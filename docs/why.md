@@ -100,8 +100,8 @@ not a claim that it is built: three rows below are marked where the two differ.
 | A rewritten context file does not re-attach mid-session, and the change notice truncates head and tail, so a mid-file edit reaches the model in neither copy | Generated files stay short, and the scan prints a restart notice | A6, A8 |
 | A fixed table of area roots put 41% of one real repository's source in no area, and split `scripts/lib` from its larger sibling `scripts/hooks` for no stateable reason | Any directory holding enough source is an area candidate | see `lib/areas.mjs` |
 | Scanning per area cost 3 to 4.4x for nothing | One whole-corpus pass, attributed to areas in the reducer | see `lib/scan.mjs` |
-| An 85-area index costs about 1.2k tokens, a 977-area index about 15.8k | 120 areas, smallest folded upward into a real parent directory; the overview summarises its listing past 200 | see `lib/areas.mjs` |
-| Raising the area ceiling to 1,000 split a 2,468-file repository into 209 areas and dropped stated claims from 194 to 143, because a smaller area holds fewer candidates | The ceiling stays at 120. Coverage on a large tree comes from folding into parent directories, which took a 100,000-file repository from 76,000 uncovered files to none | see `lib/areas.mjs` |
+| An 85-area index costs about 1.2k tokens, a 977-area index about 15.8k | An area ceiling, smallest folded upward into a real parent directory; the overview summarises its listing past 200 | see `lib/areas.mjs` |
+| Raising the area ceiling to 1,000 split a 2,468-file repository into 209 areas and dropped stated claims from 194 to 143, because a smaller area holds fewer candidates | The ceiling is `clamp(ceil(N / 16), 120, 500)`, a budget backstop reading "the average area holds at least sixteen files" rather than a size rule. Coverage on a large tree comes from folding into parent directories, which took a 100,000-file repository from 76,000 uncovered files to none | see `lib/areas.mjs` |
 | A 50,000-file corpus cap did not trim a tail: it suppressed every directive in the map, so a repository one file over the line stated nothing | No cap on repository size. The same 100,000-file repository went from 0 of 720 claims to 480 of 720 | B11 |
 | The `typescript@5` checker ran 26x slower, is whole-program (narrowing the file set drove unresolved types from 3.1% to 36.2%), and bought 5 additional entries | A semantic tier would be opt-in and never the default. **Not built:** `typescript` is not a dependency and no flag reaches it | B7 |
 | A tracked file named `--instruction-file-path=.git/config` exfiltrated a secret through a subprocess argv | Every subprocess: `execFile`, arguments after `--`, reject paths starting with `-`. **Partial:** no path reaches a positional argument today, but the rule is not applied at every call site | F5 |
@@ -128,7 +128,10 @@ each of which is now a numbered decision:
   promised floor with no number is not a floor (C4).
 - Its concentration guard was `files_conforming >= 3`, which does not block the case the spec itself
   gave as its motivation: 200 candidate sites in one file plus one each in 13 others gives 14 files
-  at ratio 1.0, and every gate passes. The guard is now a share of candidates, not a file count (D3).
+  at ratio 1.0, and every gate passes. The guard is now the inverse-Simpson count of how many files
+  the evidence is worth, plus the ratio recomputed with the largest file dropped. A share of the
+  candidates was the first replacement and it does not work either: at two files the largest share is
+  at least 0.5 by arithmetic, and at fifty files no share ever fires however lopsided the spread (D3).
 - It defined the three counts and never said which population the gate reads, current or baseline.
   Those give different answers whenever the agent has been editing (D6).
 - It claimed the parsing libraries read no repository configuration. Its own evidence section
@@ -161,5 +164,5 @@ producing nothing.
 
 ## Further reading
 
-[`DECISIONS.md`](../DECISIONS.md) is the build contract: 48 numbered decisions with the finding
+[`DECISIONS.md`](../DECISIONS.md) is the build contract: 54 numbered decisions with the finding
 behind each. [`how-it-works.md`](how-it-works.md) is the mechanical walkthrough.

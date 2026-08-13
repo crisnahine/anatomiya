@@ -208,5 +208,5 @@ There is no bug bounty.
 
 ## Supported versions
 
-anatomiya is 0.1.0 and pre-1.0. Fixes land on the main branch and there are no backports to older
+anatomiya is 0.1.1 and pre-1.0. Fixes land on the main branch and there are no backports to older
 tags. Run from main if you care about this.

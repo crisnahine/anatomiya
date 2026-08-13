@@ -180,12 +180,26 @@ in `check`.
 | `absent_is_null` | partial | js, jsx | an absent value is returned as null, not undefined |
 | `iterate_with_for_of` | partial | js, jsx | collections are iterated with `for...of`, not `.forEach` |
 | `assertion_style` | partial | js, jsx | assertions are written with `expect()` |
+| `hook_call_style` | precise | jsx | React's hooks are called by their bare name, not through React. |
+| `handler_is_named` | precise | jsx | an event handler prop is given a named function, not an inline arrow |
+| `spread_on_component` | precise | jsx | a prop spread lands on a component, not on a host element |
+| `text_translated` | partial | jsx | user-visible text goes through the translation layer |
+| `handler_memoised` | partial | jsx | a handler passed to a child is wrapped in `useCallback` |
 | `rescue_uses_error` | precise | ruby | rescue blocks use the error they caught |
 | `keyword_params` | precise | ruby | methods taking three or more arguments name them with keywords |
 | `zone_aware_time` | precise | ruby | the current time is read through the application time zone |
 | `record_lookup` | partial | ruby | records are fetched with `find_by` and checked, not `find` |
 | `model_callbacks` | partial | ruby | models keep behaviour out of lifecycle callbacks |
 | `service_result_shape` | partial | ruby | service entry points return their failure instead of raising |
+| `migration_reversible` | partial | ruby | migrations declare `change`, not `up` and `down` |
+| `migration_schema_only` | partial | ruby | migrations change the schema and leave the data alone |
+| `column_null_declared` | partial | ruby | new columns are declared `null: false` |
+| `table_primary_key_declared` | partial | ruby | new tables declare their primary key type |
+| `reference_foreign_key` | partial | ruby | reference columns declare their foreign key |
+
+The five JSX rows are the ones that make the JSX total 20 rather than 15: a `.tsx` or `.jsx` file is
+counted by every `js` dimension as well as these. The five migration rows are Rails and count as
+Ruby, which is what takes Ruby from 6 to 11.
 
 A dimension that finds zero sites in an area produces no slot at all. The area file only lists
 dimensions that appeared.
@@ -198,15 +212,20 @@ name of the gate that stopped it.
 | Gate | Threshold | Why here |
 |---|---|---|
 | `ratio` | `conforming / candidates >= 0.90` | the gate that survived measurement elsewhere; an earlier spec loosened it to 0.80 with no argument |
-| `candidates` | `>= 6` | below this the ratio is noise |
-| `concentration` | no single file supplies more than 50% of candidates | 200 sites in one file plus one each in 13 others gives 14 files at ratio 1.0 and clears any file-count floor. That is one file's habit, not the area's convention |
-| `applicability` | `applicability / areaFileCount >= 0.25` | a predicate that only recognises a small slice of the area is not trustworthy at any ratio |
-| `authors` | `>= 2` distinct authors over the files carrying conforming matches | one person's habit is not a convention |
+| `evidence` | the Wilson 95% lower bound on the same counts also reaches `0.90` | the ratio asks what this sample did; the bound asks whether the true rate can be trusted there. A perfect record needs 35 sites to hold 0.90, which is why there is no separate minimum on `candidates` |
+| `concentration` | the sites are worth `>= 3` files by inverse-Simpson count, **and** the ratio still reaches 0.90 with the largest file dropped | 200 sites in one file plus one each in 13 others gives 14 files at ratio 1.0 and clears any file-count floor. A share of the candidates cannot answer this either: at two files the largest share is at least 0.5 by arithmetic, and at fifty files no share ever fires however lopsided the spread is |
+| `applicability` | `applicability >= max(ceil(sqrt(F)), ceil(0.25 * F))`, where `F` is the files the dimension can speak about | the stricter of two floors, because each is wrong alone. The root asks for more than a quarter below sixteen files, where a quarter of a small directory is one or two files. The share holds above it: on its own the root asked 11 files of 120, and a measured 120-file area where 11 files used `?.` and 109 read absent values without it stated the claim over all 120 |
+| `authors` | `>= min(2, distinct authors in the repository)` distinct authors over the files carrying the counted matches | one person's habit is not a convention, but one author is not a thin team either: it is the whole team, and there is no second opinion being withheld |
 | `directories` | `>= 2` distinct directories, **only when the area spans more than one directory** | applied unconditionally this blocked 124 of 170 measured slots, because area discovery finds leaf directories and a leaf directory holds one |
 
 Gates are evaluated in that order and the **first** failure is the one recorded and printed. So
 `no convention. 0 of 133 sites (ratio)` means ratio failed first, not that ratio was the only
-failure.
+failure. Where git could not be read at all, the author gate is recorded as `history-unread` rather
+than as a team of zero.
+
+The whole battery runs once per side. Only the three numerators move between the claim and its
+inverse: how many files the sites are spread over, how much of the area the construct reaches, and
+who wrote it are facts about where the sites are, not about which way they point.
 
 Authors come from one `git log -M --no-merges --name-status` pass, unioning rename chains. Never
 `git blame`. One pass takes 0.03s to 0.84s regardless of file count against 103s for per-file blame
@@ -299,15 +318,18 @@ unconditionally, in this tool's house style, from the moment of clone.
 ### The encoder
 
 Every repository-controlled value is encoded before it is rendered: paths, area names, author names,
-commit subjects, branch names, matched source text, and the claim text itself. Allowlist, not
+commit subjects, branch names, and matched source text. Allowlist, not
 denylist. It normalises to NFKC, keeps only printable codepoints (which drops Cc, Cf, Co, Cs, Zl and
 Zp, and so catches bidi overrides and zero-width joiners that an ASCII control filter and
 `JSON.stringify` both miss), strips markdown structure (`---`, comment delimiters, backticks, table
 pipes), rejects mixed-script paths as probable homoglyphs, caps on grapheme clusters before quoting,
 and emits paths JSON-quoted.
 
-That is why a claim mentioning `||` renders with the pipes removed. The encoder does not know which
-strings are ours.
+The claim text is the one rendered string that does not go through it, because it is this tool's own
+sentence rather than a repository-controlled value. It used to: the encoder strips `|` as a table
+boundary, so "defaults are taken with ??, not ||" rendered as "defaults are taken with ??, not" in
+every JavaScript area of every repository. Line breaks are still collapsed, and a test pins the
+registry to sentences that need nothing more than that.
 
 ## 8. `check`
 
@@ -333,7 +355,7 @@ Severity, in the order the checks are made:
 | Result | When |
 |---|---|
 | NIT | no convention counted here, or a gate suppressed the one that was |
-| FIX | the map is stale, or there was no merge base, or the predicate is partial, or the map already names this file as an exception, or the baseline population had fewer than 6 sites, or the baseline itself was not perfect |
+| FIX | the map is stale, or there was no merge base, or the predicate is partial, or the map already names this file as an exception, or no baseline population was recorded, or the Wilson bound on the baseline counts does not reach 0.90, or the baseline itself was not perfect |
 | MUST-FIX | all baseline sites conform, so this branch is the first violation |
 
 Baseline counts come from the pinned population, never from the current one, or the agent's own
@@ -347,8 +369,10 @@ excluding Ruby here would state conventions and enforce none of them.
 
 Roughly, in order of how much they move the number of stated claims:
 
-- **Directory shape.** Many directories of 5 to 40 source files is the good case. A flat `src/` with
-  400 files gives you one area and one set of claims. Directories under 5 files give you nothing.
+- **Directory shape.** Many directories of 8 to 40 source files is the good case. A flat `src/` with
+  400 files gives you one area and one set of claims. A directory under the floor, which is 3 in a
+  small repository and 8 from about 2,000 files up, folds into its nearest ancestor that clears it,
+  and folds into nothing at all if no ancestor does.
 - **Git history.** The author gate needs 2 distinct authors on the files carrying the conforming
   matches. A young repository, a solo repository, or a squashed import will state very little.
 - **Actual consistency.** The ratio gate is 0.90. Anything your team is 80% consistent about will

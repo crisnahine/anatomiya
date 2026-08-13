@@ -1,6 +1,6 @@
 # Contributing
 
-Read `DECISIONS.md` first. It is 48 numbered rows, each one a measurement or a review finding reduced
+Read `DECISIONS.md` first. It is 54 numbered rows, each one a measurement or a review finding reduced
 to the decision it forces on the code. It is the build contract, and most questions you will have
 about why something is shaped the way it is are answered there in one line.
 
@@ -88,7 +88,9 @@ and they do not get edited because a new implementation would be tidier.
 
 A dimension is one counted claim about one area. It carries three numbers, never one:
 
-- `applicability` files that could participate in the claim at all
+- `applicability` files holding at least one candidate site. Not files that could hold one: a site
+  the predicate cannot see is a file that does not count, which is why a narrow predicate has to be
+  audited against the area's file count rather than trusted
 - `candidates` sites inside those files where the construct appears
 - `conforming` candidates matching the positive pattern
 
@@ -97,9 +99,12 @@ The ratio is `conforming / candidates`. Counting files instead of sites was meas
 
 Where the code goes:
 
-- `lib/dimensions.mjs` core JS and TS dimensions, plus the `dimensionsFor()` registry
+- `lib/dimensions.mjs` core JS and TS dimensions, plus the `ALL_DIMENSIONS` registry and
+  `dimensionsFor()`. A dimension not reachable from here does not ship, whichever file defines it
 - `lib/dimensions-extra.mjs` the rest of the JS and TS set
+- `lib/dimensions-jsx.mjs` the React surface, `langs: ["jsx"]` only
 - `lib/dimensions-ruby.mjs` Ruby, walking prism nodes through `walkRuby`
+- `lib/dimensions-rails.mjs` Rails schema and migrations, also prism
 
 The shape:
 
@@ -107,6 +112,7 @@ The shape:
 {
   key: "swallowed_error",
   claim: "catch blocks use the error they caught",
+  counterClaim: null, // discarding the error is an absence, not a style anyone picked
   precision: "precise",
   langs: ["js", "jsx"],
   run(program, add) {
@@ -114,6 +120,12 @@ The shape:
   },
 }
 ```
+
+`counterClaim` is not optional. It is the sentence an area is handed when it consistently does the
+opposite, and it is hand-written because a machine negation names nothing for the agent to write and
+because writing the inverse out loud is where an inverse that is really a defect becomes visible.
+Where the other side is a defect rather than a style, the value is an explicit `null` with the reason
+beside it. An absent key is not a third state, and `npm run check:docs` fails on one.
 
 `claim` is rendered to the agent, so write it as a statement about the code, not a verdict about the
 repository. A rendered `1.0` next to a principle's name reads as a philosophical endorsement instead
