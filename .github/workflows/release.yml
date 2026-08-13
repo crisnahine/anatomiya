@@ -45,7 +45,7 @@ jobs:
       # with every Ruby test skipped and ship a tier nothing verified.
       - uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1.321.0
         with:
-          ruby-version: "3.3"
+          ruby-version: "3.4"
 
       # Required, not optional. Ruby is installed above, so a failure here is a
       # real one, and a release that skipped the Ruby tier would ship eleven

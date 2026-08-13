@@ -7,7 +7,7 @@ about why something is shaped the way it is are answered there in one line.
 ## Setup and tests
 
 Node 22 or newer. ES modules, `.mjs` everywhere. One runtime dependency, `oxc-parser`. Ruby
-dimensions need a Ruby with `prism`, which is a default gem on Ruby 3.3 and up, so a system Ruby is
+dimensions need `prism` 1.x, a default gem on Ruby 3.4 and up, so a system Ruby is
 usually enough. If you do not have Ruby, the Ruby tests skip and the rest still run.
 
 ```sh

@@ -39,17 +39,19 @@ jobs:
 
       - run: npm ci
 
-      # The Ruby tier needs prism, which ships as a default gem from Ruby 3.3.
+      # The Ruby tier needs prism 1.x. Ruby 3.3 ships 0.19, which spells the
+      # fields the dimensions read differently, so 3.4 is the real floor.
       # A runner without it is a missing tool, not a broken build, so it says so
       # and the Ruby tests come out of the list. Failing here would make every
       # unrelated change red on a runner image bump.
       # The runner image ships no prism, so the Ruby tier would skip everywhere
-      # and half the tool would go untested behind a green tick. 3.3 is the
-      # first release where prism is a default gem, which is what
-      # `--disable-gems` needs.
+      # and half the tool would go untested behind a green tick. 3.4, not 3.3:
+      # 3.3 ships prism 0.19, which the parser child rejects by version because
+      # a rescue chain and a constant path are spelled differently there and
+      # every count would silently come back zero.
       - uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1.321.0
         with:
-          ruby-version: "3.3"
+          ruby-version: "3.4"
 
       # One leg REQUIRES Ruby. Skipping everywhere is how half the tool goes
       # untested in silence: the six Ruby dimensions, the prism child, and the
@@ -66,7 +68,7 @@ jobs:
             echo "available=true" >> "$GITHUB_OUTPUT"
           elif [ "$REQUIRED" = "true" ]; then
             echo "::error::ruby -rprism failed on the leg that must run the Ruby tier."
-            echo "::error::prism is a default gem from Ruby 3.3. Every Ruby test would have been skipped."
+            echo "::error::prism 1.x is a default gem from Ruby 3.4. Every Ruby test would have been skipped."
             exit 1
           else
             echo "available=false" >> "$GITHUB_OUTPUT"
@@ -341,12 +343,13 @@ jobs:
       # exercises none of prism, the six Ruby dimensions, or the Rails data
       # dimensions over db/schema.rb and db/migrate.
       # The runner image ships no prism, so the Ruby tier would skip everywhere
-      # and half the tool would go untested behind a green tick. 3.3 is the
-      # first release where prism is a default gem, which is what
-      # `--disable-gems` needs.
+      # and half the tool would go untested behind a green tick. 3.4, not 3.3:
+      # 3.3 ships prism 0.19, which the parser child rejects by version because
+      # a rescue chain and a constant path are spelled differently there and
+      # every count would silently come back zero.
       - uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1.321.0
         with:
-          ruby-version: "3.3"
+          ruby-version: "3.4"
 
       - name: Scan a Ruby repository
         shell: bash

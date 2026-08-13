@@ -31,8 +31,8 @@ not the ones it already serves fully.
 
 ## Install
 
-Needs Node 22 or newer. Ruby dimensions also want Ruby 3.3 or newer on `PATH`, where `prism` is a
-default gem. Without it, Ruby files are reported as unexamined rather than guessed at.
+Needs Node 22 or newer. Ruby dimensions also want Ruby 3.4 or newer on `PATH`, which is the first
+release shipping `prism` 1.x as a default gem; 3.3 ships 0.19 and is rejected by version. Without it, Ruby files are reported as unexamined rather than guessed at.
 
 ```
 /plugin marketplace add crisnahine/anatomiya
