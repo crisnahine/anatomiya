@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { needsPosixPaths } from "./platform.mjs";
 import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, rmSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, isAbsolute, sep } from "node:path";
 import { execFileSync } from "node:child_process";
 
 import { collect, isDenied, isExcludedDir, isSource, safeResolve, language, gitRoot } from "../lib/corpus.mjs";
@@ -168,7 +168,15 @@ test("gitRoot returns the top level from a subdirectory", async (t) => {
     git("commit", "-qm", "init");
   });
 
-  assert.equal(await gitRoot(join(dir, "src")), realpathSync(dir));
+  // Compared against the root's own answer, not against a path this test spells
+  // itself. One directory has several valid spellings on Windows, where git
+  // prints the long name and a temporary directory carries the 8.3 form, and
+  // asserting one of them tests the platform rather than the function.
+  const fromRoot = await gitRoot(dir);
+  assert.equal(await gitRoot(join(dir, "src")), fromRoot);
+  assert.equal(isAbsolute(fromRoot), true, "callers join against this");
+  assert.equal(fromRoot.includes("/") && sep === "\\", false, "and compare it with native separators");
+  assert.equal(realpathSync(fromRoot), fromRoot, "already resolved, so no caller has to");
 });
 
 test("fixture and vendor directories are excluded", () => {
