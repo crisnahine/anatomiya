@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { needsPosixPaths } from "./platform.mjs";
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -510,7 +511,7 @@ test("a rename made on the branch under review is still followed", async (t) => 
   assert.equal(population.files.length, 6);
 });
 
-test("a path holding a newline stays one path through the rename map", async (t) => {
+test("a path holding a newline stays one path through the rename map", needsPosixPaths, async (t) => {
   const odd = "src/services/we\nird.ts";
   const files = ["src/services/plain.ts", odd];
   let sha;

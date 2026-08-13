@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { needsPosixPaths, needsShebang } from "./platform.mjs";
 import { needsRuby } from "./ruby-available.mjs";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -246,7 +247,7 @@ test("onFile hands each result over and retains none", needsRuby, async () => {
   assert.equal(out.parsed, 1, "the counters still move when nothing is retained");
 });
 
-test("a newline in a path is a path, not two paths", needsRuby, async () => {
+test("a newline in a path is a path, not two paths", needsPosixPaths, needsRuby, async () => {
   const abs = join(dir, "two\nlines.rb");
   writeFileSync(abs, "def go\n  Time.now\nend\n");
   const out = await parseRuby([{ rel: "two\nlines.rb", abs }]);
@@ -290,7 +291,7 @@ test("no ruby on the machine charges the files instead of losing them", needsRub
   assert.equal(out.results[0].ok, false);
 });
 
-test("a parser too old for these field names reports rather than counting zero", needsRuby, async () => {
+test("a parser too old for these field names reports rather than counting zero", needsShebang, async () => {
   // The stub stands in for a Ruby whose prism spells the fields differently.
   const stub = join(dir, "old-ruby");
   writeFileSync(stub, '#!/bin/sh\necho \'{"fatal":"prism 0.19.0 predates it"}\'\n', { mode: 0o755 });

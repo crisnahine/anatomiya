@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { needsPosixPaths } from "./platform.mjs";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
@@ -135,7 +136,7 @@ test("a file renamed twice keeps the authors of every earlier name", async () =>
   rmSync(dir, { recursive: true, force: true });
 });
 
-test("a path holding a newline keys the map by the path on disk", async () => {
+test("a path holding a newline keys the map by the path on disk", needsPosixPaths, async () => {
   // The `-z` in D5's one pass. Without it git C-quotes the path and the key no
   // longer matches the corpus, so the file silently loses every author.
   const rel = "src/we\nird.ts";

@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { needsPosixPaths } from "./platform.mjs";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -95,7 +96,7 @@ test("a file that cannot be read resolves instead of throwing", async () => {
   });
 });
 
-test("a hostile filename reaches the parser as a path, not as an argument", async () => {
+test("a hostile filename reaches the parser as a path, not as an argument", needsPosixPaths, async () => {
   await withPool({ size: 1 }, async (pool, dir) => {
     // The path travels over IPC, never through a shell or an argv, so a newline
     // and a leading dash are ordinary characters.
