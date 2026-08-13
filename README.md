@@ -32,7 +32,18 @@ not the ones it already serves fully.
 ## Install
 
 Needs Node 22 or newer. Ruby dimensions also want Ruby 3.4 or newer on `PATH`, which is the first
-release shipping `prism` 1.x as a default gem; 3.3 ships 0.19 and is rejected by version. Without it, Ruby files are reported as unexamined rather than guessed at.
+release shipping `prism` 1.x as a default gem; 3.3 ships 0.19 and is rejected by version.
+
+| Platform | State |
+|---|---|
+| Linux | the suite and an end-to-end scan, pin and check run on every commit |
+| macOS | the same |
+| Windows | the same, with one guard less: there is no `ps`, so a runaway parse is caught by the five-second timeout rather than by the memory poll |
+
+Windows is tested, not assumed. Two things had to change for it: a replaced environment needs a valid
+`%SystemRoot%` before an interpreter will start, and the repository root is resolved to a native path
+because git prints forward slashes there. The hostile-filename defences are untestable on Windows,
+which forbids a newline in a filename outright, and those tests skip with that reason on the page. Without it, Ruby files are reported as unexamined rather than guessed at.
 
 ```
 /plugin marketplace add crisnahine/anatomiya
