@@ -1,0 +1,90 @@
+name: supply chain
+
+# This ships as a plugin someone installs into a session that can read their
+# repository, so what it depends on is part of what they are trusting.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "17 7 * * 2"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: supply-chain-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Only meaningful on a pull request, where there is a base to compare against.
+  review:
+    name: dependency review
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          fail-on-severity: moderate
+          # One runtime dependency, and it should stay that way: a new one
+          # arriving in a pull request is a decision worth seeing, not a diff
+          # line to scroll past.
+          comment-summary-in-pr: on-failure
+
+  audit:
+    name: audit the installed tree
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+          cache: npm
+
+      # What a user installs is the runtime tree, so that is what is audited.
+      # Development-only findings are reported and do not fail the run: they are
+      # not in anything that reaches a user's machine.
+      - name: Runtime dependencies
+        run: npm audit --omit=dev --audit-level=moderate
+
+      - name: Everything else, reported only
+        if: always()
+        continue-on-error: true
+        run: npm audit --audit-level=high
+
+      # `npm ci` runs install scripts by default, and this project needs none of
+      # them for its own code. A dependency that starts needing one is a change
+      # in what installing this executes on someone's machine.
+      - name: The install runs no scripts
+        run: |
+          rm -rf node_modules
+          npm ci --ignore-scripts
+          node -e "import('oxc-parser').then(() => console.log('the parser loads with no install script'))"
+
+  scorecard:
+    name: openssf scorecard
+    runs-on: ubuntu-latest
+    # A fork has no token for the results upload, and a red job there would say
+    # nothing about the fork.
+    if: github.event_name != 'pull_request'
+    permissions:
+      contents: read
+      security-events: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: ossf/scorecard-action@4eaacf0543bb3f2c246792bd56e8cdeffafb205a # v2.4.3
+        with:
+          results_file: results.sarif
+          results_format: sarif
+          publish_results: true
+
+      - uses: github/codeql-action/upload-sarif@0499de31b99561a6d14a36a5f662c2a54f91beee # v3.31.0
+        with:
+          sarif_file: results.sarif

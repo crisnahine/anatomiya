@@ -43,7 +43,9 @@
     "test": "node --test 'test/**/*.test.mjs'",
     "test:watch": "node --test --watch 'test/**/*.test.mjs'",
     "scan": "node bin/anatomiya.mjs scan .",
-    "validate": "node scripts/validate.mjs"
+    "validate": "node scripts/validate.mjs",
+    "check:docs": "node scripts/check-docs.mjs",
+    "coverage": "node --test --experimental-test-coverage --test-coverage-lines=95 --test-coverage-branches=87 --test-coverage-functions=95 'test/**/*.test.mjs'"
   },
   "dependencies": {
     "oxc-parser": "^0.144.0"
