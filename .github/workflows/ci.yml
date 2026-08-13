@@ -91,6 +91,48 @@ jobs:
           # shellcheck disable=SC2086
           node --test $files
 
+  # A number that only ever gets quoted is worse than none, so the floors are
+  # enforced rather than reported. They sit a little under the measured 98.66
+  # line / 90.98 branch / 97.90 function, which is room for one refactor rather
+  # than room to stop writing tests.
+  coverage:
+    name: coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+          cache: npm
+
+      - uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1.321.0
+        with:
+          ruby-version: "3.4"
+
+      - run: npm ci
+
+      - name: Measure and enforce
+        shell: bash
+        run: |
+          node --test --experimental-test-coverage \
+            --test-coverage-lines=95 \
+            --test-coverage-branches=87 \
+            --test-coverage-functions=95 \
+            $(find test -name '*.test.mjs' | sort) | tee "$RUNNER_TEMP/cov.txt"
+
+      - name: Summarise
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "### Coverage"
+            echo
+            echo '```'
+            grep -E "^# (file|-|all files)" "$RUNNER_TEMP/cov.txt" | tail -5 | sed 's/^# //'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
   # A malformed manifest fails at plugin load time with an error that does not
   # name the cause, so it is worth catching here rather than in someone's
   # session.
@@ -103,6 +145,15 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "22"
+
+      - run: npm ci
+
+      # Every number in the prose that the code also states. Both drifted in one
+      # afternoon: the README claimed 21 dimensions after 31 shipped, and a gate
+      # table listed floors the gates had stopped reading. A reader cannot tell
+      # a stale number from a true one.
+      - name: The documentation matches the code
+        run: node scripts/check-docs.mjs
 
       - name: Validate the plugin structure
         shell: bash
@@ -218,7 +269,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest, macos-latest, windows-latest]
     env:
       # Pinned to a tag so a change upstream cannot turn this red on its own.
       # Small, MIT, plain JavaScript, several directories deep enough to become
@@ -304,6 +355,22 @@ jobs:
           console.log(`${written.length} files written, ${globs} globs checked, none ends in a bare /**`);
           CHECK
           node "$RUNNER_TEMP/check-output.mjs" "$RUNNER_TEMP/smoke" "$RUNNER_TEMP/scan.out"
+
+      # A5 end to end. The overview loads on every turn, so it is only affordable
+      # on a cached read, and a unit test on the renderer cannot see a timestamp
+      # that arrives from the corpus or the baseline.
+      - name: Scan again and prove the overview did not move
+        shell: bash
+        run: |
+          cd "$RUNNER_TEMP/smoke"
+          cp .claude/rules/anatomiya-overview.md "$RUNNER_TEMP/overview-1.md"
+          node "$GITHUB_WORKSPACE/bin/anatomiya.mjs" scan . >/dev/null
+          if ! cmp -s "$RUNNER_TEMP/overview-1.md" .claude/rules/anatomiya-overview.md; then
+            echo "::error::the overview changed between two scans of unchanged source"
+            diff -u "$RUNNER_TEMP/overview-1.md" .claude/rules/anatomiya-overview.md | head -40
+            exit 1
+          fi
+          echo "the overview is byte-identical across two scans"
 
       # `scan` alone left the other two commands untested end to end, and the
       # baseline is what every gate reads: unpinned, no finding can exceed FIX,

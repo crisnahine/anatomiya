@@ -1,0 +1,43 @@
+name: codeql
+
+# The tool reads a repository it does not trust: filenames, directory names,
+# author names and source text all arrive from somewhere else and end up in a
+# file the agent then reads. The unit tests pin the encoder and the argv rules
+# at the places we thought of. This is for the places we did not.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # A finding can arrive from a rule update rather than from a commit, so the
+    # scan runs on its own even when the repository is quiet.
+    - cron: "41 6 * * 2"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyse:
+    name: analyse
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: github/codeql-action/init@0499de31b99561a6d14a36a5f662c2a54f91beee # v3.31.0
+        with:
+          languages: javascript-typescript
+          # The default suite alone misses the classes that matter most here:
+          # path traversal out of the repository, command construction, and
+          # anything that reaches an argument position.
+          queries: security-extended
+
+      - uses: github/codeql-action/analyze@0499de31b99561a6d14a36a5f662c2a54f91beee # v3.31.0
+        with:
+          category: "/language:javascript-typescript"
