@@ -9,6 +9,35 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 Nothing yet.
 
+## [0.1.1] - 2026-08-14
+
+### Fixed
+
+- Ruby 3.4 is the floor, not 3.3. The parser child rejects `prism` below 1.0 by version, because a
+  rescue chain links through `consequent` rather than `subsequent` there and a constant path through
+  `child` rather than `name`. Nothing raises; every Ruby count comes back zero. Ruby 3.3 ships
+  `prism` 0.19, so the documented requirement was wrong for every user who met it.
+- The Ruby child carries `%SystemRoot%` on Windows. A replaced environment without it cannot start
+  a side-by-side assembly, so the interpreter never ran and the whole Ruby tier was unreachable.
+- The repository root is resolved to a real native path in `gitRoot`. git prints forward slashes on
+  Windows and can print a short 8.3 form where the filesystem holds a long one, and every path
+  downstream is joined against this value and compared with it.
+- The resident-memory guard stands down on Windows, where there is no `ps`, instead of failing to
+  read one. A runaway parse is caught by the five-second timeout there. `wmic`, which is what the
+  usual replacement shells out to, is removed in Windows 11 25H2.
+
+### Added
+
+- Windows is tested rather than declared out of scope: the suite on Node 22 and 24, and an
+  end-to-end `scan`, `pin` and `check` against a real repository, alongside Linux and macOS.
+- The overview's byte-stability across two scans of unchanged source is checked end to end, not only
+  in a renderer unit test.
+- Coverage is measured and enforced at 95% lines, 87% branches, 95% functions.
+- A documentation check that compares every claim the prose makes which the code also makes: the
+  dimension counts, the gate names, the command surface, and the version across three files.
+- CodeQL with the `security-extended` suite, dependency review on pull requests, a runtime `npm
+  audit`, a check that installing runs no scripts, and an OpenSSF Scorecard.
+
 ## [0.1.0] - 2026-08-13
 
 First release. `DECISIONS.md` is the build contract and records which decisions are complete and
