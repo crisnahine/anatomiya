@@ -156,13 +156,13 @@ exported functions declare their return type
   except "src/components/base/SelectTaskTemplateAutocreateTemplateOrModule.tsx"
   and 4 more
 
-catch blocks use the error they caught: no convention. 2 of 2 sites (candidates)
+catch blocks use the error they caught: no convention. 2 of 2 sites (evidence)
 failure is returned, not thrown: no convention. 0 of 1 sites (ratio)
 optional values are read with ?.: no convention. 5 of 96 sites (ratio)
 module-level functions are declared with function, not assigned as arrows: no convention. 3 of 132 sites (ratio)
 imports used only as types are marked import type: no convention. 2 of 71 sites (ratio)
 relative imports carry the file extension: no convention. 0 of 132 sites (ratio)
-defaults are taken with ??, not: no convention. 4 of 30 sites (ratio)
+defaults are taken with ??, not ||: no convention. 4 of 30 sites (ratio)
 possibly-absent values are read with ?., not asserted with !: no convention. 121 of 121 sites (applicability)
 an absent value is returned as null, not undefined: no convention. 3 of 5 sites (ratio)
 collections are iterated with for...of, not .forEach: no convention. 2 of 9 sites (ratio)
@@ -200,7 +200,7 @@ A line ending in `no convention. 4 of 30 sites (ratio)` means the gate named in 
 stopped the claim. The counts print anyway, so a badly set threshold costs one sentence rather than
 a wrong rule.
 
-## The two commands
+## The three commands
 
 | Command | What it does |
 |---|---|
@@ -244,16 +244,19 @@ enforces a rule, the map restating it is waste, not defence in depth.
 in JSX, 11 for Ruby.
 A Python, Go or Rust repository gets an overview with no claims in it.
 
-**Files in small directories are not covered.** An area needs 5 source files. On the example above,
-196 of 2,468 files, about 8%, sat in no area at all, and the overview says so on every scan. The
-area count is capped at 120: raising it to 1,000 was tried and split the same repository into 209
-smaller areas, dropping stated claims from 194 to 143, because a smaller area holds fewer candidates
-and more of them fail the gates. Directories over the cap fold into their parent rather than being
-dropped, so repository size does not cost coverage.
+**Files in small directories are not covered.** Both bounds scale with the corpus rather than sitting
+at a fixed number. A directory needs `clamp(round(sqrt(N) / 6), 3, 8)` source files to be an area, so
+3 in a small repository and 8 from about 2,000 files up. On the example above, which was at the floor
+of 8, 196 of 2,468 files, about 8%, sat in no area at all, and the overview says so on every scan.
+The area count is capped at `clamp(ceil(N / 16), 120, 500)`, which is 155 on that repository: raising
+it to 1,000 was tried and split the same repository into 209 smaller areas, dropping stated claims
+from 194 to 143, because a smaller area holds fewer candidates and more of them fail the gates.
+Directories over the cap fold into their parent rather than being dropped, so repository size does
+not cost coverage.
 
 ## Why it works the way it does
 
-[`DECISIONS.md`](DECISIONS.md) is the build contract: 48 numbered decisions, each with the
+[`DECISIONS.md`](DECISIONS.md) is the build contract: 54 numbered decisions, each with the
 measurement or the review finding that forced it. If you want to know why a threshold is where it
 is, why the parser runs in child processes, or why there is no hook, that is the file.
 
