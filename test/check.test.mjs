@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { needsPosixPaths } from "./platform.mjs";
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
@@ -498,7 +499,7 @@ test("a deleted file produces no findings", async (t) => {
   assert.deepEqual(r.findings, []);
 });
 
-test("a path containing a newline stays one path", async (t) => {
+test("a path containing a newline stays one path", needsPosixPaths, async (t) => {
   // Git permits a newline in a path. A line-split over `--name-status` turns
   // one hostile filename into two entries, and the encoder is what keeps it
   // from breaking the rendered report open.

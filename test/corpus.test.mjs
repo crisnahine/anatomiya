@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { needsPosixPaths } from "./platform.mjs";
 import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, rmSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -89,7 +90,7 @@ test("a tracked symlink pointing outside the repository is dropped", async (t) =
   assert.equal(dropped.escaped, 1);
 });
 
-test("a filename containing a newline stays one corpus entry", async (t) => {
+test("a filename containing a newline stays one corpus entry", needsPosixPaths, async (t) => {
   const dir = repo(t, (d, { git, write }) => {
     write("src/a.ts");
     write("src/we\nird.ts");

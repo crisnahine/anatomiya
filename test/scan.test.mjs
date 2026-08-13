@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { needsPosixPaths } from "./platform.mjs";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
@@ -165,7 +166,7 @@ test("a file that kills the parser costs that one file", async (t) => {
   assert.ok(!dim.files.includes("src/bomb.ts"));
 });
 
-test("a path with a newline or a leading dash survives the whole scan", async (t) => {
+test("a path with a newline or a leading dash survives the whole scan", needsPosixPaths, async (t) => {
   // F1 and F5 end to end: the corpus is NUL-split, and no repository-controlled
   // path reaches an argument position where git or the parser reads it as an
   // option. A path lost here would silently shrink an area's population.
