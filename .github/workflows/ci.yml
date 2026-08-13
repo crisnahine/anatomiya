@@ -16,18 +16,18 @@ concurrency:
 
 jobs:
   # The tool spawns child processes, reads git, and shells out, so one platform
-  # would miss real breakage: process spawn limits, path handling, and the git
-  # binary all differ. Windows is out of scope on purpose. The parser pool and
-  # the Ruby child both assume POSIX process semantics, and nothing in the
-  # plugin has been measured there, so testing it would claim support we have
-  # not earned.
+  # would miss real breakage: spawn limits, path handling, and the git binary
+  # all differ. Windows runs too, and it is the only way to know whether it
+  # works: `ps` does not exist there and a replaced environment needs
+  # %SystemRoot% before an interpreter will start at all. Whether it stays
+  # green decides what the README is allowed to claim.
   test:
     name: test (node ${{ matrix.node }}, ${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest, macos-latest, windows-latest]
         node: ["22", "24"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
