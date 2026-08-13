@@ -1,0 +1,105 @@
+name: release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    # Write is needed for one thing: creating the release. Nothing else in this
+    # workflow writes, so nothing else gets the permission.
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+          cache: npm
+
+      # A tag that disagrees with either manifest ships a version number that is
+      # a lie, and the plugin loader reads plugin.json, not the tag. Stop before
+      # anything is published.
+      - name: Check the tag against both manifests
+        id: version
+        shell: bash
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          pkg=$(node --input-type=module -e 'import { readFileSync } from "node:fs"; process.stdout.write(JSON.parse(readFileSync("package.json", "utf8")).version ?? "")')
+          plug=$(node --input-type=module -e 'import { readFileSync } from "node:fs"; process.stdout.write(JSON.parse(readFileSync(".claude-plugin/plugin.json", "utf8")).version ?? "")')
+          echo "tag $tag, package.json $pkg, plugin.json $plug"
+          if [ "$tag" != "$pkg" ] || [ "$tag" != "$plug" ]; then
+            echo "::error::version mismatch. Tag says $tag, package.json says $pkg, .claude-plugin/plugin.json says $plug. Nothing was released."
+            exit 1
+          fi
+          echo "version=$tag" >> "$GITHUB_OUTPUT"
+
+      - run: npm ci
+
+      - name: Check the Ruby parser
+        id: ruby
+        shell: bash
+        run: |
+          if version=$(ruby -rprism -e 'print Prism::VERSION' 2>/dev/null); then
+            echo "prism $version"
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run the suite
+        shell: bash
+        env:
+          RUBY_AVAILABLE: ${{ steps.ruby.outputs.available }}
+        run: |
+          files=$(find test -name '*.test.mjs' | sort)
+          if [ "$RUBY_AVAILABLE" != "true" ]; then
+            files=$(printf '%s\n' "$files" | grep -v 'ruby\.test\.mjs$' || true)
+            echo "::warning::ruby -rprism failed on this runner. Skipping the Ruby parser tests. Every other test still runs."
+          fi
+          # shellcheck disable=SC2086
+          node --test $files
+
+      # The release body is the CHANGELOG section for this version, unedited. A
+      # tag with no section is a release with no notes, so it fails instead.
+      - name: Pull the changelog section
+        shell: bash
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          if [ ! -f CHANGELOG.md ]; then
+            echo "::error::no CHANGELOG.md, so there is nothing to release $VERSION with."
+            exit 1
+          fi
+          # The version is matched as a whole token, not a substring, or 0.1.0
+          # would find the 10.1.0 heading first and release the wrong notes.
+          awk -v ver="$VERSION" '
+            BEGIN { re = ver; gsub(/\./, "\\.", re); re = "(^|[^0-9.])" re "([^0-9.]|$)" }
+            /^## / { if (found) exit; if ($0 ~ re) { found = 1; next } }
+            found { print }
+          ' CHANGELOG.md | sed -e '/./,$!d' > "$RUNNER_TEMP/section.md"
+          # sed dropped the leading blank lines, the subshell drops the trailing ones.
+          notes=$(cat "$RUNNER_TEMP/section.md")
+          if [ -z "$notes" ]; then
+            echo "::error::CHANGELOG.md has no section for $VERSION. Add one and re-tag."
+            exit 1
+          fi
+          printf '%s\n' "$notes" > "$RUNNER_TEMP/notes.md"
+          echo "release notes:"
+          cat "$RUNNER_TEMP/notes.md"
+
+      - name: Create the release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --title "$VERSION" \
+            --notes-file "$RUNNER_TEMP/notes.md" \
+            --verify-tag

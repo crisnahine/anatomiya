@@ -1,0 +1,18 @@
+node_modules/
+npm-debug.log*
+yarn-error.log
+.npm/
+*.tgz
+
+.DS_Store
+._*
+Thumbs.db
+
+.idea/
+.vscode/
+*.swp
+*~
+
+# What this tool writes when it scans itself. Derived from the source, so a scan regenerates it.
+.claude/anatomiya/
+.claude/rules/anatomiya-*.md
