@@ -9,6 +9,41 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 Nothing yet.
 
+## [0.1.2] - 2026-08-14
+
+Documentation only. No behaviour changed, and the shipped files are the README, the changelog and
+`DECISIONS.md`.
+
+### Fixed
+
+- The gate table in `docs/how-it-works.md` described gates the code stopped reading. There is no
+  `candidates >= 6` gate: the Wilson bound subsumed it, and at 0.90 a perfect record needs 35 sites.
+  `concentration` is the inverse-Simpson count of files plus the ratio with the largest file dropped,
+  not a share of candidates. `applicability` is the stricter of a square root and a quarter of the
+  files the dimension can speak about, not the quarter alone. The `authors` bar is `min(2, repository
+  authors)`. `evidence` and `history-unread` were missing entirely.
+- `DECISIONS.md` rows C4, D2 and D3 stated the thresholds the specification promised rather than the
+  ones the gates read, which is the one thing that file's status column exists to prevent.
+- The encoder section claimed the claim text goes through the encoder. It stopped, because stripping
+  `|` rendered "defaults are taken with ??, not ||" as "defaults are taken with ??, not" in every
+  JavaScript area of every repository. The README sample still showed that truncated output.
+- The dimension table in `docs/how-it-works.md` listed 21 of the 31 dimensions that ship, missing the
+  five React ones and the five Rails migration ones.
+- The area floor and ceiling are step functions of the corpus size, not the fixed 5 and 120 the
+  README and `docs/why.md` described.
+- `CONTRIBUTING.md` gave a dimension template with no `counterClaim`, which `npm run check:docs`
+  rejects, and named three of the five registry files.
+- Counts of the rows in `DECISIONS.md` (48, now 54), the supported version in `SECURITY.md`, the
+  command count in the README, and the `CHANGELOG` compare links for 0.1.1.
+
+### Added
+
+- `CONTEXT.md`, the glossary. It splits three words that each carried more than one meaning in the
+  code: `directive` is any stated sentence, and `Pin`, `Population` and `Baseline` are the three
+  things previously all called baseline.
+- `CLAUDE.md` and `docs/agents/`, which record where issues live, the triage label vocabulary, and
+  that `DECISIONS.md` stands in for `docs/adr/`.
+
 ## [0.1.1] - 2026-08-14
 
 ### Fixed
@@ -119,5 +154,7 @@ which are partial; several listed there are not implemented yet.
 - No claim that this catches defects. Measured across ten repositories, 1 of 317 defect review
   comments was preventable by a conventions map.
 
-[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/crisnahine/anatomiya/compare/v0.1.1...v0.1.2
+[0.1.1]: https://github.com/crisnahine/anatomiya/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/crisnahine/anatomiya/releases/tag/v0.1.0
