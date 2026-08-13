@@ -1,0 +1,22 @@
+version: 2
+
+# Monthly and grouped. There is one runtime dependency and three actions, so a
+# weekly ungrouped schedule would open more pull requests than there is work.
+updates:
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 3
+    groups:
+      npm:
+        patterns: ["*"]
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 3
+    groups:
+      actions:
+        patterns: ["*"]

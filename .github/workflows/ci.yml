@@ -1,0 +1,352 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Read is all any job here needs. No job writes to the repository, posts a
+# comment, or touches a package registry.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # The tool spawns child processes, reads git, and shells out, so one platform
+  # would miss real breakage: process spawn limits, path handling, and the git
+  # binary all differ. Windows is out of scope on purpose. The parser pool and
+  # the Ruby child both assume POSIX process semantics, and nothing in the
+  # plugin has been measured there, so testing it would claim support we have
+  # not earned.
+  test:
+    name: test (node ${{ matrix.node }}, ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        node: ["22", "24"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      - run: npm ci
+
+      # The Ruby tier needs prism, which ships as a default gem from Ruby 3.3.
+      # A runner without it is a missing tool, not a broken build, so it says so
+      # and the Ruby tests come out of the list. Failing here would make every
+      # unrelated change red on a runner image bump.
+      # One leg REQUIRES Ruby. Skipping everywhere is how half the tool goes
+      # untested in silence: the six Ruby dimensions, the prism child, and the
+      # Rails data dimensions all live behind this check, and a runner image
+      # that drops Ruby would take them all out with a green tick.
+      - name: Check the Ruby parser
+        id: ruby
+        shell: bash
+        env:
+          REQUIRED: ${{ matrix.os == 'ubuntu-latest' && matrix.node == '22' }}
+        run: |
+          if version=$(ruby --disable-gems -rprism -e 'print Prism::VERSION' 2>/dev/null); then
+            echo "prism $version"
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          elif [ "$REQUIRED" = "true" ]; then
+            echo "::error::ruby -rprism failed on the leg that must run the Ruby tier."
+            echo "::error::prism is a default gem from Ruby 3.3. Every Ruby test would have been skipped."
+            exit 1
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run the suite
+        shell: bash
+        env:
+          RUBY_AVAILABLE: ${{ steps.ruby.outputs.available }}
+        run: |
+          files=$(find test -name '*.test.mjs' | sort)
+          if [ "$RUBY_AVAILABLE" != "true" ]; then
+            files=$(printf '%s\n' "$files" | grep -v 'ruby\.test\.mjs$' || true)
+            echo "::warning::ruby -rprism failed on this runner. Skipping the Ruby parser tests. Every other test still runs."
+          fi
+          if [ -z "$files" ]; then
+            echo "::error::found no test files under test/"
+            exit 1
+          fi
+          # shellcheck disable=SC2086
+          node --test $files
+
+  # A malformed manifest fails at plugin load time with an error that does not
+  # name the cause, so it is worth catching here rather than in someone's
+  # session.
+  plugin:
+    name: plugin manifests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+
+      - name: Validate the plugin structure
+        shell: bash
+        run: |
+          cat > "$RUNNER_TEMP/validate-plugin.mjs" <<'VALIDATE'
+          import { readFileSync, readdirSync, existsSync } from "node:fs";
+          import { join, resolve, relative, isAbsolute } from "node:path";
+
+          const root = process.cwd();
+          const dir = join(root, ".claude-plugin");
+          const problems = [];
+
+          function load(name) {
+            const path = join(dir, name);
+            if (!existsSync(path)) {
+              problems.push(`.claude-plugin/${name} is missing`);
+              return null;
+            }
+            try {
+              return JSON.parse(readFileSync(path, "utf8"));
+            } catch (e) {
+              problems.push(`.claude-plugin/${name} does not parse: ${e.message}`);
+              return null;
+            }
+          }
+
+          const plugin = load("plugin.json");
+          const market = load("marketplace.json");
+
+          // The directory holds manifests and nothing else. A source file, a
+          // README or a stray backup here is either dead weight or something
+          // the loader will never look at, and both read as a mistake later.
+          if (existsSync(dir)) {
+            const allowed = new Set(["plugin.json", "marketplace.json"]);
+            const extra = readdirSync(dir).filter((f) => !allowed.has(f));
+            if (extra.length) {
+              problems.push(`.claude-plugin/ holds files that are not manifests: ${extra.join(", ")}`);
+            }
+          }
+
+          for (const key of ["name", "version", "description"]) {
+            if (!plugin?.[key]) problems.push(`plugin.json has no "${key}"`);
+          }
+          if (plugin?.version && !/^\d+\.\d+\.\d+/.test(String(plugin.version))) {
+            problems.push(`plugin.json version is not semver: ${plugin.version}`);
+          }
+
+          for (const key of ["name", "owner", "plugins"]) {
+            if (!market?.[key]) problems.push(`marketplace.json has no "${key}"`);
+          }
+          if (market?.plugins && !Array.isArray(market.plugins)) {
+            problems.push(`marketplace.json "plugins" is not an array`);
+          }
+
+          // Every path a manifest names has to exist, and has to stay inside the
+          // repository. A manifest is the one place a path is written by hand,
+          // which is where the typo lands.
+          function checkPath(label, value) {
+            if (typeof value !== "string" || !value.startsWith(".")) return;
+            const abs = resolve(root, value);
+            const rel = relative(root, abs);
+            if (rel.startsWith("..") || isAbsolute(rel)) {
+              problems.push(`${label} points outside the repository: ${value}`);
+              return;
+            }
+            if (!existsSync(abs)) problems.push(`${label} points at a missing path: ${value}`);
+          }
+
+          for (const key of ["commands", "agents", "skills", "hooks", "mcpServers"]) {
+            const value = plugin?.[key];
+            if (typeof value === "string") checkPath(`plugin.json ${key}`, value);
+            else if (Array.isArray(value)) {
+              value.forEach((v, i) => checkPath(`plugin.json ${key}[${i}]`, v));
+            }
+          }
+
+          for (const [i, entry] of (market?.plugins ?? []).entries()) {
+            const at = `marketplace.json plugins[${i}]`;
+            if (!entry?.name) problems.push(`${at} has no "name"`);
+            if (!entry?.source) problems.push(`${at} has no "source"`);
+            if (typeof entry?.source === "string") {
+              checkPath(`${at} source`, entry.source);
+              // An entry pointing at this repository has to name this plugin,
+              // or installing from the marketplace resolves to nothing.
+              if (entry.source.replace(/\/$/, "") === "." && plugin?.name && entry.name !== plugin.name) {
+                problems.push(`${at} name "${entry.name}" does not match plugin.json name "${plugin.name}"`);
+              }
+            }
+          }
+
+          // Caught here it is a red build. Caught at tag time it is a release
+          // that ships two different version numbers.
+          const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+          if (plugin?.version && pkg.version !== plugin.version) {
+            problems.push(`package.json version ${pkg.version} does not match plugin.json version ${plugin.version}`);
+          }
+
+          if (problems.length) {
+            for (const p of problems) console.error(`::error::${p}`);
+            process.exit(1);
+          }
+          console.log(`plugin.json and marketplace.json are valid, version ${plugin.version}`);
+          VALIDATE
+          node "$RUNNER_TEMP/validate-plugin.mjs"
+
+  # A unit suite that passes while the binary is broken is a familiar failure,
+  # so the binary runs against a real repository with real git history. Both
+  # platforms, because this is the step that spawns the parser pool and shells
+  # out to git for real.
+  smoke:
+    name: smoke (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    env:
+      # Pinned to a tag so a change upstream cannot turn this red on its own.
+      # Small, MIT, plain JavaScript, several directories deep enough to become
+      # areas, and enough history for the author gate to have something to count.
+      SMOKE_REPO: https://github.com/expressjs/express.git
+      SMOKE_REF: v5.2.1
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+          cache: npm
+
+      - run: npm ci
+
+      - name: Scan a real repository
+        shell: bash
+        run: |
+          git clone --quiet --depth 50 --branch "$SMOKE_REF" "$SMOKE_REPO" "$RUNNER_TEMP/smoke"
+          cd "$RUNNER_TEMP/smoke"
+          node "$GITHUB_WORKSPACE/bin/anatomiya.mjs" scan . | tee "$RUNNER_TEMP/scan.out"
+
+      - name: Check it wrote what it said it wrote
+        shell: bash
+        run: |
+          cat > "$RUNNER_TEMP/check-output.mjs" <<'CHECK'
+          import { readFileSync, readdirSync, existsSync } from "node:fs";
+          import { join } from "node:path";
+
+          const repo = process.argv[2];
+          const stdout = readFileSync(process.argv[3], "utf8");
+          const rules = join(repo, ".claude/rules");
+          const problems = [];
+
+          if (!existsSync(rules)) {
+            console.error("::error::the scan wrote no .claude/rules directory");
+            process.exit(1);
+          }
+
+          const written = readdirSync(rules).filter((f) => f.startsWith("anatomiya-") && f.endsWith(".md"));
+
+          if (!written.includes("anatomiya-overview.md")) {
+            problems.push("no anatomiya-overview.md on disk");
+          }
+
+          // The command prints a count. The count and the disk have to agree,
+          // which is the whole point of running the binary rather than the
+          // functions it calls.
+          const claimed = stdout.match(/wrote (\d+) files/);
+          if (!claimed) problems.push("the scan printed no \"wrote N files\" line");
+          else if (Number(claimed[1]) !== written.length) {
+            problems.push(`the scan says it wrote ${claimed[1]} files, ${written.length} are on disk`);
+          }
+
+          if (!existsSync(join(repo, ".claude/anatomiya/facts.json"))) {
+            problems.push("no .claude/anatomiya/facts.json, so nothing rendered is derivable");
+          }
+
+          // A trailing /** is stripped by the matcher before matching, so
+          // "app/**" becomes "app" and any exclusion written under it silently
+          // does nothing. It is the kind of thing that regresses quietly, and it
+          // is only visible in the rendered output.
+          let globs = 0;
+          for (const file of written) {
+            const body = readFileSync(join(rules, file), "utf8");
+            const front = body.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+            if (!front) continue;
+            for (const line of front[1].split(/\r?\n/)) {
+              const m = line.match(/^\s*-\s*"(.+)"\s*$/);
+              if (!m) continue;
+              globs++;
+              if (/\/\*\*$/.test(m[1])) {
+                problems.push(`${file} has a glob ending in a bare /**: ${m[1]}`);
+              }
+            }
+          }
+
+          if (problems.length) {
+            for (const p of problems) console.error(`::error::${p}`);
+            process.exit(1);
+          }
+          console.log(`${written.length} files written, ${globs} globs checked, none ends in a bare /**`);
+          CHECK
+          node "$RUNNER_TEMP/check-output.mjs" "$RUNNER_TEMP/smoke" "$RUNNER_TEMP/scan.out"
+
+      # `scan` alone left the other two commands untested end to end, and the
+      # baseline is what every gate reads: unpinned, no finding can exceed FIX,
+      # so a broken `pin` silently caps the whole tool at half its severity.
+      - name: Pin, rescan against the baseline, then check a branch
+        shell: bash
+        run: |
+          cd "$RUNNER_TEMP/smoke"
+          BIN="$GITHUB_WORKSPACE/bin/anatomiya.mjs"
+
+          node "$BIN" pin . | tee "$RUNNER_TEMP/pin.out"
+          grep -q "files enter the baseline population" "$RUNNER_TEMP/pin.out"
+          test -f .claude/anatomiya/baseline.json
+
+          # A second pin at the same commit must move nothing. It moving is how
+          # a whole map drops to counts on an unchanged repository.
+          node "$BIN" pin . --dry-run | tee "$RUNNER_TEMP/pin2.out"
+          grep -qE "^0 files enter the baseline population, 0 leave it$" "$RUNNER_TEMP/pin2.out" \
+            || { echo "::error::a second pin at the same commit moved the population"; exit 1; }
+
+          node "$BIN" scan . | tee "$RUNNER_TEMP/scan2.out"
+          grep -q "^baseline " "$RUNNER_TEMP/scan2.out" \
+            || { echo "::error::the scan did not read the baseline it was just handed"; exit 1; }
+
+          # A branch with one real edit, so `check` has a diff to walk rather
+          # than reporting an empty run and passing for the wrong reason.
+          git config user.email ci@example.test
+          git config user.name ci
+          git checkout -q -b smoke-edit
+          printf '\nlet smokeMutable = 1\nexport { smokeMutable }\n' >> "$(git ls-files '*.js' | head -1)"
+          git commit -qam "smoke edit"
+          node "$BIN" check . --base "$SMOKE_REF" | tee "$RUNNER_TEMP/check.out"
+          grep -qE "MUST-FIX, [0-9]+ FIX, [0-9]+ NIT" "$RUNNER_TEMP/check.out" \
+            || { echo "::error::check printed no verdict line"; exit 1; }
+
+      # The Ruby tier has no smoke coverage otherwise: the JS repository above
+      # exercises none of prism, the six Ruby dimensions, or the Rails data
+      # dimensions over db/schema.rb and db/migrate.
+      - name: Scan a Ruby repository
+        shell: bash
+        env:
+          RUBY_REPO: https://github.com/sidekiq/sidekiq.git
+          RUBY_REF: v8.1.1
+        run: |
+          if ! ruby --disable-gems -rprism -e 'print Prism::VERSION' >/dev/null 2>&1; then
+            echo "::warning::no prism on this runner, skipping the Ruby smoke"
+            exit 0
+          fi
+          git clone --quiet --depth 50 --branch "$RUBY_REF" "$RUBY_REPO" "$RUNNER_TEMP/ruby-smoke" \
+            || { echo "::warning::could not clone the Ruby smoke repository"; exit 0; }
+          cd "$RUNNER_TEMP/ruby-smoke"
+          node "$GITHUB_WORKSPACE/bin/anatomiya.mjs" scan . | tee "$RUNNER_TEMP/ruby-scan.out"
+          grep -qE "^[0-9]+ files, [0-9]+ areas" "$RUNNER_TEMP/ruby-scan.out"
+          grep -q "could not be parsed" "$RUNNER_TEMP/ruby-scan.out" \
+            && { echo "::error::prism failed on files in a real Ruby repository"; exit 1; }
+          test -f .claude/rules/anatomiya-overview.md

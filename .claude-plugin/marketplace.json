@@ -1,0 +1,15 @@
+{
+  "name": "crisnahine",
+  "description": "Counts what your code already does, directory by directory, and puts those counts where the agent picks them up when it reads a file there",
+  "owner": {
+    "name": "crisnahine",
+    "url": "https://github.com/crisnahine"
+  },
+  "plugins": [
+    {
+      "name": "anatomiya",
+      "source": "./",
+      "description": "Counts what your code already does, directory by directory, and puts those counts where the agent picks them up when it reads a file there"
+    }
+  ]
+}
