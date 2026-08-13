@@ -43,6 +43,14 @@ jobs:
       # A runner without it is a missing tool, not a broken build, so it says so
       # and the Ruby tests come out of the list. Failing here would make every
       # unrelated change red on a runner image bump.
+      # The runner image ships no prism, so the Ruby tier would skip everywhere
+      # and half the tool would go untested behind a green tick. 3.3 is the
+      # first release where prism is a default gem, which is what
+      # `--disable-gems` needs.
+      - uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1.321.0
+        with:
+          ruby-version: "3.3"
+
       # One leg REQUIRES Ruby. Skipping everywhere is how half the tool goes
       # untested in silence: the six Ruby dimensions, the prism child, and the
       # Rails data dimensions all live behind this check, and a runner image
@@ -332,6 +340,14 @@ jobs:
       # The Ruby tier has no smoke coverage otherwise: the JS repository above
       # exercises none of prism, the six Ruby dimensions, or the Rails data
       # dimensions over db/schema.rb and db/migrate.
+      # The runner image ships no prism, so the Ruby tier would skip everywhere
+      # and half the tool would go untested behind a green tick. 3.3 is the
+      # first release where prism is a default gem, which is what
+      # `--disable-gems` needs.
+      - uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1.321.0
+        with:
+          ruby-version: "3.3"
+
       - name: Scan a Ruby repository
         shell: bash
         env:

@@ -41,16 +41,25 @@ jobs:
 
       - run: npm ci
 
+      # The runner image ships no prism, so without this the release would run
+      # with every Ruby test skipped and ship a tier nothing verified.
+      - uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1.321.0
+        with:
+          ruby-version: "3.3"
+
+      # Required, not optional. Ruby is installed above, so a failure here is a
+      # real one, and a release that skipped the Ruby tier would ship eleven
+      # dimensions and a prism child that nothing verified.
       - name: Check the Ruby parser
         id: ruby
         shell: bash
         run: |
-          if version=$(ruby -rprism -e 'print Prism::VERSION' 2>/dev/null); then
-            echo "prism $version"
-            echo "available=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "available=false" >> "$GITHUB_OUTPUT"
-          fi
+          version=$(ruby --disable-gems -rprism -e 'print Prism::VERSION') || {
+            echo "::error::ruby -rprism failed, so the Ruby tier would not be tested before release"
+            exit 1
+          }
+          echo "prism $version"
+          echo "available=true" >> "$GITHUB_OUTPUT"
 
       - name: Run the suite
         shell: bash
