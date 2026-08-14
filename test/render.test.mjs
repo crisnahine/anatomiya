@@ -396,11 +396,14 @@ test("a generated area file stays short", () => {
   // A6: a rewritten context file does not re-attach mid-session, and the change
   // notice truncates head and tail, so a long file loses its middle in both
   // copies. This is the widest area the reducer can hand over: every dimension
-  // stating a directive, each with the full exception list.
+  // stating a directive, each with the full exception list, and each an
+  // obligation carrying its companion audit line.
   const worst = area({
     dimensions: ["a", "b", "c", "d", "e"].map((k, i) =>
       dim({
         key: k,
+        kind: "pairing",
+        companionsElsewhere: 117,
         claim: `claim ${k} about this area's code`,
         precision: i % 2 ? "partial" : "precise",
         exceptions: [
@@ -586,4 +589,58 @@ test("an area with no paths glob fails the render rather than loading on every t
   // every request. The neighbouring builders throw for the same reason.
   assert.throws(() => renderArea(area({ globs: [] })), /no paths glob/);
   assert.throws(() => renderArea(area({ globs: undefined })), /no paths glob/);
+});
+
+test("a suppressed obligation prints the companion audit beside its count", () => {
+  // Measured on alphagov/whitehall: 238 models, no companion under test/models,
+  // and 117 of them have a test in another directory. The count alone reads "this
+  // repository does not test its models", which is false. The audit numbers are
+  // computed either way; a count nobody can read is not a count.
+  const out = renderArea(
+    area({
+      path: "app/models",
+      fileCount: 238,
+      dimensions: [
+        dim({
+          key: "model_test",
+          claim: "a model ships with a test",
+          applicability: 238,
+          candidates: 238,
+          conforming: 0,
+          directive: false,
+          gate: "ratio",
+          companionsElsewhere: 117,
+        }),
+      ],
+    })
+  );
+
+  // Folded into the counts line rather than added below it: A6 caps a generated
+  // file at forty lines and a per-dimension extra line breaks the worst case.
+  assert.match(out, /0 of 238 sites, 117 with a namesake elsewhere in the tree \(ratio\)/,
+    `no companion audit:\n${out}`);
+});
+
+test("an obligation with nothing to audit prints no audit line", () => {
+  const out = renderArea(
+    area({
+      path: "lib/tasks",
+      fileCount: 24,
+      dimensions: [
+        dim({
+          key: "rake_task_spec",
+          claim: "a rake task ships with a spec",
+          applicability: 24,
+          candidates: 24,
+          conforming: 0,
+          directive: false,
+          gate: "ratio",
+          companionsElsewhere: 0,
+        }),
+      ],
+    })
+  );
+
+  assert.match(out, /0 of 24 sites \(ratio\)/);
+  assert.doesNotMatch(out, /elsewhere|namesake/i, `an audit with nothing to say:\n${out}`);
 });

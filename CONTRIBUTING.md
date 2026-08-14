@@ -1,6 +1,6 @@
 # Contributing
 
-Read `DECISIONS.md` first. It is 57 numbered rows, each one a measurement or a review finding reduced
+Read `DECISIONS.md` first. It is 58 numbered rows, each one a measurement or a review finding reduced
 to the decision it forces on the code. It is the build contract, and most questions you will have
 about why something is shaped the way it is are answered there in one line.
 
@@ -105,6 +105,9 @@ Where the code goes:
 - `lib/dimensions-jsx.mjs` the React surface, `langs: ["jsx"]` only
 - `lib/dimensions-ruby.mjs` Ruby, walking prism nodes through `walkRuby`
 - `lib/dimensions-rails.mjs` Rails schema and migrations, also prism
+- `lib/pairing.mjs` file-to-file obligations and the `PAIRINGS` registry. These are the one class not
+  reachable from `ALL_DIMENSIONS`, because the parse worker runs that list and an obligation has no
+  program to run against. `reduceArea` composes both registries
 
 The shape:
 
@@ -120,6 +123,33 @@ The shape:
   },
 }
 ```
+
+A file-to-file obligation is the same three numbers with the site defined differently: the site is
+the file, so `candidates` equals `applicability` and `conforming` counts the producers whose companion
+exists. It carries no `run`; the shape is a directory pair:
+
+```js
+{
+  key: "model_spec",
+  kind: "pairing",
+  claim: "a model ships with a spec",
+  counterClaim: null,
+  precision: "precise",
+  langs: ["ruby"],
+  from: "app/models",
+  to: "spec/models",
+  ext: ".rb",
+  companionSuffix: "_spec.rb",
+}
+```
+
+Two rules are particular to this class. A repository is only asked the question for a companion suffix
+it actually uses, because producers exist whatever the repository tests with and a row that can only
+read zero is a false statement rather than a measurement. And every such row carries
+`companionsElsewhere`, the producers whose companion is missing where the predicate looks but whose
+namesake exists elsewhere. Without it a predicate aimed at the wrong directory prints a zero that
+reads as "this repository has no such habit": measured on alphagov/whitehall, the app/models area
+scores 0 of 160 and 117 of those models have a test one directory deeper.
 
 `counterClaim` is not optional. It is the sentence an area is handed when it consistently does the
 opposite, and it is hand-written because a machine negation names nothing for the agent to write and

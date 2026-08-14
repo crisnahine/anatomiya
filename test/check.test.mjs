@@ -854,3 +854,109 @@ test("the severity table reads the stated side's baseline counts and its own exc
     "the claim's exception list is the other side's and exempts nothing here"
   );
 });
+
+test("a branch that adds a rake task with no spec breaks a stated obligation", needsRuby, async (t) => {
+  // The gap this closes: check iterates dimensions that run against a program,
+  // and an obligation has none. A stated claim it cannot run came back clean,
+  // which is the shape of the bug 0.1.3 fixed for unread files.
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("lib/tasks/paired.rake", "task :paired do\n  puts 1\nend\n");
+    write("spec/lib/tasks/paired_spec.rb", "describe 'paired' do\nend\n");
+    commit("init");
+    git("checkout", "-q", "-b", "feature");
+    write("lib/tasks/lonely.rake", "task :lonely do\n  puts 2\nend\n");
+    commit("add a task with no spec");
+  });
+
+  facts(dir, {
+    sha: sha(dir, "main"),
+    path: "lib/tasks",
+    fileCount: 60,
+    pinned: ["lib/tasks/paired.rake"],
+    dimensions: [
+      dim({
+        key: "rake_task_spec",
+        claim: "a rake task ships with a spec",
+        applicability: 60,
+        candidates: 60,
+        conforming: 60,
+        baseline: { candidates: 60, conforming: 60, exceptions: [] },
+      }),
+    ],
+  });
+
+  const report = await check(dir, {});
+  const found = forKey(report, "rake_task_spec");
+
+  assert.equal(found.length, 1, `expected one finding, got ${JSON.stringify(report.findings)}`);
+  assert.equal(found[0].path, "lib/tasks/lonely.rake");
+  assert.match(found[0].reason, /spec\/lib\/tasks\/lonely_spec\.rb/);
+});
+
+test("a rake task added with its spec in the same commit reports nothing", needsRuby, async (t) => {
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("lib/tasks/paired.rake", "task :paired do\n  puts 1\nend\n");
+    write("spec/lib/tasks/paired_spec.rb", "describe 'paired' do\nend\n");
+    commit("init");
+    git("checkout", "-q", "-b", "feature");
+    write("lib/tasks/fresh.rake", "task :fresh do\n  puts 2\nend\n");
+    write("spec/lib/tasks/fresh_spec.rb", "describe 'fresh' do\nend\n");
+    commit("add a task with its spec");
+  });
+
+  facts(dir, {
+    sha: sha(dir, "main"),
+    path: "lib/tasks",
+    fileCount: 60,
+    pinned: ["lib/tasks/paired.rake"],
+    dimensions: [dim({ key: "rake_task_spec", claim: "a rake task ships with a spec" })],
+  });
+
+  assert.deepEqual(forKey(await check(dir, {}), "rake_task_spec"), []);
+});
+
+test("an obligation the map counted but never stated is not a finding", needsRuby, async (t) => {
+  // The same rule every other dimension follows: the check enforces what the
+  // map stated. A count the gates suppressed is the map's business.
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("lib/tasks/paired.rake", "task :paired do\n  puts 1\nend\n");
+    commit("init");
+    git("checkout", "-q", "-b", "feature");
+    write("lib/tasks/lonely.rake", "task :lonely do\n  puts 2\nend\n");
+    commit("add a task with no spec");
+  });
+
+  facts(dir, {
+    sha: sha(dir, "main"),
+    path: "lib/tasks",
+    fileCount: 60,
+    pinned: ["lib/tasks/paired.rake"],
+    dimensions: [dim({ key: "rake_task_spec", directive: false, gate: "ratio" })],
+  });
+
+  assert.deepEqual(forKey(await check(dir, {}), "rake_task_spec"), []);
+});
+
+test("a producer the corpus excludes is not held to an obligation", needsRuby, async (t) => {
+  // The scan counts over the corpus, which drops fixture and vendor trees. The
+  // check takes its producers from the diff, which does not, so a fixture file
+  // was measured against a claim the map never counted it in.
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("lib/tasks/paired.rake", "task :paired do\n  puts 1\nend\n");
+    write("spec/lib/tasks/paired_spec.rb", "describe 'paired' do\nend\n");
+    commit("init");
+    git("checkout", "-q", "-b", "feature");
+    write("lib/tasks/fixtures/sample.rake", "task :sample do\n  puts 2\nend\n");
+    commit("add a fixture rake task");
+  });
+
+  facts(dir, {
+    sha: sha(dir, "main"),
+    path: "lib/tasks",
+    fileCount: 60,
+    pinned: ["lib/tasks/paired.rake"],
+    dimensions: [dim({ key: "rake_task_spec", claim: "a rake task ships with a spec" })],
+  });
+
+  assert.deepEqual(forKey(await check(dir, {}), "rake_task_spec"), []);
+});

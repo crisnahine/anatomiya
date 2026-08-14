@@ -9,6 +9,30 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 Nothing yet.
 
+## [0.1.6] - 2026-08-14
+
+### Added
+
+- File-to-file obligations: a dimension whose site is the file, asking whether a file of one shape
+  ships with its companion. Nine ship, all Ruby: a model, service, job, worker, controller,
+  serializer or rake task with its spec, and a model or job with its minitest test. They are counted
+  over the corpus and need no parser, so a companion that fails to parse still answers.
+- A companion audit beside every obligation, because a ratio of zero has two meanings. Measured on
+  alphagov/whitehall: the `app/models` area scores 0 of 160 while 117 of those models have a test one
+  directory deeper. Without it the row reads "this repository does not test its models".
+- A repository is asked an obligation only for a companion suffix it uses. Producers exist whatever it
+  tests with, so counting the RSpec and the minitest row together put a line that can only read zero
+  into every Rails map.
+- `check` reports an obligation the branch broke. It iterated dimensions that run against a parsed
+  program, and an obligation has none, so a stated claim it could not run came back clean.
+
+### Changed
+
+- `scripts/check-docs.mjs` counts obligations, and reads only the unreleased section of this file.
+  A released entry states the number that shipped in it and stays true; reading the whole changelog
+  made every past release a claim about today, so the first number that ever changed failed three
+  entries that were correct.
+
 ## [0.1.5] - 2026-08-14
 
 An area's `paths` now matches the files its counts were taken over, and no others. Every area file
@@ -224,7 +248,8 @@ which are partial; several listed there are not implemented yet.
 - No claim that this catches defects. Measured across ten repositories, 1 of 317 defect review
   comments was preventable by a conventions map.
 
-[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.1.5...HEAD
+[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.1.6...HEAD
+[0.1.6]: https://github.com/crisnahine/anatomiya/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/crisnahine/anatomiya/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/crisnahine/anatomiya/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/crisnahine/anatomiya/compare/v0.1.2...v0.1.3
