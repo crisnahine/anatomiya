@@ -562,6 +562,72 @@ test("uncommitted edits to a changed file are reported as unread", async (t) => 
   assert.equal(forKey(r, "swallowed_error").length, 1, "the committed site, not the working-tree one");
 });
 
+test("work that exists only in the working tree is still reported as unread", async (t) => {
+  // The state right before review is usually uncommitted. An empty diff plus a
+  // dirty tree has to say so, or a silent zero reads as "conforms".
+  const dir = repo(t, ({ write, commit }) => {
+    write("src/a.ts", clean(2));
+    commit("init");
+    write("src/b.ts", swallow(2));
+  });
+  facts(dir, { sha: sha(dir, "main") });
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.equal(r.examined.length, 0, "nothing committed, so nothing examined");
+  assert.ok(r.caveats.some((c) => /uncommitted edits/.test(c)));
+});
+
+test("a staged but uncommitted file is reported as unread", async (t) => {
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/a.ts", clean(2));
+    commit("init");
+    write("src/b.ts", swallow(2));
+    git("add", "-A");
+  });
+  facts(dir, { sha: sha(dir, "main") });
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.ok(r.caveats.some((c) => /uncommitted edits/.test(c)));
+});
+
+test("a renamed file counts once, and under its own name", async (t) => {
+  // `status --porcelain -z` writes a rename as two fields, the new path with a
+  // status prefix and the old path bare. Reading the second as another status
+  // line both double-counts the rename and mangles the path.
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/a.ts", clean(2));
+    commit("init");
+    git("mv", "src/a.ts", "src/renamed.ts");
+  });
+  facts(dir, { sha: sha(dir, "main") });
+
+  const r = await check(dir, { baseRef: "main" });
+
+  const note = r.caveats.find((c) => /uncommitted edits/.test(c));
+  assert.ok(note, "the rename is uncommitted work the check did not read");
+  assert.match(note, /^1 file/, "one file, not two");
+});
+
+test("the store the map writes is not counted as pending work", async (t) => {
+  // facts.json and the rendered rules are this tool's own output. Counting them
+  // would fire the caveat on every clean repository that has been scanned.
+  const dir = repo(t, ({ write, commit }) => {
+    write("src/a.ts", clean(2));
+    commit("init");
+  });
+  facts(dir, { sha: sha(dir, "main") });
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.equal(
+    r.caveats.filter((c) => /uncommitted edits/.test(c)).length,
+    0,
+    "a clean tree plus an untracked map is not pending work"
+  );
+});
+
 test("a repository with no commits examines nothing and refuses nothing", async (t) => {
   const dir = repo(t, ({ write }) => {
     write("src/a.ts", swallow(3));
