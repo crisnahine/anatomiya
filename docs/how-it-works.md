@@ -30,6 +30,13 @@ Every path is then confined to the repository: lexical containment first because
 then `realpath` on both sides because `resolve()` normalises `..` but never follows a symlink and
 `readFile` does. It fails closed, and the resolved path is what gets read, not the unresolved one.
 
+A corpus that comes back empty is asked one more question: how many source files the working tree
+holds that are untracked, from a second `git ls-files --others --exclude-standard` through the same
+filters. It is the difference between a repository with nothing in it and one whose first commit has
+not landed, and only the second has anything to do about it. The count reaches the summary line and
+the overview; it is not asked at all when the corpus is non-empty, because the answer changes
+nothing there.
+
 A corpus only partly read is marked truncated, and a truncated corpus **suppresses every directive**.
 Counting over an arbitrary subset and rendering it like a complete scan is worse than reporting
 nothing, so the overview says so and prints counts only. No repository size can set it; the Ruby
@@ -69,11 +76,21 @@ Raising the ceiling is not free coverage. Taking it to 1,000 split a measured 2,
 into 209 smaller areas and dropped stated claims from 194 to 143, because a smaller area holds fewer
 candidates and more of them fail the gates.
 
-Each area gets a glob for the delivery channel's `paths` key, built from the languages present, for
-example `src/components/**/*.{cjs,js,jsx,mjs,ts,tsx}`. A glob may never end in a bare `/**`. The
+Each area gets the globs for the delivery channel's `paths` key, built from the languages present,
+for example `src/components/**/*.{cjs,js,jsx,mjs,ts,tsx}`. A glob may never end in a bare `/**`. The
 matcher strips a trailing `/**` before matching, so `app/**` becomes `app`, gitignore semantics then
 forbid re-including anything beneath it, and an exclusion written against that pattern silently does
 nothing. There is an assertion in the code rather than a comment.
+
+The globs match the files the area's counts were taken over, and no others. One recursive glob from
+the area root does not: a deeper directory that became its own area is still under it, and the
+ancestor's directive then reaches a directory whose own counts were suppressed by a gate, measured
+over a population that directory is not part of. So an area that does not hold its whole subtree
+emits either one glob per directory it holds files in, or one recursive glob and a negation per
+foreign subtree, whichever is shorter. A foreign subtree is usually a deeper area; it is also the
+files the ceiling left uncovered, since `capCount` can host an area at a directory whose own files
+were already orphaned. Measured on a 5,495-file Rails repository, 156 areas: 298 patterns in total,
+37 areas changed, 119 unchanged on the single recursive glob, 21 patterns in the largest list.
 
 The area id is the first 8 hex of `sha256(path)`, which is what makes `anatomiya-area-<id>.md` a
 stable filename across scans.
@@ -308,8 +325,9 @@ Three constraints shape the rendering:
 
 Ownership needs all three of: the `anatomiya-` filename prefix, a `generator: anatomiya` frontmatter
 key, and being known to the current scan. All three, or the file is left alone and reported. The
-prefix earns its place for one job, which is that a single `.git/info/exclude` line hides every
-generated file. It is not the ownership test, because a hand-written file can take that name.
+prefix earns its place for one job, which is that a single `$(git rev-parse --git-common-dir)/info/exclude`
+line hides every generated file. It is not the ownership test, because a hand-written file can take
+that name.
 
 Any other `.md` in `.claude/rules/` is reported as unattributed context on every run. That directory
 belongs to the repository, so a clone can ship a rule file with no `paths` key that loads

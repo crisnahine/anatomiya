@@ -23,7 +23,7 @@ const dim = (o = {}) => ({
 const area = (o = {}) => ({
   id: "aabbccdd",
   path: "src/services",
-  glob: "src/services/**/*.{ts,tsx}",
+  globs: ["src/services/**/*.{ts,tsx}"],
   fileCount: 40,
   dimensions: [dim()],
   ...o,
@@ -57,7 +57,7 @@ test("a hostile path cannot add structure to the body of an area file", () => {
   const out = renderArea(
     area({
       path: HOSTILE_DIR,
-      glob: "src/**/*.ts",
+      globs: ["src/**/*.ts"],
       dimensions: [
         dim({
           claim: "defaults are taken with ??, not ||",
@@ -86,7 +86,7 @@ test("a hostile path cannot add structure to the body of an area file", () => {
 test("a hostile directory name in the paths glob stays inside the frontmatter", () => {
   // areas.mjs builds the glob straight from the directory name, so it is
   // repository-controlled and F4 puts it through F3 like every other one.
-  const out = renderArea(area({ path: HOSTILE_DIR, glob: glob(HOSTILE_DIR, ["js"]) }));
+  const out = renderArea(area({ path: HOSTILE_DIR, globs: [glob(HOSTILE_DIR, ["js"])] }));
   const lines = out.split("\n");
 
   assert.equal(lines.filter((l) => l === "---").length, 2, "the frontmatter opens and closes once");
@@ -104,7 +104,7 @@ test("a hostile directory name in the paths glob stays inside the frontmatter", 
 test("a root-level glob keeps its leading star", () => {
   // The whole glob is the tail here, so the encoder sees no directory half at
   // all; encoding it would strip the `*` and leave a glob matching nothing.
-  const out = renderArea(area({ path: ".", glob: glob(".", ["ruby"]) }));
+  const out = renderArea(area({ path: ".", globs: [glob(".", ["ruby"])] }));
   assert.match(out, /^ {2}- "\*\*\/\*\.\{rake,rb\}"$/m);
 });
 
@@ -577,4 +577,13 @@ test("a thousand violations do not grow the file", () => {
 
   const grew = renderArea(many).split("\n").length - renderArea(few).split("\n").length;
   assert.equal(grew, 3, "two more exception lines and the overflow count, nothing else");
+});
+
+test("an area with no paths glob fails the render rather than loading on every turn", () => {
+  // Measured: a rule file whose `paths` key has no patterns under it is loaded
+  // on every turn, with no tool call involved. That is the inverse of what an
+  // area file is for, and silently emitting one costs the overview's budget on
+  // every request. The neighbouring builders throw for the same reason.
+  assert.throws(() => renderArea(area({ globs: [] })), /no paths glob/);
+  assert.throws(() => renderArea(area({ globs: undefined })), /no paths glob/);
 });

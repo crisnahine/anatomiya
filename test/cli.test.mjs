@@ -1,10 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, cpSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, realpathSync, appendFileSync, statSync, rmSync, cpSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, dirname } from "node:path";
+import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
+
+import { EXCLUDE_LINES } from "../lib/write.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -80,5 +82,70 @@ test("nothing is written to the repository when the parser is missing", (t) => {
   assert.throws(
     () => execFileSync("ls", [join(repo, ".claude", "rules")], { stdio: "pipe" }),
     "no rule files were written from a scan that parsed nothing"
+  );
+});
+
+/** A repository with source on disk and nothing committed. */
+function repoWithNothingCommitted(t) {
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-cli-fresh-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+  mkdirSync(join(dir, "lib", "core"), { recursive: true });
+  for (let i = 0; i < 5; i++) writeFileSync(join(dir, "lib", "core", `c${i}.js`), `export const a${i} = 1\n`);
+  execFileSync("git", ["init", "-q"], { cwd: dir, stdio: "pipe" });
+  return dir;
+}
+
+test("a scan names the root it resolved to, because a path argument does not scope it", (t) => {
+  // `git rev-parse --show-toplevel` resolves any path inside a repository to
+  // its root, so `scan ./packages/api` in a monorepo maps the monorepo. That is
+  // what areas, the pin and the baseline need; the output has to say so.
+  const repo = repoWithSource(t);
+  const out = String(
+    execFileSync(process.execPath, [join(ROOT, "bin", "anatomiya.mjs"), "scan", join(repo, "src")], {
+      stdio: "pipe",
+    })
+  );
+
+  assert.match(out.split("\n")[0], /^8 files, 1 areas, \d+ms, root /);
+  assert.ok(out.includes(`root ${realpathSync(repo)}`), out.split("\n")[0]);
+});
+
+test("untracked source is reported rather than counted as a repository with nothing in it", (t) => {
+  // The corpus is tracked files, which is the rule. A repository whose first
+  // commit has not landed used to get an empty map, exit 0 and an overview
+  // saying 0 files are uncovered, which states the opposite of what happened.
+  const repo = repoWithNothingCommitted(t);
+  const out = String(
+    execFileSync(process.execPath, [join(ROOT, "bin", "anatomiya.mjs"), "scan", repo], { stdio: "pipe" })
+  );
+
+  assert.match(out, /5 source files are untracked and were not counted/);
+  const overview = readFileSync(join(repo, ".claude", "rules", "anatomiya-overview.md"), "utf8");
+  assert.match(overview, /5 source files in the working tree are untracked/);
+});
+
+test("the documented exclude line works from inside a linked worktree", (t) => {
+  // `.git` in a worktree is a file holding a gitdir pointer, so the old
+  // `.git/info/exclude` line was "not a directory" and the generated map showed
+  // up as untracked in the one place an agent is most likely to be running.
+  const main = repoWithSource(t);
+  const wt = mkdtempSync(join(tmpdir(), "anatomiya-cli-wt-"));
+  rmSync(wt, { recursive: true, force: true });
+  t.after(() => rmSync(wt, { recursive: true, force: true }));
+  execFileSync("git", ["worktree", "add", "-q", wt, "-b", "feat"], { cwd: main, stdio: "pipe" });
+
+  assert.ok(statSync(join(wt, ".git")).isFile(), "a worktree's .git is a file, so .git/info/ is not a path");
+
+  execFileSync(process.execPath, [join(ROOT, "bin", "anatomiya.mjs"), "scan", wt], { stdio: "pipe" });
+  const common = String(execFileSync("git", ["rev-parse", "--git-common-dir"], { cwd: wt, stdio: "pipe" })).trim();
+  appendFileSync(resolve(wt, common, "info", "exclude"), `${EXCLUDE_LINES.join("\n")}\n`);
+
+  const status = String(execFileSync("git", ["status", "--porcelain"], { cwd: wt, stdio: "pipe" }));
+  assert.ok(!status.includes(".claude"), `the map is excluded in the worktree, got: ${status}`);
+  assert.equal(
+    String(execFileSync("git", ["status", "--porcelain"], { cwd: main, stdio: "pipe" })).includes(".claude"),
+    false,
+    "and in the main checkout, which shares the common dir"
   );
 });

@@ -9,6 +9,49 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 Nothing yet.
 
+## [0.1.5] - 2026-08-14
+
+An area's `paths` now matches the files its counts were taken over, and no others. Every area file
+is rewritten by the next scan; `facts.json` moves to schema 3, where `glob` becomes `globs`.
+
+### Fixed
+
+- An ancestor area's glob matched its descendants, so a claim a deeper area had been refused was
+  delivered to it anyway. `app/workers/workers/**` matched `app/workers/workers/google`, whose own
+  area measured the same dimension at 14 of 22 and was suppressed by the ratio gate; the ancestor's
+  directive, counted over 125 files that do not include any of google's, arrived on every read there
+  and contradicted it. The gates decide where a claim may be stated and the delivery channel was
+  walking around them. An area sharing a root with a deeper area now emits either one glob per
+  directory it holds files in, or one recursive glob and a negation per foreign subtree, whichever is
+  shorter. Measured on a 5,495-file Rails repository, 156 areas: 37 areas over-reached, by 2,425
+  files in the worst case; the rewritten map is exact on all 857,220 file-area pairs, costs 298
+  patterns in total, and leaves the other 119 areas on the single glob they had before.
+- A file that no area holds no longer receives an ancestor's directives either. That covers the two
+  ways a file ends up uncovered: every directory above it fell below the floor, and the area ceiling
+  hosting an area at a directory whose own files were already orphaned. Checked over every layout of
+  0 to 2 files across a six-directory tree, at every floor from 1 to 3 and every ceiling from 1 to 4:
+  8,736 layouts, 102,815 file-area pairs, none mismatched.
+- The README's line for keeping the map out of git failed inside a linked worktree, where `.git` is a
+  file holding a gitdir pointer and `.git/info/exclude` is not a path. It now writes to
+  `$(git rev-parse --git-common-dir)/info/exclude`, which is shared by the main checkout and every
+  linked worktree.
+
+### Changed
+
+- `scan` prints the root it resolved to. A path argument picks the repository and not a subtree,
+  because `git rev-parse --show-toplevel` resolves any path inside a repository to its root, so
+  `scan ./packages/api` in a monorepo maps the monorepo. That is what areas, the pin and the baseline
+  need; the output just never said so.
+- A scan of a repository with no tracked source says how many source files are untracked, in the
+  summary and in the overview. The corpus is tracked files by design, and a repository whose first
+  commit has not landed used to get an empty map, exit 0 and an overview reporting that 0 files were
+  uncovered. The count applies every filter the corpus does, since it is printed beside an
+  instruction to commit those files and scan again.
+- `npm run check:docs` checks the number of rows in `DECISIONS.md` against the three files that state
+  it, and rejects a duplicate row number. All three had drifted apart.
+- Rendering an area with no `paths` glob throws instead of writing one. Measured: a `paths` key with
+  no pattern under it loads the file on every turn, which is the opposite of what an area file is.
+
 ## [0.1.4] - 2026-08-14
 
 ### Changed
@@ -181,7 +224,8 @@ which are partial; several listed there are not implemented yet.
 - No claim that this catches defects. Measured across ten repositories, 1 of 317 defect review
   comments was preventable by a conventions map.
 
-[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.1.4...HEAD
+[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.1.5...HEAD
+[0.1.5]: https://github.com/crisnahine/anatomiya/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/crisnahine/anatomiya/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/crisnahine/anatomiya/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/crisnahine/anatomiya/compare/v0.1.1...v0.1.2

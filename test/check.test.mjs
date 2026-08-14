@@ -70,7 +70,7 @@ const dim = (o = {}) => ({
 function facts(dir, { sha, dimensions = [dim()], path = "src", fileCount = 8, pinned = null, areas = null } = {}) {
   const store = join(dir, ".claude/anatomiya");
   mkdirSync(store, { recursive: true });
-  const mapped = areas || [{ id: "aaaaaaaa", path, glob: `${path}/**/*.ts`, fileCount, dimensions }];
+  const mapped = areas || [{ id: "aaaaaaaa", path, globs: [`${path}/**/*.ts`], fileCount, dimensions }];
   writeFileSync(join(store, "facts.json"), JSON.stringify({ schema: 1, areas: mapped }));
   if (!sha) return;
   writeFileSync(
@@ -390,11 +390,11 @@ test("the deepest area containing a file supplies its claims", async (t) => {
   facts(dir, {
     sha: sha(dir, "main"),
     areas: [
-      { id: "aaaaaaaa", path: "src", glob: "src/**/*.ts", fileCount: 8, dimensions: [dim()] },
+      { id: "aaaaaaaa", path: "src", globs: ["src/**/*.ts"], fileCount: 8, dimensions: [dim()] },
       {
         id: "bbbbbbbb",
         path: "src/api",
-        glob: "src/api/**/*.ts",
+        globs: ["src/api/**/*.ts"],
         fileCount: 8,
         dimensions: [dim({ directive: false, gate: "authors" })],
       },
