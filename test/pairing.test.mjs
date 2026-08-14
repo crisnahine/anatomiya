@@ -371,3 +371,19 @@ test("an obligation counts against the root this repository uses", () => {
   assert.equal(hits("app/models/orphan.rb")[0].conforming, false, "and the one with none still fails");
   assert.equal(hits("test/unit/app/models/edition_test.rb"), undefined, "a companion owes nothing itself");
 });
+
+test("a tie the declared pair has no part in learns nothing", () => {
+  // Two roots on one vote each is a repository that has said nothing, and
+  // picking the alphabetical winner decides an obligation by a filename, which
+  // is what the tie-break exists to refuse. Falling back to the declared pair
+  // reports the honest zero with the namesakes counted beside it.
+  const corpus = new Set([
+    "app/models/user.rb",
+    "app/models/post.rb",
+    "zzz/user_spec.rb",
+    "aaa/post_spec.rb",
+  ]);
+  const shape = { from: "app/models", to: "spec/models", ext: ".rb", companionSuffix: "_spec.rb" };
+
+  assert.equal(companionRoot(corpus, shape), null);
+});

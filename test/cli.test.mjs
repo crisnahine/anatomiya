@@ -101,10 +101,15 @@ test("a scan that read no file of a language says so instead of reporting an emp
   // summary that says "wrote 0 files" and stops reads as a repository with
   // nothing in it. The reader has to know an interpreter is missing.
   const repo = repoWithSource(t);
-  // Every .ts file unreadable is the reachable half of the same condition; the
-  // other half needs ruby off PATH, which this suite cannot arrange portably.
+  // A crash on every file of a language is what a missing interpreter looks
+  // like, and deep nesting is the portable way to crash oxc. Not a syntax
+  // error: the parser answers those, and treating them as a blind run froze a
+  // healthy repository's whole map.
   for (let i = 0; i < 8; i++) {
-    writeFileSync(join(repo, "src", `f${i}.ts`), `export const a${i} = 1\nfoo(\n`);
+    writeFileSync(
+      join(repo, "src", `f${i}.ts`),
+      "const x = " + "[".repeat(60_000) + "1" + "]".repeat(60_000) + "\n"
+    );
   }
   const git = (...a) => execFileSync("git", a, { cwd: repo, stdio: "pipe" });
   git("add", "-A");
