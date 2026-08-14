@@ -333,10 +333,17 @@ test("one enormous line still stops the run, because V8 refuses to hold the stri
   assert.equal(out.parsed, 0, "nothing was counted from a run that stopped mid-line");
 });
 
-test("broken syntax still yields a tree and reports the error count", needsRuby, async () => {
-  const out = await parseRuby([write("broken", "def go(\n")]);
-  assert.equal(out.results[0].ok, true);
-  assert.ok(out.results[0].errors > 0);
+test("broken syntax is reported as unread, not counted from the recovery", needsRuby, async () => {
+  // prism recovers further than oxc does, so the salvaged tree holds nodes
+  // nobody wrote. This file used to answer ok with a conforming
+  // service_result_shape site, from a method that has no body to look at.
+  const out = await parseRuby([write("broken", "class Foo\n  def call(\n")], {
+    dimensions: RUBY_DIMENSIONS,
+  });
+
+  assert.equal(out.results[0].ok, false, "a file the parser could not read is not examined");
+  assert.ok(out.results[0].errors > 0, "and the count says why");
+  assert.equal(out.results[0].hits, undefined, "nothing is counted from the recovery");
 });
 
 test("scope attribution resolves to the innermost declaration, not the block", needsRuby, () => {
