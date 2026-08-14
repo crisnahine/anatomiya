@@ -9,6 +9,22 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 Nothing yet.
 
+## [0.1.3] - 2026-08-14
+
+`check` now says when it read nothing. Repositories with a dirty working tree at the moment the
+command runs, which is most of them, get a `note:` line they did not get before.
+
+### Fixed
+
+- `check` reported a clean result for work that was still only in the working tree, and the caveat
+  written to describe exactly that could never fire for it. The dirty set was intersected with the
+  committed diff, so a path had to be committed before it could be called uncommitted. Untracked and
+  staged-but-uncommitted work now produces the note, which is the state a branch is usually in when
+  `check` runs.
+- A rename counted twice and under a name three characters short. `status --porcelain -z` writes the
+  origin path as a bare field after the record, and reading it as another record both double-counted
+  the rename and mangled the path. The intersection had been hiding this.
+
 ## [0.1.2] - 2026-08-14
 
 Documentation only. No behaviour changed, and the shipped files are the README, the changelog and
@@ -154,7 +170,8 @@ which are partial; several listed there are not implemented yet.
 - No claim that this catches defects. Measured across ten repositories, 1 of 317 defect review
   comments was preventable by a conventions map.
 
-[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.1.3...HEAD
+[0.1.3]: https://github.com/crisnahine/anatomiya/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/crisnahine/anatomiya/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/crisnahine/anatomiya/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/crisnahine/anatomiya/releases/tag/v0.1.0

@@ -18,7 +18,7 @@ Run the check and report what it found.
    - every MUST-FIX, then every FIX: path, line, and the claim the site broke
    - the NIT count, listed one by one only if the user asks
    - every `note:` line it printed, and the capped-severity line above them: no map on disk, no
-     merge base, a shallow clone, changed files with uncommitted edits it could not see, files it
+     merge base, a shallow clone, files with uncommitted edits it could not see, files it
      could not read or parse
    - any file in `.claude/rules/` this tool did not write, since those also reach the agent
 
