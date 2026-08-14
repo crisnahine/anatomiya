@@ -9,6 +9,64 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 Nothing yet.
 
+## [0.1.7] - 2026-08-14
+
+Measured against 35 public and private repositories, 186,917 tracked source files. Nine issues, each
+with the measurement that forced it in `DECISIONS.md`.
+
+### Fixed
+
+- JSX in a `.js` file was handed to the TypeScript grammar, where `<div` opens a type assertion. 727
+  of react/react's 2,296 files and 3,924 of next.js's 21,358 were counted from a recovered tree, and
+  nothing reported it. The parser buffer is now named after the file's real extension. react goes
+  from 51 stated claims to 66, and its `assertion_style` count from 906 sites to 13,737. Always
+  asking for the JSX grammar is not the fix: `<string>x` is legal in `.ts` and a syntax error in
+  `.tsx`.
+- Both parser bridges computed a syntax-error count that nothing read, so a file the parser rejected
+  was charged as examined and its recovery walked as if it were the file. oxc recovers to an almost
+  empty program and silently drops sites out of the denominator; prism recovers further and answered
+  a *conforming* site from a method with no body. Such a file is now unread, and reported as its own
+  line on both surfaces.
+- A file uncovered because its area counted nothing was reported as "too few per directory", which
+  was only ever true of a directory below the floor. A scan with no ruby printed that sentence beside
+  "202 files could not be parsed". The two causes are named apart.
+- `git log -M` scores similarity, which needs blob content a `--filter=blob:none` clone does not
+  hold, so the author pass fetched from the promisor one round trip at a time. 33 of 35 measured
+  clones could not answer at all and reported history unread. A partial clone now uses `-M100%` and
+  refuses to lazy-fetch: 40 seconds and no history becomes 386ms, 8,527 files and 333 authors. A full
+  clone is untouched.
+- A run whose parser never answered for a whole language deleted the map it could not rebuild.
+  `env -i PATH=/usr/bin:/bin` on a Rails repository removed three correct area files in the same run
+  that reported it could not read them. Such a run now writes nothing, removes nothing, and says
+  which language went unread.
+
+### Added
+
+- `.mts`, `.cts`, `Rakefile`, `Gemfile`, `config.ru`, `*.gemspec` and `*.jbuilder`: 803 files in the
+  corpus that both parsers already read and nothing counted. `.rbi` stays out, because a Sorbet
+  signature describes types rather than anything anyone wrote. An area holding a file whose name
+  carries no extension gets one delivery pattern per such name, so it is not counted and then never
+  delivered.
+- `test_cases`, `testdata`, `test-data`, `golden`, `goldens`, `__mocks__` and `mocks` to the excluded
+  directories: 2,218 files across the corpus. angular keeps 2,010 files of golden compiler output
+  under `test_cases`, which was 55 of its 339 areas and every one of its 476 unparseable files.
+  `examples` is deliberately left in, at 8,967 paths, because much of it is maintained code.
+- A dimension may declare the framework its claim belongs to, and is offered only where the corpus
+  shows that framework. `zone_aware_time` has no counter-claim, so off-Rails it could only ever print
+  zero, and did: 123 sites on Homebrew, 197 on puppet, 97 on fastlane, 96 on chef, plus a NIT
+  delivered onto a plain-Ruby branch. 141 such slots are gone. The signal is `app/models/`,
+  `db/migrate/` or `config/application.rb` in the corpus, which separates 14 Rails repositories from
+  5 plain across the 19 measured.
+
+### Changed
+
+- A file-to-file obligation learns its companion root from the corpus instead of declaring it.
+  alphagov/whitehall keeps model tests under `test/unit/app/models` and read `0 of 160 sites, 117
+  with a namesake elsewhere in the tree`; it now reads `117 of 160 sites`. discourse answers its
+  controllers in `spec/requests`, which no hardcoded pair reaches. The declared pair remains the
+  prior: a tie learns nothing, and where no companion lines up at all it stands unchanged, which is
+  what keeps the honest zero for a repository that writes specs and none for its models.
+
 ## [0.1.6] - 2026-08-14
 
 ### Added
