@@ -9,6 +9,67 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 Nothing yet.
 
+## [0.1.8] - 2026-08-15
+
+An architecture pass over the pipeline's seams, and the ten defects it found on the way. Every one is
+a place two modules held one piece of knowledge and had already drifted apart, and seven of them are
+the same failure: reporting a clean result for work that never ran.
+
+### Fixed
+
+- `check` reported that it found nothing when it could not parse anything. With no `node_modules` it
+  emitted one caveat per file and exited 0, which the command file tells the agent means the check
+  ran; `scan` had raised the install error since 0.1.6, on the same condition, from the same parse
+  record. Both commands now fail with the same message.
+- `check` folded four different reasons a file went unexamined into one sentence. Syntax the parser
+  rejected is the branch's own code to go and look at; a file this tool could not read is not. The
+  scan has named the two apart since 0.1.6.
+- `check` ran every Rails claim on repositories holding no Rails. It never asked which frameworks the
+  corpus shows, so `zone_aware_time` reached a plain-Ruby branch as a NIT, which is the measured
+  symptom that C8 was written to stop and that the scan stopped in 0.1.6.
+- A pattern with no `*.` in it lost its leading `**` to the encoder's markdown-bullet rule, so a
+  `Rakefile` delivery glob rendered as `/Rakefile` and matched nothing.
+- The CLI summary and the overview each spelled the size cap their own way, under a comment claiming
+  the two could not drift. One builder now writes both, which also groups the four unexamined-file
+  lines together in the summary: the size-cap line used to print after the unread-history line and
+  now prints with its siblings.
+- A diff git refused to produce came back as an empty change list, so `check` examined no file,
+  raised no finding and said nothing about it, which renders exactly like a branch that broke
+  nothing. Both the changed-file list and the added-line ranges now report it. Base resolution and
+  the pending-edits listing still read their output unguarded, which is what keeps F15 `partial`.
+- A missing `ruby` looked exactly like a repository full of files that crash: `ruby.mjs` never
+  marked an absent interpreter, so the guard above, which reads that flag, could not see it and a
+  Ruby-only branch still reported that it found nothing. Both parser bridges now draw the same line
+  between an install problem and a bad file, which fixes the same hole in `scan`.
+- The framework probe could refuse the whole run. Listing the corpus throws when git will not answer,
+  and that was the first read in `check` that could stop a report rather than qualify it. It now
+  reads the answer the scan already stored in the map, so a mapped repository does no work at all,
+  and a corpus that will not list costs the framework's claims and a caveat instead of the run.
+- With a map from a newer schema, the report printed `capped by this run: no map on disk` above a
+  note saying the map is a schema this build cannot read. The first was false and pointed at the
+  wrong fix.
+
+### Changed
+
+- One git runner, in `lib/git.mjs`, carrying the timeout and the byte cap for the buffered reads in
+  `baseline.mjs` and `check.mjs`. There were four runners, with three different timeouts and one with
+  none at all; `corpus.mjs` still keeps its own, and the streamed reads are untouched by design. The
+  `--name-status -z` record grammar was three hand-rolled state machines and is now one parser.
+- `lib/facts.mjs` owns the machine record's shape: the schema version, reading it, and which of a
+  dimension's two sentences an area was handed. The version lived in the writer, the rule for reading
+  an older record was copied into two modules, and the reader never looked at the version at all. It
+  does now, and refuses a version past its own rather than reading unknown fields positionally.
+- One slot's verdict is assembled in one place. The gate battery, the population blocks and the
+  invariant that a blocked slot closes *both* of its sides were spread across three modules, and
+  nothing short of a full repository could reach the assembly to test it.
+- Measuring the baseline moved behind the baseline module's own seam, with the parser and the
+  reducer handed in. The scan was reaching into the population record's internals to do it.
+
+### Removed
+
+- `lib/forge.mjs`, a `gh` measurement helper that shipped in the package and was imported by nothing.
+  It was the only code in the published plugin that touched the network.
+
 ## [0.1.7] - 2026-08-14
 
 Measured against 35 public and private repositories, 186,917 tracked source files. Nine issues, each
@@ -306,7 +367,9 @@ which are partial; several listed there are not implemented yet.
 - No claim that this catches defects. Measured across ten repositories, 1 of 317 defect review
   comments was preventable by a conventions map.
 
-[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.1.6...HEAD
+[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.1.8...HEAD
+[0.1.8]: https://github.com/crisnahine/anatomiya/compare/v0.1.7...v0.1.8
+[0.1.7]: https://github.com/crisnahine/anatomiya/compare/v0.1.6...v0.1.7
 [0.1.6]: https://github.com/crisnahine/anatomiya/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/crisnahine/anatomiya/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/crisnahine/anatomiya/compare/v0.1.3...v0.1.4

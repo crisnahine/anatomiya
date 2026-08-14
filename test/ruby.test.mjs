@@ -291,6 +291,20 @@ test("no ruby on the machine charges the files instead of losing them", needsRub
   assert.equal(out.results[0].ok, false);
 });
 
+test("an absent interpreter is reported as a missing parser, not as files that crashed", needsRuby, async () => {
+  // The two are different facts with different fixes, and the JS bridge already
+  // tells them apart: an absent dependency is every file at once and is an
+  // install problem, a crash is one file. Without the flag every caller sees a
+  // repository whose Ruby all crashed, which is what a poison file looks like,
+  // and a `check` run on a machine with no ruby reported that it found nothing.
+  const out = await parseRuby([{ rel: "a.rb", abs: join(dir, "rescue_none.rb") }], {
+    ruby: "anatomiya-no-such-ruby",
+  });
+
+  assert.equal(out.results[0].missingParser, true);
+  assert.match(out.results[0].error, /anatomiya-no-such-ruby/);
+});
+
 test("a parser too old for these field names reports rather than counting zero", needsShebang, async () => {
   // The stub stands in for a Ruby whose prism spells the fields differently.
   const stub = join(dir, "old-ruby");

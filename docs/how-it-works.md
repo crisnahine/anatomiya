@@ -328,7 +328,9 @@ glob, on `cat` through bash, or on an edit with no prior read.
 
 Writes are atomic: temp file in the same directory, then rename, so a crash never leaves half a
 context file. `.claude/anatomiya/facts.json` is written first and holds every count, gated or not,
-so no rendered file exists that is not derivable from facts on disk. A run that read no file of a
+so no rendered file exists that is not derivable from facts on disk. It carries a schema version,
+and the check refuses a version past the one it knows rather than reading the fields positionally:
+an older record is readable and is read, a newer one is a shape this build has never seen. A run that read no file of a
 language writes neither, for the same reason: keeping the rendered files while replacing the facts
 they came from breaks exactly that invariant.
 
@@ -402,6 +404,14 @@ refusing: a check that refuses to run at pull-request time is the blocking hook 
 arriving at the moment it costs the most. Nothing here blocks anything. A changed Ruby file is read
 at both revisions and parsed by prism, the same split the scan uses: the map states Ruby claims, so
 excluding Ruby here would state conventions and enforce none of them.
+
+The check reads a parse result the way the scan does, because the two used to disagree about what an
+unread file means. A missing parser dependency fails the command rather than reporting no findings:
+findings never set the exit code here, so a zero exit is exactly the thing the command file tells the
+agent to trust. A file whose syntax the parser rejected is named apart from one that could not be read
+at all, since the first is the branch's own code and the second is this tool. And a framework's claim
+is asked only where the corpus shows that framework, read from the corpus rather than from the map,
+because the check runs on repositories that have no map at all.
 
 ## 9. Predicting your own result
 

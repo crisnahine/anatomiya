@@ -10,7 +10,7 @@ import {
   buildPin, loadPin, writePin, pinDelta, formatDelta,
   resolveBaseline, resolveBaseRef, baselinePopulation, baselineStates,
   showBlob, readBaselineText, mergeBase, diffRange, shaReachable, materialize,
-  PIN_PATH, isSha,
+  measureBaseline, PIN_PATH, isSha,
 } from "../lib/baseline.mjs";
 
 // The temporary repository is torn down through `t.after` rather than a call at
@@ -63,6 +63,45 @@ async function countAtBaseline(root, sha, rels) {
 function area(path, rels) {
   return { id: "aaaaaaaa", path, files: rels.map((rel) => ({ rel })) };
 }
+
+// --- B12: the baseline reads only what differs from the pin ---
+
+test("only the files that differ from the pin are read back out of it", async (t) => {
+  // Every unchanged file has the same bytes in the working tree as at the
+  // pinned commit, so the corpus pass already parsed exactly the content the
+  // baseline asks about. Reading them again costs one `git cat-file` process
+  // per file: measured at 6.9s against 1.4s to parse the whole corpus, on a
+  // repository where nothing had changed.
+  //
+  // The parser is passed in, which is what lets this be asked at all: measuring
+  // the baseline used to live in the scan, where the only way to reach it was
+  // to build a repository and run the whole pipeline over it.
+  let sha;
+  const dir = repo(t, (d, { write, commit }) => {
+    write("src/a.ts", CONFORMING);
+    write("src/b.ts", CONFORMING);
+    sha = commit("init");
+  });
+  // b.ts now differs from the pin; a.ts does not.
+  writeFileSync(join(dir, "src", "b.ts"), VIOLATING);
+
+  const rels = ["src/a.ts", "src/b.ts"];
+  const areas = [area("src", rels)];
+  const state = await resolveBaseline(dir, { pin: buildPin(areas, { sha }), baseRef: "main" });
+  const populations = new Map(areas.map((a) => [a.id, baselinePopulation(state, a)]));
+
+  const asked = [];
+  await measureBaseline(dir, state, areas, populations, {
+    headParsed: new Map(rels.map((rel) => [rel, { rel, ok: true, hits: {} }])),
+    parse: async (files) => {
+      asked.push(...files.map((f) => f.rel));
+      return { parsed: new Map(files.map((f) => [f.rel, { rel: f.rel, ok: true, hits: {} }])) };
+    },
+    reduce: () => [],
+  });
+
+  assert.deepEqual(asked, ["src/b.ts"], "a.ts was already parsed at exactly these bytes");
+});
 
 // --- E1: the baseline is the pinned file list, never today's glob ---
 
