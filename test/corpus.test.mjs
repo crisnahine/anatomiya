@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join, isAbsolute, sep } from "node:path";
 import { execFileSync } from "node:child_process";
 
-import { collect, countUntrackedSource, isDenied, isExcludedDir, isSource, safeResolve, language, gitRoot } from "../lib/corpus.mjs";
+import { collect, countUntrackedSource, isDenied, isExcludedDir, isSource, safeResolve, language, gitRoot, frameworksIn } from "../lib/corpus.mjs";
 import * as areaLib from "../lib/areas.mjs";
 
 const { discover, glob, assertGlobSafe, areaId, AREA } = areaLib;
@@ -650,4 +650,24 @@ test("mixed languages produce a brace-expanded extension list", () => {
 test("a glob over no known language throws instead of matching nothing", () => {
   assert.throws(() => glob("src", ["python"]), /no known extensions/);
   assert.throws(() => glob("src", []), /no known extensions/);
+});
+
+test("the frameworks a repository uses are read from its own corpus", () => {
+  // Measured across 19 Ruby repositories: app/models, db/migrate or
+  // config/application.rb separates 14 Rails from 5 plain with no error. It has
+  // to be the corpus and not `git ls-files`: rubocop's only app/models files
+  // are three fixtures under spec/fixtures, which the corpus already drops, and
+  // reading the raw list calls rubocop a Rails application.
+  const rails = frameworksIn(fakeFiles(["app/models/user.rb", "lib/x.rb"], "ruby"));
+  assert.deepEqual([...rails], ["rails"]);
+
+  assert.deepEqual([...frameworksIn(fakeFiles(["db/migrate/1_x.rb"], "ruby"))], ["rails"]);
+  assert.deepEqual([...frameworksIn(fakeFiles(["config/application.rb"], "ruby"))], ["rails"]);
+  // An engine keeps the same shape one directory down, which is decidim, the
+  // one repository config/application.rb alone gets wrong.
+  assert.deepEqual([...frameworksIn(fakeFiles(["decidim-core/app/models/a.rb"], "ruby"))], ["rails"]);
+
+  assert.deepEqual([...frameworksIn(fakeFiles(["lib/tool.rb", "spec/tool_spec.rb"], "ruby"))], []);
+  assert.deepEqual([...frameworksIn(fakeFiles(["src/app.ts"], "js"))], [], "a JS repository has no Rails");
+  assert.deepEqual([...frameworksIn([])], []);
 });

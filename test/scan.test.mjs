@@ -607,3 +607,49 @@ test("a spec in the wrong directory is counted, so a narrow predicate is visible
   assert.equal(row.conforming, 1, "only backfill is specced where the predicate looks");
   assert.equal(row.companionsElsewhere, 1, "cleanup is specced, one directory away");
 });
+
+test("a Ruby repository with no Rails in it is not asked a Rails question", needsRuby, async (t) => {
+  // zone_aware_time's counterClaim is null, so off-Rails it can only ever print
+  // "0 of N sites" forever: Homebrew 123 sites, puppet 197, fastlane 97, chef
+  // 96, none of them able to state either side.
+  const dir = repo(t, (d, { git, write, author }) => {
+    for (let i = 0; i < 6; i++) {
+      write(`lib/tool${i}.rb`, `class Tool${i}\n  def call\n    Time.now\n  end\nend\n`);
+    }
+    git("add", "-A");
+    git("commit", "-qm", "init");
+    author("second@t.test");
+    write("lib/tool0.rb", "class Tool0\n  def call\n    Time.now\n  end\nend\n\n");
+    git("add", "-A");
+    git("commit", "-qm", "second author");
+  });
+
+  const result = await scan(dir);
+  const area = result.areas.find((a) => a.path === "lib");
+
+  assert.ok(area, "the area exists");
+  assert.equal(
+    area.dimensions.find((d) => d.key === "zone_aware_time"),
+    undefined,
+    "no line that can only ever read zero"
+  );
+  assert.ok(area.dimensions.length > 0, "and the Ruby claims that are Ruby still count");
+});
+
+test("a Rails repository is still asked", needsRuby, async (t) => {
+  const dir = repo(t, (d, { git, write }) => {
+    for (let i = 0; i < 6; i++) {
+      write(`app/models/thing${i}.rb`, `class Thing${i}\n  def stamp\n    Time.now\n  end\nend\n`);
+    }
+    git("add", "-A");
+    git("commit", "-qm", "init");
+  });
+
+  const result = await scan(dir);
+  const area = result.areas.find((a) => a.path === "app/models");
+
+  assert.ok(
+    area.dimensions.some((d) => d.key === "zone_aware_time"),
+    "app/models is the shape, so the question applies"
+  );
+});
