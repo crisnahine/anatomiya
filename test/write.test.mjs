@@ -43,7 +43,7 @@ function result(root, areas) {
     root,
     scannedAt: "2026-01-01T00:00:00.000Z",
     durationMs: 12,
-    corpus: { files, truncated: false, dropped: {} },
+    corpus: { files, truncated: false, dropped: {}, orphaned: 8 },
     parse: { parsed: files, crashed: 0, skipped: 0 },
     suppressAll: false,
     areas,
@@ -67,6 +67,9 @@ test("files land in .claude/rules with the facts beside them", () => {
   assert.deepEqual(plan.write.sort(), listRules(dir));
   assert.ok(existsSync(join(dir, STORE, "facts.json")), "the facts are on disk beside the files");
   assert.equal(plan.uncovered, 20, "an area's own files are never counted as uncovered");
+  // The scan says how many of those discovery could not place; the rest sit in
+  // an area that counted nothing, and the overview names the two apart.
+  assert.equal(plan.orphaned, 8, "the split reaches the plan, not just the render");
 
   assert.deepEqual(EXCLUDE_LINES, [`${RULES}/${PREFIX}*.md`, `${STORE}/`]);
   rmSync(dir, { recursive: true, force: true });
@@ -94,6 +97,41 @@ test("a dry run over an existing map removes nothing", () => {
   assert.deepEqual(plan.remove, [areaFilename(goes)]);
   assert.ok(existsSync(join(rules(dir), areaFilename(goes))), "still on disk");
   assert.equal(readFileSync(join(dir, STORE, "facts.json"), "utf8"), before, "facts untouched too");
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("a scan that could not read a whole language removes nothing", () => {
+  // Measured: `env -i PATH=/usr/bin:/bin` on a 200-file Rails repository. Every
+  // Ruby file is charged as a crash, every area then counts nothing and is
+  // dropped, and the writer deletes three correct area files in the same run
+  // that reports it could not read them. A container without ruby is the
+  // ordinary case for a JavaScript pipeline on a mixed repository.
+  const dir = workspace();
+  const models = area("app/models");
+  const services = area("app/services");
+  writeMap(result(dir, [models, services]));
+
+  const before = readdirSync(rules(dir)).sort().map((f) => readFileSync(join(rules(dir), f), "utf8"));
+  const factsBefore = readFileSync(join(dir, STORE, "facts.json"), "utf8");
+
+  const blind = result(dir, []);
+  blind.parse = { ...blind.parse, crashed: blind.corpus.files, unreadable: ["ruby"] };
+  const plan = writeMap(blind);
+
+  assert.deepEqual(plan.remove, [], "a map this run cannot speak for is left alone");
+  assert.deepEqual(plan.write, [], "and not half-rewritten either");
+  assert.deepEqual(plan.unreadable, ["ruby"], "the caller is told which language went unread");
+  assert.ok(existsSync(join(rules(dir), areaFilename(models))), "both area files are still there");
+  assert.ok(existsSync(join(rules(dir), areaFilename(services))));
+  // The overview is the file that says how many areas exist and how many files
+  // this tool generated. Rewriting it from a run that read nothing leaves it
+  // claiming zero areas beside three area files that still load.
+  const after = readdirSync(rules(dir)).sort().map((f) => readFileSync(join(rules(dir), f), "utf8"));
+  assert.deepEqual(after, before, "the map on disk is byte-identical");
+  // Keeping the rendered files while replacing the facts they came from would
+  // break the one invariant this writer has: nothing rendered that the facts on
+  // disk do not derive. check reads facts.json, so it would read the empty one.
+  assert.equal(readFileSync(join(dir, STORE, "facts.json"), "utf8"), factsBefore, "and so are the facts");
   rmSync(dir, { recursive: true, force: true });
 });
 

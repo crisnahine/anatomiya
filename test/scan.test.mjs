@@ -106,7 +106,11 @@ test("a repository with no source files produces no areas", async (t) => {
     // A file that answers `ok: false` is charged here rather than counted as
     // parsed, which is what made a repository nothing could read look empty.
     failed: 0,
+    syntaxErrors: 0,
     missingParser: null,
+    // No language is unreadable when the corpus holds none: an empty repository
+    // is answered, not blindly skipped, and a scan of it may still clean up.
+    unreadable: [],
   });
 
   // The overview still renders, because an empty repository is a real answer.
@@ -164,6 +168,100 @@ test("a file that kills the parser costs that one file", async (t) => {
   const dim = dimension(result, "src", "module_state_const");
   assert.equal(dim.applicability, 6, "the crashed file contributes no sites");
   assert.ok(!dim.files.includes("src/bomb.ts"));
+});
+
+test("a file the parser could not read costs that one file", async (t) => {
+  const dir = repo(t, (d, { git, write }) => {
+    for (let i = 0; i < 6; i++) write(`src/m${i}.ts`, moduleSource(i));
+    // oxc recovers instead of dying, so this file was charged as parsed and its
+    // recovery walked as if it were the file. Whatever the recovery leaves is
+    // not what anyone wrote, and on react/react 288 files are this shape.
+    write("src/broken.ts", "export const broken = 5\nfoo(\n");
+    git("add", "-A");
+    git("commit", "-qm", "init");
+  });
+
+  const result = await scan(dir);
+
+  assert.equal(result.corpus.files, 7);
+  assert.equal(result.parse.syntaxErrors, 1, "reported as what it is, not as a file that could not be read");
+  assert.equal(result.parse.failed, 0, "a syntax error is not the same as an unreadable file");
+  assert.equal(result.parse.parsed, 7, "every file got an answer");
+
+  const dim = dimension(result, "src", "module_state_const");
+  assert.equal(dim.applicability, 6, "the unreadable file contributes no sites");
+  assert.ok(!dim.files.includes("src/broken.ts"));
+});
+
+test("a directory nothing could be counted in is not a directory that was too small", async (t) => {
+  // Discovery put all six in an area; the area was then dropped because no
+  // dimension found a site, which is the parse failure and not the floor. The
+  // uncovered count folded the two together and named only the floor.
+  const dir = repo(t, (d, { git, write }) => {
+    for (let i = 0; i < 6; i++) write(`src/broken${i}.ts`, `export const a${i} = 1\nfoo(\n`);
+    git("add", "-A");
+    git("commit", "-qm", "init");
+  });
+
+  const result = await scan(dir);
+
+  assert.equal(result.corpus.files, 6);
+  assert.equal(result.parse.syntaxErrors, 6, "none of them was read");
+  assert.equal(result.areas.length, 0, "so the area they were in states nothing and is dropped");
+  assert.equal(result.corpus.orphaned, 0, "and none of them was left without an area by discovery");
+});
+
+test("a language whose parser could not run at all is named", async (t) => {
+  // The condition is "the parser never ran", which is what a missing
+  // interpreter looks like: every file charged as a crash. It is not "no file
+  // came back ok". A syntax error also fails a file, and treating that as a
+  // blind run let one bad file in a one-file language freeze the whole map.
+  const dir = repo(t, (d, { git, write }) => {
+    for (let i = 0; i < 6; i++) write(`src/m${i}.ts`, moduleSource(i));
+    // Deep nesting takes oxc down with a SIGSEGV, which is a crash, and this is
+    // the only .jsx file in the repository.
+    write("src/bomb.jsx", "const x = " + "[".repeat(60_000) + "1" + "]".repeat(60_000) + "\n");
+    git("add", "-A");
+    git("commit", "-qm", "init");
+  });
+
+  const result = await scan(dir);
+
+  assert.equal(result.parse.crashed, 1);
+  assert.deepEqual(result.parse.unreadable, ["jsx"], "no jsx file was readable, and the parser never answered");
+});
+
+test("one file with a syntax error is not a language this run went blind on", async (t) => {
+  // Measured: six healthy .ts files and one broken .jsx froze the entire map,
+  // wrote nothing, and told the reader a interpreter was missing. jsx is its
+  // own language, so one file is the whole population of it.
+  const dir = repo(t, (d, { git, write }) => {
+    for (let i = 0; i < 6; i++) write(`src/m${i}.ts`, moduleSource(i));
+    write("src/broken.jsx", "export const x = <div>\n");
+    git("add", "-A");
+    git("commit", "-qm", "init");
+  });
+
+  const result = await scan(dir);
+
+  assert.equal(result.parse.syntaxErrors, 1, "the file is still reported unread");
+  assert.deepEqual(result.parse.unreadable, [], "but the parser ran, so this run can still speak");
+});
+
+test("a file discovery could not place is counted as orphaned", async (t) => {
+  const dir = repo(t, (d, { git, write }) => {
+    for (let i = 0; i < 6; i++) write(`src/deep/m${i}.ts`, moduleSource(i));
+    // Two files one level up, below the floor, with no ancestor that clears it.
+    write("src/loose.ts", moduleSource(90));
+    write("src/other.ts", moduleSource(91));
+    git("add", "-A");
+    git("commit", "-qm", "init");
+  });
+
+  const result = await scan(dir);
+
+  assert.deepEqual(result.areas.map((a) => a.path), ["src/deep"]);
+  assert.equal(result.corpus.orphaned, 2, "the two the floor left behind");
 });
 
 test("a path with a newline or a leading dash survives the whole scan", needsPosixPaths, async (t) => {
@@ -517,4 +615,50 @@ test("a spec in the wrong directory is counted, so a narrow predicate is visible
   assert.equal(row.candidates, 3);
   assert.equal(row.conforming, 1, "only backfill is specced where the predicate looks");
   assert.equal(row.companionsElsewhere, 1, "cleanup is specced, one directory away");
+});
+
+test("a Ruby repository with no Rails in it is not asked a Rails question", needsRuby, async (t) => {
+  // zone_aware_time's counterClaim is null, so off-Rails it can only ever print
+  // "0 of N sites" forever: Homebrew 123 sites, puppet 197, fastlane 97, chef
+  // 96, none of them able to state either side.
+  const dir = repo(t, (d, { git, write, author }) => {
+    for (let i = 0; i < 6; i++) {
+      write(`lib/tool${i}.rb`, `class Tool${i}\n  def call\n    Time.now\n  end\nend\n`);
+    }
+    git("add", "-A");
+    git("commit", "-qm", "init");
+    author("second@t.test");
+    write("lib/tool0.rb", "class Tool0\n  def call\n    Time.now\n  end\nend\n\n");
+    git("add", "-A");
+    git("commit", "-qm", "second author");
+  });
+
+  const result = await scan(dir);
+  const area = result.areas.find((a) => a.path === "lib");
+
+  assert.ok(area, "the area exists");
+  assert.equal(
+    area.dimensions.find((d) => d.key === "zone_aware_time"),
+    undefined,
+    "no line that can only ever read zero"
+  );
+  assert.ok(area.dimensions.length > 0, "and the Ruby claims that are Ruby still count");
+});
+
+test("a Rails repository is still asked", needsRuby, async (t) => {
+  const dir = repo(t, (d, { git, write }) => {
+    for (let i = 0; i < 6; i++) {
+      write(`app/models/thing${i}.rb`, `class Thing${i}\n  def stamp\n    Time.now\n  end\nend\n`);
+    }
+    git("add", "-A");
+    git("commit", "-qm", "init");
+  });
+
+  const result = await scan(dir);
+  const area = result.areas.find((a) => a.path === "app/models");
+
+  assert.ok(
+    area.dimensions.some((d) => d.key === "zone_aware_time"),
+    "app/models is the shape, so the question applies"
+  );
 });

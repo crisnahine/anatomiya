@@ -107,17 +107,36 @@ async function runScan(cwd, { dryRun }) {
   console.log(baselineLine(result.baseline));
   if (result.corpus.truncated)
     console.log("only part of the corpus was read, so every directive is suppressed and only counts print");
-  if (plan.uncovered > 0) console.log(`${plan.uncovered} files in no area`);
+  // The two causes named apart, the way the overview names them. One folded
+  // number printed beside "N files crashed the parser" invited exactly the
+  // reading the overview line was fixed to stop.
+  const barren = plan.uncovered - plan.orphaned;
+  if (plan.orphaned > 0) console.log(`${plan.orphaned} files in no area: too few per directory`);
+  if (barren > 0) console.log(`${barren} files in a directory nothing was counted in`);
   if (result.parse.crashed) console.log(`${result.parse.crashed} files crashed the parser`);
   // Counted separately from a crash: a file that answered `ok: false` was
   // charged as parsed, so a whole unreadable subtree read as clean.
   if (result.parse.failed) console.log(`${result.parse.failed} files could not be parsed`);
+  // The parser answered, and the answer was that the file is not valid syntax.
+  // A different fact from a file this tool could not read, and a different next
+  // move: go and look at them.
+  if (result.parse.syntaxErrors)
+    console.log(`${result.parse.syntaxErrors} files hold syntax the parser rejected`);
   if (result.authors.error)
     console.log(`history could not be read, so every claim fails the author gate: ${result.authors.error}`);
   if (result.parse.skipped) console.log(`${result.parse.skipped} files over the size cap`);
   if (unwritten) console.log(`${unwritten} file(s) in .claude/rules/ not written by this tool`);
   if (plan.remove.length)
     console.log(`${plan.remove.length} area file(s) removed: their area is gone or states nothing`);
+  // Nothing was written, and the reason is not "this repository has nothing in
+  // it". Said before the count, because the count is 0 and reads as the first.
+  if (plan.unreadable.length) {
+    console.log(
+      `read no ${plan.unreadable.join(" or ")} file at all, so nothing was written and the previous map was left alone`
+    );
+    console.log("this is usually a missing interpreter rather than a repository that changed");
+    return;
+  }
   console.log(dryRun ? `would write ${plan.write.length} files` : `wrote ${plan.write.length} files`);
   // Measured: a rewritten context file does not re-attach mid-session.
   if (!dryRun) console.log("a session already running still holds the old map; restart to pick it up");

@@ -105,7 +105,7 @@ test("a root-level glob keeps its leading star", () => {
   // The whole glob is the tail here, so the encoder sees no directory half at
   // all; encoding it would strip the `*` and leave a glob matching nothing.
   const out = renderArea(area({ path: ".", globs: [glob(".", ["ruby"])] }));
-  assert.match(out, /^ {2}- "\*\*\/\*\.\{rake,rb\}"$/m);
+  assert.match(out, /^ {2}- "\*\*\/\*\.\{gemspec,jbuilder,rake,rb\}"$/m);
 });
 
 test("author identity reaches a rendered file as a count, never as a name", () => {
@@ -360,13 +360,44 @@ test("an overview of a repository with no areas names only itself", () => {
   assert.ok(!/size cap/.test(out), "no skip line when nothing was skipped");
 });
 
-test("the overview reports what the parser could not read", () => {
-  const out = renderOverview(result({ parse: { parsed: 80, crashed: 7, skipped: 3 } }), {
-    uncovered: 12,
-  });
+test("a file with no area and a file whose area counted nothing are different facts", () => {
+  // The uncovered count is the corpus minus the areas that survived, and an
+  // area is dropped when no dimension found a site in it. Both causes shared
+  // one sentence, and it was only ever true of the first: six .js files holding
+  // JSX in one directory were reported as "too few per directory" at a floor of
+  // three, and a synthetic Rails repo said it of two 40-file spec directories.
+  const out = renderOverview(result(), { uncovered: 30, orphaned: 12 });
 
   assert.match(out, /^- 12 source files sit in no area \(too few per directory\)$/m);
-  assert.match(out, /^- 7 files could not be parsed$/m);
+  assert.match(out, /^- 18 source files sit in a directory nothing was counted in$/m);
+});
+
+test("one cause states one line, not a zero beside it", () => {
+  const all = renderOverview(result(), { uncovered: 9, orphaned: 9 });
+  assert.match(all, /^- 9 source files sit in no area \(too few per directory\)$/m);
+  assert.ok(!/nothing was counted in/.test(all), "no second line when every uncovered file is an orphan");
+
+  const none = renderOverview(result(), { uncovered: 9, orphaned: 0 });
+  assert.match(none, /^- 9 source files sit in a directory nothing was counted in$/m);
+  assert.ok(!/too few per directory/.test(none), "and none the other way");
+});
+
+test("the overview reports what the parser could not read", () => {
+  // Three different ways a file goes unexamined, and the agent reading this map
+  // has to be able to tell them apart. `failed` reached the CLI summary and
+  // never reached here, so a repository whose whole Ruby half was unreadable
+  // showed an empty map with nothing in it saying why.
+  const out = renderOverview(
+    result({ parse: { parsed: 80, crashed: 7, skipped: 3, failed: 5, syntaxErrors: 9 } }),
+    { uncovered: 12 }
+  );
+
+  assert.match(out, /^- 12 source files sit in no area \(too few per directory\)$/m);
+  assert.match(out, /^- 7 files crashed the parser$/m);
+  assert.match(out, /^- 5 files could not be parsed$/m);
+  // The parser answering "not valid syntax" is the repository's own code, and
+  // the reader's next move is to go and look at those files.
+  assert.match(out, /^- 9 files hold syntax the parser rejected$/m);
   assert.match(out, /^- 3 files exceeded the size cap$/m);
 });
 
