@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { parseSync } from "oxc-parser";
-import { DIMENSIONS, ALL_DIMENSIONS, dimensionsFor } from "../lib/dimensions.mjs";
+import { DIMENSIONS, ALL_DIMENSIONS, dimensionsFor, collectHits } from "../lib/dimensions.mjs";
 import { walk } from "../lib/walk.mjs";
 
 const dim = (key) => DIMENSIONS.find((d) => d.key === key);
@@ -274,4 +274,36 @@ test("a caller that names no frameworks is offered everything", () => {
   // parse job; the reducer is what decides which dimensions get a slot.
   const all = dimensionsFor(["ruby"]).map((d) => d.key);
   assert.ok(all.includes("zone_aware_time"), "no answer is not the same as the answer 'none'");
+});
+
+/* --- the loop both parser bridges run --- */
+
+test("a dimension that throws costs its own count and not the other twenty", () => {
+  // One odd tree used to be able to lose a whole file. The loop was copied into
+  // both bridges, so this guarantee held twice or not at all.
+  const hits = collectHits({}, [
+    { key: "boom", run: () => { throw new Error("an odd tree"); } },
+    { key: "fine", run: (_program, add) => add({ conforming: true, where: "f" }) },
+  ]);
+
+  assert.deepEqual(Object.keys(hits), ["fine"]);
+  assert.deepEqual(hits.fine, [{ conforming: true, where: "f" }]);
+});
+
+test("a dimension that found nothing gets no entry at all", () => {
+  // An area file lists the dimensions that appeared in it, so a dimension with
+  // no sites must not arrive as an empty one.
+  const hits = collectHits({}, [{ key: "quiet", run: () => {} }]);
+
+  assert.deepEqual(hits, {});
+});
+
+test("a site keeps its conforming flag and its scope, and nothing else", () => {
+  // What crosses the process boundary is a flag and a name. The node stays in
+  // the worker: an AST serialises to about 16x the source it came from.
+  const hits = collectHits({}, [
+    { key: "k", run: (_program, add) => add({ conforming: false, node: { start: 1, end: 2 }, where: "outer" }) },
+  ]);
+
+  assert.deepEqual(hits.k, [{ conforming: false, where: "outer" }]);
 });

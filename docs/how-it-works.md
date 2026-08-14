@@ -100,6 +100,10 @@ stable filename across scans.
 
 ## 3. The parse pool
 
+One module drives both parsers and reads what comes back. The scan and the check each used to do
+that themselves, which meant each decided separately what an unread file means, and only one of them
+ever decided it.
+
 JavaScript and TypeScript are parsed by `oxc-parser`. It runs in a pool of warm child processes,
 one parse per message. Never in-process, never in a worker thread.
 

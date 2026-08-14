@@ -7,7 +7,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
-Nothing yet.
+### Changed
+
+- `lib/parse.mjs` drives both parsers and decides once what an unread file means. The scan and the
+  check each drove them separately, so the four causes were computed on one path and none of them on
+  the other, and every fix to the reconciliation had to be made twice. The engine split, the scratch
+  directory a caller holding blobs rather than files needed, and the per-dimension loop that was
+  copied into both bridges all sit behind one entry point now. One guarantee that was previously
+  written out twice: a dimension that throws on an odd tree costs its own count and not the file.
 
 ## [0.1.8] - 2026-08-15
 
