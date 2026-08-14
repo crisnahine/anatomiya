@@ -312,11 +312,32 @@ test("a repository with more areas than the overview lists summarises the tail",
   assert.match(out, /^- and 250 more areas, each in its own file, loaded when you read one of its files$/m);
 });
 
-test("an overview at or under the limit still names every area", () => {
+test("an overview below the limit names only the areas that state something", () => {
+  // The overview loads on every turn. An area with counts alone still gets its
+  // own path-scoped file, so a line here buys a directory name and a file count
+  // the agent can already read off `ls`.
+  const out = renderOverview(
+    result({
+      areas: [
+        area({ id: "a1", path: "src/states" }),
+        area({ id: "a2", path: "src/silent", dimensions: [dim({ directive: false })] }),
+        area({ id: "a3", path: "src/quiet", dimensions: [dim({ directive: false })] }),
+      ],
+    }),
+    { uncovered: 0 }
+  );
+
+  assert.match(out, /^## Areas \(3\)$/m, "the count is the truth, not the listing's length");
+  assert.equal((out.match(/^- src\/\S+ — /gm) || []).length, 1, "only the stating area is named");
+  assert.match(out, /^- src\/states — 40 files, 1 stated$/m);
+  assert.match(out, /^- and 2 more areas, each in its own file, loaded when you read one of its files$/m);
+});
+
+test("an overview collapses nothing when every area states something", () => {
   const out = renderOverview(result(), { uncovered: 30 });
 
   assert.equal((out.match(/^- \S+ — \d+ files, \d+ stated$/gm) || []).length, result().areas.length);
-  assert.ok(!/more areas/.test(out), "nothing is summarised away below the limit");
+  assert.ok(!/more areas/.test(out), "there is no tail to summarise");
 });
 
 test("the overview names every generated file and disowns the rest", () => {
@@ -347,6 +368,21 @@ test("the overview reports what the parser could not read", () => {
   assert.match(out, /^- 12 source files sit in no area \(too few per directory\)$/m);
   assert.match(out, /^- 7 files could not be parsed$/m);
   assert.match(out, /^- 3 files exceeded the size cap$/m);
+});
+
+test("a truncated scan names no area, because a truncated scan states nothing", () => {
+  // Truncation sets `states: null` on every dimension (`scan.mjs`), so under A9
+  // there is nothing to name and the listing is the tail line alone. The areas
+  // are still counted in the heading and still have their own files.
+  const silent = (path) => area({ path, dimensions: [dim({ states: null, directive: false })] });
+  const out = renderOverview(
+    result({ suppressAll: true, areas: [silent("src/a"), silent("src/b"), silent("src/c")] }),
+    { uncovered: 5 }
+  );
+
+  assert.match(out, /^## Areas \(3\)$/m);
+  assert.equal((out.match(/^- src\/\S+ — /gm) || []).length, 0, "nothing is stated, so nothing is named");
+  assert.match(out, /^- and 3 more areas, each in its own file, loaded when you read one of its files$/m);
 });
 
 test("a truncated scan says so before any count is read", () => {
