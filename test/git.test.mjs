@@ -56,10 +56,15 @@ test("a truncated record is dropped rather than completed with a guess", () => {
 
 test("a call that outruns its timeout answers instead of hanging", async (t) => {
   // The baseline's runner passed no timeout, so a git that never returns took
-  // the scan with it. Process spawn alone outruns a 1ms budget.
+  // the scan with it.
+  //
+  // `hash-object --stdin` blocks reading a stdin nothing writes to, so the
+  // timeout is the only thing that can end it and no machine finishes it early.
+  // A fast command with a tiny budget is not the same test: it raced, and the
+  // CI runner won.
   const { dir } = repo(t);
 
-  const r = await gitBuffered(dir, ["log", "--oneline"], { timeout: 1 });
+  const r = await gitBuffered(dir, ["hash-object", "--stdin"], { timeout: 250 });
 
   assert.equal(r.ok, false, "a killed call is not a successful one");
   assert.equal(r.stdout, "", "and it reports no output it did not receive");
