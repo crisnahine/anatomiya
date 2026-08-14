@@ -15,6 +15,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
 import { ALL_DIMENSIONS, dimensionsFor } from "../lib/dimensions.mjs";
+import { PAIRINGS, pairingsFor } from "../lib/pairing.mjs";
 import { GATES } from "../lib/reduce.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -27,13 +28,30 @@ function claim(where, ok, detail) {
 
 // --- the dimension registry -------------------------------------------------
 
-const total = ALL_DIMENSIONS.length;
-const js = dimensionsFor(["js"]).length;
-const jsx = dimensionsFor(["jsx"]).length;
-const ruby = dimensionsFor(["ruby"]).length;
+// Obligations count here too. A checker blind to a whole dimension class would
+// pass while the README undercounted by nine, which is the drift this script
+// exists to catch.
+const total = ALL_DIMENSIONS.length + PAIRINGS.length;
+const js = dimensionsFor(["js"]).length + pairingsFor(["js"]).length;
+const jsx = dimensionsFor(["jsx"]).length + pairingsFor(["jsx"]).length;
+const ruby = dimensionsFor(["ruby"]).length + pairingsFor(["ruby"]).length;
+const obligations = PAIRINGS.length;
+
+// A released entry states the number that shipped in it and stays true forever.
+// Reading the whole changelog made every past release a claim about today, so
+// the first number that ever changed would fail three entries that are correct.
+const unreleased = (text) => {
+  const start = text.indexOf("## [Unreleased]");
+  // Returning an empty section would skip every claim below without failing,
+  // which is a clean report for a file nothing read.
+  claim("CHANGELOG.md", start !== -1, "has no ## [Unreleased] heading to read");
+  if (start === -1) return "";
+  const next = text.indexOf("\n## [", start + 1);
+  return next === -1 ? text.slice(start) : text.slice(start, next);
+};
 
 for (const rel of ["README.md", "docs/how-it-works.md", "CHANGELOG.md"]) {
-  const text = read(rel);
+  const text = rel === "CHANGELOG.md" ? unreleased(read(rel)) : read(rel);
   for (const m of text.matchAll(/(\d+)\s+dimensions/g)) {
     claim(`${rel}`, Number(m[1]) === total, `says "${m[1]} dimensions", the registry holds ${total}`);
   }
@@ -46,6 +64,9 @@ for (const rel of ["README.md", "docs/how-it-works.md", "CHANGELOG.md"]) {
   for (const m of text.matchAll(/(\d+)\s+for Ruby/g)) {
     claim(rel, Number(m[1]) === ruby, `says "${m[1]} for Ruby", dimensionsFor(["ruby"]) is ${ruby}`);
   }
+  for (const m of text.matchAll(/(\d+)\s+file-to-file obligations/g)) {
+    claim(rel, Number(m[1]) === obligations, `says "${m[1]} file-to-file obligations", the registry holds ${obligations}`);
+  }
 }
 
 // Every key is unique, or a claim is dropped without a word.
@@ -54,7 +75,7 @@ claim("lib/dimensions.mjs", new Set(keys).size === keys.length, "two dimensions 
 
 // A dimension either states its inverse or records that it may not. An absent
 // field is indistinguishable from one nobody classified.
-for (const d of ALL_DIMENSIONS) {
+for (const d of [...ALL_DIMENSIONS, ...PAIRINGS]) {
   claim(
     "lib/dimensions.mjs",
     d.counterClaim === null || typeof d.counterClaim === "string",
@@ -133,6 +154,6 @@ if (problems.length) {
   process.exit(1);
 }
 console.log(
-  `docs match the code: ${total} dimensions (${js} js, ${jsx} jsx, ${ruby} ruby), ` +
+  `docs match the code: ${total} dimensions (${js} js, ${jsx} jsx, ${ruby} ruby, ${obligations} of them file-to-file obligations), ` +
     `${unique.length} commands, version ${pkg.version}`
 );

@@ -25,8 +25,9 @@ memory of the last review, so it re-earns the same comment every time, and a cou
 only thing in the loop that does remember. Full numbers and caveats in [docs/why.md](docs/why.md).
 
 One correction to that table before you trust it. The per-pull-request obligations are what makes a
-repository's preventable share high in the measurement; the 31 dimensions that ship today count code
-shape, not the presence of a changeset file. Those repositories are the ones the design is aimed at,
+repository's preventable share high in the measurement. Nine of the 40 dimensions that ship today are
+file-to-file obligations, so a model without its spec is counted; a changeset file, which is owed per
+pull request rather than per file, is not. Those repositories are the ones the design is aimed at,
 not the ones it already serves fully.
 
 ## Install
@@ -245,9 +246,16 @@ claim that this finds bugs earlier is false.
 blocks a commit, a push, or a merge, and `check` reports rather than fails. If your linter already
 enforces a rule, the map restating it is waste, not defence in depth.
 
-**JavaScript, TypeScript and Ruby, nothing else.** 31 dimensions ship: 15 for JavaScript, 20 reachable
-in JSX, 11 for Ruby.
+**JavaScript, TypeScript and Ruby, nothing else.** 40 dimensions ship: 15 for JavaScript, 20 reachable
+in JSX, 20 for Ruby.
 A Python, Go or Rust repository gets an overview with no claims in it.
+
+**Nine file-to-file obligations, and they are the newest and least settled part.** They ask whether a
+file of one shape ships with its companion: a model with its spec, a rake task with its spec. The
+predicate is a directory pair, so a repository that keeps its model tests somewhere else scores zero
+against a habit it plainly has. Measured on alphagov/whitehall, the `app/models` area scores 0 of 160
+while 117 of those models have a test one directory deeper. That is why the count of companions found
+elsewhere prints beside the ratio, and why a zero here means "read the audit" rather than "no habit".
 
 **Files in small directories are not covered.** Both bounds scale with the corpus rather than sitting
 at a fixed number. A directory needs `clamp(round(sqrt(N) / 6), 3, 8)` source files to be an area, so
@@ -261,7 +269,7 @@ not cost coverage.
 
 ## Why it works the way it does
 
-[`DECISIONS.md`](DECISIONS.md) is the build contract: 57 numbered decisions, each with the
+[`DECISIONS.md`](DECISIONS.md) is the build contract: 58 numbered decisions, each with the
 measurement or the review finding that forced it. If you want to know why a threshold is where it
 is, why the parser runs in child processes, or why there is no hook, that is the file.
 

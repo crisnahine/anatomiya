@@ -440,3 +440,81 @@ test("a corpus only partly answered states nothing at all", needsRuby, async (t)
     assert.equal(d.gate, "corpus-truncated");
   }
 });
+
+test("a rake task with no spec is counted, and one with a spec conforms", needsRuby, async (t) => {
+  // Issue #7: an obligation between two files, not syntax inside one. The count
+  // is a set-membership test over the corpus, so nothing here needs the parser
+  // to see the spec at all.
+  const dir = repo(t, (d, { git, write }) => {
+    write("lib/tasks/backfill.rake", "task :backfill do\n  puts 1\nend\n");
+    write("lib/tasks/cleanup.rake", "task :cleanup do\n  puts 2\nend\n");
+    write("lib/tasks/reindex.rake", "task :reindex do\n  puts 3\nend\n");
+    write("spec/lib/tasks/backfill_spec.rb", "describe 'backfill' do\nend\n");
+    git("add", "-A");
+    git("commit", "-qm", "one");
+  });
+
+  const result = await scan(dir, { rubyGuards: RUBY_GUARDS });
+  const area = result.areas.find((a) => a.path === "lib/tasks");
+
+  assert.ok(area, `no lib/tasks area: ${result.areas.map((a) => a.path).join(", ")}`);
+  const row = area.dimensions.find((dim) => dim.key === "rake_task_spec");
+  assert.ok(row, `no obligation counted: ${area.dimensions.map((dim) => dim.key).join(", ")}`);
+  assert.equal(row.candidates, 3, "one site per rake task");
+  assert.equal(row.conforming, 1, "only backfill ships a spec");
+});
+
+test("the baseline counts an obligation against the pinned corpus, not today's", needsRuby, async (t) => {
+  // An obligation is answered by which files exist, so a branch that DELETES a
+  // spec changes the answer without touching the producer. The producer's bytes
+  // are unchanged, so the baseline reuses the corpus parse, and that record
+  // carries hits computed over today's file list. Reusing them makes the
+  // baseline agree with the branch and the violation disappears.
+  const dir = repo(t, (d, { git, write, author, pin }) => {
+    for (const n of ["backfill", "cleanup", "reindex"]) {
+      write(`lib/tasks/${n}.rake`, `task :${n} do\n  puts 1\nend\n`);
+      write(`spec/lib/tasks/${n}_spec.rb`, `describe '${n}' do\nend\n`);
+    }
+    git("add", "-A");
+    git("commit", "-qm", "init");
+    pin([{ path: "lib/tasks", files: ["lib/tasks/backfill.rake", "lib/tasks/cleanup.rake", "lib/tasks/reindex.rake"] }]);
+
+    author("second@t.test");
+    git("rm", "-q", "spec/lib/tasks/cleanup_spec.rb");
+    git("commit", "-qm", "drop a spec");
+  });
+
+  const result = await scan(dir, { rubyGuards: RUBY_GUARDS });
+  const area = result.areas.find((a) => a.path === "lib/tasks");
+  const row = area.dimensions.find((dim) => dim.key === "rake_task_spec");
+
+  assert.equal(row.conforming, 2, "today: cleanup lost its spec");
+  assert.equal(row.candidates, 3);
+  assert.ok(row.baseline, "no baseline counts at all");
+  assert.equal(row.baseline.conforming, 3, "at the pin every task had a spec");
+  assert.equal(row.baseline.candidates, 3);
+});
+
+test("a spec in the wrong directory is counted, so a narrow predicate is visible", needsRuby, async (t) => {
+  // Measured on alphagov/whitehall: the app/models area scores 0 of 160, and 117
+  // of those models have a test one directory deeper. Without this count the row
+  // reads "this repository does not test its models".
+  const dir = repo(t, (d, { git, write }) => {
+    for (const n of ["backfill", "cleanup", "reindex"]) {
+      write(`lib/tasks/${n}.rake`, `task :${n} do\n  puts 1\nend\n`);
+    }
+    write("spec/lib/tasks/backfill_spec.rb", "describe 'backfill' do\nend\n");
+    // cleanup is specced, one directory away from where the predicate looks.
+    write("spec/tasks/cleanup_spec.rb", "describe 'cleanup' do\nend\n");
+    git("add", "-A");
+    git("commit", "-qm", "one");
+  });
+
+  const result = await scan(dir, { rubyGuards: RUBY_GUARDS });
+  const area = result.areas.find((a) => a.path === "lib/tasks");
+  const row = area.dimensions.find((dim) => dim.key === "rake_task_spec");
+
+  assert.equal(row.candidates, 3);
+  assert.equal(row.conforming, 1, "only backfill is specced where the predicate looks");
+  assert.equal(row.companionsElsewhere, 1, "cleanup is specced, one directory away");
+});
