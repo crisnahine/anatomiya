@@ -130,7 +130,7 @@ async function runScan(cwd, { dryRun }) {
     console.log(`${plan.remove.length} area file(s) removed: their area is gone or states nothing`);
   // Nothing was written, and the reason is not "this repository has nothing in
   // it". Said before the count, because the count is 0 and reads as the first.
-  if (plan.unreadable && plan.unreadable.length) {
+  if (plan.unreadable.length) {
     console.log(
       `read no ${plan.unreadable.join(" or ")} file at all, so nothing was written and the previous map was left alone`
     );
