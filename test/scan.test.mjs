@@ -188,6 +188,40 @@ test("a file the parser could not read costs that one file", async (t) => {
   assert.ok(!dim.files.includes("src/broken.ts"));
 });
 
+test("a directory nothing could be counted in is not a directory that was too small", async (t) => {
+  // Discovery put all six in an area; the area was then dropped because no
+  // dimension found a site, which is the parse failure and not the floor. The
+  // uncovered count folded the two together and named only the floor.
+  const dir = repo(t, (d, { git, write }) => {
+    for (let i = 0; i < 6; i++) write(`src/broken${i}.ts`, `export const a${i} = 1\nfoo(\n`);
+    git("add", "-A");
+    git("commit", "-qm", "init");
+  });
+
+  const result = await scan(dir);
+
+  assert.equal(result.corpus.files, 6);
+  assert.equal(result.parse.failed, 6, "none of them was read");
+  assert.equal(result.areas.length, 0, "so the area they were in states nothing and is dropped");
+  assert.equal(result.corpus.orphaned, 0, "and none of them was left without an area by discovery");
+});
+
+test("a file discovery could not place is counted as orphaned", async (t) => {
+  const dir = repo(t, (d, { git, write }) => {
+    for (let i = 0; i < 6; i++) write(`src/deep/m${i}.ts`, moduleSource(i));
+    // Two files one level up, below the floor, with no ancestor that clears it.
+    write("src/loose.ts", moduleSource(90));
+    write("src/other.ts", moduleSource(91));
+    git("add", "-A");
+    git("commit", "-qm", "init");
+  });
+
+  const result = await scan(dir);
+
+  assert.deepEqual(result.areas.map((a) => a.path), ["src/deep"]);
+  assert.equal(result.corpus.orphaned, 2, "the two the floor left behind");
+});
+
 test("a path with a newline or a leading dash survives the whole scan", needsPosixPaths, async (t) => {
   // F1 and F5 end to end: the corpus is NUL-split, and no repository-controlled
   // path reaches an argument position where git or the parser reads it as an
