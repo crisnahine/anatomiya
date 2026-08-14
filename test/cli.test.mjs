@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, realpathSync, appendFileSync, statSync, rmSync, cpSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, appendFileSync, statSync, rmSync, cpSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -107,8 +107,16 @@ test("a scan names the root it resolved to, because a path argument does not sco
     })
   );
 
-  assert.match(out.split("\n")[0], /^8 files, 1 areas, \d+ms, root /);
-  assert.ok(out.includes(`root ${realpathSync(repo)}`), out.split("\n")[0]);
+  // Identified through the filesystem, not by comparing path strings. One
+  // directory has several valid spellings on Windows, where a temporary
+  // directory carries the 8.3 form and git prints the long one, and asserting
+  // one of them tests the platform rather than the line.
+  const first = out.split("\n")[0];
+  assert.match(first, /^8 files, 1 areas, \d+ms, root .+$/);
+  const printed = first.slice(first.indexOf(", root ") + ", root ".length);
+
+  assert.ok(existsSync(join(printed, "src", "f0.ts")), `not the repository that was scanned: ${first}`);
+  assert.ok(!existsSync(join(printed, "src", "src")), "the argument was widened to the root, so the root is what prints");
 });
 
 test("untracked source is reported rather than counted as a repository with nothing in it", (t) => {
