@@ -95,7 +95,7 @@ test("only the files that differ from the pin are read back out of it", async (t
     headParsed: new Map(rels.map((rel) => [rel, { rel, ok: true, hits: {} }])),
     parse: async (files) => {
       asked.push(...files.map((f) => f.rel));
-      return { parsed: new Map(files.map((f) => [f.rel, { rel: f.rel, ok: true, hits: {} }])) };
+      return { records: new Map(files.map((f) => [f.rel, { rel: f.rel, ok: true, hits: {} }])) };
     },
     reduce: () => [],
   });
