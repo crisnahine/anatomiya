@@ -462,6 +462,32 @@ test("a changed Ruby file is parsed by prism and its new violation is reported",
   assert.equal(r.findings[0].line, 4, "prism reports a line even with no byte offsets");
 });
 
+test("a changed file the parser cannot read is named, not silently skipped", async (t) => {
+  // A file that answers `ok: false` is skipped by every loop that walks a
+  // program, which is right, and reported by none of them, which is the same
+  // silence the scan had: an empty finding list reads as "conforms".
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/a.ts", "export const a = 1\n");
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/a.ts", "export const a = 1\nfoo(\n");
+    commit("break it");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    path: "src",
+    dimensions: [dim({ key: "module_state_const" })],
+  });
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.ok(
+    r.caveats.some((c) => /could not be parsed|not examined/.test(c)),
+    `expected a parse caveat: ${r.caveats.join(" | ")}`
+  );
+  assert.equal(r.findings.length, 0, "and nothing is claimed about a file nobody could read");
+});
+
 test("a Ruby file whose violation already existed at the base is not reported", async (t) => {
   // The offset-free fingerprint is the only identity a Ruby site has, so the
   // two-run difference has to still cancel an unchanged one.

@@ -166,6 +166,28 @@ test("a file that kills the parser costs that one file", async (t) => {
   assert.ok(!dim.files.includes("src/bomb.ts"));
 });
 
+test("a file the parser could not read costs that one file", async (t) => {
+  const dir = repo(t, (d, { git, write }) => {
+    for (let i = 0; i < 6; i++) write(`src/m${i}.ts`, moduleSource(i));
+    // oxc recovers instead of dying, so this file was charged as parsed and its
+    // recovery walked as if it were the file. Whatever the recovery leaves is
+    // not what anyone wrote, and on react/react 288 files are this shape.
+    write("src/broken.ts", "export const broken = 5\nfoo(\n");
+    git("add", "-A");
+    git("commit", "-qm", "init");
+  });
+
+  const result = await scan(dir);
+
+  assert.equal(result.corpus.files, 7);
+  assert.equal(result.parse.failed, 1, "the syntax errors are reported, not swallowed");
+  assert.equal(result.parse.parsed, 7, "every file got an answer");
+
+  const dim = dimension(result, "src", "module_state_const");
+  assert.equal(dim.applicability, 6, "the unreadable file contributes no sites");
+  assert.ok(!dim.files.includes("src/broken.ts"));
+});
+
 test("a path with a newline or a leading dash survives the whole scan", needsPosixPaths, async (t) => {
   // F1 and F5 end to end: the corpus is NUL-split, and no repository-controlled
   // path reaches an argument position where git or the parser reads it as an

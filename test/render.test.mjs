@@ -361,12 +361,17 @@ test("an overview of a repository with no areas names only itself", () => {
 });
 
 test("the overview reports what the parser could not read", () => {
-  const out = renderOverview(result({ parse: { parsed: 80, crashed: 7, skipped: 3 } }), {
+  // Three different ways a file goes unexamined, and the agent reading this map
+  // has to be able to tell them apart. `failed` reached the CLI summary and
+  // never reached here, so a repository whose whole Ruby half was unreadable
+  // showed an empty map with nothing in it saying why.
+  const out = renderOverview(result({ parse: { parsed: 80, crashed: 7, skipped: 3, failed: 5 } }), {
     uncovered: 12,
   });
 
   assert.match(out, /^- 12 source files sit in no area \(too few per directory\)$/m);
-  assert.match(out, /^- 7 files could not be parsed$/m);
+  assert.match(out, /^- 7 files crashed the parser$/m);
+  assert.match(out, /^- 5 files could not be parsed$/m);
   assert.match(out, /^- 3 files exceeded the size cap$/m);
 });
 
