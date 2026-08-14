@@ -7,6 +7,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.1.4] - 2026-08-14
+
 ### Changed
 
 - The overview names only the areas that state something, at every repository size. It used to name
@@ -177,7 +181,8 @@ which are partial; several listed there are not implemented yet.
 - No claim that this catches defects. Measured across ten repositories, 1 of 317 defect review
   comments was preventable by a conventions map.
 
-[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.1.3...HEAD
+[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.1.4...HEAD
+[0.1.4]: https://github.com/crisnahine/anatomiya/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/crisnahine/anatomiya/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/crisnahine/anatomiya/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/crisnahine/anatomiya/compare/v0.1.0...v0.1.1
