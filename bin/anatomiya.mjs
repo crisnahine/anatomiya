@@ -118,6 +118,15 @@ async function runScan(cwd, { dryRun }) {
   if (unwritten) console.log(`${unwritten} file(s) in .claude/rules/ not written by this tool`);
   if (plan.remove.length)
     console.log(`${plan.remove.length} area file(s) removed: their area is gone or states nothing`);
+  // Nothing was written, and the reason is not "this repository has nothing in
+  // it". Said before the count, because the count is 0 and reads as the first.
+  if (plan.unreadable && plan.unreadable.length) {
+    console.log(
+      `read no ${plan.unreadable.join(" or ")} file at all, so nothing was written and the previous map was left alone`
+    );
+    console.log("this is usually a missing interpreter rather than a repository that changed");
+    return;
+  }
   console.log(dryRun ? `would write ${plan.write.length} files` : `wrote ${plan.write.length} files`);
   // Measured: a rewritten context file does not re-attach mid-session.
   if (!dryRun) console.log("a session already running still holds the old map; restart to pick it up");

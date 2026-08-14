@@ -100,6 +100,41 @@ test("a dry run over an existing map removes nothing", () => {
   rmSync(dir, { recursive: true, force: true });
 });
 
+test("a scan that could not read a whole language removes nothing", () => {
+  // Measured: `env -i PATH=/usr/bin:/bin` on a 200-file Rails repository. Every
+  // Ruby file is charged as a crash, every area then counts nothing and is
+  // dropped, and the writer deletes three correct area files in the same run
+  // that reports it could not read them. A container without ruby is the
+  // ordinary case for a JavaScript pipeline on a mixed repository.
+  const dir = workspace();
+  const models = area("app/models");
+  const services = area("app/services");
+  writeMap(result(dir, [models, services]));
+
+  const before = readdirSync(rules(dir)).sort().map((f) => readFileSync(join(rules(dir), f), "utf8"));
+  const factsBefore = readFileSync(join(dir, STORE, "facts.json"), "utf8");
+
+  const blind = result(dir, []);
+  blind.parse = { ...blind.parse, crashed: blind.corpus.files, unreadable: ["ruby"] };
+  const plan = writeMap(blind);
+
+  assert.deepEqual(plan.remove, [], "a map this run cannot speak for is left alone");
+  assert.deepEqual(plan.write, [], "and not half-rewritten either");
+  assert.deepEqual(plan.unreadable, ["ruby"], "the caller is told which language went unread");
+  assert.ok(existsSync(join(rules(dir), areaFilename(models))), "both area files are still there");
+  assert.ok(existsSync(join(rules(dir), areaFilename(services))));
+  // The overview is the file that says how many areas exist and how many files
+  // this tool generated. Rewriting it from a run that read nothing leaves it
+  // claiming zero areas beside three area files that still load.
+  const after = readdirSync(rules(dir)).sort().map((f) => readFileSync(join(rules(dir), f), "utf8"));
+  assert.deepEqual(after, before, "the map on disk is byte-identical");
+  // Keeping the rendered files while replacing the facts they came from would
+  // break the one invariant this writer has: nothing rendered that the facts on
+  // disk do not derive. check reads facts.json, so it would read the empty one.
+  assert.equal(readFileSync(join(dir, STORE, "facts.json"), "utf8"), factsBefore, "and so are the facts");
+  rmSync(dir, { recursive: true, force: true });
+});
+
 test("a file of ours that this scan no longer covers is removed", () => {
   const dir = workspace();
   const stays = area("src/services");
