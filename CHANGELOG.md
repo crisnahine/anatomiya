@@ -7,7 +7,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
-Nothing yet.
+### Changed
+
+- The overview names only the areas that state something, at every repository size. It used to name
+  every area below 200 and apply that rule only above the limit. Measured on a 5,489-file Rails repo,
+  143 of 151 areas stated nothing, so 89% of a file that loads on every turn carried a directory name
+  and a file count `ls` already gives. Rebuilt at that shape the listing is 1,030 bytes against 8,576.
+  Nothing moves out of reach: a counts-only area keeps its own path-scoped file, which still loads
+  when one of its files is read, and the `## Areas (n)` heading still counts every area.
 
 ## [0.1.3] - 2026-08-14
 

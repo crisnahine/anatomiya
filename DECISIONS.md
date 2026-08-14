@@ -21,6 +21,7 @@ public measurement, a 4,616-comment classification, and a 237-entry glossary re-
 | A6 | Each generated file stays under ~40 lines | Measured: a mid-session rewrite does not re-attach; the change notice truncates head and tail, so a mid-file edit reaches the model in neither copy | partial |
 | A7 | The plugin never opens its own rules files with the Read tool; use `cat` | Measured: reading a context file permanently suppresses its automatic injection for that path for the rest of the process | partial |
 | A8 | Print one line after a scan: a running session holds the old map, restart to pick up the new one | Measured, same cause as A6 | partial |
+| A9 | The overview names only the areas that state something, at every repository size, and gives the rest as a count | Measured on a 5,489-file Rails repo: 151 areas, 143 of them stating nothing, 89% of an always-loaded file spent on a directory name and a file count that `ls` already gives. Rebuilt at that shape the listing is 8,576 bytes against 1,030. Nothing becomes unreachable: a counts-only area keeps its own path-scoped file, and the `## Areas (n)` heading still counts them all | **done** `render.mjs` |
 
 ## B. Engine
 
