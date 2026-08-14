@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { PAIRINGS, applyPairings, companionOf, pairingHits, pairingViolations, pairingsFor } from "../lib/pairing.mjs";
+import { PAIRINGS, applyPairings, companionOf, companionRoot, pairingHits, pairingViolations, pairingsFor } from "../lib/pairing.mjs";
 import { reduceArea } from "../lib/reduce.mjs";
 
 const RAKE_SPEC = {
@@ -295,4 +295,95 @@ test("an obligation whose companion shape appears somewhere is counted, even at 
 
   assert.ok(keys.includes("model_test"));
   assert.equal(keys.includes("model_spec"), false);
+});
+
+test("the companion root is learned from where the companions actually are", () => {
+  // alphagov/whitehall keeps model tests under test/unit/app/models, so the
+  // hardcoded test/models pair scored 0 of 160 against a habit it plainly has,
+  // with 117 namesakes sitting one prefix away. The substitution was right; the
+  // prefix it substituted was a guess.
+  const corpus = new Set([
+    "app/models/edition.rb",
+    "app/models/document.rb",
+    "app/models/edition/auditable.rb",
+    "test/unit/app/models/edition_test.rb",
+    "test/unit/app/models/document_test.rb",
+    "test/unit/app/models/edition/auditable_test.rb",
+  ]);
+  const shape = { from: "app/models", ext: ".rb", companionSuffix: "_test.rb" };
+
+  assert.equal(companionRoot(corpus, shape), "test/unit/app/models");
+});
+
+test("a repository that keeps them where the rule guessed still learns that", () => {
+  const corpus = new Set([
+    "app/services/pay.rb",
+    "app/services/refund.rb",
+    "spec/services/pay_spec.rb",
+    "spec/services/refund_spec.rb",
+  ]);
+  const shape = { from: "app/services", ext: ".rb", companionSuffix: "_spec.rb" };
+
+  assert.equal(companionRoot(corpus, shape), "spec/services");
+});
+
+test("the root the most producers agree on wins, so one stray file cannot move it", () => {
+  // discourse's controller specs are in spec/requests, 95 of them, beside a
+  // handful elsewhere. A rule that took the first match it found would learn
+  // whichever path sorted first.
+  const corpus = new Set([
+    ...["a", "b", "c", "d"].map((n) => `app/controllers/${n}.rb`),
+    ...["a", "b", "c"].map((n) => `spec/requests/${n}_spec.rb`),
+    "spec/controllers/d_spec.rb",
+  ]);
+  const shape = { from: "app/controllers", ext: ".rb", companionSuffix: "_spec.rb" };
+
+  assert.equal(companionRoot(corpus, shape), "spec/requests");
+});
+
+test("no companion anywhere learns no root, so the obligation is not asked", () => {
+  const corpus = new Set(["app/models/a.rb", "app/models/b.rb", "spec/lib/unrelated_spec.rb"]);
+  const shape = { from: "app/models", ext: ".rb", companionSuffix: "_spec.rb" };
+
+  assert.equal(companionRoot(corpus, shape), null);
+});
+
+test("an obligation counts against the root this repository uses", () => {
+  // The whitehall shape end to end: 3 models, 2 with a test, under a root the
+  // hardcoded pair never named. Before this the row read 0 of 3.
+  const corpus = new Set([
+    "app/models/edition.rb",
+    "app/models/document.rb",
+    "app/models/orphan.rb",
+    "test/unit/app/models/edition_test.rb",
+    "test/unit/app/models/document_test.rb",
+  ]);
+  const parsed = new Map(
+    [...corpus].map((rel) => [rel, { rel, ok: true, hits: {} }])
+  );
+
+  const applied = applyPairings(parsed, corpus, ["ruby"]);
+
+  assert.ok(applied.has("model_test"), "the obligation applies, because the companions exist");
+  const hits = (rel) => parsed.get(rel).hits.model_test;
+  assert.equal(hits("app/models/edition.rb")[0].conforming, true);
+  assert.equal(hits("app/models/document.rb")[0].conforming, true);
+  assert.equal(hits("app/models/orphan.rb")[0].conforming, false, "and the one with none still fails");
+  assert.equal(hits("test/unit/app/models/edition_test.rb"), undefined, "a companion owes nothing itself");
+});
+
+test("a tie the declared pair has no part in learns nothing", () => {
+  // Two roots on one vote each is a repository that has said nothing, and
+  // picking the alphabetical winner decides an obligation by a filename, which
+  // is what the tie-break exists to refuse. Falling back to the declared pair
+  // reports the honest zero with the namesakes counted beside it.
+  const corpus = new Set([
+    "app/models/user.rb",
+    "app/models/post.rb",
+    "zzz/user_spec.rb",
+    "aaa/post_spec.rb",
+  ]);
+  const shape = { from: "app/models", to: "spec/models", ext: ".rb", companionSuffix: "_spec.rb" };
+
+  assert.equal(companionRoot(corpus, shape), null);
 });

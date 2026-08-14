@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join, isAbsolute, sep } from "node:path";
 import { execFileSync } from "node:child_process";
 
-import { collect, countUntrackedSource, isDenied, isExcludedDir, isSource, safeResolve, language, gitRoot } from "../lib/corpus.mjs";
+import { collect, countUntrackedSource, isDenied, isExcludedDir, isSource, safeResolve, language, gitRoot, frameworksIn } from "../lib/corpus.mjs";
 import * as areaLib from "../lib/areas.mjs";
 
 const { discover, glob, assertGlobSafe, areaId, AREA } = areaLib;
@@ -206,6 +206,29 @@ test("fixture and vendor directories are excluded", () => {
   assert.equal(isExcludedDir("src/fixtures-helper/a.ts"), false, "the segment must match whole");
 });
 
+test("the other names deliberately unidiomatic code goes by are excluded too", () => {
+  // Same code, different directory name. angular keeps 2,010 files of golden
+  // compiler output under `test_cases`, which became 55 of its 339 areas and
+  // every one of its 476 unparseable files; the map taught an agent the house
+  // style of expected output.
+  for (const p of [
+    "packages/compiler-cli/test/compliance/test_cases/a.js",
+    "pkg/testdata/a.ts",
+    "pkg/test-data/a.ts",
+    "src/golden/a.ts",
+    "src/goldens/a.ts",
+    "src/__mocks__/fs.js",
+    "src/mocks/handlers.ts",
+  ]) {
+    assert.equal(isExcludedDir(p), true, p);
+  }
+  // Whole segments only, and `examples` stays in: 8,967 paths in the corpus
+  // match it and a good share of them are code someone maintains.
+  for (const p of ["src/test_cases_helper/a.ts", "src/mocksmith/a.ts", "examples/basic/a.ts"]) {
+    assert.equal(isExcludedDir(p), false, p);
+  }
+});
+
 test("deny-list covers credential-shaped paths", () => {
   for (const p of [".env", "config/.env.production", "certs/server.pem", "id_rsa",
                    ".claude/settings.local.json", ".git/config"]) {
@@ -241,13 +264,38 @@ test("language is derived from the extension", () => {
   assert.equal(language("a.cjs"), "js");
 });
 
-test("isSource takes the seven extensions and nothing else", () => {
+test("isSource takes what the two parsers can read, and nothing else", () => {
   for (const p of ["a.ts", "a.tsx", "a.js", "a.jsx", "a.mjs", "a.cjs", "a.rb", "a.rake"]) {
     assert.equal(isSource(p), true, p);
   }
-  for (const p of ["a.md", "a.json", "a.rbi", "a.ts.snap", "Rakefile"]) {
+  // TypeScript's module extensions. oxc reads both today, `import = require`
+  // included, and the corpus held 346 of them with nothing counting any.
+  for (const p of ["a.mts", "a.cts", "src/deep/b.mts"]) {
+    assert.equal(isSource(p), true, p);
+  }
+  // Ruby whose filename does not say so. prism reads all of these with zero
+  // errors, and they are the files least likely to be edited by someone who
+  // remembers the habit in them.
+  for (const p of ["Rakefile", "Gemfile", "config.ru", "a.gemspec", "app/views/x.json.jbuilder"]) {
+    assert.equal(isSource(p), true, p);
+  }
+  for (const p of ["lib/Rakefile", "sub/Gemfile", "sub/config.ru"]) {
+    assert.equal(isSource(p), true, `${p} is the same file one directory down`);
+  }
+  for (const p of ["a.md", "a.json", "a.ts.snap", "Gemfile.lock", "Rakefile.md", "config.ruby"]) {
     assert.equal(isSource(p), false, p);
   }
+  // Sorbet signatures describe types, not what anyone wrote. 318 in the corpus,
+  // and a claim counted over them speaks for no code.
+  assert.equal(isSource("a.rbi"), false, "a.rbi");
+});
+
+test("the filename that carries no extension still names its language", () => {
+  for (const p of ["Rakefile", "Gemfile", "config.ru", "a.gemspec", "app/views/x.json.jbuilder"]) {
+    assert.equal(language(p), "ruby", p);
+  }
+  assert.equal(language("a.mts"), "js");
+  assert.equal(language("a.cts"), "js");
 });
 
 // --- areas ---
@@ -258,7 +306,7 @@ test("no generated glob ends in a bare /**", () => {
 
   assert.equal(areas.length, 1);
   for (const a of areas) for (const g of a.globs) assert.doesNotThrow(() => assertGlobSafe(g));
-  assert.deepEqual(areas[0].globs, ["app/services/**/*.{rake,rb}"]);
+  assert.deepEqual(areas[0].globs, ["app/services/**/*.{gemspec,jbuilder,rake,rb}"]);
   assert.throws(() => assertGlobSafe("app/**"), /bare \/\*\*/);
 });
 
@@ -314,6 +362,34 @@ test("an area's globs match the files it counted and no others", () => {
   }
 });
 
+test("an area's globs reach every shape it counted, extension or not", () => {
+  // The rule #4 established: an area's paths matches the files its counts were
+  // taken over. A brace of extensions cannot spell `Rakefile`, so admitting a
+  // file with no extension has to widen the glob or the file is counted and
+  // never delivered, which is the same defect arriving from the other side.
+  const ruby = [
+    ...Array.from({ length: 5 }, (_, i) => ({ rel: `lib/tasks/t${i}.rake`, lang: "ruby" })),
+    { rel: "lib/tasks/Rakefile", lang: "ruby" },
+    { rel: "lib/tasks/Gemfile", lang: "ruby" },
+  ];
+  const rubyAreas = discover(ruby);
+  assert.equal(rubyAreas.length, 1);
+  for (const f of ruby) assert.equal(matches(rubyAreas[0].globs, f.rel), true, f.rel);
+
+  const js = [
+    ...Array.from({ length: 5 }, (_, i) => ({ rel: `src/lib/m${i}.ts`, lang: "js" })),
+    { rel: "src/lib/entry.mts", lang: "js" },
+    { rel: "src/lib/legacy.cts", lang: "js" },
+  ];
+  const jsAreas = discover(js);
+  assert.equal(jsAreas.length, 1);
+  for (const f of js) assert.equal(matches(jsAreas[0].globs, f.rel), true, f.rel);
+
+  for (const a of [...rubyAreas, ...jsAreas]) {
+    for (const g of a.globs) assert.doesNotThrow(() => assertGlobSafe(g), g);
+  }
+});
+
 test("an area holding its whole subtree still emits one recursive glob", () => {
   const areas = discover(fakeFiles([
     ...Array.from({ length: 5 }, (_, i) => `lib/core/c${i}.js`),
@@ -321,7 +397,7 @@ test("an area holding its whole subtree still emits one recursive glob", () => {
   ]));
 
   assert.equal(areas.length, 1);
-  assert.deepEqual(areas[0].globs, ["lib/core/**/*.{cjs,js,mjs,ts}"]);
+  assert.deepEqual(areas[0].globs, ["lib/core/**/*.{cjs,cts,js,mjs,mts,ts}"]);
 });
 
 test("an area with many owned directories and few foreign ones states the foreign ones", () => {
@@ -335,7 +411,7 @@ test("an area with many owned directories and few foreign ones states the foreig
   const parent = areas.find((a) => a.path === "app/svc");
 
   assert.ok(areas.some((a) => a.path === "app/svc/own"), "the deeper directory is its own area");
-  assert.deepEqual(parent.globs, ["app/svc/**/*.{cjs,js,mjs,ts}", "!app/svc/own/**/*.{cjs,js,mjs,ts}"]);
+  assert.deepEqual(parent.globs, ["app/svc/**/*.{cjs,cts,js,mjs,mts,ts}", "!app/svc/own/**/*.{cjs,cts,js,mjs,mts,ts}"]);
   assert.equal(matches(parent.globs, "app/svc/own/o1.js"), false);
   assert.equal(matches(parent.globs, "app/svc/d3/a.js"), true);
 });
@@ -566,12 +642,32 @@ test("area ids are stable hashes of the path", () => {
 });
 
 test("mixed languages produce a brace-expanded extension list", () => {
-  assert.equal(glob("src", ["js", "jsx"]), "src/**/*.{cjs,js,jsx,mjs,ts,tsx}");
+  assert.equal(glob("src", ["js", "jsx"]), "src/**/*.{cjs,cts,js,jsx,mjs,mts,ts,tsx}");
   assert.equal(glob("src", ["jsx"]), "src/**/*.{jsx,tsx}");
-  assert.equal(glob(".", ["ruby"]), "**/*.{rake,rb}");
+  assert.equal(glob(".", ["ruby"]), "**/*.{gemspec,jbuilder,rake,rb}");
 });
 
 test("a glob over no known language throws instead of matching nothing", () => {
   assert.throws(() => glob("src", ["python"]), /no known extensions/);
   assert.throws(() => glob("src", []), /no known extensions/);
+});
+
+test("the frameworks a repository uses are read from its own corpus", () => {
+  // Measured across 19 Ruby repositories: app/models, db/migrate or
+  // config/application.rb separates 14 Rails from 5 plain with no error. It has
+  // to be the corpus and not `git ls-files`: rubocop's only app/models files
+  // are three fixtures under spec/fixtures, which the corpus already drops, and
+  // reading the raw list calls rubocop a Rails application.
+  const rails = frameworksIn(fakeFiles(["app/models/user.rb", "lib/x.rb"], "ruby"));
+  assert.deepEqual([...rails], ["rails"]);
+
+  assert.deepEqual([...frameworksIn(fakeFiles(["db/migrate/1_x.rb"], "ruby"))], ["rails"]);
+  assert.deepEqual([...frameworksIn(fakeFiles(["config/application.rb"], "ruby"))], ["rails"]);
+  // An engine keeps the same shape one directory down, which is decidim, the
+  // one repository config/application.rb alone gets wrong.
+  assert.deepEqual([...frameworksIn(fakeFiles(["decidim-core/app/models/a.rb"], "ruby"))], ["rails"]);
+
+  assert.deepEqual([...frameworksIn(fakeFiles(["lib/tool.rb", "spec/tool_spec.rb"], "ruby"))], []);
+  assert.deepEqual([...frameworksIn(fakeFiles(["src/app.ts"], "js"))], [], "a JS repository has no Rails");
+  assert.deepEqual([...frameworksIn([])], []);
 });

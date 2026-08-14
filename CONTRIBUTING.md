@@ -1,6 +1,6 @@
 # Contributing
 
-Read `DECISIONS.md` first. It is 58 numbered rows, each one a measurement or a review finding reduced
+Read `DECISIONS.md` first. It is 68 numbered rows, each one a measurement or a review finding reduced
 to the decision it forces on the code. It is the build contract, and most questions you will have
 about why something is shaped the way it is are answered there in one line.
 
@@ -97,6 +97,12 @@ A dimension is one counted claim about one area. It carries three numbers, never
 The ratio is `conforming / candidates`. Counting files instead of sites was measured flipping 10 of
 39 verdicts, in both directions. It hides real conventions and it manufactures false ones.
 
+A dimension whose claim belongs to a framework carries `framework: "rails"`, and is offered only
+where the corpus shows that framework (C8). Mark one only where the predicate cannot see its own
+context from a single file: `model_callbacks` and the migrations already gate on an `ActiveRecord`
+superclass and need nothing, while `zone_aware_time` cannot tell Rails from plain Ruby by looking at
+`Time.now`.
+
 Where the code goes:
 
 - `lib/dimensions.mjs` core JS and TS dimensions, plus the `ALL_DIMENSIONS` registry and
@@ -143,13 +149,21 @@ exists. It carries no `run`; the shape is a directory pair:
 }
 ```
 
-Two rules are particular to this class. A repository is only asked the question for a companion suffix
-it actually uses, because producers exist whatever the repository tests with and a row that can only
-read zero is a false statement rather than a measurement. And every such row carries
-`companionsElsewhere`, the producers whose companion is missing where the predicate looks but whose
-namesake exists elsewhere. Without it a predicate aimed at the wrong directory prints a zero that
-reads as "this repository has no such habit": measured on alphagov/whitehall, the app/models area
-scores 0 of 160 and 117 of those models have a test one directory deeper.
+Three rules are particular to this class. A repository is only asked the question for a companion
+suffix it actually uses, because producers exist whatever the repository tests with and a row that
+can only read zero is a false statement rather than a measurement.
+
+`to` is the declared pair, and it is a prior rather than an answer. The root is learned from the
+corpus by asking each producer which file ends with its own path tail, and the declared pair stands
+where the evidence ties or finds nothing (C9). Measured on alphagov/whitehall, whose model tests sit
+under `test/unit/app/models`: the app/models area read 0 of 160 against the declared `test/models`
+and reads 117 of 160 against the root it actually uses. A tie learns nothing, or an obligation is
+decided by whichever filename sorts first.
+
+And every such row carries `companionsElsewhere`, the producers whose companion is missing where the
+predicate looks but whose namesake exists elsewhere. It is the number that separates "this
+repository has no such habit" from "the predicate is looking in the wrong place", which is what made
+the learned root worth building.
 
 `counterClaim` is not optional. It is the sentence an area is handed when it consistently does the
 opposite, and it is hand-written because a machine negation names nothing for the agent to write and
