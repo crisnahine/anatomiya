@@ -43,7 +43,7 @@ function result(root, areas) {
     root,
     scannedAt: "2026-01-01T00:00:00.000Z",
     durationMs: 12,
-    corpus: { files, truncated: false, dropped: {} },
+    corpus: { files, truncated: false, dropped: {}, orphaned: 8 },
     parse: { parsed: files, crashed: 0, skipped: 0 },
     suppressAll: false,
     areas,
@@ -67,6 +67,9 @@ test("files land in .claude/rules with the facts beside them", () => {
   assert.deepEqual(plan.write.sort(), listRules(dir));
   assert.ok(existsSync(join(dir, STORE, "facts.json")), "the facts are on disk beside the files");
   assert.equal(plan.uncovered, 20, "an area's own files are never counted as uncovered");
+  // The scan says how many of those discovery could not place; the rest sit in
+  // an area that counted nothing, and the overview names the two apart.
+  assert.equal(plan.orphaned, 8, "the split reaches the plan, not just the render");
 
   assert.deepEqual(EXCLUDE_LINES, [`${RULES}/${PREFIX}*.md`, `${STORE}/`]);
   rmSync(dir, { recursive: true, force: true });
