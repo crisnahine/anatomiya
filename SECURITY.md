@@ -148,10 +148,6 @@ Say the quiet part plainly.
   past the child process boundary, it runs as you.
 - **Dependencies are trusted.** `oxc-parser` from npm, `prism` from your Ruby install, `git`, and
   `ps`. Their supply chain is not something this tool checks.
-- **`gh` in `lib/forge.mjs` talks to the network.** It is the measurement helper, not part of `scan`
-  or `check`, and nothing in the shipped commands imports it. It uses your existing `gh`
-  credentials, reads pull request metadata and comments, and writes nothing. If that matters to you,
-  do not run it.
 - **No semantic tier ships, so nothing here reads `tsconfig.json`.** A TypeScript-checker tier is
   decisions B7 to B9 in `DECISIONS.md` and all three are `todo`: `typescript` is not a dependency and
   the CLI takes no flag that would reach it. If it is ever built it will read the repository's
@@ -166,13 +162,15 @@ Say the quiet part plainly.
 
 These are real and they are tracked in `DECISIONS.md`.
 
-- **F5 is partial.** The `--` separator rule is stated and is not yet applied at every subprocess
-  call site. Paths do not currently appear as bare positional arguments anywhere, which is what makes
-  today's code hold, but that is a property of the current call sites rather than an enforced
-  invariant.
+- **F5 is partial.** The buffered git reads in `lib/baseline.mjs` and `lib/check.mjs` now go through
+  one runner in `lib/git.mjs`, which carries the timeout and the byte cap; `lib/corpus.mjs` still
+  runs `git rev-parse` through its own. The `--`
+  separator is still not applied at every call site. Paths do not currently appear as bare
+  positional arguments anywhere, which is what makes today's code hold, but that is a property of
+  the current call sites rather than an enforced invariant.
 - **F6 is partial.** The three reads that grow with the repository now stream: `git ls-files`, `git
-  log`, and the Ruby parser's output. What still buffers through `execFile` is bounded by what it
-  asks for, one blob or one ref at a time, in `lib/baseline.mjs`, `lib/check.mjs` and `lib/forge.mjs`.
+  log`, and the Ruby parser's output. What still buffers is bounded by what it asks for, one blob or
+  one ref at a time, through `gitBuffered` in `lib/git.mjs`.
   A buffered read large enough makes `execFile` throw `RangeError: Invalid string length` from inside
   Node's own exit handler, where `maxBuffer` does not protect and V8 caps any string at 0x1fffffe8
   bytes. The failure is a lost run, not a leak.

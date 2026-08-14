@@ -85,6 +85,65 @@ test("nothing is written to the repository when the parser is missing", (t) => {
   );
 });
 
+/** A branch off the base with one added file, which is what a check examines. */
+function repoWithBranch(t) {
+  const dir = repoWithSource(t);
+  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
+  git("branch", "-M", "main");
+  git("checkout", "-q", "-b", "feat");
+  writeFileSync(join(dir, "src", "f8.ts"), "export function h() { try { go() } catch (e) { } }\n");
+  git("add", "-A");
+  git("commit", "-qm", "add");
+  return dir;
+}
+
+test("a missing parser fails the check instead of reporting it found nothing", (t) => {
+  // The same install the scan test describes, on the other command. A check
+  // that cannot parse reports one caveat per file and no findings, and the
+  // command file tells the agent a zero exit means the check ran.
+  const install = installWithoutDependencies(t);
+  const repo = repoWithBranch(t);
+
+  let status = 0;
+  let stderr = "";
+  try {
+    execFileSync(process.execPath, [join(install, "bin", "anatomiya.mjs"), "check", repo], {
+      stdio: "pipe",
+    });
+  } catch (err) {
+    status = err.status;
+    stderr = String(err.stderr);
+  }
+
+  assert.equal(status, 1, "a check that parsed nothing must not exit 0");
+  assert.match(stderr, /oxc-parser is not installed/);
+  assert.match(stderr, /npm install/, "the message says how to fix it");
+});
+
+test("the CLI summary and the overview word an unexamined file the same way", (t) => {
+  // Both surfaces list the ways a file went unexamined, and the sentences were
+  // copied rather than shared: the cap read "over the size cap" in one and
+  // "exceeded the size cap" in the other, under a comment claiming the two
+  // could not drift. The same failure had already been fixed twice on the
+  // uncovered count, which is why that one is built from a shared helper.
+  const repo = repoWithSource(t);
+  // Over the 4 MB cap, which is checked with `stat` before the file is
+  // dispatched, so nothing reads these bytes.
+  writeFileSync(join(repo, "src", "big.ts"), `const x = "${"a".repeat(4 * 1024 * 1024)}"\n`);
+  const git = (...a) => execFileSync("git", a, { cwd: repo, stdio: "pipe" });
+  git("add", "-A");
+  git("commit", "-qm", "big");
+
+  const out = String(
+    execFileSync(process.execPath, [join(ROOT, "bin", "anatomiya.mjs"), "scan", repo], { stdio: "pipe" })
+  );
+  const overview = readFileSync(join(repo, ".claude", "rules", "anatomiya-overview.md"), "utf8");
+
+  const capSentence = (text) => (/\d+ files? [^\n]*size cap/.exec(text) || [])[0];
+  assert.ok(capSentence(out), `the CLI must report the skipped file: ${out}`);
+  assert.equal(capSentence(out), capSentence(overview), "one sentence, both surfaces");
+});
+
 /** A repository with source on disk and nothing committed. */
 function repoWithNothingCommitted(t) {
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-cli-fresh-"));

@@ -108,6 +108,20 @@ test("a root-level glob keeps its leading star", () => {
   assert.match(out, /^ {2}- "\*\*\/\*\.\{gemspec,jbuilder,rake,rb\}"$/m);
 });
 
+test("a bare-name glob keeps its leading star as well", () => {
+  // A brace of extensions cannot spell `Rakefile`, so a directory holding one
+  // gets a pattern with no `*.` in it (A12). The tail match keyed on the
+  // extension glob alone, so this one fell through to the path encoder, which
+  // strips the leading `**` as a markdown bullet and leaves `/Rakefile`.
+  const out = renderArea(area({ path: ".", globs: ["**/Rakefile"] }));
+  assert.match(out, /^ {2}- "\*\*\/Rakefile"$/m);
+});
+
+test("a bare-name glob under a directory keeps both halves", () => {
+  const out = renderArea(area({ path: "lib", globs: ["lib/**/Gemfile"] }));
+  assert.match(out, /^ {2}- "lib\/\*\*\/Gemfile"$/m);
+});
+
 test("author identity reaches a rendered file as a count, never as a name", () => {
   // D4 counts distinct authors; the name itself has nowhere to land, which is
   // why a display name carrying a fake policy block cannot be rendered at all.

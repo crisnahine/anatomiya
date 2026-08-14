@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import * as reduce from "../lib/reduce.mjs";
 import { ALL_DIMENSIONS } from "../lib/dimensions.mjs";
 
-const { applyGates, GATES } = reduce;
+const { applyGates, verdictFor, GATES } = reduce;
 
 /**
  * A dimension's per-file shape as the reducer leaves it, built from per-file
@@ -537,6 +537,64 @@ const TEST_CALL = {
   claim: "test cases are declared with test(), not it()",
   counterClaim: "test cases are declared with it(), not test()",
 };
+
+/* --- the whole verdict, gates and population together --- */
+
+// The inverse-stating fixture above, which is the one that shows a block
+// closing the side the gates would otherwise have opened.
+const onlyIt = () =>
+  dim({
+    ...TEST_CALL,
+    ...spread([22, 15, 13, 9, 6, 6, 5, 5, 4, 3, 2, 2, 1, 1], Array(14).fill(0)),
+    applicability: 14, langFileCount: 14, files: paths(14),
+  });
+
+const scope = { fileCount: 14, dirCount: 1 };
+
+test("a blocked slot states neither of its two sentences", () => {
+  // Closing `directive` alone left a greenfield or unreachable-baseline area
+  // stating its inverse, which is the same directive read off a population
+  // nobody accepted (D6, E3, E4). Only the whole verdict can hold this: the
+  // gate battery is polarity-free and does not know a population was refused.
+  const r = verdictFor(onlyIt(), {
+    blocked: "postdates-baseline",
+    scope,
+    authors: 1,
+    repoAuthors: 1,
+  });
+
+  assert.equal(r.states, null, "the counter would otherwise state here");
+  assert.equal(r.directive, false);
+  assert.equal(r.gate, "postdates-baseline");
+  assert.equal(r.counterGate, "postdates-baseline", "and the inverse is closed by the same condition");
+});
+
+test("the gates read the pinned counts and never today's", () => {
+  // D6. An agent that adds conforming sites would otherwise raise the bar it is
+  // judged against, so a perfect working tree cannot open a gate the pinned
+  // population fails.
+  const today = dim({ ...spread([12, 12, 12, 12, 12]), applicability: 10, files: paths(5) });
+  const pinned = {
+    ...spread([12, 12, 12, 12, 12], [6, 6, 6, 6, 6]),
+    applicability: 10,
+    files: paths(5),
+    exceptions: [],
+  };
+
+  const r = verdictFor(today, { baselineDim: pinned, scope: { fileCount: 12, dirCount: 2 }, authors: 3 });
+
+  assert.equal(r.states, null);
+  assert.equal(r.gate, "ratio");
+  assert.equal(r.baseline.candidates, 60, "and the pinned counts travel with the verdict");
+  assert.equal(r.baseline.conforming, 30);
+});
+
+test("with no pin the verdict reads the current population and records no baseline", () => {
+  const r = verdictFor(dim({ applicability: 10 }), { scope: { fileCount: 12, dirCount: 2 }, authors: 3 });
+
+  assert.equal(r.states, "claim");
+  assert.equal(r.baseline, null, "which is what caps the check at FIX");
+});
 
 test("a directory that only ever writes it() states the inverse of the test-call convention", () => {
   // repolex tests/synthesizers: 14 files, 94 it() calls, not one test() call.

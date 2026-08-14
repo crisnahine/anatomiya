@@ -8,6 +8,8 @@ import { execFileSync } from "node:child_process";
 
 import { needsRuby } from "./ruby-available.mjs";
 import { check, severityFor, formatReport } from "../lib/check.mjs";
+import { scan } from "../lib/scan.mjs";
+import { writeMap } from "../lib/write.mjs";
 
 /**
  * Every case here builds a real git repository, because the properties under
@@ -481,11 +483,189 @@ test("a changed file the parser cannot read is named, not silently skipped", asy
 
   const r = await check(dir, { baseRef: "main" });
 
+  // Named, whatever the cause turned out to be: the sibling case above pins
+  // which sentence each cause gets, this one pins that the file is reported.
   assert.ok(
-    r.caveats.some((c) => /could not be parsed|not examined/.test(c)),
-    `expected a parse caveat: ${r.caveats.join(" | ")}`
+    r.caveats.some((c) => c.includes("src/a.ts")),
+    `expected a parse caveat naming the file: ${r.caveats.join(" | ")}`
   );
   assert.equal(r.findings.length, 0, "and nothing is claimed about a file nobody could read");
+});
+
+test("a diff the check could not read is not reported as a branch that changed nothing", async (t) => {
+  // Every git call in the check reads its output without looking at the exit
+  // code, so a diff that fails comes back as an empty change list: no file
+  // examined, no finding, and a report shaped exactly like a clean branch.
+  // The same silence as reporting clean for a file that was never parsed.
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/a.ts", clean(6));
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/b.ts", swallow(1));
+    commit("add a swallow");
+  });
+  // The base commit object survives, so the base still resolves and every
+  // earlier stage succeeds; its tree does not, so the diff cannot be produced.
+  const tree = execFileSync("git", ["rev-parse", "main^{tree}"], { cwd: dir, encoding: "utf8" }).trim();
+  rmSync(join(dir, ".git", "objects", tree.slice(0, 2), tree.slice(2)));
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.ok(
+    r.caveats.some((c) => /diff/.test(c)),
+    `expected the unread diff to be named: ${r.caveats.join(" | ")}`
+  );
+});
+
+test("a map the scan actually wrote is one the check can enforce", async (t) => {
+  // Every other case here hand-writes facts.json, and it hand-wrote a schema
+  // the writer had stopped emitting two versions earlier. Nothing ran the
+  // writer and the reader against each other, so the two were free to drift.
+  const dir = repo(t, ({ write, commit }) => {
+    for (let i = 0; i < 6; i++) write(`src/f${i}.ts`, clean(8));
+    commit("init");
+  });
+
+  await writeMap(await scan(dir), {});
+
+  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
+  git("checkout", "-q", "-b", "work");
+  writeFileSync(join(dir, "src", "f0.ts"), clean(8) + swallow(1));
+  git("add", "-A");
+  git("commit", "-qm", "swallow one");
+
+  const r = await check(dir, { baseRef: "main" });
+
+  const found = forKey(r, "swallowed_error");
+  assert.equal(found.length, 1, `expected the written claim to be enforced: ${JSON.stringify(r.findings)}`);
+  assert.notEqual(found[0].severity, "NIT", "a NIT here means the map was not read at all");
+});
+
+test("facts written by a newer scan are not read as if their shape were known", async (t) => {
+  // The reader never looked at the schema it was handed, so a record whose
+  // fields had moved would be read positionally and enforce a convention
+  // nobody stated. The writer versions this file precisely so the two can
+  // disagree out loud.
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/a.ts", clean(6));
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/b.ts", swallow(1));
+    commit("add a swallow");
+  });
+  const store = join(dir, ".claude/anatomiya");
+  mkdirSync(store, { recursive: true });
+  writeFileSync(
+    join(store, "facts.json"),
+    JSON.stringify({
+      schema: 99,
+      areas: [{ id: "aaaaaaaa", path: "src", globs: ["src/**/*.ts"], fileCount: 8, dimensions: [dim()] }],
+    })
+  );
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.ok(
+    r.caveats.some((c) => /schema/.test(c)),
+    `expected the unreadable map to be named: ${r.caveats.join(" | ")}`
+  );
+  assert.deepEqual(
+    r.findings.filter((f) => f.severity !== "NIT"),
+    [],
+    "and nothing is enforced from a map this reader cannot read"
+  );
+});
+
+test("a plain-Ruby branch is not asked a Rails question", needsRuby, async (t) => {
+  // C8: `zone_aware_time` has no counter-claim, so off-Rails it can only ever
+  // read zero, and one of the measured symptoms was a NIT delivered onto a
+  // plain-Ruby branch. The scan learned the frameworks from the corpus and
+  // stopped offering the dimension; the check never asked, so it still runs
+  // every Rails claim against a repository holding none.
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("lib/thing.rb", "def a\n  1\nend\n");
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("lib/thing.rb", "def a\n  Time.now\nend\n");
+    commit("stamp it");
+  });
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.deepEqual(
+    forKey(r, "zone_aware_time"),
+    [],
+    `no app/models, db/migrate or config/application.rb in this corpus: ${JSON.stringify(r.findings)}`
+  );
+});
+
+test("a Rails branch is still asked the Rails question", needsRuby, async (t) => {
+  // The pair above answers the same way if the fix were to stop offering the
+  // dimension anywhere, and nothing else here would notice: the registry tests
+  // cover `dimensionsFor`, not what the check does with it.
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("app/models/user.rb", "class User\n  def a\n    1\n  end\nend\n");
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("app/models/user.rb", "class User\n  def a\n    Time.now\n  end\nend\n");
+    commit("stamp it");
+  });
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.equal(
+    forKey(r, "zone_aware_time").length,
+    1,
+    `app/models is the Rails signal: ${JSON.stringify(r.findings)}`
+  );
+});
+
+test("a file that crashed the parser is named apart from one it merely rejected", async (t) => {
+  // The third of the four causes the scan names. A crash is this tool's
+  // problem and a syntax error is the file's, so folding them into one
+  // sentence points the author at the wrong thing.
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/a.ts", "export const a = 1\n");
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    // Deep nesting is the portable way to segfault oxc, which is why the
+    // parser runs out of process at all.
+    write("src/a.ts", "const x = " + "[".repeat(60_000) + "1" + "]".repeat(60_000) + "\n");
+    commit("nest it");
+  });
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.ok(
+    r.caveats.some((c) => /crashed/.test(c)),
+    `expected the crash to be named: ${r.caveats.join(" | ")}`
+  );
+});
+
+test("a file the parser rejected is named apart from one this tool could not read", async (t) => {
+  // The scan names the two apart because the reader's next move differs: syntax
+  // the parser rejected is the branch's own code to go and look at, a file that
+  // could not be read at all is this tool or the filesystem. The check folded
+  // both into one sentence, so the one the author can act on read as a tool bug.
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/a.ts", "export const a = 1\n");
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/a.ts", "export const a = 1\nfoo(\n");
+    commit("break it");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    path: "src",
+    dimensions: [dim({ key: "module_state_const" })],
+  });
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.ok(
+    r.caveats.some((c) => /syntax/.test(c)),
+    `expected the syntax cause to be named: ${r.caveats.join(" | ")}`
+  );
 });
 
 test("a Ruby file whose violation already existed at the base is not reported", async (t) => {

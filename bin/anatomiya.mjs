@@ -2,7 +2,8 @@
 import { scan } from "../lib/scan.mjs";
 import { writeMap } from "../lib/write.mjs";
 import { check, formatReport } from "../lib/check.mjs";
-import { statedSide } from "../lib/render.mjs";
+import { unexaminedLines } from "../lib/render.mjs";
+import { statedSide } from "../lib/facts.mjs";
 import { collect, gitRoot } from "../lib/corpus.mjs";
 import { discover } from "../lib/areas.mjs";
 import { buildPin, loadPin, writePin, pinDelta, formatDelta, headSha, PIN_PATH } from "../lib/baseline.mjs";
@@ -76,14 +77,7 @@ try {
 async function runScan(cwd, { dryRun }) {
   const result = await scan(cwd);
 
-  // Nothing parsed, and the reason is the install rather than the repository.
-  // `/plugin install` does not run `npm install`, so this is the first thing a
-  // new user hits, and it used to print a clean empty map and exit 0.
-  if (result.parse.missingParser) {
-    throw new Error(
-      `${result.parse.missingParser}\nrun \`npm install --omit=dev\` in the plugin directory, then scan again`
-    );
-  }
+  if (result.parse.missingParser) throw notInstalled(result.parse.missingParser, "scan");
 
   const plan = writeMap(result, { dryRun });
 
@@ -113,18 +107,9 @@ async function runScan(cwd, { dryRun }) {
   const barren = plan.uncovered - plan.orphaned;
   if (plan.orphaned > 0) console.log(`${plan.orphaned} files in no area: too few per directory`);
   if (barren > 0) console.log(`${barren} files in a directory nothing was counted in`);
-  if (result.parse.crashed) console.log(`${result.parse.crashed} files crashed the parser`);
-  // Counted separately from a crash: a file that answered `ok: false` was
-  // charged as parsed, so a whole unreadable subtree read as clean.
-  if (result.parse.failed) console.log(`${result.parse.failed} files could not be parsed`);
-  // The parser answered, and the answer was that the file is not valid syntax.
-  // A different fact from a file this tool could not read, and a different next
-  // move: go and look at them.
-  if (result.parse.syntaxErrors)
-    console.log(`${result.parse.syntaxErrors} files hold syntax the parser rejected`);
+  for (const line of unexaminedLines(result.parse)) console.log(line);
   if (result.authors.error)
     console.log(`history could not be read, so every claim fails the author gate: ${result.authors.error}`);
-  if (result.parse.skipped) console.log(`${result.parse.skipped} files over the size cap`);
   if (unwritten) console.log(`${unwritten} file(s) in .claude/rules/ not written by this tool`);
   if (plan.remove.length)
     console.log(`${plan.remove.length} area file(s) removed: their area is gone or states nothing`);
@@ -186,8 +171,18 @@ async function runPin(cwd, { dryRun }) {
   console.log("run `anatomiya scan` to measure the map against it");
 }
 
+/**
+ * `/plugin install` does not run `npm install`, so this is the first thing a new
+ * user hits. Both commands used to answer it as a repository with nothing in it:
+ * the scan wrote an empty map and exited 0, the check reported no findings.
+ */
+function notInstalled(message, command) {
+  return new Error(`${message}\nrun \`npm install --omit=dev\` in the plugin directory, then ${command} again`);
+}
+
 async function runCheck(cwd, { baseRef }) {
   const report = await check(cwd, { baseRef });
+  if (report.parse.missingParser) throw notInstalled(report.parse.missingParser, "check");
   process.stdout.write(formatReport(report));
   // Findings never set the exit code. A non-zero exit here means the check
   // could not run, which is what the command file tells the agent to trust.
