@@ -244,3 +244,34 @@ test("an empty program yields no candidates rather than throwing", () => {
     assert.equal(n, 0, d.key);
   }
 });
+
+test("a dimension a framework owns is not offered to a repository without it", () => {
+  // zone_aware_time counts Time.now as a violation, which is right under Rails
+  // and wrong in plain Ruby, and its counterClaim is null so it can never state
+  // either side there. Measured as a permanently unsatisfiable line on
+  // Homebrew (123 sites), puppet (197), fastlane (97) and chef (96), and as a
+  // NIT that check delivers onto a branch: "the current time is read through
+  // the application time zone" on a repository with no Rails in it.
+  const withRails = dimensionsFor(["ruby"], { frameworks: ["rails"] }).map((d) => d.key);
+  const without = dimensionsFor(["ruby"], { frameworks: [] }).map((d) => d.key);
+
+  assert.ok(withRails.includes("zone_aware_time"));
+  assert.ok(withRails.includes("record_lookup"));
+  assert.ok(!without.includes("zone_aware_time"), "a repository with no Rails is not asked");
+  assert.ok(!without.includes("record_lookup"));
+
+  // The rest of Ruby is Ruby. Only the two that cannot see their own context
+  // are owned; model_callbacks and the migrations already gate on an
+  // ActiveRecord superclass and find nothing off-Rails on their own.
+  for (const key of ["rescue_uses_error", "keyword_params", "service_result_shape", "model_callbacks"]) {
+    assert.ok(without.includes(key), `${key} is Ruby, not Rails`);
+  }
+});
+
+test("a caller that names no frameworks is offered everything", () => {
+  // The parse worker has no repository to ask. It computes hits the reducer may
+  // never read, which costs a walk and keeps the framework set out of every
+  // parse job; the reducer is what decides which dimensions get a slot.
+  const all = dimensionsFor(["ruby"]).map((d) => d.key);
+  assert.ok(all.includes("zone_aware_time"), "no answer is not the same as the answer 'none'");
+});
