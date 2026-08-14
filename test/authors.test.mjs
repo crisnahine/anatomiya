@@ -158,6 +158,40 @@ test("a path holding a newline keys the map by the path on disk", needsPosixPath
   rmSync(dir, { recursive: true, force: true });
 });
 
+test("a blobless clone answers without reaching for the network", async (t) => {
+  // Inexact rename detection needs blob content to score similarity, and on a
+  // --filter=blob:none clone the blobs are not local, so `-M` fetches them from
+  // the promisor one round trip at a time. 33 of 35 measured clones are that
+  // shape and not one could answer this call: the scan reported "history could
+  // not be read", every claim dropped to counts, and the map installed anyway.
+  //
+  // The promisor is deleted here rather than made slow, because the failure to
+  // pin is "this needs the network at all", not "this is slow".
+  const origin = repo((d, { git, write, author, commit }) => {
+    git("config", "uploadpack.allowFilter", "true");
+    write("src/a.ts", "export const a = 1\nexport const b = 2\n");
+    commit("one");
+    author("second@t.test");
+    git("mv", "src/a.ts", "src/b.ts");
+    write("src/b.ts", "export const a = 1\nexport const b = 2\nexport const c = 3\n");
+    commit("rename and edit, which only inexact detection follows");
+  });
+  const parent = mkdtempSync(join(tmpdir(), "anatomiya-partial-"));
+  const clone = join(parent, "clone");
+  t.after(() => {
+    rmSync(parent, { recursive: true, force: true });
+    rmSync(origin, { recursive: true, force: true });
+  });
+  execFileSync("git", ["clone", "-q", "--filter=blob:none", `file://${origin}`, clone], { stdio: "pipe" });
+  rmSync(origin, { recursive: true, force: true });
+
+  const map = await authorsByFile(clone);
+
+  assert.equal(map.error, undefined, `history must read offline: ${map.error}`);
+  assert.ok(map.size > 0, "and it must be an answer, not an empty map");
+  assert.deepEqual(sorted(map.get("src/b.ts")), ["second@t.test"]);
+});
+
 test("a repository with no commits yields an empty map instead of losing the scan", async () => {
   const dir = repo(() => {});
 
