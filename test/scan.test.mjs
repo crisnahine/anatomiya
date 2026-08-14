@@ -106,6 +106,7 @@ test("a repository with no source files produces no areas", async (t) => {
     // A file that answers `ok: false` is charged here rather than counted as
     // parsed, which is what made a repository nothing could read look empty.
     failed: 0,
+    syntaxErrors: 0,
     missingParser: null,
     // No language is unreadable when the corpus holds none: an empty repository
     // is answered, not blindly skipped, and a scan of it may still clean up.
@@ -183,7 +184,8 @@ test("a file the parser could not read costs that one file", async (t) => {
   const result = await scan(dir);
 
   assert.equal(result.corpus.files, 7);
-  assert.equal(result.parse.failed, 1, "the syntax errors are reported, not swallowed");
+  assert.equal(result.parse.syntaxErrors, 1, "reported as what it is, not as a file that could not be read");
+  assert.equal(result.parse.failed, 0, "a syntax error is not the same as an unreadable file");
   assert.equal(result.parse.parsed, 7, "every file got an answer");
 
   const dim = dimension(result, "src", "module_state_const");
@@ -204,39 +206,46 @@ test("a directory nothing could be counted in is not a directory that was too sm
   const result = await scan(dir);
 
   assert.equal(result.corpus.files, 6);
-  assert.equal(result.parse.failed, 6, "none of them was read");
+  assert.equal(result.parse.syntaxErrors, 6, "none of them was read");
   assert.equal(result.areas.length, 0, "so the area they were in states nothing and is dropped");
   assert.equal(result.corpus.orphaned, 0, "and none of them was left without an area by discovery");
 });
 
-test("a language this run could not read at all is named", async (t) => {
-  // What `env -i PATH=/usr/bin:/bin` does to a Rails repository, in the half
-  // this suite can reach without a missing interpreter: every file of a
-  // language answers not-ok, so the run has nothing to say about it and must
-  // not act as though it has.
+test("a language whose parser could not run at all is named", async (t) => {
+  // The condition is "the parser never ran", which is what a missing
+  // interpreter looks like: every file charged as a crash. It is not "no file
+  // came back ok". A syntax error also fails a file, and treating that as a
+  // blind run let one bad file in a one-file language freeze the whole map.
   const dir = repo(t, (d, { git, write }) => {
-    for (let i = 0; i < 6; i++) write(`src/broken${i}.ts`, `export const a${i} = 1\nfoo(\n`);
+    for (let i = 0; i < 6; i++) write(`src/m${i}.ts`, moduleSource(i));
+    // Deep nesting takes oxc down with a SIGSEGV, which is a crash, and this is
+    // the only .jsx file in the repository.
+    write("src/bomb.jsx", "const x = " + "[".repeat(60_000) + "1" + "]".repeat(60_000) + "\n");
     git("add", "-A");
     git("commit", "-qm", "init");
   });
 
   const result = await scan(dir);
 
-  assert.deepEqual(result.parse.unreadable, ["js"], "every file of the only language failed");
+  assert.equal(result.parse.crashed, 1);
+  assert.deepEqual(result.parse.unreadable, ["jsx"], "no jsx file was readable, and the parser never answered");
 });
 
-test("a language with one file read is a language this run can speak for", async (t) => {
+test("one file with a syntax error is not a language this run went blind on", async (t) => {
+  // Measured: six healthy .ts files and one broken .jsx froze the entire map,
+  // wrote nothing, and told the reader a interpreter was missing. jsx is its
+  // own language, so one file is the whole population of it.
   const dir = repo(t, (d, { git, write }) => {
-    for (let i = 0; i < 5; i++) write(`src/broken${i}.ts`, `export const a${i} = 1\nfoo(\n`);
-    write("src/fine.ts", moduleSource(1));
+    for (let i = 0; i < 6; i++) write(`src/m${i}.ts`, moduleSource(i));
+    write("src/broken.jsx", "export const x = <div>\n");
     git("add", "-A");
     git("commit", "-qm", "init");
   });
 
   const result = await scan(dir);
 
-  assert.deepEqual(result.parse.unreadable, [], "five of six failing is a bad repository, not a blind run");
-  assert.equal(result.parse.failed, 5);
+  assert.equal(result.parse.syntaxErrors, 1, "the file is still reported unread");
+  assert.deepEqual(result.parse.unreadable, [], "but the parser ran, so this run can still speak");
 });
 
 test("a file discovery could not place is counted as orphaned", async (t) => {

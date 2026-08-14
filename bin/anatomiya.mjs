@@ -107,11 +107,21 @@ async function runScan(cwd, { dryRun }) {
   console.log(baselineLine(result.baseline));
   if (result.corpus.truncated)
     console.log("only part of the corpus was read, so every directive is suppressed and only counts print");
-  if (plan.uncovered > 0) console.log(`${plan.uncovered} files in no area`);
+  // The two causes named apart, the way the overview names them. One folded
+  // number printed beside "N files crashed the parser" invited exactly the
+  // reading the overview line was fixed to stop.
+  const barren = plan.uncovered - plan.orphaned;
+  if (plan.orphaned > 0) console.log(`${plan.orphaned} files in no area: too few per directory`);
+  if (barren > 0) console.log(`${barren} files in a directory nothing was counted in`);
   if (result.parse.crashed) console.log(`${result.parse.crashed} files crashed the parser`);
   // Counted separately from a crash: a file that answered `ok: false` was
   // charged as parsed, so a whole unreadable subtree read as clean.
   if (result.parse.failed) console.log(`${result.parse.failed} files could not be parsed`);
+  // The parser answered, and the answer was that the file is not valid syntax.
+  // A different fact from a file this tool could not read, and a different next
+  // move: go and look at them.
+  if (result.parse.syntaxErrors)
+    console.log(`${result.parse.syntaxErrors} files hold syntax the parser rejected`);
   if (result.authors.error)
     console.log(`history could not be read, so every claim fails the author gate: ${result.authors.error}`);
   if (result.parse.skipped) console.log(`${result.parse.skipped} files over the size cap`);
