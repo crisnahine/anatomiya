@@ -105,7 +105,7 @@ test("a root-level glob keeps its leading star", () => {
   // The whole glob is the tail here, so the encoder sees no directory half at
   // all; encoding it would strip the `*` and leave a glob matching nothing.
   const out = renderArea(area({ path: ".", globs: [glob(".", ["ruby"])] }));
-  assert.match(out, /^ {2}- "\*\*\/\*\.\{rake,rb\}"$/m);
+  assert.match(out, /^ {2}- "\*\*\/\*\.\{gemspec,jbuilder,rake,rb\}"$/m);
 });
 
 test("author identity reaches a rendered file as a count, never as a name", () => {
