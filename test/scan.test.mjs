@@ -107,6 +107,9 @@ test("a repository with no source files produces no areas", async (t) => {
     // parsed, which is what made a repository nothing could read look empty.
     failed: 0,
     missingParser: null,
+    // No language is unreadable when the corpus holds none: an empty repository
+    // is answered, not blindly skipped, and a scan of it may still clean up.
+    unreadable: [],
   });
 
   // The overview still renders, because an empty repository is a real answer.
@@ -204,6 +207,36 @@ test("a directory nothing could be counted in is not a directory that was too sm
   assert.equal(result.parse.failed, 6, "none of them was read");
   assert.equal(result.areas.length, 0, "so the area they were in states nothing and is dropped");
   assert.equal(result.corpus.orphaned, 0, "and none of them was left without an area by discovery");
+});
+
+test("a language this run could not read at all is named", async (t) => {
+  // What `env -i PATH=/usr/bin:/bin` does to a Rails repository, in the half
+  // this suite can reach without a missing interpreter: every file of a
+  // language answers not-ok, so the run has nothing to say about it and must
+  // not act as though it has.
+  const dir = repo(t, (d, { git, write }) => {
+    for (let i = 0; i < 6; i++) write(`src/broken${i}.ts`, `export const a${i} = 1\nfoo(\n`);
+    git("add", "-A");
+    git("commit", "-qm", "init");
+  });
+
+  const result = await scan(dir);
+
+  assert.deepEqual(result.parse.unreadable, ["js"], "every file of the only language failed");
+});
+
+test("a language with one file read is a language this run can speak for", async (t) => {
+  const dir = repo(t, (d, { git, write }) => {
+    for (let i = 0; i < 5; i++) write(`src/broken${i}.ts`, `export const a${i} = 1\nfoo(\n`);
+    write("src/fine.ts", moduleSource(1));
+    git("add", "-A");
+    git("commit", "-qm", "init");
+  });
+
+  const result = await scan(dir);
+
+  assert.deepEqual(result.parse.unreadable, [], "five of six failing is a bad repository, not a blind run");
+  assert.equal(result.parse.failed, 5);
 });
 
 test("a file discovery could not place is counted as orphaned", async (t) => {

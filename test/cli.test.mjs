@@ -96,6 +96,28 @@ function repoWithNothingCommitted(t) {
   return dir;
 }
 
+test("a scan that read no file of a language says so instead of reporting an empty map", (t) => {
+  // The whole point of writing nothing is that the previous map survives, and a
+  // summary that says "wrote 0 files" and stops reads as a repository with
+  // nothing in it. The reader has to know an interpreter is missing.
+  const repo = repoWithSource(t);
+  // Every .ts file unreadable is the reachable half of the same condition; the
+  // other half needs ruby off PATH, which this suite cannot arrange portably.
+  for (let i = 0; i < 8; i++) {
+    writeFileSync(join(repo, "src", `f${i}.ts`), `export const a${i} = 1\nfoo(\n`);
+  }
+  const git = (...a) => execFileSync("git", a, { cwd: repo, stdio: "pipe" });
+  git("add", "-A");
+  git("commit", "-qm", "break");
+
+  const out = String(
+    execFileSync(process.execPath, [join(ROOT, "bin", "anatomiya.mjs"), "scan", repo], { stdio: "pipe" })
+  );
+
+  assert.match(out, /read no js file/, out);
+  assert.ok(!/wrote \d+ files/.test(out) || /nothing was written/.test(out), out);
+});
+
 test("a scan names the root it resolved to, because a path argument does not scope it", (t) => {
   // `git rev-parse --show-toplevel` resolves any path inside a repository to
   // its root, so `scan ./packages/api` in a monorepo maps the monorepo. That is
