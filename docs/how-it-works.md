@@ -20,7 +20,7 @@ path and a newline split turns one hostile filename into two corpus entries.
 | Source extensions | `.ts .mts .cts .tsx .js .jsx .mjs .cjs .rb .rake .gemspec .jbuilder` |
 | Source filenames | `Rakefile`, `Gemfile`, `config.ru`, matched whole so a `Gemfile.lock` is not one |
 | Denied outright | `.git/`, `.env*`, `*.pem *.key *.p12 *.pfx *.jks *.keystore`, `.claude/settings.local.json`, `id_rsa`, `id_ed25519`, `.netrc`, `.npmrc` |
-| Excluded directories | `node_modules`, `vendor`, `fixtures`, `__fixtures__`, `__snapshots__`, `dist`, `build`, `coverage`, `.next` |
+| Excluded directories | `node_modules`, `vendor`, `fixtures`, `__fixtures__`, `__snapshots__`, `test_cases`, `testdata`, `test-data`, `golden`, `goldens`, `__mocks__`, `mocks`, `dist`, `build`, `coverage`, `.next`. Not `examples`: 8,967 paths in a 35-repository corpus match it and much of that is maintained code |
 | Caps | none on the repository; 4 MB per file, which skips one generated or minified file and says so |
 
 Fixture and vendor directories are excluded because that code is deliberately unidiomatic. In one
@@ -78,7 +78,9 @@ into 209 smaller areas and dropped stated claims from 194 to 143, because a smal
 candidates and more of them fail the gates.
 
 Each area gets the globs for the delivery channel's `paths` key, built from the languages present,
-for example `src/components/**/*.{cjs,js,jsx,mjs,ts,tsx}`. A glob may never end in a bare `/**`. The
+for example `src/components/**/*.{cjs,cts,js,jsx,mjs,mts,ts,tsx}`. A directory holding a file whose
+name carries no extension, such as a `Rakefile`, gets one more pattern per such name, emitted per
+cover entry so a negation cuts it out of a foreign subtree too. A glob may never end in a bare `/**`. The
 matcher strips a trailing `/**` before matching, so `app/**` becomes `app`, gitignore semantics then
 forbid re-including anything beneath it, and an exclusion written against that pattern silently does
 nothing. There is an assertion in the code rather than a comment.
@@ -110,6 +112,17 @@ Warm matters: a process per file pays fork cost on every file. A respawn after a
 millisecond, so a poison file costs one file rather than the run. The crash arrives at the child's
 `exit` handler, the file is charged as a parse failure, the worker is replaced, and the scan
 continues.
+
+A file is unexamined in four ways, and the scan names them apart because the reader's next move
+differs: it crashed the parser, the parser rejected its syntax, this tool could not read it, or it
+was over the size cap. The second is new in this shape. Both parsers recover from a syntax error and
+hand back a tree, oxc to an almost empty one and prism to one holding nodes nobody wrote, and
+counting either moves the denominator without moving the code. So a parse reporting errors answers
+`ok: false` and contributes no sites, which is what every other unexamined file already gets.
+
+Where a language's parser answered for **no** file at all, which is what a missing interpreter looks
+like, the scan writes nothing and removes nothing. A blind run's areas all count nothing and would
+otherwise be deleted as gone. A syntax error is not that: the parser ran and answered.
 
 | Guard | Value | Enforced |
 |---|---|---|
@@ -245,7 +258,11 @@ The whole battery runs once per side. Only the three numerators move between the
 inverse: how many files the sites are spread over, how much of the area the construct reaches, and
 who wrote it are facts about where the sites are, not about which way they point.
 
-Authors come from one `git log -M --no-merges --name-status` pass, unioning rename chains. Never
+Authors come from one `git log -M --no-merges --name-status` pass, unioning rename chains, and
+`-M100%` where `remote.origin.promisor` is set. `-M` scores similarity, which needs blob content a
+`--filter=blob:none` clone does not hold, so it fetches from the promisor one round trip at a time:
+33 of 35 measured clones could not answer at all. `-M100%` matches on blob OID, which the trees
+already carry, and loses only rename-with-edit. Never
 `git blame`. One pass takes 0.03s to 0.84s regardless of file count against 103s for per-file blame
 on an eight-year repository, and the two agree 99.6% to 100%. Blame is also wrong rather than merely
 slow: one repository-wide formatter commit reassigns every line to the formatter, and the author
@@ -311,7 +328,9 @@ glob, on `cat` through bash, or on an edit with no prior read.
 
 Writes are atomic: temp file in the same directory, then rename, so a crash never leaves half a
 context file. `.claude/anatomiya/facts.json` is written first and holds every count, gated or not,
-so no rendered file exists that is not derivable from facts on disk.
+so no rendered file exists that is not derivable from facts on disk. A run that read no file of a
+language writes neither, for the same reason: keeping the rendered files while replacing the facts
+they came from breaks exactly that invariant.
 
 Three constraints shape the rendering:
 
