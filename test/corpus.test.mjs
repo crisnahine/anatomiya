@@ -206,6 +206,29 @@ test("fixture and vendor directories are excluded", () => {
   assert.equal(isExcludedDir("src/fixtures-helper/a.ts"), false, "the segment must match whole");
 });
 
+test("the other names deliberately unidiomatic code goes by are excluded too", () => {
+  // Same code, different directory name. angular keeps 2,010 files of golden
+  // compiler output under `test_cases`, which became 55 of its 339 areas and
+  // every one of its 476 unparseable files; the map taught an agent the house
+  // style of expected output.
+  for (const p of [
+    "packages/compiler-cli/test/compliance/test_cases/a.js",
+    "pkg/testdata/a.ts",
+    "pkg/test-data/a.ts",
+    "src/golden/a.ts",
+    "src/goldens/a.ts",
+    "src/__mocks__/fs.js",
+    "src/mocks/handlers.ts",
+  ]) {
+    assert.equal(isExcludedDir(p), true, p);
+  }
+  // Whole segments only, and `examples` stays in: 8,967 paths in the corpus
+  // match it and a good share of them are code someone maintains.
+  for (const p of ["src/test_cases_helper/a.ts", "src/mocksmith/a.ts", "examples/basic/a.ts"]) {
+    assert.equal(isExcludedDir(p), false, p);
+  }
+});
+
 test("deny-list covers credential-shaped paths", () => {
   for (const p of [".env", "config/.env.production", "certs/server.pem", "id_rsa",
                    ".claude/settings.local.json", ".git/config"]) {
