@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join, isAbsolute, sep } from "node:path";
 import { execFileSync } from "node:child_process";
 
-import { collect, isDenied, isExcludedDir, isSource, safeResolve, language, gitRoot } from "../lib/corpus.mjs";
+import { collect, countUntrackedSource, isDenied, isExcludedDir, isSource, safeResolve, language, gitRoot } from "../lib/corpus.mjs";
 import * as areaLib from "../lib/areas.mjs";
 
 const { discover, glob, assertGlobSafe, areaId, AREA } = areaLib;
@@ -88,6 +88,25 @@ test("a tracked symlink pointing outside the repository is dropped", async (t) =
 
   assert.deepEqual(files.map((f) => f.rel), ["src/a.ts"]);
   assert.equal(dropped.escaped, 1);
+});
+
+test("untracked source is counted by the same rule the corpus is collected by", async (t) => {
+  // The number tells the reader to commit these files and scan again, so it has
+  // to be a count of files a scan would then read. A symlink out of the
+  // repository is one `collect` drops and this must drop too.
+  const outside = tmp(t);
+  writeFileSync(join(outside, "secret.ts"), "export const KEY = 'leak'\n");
+
+  const dir = repo(t, (d, { write }) => {
+    write("src/a.ts");
+    write("src/b.ts");
+    write("src/notes.md");
+    symlinkSync(join(outside, "secret.ts"), join(d, "src", "linked.ts"));
+  });
+
+  const { files } = await collect(dir);
+  assert.deepEqual(files, [], "nothing is committed, so the corpus is empty");
+  assert.equal(await countUntrackedSource(dir), 2, "two readable source files, not the markdown or the escape");
 });
 
 test("a filename containing a newline stays one corpus entry", needsPosixPaths, async (t) => {
@@ -238,9 +257,133 @@ test("no generated glob ends in a bare /**", () => {
     Array.from({ length: 6 }, (_, i) => `app/services/s${i}.rb`), "ruby"));
 
   assert.equal(areas.length, 1);
-  for (const a of areas) assert.doesNotThrow(() => assertGlobSafe(a.glob));
-  assert.equal(areas[0].glob, "app/services/**/*.{rake,rb}");
+  for (const a of areas) for (const g of a.globs) assert.doesNotThrow(() => assertGlobSafe(g));
+  assert.deepEqual(areas[0].globs, ["app/services/**/*.{rake,rb}"]);
   assert.throws(() => assertGlobSafe("app/**"), /bare \/\*\*/);
+});
+
+const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/** The matcher's semantics: `*` stops at a slash, a `**` segment spans any depth including none. */
+function toRegExp(pattern) {
+  let out = "^";
+  for (let i = 0; i < pattern.length; i++) {
+    if (pattern.startsWith("**/", i)) {
+      out += "(?:[^/]*/)*";
+      i += 2;
+    } else if (pattern[i] === "*") {
+      out += "[^/]*";
+    } else if (pattern[i] === "{") {
+      const end = pattern.indexOf("}", i);
+      out += `(?:${pattern.slice(i + 1, end).split(",").map(escapeRe).join("|")})`;
+      i = end;
+    } else {
+      out += escapeRe(pattern[i]);
+    }
+  }
+  return new RegExp(`${out}$`);
+}
+
+/** Which of `globs` a path ends up matching: negations included, last match winning. */
+function matches(globs, rel) {
+  let hit = false;
+  for (const g of globs) {
+    const negated = g.startsWith("!");
+    if (toRegExp(negated ? g.slice(1) : g).test(rel)) hit = !negated;
+  }
+  return hit;
+}
+
+test("an area's globs match the files it counted and no others", () => {
+  // The bug: `lib/core/**/*` matched `lib/core/deep`, whose own area measured
+  // the same dimension over its own files and was suppressed by a gate. The
+  // ancestor's directive reached the directory that failed the gate.
+  const files = fakeFiles([
+    ...Array.from({ length: 5 }, (_, i) => `lib/core/c${i}.js`),
+    ...Array.from({ length: 5 }, (_, i) => `lib/core/deep/d${i}.js`),
+  ]);
+  const areas = discover(files);
+  const byPath = new Map(areas.map((a) => [a.path, a]));
+
+  assert.deepEqual([...byPath.keys()].sort(), ["lib/core", "lib/core/deep"]);
+  for (const a of areas) {
+    const mine = new Set(a.files.map((f) => f.rel));
+    for (const f of files) {
+      assert.equal(matches(a.globs, f.rel), mine.has(f.rel), `${a.path} vs ${f.rel}`);
+    }
+  }
+});
+
+test("an area holding its whole subtree still emits one recursive glob", () => {
+  const areas = discover(fakeFiles([
+    ...Array.from({ length: 5 }, (_, i) => `lib/core/c${i}.js`),
+    ...Array.from({ length: 2 }, (_, i) => `lib/core/deep/d${i}.js`),
+  ]));
+
+  assert.equal(areas.length, 1);
+  assert.deepEqual(areas[0].globs, ["lib/core/**/*.{cjs,js,mjs,ts}"]);
+});
+
+test("an area with many owned directories and few foreign ones states the foreign ones", () => {
+  // 20 directories the area holds, one that became its own area. Twenty
+  // patterns to name what it owns, two to cut out what it does not.
+  const files = fakeFiles([
+    ...Array.from({ length: 20 }, (_, i) => `app/svc/d${i}/a.js`),
+    ...Array.from({ length: 8 }, (_, i) => `app/svc/own/o${i}.js`),
+  ]);
+  const areas = discover(files, { minFiles: 3 });
+  const parent = areas.find((a) => a.path === "app/svc");
+
+  assert.ok(areas.some((a) => a.path === "app/svc/own"), "the deeper directory is its own area");
+  assert.deepEqual(parent.globs, ["app/svc/**/*.{cjs,js,mjs,ts}", "!app/svc/own/**/*.{cjs,js,mjs,ts}"]);
+  assert.equal(matches(parent.globs, "app/svc/own/o1.js"), false);
+  assert.equal(matches(parent.globs, "app/svc/d3/a.js"), true);
+});
+
+test("a negation never ends in a bare /**, which the matcher would strip", () => {
+  const areas = discover(fakeFiles([
+    ...Array.from({ length: 20 }, (_, i) => `app/svc/d${i}/a.js`),
+    ...Array.from({ length: 8 }, (_, i) => `app/svc/own/o${i}.js`),
+  ]), { minFiles: 3 });
+
+  for (const a of areas) {
+    for (const g of a.globs) assert.doesNotThrow(() => assertGlobSafe(g), g);
+  }
+});
+
+test("a file no area holds receives no area's globs", () => {
+  // `app/svc` clears the floor on its subtree, but its own remainder does not,
+  // so those two files are uncovered. An ancestor glob used to deliver to them.
+  const files = fakeFiles([
+    ...Array.from({ length: 2 }, (_, i) => `app/svc/loose${i}.js`),
+    ...Array.from({ length: 8 }, (_, i) => `app/svc/own/o${i}.js`),
+  ]);
+  const areas = discover(files, { minFiles: 3 });
+
+  assert.deepEqual(areas.map((a) => a.path), ["app/svc/own"]);
+  assert.equal(areas.orphaned.length, 2);
+  for (const a of areas) assert.equal(matches(a.globs, "app/svc/loose0.js"), false);
+});
+
+test("an area the ceiling synthesized delivers to nothing it left uncovered", () => {
+  // `capCount` creates a host area at a directory whose own bucket was already
+  // orphaned, so the host holds files under that directory and none in it. A
+  // recursive glob from there reaches the orphans, which is the nesting bug
+  // arriving by a second route.
+  const files = fakeFiles([
+    "lib/loose0.js", "lib/loose1.js",
+    ...Array.from({ length: 4 }, (_, i) => `lib/a/x${i}.js`),
+    ...Array.from({ length: 4 }, (_, i) => `lib/b/y${i}.js`),
+    ...Array.from({ length: 4 }, (_, i) => `src/c/z${i}.js`),
+  ]);
+  const areas = discover(files, { minFiles: 3, maxAreas: 2 });
+  const host = areas.find((a) => a.path === "lib");
+
+  assert.equal(host.fileCount, 8, "the host holds the two subdirectories and neither loose file");
+  assert.deepEqual(areas.orphaned.map((f) => f.rel), ["lib/loose0.js", "lib/loose1.js"]);
+  for (const f of areas.orphaned) {
+    for (const a of areas) assert.equal(matches(a.globs, f.rel), false, `${a.path} <- ${f.rel}`);
+  }
 });
 
 test("a directory below the floor folds into its parent", () => {

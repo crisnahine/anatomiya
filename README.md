@@ -78,9 +78,14 @@ It writes `.claude/rules/anatomiya-overview.md`, one file per area beside it, an
 To keep the map out of git:
 
 ```
-echo '.claude/rules/anatomiya-*.md' >> .git/info/exclude
-echo '.claude/anatomiya/' >> .git/info/exclude
+exclude="$(git rev-parse --git-common-dir)/info/exclude"
+echo '.claude/rules/anatomiya-*.md' >> "$exclude"
+echo '.claude/anatomiya/' >> "$exclude"
 ```
+
+`--git-common-dir` rather than `.git`, because inside a linked worktree `.git` is
+a file holding a pointer and `.git/info/exclude` is not a path. The common dir is
+shared, so one pair of lines covers the main checkout and every worktree.
 
 A session that is already running still holds the old map. Restart to pick up the new one.
 
@@ -89,7 +94,7 @@ A session that is already running still holds the old map. Restart to pick up th
 A real run against a 2,468 file React and TypeScript repository, on a laptop:
 
 ```
-2468 files, 127 areas, 1568ms
+2468 files, 127 areas, 1568ms, root /Users/me/code/app
 114 of 1507 claims stated, the rest print as counts
 baseline 67dacc6c, 0 files changed since origin/HEAD
 205 files in no area
@@ -256,7 +261,7 @@ not cost coverage.
 
 ## Why it works the way it does
 
-[`DECISIONS.md`](DECISIONS.md) is the build contract: 54 numbered decisions, each with the
+[`DECISIONS.md`](DECISIONS.md) is the build contract: 57 numbered decisions, each with the
 measurement or the review finding that forced it. If you want to know why a threshold is where it
 is, why the parser runs in child processes, or why there is no hook, that is the file.
 

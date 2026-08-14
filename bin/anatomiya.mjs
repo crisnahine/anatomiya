@@ -11,6 +11,9 @@ const USAGE = [
   "usage: anatomiya scan  [path] [--dry-run]",
   "       anatomiya check [path] [--base <ref>]",
   "       anatomiya pin   [path] [--dry-run]",
+  "",
+  "[path] picks the repository, not a subtree: every command covers the whole",
+  "repository the path is in, and scan prints the root it resolved to.",
 ].join("\n");
 
 const COMMANDS = new Set(["scan", "check", "pin"]);
@@ -90,7 +93,16 @@ async function runScan(cwd, { dryRun }) {
   const stated = slots.filter((d) => statedSide(d).states !== null);
   const unwritten = plan.unattributed.length + plan.foreign.length;
 
-  console.log(`${result.corpus.files} files, ${result.areas.length} areas, ${result.durationMs}ms`);
+  // The root, because a path argument does not scope the scan: `git rev-parse
+  // --show-toplevel` resolves any path inside the repository to its root, so
+  // `scan ./packages/api` in a monorepo maps the monorepo. Areas, the pin and
+  // the baseline are all repository-anchored, so that is the behaviour they
+  // need and the line is what says so.
+  console.log(`${result.corpus.files} files, ${result.areas.length} areas, ${result.durationMs}ms, root ${result.root}`);
+  if (result.corpus.untracked)
+    console.log(
+      `${result.corpus.untracked} source files are untracked and were not counted: the corpus is tracked files only`
+    );
   console.log(`${stated.length} of ${slots.length} claims stated, the rest print as counts`);
   console.log(baselineLine(result.baseline));
   if (result.corpus.truncated)
