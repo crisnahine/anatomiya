@@ -49,6 +49,43 @@ test("a file that kills the parser costs one file, not the run", async () => {
   });
 });
 
+test("JSX in a .js file is parsed, not charged as a syntax error", async () => {
+  // The worker named every file the extension did not call jsx `f.ts`, where
+  // `<div` opens a type assertion. oxc recovers, the dimensions walk the
+  // wreckage, and nothing reports it: 727 of react/react's 2,296 files and
+  // 3,924 of next.js's 21,358 are counted this way.
+  await withPool({ size: 1 }, async (pool, dir) => {
+    const src = [
+      "import React from 'react'",
+      "",
+      "export function Row({ label, onPick }) {",
+      '  return <div className="wrap"><button onClick={onPick}>{label}</button></div>',
+      "}",
+      "",
+    ].join("\n");
+
+    const r = await pool.parse(file(dir, "Row.js", src));
+
+    assert.equal(r.ok, true);
+    assert.equal(r.errors, 0, "JSX is syntax here, not an error");
+    assert.equal(r.hits.function_style.length, 1, "the declaration is counted, not lost with the tree");
+  });
+});
+
+test("an angle-bracket assertion in a .ts file still parses", async () => {
+  // The other half of the same choice. `<string>x` is legal TypeScript and a
+  // syntax error under the JSX grammar, so the filename has to follow the
+  // extension rather than always asking for the JSX-capable one.
+  await withPool({ size: 1 }, async (pool, dir) => {
+    const src = 'declare const raw: unknown\nexport const name = <string>raw\n';
+
+    const r = await pool.parse(file(dir, "assert.ts", src));
+
+    assert.equal(r.ok, true);
+    assert.equal(r.errors, 0, "the assertion is syntax here, not an error");
+  });
+});
+
 test("a file over the size cap is skipped without being read", async () => {
   await withPool({ size: 1 }, async (pool, dir) => {
     const big = file(dir, "big.ts", "//" + "x".repeat(5 * 1024 * 1024) + "\n");
