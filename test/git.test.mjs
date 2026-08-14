@@ -54,7 +54,7 @@ test("a truncated record is dropped rather than completed with a guess", () => {
   ]);
 });
 
-test("a call that outruns its timeout answers instead of hanging", async (t) => {
+test("a call that outruns its timeout answers instead of hanging", async () => {
   // The baseline's runner passed no timeout, so a git that never returns took
   // the scan with it.
   //
@@ -62,9 +62,11 @@ test("a call that outruns its timeout answers instead of hanging", async (t) => 
   // timeout is the only thing that can end it and no machine finishes it early.
   // A fast command with a tiny budget is not the same test: it raced, and the
   // CI runner won.
-  const { dir } = repo(t);
-
-  const r = await gitBuffered(dir, ["hash-object", "--stdin"], { timeout: 250 });
+  //
+  // Run against a directory this file does not own, and needing no repository,
+  // because Windows holds a directory open as a dying process's cwd: the killed
+  // git outlived the test that started it and the temp repo would not delete.
+  const r = await gitBuffered(tmpdir(), ["hash-object", "--stdin"], { timeout: 250 });
 
   assert.equal(r.ok, false, "a killed call is not a successful one");
   assert.equal(r.stdout, "", "and it reports no output it did not receive");
