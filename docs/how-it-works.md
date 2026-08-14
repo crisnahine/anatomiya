@@ -17,7 +17,8 @@ path and a newline split turns one hostile filename into two corpus entries.
 
 | Filter | Value |
 |---|---|
-| Source extensions | `.ts .tsx .js .jsx .mjs .cjs .rb .rake` |
+| Source extensions | `.ts .mts .cts .tsx .js .jsx .mjs .cjs .rb .rake .gemspec .jbuilder` |
+| Source filenames | `Rakefile`, `Gemfile`, `config.ru`, matched whole so a `Gemfile.lock` is not one |
 | Denied outright | `.git/`, `.env*`, `*.pem *.key *.p12 *.pfx *.jks *.keystore`, `.claude/settings.local.json`, `id_rsa`, `id_ed25519`, `.netrc`, `.npmrc` |
 | Excluded directories | `node_modules`, `vendor`, `fixtures`, `__fixtures__`, `__snapshots__`, `dist`, `build`, `coverage`, `.next` |
 | Caps | none on the repository; 4 MB per file, which skips one generated or minified file and says so |
