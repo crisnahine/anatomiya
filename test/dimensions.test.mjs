@@ -345,6 +345,13 @@ test("the obligations declare their precision like every other row (C5)", () => 
   }
 });
 
+test("every shipped row declares which files could participate (C2)", () => {
+  // The obligations are in here too. They are not in ALL_DIMENSIONS, the
+  // reducer composes both lists, and a checker blind to a whole class would
+  // pass while nine rows carried nothing.
+  assert.doesNotThrow(() => assertApplicability([...ALL_DIMENSIONS, ...PAIRINGS]));
+});
+
 test("a registry row that cannot say which files it speaks about does not ship (C2)", () => {
   // C2: `applicability` is whatever `run` happened to emit, so a predicate
   // seeing a tenth of its own construct gives 1.0 over four files and reads as
