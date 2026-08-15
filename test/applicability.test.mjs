@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 import { ALL_DIMENSIONS } from "../lib/dimensions.mjs";
 import { PAIRINGS, applyPairings } from "../lib/pairing.mjs";
-import { parseAll } from "../lib/parse.mjs";
+import { parseAll, scratchExt } from "../lib/parse.mjs";
 import { needsRuby } from "./ruby-available.mjs";
 
 /**
@@ -169,7 +169,9 @@ const WITNESSES = {
   },
   spread_on_component: {
     lang: "jsx",
-    applicable: `export function C(p) { return <Child {...p} /> }`,
+    // "once per spread attribute rather than once per element" is a count, and
+    // a non-zero assertion proves nothing about it.
+    applicable: [{ source: `export function C(p) { return <Child {...p} {...q} /> }`, sites: 2 }],
     inapplicable: `export function C(p) { return <Child a={p.a} /> }`,
   },
   text_translated: {
@@ -190,12 +192,15 @@ const WITNESSES = {
   // --- dimensions-ruby.mjs ---
   rescue_uses_error: {
     lang: "ruby",
-    applicable: [`begin\n  a\nrescue => e\nend`, `begin\n  a\nrescue A => e\n  b\nrescue B => e\n  c\nend`],
+    applicable: [
+      `begin\n  a\nrescue => e\nend`,
+      { source: `begin\n  a\nrescue A => e\n  b\nrescue B => e\n  c\nend`, sites: 2 },
+    ],
     inapplicable: `def f\n  1\nend`,
   },
   record_lookup: {
     lang: "ruby",
-    applicable: [`User.find_by(id: 1)`, `User.find(1)`],
+    applicable: [`User.find_by(id: 1)`, `User.find(1)`, `User.find!(1)`, `User.find_by!(id: 1)`],
     // Enumerable#find takes a block and is a different method despite the name.
     inapplicable: `xs.find { |x| x.ok? }`,
   },
@@ -206,7 +211,14 @@ const WITNESSES = {
   },
   service_result_shape: {
     lang: "ruby",
-    applicable: [`class S\n  def call\n    1\n  end\nend`, `class S\n  def self.call\n    1\n  end\nend`],
+    applicable: [
+      `class S\n  def call\n    1\n  end\nend`,
+      `class S\n  def self.call\n    1\n  end\nend`,
+      `class S\n  def perform\n    1\n  end\nend`,
+      `class S\n  def execute\n    1\n  end\nend`,
+      `class S\n  def run\n    1\n  end\nend`,
+      `module S\n  def self.call\n    1\n  end\nend`,
+    ],
     // A helper method is not an entry point, so counting it would charge every
     // raise in the repository.
     inapplicable: `class S\n  def helper\n    raise "x"\n  end\nend`,
@@ -219,7 +231,11 @@ const WITNESSES = {
   },
   zone_aware_time: {
     lang: "ruby",
-    applicable: [`Time.now`, `DateTime.now`, `Date.today`, `Time.current`, `Time.zone.now`],
+    applicable: [
+      `Time.now`, `DateTime.now`, `Date.today`,
+      `Time.current`, `Date.current`, `DateTime.current`,
+      `Time.zone.now`, `Time.zone.today`,
+    ],
     inapplicable: `def f\n  1\nend`,
   },
 
@@ -243,10 +259,16 @@ const WITNESSES = {
     applicable: [
       `class M < ActiveRecord::Migration[7.0]\n  def change\n    add_column :users, :name, :string, null: false\n  end\nend`,
       `class M < ActiveRecord::Migration[7.0]\n  def change\n    create_table :users do |t|\n      t.string :name, null: false\n    end\n  end\nend`,
+      `class M < ActiveRecord::Migration[7.0]\n  def change\n    change_table :users do |t|\n      t.string :name, null: false\n    end\n  end\nend`,
     ],
-    // change_column alters a column that already exists rather than declaring a
-    // new one.
-    inapplicable: `class M < ActiveRecord::Migration[7.0]\n  def change\n    change_column :users, :name, :text\n  end\nend`,
+    // Each exclusion the sentence names: two that alter a column which already
+    // exists, and two whose nullability the writer did not choose.
+    inapplicable: [
+      `class M < ActiveRecord::Migration[7.0]\n  def change\n    change_column :users, :name, :text\n  end\nend`,
+      `class M < ActiveRecord::Migration[7.0]\n  def change\n    change_column_null :users, :name, false\n  end\nend`,
+      `class M < ActiveRecord::Migration[7.0]\n  def change\n    create_table :users do |t|\n      t.timestamps\n    end\n  end\nend`,
+      `class M < ActiveRecord::Migration[7.0]\n  def change\n    create_table :users do |t|\n      t.references :org\n    end\n  end\nend`,
+    ],
   },
   table_primary_key_declared: {
     lang: "ruby",
@@ -258,6 +280,8 @@ const WITNESSES = {
     applicable: [
       `class M < ActiveRecord::Migration[7.0]\n  def change\n    add_reference :posts, :user, foreign_key: true\n  end\nend`,
       `class M < ActiveRecord::Migration[7.0]\n  def change\n    create_table :posts do |t|\n      t.references :user, foreign_key: true\n    end\n  end\nend`,
+      `class M < ActiveRecord::Migration[7.0]\n  def change\n    add_belongs_to :posts, :user, foreign_key: true\n  end\nend`,
+      `class M < ActiveRecord::Migration[7.0]\n  def change\n    create_table :posts do |t|\n      t.belongs_to :user, foreign_key: true\n    end\n  end\nend`,
     ],
     inapplicable: `class M < ActiveRecord::Migration[7.0]\n  def change\n    add_column :posts, :title, :string\n  end\nend`,
   },
@@ -291,16 +315,19 @@ const PAIRING_WITNESSES = Object.fromEntries(
 const jsKeys = Object.keys(WITNESSES).filter((k) => WITNESSES[k].lang !== "ruby");
 const rubyKeys = Object.keys(WITNESSES).filter((k) => WITNESSES[k].lang === "ruby");
 
-const EXT = { js: "ts", jsx: "tsx", ruby: "rb" };
-const rel = (key, half, i = 0) => `${key}.${half}.${i}.${EXT[WITNESSES[key].lang]}`;
+// The extension `materialise` will actually give this source, not a second copy
+// of the table. The parse worker picks its grammar from the name, so a private
+// mapping that drifted would hand every JSX witness to the TypeScript grammar,
+// read `<button` as a type assertion, and report five broken predicates.
+const rel = (key, half, i = 0) => `${key}.${half}.${i}.${scratchExt(WITNESSES[key].lang)}`;
 const listed = (v) => (Array.isArray(v) ? v : [v]);
 
 async function hitsFor(keys) {
   const files = keys.flatMap((key) => {
     const w = WITNESSES[key];
     return [
-      ...listed(w.applicable).map((source, i) => ({ rel: rel(key, "applicable", i), source, lang: w.lang })),
-      ...listed(w.inapplicable).map((source, i) => ({ rel: rel(key, "inapplicable", i), source, lang: w.lang })),
+      ...listed(w.applicable).map((x, i) => ({ rel: rel(key, "applicable", i), source: sourceOf(x), lang: w.lang })),
+      ...listed(w.inapplicable).map((x, i) => ({ rel: rel(key, "inapplicable", i), source: sourceOf(x), lang: w.lang })),
     ];
   });
   // One pass for every witness rather than one per dimension: `parseAll` forks
@@ -309,7 +336,23 @@ async function hitsFor(keys) {
   return records;
 }
 
-const count = (records, key, half, i) => (records.get(rel(key, half, i))?.hits?.[key] ?? []).length;
+const sourceOf = (w) => (typeof w === "string" ? w : w.source);
+const expected = (w) => (typeof w === "string" ? null : w.sites);
+
+/**
+ * How many sites the predicate found, or why the witness itself is the problem.
+ *
+ * A witness that does not parse comes back `ok: false` with no `hits` at all,
+ * which read as zero sites and passed the whole inapplicable half on a typo. A
+ * fixture nobody can parse proves nothing in either direction, so it is its own
+ * answer rather than a count.
+ */
+function sitesIn(records, key, half, i) {
+  const record = records.get(rel(key, half, i));
+  if (!record) return { error: "was never parsed" };
+  if (record.ok !== true) return { error: `did not parse (${record.kind}${record.error ? `: ${record.error}` : ""})` };
+  return { sites: (record.hits?.[key] ?? []).length };
+}
 
 test("every shipped dimension has a witness pair", () => {
   const shipped = [...ALL_DIMENSIONS.map((d) => d.key), ...PAIRINGS.map((p) => p.key)].sort();
@@ -332,15 +375,27 @@ async function witnessProblems(keys) {
     const sites = ALL_DIMENSIONS.find((d) => d.key === key).applicabilityPredicate.sites;
 
     // Every member the sentence names, not the first one that happens to match.
-    listed(w.applicable).forEach((source, i) => {
-      if (count(records, key, "applicable", i) === 0) {
-        problems.push(`${key} says it applies to "${sites}" and found no site in ${JSON.stringify(source)}`);
+    listed(w.applicable).forEach((witness, i) => {
+      const src = JSON.stringify(sourceOf(witness));
+      const got = sitesIn(records, key, "applicable", i);
+      if (got.error) return problems.push(`${key}'s applicable witness ${src} ${got.error}`);
+      if (got.sites === 0) return problems.push(`${key} says it applies to "${sites}" and found no site in ${src}`);
+      // Where the sentence promises a count, the count is the claim. "once per
+      // spread attribute rather than once per element" and "each link of a
+      // multi-rescue chain" are both cardinality, and non-zero proves neither.
+      const want = expected(witness);
+      if (want !== null && got.sites !== want) {
+        problems.push(`${key} promises ${want} site(s) in ${src} and found ${got.sites}`);
       }
     });
 
-    listed(w.inapplicable).forEach((source, i) => {
-      const n = count(records, key, "inapplicable", i);
-      if (n !== 0) problems.push(`${key} counted ${n} site(s) in ${JSON.stringify(source)}, which its sentence does not claim`);
+    listed(w.inapplicable).forEach((witness, i) => {
+      const src = JSON.stringify(sourceOf(witness));
+      const got = sitesIn(records, key, "inapplicable", i);
+      if (got.error) return problems.push(`${key}'s inapplicable witness ${src} ${got.error}`);
+      if (got.sites !== 0) {
+        problems.push(`${key} counted ${got.sites} site(s) in ${src}, which its sentence does not claim`);
+      }
     });
   }
 

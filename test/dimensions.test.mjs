@@ -360,9 +360,12 @@ test("a registry row that cannot say which files it speaks about does not ship (
     () => assertApplicability([{ key: "forgot", precision: "precise" }]),
     /forgot declares no applicabilityPredicate\.sites/
   );
+  // A sentence too short to be one is told apart from an absent field, or
+  // somebody who wrote `sites: "any file"` is sent looking for a key they can
+  // already see on the page.
   assert.throws(
     () => assertApplicability([{ key: "terse", precision: "precise", applicabilityPredicate: { sites: "files", blind: null } }]),
-    /terse declares no applicabilityPredicate\.sites/
+    /terse states applicabilityPredicate\.sites as "files", which is a word rather than a predicate/
   );
 });
 

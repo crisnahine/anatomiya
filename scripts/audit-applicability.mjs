@@ -18,6 +18,7 @@ import { pathToFileURL } from "node:url";
 
 import { ALL_DIMENSIONS } from "../lib/dimensions.mjs";
 import { PAIRINGS } from "../lib/pairing.mjs";
+import { schemaProblem } from "../lib/facts.mjs";
 
 export const NARROW_AND_PRECISE = "narrow and precise: check the predicate";
 
@@ -43,17 +44,20 @@ export function shareTable(factsList) {
   for (const facts of factsList) {
     for (const area of facts.areas ?? []) {
       for (const d of area.dimensions ?? []) {
-        // The denominator the applicability gate itself reads: the files this
-        // dimension could speak about, never every file in the area. A Ruby row
-        // counted against a mixed area's JavaScript files reads as narrow when
-        // it was simply never asked.
+        // The denominator the applicability gate itself reads, fallback and
+        // all: the files this dimension could speak about, or the area's own
+        // count where it has none. A Ruby row counted against a mixed area's
+        // JavaScript files reads as narrow when it was simply never asked, and
+        // dropping a slot with no count of its own hid the rows the gate had
+        // already suppressed as narrow from the table meant to find them.
         if (d.langFileCount === undefined) {
           denominatorless++;
           continue;
         }
-        if (!d.langFileCount) continue;
+        const denominator = d.langFileCount || area.fileCount || 0;
+        if (!denominator) continue;
         if (!shares.has(d.key)) shares.set(d.key, []);
-        shares.get(d.key).push(d.applicability / d.langFileCount);
+        shares.get(d.key).push(d.applicability / denominator);
       }
     }
   }
@@ -79,22 +83,51 @@ export function shareTable(factsList) {
   return { rows, denominatorless };
 }
 
+/**
+ * The records this audit may measure, and the paths it refused.
+ *
+ * A record this build cannot make sense of is refused rather than read field by
+ * field, which is the rule the map reader already follows: read as an empty
+ * table, a file that is not a facts record at all is indistinguishable from a
+ * repository with no dimensions in it. A path that will not open names itself,
+ * because with several on the command line an errno says nothing about which.
+ */
+export function readRecords(paths) {
+  const records = [];
+  const problems = [];
+
+  for (const path of paths) {
+    let parsed;
+    try {
+      parsed = JSON.parse(readFileSync(path, "utf8"));
+    } catch (err) {
+      problems.push(`${path} could not be read: ${err && err.message ? err.message : err}`);
+      continue;
+    }
+    const problem = schemaProblem(parsed);
+    if (problem) problems.push(`${path} was not measured: ${problem}`);
+    else records.push(parsed);
+  }
+
+  return { records, problems };
+}
+
 function main(paths) {
   if (paths.length === 0) {
     console.error("usage: node scripts/audit-applicability.mjs <facts.json> [<facts.json> ...]");
     process.exit(2);
   }
 
-  const { rows, denominatorless } = shareTable(paths.map((p) => JSON.parse(readFileSync(p, "utf8"))));
+  const { records, problems } = readRecords(paths);
+  for (const p of problems) console.error(p);
+
+  const { rows, denominatorless } = shareTable(records);
 
   if (denominatorless) {
     console.error(
       `${denominatorless} slot(s) carry no langFileCount, so their share could not be computed: ` +
         `these maps predate facts schema 5, and scanning again with this build stores it`
     );
-    // A map this cannot read is not a repository with no dimensions in it, and
-    // a clean empty table says the second.
-    if (rows.length === 0) process.exit(1);
   }
 
   console.log(["key", "precision", "areas", "median", "min", "max", "note"].join("\t"));
@@ -104,7 +137,12 @@ function main(paths) {
     );
   }
   const flagged = rows.filter((r) => r.note).length;
-  console.error(`${rows.length} dimensions over ${paths.length} repositories, ${flagged} worth opening`);
+  // The count the table was actually computed over, never the count on the
+  // command line: a caller reading it as coverage is told how many maps
+  // contributed, and a partial read is a non-zero exit rather than a summary
+  // that reads clean.
+  console.error(`${rows.length} dimensions over ${records.length} repositories, ${flagged} worth opening`);
+  if (problems.length || (denominatorless && rows.length === 0)) process.exit(1);
 }
 
 // Guarded, because the tests import `shareTable` from here and an unguarded
