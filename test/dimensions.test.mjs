@@ -1,7 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { parseSync } from "oxc-parser";
-import { DIMENSIONS, ALL_DIMENSIONS, dimensionsFor, assertPrecision, PRECISIONS } from "../lib/dimensions.mjs";
+import {
+  DIMENSIONS,
+  ALL_DIMENSIONS,
+  dimensionsFor,
+  assertPrecision,
+  assertApplicability,
+  PRECISIONS,
+} from "../lib/dimensions.mjs";
 import { PAIRINGS } from "../lib/pairing.mjs";
 import { walk, collectHits } from "../lib/walk.mjs";
 
@@ -336,4 +343,53 @@ test("the obligations declare their precision like every other row (C5)", () => 
   for (const p of PAIRINGS) {
     assert.ok(PRECISIONS.includes(p.precision), p.key);
   }
+});
+
+test("a registry row that cannot say which files it speaks about does not ship (C2)", () => {
+  // C2: `applicability` is whatever `run` happened to emit, so a predicate
+  // seeing a tenth of its own construct gives 1.0 over four files and reads as
+  // a strong convention. The three numbers cannot show that; the sentence can.
+  assert.throws(
+    () => assertApplicability([{ key: "forgot", precision: "precise" }]),
+    /forgot declares no applicability.sites/
+  );
+  assert.throws(
+    () => assertApplicability([{ key: "terse", precision: "precise", applicability: { sites: "files", blind: null } }]),
+    /terse declares no applicability.sites/
+  );
+});
+
+test("a row declaring no blind key at all is refused, because absent is not a third state (C2)", () => {
+  assert.throws(
+    () => assertApplicability([{ key: "silent", precision: "partial", applicability: { sites: "a file holding a catch clause" } }]),
+    /silent declares no applicability.blind/
+  );
+});
+
+test("precision and the blind spot cannot disagree (C2)", () => {
+  // The marker and the reason are one decision. A precise row naming a blind
+  // spot is a partial row nobody marked, which is the direction that costs a
+  // severity level in the check.
+  assert.throws(
+    () =>
+      assertApplicability([
+        { key: "lying", precision: "precise", applicability: { sites: "a file holding a catch clause", blind: "a rethrow in a helper" } },
+      ]),
+    /lying is precise and names a blind spot/
+  );
+  assert.throws(
+    () =>
+      assertApplicability([
+        { key: "quiet", precision: "partial", applicability: { sites: "a file holding a catch clause", blind: null } },
+      ]),
+    /quiet is partial and names no blind spot/
+  );
+});
+
+test("assertApplicability returns the rows it accepted, so a registry can wrap itself", () => {
+  const rows = [
+    { key: "ok", precision: "partial", applicability: { sites: "a file holding a catch clause", blind: "a rethrow inside a helper" } },
+  ];
+
+  assert.equal(assertApplicability(rows), rows);
 });
