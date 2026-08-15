@@ -146,7 +146,7 @@ exists. It carries no `run`; the shape is a directory pair:
   counterClaim: null,
   precision: "precise",
   applicabilityPredicate: {
-    sites: "a .rb file anywhere under app/models, once the repository is seen using the _spec.rb suffix at all",
+    sites: "a .rb file anywhere under app/models whose own name does not end in _spec.rb, once the repository is seen using that suffix at all",
     blind: null,
   },
   langs: ["ruby"],
@@ -222,8 +222,16 @@ completeness test, and a sentence the code disagrees with fails the other two.
 `applicable` is a list, and the length is the point. Where your sentence enumerates a set, write one
 source per member it names. One source proves the sentence names something and nothing more:
 narrowing `optional_chaining` from six receiver names to one under-counts its applicability sixfold
-and a single `opts` witness stays green straight through it. Writing the applicable half and finding
-it hard is itself the answer: a predicate nobody can demonstrate is one nobody can audit.
+and a single `opts` witness stays green straight through it. Where the sentence promises a count,
+say the count, since a non-zero assertion proves nothing about it:
+
+```js
+applicable: [{ source: `<Child {...p} {...q} />`, sites: 2 }],
+```
+
+`inapplicable` is a list too, and each exclusion your sentence names earns one. Writing the
+applicable half and finding it hard is itself the answer: a predicate nobody can demonstrate is one
+nobody can audit.
 
 The share is auditable across repositories rather than by eye, one line at a time:
 

@@ -57,12 +57,15 @@ test("what the writer emits is what the reader reads back", (t) => {
   assert.equal(statedSide(facts.areas[0].dimensions[0]).states, "claim");
 });
 
-test("the record carries the denominator its own applicability gate read", (t) => {
+test("the record carries the files this pass's dimension could speak about", (t) => {
   // `applyGates` divides by `langFileCount`, the files the dimension could
   // speak about, and the record stored only the numerator. So the one number a
   // human needs to tell a narrow predicate from a rare construct was computed,
-  // used to gate the claim, and then dropped before anything could audit it
-  // (C2, C3).
+  // shaped the gate, and was then dropped before anything could audit it
+  // (C2, C3). This pass's count beside this pass's `applicability`, which is
+  // the pair that divides: on a pinned repository the gate reads the
+  // baseline's, and storing that instead would put a numerator and a
+  // denominator from two populations on one line.
   const dir = root(t);
 
   writeFacts(dir, result([dim({ applicability: 3, langFileCount: 40 })]));

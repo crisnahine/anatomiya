@@ -1,7 +1,71 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { shareTable, NARROW_AND_PRECISE } from "../scripts/audit-applicability.mjs";
+import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import { shareTable, readRecords, NARROW_AND_PRECISE } from "../scripts/audit-applicability.mjs";
+import { FACTS_SCHEMA } from "../lib/facts.mjs";
+
+function withFiles(byName) {
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-audit-"));
+  const paths = [];
+  for (const [name, body] of Object.entries(byName)) {
+    const p = join(dir, name);
+    writeFileSync(p, typeof body === "string" ? body : JSON.stringify(body));
+    paths.push(p);
+  }
+  return { dir, paths, dispose: () => rmSync(dir, { recursive: true, force: true }) };
+}
+
+const record = (areas) => ({ schema: FACTS_SCHEMA, areas });
+const oneSlot = [{ path: "a", fileCount: 10, dimensions: [{ key: "k", applicability: 5, langFileCount: 10 }] }];
+
+test("a file that is not a facts record is refused rather than measured", () => {
+  // The same rule the map reader follows: a record this build cannot make sense
+  // of is refused, never read field by field. Read as an empty table it is
+  // indistinguishable from a repository with no dimensions in it.
+  const f = withFiles({ "notfacts.json": {} });
+  try {
+    const { records, problems } = readRecords(f.paths);
+    assert.deepEqual(records, []);
+    assert.equal(problems.length, 1);
+    assert.match(problems[0], /notfacts\.json/);
+  } finally {
+    f.dispose();
+  }
+});
+
+test("a record from a schema this build has not heard of is refused", () => {
+  const f = withFiles({ "future.json": { schema: FACTS_SCHEMA + 1, areas: oneSlot } });
+  try {
+    const { records, problems } = readRecords(f.paths);
+    assert.deepEqual(records, []);
+    assert.match(problems[0], new RegExp(`reads 1 to ${FACTS_SCHEMA}`));
+  } finally {
+    f.dispose();
+  }
+});
+
+test("a path that cannot be read names itself instead of throwing", () => {
+  const { records, problems } = readRecords(["/tmp/anatomiya-no-such-map.json"]);
+
+  assert.deepEqual(records, []);
+  assert.equal(problems.length, 1);
+  assert.match(problems[0], /anatomiya-no-such-map\.json/);
+});
+
+test("a readable record is kept beside the ones that were refused", () => {
+  const f = withFiles({ "good.json": record(oneSlot), "bad.json": {} });
+  try {
+    const { records, problems } = readRecords(f.paths);
+    assert.equal(records.length, 1, "the good map still counts");
+    assert.equal(problems.length, 1, "and the bad one is named");
+  } finally {
+    f.dispose();
+  }
+});
 
 /**
  * The audit reads what a scan already wrote, so its fixtures are facts records
@@ -36,14 +100,17 @@ test("the share is applicability over the files the dimension could speak about"
   assert.equal(denominatorless, 0);
 });
 
-test("an area whose dimension could speak about no file is not a share of zero", () => {
-  // Dividing by the area's file count would report 0.00 and flag a predicate
-  // that was never asked anything.
+test("a slot with no language files of its own falls back to the area, the way the gate does", () => {
+  // `applyGates` divides by `dim.langFileCount || areaFileCount`, so a slot with
+  // no count of its own is still gated, against the area. Dropping it here made
+  // the row the gate suppressed as narrow invisible in the table meant to find
+  // narrow rows.
   const { rows } = shareTable([
-    facts([{ path: "a", fileCount: 40, dimensions: [{ key: "k", applicability: 0, langFileCount: 0 }] }]),
+    facts([{ path: "a", fileCount: 40, dimensions: [{ key: "k", applicability: 10, langFileCount: 0 }] }]),
   ]);
 
-  assert.deepEqual(rows, []);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].med, 0.25);
 });
 
 test("shares from several repositories fold into one row per dimension", () => {
