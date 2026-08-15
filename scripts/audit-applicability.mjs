@@ -9,9 +9,11 @@
  * check over every line at once, which is what makes a predicate's narrowness
  * visible before somebody reads the map rather than after.
  *
- * A low share is not a defect on its own: `zone_aware_time` speaks about the
- * files that read a clock, and most files do not. It is a defect when the row
- * also says `precise`, which claims it sees every site there is.
+ * A low share is never a verdict. `zone_aware_time` speaks about the files that
+ * read a clock, and most files do not, so the table ranks rows to open rather
+ * than deciding anything: a `precise` row is flagged because it claims to see
+ * every site there is, which makes a narrow one worth reading. Measured across
+ * four repositories, every flagged row named a construct that is simply rare.
  */
 import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
@@ -105,7 +107,7 @@ export function readRecords(paths) {
       continue;
     }
     const problem = schemaProblem(parsed);
-    if (problem) problems.push(`${path} was not measured: ${problem}`);
+    if (problem) problems.push(`${path} was not measured: ${problem.why}`);
     else records.push(parsed);
   }
 
@@ -138,11 +140,11 @@ function main(paths) {
   }
   const flagged = rows.filter((r) => r.note).length;
   // The count the table was actually computed over, never the count on the
-  // command line: a caller reading it as coverage is told how many maps
+  // command line: a caller reading it as reach is told how many maps
   // contributed, and a partial read is a non-zero exit rather than a summary
   // that reads clean.
   console.error(`${rows.length} dimensions over ${records.length} repositories, ${flagged} worth opening`);
-  if (problems.length || (denominatorless && rows.length === 0)) process.exit(1);
+  if (problems.length || denominatorless) process.exit(1);
 }
 
 // Guarded, because the tests import `shareTable` from here and an unguarded

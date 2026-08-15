@@ -243,8 +243,10 @@ Each dimension also states, in words, which files could have participated at all
 predicate cannot see where it is partial. `applicability` is otherwise whatever the predicate
 happened to emit, so one seeing a tenth of its own construct produces a ratio of 1.00 over four
 files and reads as a strong convention with nothing on the page to contradict it. The sentence is
-checked when the registry loads, and every row carries a pair of witness files: one the sentence
-says is applicable, and one holding the neighbouring construct that must not count. `npm run
+checked when the registry loads, and every row carries witness sources: the ones the sentence says
+are applicable, and the neighbouring constructs that must not count. Where a sentence enumerates a
+set, each member it names gets a source, because one source proves the sentence names something and
+nothing more. `npm run
 audit:applicability` reads scanned repositories back and ranks every dimension by how much of an
 area it speaks for, which is how a narrow predicate is found before somebody reads the map rather
 than after. A low share is not a defect on its own, and measured across four repositories every

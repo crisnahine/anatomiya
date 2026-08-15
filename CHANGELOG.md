@@ -19,7 +19,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   witness fails the completeness test. (C2)
 - `scripts/audit-applicability.mjs` reads one or more `facts.json` files and prints the applicability
   share per dimension, flagging any `precise` row whose median sits under a quarter. Measured across
-  four repositories: 6 of 37 rows flag, and each names a construct that is simply rare. A flag is a
+  four repositories: of the 37 rows that produced a slot anywhere, 6 flag, and each names a construct
+  that is simply rare. A flag is a
   prompt to open the row, not a verdict. (C2)
 
 ### Fixed
@@ -30,8 +31,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   rows already counted it. (C2)
 - The facts record dropped `langFileCount`, the files a dimension can speak about, so the share that
   separates a narrow predicate from a rare construct shaped the gate and was then unreadable from
-  disk. Schema 5, and an older map is now refused by the audit rather than reported as a repository
-  with no dimensions in it. (C3)
+  disk. Schema 5. A map written before it carries every count and no denominator, and the audit now
+  says how many slots it could not measure and exits non-zero, rather than printing the empty table
+  that reads as a repository with no dimensions in it. (C3)
 
 ## [0.1.10] - 2026-08-15
 

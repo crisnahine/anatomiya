@@ -239,7 +239,8 @@ The share is auditable across repositories rather than by eye, one line at a tim
 npm run audit:applicability -- /path/to/repo/.claude/anatomiya/facts.json ...
 ```
 
-It flags any `precise` row whose median `applicability / langFileCount` sits under 0.25. A flag is a
+It flags any `precise` row whose median `applicability / langFileCount` sits under 0.25, falling back
+to the area's own file count where a slot has none, which is what the gate divides by. A flag is a
 prompt to open the row, never a verdict: measured across four repositories, all six flagged rows
 named a construct that is simply rare. The share is not what finds an under-counting predicate. It
 cannot separate one from a rare construct, and the one under-count found so far was caught by a
