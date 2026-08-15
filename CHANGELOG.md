@@ -19,14 +19,19 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   witness fails the completeness test. (C2)
 - `scripts/audit-applicability.mjs` reads one or more `facts.json` files and prints the applicability
   share per dimension, flagging any `precise` row whose median sits under a quarter. Measured across
-  four repositories: 6 of 37 rows flag, and none of the six under-counts. A flag is a prompt to open
-  the row, not a verdict. (C2)
+  four repositories: 6 of 37 rows flag, and each names a construct that is simply rare. A flag is a
+  prompt to open the row, not a verdict. (C2)
 
 ### Fixed
 
-- The facts record dropped `langFileCount`, the denominator its own applicability gate divides by,
-  so the share that separates a narrow predicate from a rare construct could be computed, gate a
-  claim, and then be unreadable from disk. Schema 5. (C3)
+- `service_result_shape` refused every receiver, so `def self.call` was not a service entry point at
+  all. That is the commonest Ruby service form, and the ratio was stated over whichever subset of a
+  repository writes instance entry points instead. `def self.` counts now, the way the migration
+  rows already counted it. (C2)
+- The facts record dropped `langFileCount`, the files a dimension can speak about, so the share that
+  separates a narrow predicate from a rare construct shaped the gate and was then unreadable from
+  disk. Schema 5, and an older map is now refused by the audit rather than reported as a repository
+  with no dimensions in it. (C3)
 
 ## [0.1.10] - 2026-08-15
 

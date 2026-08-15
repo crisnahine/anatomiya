@@ -215,11 +215,15 @@ cannot see, and it is tied to `precision` so the marker and the reason cannot di
 row needs a sentence there; a `precise` row spells `null`. An absent key is not a third state, and
 `assertApplicability` refuses the whole registry at load over one.
 
-Then add the witness pair in `test/applicability.test.mjs`: a source your sentence says is
+Then add the witness pair in `test/applicability.test.mjs`: the sources your sentence says are
 applicable, and the neighbouring construct that must not count. A row with no witness fails the
-completeness test, and a sentence the code disagrees with fails the other two. Writing the applicable
-half and finding it hard is itself the answer: a predicate nobody can demonstrate is one nobody can
-audit.
+completeness test, and a sentence the code disagrees with fails the other two.
+
+`applicable` is a list, and the length is the point. Where your sentence enumerates a set, write one
+source per member it names. One source proves the sentence names something and nothing more:
+narrowing `optional_chaining` from six receiver names to one under-counts its applicability sixfold
+and a single `opts` witness stays green straight through it. Writing the applicable half and finding
+it hard is itself the answer: a predicate nobody can demonstrate is one nobody can audit.
 
 The share is auditable across repositories rather than by eye, one line at a time:
 
@@ -229,7 +233,9 @@ npm run audit:applicability -- /path/to/repo/.claude/anatomiya/facts.json ...
 
 It flags any `precise` row whose median `applicability / langFileCount` sits under 0.25. A flag is a
 prompt to open the row, never a verdict: measured across four repositories, all six flagged rows
-named a construct that is simply rare, and their predicates saw every site of it.
+named a construct that is simply rare. The share is not what finds an under-counting predicate. It
+cannot separate one from a rare construct, and the one under-count found so far was caught by a
+witness, on a row the share never flagged.
 
 ## The bar a new dimension has to clear
 

@@ -67,8 +67,10 @@ export function shareTable(factsList) {
         precision,
         areas: xs.length,
         med,
-        min: Math.min(...xs),
-        max: Math.max(...xs),
+        // Folded rather than spread: `Math.min(...xs)` passes one argument per
+        // area, and enough repositories turns a range into a stack overflow.
+        min: xs.reduce((a, b) => (b < a ? b : a), Infinity),
+        max: xs.reduce((a, b) => (b > a ? b : a), -Infinity),
         note: precision === "precise" && med < NARROW ? NARROW_AND_PRECISE : "",
       };
     })
