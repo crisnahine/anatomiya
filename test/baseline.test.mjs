@@ -692,6 +692,39 @@ test("an area holding a file the pin never had is closed before any gate is aske
   assert.equal(measured.get("aaaaaaaa").gate, "population-change");
 });
 
+test("a file unreadable at the pin and unreadable today has not changed population", async (t) => {
+  // Suppressing the whole area on any unread pinned file reads a permanent
+  // blind spot as a population that moved. React is written in Flow, which oxc
+  // does not take: 287 of its files never parse at either revision, and 507 of
+  // its 986 slots were closed for it. Nothing about that population changed.
+  // A file whose readability DIFFERS between the two revisions still closes the
+  // area, because that is a difference the counts cannot see through.
+  let sha;
+  const dir = repo(t, (d, { write, commit }) => {
+    write("src/a.ts", CONFORMING);
+    write("src/flow.ts", CONFORMING);
+    sha = commit("init");
+  });
+
+  const areas = [area("src", ["src/a.ts", "src/flow.ts"])];
+  writePin(dir, buildPin(areas, { sha }));
+  const state = await resolve(dir, { baseRef: "main" });
+
+  // What the scan holds for HEAD: one file read, one the parser would not take.
+  const headParsed = new Map([
+    ["src/a.ts", { rel: "src/a.ts", ok: true, hits: {}, kind: "ok" }],
+    ["src/flow.ts", { rel: "src/flow.ts", ok: false, kind: "rejected" }],
+  ]);
+
+  const measured = await measure(dir, state, areas, {
+    headParsed,
+    parse: async () => ({ records: new Map() }),
+    reduce: () => [{ key: "d", candidates: 4, conforming: 4 }],
+  });
+
+  assert.equal(measured.get("aaaaaaaa").gate, null, "the unreadable file is a constant, not a change");
+});
+
 test("resolve reads the pin itself, so the caller never holds one", async (t) => {
   // The corpus size the layout was resolved from travels with the state: the
   // area floor is a step function of it, so deriving it from today's file count
