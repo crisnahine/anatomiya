@@ -1103,3 +1103,16 @@ test("each unexamined cause keeps its own sentence at one and at many", () => {
   assert.equal(unexaminedPhrase("syntaxErrors", 1), "holds syntax the parser rejected");
   assert.equal(unexaminedPhrase("syntaxErrors", 2), "hold syntax the parser rejected");
 });
+
+test("the whole untracked sentence agrees at one, clauses included", () => {
+  // The count agreeing while the clause after it does not is the same defect one
+  // clause further along: "1 source file ... is untracked; commit them and scan
+  // again". Pronoun-free is what makes both surfaces safe at any count.
+  const overview = renderOverview(
+    result({ corpus: { files: 0, untracked: 1, truncated: false, dropped: {} }, areas: [] }),
+    { uncovered: 0, orphaned: 0 }
+  );
+
+  assert.match(overview, /1 source file in the working tree is untracked/);
+  assert.doesNotMatch(overview, /\bthem\b/, `a plural pronoun for one file:\n${overview}`);
+});

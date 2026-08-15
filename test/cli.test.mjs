@@ -214,7 +214,7 @@ test("untracked source is reported rather than counted as a repository with noth
     execFileSync(process.execPath, [join(ROOT, "bin", "anatomiya.mjs"), "scan", repo], { stdio: "pipe" })
   );
 
-  assert.match(out, /5 source files in the working tree are untracked; the corpus is tracked files only/);
+  assert.match(out, /5 source files in the working tree are untracked\. The corpus is tracked files only, so nothing there was counted/);
   const overview = readFileSync(join(repo, ".claude", "rules", "anatomiya-overview.md"), "utf8");
   assert.match(overview, /5 source files in the working tree are untracked/);
 });
@@ -422,4 +422,27 @@ test("the scan summary reads a count of one as one", (t) => {
   const out = String(execFileSync(process.execPath, [join(ROOT, "bin", "anatomiya.mjs"), "scan", dir], { stdio: "pipe" }));
 
   assert.doesNotMatch(out, /\b1 (files|areas|claims|source files)\b/, `a count of one wearing a plural:\n${out}`);
+});
+
+test("the untracked summary reads at one and at many", (t) => {
+  // Fixing the count and leaving the clause after it is the same defect one
+  // word along, and the first attempt at this traded a plural bug for a
+  // singular one. Neither surface carries a word that has to agree.
+  const build = (n) => {
+    const dir = mkdtempSync(join(tmpdir(), "anatomiya-cli-untracked-"));
+    t.after(() => rmSync(dir, { recursive: true, force: true }));
+    writeFileSync(join(dir, "README.md"), "x\n");
+    mkdirSync(join(dir, "src"), { recursive: true });
+    for (let i = 0; i < n; i++) writeFileSync(join(dir, "src", `f${i}.ts`), `export const a${i} = ${i}\n`);
+    const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
+    git("init", "-q");
+    git("config", "user.email", "t@t.test");
+    git("config", "user.name", "T");
+    git("add", "README.md");
+    git("commit", "-qm", "init");
+    return String(execFileSync(process.execPath, [join(ROOT, "bin", "anatomiya.mjs"), "scan", dir], { stdio: "pipe" }));
+  };
+
+  assert.match(build(1), /1 source file in the working tree is untracked\./);
+  assert.match(build(3), /3 source files in the working tree are untracked\./);
 });

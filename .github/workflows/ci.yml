@@ -319,8 +319,8 @@ jobs:
           // The command prints a count. The count and the disk have to agree,
           // which is the whole point of running the binary rather than the
           // functions it calls.
-          const claimed = stdout.match(/wrote (\d+) files/);
-          if (!claimed) problems.push("the scan printed no \"wrote N files\" line");
+          const claimed = stdout.match(/wrote (\d+) files?/);
+          if (!claimed) problems.push("the scan printed no \"wrote N file(s)\" line");
           else if (Number(claimed[1]) !== written.length) {
             problems.push(`the scan says it wrote ${claimed[1]} files, ${written.length} are on disk`);
           }
@@ -432,7 +432,7 @@ jobs:
             || { echo "::warning::could not clone the Ruby smoke repository"; exit 0; }
           cd "$RUNNER_TEMP/ruby-smoke"
           node "$GITHUB_WORKSPACE/bin/anatomiya.mjs" scan . | tee "$RUNNER_TEMP/ruby-scan.out"
-          grep -qE "^[0-9]+ files, [0-9]+ areas" "$RUNNER_TEMP/ruby-scan.out"
+          grep -qE "^[0-9]+ files?, [0-9]+ areas?" "$RUNNER_TEMP/ruby-scan.out"
           grep -q "could not be parsed" "$RUNNER_TEMP/ruby-scan.out" \
             && { echo "::error::prism failed on files in a real Ruby repository"; exit 1; }
           test -f .claude/rules/anatomiya-overview.md

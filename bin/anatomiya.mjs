@@ -99,7 +99,7 @@ async function runScan(cwd, { dryRun }) {
   console.log(`${plural(result.corpus.files, "file")}, ${plural(result.areas.length, "area")}, ${result.durationMs}ms, root ${result.root}`);
   if (result.corpus.untracked)
     console.log(
-      `${untrackedSentence(result.corpus.untracked)}; the corpus is tracked files only, so none of them was counted`
+      `${untrackedSentence(result.corpus.untracked)}. The corpus is tracked files only, so nothing there was counted`
     );
   console.log(`${stated.length} of ${plural(slots.length, "claim")} stated, the rest print as counts`);
   console.log(baselineLine(result.baseline));
