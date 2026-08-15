@@ -7,6 +7,27 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- Every dimension states which files could participate in its claim, and what its predicate cannot
+  see where it is partial. `applicability` was whatever `run` happened to emit, so a predicate
+  seeing a tenth of its own construct produced a ratio of 1.00 over four files and read as a strong
+  convention. The two fields are tied to `precision`, so the marker and the reason cannot disagree,
+  and the registry refuses to load over a row that carries neither. (C2)
+- A witness pair per dimension, driven through the same parse the scan uses: a source the declared
+  sentence says is applicable, and the neighbouring construct that must not count. A new row with no
+  witness fails the completeness test. (C2)
+- `scripts/audit-applicability.mjs` reads one or more `facts.json` files and prints the applicability
+  share per dimension, flagging any `precise` row whose median sits under a quarter. Measured across
+  four repositories: 6 of 37 rows flag, and none of the six under-counts. A flag is a prompt to open
+  the row, not a verdict. (C2)
+
+### Fixed
+
+- The facts record dropped `langFileCount`, the denominator its own applicability gate divides by,
+  so the share that separates a narrow predicate from a rare construct could be computed, gate a
+  claim, and then be unreadable from disk. Schema 5. (C3)
+
 ## [0.1.10] - 2026-08-15
 
 Every row the build contract still carried as partial, closed, except the one blocked on a document
