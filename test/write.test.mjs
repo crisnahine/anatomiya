@@ -40,7 +40,9 @@ function area(path, dimensions = [dim()]) {
     path,
     globs: [{ negated: false, dir: path, tail: "**/*.ts" }],
     fileCount: 40,
-    dimensions,
+    // A single-language area comes out of the reducer with a denominator equal
+    // to its file count, and the renderer divides by that.
+    dimensions: dimensions.map((d) => ({ langFileCount: 40, ...d })),
   };
 }
 

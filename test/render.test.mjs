@@ -30,14 +30,22 @@ const dim = (o = {}) => ({
   ...o,
 });
 
-const area = (o = {}) => ({
-  id: "aabbccdd",
-  path: "src/services",
-  globs: [{ negated: false, dir: "src/services", tail: "**/*.{ts,tsx}" }],
-  fileCount: 40,
-  dimensions: [dim()],
-  ...o,
-});
+const area = (o = {}) => {
+  const built = {
+    id: "aabbccdd",
+    path: "src/services",
+    globs: [{ negated: false, dir: "src/services", tail: "**/*.{ts,tsx}" }],
+    fileCount: 40,
+    dimensions: [dim()],
+    ...o,
+  };
+  // A single-language area comes out of the reducer with a denominator equal to
+  // its file count, and the renderer divides by that rather than by the area.
+  return {
+    ...built,
+    dimensions: built.dimensions.map((d) => ({ langFileCount: built.fileCount, ...d })),
+  };
+};
 
 const result = (o = {}) => ({
   root: "/repo",
