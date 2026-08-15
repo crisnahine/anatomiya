@@ -926,8 +926,8 @@ test("a rules directory that cannot be listed is not one holding nothing", needs
 test("a rules directory that does not exist yet was looked in, not refused", () => {
   // The first scan of any repository finds no `.claude/rules`, and `readdir`
   // answers ENOENT the same way it answers a permission failure. Reported as
-  // "could not be listed", that is the first sentence a new user reads, and it
-  // describes a broken install rather than an empty one. The same rule the
+  // "could not be listed", every first run describes a broken install rather
+  // than an empty one. The same rule the
   // parser and the git reads already follow: not-there is not could-not-read.
   const dir = workspace();
 

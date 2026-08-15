@@ -2,7 +2,7 @@
 import { scan } from "../lib/scan.mjs";
 import { writeMap } from "../lib/write.mjs";
 import { check, formatReport } from "../lib/check.mjs";
-import { unexaminedLines, plural } from "../lib/render.mjs";
+import { unexaminedLines, plural, untrackedSentence } from "../lib/render.mjs";
 import { statedSide } from "../lib/facts.mjs";
 import { collect, gitRoot } from "../lib/corpus.mjs";
 import { discover } from "../lib/areas.mjs";
@@ -99,7 +99,7 @@ async function runScan(cwd, { dryRun }) {
   console.log(`${plural(result.corpus.files, "file")}, ${plural(result.areas.length, "area")}, ${result.durationMs}ms, root ${result.root}`);
   if (result.corpus.untracked)
     console.log(
-      `${plural(result.corpus.untracked, "source file")} ${result.corpus.untracked === 1 ? "is" : "are"} untracked and ${result.corpus.untracked === 1 ? "was" : "were"} not counted: the corpus is tracked files only`
+      `${untrackedSentence(result.corpus.untracked)}; the corpus is tracked files only, so none of them was counted`
     );
   console.log(`${stated.length} of ${plural(slots.length, "claim")} stated, the rest print as counts`);
   console.log(baselineLine(result.baseline));
