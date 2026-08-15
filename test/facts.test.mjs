@@ -57,6 +57,20 @@ test("what the writer emits is what the reader reads back", (t) => {
   assert.equal(statedSide(facts.areas[0].dimensions[0]).states, "claim");
 });
 
+test("the record carries the denominator its own applicability gate read", (t) => {
+  // `applyGates` divides by `langFileCount`, the files the dimension could
+  // speak about, and the record stored only the numerator. So the one number a
+  // human needs to tell a narrow predicate from a rare construct was computed,
+  // used to gate the claim, and then dropped before anything could audit it
+  // (C2, C3).
+  const dir = root(t);
+
+  writeFacts(dir, result([dim({ applicability: 3, langFileCount: 40 })]));
+  const { facts } = readFacts(dir);
+
+  assert.equal(facts.areas[0].dimensions[0].langFileCount, 40);
+});
+
 test("a stated inverse survives the trip, because the rendered map never says which side it is", (t) => {
   // C6. The map deliberately prints the sentence and no marker, so this file is
   // the only place the check can learn that the area was handed the inverse.
