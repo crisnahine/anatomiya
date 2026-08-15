@@ -15,13 +15,24 @@ import { gitBuffered, gitStreamed, parseNameStatusZ, parsePorcelainZ, showBlob }
  * machines read the same `--name-status -z` output three ways.
  */
 /**
- * Removed with retries, because half these tests kill the git they started and
- * Windows holds a directory open as a dying process's cwd. The killed child
- * outlives the test by a few milliseconds and `rmdir` fails EBUSY until it goes.
+ * Removed with retries, and the residue left to the operating system.
+ *
+ * Half these tests kill the git they started, and Windows holds a directory
+ * open as a dying process's cwd. The retries cover the ordinary case, where the
+ * child is gone within a few milliseconds; a runner under load can hold it past
+ * any budget worth waiting for. What is under test is the walk, so a `rmdir`
+ * that will not land must not fail a test that passed. This is the temporary
+ * directory, and nothing else in the suite reads it.
  */
 function scratch(t, prefix) {
   const dir = mkdtempSync(join(tmpdir(), prefix));
-  t.after(() => rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 }));
+  t.after(() => {
+    try {
+      rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+    } catch {
+      // EBUSY or EPERM from a child that outlived its test.
+    }
+  });
   return dir;
 }
 
