@@ -1,12 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, appendFileSync, statSync, rmSync, cpSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, appendFileSync, statSync, rmSync, cpSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
 
-import { EXCLUDE_LINES } from "../lib/write.mjs";
+import { EXCLUDE_LINES } from "../lib/rules.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -241,5 +241,164 @@ test("the documented exclude line works from inside a linked worktree", (t) => {
     String(execFileSync("git", ["status", "--porcelain"], { cwd: main, stdio: "pipe" })).includes(".claude"),
     false,
     "and in the main checkout, which shares the common dir"
+  );
+});
+
+/* --- the map on disk holds its own invariants (A5, A6) --- */
+
+const anatomiya = (repo, ...args) =>
+  execFileSync(process.execPath, [join(ROOT, "bin", "anatomiya.mjs"), ...args, repo], {
+    stdio: "pipe",
+    encoding: "utf8",
+  });
+
+const ruleFiles = (repo) => {
+  const dir = join(repo, ".claude", "rules");
+  return readdirSync(dir).sort().map((name) => ({ name, body: readFileSync(join(dir, name), "utf8") }));
+};
+
+test("two scans of unchanged source write byte-identical files", (t) => {
+  // A5: the token economics only work on a cached read, so anything that moves
+  // per commit destroys them. A timestamp, a duration, or a Map iterated in
+  // filesystem order is enough.
+  const repo = repoWithSource(t);
+
+  anatomiya(repo, "scan");
+  const first = ruleFiles(repo);
+  anatomiya(repo, "scan");
+  const second = ruleFiles(repo);
+
+  assert.deepEqual(second, first);
+});
+
+test("no generated file passes the line bound on a real repository", (t) => {
+  // A6, measured: a rewritten context file does not re-attach inside a live
+  // session, and the change notice truncates head and tail, so a mid-file edit
+  // reaches the model in neither copy.
+  //
+  // Measured over what a reader reads, which is the file past its frontmatter.
+  // Across 35 repositories, 17 hold an area whose `paths` list alone runs past
+  // forty lines, the worst at 170 patterns; every one of their bodies came to
+  // ten lines or fewer. A glob dropped to save a line mis-delivers the whole
+  // file, and the directives sit at the tail, which is the half a change notice
+  // keeps.
+  const repo = repoWithSource(t);
+
+  anatomiya(repo, "scan");
+
+  for (const { name, body } of ruleFiles(repo)) {
+    const lines = body.trimEnd().split("\n");
+    const bodyStart = lines[0] === "---" ? lines.indexOf("---", 1) + 1 : 0;
+    assert.ok(lines.length - bodyStart <= 40, `${name} has ${lines.length - bodyStart} body lines`);
+    // On an ordinary area the whole file holds too. The exemption is for the
+    // `paths` list, not a licence for the rest of the file to grow.
+    const globs = lines.filter((l) => /^ {2}- "/.test(l)).length;
+    assert.ok(lines.length - Math.max(0, globs - 1) <= 40, `${name} is ${lines.length} lines with ${globs} globs`);
+  }
+});
+
+test("the scan names the rule files it did not write, one per line (A4)", (t) => {
+  const repo = repoWithSource(t);
+  mkdirSync(join(repo, ".claude", "rules"), { recursive: true });
+  writeFileSync(join(repo, ".claude", "rules", "house-style.md"), "# theirs\n");
+
+  const out = anatomiya(repo, "scan");
+
+  assert.match(out, /^"house-style\.md" in \.claude\/rules\/ was not written by this tool$/m);
+  const overview = readFileSync(join(repo, ".claude", "rules", "anatomiya-overview.md"), "utf8");
+  assert.match(overview, /^- "house-style\.md"$/m);
+});
+
+test("a scan says the running session still holds the old map (A8)", (t) => {
+  // Measured: a rewritten context file does not re-attach mid-session.
+  const repo = repoWithSource(t);
+
+  const out = anatomiya(repo, "scan");
+
+  assert.match(out, /^a session already running still holds the old map; restart to pick it up$/m);
+});
+
+test("a dry run does not claim a session needs restarting", (t) => {
+  // Nothing was written, so there is nothing to pick up.
+  const repo = repoWithSource(t);
+
+  const out = anatomiya(repo, "scan", "--dry-run");
+
+  assert.doesNotMatch(out, /restart to pick it up/);
+});
+
+test("a pin says it too, because it sends the reader off to scan (A8)", (t) => {
+  const repo = repoWithSource(t);
+
+  const out = anatomiya(repo, "pin");
+
+  assert.match(out, /run `anatomiya scan` to measure the map against it/);
+  assert.match(out, /^a session already running still holds the old map; restart to pick it up$/m);
+});
+
+/* --- what the command files tell the agent (A7, A8) --- */
+
+test("every command that rebuilds the map forbids the Read tool on it (A7)", () => {
+  // Measured: reading a context file permanently suppresses its automatic
+  // injection for that path for the rest of the process, so the one session
+  // that just built the map is the one that loses it.
+  for (const name of ["scan.md", "pin.md"]) {
+    const body = readFileSync(join(ROOT, "commands", name), "utf8");
+    assert.match(body, /Do not open the generated files with the Read tool/, name);
+    assert.match(body, /`cat`/, `${name} says what to use instead`);
+  }
+});
+
+test("every command that reads the map forbids the Read tool on it (A7)", () => {
+  // The check does not write the map, but it does show it, and showing it with
+  // the Read tool turns the map off for the session that is using it.
+  const body = readFileSync(join(ROOT, "commands", "check.md"), "utf8");
+
+  assert.match(body, /Do not open the generated files with the Read tool/);
+  assert.match(body, /`cat`/);
+});
+
+test("every command that rebuilds the map says a running session keeps the old one (A8)", () => {
+  for (const name of ["scan.md", "pin.md"]) {
+    const body = readFileSync(join(ROOT, "commands", name), "utf8");
+    assert.match(body, /does not re-attach mid-session/, name);
+  }
+});
+
+test("a dry run does not report in the past tense", (t) => {
+  // A dry run writes nothing, so every line it prints about what happened to a
+  // file is about something that did not happen. The removal line carried the
+  // same slip before the replacement line was added beside it.
+  const repo = repoWithSource(t);
+  const git = (...a) => execFileSync("git", a, { cwd: repo, stdio: "pipe" });
+
+  // A second area, so the next scan has one to drop and a file to remove.
+  mkdirSync(join(repo, "lib"), { recursive: true });
+  for (let i = 0; i < 8; i++) writeFileSync(join(repo, "lib", `g${i}.ts`), `const b${i} = 1\nexport { b${i} }\n`);
+  git("add", "-A");
+  git("commit", "-qm", "two areas");
+  anatomiya(repo, "scan");
+  const libArea = readdirSync(join(repo, ".claude", "rules")).filter((f) => f.includes("area"));
+  assert.equal(libArea.length, 2, "the fixture needs two areas to drop one");
+
+  // Drop that area from the source, so the plan has a removal...
+  rmSync(join(repo, "lib"), { recursive: true, force: true });
+  git("add", "-A");
+  git("commit", "-qm", "drop it");
+  // ...and hand-write a file over a name the scan still plans, so it has a
+  // replacement too.
+  const kept = readdirSync(join(repo, ".claude", "rules")).find((f) => f.includes("area"));
+  writeFileSync(join(repo, ".claude", "rules", kept), "# hand written, our exact name\n");
+
+  const out = anatomiya(repo, "scan", "--dry-run");
+
+  assert.match(out, /would be replaced/, out);
+  assert.match(out, /would be removed/, out);
+  assert.doesNotMatch(out, /it was replaced/);
+  assert.doesNotMatch(out, /area file\(s\) removed/);
+  assert.equal(
+    readFileSync(join(repo, ".claude", "rules", kept), "utf8"),
+    "# hand written, our exact name\n",
+    "and nothing was actually written"
   );
 });

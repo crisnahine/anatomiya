@@ -26,8 +26,9 @@ Run the scan and report what it found.
      parse, files over the per-file size cap, and history git could not read, which fails the author
      gate on every claim
    - how many files it wrote, or would write, and how many area files it removed
-   - whether any file in `.claude/rules/` was not written by this tool, since those also reach the
-     agent. The scanner prints a count and no names; `ls .claude/rules` names them
+   - every file in `.claude/rules/` this tool did not write, since those also reach the agent on
+     every turn. The scanner names them one per line, and names separately any file carrying our
+     frontmatter that no map lists, which it leaves alone rather than removing
 
    Report only the lines it printed. A line the scanner left out is zero, not a number to guess at.
 

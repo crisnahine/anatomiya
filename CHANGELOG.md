@@ -7,6 +7,151 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.1.10] - 2026-08-15
+
+Every row the build contract still carried as partial, closed, except the one blocked on a document
+that is not in this repository. Ten of them, and each was the same shape: a decision enforced at the
+call sites that happened to exist, rather than by the code.
+
+Reviewing that work against a hostile repository then found seven more of the same shape in rows
+already marked done, four of them reproduced end to end, and closing those is most of what follows.
+
+### Fixed
+
+- The writer removed a file on two of the three facts ownership needs. `facts.json` was the third
+  and nobody read it, so a file an older build wrote, or anything left behind by a wiped store, was
+  deleted by the next scan. The map on disk is read before the new one replaces it, and no readable
+  map now makes nothing removable rather than everything. (A3)
+- The check called anything without our filename prefix unattributed, which both missed a
+  hand-written `anatomiya-notes.md` and lumped our own leftovers in with somebody else's context.
+  Three-fact ownership decides it now, in one module both surfaces read, and "we did not write this"
+  is reported apart from "we wrote this and no map names it". (A3, A4)
+- Nothing bounded a generated file's length. Thirteen stated JavaScript claims already clear forty
+  lines, which is the point past which a mid-session rewrite reaches the model in neither the head
+  nor the tail of its change notice. An area file now drops its suppressed counts before its stated
+  directives and says how many of each kind did not fit; the overview's area listing takes whatever
+  the rest of the file leaves. The `paths` list is exempt, since a glob dropped to save a line
+  mis-delivers the whole file, so the bound is measured over what a reader reads: across 35
+  repositories, 17 hold an area whose cover alone runs past forty lines, the worst at 170 patterns,
+  and every one of those bodies came to ten lines or fewer. (A6)
+- Area discovery's independence from the order the corpus arrived in held by accident. `git
+  ls-files` answers sorted, so nothing established that the always-loaded overview does not rewrite
+  itself when a filter or a cache reorders the file list. (A5)
+- A dimension that forgot `precision`, or spelled it `"Precise"`, was silently capped below top
+  severity by the same comparison a deliberate `partial` is, and read in the map as a claim nobody
+  marked. The registry refuses one at load. The obligations were the case in point: they are not in
+  `ALL_DIMENSIONS`, and every per-file precision test had missed them. (C5)
+- Four git reads that grow with the repository were still buffered, where `execFile` throws
+  `RangeError: Invalid string length` from inside Node's own exit handler and `maxBuffer` does not
+  protect: `ls-tree -r`, the worktree diff, the range diff, and the check's own changed-file list,
+  which lists every path there is on a branch off a distant base. The `--name-status -z` grammar has
+  a streaming reader beside the buffered parse, and both are one reading of what a rename's three
+  fields mean. (F6)
+- `--` is not universal in git: `rev-parse`, `cat-file`, `merge-base`, `config` and `status` do not
+  take it, so a repository-controlled value in one of those argument positions rested on whichever
+  predicate was meant to have caught it. Every git call now checks its arguments against a closed
+  list of the flags this tool actually passes, so a ref, a sha or a path beginning with a dash
+  refuses the call instead of reaching git. (F5)
+- The memory guard's own `ps` ran with no timeout, through `execFileSync`, which blocks the parent's
+  event loop: a `ps` that never returned was the guard becoming the hang it exists to prevent. The
+  Ruby bridge timed silence and not the wall clock, so a child answering one file every fourteen
+  seconds never finished. Both parser bridges now also run outside the repository, and git carries
+  an environment that refuses a credential prompt. (F5)
+- A caller overriding one Ruby guard replaced the whole object, leaving every guard it did not name
+  undefined. A timer set from one of those fires at once rather than never. Surfaced by the wall
+  clock above, which is the first guard added since the callers were written. (F5)
+- `commands/pin.md` runs a scan in its own step three and carried neither the rule against opening
+  the generated files with the Read tool nor the note that a running session keeps the old map. The
+  pin command says both now, and the CLI prints the restart line where it sends you off to scan.
+  (A7, A8)
+- **A tracked symlink at `.claude` moved every write, every removal and `facts.json` outside the
+  repository.** Git mode 120000 survives a clone, and `join` normalises `..` while following no
+  link, so lexical containment was not containment. Reproduced: the map written into a sibling
+  directory, that directory's filenames named in the always-loaded overview, and one of its
+  `anatomiya-*.md` files removed by the next scan. F2 had been applied to the corpus read and to
+  nothing else, which is the half that only reads. Both directories are resolved component by
+  component now, before anything is written; a dangling link is refused rather than created
+  through. The scan fails closed and the check reports, since refusing a branch is the blocking
+  behaviour this design rejects. (F2)
+- **A file in `.claude/rules/` was read whole to run a regex anchored at byte zero.** A tracked
+  symlink to a 400 MB blob took peak resident size to 1.2 GB; pointed at `/dev/zero` the read never
+  returned. Now the first 8 KB, and only when the entry is a regular file: a directory named
+  `x.md` throws `EISDIR` on open and a fifo blocks on it. Measured after: 61 MB, and `/dev/zero`
+  completes. (F17)
+- **A directory named `anatomiya-overview.md` failed every scan with an errno.** That name is
+  fixed, so a repository can spell it, and `rename` refuses the shapes `open` does. It is reported
+  as the condition it is, before a dry run answers as well as before a write. (F17)
+- The overview named a file the same run wrote over. A hand-written file taking a generated name is
+  replaced, because that name is ours by construction, and calling it a file this tool did not
+  write was false about a file that no longer existed. It also moved the overview between two scans
+  of unchanged source, which is the one thing it may never do. (A5)
+- The overview ran one line past its bound whenever every area stated something and they still did
+  not all fit: the trailing count reserved its line only for areas that were never eligible. (A6)
+- The check listed every rule file it found, into the context of the agent reading the report, and
+  the scan printed one unencoded line per file: a filename carrying a newline printed as two raw
+  lines, where `commands/scan.md` tells the agent to report the lines the scanner printed. Both are
+  encoded and bounded now, like the overview already was. (F17, F4)
+- `filesAt` answered an empty set for a listing git refused to produce. An empty set is a real
+  answer meaning "no files", and the obligation reads it as "no companion exists anywhere", so
+  every changed producer on a branch owed a file sitting right there, at MUST-FIX where the map
+  states the obligation. It answers `null` now, as the diff and the worktree listing already did,
+  and both callers treat that as a question left unanswered. Predates this change; the streaming
+  work put a comment two functions above it stating the opposite rule. (F15)
+- `readFacts` was left out of the containment fix its writing half got, so a check read and
+  enforced `facts.json` from outside the repository through the same link, while the same run
+  reported it had not looked at that directory. (F2)
+- The type test that stopped `/dev/zero` used `lstat`, which also refused a symlink to a real
+  `.md`. Claude loads one on every turn exactly like a regular file, and it went missing from the
+  scan, the check and the overview at once; a symlink holding a generated name failed the scan
+  outright, where the atomic replace had always worked on it. `stat` follows the link and still
+  answers false for a directory, a fifo and `/dev/zero`. (F17)
+- **A rule file this tool could not open was reported as somebody else's.** `readHead` answered an
+  empty string for an unreadable file, which put it through the frontmatter test as if it had been
+  read. Reproduced: a mode-000 area file of this tool's own came back foreign, the always-loaded
+  overview said so, and it could never re-enter the removable set, so a stale map for a deleted
+  directory loaded forever. Ownership nobody checked is not asserted now: unreadable is its own
+  answer, reported on all three surfaces and never removed. (F17)
+- A rules directory that could not be listed was reported as one holding nothing foreign, the same
+  lie the symlink branch was added to refuse. It earns a caveat now. (F17)
+- The overview told the reader to "scan again to clear them" about files scanning is what leaves
+  alone. Two of the three facts ownership needs is not ownership, so this tool will not remove
+  them, and the always-loaded file may not promise a fix it refuses to apply. (A3, A4)
+- The check read the file list at HEAD on the scan's clock rather than its own, 120s against the
+  30s every other read in that phase carries. (F5)
+- The overview was budgeted against its area listing alone, while the listing of rule files this
+  tool did not write was rendered after it and unbounded. A repository with enough of both put the
+  always-loaded file eight lines past its bound. Both listings share what the fixed sections leave
+  now, each keeps at least one line, and 52,416 rendered combinations hold at forty. (A6)
+- The head cap that stopped a 400 MB read was first set at 8 KB, which is smaller than this tool's
+  own frontmatter: an area's `paths` list is one line per pattern, and canvas-lms generates a
+  14 KB file. Its closing fence fell past the head, so the scan called its own output a file it had
+  not written, never removed it, and named it in the overview as somebody else's. Sized by what we
+  write now, and pinned by a test that renders a 220-pattern cover. (F17)
+- `--dry-run` reported a file "was replaced" and area files "removed" for work it had not done. The
+  removal line carried that slip before this change. (A8)
+- The overview listed files this tool wrote under the sentence "Any other file there was not
+  written by this tool". Each kind keeps its own sentence, because only one is true of each and the
+  reader's next move differs. (A4)
+- `git` ran with no restriction on the transports it may use. The check's shallow path is the one
+  place this tool talks to a remote, and it reads the repository's own `.git/config` to do it,
+  where an `ext::` URL is a shell command. (F5)
+
+### Changed
+
+- The overview names the other `.md` files in `.claude/rules/` instead of only counting its own. The
+  contract asked for the enumeration on the other side, every file we generated, so any other is
+  identifiable by absence; measured against A9 that is about 4 KB of hex filenames added back to the
+  file that loads on every turn, on the repositories where nothing is wrong. Naming the others is
+  the same guarantee at no cost when clean, it names the file a reader would otherwise have to go
+  and find, and it arrives in the file loading beside it. The scan prints them one per line too,
+  where it used to print a count and no names. (A4)
+- Every filename a scan plans is checked to be a bare `anatomiya-*.md` before anything is created,
+  so an area id carrying a separator refuses the whole write. It held because the id is a digest;
+  now it holds whether or not it stays one. (A1)
+- `.claude/rules/` has one owner, `lib/rules.mjs`. The prefix, the frontmatter test, the filename
+  rule and the directory audit lived across the renderer, the writer and the check, and the writer
+  and the check disagreed in the direction that deletes.
+
 ## [0.1.9] - 2026-08-15
 
 An architecture pass over the seams the 0.1.8 pass left open, and the six defects the moves surfaced
@@ -432,7 +577,8 @@ which are partial; several listed there are not implemented yet.
 - No claim that this catches defects. Measured across ten repositories, 1 of 317 defect review
   comments was preventable by a conventions map.
 
-[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.1.9...HEAD
+[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.1.10...HEAD
+[0.1.10]: https://github.com/crisnahine/anatomiya/compare/v0.1.9...v0.1.10
 [0.1.9]: https://github.com/crisnahine/anatomiya/compare/v0.1.8...v0.1.9
 [0.1.8]: https://github.com/crisnahine/anatomiya/compare/v0.1.7...v0.1.8
 [0.1.7]: https://github.com/crisnahine/anatomiya/compare/v0.1.6...v0.1.7
