@@ -214,7 +214,7 @@ test("untracked source is reported rather than counted as a repository with noth
     execFileSync(process.execPath, [join(ROOT, "bin", "anatomiya.mjs"), "scan", repo], { stdio: "pipe" })
   );
 
-  assert.match(out, /5 source files are untracked and were not counted/);
+  assert.match(out, /5 source files in the working tree are untracked; the corpus is tracked files only/);
   const overview = readFileSync(join(repo, ".claude", "rules", "anatomiya-overview.md"), "utf8");
   assert.match(overview, /5 source files in the working tree are untracked/);
 });

@@ -520,6 +520,16 @@ const TABLES = [
     source: (m) => `import { x } from "i18next"\nexport function C() { return <p>{${m}("k")}</p> }`,
   },
   {
+    what: "the extensions a relative import may name a source file with",
+    key: "import_extension",
+    lang: "js",
+    members: ["js", "jsx", "mjs", "cjs", "ts", "tsx"],
+    // Dropping one does not merely narrow applicability: the same table decides
+    // conforming, so a repository importing through that extension reads as
+    // breaking the claim everywhere rather than as not being asked.
+    source: (m) => `import { a } from "./a.${m}"`,
+  },
+  {
     what: "the elements a file may reach its translation layer through",
     key: "text_translated",
     lang: "jsx",

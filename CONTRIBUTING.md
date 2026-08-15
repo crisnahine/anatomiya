@@ -223,8 +223,8 @@ completeness test, and a sentence the code disagrees with fails the other two.
 one source per form the code treats differently: two call shapes, two node types, two spellings.
 
 Where the predicate recognises its construct through a closed table of names, every member of that
-table gets driven through it in `TABLES`, with the members written out in the test rather than read
-from the table. A table is one shape, so the witness pairs never notice it shrinking: dropping
+table gets driven through it: in the witness list where the members are few, and in `TABLES` where
+they are not. Either way the members are written out in the test rather than read from the table. A table is one shape, so the witness pairs never notice it shrinking: dropping
 `next-intl` from the module list makes every file in such a repository inapplicable and changes no
 shape at all. An expectation read from the table would agree with the table by construction and
 could never disagree with it, which is why the list is spelled out. One source proves the sentence names something and nothing more:

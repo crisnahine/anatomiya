@@ -45,11 +45,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   examined. Webpack 80 to 92, next.js 162 to 172. (C4)
 - Every first scan of a repository reported `.claude/rules/` as a directory it could not list.
   `readdir` answers ENOENT the same way it answers a permission failure, and the bare catch treated
-  the two alike, so the first sentence a new user read described a broken install rather than an
-  empty one. Not-there is an answer; could-not-read is not. (A4)
+  the two alike, so every first run reported a broken install rather than an empty one. Not-there is
+  an answer; could-not-read is not. (A4)
 - A count of one wore a plural. Measured over 35 repositories: seven printed "1 files hold syntax
-  the parser rejected", on the scan summary and in the file that loads on every turn. The summary
-  and the overview now agree with each other and with the count, verb included. (A4)
+  the parser rejected", on the scan summary and in the file that loads on every turn. The two
+  surfaces read one sentence for the count they share, so they cannot agree with the number and
+  disagree with each other. (A4)
 - The facts record dropped two numbers the rendered map prints, so the map was not derivable from
   the record the check reads in its place: the count behind "and N more", and the namesake count an
   obligation renders as "N with a namesake elsewhere in the tree". Found by scanning 35 repositories
