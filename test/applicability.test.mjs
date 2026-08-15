@@ -460,3 +460,132 @@ test("every obligation counts its producer, and asks nothing of a repository wit
 
   assert.deepEqual(problems, []);
 });
+
+/**
+ * A predicate that recognises its construct through a closed table of names.
+ *
+ * The witness pairs above prove a predicate sees each shape the code treats
+ * differently, and a table is one shape however many names it holds: dropping
+ * `next-intl` from the module list, or two hooks from the hook set, changes no
+ * shape and survives every test above. What it changes is which repositories
+ * the dimension can speak about at all, silently, which is the under-counted
+ * applicability C2 exists to refuse.
+ *
+ * So each member is driven through the real predicate, and the list here is
+ * written out rather than read from the table: an expectation computed the way
+ * the code computes it agrees with the code by construction and can never
+ * disagree with it. Shrink the table and the members it dropped fail here.
+ *
+ * A member added to the table and not to this list fails too, which is the
+ * point at which somebody decides whether it belongs.
+ */
+const TABLES = [
+  {
+    what: "the test-runner modifiers",
+    key: "test_call_style",
+    lang: "js",
+    members: ["each", "only", "skip", "todo", "failing", "concurrent", "skipIf", "runIf", "if", "for"],
+    source: (m) => `test.${m}([1])("a", () => {})`,
+  },
+  {
+    what: "React's own hooks",
+    key: "hook_call_style",
+    lang: "jsx",
+    members: [
+      "useState", "useEffect", "useContext", "useReducer", "useCallback", "useMemo",
+      "useRef", "useImperativeHandle", "useLayoutEffect", "useInsertionEffect",
+      "useDebugValue", "useId", "useDeferredValue", "useTransition",
+      "useSyncExternalStore", "useOptimistic", "useActionState",
+    ],
+    source: (m) => `export function C() { const a = ${m}(1); return <p>{a}</p> }`,
+  },
+  {
+    what: "the translation modules a file may reach its layer through",
+    key: "text_translated",
+    lang: "jsx",
+    members: ["react-intl", "react-i18next", "i18next", "next-intl", "react-intl-universal", "@lingui/react", "@formatjs/intl"],
+    source: (m) => `import { t } from "${m}"\nexport function C() { return <p>Hello</p> }`,
+  },
+  {
+    what: "the translation calls",
+    key: "text_translated",
+    lang: "jsx",
+    members: ["t", "translate", "formatMessage", "__", "gettext"],
+    source: (m) => `import { x } from "i18next"\nexport function C() { return <p>{${m}("k")}</p> }`,
+  },
+  {
+    what: "the elements a file may reach its translation layer through",
+    key: "text_translated",
+    lang: "jsx",
+    members: ["FormattedMessage", "FormattedHTMLMessage", "Trans", "Translate"],
+    // The element is what makes the file applicable; the visible text beside it
+    // is the site, so the source carries both.
+    source: (m) => `export function C() { return <div><${m} id="k" />Hello</div> }`,
+  },
+  {
+    what: "the model base classes",
+    key: "model_callbacks",
+    lang: "ruby",
+    members: ["ApplicationRecord", "ActiveRecord::Base", "ApplicationRecord::Base"],
+    source: (m) => `class User < ${m}
+end`,
+  },
+  {
+    what: "the column types a migration may declare",
+    key: "column_null_declared",
+    lang: "ruby",
+    members: [
+      "string", "text", "integer", "bigint", "float", "decimal", "numeric", "datetime",
+      "timestamp", "time", "date", "binary", "boolean", "json", "jsonb", "uuid", "inet",
+      "cidr", "macaddr", "citext", "interval", "money", "hstore", "vector", "daterange",
+      "tsvector", "xml", "column", "primary_key", "enum",
+    ],
+    source: (m) =>
+      `class M < ActiveRecord::Migration[7.0]\n  def change\n    create_table :t do |t|\n      t.${m} :c, null: false\n    end\n  end\nend`,
+  },
+  {
+    what: "the reference-column calls",
+    key: "reference_foreign_key",
+    lang: "ruby",
+    members: ["add_reference", "add_belongs_to"],
+    source: (m) => `class M < ActiveRecord::Migration[7.0]\n  def change\n    ${m} :posts, :user, foreign_key: true\n  end\nend`,
+  },
+  {
+    what: "the reference-column calls inside a block",
+    key: "reference_foreign_key",
+    lang: "ruby",
+    members: ["references", "belongs_to"],
+    source: (m) =>
+      `class M < ActiveRecord::Migration[7.0]\n  def change\n    create_table :posts do |t|\n      t.${m} :user, foreign_key: true\n    end\n  end\nend`,
+  },
+];
+
+async function tableProblems(tables) {
+  const files = tables.flatMap((t, ti) =>
+    t.members.map((m, mi) => ({ rel: `table${ti}.${mi}.${scratchExt(t.lang)}`, source: t.source(m), lang: t.lang }))
+  );
+  const { records } = await parseAll(files, { frameworks: ["rails"] });
+  const problems = [];
+
+  tables.forEach((t, ti) => {
+    t.members.forEach((m, mi) => {
+      const record = records.get(`table${ti}.${mi}.${scratchExt(t.lang)}`);
+      if (!record || record.ok !== true) {
+        return problems.push(`${t.key}'s witness for ${JSON.stringify(m)} did not parse`);
+      }
+      if ((record.hits?.[t.key] ?? []).length === 0) {
+        problems.push(`${t.key} does not recognise ${JSON.stringify(m)}, one of ${t.what}`);
+      }
+    });
+  });
+
+  return problems;
+}
+
+test("every JavaScript name a predicate recognises through a table is recognised", async () => {
+  assert.deepEqual(await tableProblems(TABLES.filter((t) => t.lang !== "ruby")), []);
+});
+
+test("every Ruby name a predicate recognises through a table is recognised", needsRuby, async () => {
+  assert.deepEqual(await tableProblems(TABLES.filter((t) => t.lang === "ruby")), []);
+});
