@@ -6,16 +6,16 @@ import { join } from "node:path";
 
 import { needsRuby } from "./ruby-available.mjs";
 
-import { parseAll } from "../lib/parse.mjs";
+import { parseAll, poolSizeFor } from "../lib/parse.mjs";
+import { GUARDS } from "../lib/pool.mjs";
+import { RUBY_GUARDS } from "../lib/ruby.mjs";
+import { MAX_FILE_BYTES } from "../lib/limits.mjs";
 
-/**
- * One reading of "this file went unexamined", for both callers.
- *
- * The scan computed the four causes and the check computed none of them, so
- * every fix to the reconciliation had to be made twice and the second one kept
- * being forgotten. These cases are the classification itself, asked directly
- * rather than through a repository.
- */
+// One reading of "this file went unexamined", for both callers: the scan
+// computed the four causes and the check computed none of them, so every fix to
+// the reconciliation had to be made twice. These cases ask the classification
+// directly rather than through a repository.
+
 function dir(t) {
   const d = mkdtempSync(join(tmpdir(), "anatomiya-parse-"));
   t.after(() => rmSync(d, { recursive: true, force: true }));
@@ -133,4 +133,24 @@ test("a file over the size cap is named apart from one that failed", async (t) =
 
   assert.equal(out.records.get("big.ts").kind, "oversize");
   assert.equal(out.tallies.oversize, 1);
+});
+
+test("no more parser processes are forked than there are files to parse", () => {
+  // A check examines the files one diff touched, which is usually one or two.
+  // The pool's default is min(8, cpus-1), so a one-file check forked eight
+  // child processes to parse one file. The old check capped at four and the
+  // cap was lost in the move; B10's measurement says throughput stops
+  // improving past four workers on eleven cores anyway.
+  assert.equal(poolSizeFor(1), 1);
+  assert.equal(poolSizeFor(2), 2);
+  assert.ok(poolSizeFor(500) > 1, "a whole corpus still gets the machine's pool");
+  assert.equal(poolSizeFor(500), poolSizeFor(10_000), "and is bounded by the machine, not the corpus");
+});
+
+test("every reader gives up on a file at the same size, so one file is never both parsed and refused", () => {
+  // Drift between the two parser guards splits one file's fate by which engine
+  // is asking. Every blob read takes the same ceiling from `showBlob`, so the
+  // two skips are what is left to keep in step.
+  assert.equal(GUARDS.maxBytes, MAX_FILE_BYTES);
+  assert.equal(RUBY_GUARDS.maxBytes, MAX_FILE_BYTES);
 });

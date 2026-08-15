@@ -8,10 +8,11 @@ import { execFileSync } from "node:child_process";
 
 import {
   buildPin, loadPin, writePin, pinDelta, formatDelta,
-  resolveBaseline, resolveBaseRef, baselinePopulation, baselineStates,
-  showBlob, readBaselineText, mergeBase, diffRange, shaReachable, materialize,
-  measureBaseline, PIN_PATH, isSha,
+  baselinePopulation, materialize, measure, resolve, PIN_PATH,
 } from "../lib/baseline.mjs";
+import {
+  showBlob, mergeBase, diffRange, shaReachable, resolveBaseRef, isSha,
+} from "../lib/git.mjs";
 
 // The temporary repository is torn down through `t.after` rather than a call at
 // the end of the body: a failing assertion throws, and a cleanup line below it
@@ -52,7 +53,8 @@ async function countAtBaseline(root, sha, rels) {
   let candidates = 0;
   let conforming = 0;
   for (const rel of rels) {
-    const text = await readBaselineText(root, sha, rel);
+    const blob = await showBlob(root, sha, rel);
+    const text = blob.ok ? blob.content.toString("utf8") : null;
     if (text == null) continue;
     candidates++;
     if (!text.includes("throw ")) conforming++;
@@ -87,11 +89,11 @@ test("only the files that differ from the pin are read back out of it", async (t
 
   const rels = ["src/a.ts", "src/b.ts"];
   const areas = [area("src", rels)];
-  const state = await resolveBaseline(dir, { pin: buildPin(areas, { sha }), baseRef: "main" });
-  const populations = new Map(areas.map((a) => [a.id, baselinePopulation(state, a)]));
+  writePin(dir, buildPin(areas, { sha }));
+  const state = await resolve(dir, { baseRef: "main" });
 
   const asked = [];
-  await measureBaseline(dir, state, areas, populations, {
+  await measure(dir, state, areas, {
     headParsed: new Map(rels.map((rel) => [rel, { rel, ok: true, hits: {} }])),
     parse: async (files) => {
       asked.push(...files.map((f) => f.rel));
@@ -132,7 +134,7 @@ test("moving the violating files out of the area does not lift the baseline", as
   assert.equal(pinned.candidates, 14);
   assert.ok(pinned.ratio < 0.9, "the pinned population still carries the three violations");
 
-  const state = await resolveBaseline(dir, { pin, baseRef: "main" });
+  const state = await resolve(dir, { pin, baseRef: "main" });
   const population = baselinePopulation(state, area("src/services", current));
 
   assert.equal(population.status, "population-change");
@@ -150,7 +152,7 @@ test("the baseline population is the pinned list even when the glob still matche
   });
 
   const pin = buildPin([area("src/a", files)], { sha });
-  const state = await resolveBaseline(dir, { pin, baseRef: "main" });
+  const state = await resolve(dir, { pin, baseRef: "main" });
 
   // A file added after the pin is visible as added, and never enters the
   // population the ratio is computed over.
@@ -213,7 +215,7 @@ test("a path that is a directory at the baseline sha does not read back as sourc
   // reason this is `cat-file blob`.
   const tree = await showBlob(dir, sha, "src/a");
   assert.equal(tree.ok, false);
-  assert.equal(await readBaselineText(dir, sha, "src/a"), null);
+  assert.equal((await showBlob(dir, sha, "src/a")).ok, false, "a tree is not a blob");
 });
 
 // --- E3: an unreachable baseline sha drops everything to counts ---
@@ -242,7 +244,7 @@ test("a squashed-away baseline commit drops every directive to counts", async (t
 
   assert.equal(await shaReachable(dir, sha), false);
 
-  const state = await resolveBaseline(dir, { pin, baseRef: "main" });
+  const state = await resolve(dir, { pin, baseRef: "main" });
   assert.equal(state.status, "unreachable");
   assert.equal(state.countsOnly, true);
 
@@ -289,7 +291,7 @@ test("a pin file that will not load drops to counts-only, never to a smaller pop
     // off on, which is the direction that manufactures claims.
     assert.equal(loadPin(dir), null, body.slice(0, 60));
 
-    const state = await resolveBaseline(dir, { baseRef: "main" });
+    const state = await resolve(dir, { baseRef: "main" });
     assert.equal(state.status, "unpinned");
     assert.equal(state.countsOnly, true);
     assert.equal(baselinePopulation(state, area("src/a", ["src/a/x.ts"])).directive, false);
@@ -335,7 +337,7 @@ test("a greenfield area emits no directive", async (t) => {
   });
 
   const pin = buildPin([area("src/old", ["src/old/a.ts", "src/old/b.ts"])], { sha });
-  const state = await resolveBaseline(dir, { pin, baseRef: "main" });
+  const state = await resolve(dir, { pin, baseRef: "main" });
 
   const fresh = Array.from({ length: 8 }, (_, i) => `src/new/n${i}.ts`);
   const population = baselinePopulation(state, area("src/new", fresh));
@@ -343,17 +345,6 @@ test("a greenfield area emits no directive", async (t) => {
   assert.equal(population.status, "postdates-baseline");
   assert.equal(population.directive, false);
   assert.equal(population.files.length, 0);
-});
-
-test("a dimension whose sites all arrived after the pin states nothing", () => {
-  const population = { status: "ok", directive: true, files: [{ rel: "src/a/x.ts" }], missing: [], added: [] };
-
-  assert.deepEqual(baselineStates(population, { candidates: 0, conforming: 0 }),
-    { directive: false, gate: "postdates-baseline" });
-  assert.deepEqual(baselineStates(population, { candidates: 8, conforming: 8 }),
-    { directive: true, gate: null });
-  assert.deepEqual(baselineStates({ status: "population-change", directive: false }, { candidates: 8 }),
-    { directive: false, gate: "population-change" });
 });
 
 // --- E5: re-pinning is a separate command that prints what it accepts ---
@@ -382,7 +373,7 @@ test("re-pinning prints the population delta and nothing suggests it", async (t)
   // The scan path never points a human at a re-pin. The prior design suggested
   // it exactly when post-baseline sites outnumbered baseline ones, which is the
   // moment the agent's own output is largest.
-  const state = await resolveBaseline(dir, { pin: oldPin, baseRef: "main" });
+  const state = await resolve(dir, { pin: oldPin, baseRef: "main" });
   const population = baselinePopulation(state, area("src/a", ["src/a/x.ts"]));
   for (const s of [state.status, state.baseRefReason, population.status]) {
     assert.ok(!/re-?pin/i.test(String(s)), `a scan-path string invites a re-pin: ${s}`);
@@ -410,7 +401,7 @@ test("the branch's own changes are not map drift", async (t) => {
   });
 
   const pin = buildPin([area("src/app", files)], { sha });
-  const state = await resolveBaseline(dir, { pin, baseRef: "main" });
+  const state = await resolve(dir, { pin, baseRef: "main" });
 
   assert.equal(state.drift.total, 2, "drift is baseline..base-ref");
   assert.equal(state.drift.byArea.get("src/app"), 2);
@@ -454,7 +445,7 @@ test("no base branch is a stated reason, not a thrown error or an empty sha", as
 
   // The baseline itself still resolves: the pinned population is readable
   // without a base ref, only drift is unmeasurable.
-  const state = await resolveBaseline(dir, { pin: buildPin([area("src/a", ["src/a/x.ts"])], { sha }) });
+  const state = await resolve(dir, { pin: buildPin([area("src/a", ["src/a/x.ts"])], { sha }) });
   assert.equal(state.status, "ok");
   assert.equal(state.countsOnly, false);
   assert.equal(state.baseRef, null);
@@ -507,7 +498,7 @@ test("a renamed directory keeps its baseline population", async (t) => {
   const pin = buildPin([area("src/services", before)], { sha });
   const after = before.map((rel) => rel.replace("src/services/", "src/domain/"));
 
-  const state = await resolveBaseline(dir, { pin, baseRef: "main" });
+  const state = await resolve(dir, { pin, baseRef: "main" });
   assert.equal(state.renames.get("src/domain/s0.ts"), "src/services/s0.ts");
 
   const population = baselinePopulation(state, area("src/domain", after));
@@ -541,7 +532,7 @@ test("a rename made on the branch under review is still followed", async (t) => 
   // The rename is not in baseline..main, only in baseline..HEAD. Following the
   // drift range alone would read this area as greenfield.
   const pin = buildPin([area("src/services", before)], { sha });
-  const state = await resolveBaseline(dir, { pin, baseRef: "main" });
+  const state = await resolve(dir, { pin, baseRef: "main" });
 
   assert.equal(state.drift.total, 0, "drift still ignores the branch's own moves");
 
@@ -567,7 +558,7 @@ test("a path holding a newline stays one path through the rename map", needsPosi
   writePin(dir, pin);
   assert.deepEqual(loadPin(dir).areas[0].files, [odd, "src/services/plain.ts"].sort());
 
-  const state = await resolveBaseline(dir, { pin, baseRef: "main" });
+  const state = await resolve(dir, { pin, baseRef: "main" });
 
   // A newline-split diff turns this one rename record into three junk entries,
   // and the moved file loses the claims it carried.
@@ -641,4 +632,110 @@ test("a blob that will not come back is reported, not silently dropped", async (
   // through "..", so a prefix check on the joined string is not the guard.
   assert.ok(out.missing.some((m) => m.rel === "/etc/passwd"));
   assert.ok(out.missing.some((m) => m.rel === null), "a malformed entry is reported, not thrown on");
+});
+
+// --- the scan-facing seam ---
+
+test("one call answers everything the scan needs about an area's baseline", async (t) => {
+  // The scan used to assemble this itself: load the pin, resolve the state,
+  // build a population per area, measure, and then read `population.files`,
+  // `population.missing`, `f.currentRel ?? f.rel` and `population.status` back
+  // out. Four record shapes and an ordering nobody wrote down.
+  let sha;
+  const dir = repo(t, (d, { write, commit }) => {
+    write("src/a.ts", CONFORMING);
+    write("src/b.ts", CONFORMING);
+    sha = commit("init");
+  });
+
+  const rels = ["src/a.ts", "src/b.ts"];
+  const areas = [area("src", rels)];
+  writePin(dir, buildPin(areas, { sha }));
+  const state = await resolve(dir, { baseRef: "main" });
+
+  const measured = await measure(dir, state, areas, {
+    headParsed: new Map(rels.map((rel) => [rel, { rel, ok: true, hits: {} }])),
+    parse: async () => ({ records: new Map() }),
+    reduce: () => [{ key: "d", candidates: 4, conforming: 4 }],
+  });
+
+  const one = measured.get("aaaaaaaa");
+  assert.equal(one.gate, null, "nothing closes an area whose pinned files are all still there");
+  assert.deepEqual(one.population, { status: "ok", files: 2, missing: 0 });
+  assert.equal(one.pinned.fileCount, 2, "the gates read the pinned population's shape, not today's");
+  assert.equal(one.pinned.dirCount, 1);
+  assert.deepEqual(one.dims, [{ key: "d", candidates: 4, conforming: 4 }]);
+});
+
+test("an area holding a file the pin never had is closed before any gate is asked", async (t) => {
+  // E1: a pinned file that left the area is a population a human has not
+  // accepted, and it closes the area rather than being folded into the counts.
+  let sha;
+  const dir = repo(t, (d, { write, commit, git }) => {
+    write("src/a.ts", CONFORMING);
+    write("src/b.ts", CONFORMING);
+    sha = commit("init");
+    git("mv", "src/b.ts", "src/moved.ts");
+    commit("move");
+  });
+
+  const areas = [area("src", ["src/a.ts", "src/b.ts"])];
+  writePin(dir, buildPin(areas, { sha }));
+  const state = await resolve(dir, { baseRef: "main" });
+
+  const measured = await measure(dir, state, [area("src", ["src/a.ts"])], {
+    headParsed: new Map(),
+    parse: async () => ({ records: new Map() }),
+    reduce: () => [],
+  });
+
+  assert.equal(measured.get("aaaaaaaa").gate, "population-change");
+});
+
+test("resolve reads the pin itself, so the caller never holds one", async (t) => {
+  // The corpus size the layout was resolved from travels with the state: the
+  // area floor is a step function of it, so deriving it from today's file count
+  // re-partitions the repository on one added file and every area then reads as
+  // a population change against a pin that knew the old layout.
+  let sha;
+  const dir = repo(t, (d, { write, commit }) => {
+    write("src/a.ts", CONFORMING);
+    sha = commit("init");
+  });
+  writePin(dir, buildPin([area("src", ["src/a.ts"])], { sha, corpus: 41 }));
+
+  const state = await resolve(dir, { baseRef: "main" });
+
+  assert.equal(state.layout, 41);
+  assert.equal(state.countsOnly, false);
+});
+
+test("a baseline pass that answered for part of its population says so", async (t) => {
+  // F7 applies to both corpus reads, not just the first. The baseline
+  // materialises blobs and parses them a second time, and the Ruby bridge can
+  // hit its per-line guard there exactly as it can on the working tree. Dropped,
+  // the scan states directives over a population it only partly counted.
+  let sha;
+  const dir = repo(t, (d, { write, commit }) => {
+    write("src/a.ts", CONFORMING);
+    sha = commit("init");
+  });
+  // The file differs from the pin, so it is materialised and reparsed rather
+  // than reused from the corpus pass.
+  writeFileSync(join(dir, "src", "a.ts"), VIOLATING);
+
+  const areas = [area("src", ["src/a.ts"])];
+  writePin(dir, buildPin(areas, { sha }));
+  const state = await resolve(dir, { baseRef: "main" });
+
+  const measured = await measure(dir, state, areas, {
+    headParsed: new Map(),
+    parse: async (files) => ({
+      records: new Map(files.map((f) => [f.rel, { rel: f.rel, ok: true, hits: {} }])),
+      truncated: true,
+    }),
+    reduce: () => [],
+  });
+
+  assert.equal(measured.truncated, true, "the second corpus read carries the same flag the first does");
 });

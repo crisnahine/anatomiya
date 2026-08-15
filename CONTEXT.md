@@ -22,6 +22,14 @@ _Avoid_: module, package, folder, scope
 A source file that no area holds, because every directory above it fell below the floor.
 _Avoid_: unmapped, skipped, excluded
 
+**Unexamined**:
+A corpus file that contributed no sites, and which of the four reasons it was: **crashed** the
+parser, **rejected** as syntax the parser would not take, **oversize** past the per-file cap, or
+**unreadable**, meaning this tool or the filesystem could not produce it. A file that was examined
+is **ok**. The reader's next move differs for each, which is why one word will not do: rejected
+syntax is the repository's own code, and a crash is this tool's.
+_Avoid_: failed, skipped, error, broken
+
 ### What is counted
 
 **Dimension**:

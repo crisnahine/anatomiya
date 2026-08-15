@@ -1,8 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { parseSync } from "oxc-parser";
-import { DIMENSIONS, ALL_DIMENSIONS, dimensionsFor, collectHits } from "../lib/dimensions.mjs";
-import { walk } from "../lib/walk.mjs";
+import { DIMENSIONS, ALL_DIMENSIONS, dimensionsFor } from "../lib/dimensions.mjs";
+import { walk, collectHits } from "../lib/walk.mjs";
 
 const dim = (key) => DIMENSIONS.find((d) => d.key === key);
 

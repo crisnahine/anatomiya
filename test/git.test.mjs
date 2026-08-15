@@ -5,7 +5,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 
-import { gitBuffered, parseNameStatusZ } from "../lib/git.mjs";
+import { needsShebang } from "./platform.mjs";
+
+import { gitBuffered, gitStreamed, parseNameStatusZ, parsePorcelainZ, showBlob } from "../lib/git.mjs";
 
 /**
  * One runner and one record grammar, because four copies of each had drifted:
@@ -85,4 +87,232 @@ test("a non-zero exit is reported rather than read as an empty answer", async (t
 
   assert.equal(r.ok, false);
   assert.notEqual(r.code, 0, "the exit code is what says so");
+});
+
+test("a streamed read hands over one field per NUL-delimited record", async (t) => {
+  // The streamed entry point exists because `execFile` throws
+  // `RangeError: Invalid string length` from inside Node's own exit handler on
+  // output that grows with the repository, where no caller can catch it (F6).
+  // What crosses this seam is the field split, and nothing above it.
+  const { dir } = repo(t);
+  const seen = [];
+
+  await gitStreamed(dir, ["ls-files", "-z", "--"], (field) => seen.push(field));
+
+  assert.deepEqual(seen, ["a.ts"]);
+});
+
+test("a streamed read that git refused is rejected, not resolved as an empty answer", async (t) => {
+  // The whole of F13 and F15: buffering an oversize log put it in the same
+  // silent branch as a repository with no commits, and every file came back
+  // with no author. A caller that has already been handed some fields has to
+  // hear that they were not the answer.
+  const { dir } = repo(t);
+
+  await assert.rejects(
+    () => gitStreamed(dir, ["ls-tree", "-z", "--name-only", "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"], () => {}),
+    /not a tree object|exited/
+  );
+});
+
+test("the last record of an unterminated stream still reaches the caller", async (t) => {
+  // `git log --format=...` does not terminate its final record, so a reader
+  // that only emits on NUL drops the last commit's author entirely. That is
+  // the field the author gate counts.
+  const { dir } = repo(t);
+  const seen = [];
+
+  await gitStreamed(dir, ["log", "--format=%ae", "--"], (f) => seen.push(f), { terminated: false });
+
+  assert.deepEqual(seen, ["t@t.test\n"]);
+});
+
+test("a leftover on a terminated stream is a cut-off record, not a short one", async (t) => {
+  // A caller that says its command terminates every record is saying anything
+  // left in the buffer at exit is half of one. Handing it over would name a
+  // file git never listed. `log --format=` stands in for a cut-off listing here
+  // because it reliably ends without a delimiter.
+  const { dir } = repo(t);
+
+  await assert.rejects(
+    () => gitStreamed(dir, ["log", "--format=%ae", "--"], () => {}),
+    /ended mid-record/
+  );
+});
+
+test("a caller that has seen enough stops the walk rather than reading the rest", async (t) => {
+  // Reading to the end and discarding the tail pays for a listing nobody
+  // wanted, on the repositories where the listing is largest. No caller stops
+  // early today, since B10 removed the corpus cap that used to; the seam keeps
+  // it because a bound that cannot end the walk it bounds is not a bound.
+  const { dir, git } = repo(t);
+  for (const n of ["b.ts", "c.ts", "d.ts"]) writeFileSync(join(dir, n), "export const x = 1\n");
+  git("add", "-A");
+  git("commit", "-qm", "more");
+  const seen = [];
+
+  await gitStreamed(dir, ["ls-files", "-z", "--"], (f) => {
+    seen.push(f);
+    return false;
+  });
+
+  assert.deepEqual(seen, ["a.ts"], "the walk ends on the first refusal");
+});
+
+test("a streamed read that never returns is ended by its own timeout", needsShebang, async (t) => {
+  // The baseline's runner carried no timeout at all, so a git that stopped
+  // answering took the scan with it. A stream cannot be given a byte budget the
+  // way a buffered read can, so the clock is the only bound it has.
+  //
+  // A shim on PATH rather than a real git command, because every git command
+  // that blocks does so on a stdin this runner has already closed, and a fast
+  // command with a tiny budget races the machine.
+  const { dir } = repo(t);
+  const bin = mkdtempSync(join(tmpdir(), "anatomiya-git-bin-"));
+  t.after(() => rmSync(bin, { recursive: true, force: true }));
+  writeFileSync(join(bin, "git"), "#!/bin/sh\nsleep 30\n", { mode: 0o755 });
+
+  await assert.rejects(
+    () =>
+      gitStreamed(dir, ["ls-files", "-z", "--"], () => {}, {
+        timeout: 250,
+        env: { ...process.env, PATH: `${bin}:${process.env.PATH}` },
+      }),
+    /exited SIG/
+  );
+});
+
+test("a record that never ends is refused before it reaches V8's string limit", needsShebang, async (t) => {
+  // The cap F5 asks for. Both hand-rolled readers grew one buffer until a NUL
+  // arrived, so output carrying none of them reached `Invalid string length`
+  // from inside the exit handler, which is the failure streaming exists to
+  // avoid in the first place.
+  const { dir } = repo(t);
+  const bin = mkdtempSync(join(tmpdir(), "anatomiya-git-bin-"));
+  t.after(() => rmSync(bin, { recursive: true, force: true }));
+  writeFileSync(join(bin, "git"), '#!/bin/sh\nhead -c 5000 /dev/zero | tr "\\0" "x"\n', { mode: 0o755 });
+
+  await assert.rejects(
+    () =>
+      gitStreamed(dir, ["ls-files", "-z", "--"], () => {}, {
+        maxFieldBytes: 1024,
+        env: { ...process.env, PATH: `${bin}:${process.env.PATH}` },
+      }),
+    /one record past 1024 bytes/
+  );
+});
+
+test("a porcelain record is a two-character status, a space, and the path", () => {
+  // The other grammar git prints NUL-delimited, read a fourth time in the
+  // check. Slicing three characters off is the whole record format, and
+  // getting the offset wrong takes three characters off every filename.
+  assert.deepEqual(parsePorcelainZ(" M lib/a.ts\0?? lib/b.ts\0"), ["lib/a.ts", "lib/b.ts"]);
+});
+
+test("a porcelain rename names the file once, not once per path it carries", () => {
+  // A rename is followed by its origin as a bare field. Read as another record
+  // it counts the rename twice and takes three characters off the old name.
+  assert.deepEqual(parsePorcelainZ("R  lib/new.ts\0lib/old.ts\0M  lib/c.ts\0"), ["lib/new.ts", "lib/c.ts"]);
+});
+
+test("a porcelain path holding a newline stays one record", () => {
+  assert.deepEqual(parsePorcelainZ("A  lib/two\nlines.ts\0"), ["lib/two\nlines.ts"]);
+});
+
+test("a caller that throws while reading ends the walk instead of hanging it", async (t) => {
+  // A throw out of a stream handler leaves the promise pending and the child
+  // alive: the scan stops with no error and no exit.
+  const { dir } = repo(t);
+
+  await assert.rejects(
+    () =>
+      gitStreamed(dir, ["ls-files", "-z", "--"], () => {
+        throw new Error("the caller could not use this field");
+      }),
+    /the caller could not use this field/
+  );
+});
+
+test("a caller that throws on the final unterminated record is answered too", async (t) => {
+  // The same hazard as the record loop, in the one branch that runs after the
+  // child has closed. Unguarded, the throw escapes as an uncaught exception and
+  // the promise never settles: the scan stops with no error and no exit.
+  //
+  // `log --format=` prints no NUL at all, so the only field this caller sees
+  // comes from the close handler.
+  const { dir } = repo(t);
+
+  await assert.rejects(
+    () =>
+      gitStreamed(dir, ["log", "--format=%ae", "--"], () => {
+        throw new Error("the caller could not use the last field");
+      }, { terminated: false }),
+    /the caller could not use the last field/
+  );
+});
+
+test("a blob past the parser's per-file ceiling is refused without being asked to", async (t) => {
+  // The cap used to be applied unconditionally inside this function. Handing it
+  // to the caller made the default sixteen times wider, and the one caller that
+  // passes no options buffers the whole blob through `execFile`, which is the
+  // read F5's byte cap exists to bound.
+  const { dir, git } = repo(t);
+  writeFileSync(join(dir, "big.ts"), `export const big = "${"x".repeat(5 * 1024 * 1024)}"\n`);
+  git("add", "-A");
+  git("commit", "-qm", "big");
+  const sha = execFileSync("git", ["rev-parse", "HEAD"], { cwd: dir, encoding: "utf8" }).trim();
+
+  const blob = await showBlob(dir, sha, "big.ts");
+
+  assert.equal(blob.ok, false);
+  assert.equal(blob.reason, "over size cap", "and it says which bound refused it");
+});
+
+test("a path that has become a directory errors instead of yielding a tree listing", async (t) => {
+  // `git show <sha>:<path>` prints a tree listing for a directory, and a caller
+  // reading blobs then parses that listing as source. `cat-file blob` asserts
+  // the object type, so the two outcomes stay apart.
+  const { dir, git } = repo(t);
+  const sha = execFileSync("git", ["rev-parse", "HEAD"], { cwd: dir, encoding: "utf8" }).trim();
+
+  const listing = await showBlob(dir, sha, "");
+
+  assert.equal(listing.ok, false, "the repository root is a tree, not a blob");
+});
+
+test("a blob read runs the git its caller pointed at", needsShebang, async (t) => {
+  // `showBlob` is shared by the scan and the check, and they do not agree about
+  // how long to wait. It can only take the caller's bound if it takes the
+  // caller's options at all, and dropping them silently is invisible: the real
+  // git answers, just on the wrong clock.
+  const { dir } = repo(t);
+  const bin = mkdtempSync(join(tmpdir(), "anatomiya-git-bin-"));
+  t.after(() => rmSync(bin, { recursive: true, force: true }));
+  writeFileSync(join(bin, "git"), '#!/bin/sh\nprintf SHIM\n', { mode: 0o755 });
+
+  const blob = await showBlob(dir, "a".repeat(40), "a.ts", {
+    env: { ...process.env, PATH: `${bin}:${process.env.PATH}` },
+  });
+
+  assert.equal(blob.ok, true);
+  assert.equal(blob.content.toString("utf8"), "SHIM", "the caller's environment reached the runner");
+});
+
+test("a blob read gives up on the clock its caller set, not the scan's", needsShebang, async (t) => {
+  // The check runs at review time and gives up on a stalled git sooner than a
+  // scan does. This is its most frequent git call, up to two per examined file,
+  // so inheriting the scan's 120s bound would hang a review for two minutes a
+  // file. The shim outlasts any bound but the one passed here, so the call can
+  // only settle if that bound was honoured.
+  const { dir } = repo(t);
+  const bin = mkdtempSync(join(tmpdir(), "anatomiya-git-bin-"));
+  t.after(() => rmSync(bin, { recursive: true, force: true }));
+  writeFileSync(join(bin, "git"), "#!/bin/sh\nsleep 300\n", { mode: 0o755 });
+
+  const blob = await showBlob(dir, "a".repeat(40), "a.ts", {
+    timeout: 250,
+    env: { ...process.env, PATH: `${bin}:${process.env.PATH}` },
+  });
+
+  assert.equal(blob.ok, false, "a killed read is not a successful one");
 });

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import * as reduce from "../lib/reduce.mjs";
 import { ALL_DIMENSIONS } from "../lib/dimensions.mjs";
 
-const { applyGates, verdictFor, GATES } = reduce;
+const { applyGates, verdictFor, blockedFor, GATES } = reduce;
 
 /**
  * A dimension's per-file shape as the reducer leaves it, built from per-file
@@ -549,7 +549,7 @@ const onlyIt = () =>
     applicability: 14, langFileCount: 14, files: paths(14),
   });
 
-const scope = { fileCount: 14, dirCount: 1 };
+const shape = { fileCount: 14, dirCount: 1 };
 
 test("a blocked slot states neither of its two sentences", () => {
   // Closing `directive` alone left a greenfield or unreachable-baseline area
@@ -557,8 +557,8 @@ test("a blocked slot states neither of its two sentences", () => {
   // nobody accepted (D6, E3, E4). Only the whole verdict can hold this: the
   // gate battery is polarity-free and does not know a population was refused.
   const r = verdictFor(onlyIt(), {
-    blocked: "postdates-baseline",
-    scope,
+    measured: { gate: null, pinned: shape, dims: [] },
+    current: shape,
     authors: 1,
     repoAuthors: 1,
   });
@@ -581,7 +581,7 @@ test("the gates read the pinned counts and never today's", () => {
     exceptions: [],
   };
 
-  const r = verdictFor(today, { baselineDim: pinned, scope: { fileCount: 12, dirCount: 2 }, authors: 3 });
+  const r = verdictFor(today, { baselineDim: pinned, current: { fileCount: 12, dirCount: 2 }, authors: 3 });
 
   assert.equal(r.states, null);
   assert.equal(r.gate, "ratio");
@@ -590,7 +590,7 @@ test("the gates read the pinned counts and never today's", () => {
 });
 
 test("with no pin the verdict reads the current population and records no baseline", () => {
-  const r = verdictFor(dim({ applicability: 10 }), { scope: { fileCount: 12, dirCount: 2 }, authors: 3 });
+  const r = verdictFor(dim({ applicability: 10 }), { current: { fileCount: 12, dirCount: 2 }, authors: 3 });
 
   assert.equal(r.states, "claim");
   assert.equal(r.baseline, null, "which is what caps the check at FIX");
@@ -752,4 +752,122 @@ test("the counter-eligible set is exactly twelve named keys and every counter na
     // the area does, or the agent reads a prohibition and picks a third thing.
     assert.ok(!/^no[t]?\s/i.test(d.counterClaim), `${d.key} states a prohibition, not a directive`);
   }
+});
+
+/* --- the verdict, assembled in one place --- */
+
+test("a population nobody accepted closes the slot before a gate is asked", () => {
+  // The ordering is the point. The gate battery would pass this dimension on
+  // its counts alone, and a directive derived from a population a human never
+  // accepted is a convention nobody agreed to (E1, D6).
+  const perfect = dim({ ...spread([4, 4, 4, 4]), applicability: 4 });
+
+  const r = verdictFor(perfect, {
+    measured: { gate: "population-change", pinned: null, dims: [] },
+    current: { fileCount: 4, dirCount: 2 },
+    authors: 3,
+  });
+
+  assert.equal(r.states, null);
+  assert.equal(r.directive, false);
+  assert.equal(r.gate, "population-change");
+});
+
+test("a block closes both sides, not just the claim", () => {
+  // Forcing `directive` alone leaves the area stating its inverse, which is
+  // the same directive from the same unaccepted population (D6, E3, E4).
+  const mostlyCounter = dim({ ...spread([4, 4, 4, 4], [0, 0, 0, 0]), applicability: 4, counterClaim: "the other way" });
+
+  const r = verdictFor(mostlyCounter, {
+    measured: { gate: "unreachable", pinned: null, dims: [] },
+    current: { fileCount: 4, dirCount: 2 },
+    authors: 3,
+  });
+
+  assert.equal(r.states, null);
+  assert.equal(r.counterGate, "unreachable");
+});
+
+test("a dimension whose sites all postdate the pin is closed by the verdict itself", () => {
+  // The scan used to reach into the baseline for this and hand the answer in.
+  // Only a whole repository could reach the branch.
+  const today = dim({ ...spread([4, 4, 4, 4]), applicability: 4 });
+
+  const r = verdictFor(today, {
+    measured: { gate: null, pinned: { fileCount: 4, dirCount: 2 }, dims: [] },
+    current: { fileCount: 4, dirCount: 2 },
+    authors: 3,
+  });
+
+  assert.equal(r.gate, "postdates-baseline");
+  assert.equal(r.directive, false);
+});
+
+test("a corpus answered for in part states nothing, whatever any slot counted", () => {
+  // F7. Counting over an arbitrary subset and rendering it like a complete scan
+  // is worse than reporting nothing, and the whole-map suppression outranks
+  // every other condition.
+  const perfect = dim({ ...spread([4, 4, 4, 4]), applicability: 4 });
+
+  const r = verdictFor(perfect, {
+    truncated: true,
+    current: { fileCount: 4, dirCount: 2 },
+    authors: 3,
+  });
+
+  assert.equal(r.gate, "corpus-truncated");
+  assert.equal(r.counterGate, "corpus-truncated");
+  assert.equal(r.states, null);
+});
+
+test("a repository with no pin lets the gates decide, and names no baseline", () => {
+  // Counts-only. Charging `postdates-baseline` here would name a pin that does
+  // not exist as the reason a slot said nothing.
+  const perfect = dim({ ...spread([12, 12, 12, 12, 12]), applicability: 10, files: paths(5) });
+
+  const r = verdictFor(perfect, {
+    measured: { gate: null, pinned: null, dims: [] },
+    current: { fileCount: 12, dirCount: 2 },
+    authors: 3,
+  });
+
+  assert.equal(r.gate, null);
+  assert.equal(r.states, "claim");
+});
+
+test("a verdict handed the wrong record shape refuses it rather than opening every gate", () => {
+  // The population record and the measure record are different objects, and one
+  // is a field of the other. Passed the inner one, the old reader found no
+  // `gate` and no `pinned`, returned null, and let a slot state a directive from
+  // a population nobody accepted. Every sibling seam here throws instead.
+  const perfect = dim({ ...spread([12, 12, 12, 12, 12]), applicability: 10, files: paths(5) });
+  const population = { status: "population-change", directive: false, files: [], missing: [] };
+
+  assert.throws(
+    () => verdictFor(perfect, { measured: population, current: { fileCount: 12, dirCount: 2 }, authors: 3 }),
+    /measure/
+  );
+});
+
+test("a dimension whose sites all arrived after the pin states nothing", () => {
+  // E4: a ratio over zero baseline sites is the agent's own output measured
+  // against itself, so the slot closes before any gate is asked.
+  const counted = { gate: null, pinned: { fileCount: 1, dirCount: 1 }, dims: [], population: {} };
+
+  assert.equal(blockedFor(counted, { candidates: 0, conforming: 0 }), "postdates-baseline");
+  assert.equal(blockedFor(counted, { candidates: 8, conforming: 8 }), null);
+});
+
+test("an area the whole population closed stays closed whatever the dimension counted", () => {
+  const changed = { gate: "population-change", pinned: null, dims: [], population: {} };
+
+  assert.equal(blockedFor(changed, { candidates: 8, conforming: 8 }), "population-change");
+});
+
+test("a repository with no pin has no baseline to postdate", () => {
+  // Counts-only, not greenfield. Charging every dimension `postdates-baseline`
+  // here would name a pin that does not exist as the reason.
+  const unpinned = { gate: null, pinned: null, dims: [], population: {} };
+
+  assert.equal(blockedFor(unpinned, null), null);
 });

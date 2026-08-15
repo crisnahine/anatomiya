@@ -10,6 +10,10 @@ import { needsRuby } from "./ruby-available.mjs";
 import { check, severityFor, formatReport } from "../lib/check.mjs";
 import { scan } from "../lib/scan.mjs";
 import { writeMap } from "../lib/write.mjs";
+import { writeFacts } from "../lib/facts.mjs";
+
+// The area record carries a glob in the two halves it is composed from.
+const glob = (dir) => ({ negated: false, dir, tail: "**/*.ts" });
 
 /**
  * Every case here builds a real git repository, because the properties under
@@ -72,8 +76,19 @@ const dim = (o = {}) => ({
 function facts(dir, { sha, dimensions = [dim()], path = "src", fileCount = 8, pinned = null, areas = null } = {}) {
   const store = join(dir, ".claude/anatomiya");
   mkdirSync(store, { recursive: true });
-  const mapped = areas || [{ id: "aaaaaaaa", path, globs: [`${path}/**/*.ts`], fileCount, dimensions }];
-  writeFileSync(join(store, "facts.json"), JSON.stringify({ schema: 1, areas: mapped }));
+  const mapped = areas
+    || [{ id: "aaaaaaaa", path, globs: [glob(path)], fileCount, dimensions }];
+  // Through the writer, never hand-built. This fixture used to spell `schema: 1`
+  // while the writer emitted 3, so every one of these tests read the check
+  // against a shape nothing had produced for two versions.
+  writeFacts(dir, {
+    root: dir,
+    scannedAt: "2026-01-01T00:00:00.000Z",
+    corpus: { files: fileCount, frameworks: [] },
+    parse: { parsed: fileCount },
+    suppressAll: false,
+    areas: mapped,
+  });
   if (!sha) return;
   writeFileSync(
     join(store, "baseline.json"),
@@ -392,11 +407,11 @@ test("the deepest area containing a file supplies its claims", async (t) => {
   facts(dir, {
     sha: sha(dir, "main"),
     areas: [
-      { id: "aaaaaaaa", path: "src", globs: ["src/**/*.ts"], fileCount: 8, dimensions: [dim()] },
+      { id: "aaaaaaaa", path: "src", globs: [glob("src")], fileCount: 8, dimensions: [dim()] },
       {
         id: "bbbbbbbb",
         path: "src/api",
-        globs: ["src/api/**/*.ts"],
+        globs: [glob("src/api")],
         fileCount: 8,
         dimensions: [dim({ directive: false, gate: "authors" })],
       },
@@ -559,7 +574,7 @@ test("facts written by a newer scan are not read as if their shape were known", 
     join(store, "facts.json"),
     JSON.stringify({
       schema: 99,
-      areas: [{ id: "aaaaaaaa", path: "src", globs: ["src/**/*.ts"], fileCount: 8, dimensions: [dim()] }],
+      areas: [{ id: "aaaaaaaa", path: "src", globs: [glob("src")], fileCount: 8, dimensions: [dim()] }],
     })
   );
 

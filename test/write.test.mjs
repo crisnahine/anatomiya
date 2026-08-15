@@ -33,7 +33,13 @@ const dim = (o = {}) => ({
 });
 
 function area(path, dimensions = [dim()]) {
-  return { id: areaId(path), path, globs: [`${path}/**/*.ts`], fileCount: 40, dimensions };
+  return {
+    id: areaId(path),
+    path,
+    globs: [{ negated: false, dir: path, tail: "**/*.ts" }],
+    fileCount: 40,
+    dimensions,
+  };
 }
 
 // Twenty files sit in no area, which is what `uncovered` must come out as.

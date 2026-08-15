@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { renderArea, renderOverview, areaFilename, isOwned, GENERATOR, OVERVIEW_AREAS } from "../lib/render.mjs";
-import { glob } from "../lib/areas.mjs";
+import { globEntry, globText } from "../lib/areas.mjs";
 
 const dim = (o = {}) => ({
   key: "swallowed_error",
@@ -23,7 +23,7 @@ const dim = (o = {}) => ({
 const area = (o = {}) => ({
   id: "aabbccdd",
   path: "src/services",
-  globs: ["src/services/**/*.{ts,tsx}"],
+  globs: [{ negated: false, dir: "src/services", tail: "**/*.{ts,tsx}" }],
   fileCount: 40,
   dimensions: [dim()],
   ...o,
@@ -57,7 +57,7 @@ test("a hostile path cannot add structure to the body of an area file", () => {
   const out = renderArea(
     area({
       path: HOSTILE_DIR,
-      globs: ["src/**/*.ts"],
+      globs: [{ negated: false, dir: "src", tail: "**/*.ts" }],
       dimensions: [
         dim({
           claim: "defaults are taken with ??, not ||",
@@ -86,7 +86,7 @@ test("a hostile path cannot add structure to the body of an area file", () => {
 test("a hostile directory name in the paths glob stays inside the frontmatter", () => {
   // areas.mjs builds the glob straight from the directory name, so it is
   // repository-controlled and F4 puts it through F3 like every other one.
-  const out = renderArea(area({ path: HOSTILE_DIR, globs: [glob(HOSTILE_DIR, ["js"])] }));
+  const out = renderArea(area({ path: HOSTILE_DIR, globs: [globEntry(HOSTILE_DIR, ["js"])] }));
   const lines = out.split("\n");
 
   assert.equal(lines.filter((l) => l === "---").length, 2, "the frontmatter opens and closes once");
@@ -96,7 +96,7 @@ test("a hostile directory name in the paths glob stays inside the frontmatter", 
   // The extension tail must survive intact. The encoder strips a leading `*` as
   // a markdown bullet, and a glob that lost it reads correct and matches
   // nothing.
-  const tail = glob("src", ["js"]).slice("src".length);
+  const tail = globText(globEntry("src", ["js"])).slice("src".length);
   assert.ok(lines[3].startsWith(`  - "src/evil `), lines[3]);
   assert.ok(lines[3].endsWith(`${tail}"`), lines[3]);
 });
@@ -104,7 +104,7 @@ test("a hostile directory name in the paths glob stays inside the frontmatter", 
 test("a root-level glob keeps its leading star", () => {
   // The whole glob is the tail here, so the encoder sees no directory half at
   // all; encoding it would strip the `*` and leave a glob matching nothing.
-  const out = renderArea(area({ path: ".", globs: [glob(".", ["ruby"])] }));
+  const out = renderArea(area({ path: ".", globs: [globEntry(".", ["ruby"])] }));
   assert.match(out, /^ {2}- "\*\*\/\*\.\{gemspec,jbuilder,rake,rb\}"$/m);
 });
 
@@ -113,12 +113,12 @@ test("a bare-name glob keeps its leading star as well", () => {
   // gets a pattern with no `*.` in it (A12). The tail match keyed on the
   // extension glob alone, so this one fell through to the path encoder, which
   // strips the leading `**` as a markdown bullet and leaves `/Rakefile`.
-  const out = renderArea(area({ path: ".", globs: ["**/Rakefile"] }));
+  const out = renderArea(area({ path: ".", globs: [{ negated: false, dir: "", tail: "**/Rakefile" }] }));
   assert.match(out, /^ {2}- "\*\*\/Rakefile"$/m);
 });
 
 test("a bare-name glob under a directory keeps both halves", () => {
-  const out = renderArea(area({ path: "lib", globs: ["lib/**/Gemfile"] }));
+  const out = renderArea(area({ path: "lib", globs: [{ negated: false, dir: "lib", tail: "**/Gemfile" }] }));
   assert.match(out, /^ {2}- "lib\/\*\*\/Gemfile"$/m);
 });
 
@@ -427,7 +427,9 @@ test("a truncated scan names no area, because a truncated scan states nothing", 
 
   assert.match(out, /^## Areas \(3\)$/m);
   assert.equal((out.match(/^- src\/\S+ — /gm) || []).length, 0, "nothing is stated, so nothing is named");
-  assert.match(out, /^- and 3 more areas, each in its own file, loaded when you read one of its files$/m);
+  // Not "and 3 more": nothing was named, so there is nothing for these to be
+  // more than.
+  assert.match(out, /^- 3 areas, each in its own file, loaded when you read one of its files$/m);
 });
 
 test("a truncated scan says so before any count is read", () => {
@@ -688,4 +690,29 @@ test("an obligation with nothing to audit prints no audit line", () => {
 
   assert.match(out, /0 of 24 sites \(ratio\)/);
   assert.doesNotMatch(out, /elsewhere|namesake/i, `an audit with nothing to say:\n${out}`);
+});
+
+test("an overview that names no area does not offer more of them", () => {
+  // Measured on a repository whose every area carried counts and stated
+  // nothing: the heading read "Areas (3)", no area was named under it, and the
+  // one line beneath said "and 3 more areas". More than which? The listing is
+  // deliberately limited to areas that state something, so naming none of them
+  // is the ordinary case for a repository with no conventions yet, not an edge.
+  const silent = dim({ states: null, directive: false, gate: "ratio" });
+  const out = renderOverview(
+    result({ areas: [area({ dimensions: [silent] }), area({ id: "11223344", path: "src/api", dimensions: [silent] })] }),
+    { uncovered: 0 }
+  );
+
+  assert.doesNotMatch(out, /and 2 more areas/, "nothing was listed, so nothing can be more");
+  assert.match(out, /^- 2 areas, each in its own file/m);
+});
+
+test("a single unnamed area is one area, not '1 areas'", () => {
+  // The overview loads on every turn, so its one grammatical slip is read every
+  // turn too.
+  const silent = dim({ states: null, directive: false, gate: "ratio" });
+  const out = renderOverview(result({ areas: [area({ dimensions: [silent] })] }), { uncovered: 0 });
+
+  assert.match(out, /^- 1 area in its own file, loaded when you read one of its files$/m);
 });
