@@ -2,8 +2,12 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const SCRIPT = join(dirname(fileURLToPath(import.meta.url)), "..", "scripts", "audit-applicability.mjs");
 
 import { shareTable, readRecords, NARROW_AND_PRECISE } from "../scripts/audit-applicability.mjs";
 import { FACTS_SCHEMA } from "../lib/facts.mjs";
@@ -21,6 +25,54 @@ function withFiles(byName) {
 
 const record = (areas) => ({ schema: FACTS_SCHEMA, areas });
 const oneSlot = [{ path: "a", fileCount: 10, dimensions: [{ key: "k", applicability: 5, langFileCount: 10 }] }];
+
+/**
+ * The exit code is the contract a CI job reads, so it is asserted rather than
+ * checked by hand: a partial read that exits 0 is the clean-looking summary the
+ * whole refusal exists to prevent.
+ */
+function runScript(args) {
+  const r = spawnSync(process.execPath, [SCRIPT, ...args], { encoding: "utf8" });
+  return { code: r.status, out: r.stdout, err: r.stderr };
+}
+
+test("a map the audit could not measure exits non-zero, whichever way it could not", () => {
+  const f = withFiles({
+    "notfacts.json": {},
+    "future.json": { schema: FACTS_SCHEMA + 1, areas: oneSlot },
+    "old.json": { schema: 4, areas: [{ path: "a", fileCount: 10, dimensions: [{ key: "k", applicability: 5 }] }] },
+    "good.json": record(oneSlot),
+  });
+  try {
+    const [notfacts, future, old, good] = f.paths;
+
+    assert.equal(runScript([good]).code, 0, "a map it could read exits clean");
+    assert.equal(runScript([notfacts]).code, 1);
+    assert.equal(runScript([future]).code, 1);
+    assert.equal(runScript([old]).code, 1, "every slot carried no denominator");
+    // The one that read clean on its own: a good map alongside an old one used
+    // to swallow the old one's slots and still exit 0.
+    assert.equal(runScript([good, old]).code, 1, "a partial read is not a clean run");
+    assert.equal(runScript(["/tmp/anatomiya-no-such-map.json"]).code, 1);
+  } finally {
+    f.dispose();
+  }
+});
+
+test("the summary counts the maps the table was computed over, not the ones on the command line", () => {
+  const f = withFiles({ "good.json": record(oneSlot), "bad.json": {} });
+  try {
+    assert.match(runScript(f.paths).err, /over 1 repositories/);
+  } finally {
+    f.dispose();
+  }
+});
+
+test("with no argument it says how to be called", () => {
+  const r = runScript([]);
+  assert.equal(r.code, 2);
+  assert.match(r.err, /usage: /);
+});
 
 test("a file that is not a facts record is refused rather than measured", () => {
   // The same rule the map reader follows: a record this build cannot make sense

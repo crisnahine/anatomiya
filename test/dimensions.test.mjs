@@ -396,6 +396,20 @@ test("precision and the blind spot cannot disagree (C2)", () => {
   );
 });
 
+test("a row whose precision this build does not know cannot have its blind spot checked (C2)", () => {
+  // The tie between the marker and the reason only holds against a precision
+  // this build knows. Both shipped registries run `assertPrecision` first, but
+  // this is exported, and a row spelling `"Precise"` would otherwise satisfy
+  // neither branch and pass with no blind spot checked at all.
+  assert.throws(
+    () =>
+      assertApplicability([
+        { key: "typo", precision: "Precise", applicabilityPredicate: { sites: "a file holding a catch clause", blind: null } },
+      ]),
+    /typo declares precision "Precise", so its blind spot cannot be checked/
+  );
+});
+
 test("assertApplicability returns the rows it accepted, so a registry can wrap itself", () => {
   const rows = [
     { key: "ok", precision: "partial", applicabilityPredicate: { sites: "a file holding a catch clause", blind: "a rethrow inside a helper" } },
