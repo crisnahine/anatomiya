@@ -74,6 +74,40 @@ test("the record carries the files this pass's dimension could speak about", (t)
   assert.equal(facts.areas[0].dimensions[0].langFileCount, 40);
 });
 
+test("every number the rendered map prints comes back off the record", (t) => {
+  // The map is derivable from this file, which is why the check reads the
+  // record rather than the rendered map. Two numbers the renderer prints were
+  // computed, rendered and then dropped before the record was written: the
+  // count behind "and 6 more", and the namesake count that separates "this
+  // repository has no such habit" from "the predicate is looking in the wrong
+  // place" (C7).
+  const dir = root(t);
+
+  writeFacts(dir, result([
+    dim({
+      companionsElsewhere: 17,
+      exceptions: [{ path: "a.rb", count: 1 }],
+      moreExceptions: 6,
+      counterClaim: "the other way",
+      counterExceptions: [{ path: "b.rb", count: 1 }],
+      moreCounterExceptions: 2,
+    }),
+  ]));
+  const written = readFacts(dir).facts.areas[0].dimensions[0];
+
+  assert.equal(written.moreExceptions, 6, "the count behind the rendered \"and N more\"");
+  assert.equal(written.moreCounterExceptions, 2, "the same on the side the map may have stated");
+  assert.equal(written.companionsElsewhere, 17, "the namesake count an obligation renders (C7)");
+});
+
+test("a syntax dimension carries no companion count, because it has no companion", (t) => {
+  const dir = root(t);
+
+  writeFacts(dir, result([dim()]));
+
+  assert.equal("companionsElsewhere" in readFacts(dir).facts.areas[0].dimensions[0], false);
+});
+
 test("a stated inverse survives the trip, because the rendered map never says which side it is", (t) => {
   // C6. The map deliberately prints the sentence and no marker, so this file is
   // the only place the check can learn that the area was handed the inverse.

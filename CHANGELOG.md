@@ -38,6 +38,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   all. That is the commonest Ruby service form, and the ratio was stated over whichever subset of a
   repository writes instance entry points instead. `def self.` counts now, the way the migration
   rows already counted it. (C2)
+- The facts record dropped two numbers the rendered map prints, so the map was not derivable from
+  the record the check reads in its place: the count behind "and N more", and the namesake count an
+  obligation renders as "N with a namesake elsewhere in the tree". Found by scanning 35 repositories
+  and looking for a rendered line the record could not reproduce: 1,158 slots on one repository
+  printed a full exception list with no count of what was left out. (C7)
 - The facts record dropped `langFileCount`, the files a dimension can speak about, so the share that
   separates a narrow predicate from a rare construct shaped the gate and was then unreadable from
   disk. Schema 5. A map written before it carries every count and no denominator, and the audit now
