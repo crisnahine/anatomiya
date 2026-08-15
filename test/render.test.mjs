@@ -1,7 +1,16 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { renderArea, renderOverview, unexaminedLines, OVERVIEW_AREAS, MAX_LINES } from "../lib/render.mjs";
+import {
+  renderArea,
+  renderOverview,
+  unexaminedLines,
+  unexaminedPhrase,
+  untrackedSentence,
+  plural,
+  OVERVIEW_AREAS,
+  MAX_LINES,
+} from "../lib/render.mjs";
 import { areaFilename, isOwned, GENERATOR } from "../lib/rules.mjs";
 import { globEntry, globText } from "../lib/areas.mjs";
 
@@ -1033,4 +1042,64 @@ test("a count above one keeps the plural and its verb", () => {
     "4 files hold syntax the parser rejected",
     "5 files exceeded the size cap",
   ]);
+});
+
+test("a stated line divides by the number the gate divided by", () => {
+  // C3: applicability beside the files it could have spoken about is the only
+  // thing a human can audit a narrow predicate with, and that only works when
+  // the rendered denominator is the one the gate used. The area's own file
+  // count is a different number in two ordinary cases: a mixed-language area,
+  // where a Ruby claim can never speak for the TypeScript files, and an area
+  // holding syntax the parser rejected.
+  const text = renderArea({
+    id: "aaaaaaaa",
+    path: "app",
+    globs: [{ negated: false, dir: "app", tail: "**/*.rb" }],
+    fileCount: 20,
+    dimensions: [
+      {
+        key: "k",
+        claim: "rescue blocks use the error they caught",
+        precision: "precise",
+        applicability: 4,
+        langFileCount: 5,
+        candidates: 44,
+        conforming: 44,
+        authors: 2,
+        states: "claim",
+        directive: true,
+        gate: null,
+        exceptions: [],
+        moreExceptions: 0,
+      },
+    ],
+  });
+
+  assert.match(text, /44 of 44 sites across 4 of 5 files/, `divided by the area instead:\n${text}`);
+});
+
+test("the untracked sentence agrees at a count of one, on both surfaces", () => {
+  // The commit that introduced this helper exists only to make these two agree
+  // at one, and nothing pinned it: a helper that always said "files ... are"
+  // left every test green.
+  assert.equal(untrackedSentence(1), "1 source file in the working tree is untracked");
+  assert.equal(untrackedSentence(5), "5 source files in the working tree are untracked");
+});
+
+test("plural leaves a count of zero plural", () => {
+  // "0 file" reads as a typo, and `n <= 1` is the easy slip.
+  assert.equal(plural(0, "area"), "0 areas");
+  assert.equal(plural(1, "area"), "1 area");
+  assert.equal(plural(2, "area"), "2 areas");
+});
+
+test("each unexamined cause keeps its own sentence at one and at many", () => {
+  // Dropping a cause from the check's map made an oversize file report as one
+  // that could not be parsed, which is a different thing to do about it.
+  for (const kind of ["crashed", "failed", "syntaxErrors", "skipped"]) {
+    assert.equal(typeof unexaminedPhrase(kind, 1), "string", kind);
+    assert.notEqual(unexaminedPhrase(kind, 1), unexaminedPhrase(kind === "crashed" ? "failed" : "crashed", 1), kind);
+  }
+  assert.equal(unexaminedPhrase("syntaxErrors", 1), "holds syntax the parser rejected");
+  assert.equal(unexaminedPhrase("syntaxErrors", 2), "hold syntax the parser rejected");
 });

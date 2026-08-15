@@ -5,6 +5,8 @@ import { ALL_DIMENSIONS } from "../lib/dimensions.mjs";
 import { PAIRINGS, applyPairings } from "../lib/pairing.mjs";
 import { parseAll, scratchExt } from "../lib/parse.mjs";
 import { needsRuby } from "./ruby-available.mjs";
+import { REACT_HOOKS } from "../lib/dimensions-jsx.mjs";
+import { COLUMN_TYPE } from "../lib/dimensions-rails.mjs";
 
 /**
  * One witness pair per dimension: the sources the declared predicate says are
@@ -482,8 +484,9 @@ test("every obligation counts its producer, and asks nothing of a repository wit
  * the code computes it agrees with the code by construction and can never
  * disagree with it. Shrink the table and the members it dropped fail here.
  *
- * A member added to the table and not to this list fails too, which is the
- * point at which somebody decides whether it belongs.
+ * The comparison runs both ways: a member added to the table and not to this
+ * list fails too, which is the point at which somebody decides whether it
+ * belongs. One direction alone lets a table grow with nobody looking.
  */
 const TABLES = [
   {
@@ -597,6 +600,22 @@ async function tableProblems(tables) {
 
   return problems;
 }
+
+test("no table grew a member this list has not seen", () => {
+  // The other direction. Driving each listed member through the predicate shows
+  // the table did not shrink; only comparing the two lists shows it did not
+  // grow, and a name added with nobody looking is a claim nobody decided to
+  // make.
+  const shipped = {
+    hook_call_style: REACT_HOOKS,
+    column_null_declared: COLUMN_TYPE,
+  };
+  for (const [key, table] of Object.entries(shipped)) {
+    const listed = TABLES.filter((t) => t.key === key && t.members.length === table.size);
+    assert.equal(listed.length, 1, `${key}: no TABLES row matches the shipped table's size`);
+    assert.deepEqual([...listed[0].members].sort(), [...table].sort(), `${key} grew or lost a member`);
+  }
+});
 
 test("every JavaScript name a predicate recognises through a table is recognised", async () => {
   assert.deepEqual(await tableProblems(TABLES.filter((t) => t.lang !== "ruby")), []);
