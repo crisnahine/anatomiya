@@ -198,7 +198,7 @@ test("a scan names the root it resolved to, because a path argument does not sco
   // directory carries the 8.3 form and git prints the long one, and asserting
   // one of them tests the platform rather than the line.
   const first = out.split("\n")[0];
-  assert.match(first, /^8 files, 1 areas, \d+ms, root .+$/);
+  assert.match(first, /^8 files, 1 area, \d+ms, root .+$/);
   const printed = first.slice(first.indexOf(", root ") + ", root ".length);
 
   assert.ok(existsSync(join(printed, "src", "f0.ts")), `not the repository that was scanned: ${first}`);
@@ -401,4 +401,25 @@ test("a dry run does not report in the past tense", (t) => {
     "# hand written, our exact name\n",
     "and nothing was actually written"
   );
+});
+
+test("the scan summary reads a count of one as one", (t) => {
+  // Every count on the summary reaches a person, and several are 1 on a real
+  // repository. Measured across a thirty-five repository corpus: seven printed
+  // "1 files hold syntax the parser rejected", on this line and in the file
+  // that loads on every turn.
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-cli-one-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  mkdirSync(join(dir, "src"), { recursive: true });
+  writeFileSync(join(dir, "src", "only.ts"), `export const a = 1\n`);
+  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
+  git("init", "-q");
+  git("config", "user.email", "t@t.test");
+  git("config", "user.name", "T");
+  git("add", "-A");
+  git("commit", "-qm", "init");
+
+  const out = String(execFileSync(process.execPath, [join(ROOT, "bin", "anatomiya.mjs"), "scan", dir], { stdio: "pipe" }));
+
+  assert.doesNotMatch(out, /\b1 (files|areas|claims|source files)\b/, `a count of one wearing a plural:\n${out}`);
 });

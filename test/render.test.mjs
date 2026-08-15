@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { renderArea, renderOverview, OVERVIEW_AREAS, MAX_LINES } from "../lib/render.mjs";
+import { renderArea, renderOverview, unexaminedLines, OVERVIEW_AREAS, MAX_LINES } from "../lib/render.mjs";
 import { areaFilename, isOwned, GENERATOR } from "../lib/rules.mjs";
 import { globEntry, globText } from "../lib/areas.mjs";
 
@@ -1007,4 +1007,30 @@ test("a file whose ownership could not be established is neither ours nor theirs
   assert.match(out, /^Any other file there was not written by this tool:$/m);
   assert.match(out, /^- "house\.md"$/m);
   assert.doesNotMatch(out, /- "anatomiya-area-cafe\.md"/, "not named as somebody else's");
+});
+
+test("a count of one reads as one, in every unexamined line", () => {
+  // These four reach a person on the scan's own summary and in the always-loaded
+  // overview. The file already pluralises the uncovered counts and the author
+  // count; these bypassed it and printed "1 files hold syntax the parser
+  // rejected" on seven repositories in a thirty-five repository corpus.
+  const one = unexaminedLines({ crashed: 1, failed: 1, syntaxErrors: 1, skipped: 1 });
+
+  assert.deepEqual(one, [
+    "1 file crashed the parser",
+    "1 file could not be parsed",
+    "1 file holds syntax the parser rejected",
+    "1 file exceeded the size cap",
+  ]);
+});
+
+test("a count above one keeps the plural and its verb", () => {
+  const many = unexaminedLines({ crashed: 2, failed: 3, syntaxErrors: 4, skipped: 5 });
+
+  assert.deepEqual(many, [
+    "2 files crashed the parser",
+    "3 files could not be parsed",
+    "4 files hold syntax the parser rejected",
+    "5 files exceeded the size cap",
+  ]);
 });

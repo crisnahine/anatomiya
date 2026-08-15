@@ -38,6 +38,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   all. That is the commonest Ruby service form, and the ratio was stated over whichever subset of a
   repository writes instance entry points instead. `def self.` counts now, the way the migration
   rows already counted it. (C2)
+- Every first scan of a repository reported `.claude/rules/` as a directory it could not list.
+  `readdir` answers ENOENT the same way it answers a permission failure, and the bare catch treated
+  the two alike, so the first sentence a new user read described a broken install rather than an
+  empty one. Not-there is an answer; could-not-read is not. (A4)
+- A count of one wore a plural. Measured over 35 repositories: seven printed "1 files hold syntax
+  the parser rejected", on the scan summary and in the file that loads on every turn. The summary
+  and the overview now agree with each other and with the count, verb included. (A4)
 - The facts record dropped two numbers the rendered map prints, so the map was not derivable from
   the record the check reads in its place: the count behind "and N more", and the namesake count an
   obligation renders as "N with a namesake elsewhere in the tree". Found by scanning 35 repositories

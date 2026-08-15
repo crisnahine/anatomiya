@@ -2,7 +2,7 @@
 import { scan } from "../lib/scan.mjs";
 import { writeMap } from "../lib/write.mjs";
 import { check, formatReport } from "../lib/check.mjs";
-import { unexaminedLines } from "../lib/render.mjs";
+import { unexaminedLines, plural } from "../lib/render.mjs";
 import { statedSide } from "../lib/facts.mjs";
 import { collect, gitRoot } from "../lib/corpus.mjs";
 import { discover } from "../lib/areas.mjs";
@@ -96,12 +96,12 @@ async function runScan(cwd, { dryRun }) {
   // `scan ./packages/api` in a monorepo maps the monorepo. Areas, the pin and
   // the baseline are all repository-anchored, so that is the behaviour they
   // need and the line is what says so.
-  console.log(`${result.corpus.files} files, ${result.areas.length} areas, ${result.durationMs}ms, root ${result.root}`);
+  console.log(`${plural(result.corpus.files, "file")}, ${plural(result.areas.length, "area")}, ${result.durationMs}ms, root ${result.root}`);
   if (result.corpus.untracked)
     console.log(
-      `${result.corpus.untracked} source files are untracked and were not counted: the corpus is tracked files only`
+      `${plural(result.corpus.untracked, "source file")} ${result.corpus.untracked === 1 ? "is" : "are"} untracked and ${result.corpus.untracked === 1 ? "was" : "were"} not counted: the corpus is tracked files only`
     );
-  console.log(`${stated.length} of ${slots.length} claims stated, the rest print as counts`);
+  console.log(`${stated.length} of ${plural(slots.length, "claim")} stated, the rest print as counts`);
   console.log(baselineLine(result.baseline));
   if (result.corpus.truncated)
     console.log("only part of the corpus was read, so every directive is suppressed and only counts print");
@@ -109,8 +109,8 @@ async function runScan(cwd, { dryRun }) {
   // number printed beside "N files crashed the parser" invited exactly the
   // reading the overview line was fixed to stop.
   const barren = plan.uncovered - plan.orphaned;
-  if (plan.orphaned > 0) console.log(`${plan.orphaned} files in no area: too few per directory`);
-  if (barren > 0) console.log(`${barren} files in a directory nothing was counted in`);
+  if (plan.orphaned > 0) console.log(`${plural(plan.orphaned, "file")} in no area: too few per directory`);
+  if (barren > 0) console.log(`${plural(barren, "file")} in a directory nothing was counted in`);
   for (const line of unexaminedLines(result.parse)) console.log(line);
   if (result.authors.error)
     console.log(`history could not be read, so every claim fails the author gate: ${result.authors.error}`);
@@ -143,7 +143,7 @@ async function runScan(cwd, { dryRun }) {
     console.log("this is usually a missing interpreter rather than a repository that changed");
     return;
   }
-  console.log(dryRun ? `would write ${plan.write.length} files` : `wrote ${plan.write.length} files`);
+  console.log(dryRun ? `would write ${plural(plan.write.length, "file")}` : `wrote ${plural(plan.write.length, "file")}`);
   // Measured: a rewritten context file does not re-attach mid-session.
   if (!dryRun) console.log("a session already running still holds the old map; restart to pick it up");
 }
@@ -173,7 +173,7 @@ function baselineLine(b) {
     return `the pinned commit ${b.sha ? b.sha.slice(0, 8) : "?"} is gone from this clone, so every claim dropped to counts`;
   if (b.countsOnly)
     return "no baseline pinned: claims are measured against the current tree, and no finding can exceed FIX. `anatomiya pin` accepts one";
-  const drift = b.drift === null ? "" : `, ${b.drift} files changed since ${b.baseRef ? b.baseRef.ref : "the base"}`;
+  const drift = b.drift === null ? "" : `, ${plural(b.drift, "file")} changed since ${b.baseRef ? b.baseRef.ref : "the base"}`;
   return `baseline ${b.sha.slice(0, 8)}${drift}`;
 }
 
