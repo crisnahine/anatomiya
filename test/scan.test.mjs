@@ -552,7 +552,7 @@ test("a rake task with no spec is counted, and one with a spec conforms", needsR
     git("commit", "-qm", "one");
   });
 
-  const result = await scan(dir, { rubyGuards: RUBY_GUARDS });
+  const result = await scan(dir);
   const area = result.areas.find((a) => a.path === "lib/tasks");
 
   assert.ok(area, `no lib/tasks area: ${result.areas.map((a) => a.path).join(", ")}`);
@@ -582,7 +582,7 @@ test("the baseline counts an obligation against the pinned corpus, not today's",
     git("commit", "-qm", "drop a spec");
   });
 
-  const result = await scan(dir, { rubyGuards: RUBY_GUARDS });
+  const result = await scan(dir);
   const area = result.areas.find((a) => a.path === "lib/tasks");
   const row = area.dimensions.find((dim) => dim.key === "rake_task_spec");
 
@@ -608,7 +608,7 @@ test("a spec in the wrong directory is counted, so a narrow predicate is visible
     git("commit", "-qm", "one");
   });
 
-  const result = await scan(dir, { rubyGuards: RUBY_GUARDS });
+  const result = await scan(dir);
   const area = result.areas.find((a) => a.path === "lib/tasks");
   const row = area.dimensions.find((dim) => dim.key === "rake_task_spec");
 

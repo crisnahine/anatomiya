@@ -6,7 +6,8 @@ import { unexaminedLines } from "../lib/render.mjs";
 import { statedSide } from "../lib/facts.mjs";
 import { collect, gitRoot } from "../lib/corpus.mjs";
 import { discover } from "../lib/areas.mjs";
-import { buildPin, loadPin, writePin, pinDelta, formatDelta, headSha, PIN_PATH } from "../lib/baseline.mjs";
+import { buildPin, loadPin, writePin, pinDelta, formatDelta, PIN_PATH } from "../lib/baseline.mjs";
+import { headSha } from "../lib/git.mjs";
 
 const USAGE = [
   "usage: anatomiya scan  [path] [--dry-run]",

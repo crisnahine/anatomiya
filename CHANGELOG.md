@@ -7,8 +7,65 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.1.9] - 2026-08-15
+
+An architecture pass over the seams the 0.1.8 pass left open. Every change is a place two modules
+still held one piece of knowledge, and the one defect found along the way.
+
+### Fixed
+
+- The baseline pass dropped its own truncation flag, so F7's whole-map suppression covered one of
+  the two corpus reads. The baseline materialises blobs from the pinned commit and parses them a
+  second time, and the Ruby bridge hits its per-line guard there exactly as it does on the working
+  tree. A scan that answered for part of a population still stated directives over the rest of the
+  map, with `suppressAll` false.
+- A directory whose own name is glob syntax, which a repository may legally have, broke the pattern
+  that was supposed to name it. `app/**` reached the whole tree as a glob, and passed through the
+  encoder it lost its leading `*` run to the markdown bullet rule and matched nothing. Neither is
+  deliverable, so such a directory no longer roots an area and no cover names it; its files fold into
+  an ancestor that can be spelled, whose recursive tail still reaches them.
+- The check read a file's content with `git show <rev>:<path>`, which prints a tree listing for a
+  path that has become a directory. It reads blobs through the same `cat-file blob` the baseline
+  uses, so the object type is asserted rather than assumed.
+- An overview whose areas all carried counts and stated nothing read "Areas (3)", named none of
+  them, and then offered "and 3 more areas". More than which? The listing is deliberately limited to
+  areas that state something, so naming none of them is the ordinary case for a repository before
+  any convention is measured, not an edge. One area now reads "1 area".
+
 ### Changed
 
+- `lib/git.mjs` is now every git call this tool makes, not most of them. `corpus.mjs` and
+  `authors.mjs` each ran their own `spawn` with their own guards, so a second streamed entry point
+  sits beside the buffered one and both carry the same battery. It bounds a single record, which
+  neither hand-rolled reader did: output carrying no delimiter grew one buffer until it hit the
+  string limit streaming exists to avoid. `git status --porcelain -z` was a fourth NUL grammar read
+  by hand in the check, and is read here now. The deepest-area-owner rule and the first-line-of-stderr
+  helper each had copies that could disagree about one file's fate, and now have one owner apiece;
+  the 4 MB per-file ceiling four readers share is in `lib/limits.mjs`, a leaf, so no parse worker
+  loads the corpus and a git runner to learn one number. The owner rule's two copies had already drifted: the baseline's compared
+  path lengths, which scores the repository root at 1, so a one-character area path could never
+  displace it.
+- `lib/baseline.mjs` offers the scan two entry points, `resolve` and `measure`. It offered five, and
+  the order they had to be called in was written down nowhere; the scan then read four record shapes
+  back out of them to assemble one answer. Its git plumbing moved to `lib/git.mjs`, which is where
+  the check was already going for the same base ref.
+- `verdictFor` in `lib/reduce.mjs` decides what closes a slot, rather than being handed the answer.
+  The gate battery and the both-sides invariant were already there; what was still split is the
+  ordering, which lived across the baseline's population blocks and a `suppression` helper in the
+  scan. Every gate-and-population interaction is now asked of the function directly rather than of a
+  repository, so F7's whole-map suppression keeps one end-to-end test and the rest is table-driven.
+- `lib/facts.mjs` owns the machine record end to end: it already held the schema, the reader and the
+  polarity decision, and now holds the writer and the per-dimension projection that lived in
+  `write.mjs`. The check's own tests fabricated a record at `schema: 1` while the writer emitted 3,
+  so `readFacts`' main path was only ever tested against a shape nothing produced; they write through
+  `writeFacts` now.
+- An area carries its `paths` patterns in the two halves they are composed from, `dir` and `tail`,
+  rather than joined and taken apart again by a second reading of the grammar in the renderer. The
+  emitted patterns do not change. The facts schema is 4 for it.
+- A parse of in-memory sources left its scratch directory behind when a write into it threw. The
+  whole pass is wrapped now, so the directory goes whether or not the writes finish.
+- The parser pool forks no more workers than there are files to parse. A check examines the handful
+  a diff touched, and forking the machine's whole pool for one of them paid fork cost for nothing.
 - `lib/parse.mjs` drives both parsers and decides once what an unread file means. The scan and the
   check each drove them separately, so the four causes were computed on one path and none of them on
   the other, and every fix to the reconciliation had to be made twice. The engine split, the scratch
@@ -374,7 +431,8 @@ which are partial; several listed there are not implemented yet.
 - No claim that this catches defects. Measured across ten repositories, 1 of 317 defect review
   comments was preventable by a conventions map.
 
-[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.1.8...HEAD
+[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.1.9...HEAD
+[0.1.9]: https://github.com/crisnahine/anatomiya/compare/v0.1.8...v0.1.9
 [0.1.8]: https://github.com/crisnahine/anatomiya/compare/v0.1.7...v0.1.8
 [0.1.7]: https://github.com/crisnahine/anatomiya/compare/v0.1.6...v0.1.7
 [0.1.6]: https://github.com/crisnahine/anatomiya/compare/v0.1.5...v0.1.6

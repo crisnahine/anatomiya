@@ -9,7 +9,10 @@ import { execFileSync } from "node:child_process";
 import { collect, countUntrackedSource, isDenied, isExcludedDir, isSource, safeResolve, language, gitRoot, frameworksIn } from "../lib/corpus.mjs";
 import * as areaLib from "../lib/areas.mjs";
 
-const { discover, glob, assertGlobSafe, areaId, AREA } = areaLib;
+const { discover, globEntry, globText, assertGlobSafe, areaId, AREA } = areaLib;
+
+// The two halves the area record carries, composed the way the renderer does.
+const glob = (dir, langs) => globText(globEntry(dir, langs));
 
 /** A temp directory removed by the runner, so a failed assertion still cleans up. */
 function tmp(t) {
@@ -306,8 +309,10 @@ test("no generated glob ends in a bare /**", () => {
 
   assert.equal(areas.length, 1);
   for (const a of areas) for (const g of a.globs) assert.doesNotThrow(() => assertGlobSafe(g));
-  assert.deepEqual(areas[0].globs, ["app/services/**/*.{gemspec,jbuilder,rake,rb}"]);
-  assert.throws(() => assertGlobSafe("app/**"), /bare \/\*\*/);
+  assert.deepEqual(areas[0].globs.map((g) => areaLib.globText(g)), [
+    "app/services/**/*.{gemspec,jbuilder,rake,rb}",
+  ]);
+  assert.throws(() => assertGlobSafe({ negated: false, dir: "app", tail: "**" }), /bare \/\*\*/);
 });
 
 const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -336,8 +341,9 @@ function toRegExp(pattern) {
 function matches(globs, rel) {
   let hit = false;
   for (const g of globs) {
-    const negated = g.startsWith("!");
-    if (toRegExp(negated ? g.slice(1) : g).test(rel)) hit = !negated;
+    // The area record carries the halves apart; the matcher reads the pattern
+    // the delivery channel would.
+    if (toRegExp(areaLib.globText({ ...g, negated: false })).test(rel)) hit = !g.negated;
   }
   return hit;
 }
@@ -397,7 +403,9 @@ test("an area holding its whole subtree still emits one recursive glob", () => {
   ]));
 
   assert.equal(areas.length, 1);
-  assert.deepEqual(areas[0].globs, ["lib/core/**/*.{cjs,cts,js,mjs,mts,ts}"]);
+  assert.deepEqual(areas[0].globs.map((g) => areaLib.globText(g)), [
+    "lib/core/**/*.{cjs,cts,js,mjs,mts,ts}",
+  ]);
 });
 
 test("an area with many owned directories and few foreign ones states the foreign ones", () => {
@@ -411,7 +419,10 @@ test("an area with many owned directories and few foreign ones states the foreig
   const parent = areas.find((a) => a.path === "app/svc");
 
   assert.ok(areas.some((a) => a.path === "app/svc/own"), "the deeper directory is its own area");
-  assert.deepEqual(parent.globs, ["app/svc/**/*.{cjs,cts,js,mjs,mts,ts}", "!app/svc/own/**/*.{cjs,cts,js,mjs,mts,ts}"]);
+  assert.deepEqual(parent.globs.map((g) => areaLib.globText(g)), [
+    "app/svc/**/*.{cjs,cts,js,mjs,mts,ts}",
+    "!app/svc/own/**/*.{cjs,cts,js,mjs,mts,ts}",
+  ]);
   assert.equal(matches(parent.globs, "app/svc/own/o1.js"), false);
   assert.equal(matches(parent.globs, "app/svc/d3/a.js"), true);
 });
@@ -670,4 +681,114 @@ test("the frameworks a repository uses are read from its own corpus", () => {
   assert.deepEqual([...frameworksIn(fakeFiles(["lib/tool.rb", "spec/tool_spec.rb"], "ruby"))], []);
   assert.deepEqual([...frameworksIn(fakeFiles(["src/app.ts"], "js"))], [], "a JS repository has no Rails");
   assert.deepEqual([...frameworksIn([])], []);
+});
+
+test("the deepest area containing a path is the one whose claims it carries", () => {
+  // Nested areas both contain the file, and only the deepest one measured it.
+  // The rule lived twice, in the check's finding attribution and in the
+  // baseline's drift count, so a fix to one left the other reporting drift
+  // against an ancestor.
+  const paths = ["app", "app/models", "lib"];
+
+  assert.equal(areaLib.areaOwner("app/models/user.rb", paths), "app/models");
+  assert.equal(areaLib.areaOwner("app/jobs/mail.rb", paths), "app");
+  assert.equal(areaLib.areaOwner("bin/run.rb", paths), null);
+});
+
+test("a sibling sharing a name prefix does not own the path", () => {
+  // "app/model" is a prefix of "app/models/user.rb" as a string and contains
+  // none of it as a directory. Testing the prefix without the separator hands
+  // the file to a directory it was never counted in.
+  assert.equal(areaLib.areaOwner("app/models/user.rb", ["app/model"]), null);
+});
+
+test("the repository root owns a path only when nothing deeper does", () => {
+  // "." contains every path without being a prefix of any of them, and it is
+  // the least specific answer there is.
+  assert.equal(areaLib.areaOwner("lib/a.ts", [".", "lib"]), "lib");
+  assert.equal(areaLib.areaOwner("a.ts", ["."]), ".");
+});
+
+test("an area carries its globs as structure, so nothing has to read the pattern back", () => {
+  // The cover entries were built structured and flattened to strings, and the
+  // renderer then recovered the halves with a regex it kept its own copy of.
+  // One grammar, two modules, and the regex knew only the extension form: a
+  // bare name from A12 fell through to the path encoder, which strips a leading
+  // `**` as a markdown bullet and leaves `/Rakefile`.
+  const areas = areaLib.discover(fakeFiles(
+    Array.from({ length: 6 }, (_, i) => `app/services/s${i}.rb`), "ruby"));
+
+  assert.deepEqual(areas[0].globs, [
+    { negated: false, dir: "app/services", tail: "**/*.{gemspec,jbuilder,rake,rb}" },
+  ]);
+});
+
+test("a bare name the extension brace cannot spell is its own entry, with its own tail", () => {
+  // A12. The tail is what a renderer must not encode, and here it carries no
+  // `*.` at all, which is the shape the regex missed.
+  const files = [
+    ...fakeFiles(Array.from({ length: 5 }, (_, i) => `lib/tasks/t${i}.rake`), "ruby"),
+    ...fakeFiles(["lib/tasks/Rakefile"], "ruby"),
+  ];
+
+  const areas = areaLib.discover(files);
+
+  assert.deepEqual(areas[0].globs.map((g) => g.tail).sort(), [
+    "**/*.{gemspec,jbuilder,rake,rb}",
+    "**/Rakefile",
+  ]);
+});
+
+test("a directory whose name is glob syntax never becomes an area root", () => {
+  // A path is repository-controlled (F4), and a directory may legally be called
+  // `**`. Spelled into a pattern it stops naming that directory: as a glob it
+  // over-reaches to the whole tree, and encoded it loses the leading `*` run to
+  // the markdown bullet rule and matches nothing. Neither is deliverable, so
+  // the files fold into an ancestor whose name can be spelled, where the
+  // recursive tail still reaches them.
+  const files = [
+    ...fakeFiles(Array.from({ length: 4 }, (_, i) => `app/a${i}.ts`)),
+    ...fakeFiles(Array.from({ length: 6 }, (_, i) => `app/**/s${i}.ts`)),
+  ];
+
+  const areas = areaLib.discover(files);
+
+  assert.deepEqual(areas.map((a) => a.path), ["app"], "the glob-shaped directory hosts nothing");
+  for (const g of areas[0].globs) assert.ok(!g.dir.includes("*"), `dir is spellable: ${g.dir}`);
+  assert.equal(matches(areas[0].globs, "app/**/s0.ts"), true, "and its files are still covered");
+});
+
+test("no emitted pattern begins with a bare separator", () => {
+  // What a lost leading `*` run leaves behind. It reads like a working absolute
+  // path and matches nothing.
+  const files = [
+    ...fakeFiles(Array.from({ length: 4 }, (_, i) => `app/a${i}.ts`)),
+    ...fakeFiles(Array.from({ length: 6 }, (_, i) => `app/**/s${i}.ts`)),
+  ];
+
+  for (const a of areaLib.discover(files)) {
+    for (const g of a.globs) assert.ok(!areaLib.globText(g).replace(/^!/, "").startsWith("/"), areaLib.globText(g));
+  }
+});
+
+test("no cover entry names a directory a pattern cannot spell", () => {
+  // The fold keeps a glob-shaped directory from rooting an area, but an area
+  // above it still has to describe the subtree it holds. Naming it there puts
+  // the same unspellable segment into the pattern by the other route.
+  const files = [
+    ...fakeFiles(Array.from({ length: 4 }, (_, i) => `app/a${i}.ts`)),
+    ...fakeFiles(Array.from({ length: 4 }, (_, i) => `app/**/s${i}.ts`)),
+    ...fakeFiles(Array.from({ length: 8 }, (_, i) => `app/deep/d${i}.ts`)),
+  ];
+
+  const areas = areaLib.discover(files);
+
+  for (const a of areas) {
+    for (const g of a.globs) {
+      assert.ok(!/[*?[\]{}!]/.test(g.dir), `${a.path} names an unspellable directory: ${g.dir}`);
+    }
+  }
+  const app = areas.find((a) => a.path === "app");
+  assert.equal(matches(app.globs, "app/**/s0.ts"), true, "and it still covers what it counted");
+  assert.equal(matches(app.globs, "app/deep/d0.ts"), false, "without reaching the area below it");
 });
