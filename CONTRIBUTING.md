@@ -191,8 +191,37 @@ at all. That third one is where the bugs live: a property key that spells the sa
 binding, a rethrow inside a catch, an inner arrow whose `try` sits inside the outer function's byte
 range.
 
-A dimension with no writable applicability predicate does not ship. If you cannot say in code which
-files could have participated, you cannot honestly report a ratio.
+A dimension with no writable applicability predicate does not ship, and the predicate is a field
+rather than advice. Every row carries:
+
+```js
+applicability: {
+  sites: "a file holding at least one catch clause, whether or not it binds the error",
+  blind: null,
+},
+```
+
+`sites` says which files could participate at all. Write it from the `run` body, not from the claim:
+the claim says what conforming means, this says what applicable means. `blind` is what the predicate
+cannot see, and it is tied to `precision` so the marker and the reason cannot disagree. A `partial`
+row needs a sentence there; a `precise` row spells `null`. An absent key is not a third state, and
+`assertApplicability` refuses the whole registry at load over one.
+
+Then add the witness pair in `test/applicability.test.mjs`: a source your sentence says is
+applicable, and the neighbouring construct that must not count. A row with no witness fails the
+completeness test, and a sentence the code disagrees with fails the other two. Writing the applicable
+half and finding it hard is itself the answer: a predicate nobody can demonstrate is one nobody can
+audit.
+
+The share is auditable across repositories rather than by eye, one line at a time:
+
+```sh
+node scripts/audit-applicability.mjs /path/to/repo/.claude/anatomiya/facts.json ...
+```
+
+It flags any `precise` row whose median `applicability / langFileCount` sits under 0.25. A flag is a
+prompt to open the row, never a verdict: measured across four repositories, all six flagged rows
+named a construct that is simply rare, and their predicates saw every site of it.
 
 ## The bar a new dimension has to clear
 
