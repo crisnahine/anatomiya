@@ -232,9 +232,15 @@ const WITNESSES = {
       `class S\n  def run\n    1\n  end\nend`,
       `module S\n  def self.call\n    1\n  end\nend`,
     ],
-    // A helper method is not an entry point, so counting it would charge every
-    // raise in the repository.
-    inapplicable: `class S\n  def helper\n    raise "x"\n  end\nend`,
+    inapplicable: [
+      // A helper method is not an entry point, so counting it would charge every
+      // raise in the repository.
+      `class S\n  def helper\n    raise "x"\n  end\nend`,
+      // A def on any other receiver belongs to that object, not to this class.
+      // Widening the guard rather than narrowing it leaves every applicable
+      // witness passing, so the other direction needs its own source.
+      `class S\n  def other.call\n    1\n  end\nend`,
+    ],
   },
   keyword_params: {
     lang: "ruby",
