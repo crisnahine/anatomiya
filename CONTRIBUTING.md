@@ -219,8 +219,9 @@ Then add the witness pair in `test/applicability.test.mjs`: the sources your sen
 applicable, and the neighbouring construct that must not count. A row with no witness fails the
 completeness test, and a sentence the code disagrees with fails the other two.
 
-`applicable` is a list, and the length is the point. Where your sentence enumerates a set, write one
-source per member it names. One source proves the sentence names something and nothing more:
+`applicable` is a list, and the length is the point. Where your sentence names several forms, write
+one source per form the code treats differently. A closed lookup table is one form, however many
+names are in it; two call shapes, two node types or two spellings are not. One source proves the sentence names something and nothing more:
 narrowing `optional_chaining` from six receiver names to one under-counts its applicability sixfold
 and a single `opts` witness stays green straight through it. Where the sentence promises a count,
 say the count, since a non-zero assertion proves nothing about it:
@@ -229,7 +230,7 @@ say the count, since a non-zero assertion proves nothing about it:
 applicable: [{ source: `<Child {...p} {...q} />`, sites: 2 }],
 ```
 
-`inapplicable` is a list too, and each exclusion your sentence names earns one. Writing the
+`inapplicable` is a list too, and each exclusion your sentence names earns one, by the same rule. Writing the
 applicable half and finding it hard is itself the answer: a predicate nobody can demonstrate is one
 nobody can audit.
 

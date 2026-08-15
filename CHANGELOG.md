@@ -19,9 +19,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   witness fails the completeness test. (C2)
 - `scripts/audit-applicability.mjs` reads one or more `facts.json` files and prints the applicability
   share per dimension, flagging any `precise` row whose median sits under a quarter. Measured across
-  four repositories: of the 37 rows that produced a slot anywhere, 6 flag, and each names a construct
-  that is simply rare. A flag is a
-  prompt to open the row, not a verdict. (C2)
+  express, sidekiq, vuejs/core and mastodon: of the 37 rows that produced a slot in any of them, 6
+  flag, and each names a construct that is simply rare. Which rows produce a slot depends on which
+  repositories are asked, so the four are named. A flag is a prompt to open the row, not a verdict.
+  (C2)
 
 ### Fixed
 
