@@ -57,6 +57,25 @@ test("what the writer emits is what the reader reads back", (t) => {
   assert.equal(statedSide(facts.areas[0].dimensions[0]).states, "claim");
 });
 
+test("a record written before the new counts existed still reads", (t) => {
+  // C10: an older record stays readable, and the three numbers the map prints
+  // are simply absent from one written before schema 6.
+  const dir = root(t);
+  mkdirSync(dirname(join(dir, FACTS_PATH)), { recursive: true });
+  writeFileSync(
+    join(dir, FACTS_PATH),
+    JSON.stringify({
+      schema: 5,
+      areas: [{ id: "a", path: "src", fileCount: 8, dimensions: [{ key: "k", directive: true, candidates: 4, conforming: 4 }] }],
+    })
+  );
+
+  const { facts, unreadable } = readFacts(dir);
+
+  assert.equal(unreadable, null, "a schema this build knows stays readable");
+  assert.equal(facts.areas[0].dimensions[0].moreExceptions, undefined, "and simply carries no such count");
+});
+
 test("the record carries the files this pass's dimension could speak about", (t) => {
   // `applyGates` divides by `langFileCount`, the files the dimension could
   // speak about, and the record stored only the numerator. So the one number a

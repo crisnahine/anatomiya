@@ -38,6 +38,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   all. That is the commonest Ruby service form, and the ratio was stated over whichever subset of a
   repository writes instance entry points instead. `def self.` counts now, the way the migration
   rows already counted it. (C2)
+- The rendered line divided by the area's file count while the gate divided by the files the
+  dimension could speak about, so the number a reader audits a narrow predicate with was not the
+  number that decided it. Wrong in a mixed-language area before any of this: a Ruby claim read "5 of
+  10 files" where five were all it could ever speak for. (C3)
 - The applicability gate divided a numerator over parsed files by a denominator over every file of
   the language, so a repository holding syntax this tool does not take read as one full of narrow
   predicates. Measured across 35 repositories: react is written in Flow, 287 of its 2,277 files are

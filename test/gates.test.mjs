@@ -906,3 +906,54 @@ test("a file the parser could not read is not a file the dimension could speak a
   assert.equal(dim.applicability, 2, "two files produced a site");
   assert.equal(dim.langFileCount, 2, "and two are all this dimension could have spoken about");
 });
+
+test("the denominator counts the records handed in, not today's file list", () => {
+  // The baseline pass reduces records keyed by the PINNED paths against an area
+  // holding today's. Reading the denominator off `area.files` drops every file
+  // renamed since the pin, the applicability floor falls with it, and a `git mv`
+  // with no content change turns a suppressed claim into a directive the check
+  // then enforces. Reproduced end to end: 12 renames took a slot from
+  // gate "applicability" to states "claim".
+  const area = {
+    path: "src",
+    langs: ["js"],
+    fileCount: 20,
+    files: Array.from({ length: 20 }, (_, i) => ({ rel: `src/today${i}.ts`, lang: "js" })),
+  };
+  const hit = [{ conforming: true, where: null }];
+  // What the pinned pass hands in: the same twenty files under their old names.
+  const parsed = Array.from({ length: 20 }, (_, i) => ({
+    rel: `src/pinned${i}.ts`,
+    ok: true,
+    hits: i < 4 ? { module_state_const: hit } : {},
+  }));
+
+  const [dim] = reduce.reduceArea(area, parsed).filter((d) => d.key === "module_state_const");
+
+  assert.equal(dim.applicability, 4);
+  assert.equal(dim.langFileCount, 20, "twenty records were read, whatever they are called today");
+});
+
+test("an obligation's denominator is examined files too, because an unread producer answers nothing", () => {
+  // `applyPairings` skips a record that is not ok, so an unparsed producer
+  // contributes to no pairing site. Keeping it in the denominator is the same
+  // split between populations the syntax dimensions were just fixed for.
+  const area = {
+    path: "app/models",
+    langs: ["ruby"],
+    fileCount: 4,
+    files: ["a", "b", "c", "d"].map((n) => ({ rel: `app/models/${n}.rb`, lang: "ruby" })),
+  };
+  const hit = [{ conforming: true, elsewhere: false }];
+  const parsed = [
+    { rel: "app/models/a.rb", ok: true, hits: { model_spec: hit } },
+    { rel: "app/models/b.rb", ok: true, hits: { model_spec: hit } },
+    { rel: "app/models/c.rb", ok: false, kind: "rejected" },
+    { rel: "app/models/d.rb", ok: false, kind: "crashed" },
+  ];
+
+  const [dim] = reduce.reduceArea(area, parsed).filter((d) => d.key === "model_spec");
+
+  assert.equal(dim.applicability, 2);
+  assert.equal(dim.langFileCount, 2, "two producers were read, and two is what the ratio is over");
+});
