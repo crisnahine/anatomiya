@@ -38,6 +38,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   all. That is the commonest Ruby service form, and the ratio was stated over whichever subset of a
   repository writes instance entry points instead. `def self.` counts now, the way the migration
   rows already counted it. (C2)
+- The applicability gate divided a numerator over parsed files by a denominator over every file of
+  the language, so a repository holding syntax this tool does not take read as one full of narrow
+  predicates. Measured across 35 repositories: react is written in Flow, 287 of its 2,277 files are
+  rejected, and its stated claims go from 36 to 65 once the denominator counts only what was
+  examined. Webpack 80 to 92, next.js 162 to 172. (C4)
 - Every first scan of a repository reported `.claude/rules/` as a directory it could not list.
   `readdir` answers ENOENT the same way it answers a permission failure, and the bare catch treated
   the two alike, so the first sentence a new user read described a broken install rather than an
