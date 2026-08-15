@@ -55,7 +55,16 @@ const WITNESSES = {
   },
   async_error_handling: {
     lang: "js",
-    applicable: `export async function f() { await g() }`,
+    // Every shape an async function comes in. Measured on this repository:
+    // 202 of 250 async sites are arrows, so a predicate narrowed to the
+    // declaration drops four fifths of them and states over the remainder.
+    applicable: [
+      `export async function f() { await g() }`,
+      `export const f = async () => { await g() }`,
+      `export class C { async m() { await g() } }`,
+      `export const f = async function () { await g() }`,
+      `export const o = { async m() { await g() } }`,
+    ],
     inapplicable: `export function f() { return g() }`,
   },
   optional_chaining: {
@@ -90,7 +99,11 @@ const WITNESSES = {
   },
   type_only_import: {
     lang: "js",
-    applicable: `import { A } from "./a.ts"\nlet x: A`,
+    applicable: [
+      `import { A } from "./a.ts"\nlet x: A`,
+      `import A from "./a.ts"\nlet x: A`,
+      `import * as A from "./a.ts"\nlet x: A.T`,
+    ],
     // Read as a value as well as a type, so which it is cannot be decided here.
     inapplicable: `import { A } from "./a.ts"\nlet x: A\nexport const y = A`,
   },
@@ -225,7 +238,13 @@ const WITNESSES = {
   },
   keyword_params: {
     lang: "ruby",
-    applicable: [`def f(a:, b:, c:)\nend`, `def f(a, b, c)\nend`, `def f(a, b, c:)\nend`],
+    applicable: [
+      `def f(a:, b:, c:)\nend`,
+      `def f(a, b, c)\nend`,
+      `def f(a, b, c:)\nend`,
+      `def f(a = 1, b = 2, c = 3)\nend`,
+      `def f(a, *rest, b, c)\nend`,
+    ],
     // Two arguments read fine positionally; the convention starts at three.
     inapplicable: `def f(a, b)\nend`,
   },
@@ -245,6 +264,7 @@ const WITNESSES = {
     applicable: [
       `class M < ActiveRecord::Migration[7.0]\n  def change\n  end\nend`,
       `class M < ActiveRecord::Migration[7.0]\n  def up\n  end\n  def down\n  end\nend`,
+      `class M < ActiveRecord::Migration[7.0]\n  def down\n  end\nend`,
     ],
     // A helper-only migration class has made no choice about reversibility.
     inapplicable: `class M < ActiveRecord::Migration[7.0]\n  def helper\n  end\nend`,
@@ -306,6 +326,9 @@ const PAIRING_WITNESSES = Object.fromEntries(
         [`${p.from}/thing${p.ext}`],
         [`${p.from}/thing${p.ext === ".rb" ? ".rake" : ".rb"}`, `${p.to}/thing${p.companionSuffix}`],
         [`somewhere/else/thing${p.ext}`, `${p.to}/thing${p.companionSuffix}`],
+        // A producer whose own name ends in the companion suffix is not one.
+        // Unreachable for the .rake row, where the two suffixes are disjoint by
+        // construction and the extension test drops the file first.
         [`${p.from}/thing${p.companionSuffix}`, `${p.to}/other${p.companionSuffix}`],
       ],
     },

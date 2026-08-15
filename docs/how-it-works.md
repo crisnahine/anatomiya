@@ -244,13 +244,14 @@ predicate cannot see where it is partial. `applicability` is otherwise whatever 
 happened to emit, so one seeing a tenth of its own construct produces a ratio of 1.00 over four
 files and reads as a strong convention with nothing on the page to contradict it. The sentence is
 checked when the registry loads, and every row carries witness sources: the ones the sentence says
-are applicable, and the neighbouring constructs that must not count. Where a sentence enumerates a
-set, each member it names gets a source, because one source proves the sentence names something and
-nothing more. `npm run
-audit:applicability` reads scanned repositories back and ranks every dimension by how much of an
-area it speaks for, which is how a narrow predicate is found before somebody reads the map rather
-than after. A low share is not a defect on its own, and measured across four repositories every
-flagged row turned out to name a construct that is simply rare.
+are applicable, and the neighbouring constructs that must not count. Where a sentence names several
+forms, each one the code treats differently gets a source, because one source proves the sentence
+names something and nothing more.
+
+`npm run audit:applicability` reads scanned repositories back and ranks every dimension by how much
+of an area it speaks for, which is how a narrow predicate is found before somebody reads the map
+rather than after. A low share is not a defect on its own: measured across express, sidekiq,
+vuejs/core and mastodon, every flagged row named a construct that is simply rare.
 
 ## 5. The gates
 

@@ -42,8 +42,13 @@ export function shareTable(factsList) {
   // from "read, and there was nothing there", which is the same rule the parse
   // classification and the git reads already follow.
   let denominatorless = 0;
+  // Maps that put at least one share into the table, which is not the same as
+  // maps that parsed: one written before schema 5 reads cleanly and contributes
+  // nothing, and counting it as reach is the overstatement this exists to stop.
+  let measured = 0;
 
   for (const facts of factsList) {
+    const before = [...shares.values()].reduce((n, xs) => n + xs.length, 0);
     for (const area of facts.areas ?? []) {
       for (const d of area.dimensions ?? []) {
         // The denominator the applicability gate itself reads, fallback and
@@ -62,6 +67,7 @@ export function shareTable(factsList) {
         shares.get(d.key).push(d.applicability / denominator);
       }
     }
+    if ([...shares.values()].reduce((n, xs) => n + xs.length, 0) > before) measured++;
   }
 
   const rows = [...shares.entries()]
@@ -82,7 +88,7 @@ export function shareTable(factsList) {
     })
     .sort((a, b) => a.med - b.med || a.key.localeCompare(b.key));
 
-  return { rows, denominatorless };
+  return { rows, denominatorless, measured };
 }
 
 /**
@@ -123,7 +129,7 @@ function main(paths) {
   const { records, problems } = readRecords(paths);
   for (const p of problems) console.error(p);
 
-  const { rows, denominatorless } = shareTable(records);
+  const { rows, denominatorless, measured } = shareTable(records);
 
   if (denominatorless) {
     console.error(
@@ -139,11 +145,11 @@ function main(paths) {
     );
   }
   const flagged = rows.filter((r) => r.note).length;
-  // The count the table was actually computed over, never the count on the
-  // command line: a caller reading it as reach is told how many maps
-  // contributed, and a partial read is a non-zero exit rather than a summary
-  // that reads clean.
-  console.error(`${rows.length} dimensions over ${records.length} repositories, ${flagged} worth opening`);
+  // The maps that actually put a share in the table, never the count on the
+  // command line and never the count that merely parsed: a caller reading it as
+  // reach is told what contributed, and a partial read is a non-zero exit
+  // rather than a summary that reads clean.
+  console.error(`${rows.length} dimensions over ${measured} repositories, ${flagged} worth opening`);
   if (problems.length || denominatorless) process.exit(1);
 }
 

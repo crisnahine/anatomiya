@@ -144,7 +144,7 @@ test("a record from a schema this build has not heard of is refused, not read", 
   const { facts, unreadable } = readFacts(dir);
 
   assert.equal(facts, null, "nothing is enforced from a record this build cannot read");
-  assert.match(unreadable, /Scan again with this build/);
+  assert.match(unreadable, /scan again with this build/);
 });
 
 test("a schema this build cannot make sense of is refused, not read positionally", (t) => {
