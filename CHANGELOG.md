@@ -38,6 +38,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   all. That is the commonest Ruby service form, and the ratio was stated over whichever subset of a
   repository writes instance entry points instead. `def self.` counts now, the way the migration
   rows already counted it. (C2)
+- Any pinned file this tool could not read suppressed its whole area as a population change, so a
+  permanent blind spot read as a population that moved. React is written in Flow, which oxc does not
+  take: 287 of its files never parse at either revision, and 507 of its 986 slots were closed for
+  it. The current pass already leaves such a file out of its counts, so the two passes disagreed
+  about what an unreadable file means. React now states 65 claims instead of 36, webpack 92 instead
+  of 80, next.js 172 instead of 162. A file readable at one revision and not the other still closes
+  the area, which is the case the guard was written for. (E8)
 - The rendered line divided by the area's file count while the gate divided by the files the
   dimension could speak about, so the number a reader audits a narrow predicate with was not the
   number that decided it. Wrong in a mixed-language area before any of this: a Ruby claim read "5 of
