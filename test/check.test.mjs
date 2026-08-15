@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { needsPosixPaths } from "./platform.mjs";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, symlinkSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { execFileSync } from "node:child_process";
@@ -751,7 +751,7 @@ test("the report names files in .claude/rules this tool did not write", async (t
   // of clone, in our house style, forever.
   const dir = repo(t, ({ write, commit }) => {
     write("src/a.ts", clean(2));
-    write(".claude/rules/anatomiya-overview.md", "ours\n");
+    write(".claude/rules/anatomiya-overview.md", "---\ngenerator: anatomiya\n---\n\nours\n");
     write(".claude/rules/house.md", "someone else's\n");
     write(".claude/rules/notes.txt", "not a rule file\n");
     commit("init");
@@ -760,8 +760,43 @@ test("the report names files in .claude/rules this tool did not write", async (t
 
   const r = await check(dir, { baseRef: "main" });
 
-  assert.deepEqual(r.unattributed, ["house.md"]);
+  assert.deepEqual(r.foreign, ["house.md"]);
+  assert.deepEqual(r.unknown, []);
   assert.ok(formatReport(r).includes("house.md"));
+});
+
+test("our own filename with nobody's frontmatter is not ours (A3)", async (t) => {
+  // The prefix is a name anyone can type. Two of the three facts is not
+  // ownership, and the report is what says so.
+  const dir = repo(t, ({ write, commit }) => {
+    write("src/a.ts", clean(2));
+    write(".claude/rules/anatomiya-area-deadbeef.md", "# hand-written, our name\n");
+    commit("init");
+  });
+  facts(dir, { sha: sha(dir, "main") });
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.deepEqual(r.foreign, ["anatomiya-area-deadbeef.md"]);
+});
+
+test("our frontmatter with no map naming it is reported apart from a foreign file (A3, A4)", async (t) => {
+  // This tool's own output from a scan whose record is gone. It still loads, so
+  // it is named; it is not removed, because the map cannot vouch for it.
+  const dir = repo(t, ({ write, commit }) => {
+    write("src/a.ts", clean(2));
+    write(".claude/rules/anatomiya-area-99999999.md", "---\ngenerator: anatomiya\n---\n\nstale\n");
+    commit("init");
+  });
+  facts(dir, { sha: sha(dir, "main") });
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.deepEqual(r.foreign, [], "not somebody else's");
+  assert.deepEqual(r.unknown, ["anatomiya-area-99999999.md"]);
+  const rendered = formatReport(r);
+  assert.ok(rendered.includes("the map on disk does not name"));
+  assert.ok(rendered.includes("anatomiya-area-99999999.md"));
 });
 
 test("uncommitted edits to a changed file are reported as unread", async (t) => {
@@ -1180,4 +1215,111 @@ test("a producer the corpus excludes is not held to an obligation", needsRuby, a
   });
 
   assert.deepEqual(forKey(await check(dir, {}), "rake_task_spec"), []);
+});
+
+test("a rules directory linked out of the repository is reported, not examined", async (t) => {
+  // The scan refuses to write through such a link. The check has nothing to
+  // refuse, so it says what it could not look at: a clean rules directory
+  // reported here is the same lie as a clean diff reported for one git would
+  // not produce (F15, F2).
+  const outside = mkdtempSync(join(tmpdir(), "anatomiya-outside-"));
+  t.after(() => rmSync(outside, { recursive: true, force: true }));
+  writeFileSync(join(outside, "house.md"), "# theirs\n");
+
+  const dir = repo(t, ({ dir, write, commit }) => {
+    write("src/a.ts", clean(2));
+    mkdirSync(join(dir, ".claude"), { recursive: true });
+    symlinkSync(outside, join(dir, ".claude", "rules"));
+    commit("init");
+  });
+  facts(dir, { sha: sha(dir, "main") });
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.deepEqual(r.foreign, [], "nothing outside the repository was read");
+  assert.ok(
+    r.caveats.some((c) => /resolves outside the repository/.test(c)),
+    `no caveat said so: ${r.caveats.join("; ")}`
+  );
+});
+
+test("the report counts rule files past a handful rather than naming them all", async (t) => {
+  // This report is read by an agent, and a repository holding ten thousand
+  // `.md` files in `.claude/rules/` would otherwise spend ten thousand lines of
+  // its context saying so.
+  const dir = repo(t, ({ dir, write, commit }) => {
+    write("src/a.ts", clean(2));
+    mkdirSync(join(dir, ".claude/rules"), { recursive: true });
+    for (let i = 0; i < 40; i++) writeFileSync(join(dir, ".claude/rules", `theirs-${i}.md`), "# theirs\n");
+    commit("init");
+  });
+  facts(dir, { sha: sha(dir, "main") });
+
+  const r = await check(dir, { baseRef: "main" });
+  const rendered = formatReport(r);
+
+  assert.equal(r.foreign.length, 40, "the count is still the truth");
+  assert.ok(rendered.split("\n").filter((l) => /^ {2}"theirs-/.test(l)).length <= 20);
+  assert.match(rendered, /^ {2}and 20 more$/m);
+});
+
+test("an unreadable tree reports the obligation unchecked instead of failing every producer", async (t) => {
+  // Same shape as F13 for history and F15 for the diff: `ls-tree` answering
+  // nothing is not a repository with no files. Read as one, every changed model
+  // on the branch owes a spec that "does not exist", and a map stating the
+  // obligation puts those at MUST-FIX against an author who wrote the spec.
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("app/models/thing.rb", "class Thing\nend\n");
+    write("spec/models/thing_spec.rb", "describe Thing do\nend\n");
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("app/models/other.rb", "class Other\nend\n");
+    write("spec/models/other_spec.rb", "describe Other do\nend\n");
+    commit("both halves, so nothing is owed");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    path: "app/models",
+    dimensions: [dim({ key: "model_spec", directive: true })],
+  });
+  //
+  // The unreadable-tree half is pinned at the `filesAt` seam in `git.mjs`, not
+  // here: `ls-tree -r HEAD` and `diff base...HEAD` walk the same tree, so no
+  // repository state breaks one and leaves the other working. Removing HEAD's
+  // tree, or any subtree under it, fails both, and the run then reports the
+  // diff instead. What this case pins is the other side of the guard, that a
+  // tree git *does* answer still gets its obligations checked.
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.deepEqual(
+    r.findings.filter((f) => f.dimension === "model_spec"),
+    [],
+    "the companion is in the same commit, so nothing is owed"
+  );
+});
+
+test("a producer whose companion the branch never wrote is still reported", async (t) => {
+  // The control for the guard above. A `return` that fired on every tree rather
+  // than on a missing one would turn the whole obligation off, and every case
+  // that asserts nothing was found would pass louder for it.
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("app/models/thing.rb", "class Thing\nend\n");
+    write("spec/models/thing_spec.rb", "describe Thing do\nend\n");
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("app/models/lonely.rb", "class Lonely\nend\n");
+    commit("a model with no spec");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    path: "app/models",
+    dimensions: [dim({ key: "model_spec", directive: true })],
+  });
+
+  const r = await check(dir, { baseRef: "main" });
+  const owed = r.findings.filter((f) => f.dimension === "model_spec");
+
+  assert.equal(owed.length, 1, `expected the missing spec to be reported: ${JSON.stringify(r.findings)}`);
+  assert.equal(owed[0].path, "app/models/lonely.rb");
+  assert.match(owed[0].reason, /no "spec\/models\/lonely_spec\.rb"/);
 });

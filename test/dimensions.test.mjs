@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { parseSync } from "oxc-parser";
-import { DIMENSIONS, ALL_DIMENSIONS, dimensionsFor } from "../lib/dimensions.mjs";
+import { DIMENSIONS, ALL_DIMENSIONS, dimensionsFor, assertPrecision, PRECISIONS } from "../lib/dimensions.mjs";
+import { PAIRINGS } from "../lib/pairing.mjs";
 import { walk, collectHits } from "../lib/walk.mjs";
 
 const dim = (key) => DIMENSIONS.find((d) => d.key === key);
@@ -306,4 +307,33 @@ test("a site keeps its conforming flag and its scope, and nothing else", () => {
   ]);
 
   assert.deepEqual(hits.k, [{ conforming: false, where: "outer" }]);
+});
+
+test("a registry row with no precision does not ship (C5)", () => {
+  // C5: the severity rule reads this field, and a row that forgets it is capped
+  // by the same comparison a deliberate `partial` is. Silent, and a claim
+  // quietly worth less than it should be. Checked at load, because the registry
+  // is assembled from six files and a seventh would arrive without a test.
+  assert.throws(
+    () => assertPrecision([{ key: "forgot", claim: "something" }]),
+    /declares precision undefined, not one of precise or partial/
+  );
+  assert.throws(
+    () => assertPrecision([{ key: "typo", precision: "Precise" }]),
+    /declares precision "Precise"/
+  );
+});
+
+test("assertPrecision returns the rows it accepted, so a registry can wrap itself", () => {
+  const rows = [{ key: "ok", precision: "partial" }];
+
+  assert.equal(assertPrecision(rows), rows);
+});
+
+test("the obligations declare their precision like every other row (C5)", () => {
+  // Pairings are a registry the dimension checks never reached: they are not in
+  // ALL_DIMENSIONS, and the reducer composes both lists.
+  for (const p of PAIRINGS) {
+    assert.ok(PRECISIONS.includes(p.precision), p.key);
+  }
 });

@@ -7,7 +7,15 @@ import { execFileSync } from "node:child_process";
 
 import { needsShebang } from "./platform.mjs";
 
-import { gitBuffered, gitStreamed, parseNameStatusZ, parsePorcelainZ, showBlob } from "../lib/git.mjs";
+import { gitBuffered, gitStreamed, nameStatusReader, parsePorcelainZ, showBlob } from "../lib/git.mjs";
+
+/** Every row a NUL-delimited name-status listing yields, read as a stream. */
+function nameStatusRows(out) {
+  const rows = [];
+  const onField = nameStatusReader((row) => rows.push(row));
+  for (const field of String(out ?? "").split("\0")) onField(field);
+  return rows;
+}
 
 /**
  * One runner and one record grammar, because four copies of each had drifted:
@@ -53,7 +61,7 @@ test("a rename is one record carrying both of its paths", () => {
   // Three NUL fields where everything else has two. Splitting on NUL and
   // pairing blindly reads the old path as a status and shifts every record
   // after it.
-  const rows = parseNameStatusZ("R100\0src/old.ts\0src/new.ts\0M\0src/other.ts\0");
+  const rows = nameStatusRows("R100\0src/old.ts\0src/new.ts\0M\0src/other.ts\0");
 
   assert.deepEqual(rows, [
     { status: "R100", from: "src/old.ts", to: "src/new.ts" },
@@ -64,7 +72,7 @@ test("a rename is one record carrying both of its paths", () => {
 test("a path holding a newline stays one record", () => {
   // Why the grammar is read on NUL and never on newlines: git permits a newline
   // inside a path, and a newline split turns one hostile filename into two.
-  const rows = parseNameStatusZ("A\0src/two\nlines.ts\0");
+  const rows = nameStatusRows("A\0src/two\nlines.ts\0");
 
   assert.deepEqual(rows, [{ status: "A", from: null, to: "src/two\nlines.ts" }]);
 });
@@ -72,7 +80,7 @@ test("a path holding a newline stays one record", () => {
 test("a truncated record is dropped rather than completed with a guess", () => {
   // A byte cap can cut the output mid-record. Emitting the half that arrived
   // would name a file the diff never reported.
-  assert.deepEqual(parseNameStatusZ("M\0src/a.ts\0R100\0src/old.ts\0"), [
+  assert.deepEqual(nameStatusRows("M\0src/a.ts\0R100\0src/old.ts\0"), [
     { status: "M", from: null, to: "src/a.ts" },
   ]);
 });
@@ -332,4 +340,167 @@ test("a blob read gives up on the clock its caller set, not the scan's", needsSh
   });
 
   assert.equal(blob.ok, false, "a killed read is not a successful one");
+});
+
+/* --- an argument that reads as an option never reaches git (F5) --- */
+
+test("a repository-controlled value shaped like an option refuses the call", async (t) => {
+  // Measured: a tracked file named `--instruction-file-path=.git/config`
+  // exfiltrated a secret. `--` neutralises the whole class where git takes it,
+  // and `rev-parse`, `cat-file`, `merge-base`, `config` and `status` take none,
+  // so the rule is stated from the other side: an argument that looks like an
+  // option must be one this tool wrote.
+  const { dir } = repo(t);
+
+  const r = await gitBuffered(dir, ["rev-parse", "--upload-pack=touch /tmp/pwned"]);
+
+  assert.equal(r.ok, false);
+  assert.match(r.error, /reads as an option/);
+  assert.equal(r.stdout, "", "and nothing that looks like an answer");
+});
+
+test("the streamed runner refuses the same argument the buffered one does", async (t) => {
+  const { dir } = repo(t);
+
+  await assert.rejects(
+    () => gitStreamed(dir, ["ls-files", "-z", "--exclude-from=/etc/passwd", "--"], () => true),
+    /reads as an option/
+  );
+});
+
+test("a path that begins with a dash is refused rather than quoted", async (t) => {
+  // The corpus already drops these, and this is the layer that makes a
+  // predicate somebody forgot fail loudly instead of reaching git.
+  const { dir } = repo(t);
+
+  const r = await gitBuffered(dir, ["ls-tree", "-r", "--name-only", "-z", "--not-a-sha", "--"]);
+
+  assert.equal(r.ok, false);
+  assert.match(r.error, /reads as an option/);
+});
+
+test("every option this tool actually passes is allowed through", async (t) => {
+  // The allowlist is a closed set, so it fails in the direction that breaks a
+  // real call rather than the one that lets an argument through.
+  const { dir } = repo(t);
+
+  for (const args of [
+    ["rev-parse", "--show-toplevel"],
+    ["rev-parse", "--verify", "--quiet", "HEAD^{commit}"],
+    ["rev-parse", "--is-shallow-repository"],
+    ["ls-files", "-z", "--"],
+    ["ls-files", "-z", "--others", "--exclude-standard", "--"],
+    ["ls-tree", "-r", "--name-only", "-z", "HEAD", "--"],
+    ["diff", "--name-only", "-z", "HEAD", "--"],
+    ["diff", "--find-renames", "--name-status", "-z", "HEAD..HEAD", "--"],
+    ["status", "--porcelain", "-z"],
+    ["config", "--get", "user.name"],
+    ["log", "-M", "--no-merges", "--name-status", "-z", "--format=%ae", "--"],
+    ["log", "-M100%", "--no-merges", "--name-status", "-z", "--format=%ae", "--"],
+    ["rev-list", "--max-parents=0", "HEAD"],
+    ["-c", "core.quotePath=false", "diff", "--find-renames", "--unified=0", "HEAD", "HEAD"],
+  ]) {
+    const r = await gitBuffered(dir, args);
+    assert.doesNotMatch(r.error || "", /reads as an option/, args.join(" "));
+  }
+});
+
+test("a git call cannot stop to ask for a credential", async (t) => {
+  // A prompt on a terminal nobody is watching is a scan that never returns. The
+  // environment refuses instead, which turns a hang into an exit code.
+  const { dir } = repo(t);
+
+  const r = await gitBuffered(dir, ["config", "--get", "core.askpass"], { env: process.env });
+
+  assert.equal(typeof r.ok, "boolean");
+  assert.equal(process.env.GIT_TERMINAL_PROMPT, undefined, "the parent's environment is untouched");
+});
+
+/* --- the listings that grow with the repository are streamed (F6) --- */
+
+test("the grammar does not care how the fields were cut up", () => {
+  // What streaming buys is that a record need not arrive whole. Three
+  // hand-rolled state machines used to read this output three ways, each with
+  // its own note that a rename carries three fields.
+  const whole = nameStatusRows("R100\0src/old.ts\0src/new.ts\0M\0src/other.ts\0");
+
+  const rows = [];
+  const onField = nameStatusReader((row) => rows.push(row));
+  for (const field of ["R100", "src/old.ts", "src/new.ts", "M", "src/other.ts", ""]) onField(field);
+
+  assert.deepEqual(rows, whole);
+  assert.equal(rows.length, 2);
+});
+
+test("a listing arriving in chunks that split a path is still one record", async () => {
+  // What streaming is for: a record does not arrive whole, and a reader that
+  // assumes it does names half a file.
+  const { nameStatusReader } = await import("../lib/git.mjs");
+  const rows = [];
+  const onField = nameStatusReader((row) => rows.push(row));
+  for (const field of ["R100", "src/old.ts", "src/new.ts", ""]) onField(field);
+
+  assert.deepEqual(rows, [{ status: "R100", from: "src/old.ts", to: "src/new.ts" }]);
+});
+
+test("the tree listing and the range diff answer over a real repository", async (t) => {
+  const { filesAt, diffRange, changedSinceWorktree } = await import("../lib/git.mjs");
+  const { dir, git } = repo(t);
+  const first = execFileSync("git", ["rev-parse", "HEAD"], { cwd: dir, encoding: "utf8" }).trim();
+  writeFileSync(join(dir, "b.ts"), "export const b = 2\n");
+  git("add", "-A");
+  git("commit", "-qm", "second");
+
+  assert.deepEqual([...(await filesAt(dir, "HEAD"))].sort(), ["a.ts", "b.ts"]);
+  assert.deepEqual([...(await filesAt(dir, first))], ["a.ts"]);
+
+  const range = await diffRange(dir, first, "HEAD");
+  assert.deepEqual([...range.changed], ["b.ts"]);
+  assert.equal(range.renames.size, 0);
+
+  writeFileSync(join(dir, "a.ts"), "export const a = 99\n");
+  assert.deepEqual([...(await changedSinceWorktree(dir, "HEAD"))], ["a.ts"]);
+});
+
+test("no read git refused answers as a repository where there was nothing", async (t) => {
+  // One rule for all three, and `filesAt` used to be the exception: it answered
+  // an empty set, which is a real answer meaning "no files", and the obligation
+  // reads that as "no companion exists anywhere". A diff that failed must never
+  // read as a branch that changed nothing, and a file list that failed must
+  // never read as a commit holding none.
+  const { filesAt, diffRange, changedSinceWorktree } = await import("../lib/git.mjs");
+  const { dir } = repo(t);
+  const absent = "0".repeat(40);
+
+  assert.equal(await filesAt(dir, absent), null);
+  assert.equal(await diffRange(dir, absent, "HEAD"), null);
+  assert.equal(await changedSinceWorktree(dir, absent), null);
+});
+
+test("a rename survives the streamed range diff with both of its paths", async (t) => {
+  // E7: at the pinned commit only the old path exists, so both names count as
+  // changed and the map is what lets a renamed file find its own baseline.
+  const { diffRange } = await import("../lib/git.mjs");
+  const { dir, git } = repo(t);
+  const first = execFileSync("git", ["rev-parse", "HEAD"], { cwd: dir, encoding: "utf8" }).trim();
+  git("mv", "a.ts", "moved.ts");
+  git("commit", "-qm", "move");
+
+  const range = await diffRange(dir, first, "HEAD");
+
+  assert.equal(range.renames.get("moved.ts"), "a.ts");
+  assert.deepEqual([...range.changed].sort(), ["a.ts", "moved.ts"]);
+});
+
+test("a tree listing git would not produce is unknown, not empty", async (t) => {
+  // F15: a read the check could not perform is reported, never absorbed as an
+  // empty answer. An empty tree is a real answer meaning "no files", and the
+  // obligation check reads it as "no companion exists anywhere", so every
+  // changed producer on the branch becomes a violation that can reach MUST-FIX.
+  const { filesAt } = await import("../lib/git.mjs");
+  const { dir } = repo(t);
+
+  assert.equal(await filesAt(dir, "0".repeat(40)), null, "an unreadable commit answers nothing");
+  assert.equal(await filesAt(dir, "not-a-sha"), null, "and so does a rev it will not take");
+  assert.deepEqual([...(await filesAt(dir, "HEAD"))], ["a.ts"], "a real tree still answers");
 });

@@ -1,10 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { needsPosixPaths } from "./platform.mjs";
+import { needsPosixPaths, needsShebang } from "./platform.mjs";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createPool } from "../lib/pool.mjs";
+import { createPool, rssOf, GUARDS } from "../lib/pool.mjs";
 
 function file(dir, name, body) {
   const abs = join(dir, name);
@@ -247,4 +247,43 @@ test("a worker that dies before answering reports what it printed", async (t) =>
   } finally {
     await pool.close();
   }
+});
+
+test("a ps that will not return costs the poll its timeout, not the run", needsShebang, () => {
+  // F5: every subprocess here carries a timeout, and this one runs through
+  // `execFileSync`, which blocks the parent's event loop. Without the timeout
+  // the guard that exists to stop a runaway parse becomes the hang.
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-ps-"));
+  writeFileSync(join(dir, "ps"), "#!/bin/sh\nsleep 30\n", { mode: 0o755 });
+  const path = process.env.PATH;
+  process.env.PATH = `${dir}:${path}`;
+
+  const started = Date.now();
+  try {
+    const out = rssOf([process.pid]);
+    const elapsed = Date.now() - started;
+
+    assert.equal(out.size, 0, "a ps that answered nothing reports nothing");
+    assert.ok(elapsed < 10_000, `waited ${elapsed}ms on a ps that never returns`);
+  } finally {
+    process.env.PATH = path;
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("the memory poll bounds what it will read back", () => {
+  // The same battery every other subprocess carries: a timeout and a byte
+  // bound, both named rather than left to the default.
+  assert.ok(Number.isFinite(GUARDS.psTimeoutMs) && GUARDS.psTimeoutMs > 0);
+  assert.ok(Number.isFinite(GUARDS.psMaxBytes) && GUARDS.psMaxBytes > 0);
+});
+
+test("the poll reads a live process's resident size", () => {
+  // The guard has to work, not only fail safely: a run whose ps is fine must
+  // still get a number back, or the RSS ceiling never fires on anything.
+  if (process.platform === "win32") return;
+
+  const out = rssOf([process.pid]);
+
+  assert.ok(out.get(process.pid) > 0, "this process has a resident size");
 });

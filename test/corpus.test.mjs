@@ -792,3 +792,20 @@ test("no cover entry names a directory a pattern cannot spell", () => {
   assert.equal(matches(app.globs, "app/**/s0.ts"), true, "and it still covers what it counted");
   assert.equal(matches(app.globs, "app/deep/d0.ts"), false, "without reaching the area below it");
 });
+
+test("area discovery does not depend on the order the files arrived in", () => {
+  // A5: the overview must be byte-stable across scans of unchanged source, and
+  // its listing is this order. `git ls-files` happens to answer sorted today,
+  // which is not the same as the map not caring: a filter, a merge or a cache
+  // that reorders the corpus would silently rewrite an always-loaded file.
+  const files = [];
+  for (const d of ["src/api", "src/web", "lib/http", "lib/util", "app/models"]) {
+    for (let i = 0; i < 6; i++) files.push({ rel: `${d}/f${i}.ts`, abs: `/r/${d}/f${i}.ts`, lang: "js" });
+  }
+
+  const forward = discover(files).map((a) => a.path);
+  const backward = discover([...files].reverse()).map((a) => a.path);
+
+  assert.deepEqual(backward, forward);
+  assert.deepEqual(forward, [...forward].sort(), "and the order is one a human can predict");
+});

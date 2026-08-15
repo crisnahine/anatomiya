@@ -20,7 +20,8 @@ Run the check and report what it found.
    - every `note:` line it printed, and the capped-severity line above them: no map on disk, no
      merge base, a shallow clone, files with uncommitted edits it could not see, files it
      could not read or parse
-   - any file in `.claude/rules/` this tool did not write, since those also reach the agent
+   - any file in `.claude/rules/` this tool did not write, and any carrying our frontmatter that
+     the map on disk does not name, since both reach the agent on every turn
 
 3. MUST-FIX means the baseline population held zero violations of that claim, so this branch is the
    first. Nothing is blocked by it: fix the site, or say which exception it falls under. Severity

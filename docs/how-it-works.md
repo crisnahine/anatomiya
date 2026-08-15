@@ -342,22 +342,52 @@ Three constraints shape the rendering:
 
 - **The overview must be byte-stable between scans with no source change.** The token economics only
   work on a cached read, so there is no timestamp, no duration, and no count that moves per commit.
-- **Each generated file stays short.** A rewritten context file does not re-attach inside a live
-  session, and the change notice truncates head and tail, so a long file loses its middle in both
-  copies. This is also why the scan prints a line telling you to restart.
+- **Each generated file stays under 40 lines.** A rewritten context file does not re-attach inside a
+  live session, and the change notice truncates head and tail, so a long file loses its middle in
+  both copies. This is also why the scan prints a line telling you to restart. It is a bound the
+  renderer holds rather than a hope about how many dimensions an area has: an area file drops its
+  suppressed counts before its stated directives and says how many did not fit, and the overview's
+  area listing gets whatever the rest of that file leaves. The `paths` list is exempt, because a
+  glob dropped to save a line mis-delivers the whole file.
 - **The plugin never opens its own output with the Read tool.** Reading a context file permanently
   suppresses its automatic injection for that path for the rest of the process, which would turn the
   map off for the session that just built it. The commands use `cat`.
 
 Ownership needs all three of: the `anatomiya-` filename prefix, a `generator: anatomiya` frontmatter
-key, and being known to the current scan. All three, or the file is left alone and reported. The
+key, and the map on disk naming the file. All three, or the file is left alone and reported. The
 prefix earns its place for one job, which is that a single `$(git rev-parse --git-common-dir)/info/exclude`
 line hides every generated file. It is not the ownership test, because a hand-written file can take
-that name.
+that name. Nor is the frontmatter key: an older build wrote files this one knows nothing about, and
+a wiped store leaves a directory full of them. The third fact comes from `facts.json`, read before
+the new record replaces it, and no readable map means nothing is removable rather than everything.
 
-Any other `.md` in `.claude/rules/` is reported as unattributed context on every run. That directory
-belongs to the repository, so a clone can ship a rule file with no `paths` key that loads
-unconditionally, in this tool's house style, from the moment of clone.
+Both surfaces report what they did not write, and they name it rather than counting it. A file with
+somebody else's name, or ours with nobody's frontmatter, is somebody else's context. A file with our
+name and our key that no map lists is our own output from a scan whose record is gone, and it is
+named apart because re-scanning is what clears it. `.claude/rules/` belongs to the repository, so a
+clone can ship a rule file with no `paths` key that loads unconditionally, in this tool's house
+style, from the moment of clone. The overview names them too, since it is the file loading beside
+them, and says nothing at all when there are none.
+
+Every write lands under `.claude/rules/` as a bare `anatomiya-*.md` name, checked when the plan is
+built rather than assumed because an area id is a hex digest today. A name that would resolve
+anywhere else refuses the whole write.
+
+That directory and the store are also resolved component by component before anything is written,
+and refused when the resolved path leaves the repository. `join` normalises `..` and follows no
+link, so lexical containment is not containment: a tracked `.claude -> ../victim`, git mode 120000
+and so present in every clone, had the map and `facts.json` written into a directory the repository
+does not own, that directory's filenames named in the always-loaded overview, and one of its
+`anatomiya-*.md` files removed by the next scan. One link at `.claude` escapes with both
+directories, so both are checked. The scan fails closed; the check reports it as a caveat, because
+refusing a branch at review time is the blocking behaviour this design rejects.
+
+Files in there are read by their first 8 KB and only when the entry is a regular file. The
+ownership test is a regex anchored at byte zero, so the rest was never the question, and read whole
+a tracked symlink to a large blob took a scan's peak resident size to 1.2 GB, while one pointed at
+`/dev/zero` never returned. A directory named `x.md` throws `EISDIR` on open and a fifo blocks on
+it; where one holds a name the scan is about to write, which `anatomiya-overview.md` invites since
+that name is fixed, it is reported as that condition rather than as an errno out of the rename.
 
 ### The encoder
 

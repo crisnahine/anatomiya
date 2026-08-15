@@ -25,7 +25,14 @@ Pin the baseline, but only when the user asked for it.
    node "${CLAUDE_PLUGIN_ROOT}/bin/anatomiya.mjs" scan .
    ```
 
-4. Never run this because a check reported findings, and never suggest it while a branch is under
+4. **Do not open the generated files with the Read tool.** Reading a context file permanently
+   suppresses its automatic injection for the rest of the session, which turns the map off for the
+   very session that just rebuilt it. Use `cat` or `head` through Bash if you need to show one.
+
+5. Tell the user that a session already running still holds the previous map. A rewritten context
+   file does not re-attach mid-session; a fresh session picks up the new one.
+
+6. Never run this because a check reported findings, and never suggest it while a branch is under
    review. The pin says which files a human accepted as the population every claim is counted over.
    Re-pinning during review moves the bar to include the branch's own code, which turns the agent's
    output into the evidence for the agent's claims. It is a human's call, made unprompted.

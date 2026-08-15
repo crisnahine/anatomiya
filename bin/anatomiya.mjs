@@ -8,6 +8,8 @@ import { collect, gitRoot } from "../lib/corpus.mjs";
 import { discover } from "../lib/areas.mjs";
 import { buildPin, loadPin, writePin, pinDelta, formatDelta, PIN_PATH } from "../lib/baseline.mjs";
 import { headSha } from "../lib/git.mjs";
+import { encodePath } from "../lib/encode.mjs";
+import { listSome, LISTED, RULES_DIR } from "../lib/rules.mjs";
 
 const USAGE = [
   "usage: anatomiya scan  [path] [--dry-run]",
@@ -19,6 +21,8 @@ const USAGE = [
 ].join("\n");
 
 const COMMANDS = new Set(["scan", "check", "pin"]);
+
+
 
 function fail(message, code = 2) {
   console.error(message);
@@ -86,7 +90,6 @@ async function runScan(cwd, { dryRun }) {
   // Through the renderer's own side selection, or the line undercounts every
   // area that was handed the inverse and the summary disagrees with the map.
   const stated = slots.filter((d) => statedSide(d).states !== null);
-  const unwritten = plan.unattributed.length + plan.foreign.length;
 
   // The root, because a path argument does not scope the scan: `git rev-parse
   // --show-toplevel` resolves any path inside the repository to its root, so
@@ -111,9 +114,26 @@ async function runScan(cwd, { dryRun }) {
   for (const line of unexaminedLines(result.parse)) console.log(line);
   if (result.authors.error)
     console.log(`history could not be read, so every claim fails the author gate: ${result.authors.error}`);
-  if (unwritten) console.log(`${unwritten} file(s) in .claude/rules/ not written by this tool`);
-  if (plan.remove.length)
-    console.log(`${plan.remove.length} area file(s) removed: their area is gone or states nothing`);
+  // Named, not counted. The count was a number the reader then had to go and
+  // resolve with `ls`, and the whole point of the line is that these files
+  // reach the agent on every turn.
+  reportRuleFiles(plan.foreign, "was not written by this tool");
+  // This tool's own output, from a scan whose record is gone. Two of the three
+  // facts ownership needs is not ownership, so it is left where it is.
+  reportRuleFiles(plan.unknown, "carries our frontmatter but no map names it, so it was left alone");
+  // Whose it is was never established, so neither sentence above is true of it.
+  reportRuleFiles(plan.unreadableRules, "could not be read, so whose it is was not established");
+  if (!plan.listed) console.log(`${RULES_DIR}/ could not be listed, so nothing in it was examined`);
+  // A generated name is ours by construction, so this is not a refusal. It is
+  // still the one case where a scan replaces a file somebody wrote by hand.
+  reportRuleFiles(
+    plan.replaced,
+    dryRun ? "holds a name this scan writes, so it would be replaced" : "held a name this scan writes, so it was replaced"
+  );
+  if (plan.remove.length) {
+    const what = dryRun ? "would be removed" : "removed";
+    console.log(`${plan.remove.length} area file(s) ${what}: their area is gone or states nothing`);
+  }
   // Nothing was written, and the reason is not "this repository has nothing in
   // it". Said before the count, because the count is 0 and reads as the first.
   if (plan.unreadable.length) {
@@ -126,6 +146,21 @@ async function runScan(cwd, { dryRun }) {
   console.log(dryRun ? `would write ${plan.write.length} files` : `wrote ${plan.write.length} files`);
   // Measured: a rewritten context file does not re-attach mid-session.
   if (!dryRun) console.log("a session already running still holds the old map; restart to pick it up");
+}
+
+/**
+ * One group of rule files, encoded and bounded.
+ *
+ * The names come off the filesystem, so they are repository-controlled like
+ * every other value this tool prints: one carrying a newline printed as
+ * two raw lines, and `commands/scan.md` tells the agent to report the lines the
+ * scanner printed, so a crafted filename could forge one. The cap is the same
+ * trade the report and the overview make, for the same reason.
+ */
+function reportRuleFiles(names, what) {
+  const { shown, rest } = listSome(names, LISTED.report);
+  for (const name of shown) console.log(`${encodePath(name)} in ${RULES_DIR}/ ${what}`);
+  if (rest) console.log(`and ${rest} more file(s) in ${RULES_DIR}/ that ${what}`);
 }
 
 /**
@@ -170,6 +205,10 @@ async function runPin(cwd, { dryRun }) {
   writePin(root, next);
   console.log(`\nwrote ${PIN_PATH}`);
   console.log("run `anatomiya scan` to measure the map against it");
+  // The scan that follows rewrites every context file, and a rewritten one does
+  // not re-attach mid-session. Said here too, because the pin is where a
+  // human is told to go and run it.
+  console.log("a session already running still holds the old map; restart to pick it up");
 }
 
 /**

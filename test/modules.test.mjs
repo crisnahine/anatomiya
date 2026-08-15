@@ -51,3 +51,51 @@ test("no module in lib imports its way back to itself", () => {
 
   assert.deepEqual([...new Set(cycles)], []);
 });
+
+/**
+ * The bodies of the named exports in one lib module, keyed by name.
+ *
+ * Read from source, because what is under test is which runner a function
+ * reaches for, and both runners answer the same values.
+ */
+function bodies(file) {
+  const src = readFileSync(join(LIB, file), "utf8");
+  const out = new Map();
+  for (const m of src.matchAll(/^(?:export )?(?:async )?function (\w+)\(/gm)) {
+    const start = m.index;
+    const next = src.slice(start + 1).search(/^(?:export )?(?:async )?function \w+\(/m);
+    out.set(m[1], next === -1 ? src.slice(start) : src.slice(start, start + 1 + next));
+  }
+  return out;
+}
+
+test("every git read that grows with the repository is streamed, never buffered", () => {
+  // Measured: `execFile` throws `RangeError: Invalid string length` from
+  // inside Node's own exit handler, `maxBuffer` does not protect against it,
+  // and V8 caps any string at 0x1fffffe8 bytes. Both runners answer the same
+  // values on a small repository, so the only thing that says which one a
+  // function used is the call it makes.
+  const git = bodies("git.mjs");
+  const check = bodies("check.mjs");
+
+  for (const [name, body] of [
+    ["filesAt", git.get("filesAt")],
+    ["pathSet", git.get("pathSet")],
+    ["changedSinceWorktree", git.get("changedSinceWorktree")],
+    ["diffRange", git.get("diffRange")],
+    ["changedFiles", check.get("changedFiles")],
+  ]) {
+    assert.ok(body, `${name} is not a named function any more`);
+    assert.doesNotMatch(body, /gitBuffered\(/, `${name} buffers a listing that grows with the repository`);
+  }
+});
+
+test("the bounded git reads stay on the buffered runner", () => {
+  // The split is real rather than incidental: a blob, a ref and one sha are
+  // bounded by what they are, and streaming them buys nothing.
+  const git = bodies("git.mjs");
+
+  for (const name of ["showBlob", "headSha", "mergeBase", "shaReachable"]) {
+    assert.match(git.get(name), /gitBuffered\(/, `${name} left the runner it belongs on`);
+  }
+});

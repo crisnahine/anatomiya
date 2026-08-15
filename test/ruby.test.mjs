@@ -549,3 +549,51 @@ test("a dimension only ever calls add with what the reducer reads", needsRuby, (
     assert.ok(fired > 0, `${d.key} never fired, so no fixture holds it to this shape`);
   }
 });
+
+test("a child that keeps answering forever still ends at the wall clock", needsRuby, async () => {
+  // F5: silence is not the only way a subprocess fails to end. A child that
+  // answers one file every fourteen seconds keeps the idle timer happy and
+  // never finishes, and every subprocess here owes a timeout rather than a
+  // liveness check.
+  const out = await parseRuby([{ rel: "a.rb", abs: join(dir, "rescue_none.rb") }], {
+    guards: { wallBaseMs: 1, wallPerFileMs: 0 },
+  });
+
+  assert.equal(out.error, "ruby ran past its wall clock");
+  assert.equal(out.results[0].crashed, true, "what never answered is charged, not dropped");
+});
+
+test("the wall clock is derived from how much work was handed over", needsRuby, () => {
+  // A large repository legitimately runs for minutes, so a fixed ceiling would
+  // cut off the repositories the map is most worth building for.
+  assert.ok(RUBY_GUARDS.wallBaseMs >= 60_000, "a small repository gets a full minute");
+  assert.ok(RUBY_GUARDS.wallPerFileMs > 0, "and a large one gets more");
+  // Measured at 6,867 files/sec, so this is far past what a real corpus needs.
+  const forRails = RUBY_GUARDS.wallBaseMs + RUBY_GUARDS.wallPerFileMs * 5_500;
+  assert.ok(forRails > 200_000, `${forRails}ms is not enough for a Rails-sized corpus`);
+});
+
+test("overriding one guard keeps the rest", needsRuby, async () => {
+  // A caller that replaced the whole object left every guard it did not name
+  // undefined, and a timer set from one of those fires at once rather than
+  // never.
+  const out = await parseRuby([{ rel: "a.rb", abs: join(dir, "rescue_none.rb") }], {
+    guards: { idleMs: 20_000 },
+  });
+
+  assert.equal(out.error, null, "the wall clock it did not name still held off");
+  assert.equal(out.parsed, 1);
+});
+
+test("a guard named as undefined keeps its default", needsRuby, async () => {
+  // Naming a guard and naming nothing are the same gesture from a caller
+  // building an override object, and a spread copies the second over the
+  // default. A wall clock built from `undefined` fires at once rather than
+  // never, which charges every file as crashed on a run that was fine.
+  const out = await parseRuby([{ rel: "a.rb", abs: join(dir, "rescue_none.rb") }], {
+    guards: { wallBaseMs: undefined, idleMs: undefined },
+  });
+
+  assert.equal(out.error, null);
+  assert.equal(out.parsed, 1);
+});

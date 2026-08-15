@@ -15,3 +15,10 @@ export const needsPosixPaths = WINDOWS
 export const needsShebang = WINDOWS
   ? { skip: "Windows does not execute a shebang, so the stub interpreter cannot run" }
   : {};
+
+// `chmod` on Windows moves the read-only attribute and nothing else, so a file
+// this test needs to be unreadable stays readable and the case proves the
+// opposite of what it says.
+export const needsPosixPermissions = WINDOWS
+  ? { skip: "Windows chmod only toggles read-only, so a file cannot be made unreadable" }
+  : {};
