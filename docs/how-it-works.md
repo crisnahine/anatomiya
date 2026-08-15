@@ -246,7 +246,9 @@ files and reads as a strong convention with nothing on the page to contradict it
 checked when the registry loads, and every row carries witness sources: the ones the sentence says
 are applicable, and the neighbouring constructs that must not count. Where a sentence names several
 forms, each one the code treats differently gets a source, because one source proves the sentence
-names something and nothing more.
+names something and nothing more. Where the predicate recognises its construct through a closed
+table of names, every member of that table is driven through it as well, since a table shrinking
+changes no shape and quietly narrows which repositories the dimension can speak about at all.
 
 `npm run audit:applicability` reads scanned repositories back and ranks every dimension by how much
 of an area it speaks for, which is how a narrow predicate is found before somebody reads the map

@@ -220,8 +220,14 @@ applicable, and the neighbouring construct that must not count. A row with no wi
 completeness test, and a sentence the code disagrees with fails the other two.
 
 `applicable` is a list, and the length is the point. Where your sentence names several forms, write
-one source per form the code treats differently. A closed lookup table is one form, however many
-names are in it; two call shapes, two node types or two spellings are not. One source proves the sentence names something and nothing more:
+one source per form the code treats differently: two call shapes, two node types, two spellings.
+
+Where the predicate recognises its construct through a closed table of names, every member of that
+table gets driven through it in `TABLES`, with the members written out in the test rather than read
+from the table. A table is one shape, so the witness pairs never notice it shrinking: dropping
+`next-intl` from the module list makes every file in such a repository inapplicable and changes no
+shape at all. An expectation read from the table would agree with the table by construction and
+could never disagree with it, which is why the list is spelled out. One source proves the sentence names something and nothing more:
 narrowing `optional_chaining` from six receiver names to one under-counts its applicability sixfold
 and a single `opts` witness stays green straight through it. Where the sentence promises a count,
 say the count, since a non-zero assertion proves nothing about it:

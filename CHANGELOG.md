@@ -14,9 +14,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   seeing a tenth of its own construct produced a ratio of 1.00 over four files and read as a strong
   convention. The two fields are tied to `precision`, so the marker and the reason cannot disagree,
   and the registry refuses to load over a row that carries neither. (C2)
-- A witness pair per dimension, driven through the same parse the scan uses: a source the declared
-  sentence says is applicable, and the neighbouring construct that must not count. A new row with no
-  witness fails the completeness test. (C2)
+- Witness sources per dimension, driven through the same parse the scan uses: the ones the declared
+  sentence says are applicable, and the neighbouring constructs that must not count. A new row with
+  no witness fails the completeness test, and where a sentence promises a count, the count is
+  asserted. (C2)
+- Every member of every closed table a predicate recognises its construct through is driven through
+  that predicate: React's hooks, the translation modules, elements and calls, the test-runner
+  modifiers, the column types, the reference calls and the model base classes. The witness pairs
+  cannot see a table shrink, because losing a name changes no shape: dropping `next-intl` from the
+  module list makes every file in such a repository inapplicable and every other test stays green.
+  The expected members are written out in the test rather than read from the table, since an
+  expectation taken from the code agrees with it by construction. (C2)
 - `scripts/audit-applicability.mjs` reads one or more `facts.json` files and prints the applicability
   share per dimension, flagging any `precise` row whose median sits under a quarter. Measured across
   express, sidekiq, vuejs/core and mastodon: of the 37 rows that produced a slot in any of them, 6
