@@ -871,3 +871,38 @@ test("a repository with no pin has no baseline to postdate", () => {
 
   assert.equal(blockedFor(unpinned, null), null);
 });
+
+test("a file the parser could not read is not a file the dimension could speak about", () => {
+  // `applicability` counts files that produced a site, and only an examined file
+  // can produce one. Counting every file of the language as the denominator
+  // divides a numerator over parsed files by a population that includes files
+  // nothing was read from, and the applicability gate then reads a predicate as
+  // narrow because the repository holds syntax this tool does not take.
+  // Measured: 55 of react's 122 areas hold at least one such file, one of them
+  // every file it has.
+  const area = {
+    path: "src",
+    langs: ["js"],
+    fileCount: 4,
+    files: [
+      { rel: "src/a.ts", lang: "js" },
+      { rel: "src/b.ts", lang: "js" },
+      { rel: "src/c.ts", lang: "js" },
+      { rel: "src/d.ts", lang: "js" },
+    ],
+  };
+  const hit = [{ conforming: true, where: null }];
+  const parsed = [
+    { rel: "src/a.ts", ok: true, hits: { swallowed_error: hit } },
+    { rel: "src/b.ts", ok: true, hits: { swallowed_error: hit } },
+    // Flow in a .js file, or any syntax the parser rejects: examined, and it
+    // answered that it could not read this.
+    { rel: "src/c.ts", ok: false, kind: "rejected" },
+    { rel: "src/d.ts", ok: false, kind: "crashed" },
+  ];
+
+  const [dim] = reduce.reduceArea(area, parsed).filter((d) => d.key === "swallowed_error");
+
+  assert.equal(dim.applicability, 2, "two files produced a site");
+  assert.equal(dim.langFileCount, 2, "and two are all this dimension could have spoken about");
+});
