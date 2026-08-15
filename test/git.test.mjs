@@ -14,9 +14,19 @@ import { gitBuffered, gitStreamed, parseNameStatusZ, parsePorcelainZ, showBlob }
  * the baseline's runner carried no timeout at all, and three hand-rolled state
  * machines read the same `--name-status -z` output three ways.
  */
+/**
+ * Removed with retries, because half these tests kill the git they started and
+ * Windows holds a directory open as a dying process's cwd. The killed child
+ * outlives the test by a few milliseconds and `rmdir` fails EBUSY until it goes.
+ */
+function scratch(t, prefix) {
+  const dir = mkdtempSync(join(tmpdir(), prefix));
+  t.after(() => rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 }));
+  return dir;
+}
+
 function repo(t) {
-  const dir = mkdtempSync(join(tmpdir(), "anatomiya-git-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const dir = scratch(t, "anatomiya-git-");
 
   const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
   git("init", "-q");
@@ -168,8 +178,7 @@ test("a streamed read that never returns is ended by its own timeout", needsSheb
   // that blocks does so on a stdin this runner has already closed, and a fast
   // command with a tiny budget races the machine.
   const { dir } = repo(t);
-  const bin = mkdtempSync(join(tmpdir(), "anatomiya-git-bin-"));
-  t.after(() => rmSync(bin, { recursive: true, force: true }));
+  const bin = scratch(t, "anatomiya-git-bin-");
   writeFileSync(join(bin, "git"), "#!/bin/sh\nsleep 30\n", { mode: 0o755 });
 
   await assert.rejects(
@@ -188,8 +197,7 @@ test("a record that never ends is refused before it reaches V8's string limit", 
   // from inside the exit handler, which is the failure streaming exists to
   // avoid in the first place.
   const { dir } = repo(t);
-  const bin = mkdtempSync(join(tmpdir(), "anatomiya-git-bin-"));
-  t.after(() => rmSync(bin, { recursive: true, force: true }));
+  const bin = scratch(t, "anatomiya-git-bin-");
   writeFileSync(join(bin, "git"), '#!/bin/sh\nhead -c 5000 /dev/zero | tr "\\0" "x"\n', { mode: 0o755 });
 
   await assert.rejects(
@@ -286,8 +294,7 @@ test("a blob read runs the git its caller pointed at", needsShebang, async (t) =
   // caller's options at all, and dropping them silently is invisible: the real
   // git answers, just on the wrong clock.
   const { dir } = repo(t);
-  const bin = mkdtempSync(join(tmpdir(), "anatomiya-git-bin-"));
-  t.after(() => rmSync(bin, { recursive: true, force: true }));
+  const bin = scratch(t, "anatomiya-git-bin-");
   writeFileSync(join(bin, "git"), '#!/bin/sh\nprintf SHIM\n', { mode: 0o755 });
 
   const blob = await showBlob(dir, "a".repeat(40), "a.ts", {
@@ -305,8 +312,7 @@ test("a blob read gives up on the clock its caller set, not the scan's", needsSh
   // file. The shim outlasts any bound but the one passed here, so the call can
   // only settle if that bound was honoured.
   const { dir } = repo(t);
-  const bin = mkdtempSync(join(tmpdir(), "anatomiya-git-bin-"));
-  t.after(() => rmSync(bin, { recursive: true, force: true }));
+  const bin = scratch(t, "anatomiya-git-bin-");
   writeFileSync(join(bin, "git"), "#!/bin/sh\nsleep 300\n", { mode: 0o755 });
 
   const blob = await showBlob(dir, "a".repeat(40), "a.ts", {
