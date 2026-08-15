@@ -271,34 +271,32 @@ test("every shipped dimension has a witness pair", () => {
   assert.deepEqual(witnessed, shipped, "a dimension without a witness ships a predicate nobody proved");
 });
 
-test("every JavaScript predicate sees the file its sentence claims, and only that one", async () => {
-  const records = await hitsFor(jsKeys);
+/**
+ * Both engines answer the same question, so they get one body. Split by
+ * language because only one of them needs a Ruby on the machine, and skipping
+ * that half must not take the other with it.
+ */
+async function witnessProblems(keys) {
+  const records = await hitsFor(keys);
   const problems = [];
 
-  for (const key of jsKeys) {
+  for (const key of keys) {
     const applicable = count(records, key, "applicable");
     const inapplicable = count(records, key, "inapplicable");
-    const sites = ALL_DIMENSIONS.find((d) => d.key === key).applicability.sites;
+    const sites = ALL_DIMENSIONS.find((d) => d.key === key).applicabilityPredicate.sites;
     if (applicable === 0) problems.push(`${key} says it applies to "${sites}" and found no site in its own witness`);
     if (inapplicable !== 0) problems.push(`${key} counted ${inapplicable} site(s) in a file its predicate does not claim`);
   }
 
-  assert.deepEqual(problems, []);
+  return problems;
+}
+
+test("every JavaScript predicate sees the file its sentence claims, and only that one", async () => {
+  assert.deepEqual(await witnessProblems(jsKeys), []);
 });
 
 test("every Ruby predicate sees the file its sentence claims, and only that one", needsRuby, async () => {
-  const records = await hitsFor(rubyKeys);
-  const problems = [];
-
-  for (const key of rubyKeys) {
-    const applicable = count(records, key, "applicable");
-    const inapplicable = count(records, key, "inapplicable");
-    const sites = ALL_DIMENSIONS.find((d) => d.key === key).applicability.sites;
-    if (applicable === 0) problems.push(`${key} says it applies to "${sites}" and found no site in its own witness`);
-    if (inapplicable !== 0) problems.push(`${key} counted ${inapplicable} site(s) in a file its predicate does not claim`);
-  }
-
-  assert.deepEqual(problems, []);
+  assert.deepEqual(await witnessProblems(rubyKeys), []);
 });
 
 test("every obligation counts its producer, and asks nothing of a repository with no companion of that shape", () => {
@@ -318,7 +316,7 @@ test("every obligation counts its producer, and asks nothing of a repository wit
     const w = PAIRING_WITNESSES[pairing.key];
     const applicable = applyTo(w.applicable, pairing.key);
     const inapplicable = applyTo(w.inapplicable, pairing.key);
-    const sites = pairing.applicability.sites;
+    const sites = pairing.applicabilityPredicate.sites;
     if (applicable === 0) problems.push(`${pairing.key} says it applies to "${sites}" and counted no producer in its own witness`);
     if (inapplicable !== 0) {
       problems.push(`${pairing.key} asked a repository holding no ${pairing.companionSuffix} file, where it can only read zero`);

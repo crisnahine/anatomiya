@@ -358,18 +358,18 @@ test("a registry row that cannot say which files it speaks about does not ship (
   // a strong convention. The three numbers cannot show that; the sentence can.
   assert.throws(
     () => assertApplicability([{ key: "forgot", precision: "precise" }]),
-    /forgot declares no applicability.sites/
+    /forgot declares no applicabilityPredicate\.sites/
   );
   assert.throws(
-    () => assertApplicability([{ key: "terse", precision: "precise", applicability: { sites: "files", blind: null } }]),
-    /terse declares no applicability.sites/
+    () => assertApplicability([{ key: "terse", precision: "precise", applicabilityPredicate: { sites: "files", blind: null } }]),
+    /terse declares no applicabilityPredicate\.sites/
   );
 });
 
 test("a row declaring no blind key at all is refused, because absent is not a third state (C2)", () => {
   assert.throws(
-    () => assertApplicability([{ key: "silent", precision: "partial", applicability: { sites: "a file holding a catch clause" } }]),
-    /silent declares no applicability.blind/
+    () => assertApplicability([{ key: "silent", precision: "partial", applicabilityPredicate: { sites: "a file holding a catch clause" } }]),
+    /silent declares no applicabilityPredicate\.blind/
   );
 });
 
@@ -380,14 +380,14 @@ test("precision and the blind spot cannot disagree (C2)", () => {
   assert.throws(
     () =>
       assertApplicability([
-        { key: "lying", precision: "precise", applicability: { sites: "a file holding a catch clause", blind: "a rethrow in a helper" } },
+        { key: "lying", precision: "precise", applicabilityPredicate: { sites: "a file holding a catch clause", blind: "a rethrow in a helper" } },
       ]),
     /lying is precise and names a blind spot/
   );
   assert.throws(
     () =>
       assertApplicability([
-        { key: "quiet", precision: "partial", applicability: { sites: "a file holding a catch clause", blind: null } },
+        { key: "quiet", precision: "partial", applicabilityPredicate: { sites: "a file holding a catch clause", blind: null } },
       ]),
     /quiet is partial and names no blind spot/
   );
@@ -395,7 +395,7 @@ test("precision and the blind spot cannot disagree (C2)", () => {
 
 test("assertApplicability returns the rows it accepted, so a registry can wrap itself", () => {
   const rows = [
-    { key: "ok", precision: "partial", applicability: { sites: "a file holding a catch clause", blind: "a rethrow inside a helper" } },
+    { key: "ok", precision: "partial", applicabilityPredicate: { sites: "a file holding a catch clause", blind: "a rethrow inside a helper" } },
   ];
 
   assert.equal(assertApplicability(rows), rows);

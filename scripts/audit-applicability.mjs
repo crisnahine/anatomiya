@@ -33,6 +33,12 @@ const median = (xs) => {
 export function shareTable(factsList) {
   const precisionOf = new Map([...ALL_DIMENSIONS, ...PAIRINGS].map((d) => [d.key, d.precision]));
   const shares = new Map();
+  // A slot that is there and whose denominator is not. A map written before
+  // schema 5 carries every count and no `langFileCount`, and folding that into
+  // an empty table reports a repository with no dimensions in it. Told apart
+  // from "read, and there was nothing there", which is the same rule the parse
+  // classification and the git reads already follow.
+  let denominatorless = 0;
 
   for (const facts of factsList) {
     for (const area of facts.areas ?? []) {
@@ -41,15 +47,18 @@ export function shareTable(factsList) {
         // dimension could speak about, never every file in the area. A Ruby row
         // counted against a mixed area's JavaScript files reads as narrow when
         // it was simply never asked.
-        const denominator = d.langFileCount || 0;
-        if (!denominator) continue;
+        if (d.langFileCount === undefined) {
+          denominatorless++;
+          continue;
+        }
+        if (!d.langFileCount) continue;
         if (!shares.has(d.key)) shares.set(d.key, []);
-        shares.get(d.key).push(d.applicability / denominator);
+        shares.get(d.key).push(d.applicability / d.langFileCount);
       }
     }
   }
 
-  return [...shares.entries()]
+  const rows = [...shares.entries()]
     .map(([key, xs]) => {
       const precision = precisionOf.get(key) ?? "?";
       const med = median(xs);
@@ -64,6 +73,8 @@ export function shareTable(factsList) {
       };
     })
     .sort((a, b) => a.med - b.med || a.key.localeCompare(b.key));
+
+  return { rows, denominatorless };
 }
 
 function main(paths) {
@@ -72,7 +83,18 @@ function main(paths) {
     process.exit(2);
   }
 
-  const rows = shareTable(paths.map((p) => JSON.parse(readFileSync(p, "utf8"))));
+  const { rows, denominatorless } = shareTable(paths.map((p) => JSON.parse(readFileSync(p, "utf8"))));
+
+  if (denominatorless) {
+    console.error(
+      `${denominatorless} slot(s) carry no langFileCount, so their share could not be computed: ` +
+        `these maps predate facts schema 5, and scanning again with this build stores it`
+    );
+    // A map this cannot read is not a repository with no dimensions in it, and
+    // a clean empty table says the second.
+    if (rows.length === 0) process.exit(1);
+  }
+
   console.log(["key", "precision", "areas", "median", "min", "max", "note"].join("\t"));
   for (const r of rows) {
     console.log(

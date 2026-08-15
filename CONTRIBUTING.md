@@ -123,6 +123,10 @@ The shape:
   claim: "catch blocks use the error they caught",
   counterClaim: null, // discarding the error is an absence, not a style anyone picked
   precision: "precise",
+  applicabilityPredicate: {
+    sites: "a file holding at least one catch clause, whether or not it binds the error",
+    blind: null,
+  },
   langs: ["js", "jsx"],
   run(program, add) {
     // one add() per candidate site, conforming decided per site
@@ -141,6 +145,10 @@ exists. It carries no `run`; the shape is a directory pair:
   claim: "a model ships with a spec",
   counterClaim: null,
   precision: "precise",
+  applicabilityPredicate: {
+    sites: "a .rb file anywhere under app/models, once the repository is seen using the _spec.rb suffix at all",
+    blind: null,
+  },
   langs: ["ruby"],
   from: "app/models",
   to: "spec/models",
@@ -195,7 +203,7 @@ A dimension with no writable applicability predicate does not ship, and the pred
 rather than advice. Every row carries:
 
 ```js
-applicability: {
+applicabilityPredicate: {
   sites: "a file holding at least one catch clause, whether or not it binds the error",
   blind: null,
 },
@@ -216,7 +224,7 @@ audit.
 The share is auditable across repositories rather than by eye, one line at a time:
 
 ```sh
-node scripts/audit-applicability.mjs /path/to/repo/.claude/anatomiya/facts.json ...
+npm run audit:applicability -- /path/to/repo/.claude/anatomiya/facts.json ...
 ```
 
 It flags any `precise` row whose median `applicability / langFileCount` sits under 0.25. A flag is a
