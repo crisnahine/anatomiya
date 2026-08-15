@@ -9,8 +9,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [0.1.9] - 2026-08-15
 
-An architecture pass over the seams the 0.1.8 pass left open. Every change is a place two modules
-still held one piece of knowledge, and the one defect found along the way.
+An architecture pass over the seams the 0.1.8 pass left open, and the six defects the moves surfaced
+on the way. Every change is a place two modules still held one piece of knowledge; every defect is
+one the move made visible rather than one it introduced.
 
 ### Fixed
 
