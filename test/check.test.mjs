@@ -7,7 +7,7 @@ import { join, dirname } from "node:path";
 import { execFileSync } from "node:child_process";
 
 import { needsRuby } from "./ruby-available.mjs";
-import { check, severityFor, formatReport } from "../lib/check.mjs";
+import { check, severityFor, formatReport, unreadReason } from "../lib/check.mjs";
 import { scan } from "../lib/scan.mjs";
 import { writeMap } from "../lib/write.mjs";
 import { writeFacts } from "../lib/facts.mjs";
@@ -1322,4 +1322,18 @@ test("a producer whose companion the branch never wrote is still reported", asyn
   assert.equal(owed.length, 1, `expected the missing spec to be reported: ${JSON.stringify(r.findings)}`);
   assert.equal(owed[0].path, "app/models/lonely.rb");
   assert.match(owed[0].reason, /no "spec\/models\/lonely_spec\.rb"/);
+});
+
+test("a file the check could not read names its own cause, in the singular", () => {
+  // This surface always names one file, so it always takes the singular verb,
+  // and the four causes are four different things to do about it: a crash is
+  // this tool's, rejected syntax is the branch's own code, the cap is a
+  // generated file nobody writes by hand, and the rest is this tool or the
+  // filesystem. Folding any of them into another sends the reader after the
+  // wrong thing.
+  assert.equal(unreadReason({ kind: "crashed" }), "crashed the parser");
+  assert.equal(unreadReason({ kind: "rejected" }), "holds syntax the parser rejected");
+  assert.equal(unreadReason({ kind: "oversize" }), "exceeded the size cap");
+  assert.equal(unreadReason({ kind: "unreadable" }), "could not be parsed");
+  assert.equal(unreadReason(null), "could not be parsed", "no record at all is the same as unreadable");
 });
