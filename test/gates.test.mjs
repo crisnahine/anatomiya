@@ -1020,3 +1020,40 @@ test("a file whose types were stripped leaves the denominator of the dimensions 
   assert.equal(typed.langFileCount, 10, "a stripped file is not a file this dimension declined");
   assert.equal(untyped.langFileCount, 20, "every other dimension did run on it");
 });
+test("a semantic dimension states nothing when the tier ran degraded", () => {
+  const d = dim({ tier: "semantic" });
+  const r = verdictFor(d, {
+    current: { fileCount: 12, dirCount: 2 },
+    authors: 3,
+    repoAuthors: 3,
+    semantic: { status: "degraded", reason: "low-resolution" },
+  });
+  assert.equal(r.directive, false);
+  assert.equal(r.states, null);
+  assert.equal(r.gate, "degraded-semantic");
+  assert.equal(r.counterGate, "degraded-semantic", "a block closes both sides");
+});
+
+test("a degraded tier does not touch the syntactic dimensions beside it", () => {
+  const d = dim({ tier: "syntactic" });
+  const r = verdictFor(d, {
+    current: { fileCount: 12, dirCount: 2 },
+    authors: 3,
+    repoAuthors: 3,
+    semantic: { status: "degraded", reason: "low-resolution" },
+  });
+  assert.equal(r.directive, true);
+  assert.equal(r.gate, null);
+});
+
+test("a truncated corpus still outranks a degraded tier", () => {
+  const d = dim({ tier: "semantic" });
+  const r = verdictFor(d, {
+    current: { fileCount: 12, dirCount: 2 },
+    authors: 3,
+    repoAuthors: 3,
+    truncated: true,
+    semantic: { status: "degraded", reason: "low-resolution" },
+  });
+  assert.equal(r.gate, "corpus-truncated");
+});
