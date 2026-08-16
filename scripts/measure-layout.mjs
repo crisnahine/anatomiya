@@ -20,6 +20,7 @@
  */
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 
 import { namesakeCompanions } from "../lib/companions.mjs";
 import { collect, frameworksIn } from "../lib/corpus.mjs";
@@ -40,7 +41,7 @@ const LEVEL_SUFFIX = " (files at this level)";
 
 // The five rows part 2 added, counted per repository so a row nothing states
 // anywhere is visible as such.
-const LEARNED_ROWS = ["extends_base", "class_base", "module_include", "interface_prefix", "type_alias_prefix"];
+export const LEARNED_ROWS = ["extends_base", "class_base", "module_include", "interface_prefix", "type_alias_prefix"];
 
 // --- the recount ------------------------------------------------------------
 
@@ -436,6 +437,7 @@ async function measure(name, dir) {
     section: section === null ? null : section.join("\n"),
     overviewLines: count,
     result: first,
+    learned: learnedRows(name, first.areas),
     row: {
       repo: name,
       tracked: corpus.length,
@@ -466,10 +468,85 @@ const COLUMNS = [
   "seconds",
 ];
 
-function tableOf(rows) {
-  const out = [`| ${COLUMNS.join(" | ")} |`, `|${COLUMNS.map(() => "---").join("|")}|`];
-  for (const r of rows) out.push(`| ${COLUMNS.map((c) => r[c]).join(" | ")} |`);
+function tableOf(rows, columns = COLUMNS) {
+  const out = [`| ${columns.join(" | ")} |`, `|${columns.map(() => "---").join("|")}|`];
+  for (const r of rows) out.push(`| ${columns.map((c) => r[c]).join(" | ")} |`);
   return out.join("\n");
+}
+
+// --- the dimension bar ------------------------------------------------------
+
+/**
+ * What the bar asks for and a summary cannot answer: the three numbers and the
+ * ratio, per repository and per area, for each of the five learned rows.
+ *
+ * A summary hides the one thing step 3 is looking for. `module_state_const`
+ * scored 620 of 620 on one repository and shipped a directive nobody could
+ * break; what would have caught it is a column of ratios sitting at 1.0.
+ */
+const LEARNED_COLUMNS = [
+  "repo",
+  "area",
+  "applicability",
+  "langFileCount",
+  "candidates",
+  "conforming",
+  "ratio",
+  "learned",
+  "stated",
+];
+
+// A repository with sixty leaf areas holding one class each is not what the bar
+// is asking about, and a table nobody reads to the end proves nothing.
+const ROW_AREAS = 5;
+
+/**
+ * Whether the area was handed the sentence, and what stopped it if not.
+ *
+ * The gate is the point of the column: a row suppressed everywhere by `ratio`
+ * is a repository disagreeing with itself, and one suppressed by `evidence` is
+ * a repository that agrees and has too little of it to say so.
+ */
+function statedText(d) {
+  const { states, gate } = statedSide(d);
+  if (states === null) return `no (${gate})`;
+  return d.matchesDefault === true ? "no (model default)" : "yes";
+}
+
+/** One repository's lines for each learned row, biggest area first. */
+export function learnedRows(repo, areas) {
+  const out = new Map(LEARNED_ROWS.map((key) => [key, []]));
+  for (const a of areas) {
+    for (const d of a.dimensions) {
+      // An area holding no site of the row is not evidence about it either way,
+      // and printing it as a zero row buries the areas that counted something.
+      if (!out.has(d.key) || !d.candidates) continue;
+      out.get(d.key).push({
+        repo,
+        area: a.path,
+        applicability: d.applicability,
+        langFileCount: d.langFileCount ?? "-",
+        candidates: d.candidates,
+        conforming: d.conforming,
+        ratio: d.ratio.toFixed(3),
+        learned: d.learned ?? "-",
+        stated: statedText(d),
+      });
+    }
+  }
+  for (const [key, rows] of out) {
+    rows.sort((x, y) => y.candidates - x.candidates || x.area.localeCompare(y.area));
+    out.set(key, rows.slice(0, ROW_AREAS));
+  }
+  return out;
+}
+
+/** The five tables, in registry order, from `[key, rows]` pairs. */
+export function learnedTables(collected) {
+  const byKey = new Map(collected);
+  return LEARNED_ROWS.flatMap((key) => [`### ${key}`, "", tableOf(byKey.get(key) ?? [], LEARNED_COLUMNS), ""]).join(
+    "\n"
+  );
 }
 
 function parseArgs(argv) {
@@ -502,6 +579,7 @@ async function main() {
 
   const rows = [];
   const sections = [];
+  const learned = new Map(LEARNED_ROWS.map((key) => [key, []]));
   const failures = [];
 
   for (const name of repos) {
@@ -509,6 +587,7 @@ async function main() {
       const out = await measure(name, join(corpusDir, name));
       rows.push(out.row);
       sections.push(out);
+      for (const [key, lines] of out.learned) learned.get(key).push(...lines);
       console.log(`| ${COLUMNS.map((c) => out.row[c]).join(" | ")} |`);
       if (opts.facts) {
         const dir = join(resolve(opts.facts), name);
@@ -524,11 +603,14 @@ async function main() {
 
   console.log("");
   console.log(tableOf(rows));
+  console.log("");
+  console.log(learnedTables([...learned]));
 
   if (opts.md) {
     const body = [
       tableOf(rows),
       "",
+      learnedTables([...learned]),
       ...sections.flatMap((s) => [`## ${s.name}`, "", "```", s.section ?? "(no section)", "```", ""]),
     ];
     writeFileSync(resolve(opts.md), body.join("\n"));
@@ -542,4 +624,8 @@ async function main() {
   console.error(`\n${rows.length} of ${repos.length} repositories passed`);
 }
 
-await main();
+// Guarded, because the tests import the bar's table builders from here and an
+// unguarded run would scan a corpus instead of asserting.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  await main();
+}
