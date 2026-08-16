@@ -87,8 +87,9 @@ are how many areas printed each roster line.
 ## Tuning, and why
 
 Seven changes, each with a test that fails before it and passes after. The three numbers the
-design left open are unchanged: the floor is still `max(3, ceil(0.01 * N))`, the wrapper share is
-still 0.8, the budget is still 7 root lines, and the shell list is still the same five words.
+design left open are unchanged, and so is the shell list: the floor is still
+`max(3, ceil(0.01 * N))`, the wrapper share is still 0.8, the budget is still 7 root lines, and
+the five shell names are the same five words.
 
 ### 1. The tests line names where most of a runner's files are
 
@@ -261,16 +262,36 @@ each of whitehall and consul; `interface_prefix` on 14 areas of vscode and 6 of 
 discourse and fastlane. Nothing states `type_alias_prefix` anywhere.
 
 `module_include` deserves an issue. On empire-flippers/api every worker includes `Sidekiq::Worker`
-and one more module, and the row counts include sites rather than classes, so
-`app/workers/workers` scores 125 of 234 and `app/workers/cronjobs` 70 of 140. A repository where
-every class includes exactly two modules cannot exceed 0.5 on this row however uniform it is, so
-the ratio gate suppresses it everywhere. The counts line still prints, which is what makes the
-threshold auditable, and this is the audit finding it.
+and one more module, and the row counts include sites rather than classes, so the second include
+in each class is a site the learned base can never answer. `app/workers/workers` scores 125 of 234,
+which is 0.534, and `app/workers/cronjobs` 70 of 140, which is exactly one half. Two includes per
+class pin the row there whatever the repository does, and a third would push it lower; either way
+it sits far under the 0.90 gate and the ratio gate suppresses it everywhere. The counts line still
+prints, which is what makes the threshold auditable, and this is the audit finding it.
+
+`class_base` = `ApplicationController` for `app/controllers` is a question the api does not have
+the shape to be asked. There is no `app/controllers` area in the partition: discovery found
+`app/controllers/api/v1`, 65 files, and `app/controllers/api/v1/admin`, 36. Nor is
+`ApplicationController` the base either of them uses. The row is learned from what the classes
+actually inherit, and that is `Api::V1::BaseController` under `api/v1` and
+`Api::V1::Admin::BaseController` under `api/v1/admin`, which is the row working: a learned base is
+the repository's, not a framework's default.
+
+Neither is stated, and two different gates stop them. `api/v1` scores 55 of 65, a point ratio of
+0.846, which is under `minRatio` and fails on the ratio alone before any interval is computed: ten
+of its controllers inherit something else. `api/v1/admin` scores 33 of 36, a point ratio of 0.917
+that clears `minRatio` and whose Wilson lower bound does not, so the evidence gate takes it. Both
+print as counts, which is what the suppressed side is for. `class_base` is stated on 7 areas of
+this repository, `app/models` at `ApplicationRecord` 124 of 130 and `app/services/api/v1` at
+`ActiveInteraction::Base` 79 of 79 among them.
 
 ## The PR 4096 probe
 
 Read-only on the corpus copy of empire-flippers/client, at the commit it is checked out at. No
-branch, no patch.
+branch, no patch: the corpus repositories are read-only for this harness, so the brief's
+branch-apply-check step was not run, and what the spec's acceptance asks for, the overview section
+carrying the Cypress-against-vitest denominator and the `src/components` helper facet, is met by
+the section quoted below.
 
 The overview section:
 

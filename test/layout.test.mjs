@@ -56,6 +56,17 @@ test("a file in a test tree that mirrors a source file is that file's test", () 
   assert.equal(isTestFile(corpus[4], mirrored), false, "nothing outside the test tree answers to it");
 });
 
+test("the roster counts against the mirror index it is handed, and builds none of its own", () => {
+  // The scan builds it once over the corpus and the area kinds read the same
+  // one, so the record has to take it rather than walk the tree again.
+  const corpus = [file("src/a.ts", "js"), file("src/b.ts", "js"), file("src/c.ts", "js")];
+
+  assert.deepEqual(layoutFacts(corpus).tests, [], "nothing here mirrors anything");
+  assert.deepEqual(layoutFacts(corpus, { mirrored: new Set(["src/a.ts"]) }).tests, [
+    { runner: "test files", root: "src", files: 1 },
+  ]);
+});
+
 test("a directory called test does not make what sits in it a test", () => {
   // The directory holds the support code as well as the specs. Counting all of
   // it read `136 test files under spec/factories` on empire-flippers/api,
