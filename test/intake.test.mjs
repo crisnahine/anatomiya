@@ -79,3 +79,52 @@ test("every planned row says which entries it absorbs", () => {
     assert.ok(r.absorbs.length >= 1, `${r.key} is planned and absorbs nothing`);
   }
 });
+
+test("the parser reports a row it cannot read instead of dropping it", () => {
+  // A row with the wrong cell count or an unknown status is a row somebody
+  // edited by hand and got wrong. Skipping it silently means the key it names
+  // is simply absent, and the "ships with no intake row" claim then fires
+  // somewhere far from the actual mistake.
+  const table = [
+    "| key | absorbs | renamed from | status | why |",
+    "|---|---|---|---|---|",
+    "| good | An entry | - | shipped | |",
+    "| short | An entry | - | shipped |",
+    "| odd_status | An entry | - | maybe | |",
+  ].join("\n");
+
+  const { rows, problems } = readIntake(table);
+
+  assert.deepEqual(rows.map((r) => r.key), ["good"]);
+  assert.equal(problems.length, 2);
+  assert.match(problems[0], /4 cells, not 5/);
+  assert.match(problems[1], /odd_status has status "maybe"/);
+});
+
+test("the parser says so when there is no table at all", () => {
+  const { rows, problems } = readIntake("# Dimension intake\n\nnothing here yet\n");
+  assert.deepEqual(rows, []);
+  assert.match(problems[0], /no table header row/);
+});
+
+test("the parser reads the columns it promises", () => {
+  const table = [
+    "| key | absorbs | renamed from | status | why |",
+    "|---|---|---|---|---|",
+    "| one | A; B ; C | Old Name | planned | a reason long enough to count |",
+    "| - | D | - | dropped | no denominator anywhere |",
+  ].join("\n");
+
+  const { rows, problems } = readIntake(table);
+
+  assert.deepEqual(problems, []);
+  assert.deepEqual(rows[0], {
+    key: "one",
+    absorbs: ["A", "B", "C"],
+    renamedFrom: "Old Name",
+    status: "planned",
+    why: "a reason long enough to count",
+  });
+  assert.equal(rows[1].key, null, "a dropped row names no key");
+  assert.deepEqual(rows[1].absorbs, ["D"]);
+});

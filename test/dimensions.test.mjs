@@ -8,6 +8,7 @@ import {
   assertPrecision,
   assertApplicability,
   assertClaimIsNotAVerdict,
+  PRINCIPLE_NAMES,
   PRECISIONS,
 } from "../lib/dimensions.mjs";
 import { PAIRINGS } from "../lib/pairing.mjs";
@@ -462,6 +463,27 @@ test("a claim naming a principle does not load", () => {
     () => assertClaimIsNotAVerdict([{ key: "x", claim: "calls stay shallow", counterClaim: "SOLID is ignored" }]),
     /SOLID/
   );
+});
+
+test("the principle check does not depend on how the name is capitalised", () => {
+  // Nobody writes a claim in the glossary's capitalisation. "law of demeter" in
+  // a lowercase sentence is the same endorsement.
+  assert.throws(
+    () => assertClaimIsNotAVerdict([{ key: "x", claim: "calls follow the law of demeter", counterClaim: null }]),
+    /Law of Demeter/
+  );
+  assert.throws(
+    () => assertClaimIsNotAVerdict([{ key: "x", claim: "the code is solid and tested", counterClaim: null }]),
+    /SOLID/
+  );
+});
+
+test("the names that have been proposed as labels are all on the list", () => {
+  // The list is the rule. Written out here rather than read from the module,
+  // since an expectation taken from the code agrees with it by construction.
+  for (const name of ["Postel's Law", "Law of Demeter", "Principle of least privilege", "SOLID", "DRY", "YAGNI"]) {
+    assert.ok(PRINCIPLE_NAMES.includes(name), `${name} is not on the list`);
+  }
 });
 
 test("a claim about the code loads", () => {
