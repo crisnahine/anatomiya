@@ -202,24 +202,48 @@ test("stripping Flow moves no offset, whatever alphabet the file is written in",
   // B5 is about the unit: oxc reports offsets in UTF-16 code units and the
   // walkers slice the same in-memory string, so that is the length the strip
   // has to preserve. The byte length can move and does not matter, because
-  // nothing indexes bytes: `Café` is five code units and six bytes, and five
+  // nothing indexes bytes: `Cafe\u0301` is five code units and six bytes, and five
   // spaces are five of each.
+  //
+  // The retry has to actually fire for any of that to be under test, and a .js
+  // file is handed to the TypeScript grammar, which accepts most of what Flow
+  // writes. Only Flow-only syntax reaches the stripper, so that is what the
+  // fixture holds: an earlier version of this test used a plain type alias,
+  // parsed clean as TypeScript, and asserted the invariant against a tree that
+  // had never been stripped.
   const source = [
     "// @flow",
-    "// 日本語のコメント",
-    "type Café = string",
-    'const emoji = "🎉🎉"',
-    "export function greet(name: Café): string {",
-    "  try { return name + emoji } catch (e) { }",
+    "// \u65e5\u672c\u8a9e\u306e\u30b3\u30e1\u30f3\u30c8",
+    "type Opts = {| name: string |}",
+    'const emoji = "\ud83c\udf89\ud83c\udf89"',
+    "export function greet(o: Opts): string {",
+    "  try { return o.name + emoji } catch (e) { }",
     "}",
+    "const after_the_unicode = 1",
+    "export { after_the_unicode }",
   ].join("\n");
 
-  const { records } = await parseAll([{ rel: "unicode.js", source, lang: "js" }]);
+  const { records } = await parseAll([{ rel: "unicode.js", source, lang: "js" }], { withProgram: true });
   const r = records.get("unicode.js");
 
   assert.equal(r.kind, "ok");
+  assert.equal(r.stripped, true, "the retry has to have fired, or this asserts nothing");
   assert.equal(r.length, source.length, "the reported length is the source's own, not the stripped one");
   assert.ok(r.hits.swallowed_error?.length >= 1);
+
+  // The offsets are the whole point. Every one of them sits after two lines of
+  // non-ASCII and after the type the stripper removed, and the walkers slice
+  // the source the parser never saw. A stripper that deleted the annotations
+  // instead of blanking them would leave each of these pointing short.
+  const marker = r.program.body
+    .flatMap((n) => n.declarations ?? [])
+    .find((d) => d.id?.name === "after_the_unicode");
+  assert.ok(marker, "the fixture lost its marker");
+  assert.equal(
+    source.slice(marker.start, marker.end),
+    "after_the_unicode = 1",
+    "an offset off the stripped tree no longer lands on its own text in the source"
+  );
 });
 
 test("a dimension that reads type syntax says nothing about a file whose types were stripped", async () => {
