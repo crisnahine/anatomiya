@@ -93,11 +93,16 @@ test("process.env reads are direct sites and the config module conforms", () => 
 
 /* --- offering --- */
 
-test("capabilitiesIn reads the corpus for wrapper-shaped files", () => {
+test("capabilitiesIn reads the corpus for wrapper-shaped files and directories", () => {
   const files = (rels) => rels.map((rel) => ({ rel, lang: "js" }));
   assert.deepEqual(
     [...capabilitiesIn(files(["src/lib/logger.ts", "src/api-client.ts", "src/a.ts"]))].sort(),
     ["logging", "network"]
+  );
+  assert.deepEqual(
+    [...capabilitiesIn(files(["src/logging/index.ts"]))],
+    ["logging"],
+    "a directory-module wrapper is imported by its directory name"
   );
   assert.deepEqual([...capabilitiesIn(files(["src/a.ts", "src/dialog.ts"]))], []);
 });

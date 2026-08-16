@@ -190,8 +190,7 @@ minutes and what a hung parse looks like is silence.
 
 ## 4. Dimensions and the three numbers
 
-A dimension is one claim about one area. 41 ship, the filename row included: 22 for JavaScript, 27 reachable in JSX, 14 for
-Ruby. Each
+A dimension is one claim about one area. 41 ship, the filename row included: 22 for JavaScript, 27 reachable in JSX, and 14 that speak Ruby. Each
 is defined by three quantities, not one.
 
 | Quantity | Meaning |
