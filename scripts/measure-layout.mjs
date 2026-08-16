@@ -21,11 +21,11 @@
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
-import { namesakeCompanions, stemOf } from "../lib/companions.mjs";
+import { namesakeCompanions } from "../lib/companions.mjs";
 import { collect, frameworksIn } from "../lib/corpus.mjs";
 import { isTestFile, majorityDir, mirroredTests, MODULE_EXTS, runnerOf, tally } from "../lib/layout.mjs";
 import { parseAll } from "../lib/parse.mjs";
-import { baseOf, dirOf } from "../lib/paths.mjs";
+import { baseOf, dirOf, extOf, stemOf } from "../lib/paths.mjs";
 import { scan } from "../lib/scan.mjs";
 import { MAX_LINES, renderOverview, ROOT_LABEL, splitUncovered } from "../lib/render.mjs";
 import { readFacts, statedSide, writeFacts } from "../lib/facts.mjs";
@@ -43,12 +43,6 @@ const LEVEL_SUFFIX = " (files at this level)";
 const LEARNED_ROWS = ["extends_base", "class_base", "module_include", "interface_prefix", "type_alias_prefix"];
 
 // --- the recount ------------------------------------------------------------
-
-const extOf = (rel) => {
-  const base = baseOf(rel);
-  const dot = base.lastIndexOf(".");
-  return dot > 0 ? base.slice(dot) : "(none)";
-};
 
 // The mirror index the corpus decides, set once per repository before anything
 // is recounted: it is a fact about the whole tree, like the roster's own.
