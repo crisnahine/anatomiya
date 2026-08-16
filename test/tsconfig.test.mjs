@@ -5,21 +5,12 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, isAbsolute } from "node:path";
 import { loadTypeScript } from "../lib/semantic.mjs";
+import { repo } from "./ts-repo.mjs";
 import { readConfig, FORCED_OPTIONS, confinedCompilerHost } from "../lib/tsconfig.mjs";
 
 const loaded = await loadTypeScript();
 const ts = loaded?.ts;
 const needsTs = { skip: ts ? false : "typescript is not installed" };
-
-function repo(files) {
-  const dir = mkdtempSync(join(tmpdir(), "anatomiya-tsconfig-"));
-  for (const [rel, body] of Object.entries(files)) {
-    const abs = join(dir, rel);
-    mkdirSync(join(abs, ".."), { recursive: true });
-    writeFileSync(abs, body);
-  }
-  return dir;
-}
 
 test("a repository with no tsconfig is degraded, not broken", needsTs, () => {
   const dir = repo({ "a.ts": "export const a = 1" });
