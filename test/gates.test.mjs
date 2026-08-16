@@ -957,3 +957,32 @@ test("an obligation's denominator is examined files too, because an unread produ
   assert.equal(dim.applicability, 2);
   assert.equal(dim.langFileCount, 2, "two producers were read, and two is what the ratio is over");
 });
+
+test("the denominator counts only the languages the dimension speaks, in a mixed area", () => {
+  // The whole reason `langFileCount` exists. The five JSX dimensions declare
+  // ["jsx"] and never ["js","jsx"] so they are judged against the .tsx files
+  // rather than against a directory of .ts, and nothing tested that: replacing
+  // the language test with `examined.length` passed the entire suite.
+  const area = {
+    path: "src",
+    langs: ["js", "jsx"],
+    fileCount: 10,
+    files: [
+      ...Array.from({ length: 8 }, (_, i) => ({ rel: `src/plain${i}.ts`, lang: "js" })),
+      ...Array.from({ length: 2 }, (_, i) => ({ rel: `src/view${i}.tsx`, lang: "jsx" })),
+    ],
+  };
+  const hit = [{ conforming: true, where: null }];
+  const parsed = area.files.map((f) => ({
+    rel: f.rel,
+    ok: true,
+    hits: f.lang === "jsx" ? { hook_call_style: hit, swallowed_error: hit } : { swallowed_error: hit },
+  }));
+
+  const dims = reduce.reduceArea(area, parsed);
+  const jsx = dims.find((d) => d.key === "hook_call_style");
+  const js = dims.find((d) => d.key === "swallowed_error");
+
+  assert.equal(jsx.langFileCount, 2, "a JSX claim speaks for the two .tsx files, not for all ten");
+  assert.equal(js.langFileCount, 10, "a js dimension reaches .tsx too, so it speaks for all ten");
+});
