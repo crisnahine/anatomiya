@@ -976,9 +976,15 @@ test("the overview holds its bound over every section that can grow, not just th
   for (const areas of [0, 1, 2, 3, 6, 50, 201, 400]) {
     for (const nForeign of [0, 1, 5, 6, 7, 9, 5000]) {
       for (const nUnknown of [0, 1, 3, 5000]) {
-        for (const parse of [{ parsed: 8 }, { parsed: 8, crashed: 3, skipped: 2, failed: 4, syntaxErrors: 5 }]) {
+        for (const parse of [
+          { parsed: 8 },
+          { parsed: 8, crashed: 3, skipped: 2, failed: 4, syntaxErrors: 5 },
+          { parsed: 8, crashed: 3, skipped: 2, failed: 4, syntaxErrors: 5, missingStripper: true },
+        ]) {
+        for (const layout of [null, clientLayout(), clientLayout({ principles: [] }), truncatedLayout()]) {
           const out = renderOverview(
             {
+              layout,
               root: "/repo",
               scannedAt: "2026-01-01T00:00:00.000Z",
               durationMs: 1,
@@ -986,6 +992,7 @@ test("the overview holds its bound over every section that can grow, not just th
               corpus: { files: 900, truncated: true, untracked: 4, dropped: {} },
               parse,
               suppressAll: true,
+              semantic: { ran: true, status: "degraded", reason: "no tsconfig", typedResolutionRate: null },
               authors: { files: 9, error: null, repo: 1 },
               areas: Array.from({ length: areas }, (_, i) => areaOf(i)),
             },
@@ -1001,11 +1008,12 @@ test("the overview holds its bound over every section that can grow, not just th
           const lines = out.trimEnd().split("\n").length;
           if (lines > worst) {
             worst = lines;
-            at = { areas, nForeign, nUnknown };
+            at = { areas, nForeign, nUnknown, roots: layout?.roots.length ?? null };
           }
           // Whatever the budget does, the file still has to say these.
           assert.match(out, new RegExp(`^## Areas \\(${areas}\\)$`, "m"));
           assert.match(out, /^Generated files: \d+ under/m);
+        }
         }
       }
     }
@@ -1212,13 +1220,23 @@ const clientLayout = (o = {}) => ({
   ...o,
 });
 
+const truncatedLayout = () => ({
+  size: 900,
+  minFiles: 9,
+  roots: [],
+  more: { roots: 0, files: 0 },
+  tests: [],
+  principles: [],
+  truncated: true,
+});
+
 test("a root line says what the directory holds, its tests and its namesakes", () => {
   const lines = renderLayout(clientLayout());
 
   assert.equal(
     lines[3],
     "- src/components: 504 .tsx (JSX), 65 .ts and 43 other; 4 vitest specs under __tests__; " +
-      "0 of 504 have a namesake test; 60 .ts modules named types/schema/utils; 35 files inline a helper"
+      "0 of 504 have a namesake test; 60 sibling modules named types/schema/utils; 35 files inline a helper"
   );
   assert.equal(lines[2], "- src/pages: 1003 .tsx (JSX), 188 .ts and 32 other");
   assert.equal(lines[4], "- src/queries: 314 .ts");
@@ -1332,7 +1350,7 @@ test("the roster is byte-stable across two scans of unchanged source", () => {
   assert.equal(Buffer.compare(Buffer.from(first), Buffer.from(second)), 0);
 });
 
-test("an area says which kinds of file it holds, right under its heading", () => {
+test("an area says which kinds of file it holds, after what it asks of a new one", () => {
   const out = renderArea(
     area({
       kinds: root("src/services", {
@@ -1347,7 +1365,8 @@ test("an area says which kinds of file it holds, right under its heading", () =>
   const lines = out.split("\n");
 
   assert.equal(lines[6], "# src/services  40 files");
-  assert.equal(lines[8], "kinds: 7 .tsx (JSX), 1 .ts; 0 test files; 0 of 7 have a namesake test");
+  assert.equal(lines[8], "catch blocks use the error they caught", "the directive is delivered first");
+  assert.equal(lines[11], "kinds: 7 .tsx (JSX), 1 .ts; 0 test files; 0 of 7 have a namesake test");
   assert.doesNotMatch(out, /other/, "the area's denominator is not the root line's");
 });
 
@@ -1523,7 +1542,7 @@ test("a count of one reads as one on every clause of a root line", () => {
 
   assert.equal(
     lines[2],
-    "- src/one: 3 .tsx (JSX); 1 vitest spec; 1 of 1 have a namesake test; 1 .ts module named types; 1 file inlines a helper"
+    "- src/one: 3 .tsx (JSX); 1 vitest spec; 1 of 1 have a namesake test; 1 sibling module named types; 1 file inlines a helper"
   );
   assert.equal(lines[3], "- and 1 more directory holding 1 file");
 });
@@ -1532,4 +1551,108 @@ test("an area nothing was counted in says nothing about its kinds", () => {
   const bare = root("src/services", { files: 0, exts: [] });
 
   assert.doesNotMatch(renderArea(area({ kinds: bare })), /^kinds:/m);
+});
+
+/* --- the roster and the kinds line pay for themselves --- */
+
+test("the roster gives up root lines rather than push the overview past its bound", () => {
+  // Seven roots, one principle, a solo repository, both uncovered causes and
+  // two parse failures: the head and the tail together leave the roster less
+  // than the fifteen lines it would take.
+  const out = renderOverview(
+    result({
+      layout: clientLayout({ principles: ["test_shape"] }),
+      authors: { files: 9, error: null, repo: 1 },
+      parse: { parsed: 80, crashed: 3, failed: 4 },
+    }),
+    { uncovered: 40, orphaned: 10 }
+  );
+
+  assert.ok(lineCount(out) <= MAX_LINES, `${lineCount(out)} lines is past the bound`);
+  assert.match(out, /^## What lives where$/m);
+  assert.match(out, /^- tests: 102 Cypress specs under cypress\/integration/m, "the denominator is kept");
+  assert.match(out, /^Match sibling test shape/m, "so is the sentence it grounds");
+  assert.match(out, /^- and \d+ more directories holding \d+ files$/m, "the roots that gave way are counted");
+  assert.match(out, /^- src\/pages: /m, "the biggest root is the last one to go");
+});
+
+test("the roster holds the bound against every line the tail can grow", () => {
+  const out = renderOverview(
+    result({
+      layout: clientLayout(),
+      authors: { files: 9, error: null, repo: 1 },
+      parse: { parsed: 80, crashed: 3, failed: 4, syntaxErrors: 5, skipped: 2, missingStripper: true },
+      semantic: { ran: true, status: "degraded", reason: "no tsconfig", typedResolutionRate: 0.2 },
+    }),
+    { uncovered: 40, orphaned: 10 }
+  );
+
+  assert.ok(lineCount(out) <= MAX_LINES, `${lineCount(out)} lines is past the bound`);
+  assert.match(out, /^- tests: /m);
+  assert.match(out, /^Match sibling test shape/m);
+});
+
+test("a folded root is counted where it would have printed", () => {
+  const tight = renderLayout(clientLayout(), 10);
+  const whole = renderLayout(clientLayout());
+
+  assert.ok(tight.length <= 10, `${tight.length} lines is past the budget it was given`);
+  assert.equal(tight[2], whole[2], "the biggest root still prints");
+  assert.equal(tight[3], whole[3]);
+  // The six already folded, plus the five roots that gave way, holding 76 + their files.
+  assert.equal(tight[4], "- and 11 more directories holding 689 files");
+  assert.equal(tight[5], whole[10], "the tests line is not what gives way");
+  assert.equal(tight.at(-2), "Match directory granularity; don't extract into a sibling module what the directory's files inline.");
+});
+
+test("a budget too small for the roster to say anything prints none of it", () => {
+  assert.deepEqual(renderLayout(clientLayout(), 3), []);
+  assert.deepEqual(renderLayout(truncatedLayout(), 3), []);
+  assert.deepEqual(renderLayout(truncatedLayout(), 4).length, 4, "the notice is the last thing to go");
+});
+
+const glob = (i) => ({ negated: false, dir: `src/services/sub${i}`, tail: "*.{ts,tsx}" });
+
+const kindsOf = () =>
+  root("src/services", {
+    files: 8,
+    exts: [[".tsx", 7], [".ts", 1]],
+    jsxExt: ".tsx",
+    companions: { with: 0, of: 7, root: null },
+  });
+
+test("an area whose paths list ate the budget describes nothing and delivers", () => {
+  // The `paths` list is delivery and keeps every pattern, so the body floor can
+  // already run past the bound. A description of the area may not add to that.
+  const out = renderArea(
+    area({ globs: Array.from({ length: 30 }, (_, i) => glob(i)), kinds: kindsOf() })
+  );
+
+  assert.ok(lineCount(out) <= MAX_LINES, `${lineCount(out)} lines is past the bound`);
+  assert.equal((out.match(/^ {2}- "/gm) || []).length, 30, "every glob is delivered");
+  assert.match(out, /^catch blocks use the error they caught$/m, "the directive is delivered");
+  assert.doesNotMatch(out, /^kinds:/m, "the description is what there was no room for");
+});
+
+test("an area with room to spare still says what kinds of file it holds", () => {
+  const out = renderArea(
+    area({ globs: Array.from({ length: 25 }, (_, i) => glob(i)), kinds: kindsOf() })
+  );
+
+  assert.ok(lineCount(out) <= MAX_LINES, `${lineCount(out)} lines is past the bound`);
+  assert.match(out, /^kinds: 7 \.tsx \(JSX\), 1 \.ts; 0 test files; 0 of 7 have a namesake test$/m);
+});
+
+test("a directory name the encoder empties is still a subject", () => {
+  // `- : 30 .ts` is a bullet about nothing.
+  const lines = renderLayout(
+    clientLayout({
+      roots: [root("###", { files: 30, exts: [[".ts", 30]] })],
+      more: { roots: 0, files: 0 },
+      tests: [],
+      principles: [],
+    })
+  );
+
+  assert.equal(lines[2], "- (unnamed): 30 .ts");
 });
