@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { scan } from "../lib/scan.mjs";
+import { loadTypeScript, notInstalledMessage } from "../lib/semantic.mjs";
 import { writeMap } from "../lib/write.mjs";
 import { check, formatReport } from "../lib/check.mjs";
 import { unexaminedLines, plural, untrackedSentence } from "../lib/render.mjs";
@@ -12,9 +13,12 @@ import { encodePath } from "../lib/encode.mjs";
 import { listSome, LISTED, RULES_DIR } from "../lib/rules.mjs";
 
 const USAGE = [
-  "usage: anatomiya scan  [path] [--dry-run]",
-  "       anatomiya check [path] [--base <ref>]",
+  "usage: anatomiya scan  [path] [--dry-run] [--deep]",
+  "       anatomiya check [path] [--base <ref>] [--deep]",
   "       anatomiya pin   [path] [--dry-run]",
+  "",
+  "--deep adds the typescript checker: about 26x slower, and it needs the",
+  "optional typescript dependency. The default scan does not use it.",
   "",
   "[path] picks the repository, not a subtree: every command covers the whole",
   "repository the path is in, and scan prints the root it resolved to.",
@@ -36,11 +40,16 @@ function fail(message, code = 2) {
  */
 function parseArgs(argv) {
   const cmd = COMMANDS.has(argv[0]) ? argv.shift() : "scan";
-  const opts = { cmd, path: null, dryRun: false, baseRef: null };
+  const opts = { cmd, path: null, dryRun: false, baseRef: null, deep: false };
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === "-h" || arg === "--help") return { ...opts, help: true };
+    if (arg === "--deep") {
+      if (cmd === "pin") fail(`--deep is not a ${cmd} option\n${USAGE}`);
+      opts.deep = true;
+      continue;
+    }
     if (arg === "--dry-run") {
       if (cmd === "check") fail(`--dry-run is not a ${cmd} option\n${USAGE}`);
       opts.dryRun = true;
@@ -79,8 +88,12 @@ try {
   process.exit(1);
 }
 
-async function runScan(cwd, { dryRun }) {
-  const result = await scan(cwd);
+async function runScan(cwd, { dryRun, deep = false }) {
+  // Refused before any work, not after the parse: --deep with no checker
+  // installed is an install problem, and a scan that runs for a minute and then
+  // says so has already spent the time (B13's shape).
+  if (deep && (await loadTypeScript()) === null) throw new Error(notInstalledMessage());
+  const result = await scan(cwd, { deep });
 
   if (result.parse.missingParser) throw notInstalled(result.parse.missingParser, "scan");
 
