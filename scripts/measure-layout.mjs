@@ -54,16 +54,46 @@ const stemOf = (rel) => {
 };
 
 const TEST_DIRS = new Set(["__tests__"]);
-const TEST_NAME = /\.(test|spec|cy)\.|_(spec|test)\.rb$/;
+const TEST_NAME = /[.-](test|spec|cy)\.|_(spec|test)\.rb$/;
+const TEST_ROOTS = new Set(["test", "tests", "spec"]);
 const MODULE_EXTS = new Set([".ts", ".js", ".mjs", ".cjs", ".mts", ".cts"]);
 const NAMESAKE_SUFFIXES = ["_spec", "_test", ".test", ".spec", ".cy"];
+
+// The mirror index the corpus decides, set once per repository before anything
+// is recounted: it is a fact about the whole tree, like the roster's own.
+let mirrored = new Set();
 
 function isTest(f) {
   if (!f.lang) return false;
   if (f.facets?.testRunner || f.facets?.testCalls) return true;
   if (TEST_NAME.test(baseOf(f.rel))) return true;
+  if (mirrored.has(f.rel)) return true;
   const dir = dirOf(f.rel);
   return dir !== "" && dir.split("/").some((seg) => TEST_DIRS.has(seg));
+}
+
+const withoutExt = (rel) => {
+  const dot = rel.lastIndexOf(".");
+  return dot > rel.lastIndexOf("/") ? rel.slice(0, dot) : rel;
+};
+
+const inTestRoot = (rel) => rel.includes("/") && TEST_ROOTS.has(rel.slice(0, rel.indexOf("/")));
+
+/** A test tree's files that mirror a source file outside it, recounted here. */
+function mirrorIndex(corpus) {
+  const outside = new Set();
+  for (const f of corpus) {
+    if (!f.lang || inTestRoot(f.rel)) continue;
+    const segments = withoutExt(f.rel).split("/");
+    for (let i = 0; i < segments.length; i++) outside.add(segments.slice(i).join("/"));
+  }
+  const out = new Set();
+  for (const f of corpus) {
+    if (!f.lang || !inTestRoot(f.rel)) continue;
+    const under = withoutExt(f.rel).slice(f.rel.indexOf("/") + 1);
+    if (under.includes("/") && outside.has(under)) out.add(f.rel);
+  }
+  return out;
 }
 
 const runnerOf = (f) =>
@@ -499,6 +529,7 @@ async function measure(name, dir) {
   if (a !== b) fail(`two scans of one tree rendered different overviews: ${firstDifference(a, b)}`);
 
   const corpus = await layoutCorpus(first.root);
+  mirrored = mirrorIndex(corpus);
   const section = sectionOf(a);
   const seen = checkSection(section, corpus, first.root, (first.layout?.roots ?? []).map((r) => r.path));
 
