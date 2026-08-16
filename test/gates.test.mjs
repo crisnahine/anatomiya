@@ -1111,3 +1111,64 @@ test("a semantic dimension with no baseline names the tier, not a greenfield dir
   });
   assert.equal(s.gate, "postdates-baseline");
 });
+
+/* --- the model-default filter --- */
+
+test("a stated side matching the model default is flagged", () => {
+  const r = verdictFor(dim({ applicability: 10 }), {
+    current: { fileCount: 12, dirCount: 2 },
+    authors: 3,
+    defaultSide: () => "claim",
+  });
+  assert.equal(r.states, "claim");
+  assert.equal(r.matchesDefault, true);
+});
+
+test("a counter stated against the model default is not flagged", () => {
+  const inverse = dim({
+    counterClaim: "the inverse sentence",
+    ...spread([12, 12, 12, 12, 12], [0, 0, 0, 0, 0]),
+    applicability: 10,
+    files: paths(5),
+  });
+  const r = verdictFor(inverse, {
+    current: { fileCount: 12, dirCount: 2 },
+    authors: 3,
+    defaultSide: () => "claim",
+  });
+  assert.equal(r.states, "counter");
+  assert.equal(r.matchesDefault, false, "the repository deviates, which is the map's whole value");
+});
+
+test("a counter matching a counter default is flagged too", () => {
+  const inverse = dim({
+    counterClaim: "the inverse sentence",
+    ...spread([12, 12, 12, 12, 12], [0, 0, 0, 0, 0]),
+    applicability: 10,
+    files: paths(5),
+  });
+  const r = verdictFor(inverse, {
+    current: { fileCount: 12, dirCount: 2 },
+    authors: 3,
+    defaultSide: () => "counter",
+  });
+  assert.equal(r.states, "counter");
+  assert.equal(r.matchesDefault, true);
+});
+
+test("a blocked slot is never flagged as matching the default", () => {
+  const r = verdictFor(onlyIt(), {
+    measured: { gate: null, pinned: shape, dims: [] },
+    current: shape,
+    authors: 1,
+    repoAuthors: 1,
+    defaultSide: () => "claim",
+  });
+  assert.equal(r.states, null);
+  assert.equal(r.matchesDefault, false);
+});
+
+test("with no override the shipped table decides, and unmeasured reads as no default", () => {
+  const r = verdictFor(dim({ applicability: 10 }), { current: { fileCount: 12, dirCount: 2 }, authors: 3 });
+  assert.equal(r.matchesDefault, false, "the seeded table is all none, which fails open");
+});
