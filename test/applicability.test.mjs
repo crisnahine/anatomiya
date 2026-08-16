@@ -386,7 +386,14 @@ function sitesIn(records, key, half, i) {
 }
 
 test("every shipped dimension has a witness pair", () => {
-  const shipped = [...ALL_DIMENSIONS.map((d) => d.key), ...PAIRINGS.map((p) => p.key)].sort();
+  // The witnesses here are driven through `parseAll`, which is the syntactic
+  // engine. A semantic row's predicate takes a checker instead and cannot be
+  // proved by a parse, so its witnesses live in `dimensions-semantic.test.mjs`
+  // and that file holds the same completeness assertion over its own registry.
+  const shipped = [
+    ...ALL_DIMENSIONS.filter((d) => d.tier !== "semantic").map((d) => d.key),
+    ...PAIRINGS.map((p) => p.key),
+  ].sort();
   const witnessed = [...Object.keys(WITNESSES), ...Object.keys(PAIRING_WITNESSES)].sort();
 
   assert.deepEqual(witnessed, shipped, "a dimension without a witness ships a predicate nobody proved");
