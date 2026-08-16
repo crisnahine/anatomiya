@@ -8,10 +8,11 @@
  * recounted here, from `git ls-files` and the parse facets, rather than read
  * back out of the record that produced it.
  *
- * The recount shares the classification rules with `layout.mjs` on purpose: a
- * test file is a test file by one definition, and a second one here would only
- * measure the disagreement. What it does not share is the summation, the root
- * subsets or the rendering, which is where a wrong number would come from.
+ * The classification predicates are imported from `layout.mjs` rather than
+ * copied: a test file is a test file by one definition, and a second one here
+ * would measure the disagreement rather than the counts. What the recount owns
+ * is the summation, the root subsets and the reading back of the printed line,
+ * which is where a wrong number would come from.
  *
  * Read-only over the corpus. A repository is opened, listed, parsed and left
  * exactly as it was; facts records go to `--facts` under this tool's own
@@ -20,10 +21,13 @@
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
+import { namesakeCompanions, stemOf } from "../lib/companions.mjs";
 import { collect, frameworksIn } from "../lib/corpus.mjs";
+import { isTestFile, majorityDir, mirroredTests, MODULE_EXTS, runnerOf, tally } from "../lib/layout.mjs";
 import { parseAll } from "../lib/parse.mjs";
+import { baseOf, dirOf } from "../lib/paths.mjs";
 import { scan } from "../lib/scan.mjs";
-import { MAX_LINES, renderOverview, splitUncovered } from "../lib/render.mjs";
+import { MAX_LINES, renderOverview, ROOT_LABEL, splitUncovered } from "../lib/render.mjs";
 import { readFacts, statedSide, writeFacts } from "../lib/facts.mjs";
 import { areaFilename, auditRules, knownNames, OVERVIEW_FILE } from "../lib/rules.mjs";
 import { encodePath } from "../lib/encode.mjs";
@@ -40,124 +44,21 @@ const LEARNED_ROWS = ["extends_base", "class_base", "module_include", "interface
 
 // --- the recount ------------------------------------------------------------
 
-const baseOf = (rel) => rel.slice(rel.lastIndexOf("/") + 1);
-const dirOf = (rel) => (rel.includes("/") ? rel.slice(0, rel.lastIndexOf("/")) : "");
 const extOf = (rel) => {
   const base = baseOf(rel);
   const dot = base.lastIndexOf(".");
   return dot > 0 ? base.slice(dot) : "(none)";
 };
-const stemOf = (rel) => {
-  const base = baseOf(rel);
-  const dot = base.lastIndexOf(".");
-  return dot > 0 ? base.slice(0, dot) : base;
-};
-
-const TEST_DIRS = new Set(["__tests__"]);
-const TEST_NAME = /[.-](test|spec|cy)\.|_(spec|test)\.rb$/;
-const TEST_ROOTS = new Set(["test", "tests", "spec"]);
-const MODULE_EXTS = new Set([".ts", ".js", ".mjs", ".cjs", ".mts", ".cts"]);
-const NAMESAKE_SUFFIXES = ["_spec", "_test", ".test", ".spec", ".cy"];
 
 // The mirror index the corpus decides, set once per repository before anything
 // is recounted: it is a fact about the whole tree, like the roster's own.
 let mirrored = new Set();
 
-function isTest(f) {
-  if (!f.lang) return false;
-  if (f.facets?.testRunner || f.facets?.testCalls) return true;
-  if (TEST_NAME.test(baseOf(f.rel))) return true;
-  if (mirrored.has(f.rel)) return true;
-  const dir = dirOf(f.rel);
-  return dir !== "" && dir.split("/").some((seg) => TEST_DIRS.has(seg));
-}
+const isTest = (f) => isTestFile(f, mirrored);
+const runner = (f) => runnerOf(f.rel, f.facets);
 
-const withoutExt = (rel) => {
-  const dot = rel.lastIndexOf(".");
-  return dot > rel.lastIndexOf("/") ? rel.slice(0, dot) : rel;
-};
-
-const inTestRoot = (rel) => rel.includes("/") && TEST_ROOTS.has(rel.slice(0, rel.indexOf("/")));
-
-/** A test tree's files that mirror a source file outside it, recounted here. */
-function mirrorIndex(corpus) {
-  const outside = new Set();
-  for (const f of corpus) {
-    if (!f.lang || inTestRoot(f.rel)) continue;
-    const segments = withoutExt(f.rel).split("/");
-    for (let i = 0; i < segments.length; i++) outside.add(segments.slice(i).join("/"));
-  }
-  const out = new Set();
-  for (const f of corpus) {
-    if (!f.lang || !inTestRoot(f.rel)) continue;
-    const under = withoutExt(f.rel).slice(f.rel.indexOf("/") + 1);
-    if (under.includes("/") && outside.has(under)) out.add(f.rel);
-  }
-  return out;
-}
-
-const runnerOf = (f) =>
-  f.facets?.testRunner || (dirOf(f.rel).split("/").includes("cypress") ? "cypress" : "test files");
-
-const tally = (values) => {
-  const counts = new Map();
-  for (const v of values) counts.set(v, (counts.get(v) ?? 0) + 1);
-  return [...counts].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
-};
-
-const WRAPPER_SHARE = 0.8;
-
-const majorityDir = (dirs) => {
-  const bar = WRAPPER_SHARE * dirs.length;
-  const prefix = [];
-  for (;;) {
-    const under = dirs.filter((d) => d.startsWith(prefix.length ? `${prefix.join("/")}/` : ""));
-    const next = tally(under.map((d) => d.split("/")[prefix.length]).filter(Boolean));
-    if (next.length === 0 || next[0][1] < bar) break;
-    prefix.push(next[0][0]);
-  }
-  return prefix.length === 0 ? null : prefix.join("/");
-};
-
-const namesakeStem = (rel) => {
-  const stem = stemOf(rel);
-  for (const suffix of NAMESAKE_SUFFIXES) {
-    if (stem.length > suffix.length && stem.endsWith(suffix)) return stem.slice(0, -suffix.length);
-  }
-  return stem;
-};
-
-const tailOf = (rel, rootPath) => {
-  const dir = dirOf(rel);
-  if (rootPath === "" || rootPath === ".") return dir;
-  if (dir === rootPath) return "";
-  return dir.startsWith(`${rootPath}/`) ? dir.slice(rootPath.length + 1) : dir;
-};
-
-function namesakes(sourceFiles, testFiles, rootPath) {
-  const byStem = new Map();
-  for (const t of testFiles) {
-    const stem = namesakeStem(t.rel);
-    if (!byStem.has(stem)) byStem.set(stem, []);
-    byStem.get(stem).push(t.rel);
-  }
-  const votes = new Map();
-  let answered = 0;
-  for (const f of sourceFiles) {
-    const tail = tailOf(f.rel, rootPath);
-    let matched = false;
-    for (const rel of byStem.get(stemOf(f.rel)) ?? []) {
-      const dir = dirOf(rel);
-      if (tail !== "" && dir !== tail && !dir.endsWith(`/${tail}`)) continue;
-      matched = true;
-      const prefix = tail === "" ? dir : dir.slice(0, Math.max(0, dir.length - tail.length - 1));
-      votes.set(prefix, (votes.get(prefix) ?? 0) + 1);
-    }
-    if (matched) answered++;
-  }
-  const ranked = [...votes].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
-  return { with: answered, of: sourceFiles.length, root: ranked.length === 0 ? null : ranked[0][0] || "." };
-}
+// What the renderer calls a flat repository's one root, read back to the path.
+const pathOf = (label) => (label === ROOT_LABEL ? "." : label);
 
 /** The files a printed root path stands for, by the rule that selected it. */
 function filesUnder(path, corpus) {
@@ -171,9 +72,9 @@ function filesUnder(path, corpus) {
 function testGroupsOf(own, dir) {
   const groups = new Map();
   for (const f of own.filter(isTest)) {
-    const runner = runnerOf(f);
-    if (!groups.has(runner)) groups.set(runner, []);
-    groups.get(runner).push(f);
+    const name = runner(f);
+    if (!groups.has(name)) groups.set(name, []);
+    groups.get(name).push(f);
   }
   return [...groups]
     .map(([runner, group]) => {
@@ -205,11 +106,12 @@ function recountRoot(path, corpus, testFiles) {
     jsxExt: exts.find(([ext, count]) => (jsxByExt.get(ext) ?? 0) * 2 >= count)?.[0] ?? null,
     tests: testGroupsOf(own, dir),
     testRoot: tests.length * 2 > own.length,
-    companions: producers.length > 0 && testFiles.length > 0 ? namesakes(producers, testFiles, dir) : null,
+    companions:
+      producers.length > 0 && testFiles.length > 0 ? namesakeCompanions(producers, testFiles, dir) : null,
     helpers: null,
   };
 
-  const modules = own.filter((f) => MODULE_EXTS.has(extOf(f.rel)) && !f.facets?.jsx && !isTest(f));
+  const modules = own.filter((f) => f.facets && MODULE_EXTS.has(extOf(f.rel)) && !f.facets.jsx && !isTest(f));
   if (jsxFiles.length > 0 && modules.length > 0) {
     out.helpers = {
       siblingModules: modules.length,
@@ -225,9 +127,9 @@ function recountTests(corpus) {
   const dirs = new Map();
   for (const f of corpus) {
     if (!isTest(f)) continue;
-    const runner = runnerOf(f);
-    if (!dirs.has(runner)) dirs.set(runner, []);
-    dirs.get(runner).push(dirOf(f.rel));
+    const name = runner(f);
+    if (!dirs.has(name)) dirs.set(name, []);
+    dirs.get(name).push(dirOf(f.rel));
   }
   return [...dirs]
     .map(([runner, group]) => ({ runner, root: majorityDir(group), files: group.length }))
@@ -326,8 +228,9 @@ function checkSection(section, corpus, root, recordRoots) {
   for (const line of rootLines) {
     const parsed = readRootLine(line);
     if (parsed === null) fail(`root line has no path label: ${line}`);
-    checkPathOnDisk(parsed.label, root);
-    const counted = recountRoot(parsed.label, corpus, testFiles);
+    const path = pathOf(parsed.label);
+    checkPathOnDisk(path, root);
+    const counted = recountRoot(path, corpus, testFiles);
     printedFiles += counted.files;
 
     const clauses = [...parsed.clauses];
@@ -529,7 +432,7 @@ async function measure(name, dir) {
   if (a !== b) fail(`two scans of one tree rendered different overviews: ${firstDifference(a, b)}`);
 
   const corpus = await layoutCorpus(first.root);
-  mirrored = mirrorIndex(corpus);
+  mirrored = mirroredTests(corpus);
   const section = sectionOf(a);
   const seen = checkSection(section, corpus, first.root, (first.layout?.roots ?? []).map((r) => r.path));
 
