@@ -76,3 +76,44 @@ test("a learned class that held since the pin states as usual", () => {
   assert.equal(r.states, "claim");
   assert.equal(r.gate, null);
 });
+
+/* --- file naming, classified from the basename --- */
+
+test("classifyBasename tells the four classes apart and refuses the ambiguous", async () => {
+  const { classifyBasename } = await import("../lib/dimensions-naming.mjs");
+  assert.equal(classifyBasename("src/user-profile.ts"), "kebab-case");
+  assert.equal(classifyBasename("src/userProfile.ts"), "camelCase");
+  assert.equal(classifyBasename("src/UserProfile.tsx"), "PascalCase");
+  assert.equal(classifyBasename("app/models/user_profile.rb"), "snake_case");
+  assert.equal(classifyBasename("src/index.ts"), null, "a single lowercase word matches every class");
+  assert.equal(classifyBasename("Rakefile"), null, "a bare filename is its own convention");
+  assert.equal(classifyBasename("src/OrderList.stories.tsx"), "PascalCase", "only the stem is read");
+});
+
+test("an area of mostly kebab files states the learned class over every classifiable file", async () => {
+  const { reduceArea } = await import("../lib/reduce.mjs");
+  const rels = [
+    "src/user-profile.ts", "src/order-list.ts", "src/data-store.ts", "src/api-client.ts",
+    "src/form-input.ts", "src/nav-bar.ts", "src/date-utils.ts", "src/error-page.ts",
+    "src/big-table.ts", "src/oneOff.ts",
+  ];
+  const area = { langs: ["js"], files: rels.map((rel) => ({ rel, lang: "js" })) };
+  const parsed = rels.map((rel) => ({ rel, ok: true, hits: {} }));
+  const dims = reduceArea(area, parsed);
+  const slot = dims.find((d) => d.key === "file_naming_case");
+  assert.ok(slot, "the corpus dimension produced a slot");
+  assert.equal(slot.learned, "kebab-case");
+  assert.equal(slot.claim, "files here are named kebab-case");
+  assert.equal(slot.candidates, 10);
+  assert.equal(slot.conforming, 9);
+  assert.equal(slot.applicability, 10);
+  assert.equal(slot.exceptions[0].path, "src/oneOff.ts");
+});
+
+test("a naming tie produces no slot at all", async () => {
+  const { reduceArea } = await import("../lib/reduce.mjs");
+  const rels = ["src/user-profile.ts", "src/orderList.ts"];
+  const area = { langs: ["js"], files: rels.map((rel) => ({ rel, lang: "js" })) };
+  const parsed = rels.map((rel) => ({ rel, ok: true, hits: {} }));
+  assert.equal(reduceArea(area, parsed).find((d) => d.key === "file_naming_case"), undefined);
+});

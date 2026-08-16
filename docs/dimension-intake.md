@@ -66,6 +66,7 @@ legitimate origin and the table says so rather than inventing an entry to point 
 | model_test | - | - | shipped | |
 | job_test | - | - | shipped | |
 | law_of_demeter | Law of Demeter | Law of Demeter | shipped | The glossary name is the principle's, and a ratio beside it reads as agreement with the principle rather than as a count of this repository's chains. The key says what is counted: a call chain whose receivers are one type. The only semantic row, so it reaches a scan only with --deep |
+| file_naming_case | - | - | shipped | Written from the measured naming-divergence literature rather than the glossary. The class is learned per area from the plurality of its own filenames, a tie learns nothing, and a class that moved since the pin closes the slot |
 | boundary_input_validation | Postel's Law; Fail fast; Input validation | Postel's Law | planned | Three entries over one walk: the entry points that read request input. The input-validation predicate is the sharp one and the other two reference it. Renamed because a ratio next to a principle's name reads as an endorsement |
 | observability | Observability; Metrics vs logs vs traces | - | planned | Metrics-vs-logs-vs-traces is a vocabulary distinction over the same sites, not a second detector |
 | constructor_injection | Dependency injection / IoC; DI container (degraded half) | - | planned | The container entry's degraded half is the constructor-injection claim. Two keys share one pass: this one, and di_container_presence for the roster |
