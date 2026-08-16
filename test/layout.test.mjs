@@ -203,6 +203,43 @@ test("the tests line groups by runner and names the prefix each shares", () => {
   ]);
 });
 
+test("the tests line names where most of a runner's files are, not what one stray file leaves", () => {
+  // Measured on empire-flippers/client: 102 Cypress specs under
+  // cypress/integration and 4 elsewhere collapsed the shared prefix to the
+  // repository root, and the line read "106 Cypress specs under .".
+  const corpus = [
+    ...files(102, (i) => file(`cypress/integration/x${i}.spec.js`, "js")),
+    ...files(4, (i) => file(`src/legacy/y${i}.cy.ts`, "js", { testRunner: "cypress" })),
+  ];
+
+  assert.deepEqual(testsLine(corpus), [{ runner: "cypress", root: "cypress/integration", files: 106 }]);
+});
+
+test("a runner spread across the repository is named without a directory", () => {
+  const corpus = [
+    ...files(30, (i) => file(`apps/a/test/x${i}.test.ts`, "js", { testRunner: "vitest" })),
+    ...files(30, (i) => file(`libs/b/test/y${i}.test.ts`, "js", { testRunner: "vitest" })),
+  ];
+
+  assert.deepEqual(testsLine(corpus), [{ runner: "vitest", root: null, files: 60 }]);
+});
+
+test("a shell whose children all sit under the floor keeps its own line", () => {
+  // webpack: 652 files under lib/, 117 of them directly there and no child
+  // clearing the floor, so descending dissolved the whole of webpack's source
+  // and the map named test/ and examples/ and nothing else.
+  const corpus = [
+    ...files(1000, (i) => file(`test/t${i}.js`, "js")),
+    ...files(117, (i) => file(`lib/l${i}.js`, "js")),
+    ...files(8, (i) => i).flatMap((d) => files(60, (i) => file(`lib/d${d}/f${i}.js`, "js"))),
+  ];
+
+  const { roots } = layoutRoots(corpus, { minFiles: 144 });
+
+  assert.deepEqual(paths(roots), ["test", "lib"]);
+  assert.equal(roots[1].files.length, 597);
+});
+
 test("two runners at one count order by name, whichever file arrived first", () => {
   const corpus = [
     ...files(3, (i) => file(`src/m${i}.test.js`, "js", { testRunner: "mocha" })),
