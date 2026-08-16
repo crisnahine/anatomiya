@@ -208,3 +208,16 @@ test("the picker carries the learned class and the filled sentence", () => {
   assert.equal(top.learned, "PascalCase");
   assert.equal(top.claim, "exported names are PascalCase");
 });
+
+test("a filename target is scored by the name the trial chose", async () => {
+  const s = await scoreFile(
+    { rel: "src/orderList.ts", source: "export const a = 1;\n", lang: "js" },
+    { key: "file_naming_case", learned: "kebab-case" }
+  );
+  assert.deepEqual(s, { candidates: 1, conforming: 0, ratio: 0 });
+  const t = await scoreFile(
+    { rel: "src/order-list.ts", source: "export const a = 1;\n", lang: "js" },
+    { key: "file_naming_case", learned: "kebab-case" }
+  );
+  assert.deepEqual(t, { candidates: 1, conforming: 1, ratio: 1 });
+});

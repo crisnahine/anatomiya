@@ -1559,6 +1559,8 @@ test("a learned naming class is enforced as the class the map stored", async (t)
   const found = forKey(report, "function_naming_case");
   assert.equal(found.length, 1, JSON.stringify(found));
   assert.equal(found[0].where, "bad_name");
+  assert.equal(found[0].line, 2, "the finding points at the declaration, not line 1");
+  assert.ok(found[0].snippet.includes("bad_name"), JSON.stringify(found[0].snippet));
 });
 
 test("a routing claim is not asked of a repository with no wrapper", async (t) => {

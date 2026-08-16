@@ -207,3 +207,15 @@ test("a learned class equal to the model default is flagged through reduceArea i
   assert.equal(r.states, "claim");
   assert.equal(r.matchesDefault, true, "the record reduceArea builds must reach the class branch");
 });
+
+test("a learned row may never carry a counter, by load-time throw", async () => {
+  const { assertLearnedRows } = await import("../lib/dimensions.mjs");
+  assert.throws(
+    () => assertLearnedRows([{ key: "x", learnedClasses: true, claim: "y are <style>", counterClaim: "no" }]),
+    /counter/
+  );
+  assert.throws(
+    () => assertLearnedRows([{ key: "x", learnedClasses: true, claim: "no placeholder", counterClaim: null }]),
+    /<style>/
+  );
+});
