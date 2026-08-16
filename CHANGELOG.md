@@ -17,7 +17,42 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   offset still lands where it does in the source, which is the unit oxc counts in. It is loaded the first time a
   `.js`-family file is rejected, so a repository whose JavaScript all parses never pays the ~13 MB
   it costs. A rejected file may be Flow or may simply be broken, and telling those apart is what the
-  retry is for, so it cannot be what decides whether to load. (B19)
+  retry is for, so it cannot be what decides whether to load. react goes from 287 rejected files and
+  36 stated claims to 2 and 79. (B19)
+
+- A tree that came back from that retry no longer answers the rows that depend on the annotations,
+  and each such row says so on itself. The retry blanks the annotations, so `exported functions
+  declare their return type` read 0 of 1213 on react where the truth is 986, and the check printed
+  `FIX` beside a line that declares one, quoting the annotation in its own snippet. `import type`
+  statements are sites of the extension claim and the stripper deletes them outright, so a stripped
+  file read as more conformant than it is: react writes 309 of them and not one carries an
+  extension. All three readers drop such a row together, and the file leaves that row's denominator,
+  because a file nobody asked is not a file that declined. (B20)
+
+- A missing `flow-remove-types` is named on screen instead of showing up as unreadable files. The
+  dependency arrived after the plugin did, so a `node_modules` older than it loads the parser, cannot
+  run the retry, and charges every Flow file to the rejected count with nothing connecting the two.
+  Both the scan summary and the check caveats say which dependency is absent. (B19)
+
+### Fixed
+
+- A cast no longer hides the value it wraps. `return null as any` is a return of null and was not
+  counted as one, which react writes 24 times and vscode 20; `x ?? ([] as Foo[])` is a default taken
+  with `??` and was not counted either. `satisfies`, `!`, `<T>x` and parentheses wrap the same way.
+  Found by counting one file twice, once with its annotations blanked, and asking which dimensions
+  disagreed. (C11)
+
+- `declare const x: number` is no longer counted as module state, and neither is a binding inside a
+  namespace or an ambient module. Neither binds anything at run time. (C12)
+
+- A file whose types were stripped no longer sits in the denominator of the rows it was never asked.
+  A directory of ten plain files and ten Flow files rendered `10 of 10 sites across 10 of 20 files`,
+  which reads as half the directory declining a convention that was never measured there. Facts
+  schema 7.
+
+- The Flow retry no longer carries its own list of file extensions. It is derived from the one the
+  corpus uses, so an extension added there is in scope for both at once rather than entering the
+  corpus and never being retried.
 
 - Every dimension states which files could participate in its claim, and what its predicate cannot
   see where it is partial. `applicability` was whatever `run` happened to emit, so a predicate
@@ -42,7 +77,6 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   repositories are asked, so the four are named. A flag is a prompt to open the row, not a verdict.
   (C2)
 
-### Fixed
 
 - The raw parser transfer is no longer asked for on Windows. oxc allocates a 6 GiB buffer per parsing
   operation, `rawTransferSupported()` never asks which platform it is on, this pool runs up to eight
