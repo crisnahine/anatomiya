@@ -32,9 +32,11 @@ Per repository the script asserts:
 35 of 35, after the seven tuning changes below. The first run cleared 1 to 4 mechanically on 34 of
 them and read wrong on most.
 
-Re-run after the whole-branch review's two roster fixes, which is the run recorded here: 35 of 35
-again, no number in the table moved, and eleven root lines on nine repositories dropped a
-sibling-module count by 1 to 10.
+Re-run after the whole-branch review's two roster fixes: 35 of 35 again, no number in the table
+moved, and eleven root lines on nine repositories dropped a sibling-module count by 1 to 10.
+
+Re-run again after the second review's Ruby facet fix, which is the run recorded here: 35 of 35, no
+number in the table moved, and six Ruby repositories dropped test counts (change 10 below).
 
 One byte-stability failure, on appsmith, in the first of seven full runs: `## Not covered` moved
 between the two scans. It did not reproduce in six later full runs or in four solo runs of that
@@ -53,46 +55,46 @@ are how many areas printed each roster line.
 
 | repo | tracked | roots | folded | testGroups | principles | extends_base | class_base | module_include | interface_prefix | type_alias_prefix | imports | reused | seconds |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| Homebrew__brew | 2501 | 3 | 0 | 3 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 13.4 |
-| TryGhost__Ghost | 7940 | 5 | 0 | 6 | 2 | 1 | 0 | 0 | 0 | 0 | 142 | 87 | 13.5 |
-| alphagov__whitehall | 2621 | 7 | 8 | 3 | 1 | 0 | 2 | 0 | 0 | 0 | 0 | 0 | 7.6 |
-| angular__angular | 8522 | 7 | 11 | 3 | 2 | 0 | 0 | 0 | 0 | 0 | 93 | 103 | 12.9 |
-| appsmithorg__appsmith | 13087 | 3 | 0 | 5 | 2 | 0 | 0 | 0 | 0 | 0 | 126 | 128 | 13.9 |
-| babel__babel | 2303 | 7 | 10 | 3 | 1 | 0 | 0 | 0 | 0 | 0 | 26 | 16 | 4.9 |
-| backstage__backstage | 11781 | 7 | 5 | 2 | 2 | 0 | 0 | 0 | 0 | 0 | 186 | 99 | 14.7 |
-| calcom__cal.diy | 7372 | 7 | 4 | 4 | 2 | 0 | 0 | 0 | 0 | 0 | 122 | 60 | 9.1 |
-| chef__chef | 2281 | 7 | 1 | 2 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 11.1 |
-| consul__consul | 6025 | 7 | 2 | 1 | 1 | 0 | 2 | 0 | 0 | 0 | 0 | 0 | 7.0 |
-| decidim__decidim | 11467 | 7 | 18 | 2 | 1 | 0 | 0 | 0 | 0 | 0 | 4 | 5 | 19.1 |
-| diaspora__diaspora | 1921 | 7 | 5 | 2 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 4.6 |
-| discourse__discourse | 23263 | 7 | 5 | 6 | 1 | 1 | 3 | 1 | 0 | 0 | 75 | 12 | 62.2 |
-| empire-flippers__api | 8986 | 7 | 2 | 2 | 1 | 0 | 7 | 0 | 0 | 0 | 0 | 0 | 18.3 |
-| empire-flippers__client | 2999 | 7 | 3 | 2 | 2 | 0 | 0 | 0 | 6 | 0 | 86 | 44 | 4.7 |
+| Homebrew__brew | 2501 | 3 | 0 | 3 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 14.1 |
+| TryGhost__Ghost | 7940 | 5 | 0 | 6 | 2 | 1 | 0 | 0 | 0 | 0 | 142 | 87 | 14.3 |
+| alphagov__whitehall | 2621 | 7 | 8 | 3 | 1 | 0 | 2 | 0 | 0 | 0 | 0 | 0 | 7.9 |
+| angular__angular | 8522 | 7 | 11 | 3 | 2 | 0 | 0 | 0 | 0 | 0 | 93 | 103 | 13.5 |
+| appsmithorg__appsmith | 13087 | 3 | 0 | 5 | 2 | 0 | 0 | 0 | 0 | 0 | 126 | 128 | 14.8 |
+| babel__babel | 2303 | 7 | 10 | 3 | 1 | 0 | 0 | 0 | 0 | 0 | 26 | 16 | 5.3 |
+| backstage__backstage | 11781 | 7 | 5 | 2 | 2 | 0 | 0 | 0 | 0 | 0 | 186 | 99 | 15.1 |
+| calcom__cal.diy | 7372 | 7 | 4 | 4 | 2 | 0 | 0 | 0 | 0 | 0 | 122 | 60 | 9.5 |
+| chef__chef | 2281 | 7 | 1 | 2 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 11.0 |
+| consul__consul | 6025 | 7 | 2 | 1 | 1 | 0 | 2 | 0 | 0 | 0 | 0 | 0 | 7.1 |
+| decidim__decidim | 11467 | 7 | 18 | 2 | 1 | 0 | 0 | 0 | 0 | 0 | 4 | 5 | 19.4 |
+| diaspora__diaspora | 1921 | 7 | 5 | 2 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 4.7 |
+| discourse__discourse | 23263 | 7 | 5 | 6 | 1 | 1 | 3 | 1 | 0 | 0 | 75 | 12 | 62.7 |
+| empire-flippers__api | 8986 | 7 | 2 | 2 | 1 | 0 | 7 | 0 | 0 | 0 | 0 | 0 | 18.2 |
+| empire-flippers__client | 2999 | 7 | 3 | 2 | 2 | 0 | 0 | 0 | 6 | 0 | 86 | 44 | 5.0 |
 | errbit__errbit | 529 | 7 | 7 | 2 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 1.1 |
-| eslint__eslint | 1533 | 7 | 10 | 3 | 1 | 0 | 0 | 0 | 0 | 0 | 1 | 7 | 4.2 |
+| eslint__eslint | 1533 | 7 | 10 | 3 | 1 | 0 | 0 | 0 | 0 | 0 | 1 | 7 | 4.4 |
 | fastlane__fastlane | 2136 | 7 | 7 | 2 | 1 | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 6.9 |
 | forem__forem | 6425 | 7 | 6 | 3 | 2 | 0 | 1 | 0 | 0 | 0 | 14 | 7 | 14.4 |
 | huginn__huginn | 729 | 7 | 9 | 1 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 2.6 |
-| instructure__canvas-lms | 21913 | 7 | 8 | 4 | 2 | 0 | 1 | 0 | 0 | 0 | 148 | 129 | 98.9 |
+| instructure__canvas-lms | 21913 | 7 | 8 | 4 | 2 | 0 | 1 | 0 | 0 | 0 | 148 | 129 | 100.1 |
 | mastodon__mastodon | 9846 | 7 | 5 | 3 | 2 | 0 | 1 | 0 | 0 | 0 | 20 | 23 | 11.0 |
-| microsoft__vscode | 15712 | 4 | 0 | 6 | 2 | 0 | 0 | 0 | 14 | 0 | 164 | 90 | 56.1 |
-| openfoodfoundation__openfoodnetwork | 3882 | 7 | 7 | 2 | 1 | 0 | 0 | 0 | 0 | 0 | 3 | 1 | 9.8 |
-| opf__openproject | 22498 | 7 | 8 | 3 | 1 | 0 | 1 | 0 | 0 | 0 | 22 | 7 | 45.9 |
-| prisma__prisma | 6154 | 7 | 7 | 3 | 2 | 0 | 0 | 0 | 0 | 0 | 115 | 76 | 9.1 |
+| microsoft__vscode | 15712 | 4 | 0 | 6 | 2 | 0 | 0 | 0 | 14 | 0 | 164 | 90 | 54.6 |
+| openfoodfoundation__openfoodnetwork | 3882 | 7 | 7 | 2 | 1 | 0 | 0 | 0 | 0 | 0 | 3 | 1 | 9.9 |
+| opf__openproject | 22498 | 7 | 8 | 3 | 1 | 0 | 1 | 0 | 0 | 0 | 22 | 7 | 46.0 |
+| prisma__prisma | 6154 | 7 | 7 | 3 | 2 | 0 | 0 | 0 | 0 | 0 | 115 | 76 | 9.0 |
 | publiclab__plots2 | 860 | 7 | 6 | 2 | 1 | 0 | 0 | 0 | 0 | 0 | 1 | 0 | 2.4 |
-| puppetlabs__puppet | 2466 | 7 | 0 | 2 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 15.6 |
+| puppetlabs__puppet | 2466 | 7 | 0 | 2 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 15.8 |
 | react__react | 2969 | 7 | 18 | 3 | 2 | 1 | 0 | 0 | 0 | 0 | 16 | 34 | 8.9 |
-| rubocop__rubocop | 2155 | 7 | 2 | 2 | 1 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 8.4 |
-| storybookjs__storybook | 7597 | 5 | 0 | 7 | 2 | 0 | 0 | 0 | 0 | 0 | 75 | 77 | 11.6 |
-| supabase__supabase | 16751 | 4 | 0 | 4 | 2 | 0 | 0 | 0 | 0 | 0 | 198 | 157 | 15.0 |
-| typeorm__typeorm | 3542 | 7 | 0 | 3 | 2 | 1 | 0 | 0 | 0 | 0 | 8 | 25 | 4.6 |
-| vercel__next.js | 28490 | 7 | 2 | 5 | 2 | 1 | 0 | 0 | 0 | 0 | 28 | 58 | 30.0 |
-| webpack__webpack | 14364 | 3 | 0 | 1 | 2 | 0 | 0 | 0 | 0 | 0 | 15 | 18 | 8.9 |
+| rubocop__rubocop | 2155 | 7 | 2 | 2 | 1 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 8.5 |
+| storybookjs__storybook | 7597 | 5 | 0 | 7 | 2 | 0 | 0 | 0 | 0 | 0 | 75 | 77 | 11.7 |
+| supabase__supabase | 16751 | 4 | 0 | 4 | 2 | 0 | 0 | 0 | 0 | 0 | 198 | 157 | 14.5 |
+| typeorm__typeorm | 3542 | 7 | 0 | 3 | 2 | 1 | 0 | 0 | 0 | 0 | 8 | 25 | 4.4 |
+| vercel__next.js | 28490 | 7 | 2 | 5 | 2 | 1 | 0 | 0 | 0 | 0 | 28 | 58 | 28.3 |
+| webpack__webpack | 14364 | 3 | 0 | 1 | 2 | 0 | 0 | 0 | 0 | 0 | 15 | 18 | 8.8 |
 
 ## Tuning, and why
 
-Seven changes out of the corpus runs, then two more out of the whole-branch review after them.
-Each has a test that fails before it and passes after. The three numbers the design left open are
+Seven changes out of the corpus runs, then two more out of the first whole-branch review and one
+out of the second. Each has a test that fails before it and passes after. The three numbers the design left open are
 unchanged, and so is the shell list: the floor is still
 `max(3, ceil(0.01 * N))`, the wrapper share is still 0.8, the budget is still 7 root lines, and
 the five shell names are the same five words.
@@ -210,6 +212,24 @@ line already does. The one root that really is the repository root, a flat repos
 Neither case occurs in this corpus: no repository here is one flat directory, and none printed a
 namesake `under .`. The corpus is the evidence that the fix costs nothing, not the reason for it.
 
+### 10. A Ruby test DSL call inside a method declares no case
+
+Was: a `describe`, `context`, `feature`, `it`, `test` or `shared_examples` call with a block made
+the file a spec wherever it sat. Now it counts only outside every method, which is the altitude the
+JavaScript half already read off `ctx.enclosing`. A class or module body still counts, because that
+is where RSpec's own describes sit.
+
+errbit's `spec/support/macros.rb` is the shape: two plain methods, `it_requires_authentication` and
+`it_requires_admin_privileges`, whose bodies call `context` and `it` so a real spec can call the
+method. It is the macro, not the spec, and it read as one RSpec spec. whitehall has eleven of them
+under `test/support` and `test/integration`.
+
+Six repositories moved and every one of them downward: whitehall's tests line 111 to 101 test
+files, puppet 771 to 767 across two groups, openproject 4039 to 4036 RSpec specs, chef 696 to 694,
+canvas-lms 2971 to 2970, errbit 101 to 100. puppet also gained a namesake, 632 of 1008 to 633 of
+1009, because a file that stopped being a test went back to being one of the files a test answers.
+Nothing else in any section moved and no number in the table above changed.
+
 ## What still reads wrong, and why it was left
 
 **A test directory that is mostly fixtures is a source root, and its namesake clause is true and
@@ -283,12 +303,552 @@ classes extend nothing. `class_base` sits at 0.848 because it is only asked of f
 class at all. The audit ranks rows to open rather than deciding anything, and none of these four
 is a predicate reaching for the wrong files.
 
-What the corpus states is thin: `class_base` on 7 areas of empire-flippers/api, 3 of discourse, 2
-each of whitehall and consul; `interface_prefix` on 14 areas of vscode and 6 of the client;
-`extends_base` on one area each of five repositories; `module_include` on one area each of
-discourse and fastlane. Nothing states `type_alias_prefix` anywhere, and that is the row working
-rather than the row broken: a `T` prefix on a type alias is rare, `none` is the model default for
-the row, and a repository that prefixes nothing prints counts instead of a sentence nobody needs.
+The bar a new dimension has to clear asks for the counts per repository and refuses a summary
+(CONTRIBUTING, steps 2 and 3). So the harness prints one table per row: a line for every area that
+carried a candidate site, capped at the five biggest per repository, since a repository with sixty
+leaf areas holding one class each is not what the bar is asking about. `stated` says whether the
+area was handed the sentence, and names the gate that stopped it when it was not. A gate of
+`model default` is an area that passed every gate and prints counts anyway, because the model
+writes that side unprompted.
+
+The stated counts in the table at the top of this file are over every area; these tables see only
+the five biggest per repository, so a row stated on a small area is not on the line below it.
+
+### extends_base
+
+| repo | area | applicability | langFileCount | candidates | conforming | ratio | learned | stated |
+|---|---|---|---|---|---|---|---|---|
+| TryGhost__Ghost | apps/ember-admin/app/components | 100 | 112 | 103 | 86 | 0.835 | Component | no (ratio) |
+| TryGhost__Ghost | apps/ember-admin/app/services | 35 | 40 | 47 | 31 | 0.660 | Service | no (ratio) |
+| TryGhost__Ghost | ghost/core/core/server/data/seeders/importers | 41 | 43 | 41 | 41 | 1.000 | TableImporter | yes |
+| TryGhost__Ghost | apps/ember-admin/app/routes | 28 | 30 | 29 | 15 | 0.517 | AuthenticatedRoute | no (ratio) |
+| TryGhost__Ghost | e2e/helpers/pages/admin | 23 | 37 | 28 | 19 | 0.679 | AdminPage | no (ratio) |
+| angular__angular | packages/core/test/acceptance | 25 | 75 | 244 | 64 | 0.262 | SuperDirective | no (ratio) |
+| angular__angular | packages/upgrade/static/test/integration | 6 | 10 | 86 | 86 | 1.000 | UpgradeComponent | no (concentration) |
+| angular__angular | packages/compiler/src/typecheck/ops | 20 | 25 | 33 | 28 | 0.848 | TcbOp | no (ratio) |
+| angular__angular | packages/forms/src/directives | 22 | 31 | 31 | 7 | 0.226 | AbstractValidatorDirective | no (ratio) |
+| angular__angular | packages/compiler/src/template/pipeline/ir/src | 1 | 10 | 29 | 28 | 0.966 | ExpressionBase | no (evidence) |
+| appsmithorg__appsmith | app/client/src/components/propertyControls | 55 | 74 | 58 | 51 | 0.879 | BaseControl | no (ratio) |
+| appsmithorg__appsmith | app/client/src/widgets | 56 | 192 | 56 | 38 | 0.679 | BaseWidget | no (ratio) |
+| appsmithorg__appsmith | app/client/src/components/formControls | 23 | 40 | 25 | 22 | 0.880 | BaseControl | no (ratio) |
+| appsmithorg__appsmith | app/client/src/api | 11 | 34 | 11 | 9 | 0.818 | Api | no (ratio) |
+| appsmithorg__appsmith | app/client/src/entities | 7 | 45 | 11 | 4 | 0.364 | AppEngineApiError | no (ratio) |
+| babel__babel | packages/babel-parser/src/plugins | 8 | 9 | 10 | 6 | 0.600 | superClass | no (ratio) |
+| babel__babel | packages/babel-plugin-transform-regenerator/src/regenerator | 1 | 7 | 7 | 7 | 1.000 | Entry | no (evidence) |
+| babel__babel | eslint/babel-eslint-parser/src | 3 | 17 | 6 | 2 | 0.333 | OriginalReferencer | no (ratio) |
+| babel__babel | packages/babel-plugin-transform-regenerator/test/regenerator-fixtures | 2 | 14 | 2 | 2 | 1.000 | A | no (evidence) |
+| babel__babel | packages/babel-core/src | 1 | 14 | 1 | 1 | 1.000 | Error | no (evidence) |
+| backstage__backstage | packages/errors/src/errors | 4 | 9 | 13 | 10 | 0.769 | CustomErrorBase | no (ratio) |
+| backstage__backstage | packages/backend-openapi-utils/src/schema | 2 | 11 | 7 | 3 | 0.429 | BaseParameterParser | no (ratio) |
+| backstage__backstage | plugins/techdocs-node/src/stages/publish | 3 | 18 | 5 | 2 | 0.400 | ContainerClient | no (ratio) |
+| backstage__backstage | plugins/events-node/src/api | 3 | 12 | 3 | 2 | 0.667 | EventRouter | no (ratio) |
+| backstage__backstage | packages/frontend-plugin-api/src/components | 2 | 13 | 2 | 2 | 1.000 | Component | no (evidence) |
+| calcom__cal.diy | packages/emails/templates | 50 | 51 | 50 | 25 | 0.500 | BaseEmail | no (ratio) |
+| calcom__cal.diy | packages/platform/types/event-types/event-types_2024_06_14 | 3 | 8 | 28 | 2 | 0.071 | BaseEventTypeOutput_2024_06_14 | no (ratio) |
+| calcom__cal.diy | packages/lib | 10 | 209 | 25 | 11 | 0.440 | Tasker | no (ratio) |
+| calcom__cal.diy | packages/platform/types/bookings/2024-08-13/inputs | 3 | 17 | 10 | 2 | 0.200 | BaseBookingAttendee | no (ratio) |
+| calcom__cal.diy | packages/sms/attendee | 9 | 9 | 9 | 9 | 1.000 | SMSManager | no (evidence) |
+| decidim__decidim | decidim-core/app/packs/src/decidim/controllers | 29 | 56 | 29 | 29 | 1.000 | Controller | no (evidence) |
+| decidim__decidim | decidim-admin/app/packs/src/decidim/admin | 3 | 37 | 3 | 3 | 1.000 | Controller | no (evidence) |
+| decidim__decidim | decidim-core/app/packs/src/decidim/map | 3 | 10 | 3 | 3 | 1.000 | MapController | no (evidence) |
+| decidim__decidim | decidim-comments/app/packs/src/decidim/comments | 2 | 8 | 2 | 2 | 1.000 | Controller | no (evidence) |
+| decidim__decidim | decidim-assemblies/app | 1 | 6 | 1 | 1 | 1.000 | Controller | no (evidence) |
+| discourse__discourse | frontend/discourse/tests/unit/lib | 10 | 106 | 120 | 69 | 0.575 | Component | no (ratio) |
+| discourse__discourse | frontend/discourse/admin/routes | 118 | 119 | 118 | 78 | 0.661 | DiscourseRoute | no (ratio) |
+| discourse__discourse | frontend/discourse/app/routes | 100 | 105 | 103 | 77 | 0.748 | DiscourseRoute | no (ratio) |
+| discourse__discourse | frontend/discourse/admin/controllers | 74 | 74 | 74 | 60 | 0.811 | Controller | no (ratio) |
+| discourse__discourse | frontend/discourse/tests/unit/lib/blocks | 5 | 13 | 73 | 64 | 0.877 | Component | no (ratio) |
+| empire-flippers__client | src/components | 1 | 148 | 1 | 1 | 1.000 | React.Component | no (evidence) |
+| empire-flippers__client | src/components/base | 1 | 122 | 1 | 1 | 1.000 | React.Component | no (evidence) |
+| empire-flippers__client | src/router | 1 | 8 | 1 | 1 | 1.000 | React.Component | no (evidence) |
+| eslint__eslint | lib/languages/js/source-code/token-store | 9 | 13 | 9 | 5 | 0.556 | Cursor | no (ratio) |
+| eslint__eslint | lib/config | 3 | 5 | 6 | 5 | 0.833 | Error | no (ratio) |
+| eslint__eslint | lib/linter/code-path-analysis | 1 | 7 | 5 | 5 | 1.000 | LoopContextBase | no (evidence) |
+| eslint__eslint | lib | 1 | 16 | 4 | 4 | 1.000 | Error | no (evidence) |
+| eslint__eslint | lib/rules/utils | 1 | 7 | 1 | 1 | 1.000 | Map | no (evidence) |
+| forem__forem | app/javascript/admin/controllers | 22 | 22 | 22 | 19 | 0.864 | Controller | no (ratio) |
+| forem__forem | app/javascript | 8 | 112 | 8 | 7 | 0.875 | Component | no (ratio) |
+| forem__forem | app/javascript/onboarding/components | 7 | 17 | 7 | 7 | 1.000 | Component | no (evidence) |
+| forem__forem | app/javascript/listings | 3 | 15 | 3 | 3 | 1.000 | Component | no (evidence) |
+| forem__forem | app/javascript/listings/components | 1 | 16 | 1 | 1 | 1.000 | Component | no (evidence) |
+| huginn__huginn | app/assets/javascripts/components | 1 | 6 | 1 | 1 | 1.000 | PlainJsonEditor | no (evidence) |
+| instructure__canvas-lms | ui/features | 81 | 966 | 83 | 37 | 0.446 | React.Component | no (ratio) |
+| instructure__canvas-lms | ui/shared | 49 | 753 | 52 | 23 | 0.442 | React.Component | no (ratio) |
+| instructure__canvas-lms | ui/shared/planner/components | 28 | 89 | 28 | 23 | 0.821 | Component | no (ratio) |
+| instructure__canvas-lms | ui/features/external_apps/react/components | 27 | 38 | 27 | 27 | 1.000 | React.Component | no (evidence) |
+| instructure__canvas-lms | ui/features/gradebook/react/default_gradebook/components | 17 | 54 | 17 | 11 | 0.647 | React.Component | no (ratio) |
+| mastodon__mastodon | app/javascript/mastodon/components | 22 | 167 | 26 | 18 | 0.692 | PureComponent | no (ratio) |
+| mastodon__mastodon | app/javascript/mastodon/features | 23 | 94 | 23 | 12 | 0.522 | PureComponent | no (ratio) |
+| mastodon__mastodon | app/javascript/mastodon/features/compose/components | 5 | 20 | 8 | 5 | 0.625 | PureComponent | no (ratio) |
+| mastodon__mastodon | app/javascript/mastodon/features/notifications/components | 7 | 16 | 7 | 4 | 0.571 | PureComponent | no (ratio) |
+| mastodon__mastodon | app/javascript/mastodon/features/report | 6 | 8 | 6 | 6 | 1.000 | PureComponent | no (evidence) |
+| microsoft__vscode | src/vs/workbench/contrib | 123 | 203 | 274 | 117 | 0.427 | Action2 | no (ratio) |
+| microsoft__vscode | src/vs/editor/contrib | 79 | 151 | 250 | 75 | 0.300 | EditorAction | no (ratio) |
+| microsoft__vscode | src/vs/workbench/browser/parts/editor | 34 | 43 | 203 | 77 | 0.379 | Action2 | no (ratio) |
+| microsoft__vscode | src/vs/workbench/contrib/chat/browser/actions | 32 | 37 | 178 | 142 | 0.798 | Action2 | no (ratio) |
+| microsoft__vscode | src/vs/platform | 104 | 280 | 168 | 71 | 0.423 | Disposable | no (ratio) |
+| openfoodfoundation__openfoodnetwork | app/webpacker/controllers | 65 | 69 | 65 | 53 | 0.815 | Controller | no (ratio) |
+| openfoodfoundation__openfoodnetwork | app/components | 8 | 8 | 8 | 5 | 0.625 | Controller | no (ratio) |
+| opf__openproject | frontend/src/stimulus/controllers/dynamic | 76 | 98 | 76 | 68 | 0.895 | Controller | no (ratio) |
+| opf__openproject | frontend/src/app/core/apiv3/endpoints | 50 | 51 | 50 | 18 | 0.360 | ApiV3ResourceCollection | no (ratio) |
+| opf__openproject | frontend/src/app/features/hal/resources | 44 | 48 | 45 | 39 | 0.867 | HalResource | no (ratio) |
+| opf__openproject | frontend/src/app/features/work-packages/components | 36 | 82 | 37 | 20 | 0.541 | UntilDestroyedMixin | no (ratio) |
+| opf__openproject | frontend/src/app/shared/components/fields/display/field-types | 35 | 42 | 35 | 21 | 0.600 | DisplayField | no (ratio) |
+| prisma__prisma | packages/3-targets/3-targets/postgres/src/core | 11 | 32 | 80 | 30 | 0.375 | PostgresCodecDescriptor | no (ratio) |
+| prisma__prisma | packages/2-sql/4-lanes/relational-core/src/ast | 4 | 9 | 59 | 22 | 0.373 | Expression | no (ratio) |
+| prisma__prisma | packages/3-targets/3-targets/postgres/src/core/migrations | 3 | 23 | 36 | 33 | 0.917 | PostgresOpFactoryCallNode | no (evidence) |
+| prisma__prisma | packages/3-targets/3-targets/sqlite/src/core | 6 | 21 | 24 | 9 | 0.375 | SqliteCodecDescriptor | no (ratio) |
+| prisma__prisma | packages/1-framework/1-core/framework-components/test | 9 | 52 | 20 | 8 | 0.400 | RuntimeCore | no (ratio) |
+| react__react | packages/react-dom/src/__tests__ | 63 | 133 | 610 | 607 | 0.995 | React.Component | yes |
+| react__react | packages/react-reconciler/src/__tests__ | 46 | 77 | 335 | 308 | 0.919 | React.Component | no (evidence) |
+| react__react | packages/react/src/__tests__ | 18 | 31 | 196 | 191 | 0.974 | React.Component | no (directories) |
+| react__react | scripts/bench/benchmarks | 1 | 10 | 183 | 183 | 1.000 | React.Component | no (concentration) |
+| react__react | packages/react-devtools-shared/src/__tests__ | 7 | 45 | 28 | 27 | 0.964 | React.Component | no (evidence) |
+| storybookjs__storybook | code/core/src | 5 | 41 | 99 | 98 | 0.990 | StorybookError | no (concentration) |
+| storybookjs__storybook | code/addons/docs/src/blocks/controls/react-editable-json-tree | 2 | 10 | 7 | 7 | 1.000 | Component | no (evidence) |
+| storybookjs__storybook | code/core/src/common/js-package-manager | 5 | 23 | 5 | 5 | 1.000 | JsPackageManager | no (evidence) |
+| storybookjs__storybook | code/frameworks/angular-vite/src/client/renderer/utils | 2 | 9 | 5 | 2 | 0.400 | BarComponent | no (ratio) |
+| storybookjs__storybook | code/renderers/web-components/template | 5 | 11 | 5 | 5 | 1.000 | LitElement | no (evidence) |
+| supabase__supabase | apps/studio/public/monaco-editor/vs/language | 6 | 7 | 104 | 43 | 0.413 | x | no (ratio) |
+| supabase__supabase | apps/studio/public/monaco-editor/vs | 1 | 9 | 24 | 7 | 0.292 | Error | no (ratio) |
+| supabase__supabase | apps/studio/components/layouts/TableEditorLayout | 1 | 10 | 11 | 10 | 0.909 | ExportAllRowsErrorFamily | no (evidence) |
+| supabase__supabase | apps/docs/app/api | 1 | 15 | 6 | 4 | 0.667 | Error | no (ratio) |
+| supabase__supabase | packages/ai-commands/src | 1 | 8 | 5 | 4 | 0.800 | ApplicationError | no (ratio) |
+| typeorm__typeorm | src/driver | 25 | 65 | 119 | 14 | 0.118 | MongoAPIError | no (ratio) |
+| typeorm__typeorm | test/github-issues | 59 | 958 | 61 | 30 | 0.492 | BaseEntity | no (ratio) |
+| typeorm__typeorm | src/error | 60 | 61 | 60 | 59 | 0.983 | TypeORMError | yes |
+| typeorm__typeorm | test/functional/table-inheritance/single-table | 10 | 19 | 10 | 8 | 0.800 | Person | no (ratio) |
+| typeorm__typeorm | test/functional/cascades | 9 | 69 | 9 | 5 | 0.556 | BaseEntity | no (ratio) |
+| vercel__next.js | packages/next/src/compiled | 45 | 160 | 407 | 52 | 0.128 | te | no (ratio) |
+| vercel__next.js | packages/next/src/compiled/@edge-runtime/primitives | 4 | 19 | 121 | 42 | 0.347 | UndiciError | no (ratio) |
+| vercel__next.js | turbopack/crates/turbopack-tests/tests/execution/webpack/inner-graph | 5 | 57 | 37 | 10 | 0.270 | Foo | no (ratio) |
+| vercel__next.js | packages/next-codemod/transforms/__testfixtures__/url-to-withrouter | 36 | 40 | 36 | 36 | 1.000 | React.Component | yes |
+| vercel__next.js | packages/next/src/server | 24 | 191 | 33 | 6 | 0.182 | Normalizers | no (ratio) |
+| webpack__webpack | lib/dependencies | 102 | 139 | 105 | 33 | 0.314 | ModuleDependency | no (ratio) |
+| webpack__webpack | lib/runtime | 36 | 37 | 37 | 20 | 0.541 | RuntimeModule | no (ratio) |
+| webpack__webpack | test/cases/inner-graph/extend-class2 | 3 | 8 | 35 | 10 | 0.286 | Foo | no (ratio) |
+| webpack__webpack | lib/errors | 28 | 29 | 28 | 25 | 0.893 | WebpackError | no (ratio) |
+| webpack__webpack | test/cases/inner-graph/extend-class | 9 | 17 | 21 | 5 | 0.238 | Error | no (ratio) |
+
+### class_base
+
+| repo | area | applicability | langFileCount | candidates | conforming | ratio | learned | stated |
+|---|---|---|---|---|---|---|---|---|
+| Homebrew__brew | Library/Homebrew | 71 | 220 | 183 | 47 | 0.257 | RuntimeError | no (ratio) |
+| Homebrew__brew | Library/Homebrew/rubocops | 52 | 55 | 98 | 71 | 0.724 | FormulaCop | no (ratio) |
+| Homebrew__brew | Library/Homebrew/cmd | 76 | 77 | 81 | 75 | 0.926 | AbstractCommand | no (evidence) |
+| Homebrew__brew | Library/Homebrew/dev-cmd | 60 | 60 | 65 | 60 | 0.923 | AbstractCommand | no (evidence) |
+| Homebrew__brew | Library/Homebrew/cask/artifact | 40 | 41 | 44 | 17 | 0.386 | Moved | no (ratio) |
+| alphagov__whitehall | test/unit/app/models | 139 | 139 | 145 | 141 | 0.972 | ActiveSupport::TestCase | yes |
+| alphagov__whitehall | app/models | 128 | 160 | 135 | 92 | 0.681 | ApplicationRecord | no (ratio) |
+| alphagov__whitehall | test/unit/app/presenters/publishing_api | 41 | 41 | 127 | 74 | 0.583 | ActiveSupport::TestCase | no (ratio) |
+| alphagov__whitehall | test/functional/admin | 94 | 94 | 98 | 97 | 0.990 | ActionController::TestCase | yes |
+| alphagov__whitehall | app/controllers/admin | 94 | 95 | 94 | 74 | 0.787 | Admin::BaseController | no (ratio) |
+| chef__chef | lib/chef | 38 | 146 | 242 | 95 | 0.393 | RuntimeError | no (ratio) |
+| chef__chef | lib/chef/resource | 186 | 196 | 187 | 130 | 0.695 | Chef::Resource | no (ratio) |
+| chef__chef | spec/integration/recipes | 5 | 14 | 52 | 31 | 0.596 | BaseThingy | no (ratio) |
+| chef__chef | lib/chef/provider | 47 | 50 | 47 | 23 | 0.489 | Chef::Provider | no (ratio) |
+| chef__chef | lib/chef/provider/package | 36 | 40 | 41 | 32 | 0.780 | Chef::Provider::Package | no (ratio) |
+| consul__consul | app/models | 73 | 101 | 73 | 67 | 0.918 | ApplicationRecord | no (evidence) |
+| consul__consul | app/controllers/admin | 70 | 70 | 70 | 52 | 0.743 | Admin::BaseController | no (ratio) |
+| consul__consul | app/components | 62 | 66 | 62 | 61 | 0.984 | ApplicationComponent | yes |
+| consul__consul | app/components/admin | 60 | 60 | 60 | 60 | 1.000 | ApplicationComponent | yes |
+| consul__consul | app/controllers | 45 | 45 | 46 | 36 | 0.783 | ApplicationController | no (ratio) |
+| decidim__decidim | decidim-core/app/cells/decidim | 85 | 85 | 85 | 71 | 0.835 | Decidim::ViewModel | no (ratio) |
+| decidim__decidim | decidim-core/app/models/decidim | 66 | 68 | 69 | 54 | 0.783 | ApplicationRecord | no (ratio) |
+| decidim__decidim | decidim-admin/app/commands/decidim/admin | 68 | 68 | 68 | 40 | 0.588 | Decidim::Command | no (ratio) |
+| decidim__decidim | decidim-core/db/migrate | 41 | 255 | 56 | 55 | 0.982 | ApplicationRecord | no (applicability) |
+| decidim__decidim | decidim-core/app/controllers/decidim | 52 | 52 | 53 | 37 | 0.698 | Decidim::ApplicationController | no (ratio) |
+| diaspora__diaspora | app/models | 46 | 49 | 50 | 43 | 0.860 | ApplicationRecord | no (ratio) |
+| diaspora__diaspora | app/controllers | 41 | 41 | 41 | 35 | 0.854 | ApplicationController | no (ratio) |
+| diaspora__diaspora | app/workers | 32 | 33 | 33 | 26 | 0.788 | BaseWorker | no (ratio) |
+| diaspora__diaspora | db/migrate | 15 | 49 | 29 | 29 | 1.000 | ApplicationRecord | no (evidence) |
+| diaspora__diaspora | app/presenters | 17 | 25 | 17 | 17 | 1.000 | BasePresenter | no (evidence) |
+| discourse__discourse | app/models | 267 | 301 | 290 | 217 | 0.748 | ActiveRecord::Base | no (ratio) |
+| discourse__discourse | app/serializers | 226 | 229 | 239 | 170 | 0.711 | ApplicationSerializer | no (ratio) |
+| discourse__discourse | lib | 99 | 384 | 155 | 48 | 0.310 | StandardError | no (ratio) |
+| discourse__discourse | app/jobs/scheduled | 107 | 107 | 107 | 107 | 1.000 | Jobs::Scheduled | yes |
+| discourse__discourse | spec/system/page_objects/pages | 94 | 95 | 106 | 81 | 0.764 | PageObjects::Pages::Base | no (ratio) |
+| empire-flippers__api | app/models | 129 | 129 | 130 | 124 | 0.954 | ApplicationRecord | yes |
+| empire-flippers__api | app/services/models/listings | 122 | 150 | 122 | 122 | 1.000 | ActiveInteraction::Base | yes |
+| empire-flippers__api | app/services/models | 116 | 143 | 116 | 116 | 1.000 | ActiveInteraction::Base | yes |
+| empire-flippers__api | app/services/api/v1 | 79 | 81 | 79 | 79 | 1.000 | ActiveInteraction::Base | yes |
+| empire-flippers__api | app/controllers/api/v1 | 65 | 65 | 65 | 55 | 0.846 | Api::V1::BaseController | no (ratio) |
+| errbit__errbit | app/controllers | 12 | 13 | 13 | 9 | 0.692 | ApplicationController | no (ratio) |
+| errbit__errbit | app/decorators | 8 | 8 | 8 | 8 | 1.000 | Draper::Decorator | no (evidence) |
+| errbit__errbit | app/models/notification_services | 6 | 6 | 6 | 6 | 1.000 | NotificationService | no (evidence) |
+| errbit__errbit | app/controllers/api/v1 | 4 | 4 | 4 | 4 | 1.000 | ApplicationController | no (evidence) |
+| errbit__errbit | app/jobs | 3 | 3 | 3 | 2 | 0.667 | ApplicationJob | no (ratio) |
+| fastlane__fastlane | fastlane/lib/fastlane/actions | 234 | 234 | 240 | 215 | 0.896 | Action | no (ratio) |
+| fastlane__fastlane | spaceship/lib/spaceship/tunes | 42 | 53 | 44 | 38 | 0.864 | TunesBase | no (ratio) |
+| fastlane__fastlane | spaceship/lib/spaceship | 5 | 23 | 23 | 14 | 0.609 | BasicPreferredInfoError | no (ratio) |
+| fastlane__fastlane | trainer/lib/trainer | 1 | 8 | 16 | 10 | 0.625 | AbstractObject | no (ratio) |
+| fastlane__fastlane | fastlane_core/lib/fastlane_core/ui | 8 | 13 | 15 | 4 | 0.267 | FastlaneException | no (ratio) |
+| forem__forem | app/models | 126 | 142 | 132 | 119 | 0.902 | ApplicationRecord | no (evidence) |
+| forem__forem | app/controllers | 105 | 105 | 107 | 93 | 0.869 | ApplicationController | no (ratio) |
+| forem__forem | app/liquid_tags | 77 | 83 | 78 | 62 | 0.795 | LiquidTagBase | no (ratio) |
+| forem__forem | app/controllers/admin | 56 | 56 | 56 | 55 | 0.982 | Admin::ApplicationController | yes |
+| forem__forem | app/policies | 37 | 40 | 41 | 36 | 0.878 | ApplicationPolicy | no (ratio) |
+| huginn__huginn | app/models/agents | 75 | 75 | 90 | 75 | 0.833 | Agent | no (ratio) |
+| huginn__huginn | app/controllers | 17 | 18 | 17 | 14 | 0.824 | ApplicationController | no (ratio) |
+| huginn__huginn | lib | 11 | 24 | 16 | 7 | 0.438 | Faraday::Middleware | no (ratio) |
+| huginn__huginn | app/models | 10 | 10 | 12 | 10 | 0.833 | ActiveRecord::Base | no (ratio) |
+| huginn__huginn | spec/concerns | 7 | 7 | 9 | 6 | 0.667 | Agent | no (ratio) |
+| instructure__canvas-lms | app/models | 303 | 413 | 359 | 260 | 0.724 | ApplicationRecord | no (ratio) |
+| instructure__canvas-lms | app/graphql/types | 182 | 182 | 268 | 149 | 0.556 | ApplicationObjectType | no (ratio) |
+| instructure__canvas-lms | app/controllers | 242 | 261 | 250 | 225 | 0.900 | ApplicationController | no (evidence) |
+| instructure__canvas-lms | app/graphql/mutations | 110 | 110 | 138 | 75 | 0.543 | Mutations::BaseMutation | no (ratio) |
+| instructure__canvas-lms | lib | 64 | 259 | 104 | 30 | 0.288 | StandardError | no (ratio) |
+| mastodon__mastodon | app/models | 129 | 156 | 136 | 110 | 0.809 | ApplicationRecord | no (ratio) |
+| mastodon__mastodon | app/serializers/rest | 67 | 67 | 80 | 70 | 0.875 | ActiveModel::Serializer | no (ratio) |
+| mastodon__mastodon | db/post_migrate | 16 | 80 | 77 | 77 | 1.000 | ApplicationRecord | no (applicability) |
+| mastodon__mastodon | app/services | 68 | 79 | 74 | 67 | 0.905 | BaseService | no (evidence) |
+| mastodon__mastodon | app/controllers/admin | 70 | 70 | 70 | 34 | 0.486 | BaseController | no (ratio) |
+| microsoft__vscode | extensions/vscode-colorize-tests/test/colorize-fixtures | 1 | 1 | 1 | 1 | 1.000 | MsRestAzure::AzureServiceClient | no (evidence) |
+| openfoodfoundation__openfoodnetwork | db/migrate | 31 | 262 | 59 | 40 | 0.678 | ActiveRecord::Base | no (ratio) |
+| openfoodfoundation__openfoodnetwork | app/models | 52 | 54 | 52 | 38 | 0.731 | ApplicationRecord | no (ratio) |
+| openfoodfoundation__openfoodnetwork | app/serializers/api/admin | 45 | 45 | 50 | 43 | 0.860 | ActiveModel::Serializer | no (ratio) |
+| openfoodfoundation__openfoodnetwork | app/models/spree | 47 | 55 | 49 | 37 | 0.755 | ApplicationRecord | no (ratio) |
+| openfoodfoundation__openfoodnetwork | app/serializers/api | 40 | 41 | 40 | 35 | 0.875 | ActiveModel::Serializer | no (ratio) |
+| opf__openproject | app/services | 169 | 250 | 176 | 30 | 0.170 | BaseServices::SetAttributes | no (ratio) |
+| opf__openproject | lib/api/v3 | 150 | 170 | 150 | 60 | 0.400 | API::OpenProjectAPI | no (ratio) |
+| opf__openproject | app/models | 143 | 243 | 146 | 93 | 0.637 | ApplicationRecord | no (ratio) |
+| opf__openproject | app/contracts | 143 | 155 | 143 | 65 | 0.455 | BaseContract | no (ratio) |
+| opf__openproject | modules | 140 | 212 | 140 | 27 | 0.193 | Tables::Base | no (ratio) |
+| publiclab__plots2 | test/functional | 29 | 29 | 29 | 25 | 0.862 | ActionController::TestCase | no (ratio) |
+| publiclab__plots2 | app/controllers | 27 | 27 | 27 | 26 | 0.963 | ApplicationController | no (evidence) |
+| publiclab__plots2 | app/models | 23 | 24 | 25 | 15 | 0.600 | ApplicationRecord | no (ratio) |
+| publiclab__plots2 | test/unit | 23 | 23 | 23 | 18 | 0.783 | ActiveSupport::TestCase | no (ratio) |
+| publiclab__plots2 | test/system | 21 | 21 | 21 | 21 | 1.000 | ApplicationSystemTestCase | no (evidence) |
+| puppetlabs__puppet | lib/puppet/pops | 15 | 36 | 117 | 22 | 0.188 | Expression | no (ratio) |
+| puppetlabs__puppet | lib/puppet | 40 | 145 | 90 | 18 | 0.200 | Error | no (ratio) |
+| puppetlabs__puppet | lib/puppet/pops/types | 23 | 36 | 85 | 19 | 0.224 | PAnyType | no (ratio) |
+| puppetlabs__puppet | lib/puppet/indirector | 50 | 58 | 50 | 14 | 0.280 | Puppet::Indirector::Terminus | no (ratio) |
+| puppetlabs__puppet | lib/puppet/util | 24 | 91 | 46 | 5 | 0.109 | Puppet::Error | no (ratio) |
+| rubocop__rubocop | lib/rubocop/cop/style | 299 | 302 | 301 | 299 | 0.993 | Base | no (directories) |
+| rubocop__rubocop | lib/rubocop/cop/lint | 157 | 158 | 157 | 157 | 1.000 | Base | no (directories) |
+| rubocop__rubocop | lib/rubocop/cop/layout | 100 | 100 | 100 | 100 | 1.000 | Base | yes |
+| rubocop__rubocop | lib/rubocop/cop/internal_affairs | 40 | 42 | 40 | 39 | 0.975 | Base | no (evidence) |
+| rubocop__rubocop | lib/rubocop/cop/naming | 19 | 19 | 19 | 19 | 1.000 | Base | no (evidence) |
+
+### module_include
+
+| repo | area | applicability | langFileCount | candidates | conforming | ratio | learned | stated |
+|---|---|---|---|---|---|---|---|---|
+| Homebrew__brew | Library/Homebrew | 57 | 220 | 104 | 47 | 0.452 | Utils::Output::Mixin | no (ratio) |
+| Homebrew__brew | Library/Homebrew/rubocops/cask | 19 | 26 | 28 | 12 | 0.429 | CaskHelp | no (ratio) |
+| Homebrew__brew | Library/Homebrew/cmd | 23 | 77 | 23 | 13 | 0.565 | ShellCommand | no (ratio) |
+| Homebrew__brew | Library/Homebrew/unpack_strategy | 20 | 35 | 21 | 21 | 1.000 | UnpackStrategy | no (evidence) |
+| Homebrew__brew | Library/Homebrew/cask | 12 | 30 | 20 | 10 | 0.500 | Utils::Output::Mixin | no (ratio) |
+| alphagov__whitehall | app/models | 68 | 160 | 209 | 14 | 0.067 | PublishesToPublishingApi | no (ratio) |
+| alphagov__whitehall | app/presenters/publishing_api | 25 | 40 | 46 | 22 | 0.478 | GovspeakHelper | no (ratio) |
+| alphagov__whitehall | test/unit/app/models | 25 | 139 | 41 | 13 | 0.317 | ActionDispatch::TestProcess | no (ratio) |
+| alphagov__whitehall | test/integration | 16 | 34 | 35 | 12 | 0.343 | TaxonomyHelper | no (ratio) |
+| alphagov__whitehall | test/functional/admin | 25 | 94 | 27 | 12 | 0.444 | TaxonomyHelper | no (ratio) |
+| chef__chef | lib/chef | 46 | 146 | 81 | 15 | 0.185 | Chef::Mixin::ParamsValidate | no (ratio) |
+| chef__chef | lib/chef/resource | 41 | 196 | 43 | 8 | 0.186 | Chef::Mixin::OpenSSLHelper | no (ratio) |
+| chef__chef | lib/chef/win32 | 16 | 23 | 31 | 6 | 0.194 | Chef::Mixin::WideString | no (ratio) |
+| chef__chef | spec/unit/mixin | 13 | 28 | 20 | 3 | 0.150 | Chef::Mixin::Properties | no (ratio) |
+| chef__chef | lib/chef/provider | 11 | 50 | 19 | 3 | 0.158 | Chef::Mixin::FileClass | no (ratio) |
+| consul__consul | app/models | 39 | 101 | 114 | 12 | 0.105 | Globalizable | no (ratio) |
+| consul__consul | app/models/legislation | 7 | 9 | 32 | 7 | 0.219 | ActsAsParanoidAliases | no (ratio) |
+| consul__consul | app/components/admin | 23 | 60 | 30 | 15 | 0.500 | Header | no (ratio) |
+| consul__consul | app/controllers | 13 | 45 | 28 | 9 | 0.321 | FeatureFlags | no (ratio) |
+| consul__consul | app/models/budget | 6 | 17 | 28 | 4 | 0.143 | Globalizable | no (ratio) |
+| decidim__decidim | decidim-core/app/controllers/decidim | 34 | 52 | 90 | 11 | 0.122 | FormFactory | no (ratio) |
+| decidim__decidim | decidim-core/app/models/decidim | 39 | 68 | 89 | 15 | 0.169 | Decidim::TranslatableResource | no (ratio) |
+| decidim__decidim | decidim-core/lib/decidim | 45 | 204 | 82 | 13 | 0.159 | Decidim::AttributeObject::Model | no (ratio) |
+| decidim__decidim | decidim-core/app/cells/decidim | 38 | 85 | 73 | 13 | 0.178 | Cell::ViewModel::Partial | no (ratio) |
+| decidim__decidim | decidim-debates/app | 16 | 36 | 59 | 4 | 0.068 | Decidim::MultipleAttachmentsMethods | no (ratio) |
+| diaspora__diaspora | app/models | 22 | 49 | 60 | 15 | 0.250 | Diaspora::Federated::Base | no (ratio) |
+| diaspora__diaspora | app/controllers | 3 | 41 | 6 | 2 | 0.333 | ApplicationHelper | no (ratio) |
+| diaspora__diaspora | app/controllers/api/v1 | 5 | 16 | 5 | 2 | 0.400 | PostsHelper | no (ratio) |
+| diaspora__diaspora | lib | 4 | 15 | 5 | 3 | 0.600 | Diaspora::Logging | no (ratio) |
+| diaspora__diaspora | lib/archive_importer | 4 | 7 | 5 | 4 | 0.800 | Diaspora::Logging | no (ratio) |
+| discourse__discourse | app/models | 66 | 301 | 160 | 11 | 0.069 | ActiveModel::Serialization | no (ratio) |
+| discourse__discourse | lib/onebox/engine | 69 | 73 | 158 | 64 | 0.405 | Engine | no (ratio) |
+| discourse__discourse | lib | 32 | 384 | 56 | 9 | 0.161 | ActiveModel::Serialization | no (ratio) |
+| discourse__discourse | plugins/discourse-workflows/app/services/discourse_workflows | 45 | 53 | 56 | 45 | 0.804 | Service::Base | no (ratio) |
+| discourse__discourse | app/services | 44 | 127 | 48 | 38 | 0.792 | Service::Base | no (ratio) |
+| empire-flippers__api | app/workers/workers | 125 | 125 | 234 | 125 | 0.534 | Sidekiq::Worker | no (ratio) |
+| empire-flippers__api | app/workers/cronjobs | 70 | 70 | 140 | 70 | 0.500 | Sidekiq::Worker | no (ratio) |
+| empire-flippers__api | app/workers/workers/listings | 38 | 38 | 74 | 38 | 0.514 | Sidekiq::Worker | no (ratio) |
+| empire-flippers__api | app/workers/workers/amazon_sp | 25 | 25 | 48 | 25 | 0.521 | Sidekiq::Worker | no (ratio) |
+| empire-flippers__api | app/models | 31 | 129 | 45 | 20 | 0.444 | ActiveModel::Dirty | no (ratio) |
+| errbit__errbit | app/models | 13 | 14 | 26 | 12 | 0.462 | Mongoid::Document | no (ratio) |
+| errbit__errbit | app/controllers | 3 | 13 | 3 | 2 | 0.667 | ProblemsSearcher | no (ratio) |
+| fastlane__fastlane | spaceship/lib/spaceship/connect_api/models | 71 | 71 | 71 | 71 | 1.000 | Spaceship::ConnectAPI::Model | yes |
+| fastlane__fastlane | trainer/lib/trainer/xcresult | 3 | 6 | 3 | 2 | 0.667 | TestCaseAttributes | no (ratio) |
+| fastlane__fastlane | fastlane_core/spec | 2 | 47 | 2 | 2 | 1.000 | Commander::Methods | no (evidence) |
+| fastlane__fastlane | cert | 1 | 8 | 1 | 1 | 1.000 | Commander::Methods | no (evidence) |
+| fastlane__fastlane | credentials_manager | 1 | 7 | 1 | 1 | 1.000 | Commander::Methods | no (evidence) |
+| forem__forem | app/workers | 87 | 95 | 101 | 88 | 0.871 | Sidekiq::Job | no (ratio) |
+| forem__forem | app/models | 17 | 142 | 38 | 6 | 0.158 | AlgoliaSearchable | no (ratio) |
+| forem__forem | app/liquid_tags | 19 | 83 | 30 | 9 | 0.300 | ActionView::Helpers::SanitizeHelper | no (ratio) |
+| forem__forem | app/workers/articles | 16 | 17 | 18 | 16 | 0.889 | Sidekiq::Job | no (ratio) |
+| forem__forem | app/workers/notifications | 16 | 16 | 17 | 16 | 0.941 | Sidekiq::Job | no (evidence) |
+| huginn__huginn | app/models/agents | 50 | 75 | 66 | 16 | 0.242 | FormConfigurable | no (ratio) |
+| huginn__huginn | app/models | 4 | 10 | 13 | 3 | 0.231 | JsonSerializedField | no (ratio) |
+| huginn__huginn | app/concerns | 9 | 27 | 9 | 7 | 0.778 | Oauthable | no (ratio) |
+| huginn__huginn | lib | 4 | 24 | 9 | 6 | 0.667 | SAXMachine | no (ratio) |
+| huginn__huginn | app/controllers | 5 | 18 | 7 | 4 | 0.571 | SortableTable | no (ratio) |
+| instructure__canvas-lms | app/controllers | 162 | 261 | 415 | 30 | 0.072 | HorizonMode | no (ratio) |
+| instructure__canvas-lms | app/models | 157 | 413 | 403 | 74 | 0.184 | Workflow | no (ratio) |
+| instructure__canvas-lms | lib/api/v1 | 104 | 115 | 247 | 89 | 0.360 | Api::V1::Json | no (ratio) |
+| instructure__canvas-lms | lib/cc | 26 | 53 | 70 | 10 | 0.143 | CC::CCHelper | no (ratio) |
+| instructure__canvas-lms | app/controllers/quizzes | 17 | 18 | 41 | 15 | 0.366 | Filters::Quizzes | no (ratio) |
+| mastodon__mastodon | app/models | 61 | 156 | 134 | 24 | 0.179 | Paginable | no (ratio) |
+| mastodon__mastodon | app/workers | 67 | 75 | 103 | 63 | 0.612 | Sidekiq::Worker | no (ratio) |
+| mastodon__mastodon | app/services | 44 | 79 | 66 | 25 | 0.379 | Payloadable | no (ratio) |
+| mastodon__mastodon | app/controllers | 25 | 48 | 51 | 9 | 0.176 | Authorization | no (ratio) |
+| mastodon__mastodon | app/services/activitypub | 19 | 20 | 33 | 19 | 0.576 | JsonLdHelper | no (ratio) |
+| openfoodfoundation__openfoodnetwork | app/models/spree | 14 | 55 | 21 | 3 | 0.143 | CalculatedAdjustments | no (ratio) |
+| openfoodfoundation__openfoodnetwork | app/controllers/api/v0 | 7 | 20 | 18 | 3 | 0.167 | PaginationData | no (ratio) |
+| openfoodfoundation__openfoodnetwork | lib/tasks/sample_data | 13 | 15 | 18 | 13 | 0.722 | Logging | no (ratio) |
+| openfoodfoundation__openfoodnetwork | app/mailers | 8 | 11 | 9 | 7 | 0.778 | I18nHelper | no (ratio) |
+| openfoodfoundation__openfoodnetwork | spec/controllers/api/v0 | 6 | 20 | 9 | 6 | 0.667 | AuthenticationHelper | no (ratio) |
+| opf__openproject | app/components | 76 | 135 | 163 | 53 | 0.325 | OpPrimer::ComponentHelpers | no (ratio) |
+| opf__openproject | app/controllers | 50 | 87 | 118 | 24 | 0.203 | OpTurbo::ComponentStream | no (ratio) |
+| opf__openproject | app/models | 44 | 243 | 115 | 21 | 0.183 | Scopes::Scoped | no (ratio) |
+| opf__openproject | lib/api/v3 | 49 | 170 | 90 | 20 | 0.222 | API::Decorators::LinkedResource | no (ratio) |
+| opf__openproject | modules/meeting/app/components/meeting_agenda_items | 25 | 25 | 73 | 25 | 0.342 | OpPrimer::ComponentHelpers | no (ratio) |
+| publiclab__plots2 | test/functional | 7 | 29 | 10 | 4 | 0.400 | ActiveJob::TestHelper | no (ratio) |
+| publiclab__plots2 | app/mailers | 6 | 6 | 6 | 6 | 1.000 | ApplicationHelper | no (evidence) |
+| publiclab__plots2 | test/integration | 3 | 14 | 3 | 3 | 1.000 | ActiveJob::TestHelper | no (evidence) |
+| publiclab__plots2 | test/integration/incoming_mail_parsing_test | 3 | 3 | 3 | 3 | 1.000 | ActiveJob::TestHelper | no (evidence) |
+| publiclab__plots2 | test/unit | 3 | 23 | 3 | 2 | 0.667 | ActiveJob::TestHelper | no (ratio) |
+| puppetlabs__puppet | lib/puppet | 36 | 145 | 82 | 12 | 0.146 | Puppet::Util | no (ratio) |
+| puppetlabs__puppet | lib/puppet/util | 22 | 91 | 41 | 9 | 0.220 | Puppet::Util | no (ratio) |
+| puppetlabs__puppet | spec/unit/pops/types | 18 | 25 | 36 | 15 | 0.417 | PuppetSpec::Compiler | no (ratio) |
+| puppetlabs__puppet | lib/puppet/pops/types | 12 | 36 | 22 | 5 | 0.227 | Enumerable | no (ratio) |
+| puppetlabs__puppet | benchmarks | 20 | 24 | 20 | 20 | 1.000 | FileUtils | no (evidence) |
+| rubocop__rubocop | lib/rubocop/cop/style | 205 | 302 | 325 | 107 | 0.329 | RangeHelp | no (ratio) |
+| rubocop__rubocop | lib/rubocop/cop/layout | 95 | 100 | 168 | 49 | 0.292 | RangeHelp | no (ratio) |
+| rubocop__rubocop | lib/rubocop/cop/lint | 63 | 158 | 75 | 28 | 0.373 | RangeHelp | no (ratio) |
+| rubocop__rubocop | lib/rubocop/cop/mixin | 18 | 81 | 25 | 8 | 0.320 | RangeHelp | no (ratio) |
+| rubocop__rubocop | lib/rubocop/cop/metrics | 9 | 15 | 15 | 4 | 0.267 | CodeLength | no (ratio) |
+
+### interface_prefix
+
+| repo | area | applicability | langFileCount | candidates | conforming | ratio | learned | stated |
+|---|---|---|---|---|---|---|---|---|
+| TryGhost__Ghost | apps/admin-x-framework/src/api | 35 | 43 | 73 | 73 | 1.000 | none | no (model default) |
+| TryGhost__Ghost | apps/shade/src/components/ui | 34 | 122 | 65 | 65 | 1.000 | none | no (model default) |
+| TryGhost__Ghost | koenig/kg-default-nodes/src/nodes | 26 | 74 | 61 | 61 | 1.000 | none | no (model default) |
+| TryGhost__Ghost | apps/shade/src/components/patterns | 12 | 28 | 47 | 47 | 1.000 | none | no (model default) |
+| TryGhost__Ghost | ghost/core/core/server/services/gifts | 8 | 20 | 35 | 35 | 1.000 | none | no (model default) |
+| angular__angular | packages/compiler/src/template/pipeline/ir/src | 7 | 10 | 88 | 88 | 1.000 | none | no (concentration) |
+| angular__angular | packages/core/src | 20 | 75 | 78 | 78 | 1.000 | none | no (model default) |
+| angular__angular | packages/compiler/src | 14 | 36 | 57 | 57 | 1.000 | none | no (model default) |
+| angular__angular | packages/core/src/render3/interfaces | 11 | 21 | 57 | 31 | 0.544 | none | no (ratio) |
+| angular__angular | adev/shared-docs/pipeline/api-gen/rendering | 5 | 17 | 55 | 55 | 1.000 | none | no (concentration) |
+| appsmithorg__appsmith | app/client/src/widgets | 91 | 192 | 161 | 161 | 1.000 | none | no (model default) |
+| appsmithorg__appsmith | app/client/src/actions | 20 | 56 | 91 | 91 | 1.000 | none | no (model default) |
+| appsmithorg__appsmith | app/client/src/entities | 15 | 45 | 83 | 82 | 0.988 | none | no (model default) |
+| appsmithorg__appsmith | app/client/src/ce | 16 | 30 | 79 | 78 | 0.987 | none | no (model default) |
+| appsmithorg__appsmith | app/client/src/components/propertyControls | 51 | 74 | 77 | 77 | 1.000 | none | no (model default) |
+| babel__babel | packages/babel-types/src | 1 | 22 | 269 | 269 | 1.000 | none | no (concentration) |
+| babel__babel | packages | 47 | 282 | 59 | 59 | 1.000 | none | no (applicability) |
+| babel__babel | packages/babel-parser/src | 4 | 10 | 37 | 37 | 1.000 | none | no (concentration) |
+| babel__babel | packages/babel-traverse/src | 4 | 12 | 10 | 10 | 1.000 | none | no (evidence) |
+| babel__babel | packages/babel-helpers/src/helpers | 8 | 95 | 9 | 9 | 1.000 | none | no (evidence) |
+| backstage__backstage | packages/ui/src/components | 41 | 211 | 62 | 62 | 1.000 | none | no (applicability) |
+| backstage__backstage | packages/catalog-client/src/schema/openapi/generated/models | 41 | 43 | 41 | 41 | 1.000 | none | no (model default) |
+| backstage__backstage | plugins/bitbucket-cloud-common/src | 3 | 9 | 41 | 41 | 1.000 | none | no (concentration) |
+| backstage__backstage | plugins/catalog-backend/src/schema/openapi/generated/models | 41 | 43 | 41 | 41 | 1.000 | none | no (model default) |
+| backstage__backstage | plugins/scaffolder-backend/src/schema/openapi/generated/models | 40 | 47 | 40 | 40 | 1.000 | none | no (model default) |
+| calcom__cal.diy | packages/features/webhooks/lib | 12 | 33 | 65 | 51 | 0.785 | none | no (ratio) |
+| calcom__cal.diy | packages/features | 26 | 117 | 41 | 29 | 0.707 | none | no (ratio) |
+| calcom__cal.diy | packages/types | 15 | 30 | 40 | 39 | 0.975 | none | no (evidence) |
+| calcom__cal.diy | packages/features/watchlist/lib | 12 | 27 | 34 | 27 | 0.794 | none | no (ratio) |
+| calcom__cal.diy | packages/lib | 14 | 209 | 30 | 21 | 0.700 | none | no (ratio) |
+| discourse__discourse | frontend/discourse/app/lib/blocks/-internals | 16 | 25 | 48 | 48 | 1.000 | none | no (model default) |
+| discourse__discourse | frontend/discourse/app/lib | 7 | 272 | 45 | 45 | 1.000 | none | no (applicability) |
+| discourse__discourse | frontend/discourse/float-kit | 5 | 16 | 11 | 11 | 1.000 | none | no (evidence) |
+| discourse__discourse | frontend/discourse/app/blocks/conditions | 7 | 8 | 10 | 10 | 1.000 | none | no (evidence) |
+| discourse__discourse | frontend/discourse/app/static | 2 | 26 | 9 | 9 | 1.000 | none | no (evidence) |
+| empire-flippers__client | src/queries | 138 | 141 | 276 | 274 | 0.993 | I | yes |
+| empire-flippers__client | src/components | 102 | 148 | 167 | 156 | 0.934 | I | no (evidence) |
+| empire-flippers__client | src/queries/admin | 68 | 70 | 133 | 133 | 1.000 | I | yes |
+| empire-flippers__client | src/components/TaskList/tasks | 64 | 75 | 122 | 122 | 1.000 | I | yes |
+| empire-flippers__client | src/components/base | 64 | 122 | 92 | 91 | 0.989 | I | yes |
+| eslint__eslint | lib/types | 2 | 4 | 50 | 50 | 1.000 | none | no (concentration) |
+| eslint__eslint | tests/lib | 1 | 19 | 2 | 2 | 1.000 | none | no (evidence) |
+| instructure__canvas-lms | ui/features | 169 | 966 | 306 | 304 | 0.993 | none | no (applicability) |
+| instructure__canvas-lms | ui/shared | 51 | 753 | 95 | 92 | 0.968 | none | no (applicability) |
+| instructure__canvas-lms | ui/features/course_paces/react/components | 26 | 61 | 63 | 63 | 1.000 | none | no (model default) |
+| instructure__canvas-lms | ui/shared/global/env | 37 | 39 | 55 | 55 | 1.000 | none | no (model default) |
+| instructure__canvas-lms | ui/shared/assignments/react | 18 | 47 | 52 | 52 | 1.000 | none | no (directories) |
+| mastodon__mastodon | app/javascript/mastodon/api_types | 21 | 21 | 87 | 87 | 1.000 | none | no (model default) |
+| mastodon__mastodon | app/javascript/mastodon/components | 58 | 167 | 74 | 74 | 1.000 | none | no (model default) |
+| mastodon__mastodon | app/javascript/mastodon/models | 10 | 17 | 32 | 32 | 1.000 | none | no (evidence) |
+| mastodon__mastodon | app/javascript/mastodon/reducers | 17 | 43 | 32 | 32 | 1.000 | none | no (evidence) |
+| mastodon__mastodon | app/javascript/mastodon/features | 17 | 94 | 24 | 23 | 0.958 | none | no (evidence) |
+| microsoft__vscode | src/vscode-dts | 136 | 177 | 727 | 727 | 1.000 | none | no (model default) |
+| microsoft__vscode | src/vs/platform | 139 | 280 | 577 | 527 | 0.913 | I | no (evidence) |
+| microsoft__vscode | src/vs/workbench/api/common | 64 | 120 | 566 | 298 | 0.527 | none | no (ratio) |
+| microsoft__vscode | src/vs/workbench/contrib/chat/common | 49 | 70 | 431 | 420 | 0.974 | I | yes |
+| microsoft__vscode | src/vs/platform/agentHost/common/state/protocol | 29 | 48 | 313 | 313 | 1.000 | none | no (model default) |
+| opf__openproject | frontend/src/app/core/state | 33 | 57 | 65 | 46 | 0.708 | I | no (ratio) |
+| opf__openproject | frontend/src/app/features/hal/resources | 24 | 48 | 48 | 44 | 0.917 | none | no (evidence) |
+| opf__openproject | frontend/src/app/shared/components | 22 | 132 | 40 | 35 | 0.875 | none | no (ratio) |
+| opf__openproject | frontend/src/app/features/hal | 7 | 23 | 19 | 18 | 0.947 | none | no (evidence) |
+| opf__openproject | frontend/src/app/features/work-packages/components | 11 | 82 | 18 | 17 | 0.944 | none | no (evidence) |
+| prisma__prisma | packages/1-framework/1-core/framework-components/src/control | 15 | 18 | 81 | 81 | 1.000 | none | no (model default) |
+| prisma__prisma | packages/1-framework/1-core/framework-components/src/shared | 13 | 17 | 81 | 81 | 1.000 | none | no (model default) |
+| prisma__prisma | packages/3-extensions/sql-orm-client/src | 15 | 32 | 51 | 51 | 1.000 | none | no (directories) |
+| prisma__prisma | packages/1-framework/3-tooling/cli/src/control-api/operations | 20 | 29 | 45 | 45 | 1.000 | none | no (model default) |
+| prisma__prisma | packages/1-framework/3-tooling/migration/src | 19 | 33 | 38 | 38 | 1.000 | none | no (model default) |
+| react__react | compiler/packages/babel-plugin-react-compiler/src | 2 | 16 | 94 | 93 | 0.989 | none | no (concentration) |
+| react__react | compiler/packages | 3 | 18 | 14 | 14 | 1.000 | none | no (evidence) |
+| react__react | compiler/scripts | 4 | 19 | 11 | 11 | 1.000 | none | no (evidence) |
+| react__react | packages/eslint-plugin-react-hooks/src | 1 | 18 | 10 | 10 | 1.000 | none | no (evidence) |
+| react__react | compiler/packages/react-mcp-server | 1 | 8 | 5 | 5 | 1.000 | none | no (evidence) |
+| storybookjs__storybook | code/core/src/types/modules | 11 | 21 | 103 | 103 | 1.000 | none | no (model default) |
+| storybookjs__storybook | scripts/eval/lib | 10 | 29 | 42 | 42 | 1.000 | none | no (model default) |
+| storybookjs__storybook | code/core/src/components/components | 27 | 66 | 40 | 40 | 1.000 | none | no (model default) |
+| storybookjs__storybook | code/core/src/csf | 6 | 13 | 34 | 33 | 0.971 | none | no (evidence) |
+| storybookjs__storybook | code/core/src | 9 | 41 | 31 | 31 | 1.000 | none | no (evidence) |
+| supabase__supabase | packages/common | 5 | 38 | 214 | 214 | 1.000 | none | no (concentration) |
+| supabase__supabase | apps/studio/components/ui | 79 | 140 | 91 | 91 | 1.000 | none | no (model default) |
+| supabase__supabase | apps/www/components | 58 | 114 | 80 | 80 | 1.000 | none | no (model default) |
+| supabase__supabase | packages/ui-patterns/src | 39 | 87 | 65 | 65 | 1.000 | none | no (model default) |
+| supabase__supabase | apps/docs/features/docs | 16 | 35 | 62 | 43 | 0.694 | none | no (ratio) |
+| typeorm__typeorm | src/driver | 28 | 65 | 201 | 201 | 1.000 | none | no (concentration) |
+| typeorm__typeorm | src/decorator/options | 26 | 26 | 26 | 26 | 1.000 | none | no (evidence) |
+| typeorm__typeorm | src/metadata-args | 21 | 23 | 21 | 21 | 1.000 | none | no (evidence) |
+| typeorm__typeorm | src/subscriber/event | 11 | 11 | 13 | 13 | 1.000 | none | no (evidence) |
+| typeorm__typeorm | src/entity-schema | 10 | 15 | 10 | 10 | 1.000 | none | no (evidence) |
+| vercel__next.js | packages/next/src/server | 32 | 191 | 74 | 74 | 1.000 | none | no (applicability) |
+| vercel__next.js | examples | 35 | 1091 | 43 | 41 | 0.953 | none | no (evidence) |
+| vercel__next.js | packages/next/src/server/app-render | 11 | 97 | 41 | 41 | 1.000 | none | no (applicability) |
+| vercel__next.js | packages/next | 12 | 121 | 40 | 40 | 1.000 | none | no (applicability) |
+| vercel__next.js | packages/next/src/server/dev | 9 | 33 | 36 | 36 | 1.000 | none | no (concentration) |
+| webpack__webpack | declarations/plugins | 24 | 25 | 51 | 51 | 1.000 | none | no (model default) |
+| webpack__webpack | test/configCases/typescript | 2 | 70 | 2 | 2 | 1.000 | none | no (evidence) |
+| webpack__webpack | examples | 1 | 329 | 1 | 1 | 1.000 | none | no (evidence) |
+
+### type_alias_prefix
+
+| repo | area | applicability | langFileCount | candidates | conforming | ratio | learned | stated |
+|---|---|---|---|---|---|---|---|---|
+| TryGhost__Ghost | apps/admin-x-framework/src/api | 33 | 43 | 131 | 131 | 1.000 | none | no (model default) |
+| TryGhost__Ghost | apps/shade/src/components/ui | 77 | 122 | 84 | 84 | 1.000 | none | no (model default) |
+| TryGhost__Ghost | ghost/core/core/server/services | 20 | 181 | 75 | 75 | 1.000 | none | no (applicability) |
+| TryGhost__Ghost | apps/shade/src/components/patterns | 22 | 28 | 44 | 44 | 1.000 | none | no (model default) |
+| TryGhost__Ghost | ghost/core/core/server/services/machine-payments | 9 | 12 | 39 | 39 | 1.000 | none | no (authors) |
+| angular__angular | packages/forms/test | 4 | 12 | 124 | 124 | 1.000 | none | no (concentration) |
+| angular__angular | packages/core/src/render3/interfaces | 10 | 21 | 62 | 52 | 0.839 | none | no (ratio) |
+| angular__angular | packages/router/src | 12 | 44 | 54 | 54 | 1.000 | none | no (model default) |
+| angular__angular | packages/core/src | 12 | 75 | 34 | 34 | 1.000 | none | no (evidence) |
+| angular__angular | packages/forms/src | 6 | 12 | 28 | 28 | 1.000 | none | no (evidence) |
+| appsmithorg__appsmith | app/client/packages/design-system/ads/src | 43 | 239 | 88 | 88 | 1.000 | none | no (applicability) |
+| appsmithorg__appsmith | app/client/src/workers/Evaluation/fns | 12 | 24 | 50 | 47 | 0.940 | T | no (evidence) |
+| appsmithorg__appsmith | app/client/src/git/requests | 32 | 65 | 45 | 45 | 1.000 | none | no (model default) |
+| appsmithorg__appsmith | app/client/packages/design-system/widgets/src/components | 34 | 176 | 37 | 37 | 1.000 | none | no (applicability) |
+| appsmithorg__appsmith | app/client/src/widgets | 23 | 192 | 35 | 35 | 1.000 | none | no (applicability) |
+| babel__babel | packages/babel-types/src | 7 | 22 | 73 | 72 | 0.986 | none | no (concentration) |
+| babel__babel | packages/babel-core/src/config | 14 | 21 | 71 | 71 | 1.000 | none | no (model default) |
+| babel__babel | packages/babel-parser/src | 8 | 10 | 60 | 60 | 1.000 | none | no (model default) |
+| babel__babel | packages | 33 | 282 | 53 | 53 | 1.000 | none | no (applicability) |
+| babel__babel | packages/babel-traverse/src/path | 11 | 20 | 27 | 27 | 1.000 | none | no (evidence) |
+| backstage__backstage | packages/backend-openapi-utils/src/types | 7 | 8 | 74 | 74 | 1.000 | none | no (model default) |
+| backstage__backstage | packages/frontend-plugin-api/src/apis/definitions | 18 | 24 | 69 | 64 | 0.928 | none | no (evidence) |
+| backstage__backstage | packages/ui/src/components | 42 | 211 | 68 | 68 | 1.000 | none | no (applicability) |
+| backstage__backstage | packages/core-components/src/components | 36 | 129 | 67 | 66 | 0.985 | none | no (model default) |
+| backstage__backstage | packages/core-components/src/layout | 23 | 59 | 52 | 52 | 1.000 | none | no (model default) |
+| calcom__cal.diy | packages/ui/components | 40 | 142 | 82 | 79 | 0.963 | none | no (evidence) |
+| calcom__cal.diy | packages/lib | 39 | 209 | 81 | 80 | 0.988 | none | no (applicability) |
+| calcom__cal.diy | packages/features/bookings/lib | 29 | 73 | 77 | 77 | 1.000 | none | no (model default) |
+| calcom__cal.diy | packages/types | 20 | 30 | 76 | 75 | 0.987 | none | no (model default) |
+| calcom__cal.diy | packages/features | 34 | 117 | 75 | 72 | 0.960 | none | no (evidence) |
+| discourse__discourse | frontend/discourse/app/lib | 6 | 272 | 23 | 23 | 1.000 | none | no (evidence) |
+| discourse__discourse | frontend/discourse/app/lib/blocks/-internals | 6 | 25 | 13 | 13 | 1.000 | none | no (evidence) |
+| discourse__discourse | frontend/discourse/float-kit | 3 | 16 | 9 | 9 | 1.000 | none | no (evidence) |
+| discourse__discourse | frontend/discourse/app/blocks/conditions | 2 | 8 | 3 | 3 | 1.000 | none | no (evidence) |
+| discourse__discourse | frontend/discourse/app/static | 2 | 26 | 2 | 2 | 1.000 | none | no (evidence) |
+| empire-flippers__client | src/components/base | 10 | 122 | 18 | 17 | 0.944 | T | no (evidence) |
+| empire-flippers__client | src/components | 11 | 148 | 13 | 9 | 0.692 | T | no (ratio) |
+| empire-flippers__client | src/types | 5 | 39 | 12 | 9 | 0.750 | T | no (ratio) |
+| empire-flippers__client | src/components/Calendar | 1 | 12 | 8 | 7 | 0.875 | T | no (ratio) |
+| empire-flippers__client | src/hooks | 5 | 51 | 7 | 4 | 0.571 | T | no (ratio) |
+| eslint__eslint | lib/types | 2 | 4 | 62 | 62 | 1.000 | none | no (concentration) |
+| eslint__eslint | tests/lib | 1 | 19 | 1 | 1 | 1.000 | none | no (evidence) |
+| instructure__canvas-lms | ui/features | 106 | 966 | 213 | 213 | 1.000 | none | no (applicability) |
+| instructure__canvas-lms | ui/shared | 79 | 753 | 148 | 148 | 1.000 | none | no (applicability) |
+| instructure__canvas-lms | ui/features/lti_registrations/manage | 41 | 68 | 80 | 80 | 1.000 | none | no (model default) |
+| instructure__canvas-lms | ui | 4 | 14 | 78 | 78 | 1.000 | none | no (concentration) |
+| instructure__canvas-lms | ui/shared/grading | 14 | 48 | 73 | 73 | 1.000 | none | no (model default) |
+| mastodon__mastodon | app/javascript/mastodon/components | 49 | 167 | 71 | 71 | 1.000 | none | no (model default) |
+| mastodon__mastodon | app/javascript/mastodon/models | 14 | 17 | 49 | 49 | 1.000 | none | no (model default) |
+| mastodon__mastodon | app/javascript/mastodon/api_types | 14 | 21 | 27 | 27 | 1.000 | none | no (evidence) |
+| mastodon__mastodon | app/javascript/mastodon/features/emoji | 6 | 23 | 23 | 23 | 1.000 | none | no (evidence) |
+| mastodon__mastodon | app/javascript/mastodon/components/form_fields | 18 | 25 | 18 | 18 | 1.000 | none | no (evidence) |
+| microsoft__vscode | src/vs/platform/agentHost/node/codex/protocol/generated/v2 | 602 | 603 | 602 | 602 | 1.000 | none | no (authors) |
+| microsoft__vscode | src/vs/workbench/api/common | 31 | 120 | 131 | 89 | 0.679 | none | no (ratio) |
+| microsoft__vscode | extensions/copilot/src/platform | 44 | 223 | 124 | 115 | 0.927 | none | no (evidence) |
+| microsoft__vscode | src/vs/base/common | 38 | 120 | 120 | 110 | 0.917 | none | no (evidence) |
+| microsoft__vscode | src/vs/platform | 58 | 280 | 110 | 88 | 0.800 | none | no (ratio) |
+| opf__openproject | frontend/src/app/shared/components | 14 | 132 | 18 | 17 | 0.944 | none | no (evidence) |
+| opf__openproject | frontend/src/app/shared/helpers | 5 | 40 | 14 | 14 | 1.000 | none | no (evidence) |
+| opf__openproject | frontend/src/app/features/work-packages/components | 9 | 82 | 10 | 10 | 1.000 | none | no (evidence) |
+| opf__openproject | frontend/src/stimulus/controllers/dynamic | 6 | 98 | 9 | 9 | 1.000 | none | no (evidence) |
+| opf__openproject | frontend/src/stimulus/controllers/dynamic/sortable-lists | 5 | 12 | 8 | 8 | 1.000 | none | no (evidence) |
+| prisma__prisma | test/integration/test/ports/prisma/functional | 111 | 321 | 1622 | 1622 | 1.000 | none | no (model default) |
+| prisma__prisma | test/integration/test/ports/prisma/functional/relation-mode-gh-1-to-1/_fixture | 16 | 24 | 248 | 248 | 1.000 | none | no (model default) |
+| prisma__prisma | test/integration/test/ports/prisma/functional/relation-mode-gh-1-to-n/_fixture | 16 | 24 | 248 | 248 | 1.000 | none | no (model default) |
+| prisma__prisma | packages/3-extensions/sql-orm-client/test | 31 | 71 | 235 | 235 | 1.000 | none | no (model default) |
+| prisma__prisma | packages/2-sql/2-authoring/contract-ts/src | 13 | 17 | 227 | 227 | 1.000 | none | no (directories) |
+| react__react | compiler/packages/babel-plugin-react-compiler/src/HIR | 20 | 30 | 195 | 191 | 0.979 | none | no (concentration) |
+| react__react | packages/react-devtools-shared/src/devtools/views/Components | 40 | 48 | 95 | 95 | 1.000 | none | no (model default) |
+| react__react | packages/react-reconciler/src | 27 | 65 | 50 | 50 | 1.000 | none | no (directories) |
+| react__react | compiler/packages/babel-plugin-react-compiler/src | 7 | 16 | 44 | 44 | 1.000 | none | no (model default) |
+| react__react | packages/react-devtools-shared/src | 9 | 23 | 44 | 44 | 1.000 | none | no (concentration) |
+| storybookjs__storybook | code/core/src/types/modules | 11 | 21 | 123 | 123 | 1.000 | none | no (model default) |
+| storybookjs__storybook | code/core/src/shared/open-service | 20 | 45 | 120 | 120 | 1.000 | none | no (model default) |
+| storybookjs__storybook | agent-eval/evals | 58 | 118 | 61 | 61 | 1.000 | none | no (authors) |
+| storybookjs__storybook | code/core/src/csf | 6 | 13 | 60 | 58 | 0.967 | none | no (evidence) |
+| storybookjs__storybook | code/renderers/vue3/src | 12 | 25 | 54 | 54 | 1.000 | none | no (model default) |
+| supabase__supabase | apps/studio/data | 190 | 260 | 555 | 521 | 0.939 | none | no (model default) |
+| supabase__supabase | apps/studio/data/database | 29 | 31 | 107 | 107 | 1.000 | none | no (model default) |
+| supabase__supabase | apps/studio/data/storage | 35 | 40 | 101 | 101 | 1.000 | none | no (model default) |
+| supabase__supabase | apps/studio/data/organizations | 30 | 33 | 84 | 84 | 1.000 | none | no (model default) |
+| supabase__supabase | apps/studio/data/replication | 26 | 31 | 78 | 78 | 1.000 | none | no (model default) |
+| typeorm__typeorm | src/driver | 4 | 65 | 144 | 144 | 1.000 | none | no (concentration) |
+| typeorm__typeorm | src/driver/types | 8 | 12 | 26 | 26 | 1.000 | none | no (evidence) |
+| typeorm__typeorm | src/find-options | 8 | 14 | 13 | 13 | 1.000 | none | no (evidence) |
+| typeorm__typeorm | src/common | 8 | 9 | 9 | 9 | 1.000 | none | no (evidence) |
+| typeorm__typeorm | src/metadata/types | 9 | 10 | 9 | 9 | 1.000 | none | no (evidence) |
+| vercel__next.js | packages/next/src/server | 47 | 191 | 151 | 150 | 0.993 | none | no (applicability) |
+| vercel__next.js | packages/next/src/lib/metadata | 13 | 29 | 142 | 142 | 1.000 | none | no (model default) |
+| vercel__next.js | packages/next/src/server/app-render | 36 | 97 | 133 | 133 | 1.000 | none | no (model default) |
+| vercel__next.js | packages/next/src/shared/lib | 27 | 110 | 129 | 129 | 1.000 | none | no (applicability) |
+| vercel__next.js | turbopack/crates | 15 | 71 | 93 | 93 | 1.000 | none | no (applicability) |
+| webpack__webpack | declarations/plugins | 14 | 25 | 52 | 52 | 1.000 | none | no (model default) |
+| webpack__webpack | test/configCases/typescript | 4 | 70 | 4 | 4 | 1.000 | none | no (evidence) |
+| webpack__webpack | test/configCases/library | 2 | 138 | 3 | 3 | 1.000 | none | no (evidence) |
+| webpack__webpack | test/configCases/typescript/basic | 1 | 8 | 1 | 1 | 1.000 | none | no (evidence) |
+
+All five spread, which is what step 3 asks. The ratio is a point ratio over the area's own sites,
+so the 0.90 in each sentence is the gate the ratio has to clear before any interval is computed.
+
+- **extends_base** spreads from 0.071 to 1.000 over 111 areas of 24 repositories, 73 of them under
+  0.90, and it states on one area each of Ghost, discourse, react, typeorm and next.js.
+- **class_base** spreads from 0.109 to 1.000 over 96 areas of 20 repositories, 65 of them under
+  0.90, and it states on 19 areas of nine Ruby repositories, seven of those empire-flippers/api's.
+- **module_include** spreads from 0.067 to 1.000 over 92 areas of 19 repositories, 82 of them under
+  0.90, and it states on one area each of discourse and fastlane; the paragraph below says why so
+  few, and it is the row counting sites rather than the corpus disagreeing.
+- **interface_prefix** spreads from 0.527 to 1.000 over 95 areas of 20 repositories, 9 of them
+  under 0.90, and it states on 14 areas of vscode and 6 of the client. 33 more areas cleared every
+  gate and print counts because `none` is what the model writes anyway.
+- **type_alias_prefix** spreads from 0.571 to 1.000 over 96 areas of 20 repositories, 7 of them
+  under 0.90, and it states nowhere: 33 areas cleared the gates and every one of them learned
+  `none`, which is the model default.
+
+Nothing stating `type_alias_prefix` is the row working rather than the row broken. A `T` prefix on a
+type alias is rare, `none` is the model default for the row, and a repository that prefixes nothing
+prints counts instead of a sentence nobody needs.
 
 `module_include` deserves an issue. On empire-flippers/api every worker includes `Sidekiq::Worker`
 and one more module, and the row counts include sites rather than classes, so the second include
@@ -402,14 +962,14 @@ Wilson lower bound is under the 0.90 gate, so it prints as a count. It is stated
 ```
 ## What lives where
 
-- test: 39 node:test specs and 4 other
-- lib: 41 .mjs, 1 .json; 29 of 41 have a namesake test under test
-- scripts: 12 .mjs; 3 of 12 have a namesake test under test
+- test: 40 node:test specs and 4 other
+- lib: 42 .mjs, 1 .json; 29 of 42 have a namesake test under test
+- scripts: 12 .mjs; 4 of 12 have a namesake test under test
 - docs: 14 .md
 - .github: 5 .yml, 3 .md
 - commands: 3 .md
 - and 17 more files in directories under the floor
-- tests: 39 node:test specs under test; 29 of 41 .mjs files have a namesake test
+- tests: 40 node:test specs under test; 29 of 42 .mjs files have a namesake test
 
 Match sibling test shape; skip tests where siblings have none.
 ```
@@ -455,7 +1015,7 @@ Match directory granularity; don't extract into a sibling module what the direct
 ```
 ## What lives where
 
-- test: 538 minitest specs, 92 test files and 136 other
+- test: 538 minitest specs, 82 test files and 146 other
 - app/models: 238 .rb, 7 .json; 140 of 238 have a namesake test under test/unit/app/models
 - db: 223 .rb, 2 .csv and 3 other; 0 of 223 have a namesake test
 - features: 96 .rb, 55 .feature; 1 test file under support; 2 of 95 have a namesake test under test
@@ -463,7 +1023,7 @@ Match directory granularity; don't extract into a sibling module what the direct
 - app/presenters/publishing_api: 66 .rb; 61 of 66 have a namesake test under test/unit/app/presenters/publishing_api
 - app/helpers: 52 .rb; 31 of 52 have a namesake test under test/unit/app/helpers
 - and 8 more directories holding 1018 files
-- tests: 538 minitest specs under test; 111 test files under test; 5 RSpec under test/unit/app/helpers; 140 of 238 .rb files have a namesake test
+- tests: 538 minitest specs under test; 101 test files under test; 5 RSpec under test/unit/app/helpers; 140 of 238 .rb files have a namesake test
 
 Match sibling test shape; skip tests where siblings have none.
 ```
@@ -563,7 +1123,7 @@ Match directory granularity; don't extract into a sibling module what the direct
 ```
 ## What lives where
 
-- spec: 657 RSpec specs, 4 test files and 461 other
+- spec: 655 RSpec specs, 4 test files and 463 other
 - lib/chef: 797 .rb, 12 .erb and 2 other; 499 of 797 have a namesake test under spec/unit
 - kitchen-tests: 66 .rb, 6 .yml and 16 other; 19 RSpec specs; 0 of 47 have a namesake test
 - chef-utils: 37 .rb, 4 (none) and 2 other; 14 RSpec specs under dsl; 0 of 23 have a namesake test
@@ -571,7 +1131,7 @@ Match directory granularity; don't extract into a sibling module what the direct
 - .expeditor: 17 .sh, 11 .ps1 and 13 other
 - docs/dev: 39 .md
 - and 1 more directory holding 113 files
-- tests: 696 RSpec specs under spec; 5 test files under spec/unit; 499 of 797 .rb files have a namesake test
+- tests: 694 RSpec specs under spec; 5 test files under spec/unit; 499 of 797 .rb files have a namesake test
 
 Match sibling test shape; skip tests where siblings have none.
 ```
@@ -690,7 +1250,7 @@ Match directory granularity; don't extract into a sibling module what the direct
 ```
 ## What lives where
 
-- spec: 101 RSpec specs, 1 test file and 32 other
+- spec: 100 RSpec specs, 1 test file and 33 other
 - config: 31 .rb, 6 .yml; 2 of 31 have a namesake test under spec
 - app/models: 20 .rb; 18 of 20 have a namesake test under spec/models
 - app/controllers: 18 .rb; 16 of 18 have a namesake test under spec/controllers
@@ -698,7 +1258,7 @@ Match directory granularity; don't extract into a sibling module what the direct
 - app/helpers: 8 .rb; 4 of 8 have a namesake test under spec/helpers
 - app/interactors: 7 .rb; 7 of 7 have a namesake test under spec/interactors
 - and 7 more directories holding 297 files
-- tests: 101 RSpec specs under spec; 1 test file under spec/models; 2 of 31 .rb files have a namesake test
+- tests: 100 RSpec specs under spec; 1 test file under spec/models; 2 of 31 .rb files have a namesake test
 
 Match sibling test shape; skip tests where siblings have none.
 ```
@@ -782,14 +1342,14 @@ Match sibling test shape; skip tests where siblings have none.
 ## What lives where
 
 - ui: 3609 .tsx (JSX), 1865 .js and 4601 other; 3235 test files under __tests__; 110 vitest specs under __tests__; 2 jest specs under test-utils; 0 of 2361 have a namesake test; 2417 sibling modules named index/types/utils; 1506 files inline a helper
-- spec: 2732 RSpec specs, 1 test file and 473 other
+- spec: 2731 RSpec specs, 1 test file and 474 other
 - gems: 687 .rb, 180 .json and 397 other; 239 RSpec specs; 0 of 448 have a namesake test
 - lib: 808 .rb, 20 .rake and 22 other; 463 of 808 have a namesake test under spec/lib
 - app/models: 688 .rb; 516 of 688 have a namesake test under spec/models
 - packages/canvas-rce/src/rce/plugins: 163 .jsx (JSX), 154 .js and 136 other; 188 test files under __tests__; 0 of 83 have a namesake test; 152 sibling modules named plugin/index/utils; 67 files inline a helper
 - app/graphql: 390 .rb, 5 .md; 232 of 390 have a namesake test under spec/graphql
 - and 8 more directories holding 4982 files
-- tests: 3519 test files under ui; 2971 RSpec under spec; 125 vitest under ui; and 1 more; 0 of 2361 .tsx files have a namesake test
+- tests: 3519 test files under ui; 2970 RSpec under spec; 125 vitest under ui; and 1 more; 0 of 2361 .tsx files have a namesake test
 
 Match sibling test shape; skip tests where siblings have none.
 Match directory granularity; don't extract into a sibling module what the directory's files inline.
@@ -854,14 +1414,14 @@ Match sibling test shape; skip tests where siblings have none.
 ## What lives where
 
 - modules: 4029 .rb, 2982 .yml and 771 other; 1406 RSpec specs; 8 test files; 0 of 2623 have a namesake test
-- spec: 2633 RSpec specs, 5 test files and 469 other
+- spec: 2630 RSpec specs, 5 test files and 472 other
 - app/models: 988 .rb, 5 .yml and 4 other; 423 of 988 have a namesake test under spec/models
 - app/components: 574 .rb, 412 .erb and 55 other; 168 of 574 have a namesake test under spec/components
 - frontend/src/app/features: 527 .ts, 121 .html and 54 other; 22 test files; 2 vitest specs; 24 of 503 have a namesake test under frontend/src/app/features
 - app/services: 479 .rb; 263 of 479 have a namesake test under spec/services
 - lib/api/v3: 442 .rb; 137 of 442 have a namesake test under spec/lib/api/v3
 - and 8 more directories holding 7948 files
-- tests: 4039 RSpec specs; 106 test files under frontend/src; 73 vitest under frontend/src; 0 of 2623 .rb files have a namesake test
+- tests: 4036 RSpec specs; 106 test files under frontend/src; 73 vitest under frontend/src; 0 of 2623 .rb files have a namesake test
 
 Match sibling test shape; skip tests where siblings have none.
 ```
@@ -908,15 +1468,15 @@ Match sibling test shape; skip tests where siblings have none.
 ```
 ## What lives where
 
-- lib/puppet: 1009 .rb, 5 .erb and 4 other; 1 test file under util; 632 of 1008 have a namesake test under spec/unit
+- lib/puppet: 1009 .rb, 5 .erb and 4 other; 633 of 1009 have a namesake test under spec/unit
 - spec/unit: 676 RSpec specs, 4 test files and 5 other
 - acceptance: 255 .rb, 59 (none) and 12 other; 3 RSpec specs under acceptance; 2 test files under windows; 3 of 250 have a namesake test under acceptance
 - spec/integration: 69 RSpec specs
-- spec/lib: 38 .rb; 2 RSpec specs; 1 of 36 have a namesake test under spec/lib
+- spec/lib: 38 .rb; 1 RSpec spec under matchers; 1 of 37 have a namesake test under spec/lib
 - benchmarks: 49 .erb, 24 (none) and 34 other
 - references: 40 .md
 - and 183 more files in directories under the floor
-- tests: 764 RSpec specs under spec/unit; 7 test files; 632 of 1008 .rb files have a namesake test
+- tests: 761 RSpec specs under spec/unit; 6 test files; 633 of 1009 .rb files have a namesake test
 
 Match sibling test shape; skip tests where siblings have none.
 ```
