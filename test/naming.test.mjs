@@ -163,3 +163,25 @@ test("both AST naming rows are reachable from the registry", async () => {
   assert.ok(keys.includes("function_naming_case"));
   assert.ok(keys.includes("exported_symbol_case"));
 });
+
+/* --- a learned class matching the model's own class is map-noise --- */
+
+test("a learned class equal to the model default renders as counts", () => {
+  const r = verdictFor(gatedDim({ learned: "camelCase", learnedClasses: true }), {
+    current: { fileCount: 12, dirCount: 2 },
+    authors: 3,
+    defaultSide: () => null,
+    defaultClass: () => "camelCase",
+  });
+  assert.equal(r.states, "claim");
+  assert.equal(r.matchesDefault, true);
+});
+
+test("a learned class the model does not write keeps stating", () => {
+  const r = verdictFor(gatedDim({ learned: "snake_case", learnedClasses: true }), {
+    current: { fileCount: 12, dirCount: 2 },
+    authors: 3,
+    defaultClass: () => "camelCase",
+  });
+  assert.equal(r.matchesDefault, false);
+});
