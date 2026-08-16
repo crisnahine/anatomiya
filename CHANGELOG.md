@@ -7,6 +7,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- Five learned rows, so a map says what a new file in this directory is expected to sit on.
+  `extends_base` and `class_base` learn the superclass a directory's classes name, `module_include`
+  the module its class and module bodies mix in, and `interface_prefix` and `type_alias_prefix` the
+  letter its declared type names carry. The first three learn a name out of the repository's own
+  source, so the sentence is encoded before it is rendered. The last two can learn that there is no
+  prefix at all, which is what a model writes unprompted, so a repository that prefixes nothing
+  prints counts and a prefixed one states.
+
 ### Fixed
 
 - The encoder strips `--!>` as well as `-->`: parsers close a comment on either, so a
