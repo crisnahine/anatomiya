@@ -663,3 +663,37 @@ test("a Rails repository is still asked", needsRuby, async (t) => {
     "app/models is the shape, so the question applies"
   );
 });
+
+test("a degraded checker suppresses its own claims across a real scan", async (t) => {
+  // B8's whole point. The tier ran on two real repositories at 70% and 29%
+  // resolution, and both stated semantic claims anyway, because the tier's
+  // state reached the record and never reached the verdict.
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-degraded-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
+  mkdirSync(join(dir, "src"), { recursive: true });
+  // No tsconfig, so the tier is degraded by rule, and chains the checker could
+  // not resolve either way.
+  for (let i = 0; i < 14; i++) {
+    writeFileSync(
+      join(dir, "src", `f${i}.ts`),
+      `export function f${i}(s: string) {\n  return s.trim().toLowerCase()\n}\n`
+    );
+  }
+  git("init", "-q");
+  git("config", "user.email", "t@t.test");
+  git("config", "user.name", "T");
+  git("add", "-A");
+  git("commit", "-qm", "init");
+
+  const r = await scan(dir, { deep: true });
+
+  assert.equal(r.semantic.ran, true);
+  assert.equal(r.semantic.status, "degraded", `the tier was expected degraded, got ${r.semantic.reason}`);
+  for (const area of r.areas) {
+    for (const d of area.dimensions.filter((x) => x.key === "law_of_demeter")) {
+      assert.equal(d.states, null, `${area.path} stated a semantic claim off a degraded tier`);
+      assert.equal(d.gate, "degraded-semantic", `${area.path} closed it for ${d.gate} instead`);
+    }
+  }
+});
