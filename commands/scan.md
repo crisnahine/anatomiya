@@ -16,6 +16,8 @@ Run the scan and report what it found.
 2. Report what came back, in this order:
    - how many files and areas, and how long it took
    - how many claims were stated, and how many printed as counts only
+   - how much of the layout printed: the root directories that got a line versus the ones that
+     folded away, the test groups counted, and how many areas' roster lines state imports or reuse
    - which population the gates read: the baseline line names the pinned commit, or says no
      baseline is pinned. Unpinned means the claims are measured against the current working tree
      and no later check finding can exceed FIX

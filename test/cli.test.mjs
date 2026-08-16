@@ -205,6 +205,31 @@ test("a scan names the root it resolved to, because a path argument does not sco
   assert.ok(!existsSync(join(printed, "src", "src")), "the argument was widened to the root, so the root is what prints");
 });
 
+/** Two sibling directories, each past the floor, so the layout counts two roots. */
+function repoWithTwoRoots(t) {
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-cli-layout-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+  for (const sub of ["alpha", "beta"]) {
+    mkdirSync(join(dir, sub), { recursive: true });
+    for (let i = 0; i < 5; i++) writeFileSync(join(dir, sub, `f${i}.ts`), `export const a${i} = ${i}\n`);
+  }
+  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
+  git("init", "-q");
+  git("config", "user.email", "t@t.test");
+  git("config", "user.name", "T");
+  git("add", "-A");
+  git("commit", "-qm", "init");
+  return dir;
+}
+
+test("the scan summary says how much of the layout it printed", (t) => {
+  const repo = repoWithTwoRoots(t);
+  const out = String(execFileSync(process.execPath, [join(ROOT, "bin", "anatomiya.mjs"), "scan", repo], { stdio: "pipe" }));
+
+  assert.match(out, /^layout: 2 roots, 0 folded, tests: none; roster lines: 0 areas with imports, 0 with reuse$/m, out);
+});
+
 test("untracked source is reported rather than counted as a repository with nothing in it", (t) => {
   // The corpus is tracked files, which is the rule. A repository whose first
   // commit has not landed used to get an empty map, exit 0 and an overview

@@ -9,6 +9,7 @@ import {
   unexaminedPhrase,
   untrackedSentence,
   plural,
+  layoutSummary,
   OVERVIEW_AREAS,
   MAX_LINES,
 } from "../lib/render.mjs";
@@ -1348,6 +1349,36 @@ test("the roster is byte-stable across two scans of unchanged source", () => {
   );
 
   assert.equal(Buffer.compare(Buffer.from(first), Buffer.from(second)), 0);
+});
+
+/* --- the scan summary's own layout line --- */
+
+test("the summary line says how many roots and test groups the layout counted", () => {
+  const areas = [
+    area({ imports: [{ module: "react", files: 3, of: 5 }], reused: [] }),
+    area({ imports: [], reused: [{ name: "getFullName", file: "src/services/name.ts", importers: 42 }] }),
+    area({ imports: null, reused: null }),
+  ];
+
+  assert.equal(
+    layoutSummary(clientLayout(), areas),
+    "layout: 7 roots, 6 folded, tests: 102 cypress under cypress/integration, 4 vitest under src; " +
+      "roster lines: 1 area with imports, 1 with reuse"
+  );
+});
+
+test("the summary line says tests: none rather than an empty list", () => {
+  const bare = { size: 4, minFiles: 3, roots: [], more: { roots: 0, files: 4 }, tests: [], principles: [], truncated: false };
+
+  assert.equal(layoutSummary(bare, []), "layout: 0 roots, 0 folded, tests: none; roster lines: 0 areas with imports, 0 with reuse");
+});
+
+test("a truncated scan's summary line says its layout was not counted", () => {
+  assert.equal(layoutSummary(truncatedLayout(), []), "layout: not counted, the scan was truncated");
+});
+
+test("no layout on the record prints no summary line", () => {
+  assert.equal(layoutSummary(null, []), null, "an older record carries no layout");
 });
 
 test("an area says which kinds of file it holds, right under its heading", () => {
