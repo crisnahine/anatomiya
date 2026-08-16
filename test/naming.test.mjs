@@ -185,3 +185,25 @@ test("a learned class the model does not write keeps stating", () => {
   });
   assert.equal(r.matchesDefault, false);
 });
+
+/* --- the filter must fire through the real pipeline, not a hand-built record --- */
+
+test("a learned class equal to the model default is flagged through reduceArea itself", async () => {
+  const { reduceArea, verdictFor } = await import("../lib/reduce.mjs");
+  const rels = Array.from({ length: 40 }, (_, i) => `src/mod${i}.ts`);
+  const area = { langs: ["js"], files: rels.map((rel) => ({ rel, lang: "js" })) };
+  const parsed = rels.map((rel) => ({
+    rel,
+    ok: true,
+    hits: { function_naming_case: [{ conforming: false, where: "fetchAll", class: "camelCase" }] },
+  }));
+  const slot = reduceArea(area, parsed).find((d) => d.key === "function_naming_case");
+  assert.equal(slot.learned, "camelCase");
+  const r = verdictFor(slot, {
+    current: { fileCount: 40, dirCount: 1 },
+    authors: 3,
+    defaultClass: (key) => (key === "function_naming_case" ? "camelCase" : null),
+  });
+  assert.equal(r.states, "claim");
+  assert.equal(r.matchesDefault, true, "the record reduceArea builds must reach the class branch");
+});

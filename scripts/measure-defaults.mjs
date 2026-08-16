@@ -211,13 +211,17 @@ async function main() {
           if (trial.reason.includes("not on PATH")) process.exit(1);
           continue;
         }
-        runs++;
+        let contributed = false;
         for (const f of trial.wrote) {
           // `language` answers "js" for anything, so the extension filter is
           // what keeps a README out of the parse.
           if (!/\.(ts|mts|cts|tsx|js|jsx|mjs|cjs|rb|rake)$/.test(f.rel)) continue;
           outputs.push({ rel: `${task.id}-${i}/${f.rel}`, lang: language(f.rel), source: f.source });
+          contributed = true;
         }
+        // A trial that wrote nothing parseable contributed no sites, and
+        // counting it would overstate the evidence behind every entry.
+        if (contributed) runs++;
         console.error(`${task.id}#${i}: ${trial.wrote.length} file(s)`);
       } finally {
         rmSync(dir, { recursive: true, force: true });

@@ -195,6 +195,13 @@ const SRC = {
     end
   `,
 
+  http_raw_block: `
+    def fetch_all
+      Net::HTTP.start(url) do |http|
+        http.request(req)
+      end
+    end
+  `,
   http_model: `
     class Order
       def sync
@@ -650,4 +657,9 @@ test("Net::HTTP and URI.open are direct sites and client calls conform", needsRu
 
 test("an ActiveRecord-shaped call on a client-named constant is not an HTTP site", needsRuby, () => {
   assert.deepEqual(counts("http_through_client", "http_model"), { candidates: 1, conforming: 1 });
+});
+
+test("a raw Net::HTTP block handle named http is not a conforming client", needsRuby, () => {
+  assert.deepEqual(counts("http_through_client", "http_raw_block"), { candidates: 1, conforming: 0 },
+    "only the Net::HTTP.start site counts, and it counts against");
 });

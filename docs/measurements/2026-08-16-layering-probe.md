@@ -9,7 +9,7 @@ script was throwaway and is not committed.
 ## Numbers
 
 | repo | files | areas | relative specifiers | resolved | cross-area edges | pairs n>=6 | one-way at 0.9 | at the Wilson gate | fragile |
-|---|---|---|---|---|---|---|---|---|
+|---|---|---|---|---|---|---|---|---|---|
 | eslint | 853 | 29 | 5 | 2 | 0 | 0 | 0 | 0 | 0 |
 | webpack | 11,925 | 403 | 3,895 | 2,563 | 137 | 8 | 7 | 0 | 2 |
 | storybook | 4,688 | 258 | 7,646 | 7,229 | 2,327 | 118 | 66 (55.9%) | 1 | 37 of 66 |
