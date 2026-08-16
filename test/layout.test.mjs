@@ -14,7 +14,7 @@ test("the root floor is one percent of the corpus and never below three", () => 
   assert.equal(minRootFiles(100), 3);
 });
 
-test("a name or a directory the table does not know still names a test file", () => {
+test("a name the table does not know still names a test file", () => {
   for (const rel of [
     "src/a.test.ts",
     "src/a.spec.js",
@@ -22,14 +22,25 @@ test("a name or a directory the table does not know still names a test file", ()
     "src/__tests__/a.ts",
     "spec/a_spec.rb",
     "test/a_test.rb",
-    "cypress/integration/a.js",
-    "e2e/a.js",
-    "tests/a.js",
   ]) {
     assert.equal(isTestFile(file(rel, "js")), true, rel);
   }
   assert.equal(isTestFile(file("src/a.ts", "js")), false);
   assert.equal(isTestFile(file("src/latest/a.ts", "js")), false);
+});
+
+test("a directory called test does not make what sits in it a test", () => {
+  // The directory holds the support code as well as the specs. Counting all of
+  // it read `136 test files under spec/factories` on empire-flippers/api,
+  // `spec/support: 22 test files` on rubocop, and 1,979 fixture modules under
+  // webpack's `test/cases`.
+  assert.equal(isTestFile(file("spec/factories/users.rb", "ruby")), false);
+  assert.equal(isTestFile(file("cypress/support/commands.js", "js")), false);
+  assert.equal(isTestFile(file("test/foo.js", "js")), false);
+  assert.equal(isTestFile(file("test/cases/foo/lib.js", "js", { testCalls: false })), false);
+
+  assert.equal(isTestFile(file("spec/support/shared.rb", "ruby", { testCalls: true })), true);
+  assert.equal(isTestFile(file("test/cases/foo/index.js", "js", { testCalls: true })), true);
 });
 
 test("a file this tool does not parse is not a spec, wherever it sits", () => {
