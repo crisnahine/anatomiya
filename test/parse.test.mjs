@@ -342,7 +342,7 @@ test("a scan whose node_modules predates the stripper says which dependency is m
     writeFileSync(join(repo, "src", `f${i}.js`), `export const v${i} = ${i}\n`);
   }
   writeFileSync(join(repo, "src", "flowed.js"), FLOW_SOURCE + "\n");
-  git("init", "-q");
+  git("init", "-q", "-b", "main");
   git("config", "user.email", "t@t.test");
   git("config", "user.name", "T");
   git("add", "-A");

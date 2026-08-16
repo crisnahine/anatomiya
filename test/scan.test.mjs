@@ -680,7 +680,7 @@ test("a degraded checker suppresses its own claims across a real scan", async (t
       `export function f${i}(s: string) {\n  return s.trim().toLowerCase()\n}\n`
     );
   }
-  git("init", "-q");
+  git("init", "-q", "-b", "main");
   git("config", "user.email", "t@t.test");
   git("config", "user.name", "T");
   git("add", "-A");
