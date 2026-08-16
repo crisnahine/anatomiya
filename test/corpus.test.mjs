@@ -809,3 +809,13 @@ test("area discovery does not depend on the order the files arrived in", () => {
   assert.deepEqual(backward, forward);
   assert.deepEqual(forward, [...forward].sort(), "and the order is one a human can predict");
 });
+
+test("a yarn directory is vendor, wherever it sits", () => {
+  // Measured: 14 files across the 35-repository corpus, every one a
+  // machine-generated bundle, and the 2 MB releases sit at the parse timeout
+  // boundary, flipping between crashed and rejected across runs, which moves
+  // the always-loaded overview (A5).
+  assert.equal(isExcludedDir(".yarn/releases/yarn-4.8.1.cjs"), true);
+  assert.equal(isExcludedDir("workspaces/ui/.yarn/plugins/plugin-backstage.cjs"), true);
+  assert.equal(isExcludedDir("src/yarn-utils/a.ts"), false, "a directory merely named yarn-ish stays");
+});
