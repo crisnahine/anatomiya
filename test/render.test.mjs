@@ -1350,7 +1350,7 @@ test("the roster is byte-stable across two scans of unchanged source", () => {
   assert.equal(Buffer.compare(Buffer.from(first), Buffer.from(second)), 0);
 });
 
-test("an area says which kinds of file it holds, after what it asks of a new one", () => {
+test("an area says which kinds of file it holds, right under its heading", () => {
   const out = renderArea(
     area({
       kinds: root("src/services", {
@@ -1365,8 +1365,8 @@ test("an area says which kinds of file it holds, after what it asks of a new one
   const lines = out.split("\n");
 
   assert.equal(lines[6], "# src/services  40 files");
-  assert.equal(lines[8], "catch blocks use the error they caught", "the directive is delivered first");
-  assert.equal(lines[11], "kinds: 7 .tsx (JSX), 1 .ts; 0 test files; 0 of 7 have a namesake test");
+  assert.equal(lines[8], "kinds: 7 .tsx (JSX), 1 .ts; 0 test files; 0 of 7 have a namesake test");
+  assert.equal(lines[9], "catch blocks use the error they caught", "the directive follows it");
   assert.doesNotMatch(out, /other/, "the area's denominator is not the root line's");
 });
 
@@ -1655,4 +1655,30 @@ test("a directory name the encoder empties is still a subject", () => {
   );
 
   assert.equal(lines[2], "- (unnamed): 30 .ts");
+});
+
+test("the kinds line is budgeted where it gives way and printed where it is read", () => {
+  // Last in `blocks`, so a short budget spends the roster on it and it outlives
+  // nothing but the directives; first in the body, which is where it is read.
+  const stated = (n) => Array.from({ length: n }, (_, i) => dim({ key: `s${i}`, claim: `stated ${i}` }));
+  const counted = (n) =>
+    Array.from({ length: n }, (_, i) =>
+      dim({ key: `c${i}`, claim: `counted ${i}`, states: null, directive: false, gate: "ratio" })
+    );
+  const out = renderArea(
+    rosterArea({
+      globs: Array.from({ length: 25 }, (_, i) => glob(i)),
+      kinds: kindsOf(),
+      dimensions: [...stated(2), ...counted(4)],
+    })
+  );
+  const lines = out.split("\n");
+
+  assert.ok(lineCount(out) <= MAX_LINES, `${lineCount(out)} lines is past the bound`);
+  assert.equal(lines[30], "# src/services  40 files");
+  assert.equal(lines[32], "kinds: 7 .tsx (JSX), 1 .ts; 0 test files; 0 of 7 have a namesake test");
+  assert.equal(lines[33], "stated 0", "the directives follow it and outlive it");
+  assert.match(out, /^stated 1$/m);
+  assert.doesNotMatch(out, /^most files here import/m, "the roster gave way before the kinds line did");
+  assert.doesNotMatch(out, /^counted 0: no convention/m);
 });
