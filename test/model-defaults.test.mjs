@@ -4,8 +4,9 @@ import assert from "node:assert/strict";
 import { MODEL_DEFAULTS, defaultSideFor, assertModelDefaults } from "../lib/model-defaults.mjs";
 import { ALL_DIMENSIONS } from "../lib/dimensions.mjs";
 import { PAIRINGS } from "../lib/pairing.mjs";
+import { NAMING_CORPUS } from "../lib/dimensions-naming.mjs";
 
-const REGISTRY_KEYS = new Set([...ALL_DIMENSIONS, ...PAIRINGS].map((d) => d.key));
+const REGISTRY_KEYS = new Set([...ALL_DIMENSIONS, ...PAIRINGS, ...NAMING_CORPUS].map((d) => d.key));
 
 const entry = (over = {}) => ({
   default: "none",

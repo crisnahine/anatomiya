@@ -117,3 +117,49 @@ test("a naming tie produces no slot at all", async () => {
   const parsed = rels.map((rel) => ({ rel, ok: true, hits: {} }));
   assert.equal(reduceArea(area, parsed).find((d) => d.key === "file_naming_case"), undefined);
 });
+
+/* --- the AST naming rows --- */
+
+const astHits = async (key, src) => {
+  const { parseSync } = await import("oxc-parser");
+  const { NAMING_AST } = await import("../lib/dimensions-naming.mjs");
+  const { program } = parseSync("f.tsx", src, { sourceType: "module" });
+  const out = [];
+  NAMING_AST.find((d) => d.key === key).run(program, (h) => out.push(h));
+  return out;
+};
+
+test("function_naming_case votes with each module-level function's class", async () => {
+  const h = await astHits("function_naming_case", `
+    function fooBar() {}
+    function foo_bar() {}
+    const FooBar = () => {}
+    function foo() {}
+    function outer() { function innerName() {} }
+  `);
+  assert.deepEqual(h.map((x) => x.class).sort(), ["PascalCase", "camelCase", "snake_case"]);
+});
+
+test("a class method is not a module-level function site", async () => {
+  const h = await astHits("function_naming_case", `class C { fooBar() {} }`);
+  assert.equal(h.length, 0);
+});
+
+test("exported_symbol_case reads declarations and specifiers, never default", async () => {
+  const h = await astHits("exported_symbol_case", `
+    export function fooBar() {}
+    export const my_thing = 1;
+    export class OrderList {}
+    const plain = 1;
+    export { plain as renamedThing };
+    export default function ignoredName() {}
+  `);
+  assert.deepEqual(h.map((x) => x.class).sort(), ["PascalCase", "camelCase", "camelCase", "snake_case"]);
+});
+
+test("both AST naming rows are reachable from the registry", async () => {
+  const { dimensionsFor } = await import("../lib/dimensions.mjs");
+  const keys = dimensionsFor(["js"]).map((d) => d.key);
+  assert.ok(keys.includes("function_naming_case"));
+  assert.ok(keys.includes("exported_symbol_case"));
+});

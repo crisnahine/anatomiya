@@ -449,5 +449,38 @@
       "sideCounts": null,
       "source": "seed: unmeasured"
     }
+  },
+  "file_naming_case": {
+    "default": "none",
+    "provenance": {
+      "method": "literature",
+      "model": null,
+      "date": null,
+      "samples": null,
+      "sideCounts": null,
+      "source": "seed: unmeasured"
+    }
+  },
+  "function_naming_case": {
+    "default": "none",
+    "provenance": {
+      "method": "literature",
+      "model": null,
+      "date": null,
+      "samples": null,
+      "sideCounts": null,
+      "source": "seed: unmeasured"
+    }
+  },
+  "exported_symbol_case": {
+    "default": "none",
+    "provenance": {
+      "method": "literature",
+      "model": null,
+      "date": null,
+      "samples": null,
+      "sideCounts": null,
+      "source": "seed: unmeasured"
+    }
   }
 }

@@ -735,6 +735,9 @@ test("the counter-eligible set is exactly twelve named keys and every counter na
     "law_of_demeter",
     "migration_reversible", "migration_schema_only", "column_null_declared",
     "table_primary_key_declared", "reference_foreign_key",
+    // The other side of a learned class is another class, which the learning
+    // already picks; a hand-written inverse would fight it.
+    "function_naming_case", "exported_symbol_case",
   ];
 
   const carrying = ALL_DIMENSIONS.filter((d) => typeof d.counterClaim === "string").map((d) => d.key);
