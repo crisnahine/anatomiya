@@ -717,7 +717,7 @@ test("the counter-eligible set is exactly twelve named keys and every counter na
   // the field reads as refused, and the registry cannot tell the two apart.
   const eligible = [
     "function_style", "type_only_import", "import_extension", "test_call_style",
-    "assertion_style", "absent_is_null",
+    "assertion_style", "absent_is_null", "doc_comment_style",
     "record_lookup", "model_callbacks", "service_result_shape",
     "hook_call_style", "handler_is_named", "handler_memoised",
   ];

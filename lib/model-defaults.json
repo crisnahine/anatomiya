@@ -482,5 +482,16 @@
       "sideCounts": null,
       "source": "seed: unmeasured"
     }
+  },
+  "doc_comment_style": {
+    "default": "none",
+    "provenance": {
+      "method": "literature",
+      "model": null,
+      "date": null,
+      "samples": null,
+      "sideCounts": null,
+      "source": "seed: unmeasured"
+    }
   }
 }
