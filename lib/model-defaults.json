@@ -526,5 +526,27 @@
       "sideCounts": null,
       "source": "seed: unmeasured"
     }
+  },
+  "logger_over_puts": {
+    "default": "none",
+    "provenance": {
+      "method": "literature",
+      "model": null,
+      "date": null,
+      "samples": null,
+      "sideCounts": null,
+      "source": "seed: unmeasured"
+    }
+  },
+  "http_through_client": {
+    "default": "none",
+    "provenance": {
+      "method": "literature",
+      "model": null,
+      "date": null,
+      "samples": null,
+      "sideCounts": null,
+      "source": "seed: unmeasured"
+    }
   }
 }

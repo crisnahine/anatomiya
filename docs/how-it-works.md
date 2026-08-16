@@ -190,7 +190,7 @@ minutes and what a hung parse looks like is silence.
 
 ## 4. Dimensions and the three numbers
 
-A dimension is one claim about one area. 37 ship: 21 for JavaScript, 26 reachable in JSX, 11 for
+A dimension is one claim about one area. 39 ship: 21 for JavaScript, 26 reachable in JSX, 13 for
 Ruby. Each
 is defined by three quantities, not one.
 
@@ -253,6 +253,8 @@ in `check`.
 | `route_logging` | partial | js, jsx | logging goes through the repository's own logger, not the console |
 | `route_network` | partial | js, jsx | network calls go through the repository's own client, not fetch directly |
 | `route_env` | partial | js, jsx | environment reads go through the repository's own config module, not process.env |
+| `logger_over_puts` | partial | ruby | output goes through a logger, not puts |
+| `http_through_client` | partial | ruby | HTTP goes through the repository's own client, not `Net::HTTP` |
 
 The five JSX rows are the ones that make the JSX total 22 rather than 17: a `.tsx` or `.jsx` file is
 counted by every `js` dimension as well as these. The five migration rows are Rails and count as

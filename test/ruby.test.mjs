@@ -169,6 +169,32 @@ const SRC = {
     end
   `,
 
+  log_mixed: `
+    def work
+      puts "starting"
+      logger.info("started")
+      Rails.logger.warn("careful")
+      p result
+    end
+  `,
+  log_wrapped: `
+    class Job
+      def run
+        @logger.debug("x")
+      end
+    end
+  `,
+  http_mixed: `
+    class Sync
+      def run
+        Net::HTTP.get(uri)
+        URI.open("https://x")
+        ApiClient.get("/x")
+        client.post("/y")
+      end
+    end
+  `,
+
   scopes: `
     class Outer
       def run
@@ -596,4 +622,18 @@ test("a guard named as undefined keeps its default", needsRuby, async () => {
 
   assert.equal(out.error, null);
   assert.equal(out.parsed, 1);
+});
+
+// --- capability routing, Ruby side ---
+
+test("puts and friends are direct sites and logger calls conform", needsRuby, () => {
+  assert.deepEqual(counts("logger_over_puts", "log_mixed"), { candidates: 4, conforming: 2 });
+});
+
+test("an instance-variable logger conforms too", needsRuby, () => {
+  assert.deepEqual(counts("logger_over_puts", "log_wrapped"), { candidates: 1, conforming: 1 });
+});
+
+test("Net::HTTP and URI.open are direct sites and client calls conform", needsRuby, () => {
+  assert.deepEqual(counts("http_through_client", "http_mixed"), { candidates: 4, conforming: 2 });
 });

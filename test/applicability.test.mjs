@@ -341,6 +341,30 @@ const WITNESSES = {
     inapplicable: `def f\n  1\nend`,
   },
 
+  logger_over_puts: {
+    lang: "ruby",
+    applicable: [
+      `puts "x"`,
+      `pp result`,
+      `warn "careful"`,
+      `logger.info("x")`,
+      `Rails.logger.warn("x")`,
+      `@logger.debug("x")`,
+    ],
+    inapplicable: `compute(1)`,
+  },
+  http_through_client: {
+    lang: "ruby",
+    applicable: [
+      `Net::HTTP.get(uri)`,
+      `URI.open("https://x")`,
+      `ApiClient.get("/x")`,
+      `client.post("/y")`,
+      `@client.post("/y")`,
+    ],
+    inapplicable: `record.save`,
+  },
+
   // --- dimensions-rails.mjs ---
   migration_reversible: {
     lang: "ruby",
