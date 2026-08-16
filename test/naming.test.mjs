@@ -231,3 +231,22 @@ test("a leading digit run and its separator are cut before the stem is classifie
   assert.equal(classifyBasename("src/v2Client.ts"), "camelCase", "a digit inside a word is part of the word");
   assert.equal(classifyBasename("src/404.ts"), null, "digits alone name nothing");
 });
+
+/* --- the classifier is linear on hostile identifiers --- */
+
+test("classifyWord answers a long uppercase run followed by a non-word in linear time", async () => {
+  const { classifyWord } = await import("../lib/dimensions-naming.mjs");
+  // The camelCase pattern used to carry `(?:[A-Z][a-zA-Z0-9]*)+`, whose
+  // uppercase runs split ambiguously; 28 characters measured six seconds.
+  const hostile = "a" + "A".repeat(40) + "!";
+  const t = Date.now();
+  assert.equal(classifyWord(hostile), null);
+  assert.ok(Date.now() - t < 200, `took ${Date.now() - t} ms`);
+  // The behaviour the pattern encodes still holds on the shapes that matter.
+  assert.equal(classifyWord("fooBar"), "camelCase");
+  assert.equal(classifyWord("fooBARBaz"), "camelCase");
+  assert.equal(classifyWord("v2Client"), "camelCase");
+  assert.equal(classifyWord("FooBar"), "PascalCase");
+  assert.equal(classifyWord("foo"), null);
+  assert.equal(classifyWord("FOO"), "PascalCase");
+});
