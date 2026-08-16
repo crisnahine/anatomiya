@@ -1,12 +1,13 @@
 # Contributing
 
-Read `DECISIONS.md` first. It is 72 numbered rows, each one a measurement or a review finding reduced
+Read `DECISIONS.md` first. It is 78 numbered rows, each one a measurement or a review finding reduced
 to the decision it forces on the code. It is the build contract, and most questions you will have
 about why something is shaped the way it is are answered there in one line.
 
 ## Setup and tests
 
-Node 22 or newer. ES modules, `.mjs` everywhere. One runtime dependency, `oxc-parser`. Ruby
+Node 22 or newer. ES modules, `.mjs` everywhere. Two runtime dependencies, `oxc-parser` and
+`flow-remove-types`, the second loaded the first time a `.js`-family file is rejected. Ruby
 dimensions need `prism` 1.x, a default gem on Ruby 3.4 and up, so a system Ruby is
 usually enough. If you do not have Ruby, the Ruby tests skip and the rest still run.
 
@@ -86,6 +87,12 @@ and they do not get edited because a new implementation would be tidier.
 
 ## Adding a dimension
 
+Start at `docs/dimension-intake.md`, not at the registry. A row goes in the table before it goes in
+the code: which glossary entries the key answers, what it is renamed from if its own name would read
+as a verdict beside a ratio, and whether it has a denominator at all. `npm run check:docs` fails if a
+shipped key has no row there, and `lib/dimensions.mjs` refuses to load a claim that names a
+principle. (G2, G3, G4)
+
 A dimension is one counted claim about one area. It carries three numbers, never one:
 
 - `applicability` files holding at least one candidate site. Not files that could hold one: a site
@@ -123,6 +130,10 @@ The shape:
   claim: "catch blocks use the error they caught",
   counterClaim: null, // discarding the error is an absence, not a style anyone picked
   precision: "precise",
+  applicabilityPredicate: {
+    sites: "a file holding at least one catch clause, whether or not it binds the error",
+    blind: null,
+  },
   langs: ["js", "jsx"],
   run(program, add) {
     // one add() per candidate site, conforming decided per site
@@ -141,6 +152,10 @@ exists. It carries no `run`; the shape is a directory pair:
   claim: "a model ships with a spec",
   counterClaim: null,
   precision: "precise",
+  applicabilityPredicate: {
+    sites: "a .rb file anywhere under app/models whose own name does not end in _spec.rb, once the repository is seen using that suffix at all",
+    blind: null,
+  },
   langs: ["ruby"],
   from: "app/models",
   to: "spec/models",
@@ -191,8 +206,59 @@ at all. That third one is where the bugs live: a property key that spells the sa
 binding, a rethrow inside a catch, an inner arrow whose `try` sits inside the outer function's byte
 range.
 
-A dimension with no writable applicability predicate does not ship. If you cannot say in code which
-files could have participated, you cannot honestly report a ratio.
+A dimension with no writable applicability predicate does not ship, and the predicate is a field
+rather than advice. Every row carries:
+
+```js
+applicabilityPredicate: {
+  sites: "a file holding at least one catch clause, whether or not it binds the error",
+  blind: null,
+},
+```
+
+`sites` says which files could participate at all. Write it from the `run` body, not from the claim:
+the claim says what conforming means, this says what applicable means. `blind` is what the predicate
+cannot see, and it is tied to `precision` so the marker and the reason cannot disagree. A `partial`
+row needs a sentence there; a `precise` row spells `null`. An absent key is not a third state, and
+`assertApplicability` refuses the whole registry at load over one.
+
+Then add the witness pair in `test/applicability.test.mjs`: the sources your sentence says are
+applicable, and the neighbouring construct that must not count. A row with no witness fails the
+completeness test, and a sentence the code disagrees with fails the other two.
+
+`applicable` is a list, and the length is the point. Where your sentence names several forms, write
+one source per form the code treats differently: two call shapes, two node types, two spellings.
+
+Where the predicate recognises its construct through a closed table of names, every member of that
+table gets driven through it: in the witness list where the members are few, and in `TABLES` where
+they are not. Either way the members are written out in the test rather than read from the table. A table is one shape, so the witness pairs never notice it shrinking: dropping
+`next-intl` from the module list makes every file in such a repository inapplicable and changes no
+shape at all. An expectation read from the table would agree with the table by construction and
+could never disagree with it, which is why the list is spelled out. One source proves the sentence names something and nothing more:
+narrowing `optional_chaining` from six receiver names to one under-counts its applicability sixfold
+and a single `opts` witness stays green straight through it. Where the sentence promises a count,
+say the count, since a non-zero assertion proves nothing about it:
+
+```js
+applicable: [{ source: `<Child {...p} {...q} />`, sites: 2 }],
+```
+
+`inapplicable` is a list too, and each exclusion your sentence names earns one, by the same rule. Writing the
+applicable half and finding it hard is itself the answer: a predicate nobody can demonstrate is one
+nobody can audit.
+
+The share is auditable across repositories rather than by eye, one line at a time:
+
+```sh
+npm run audit:applicability -- /path/to/repo/.claude/anatomiya/facts.json ...
+```
+
+It flags any `precise` row whose median `applicability / langFileCount` sits under 0.25, falling back
+to the area's own file count where a slot has none, which is what the gate divides by. A flag is a
+prompt to open the row, never a verdict: measured across four repositories, all six flagged rows
+named a construct that is simply rare. The share is not what finds an under-counting predicate. It
+cannot separate one from a rare construct, and the one under-count found so far was caught by a
+witness, on a row the share never flagged.
 
 ## The bar a new dimension has to clear
 

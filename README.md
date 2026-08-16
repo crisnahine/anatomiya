@@ -25,7 +25,7 @@ memory of the last review, so it re-earns the same comment every time, and a cou
 only thing in the loop that does remember. Full numbers and caveats in [docs/why.md](docs/why.md).
 
 One correction to that table before you trust it. The per-pull-request obligations are what makes a
-repository's preventable share high in the measurement. Nine of the 40 dimensions that ship today are
+repository's preventable share high in the measurement. Nine of the 41 dimensions that ship today are
 file-to-file obligations, so a model without its spec is counted; a changeset file, which is owed per
 pull request rather than per file, is not. Those repositories are the ones the design is aimed at,
 not the ones it already serves fully.
@@ -51,7 +51,8 @@ which forbids a newline in a filename outright, and those tests skip with that r
 /plugin install anatomiya@crisnahine
 ```
 
-The scanner has one runtime dependency, `oxc-parser`. Install it once in the plugin directory:
+The scanner has two runtime dependencies, `oxc-parser` and `flow-remove-types`. Install them once
+in the plugin directory:
 
 ```
 npm install --omit=dev
@@ -246,9 +247,16 @@ claim that this finds bugs earlier is false.
 blocks a commit, a push, or a merge, and `check` reports rather than fails. If your linter already
 enforces a rule, the map restating it is waste, not defence in depth.
 
-**JavaScript, TypeScript and Ruby, nothing else.** 40 dimensions ship: 15 for JavaScript, 20 reachable
+**JavaScript, TypeScript and Ruby, nothing else.** 41 dimensions ship: 15 for JavaScript, 20 reachable
 in JSX, 20 for Ruby.
 A Python, Go or Rust repository gets an overview with no claims in it.
+
+One of the 41 needs the type checker and is the only thing `scan --deep` adds: `a call chain stays
+inside one type`. It is off by default because the checker was measured about 26x slower than the parse and
+whole-program, so it cannot be narrowed to the files you changed. It is a scan option only, for the same reason: a check would have to build the
+corpus twice. `--deep` needs the optional `typescript` dependency and the scanned repository's own
+dependencies on disk, refuses before doing any work if the first is missing, and says on the map when
+the checker answered badly rather than printing a clean-looking count.
 
 **Nine file-to-file obligations, and they are the newest and least settled part.** They ask whether a
 file of one shape ships with its companion: a model with its spec, a rake task with its spec. The
@@ -269,7 +277,7 @@ not cost coverage.
 
 ## Why it works the way it does
 
-[`DECISIONS.md`](DECISIONS.md) is the build contract: 72 numbered decisions, each with the
+[`DECISIONS.md`](DECISIONS.md) is the build contract: 78 numbered decisions, each with the
 measurement or the review finding that forced it. If you want to know why a threshold is where it
 is, why the parser runs in child processes, or why there is no hook, that is the file.
 
@@ -283,7 +291,7 @@ npm install
 node --test 'test/**/*.test.mjs'
 ```
 
-ES modules, `.mjs`, Node 22 or newer, one runtime dependency.
+ES modules, `.mjs`, Node 22 or newer, two runtime dependencies.
 
 ## License
 

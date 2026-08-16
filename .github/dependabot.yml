@@ -1,6 +1,6 @@
 version: 2
 
-# Monthly and grouped. There is one runtime dependency and three actions, so a
+# Monthly and grouped. There are two runtime dependencies and three actions, so a
 # weekly ungrouped schedule would open more pull requests than there is work.
 updates:
   - package-ecosystem: npm

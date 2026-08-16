@@ -396,3 +396,57 @@ test("a bare return is control flow, not a decision about absent values", () => 
   assert.equal(explicit.length, 2, "an explicit `return undefined` is still a decision");
   assert.equal(explicit.filter((h) => h.conforming).length, 1);
 });
+
+test("a cast does not hide the value it wraps", () => {
+  // `null as any` is null. The walkers matched on the node type of the returned
+  // expression, so a cast around it made the site disappear: react writes
+  // `return null as any` 24 times and vscode 20, and every one of them was a
+  // conforming site nobody counted. `satisfies` and `!` wrap the same way.
+  assert.deepEqual(counts("absent_is_null", "function f() { return null }"), { candidates: 1, conforming: 1 });
+
+  for (const cast of ["null as any", "null satisfies any", "null!", "(null as any)"]) {
+    assert.deepEqual(
+      counts("absent_is_null", `function f() { return ${cast} }`),
+      { candidates: 1, conforming: 1 },
+      `return ${cast}`
+    );
+  }
+  for (const cast of ["undefined as any", "undefined satisfies any", "undefined!"]) {
+    assert.deepEqual(
+      counts("absent_is_null", `function f() { return ${cast} }`),
+      { candidates: 1, conforming: 0 },
+      `return ${cast}`
+    );
+  }
+  // An expression body is the same choice written the other way.
+  assert.deepEqual(counts("absent_is_null", "const f = () => null as any"), { candidates: 1, conforming: 1 });
+});
+
+test("a cast does not hide that the right side of a default is a literal", () => {
+  // `x ?? ([] as Foo[])` takes a default, and typing the empty array is the
+  // ordinary way to write it. Matching on the node type dropped the site.
+  assert.deepEqual(counts("nullish_default", "const a = x ?? []"), { candidates: 1, conforming: 1 });
+
+  for (const right of ["[] as Foo[]", "([] as Foo[])", "0 satisfies number", "1!"]) {
+    assert.deepEqual(
+      counts("nullish_default", `const a = x ?? ${right}`),
+      { candidates: 1, conforming: 1 },
+      `?? ${right}`
+    );
+    assert.deepEqual(
+      counts("nullish_default", `const a = x || ${right}`),
+      { candidates: 1, conforming: 0 },
+      `|| ${right}`
+    );
+  }
+  // A call is still a fallback branch, cast or not: the two operators are not
+  // interchangeable there and it is not a site.
+  assert.deepEqual(counts("nullish_default", "const a = x ?? b() as Foo"), { candidates: 0, conforming: 0 });
+});
+
+test("peeling a cast does not blind the dimension whose site is the cast", () => {
+  // `!` is what non_null_assertion counts. Unwrapping it everywhere would erase
+  // its own sites, so it reads the node before anything peels it.
+  assert.deepEqual(counts("non_null_assertion", "const a = x!.y"), { candidates: 1, conforming: 0 });
+  assert.deepEqual(counts("non_null_assertion", "const a = x?.y"), { candidates: 1, conforming: 1 });
+});

@@ -40,3 +40,10 @@ Run the scan and report what it found.
    file does not re-attach mid-session; a fresh session picks up the new one.
 
 If the scanner exits non-zero, show its output and stop. Do not guess at what it found.
+
+### The type checker
+
+`--deep` adds the TypeScript checker. It is off by default because it was measured about 26x
+slower than the parse and cannot be narrowed to the files that changed. It needs the optional
+`typescript` dependency and the repository's own dependencies installed; without them it says
+so on the map rather than printing a clean-looking count.

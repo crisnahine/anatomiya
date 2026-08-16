@@ -319,8 +319,8 @@ jobs:
           // The command prints a count. The count and the disk have to agree,
           // which is the whole point of running the binary rather than the
           // functions it calls.
-          const claimed = stdout.match(/wrote (\d+) files/);
-          if (!claimed) problems.push("the scan printed no \"wrote N files\" line");
+          const claimed = stdout.match(/wrote (\d+) files?/);
+          if (!claimed) problems.push("the scan printed no \"wrote N file(s)\" line");
           else if (Number(claimed[1]) !== written.length) {
             problems.push(`the scan says it wrote ${claimed[1]} files, ${written.length} are on disk`);
           }
@@ -382,7 +382,7 @@ jobs:
           BIN="$GITHUB_WORKSPACE/bin/anatomiya.mjs"
 
           node "$BIN" pin . | tee "$RUNNER_TEMP/pin.out"
-          grep -q "files enter the baseline population" "$RUNNER_TEMP/pin.out"
+          grep -qE "files? enters? the baseline population" "$RUNNER_TEMP/pin.out"
           test -f .claude/anatomiya/baseline.json
 
           # A second pin at the same commit must move nothing. It moving is how
@@ -405,6 +405,38 @@ jobs:
           node "$BIN" check . --base "$SMOKE_REF" | tee "$RUNNER_TEMP/check.out"
           grep -qE "MUST-FIX, [0-9]+ FIX, [0-9]+ NIT" "$RUNNER_TEMP/check.out" \
             || { echo "::error::check printed no verdict line"; exit 1; }
+
+      # The tier ships behind a flag, so nothing else in this workflow ever runs
+      # it, and a leg that never runs is a leg that breaks quietly. One platform
+      # is enough: the tier is Node and TypeScript, and the platform-specific
+      # surface is already covered by the other legs.
+      - name: The optional checker is installed
+        shell: bash
+        run: node -e "import('typescript').then(t => console.log((t.default ?? t).version))"
+
+      - name: Scan a TypeScript repository with the checker on
+        shell: bash
+        env:
+          DEEP_REPO: https://github.com/sindresorhus/got.git
+          DEEP_REF: v14.4.7
+        run: |
+          git clone --quiet --depth 50 --branch "$DEEP_REF" "$DEEP_REPO" "$RUNNER_TEMP/deep" \
+            || { echo "::warning::could not clone the deep smoke repository"; exit 0; }
+          cd "$RUNNER_TEMP/deep"
+          # The repository's own dependencies decide whether the checker can
+          # resolve anything, and that is the one thing this tier needs that
+          # nothing else here does (B8).
+          npm ci --ignore-scripts --no-audit --no-fund >/dev/null 2>&1 \
+            || echo "::warning::deep smoke ran without the repository's dependencies"
+          node "$GITHUB_WORKSPACE/bin/anatomiya.mjs" scan . --deep | tee "$RUNNER_TEMP/deep.out"
+          grep -qE "^[0-9]+ files?, [0-9]+ areas?" "$RUNNER_TEMP/deep.out" \
+            || { echo "::error::--deep printed no summary line"; exit 1; }
+          test -f .claude/rules/anatomiya-overview.md
+          node -e '
+            const f = JSON.parse(require("fs").readFileSync(".claude/anatomiya/facts.json", "utf8"));
+            if (!f.semantic || f.semantic.ran !== true) { console.error("::error::--deep did not run the tier"); process.exit(1); }
+            console.log("tier:", f.semantic.status, f.semantic.reason ?? "", "resolution", f.semantic.typedResolutionRate);
+          '
 
       # The Ruby tier has no smoke coverage otherwise: the JS repository above
       # exercises none of prism, the six Ruby dimensions, or the Rails data
@@ -432,7 +464,7 @@ jobs:
             || { echo "::warning::could not clone the Ruby smoke repository"; exit 0; }
           cd "$RUNNER_TEMP/ruby-smoke"
           node "$GITHUB_WORKSPACE/bin/anatomiya.mjs" scan . | tee "$RUNNER_TEMP/ruby-scan.out"
-          grep -qE "^[0-9]+ files, [0-9]+ areas" "$RUNNER_TEMP/ruby-scan.out"
+          grep -qE "^[0-9]+ files?, [0-9]+ areas?" "$RUNNER_TEMP/ruby-scan.out"
           grep -q "could not be parsed" "$RUNNER_TEMP/ruby-scan.out" \
             && { echo "::error::prism failed on files in a real Ruby repository"; exit 1; }
           test -f .claude/rules/anatomiya-overview.md

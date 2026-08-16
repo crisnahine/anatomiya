@@ -1,7 +1,16 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { renderArea, renderOverview, OVERVIEW_AREAS, MAX_LINES } from "../lib/render.mjs";
+import {
+  renderArea,
+  renderOverview,
+  unexaminedLines,
+  unexaminedPhrase,
+  untrackedSentence,
+  plural,
+  OVERVIEW_AREAS,
+  MAX_LINES,
+} from "../lib/render.mjs";
 import { areaFilename, isOwned, GENERATOR } from "../lib/rules.mjs";
 import { globEntry, globText } from "../lib/areas.mjs";
 
@@ -21,14 +30,22 @@ const dim = (o = {}) => ({
   ...o,
 });
 
-const area = (o = {}) => ({
-  id: "aabbccdd",
-  path: "src/services",
-  globs: [{ negated: false, dir: "src/services", tail: "**/*.{ts,tsx}" }],
-  fileCount: 40,
-  dimensions: [dim()],
-  ...o,
-});
+const area = (o = {}) => {
+  const built = {
+    id: "aabbccdd",
+    path: "src/services",
+    globs: [{ negated: false, dir: "src/services", tail: "**/*.{ts,tsx}" }],
+    fileCount: 40,
+    dimensions: [dim()],
+    ...o,
+  };
+  // A single-language area comes out of the reducer with a denominator equal to
+  // its file count, and the renderer divides by that rather than by the area.
+  return {
+    ...built,
+    dimensions: built.dimensions.map((d) => ({ langFileCount: built.fileCount, ...d })),
+  };
+};
 
 const result = (o = {}) => ({
   root: "/repo",
@@ -1007,4 +1024,120 @@ test("a file whose ownership could not be established is neither ours nor theirs
   assert.match(out, /^Any other file there was not written by this tool:$/m);
   assert.match(out, /^- "house\.md"$/m);
   assert.doesNotMatch(out, /- "anatomiya-area-cafe\.md"/, "not named as somebody else's");
+});
+
+test("a count of one reads as one, in every unexamined line", () => {
+  // These four reach a person on the scan's own summary and in the always-loaded
+  // overview. The file already pluralises the uncovered counts and the author
+  // count; these bypassed it and printed "1 files hold syntax the parser
+  // rejected" on seven repositories in a thirty-five repository corpus.
+  const one = unexaminedLines({ crashed: 1, failed: 1, syntaxErrors: 1, skipped: 1 });
+
+  assert.deepEqual(one, [
+    "1 file crashed the parser",
+    "1 file could not be parsed",
+    "1 file holds syntax the parser rejected",
+    "1 file exceeded the size cap",
+  ]);
+});
+
+test("a count above one keeps the plural and its verb", () => {
+  const many = unexaminedLines({ crashed: 2, failed: 3, syntaxErrors: 4, skipped: 5 });
+
+  assert.deepEqual(many, [
+    "2 files crashed the parser",
+    "3 files could not be parsed",
+    "4 files hold syntax the parser rejected",
+    "5 files exceeded the size cap",
+  ]);
+});
+
+test("a stated line divides by the number the gate divided by", () => {
+  // C3: applicability beside the files it could have spoken about is the only
+  // thing a human can audit a narrow predicate with, and that only works when
+  // the rendered denominator is the one the gate used. The area's own file
+  // count is a different number in two ordinary cases: a mixed-language area,
+  // where a Ruby claim can never speak for the TypeScript files, and an area
+  // holding syntax the parser rejected.
+  const text = renderArea({
+    id: "aaaaaaaa",
+    path: "app",
+    globs: [{ negated: false, dir: "app", tail: "**/*.rb" }],
+    fileCount: 20,
+    dimensions: [
+      {
+        key: "k",
+        claim: "rescue blocks use the error they caught",
+        precision: "precise",
+        applicability: 4,
+        langFileCount: 5,
+        candidates: 44,
+        conforming: 44,
+        authors: 2,
+        states: "claim",
+        directive: true,
+        gate: null,
+        exceptions: [],
+        moreExceptions: 0,
+      },
+    ],
+  });
+
+  assert.match(text, /44 of 44 sites across 4 of 5 files/, `divided by the area instead:\n${text}`);
+});
+
+test("the untracked sentence agrees at a count of one, on both surfaces", () => {
+  // The commit that introduced this helper exists only to make these two agree
+  // at one, and nothing pinned it: a helper that always said "files ... are"
+  // left every test green.
+  assert.equal(untrackedSentence(1), "1 source file in the working tree is untracked");
+  assert.equal(untrackedSentence(5), "5 source files in the working tree are untracked");
+});
+
+test("plural leaves a count of zero plural", () => {
+  // "0 file" reads as a typo, and `n <= 1` is the easy slip.
+  assert.equal(plural(0, "area"), "0 areas");
+  assert.equal(plural(1, "area"), "1 area");
+  assert.equal(plural(2, "area"), "2 areas");
+});
+
+test("each unexamined cause keeps its own sentence at one and at many", () => {
+  // Dropping a cause from the check's map made an oversize file report as one
+  // that could not be parsed, which is a different thing to do about it.
+  for (const kind of ["crashed", "failed", "syntaxErrors", "skipped"]) {
+    assert.equal(typeof unexaminedPhrase(kind, 1), "string", kind);
+    assert.notEqual(unexaminedPhrase(kind, 1), unexaminedPhrase(kind === "crashed" ? "failed" : "crashed", 1), kind);
+  }
+  assert.equal(unexaminedPhrase("syntaxErrors", 1), "holds syntax the parser rejected");
+  assert.equal(unexaminedPhrase("syntaxErrors", 2), "hold syntax the parser rejected");
+});
+
+test("the whole untracked sentence agrees at one, clauses included", () => {
+  // The count agreeing while the clause after it does not is the same defect one
+  // clause further along: "1 source file ... is untracked; commit them and scan
+  // again". Pronoun-free is what makes both surfaces safe at any count.
+  const overview = renderOverview(
+    result({ corpus: { files: 0, untracked: 1, truncated: false, dropped: {} }, areas: [] }),
+    { uncovered: 0, orphaned: 0 }
+  );
+
+  assert.match(overview, /1 source file in the working tree is untracked/);
+  assert.doesNotMatch(overview, /\bthem\b/, `a plural pronoun for one file:\n${overview}`);
+});
+
+test("a scan that could not load the stripper says so beside the rejected count", () => {
+  // The dependency arrived after the plugin did, so anyone whose node_modules
+  // predates it gets oxc and no stripper. Every Flow file then lands in the
+  // rejected count with nothing on screen to connect the two, and on react
+  // that is 286 files and 13 claims that quietly stop being stated.
+  const lines = unexaminedLines({ syntaxErrors: 286, missingStripper: true });
+
+  assert.deepEqual(lines, [
+    "286 files hold syntax the parser rejected",
+    "flow-remove-types is not installed, so a file written in Flow is rejected rather than read",
+  ]);
+});
+
+test("the stripper is not mentioned when nothing was rejected", () => {
+  assert.deepEqual(unexaminedLines({ skipped: 1, missingStripper: true }), ["1 file exceeded the size cap"]);
 });

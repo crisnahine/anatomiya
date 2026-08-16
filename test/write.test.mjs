@@ -40,7 +40,9 @@ function area(path, dimensions = [dim()]) {
     path,
     globs: [{ negated: false, dir: path, tail: "**/*.ts" }],
     fileCount: 40,
-    dimensions,
+    // A single-language area comes out of the reducer with a denominator equal
+    // to its file count, and the renderer divides by that.
+    dimensions: dimensions.map((d) => ({ langFileCount: 40, ...d })),
   };
 }
 
@@ -919,6 +921,22 @@ test("a rules directory that cannot be listed is not one holding nothing", needs
   assert.equal(blind.listed, false, "the caller is told nothing was listed");
   assert.deepEqual(blind.remove, [], "and nothing is removed off an empty listing");
   assert.equal(seeing.listed, true, "and a directory it could list says so");
+
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("a rules directory that does not exist yet was looked in, not refused", () => {
+  // The first scan of any repository finds no `.claude/rules`, and `readdir`
+  // answers ENOENT the same way it answers a permission failure. Reported as
+  // "could not be listed", every first run describes a broken install rather
+  // than an empty one. The same rule the
+  // parser and the git reads already follow: not-there is not could-not-read.
+  const dir = workspace();
+
+  const first = writeMap(result(dir, [area("src/services")]), { dryRun: true });
+
+  assert.equal(first.listed, true, "nothing is there, and that is an answer");
+  assert.deepEqual(first.remove, []);
 
   rmSync(dir, { recursive: true, force: true });
 });

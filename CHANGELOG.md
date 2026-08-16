@@ -7,6 +7,182 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.1.11] - 2026-08-16
+
+Flow, so a repository oxc refuses by name is read rather than charged as broken: react goes from 287
+rejected files and 36 stated claims to 2 and 79. An opt-in `typescript` checker behind
+`scan --deep`, with one dimension and a degraded mode that says which of two things went wrong. A
+committed intake table for what became a dimension, what collapsed into one, and what has no
+denominator and never ships. And one command for the only success measure this tool accepts, with
+the first measurement it took committed beside it.
+
+Every row the build contract carried as `todo` is closed, which is all seventy-eight of them.
+
+Four counting bugs came out of asking a different question: parse one file twice, once with its
+annotations blanked, and see which dimensions disagree. That comparison is a test now, so a
+dimension that answers two ways for one file fails CI. A further eight came from a review of the
+work above, and the two worst were both a test passing for the wrong reason.
+
+### Added
+
+- A `.js`-family file oxc rejects is retried with its Flow types stripped. oxc refuses Flow by name,
+  and react is written in it: 287 of its 2,277 files were charged as syntax the parser rejected, so
+  their sites counted nowhere and the areas holding them closed as a population that moved. Now 2
+  are rejected and the repository states 78 claims instead of 65. The stripper replaces types with
+  whitespace rather than removing them, so the length in UTF-16 code units does not move and every
+  offset still lands where it does in the source, which is the unit oxc counts in. It is loaded the first time a
+  `.js`-family file is rejected, so a repository whose JavaScript all parses never pays the ~13 MB
+  it costs. A rejected file may be Flow or may simply be broken, and telling those apart is what the
+  retry is for, so it cannot be what decides whether to load. react goes from 287 rejected files and
+  36 stated claims to 2 and 79. (B19)
+
+- A tree that came back from that retry no longer answers the rows that depend on the annotations,
+  and each such row says so on itself. The retry blanks the annotations, so `exported functions
+  declare their return type` read 0 of 1213 on react where the truth is 986, and the check printed
+  `FIX` beside a line that declares one, quoting the annotation in its own snippet. `import type`
+  statements are sites of the extension claim and the stripper deletes them outright, so a stripped
+  file read as more conformant than it is: react writes 309 of them and not one carries an
+  extension. All three readers drop such a row together, and the file leaves that row's denominator,
+  because a file nobody asked is not a file that declined. (B20)
+
+- A missing `flow-remove-types` is named on screen instead of showing up as unreadable files. The
+  dependency arrived after the plugin did, so a `node_modules` older than it loads the parser, cannot
+  run the retry, and charges every Flow file to the rejected count with nothing connecting the two.
+  Both the scan summary and the check caveats say which dependency is absent. (B19)
+
+- An opt-in second tier behind `--deep`: the `typescript@5` checker, one dimension, and a degraded
+  mode that says so. `typescript` is an optional dependency and never a runtime one, pinned inside
+  major 5 because 7 is the Go port with no JS API and a range admitting it would turn `--deep` into a
+  silent no-op. One child process for the whole corpus, because the checker is whole-program:
+  narrowing the file set was measured saving 3% of the time and driving unresolved types from 3.1% to
+  36.2%. Every dimension declares which tier answers it, and the default caller is offered the
+  syntactic one, so a claim that needs a checker nobody ran cannot reach a map. (B7)
+
+- `a call chain stays inside one type`, the one dimension the checker buys. Measured on three real
+  repositories: 0.212 on a client app whose dependencies are installed and where the tier resolved
+  0.895, 0.366 on typeorm and 0.797 on supabase. That spread is 0.585 and every one of them is under
+  0.90, which is the bar `CONTRIBUTING.md` sets. `partial`, because a receiver whose type did not
+  resolve is not counted as a distinct type, so an unresolved chain reads as conforming and
+  under-counts rather than inventing violations. (B7)
+
+- A degraded checker states nothing and says which of two things went wrong: a `tsconfig.json` that
+  could not be read keeps its own reason, and one that read cleanly while type resolution fell under
+  0.80 reports `low-resolution`. It closes its own rows and no syntactic one. The tier's real
+  requirement turned out to be unlike anything else here, and the measurement is what found it: it
+  needs the repository's own dependencies on disk. typeorm reported a config error because it extends
+  `@tsconfig/node20` and the clone has no `node_modules`; supabase resolved 29% across a monorepo for
+  the same reason. (B8)
+
+- The repository's own `tsconfig.json` is read through a host confined to the repository, so an
+  `extends` pointing outside it is refused and reported rather than followed. The file list is the
+  corpus rather than the config's globs, every option that writes to disk is forced off, and the lib
+  files come from the plugin's own `typescript` rather than the repository's, which can ship one of
+  its own. (B9)
+
+- A check whose map holds a type-checked claim says so on its own line, instead of reading like a
+  branch that broke nothing. `--deep` is a scan option only: the checker is whole-program, so a check
+  would have to build the corpus at two revisions to answer with it. (B7)
+
+- One committed intake table for what became a dimension, what collapsed into one, what was renamed
+  so a ratio does not read as a verdict, and what has no denominator and never ships. The collapses
+  were a finding in a document this repository does not hold, which is a finding nobody can act on
+  twice. Writing it found two the audit did not. A claim naming a principle now refuses to load at
+  all. (G2, G3, G4)
+
+- `scripts/ab.mjs`, one command for the only success measure this tool accepts: two worktrees off one
+  commit, one holding the map, injection verified in both arms before any trial runs, and every
+  written file scored by the dimension's own predicate rather than by a regex written for one task.
+  It refuses to run where the best stated claim has no headroom, because the one A/B done by hand
+  scored 10 of 10 in both arms and measured a ceiling. (G5)
+
+### Fixed
+
+- A cast no longer hides the value it wraps. `return null as any` is a return of null and was not
+  counted as one, which react writes 24 times and vscode 20; `x ?? ([] as Foo[])` is a default taken
+  with `??` and was not counted either. `satisfies`, `!`, `<T>x` and parentheses wrap the same way.
+  Found by counting one file twice, once with its annotations blanked, and asking which dimensions
+  disagreed. (C11)
+
+- `declare const x: number` is no longer counted as module state, and neither is a binding inside a
+  namespace or an ambient module. Neither binds anything at run time. (C12)
+
+- A file whose types were stripped no longer sits in the denominator of the rows it was never asked.
+  A directory of ten plain files and ten Flow files rendered `10 of 10 sites across 10 of 20 files`,
+  which reads as half the directory declining a convention that was never measured there. Facts
+  schema 7.
+
+- The Flow retry no longer carries its own list of file extensions. It is derived from the one the
+  corpus uses, so an extension added there is in scope for both at once rather than entering the
+  corpus and never being retried.
+
+- Every dimension states which files could participate in its claim, and what its predicate cannot
+  see where it is partial. `applicability` was whatever `run` happened to emit, so a predicate
+  seeing a tenth of its own construct produced a ratio of 1.00 over four files and read as a strong
+  convention. The two fields are tied to `precision`, so the marker and the reason cannot disagree,
+  and the registry refuses to load over a row that carries neither. (C2)
+- Witness sources per dimension, driven through the same parse the scan uses: the ones the declared
+  sentence says are applicable, and the neighbouring constructs that must not count. A new row with
+  no witness fails the completeness test, and where a sentence promises a count, the count is
+  asserted. (C2)
+- Every member of every closed table a predicate recognises its construct through is driven through
+  that predicate: React's hooks, the translation modules, elements and calls, the test-runner
+  modifiers, the column types, the reference calls and the model base classes. The witness pairs
+  cannot see a table shrink, because losing a name changes no shape: dropping `next-intl` from the
+  module list makes every file in such a repository inapplicable and every other test stays green.
+  The expected members are written out in the test rather than read from the table, since an
+  expectation taken from the code agrees with it by construction. (C2)
+- `scripts/audit-applicability.mjs` reads one or more `facts.json` files and prints the applicability
+  share per dimension, flagging any `precise` row whose median sits under a quarter. Measured across
+  express, sidekiq, vuejs/core and mastodon: of the 37 rows that produced a slot in any of them, 6
+  flag, and each names a construct that is simply rare. Which rows produce a slot depends on which
+  repositories are asked, so the four are named. A flag is a prompt to open the row, not a verdict.
+  (C2)
+
+
+- The raw parser transfer is no longer asked for on Windows. oxc allocates a 6 GiB buffer per parsing
+  operation, `rawTransferSupported()` never asks which platform it is on, this pool runs up to eight
+  workers at once, and Windows both commits at allocation and is the one platform where the pool's
+  memory guard stands down. The parser answers the same tree without the flag. (B18)
+
+- `service_result_shape` refused every receiver, so `def self.call` was not a service entry point at
+  all. That is the commonest Ruby service form, and the ratio was stated over whichever subset of a
+  repository writes instance entry points instead. `def self.` counts now, the way the migration
+  rows already counted it. (C2)
+- Any pinned file this tool could not read suppressed its whole area as a population change, so a
+  permanent blind spot read as a population that moved. React is written in Flow, which oxc does not
+  take: 287 of its files never parse at either revision, and 507 of its 986 slots were closed for
+  it. The current pass already leaves such a file out of its counts, so the two passes disagreed
+  about what an unreadable file means. React now states 65 claims instead of 36, webpack 92 instead
+  of 80, next.js 172 instead of 162. A file that has become readable since the pin still closes the
+  area, because the baseline is then missing sites today can see. (E8)
+- The rendered line divided by the area's file count while the gate divided by the files the
+  dimension could speak about, so the number a reader audits a narrow predicate with was not the
+  number that decided it. Wrong in a mixed-language area before any of this: a Ruby claim read "5 of
+  10 files" where five were all it could ever speak for. (C3)
+- The applicability gate divided a numerator over parsed files by a denominator over every file of
+  the language, so a repository holding syntax this tool does not take read as one full of narrow
+  predicates. Measured across 35 repositories: react is written in Flow, 287 of its 2,277 files are
+  rejected, and its stated claims go from 36 to 65 once the denominator counts only what was
+  examined. Webpack 80 to 92, next.js 162 to 172. (C4)
+- Every first scan of a repository reported `.claude/rules/` as a directory it could not list.
+  `readdir` answers ENOENT the same way it answers a permission failure, and the bare catch treated
+  the two alike, so every first run reported a broken install rather than an empty one. Not-there is
+  an answer; could-not-read is not. (A4)
+- A count of one wore a plural. Measured over 35 repositories: seven printed "1 files hold syntax
+  the parser rejected", on the scan summary and in the file that loads on every turn. The two
+  surfaces read one sentence for the count they share, so they cannot agree with the number and
+  disagree with each other. (A4)
+- The facts record dropped two numbers the rendered map prints, so the map was not derivable from
+  the record the check reads in its place: the count behind "and N more", and the namesake count an
+  obligation renders as "N with a namesake elsewhere in the tree". Found by scanning 35 repositories
+  and looking for a rendered line the record could not reproduce: 1,158 slots on one repository
+  printed a full exception list with no count of what was left out. (C7)
+- The facts record dropped `langFileCount`, the files a dimension can speak about, so the share that
+  separates a narrow predicate from a rare construct shaped the gate and was then unreadable from
+  disk. Schema 5. A map written before it carries every count and no denominator, and the audit now
+  says how many slots it could not measure and exits non-zero, rather than printing the empty table
+  that reads as a repository with no dimensions in it. (C3)
+
 ## [0.1.10] - 2026-08-15
 
 Every row the build contract still carried as partial, closed, except the one blocked on a document
@@ -577,7 +753,7 @@ which are partial; several listed there are not implemented yet.
 - No claim that this catches defects. Measured across ten repositories, 1 of 317 defect review
   comments was preventable by a conventions map.
 
-[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.1.10...HEAD
+[0.1.11]: https://github.com/crisnahine/anatomiya/compare/v0.1.10...v0.1.11
 [0.1.10]: https://github.com/crisnahine/anatomiya/compare/v0.1.9...v0.1.10
 [0.1.9]: https://github.com/crisnahine/anatomiya/compare/v0.1.8...v0.1.9
 [0.1.8]: https://github.com/crisnahine/anatomiya/compare/v0.1.7...v0.1.8

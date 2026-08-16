@@ -198,7 +198,7 @@ test("a scan names the root it resolved to, because a path argument does not sco
   // directory carries the 8.3 form and git prints the long one, and asserting
   // one of them tests the platform rather than the line.
   const first = out.split("\n")[0];
-  assert.match(first, /^8 files, 1 areas, \d+ms, root .+$/);
+  assert.match(first, /^8 files, 1 area, \d+ms, root .+$/);
   const printed = first.slice(first.indexOf(", root ") + ", root ".length);
 
   assert.ok(existsSync(join(printed, "src", "f0.ts")), `not the repository that was scanned: ${first}`);
@@ -214,7 +214,7 @@ test("untracked source is reported rather than counted as a repository with noth
     execFileSync(process.execPath, [join(ROOT, "bin", "anatomiya.mjs"), "scan", repo], { stdio: "pipe" })
   );
 
-  assert.match(out, /5 source files are untracked and were not counted/);
+  assert.match(out, /5 source files in the working tree are untracked\. The corpus is tracked files only, so nothing there was counted/);
   const overview = readFileSync(join(repo, ".claude", "rules", "anatomiya-overview.md"), "utf8");
   assert.match(overview, /5 source files in the working tree are untracked/);
 });
@@ -401,4 +401,71 @@ test("a dry run does not report in the past tense", (t) => {
     "# hand written, our exact name\n",
     "and nothing was actually written"
   );
+});
+
+test("the scan summary reads a count of one as one", (t) => {
+  // Every count on the summary reaches a person, and several are 1 on a real
+  // repository. Measured across a thirty-five repository corpus: seven printed
+  // "1 files hold syntax the parser rejected", on this line and in the file
+  // that loads on every turn.
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-cli-one-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  mkdirSync(join(dir, "src"), { recursive: true });
+  writeFileSync(join(dir, "src", "only.ts"), `export const a = 1\n`);
+  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
+  git("init", "-q");
+  git("config", "user.email", "t@t.test");
+  git("config", "user.name", "T");
+  git("add", "-A");
+  git("commit", "-qm", "init");
+
+  const out = String(execFileSync(process.execPath, [join(ROOT, "bin", "anatomiya.mjs"), "scan", dir], { stdio: "pipe" }));
+
+  assert.doesNotMatch(out, /\b1 (files|areas|claims|source files)\b/, `a count of one wearing a plural:\n${out}`);
+});
+
+test("the untracked summary reads at one and at many", (t) => {
+  // Fixing the count and leaving the clause after it is the same defect one
+  // word along, and the first attempt at this traded a plural bug for a
+  // singular one. Neither surface carries a word that has to agree.
+  const build = (n) => {
+    const dir = mkdtempSync(join(tmpdir(), "anatomiya-cli-untracked-"));
+    t.after(() => rmSync(dir, { recursive: true, force: true }));
+    writeFileSync(join(dir, "README.md"), "x\n");
+    mkdirSync(join(dir, "src"), { recursive: true });
+    for (let i = 0; i < n; i++) writeFileSync(join(dir, "src", `f${i}.ts`), `export const a${i} = ${i}\n`);
+    const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
+    git("init", "-q");
+    git("config", "user.email", "t@t.test");
+    git("config", "user.name", "T");
+    git("add", "README.md");
+    git("commit", "-qm", "init");
+    return String(execFileSync(process.execPath, [join(ROOT, "bin", "anatomiya.mjs"), "scan", dir], { stdio: "pipe" }));
+  };
+
+  assert.match(build(1), /1 source file in the working tree is untracked\./);
+  assert.match(build(3), /3 source files in the working tree are untracked\./);
+});
+
+test("--deep is refused on check, because the check cannot run a whole-program checker", () => {
+  // It was accepted, recorded as ran, and never ran: check.mjs has no runSemantic
+  // in it. So the report said "rerun with --deep", the user did, the note
+  // disappeared because ran was true, and nothing was measured either time.
+  // The checker is whole-program and would need the whole corpus built at two
+  // revisions to answer a branch, which is a scan's job and not a check's.
+  let code = 0;
+  let stderr = "";
+  try {
+    execFileSync(process.execPath, [join(ROOT, "bin", "anatomiya.mjs"), "check", ".", "--deep"], {
+      stdio: "pipe",
+      encoding: "utf8",
+    });
+  } catch (err) {
+    code = err.status;
+    stderr = String(err.stderr ?? "");
+  }
+
+  assert.equal(code, 2);
+  assert.match(stderr, /--deep is not a check option/);
+  assert.match(stderr, /anatomiya scan --deep/, "and it says where the tier does run");
 });
