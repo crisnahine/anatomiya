@@ -8,6 +8,12 @@
  * the same predicates the scan uses, and the same sites are the sideCounts, so
  * the harness's number and the table's number are the same number by
  * construction (the G5 principle).
+ *
+ * The trials run through the same headless CLI the A/B uses, on purpose: the
+ * maps are read by agents inside that harness, so the default worth filtering
+ * on is the agent as deployed, harness prompt included. A construct the shared
+ * prompts never elicit stays under the 20-site floor and reads none, which
+ * fails open: the dimension keeps stating.
  */
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
