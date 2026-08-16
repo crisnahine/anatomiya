@@ -21,7 +21,7 @@ path and a newline split turns one hostile filename into two corpus entries.
 | Source filenames | `Rakefile`, `Gemfile`, `config.ru`, matched whole so a `Gemfile.lock` is not one |
 | Denied outright | `.git/`, `.env*`, `*.pem *.key *.p12 *.pfx *.jks *.keystore`, `.claude/settings.local.json`, `id_rsa`, `id_ed25519`, `.netrc`, `.npmrc` |
 | Excluded directories | `node_modules`, `vendor`, `.yarn`, `fixtures`, `__fixtures__`, `__snapshots__`, `test_cases`, `testdata`, `test-data`, `golden`, `goldens`, `__mocks__`, `mocks`, `dist`, `build`, `coverage`, `.next`. Not `examples`: 8,967 paths in a 35-repository corpus match it and much of that is maintained code |
-| Caps | none on the repository; 4 MB per file, which skips one generated or minified file and says so |
+| Caps | none on the repository; 1 MB per file, which skips a bundle or a compiled file and says so. Measured across 35 repositories, no hand-written source exceeds 850 KB, and every file between 1 and 4 MB sat at the parse timeout boundary, flipping between crashed and parsed with machine load |
 
 Fixture and vendor directories are excluded because that code is deliberately unidiomatic. In one
 measured repository, 18 of 85 discovered areas were fixture directories, and a map that teaches a
@@ -149,7 +149,7 @@ otherwise be deleted as gone. A syntax error is not that: the parser ran and ans
 
 | Guard | Value | Enforced |
 |---|---|---|
-| File size | 4 MB | checked with `stat` before the file is dispatched |
+| File size | 1 MB | checked with `stat` before the file is dispatched |
 | Wall time | 5s | `SIGKILL` from the parent |
 | Resident memory | 1 GB | polled every 25ms via `ps`, starting 250ms after the file goes in flight |
 

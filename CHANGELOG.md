@@ -38,10 +38,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
-- `.yarn` is excluded from the corpus. Its bundles are machine-generated, and the 2 MB releases
-  sat at the parse timeout boundary, flipping between crashed and rejected across runs, which
-  moved the always-loaded overview (A5). Found by an end-to-end sweep over the 35-repository
-  measurement corpus.
+- The per-file size cap is 1 MB, down from 4 MB. A 35-repository sweep found no hand-written
+  source above 850 KB and every file in the 1 to 4 MB band a bundle, compiled output or a perf
+  fixture sitting at the 5 s parse timeout boundary, flipping between crashed and parsed with
+  machine load; each flip moved the always-loaded overview (A5). A size cap is deterministic
+  where a wall-clock timeout is not. `.yarn` is excluded from the corpus outright for the same
+  reason.
 
 ### Decided against
 
