@@ -730,6 +730,9 @@ test("the counter-eligible set is exactly twelve named keys and every counter na
     // rewritten into the classic bug.
     "iterate_with_for_of",
     "spread_on_component", "text_translated",
+    // The inverse reads "a call chain crosses several types", which as a
+    // directive asks an agent to reach through one object to another.
+    "law_of_demeter",
     "migration_reversible", "migration_schema_only", "column_null_declared",
     "table_primary_key_declared", "reference_foreign_key",
   ];
