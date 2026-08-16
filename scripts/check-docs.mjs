@@ -11,7 +11,7 @@
  */
 import { readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
 
 import { ALL_DIMENSIONS, dimensionsFor } from "../lib/dimensions.mjs";
@@ -21,6 +21,48 @@ import { GATES } from "../lib/reduce.mjs";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const read = (rel) => readFileSync(join(root, rel), "utf8");
 const problems = [];
+
+/**
+ * The intake table, as rows.
+ *
+ * Markdown rather than JSON because the table is read by people in a pull
+ * request far more often than by this parser, and a decision nobody reads is a
+ * decision that gets made twice.
+ */
+export function readIntake(text) {
+  const rows = [];
+  const problems = [];
+  const lines = text.split(/\r?\n/);
+  const header = lines.findIndex((l) => /^\|\s*key\s*\|/.test(l));
+  if (header === -1) {
+    problems.push("docs/dimension-intake.md has no table header row");
+    return { rows, problems };
+  }
+
+  for (const line of lines.slice(header + 2)) {
+    if (!line.startsWith("|")) continue;
+    const cells = line.split("|").slice(1, -1).map((c) => c.trim());
+    if (cells.length !== 5) {
+      problems.push(`intake row has ${cells.length} cells, not 5: ${line.slice(0, 60)}`);
+      continue;
+    }
+    const [key, absorbs, renamedFrom, status, why] = cells;
+    if (!["shipped", "planned", "dropped"].includes(status)) {
+      problems.push(`intake row ${key} has status "${status}"`);
+      continue;
+    }
+    rows.push({
+      key: key === "-" ? null : key,
+      absorbs: absorbs === "-" || absorbs === "" ? [] : absorbs.split(";").map((x) => x.trim()).filter(Boolean),
+      renamedFrom,
+      status,
+      why,
+    });
+  }
+
+  return { rows, problems };
+}
+
 
 function claim(where, ok, detail) {
   if (!ok) problems.push(`${where}: ${detail}`);
@@ -139,6 +181,37 @@ for (const cmd of unique) {
   claim("README.md", readme.includes(`/anatomiya:${cmd}`), `does not mention /anatomiya:${cmd}`);
 }
 
+// --- the intake table -------------------------------------------------------
+
+// A dimension that ships without an intake row is one nobody decided to build:
+// the collapse, the rename and the drop were never asked about it. The README's
+// dimension count has already drifted once, and this is the same failure with a
+// worse consequence, so the table is checked rather than trusted.
+const intake = readIntake(read("docs/dimension-intake.md"));
+for (const p of intake.problems) claim("docs/dimension-intake.md", false, p);
+
+const intakeByKey = new Map(intake.rows.filter((r) => r.key).map((r) => [r.key, r]));
+const droppedKeys = new Set(intake.rows.filter((r) => r.status === "dropped" && r.key).map((r) => r.key));
+for (const d of [...ALL_DIMENSIONS, ...PAIRINGS]) {
+  const row = intakeByKey.get(d.key);
+  claim("docs/dimension-intake.md", !!row, `${d.key} ships and has no intake row`);
+  if (row) {
+    claim("docs/dimension-intake.md", row.status === "shipped", `${d.key} ships and its intake row says ${row.status}`);
+  }
+  claim("docs/dimension-intake.md", !droppedKeys.has(d.key), `${d.key} ships and is also marked dropped`);
+}
+
+// Two rows claiming one entry print the same three numbers twice under two
+// names, which is the duplication the collapse exists to stop.
+const absorbedBy = new Map();
+for (const r of intake.rows) {
+  for (const entry of r.absorbs) {
+    const previous = absorbedBy.get(entry);
+    claim("docs/dimension-intake.md", previous === undefined, `"${entry}" is absorbed by both ${previous} and ${r.key ?? "a dropped row"}`);
+    absorbedBy.set(entry, r.key ?? "a dropped row");
+  }
+}
+
 // --- runtime dependencies ---------------------------------------------------
 
 // SECURITY.md said "oxc-parser is the only runtime dependency" for as long as
@@ -161,12 +234,17 @@ claim("CHANGELOG.md", read("CHANGELOG.md").includes(`## [${pkg.version}]`), `has
 
 // ----------------------------------------------------------------------------
 
-if (problems.length) {
+// This file exports `readIntake` as well as running as a script, and a bare
+// `process.exit(1)` at module scope would take the test process with it the
+// moment a doc claim failed.
+const isEntry = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
+if (isEntry && problems.length) {
   for (const p of problems) console.error(`::error::${p}`);
   console.error(`\n${problems.length} claim(s) in the documentation do not match the code.`);
   process.exit(1);
 }
-console.log(
+if (isEntry)
+  console.log(
   `docs match the code: ${total} dimensions (${js} js, ${jsx} jsx, ${ruby} ruby, ${obligations} of them file-to-file obligations), ` +
-    `${unique.length} commands, ${deps.length} runtime dependencies, version ${pkg.version}`
+    `${unique.length} commands, ${deps.length} runtime dependencies, ${intake.rows.length} intake rows, version ${pkg.version}`
 );

@@ -7,6 +7,7 @@ import {
   dimensionsFor,
   assertPrecision,
   assertApplicability,
+  assertClaimIsNotAVerdict,
   PRECISIONS,
 } from "../lib/dimensions.mjs";
 import { PAIRINGS } from "../lib/pairing.mjs";
@@ -446,4 +447,29 @@ test("a binding inside a namespace is not module state", () => {
     candidates: 1,
     conforming: 0,
   });
+});
+
+test("a claim naming a principle does not load", () => {
+  // `claim` is the sentence an agent reads. A rendered 1.0 beside a principle's
+  // name reads as agreement with the principle rather than as a count of this
+  // repository's sites, which is the one thing a counted claim cannot say.
+  assert.throws(
+    () => assertClaimIsNotAVerdict([{ key: "x", claim: "the code follows the Law of Demeter", counterClaim: null }]),
+    /Law of Demeter/
+  );
+  // The counter-claim is rendered too, so it is held to the same rule.
+  assert.throws(
+    () => assertClaimIsNotAVerdict([{ key: "x", claim: "calls stay shallow", counterClaim: "SOLID is ignored" }]),
+    /SOLID/
+  );
+});
+
+test("a claim about the code loads", () => {
+  assert.doesNotThrow(() =>
+    assertClaimIsNotAVerdict([{ key: "y", claim: "a call chain stays inside one type", counterClaim: null }])
+  );
+});
+
+test("every shipped claim says what the code does", () => {
+  assert.doesNotThrow(() => assertClaimIsNotAVerdict(ALL_DIMENSIONS));
 });

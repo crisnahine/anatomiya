@@ -87,6 +87,12 @@ and they do not get edited because a new implementation would be tidier.
 
 ## Adding a dimension
 
+Start at `docs/dimension-intake.md`, not at the registry. A row goes in the table before it goes in
+the code: which glossary entries the key answers, what it is renamed from if its own name would read
+as a verdict beside a ratio, and whether it has a denominator at all. `npm run check:docs` fails if a
+shipped key has no row there, and `lib/dimensions.mjs` refuses to load a claim that names a
+principle. (G2, G3, G4)
+
 A dimension is one counted claim about one area. It carries three numbers, never one:
 
 - `applicability` files holding at least one candidate site. Not files that could hold one: a site
