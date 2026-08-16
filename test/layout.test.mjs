@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { namesakeCompanions } from "../lib/companions.mjs";
+import { namesakeCompanions, namesakeIndex } from "../lib/companions.mjs";
 import { isTestFile, layoutFacts, layoutRoots, minRootFiles, mirroredTests, runnerOf, testsLine } from "../lib/layout.mjs";
 import { roster } from "../lib/layout-scan.mjs";
 
@@ -447,4 +447,62 @@ test("a truncated scan keeps the size and counts nothing else", () => {
   assert.equal(layout.principles.length, 0);
   assert.deepEqual(layout.more, { roots: 0, files: 0 });
   assert.ok(roster({ ...args, truncated: false }).layout.roots.length > 0, "and the flag is what does it");
+});
+
+test("a truncated scan describes no area's kinds either", () => {
+  // The same subset the roster refuses to describe is what an area's own counts
+  // would be read off, so the closure answers with nothing rather than counts.
+  const corpus = files(5, (i) => ({ rel: `src/components/A${i}.tsx`, lang: "jsx" }));
+  const args = { files: corpus, others: [], records: new Map() };
+  const area = { path: "src/components", files: corpus };
+
+  assert.equal(roster({ ...args, truncated: true }).kinds(area), null);
+  assert.ok(roster({ ...args, truncated: false }).kinds(area).files > 0, "and the flag is what does it");
+});
+
+test("a hyphen before cy is a name, not a test shape", () => {
+  // `.cy.` is how Cypress spells a spec. `-cy.` is not: it is the tail of an
+  // ordinary word, and `legacy-cy.ts` is not a spec.
+  assert.equal(isTestFile(file("src/legacy-cy.ts", "js")), false);
+  assert.equal(isTestFile(file("src/checkout.cy.ts", "js")), true);
+  assert.equal(isTestFile(file("src/checkout-test.js", "js")), true);
+  assert.equal(isTestFile(file("src/checkout-spec.js", "js")), true);
+});
+
+test("a file the parse never read is no sibling module", () => {
+  // An unparsed file has no JSX facet to be false, so counting it as a module
+  // charged the granularity sentence with files nothing was read from.
+  const unread = [
+    file("src/ui/C.tsx", "jsx", { jsx: true, inlineHelpers: 0 }),
+    file("src/ui/a.ts", "js"),
+    file("src/ui/b.ts", "js"),
+  ];
+
+  assert.equal("helpers" in layoutFacts(unread, { minFiles: 3 }).roots[0], false);
+
+  const read = unread.map((f) =>
+    f.facets === null ? { ...f, facets: { jsx: false, inlineHelpers: 0 } } : f);
+
+  assert.equal(layoutFacts(read, { minFiles: 3 }).roots[0].helpers.siblingModules, 2);
+});
+
+test("a namesake whose root is the repository root names no directory", () => {
+  // "under ." is not a place, and the renderer omits the clause on null.
+  const source = [file("a.ts", "js")];
+  const tests = [file("a.test.ts", "js")];
+
+  assert.deepEqual(namesakeCompanions(source, tests, ""), { with: 1, of: 1, root: null });
+});
+
+test("the namesake index is built once and read by every root", () => {
+  // A scan asks this per root over the same test files, and rebuilding the stem
+  // map each time walks the whole corpus again for an answer that cannot differ.
+  const tests = [file("spec/models/foo_spec.rb", "ruby")];
+  const index = namesakeIndex(tests);
+
+  assert.deepEqual(namesakeCompanions([file("app/models/foo.rb", "ruby")], [], "app/models", index), {
+    with: 1,
+    of: 1,
+    root: "spec/models",
+  });
 });
