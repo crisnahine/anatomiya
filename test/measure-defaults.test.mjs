@@ -1,0 +1,46 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+
+import { countSides, decideDefault, mergeTable } from "../scripts/measure-defaults.mjs";
+
+const record = (hits) => ({ ok: true, hits });
+const flags = (n, conforming) => Array.from({ length: n }, () => ({ conforming, where: null }));
+
+test("countSides tallies conforming as the claim side and the rest as the counter", () => {
+  const records = new Map([
+    ["a.ts", record({ nullish_default: [...flags(3, true), ...flags(1, false)] })],
+    ["b.ts", record({ nullish_default: flags(2, true), swallowed_error: flags(4, false) })],
+    ["c.ts", { ok: false, hits: { nullish_default: flags(9, true) } }],
+  ]);
+  const sides = countSides(records);
+  assert.deepEqual(sides.get("nullish_default"), { claim: 5, counter: 1 });
+  assert.deepEqual(sides.get("swallowed_error"), { claim: 0, counter: 4 });
+  assert.equal(sides.has("c"), false, "an unread file contributes nothing");
+});
+
+test("a side needs 0.8 of at least 20 sites", () => {
+  assert.equal(decideDefault({ claim: 18, counter: 2 }), "claim");
+  assert.equal(decideDefault({ claim: 2, counter: 18 }), "counter");
+  assert.equal(decideDefault({ claim: 15, counter: 4 }), "none", "19 sites is under the evidence floor");
+  assert.equal(decideDefault({ claim: 15, counter: 5 }), "none", "0.75 is under the share floor");
+  assert.equal(decideDefault({ claim: 0, counter: 0 }), "none");
+});
+
+test("a measured entry is not overwritten unless forced", () => {
+  const measured = {
+    default: "claim",
+    provenance: { method: "measured", model: "m0", date: "2026-01-01", samples: 9, sideCounts: { claim: 20, counter: 0 } },
+  };
+  const seed = { default: "none", provenance: { method: "literature", source: "seed: unmeasured" } };
+  const incoming = {
+    default: "counter",
+    provenance: { method: "measured", model: "m1", date: "2026-08-16", samples: 5, sideCounts: { claim: 0, counter: 20 } },
+  };
+
+  const kept = mergeTable({ a: measured, b: seed }, { a: incoming, b: incoming });
+  assert.equal(kept.a.provenance.model, "m0", "the earlier measurement stands");
+  assert.equal(kept.b.provenance.model, "m1", "a seed always yields to a measurement");
+
+  const forced = mergeTable({ a: measured }, { a: incoming }, { force: true });
+  assert.equal(forced.a.provenance.model, "m1");
+});
