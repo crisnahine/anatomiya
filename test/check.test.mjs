@@ -1419,3 +1419,50 @@ test("a check that could not load the stripper names the dependency too", async 
   assert.match(out, /src\/flowed\.js/, `the Flow file was expected in the caveats:\n${out}`);
   assert.match(out, /flow-remove-types is not installed/, `nothing named the missing dependency:\n${out}`);
 });
+
+test("a claim is not silenced by a finding invented off the base's stripped tree", async (t) => {
+  // The base side goes through the same retry, so on a Flow file its
+  // annotations are blanked too. Asking a blind row about that tree answers
+  // "no return type" for every function in it, and those answers cancel the
+  // real ones on the head side: a violation the branch genuinely has is
+  // reported as pre-existing and disappears.
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-basestrip-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
+  mkdirSync(join(dir, "src"), { recursive: true });
+  for (let i = 0; i < 14; i++) {
+    writeFileSync(join(dir, "src", `f${i}.ts`), `export function f${i}(): number {\n  return ${i}\n}\n`);
+  }
+  // Flow-only syntax, so the base is retried and its annotations blanked.
+  writeFileSync(
+    join(dir, "src", "legacy.js"),
+    ["// @flow", "type O = {| n: string |}", "export function legacy(o: O) {", "  return o.n", "}"].join("\n") + "\n"
+  );
+  git("init", "-q");
+  git("config", "user.email", "t@t.test");
+  git("config", "user.name", "T");
+  git("add", "-A");
+  git("commit", "-qm", "init");
+  const bin = fileURLToPath(new URL("../bin/anatomiya.mjs", import.meta.url));
+  execFileSync(process.execPath, [bin, "scan", dir], { stdio: "pipe" });
+
+  git("checkout", "-q", "-b", "migrate");
+  // Same file, same missing return type. Only the Flow-only syntax goes, so the
+  // head parses as written and the base is still stripped.
+  writeFileSync(
+    join(dir, "src", "legacy.js"),
+    ["// @flow", "type O = {n: string}", "export function legacy(o: O) {", "  return o.n", "}"].join("\n") + "\n"
+  );
+  git("commit", "-qam", "migrate");
+
+  const out = execFileSync(process.execPath, [bin, "check", dir, "--base", "main"], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+
+  assert.match(
+    out,
+    /exported functions declare their return type/,
+    `the head file declares no return type and nothing said so:\n${out}`
+  );
+});
