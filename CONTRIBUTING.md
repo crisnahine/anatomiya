@@ -7,7 +7,7 @@ about why something is shaped the way it is are answered there in one line.
 ## Setup and tests
 
 Node 22 or newer. ES modules, `.mjs` everywhere. Two runtime dependencies, `oxc-parser` and
-`flow-remove-types`, the second loaded only when a file turns out to be written in Flow. Ruby
+`flow-remove-types`, the second loaded the first time a `.js`-family file is rejected. Ruby
 dimensions need `prism` 1.x, a default gem on Ruby 3.4 and up, so a system Ruby is
 usually enough. If you do not have Ruby, the Ruby tests skip and the rest still run.
 
