@@ -103,6 +103,41 @@ test("rubyFacets says which test runner a file speaks", needsRuby, async (t) => 
   assert.equal(records.get("app/models/c.rb").facets.testCalls, false);
 });
 
+test("a runner the table names is read off the import, qunit included", async (t) => {
+  // Ember writes `import { test } from "qunit"` and calls it inside an
+  // `acceptance(...)` block, so the import is the only thing the file says.
+  const dir = repo({
+    "tests/acceptance/login-test.js": `import { test } from "qunit"\nacceptance("Login", function () {\n  test("x", function (assert) { assert.ok(true) })\n})\n`,
+  });
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+  const { records } = await parseAll(list(dir, ["tests/acceptance/login-test.js"]));
+
+  assert.equal(records.get("tests/acceptance/login-test.js").facets.testRunner, "qunit");
+});
+
+test("a method named test_ in an ordinary class is not a minitest case", needsRuby, async (t) => {
+  // `def test_connection` is ordinary Ruby: a service exposes it, a client
+  // pings with it. Counting it made empire-flippers/api read
+  // `app/services: 6 minitest specs` and discourse `lib: 3 minitest specs`.
+  // The signal is the base class or the file's own shape, never the method
+  // name on its own.
+  const dir = repo({
+    "app/services/webhook.rb": `class Webhook\n  def test_connection\n  end\nend\n`,
+    "test/webhook_test.rb": `class WebhookTest\n  def test_connection\n  end\nend\n`,
+    "app/models/probe.rb": `class Probe < ActiveSupport::TestCase\n  def test_x\n  end\nend\n`,
+  });
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+  const rels = ["app/services/webhook.rb", "test/webhook_test.rb", "app/models/probe.rb"];
+  const { records } = await parseAll(list(dir, rels));
+
+  assert.equal(records.get("app/services/webhook.rb").facets.testRunner, null);
+  assert.equal(records.get("app/services/webhook.rb").facets.testCalls, false);
+  assert.equal(records.get("test/webhook_test.rb").facets.testRunner, "minitest", "the file says so itself");
+  assert.equal(records.get("app/models/probe.rb").facets.testRunner, "minitest", "the base class says so");
+});
+
 test("an ordinary call named like the DSL is not one, without a block", needsRuby, async (t) => {
   // `context`, `it` and `feature` are ordinary Ruby method names: an Interactor
   // service reads `context.amount` in every one of its files, and typing those

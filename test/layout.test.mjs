@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { namesakeCompanions } from "../lib/companions.mjs";
-import { isTestFile, layoutFacts, layoutRoots, minRootFiles, runnerOf, testsLine } from "../lib/layout.mjs";
+import { isTestFile, layoutFacts, layoutRoots, minRootFiles, mirroredTests, runnerOf, testsLine } from "../lib/layout.mjs";
 import { roster } from "../lib/layout-scan.mjs";
 
 const file = (rel, lang = null, facets = null) => ({ rel, lang, facets });
@@ -14,7 +14,7 @@ test("the root floor is one percent of the corpus and never below three", () => 
   assert.equal(minRootFiles(100), 3);
 });
 
-test("a name or a directory the table does not know still names a test file", () => {
+test("a name the table does not know still names a test file", () => {
   for (const rel of [
     "src/a.test.ts",
     "src/a.spec.js",
@@ -22,14 +22,63 @@ test("a name or a directory the table does not know still names a test file", ()
     "src/__tests__/a.ts",
     "spec/a_spec.rb",
     "test/a_test.rb",
-    "cypress/integration/a.js",
-    "e2e/a.js",
-    "tests/a.js",
   ]) {
     assert.equal(isTestFile(file(rel, "js")), true, rel);
   }
   assert.equal(isTestFile(file("src/a.ts", "js")), false);
   assert.equal(isTestFile(file("src/latest/a.ts", "js")), false);
+});
+
+test("a name spelled with a hyphen is a test name too", () => {
+  // discourse writes its Ember tests as `login-test.js`, which is the dotted
+  // convention with the other separator.
+  assert.equal(isTestFile(file("tests/acceptance/login-test.js", "js")), true);
+  assert.equal(isTestFile(file("src/checkout-spec.ts", "js")), true);
+  assert.equal(isTestFile(file("src/latest-thing.ts", "js")), false);
+});
+
+test("a file in a test tree that mirrors a source file is that file's test", () => {
+  // eslint names `tests/lib/rules/no-var.js` after the `lib/rules/no-var.js`
+  // it covers and drives RuleTester, so nothing in the file says what it is.
+  // The tree does: strip the test root and it is the source path.
+  const corpus = [
+    file("lib/rules/no-var.js", "js"),
+    file("tests/lib/rules/no-var.js", "js"),
+    file("tests/data/no-var.js", "js"),
+    file("test/no-var.js", "js"),
+    file("test/cases/foo/lib.js", "js"),
+  ];
+  const mirrored = mirroredTests(corpus);
+
+  assert.equal(isTestFile(corpus[1], mirrored), true);
+  assert.equal(isTestFile(corpus[2], mirrored), false, "a different position mirrors nothing");
+  assert.equal(isTestFile(corpus[3], mirrored), false, "a bare basename is not a mirror");
+  assert.equal(isTestFile(corpus[4], mirrored), false, "nothing outside the test tree answers to it");
+});
+
+test("the roster counts against the mirror index it is handed, and builds none of its own", () => {
+  // The scan builds it once over the corpus and the area kinds read the same
+  // one, so the record has to take it rather than walk the tree again.
+  const corpus = [file("src/a.ts", "js"), file("src/b.ts", "js"), file("src/c.ts", "js")];
+
+  assert.deepEqual(layoutFacts(corpus).tests, [], "nothing here mirrors anything");
+  assert.deepEqual(layoutFacts(corpus, { mirrored: new Set(["src/a.ts"]) }).tests, [
+    { runner: "test files", root: "src", files: 1 },
+  ]);
+});
+
+test("a directory called test does not make what sits in it a test", () => {
+  // The directory holds the support code as well as the specs. Counting all of
+  // it read `136 test files under spec/factories` on empire-flippers/api,
+  // `spec/support: 22 test files` on rubocop, and 1,979 fixture modules under
+  // webpack's `test/cases`.
+  assert.equal(isTestFile(file("spec/factories/users.rb", "ruby")), false);
+  assert.equal(isTestFile(file("cypress/support/commands.js", "js")), false);
+  assert.equal(isTestFile(file("test/foo.js", "js")), false);
+  assert.equal(isTestFile(file("test/cases/foo/lib.js", "js", { testCalls: false })), false);
+
+  assert.equal(isTestFile(file("spec/support/shared.rb", "ruby", { testCalls: true })), true);
+  assert.equal(isTestFile(file("test/cases/foo/index.js", "js", { testCalls: true })), true);
 });
 
 test("a file this tool does not parse is not a spec, wherever it sits", () => {
@@ -201,6 +250,43 @@ test("the tests line groups by runner and names the prefix each shares", () => {
     { runner: "cypress", root: "cypress/integration", files: 102 },
     { runner: "vitest", root: "src", files: 4 },
   ]);
+});
+
+test("the tests line names where most of a runner's files are, not what one stray file leaves", () => {
+  // Measured on empire-flippers/client: 102 Cypress specs under
+  // cypress/integration and 4 elsewhere collapsed the shared prefix to the
+  // repository root, and the line read "106 Cypress specs under .".
+  const corpus = [
+    ...files(102, (i) => file(`cypress/integration/x${i}.spec.js`, "js")),
+    ...files(4, (i) => file(`src/legacy/y${i}.cy.ts`, "js", { testRunner: "cypress" })),
+  ];
+
+  assert.deepEqual(testsLine(corpus), [{ runner: "cypress", root: "cypress/integration", files: 106 }]);
+});
+
+test("a runner spread across the repository is named without a directory", () => {
+  const corpus = [
+    ...files(30, (i) => file(`apps/a/test/x${i}.test.ts`, "js", { testRunner: "vitest" })),
+    ...files(30, (i) => file(`libs/b/test/y${i}.test.ts`, "js", { testRunner: "vitest" })),
+  ];
+
+  assert.deepEqual(testsLine(corpus), [{ runner: "vitest", root: null, files: 60 }]);
+});
+
+test("a shell whose children all sit under the floor keeps its own line", () => {
+  // webpack: 652 files under lib/, 117 of them directly there and no child
+  // clearing the floor, so descending dissolved the whole of webpack's source
+  // and the map named test/ and examples/ and nothing else.
+  const corpus = [
+    ...files(1000, (i) => file(`test/t${i}.js`, "js")),
+    ...files(117, (i) => file(`lib/l${i}.js`, "js")),
+    ...files(8, (i) => i).flatMap((d) => files(60, (i) => file(`lib/d${d}/f${i}.js`, "js"))),
+  ];
+
+  const { roots } = layoutRoots(corpus, { minFiles: 144 });
+
+  assert.deepEqual(paths(roots), ["test", "lib"]);
+  assert.equal(roots[1].files.length, 597);
 });
 
 test("two runners at one count order by name, whichever file arrived first", () => {

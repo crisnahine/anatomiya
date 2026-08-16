@@ -1482,6 +1482,48 @@ test("a runner the table does not name prints as test files, never as specs", ()
   assert.equal(lines[4], "- tests: 1 test file under src/mod; 40 RSpec under spec");
 });
 
+test("a test root is counted by runner, not by everything sitting in it", () => {
+  // alphagov/whitehall: 766 files under test/, 538 of them minitest specs, and
+  // the line called all 766 minitest specs while the tests line below it said
+  // 538.
+  const lines = renderLayout(
+    clientLayout({
+      roots: [
+        root("test", {
+          files: 766,
+          exts: [[".rb", 700]],
+          tests: [
+            { runner: "minitest", files: 538, sub: null },
+            { runner: "rspec", files: 5, sub: null },
+          ],
+          testRoot: true,
+        }),
+      ],
+      more: { roots: 0, files: 0 },
+      tests: [{ runner: "minitest", root: "test", files: 538 }],
+      principles: ["test_shape"],
+    })
+  );
+
+  assert.equal(lines[2], "- test: 538 minitest specs, 5 RSpec specs and 223 other");
+});
+
+test("a runner spread across the repository is named without a directory", () => {
+  const lines = renderLayout(
+    clientLayout({
+      roots: [root("src/mod", { files: 30, exts: [[".js", 30]] })],
+      more: { roots: 0, files: 0 },
+      tests: [
+        { runner: "vitest", root: null, files: 60 },
+        { runner: "jest", root: "test", files: 4 },
+      ],
+      principles: ["test_shape"],
+    })
+  );
+
+  assert.equal(lines[3], "- tests: 60 vitest specs; 4 jest under test");
+});
+
 test("a repository with more than three test groups counts the tail", () => {
   const group = (runner, root, files) => ({ runner, root, files });
   const lines = renderLayout(
