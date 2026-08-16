@@ -139,6 +139,19 @@ for (const cmd of unique) {
   claim("README.md", readme.includes(`/anatomiya:${cmd}`), `does not mention /anatomiya:${cmd}`);
 }
 
+// --- runtime dependencies ---------------------------------------------------
+
+// SECURITY.md said "oxc-parser is the only runtime dependency" for as long as
+// there were two of them. A reader deciding whether to run this on a work
+// repository is reading exactly that sentence, so the set is checked rather
+// than trusted.
+const deps = Object.keys(JSON.parse(read("package.json")).dependencies ?? {});
+for (const doc of ["SECURITY.md", "README.md"]) {
+  const text = read(doc);
+  for (const dep of deps) claim(doc, text.includes(dep), `does not name the runtime dependency ${dep}`);
+  claim(doc, !/only runtime dependency/.test(text), `says "only runtime dependency" with ${deps.length} of them`);
+}
+
 // --- versions ---------------------------------------------------------------
 
 const pkg = JSON.parse(read("package.json"));
@@ -155,5 +168,5 @@ if (problems.length) {
 }
 console.log(
   `docs match the code: ${total} dimensions (${js} js, ${jsx} jsx, ${ruby} ruby, ${obligations} of them file-to-file obligations), ` +
-    `${unique.length} commands, version ${pkg.version}`
+    `${unique.length} commands, ${deps.length} runtime dependencies, version ${pkg.version}`
 );
