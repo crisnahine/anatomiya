@@ -1354,7 +1354,7 @@ async function flowRepo(t) {
   for (let i = 0; i < 12; i++) {
     writeFileSync(join(dir, "src", `f${i}.ts`), `export function f${i}(): number { return ${i} }\n`);
   }
-  git("init", "-q");
+  git("init", "-q", "-b", "main");
   git("config", "user.email", "t@t.test");
   git("config", "user.name", "T");
   git("add", "-A");
@@ -1377,7 +1377,7 @@ test("the check does not report a type claim against a file whose types were str
   // their return type" next to a line that declares one.
   const repo = await flowRepo(t);
 
-  const report = await check(repo, { base: "main" });
+  const report = await check(repo, { baseRef: "main" });
   const text = formatReport(report);
 
   assert.doesNotMatch(
@@ -1400,7 +1400,7 @@ test("a check that could not load the stripper names the dependency too", async 
   for (let i = 0; i < 12; i++) {
     writeFileSync(join(repo, "src", `f${i}.ts`), `export function f${i}(): number { return ${i} }\n`);
   }
-  git("init", "-q");
+  git("init", "-q", "-b", "main");
   git("config", "user.email", "t@t.test");
   git("config", "user.name", "T");
   git("add", "-A");
@@ -1438,7 +1438,7 @@ test("a claim is not silenced by a finding invented off the base's stripped tree
     join(dir, "src", "legacy.js"),
     ["// @flow", "type O = {| n: string |}", "export function legacy(o: O) {", "  return o.n", "}"].join("\n") + "\n"
   );
-  git("init", "-q");
+  git("init", "-q", "-b", "main");
   git("config", "user.email", "t@t.test");
   git("config", "user.name", "T");
   git("add", "-A");
@@ -1479,7 +1479,7 @@ test("a map holding a semantic claim, checked without --deep, says so rather tha
   for (let i = 0; i < 14; i++) {
     writeFileSync(join(dir, "src", `f${i}.ts`), `export function f${i}(s: string) {\n  return s.trim().toLowerCase()\n}\n`);
   }
-  git("init", "-q");
+  git("init", "-q", "-b", "main");
   git("config", "user.email", "t@t.test");
   git("config", "user.name", "T");
   git("add", "-A");

@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join, isAbsolute } from "node:path";
 import { loadTypeScript } from "../lib/semantic.mjs";
 import { repo } from "./ts-repo.mjs";
-import { readConfig, FORCED_OPTIONS, confinedCompilerHost } from "../lib/tsconfig.mjs";
+import { readConfig, FORCED_OPTIONS, confinedCompilerHost, toTsPath } from "../lib/tsconfig.mjs";
 
 const loaded = await loadTypeScript();
 const ts = loaded?.ts;
@@ -151,6 +151,47 @@ test("the compiler host refuses a read outside the repository and outside the li
     assert.ok(isAbsolute(lib), "the host answers with a path, not a name");
     assert.equal(host.fileExists(lib), true, "the plugin's own lib files stay readable");
     assert.match(lib, /node_modules[/\\]typescript[/\\]lib/, "and it is the plugin's own, not the repository's");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a path handed to TypeScript carries no backslash, whatever platform built it", () => {
+  // TypeScript normalises every path it holds to forward slashes and then
+  // asserts the two forms are equal, so a backslash path crashes it with a
+  // Debug Failure the moment a config has an error to report. Windows-only, and
+  // it took CI red on both Windows legs to find.
+  //
+  // Driven with a Windows-shaped path rather than one this machine built: `sep`
+  // is already "/" here, so a test over a real local path passes without the
+  // fix and proves nothing. That is what the first version of this test did.
+  assert.equal(toTsPath("C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\x\\tsconfig.json"),
+               "C:/Users/RUNNER~1/AppData/Local/Temp/x/tsconfig.json");
+  assert.equal(toTsPath("/tmp/x/tsconfig.json"), "/tmp/x/tsconfig.json", "a POSIX path is left alone");
+  assert.equal(toTsPath("D:\\a\\anatomiya"), "D:/a/anatomiya");
+});
+
+test("readConfig hands both TypeScript entry points a normalised path", needsTs, () => {
+  const dir = repo({ "tsconfig.json": `{"compilerOptions":{"target":"not-a-target"}}`, "a.ts": "export const a = 1" });
+  try {
+    const seen = [];
+    const spy = {
+      ...ts,
+      parseConfigFileTextToJson(path, text) {
+        seen.push(path);
+        return ts.parseConfigFileTextToJson(path, text);
+      },
+      parseJsonConfigFileContent(config, host, basePath, existing, configName) {
+        seen.push(basePath, configName);
+        return ts.parseJsonConfigFileContent(config, host, basePath, existing, configName);
+      },
+    };
+
+    const r = readConfig(spy, dir);
+
+    assert.equal(r.status, "degraded", "the fixture has to reach the error path, or nothing was handed over");
+    assert.ok(seen.length >= 3, "both entry points were expected to be called");
+    for (const p of seen) assert.equal(p, toTsPath(p), `${p} was not normalised before TypeScript saw it`);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
