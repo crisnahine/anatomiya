@@ -384,3 +384,32 @@ test("a stripped file says nothing about its imports either", async () => {
   }
   assert.equal(r.hits.nullish_default?.length, 1, "a dimension that reads code still answers");
 });
+
+test("a multi-line annotation leaves the line numbers where they were", async () => {
+  // The check prints line numbers off this tree. Blanking preserves offsets
+  // only if it preserves the newlines inside a type that spans several lines;
+  // a stripper that collapsed them would move every line below it, and the
+  // check would name the wrong one.
+  const source = [
+    "// @flow",
+    "type Opts = {|",
+    "  name: string,",
+    "  size: number,",
+    "|}",
+    "export function greet(",
+    "  o: Opts,",
+    "): string {",
+    "  return o.name",
+    "}",
+    "const marker = 1",
+    "export { marker }",
+  ].join("\n");
+
+  const { records } = await parseAll([{ rel: "multiline.js", source, lang: "js" }], { withProgram: true });
+  const r = records.get("multiline.js");
+
+  assert.equal(r.stripped, true, "the retry has to have fired, or this asserts nothing");
+  const marker = r.program.body.flatMap((n) => n.declarations ?? []).find((d) => d.id?.name === "marker");
+  assert.ok(marker, "the fixture lost its marker");
+  assert.equal(source.slice(0, marker.start).split("\n").length, 11, "the marker is on line 11 of the source");
+});
