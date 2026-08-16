@@ -25,7 +25,7 @@ memory of the last review, so it re-earns the same comment every time, and a cou
 only thing in the loop that does remember. Full numbers and caveats in [docs/why.md](docs/why.md).
 
 One correction to that table before you trust it. The per-pull-request obligations are what makes a
-repository's preventable share high in the measurement. Nine of the 49 dimensions that ship today are
+repository's preventable share high in the measurement. Nine of the 50 dimensions that ship today are
 file-to-file obligations, so a model without its spec is counted; a changeset file, which is owed per
 pull request rather than per file, is not. Those repositories are the ones the design is aimed at,
 not the ones it already serves fully.
@@ -247,8 +247,8 @@ claim that this finds bugs earlier is false.
 blocks a commit, a push, or a merge, and `check` reports rather than fails. If your linter already
 enforces a rule, the map restating it is waste, not defence in depth.
 
-**JavaScript, TypeScript and Ruby, nothing else.** 49 dimensions ship: 21 for JavaScript, 26 reachable
-in JSX, 22 for Ruby.
+**JavaScript, TypeScript and Ruby, nothing else.** 50 dimensions ship: 22 for JavaScript, 27 reachable
+in JSX, 23 for Ruby.
 A Python, Go or Rust repository gets an overview with no claims in it.
 
 One of the 49 needs the type checker and is the only thing `scan --deep` adds: `a call chain stays

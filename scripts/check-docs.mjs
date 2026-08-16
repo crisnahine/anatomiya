@@ -15,6 +15,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
 
 import { ALL_DIMENSIONS, dimensionsFor } from "../lib/dimensions.mjs";
+import { NAMING_CORPUS } from "../lib/dimensions-naming.mjs";
 import { PAIRINGS, pairingsFor } from "../lib/pairing.mjs";
 import { GATES } from "../lib/reduce.mjs";
 
@@ -73,10 +74,14 @@ function claim(where, ok, detail) {
 // Obligations count here too. A checker blind to a whole dimension class would
 // pass while the README undercounted by nine, which is the drift this script
 // exists to catch.
-const total = ALL_DIMENSIONS.length + PAIRINGS.length;
-const js = dimensionsFor(["js"]).length + pairingsFor(["js"]).length;
-const jsx = dimensionsFor(["jsx"]).length + pairingsFor(["jsx"]).length;
-const ruby = dimensionsFor(["ruby"]).length + pairingsFor(["ruby"]).length;
+// The corpus rows are composed by the reducer rather than the registry, and a
+// shipped claim outside every count is exactly the blindness this script
+// exists to catch.
+const corpusFor = (lang) => NAMING_CORPUS.filter((d) => d.langs.includes(lang)).length;
+const total = ALL_DIMENSIONS.length + PAIRINGS.length + NAMING_CORPUS.length;
+const js = dimensionsFor(["js"]).length + pairingsFor(["js"]).length + corpusFor("js");
+const jsx = dimensionsFor(["jsx"]).length + pairingsFor(["jsx"]).length + corpusFor("jsx");
+const ruby = dimensionsFor(["ruby"]).length + pairingsFor(["ruby"]).length + corpusFor("ruby");
 const obligations = PAIRINGS.length;
 
 // A released entry states the number that shipped in it and stays true forever.
