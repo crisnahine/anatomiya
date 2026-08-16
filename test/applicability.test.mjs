@@ -162,6 +162,33 @@ const WITNESSES = {
     inapplicable: `export function f() { return 1 }`,
   },
 
+  // --- dimensions-naming.mjs ---
+  function_naming_case: {
+    lang: "js",
+    // Every form the walker treats apart: a declaration, an arrow bound to a
+    // const, a function expression bound to a const, in each spellable class.
+    applicable: [
+      `function fooBar() {}`,
+      `function foo_bar() {}`,
+      `const FooBar = () => {}`,
+      `const fetchAll = function () {}`,
+    ],
+    // A single lowercase word matches every class and votes for none, and a
+    // nested function is not module level.
+    inapplicable: `function outer() { function innerName() {} }`,
+  },
+  exported_symbol_case: {
+    lang: "js",
+    applicable: [
+      `export function fooBar() {}`,
+      `export const my_thing = 1`,
+      `export class OrderList {}`,
+      `const plain = 1; export { plain as renamedThing }`,
+      `export type UserShape = { id: string }`,
+    ],
+    inapplicable: `export default function fooBar() {}`,
+  },
+
   // --- dimensions-jsx.mjs ---
   hook_call_style: {
     lang: "jsx",

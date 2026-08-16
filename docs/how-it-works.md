@@ -190,7 +190,7 @@ minutes and what a hung parse looks like is silence.
 
 ## 4. Dimensions and the three numbers
 
-A dimension is one claim about one area. 31 ship: 15 for JavaScript, 20 reachable in JSX, 11 for
+A dimension is one claim about one area. 33 ship: 17 for JavaScript, 22 reachable in JSX, 11 for
 Ruby. Each
 is defined by three quantities, not one.
 
@@ -247,10 +247,19 @@ in `check`.
 | `column_null_declared` | partial | ruby | new columns are declared `null: false` |
 | `table_primary_key_declared` | partial | ruby | new tables declare their primary key type |
 | `reference_foreign_key` | partial | ruby | reference columns declare their foreign key |
+| `function_naming_case` | precise | js, jsx | functions are named `<style>`, learned |
+| `exported_symbol_case` | precise | js, jsx | exported names are `<style>`, learned |
 
-The five JSX rows are the ones that make the JSX total 20 rather than 15: a `.tsx` or `.jsx` file is
+The five JSX rows are the ones that make the JSX total 22 rather than 17: a `.tsx` or `.jsx` file is
 counted by every `js` dimension as well as these. The five migration rows are Rails and count as
 Ruby, which is what takes Ruby from 6 to 11.
+
+A row marked "learned" carries a template rather than a fixed sentence. Its sites vote with the
+naming class they spell, the plurality class becomes the sentence, and a tie learns nothing and
+produces no slot. One more such row, `file_naming_case`, asks about filenames: it needs no parser,
+so the reducer composes it the way it composes the obligations. A learned class that has moved
+since the pin closes the slot (`learned-moved`) until a human re-pins, because the pinned counts
+answer a different sentence than today's.
 
 A dimension that finds zero sites in an area produces no slot at all. The area file only lists
 dimensions that appeared.
