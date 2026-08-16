@@ -733,3 +733,52 @@ test("the scan writes down which kinds of file live where", async (t) => {
   assert.deepEqual(components.kinds.exts, [[".tsx", 5]], "an area is counted the way a root is");
   assert.equal(components.kinds.jsx, 5);
 });
+
+test("an area names what its files import and what other files import from it", async (t) => {
+  const dir = repo(t, (d, { git, write }) => {
+    for (let i = 0; i < 6; i++) {
+      write(
+        `src/components/Thing${i}.tsx`,
+        `import styled from "styled-components"\nimport { fullName } from "../utils/user"\n` +
+          `const Box${i} = styled.div\`\`\nexport const Thing${i} = () => <Box${i}>{fullName()}</Box${i}>\n`
+      );
+    }
+    write("src/utils/user.ts", "export function fullName(): string {\n  return \"x\"\n}\n");
+    write("src/utils/dates.ts", "export function today(): number {\n  return 1\n}\n");
+    write("src/utils/ids.ts", "export function nextId(): number {\n  return 2\n}\n");
+    git("add", "-A");
+    git("commit", "-qm", "init");
+  });
+
+  const result = await scan(dir);
+
+  const components = result.areas.find((a) => a.path === "src/components");
+  assert.ok(components, "the importing area exists");
+  assert.deepEqual(
+    components.imports,
+    [{ module: "styled-components", files: 6, of: 6 }],
+    "a relative sibling import is not a convention, so only the package is named"
+  );
+
+  const utils = result.areas.find((a) => a.path === "src/utils");
+  assert.ok(utils, "the imported area exists");
+  assert.deepEqual(utils.reused, [{ name: "fullName", file: "src/utils/user.ts", importers: 6 }]);
+  assert.deepEqual(utils.imports, [], "nothing in here imports anything, which is a count and not a gap");
+});
+
+test("an area with no static import surface is asked neither question", needsRuby, async (t) => {
+  const dir = repo(t, (d, { git, write }) => {
+    for (let i = 0; i < 4; i++) {
+      write(`app/models/thing${i}.rb`, `class Thing${i}\n  def call\n    1\n  end\nend\n`);
+    }
+    git("add", "-A");
+    git("commit", "-qm", "init");
+  });
+
+  const result = await scan(dir);
+
+  const models = result.areas.find((a) => a.path === "app/models");
+  assert.ok(models, "the area exists");
+  assert.equal(models.imports, null, "Ruby has no import to count, and zero would read as a measured none");
+  assert.equal(models.reused, null);
+});
