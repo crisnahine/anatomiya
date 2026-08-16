@@ -112,3 +112,46 @@ test("a checker outside major 5 is refused, because 7 has no JS API", async (t) 
   const ok = await loadTypeScript({ specifier: stub("5.9.3") });
   assert.equal(ok?.version, "5.9.3");
 });
+
+test("a checker that dies partway through is a failure, not a clean partial answer", async (t) => {
+  // The exit handler read any death after `built` as success, so a worker
+  // OOM-killed halfway (it was measured at 880 MB resident) resolved 'ok' with
+  // half the corpus in `records`, and the map rendered type-checked claims
+  // measured over a fraction of it with nothing saying so. That is the silent
+  // partial answer B8 exists to refuse.
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-halfdead-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const worker = join(dir, "half-dead.mjs");
+  writeFileSync(
+    worker,
+    [
+      "process.send({ ready: true });",
+      "process.on('message', () => {",
+      "  process.send({ built: true, resolution: { resolved: 90, total: 100 }, config: { status: 'ok', reason: null } });",
+      "  process.send({ rel: 'a.ts', hits: {} });",
+      "  setTimeout(() => process.exit(137), 20);",
+      "});",
+    ].join("\n")
+  );
+
+  const r = await runSemantic(dir, [{ rel: "a.ts", abs: join(dir, "a.ts"), lang: "js" }], { workerPath: worker });
+
+  assert.equal(r.status, "degraded", "a half-finished run reported its partial counts as ok");
+  assert.match(String(r.error ?? ""), /before it finished/);
+});
+
+test("a checker that cannot start degrades the tier instead of crashing the scan", async (t) => {
+  // fork emits 'error' on EMFILE or EAGAIN, and nothing listened for it, so an
+  // unhandled 'error' event became an uncaughtException and took the whole
+  // scan down, losing the syntactic pass that had already finished.
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-nostart-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+  const r = await runSemantic(dir, [{ rel: "a.ts", abs: join(dir, "a.ts"), lang: "js" }], {
+    workerPath: join(dir, "does-not-exist.mjs"),
+  });
+
+  assert.equal(r.status, "degraded");
+  assert.equal(r.records.size, 0);
+  assert.ok(r.error, "the tier has to say why it could not run");
+});

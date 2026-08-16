@@ -517,3 +517,30 @@ test("asking for all tiers returns the semantic rows too", () => {
   const keys = dimensionsFor(["js"], { tier: "all" }).map((d) => d.key);
   for (const d of SEMANTIC_DIMENSIONS) assert.ok(keys.includes(d.key), `${d.key} is missing from the deep set`);
 });
+
+test("a principle's name is matched as a word, not as a substring", () => {
+  // The short entries are acronyms, and a bare substring match finds them
+  // inside ordinary English: "consolidated" holds SOLID, "dry-run" holds DRY,
+  // "kissed" holds KISS. The assert runs at module load over the whole
+  // registry, so one legitimate claim spelled that way kills scan, check and
+  // pin at startup and names a principle the sentence never mentions.
+  for (const claim of [
+    "errors are consolidated at the boundary",
+    "migrations are dry-run first",
+    "a stale handler is kissed goodbye",
+    "the payload is yagni-free",
+  ]) {
+    assert.doesNotThrow(() => assertClaimIsNotAVerdict([{ key: "x", claim, counterClaim: null }]), claim);
+  }
+
+  // The names themselves still refuse, whatever the surrounding case.
+  for (const claim of [
+    "the code follows SOLID",
+    "handlers are DRY",
+    "keep it KISS",
+    "YAGNI applies here",
+    "calls follow the law of demeter",
+  ]) {
+    assert.throws(() => assertClaimIsNotAVerdict([{ key: "x", claim, counterClaim: null }]), /principle/, claim);
+  }
+});
