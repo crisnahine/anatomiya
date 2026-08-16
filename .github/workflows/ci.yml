@@ -24,6 +24,9 @@ jobs:
   test:
     name: test (node ${{ matrix.node }}, ${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    # A test that hangs (a blocking open on a fifo, say) fails here instead of
+    # holding the runner for the six-hour default.
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -98,6 +101,9 @@ jobs:
   coverage:
     name: coverage
     runs-on: ubuntu-latest
+    # A test that hangs (a blocking open on a fifo, say) fails here instead of
+    # holding the runner for the six-hour default.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -139,6 +145,9 @@ jobs:
   plugin:
     name: plugin manifests
     runs-on: ubuntu-latest
+    # A test that hangs (a blocking open on a fifo, say) fails here instead of
+    # holding the runner for the six-hour default.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -266,6 +275,9 @@ jobs:
   smoke:
     name: smoke (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    # A test that hangs (a blocking open on a fifo, say) fails here instead of
+    # holding the runner for the six-hour default.
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
