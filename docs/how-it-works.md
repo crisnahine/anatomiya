@@ -125,10 +125,13 @@ lands where it does in the source, which is the unit oxc counts in. A retry that
 genuine syntax error into a clean parse. The `.ts` family is not retried, because Flow is not legal
 there.
 
-A retried file has its annotations blanked, so three claims go unanswered for it: the two that ask
-about the annotation itself, and `relative imports carry the file extension`, whose sites include the
-`import type` statements the strip deletes outright. The file is left out of those three
-denominators as well, because a file nobody asked is not a file that declined. Every claim that
+A retried file has its annotations blanked, so five claims go unanswered for it: the two that ask
+about the annotation itself; `relative imports carry the file extension`, whose sites include the
+`import type` statements the strip deletes outright; `exported names are <style>`, whose sites
+include type-only exports the strip deletes the same way; and `exported functions carry a doc
+comment`, whose comment gap the scan and the check would otherwise measure against two different
+strings. The file is left out of those five denominators as well, because a file nobody asked is
+not a file that declined. Every claim that
 reads code is answered as usual. If `flow-remove-types` is not installed at all the retry cannot
 run, and the scan and the check both say so by name rather than leaving a pile of rejected files
 with no explanation.
@@ -190,7 +193,7 @@ minutes and what a hung parse looks like is silence.
 
 ## 4. Dimensions and the three numbers
 
-A dimension is one claim about one area. 41 ship, the filename row included: 22 for JavaScript, 27 reachable in JSX, and 14 that speak Ruby. Each
+A dimension is one claim about one area. 41 ship, the filename row included: 22 for JavaScript, 27 reachable in JSX, and 14 that speak Ruby, plus the one type-checked row, which sits in the total and reaches a scan only with --deep. Each
 is defined by three quantities, not one.
 
 | Quantity | Meaning |
