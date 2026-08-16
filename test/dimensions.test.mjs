@@ -8,10 +8,12 @@ import {
   assertPrecision,
   assertApplicability,
   assertClaimIsNotAVerdict,
+  assertTier,
   PRINCIPLE_NAMES,
   PRECISIONS,
 } from "../lib/dimensions.mjs";
 import { PAIRINGS } from "../lib/pairing.mjs";
+import { SEMANTIC_DIMENSIONS } from "../lib/dimensions-semantic.mjs";
 import { walk, collectHits } from "../lib/walk.mjs";
 
 const dim = (key) => DIMENSIONS.find((d) => d.key === key);
@@ -494,4 +496,24 @@ test("a claim about the code loads", () => {
 
 test("every shipped claim says what the code does", () => {
   assert.doesNotThrow(() => assertClaimIsNotAVerdict(ALL_DIMENSIONS));
+});
+
+test("every registry row declares a tier, and an unknown one refuses to load", () => {
+  for (const d of ALL_DIMENSIONS) {
+    assert.ok(["syntactic", "semantic"].includes(d.tier), `${d.key} declares tier ${JSON.stringify(d.tier)}`);
+  }
+  assert.throws(() => assertTier([{ key: "x", tier: "Syntactic" }]), /tier/);
+  assert.throws(() => assertTier([{ key: "y" }]), /tier/);
+});
+
+test("the default caller is offered the syntactic tier only", () => {
+  // The tier is opt-in. A caller that forgets to ask must not get a claim that
+  // needs a checker nobody ran.
+  const keys = dimensionsFor(["js"]).map((d) => d.key);
+  for (const d of SEMANTIC_DIMENSIONS) assert.equal(keys.includes(d.key), false, `${d.key} leaked into the default set`);
+});
+
+test("asking for all tiers returns the semantic rows too", () => {
+  const keys = dimensionsFor(["js"], { tier: "all" }).map((d) => d.key);
+  for (const d of SEMANTIC_DIMENSIONS) assert.ok(keys.includes(d.key), `${d.key} is missing from the deep set`);
 });
