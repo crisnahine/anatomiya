@@ -67,6 +67,9 @@ legitimate origin and the table says so rather than inventing an entry to point 
 | job_test | - | - | shipped | |
 | law_of_demeter | Law of Demeter | Law of Demeter | shipped | The glossary name is the principle's, and a ratio beside it reads as agreement with the principle rather than as a count of this repository's chains. The key says what is counted: a call chain whose receivers are one type. The only semantic row, so it reaches a scan only with --deep |
 | file_naming_case | - | - | shipped | Written from the measured naming-divergence literature rather than the glossary. The class is learned per area from the plurality of its own filenames, a tie learns nothing, and a class that moved since the pin closes the slot |
+| route_logging | - | - | shipped | The most cited agent symptom is framework-default code instead of the repository's wrapper. The wrapper is learned per file from relative imports whose filename says log, logger or logging; offered only where the corpus shows such a file (C8) |
+| route_network | - | - | shipped | Same shape over fetch and axios against a client, http, api, request or fetcher module |
+| route_env | - | - | shipped | Same shape over process.env against a config, env or settings module |
 | doc_comment_style | - | - | shipped | Written from the measured comment-divergence literature. Two real sides: repositories that document their export surface, and repositories whose files carry almost no comments, where the counter is the directive that stops tutorial-style over-commenting |
 | function_naming_case | - | - | shipped | The same learning over module-level function names. Module level only, matching function_style's altitude: a method answers to its class's convention |
 | exported_symbol_case | - | - | shipped | The same learning over a module's export surface, where a naming convention costs its consumers. Blind on a Flow-stripped file, because the retry deletes a type-only export whole |

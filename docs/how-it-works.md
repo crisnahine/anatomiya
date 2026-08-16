@@ -190,7 +190,7 @@ minutes and what a hung parse looks like is silence.
 
 ## 4. Dimensions and the three numbers
 
-A dimension is one claim about one area. 34 ship: 18 for JavaScript, 23 reachable in JSX, 11 for
+A dimension is one claim about one area. 37 ship: 21 for JavaScript, 26 reachable in JSX, 11 for
 Ruby. Each
 is defined by three quantities, not one.
 
@@ -249,10 +249,21 @@ in `check`.
 | `reference_foreign_key` | partial | ruby | reference columns declare their foreign key |
 | `function_naming_case` | precise | js, jsx | functions are named `<style>`, learned |
 | `exported_symbol_case` | precise | js, jsx | exported names are `<style>`, learned |
+| `doc_comment_style` | partial | js, jsx | exported functions carry a doc comment |
+| `route_logging` | partial | js, jsx | logging goes through the repository's own logger, not the console |
+| `route_network` | partial | js, jsx | network calls go through the repository's own client, not fetch directly |
+| `route_env` | partial | js, jsx | environment reads go through the repository's own config module, not process.env |
 
 The five JSX rows are the ones that make the JSX total 22 rather than 17: a `.tsx` or `.jsx` file is
 counted by every `js` dimension as well as these. The five migration rows are Rails and count as
 Ruby, which is what takes Ruby from 6 to 11.
+
+The three `route_` rows ask whether a cross-cutting concern goes through the repository's own
+module. The wrapper is learned per file from its relative imports, by filename vocabulary (log,
+logger, logging; client, http, api, request, fetcher; config, env, settings), and the direct forms
+are a closed table (console calls, fetch and axios, process.env reads). Each row is offered only
+where the corpus holds a wrapper-shaped file at all, the same posture as a framework claim, so a
+repository that logs to the console on purpose never carries a line that can only read zero.
 
 A row marked "learned" carries a template rather than a fixed sentence. Its sites vote with the
 naming class they spell, the plurality class becomes the sentence, and a tie learns nothing and
