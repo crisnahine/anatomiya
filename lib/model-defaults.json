@@ -1,13 +1,13 @@
 {
   "swallowed_error": {
-    "default": "none",
+    "default": "claim",
     "provenance": {
       "method": "measured",
       "model": "claude-opus-5",
       "date": "2026-08-16",
-      "samples": 18,
+      "samples": 30,
       "sideCounts": {
-        "claim": 9,
+        "claim": 23,
         "counter": 0
       }
     }
@@ -18,10 +18,10 @@
       "method": "measured",
       "model": "claude-opus-5",
       "date": "2026-08-16",
-      "samples": 18,
+      "samples": 30,
       "sideCounts": {
-        "claim": 7,
-        "counter": 39
+        "claim": 15,
+        "counter": 73
       }
     }
   },
@@ -31,9 +31,9 @@
       "method": "measured",
       "model": "claude-opus-5",
       "date": "2026-08-16",
-      "samples": 18,
+      "samples": 30,
       "sideCounts": {
-        "claim": 28,
+        "claim": 54,
         "counter": 0
       }
     }
@@ -44,10 +44,10 @@
       "method": "measured",
       "model": "claude-opus-5",
       "date": "2026-08-16",
-      "samples": 18,
+      "samples": 30,
       "sideCounts": {
-        "claim": 7,
-        "counter": 3
+        "claim": 14,
+        "counter": 7
       }
     }
   },
@@ -57,10 +57,10 @@
       "method": "measured",
       "model": "claude-opus-5",
       "date": "2026-08-16",
-      "samples": 18,
+      "samples": 30,
       "sideCounts": {
         "claim": 0,
-        "counter": 63
+        "counter": 128
       }
     }
   },
@@ -70,23 +70,23 @@
       "method": "measured",
       "model": "claude-opus-5",
       "date": "2026-08-16",
-      "samples": 18,
+      "samples": 30,
       "sideCounts": {
-        "claim": 58,
+        "claim": 119,
         "counter": 0
       }
     }
   },
   "explicit_return_type": {
-    "default": "none",
+    "default": "claim",
     "provenance": {
       "method": "measured",
       "model": "claude-opus-5",
       "date": "2026-08-16",
-      "samples": 18,
+      "samples": 30,
       "sideCounts": {
-        "claim": 15,
-        "counter": 3
+        "claim": 31,
+        "counter": 6
       }
     }
   },
@@ -107,10 +107,10 @@
       "method": "measured",
       "model": "claude-opus-5",
       "date": "2026-08-16",
-      "samples": 18,
+      "samples": 30,
       "sideCounts": {
         "claim": 0,
-        "counter": 3
+        "counter": 6
       }
     }
   },
@@ -141,12 +141,14 @@
   "absent_is_null": {
     "default": "none",
     "provenance": {
-      "method": "literature",
-      "model": null,
-      "date": null,
-      "samples": null,
-      "sideCounts": null,
-      "source": "seed: unmeasured"
+      "method": "measured",
+      "model": "claude-opus-5",
+      "date": "2026-08-16",
+      "samples": 12,
+      "sideCounts": {
+        "claim": 5,
+        "counter": 0
+      }
     }
   },
   "iterate_with_for_of": {
@@ -155,9 +157,9 @@
       "method": "measured",
       "model": "claude-opus-5",
       "date": "2026-08-16",
-      "samples": 18,
+      "samples": 30,
       "sideCounts": {
-        "claim": 5,
+        "claim": 18,
         "counter": 0
       }
     }
@@ -168,10 +170,10 @@
       "method": "measured",
       "model": "claude-opus-5",
       "date": "2026-08-16",
-      "samples": 18,
+      "samples": 30,
       "sideCounts": {
         "claim": 0,
-        "counter": 25
+        "counter": 51
       }
     }
   },
@@ -181,9 +183,9 @@
       "method": "measured",
       "model": "claude-opus-5",
       "date": "2026-08-16",
-      "samples": 18,
+      "samples": 30,
       "sideCounts": {
-        "claim": 31,
+        "claim": 66,
         "counter": 0
       }
     }
@@ -275,10 +277,10 @@
       "method": "measured",
       "model": "claude-opus-5",
       "date": "2026-08-16",
-      "samples": 18,
+      "samples": 30,
       "sideCounts": {
         "claim": 0,
-        "counter": 3
+        "counter": 6
       }
     }
   },
@@ -493,34 +495,43 @@
   "file_naming_case": {
     "default": "none",
     "provenance": {
-      "method": "literature",
-      "model": null,
-      "date": null,
-      "samples": null,
+      "method": "measured",
+      "model": "claude-opus-5",
+      "date": "2026-08-16",
+      "samples": 12,
       "sideCounts": null,
-      "source": "seed: unmeasured"
+      "classCounts": {
+        "PascalCase": 3
+      }
     }
   },
   "function_naming_case": {
     "default": "none",
+    "class": "camelCase",
     "provenance": {
-      "method": "literature",
-      "model": null,
-      "date": null,
-      "samples": null,
+      "method": "measured",
+      "model": "claude-opus-5",
+      "date": "2026-08-16",
+      "samples": 12,
       "sideCounts": null,
-      "source": "seed: unmeasured"
+      "classCounts": {
+        "camelCase": 39,
+        "PascalCase": 3
+      }
     }
   },
   "exported_symbol_case": {
     "default": "none",
     "provenance": {
-      "method": "literature",
-      "model": null,
-      "date": null,
-      "samples": null,
+      "method": "measured",
+      "model": "claude-opus-5",
+      "date": "2026-08-16",
+      "samples": 12,
       "sideCounts": null,
-      "source": "seed: unmeasured"
+      "classCounts": {
+        "PascalCase": 22,
+        "camelCase": 10
+      }
     }
   },
   "doc_comment_style": {
@@ -529,10 +540,10 @@
       "method": "measured",
       "model": "claude-opus-5",
       "date": "2026-08-16",
-      "samples": 18,
+      "samples": 30,
       "sideCounts": {
         "claim": 1,
-        "counter": 19
+        "counter": 39
       }
     }
   },
