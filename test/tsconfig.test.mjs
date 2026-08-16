@@ -3,9 +3,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, isAbsolute } from "node:path";
 import { loadTypeScript } from "../lib/semantic.mjs";
-import { readConfig, FORCED_OPTIONS } from "../lib/tsconfig.mjs";
+import { readConfig, FORCED_OPTIONS, confinedCompilerHost } from "../lib/tsconfig.mjs";
 
 const loaded = await loadTypeScript();
 const ts = loaded?.ts;
@@ -142,6 +142,24 @@ test("a config whose globs match nothing is still ok, because the file list is f
   try {
     const r = readConfig(ts, dir);
     assert.equal(r.status, "ok", `a config with no matching inputs read as ${r.reason}`);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("the compiler host refuses a read outside the repository and outside the lib dir", needsTs, () => {
+  const dir = repo({ "a.ts": "export const a = 1" });
+  try {
+    const host = confinedCompilerHost(ts, dir, ts.getDefaultCompilerOptions());
+    assert.equal(host.fileExists(join(dir, "a.ts")), true, "inside the repository is readable");
+    assert.equal(host.fileExists("/etc/hosts"), false, "outside is not");
+    // The default lib has to stay readable or nothing resolves at all, and it
+    // comes from the plugin's own typescript rather than the repository's.
+    // `getDefaultLibFileName` answers with the full path, not a bare name.
+    const lib = host.getDefaultLibFileName(ts.getDefaultCompilerOptions());
+    assert.ok(isAbsolute(lib), "the host answers with a path, not a name");
+    assert.equal(host.fileExists(lib), true, "the plugin's own lib files stay readable");
+    assert.match(lib, /node_modules[/\\]typescript[/\\]lib/, "and it is the plugin's own, not the repository's");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
