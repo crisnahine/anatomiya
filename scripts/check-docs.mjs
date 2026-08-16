@@ -9,7 +9,7 @@
  * Only mechanically derivable claims are checked. Prose that describes a
  * measurement is left to a human.
  */
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
@@ -223,6 +223,19 @@ for (const doc of ["SECURITY.md", "README.md"]) {
   const text = read(doc);
   for (const dep of deps) claim(doc, text.includes(dep), `does not name the runtime dependency ${dep}`);
   claim(doc, !/only runtime dependency/.test(text), `says "only runtime dependency" with ${deps.length} of them`);
+}
+
+// --- committed documents carry no local path --------------------------------
+
+// The first A/B result committed here carried /Users/<name>/Documents/... into
+// a public repository, in its title and in its table. Where a clone sat on the
+// machine that ran something is not part of the record, and nobody else can
+// check it. Measurements are generated, so the generator was fixed too; this is
+// the net under it.
+for (const rel of readdirSync(join(root, "docs/measurements")).filter((f) => f.endsWith(".md"))) {
+  const text = read(join("docs/measurements", rel));
+  const hit = text.match(/\/Users\/[^\s/]+|\/home\/[^\s/]+|[A-Z]:\\Users\\[^\s\\]+/);
+  claim(`docs/measurements/${rel}`, !hit, `carries the local path ${hit ? hit[0] : ""}`);
 }
 
 // --- versions ---------------------------------------------------------------
