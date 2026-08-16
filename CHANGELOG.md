@@ -7,6 +7,27 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.1.12] - 2026-08-16
+
+The map now says only what a repository does differently from what the model writes anyway, and it
+grew the claim families reviewers actually fight about. Ten of the shipped claims are things the
+model does unprompted (measured, thirty runs through the deployed harness); those still count and
+still enforce, but they no longer spend a line of always-loaded context. Nine new rows ship: three
+that learn a naming class from the repository's own files, functions and exports; one that says
+whether exported functions carry a doc comment, with a real counter side; and five that ask whether
+logging, network and environment reads route through the repository's own module. A layering
+dimension was probed on four repositories and refused at this tool's own evidence bar, with the
+numbers.
+
+The per-file size cap moved from 4 MB to 1 MB, because a 35-repository sweep found the 1 to 4 MB
+band holds only bundles and compiled output sitting at the parse timeout, flipping between crashed
+and parsed with machine load, and each flip moved the always-loaded overview. Five review loops
+over the branch found two defects the tests had passed around: a facts-sourced value reaching a
+rendered claim unencoded, and the class-default filter reading a registry marker the reducer never
+carried. Both are pinned by tests that go through the real path.
+
+Closes #33.
+
 ### Added
 
 - A model-defaults table, `lib/model-defaults.json`. A stated side the model already writes
@@ -42,6 +63,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- A Rails migration's timestamp prefix is cut before its stem is classified (#33). Read whole,
+  `20260816120000_AddBadColumn.rb` classified as nothing, so conforming migration names counted on
+  scan and the realistic violating shape was the one the check could not see. Now the Pascal stem
+  is a MUST-FIX against a stated snake_case area with a clean baseline.
 - The per-file size cap is 1 MB, down from 4 MB. A 35-repository sweep found no hand-written
   source above 850 KB and every file in the 1 to 4 MB band a bundle, compiled output or a perf
   fixture sitting at the 5 s parse timeout boundary, flipping between crashed and parsed with
@@ -801,6 +826,7 @@ which are partial; several listed there are not implemented yet.
 - No claim that this catches defects. Measured across ten repositories, 1 of 317 defect review
   comments was preventable by a conventions map.
 
+[0.1.12]: https://github.com/crisnahine/anatomiya/compare/v0.1.11...v0.1.12
 [0.1.11]: https://github.com/crisnahine/anatomiya/compare/v0.1.10...v0.1.11
 [0.1.10]: https://github.com/crisnahine/anatomiya/compare/v0.1.9...v0.1.10
 [0.1.9]: https://github.com/crisnahine/anatomiya/compare/v0.1.8...v0.1.9

@@ -1690,3 +1690,24 @@ test("a badly named new file that does not parse is still a filename finding", a
   const found = forKey(report, "file_naming_case");
   assert.deepEqual(found.map((f) => f.path), ["src/badName.ts"], "the name needs no tree");
 });
+
+test("a Pascal-named migration breaks a stated snake_case claim (#33)", async (t) => {
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("db/migrate/20260101000000_create_users.rb", `class CreateUsers < ActiveRecord::Migration[7.0]\n  def change\n  end\nend\n`);
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("db/migrate/20260816120000_AddBadColumn.rb", `class AddBadColumn < ActiveRecord::Migration[7.0]\n  def change\n  end\nend\n`);
+    commit("add");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    path: "db/migrate",
+    dimensions: [dim({ key: "file_naming_case", learned: "snake_case" })],
+    areas: [{ id: "aaaaaaaa", path: "db/migrate", globs: [{ negated: false, dir: "db/migrate", tail: "**/*.rb" }], fileCount: 8,
+      dimensions: [dim({ key: "file_naming_case", learned: "snake_case" })] }],
+  });
+  const report = await check(dir);
+  const found = forKey(report, "file_naming_case");
+  assert.deepEqual(found.map((f) => f.path), ["db/migrate/20260816120000_AddBadColumn.rb"], JSON.stringify(report.findings));
+  assert.equal(found[0].severity, "MUST-FIX", "the baseline holds no violation, so this branch is the first");
+});

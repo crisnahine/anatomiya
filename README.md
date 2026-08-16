@@ -207,6 +207,16 @@ A line ending in `no convention. 4 of 30 sites (ratio)` means the gate named in 
 stopped the claim. The counts print anyway, so a badly set threshold costs one sentence rather than
 a wrong rule.
 
+A line ending in `(matches model default)` is a claim that cleared every gate and is also what the
+model writes unprompted, measured through the deployed harness. It counts, and `check` enforces it
+at full severity, but it spends no directive line: context files pay only for what a repository
+does differently, and the always-loaded budget goes there. Which side a model writes is a
+committed table with provenance per entry, and an unmeasured entry fails open.
+
+A claim reading `files here are named kebab-case` or `functions are named camelCase` learned its
+class from the area's own files, so the same row states a different sentence in a different
+repository. A tie learns nothing, and a class that moved since the pin says so until you re-pin.
+
 ## The three commands
 
 | Command | What it does |

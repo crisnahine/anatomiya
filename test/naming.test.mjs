@@ -219,3 +219,15 @@ test("a learned row may never carry a counter, by load-time throw", async () => 
     /<style>/
   );
 });
+
+/* --- a timestamp prefix is not part of the name (#33) --- */
+
+test("a leading digit run and its separator are cut before the stem is classified", async () => {
+  const { classifyBasename } = await import("../lib/dimensions-naming.mjs");
+  assert.equal(classifyBasename("db/migrate/20260816120000_add_bad_column.rb"), "snake_case");
+  assert.equal(classifyBasename("db/migrate/20260816120000_AddBadColumn.rb"), "PascalCase", "the violating shape must classify, or the check cannot see it");
+  assert.equal(classifyBasename("db/migrate/20260816120000_addBadColumn.rb"), "camelCase");
+  assert.equal(classifyBasename("db/migrate/001-create-users.rb"), "kebab-case");
+  assert.equal(classifyBasename("src/v2Client.ts"), "camelCase", "a digit inside a word is part of the word");
+  assert.equal(classifyBasename("src/404.ts"), null, "digits alone name nothing");
+});
