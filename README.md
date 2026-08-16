@@ -51,7 +51,8 @@ which forbids a newline in a filename outright, and those tests skip with that r
 /plugin install anatomiya@crisnahine
 ```
 
-The scanner has one runtime dependency, `oxc-parser`. Install it once in the plugin directory:
+The scanner has two runtime dependencies, `oxc-parser` and `flow-remove-types`. Install them once
+in the plugin directory:
 
 ```
 npm install --omit=dev
@@ -269,7 +270,7 @@ not cost coverage.
 
 ## Why it works the way it does
 
-[`DECISIONS.md`](DECISIONS.md) is the build contract: 74 numbered decisions, each with the
+[`DECISIONS.md`](DECISIONS.md) is the build contract: 75 numbered decisions, each with the
 measurement or the review finding that forced it. If you want to know why a threshold is where it
 is, why the parser runs in child processes, or why there is no hook, that is the file.
 
@@ -283,7 +284,7 @@ npm install
 node --test 'test/**/*.test.mjs'
 ```
 
-ES modules, `.mjs`, Node 22 or newer, one runtime dependency.
+ES modules, `.mjs`, Node 22 or newer, two runtime dependencies.
 
 ## License
 

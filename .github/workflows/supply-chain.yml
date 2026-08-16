@@ -28,7 +28,7 @@ jobs:
       - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
         with:
           fail-on-severity: moderate
-          # One runtime dependency, and it should stay that way: a new one
+          # Two runtime dependencies, and it should stay that way: a new one
           # arriving in a pull request is a decision worth seeing, not a diff
           # line to scroll past.
           comment-summary-in-pr: on-failure

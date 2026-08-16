@@ -117,6 +117,14 @@ millisecond, so a poison file costs one file rather than the run. The crash arri
 `exit` handler, the file is charged as a parse failure, the worker is replaced, and the scan
 continues.
 
+A `.js`, `.jsx`, `.mjs` or `.cjs` file the parser rejects is retried once with its Flow types
+stripped, because oxc refuses Flow by name and a Flow file is not a broken one. react is written in
+Flow: 287 of its 2,277 files were charged as unreadable before, and 2 are now. The strip replaces
+types with whitespace, so the byte length does not move and every offset still lands where it does
+on disk. A retry that still reports errors leaves the file rejected, since the retry may not turn a
+genuine syntax error into a clean parse. The `.ts` family is not retried, because Flow is not legal
+there.
+
 A file is unexamined in four ways, and the scan names them apart because the reader's next move
 differs: it crashed the parser, the parser rejected its syntax, this tool could not read it, or it
 was over the size cap. The second is new in this shape. Both parsers recover from a syntax error and
