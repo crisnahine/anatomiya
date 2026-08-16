@@ -1178,5 +1178,5 @@ test("a blocked slot is never flagged as matching the default", () => {
 
 test("with no override the shipped table decides, and unmeasured reads as no default", () => {
   const r = verdictFor(dim({ applicability: 10 }), { current: { fileCount: 12, dirCount: 2 }, authors: 3 });
-  assert.equal(r.matchesDefault, false, "the seeded table is all none, which fails open");
+  assert.equal(r.matchesDefault, false, "the fixture key is absent from the table, which fails open");
 });

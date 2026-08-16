@@ -1648,4 +1648,5 @@ test("a rename into a foreign filename class is a finding, a rename within the c
   const report = await check(dir);
   const found = forKey(report, "file_naming_case");
   assert.deepEqual(found.map((f) => f.path), ["src/dataStore.ts"], JSON.stringify(found));
+  assert.equal(found[0].oldPath, "src/data-store.ts", "the rename provenance travels with the finding");
 });

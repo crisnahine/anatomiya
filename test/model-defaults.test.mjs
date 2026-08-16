@@ -46,7 +46,7 @@ test("a side outside the three refuses to load", () => {
   assert.throws(() => assertModelDefaults(table, REGISTRY_KEYS), /sometimes/);
 });
 
-test("a method outside the two refuses to load", () => {
+test("a method outside the closed set refuses to load", () => {
   const table = new Map([["nullish_default", entry({ provenance: { method: "guess" } })]]);
   assert.throws(() => assertModelDefaults(table, REGISTRY_KEYS), /guess/);
 });
@@ -61,4 +61,9 @@ test("a class entry answers defaultClassFor and never a side", async () => {
   const cls = defaultClassFor("function_naming_case");
   assert.ok(cls === null || typeof cls === "string");
   assert.equal(defaultClassFor("nullish_default"), null, "a side dimension has no class");
+});
+
+test("a class outside the closed vocabulary refuses to load", () => {
+  const table = new Map([["function_naming_case", entry({ class: "camelcase" })]]);
+  assert.throws(() => assertModelDefaults(table, new Set(["function_naming_case"])), /camelcase/);
 });
