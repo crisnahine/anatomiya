@@ -9,6 +9,19 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- A `## What lives where` section on the overview, so a map says where a new file goes before the
+  agent has read anything. Up to seven directories, each with what it holds by extension, the test
+  runners inside it, how many of its files have a namesake test, and how many sibling modules sit
+  beside its components. The directories are chosen by a floor that scales with the corpus rather
+  than from a table of known roots, and there is no vocabulary of kinds: a line is labelled with a
+  directory name and a count is nouned with an extension. One line under them summarises the
+  repository's tests, with the namesake count that makes it a denominator rather than a total, and
+  two sentences print where the counts ground them. It rides the always-loaded overview because
+  that is the one channel reaching a write path nobody read in first (#34).
+- The same counts per area, as a `kinds` line under the heading, and two roster lines beside it:
+  the modules most of an area's files import, and the names it hands out that the rest of the
+  repository imports most. Both outlive a suppressed count and give way to a stated directive.
+  Facts schema is 11.
 - Five learned rows, so a map says what a new file in this directory is expected to sit on.
   `extends_base` and `class_base` learn the superclass a directory's classes name, `module_include`
   the module its class and module bodies mix in, and `interface_prefix` and `type_alias_prefix` the
