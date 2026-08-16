@@ -251,7 +251,7 @@ enforces a rule, the map restating it is waste, not defence in depth.
 in JSX, 22 for Ruby.
 A Python, Go or Rust repository gets an overview with no claims in it.
 
-One of the 41 needs the type checker and is the only thing `scan --deep` adds: `a call chain stays
+One of the 49 needs the type checker and is the only thing `scan --deep` adds: `a call chain stays
 inside one type`. It is off by default because the checker was measured about 26x slower than the parse and
 whole-program, so it cannot be narrowed to the files you changed. It is a scan option only, for the same reason: a check would have to build the
 corpus twice. `--deep` needs the optional `typescript` dependency and the scanned repository's own
@@ -277,7 +277,7 @@ not cost coverage.
 
 ## Why it works the way it does
 
-[`DECISIONS.md`](DECISIONS.md) is the build contract: 79 numbered decisions, each with the
+[`DECISIONS.md`](DECISIONS.md) is the build contract: 81 numbered decisions, each with the
 measurement or the review finding that forced it. If you want to know why a threshold is where it
 is, why the parser runs in child processes, or why there is no hook, that is the file.
 

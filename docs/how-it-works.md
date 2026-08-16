@@ -256,9 +256,9 @@ in `check`.
 | `logger_over_puts` | partial | ruby | output goes through a logger, not puts |
 | `http_through_client` | partial | ruby | HTTP goes through the repository's own client, not `Net::HTTP` |
 
-The five JSX rows are the ones that make the JSX total 22 rather than 17: a `.tsx` or `.jsx` file is
+The five JSX rows are the ones that make the JSX total 26 rather than 21: a `.tsx` or `.jsx` file is
 counted by every `js` dimension as well as these. The five migration rows are Rails and count as
-Ruby, which is what takes Ruby from 6 to 11.
+Ruby, which with the two routing rows is what takes Ruby from 8 to 13.
 
 The three `route_` rows ask whether a cross-cutting concern goes through the repository's own
 module. The wrapper is learned per file from its relative imports, by filename vocabulary (log,

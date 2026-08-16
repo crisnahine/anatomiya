@@ -93,12 +93,11 @@
   "type_only_import": {
     "default": "none",
     "provenance": {
-      "method": "literature",
+      "method": "seed",
       "model": null,
       "date": null,
       "samples": null,
-      "sideCounts": null,
-      "source": "seed: unmeasured"
+      "sideCounts": null
     }
   },
   "import_extension": {
@@ -117,12 +116,11 @@
   "nullish_default": {
     "default": "none",
     "provenance": {
-      "method": "literature",
+      "method": "seed",
       "model": null,
       "date": null,
       "samples": null,
-      "sideCounts": null,
-      "source": "seed: unmeasured"
+      "sideCounts": null
     }
   },
   "non_null_assertion": {
@@ -206,23 +204,21 @@
   "record_lookup": {
     "default": "none",
     "provenance": {
-      "method": "literature",
+      "method": "seed",
       "model": null,
       "date": null,
       "samples": null,
-      "sideCounts": null,
-      "source": "seed: unmeasured"
+      "sideCounts": null
     }
   },
   "model_callbacks": {
     "default": "none",
     "provenance": {
-      "method": "literature",
+      "method": "seed",
       "model": null,
       "date": null,
       "samples": null,
-      "sideCounts": null,
-      "source": "seed: unmeasured"
+      "sideCounts": null
     }
   },
   "service_result_shape": {
@@ -241,34 +237,31 @@
   "keyword_params": {
     "default": "none",
     "provenance": {
-      "method": "literature",
+      "method": "seed",
       "model": null,
       "date": null,
       "samples": null,
-      "sideCounts": null,
-      "source": "seed: unmeasured"
+      "sideCounts": null
     }
   },
   "zone_aware_time": {
     "default": "none",
     "provenance": {
-      "method": "literature",
+      "method": "seed",
       "model": null,
       "date": null,
       "samples": null,
-      "sideCounts": null,
-      "source": "seed: unmeasured"
+      "sideCounts": null
     }
   },
   "hook_call_style": {
     "default": "none",
     "provenance": {
-      "method": "literature",
+      "method": "seed",
       "model": null,
       "date": null,
       "samples": null,
-      "sideCounts": null,
-      "source": "seed: unmeasured"
+      "sideCounts": null
     }
   },
   "handler_is_named": {
@@ -287,34 +280,31 @@
   "spread_on_component": {
     "default": "none",
     "provenance": {
-      "method": "literature",
+      "method": "seed",
       "model": null,
       "date": null,
       "samples": null,
-      "sideCounts": null,
-      "source": "seed: unmeasured"
+      "sideCounts": null
     }
   },
   "text_translated": {
     "default": "none",
     "provenance": {
-      "method": "literature",
+      "method": "seed",
       "model": null,
       "date": null,
       "samples": null,
-      "sideCounts": null,
-      "source": "seed: unmeasured"
+      "sideCounts": null
     }
   },
   "handler_memoised": {
     "default": "none",
     "provenance": {
-      "method": "literature",
+      "method": "seed",
       "model": null,
       "date": null,
       "samples": null,
-      "sideCounts": null,
-      "source": "seed: unmeasured"
+      "sideCounts": null
     }
   },
   "migration_reversible": {
@@ -385,111 +375,101 @@
   "law_of_demeter": {
     "default": "none",
     "provenance": {
-      "method": "literature",
+      "method": "seed",
       "model": null,
       "date": null,
       "samples": null,
-      "sideCounts": null,
-      "source": "seed: unmeasured"
+      "sideCounts": null
     }
   },
   "rake_task_spec": {
     "default": "none",
     "provenance": {
-      "method": "literature",
+      "method": "seed",
       "model": null,
       "date": null,
       "samples": null,
-      "sideCounts": null,
-      "source": "seed: unmeasured"
+      "sideCounts": null
     }
   },
   "model_spec": {
     "default": "none",
     "provenance": {
-      "method": "literature",
+      "method": "seed",
       "model": null,
       "date": null,
       "samples": null,
-      "sideCounts": null,
-      "source": "seed: unmeasured"
+      "sideCounts": null
     }
   },
   "service_spec": {
     "default": "none",
     "provenance": {
-      "method": "literature",
+      "method": "seed",
       "model": null,
       "date": null,
       "samples": null,
-      "sideCounts": null,
-      "source": "seed: unmeasured"
+      "sideCounts": null
     }
   },
   "job_spec": {
     "default": "none",
     "provenance": {
-      "method": "literature",
+      "method": "seed",
       "model": null,
       "date": null,
       "samples": null,
-      "sideCounts": null,
-      "source": "seed: unmeasured"
+      "sideCounts": null
     }
   },
   "worker_spec": {
     "default": "none",
     "provenance": {
-      "method": "literature",
+      "method": "seed",
       "model": null,
       "date": null,
       "samples": null,
-      "sideCounts": null,
-      "source": "seed: unmeasured"
+      "sideCounts": null
     }
   },
   "controller_spec": {
     "default": "none",
     "provenance": {
-      "method": "literature",
+      "method": "seed",
       "model": null,
       "date": null,
       "samples": null,
-      "sideCounts": null,
-      "source": "seed: unmeasured"
+      "sideCounts": null
     }
   },
   "serializer_spec": {
     "default": "none",
     "provenance": {
-      "method": "literature",
+      "method": "seed",
       "model": null,
       "date": null,
       "samples": null,
-      "sideCounts": null,
-      "source": "seed: unmeasured"
+      "sideCounts": null
     }
   },
   "model_test": {
     "default": "none",
     "provenance": {
-      "method": "literature",
+      "method": "seed",
       "model": null,
       "date": null,
       "samples": null,
-      "sideCounts": null,
-      "source": "seed: unmeasured"
+      "sideCounts": null
     }
   },
   "job_test": {
     "default": "none",
     "provenance": {
-      "method": "literature",
+      "method": "seed",
       "model": null,
       "date": null,
       "samples": null,
-      "sideCounts": null,
-      "source": "seed: unmeasured"
+      "sideCounts": null
     }
   },
   "file_naming_case": {
@@ -550,56 +530,51 @@
   "route_logging": {
     "default": "none",
     "provenance": {
-      "method": "literature",
+      "method": "seed",
       "model": null,
       "date": null,
       "samples": null,
-      "sideCounts": null,
-      "source": "seed: unmeasured"
+      "sideCounts": null
     }
   },
   "route_network": {
     "default": "none",
     "provenance": {
-      "method": "literature",
+      "method": "seed",
       "model": null,
       "date": null,
       "samples": null,
-      "sideCounts": null,
-      "source": "seed: unmeasured"
+      "sideCounts": null
     }
   },
   "route_env": {
     "default": "none",
     "provenance": {
-      "method": "literature",
+      "method": "seed",
       "model": null,
       "date": null,
       "samples": null,
-      "sideCounts": null,
-      "source": "seed: unmeasured"
+      "sideCounts": null
     }
   },
   "logger_over_puts": {
     "default": "none",
     "provenance": {
-      "method": "literature",
+      "method": "seed",
       "model": null,
       "date": null,
       "samples": null,
-      "sideCounts": null,
-      "source": "seed: unmeasured"
+      "sideCounts": null
     }
   },
   "http_through_client": {
     "default": "none",
     "provenance": {
-      "method": "literature",
+      "method": "seed",
       "model": null,
       "date": null,
       "samples": null,
-      "sideCounts": null,
-      "source": "seed: unmeasured"
+      "sideCounts": null
     }
   }
 }

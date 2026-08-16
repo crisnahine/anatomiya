@@ -109,3 +109,17 @@ test("dimensionsFor offers a capability row only where the corpus shows the wrap
   const unknown = dimensionsFor(["js"]).map((d) => d.key);
   assert.ok(unknown.includes("route_logging"), "a caller that cannot know is offered everything");
 });
+
+test("a capability is offered only where files already route through a wrapper", async () => {
+  const { adoptedCapabilities } = await import("../lib/dimensions.mjs");
+  const rec = (key, conforming) => ({ ok: true, hits: { [key]: [{ conforming }] } });
+  const records = new Map([
+    ["a.ts", rec("route_logging", true)],
+    ["b.ts", rec("route_logging", true)],
+    ["c.rb", rec("logger_over_puts", true)],
+    ["d.ts", rec("route_network", true)],
+    ["e.ts", rec("route_env", false)],
+  ]);
+  const adopted = adoptedCapabilities(records, new Set(["logging", "network", "env"]));
+  assert.deepEqual([...adopted].sort(), ["logging"], "three adopting files across both engines; one is a habit, none is a vocabulary accident");
+});
