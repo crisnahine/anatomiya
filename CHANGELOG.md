@@ -14,6 +14,26 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   enforces it unchanged from `facts.json`. Entries carry provenance and an unmeasured entry fails
   open. `scripts/measure-defaults.mjs` writes the table by parsing the model's own output through
   the scan's predicates. Facts schema is 10.
+- Learned-class naming rows: `file_naming_case`, `function_naming_case` and
+  `exported_symbol_case`. The class is the plurality of the area's own sites, a tie learns
+  nothing, and a class that moved since the pin closes the slot (`learned-moved`) until a human
+  re-pins. The check enforces the stored class, and a new file breaking the area's filename
+  class is a finding.
+- `doc_comment_style`, with a real counter side: repositories that document their export surface
+  state the claim, and repositories whose code explains itself state the counter, which is the
+  directive that stops tutorial-style over-commenting. The parse worker now hands each
+  dimension the tree's comments and the exact string it parsed.
+- Capability routing rows: `route_logging`, `route_network`, `route_env` (JS), and
+  `logger_over_puts`, `http_through_client` (Ruby). The wrapper is learned per file from
+  imports or receivers named in the category vocabulary; each row is offered only where the
+  corpus holds a wrapper-shaped file, so a repository that logs to the console on purpose never
+  carries a line that can only read zero.
+
+### Decided against
+
+- An import-direction (layering) dimension. Probed on four repositories: a require() repository
+  is invisible to an import-statement site, and at this tool's own Wilson gate 0 of 4 put even a
+  third of their area pairs over the bar. `docs/measurements/2026-08-16-layering-probe.md`.
 
 ## [0.1.11] - 2026-08-16
 
