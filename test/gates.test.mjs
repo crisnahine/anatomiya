@@ -1083,3 +1083,31 @@ test("the reducer offers the semantic rows only when it is asked for them", () =
   assert.equal(deep.candidates, 4);
   assert.equal(deep.conforming, 2);
 });
+
+test("a semantic dimension with no baseline names the tier, not a greenfield directory", () => {
+  // The tier does not run at the pin and `pin --deep` is refused, so a semantic
+  // row on any pinned repository has no baselineDim and was gated
+  // postdates-baseline: permanently, and naming a cause that is not the reason.
+  // The area is not new; the checker was never asked there.
+  const d = dim({ tier: "semantic" });
+  const r = verdictFor(d, {
+    current: { fileCount: 24, dirCount: 2 },
+    authors: 3,
+    repoAuthors: 3,
+    measured: { gate: null, pinned: { fileCount: 24, dirCount: 2 }, dims: [] },
+    baselineDim: null,
+  });
+
+  assert.equal(r.gate, "semantic-unbaselined");
+  assert.equal(r.states, null);
+
+  // A syntactic row in a genuinely new directory still reads as greenfield.
+  const s = verdictFor(dim({ tier: "syntactic" }), {
+    current: { fileCount: 24, dirCount: 2 },
+    authors: 3,
+    repoAuthors: 3,
+    measured: { gate: null, pinned: { fileCount: 24, dirCount: 2 }, dims: [] },
+    baselineDim: null,
+  });
+  assert.equal(s.gate, "postdates-baseline");
+});

@@ -339,6 +339,7 @@ Four conditions stop a directive before any gate is consulted:
 | `unreachable` | the pinned commit is gone from this clone, usually a squash-merge. Every claim drops to counts, and stored counts are never fallen back on |
 | `population-change` | a pinned file is no longer in this area, or would not come back or parse. Suppressed until a human re-pins |
 | `postdates-baseline` | nothing in this area, or nothing this dimension counts, existed at the pin. Greenfield directories are where agents write most, and there the baseline would be the agent's own output at 100% |
+| `semantic-unbaselined` | a type-checked claim on a pinned repository. The checker does not run over the pinned blobs and `pin --deep` is refused, so there is nothing at the pin to compare against and the counts print without a directive. Not the same as a greenfield directory, which is why it has its own name |
 | `corpus-truncated` | the scan hit a cap and answered for a subset of the repository |
 
 A rename map from `git diff --find-renames` is carried into the lookup, so a renamed directory finds
