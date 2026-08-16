@@ -22,6 +22,7 @@ import { buildArms, installMap, PROBE } from "./ab/arms.mjs";
 import { runTrial, CLAUDE_DEFAULTS } from "./ab/run.mjs";
 import { scoreFile } from "./ab/score.mjs";
 import { readingFor } from "./ab/read.mjs";
+import { repoLabel } from "./ab/label.mjs";
 import { language } from "../lib/corpus.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -82,6 +83,16 @@ if (!target || target.headroom < args.minHeadroom) {
 console.log(`measuring ${target.key} in ${target.path}: ${target.ratio.toFixed(3)}, headroom ${target.headroom.toFixed(3)}`);
 
 const sha = execFileSync("git", ["rev-parse", "HEAD"], { cwd: args.repo, encoding: "utf8" }).trim();
+// What the result file calls this repository. Never the path it sits at: the
+// file is a document other people read, and a home directory is neither theirs
+// nor checkable.
+let origin = null;
+try {
+  origin = execFileSync("git", ["remote", "get-url", "origin"], { cwd: args.repo, encoding: "utf8" }).trim();
+} catch {
+  // A clone with no origin names itself by its directory, which is all it has.
+}
+const label = repoLabel(args.repo, origin);
 const prompt = readFileSync(args.task, "utf8");
 
 // 3. Two worktrees off one commit, one holding the map.
@@ -139,13 +150,13 @@ try {
     }
     return out;
   };
-  result = { target, sha, said, a: await score(trials.a), b: await score(trials.b) };
+  result = { target, sha, label, said, a: await score(trials.a), b: await score(trials.b) };
 } finally {
   await arms.dispose();
 }
 
 // 7. The file a reader quotes.
-const out = args.out ?? join(root, "docs/measurements", `${args.repo.split("/").filter(Boolean).at(-1)}.md`);
+const out = args.out ?? join(root, "docs/measurements", `${label.split("/").at(-1)}.md`);
 mkdirSync(dirname(out), { recursive: true });
 writeFileSync(out, render(result, args));
 console.log(`wrote ${out}`);
@@ -153,11 +164,11 @@ console.log(`wrote ${out}`);
 function render(r, o) {
   const { target: t, a, b } = r;
   const pct = (x) => (x.candidates ? (x.conforming / x.candidates).toFixed(3) : "no sites");
-  return `# A/B: ${o.repo} at ${r.sha.slice(0, 8)}
+  return `# A/B: ${r.label} at ${r.sha.slice(0, 8)}
 
 | setting | value |
 |---|---|
-| repository | ${o.repo} |
+| repository | ${r.label} |
 | commit | ${r.sha} |
 | area | ${t.path} |
 | claim | ${t.claim} |

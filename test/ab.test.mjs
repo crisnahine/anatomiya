@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { rankAreas } from "../scripts/ab/pick.mjs";
 import { scoreFile } from "../scripts/ab/score.mjs";
 import { readingFor } from "../scripts/ab/read.mjs";
+import { repoLabel } from "../scripts/ab/label.mjs";
 
 const facts = {
   areas: [
@@ -143,4 +144,26 @@ test("equal ratios are not a difference, and a missing arm is not a loser", () =
   // A real difference still reads as one.
   const moved = readingFor({ a: { candidates: 15, conforming: 15 }, b: { candidates: 9, conforming: 6 } }, 0.1);
   assert.match(moved, /1\.000 against 0\.667/);
+});
+
+test("the result file names the repository without a local path in it", () => {
+  // The first one committed carried /Users/<name>/Documents/... into a public
+  // repository, twice. A measurement is a document other people read; where the
+  // clone happened to sit on the machine that ran it is not part of it.
+  assert.equal(repoLabel("/Users/someone/Projects/corpus/microsoft__vscode", null), "microsoft__vscode");
+  assert.equal(repoLabel("/home/ci/work/anatomiya", null), "anatomiya");
+  assert.equal(repoLabel("C:\\Users\\someone\\repos\\thing", null), "thing");
+
+  // An origin is the better name when there is one, and it identifies the
+  // commit for a reader who wants to check the numbers.
+  assert.equal(
+    repoLabel("/Users/someone/corpus/vscode", "https://github.com/microsoft/vscode.git"),
+    "github.com/microsoft/vscode"
+  );
+  assert.equal(repoLabel("/tmp/x", "git@github.com:microsoft/vscode.git"), "github.com/microsoft/vscode");
+
+  // Whatever it answers, it never carries a home directory.
+  for (const p of ["/Users/crisn/x/y", "/home/crisn/x/y", "C:\\Users\\crisn\\x"]) {
+    assert.doesNotMatch(repoLabel(p, null), /Users|home|crisn/);
+  }
 });
