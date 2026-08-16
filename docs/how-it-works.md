@@ -524,6 +524,13 @@ It describes the tree as it is rather than the pinned population, because it is 
 directive: a tests line that moves when an agent adds a test file is a true count that flips
 nothing. A truncated corpus prints `layout: not counted, the scan was truncated` and no roots.
 
+The scan's own summary carries the same counts unbudgeted, since the block on disk can drop lines
+to its budget and the terminal is where the whole count still has to show up:
+
+```
+layout: 7 roots, 3 folded, tests: 103 cypress under cypress/integration, 7 vitest under src; roster lines: 86 areas with imports, 44 with reuse
+```
+
 ### Which directories get a line
 
 There is no table of known roots, the same as area discovery. The walk starts at the repository
@@ -553,20 +560,30 @@ IPC channel with `hits` and are a small object of flags and counts.
 
 For JavaScript and JSX: whether the file holds JSX; the modules it imports and the names it takes
 from each; whether it imports a test runner, from a closed table (`vitest`, `jest`,
-`@jest/globals`, `mocha`, `chai`, `ava`, `tap`, `node:test`, `cypress`, `@playwright/test`,
-`playwright`) or makes a top-level `describe`, `it`, `test` or `cy` call; and how many module-level
-functions it defines and does not export.
+`@jest/globals`, `mocha`, `chai`, `ava`, `tap`, `node:test`, `cypress`, `qunit`,
+`@playwright/test`, `playwright`) or makes a top-level `describe`, `it`, `test` or `cy` call; and
+how many module-level functions it defines and does not export.
 
 For Ruby: whether it declares cases in the RSpec vocabulary, inherits a minitest test case, or
 defines a `test_` method inside a class. The superclass wins over the vocabulary, because
 shoulda-context writes `context` blocks inside an `ActiveSupport::TestCase` and that file is
 minitest whatever its bodies are written in.
 
-A file the table does not know is still a test file when its name carries `.test.`, `.spec.` or
-`.cy.`, or when a path segment is `test`, `tests`, `spec`, `__tests__`, `cypress` or `e2e`; its
-runner then prints as `test files` rather than being guessed at. A file in no language this tool
-parses is never a test file: twenty screenshots under `cypress/` are not twenty specs, and counting
-them made the denominator this section exists to be read 24 over 4.
+A file is a test by its facets, its name or its position, and by nothing else. The facets first: a
+known runner import, or a top-level `describe`, `it`, `test` or `cy` call. Then the basename, which
+counts when it carries `.test.`, `.spec.`, `.cy.`, `-test.`, `-spec.`, `_spec.rb` or `_test.rb`.
+Then a `__tests__` path segment, because nothing but a test is ever put in one. Last, for a source
+file under a top-level `test`, `tests` or `spec` directory, a source file outside that tree whose
+path the file's own tail mirrors: eslint's `tests/lib/rules/no-var.js` covers `lib/rules/no-var.js`
+and says so nowhere but in its path. A file counted by one of the last three prints its runner as
+`test files` rather than having one guessed at.
+
+Two things do not make a test file. A directory named `test`, `tests`, `spec`, `cypress` or `e2e`
+does not, on its own: those trees hold the factories, fixtures, page objects and support code
+beside the specs, and charging all of it to the runner read `136 test files under spec/factories`
+on one Rails API and 1,979 fixture modules under webpack's `test/cases`. And a file in no language
+this tool parses is never one: twenty screenshots under `cypress/` are not twenty specs, and
+counting them made the denominator this section exists to be read 24 over 4.
 
 ### What a root line says
 
@@ -602,8 +619,12 @@ Every clause is dropped when it counts nothing.
 
 ### The tests line
 
-One line for the whole repository, after the roots. A group per runner, named with the shortest
-directory prefix that runner's files share, biggest first, at most three and then `and k more`. The
+One line for the whole repository, after the roots. A group per runner, biggest first, at most
+three and then `and k more`. Each is named with the deepest directory holding at least the wrapper
+share of its files, and with no directory at all when that turns out to be the repository root.
+Not the prefix every one of them shares: one file kept outside the tree the rest sit in collapses a
+strict prefix to nothing, and 28 of the 35 measured repositories printed at least one `under .`,
+which is the clause failing at the only job it has. The
 trailing clause takes the first root printed that is not a test directory and has a namesake count,
 and nouns it with that root's top extension, so a repository whose tests are all feature-named
 end-to-end specs says out loud that `0 of 504 .tsx files have a namesake test`. That clause is what

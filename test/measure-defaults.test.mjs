@@ -91,3 +91,21 @@ test("two measured batches of the same model accumulate instead of replacing", a
   assert.deepEqual(classes.provenance.classCounts, { camelCase: 54, PascalCase: 2 });
   assert.equal(classes.class, "camelCase");
 });
+
+test("a class read out of repository text is never written to the table", async () => {
+  const { accumulate, decideTableClass } = await import("../scripts/measure-defaults.mjs");
+
+  assert.equal(decideTableClass("function_naming_case", { camelCase: 23, snake_case: 2 }), "camelCase");
+  assert.equal(
+    decideTableClass("class_base", { ApplicationController: 23, Base: 2 }),
+    null,
+    "the table's vocabulary is the naming classes, and a superclass name is not one"
+  );
+
+  const counts = (n) => ({
+    default: "none",
+    provenance: { method: "measured", model: "m", samples: 3, sideCounts: null, classCounts: { ApplicationController: n } },
+  });
+
+  assert.equal("class" in accumulate(counts(20), counts(10), "class_base"), false, "and two runs do not add one");
+});

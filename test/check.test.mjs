@@ -1659,6 +1659,32 @@ test("a learned base class is enforced the way a learned naming class is", needs
   assert.equal(found[0].claim, "classes here inherit ApplicationController");
 });
 
+test("a learned mixin is enforced the way a learned base class is", needsRuby, async (t) => {
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("app/models/user.rb", "class User\n  include Auditable\nend\n");
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("app/models/order.rb", "class Order\n  include Trackable\nend\n");
+    commit("add");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    areas: [{
+      id: "aaaaaaaa",
+      path: "app/models",
+      globs: [{ negated: false, dir: "app/models", tail: "**/*.rb" }],
+      fileCount: 8,
+      dimensions: [dim({ key: "module_include", learned: "Auditable" })],
+    }],
+  });
+  const report = await check(dir);
+  assertExamined(report, "app/models/order.rb");
+  const found = forKey(report, "module_include");
+  assert.equal(found.length, 1, JSON.stringify(report.findings));
+  assert.equal(found[0].path, "app/models/order.rb");
+  assert.equal(found[0].claim, "classes here include Auditable");
+});
+
 test("a learned superclass is enforced the way a learned naming class is", async (t) => {
   const dir = repo(t, ({ git, write, commit }) => {
     write("src/panel.ts", "export class Panel extends React.Component {}\n");

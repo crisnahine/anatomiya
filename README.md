@@ -142,28 +142,33 @@ Any other file there was not written by this tool.
 ```
 
 Above that listing, and trimmed out of the example, sits the section that says where things already
-live. This one is from a larger React and TypeScript repository, and every line in it is a count
-over tracked files:
+live. This one is the `empire-flippers/client` section from the 35-repository acceptance run in
+`docs/measurements/2026-08-17-what-lives-where.md`, verbatim, and every line in it is a count over
+tracked files:
 
 ```markdown
 ## What lives where
 
-- src/pages: 1003 .tsx (JSX), 188 .ts and 32 other
-- src/components: 504 .tsx (JSX), 65 .ts and 43 other; 4 vitest specs under __tests__; 0 of 504 have a namesake test; 60 sibling modules named types/schema/utils; 35 files inline a helper
-- src/queries: 314 .ts
+- src/pages: 1003 .tsx (JSX), 188 .ts and 71 other; 2 vitest specs under __tests__; 0 of 1003 have a namesake test; 186 sibling modules named types/schema/mapper; 214 files inline a helper
+- src/components: 504 .tsx (JSX), 65 .ts and 106 other; 2 vitest specs; 1 of 504 have a namesake test under cypress/integration/components; 66 sibling modules named index/schema/types; 117 files inline a helper
+- src/queries: 314 .ts, 1 .tsx; 0 of 314 have a namesake test
 - cypress/integration: 102 Cypress specs
-- src/hooks: 47 .tsx (JSX), 23 .ts
-- src/utils: 53 .ts, 10 .js and 4 other
-- src/layouts: 42 .tsx (JSX) and 18 other
-- and 6 more directories holding 76 files
-- tests: 102 Cypress specs under cypress/integration; 4 vitest under src; 0 of 504 .tsx files have a namesake test
+- src/hooks: 47 .tsx (JSX), 23 .ts; 0 of 47 have a namesake test; 23 sibling modules named mapper/payoutContext/schema; 6 files inline a helper
+- src/utils: 53 .ts, 10 .js and 4 other; 3 vitest specs under __tests__; 4 of 52 have a namesake test under src/utils/__tests__; 60 sibling modules named assert/balanceTransaction/buyerProfileValidation; 0 files inline a helper
+- src/layouts: 42 .tsx (JSX), 11 .jpg and 21 other; 0 of 42 have a namesake test; 6 sibling modules named constants/utils/hooks; 4 files inline a helper
+- and 3 more directories holding 434 files
+- tests: 103 Cypress specs under cypress/integration; 7 vitest under src; 0 of 1003 .tsx files have a namesake test
 
 Match sibling test shape; skip tests where siblings have none.
 Match directory granularity; don't extract into a sibling module what the directory's files inline.
 ```
 
-Four vitest files beside 102 Cypress specs is the denominator an agent writing the next test needs,
-and it is why the section counts rather than naming a preferred runner.
+Two vitest specs in `src/components` beside 102 Cypress specs in `cypress/integration` is the
+denominator an agent writing the next test needs, and it is why the section counts rather than
+naming a preferred runner. The tests line under the roots is the whole repository's: 103 Cypress
+specs, 7 vitest files spread across `src`, and none of the 1003 `.tsx` files under `src/pages` with
+a test of its own name. The two sentences at the bottom carry no number of their own, because the
+numbers are the lines above them.
 
 One area file, printed in full. It carries a `paths` key, so it loads only when the agent reads a
 file underneath it:
@@ -311,7 +316,7 @@ not cost coverage.
 
 ## Why it works the way it does
 
-[`DECISIONS.md`](DECISIONS.md) is the build contract: 93 numbered decisions, each with the
+[`DECISIONS.md`](DECISIONS.md) is the build contract: 94 numbered decisions, each with the
 measurement or the review finding that forced it. If you want to know why a threshold is where it
 is, why the parser runs in child processes, or why there is no hook, that is the file.
 
