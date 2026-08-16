@@ -27,6 +27,9 @@ export function rankAreas(facts, { minCandidates = 20 } = {}) {
     for (const d of area.dimensions ?? []) {
       const stated = d.states === "claim" || (d.states === undefined && d.directive);
       if (!stated) continue;
+      // The renderer drops a default-matching claim to a counts line, so the
+      // map arm was never handed a directive to differ on.
+      if (d.matchesDefault === true) continue;
       if (!d.candidates || d.candidates < minCandidates) continue;
       const ratio = d.conforming / d.candidates;
       out.push({
