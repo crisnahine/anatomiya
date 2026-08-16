@@ -261,7 +261,7 @@ enforces a rule, the map restating it is waste, not defence in depth.
 in JSX, 25 for Ruby.
 A Python, Go or Rust repository gets an overview with no claims in it.
 
-One of the 50 needs the type checker and is the only thing `scan --deep` adds: `a call chain stays
+One of the 55 needs the type checker and is the only thing `scan --deep` adds: `a call chain stays
 inside one type`. It is off by default because the checker was measured about 26x slower than the parse and
 whole-program, so it cannot be narrowed to the files you changed. It is a scan option only, for the same reason: a check would have to build the
 corpus twice. `--deep` needs the optional `typescript` dependency and the scanned repository's own
