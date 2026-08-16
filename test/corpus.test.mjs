@@ -62,6 +62,16 @@ test("corpus takes tracked source files only", async (t) => {
   assert.equal(dropped.notSource, 1, "the tracked README is counted, not silently gone");
 });
 
+test("collect lists non-source tracked files as others", async (t) => {
+  const dir = repo(t, (d, { write, git }) => {
+    write("src/a.ts"); write("README.md", "# r\n"); write("docs/x.md", "x\n"); write("node_modules/y.md", "y\n");
+    git("add", "-A"); git("commit", "-qm", "init");
+  });
+  const { files, others } = await collect(dir);
+  assert.deepEqual(files.map((f) => f.rel), ["src/a.ts"]);
+  assert.deepEqual(others.map((f) => f.rel).sort(), ["README.md", "docs/x.md"]);
+});
+
 test("a tracked .env contributes nothing even though git lists it", async (t) => {
   const dir = repo(t, (d, { git, write }) => {
     write("src/a.ts");
