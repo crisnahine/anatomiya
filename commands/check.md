@@ -41,3 +41,13 @@ Run the check and report what it found.
 
 Findings never set the exit code. A non-zero exit means the check could not run: show its output and
 stop, and do not guess at what it found.
+
+### The type checker
+
+`--deep` adds the TypeScript checker. It is off by default because it was measured about 26x
+slower than the parse and cannot be narrowed to the files that changed. It needs the optional
+`typescript` dependency and the repository's own dependencies installed; without them it says
+so on the map rather than printing a clean-looking count.
+
+If the map holds a type-checked claim and you run without `--deep`, the report says how many
+were not measured. A report with no findings does not mean those were clean.

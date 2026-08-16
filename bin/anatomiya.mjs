@@ -233,8 +233,8 @@ function notInstalled(message, command) {
   return new Error(`${message}\nrun \`npm install --omit=dev\` in the plugin directory, then ${command} again`);
 }
 
-async function runCheck(cwd, { baseRef }) {
-  const report = await check(cwd, { baseRef });
+async function runCheck(cwd, { baseRef, deep = false }) {
+  const report = await check(cwd, { baseRef, deep });
   if (report.parse.missingParser) throw notInstalled(report.parse.missingParser, "check");
   process.stdout.write(formatReport(report));
   // Findings never set the exit code. A non-zero exit here means the check
