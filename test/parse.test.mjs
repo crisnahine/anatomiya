@@ -9,7 +9,7 @@ import { needsRuby } from "./ruby-available.mjs";
 import { parseAll, poolSizeFor } from "../lib/parse.mjs";
 import { GUARDS } from "../lib/pool.mjs";
 import { RUBY_GUARDS } from "../lib/ruby.mjs";
-import { MAX_FILE_BYTES } from "../lib/limits.mjs";
+import { MAX_FILE_BYTES, rawTransferAllowed } from "../lib/limits.mjs";
 
 // One reading of "this file went unexamined", for both callers: the scan
 // computed the four causes and the check computed none of them, so every fix to
@@ -153,4 +153,17 @@ test("every reader gives up on a file at the same size, so one file is never bot
   // two skips are what is left to keep in step.
   assert.equal(GUARDS.maxBytes, MAX_FILE_BYTES);
   assert.equal(RUBY_GUARDS.maxBytes, MAX_FILE_BYTES);
+});
+
+test("raw transfer is refused on the platform that cannot overcommit", () => {
+  // oxc allocates a 6 GiB buffer per parsing operation to get 4 GiB alignment.
+  // Most of its pages are never touched, so on a system that overcommits it
+  // costs virtual address space and nothing else. Windows commits at
+  // allocation, this pool runs up to eight workers each doing it, and the
+  // pool's own memory guard is the one thing that stands down there because
+  // there is no `ps`. `rawTransferSupported()` tests pointer width and the Node
+  // version and never asks which platform it is on.
+  assert.equal(rawTransferAllowed("linux"), true);
+  assert.equal(rawTransferAllowed("darwin"), true);
+  assert.equal(rawTransferAllowed("win32"), false);
 });
