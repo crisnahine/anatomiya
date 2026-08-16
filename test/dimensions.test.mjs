@@ -417,3 +417,33 @@ test("assertApplicability returns the rows it accepted, so a registry can wrap i
 
   assert.equal(assertApplicability(rows), rows);
 });
+
+test("an ambient declaration is not module state", () => {
+  // `declare const x: number` binds nothing at run time: it describes something
+  // declared elsewhere. Counted as a module binding it moved the ratio on a
+  // claim about mutable state, and it vanishes when a file's types are
+  // stripped, so the same file counted two ways.
+  assert.deepEqual(counts("module_state_const", "declare const x: number;\ndeclare let y: string;\n"), {
+    candidates: 0,
+    conforming: 0,
+  });
+  // The ordinary declarations beside it still count.
+  assert.deepEqual(counts("module_state_const", "declare let y: string;\nlet a = 1;\nconst b = 2;\n"), {
+    candidates: 2,
+    conforming: 1,
+  });
+});
+
+test("a binding inside a namespace is not module state", () => {
+  // `declare module 'x' { export var y }` and `namespace N { var y }` are both
+  // scoped to the block, not to the module, and the first binds nothing at run
+  // time at all.
+  assert.deepEqual(counts("module_state_const", "declare module 'bar' {\n  export var foo: any;\n}\n"), {
+    candidates: 0,
+    conforming: 0,
+  });
+  assert.deepEqual(counts("module_state_const", "namespace N {\n  var inner = 1;\n}\nlet outer = 2;\n"), {
+    candidates: 1,
+    conforming: 0,
+  });
+});
