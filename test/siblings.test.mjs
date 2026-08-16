@@ -244,3 +244,45 @@ test("a file under a directory named index is one file, not an ambiguous tail", 
 
   assert.equal(specifierToFile("~/src/index", "src/app.ts", rels), "src/index/index.ts");
 });
+
+test("a runtime package is runtime on every subpath, and a package with the same prefix is not", () => {
+  const records = files(6, (i) =>
+    record(`src/a${i}.tsx`, ["next/link", "next/router", "react-dom/client", "next-auth", "@scope/pkg/sub"])
+  );
+
+  assert.deepEqual(
+    commonImports(records).map((c) => c.module),
+    ["@scope/pkg/sub", "next-auth"]
+  );
+});
+
+test("reuse counts the files outside the area, not the siblings inside it", () => {
+  // "what do other parts of the repository import from here" is the question.
+  // A directory importing its own files is how it is written, not who depends
+  // on it.
+  const area = new Set(["src/utils/user.ts", "src/utils/a.ts", "src/utils/b.ts", "src/utils/c.ts"]);
+  const rels = corpus(...area, "src/pages/p0.ts", "src/pages/p1.ts");
+  const records = new Map();
+  for (const rel of ["src/utils/a.ts", "src/utils/b.ts", "src/utils/c.ts"]) {
+    records.set(rel, record(rel, [{ module: "./user", names: ["fullName"] }]));
+  }
+  for (const rel of ["src/pages/p0.ts", "src/pages/p1.ts"]) {
+    records.set(rel, record(rel, [{ module: "~/src/utils/user", names: ["fullName"] }]));
+  }
+
+  assert.deepEqual(mostImported(area, records, rels), [], "three siblings and two outsiders is two importers");
+});
+
+test("five files outside the area is five importers", () => {
+  const area = new Set(["src/utils/user.ts", "src/utils/a.ts"]);
+  const outside = files(5, (i) => `src/pages/p${i}.ts`);
+  const rels = corpus(...area, ...outside);
+  const records = new Map([
+    ["src/utils/a.ts", record("src/utils/a.ts", [{ module: "./user", names: ["fullName"] }])],
+    ...outside.map((rel) => [rel, record(rel, [{ module: "~/src/utils/user", names: ["fullName"] }])]),
+  ]);
+
+  assert.deepEqual(mostImported(area, records, rels), [
+    { name: "fullName", file: "src/utils/user.ts", importers: 5 },
+  ]);
+});
