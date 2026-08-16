@@ -65,3 +65,29 @@ test("countSides skips a learned-class hit, whose flag is a placeholder", async 
   ]);
   assert.deepEqual(countSides(records).get("k"), { claim: 0, counter: 1 });
 });
+
+test("two measured batches of the same model accumulate instead of replacing", async () => {
+  const { accumulate } = await import("../scripts/measure-defaults.mjs");
+  const a = {
+    default: "none",
+    provenance: { method: "measured", model: "m", date: "2026-08-16", samples: 18, sideCounts: { claim: 12, counter: 0 } },
+  };
+  const b = {
+    default: "none",
+    provenance: { method: "measured", model: "m", date: "2026-08-16", samples: 11, sideCounts: { claim: 9, counter: 1 } },
+  };
+  const merged = accumulate(a, b);
+  assert.deepEqual(merged.provenance.sideCounts, { claim: 21, counter: 1 });
+  assert.equal(merged.provenance.samples, 29);
+  assert.equal(merged.default, "claim", "21 of 22 clears the floor neither batch cleared alone");
+
+  const c = { default: "none", provenance: { method: "measured", model: "OTHER", samples: 3, sideCounts: { claim: 2, counter: 0 } } };
+  assert.equal(accumulate(a, c), null, "a different model is a different question");
+
+  const classes = accumulate(
+    { default: "none", class: "camelCase", provenance: { method: "measured", model: "m", samples: 3, sideCounts: null, classCounts: { camelCase: 44, PascalCase: 2 } } },
+    { default: "none", provenance: { method: "measured", model: "m", samples: 3, sideCounts: null, classCounts: { camelCase: 10 } } }
+  );
+  assert.deepEqual(classes.provenance.classCounts, { camelCase: 54, PascalCase: 2 });
+  assert.equal(classes.class, "camelCase");
+});
