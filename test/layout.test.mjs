@@ -101,6 +101,33 @@ test("a repository that is one flat directory prints that directory", () => {
   assert.deepEqual(more, { roots: 0, files: 0 });
 });
 
+test("a monorepo descends past packages and past each package's own shell", () => {
+  const corpus = files(12, (i) => i + 1).flatMap((n) => [
+    ...files(3, (i) => file(`packages/p${n}/src/f${i}.ts`, "js")),
+    ...(n <= 2 ? [file(`packages/p${n}/src/x.test.ts`, "js", { testRunner: "vitest" })] : []),
+  ]);
+
+  const { roots, more } = layoutRoots(corpus, { minFiles: minRootFiles(corpus.length) });
+
+  assert.equal(roots.length, 7);
+  assert.deepEqual(paths(roots).slice(0, 2), ["packages/p1/src", "packages/p2/src"]);
+  assert.deepEqual(more, { roots: 5, files: 15 });
+  assert.deepEqual(testsLine(corpus), [{ runner: "vitest", root: "packages", files: 2 }]);
+});
+
+test("a child has to hold four fifths of its parent to stand in for it", () => {
+  const parent = (share) => [
+    ...files(share, (i) => file(`bundle/deps/d${i}.js`, "js")),
+    ...files(100 - share, (i) => file(`bundle/b${i}.js`, "js")),
+  ];
+
+  assert.deepEqual(paths(layoutRoots(parent(79), { minFiles: 3 }).roots), ["bundle"]);
+  assert.deepEqual(paths(layoutRoots(parent(80), { minFiles: 3 }).roots), [
+    "bundle/deps",
+    "bundle (files at this level)",
+  ]);
+});
+
 test("a namesake answers the file whose path tail it shares", () => {
   const source = [file("app/models/edition/foo.rb", "ruby")];
   const tests = [file("spec/models/edition/foo_spec.rb", "ruby")];
@@ -157,42 +184,63 @@ test("the tests line groups by runner and names the prefix each shares", () => {
   ]);
 });
 
-// The shape of empire-flippers/client, scaled down: JSX pages and components,
-// a handful of named sibling modules, four vitest files beside the Cypress suite.
+test("two runners at one count order by name, whichever file arrived first", () => {
+  const corpus = [
+    ...files(3, (i) => file(`src/m${i}.test.js`, "js", { testRunner: "mocha" })),
+    ...files(3, (i) => file(`src/j${i}.test.js`, "js", { testRunner: "jest" })),
+  ];
+  const expected = [
+    { runner: "jest", root: "src", files: 3 },
+    { runner: "mocha", root: "src", files: 3 },
+  ];
+
+  assert.deepEqual(testsLine(corpus), expected);
+  assert.deepEqual(testsLine([...corpus].reverse()), expected);
+});
+
+// The shape of empire-flippers/client, at the numbers the spec recounted by
+// hand: JSX pages and components, sibling modules named by role, four vitest
+// files beside a Cypress suite.
 const client = () => [
-  ...files(44, (i) => file(`src/pages/P${i}.tsx`, "jsx", { jsx: true, inlineHelpers: 0 })),
-  ...files(30, (i) => file(`src/components/C${i}.tsx`, "jsx", { jsx: true, inlineHelpers: i < 8 ? 1 : 0 })),
-  ...["a/types", "b/types", "c/types", "a/schema", "b/schema", "a/utils"].map((m) =>
-    file(`src/components/${m}.ts`, "js", { jsx: false, inlineHelpers: 0 })),
+  ...files(1003, (i) => file(`src/pages/P${i}.tsx`, "jsx", { jsx: true, inlineHelpers: 0 })),
+  ...files(188, (i) => file(`src/pages/u${i}.ts`, "js", { jsx: false, inlineHelpers: 0 })),
+  ...files(32, (i) => file(`src/pages/s${i}.scss`)),
+  ...files(504, (i) => file(`src/components/C${i}.tsx`, "jsx", { jsx: true, inlineHelpers: i < 35 ? 1 : 0 })),
+  ...files(30, (i) => file(`src/components/t${i}/types.ts`, "js", { jsx: false, inlineHelpers: 0 })),
+  ...files(20, (i) => file(`src/components/s${i}/schema.ts`, "js", { jsx: false, inlineHelpers: 0 })),
+  ...files(15, (i) => file(`src/components/u${i}/utils.ts`, "js", { jsx: false, inlineHelpers: 0 })),
+  ...files(43, (i) => file(`src/components/style${i}.scss`)),
   ...files(4, (i) => file(`src/components/w${i}/__tests__/W${i}.test.tsx`, "jsx", { testRunner: "vitest" })),
-  ...files(20, (i) => file(`cypress/integration/x${i}.spec.js`, "js")),
+  ...files(102, (i) => file(`cypress/integration/x${i}.spec.js`, "js")),
 ];
 
 test("the layout record counts each root's extensions, tests, namesakes and helpers", () => {
   const facts = layoutFacts(client(), {});
 
   assert.deepEqual(Object.keys(facts), ["size", "minFiles", "roots", "more", "tests"]);
-  assert.equal(facts.size, 104);
-  assert.equal(facts.minFiles, 3);
+  assert.equal(facts.size, 1941);
+  assert.equal(facts.minFiles, 20);
   assert.deepEqual(paths(facts.roots), ["src/pages", "src/components", "cypress/integration"]);
   assert.deepEqual(facts.more, { roots: 0, files: 0 });
   assert.deepEqual(facts.tests, [
-    { runner: "cypress", root: "cypress/integration", files: 20 },
+    { runner: "cypress", root: "cypress/integration", files: 102 },
     { runner: "vitest", root: "src/components", files: 4 },
   ]);
 
   assert.deepEqual(facts.roots[1], {
     path: "src/components",
-    files: 40,
-    source: 40,
-    exts: [[".tsx", 34], [".ts", 6]],
-    other: 0,
-    jsx: 30,
+    files: 616,
+    source: 573,
+    exts: [[".tsx", 508], [".ts", 65]],
+    other: 43,
+    jsx: 504,
     jsxExt: ".tsx",
     tests: [{ runner: "vitest", files: 4, sub: "__tests__" }],
     testRoot: false,
-    companions: { with: 0, of: 36, root: null },
-    helpers: { siblingModules: 6, stems: ["types", "schema", "utils"], inlineFiles: 8 },
+    // The denominator is the extension the line printed, so `0 of 504` sits
+    // beside `504 .tsx` and counts the files the reader can see.
+    companions: { with: 0, of: 504, root: null },
+    helpers: { siblingModules: 65, stems: ["types", "schema", "utils"], inlineFiles: 35 },
   });
 });
 
@@ -201,9 +249,33 @@ test("a root that is mostly tests carries no namesake or helper count", () => {
   const cypress = facts.roots[2];
 
   assert.equal(cypress.testRoot, true);
-  assert.deepEqual(cypress.tests, [{ runner: "cypress", files: 20, sub: null }]);
+  assert.deepEqual(cypress.tests, [{ runner: "cypress", files: 102, sub: null }]);
   assert.equal("companions" in cypress, false);
   assert.equal("helpers" in cypress, false);
+});
+
+test("the JSX mark is only ever on an extension the line prints", () => {
+  const corpus = [
+    ...files(50, (i) => file(`web/d${i}.md`)),
+    ...files(40, (i) => file(`web/m${i}.ts`, "js", { jsx: false })),
+    ...files(10, (i) => file(`web/C${i}.jsx`, "jsx", { jsx: true })),
+  ];
+
+  const { roots } = layoutFacts(corpus, {});
+
+  assert.deepEqual(roots[0].exts, [[".md", 50], [".ts", 40]]);
+  assert.equal(roots[0].jsxExt, null);
+});
+
+test("the JSX mark goes to the first printed extension that is half JSX", () => {
+  const corpus = [
+    ...files(100, (i) => file(`web/C${i}.tsx`, "jsx", { jsx: i < 40 })),
+    ...files(20, (i) => file(`web/h${i}.js`, "js", { jsx: i < 15 })),
+  ];
+
+  const { roots } = layoutFacts(corpus, {});
+
+  assert.equal(roots[0].jsxExt, ".js");
 });
 
 test("a file whose name carries no extension is counted under a name of its own", () => {
