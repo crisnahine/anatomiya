@@ -4,6 +4,7 @@ import { needsPosixPermissions } from "./platform.mjs";
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, statSync, symlinkSync, chmodSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { execFileSync } from "node:child_process";
 
 import { writeMap } from "../lib/write.mjs";
 import { areaFilename, isOwned, EXCLUDE_LINES, HEAD_BYTES, PREFIX } from "../lib/rules.mjs";
@@ -746,9 +747,9 @@ test("an area file whose cover is longer than a short head is still ours", () =>
   rmSync(dir, { recursive: true, force: true });
 });
 
-test("a rules entry that is not a regular file is never opened", () => {
-  // A fifo blocks on open and a directory named `x.md` throws EISDIR. Neither is
-  // a rule file, and `readdir` reports both.
+test("a rules entry that is not a regular file is not a rule file", () => {
+  // A directory named `x.md` is a shape, not a file: typed on the opened handle
+  // where the platform opens it, and on the EISDIR where it refuses.
   const dir = workspace();
   mkdirSync(join(rules(dir), "adirectory.md"), { recursive: true });
 
@@ -810,6 +811,44 @@ test("a hand-written file holding a planned name is not called somebody else's",
   assert.deepEqual(plan.replaced, [areaFilename(mine)], "and the caller is told the name was taken");
   assert.equal(first, second, "the overview is byte-stable across two scans");
   rmSync(dir, { recursive: true, force: true });
+});
+
+test("a fifo in the rules directory is a shape, and the open does not hang on it", needsPosixPermissions, () => {
+  // A fifo with no writer blocks a blocking open forever. Opened non-blocking
+  // and typed on the handle, it answers "other" like a directory does, and the
+  // scan that read the directory continues.
+  const dir = workspace();
+  mkdirSync(rules(dir), { recursive: true });
+  const fifo = join(rules(dir), "pipe.md");
+  execFileSync("mkfifo", [fifo]);
+
+  const t = Date.now();
+  const plan = writeMap(result(dir, [area("src/services")]));
+  assert.ok(Date.now() - t < 5000, "the open returned");
+  assert.deepEqual(plan.foreign, [], "a fifo is not somebody else's rule file");
+  assert.deepEqual(plan.unreadableRules, [], "and it is not a file this tool failed to read");
+
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("a socket in the rules directory is a shape on every platform, not an unreadable file", needsPosixPermissions, async () => {
+  // A unix socket refuses to open, and the errno differs: ENXIO on Linux,
+  // EOPNOTSUPP on macOS. Whichever it is, the entry is a shape and occupies
+  // its name; only a regular file that will not open is "unreadable".
+  const { createServer } = await import("node:net");
+  const dir = workspace();
+  mkdirSync(rules(dir), { recursive: true });
+  const sock = join(rules(dir), "sock.md");
+  const server = createServer();
+  await new Promise((resolve, reject) => server.listen(sock, resolve).once("error", reject));
+  try {
+    const plan = writeMap(result(dir, [area("src/services")]));
+    assert.deepEqual(plan.foreign, [], "a socket is not somebody else's rule file");
+    assert.deepEqual(plan.unreadableRules, [], "and it is not a file this tool failed to read");
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("a directory holding a generated name is reported, not an errno", () => {

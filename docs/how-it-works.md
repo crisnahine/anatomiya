@@ -455,12 +455,16 @@ does not own, that directory's filenames named in the always-loaded overview, an
 directories, so both are checked. The scan fails closed; the check reports it as a caveat, because
 refusing a branch at review time is the blocking behaviour this design rejects.
 
-Files in there are read by their first 8 KB and only when the entry is a regular file. The
-ownership test is a regex anchored at byte zero, so the rest was never the question, and read whole
-a tracked symlink to a large blob took a scan's peak resident size to 1.2 GB, while one pointed at
-`/dev/zero` never returned. A directory named `x.md` throws `EISDIR` on open and a fifo blocks on
-it; where one holds a name the scan is about to write, which `anatomiya-overview.md` invites since
-that name is fixed, it is reported as that condition rather than as an errno out of the rename.
+Files in there are read by their head, one megabyte at most, and only when the opened handle is a
+regular file. The ownership test is a regex anchored at byte zero, so the rest was never the
+question, and read whole a tracked symlink to a large blob took a scan's peak resident size to 1.2
+GB, while one pointed at `/dev/zero` never returned. The file is opened first and typed on the
+handle it is read from, so a path swapped between a stat and an open cannot hand the type test one
+file and the read another; a fifo is opened non-blocking so it cannot hold the open. A directory
+named `x.md`, or a socket, is a shape rather than a file, on the platforms that open it and the
+ones that refuse under whatever errno they refuse with; where one holds a name the scan is about to write, which `anatomiya-overview.md`
+invites since that name is fixed, it is reported as that condition rather than as an errno out of
+the rename.
 
 ### The encoder
 
