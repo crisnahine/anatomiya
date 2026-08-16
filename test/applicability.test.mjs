@@ -162,6 +162,20 @@ const WITNESSES = {
     inapplicable: `export function f() { return 1 }`,
   },
 
+  doc_comment_style: {
+    lang: "js",
+    // Every exported form the walker treats apart. The comment is deliberately
+    // absent from most: applicability is about being a site, not conforming.
+    applicable: [
+      `export function fooBar() {}`,
+      `export class OrderList {}`,
+      `export const fetchAll = () => {}`,
+      `export default function () {}`,
+      `/** documented */\nexport function documented() {}`,
+    ],
+    inapplicable: `function local() {}\nexport const limit = 3;`,
+  },
+
   // --- dimensions-naming.mjs ---
   function_naming_case: {
     lang: "js",

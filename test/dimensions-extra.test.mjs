@@ -450,3 +450,55 @@ test("peeling a cast does not blind the dimension whose site is the cast", () =>
   assert.deepEqual(counts("non_null_assertion", "const a = x!.y"), { candidates: 1, conforming: 0 });
   assert.deepEqual(counts("non_null_assertion", "const a = x?.y"), { candidates: 1, conforming: 1 });
 });
+
+// --- doc_comment_style ---
+
+const docHits = (src) => {
+  const { program, comments } = parseSync("f.tsx", src, { sourceType: "module" });
+  const out = [];
+  dim("doc_comment_style").run(program, (h) => out.push(h), { comments, source: src });
+  return out;
+};
+
+test("an exported declaration with a comment directly above conforms", () => {
+  const h = docHits(`/** doc */\nexport function a() {}\nexport function b() {}`);
+  assert.equal(h.length, 2);
+  assert.equal(h.filter((x) => x.conforming).length, 1);
+});
+
+test("a line comment and a blank line still attach", () => {
+  const h = docHits(`// what b is for\n\nexport const b = () => {}`);
+  assert.deepEqual(h.map((x) => x.conforming), [true]);
+});
+
+test("every exported form is a site: function, class, const function, default", () => {
+  const h = docHits(`
+    export function a() {}
+    export class B {}
+    export const c = () => {}
+    export default function d() {}
+  `);
+  assert.equal(h.length, 4);
+});
+
+test("an unexported function and an exported plain value are not sites", () => {
+  const h = docHits(`function a() {}\nexport const limit = 3;`);
+  assert.equal(h.length, 0);
+});
+
+test("a trailing comment on the previous statement does not attach to the next", () => {
+  const h = docHits(`export function a() {} // about a\nexport function b() {}`);
+  assert.deepEqual(h.map((x) => x.conforming), [false, false]);
+});
+
+test("collectHits hands the extras through to the dimension", async () => {
+  const { collectHits } = await import("../lib/walk.mjs");
+  const probe = {
+    key: "probe",
+    run(_program, add, extra) {
+      add({ conforming: extra?.marker === true });
+    },
+  };
+  const hits = collectHits({ type: "Program", body: [] }, [probe], { marker: true });
+  assert.equal(hits.probe[0].conforming, true);
+});
