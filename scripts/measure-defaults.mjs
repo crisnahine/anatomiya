@@ -118,11 +118,51 @@ export function decideDefault({ claim, counter }) {
   return "none";
 }
 
-/** A measured entry yields only to --force; everything else yields to a measurement. */
+/**
+ * Two measured batches of the same model answer one question, so their counts
+ * sum and the decision is retaken over the union: 19 sites and 10 sites are 29,
+ * which can clear the floor neither batch cleared alone. A different model is a
+ * different question and never merges.
+ */
+export function accumulate(a, b) {
+  const pa = a.provenance;
+  const pb = b.provenance;
+  if (pa.method !== "measured" || pb.method !== "measured" || pa.model !== pb.model) return null;
+  const sum = (x, y) => {
+    if (!x && !y) return null;
+    const out = { ...(x || {}) };
+    for (const [k, n] of Object.entries(y || {})) out[k] = (out[k] || 0) + n;
+    return out;
+  };
+  const sideCounts = sum(pa.sideCounts, pb.sideCounts);
+  const classCounts = sum(pa.classCounts, pb.classCounts);
+  const cls = classCounts ? decideDefaultClass(classCounts) : null;
+  return {
+    default: sideCounts ? decideDefault(sideCounts) : "none",
+    ...(cls ? { class: cls } : {}),
+    provenance: {
+      method: "measured",
+      model: pa.model,
+      date: pb.date ?? pa.date,
+      samples: (pa.samples || 0) + (pb.samples || 0),
+      sideCounts,
+      ...(classCounts ? { classCounts } : {}),
+    },
+  };
+}
+
+/**
+ * A measured entry accumulates with a new measurement of the same model, yields
+ * wholesale only to --force, and everything else yields to a measurement.
+ */
 export function mergeTable(existing, incoming, { force = false } = {}) {
   const out = { ...existing };
   for (const [key, entry] of Object.entries(incoming)) {
     const held = existing[key];
+    if (held && held.provenance?.method === "measured" && entry.provenance?.method === "measured" && !force) {
+      out[key] = accumulate(held, entry) ?? held;
+      continue;
+    }
     if (!force && held && held.provenance?.method === "measured") continue;
     out[key] = entry;
   }
