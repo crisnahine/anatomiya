@@ -1124,3 +1124,20 @@ test("the whole untracked sentence agrees at one, clauses included", () => {
   assert.match(overview, /1 source file in the working tree is untracked/);
   assert.doesNotMatch(overview, /\bthem\b/, `a plural pronoun for one file:\n${overview}`);
 });
+
+test("a scan that could not load the stripper says so beside the rejected count", () => {
+  // The dependency arrived after the plugin did, so anyone whose node_modules
+  // predates it gets oxc and no stripper. Every Flow file then lands in the
+  // rejected count with nothing on screen to connect the two, and on react
+  // that is 286 files and 13 claims that quietly stop being stated.
+  const lines = unexaminedLines({ syntaxErrors: 286, missingStripper: true });
+
+  assert.deepEqual(lines, [
+    "286 files hold syntax the parser rejected",
+    "flow-remove-types is not installed, so a file written in Flow is rejected rather than read",
+  ]);
+});
+
+test("the stripper is not mentioned when nothing was rejected", () => {
+  assert.deepEqual(unexaminedLines({ skipped: 1, missingStripper: true }), ["1 file exceeded the size cap"]);
+});

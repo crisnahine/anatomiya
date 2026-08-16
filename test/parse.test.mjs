@@ -1,10 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { needsRuby } from "./ruby-available.mjs";
+import { installWithoutStripper, FLOW_SOURCE } from "./no-stripper.mjs";
 
 import { parseAll, poolSizeFor } from "../lib/parse.mjs";
 import { GUARDS } from "../lib/pool.mjs";
@@ -278,4 +280,79 @@ test("a file that needed no retry still answers the type dimensions", async () =
   const { records } = await parseAll([{ rel: "plain.ts", source, lang: "js" }]);
 
   assert.equal(records.get("plain.ts").hits.explicit_return_type?.length, 1);
+});
+
+test("the raw-transfer guard called with no argument reads this platform", () => {
+  // The worker calls it with no argument, so the default is the only form
+  // production uses and it was the only form nothing covered. Dropping the
+  // default leaves `undefined !== "win32"`, which is true, and raw transfer
+  // turns back on for the platform it was disabled for.
+  const real = process.platform;
+  Object.defineProperty(process, "platform", { value: "win32", configurable: true });
+  try {
+    assert.equal(rawTransferAllowed(), false);
+  } finally {
+    Object.defineProperty(process, "platform", { value: real, configurable: true });
+  }
+});
+
+test("a Flow file with no @flow pragma is read too", async () => {
+  // Most Flow in the wild carries the pragma and some does not. The stripper
+  // skips an unmarked file unless it is told to read everything, and a file it
+  // skips comes back with the same syntax oxc already rejected.
+  const source = [
+    "type Opts = {| name: string |}",
+    "export function greet(o: Opts): string { return o.name }",
+  ].join("\n");
+
+  const { records } = await parseAll([{ rel: "nopragma.js", source, lang: "js" }]);
+  const r = records.get("nopragma.js");
+
+  assert.equal(r.kind, "ok", `an unmarked Flow file came back ${r.kind}`);
+  assert.equal(r.stripped, true);
+});
+
+test("the retry reaches every extension that can hold Flow", async () => {
+  // Flow is not confined to .js. Narrowing the test to .js and .jsx leaves a
+  // .mjs or .cjs file rejected, which is the state this whole retry exists to
+  // get out of.
+  const source = [
+    "// @flow",
+    "type Opts = {| name: string |}",
+    "export function greet(o: Opts): string { return o.name }",
+  ].join("\n");
+
+  for (const rel of ["a.js", "b.jsx", "c.mjs", "d.cjs"]) {
+    const { records } = await parseAll([{ rel, source, lang: "js" }]);
+    assert.equal(records.get(rel).kind, "ok", `${rel} was rejected rather than retried`);
+  }
+});
+
+test("a scan whose node_modules predates the stripper says which dependency is missing", async (t) => {
+  // The retry cannot run, so every Flow file is charged as unreadable and
+  // nothing on screen connects the count to its cause. On react that is 286
+  // files and 13 claims that quietly stop being stated.
+  const home = installWithoutStripper(t);
+
+  const repo = mkdtempSync(join(tmpdir(), "anatomiya-flowrepo-"));
+  t.after(() => rmSync(repo, { recursive: true, force: true }));
+  const git = (...a) => execFileSync("git", a, { cwd: repo, stdio: "pipe" });
+  mkdirSync(join(repo, "src"), { recursive: true });
+  for (let i = 0; i < 10; i++) {
+    writeFileSync(join(repo, "src", `f${i}.js`), `export const v${i} = ${i}\n`);
+  }
+  writeFileSync(join(repo, "src", "flowed.js"), FLOW_SOURCE + "\n");
+  git("init", "-q");
+  git("config", "user.email", "t@t.test");
+  git("config", "user.name", "T");
+  git("add", "-A");
+  git("commit", "-qm", "init");
+
+  const out = execFileSync(process.execPath, [join(home, "bin", "anatomiya.mjs"), "scan", repo], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+
+  assert.match(out, /holds? syntax the parser rejected/, `the Flow file was expected to be rejected here:\n${out}`);
+  assert.match(out, /flow-remove-types is not installed/, `nothing named the missing dependency:\n${out}`);
 });

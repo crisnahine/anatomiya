@@ -108,6 +108,7 @@ test("a repository with no source files produces no areas", async (t) => {
     failed: 0,
     syntaxErrors: 0,
     missingParser: null,
+    missingStripper: false,
     // No language is unreadable when the corpus holds none: an empty repository
     // is answered, not blindly skipped, and a scan of it may still clean up.
     unreadable: [],
