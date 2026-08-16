@@ -1,0 +1,453 @@
+{
+  "swallowed_error": {
+    "default": "none",
+    "provenance": {
+      "method": "literature",
+      "model": null,
+      "date": null,
+      "samples": null,
+      "sideCounts": null,
+      "source": "seed: unmeasured"
+    }
+  },
+  "error_shape": {
+    "default": "none",
+    "provenance": {
+      "method": "literature",
+      "model": null,
+      "date": null,
+      "samples": null,
+      "sideCounts": null,
+      "source": "seed: unmeasured"
+    }
+  },
+  "module_state_const": {
+    "default": "none",
+    "provenance": {
+      "method": "literature",
+      "model": null,
+      "date": null,
+      "samples": null,
+      "sideCounts": null,
+      "source": "seed: unmeasured"
+    }
+  },
+  "async_error_handling": {
+    "default": "none",
+    "provenance": {
+      "method": "literature",
+      "model": null,
+      "date": null,
+      "samples": null,
+      "sideCounts": null,
+      "source": "seed: unmeasured"
+    }
+  },
+  "optional_chaining": {
+    "default": "none",
+    "provenance": {
+      "method": "literature",
+      "model": null,
+      "date": null,
+      "samples": null,
+      "sideCounts": null,
+      "source": "seed: unmeasured"
+    }
+  },
+  "function_style": {
+    "default": "none",
+    "provenance": {
+      "method": "literature",
+      "model": null,
+      "date": null,
+      "samples": null,
+      "sideCounts": null,
+      "source": "seed: unmeasured"
+    }
+  },
+  "explicit_return_type": {
+    "default": "none",
+    "provenance": {
+      "method": "literature",
+      "model": null,
+      "date": null,
+      "samples": null,
+      "sideCounts": null,
+      "source": "seed: unmeasured"
+    }
+  },
+  "type_only_import": {
+    "default": "none",
+    "provenance": {
+      "method": "literature",
+      "model": null,
+      "date": null,
+      "samples": null,
+      "sideCounts": null,
+      "source": "seed: unmeasured"
+    }
+  },
+  "import_extension": {
+    "default": "none",
+    "provenance": {
+      "method": "literature",
+      "model": null,
+      "date": null,
+      "samples": null,
+      "sideCounts": null,
+      "source": "seed: unmeasured"
+    }
+  },
+  "nullish_default": {
+    "default": "none",
+    "provenance": {
+      "method": "literature",
+      "model": null,
+      "date": null,
+      "samples": null,
+      "sideCounts": null,
+      "source": "seed: unmeasured"
+    }
+  },
+  "non_null_assertion": {
+    "default": "none",
+    "provenance": {
+      "method": "literature",
+      "model": null,
+      "date": null,
+      "samples": null,
+      "sideCounts": null,
+      "source": "seed: unmeasured"
+    }
+  },
+  "absent_is_null": {
+    "default": "none",
+    "provenance": {
+      "method": "literature",
+      "model": null,
+      "date": null,
+      "samples": null,
+      "sideCounts": null,
+      "source": "seed: unmeasured"
+    }
+  },
+  "iterate_with_for_of": {
+    "default": "none",
+    "provenance": {
+      "method": "literature",
+      "model": null,
+      "date": null,
+      "samples": null,
+      "sideCounts": null,
+      "source": "seed: unmeasured"
+    }
+  },
+  "test_call_style": {
+    "default": "none",
+    "provenance": {
+      "method": "literature",
+      "model": null,
+      "date": null,
+      "samples": null,
+      "sideCounts": null,
+      "source": "seed: unmeasured"
+    }
+  },
+  "assertion_style": {
+    "default": "none",
+    "provenance": {
+      "method": "literature",
+      "model": null,
+      "date": null,
+      "samples": null,
+      "sideCounts": null,
+      "source": "seed: unmeasured"
+    }
+  },
+  "rescue_uses_error": {
+    "default": "none",
+    "provenance": {
+      "method": "literature",
+      "model": null,
+      "date": null,
+      "samples": null,
+      "sideCounts": null,
+      "source": "seed: unmeasured"
+    }
+  },
+  "record_lookup": {
+    "default": "none",
+    "provenance": {
+      "method": "literature",
+      "model": null,
+      "date": null,
+      "samples": null,
+      "sideCounts": null,
+      "source": "seed: unmeasured"
+    }
+  },
+  "model_callbacks": {
+    "default": "none",
+    "provenance": {
+      "method": "literature",
+      "model": null,
+      "date": null,
+      "samples": null,
+      "sideCounts": null,
+      "source": "seed: unmeasured"
+    }
+  },
+  "service_result_shape": {
+    "default": "none",
+    "provenance": {
+      "method": "literature",
+      "model": null,
+      "date": null,
+      "samples": null,
+      "sideCounts": null,
+      "source": "seed: unmeasured"
+    }
+  },
+  "keyword_params": {
+    "default": "none",
+    "provenance": {
+      "method": "literature",
+      "model": null,
+      "date": null,
+      "samples": null,
+      "sideCounts": null,
+      "source": "seed: unmeasured"
+    }
+  },
+  "zone_aware_time": {
+    "default": "none",
+    "provenance": {
+      "method": "literature",
+      "model": null,
+      "date": null,
+      "samples": null,
+      "sideCounts": null,
+      "source": "seed: unmeasured"
+    }
+  },
+  "hook_call_style": {
+    "default": "none",
+    "provenance": {
+      "method": "literature",
+      "model": null,
+      "date": null,
+      "samples": null,
+      "sideCounts": null,
+      "source": "seed: unmeasured"
+    }
+  },
+  "handler_is_named": {
+    "default": "none",
+    "provenance": {
+      "method": "literature",
+      "model": null,
+      "date": null,
+      "samples": null,
+      "sideCounts": null,
+      "source": "seed: unmeasured"
+    }
+  },
+  "spread_on_component": {
+    "default": "none",
+    "provenance": {
+      "method": "literature",
+      "model": null,
+      "date": null,
+      "samples": null,
+      "sideCounts": null,
+      "source": "seed: unmeasured"
+    }
+  },
+  "text_translated": {
+    "default": "none",
+    "provenance": {
+      "method": "literature",
+      "model": null,
+      "date": null,
+      "samples": null,
+      "sideCounts": null,
+      "source": "seed: unmeasured"
+    }
+  },
+  "handler_memoised": {
+    "default": "none",
+    "provenance": {
+      "method": "literature",
+      "model": null,
+      "date": null,
+      "samples": null,
+      "sideCounts": null,
+      "source": "seed: unmeasured"
+    }
+  },
+  "migration_reversible": {
+    "default": "none",
+    "provenance": {
+      "method": "literature",
+      "model": null,
+      "date": null,
+      "samples": null,
+      "sideCounts": null,
+      "source": "seed: unmeasured"
+    }
+  },
+  "migration_schema_only": {
+    "default": "none",
+    "provenance": {
+      "method": "literature",
+      "model": null,
+      "date": null,
+      "samples": null,
+      "sideCounts": null,
+      "source": "seed: unmeasured"
+    }
+  },
+  "column_null_declared": {
+    "default": "none",
+    "provenance": {
+      "method": "literature",
+      "model": null,
+      "date": null,
+      "samples": null,
+      "sideCounts": null,
+      "source": "seed: unmeasured"
+    }
+  },
+  "table_primary_key_declared": {
+    "default": "none",
+    "provenance": {
+      "method": "literature",
+      "model": null,
+      "date": null,
+      "samples": null,
+      "sideCounts": null,
+      "source": "seed: unmeasured"
+    }
+  },
+  "reference_foreign_key": {
+    "default": "none",
+    "provenance": {
+      "method": "literature",
+      "model": null,
+      "date": null,
+      "samples": null,
+      "sideCounts": null,
+      "source": "seed: unmeasured"
+    }
+  },
+  "law_of_demeter": {
+    "default": "none",
+    "provenance": {
+      "method": "literature",
+      "model": null,
+      "date": null,
+      "samples": null,
+      "sideCounts": null,
+      "source": "seed: unmeasured"
+    }
+  },
+  "rake_task_spec": {
+    "default": "none",
+    "provenance": {
+      "method": "literature",
+      "model": null,
+      "date": null,
+      "samples": null,
+      "sideCounts": null,
+      "source": "seed: unmeasured"
+    }
+  },
+  "model_spec": {
+    "default": "none",
+    "provenance": {
+      "method": "literature",
+      "model": null,
+      "date": null,
+      "samples": null,
+      "sideCounts": null,
+      "source": "seed: unmeasured"
+    }
+  },
+  "service_spec": {
+    "default": "none",
+    "provenance": {
+      "method": "literature",
+      "model": null,
+      "date": null,
+      "samples": null,
+      "sideCounts": null,
+      "source": "seed: unmeasured"
+    }
+  },
+  "job_spec": {
+    "default": "none",
+    "provenance": {
+      "method": "literature",
+      "model": null,
+      "date": null,
+      "samples": null,
+      "sideCounts": null,
+      "source": "seed: unmeasured"
+    }
+  },
+  "worker_spec": {
+    "default": "none",
+    "provenance": {
+      "method": "literature",
+      "model": null,
+      "date": null,
+      "samples": null,
+      "sideCounts": null,
+      "source": "seed: unmeasured"
+    }
+  },
+  "controller_spec": {
+    "default": "none",
+    "provenance": {
+      "method": "literature",
+      "model": null,
+      "date": null,
+      "samples": null,
+      "sideCounts": null,
+      "source": "seed: unmeasured"
+    }
+  },
+  "serializer_spec": {
+    "default": "none",
+    "provenance": {
+      "method": "literature",
+      "model": null,
+      "date": null,
+      "samples": null,
+      "sideCounts": null,
+      "source": "seed: unmeasured"
+    }
+  },
+  "model_test": {
+    "default": "none",
+    "provenance": {
+      "method": "literature",
+      "model": null,
+      "date": null,
+      "samples": null,
+      "sideCounts": null,
+      "source": "seed: unmeasured"
+    }
+  },
+  "job_test": {
+    "default": "none",
+    "provenance": {
+      "method": "literature",
+      "model": null,
+      "date": null,
+      "samples": null,
+      "sideCounts": null,
+      "source": "seed: unmeasured"
+    }
+  }
+}
