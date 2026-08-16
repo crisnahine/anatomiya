@@ -55,3 +55,10 @@ test("a literature entry with no source refuses to load", () => {
   const table = new Map([["nullish_default", entry({ provenance: { method: "literature", source: undefined } })]]);
   assert.throws(() => assertModelDefaults(table, REGISTRY_KEYS), /source/);
 });
+
+test("a class entry answers defaultClassFor and never a side", async () => {
+  const { defaultClassFor } = await import("../lib/model-defaults.mjs");
+  const cls = defaultClassFor("function_naming_case");
+  assert.ok(cls === null || typeof cls === "string");
+  assert.equal(defaultClassFor("nullish_default"), null, "a side dimension has no class");
+});

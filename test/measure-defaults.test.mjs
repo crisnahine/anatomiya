@@ -44,3 +44,24 @@ test("a measured entry is not overwritten unless forced", () => {
   const forced = mergeTable({ a: measured }, { a: incoming }, { force: true });
   assert.equal(forced.a.provenance.model, "m1");
 });
+
+test("a learned-class dimension measures its class, never a side", async () => {
+  const { countClasses, decideDefaultClass } = await import("../scripts/measure-defaults.mjs");
+  const cls = (c, n) => Array.from({ length: n }, () => ({ conforming: false, class: c }));
+  const records = new Map([
+    ["a.ts", { ok: true, hits: { function_naming_case: [...cls("camelCase", 15), ...cls("snake_case", 2)] } }],
+    ["b.ts", { ok: true, hits: { function_naming_case: cls("camelCase", 8) } }],
+  ]);
+  const classes = countClasses(records);
+  assert.deepEqual(classes.get("function_naming_case"), { camelCase: 23, snake_case: 2 });
+  assert.equal(decideDefaultClass({ camelCase: 23, snake_case: 2 }), "camelCase");
+  assert.equal(decideDefaultClass({ camelCase: 12, snake_case: 2 }), null, "under 20 sites is unmeasured");
+  assert.equal(decideDefaultClass({ camelCase: 14, snake_case: 7 }), null, "under 0.8 share is no default");
+});
+
+test("countSides skips a learned-class hit, whose flag is a placeholder", async () => {
+  const records = new Map([
+    ["a.ts", { ok: true, hits: { k: [{ conforming: false, class: "camelCase" }, { conforming: false }] } }],
+  ]);
+  assert.deepEqual(countSides(records).get("k"), { claim: 0, counter: 1 });
+});

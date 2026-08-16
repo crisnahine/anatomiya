@@ -16,6 +16,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { parseAll } from "../lib/parse.mjs";
 import { language } from "../lib/corpus.mjs";
+import { classifyBasename } from "../lib/dimensions-naming.mjs";
 import { runTrial, CLAUDE_DEFAULTS } from "./ab/run.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -59,18 +60,53 @@ export const TASKS = [
   },
 ];
 
-/** Conforming sites are the claim side; the rest are the counter side. */
+/**
+ * Conforming sites are the claim side; the rest are the counter side. A hit
+ * carrying a class is a learned-class vote whose flag is a placeholder the
+ * reducer overwrites, so it is not a side at all.
+ */
 export function countSides(records) {
   const sides = new Map();
   for (const r of records.values()) {
     if (!r.ok || !r.hits) continue;
     for (const [key, hits] of Object.entries(r.hits)) {
       const s = sides.get(key) ?? { claim: 0, counter: 0 };
-      for (const h of hits) h.conforming ? s.claim++ : s.counter++;
-      sides.set(key, s);
+      let any = false;
+      for (const h of hits) {
+        if (h.class) continue;
+        any = true;
+        h.conforming ? s.claim++ : s.counter++;
+      }
+      if (any || sides.has(key)) sides.set(key, s);
     }
   }
   return sides;
+}
+
+/** Class votes per learned-class dimension. */
+export function countClasses(records) {
+  const out = new Map();
+  for (const r of records.values()) {
+    if (!r.ok || !r.hits) continue;
+    for (const [key, hits] of Object.entries(r.hits)) {
+      for (const h of hits) {
+        if (!h.class) continue;
+        const tally = out.get(key) ?? {};
+        tally[h.class] = (tally[h.class] || 0) + 1;
+        out.set(key, tally);
+      }
+    }
+  }
+  return out;
+}
+
+/** The model's class at 0.8 of at least 20 sites, or null. */
+export function decideDefaultClass(tally) {
+  const entries = Object.entries(tally);
+  const total = entries.reduce((n, [, c]) => n + c, 0);
+  if (total < 20) return null;
+  const [top, count] = entries.sort((a, b) => b[1] - a[1])[0];
+  return count / total >= 0.8 ? top : null;
 }
 
 /** A side is the default at 0.8 of at least 20 sites; anything less is none. */
@@ -150,13 +186,31 @@ async function main() {
 
   const { records } = await parseAll(outputs, { frameworks: ["rails"] });
   const sides = countSides(records);
+  const classes = countClasses(records);
+  // The filename row is a corpus dimension with no worker hits, so its votes
+  // come straight off the names the model chose.
+  const fileTally = {};
+  for (const o of outputs) {
+    const cls = classifyBasename(o.rel);
+    if (cls) fileTally[cls] = (fileTally[cls] || 0) + 1;
+  }
+  if (Object.keys(fileTally).length) classes.set("file_naming_case", fileTally);
 
   const date = new Date().toISOString().slice(0, 10);
   const measured = {};
   for (const [key, sideCounts] of sides) {
+    if (sideCounts.claim + sideCounts.counter === 0) continue;
     measured[key] = {
       default: decideDefault(sideCounts),
       provenance: { method: "measured", model: args.model, date, samples: runs, sideCounts },
+    };
+  }
+  for (const [key, tally] of classes) {
+    const cls = decideDefaultClass(tally);
+    measured[key] = {
+      default: "none",
+      ...(cls ? { class: cls } : {}),
+      provenance: { method: "measured", model: args.model, date, samples: runs, sideCounts: null, classCounts: tally },
     };
   }
 
