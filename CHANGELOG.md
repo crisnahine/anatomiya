@@ -31,6 +31,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - A second A/B on vscode, this time on a claim with headroom that the model-defaults table does
   not filter: `docs/measurements/2026-08-16-vscode-nonnull-2.md`. The arms differ (0.818 with the
   map against 0.000 without, over 4 and 1 scored files), read with its own small-sample caveat.
+- A third A/B on the new family, `exported names are PascalCase` in a vscode protocol area:
+  `docs/measurements/2026-08-16-vscode-symbols.md`. A null result about the task, which asked
+  for constants and functions where the learned class is PascalCase, and a working record that
+  the harness scores a learned row against the map's class rather than the file's own vote.
 - The research catalogue this work answers: `docs/research/why-agents-miss-house-style.md`, 34
   failure modes with a primary source and an evidence label each, and
   `docs/measurements/2026-08-16-new-row-variance.md`, the per-repository variance record for the
