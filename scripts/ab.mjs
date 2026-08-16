@@ -138,7 +138,7 @@ try {
       for (const file of r.wrote) {
         const s = await scoreFile(
           { rel: file.rel, source: file.source, lang: language(file.rel) },
-          { key: target.key, frameworks: facts.corpus?.frameworks ?? [] }
+          { key: target.key, frameworks: facts.corpus?.frameworks ?? [], learned: target.learned ?? null }
         );
         if (!s) continue;
         out.filesScored++;
