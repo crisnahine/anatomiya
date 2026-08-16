@@ -59,6 +59,29 @@ const shape = (program, dims) => {
   return out;
 };
 
+/** The five rows a .jsx file adds, in a shape the parser takes as written. */
+const JSX_FIXTURE = [
+  "// @flow",
+  "import type {Props} from './props'",
+  "import {useState, useCallback, useMemo} from 'react'",
+  "import {useTranslation} from 'react-i18next'",
+  "",
+  "export function Panel(props: Props) {",
+  "  const {t} = useTranslation()",
+  "  const [open, setOpen] = useState<boolean>(false)",
+  "  const toggle = useCallback(() => setOpen(!open), [open])",
+  "  const label: string = useMemo(() => (open ? 'Close' : 'Open'), [open])",
+  "  const extra = props.extra ?? null as any",
+  "  return (",
+  "    <div className={label} onClick={toggle} {...props}>",
+  "      <span>{t('panel.hello')}</span>",
+  "      <em>Untranslated</em>",
+  "      {extra}",
+  "    </div>",
+  "  )",
+  "}",
+].join("\n");
+
 test("only the dimensions marked blind answer differently once the types are stripped", () => {
   // This comparison is what found four bugs the review did not: a cast hiding
   // the value it wraps, an ambient declaration counted as module state, a
@@ -91,5 +114,35 @@ test("only the dimensions marked blind answer differently once the types are str
   assert.ok(
     moved.some((d) => d.blindWhenStripped === true),
     "the fixture no longer moves any blind dimension"
+  );
+});
+
+test("the same holds for the rows only a JSX file carries", () => {
+  // The five JSX rows read hooks, handlers and elements rather than
+  // annotations, and none of them is marked blind. This is what says so.
+  const before = parseSync("f.tsx", JSX_FIXTURE, { sourceType: "module" });
+  assert.equal(before.errors.length, 0, "the fixture has to parse as written, or there is nothing to compare");
+
+  const blanked = stripFlow(JSX_FIXTURE, { all: true }).toString();
+  assert.notEqual(blanked, JSX_FIXTURE, "the fixture has to hold something the stripper removes");
+  const after = parseSync("f.tsx", blanked, { sourceType: "module" });
+  assert.equal(after.errors.length, 0, `the blanked fixture no longer parses: ${after.errors[0]?.message}`);
+
+  const dims = dimensionsFor(["jsx"], { frameworks: ["react"] });
+  const a = shape(before.program, dims);
+  const b = shape(after.program, dims);
+
+  // Without this the fixture could stop reaching these rows and the test would
+  // still pass, which is how a comparison test quietly becomes a no-op.
+  const jsOnly = new Set(dimensionsFor(["js"]).map((d) => d.key));
+  for (const d of dims.filter((x) => !jsOnly.has(x.key))) {
+    assert.notEqual(a.get(d.key), "0 sites / 0 conforming", `the fixture no longer reaches ${d.key}`);
+  }
+
+  const unmarked = dims.filter((d) => a.get(d.key) !== b.get(d.key)).filter((d) => d.blindWhenStripped !== true);
+  assert.deepEqual(
+    unmarked.map((d) => `${d.key}: ${a.get(d.key)} -> ${b.get(d.key)}`),
+    [],
+    "a JSX dimension answers two ways for one file depending on whether the retry ran"
   );
 });
