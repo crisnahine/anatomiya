@@ -7,6 +7,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- The encoder strips `--!>` as well as `-->`: parsers close a comment on either, so a
+  repository-controlled value holding the first could close a comment the renderer never opened.
+- A rule file's head is opened first and typed on the handle it is read from, so a path swapped
+  between a stat and an open cannot hand the type test one file and the read another. A fifo is
+  opened non-blocking so it cannot hold the open, and a shape the platform refuses to open at all
+  (a directory on Windows, a socket anywhere) is typed on the path with nothing read after it, and
+  still occupies its name. Two CodeQL alerts that predate 0.1.12.
+
 ## [0.1.12] - 2026-08-16
 
 The map now says only what a repository does differently from what the model writes anyway, and it
