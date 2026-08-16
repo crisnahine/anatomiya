@@ -272,7 +272,10 @@ naming class they spell, the plurality class becomes the sentence, and a tie lea
 produces no slot. One more such row, `file_naming_case`, asks about filenames: it needs no parser,
 so the reducer composes it the way it composes the obligations. A learned class that has moved
 since the pin closes the slot (`learned-moved`) until a human re-pins, because the pinned counts
-answer a different sentence than today's.
+answer a different sentence than today's. The filename row has one candidate per file, so under
+the evidence gate an area needs 35 classifiable filenames to state it; in smaller areas the row
+feeds the check's learned enforcement and prints as counts, which is the gate working rather than
+a bug.
 
 A dimension that finds zero sites in an area produces no slot at all. The area file only lists
 dimensions that appeared.
