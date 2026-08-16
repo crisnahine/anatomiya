@@ -1,8 +1,10 @@
 // test/semantic.test.mjs
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { rmSync } from "node:fs";
+import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { pathToFileURL } from "node:url";
 import { repo } from "./ts-repo.mjs";
 import {
   loadTypeScript,
@@ -88,4 +90,25 @@ test("the tier answers a real file and reports a resolution rate", needsTs, asyn
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("a checker outside major 5 is refused, because 7 has no JS API", async (t) => {
+  // The range in package.json may never widen past major 5: typescript@7 is the
+  // Go port and publishes no JS API, so a range that admits it turns --deep into
+  // a silent no-op the day it publishes. Refusing here is what turns that into
+  // the same named refusal an absent checker gets.
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-tsver-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+  const stub = (version) => {
+    const p = join(dir, `ts-${version}.mjs`);
+    writeFileSync(p, `export const version = ${JSON.stringify(version)};\nexport function createProgram() {}\n`);
+    return pathToFileURL(p).href;
+  };
+
+  assert.equal(await loadTypeScript({ specifier: stub("7.0.0") }), null, "the Go port is refused");
+  assert.equal(await loadTypeScript({ specifier: stub("6.1.2") }), null, "so is anything else off major 5");
+
+  const ok = await loadTypeScript({ specifier: stub("5.9.3") });
+  assert.equal(ok?.version, "5.9.3");
 });
