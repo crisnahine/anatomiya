@@ -2,7 +2,17 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { namesakeCompanions, namesakeIndex } from "../lib/companions.mjs";
-import { isTestFile, layoutFacts, layoutRoots, minRootFiles, mirroredTests, runnerOf, testsLine } from "../lib/layout.mjs";
+import {
+  isTestFile,
+  layoutFacts,
+  layoutIndexes,
+  layoutRoots,
+  minRootFiles,
+  mirroredTests,
+  rootFacts,
+  runnerOf,
+  testsLine,
+} from "../lib/layout.mjs";
 import { roster } from "../lib/layout-scan.mjs";
 
 const file = (rel, lang = null, facets = null) => ({ rel, lang, facets });
@@ -62,7 +72,7 @@ test("the roster counts against the mirror index it is handed, and builds none o
   const corpus = [file("src/a.ts", "js"), file("src/b.ts", "js"), file("src/c.ts", "js")];
 
   assert.deepEqual(layoutFacts(corpus).tests, [], "nothing here mirrors anything");
-  assert.deepEqual(layoutFacts(corpus, { mirrored: new Set(["src/a.ts"]) }).tests, [
+  assert.deepEqual(layoutFacts(corpus, { indexes: layoutIndexes(corpus, new Set(["src/a.ts"])) }).tests, [
     { runner: "test files", root: "src", files: 1 },
   ]);
 });
@@ -492,6 +502,26 @@ test("a namesake whose root is the repository root names no directory", () => {
   const tests = [file("a.test.ts", "js")];
 
   assert.deepEqual(namesakeCompanions(source, tests, ""), { with: 1, of: 1, root: null });
+});
+
+test("one root reads the three indexes the corpus was walked for, and rebuilds none", () => {
+  // Both callers hold the whole corpus and build all three, so the record takes
+  // them as one object rather than as a corpus and a chain of optional
+  // arguments it could fall back to rebuilding them from.
+  const corpus = [
+    file("app/models/foo.rb", "ruby"),
+    file("app/models/bar.rb", "ruby"),
+    file("app/models/baz.rb", "ruby"),
+    file("spec/models/foo_spec.rb", "ruby", { testRunner: "rspec" }),
+  ];
+  const indexes = layoutIndexes(corpus);
+
+  assert.deepEqual(Object.keys(indexes), ["testFiles", "mirrored", "byStem"]);
+  assert.deepEqual(indexes.testFiles.map((f) => f.rel), ["spec/models/foo_spec.rb"]);
+
+  const root = { path: "app/models", dir: "app/models", files: corpus.slice(0, 3) };
+
+  assert.deepEqual(rootFacts(root, indexes).companions, { with: 1, of: 3, root: "spec/models" });
 });
 
 test("the namesake index is built once and read by every root", () => {
