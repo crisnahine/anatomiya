@@ -356,3 +356,31 @@ test("a scan whose node_modules predates the stripper says which dependency is m
   assert.match(out, /holds? syntax the parser rejected/, `the Flow file was expected to be rejected here:\n${out}`);
   assert.match(out, /flow-remove-types is not installed/, `nothing named the missing dependency:\n${out}`);
 });
+
+test("a stripped file says nothing about its imports either", async () => {
+  // The stripper deletes `import type {X} from './y'`, and those are sites of
+  // the extension claim: react writes 309 of them and not one carries an
+  // extension, so a stripped file reports only the imports that survived and
+  // its conformance reads higher than the file's. The dimensions that do not
+  // depend on the annotations still answer.
+  const source = [
+    "// @flow",
+    "import type {Opts} from './opts'",
+    "import {run} from './run'",
+    "type Exact = {| n: string |}",
+    "export function greet(o: Exact): string {",
+    "  const fallback = o.n ?? 'x'",
+    "  return run(fallback)",
+    "}",
+  ].join("\n");
+
+  const { records } = await parseAll([{ rel: "flow.js", source, lang: "js" }]);
+  const r = records.get("flow.js");
+
+  assert.equal(r.kind, "ok");
+  assert.equal(r.stripped, true, "the retry has to have fired, or this asserts nothing");
+  for (const key of ["import_extension", "explicit_return_type", "type_only_import"]) {
+    assert.equal(r.hits[key], undefined, `${key} answered off a tree with the types deleted`);
+  }
+  assert.equal(r.hits.nullish_default?.length, 1, "a dimension that reads code still answers");
+});
