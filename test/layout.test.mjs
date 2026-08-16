@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import { namesakeCompanions } from "../lib/companions.mjs";
 import { isTestFile, layoutFacts, layoutRoots, minRootFiles, runnerOf, testsLine } from "../lib/layout.mjs";
+import { roster } from "../lib/layout-scan.mjs";
 
 const file = (rel, lang = null, facets = null) => ({ rel, lang, facets });
 const files = (n, make) => Array.from({ length: n }, (_, i) => make(i));
@@ -25,16 +26,34 @@ test("a name or a directory the table does not know still names a test file", ()
     "e2e/a.js",
     "tests/a.js",
   ]) {
-    assert.equal(isTestFile(rel, null), true, rel);
+    assert.equal(isTestFile(file(rel, "js")), true, rel);
   }
-  assert.equal(isTestFile("src/a.ts", null), false);
-  assert.equal(isTestFile("src/latest/a.ts", null), false);
+  assert.equal(isTestFile(file("src/a.ts", "js")), false);
+  assert.equal(isTestFile(file("src/latest/a.ts", "js")), false);
+});
+
+test("a file this tool does not parse is not a spec, wherever it sits", () => {
+  // Twenty screenshots under `cypress/` made the tests line read 24 specs over
+  // 4, and the roster exists to be the denominator rather than to invent one.
+  assert.equal(isTestFile(file("cypress/screenshots/login.png")), false);
+  assert.equal(isTestFile(file("spec/support/rows.yml")), false);
+  assert.equal(isTestFile(file("test/data/rows.txt")), false);
+  assert.equal(isTestFile(file("cypress/integration/a.spec.js", "js")), true, "the spec beside them still counts");
+});
+
+test("the tests line counts specs and not what sits beside them", () => {
+  const corpus = [
+    ...files(4, (i) => file(`cypress/integration/x${i}.spec.js`, "js")),
+    ...files(20, (i) => file(`cypress/screenshots/x${i}.png`)),
+  ];
+
+  assert.deepEqual(testsLine(corpus), [{ runner: "cypress", root: "cypress/integration", files: 4 }]);
 });
 
 test("a file that imports a runner is a test file wherever it sits", () => {
-  assert.equal(isTestFile("src/components/Foo.tsx", { testRunner: "vitest" }), true);
-  assert.equal(isTestFile("src/components/Foo.tsx", { testCalls: true }), true);
-  assert.equal(isTestFile("src/components/Foo.tsx", { testRunner: null, testCalls: false }), false);
+  assert.equal(isTestFile(file("src/components/Foo.tsx", "jsx", { testRunner: "vitest" })), true);
+  assert.equal(isTestFile(file("src/components/Foo.tsx", "jsx", { testCalls: true })), true);
+  assert.equal(isTestFile(file("src/components/Foo.tsx", "jsx", { testRunner: null, testCalls: false })), false);
 });
 
 test("the runner is the one the file imports, then the directory, then unnamed", () => {
@@ -324,4 +343,22 @@ test("a test file named after the file it covers is a namesake with no suffix at
     of: 1,
     root: "src/components/__tests__",
   });
+});
+
+test("a truncated scan keeps the size and counts nothing else", () => {
+  // Counts over an arbitrary subset, rendered as a description of the tree, is
+  // the failure the truncation rule exists for. The size survives because it is
+  // what the notice is about.
+  const corpus = files(5, (i) => ({ rel: `src/components/A${i}.tsx`, lang: "jsx" }));
+  const args = { files: corpus, others: [{ rel: "README.md" }], records: new Map() };
+
+  const { layout } = roster({ ...args, truncated: true });
+
+  assert.equal(layout.truncated, true);
+  assert.equal(layout.size, 6, "every tracked path, source or not");
+  assert.equal(layout.roots.length, 0);
+  assert.equal(layout.tests.length, 0);
+  assert.equal(layout.principles.length, 0);
+  assert.deepEqual(layout.more, { roots: 0, files: 0 });
+  assert.ok(roster({ ...args, truncated: false }).layout.roots.length > 0, "and the flag is what does it");
 });

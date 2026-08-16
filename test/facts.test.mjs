@@ -276,3 +276,70 @@ test("matchesDefault survives the round trip and absent reads as false", (t) => 
   assert.equal(flagged.matchesDefault, true);
   assert.equal("matchesDefault" in plain, false, "stored only when true, so a schema-9 record reads unchanged");
 });
+
+/** One root's record, in the shape `rootFacts` emits it. */
+const kindsOf = (path, ext, count) => ({
+  path,
+  files: count,
+  source: count,
+  exts: [[ext, count]],
+  other: 0,
+  jsx: 0,
+  jsxExt: null,
+  tests: [],
+  testRoot: false,
+});
+
+test("the roster survives the round trip, at the top and under each area", (t) => {
+  const dir = root(t);
+  const layout = {
+    size: 10,
+    minFiles: 3,
+    roots: [kindsOf("src/components", ".tsx", 5)],
+    more: { roots: 0, files: 0 },
+    tests: [{ runner: "cypress", root: "cypress/integration", files: 5 }],
+    principles: ["test_shape"],
+    truncated: false,
+  };
+  const kinds = kindsOf("src", ".ts", 8);
+  const base = result([dim()]);
+
+  writeFacts(dir, { ...base, layout, areas: [{ ...base.areas[0], kinds }] });
+  const { facts } = readFacts(dir);
+
+  assert.equal(facts.schema, 11, "the roster arrived with a version of its own");
+  assert.deepEqual(facts.layout, layout);
+  assert.deepEqual(facts.areas[0].kinds, kinds);
+});
+
+test("a record written before the roster existed reads as not counted, not as empty", (t) => {
+  // An empty roster and an absent one render the same way and mean opposite
+  // things: one is a repository with nothing in it, the other is a scan that
+  // never counted.
+  const dir = root(t);
+  mkdirSync(dirname(join(dir, FACTS_PATH)), { recursive: true });
+  writeFileSync(
+    join(dir, FACTS_PATH),
+    JSON.stringify({ schema: 10, areas: [{ id: "a", path: "src", fileCount: 8, dimensions: [] }] })
+  );
+
+  const { facts, unreadable } = readFacts(dir);
+
+  assert.equal(unreadable, null, "a schema this build knows stays readable");
+  assert.equal(facts.layout, null);
+  assert.equal(facts.areas[0].kinds, null);
+});
+
+test("a null area on disk is carried, not thrown on", (t) => {
+  // `knownNames` in rules.mjs guards the same shape: a hand-edited or truncated
+  // record is the ordinary case of a file nobody promised, and reading it must
+  // not take the whole check down.
+  const dir = root(t);
+  mkdirSync(dirname(join(dir, FACTS_PATH)), { recursive: true });
+  writeFileSync(join(dir, FACTS_PATH), JSON.stringify({ schema: FACTS_SCHEMA, areas: [null] }));
+
+  const { facts, unreadable } = readFacts(dir);
+
+  assert.equal(unreadable, null);
+  assert.deepEqual(facts.areas, [null]);
+});
