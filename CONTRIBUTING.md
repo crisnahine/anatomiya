@@ -303,3 +303,9 @@ those are the rows where a plausible-looking refactor quietly removes a control.
 
 No attribution boilerplate in commits, code, or documentation. No tool or vendor footers, no
 generated-by banners, no co-author trailers.
+
+## Releases
+
+`docs/releasing.md` is the list. Work it top to bottom rather than from memory: the version lives in
+four places, the changelog has to keep a heading the checker reads, and the tag is what actually
+releases. `0.1.10` shipped with no tag because none of that was written down.
