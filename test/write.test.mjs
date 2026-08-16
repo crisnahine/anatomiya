@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { needsPosixPermissions } from "./platform.mjs";
+import { needsPosixPermissions, needsPosixSpecialFiles } from "./platform.mjs";
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, statSync, symlinkSync, chmodSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -813,7 +813,7 @@ test("a hand-written file holding a planned name is not called somebody else's",
   rmSync(dir, { recursive: true, force: true });
 });
 
-test("a fifo in the rules directory is a shape, and the open does not hang on it", needsPosixPermissions, () => {
+test("a fifo in the rules directory is a shape, and the open does not hang on it", needsPosixSpecialFiles, () => {
   // A fifo with no writer blocks a blocking open forever. Opened non-blocking
   // and typed on the handle, it answers "other" like a directory does, and the
   // scan that read the directory continues.
@@ -831,7 +831,7 @@ test("a fifo in the rules directory is a shape, and the open does not hang on it
   rmSync(dir, { recursive: true, force: true });
 });
 
-test("a socket in the rules directory is a shape on every platform, not an unreadable file", needsPosixPermissions, async () => {
+test("a socket in the rules directory is a shape on every platform, not an unreadable file", needsPosixSpecialFiles, async () => {
   // A unix socket refuses to open, and the errno differs: ENXIO on Linux,
   // EOPNOTSUPP on macOS. Whichever it is, the entry is a shape and occupies
   // its name; only a regular file that will not open is "unreadable".

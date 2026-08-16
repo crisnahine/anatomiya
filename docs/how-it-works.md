@@ -462,7 +462,7 @@ GB, while one pointed at `/dev/zero` never returned. The file is opened first an
 handle it is read from, so a path swapped between a stat and an open cannot hand the type test one
 file and the read another; a fifo is opened non-blocking so it cannot hold the open. A directory
 named `x.md`, or a socket, is a shape rather than a file, on the platforms that open it and the
-ones that refuse under whatever errno they refuse with; where one holds a name the scan is about to write, which `anatomiya-overview.md`
+ones that refuse, under whatever errno they refuse with; where one holds a name the scan is about to write, which `anatomiya-overview.md`
 invites since that name is fixed, it is reported as that condition rather than as an errno out of
 the rename.
 
