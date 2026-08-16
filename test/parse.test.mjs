@@ -221,3 +221,37 @@ test("stripping Flow moves no offset, whatever alphabet the file is written in",
   assert.equal(r.length, source.length, "the reported length is the source's own, not the stripped one");
   assert.ok(r.hits.swallowed_error?.length >= 1);
 });
+
+test("a dimension that reads type syntax says nothing about a file whose types were stripped", async () => {
+  // The retry hands the walkers a tree with the annotations blanked out. Two
+  // dimensions ask about exactly those annotations, so on a Flow file they read
+  // the opposite of the source: measured on react, `explicit_return_type` said
+  // 0 of 1213 where the truth is 986, and three areas lost a claim they had
+  // earned. B15's own argument, turned around: a tree that is not the file
+  // moves the denominator without moving the code.
+  const source = [
+    "// @flow",
+    'import type { Node } from "react"',
+    "type Options = {| name: string |}",
+    "export function describe(opts: Options): string { return opts.name }",
+    "export function other(): number { return 1 }",
+  ].join("\n");
+
+  const { records } = await parseAll([{ rel: "flow.js", source, lang: "js" }]);
+  const r = records.get("flow.js");
+
+  assert.equal(r.kind, "ok", "the file is still read");
+  assert.equal(r.hits.explicit_return_type, undefined, "it declares return types this tree cannot see");
+  assert.equal(r.hits.type_only_import, undefined, "and a type-only import this tree cannot see");
+  assert.ok(r.hits.function_style?.length >= 1, "the dimensions that read code still answer");
+});
+
+test("a file that needed no retry still answers the type dimensions", async () => {
+  // The exclusion is about the stripped tree, not about the extension: a plain
+  // TypeScript file in the same repository must still be asked.
+  const source = "export function f(): number { return 1 }\n";
+
+  const { records } = await parseAll([{ rel: "plain.ts", source, lang: "js" }]);
+
+  assert.equal(records.get("plain.ts").hits.explicit_return_type?.length, 1);
+});

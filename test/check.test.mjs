@@ -5,6 +5,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, symlinkSync, rmSyn
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { execFileSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
 import { needsRuby } from "./ruby-available.mjs";
 import { check, severityFor, formatReport, unreadReason } from "../lib/check.mjs";
@@ -1336,4 +1337,51 @@ test("a file the check could not read names its own cause, in the singular", () 
   assert.equal(unreadReason({ kind: "oversize" }), "exceeded the size cap");
   assert.equal(unreadReason({ kind: "unreadable" }), "could not be parsed");
   assert.equal(unreadReason(null), "could not be parsed", "no record at all is the same as unreadable");
+});
+
+
+/**
+ * A repository whose branch adds a Flow file to an area that states the
+ * return-type claim. Flow is not TypeScript, so the parser rejects it and the
+ * worker retries with the annotations blanked.
+ */
+async function flowRepo(t) {
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-flow-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
+  mkdirSync(join(dir, "src"), { recursive: true });
+  for (let i = 0; i < 12; i++) {
+    writeFileSync(join(dir, "src", `f${i}.ts`), `export function f${i}(): number { return ${i} }\n`);
+  }
+  git("init", "-q");
+  git("config", "user.email", "t@t.test");
+  git("config", "user.name", "T");
+  git("add", "-A");
+  git("commit", "-qm", "init");
+  const bin = fileURLToPath(new URL("../bin/anatomiya.mjs", import.meta.url));
+  execFileSync(process.execPath, [bin, "scan", dir], { stdio: "pipe" });
+  git("checkout", "-q", "-b", "probe");
+  writeFileSync(
+    join(dir, "src", "flowed.js"),
+    ["// @flow", "type Opts = {| name: string |}", "export function describe(o: Opts): string { return o.name }"].join("\n") + "\n"
+  );
+  git("add", "-A");
+  git("commit", "-qm", "flow");
+  return dir;
+}
+
+test("the check does not report a type claim against a file whose types were stripped", async (t) => {
+  // The check walks the same tree the scan counted, and on a retried file the
+  // annotations are blanked. Left alone it prints "exported functions declare
+  // their return type" next to a line that declares one.
+  const repo = await flowRepo(t);
+
+  const report = await check(repo, { base: "main" });
+  const text = formatReport(report);
+
+  assert.doesNotMatch(
+    text,
+    /exported functions declare their return type/,
+    `a claim about annotations, on a file whose annotations were stripped:\n${text}`
+  );
 });
