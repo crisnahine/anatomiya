@@ -103,6 +103,19 @@ test("rubyFacets says which test runner a file speaks", needsRuby, async (t) => 
   assert.equal(records.get("app/models/c.rb").facets.testCalls, false);
 });
 
+test("a runner the table names is read off the import, qunit included", async (t) => {
+  // Ember writes `import { test } from "qunit"` and calls it inside an
+  // `acceptance(...)` block, so the import is the only thing the file says.
+  const dir = repo({
+    "tests/acceptance/login-test.js": `import { test } from "qunit"\nacceptance("Login", function () {\n  test("x", function (assert) { assert.ok(true) })\n})\n`,
+  });
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+  const { records } = await parseAll(list(dir, ["tests/acceptance/login-test.js"]));
+
+  assert.equal(records.get("tests/acceptance/login-test.js").facets.testRunner, "qunit");
+});
+
 test("a method named test_ in an ordinary class is not a minitest case", needsRuby, async (t) => {
   // `def test_connection` is ordinary Ruby: a service exposes it, a client
   // pings with it. Counting it made empire-flippers/api read

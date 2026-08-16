@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { namesakeCompanions } from "../lib/companions.mjs";
-import { isTestFile, layoutFacts, layoutRoots, minRootFiles, runnerOf, testsLine } from "../lib/layout.mjs";
+import { isTestFile, layoutFacts, layoutRoots, minRootFiles, mirroredTests, runnerOf, testsLine } from "../lib/layout.mjs";
 import { roster } from "../lib/layout-scan.mjs";
 
 const file = (rel, lang = null, facets = null) => ({ rel, lang, facets });
@@ -27,6 +27,33 @@ test("a name the table does not know still names a test file", () => {
   }
   assert.equal(isTestFile(file("src/a.ts", "js")), false);
   assert.equal(isTestFile(file("src/latest/a.ts", "js")), false);
+});
+
+test("a name spelled with a hyphen is a test name too", () => {
+  // discourse writes its Ember tests as `login-test.js`, which is the dotted
+  // convention with the other separator.
+  assert.equal(isTestFile(file("tests/acceptance/login-test.js", "js")), true);
+  assert.equal(isTestFile(file("src/checkout-spec.ts", "js")), true);
+  assert.equal(isTestFile(file("src/latest-thing.ts", "js")), false);
+});
+
+test("a file in a test tree that mirrors a source file is that file's test", () => {
+  // eslint names `tests/lib/rules/no-var.js` after the `lib/rules/no-var.js`
+  // it covers and drives RuleTester, so nothing in the file says what it is.
+  // The tree does: strip the test root and it is the source path.
+  const corpus = [
+    file("lib/rules/no-var.js", "js"),
+    file("tests/lib/rules/no-var.js", "js"),
+    file("tests/data/no-var.js", "js"),
+    file("test/no-var.js", "js"),
+    file("test/cases/foo/lib.js", "js"),
+  ];
+  const mirrored = mirroredTests(corpus);
+
+  assert.equal(isTestFile(corpus[1], mirrored), true);
+  assert.equal(isTestFile(corpus[2], mirrored), false, "a different position mirrors nothing");
+  assert.equal(isTestFile(corpus[3], mirrored), false, "a bare basename is not a mirror");
+  assert.equal(isTestFile(corpus[4], mirrored), false, "nothing outside the test tree answers to it");
 });
 
 test("a directory called test does not make what sits in it a test", () => {

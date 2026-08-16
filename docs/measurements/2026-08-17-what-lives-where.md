@@ -28,11 +28,11 @@ Per repository the script asserts:
 
 ## Result
 
-35 of 35, after the five tuning changes below. The first run cleared 1 to 4 mechanically on 34 of
+35 of 35, after the seven tuning changes below. The first run cleared 1 to 4 mechanically on 34 of
 them and read wrong on most.
 
-One byte-stability failure, on appsmith, in the first of six full runs: `## Not covered` moved
-between the two scans. It did not reproduce in five later full runs or in four solo runs of that
+One byte-stability failure, on appsmith, in the first of seven full runs: `## Not covered` moved
+between the two scans. It did not reproduce in six later full runs or in four solo runs of that
 repository. The parse pool kills a worker batch at 5 s of wall clock, so under the load of a
 35-repository run a batch can be charged as crashed and the count of unexamined files moves with
 it. Not a layout finding: it is the one wall-clock guard left in the tool, and `limits.mjs`
@@ -49,44 +49,44 @@ are how many areas printed each roster line.
 | repo | tracked | roots | folded | testGroups | principles | extends_base | class_base | module_include | interface_prefix | type_alias_prefix | imports | reused | seconds |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | Homebrew__brew | 2501 | 3 | 0 | 3 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 14.1 |
-| TryGhost__Ghost | 7940 | 5 | 0 | 6 | 2 | 1 | 0 | 0 | 0 | 0 | 142 | 87 | 14.1 |
+| TryGhost__Ghost | 7940 | 5 | 0 | 6 | 2 | 1 | 0 | 0 | 0 | 0 | 142 | 87 | 14.4 |
 | alphagov__whitehall | 2621 | 7 | 8 | 3 | 1 | 0 | 2 | 0 | 0 | 0 | 0 | 0 | 7.8 |
-| angular__angular | 8522 | 7 | 11 | 3 | 2 | 0 | 0 | 0 | 0 | 0 | 93 | 103 | 13.5 |
-| appsmithorg__appsmith | 13087 | 3 | 0 | 5 | 2 | 0 | 0 | 0 | 0 | 0 | 126 | 128 | 14.6 |
+| angular__angular | 8522 | 7 | 11 | 3 | 2 | 0 | 0 | 0 | 0 | 0 | 93 | 103 | 13.6 |
+| appsmithorg__appsmith | 13087 | 3 | 0 | 5 | 2 | 0 | 0 | 0 | 0 | 0 | 126 | 128 | 14.8 |
 | babel__babel | 2303 | 7 | 10 | 3 | 1 | 0 | 0 | 0 | 0 | 0 | 26 | 16 | 5.3 |
-| backstage__backstage | 11781 | 7 | 5 | 2 | 2 | 0 | 0 | 0 | 0 | 0 | 186 | 99 | 14.9 |
-| calcom__cal.diy | 7372 | 7 | 4 | 4 | 2 | 0 | 0 | 0 | 0 | 0 | 122 | 60 | 9.3 |
+| backstage__backstage | 11781 | 7 | 5 | 2 | 2 | 0 | 0 | 0 | 0 | 0 | 186 | 99 | 15.0 |
+| calcom__cal.diy | 7372 | 7 | 4 | 4 | 2 | 0 | 0 | 0 | 0 | 0 | 122 | 60 | 9.2 |
 | chef__chef | 2281 | 7 | 1 | 2 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 11.0 |
 | consul__consul | 6025 | 7 | 2 | 1 | 1 | 0 | 2 | 0 | 0 | 0 | 0 | 0 | 7.0 |
-| decidim__decidim | 11467 | 7 | 18 | 2 | 1 | 0 | 0 | 0 | 0 | 0 | 4 | 5 | 20.0 |
-| diaspora__diaspora | 1921 | 7 | 5 | 2 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 4.8 |
-| discourse__discourse | 23263 | 7 | 5 | 5 | 1 | 1 | 3 | 1 | 0 | 0 | 75 | 12 | 63.1 |
+| decidim__decidim | 11467 | 7 | 18 | 2 | 1 | 0 | 0 | 0 | 0 | 0 | 4 | 5 | 19.6 |
+| diaspora__diaspora | 1921 | 7 | 5 | 2 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 4.7 |
+| discourse__discourse | 23263 | 7 | 5 | 6 | 1 | 1 | 3 | 1 | 0 | 0 | 75 | 12 | 60.3 |
 | empire-flippers__api | 8986 | 7 | 2 | 2 | 1 | 0 | 7 | 0 | 0 | 0 | 0 | 0 | 18.4 |
-| empire-flippers__client | 2999 | 7 | 3 | 2 | 2 | 0 | 0 | 0 | 6 | 0 | 86 | 44 | 5.1 |
-| errbit__errbit | 529 | 7 | 7 | 2 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 1.1 |
-| eslint__eslint | 1533 | 7 | 10 | 3 | 1 | 0 | 0 | 0 | 0 | 0 | 1 | 7 | 4.4 |
+| empire-flippers__client | 2999 | 7 | 3 | 2 | 2 | 0 | 0 | 0 | 6 | 0 | 86 | 44 | 5.0 |
+| errbit__errbit | 529 | 7 | 7 | 2 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 1.0 |
+| eslint__eslint | 1533 | 7 | 10 | 3 | 1 | 0 | 0 | 0 | 0 | 0 | 1 | 7 | 4.2 |
 | fastlane__fastlane | 2136 | 7 | 7 | 2 | 1 | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 6.9 |
-| forem__forem | 6425 | 7 | 6 | 3 | 2 | 0 | 1 | 0 | 0 | 0 | 14 | 7 | 14.6 |
-| huginn__huginn | 729 | 7 | 9 | 1 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 2.7 |
-| instructure__canvas-lms | 21913 | 7 | 8 | 4 | 2 | 0 | 1 | 0 | 0 | 0 | 148 | 129 | 100.3 |
+| forem__forem | 6425 | 7 | 6 | 3 | 2 | 0 | 1 | 0 | 0 | 0 | 14 | 7 | 14.4 |
+| huginn__huginn | 729 | 7 | 9 | 1 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 2.6 |
+| instructure__canvas-lms | 21913 | 7 | 8 | 4 | 2 | 0 | 1 | 0 | 0 | 0 | 148 | 129 | 99.8 |
 | mastodon__mastodon | 9846 | 7 | 5 | 3 | 2 | 0 | 1 | 0 | 0 | 0 | 20 | 23 | 10.9 |
-| microsoft__vscode | 15712 | 4 | 0 | 6 | 2 | 0 | 0 | 0 | 14 | 0 | 164 | 90 | 55.7 |
-| openfoodfoundation__openfoodnetwork | 3882 | 7 | 7 | 2 | 1 | 0 | 0 | 0 | 0 | 0 | 3 | 1 | 9.8 |
-| opf__openproject | 22498 | 7 | 8 | 3 | 1 | 0 | 1 | 0 | 0 | 0 | 22 | 7 | 46.2 |
-| prisma__prisma | 6154 | 7 | 7 | 2 | 2 | 0 | 0 | 0 | 0 | 0 | 115 | 76 | 9.1 |
-| publiclab__plots2 | 860 | 7 | 6 | 2 | 1 | 0 | 0 | 0 | 0 | 0 | 1 | 0 | 2.5 |
+| microsoft__vscode | 15712 | 4 | 0 | 6 | 2 | 0 | 0 | 0 | 14 | 0 | 164 | 90 | 56.6 |
+| openfoodfoundation__openfoodnetwork | 3882 | 7 | 7 | 2 | 1 | 0 | 0 | 0 | 0 | 0 | 3 | 1 | 10.0 |
+| opf__openproject | 22498 | 7 | 8 | 3 | 1 | 0 | 1 | 0 | 0 | 0 | 22 | 7 | 46.8 |
+| prisma__prisma | 6154 | 7 | 7 | 3 | 2 | 0 | 0 | 0 | 0 | 0 | 115 | 76 | 9.2 |
+| publiclab__plots2 | 860 | 7 | 6 | 2 | 1 | 0 | 0 | 0 | 0 | 0 | 1 | 0 | 2.4 |
 | puppetlabs__puppet | 2466 | 7 | 0 | 2 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 15.7 |
-| react__react | 2969 | 7 | 18 | 3 | 2 | 1 | 0 | 0 | 0 | 0 | 16 | 34 | 8.8 |
-| rubocop__rubocop | 2155 | 7 | 2 | 1 | 1 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 8.5 |
+| react__react | 2969 | 7 | 18 | 3 | 2 | 1 | 0 | 0 | 0 | 0 | 16 | 34 | 8.9 |
+| rubocop__rubocop | 2155 | 7 | 2 | 2 | 1 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 8.4 |
 | storybookjs__storybook | 7597 | 5 | 0 | 7 | 2 | 0 | 0 | 0 | 0 | 0 | 75 | 77 | 11.7 |
 | supabase__supabase | 16751 | 4 | 0 | 4 | 2 | 0 | 0 | 0 | 0 | 0 | 198 | 157 | 14.8 |
-| typeorm__typeorm | 3542 | 7 | 0 | 3 | 2 | 1 | 0 | 0 | 0 | 0 | 8 | 25 | 4.6 |
-| vercel__next.js | 28490 | 7 | 2 | 5 | 2 | 1 | 0 | 0 | 0 | 0 | 28 | 58 | 29.7 |
+| typeorm__typeorm | 3542 | 7 | 0 | 3 | 2 | 1 | 0 | 0 | 0 | 0 | 8 | 25 | 4.5 |
+| vercel__next.js | 28490 | 7 | 2 | 5 | 2 | 1 | 0 | 0 | 0 | 0 | 28 | 58 | 30.0 |
 | webpack__webpack | 14364 | 3 | 0 | 1 | 2 | 0 | 0 | 0 | 0 | 0 | 15 | 18 | 9.0 |
 
 ## Tuning, and why
 
-Five changes, each with a test that fails before it and passes after. The three numbers the
+Seven changes, each with a test that fails before it and passes after. The three numbers the
 design left open are unchanged: the floor is still `max(3, ceil(0.01 * N))`, the wrapper share is
 still 0.8, the budget is still 7 root lines, and the shell list is still the same five words.
 
@@ -154,42 +154,57 @@ class inherits a minitest base, or the file is `_test.rb` or sits under a `test`
 specs` on discourse, in directories holding no test at all. `rubyFacets` takes the path as a second
 argument for it, from the record `ruby.mjs` already has.
 
+### 6. `qunit`, and the hyphen
+
+`lib/facets.mjs` gains `qunit` in `TEST_RUNNER_MODULES`, the closed table that grows exactly this
+way. `lib/layout.mjs` accepts `-test.` and `-spec.` in the basename rule beside the dotted forms.
+
+Both are discourse, which writes its Ember tests as `login-test.js` importing `test` from `qunit`
+and calling it inside an `acceptance(...)` block, so nothing at the top level and nothing in the
+name reached it. Change 4 had taken its whole JavaScript side to zero. It now reads `456 qunit
+specs` on `frontend/discourse` and `217 qunit specs` on `plugins`, and the runner is named where
+the old directory rule could only say `test files`.
+
+### 7. A file in a test tree that mirrors a source file is that file's test
+
+New in `lib/layout.mjs`: `mirroredTests(files)` returns the files under a top-level `test`, `tests`
+or `spec` directory whose path, with that directory stripped, tail-matches a source path outside
+it. `isTestFile` takes the set as a second argument, `layoutFacts` builds it once over the corpus
+and `roster` builds it once for the area kinds, so the pure signature stays testable from a
+literal array.
+
+eslint is the whole reason. Its rule tests are `tests/lib/rules/no-var.js`, named exactly like the
+`lib/rules/no-var.js` they cover, driving `RuleTester` with no runner import, no top-level
+`describe` and no suffix. Nothing in the file says what it is; the tree does, and it says it in the
+shape `companions.mjs` already reads, one directory down and in reverse. `lib/rules` reads `301 of
+305 have a namesake test under tests/lib/rules` where change 4 alone had left it at 9 of 305.
+
+A single segment left after stripping is refused: it would be a bare basename matching whatever
+happens to share it, which is the reason `siblings.mjs` refuses one.
+
 ## What still reads wrong, and why it was left
 
-**A runner the table does not name, in a file the name rule does not catch, is now invisible.**
-This is the cost of change 4 and it is not small. Two repositories lose real tests, for two
-different reasons, and both need a decision before the next round.
+**A test directory that is mostly fixtures is a source root, and its namesake clause is true and
+noisy.** webpack's `test/` is 12,645 files of which 2,607 are tests, so it no longer clears the
+half that makes a test root and prints `10418 .js, 814 .css and 1413 other; 2607 test files; 1 of
+7858 have a namesake test under test`. The first two clauses are the most accurate the section has
+ever been about that directory. The third is a true count of a question nobody asked: those 7,858
+are the inputs the 2,607 tests run on, and a namesake test for a fixture is not a thing. Same
+shape on typeorm's `test/` and next.js's. Suppressing it needs a rule for "this root is a test
+tree even though under half of it parses as a test", which is a fourth definition of a test
+directory and worth measuring on its own rather than bolting on here.
 
-eslint is the worse of them. Its rule tests are `tests/lib/rules/no-var.js`, named exactly like
-the `lib/rules/no-var.js` they cover, and they drive `RuleTester` rather than calling `describe`.
-No basename rule, no `__tests__`, no runner in the table, no top-level test call: only the
-directory said what they were. `lib/rules` went from `302 of 305 have a namesake test under
-tests/lib/rules` to `9 of 305`, and that line was the clearest thing the roster said on any of the
-35.
-
-discourse loses its whole JavaScript side. Its 4,000-odd Ember tests are `*-test.js` with a
-hyphen, import `test` from `qunit`, which is not in the runner table, and call it inside an
-`acceptance(...)` block rather than at the top level. `frontend/discourse` went from `483 test
-files` to none.
-
-Three fixes are open and none is guesswork: add `qunit` to `TEST_RUNNER_MODULES`, which is the
-closed table the design says grows exactly this way; accept `-test.` and `-spec.` in the basename
-rule beside the dotted forms; and, for eslint's shape, something that says a file in a parallel
-tree naming a source file is that file's test. The first two are cheap. The third is the same
-question the namesake clause already asks and is the one worth measuring on this harness. Left out
-of this round because the ruling that produced change 4 named the shapes it wanted, and widening
-it would change what the table above measured.
-
-**A test directory that is mostly fixtures is now a source root.** webpack's `test/` is 12,645
-files of which 2,606 are tests, so it no longer clears the half that makes a test root and prints
-`10418 .js, 814 .css and 1413 other; 2606 test files; 1 of 7859 have a namesake test under test`.
-The first two clauses are the most accurate thing the section has ever said about that directory.
-The namesake clause on the end is noise. Same shape on typeorm's `test/` and next.js's.
+**Three signals now, and a repository can still spell a test in a fourth way.** The name, the
+runner import or a top-level call, the `__tests__` directory, and the mirror cover the 35. They are
+a closed set, and a repository whose tests are named for neither the runner nor the file they
+cover, sitting in a directory named for neither, would go uncounted. That is the trade the
+directory rule was making the other way round, and the harness is what would find the next case.
 
 **The namesake clause reads zero above a source-and-spec split.** discourse prints
-`plugins: ... 1675 RSpec specs; ... 0 of 2655 have a namesake test`, openproject the same shape on
-`modules`, vscode `src/vs: 1670 test files; 5 of 6555`, canvas-lms `ui: 3235 test files under
-__tests__; 0 of 2361`, and decidim's seven engines read 6 of 1219 and lower. The namesake match is
+`plugins: ... 1675 RSpec specs; 217 qunit specs; ... 0 of 2655 have a namesake test`, openproject
+the same shape on `modules` at 0 of 2623, vscode `src/vs: 1670 test files; 5 of 6555`, canvas-lms
+`ui: 3235 test files under __tests__; 0 of 2361`, and decidim's seven engines read 6 of 1219 and
+lower. The namesake match is
 on the path tail, so `modules/budgets/app/models/budget.rb` is answered only by a test whose
 directory ends in `budgets/app/models`, and the test that exists sits in `budgets/spec/models`.
 Every rule that would count it is a guess about how a repository spells its test tree, and the
@@ -197,14 +212,14 @@ loosest of them, matching on the basename alone, is what the tail rule was chose
 beside it on the same line already says the tests are there. Worth its own issue with this
 harness to judge a candidate rule against.
 
-**The tests-line directory is a majority, not a set.** rubocop prints `764 RSpec specs under
-spec/rubocop/cop` where 680 of them are, canvas-lms `3519 test files under ui`, appsmith `835
-Cypress specs under app/client/cypress/e2e/Regression/ClientSide`. At the 0.8 bar one file in five
-may sit somewhere else. The alternative, saying nothing, reads worse.
+**The tests-line directory is a majority, not a set.** eslint prints `359 test files under
+tests/lib/rules` where 301 of them are, rubocop `764 RSpec specs under spec/rubocop/cop` where 680
+are, appsmith `835 Cypress specs under app/client/cypress/e2e/Regression/ClientSide`. At the 0.8
+bar one file in five may sit somewhere else. The alternative, saying nothing, reads worse.
 
-**The helper facet's three stems are build config in a monorepo root.** Ghost prints `993 sibling
-modules named index/eslint.config/vite.config`, react `243 sibling modules named
-index/tsup.config/types.d`, next.js `754 sibling modules named next.config/index/postcss.config`.
+**The helper facet's three stems are build config in a monorepo root.** Ghost prints `1014
+sibling modules named index/eslint.config/vite.config`, react `242 sibling modules named
+index/tsup.config/types.d`, next.js `757 sibling modules named next.config/index/postcss.config`.
 The count is right and the names are not what a reader should copy. No rule separates
 `vite.config.ts` from `user.service.ts` without a vocabulary of kinds, and this tool ships none.
 
@@ -359,11 +374,11 @@ table above records.
 ```
 ## What lives where
 
-- Library/Homebrew: 1651 .rb, 317 .rbi and 336 other; 657 RSpec specs; 5 test files; 1 minitest spec under helper; 516 of 988 have a namesake test under Library/Homebrew/test
+- Library/Homebrew: 1651 .rb, 317 .rbi and 336 other; 657 RSpec specs; 8 test files; 1 minitest spec under helper; 515 of 985 have a namesake test under Library/Homebrew/test
 - docs: 85 .md, 11 .yml and 19 other
 - .github: 32 .yml, 2 .md and 6 other
 - and 42 more files in directories under the floor
-- tests: 657 RSpec specs under Library/Homebrew/test; 5 test files under Library/Homebrew; 1 minitest under Library/Homebrew/test/support/helper; 516 of 988 .rb files have a namesake test
+- tests: 657 RSpec specs under Library/Homebrew/test; 8 test files under Library/Homebrew; 1 minitest under Library/Homebrew/test/support/helper; 515 of 985 .rb files have a namesake test
 
 Match sibling test shape; skip tests where siblings have none.
 ```
@@ -374,12 +389,12 @@ Match sibling test shape; skip tests where siblings have none.
 ## What lives where
 
 - ghost/core: 2093 .js, 384 .ts and 192 other; 806 test files; 20 vitest specs; 1 chai spec under public; 3 of 1396 have a namesake test under apps/announcement-bar
-- apps: 914 .tsx (JSX), 751 .js and 1575 other; 231 vitest specs; 116 test files; 113 mocha specs; 31 playwright specs under e2e; 11 chai specs under editor; 33 of 738 have a namesake test under apps; 1017 sibling modules named index/eslint.config/vite.config; 321 files inline a helper
+- apps: 914 .tsx (JSX), 751 .js and 1575 other; 231 vitest specs; 119 test files; 113 mocha specs; 31 playwright specs under e2e; 11 chai specs under editor; 33 of 738 have a namesake test under apps; 1014 sibling modules named index/eslint.config/vite.config; 321 files inline a helper
 - koenig: 484 .ts, 287 .tsx (JSX) and 236 other; 109 test files; 60 playwright specs; 15 vitest specs under unit; 0 of 304 have a namesake test; 326 sibling modules named index/eslint.config/vitest.config; 87 files inline a helper
 - e2e: 98 playwright specs, 64 test files and 139 other
 - packages/i18n/locales: 311 .json
 - and 412 more files in directories under the floor
-- tests: 1096 test files; 278 vitest under apps; 189 playwright; and 3 more; 3 of 1396 .js files have a namesake test
+- tests: 1099 test files; 278 vitest under apps; 189 playwright; and 3 more; 3 of 1396 .js files have a namesake test
 
 Match sibling test shape; skip tests where siblings have none.
 Match directory granularity; don't extract into a sibling module what the directory's files inline.
@@ -390,15 +405,15 @@ Match directory granularity; don't extract into a sibling module what the direct
 ```
 ## What lives where
 
-- test: 538 minitest specs, 90 test files and 138 other
+- test: 538 minitest specs, 92 test files and 136 other
 - app/models: 238 .rb, 7 .json; 140 of 238 have a namesake test under test/unit/app/models
 - db: 223 .rb, 2 .csv and 3 other; 0 of 223 have a namesake test
-- features: 96 .rb, 55 .feature; 1 test file under support; 0 of 95 have a namesake test
+- features: 96 .rb, 55 .feature; 1 test file under support; 2 of 95 have a namesake test under test
 - app/controllers/admin: 95 .rb; 91 of 95 have a namesake test under test/functional/admin
 - app/presenters/publishing_api: 66 .rb; 61 of 66 have a namesake test under test/unit/app/presenters/publishing_api
 - app/helpers: 52 .rb; 31 of 52 have a namesake test under test/unit/app/helpers
 - and 8 more directories holding 1018 files
-- tests: 538 minitest specs under test; 109 test files under test; 5 RSpec under test/unit/app/helpers; 140 of 238 .rb files have a namesake test
+- tests: 538 minitest specs under test; 111 test files under test; 5 RSpec under test/unit/app/helpers; 140 of 238 .rb files have a namesake test
 
 Match sibling test shape; skip tests where siblings have none.
 ```
@@ -412,11 +427,11 @@ Match sibling test shape; skip tests where siblings have none.
 - adev/src/content: 612 .ts, 384 .md and 837 other; 24 test files under src; 7 of 588 have a namesake test under adev/src/content
 - packages/compiler-cli: 535 .ts, 118 .bazel and 28 other; 37 test files under test; 1 of 498 have a namesake test under packages/core/schematics/migrations/signal-migration/test/golden-test
 - packages/compiler: 292 .ts, 8 .bazel and 4 other; 50 test files; 2 of 242 have a namesake test under packages/core/schematics/migrations/signal-migration/test/golden-test
-- packages/zone.js: 215 .ts, 38 .js and 65 other; 99 test files; 1 vitest spec under vitest; 1 of 121 have a namesake test under packages/zone.js/test/common
+- packages/zone.js: 215 .ts, 38 .js and 65 other; 103 test files; 1 vitest spec under vitest; 1 of 117 have a namesake test under packages/zone.js/test/common
 - devtools/projects: 256 .ts, 106 .bazel and 150 other; 68 test files; 61 of 188 have a namesake test under devtools/projects
 - adev/shared-docs: 136 .mts, 86 .ts and 230 other; 51 test files; 0 of 105 have a namesake test; 173 sibling modules named index/builder/defaults; 3 files inline a helper
 - and 11 more directories holding 3170 files
-- tests: 1000 test files; 10 Cypress under devtools/cypress/integration; 1 vitest under packages/zone.js/test/vitest; 13 of 818 .ts files have a namesake test
+- tests: 1006 test files; 10 Cypress under devtools/cypress/integration; 1 vitest under packages/zone.js/test/vitest; 13 of 818 .ts files have a namesake test
 
 Match sibling test shape; skip tests where siblings have none.
 Match directory granularity; don't extract into a sibling module what the directory's files inline.
@@ -450,7 +465,7 @@ Match directory granularity; don't extract into a sibling module what the direct
 - eslint: 34 .ts, 21 .js and 18 other; 10 test files; 0 of 34 have a namesake test
 - packages/babel-traverse: 36 .ts, 19 .js and 4 other; 18 test files under test; 0 of 35 have a namesake test
 - and 10 more directories holding 1510 files
-- tests: 149 test files under packages; 2 jest; 1 node:test under test/esm; 0 of 93 .ts files have a namesake test
+- tests: 150 test files under packages; 2 jest; 1 node:test under test/esm; 0 of 93 .ts files have a namesake test
 
 Match sibling test shape; skip tests where siblings have none.
 ```
@@ -468,7 +483,7 @@ Match sibling test shape; skip tests where siblings have none.
 - packages/catalog-model: 161 .ts, 51 .yaml and 24 other; 62 test files; 63 of 99 have a namesake test under packages/catalog-model
 - docs-ui/src/app/components: 72 .tsx (JSX), 57 .ts and 44 other; 0 of 72 have a namesake test; 57 sibling modules named snippets/props-definition; 1 file inlines a helper
 - and 5 more directories holding 4912 files
-- tests: 1710 test files; 10 playwright under packages; 685 of 2431 .ts files have a namesake test
+- tests: 1711 test files; 10 playwright under packages; 685 of 2431 .ts files have a namesake test
 
 Match sibling test shape; skip tests where siblings have none.
 Match directory granularity; don't extract into a sibling module what the directory's files inline.
@@ -479,7 +494,7 @@ Match directory granularity; don't extract into a sibling module what the direct
 ```
 ## What lives where
 
-- apps: 969 .ts, 595 .tsx (JSX) and 478 other; 65 vitest specs; 64 test files; 51 playwright specs under playwright; 2 jest specs under v2; 26 of 804 have a namesake test under apps; 812 sibling modules named route/[trpc]/index; 142 files inline a helper
+- apps: 969 .ts, 595 .tsx (JSX) and 478 other; 66 test files; 65 vitest specs; 51 playwright specs under playwright; 2 jest specs under v2; 26 of 802 have a namesake test under apps; 810 sibling modules named route/[trpc]/index; 142 files inline a helper
 - packages/features: 901 .ts, 64 .tsx (JSX) and 16 other; 199 vitest specs; 3 test files under __tests__; 105 of 703 have a namesake test under packages/features; 703 sibling modules named types/index/tokens; 17 files inline a helper
 - packages/app-store: 680 .ts, 184 .json and 699 other; 33 vitest specs; 2 playwright specs under tests; 1 test file under __tests__; 17 of 647 have a namesake test under packages/app-store; 647 sibling modules named index/add/zod; 5 files inline a helper
 - packages/trpc/server/routers/viewer: 345 .ts, 20 .tsx; 26 vitest specs; 21 of 319 have a namesake test under packages/trpc/server/routers/viewer
@@ -487,7 +502,7 @@ Match directory granularity; don't extract into a sibling module what the direct
 - packages/ui/components: 140 .tsx (JSX), 63 .ts and 14 other; 26 vitest specs; 8 test files; 9 of 108 have a namesake test under packages/ui/components; 62 sibling modules named index/types/dateRangeLogic; 24 files inline a helper
 - packages/lib (files at this level): 146 .ts, 4 .json and 4 other; 22 vitest specs; 21 of 124 have a namesake test under packages/lib; 124 sibling modules named array/availability/buildCalEventFromBooking; 1 file inlines a helper
 - and 4 more directories holding 1643 files
-- tests: 431 vitest specs under packages; 77 test files under apps; 72 playwright; and 1 more; 26 of 804 .ts files have a namesake test
+- tests: 431 vitest specs under packages; 79 test files under apps; 72 playwright; and 1 more; 26 of 802 .ts files have a namesake test
 
 Match sibling test shape; skip tests where siblings have none.
 Match directory granularity; don't extract into a sibling module what the directory's files inline.
@@ -570,15 +585,15 @@ Match sibling test shape; skip tests where siblings have none.
 ```
 ## What lives where
 
-- plugins: 4330 .rb, 4072 .yml and 2758 other; 1675 RSpec specs; 0 of 2655 have a namesake test
-- spec: 1680 RSpec specs, 1 test file and 504 other
-- frontend/discourse: 1907 .js, 1678 .gjs and 167 other; 1 of 1907 have a namesake test under plugins/discourse-ai/spec/lib/agents/tool_runner
+- plugins: 4330 .rb, 4072 .yml and 2758 other; 1675 RSpec specs; 217 qunit specs; 1 test file under routes; 0 of 2655 have a namesake test
+- spec: 1680 RSpec specs, 7 test files and 498 other
+- frontend/discourse: 1907 .js, 1678 .gjs and 167 other; 456 qunit specs; 9 test files; 1 of 1448 have a namesake test under plugins/discourse-ai/spec/lib/agents/tool_runner
 - db/migrate: 1735 .rb, 1 .json; 7 of 1735 have a namesake test under spec/db/migrate
 - migrations: 392 .rb, 11 (none) and 24 other; 72 RSpec specs; 0 of 320 have a namesake test
 - app/models: 379 .rb; 209 of 379 have a namesake test under spec/models
 - lib (files at this level): 253 .rb; 186 of 253 have a namesake test under spec/lib
 - and 5 more directories holding 3371 files
-- tests: 3432 RSpec specs; 6 vitest under frontend/asset-processor; 4 minitest under script/import_scripts; and 2 more; 0 of 2655 .rb files have a namesake test
+- tests: 3432 RSpec specs; 674 qunit; 18 test files; and 3 more; 0 of 2655 .rb files have a namesake test
 
 Match sibling test shape; skip tests where siblings have none.
 ```
@@ -643,15 +658,15 @@ Match sibling test shape; skip tests where siblings have none.
 ```
 ## What lives where
 
-- lib/rules: 305 .js; 9 of 305 have a namesake test under tests/lib/rules
-- tests/lib/rules: 301 .js; 9 test files under utils; 0 of 292 have a namesake test
-- tools: 17 .js, 3 .mjs and 3 other; 4 of 17 have a namesake test under tests/tools
+- lib/rules: 305 .js; 301 of 305 have a namesake test under tests/lib/rules
+- tests/lib/rules: 301 test files
+- tools: 17 .js, 3 .mjs and 3 other; 6 of 17 have a namesake test under tests/tools
 - lib/linter: 20 .js; 17 of 20 have a namesake test under tests/lib/linter
 - lib/shared: 19 .js; 11 of 19 have a namesake test under tests/lib/shared
 - messages: 18 .js; 0 of 18 have a namesake test
 - lib/languages/js: 17 .js; 1 of 17 have a namesake test under tests/lib/languages/js
 - and 10 more directories holding 830 files
-- tests: 65 test files under tests/lib; 8 chai under tests; 1 Cypress; 9 of 305 .js files have a namesake test
+- tests: 359 test files under tests/lib/rules; 8 chai under tests; 1 Cypress; 301 of 305 .js files have a namesake test
 
 Match sibling test shape; skip tests where siblings have none.
 ```
@@ -755,11 +770,11 @@ Match directory granularity; don't extract into a sibling module what the direct
 ## What lives where
 
 - src/vs: 8225 .ts, 430 .css and 675 other; 1670 test files; 5 of 6555 have a namesake test under src/vs
-- extensions: 3165 .ts, 1066 .json and 1190 other; 406 vitest specs under test; 148 test files under test; 77 mocha specs; 16 node:test specs under test; 7 chai specs under test; 1 playwright spec under test; 13 of 2550 have a namesake test under extensions; 2650 sibling modules named index/esbuild/utils; 47 files inline a helper
+- extensions: 3165 .ts, 1066 .json and 1190 other; 406 vitest specs under test; 150 test files under test; 77 mocha specs; 16 node:test specs under test; 7 chai specs under test; 1 playwright spec under test; 13 of 2549 have a namesake test under extensions; 2648 sibling modules named index/esbuild/utils; 47 files inline a helper
 - src/vscode-dts: 177 .ts, 1 .md; 0 of 177 have a namesake test
 - test: 116 .ts, 32 .json and 53 other; 33 test files; 22 playwright specs under src; 10 mocha specs; 0 of 58 have a namesake test
 - and 582 more files in directories under the floor
-- tests: 1852 test files under src/vs; 406 vitest under extensions/copilot/src; 87 mocha under extensions; and 3 more; 5 of 6555 .ts files have a namesake test
+- tests: 1858 test files under src/vs; 406 vitest under extensions/copilot/src; 87 mocha under extensions; and 3 more; 5 of 6555 .ts files have a namesake test
 
 Match sibling test shape; skip tests where siblings have none.
 Match directory granularity; don't extract into a sibling module what the directory's files inline.
@@ -778,7 +793,7 @@ Match directory granularity; don't extract into a sibling module what the direct
 - app/services: 121 .rb; 84 of 121 have a namesake test under spec/services
 - app/webpacker: 186 .scss, 87 .js and 71 other
 - and 7 more directories holding 1770 files
-- tests: 715 RSpec specs under spec; 31 test files under spec/javascripts; 6 of 262 .rb files have a namesake test
+- tests: 715 RSpec specs under spec; 32 test files under spec/javascripts; 6 of 262 .rb files have a namesake test
 
 Match sibling test shape; skip tests where siblings have none.
 ```
@@ -789,14 +804,14 @@ Match sibling test shape; skip tests where siblings have none.
 ## What lives where
 
 - modules: 4029 .rb, 2982 .yml and 771 other; 1406 RSpec specs; 8 test files; 0 of 2623 have a namesake test
-- spec: 2633 RSpec specs, 3 test files and 471 other
+- spec: 2633 RSpec specs, 5 test files and 469 other
 - app/models: 988 .rb, 5 .yml and 4 other; 423 of 988 have a namesake test under spec/models
 - app/components: 574 .rb, 412 .erb and 55 other; 168 of 574 have a namesake test under spec/components
 - frontend/src/app/features: 527 .ts, 121 .html and 54 other; 22 test files; 2 vitest specs; 24 of 503 have a namesake test under frontend/src/app/features
 - app/services: 479 .rb; 263 of 479 have a namesake test under spec/services
 - lib/api/v3: 442 .rb; 137 of 442 have a namesake test under spec/lib/api/v3
 - and 8 more directories holding 7948 files
-- tests: 4039 RSpec specs; 104 test files under frontend/src; 73 vitest under frontend/src; 0 of 2623 .rb files have a namesake test
+- tests: 4039 RSpec specs; 106 test files under frontend/src; 73 vitest under frontend/src; 0 of 2623 .rb files have a namesake test
 
 Match sibling test shape; skip tests where siblings have none.
 ```
@@ -806,15 +821,15 @@ Match sibling test shape; skip tests where siblings have none.
 ```
 ## What lives where
 
-- packages/1-framework: 839 .ts, 57 .json and 115 other; 318 vitest specs under test; 0 of 521 have a namesake test
+- packages/1-framework: 839 .ts, 57 .json and 115 other; 318 vitest specs under test; 2 test files under shared; 0 of 519 have a namesake test
 - test/integration/test: 686 .ts, 199 .md and 326 other; 338 vitest specs; 0 of 348 have a namesake test
 - packages/2-sql: 562 .ts, 37 .json and 28 other; 273 vitest specs under test; 0 of 289 have a namesake test
 - packages/3-targets: 533 .ts, 25 .json and 14 other; 268 vitest specs under test; 0 of 265 have a namesake test
 - packages/3-extensions: 377 .ts, 49 .json and 22 other; 177 vitest specs under test; 0 of 200 have a namesake test
-- examples: 311 .ts, 95 .json and 133 other; 46 vitest specs under test; 0 of 266 have a namesake test; 269 sibling modules named contract.d/prisma.config/db; 7 files inline a helper
+- examples: 311 .ts, 95 .json and 133 other; 46 vitest specs under test; 1 test file under test; 0 of 265 have a namesake test; 268 sibling modules named contract.d/prisma.config/db; 7 files inline a helper
 - packages/2-mongo-family: 305 .ts, 42 .json and 19 other; 128 vitest specs under test; 0 of 177 have a namesake test
 - and 7 more directories holding 1380 files
-- tests: 1626 vitest specs; 28 node:test under scripts; 0 of 521 .ts files have a namesake test
+- tests: 1626 vitest specs; 28 node:test under scripts; 4 test files; 0 of 519 .ts files have a namesake test
 
 Match sibling test shape; skip tests where siblings have none.
 Match directory granularity; don't extract into a sibling module what the directory's files inline.
@@ -861,15 +876,15 @@ Match sibling test shape; skip tests where siblings have none.
 ```
 ## What lives where
 
-- compiler: 223 .ts, 120 .rs and 230 other; 23 test files under __tests__; 2 playwright specs; 1 node:test spec under __tests__; 0 of 205 have a namesake test; 243 sibling modules named index/tsup.config/types.d; 8 files inline a helper
-- scripts: 161 .js, 6 .md and 29 other; 11 test files under __tests__; 0 of 150 have a namesake test; 151 sibling modules named build/benchmark/index; 0 files inline a helper
+- compiler: 223 .ts, 120 .rs and 230 other; 24 test files under __tests__; 2 playwright specs; 1 node:test spec under __tests__; 0 of 205 have a namesake test; 242 sibling modules named index/tsup.config/types.d; 8 files inline a helper
+- scripts: 161 .js, 6 .md and 29 other; 13 test files under __tests__; 0 of 148 have a namesake test; 149 sibling modules named build/benchmark/index; 0 files inline a helper
 - packages/react-devtools-shared/src/devtools/views: 149 .js (JSX), 80 .css; 1 of 149 have a namesake test under packages/react-devtools-inline/__tests__/__e2e__; 29 sibling modules named utils/constants/types; 43 files inline a helper
 - packages/react-devtools-shared/src/hooks/__tests__/__source__/__compiled__: 144 test files and 67 other
 - packages/react-dom/src/__tests__: 133 test files
 - packages/react: 76 .js, 6 .ts and 3 other; 31 test files under __tests__; 1 of 51 have a namesake test under packages/react-devtools-shared/src/hooks/__tests__/__source__; 51 sibling modules named compiler-runtime/index/jsx-dev-runtime; 2 files inline a helper
 - packages/react-reconciler/src (files at this level): 82 .js; 1 of 82 have a namesake test under packages/react-reconciler/src/forks
 - and 18 more directories holding 1460 files
-- tests: 580 test files under packages; 5 playwright; 1 node:test under compiler/apps/playground/__tests__; 0 of 205 .ts files have a namesake test
+- tests: 583 test files under packages; 5 playwright; 1 node:test under compiler/apps/playground/__tests__; 0 of 205 .ts files have a namesake test
 
 Match sibling test shape; skip tests where siblings have none.
 Match directory granularity; don't extract into a sibling module what the directory's files inline.
@@ -888,7 +903,7 @@ Match directory granularity; don't extract into a sibling module what the direct
 - lib/rubocop/formatter: 22 .rb; 21 of 22 have a namesake test under spec/rubocop/formatter
 - relnotes: 291 .md
 - and 2 more directories holding 252 files
-- tests: 764 RSpec specs under spec/rubocop/cop; 676 of 803 .rb files have a namesake test
+- tests: 764 RSpec specs under spec/rubocop/cop; 1 test file under spec/core_ext; 676 of 803 .rb files have a namesake test
 
 Match sibling test shape; skip tests where siblings have none.
 ```
@@ -898,13 +913,13 @@ Match sibling test shape; skip tests where siblings have none.
 ```
 ## What lives where
 
-- code: 3104 .ts, 785 .tsx (JSX) and 1607 other; 710 vitest specs; 33 playwright specs under e2e-sandbox; 18 test files under rules; 2 chai specs under test; 1 node:test spec under cli; 547 of 2388 have a namesake test under code; 2564 sibling modules named index/types/input.stories; 250 files inline a helper
+- code: 3104 .ts, 785 .tsx (JSX) and 1607 other; 710 vitest specs; 33 playwright specs under e2e-sandbox; 23 test files under rules; 2 chai specs under test; 1 node:test spec under cli; 544 of 2383 have a namesake test under code; 2559 sibling modules named index/types/input.stories; 250 files inline a helper
 - agent-eval: 89 .ts, 78 .tsx and 138 other; 53 vitest specs; 1 of 36 have a namesake test under agent-eval; 48 sibling modules named main/vitest.config/preview; 0 files inline a helper
-- scripts: 164 .ts, 8 .js and 20 other; 31 vitest specs; 1 playwright spec under bench; 23 of 132 have a namesake test under scripts
+- scripts: 164 .ts, 8 .js and 20 other; 31 vitest specs; 3 test files under tasks; 1 playwright spec under bench; 23 of 130 have a namesake test under scripts
 - test-storybooks: 82 .ts, 51 .tsx (JSX) and 267 other; 8 playwright specs under e2e-tests; 7 vitest specs under tests; 4 test files under stories; 3 Cypress specs; 1 jest spec under stories; 0 of 64 have a namesake test; 100 sibling modules named main/preview/vite.config; 11 files inline a helper
 - docs: 684 .md, 183 .mdx and 217 other
 - and 120 more files in directories under the floor
-- tests: 801 vitest specs under code; 42 playwright; 22 test files under code; and 4 more; 547 of 2388 .ts files have a namesake test
+- tests: 801 vitest specs under code; 42 playwright; 30 test files; and 4 more; 544 of 2383 .ts files have a namesake test
 
 Match sibling test shape; skip tests where siblings have none.
 Match directory granularity; don't extract into a sibling module what the directory's files inline.
@@ -931,7 +946,7 @@ Match directory granularity; don't extract into a sibling module what the direct
 ```
 ## What lives where
 
-- test: 2748 .ts, 8 .json and 1 other; 667 chai specs; 276 test files; 1 mocha spec under 4956; 0 of 1804 have a namesake test
+- test: 2748 .ts, 8 .json and 1 other; 667 chai specs; 277 test files; 1 mocha spec under 4956; 0 of 1803 have a namesake test
 - src/driver: 90 .ts; 0 of 90 have a namesake test
 - packages/codemod: 78 .ts, 5 .json and 6 other; 15 chai specs; 0 of 63 have a namesake test
 - src/decorator: 69 .ts; 0 of 69 have a namesake test
@@ -939,7 +954,7 @@ Match directory granularity; don't extract into a sibling module what the direct
 - src/query-builder: 39 .ts; 1 of 39 have a namesake test under test/functional/database-schema/custom-constraint-names/index
 - docs: 76 .md, 12 .svg and 26 other; 4 sibling modules named databases/docusaurus.config/redirects; 2 files inline a helper
 - and 323 more files in directories under the floor
-- tests: 684 chai specs under test; 276 test files under test; 1 mocha under test/github-issues/4956; 0 of 1804 .ts files have a namesake test
+- tests: 684 chai specs under test; 277 test files under test; 1 mocha under test/github-issues/4956; 0 of 1803 .ts files have a namesake test
 
 Match sibling test shape; skip tests where siblings have none.
 Match directory granularity; don't extract into a sibling module what the directory's files inline.
@@ -950,15 +965,15 @@ Match directory granularity; don't extract into a sibling module what the direct
 ```
 ## What lives where
 
-- test: 4964 .js (JSX), 4402 .tsx and 4149 other; 1842 test files; 67 playwright specs; 3 of 4961 have a namesake test under test; 2839 sibling modules named next.config/route/page; 755 files inline a helper
-- turbopack/crates: 2194 .js, 781 .rs and 1472 other; 247 test files under input; 0 of 1947 have a namesake test; 2101 sibling modules named input/index/output; 3 files inline a helper
+- test: 4964 .js (JSX), 4402 .tsx and 4149 other; 1851 test files; 67 playwright specs; 3 of 4958 have a namesake test under test; 2831 sibling modules named next.config/route/page; 755 files inline a helper
+- turbopack/crates: 2194 .js, 781 .rs and 1472 other; 251 test files under input; 0 of 1943 have a namesake test; 2097 sibling modules named input/index/output; 3 files inline a helper
 - examples: 959 .tsx (JSX), 751 .js and 2247 other; 14 test files; 5 vitest specs; 3 Cypress specs under e2e; 3 playwright specs under e2e; 7 of 946 have a namesake test under examples; 757 sibling modules named next.config/index/postcss.config; 97 files inline a helper
 - crates/next-custom-transforms/tests: 810 .js, 86 .stderr and 45 other; 0 of 810 have a namesake test; 637 sibling modules named output/input/output-default; 34 files inline a helper
 - packages/next/src/compiled: 684 .js, 145 .json and 168 other; 0 of 684 have a namesake test
 - packages/next/src/server: 536 .ts, 36 .tsx and 5 other; 78 test files; 76 of 458 have a namesake test under packages/next/src/server; 463 sibling modules named index/utils/types; 5 files inline a helper
 - packages/next-codemod/transforms/__testfixtures__: 238 .tsx, 159 .js and 100 other; 0 of 238 have a namesake test; 202 sibling modules named next.config/cloudinary-loader/eslint.config; 14 files inline a helper
 - and 2 more directories holding 3559 files
-- tests: 2293 test files under test; 79 playwright under test; 29 vitest under evals/evals; and 2 more; 3 of 4961 .js files have a namesake test
+- tests: 2307 test files under test; 79 playwright under test; 29 vitest under evals/evals; and 2 more; 3 of 4958 .js files have a namesake test
 
 Match sibling test shape; skip tests where siblings have none.
 Match directory granularity; don't extract into a sibling module what the directory's files inline.
@@ -969,11 +984,11 @@ Match directory granularity; don't extract into a sibling module what the direct
 ```
 ## What lives where
 
-- test: 10418 .js, 814 .css and 1413 other; 2606 test files; 1 of 7859 have a namesake test under test
+- test: 10418 .js, 814 .css and 1413 other; 2607 test files; 1 of 7858 have a namesake test under test
 - lib: 651 .js, 1 .svg; 8 of 651 have a namesake test under test
 - examples: 453 .js, 181 .md and 118 other; 0 of 453 have a namesake test; 451 sibling modules named build/webpack.config/example; 0 files inline a helper
 - and 315 more files in directories under the floor
-- tests: 2607 test files under test; 1 of 7859 .js files have a namesake test
+- tests: 2608 test files under test; 1 of 7858 .js files have a namesake test
 
 Match sibling test shape; skip tests where siblings have none.
 Match directory granularity; don't extract into a sibling module what the directory's files inline.
