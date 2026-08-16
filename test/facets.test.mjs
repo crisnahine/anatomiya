@@ -138,6 +138,26 @@ test("a method named test_ in an ordinary class is not a minitest case", needsRu
   assert.equal(records.get("app/models/probe.rb").facets.testRunner, "minitest", "the base class says so");
 });
 
+test("a DSL call inside a method is not a case the file declares", needsRuby, async (t) => {
+  // The Ruby half of the JS half's top-level rule. A page object writes
+  // `context "..." do` inside a method to name a step, and only a body that
+  // declares its cases outside every method is declaring a suite. A class or
+  // module body is where RSpec's own describes sit, so it stays a site.
+  const dir = repo({
+    "app/pages/page.rb": `class Page\n  def open\n    context "x" do\n    end\n  end\nend\n`,
+    "spec/foo_spec.rb": `RSpec.describe Foo do\n  it "x" do\n  end\nend\n`,
+  });
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+  const rels = ["app/pages/page.rb", "spec/foo_spec.rb"];
+  const { records } = await parseAll(list(dir, rels));
+
+  assert.equal(records.get("app/pages/page.rb").facets.testRunner, null);
+  assert.equal(records.get("app/pages/page.rb").facets.testCalls, false);
+  assert.equal(records.get("spec/foo_spec.rb").facets.testRunner, "rspec");
+  assert.equal(records.get("spec/foo_spec.rb").facets.testCalls, true);
+});
+
 test("an ordinary call named like the DSL is not one, without a block", needsRuby, async (t) => {
   // `context`, `it` and `feature` are ordinary Ruby method names: an Interactor
   // service reads `context.amount` in every one of its files, and typing those

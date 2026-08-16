@@ -565,7 +565,11 @@ from each; whether it imports a test runner, from a closed table (`vitest`, `jes
 how many module-level functions it defines and does not export.
 
 For Ruby: whether it declares cases in the RSpec vocabulary, inherits a minitest test case, or
-defines a `test_` method inside a class. The superclass wins over the vocabulary, because
+defines a `test_` method inside a class. A DSL call counts where it takes a block and sits outside
+every method, which is the altitude the JavaScript half reads: inside a `def` the call runs when
+that method does, and a page object naming its steps `context "..." do` declares no case. A class
+or module body is where RSpec's own describes sit and stays a site. The superclass wins over the
+vocabulary, because
 shoulda-context writes `context` blocks inside an `ActiveSupport::TestCase` and that file is
 minitest whatever its bodies are written in.
 
