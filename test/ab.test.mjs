@@ -167,3 +167,18 @@ test("the result file names the repository without a local path in it", () => {
     assert.doesNotMatch(repoLabel(p, null), /Users|home|crisn/);
   }
 });
+
+test("a claim the model writes by default is not a candidate: the map no longer states it", async () => {
+  const { rankAreas } = await import("../scripts/ab/pick.mjs");
+  const facts = {
+    areas: [{
+      path: "src",
+      dimensions: [
+        { key: "module_state_const", states: "claim", directive: true, candidates: 80, conforming: 70, matchesDefault: true },
+        { key: "swallowed_error", states: "claim", directive: true, candidates: 80, conforming: 70 },
+      ],
+    }],
+  };
+  const ranked = rankAreas(facts);
+  assert.deepEqual(ranked.map((r) => r.key), ["swallowed_error"]);
+});
