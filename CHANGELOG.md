@@ -34,6 +34,50 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   run the retry, and charges every Flow file to the rejected count with nothing connecting the two.
   Both the scan summary and the check caveats say which dependency is absent. (B19)
 
+- An opt-in second tier behind `--deep`: the `typescript@5` checker, one dimension, and a degraded
+  mode that says so. `typescript` is an optional dependency and never a runtime one, pinned inside
+  major 5 because 7 is the Go port with no JS API and a range admitting it would turn `--deep` into a
+  silent no-op. One child process for the whole corpus, because the checker is whole-program:
+  narrowing the file set was measured saving 3% of the time and driving unresolved types from 3.1% to
+  36.2%. Every dimension declares which tier answers it, and the default caller is offered the
+  syntactic one, so a claim that needs a checker nobody ran cannot reach a map. (B7)
+
+- `a call chain stays inside one type`, the one dimension the checker buys. Measured on three real
+  repositories: 0.212 on a client app whose dependencies are installed and where the tier resolved
+  0.895, 0.366 on typeorm and 0.797 on supabase. That spread is 0.585 and every one of them is under
+  0.90, which is the bar `CONTRIBUTING.md` sets. `partial`, because a receiver whose type did not
+  resolve is not counted as a distinct type, so an unresolved chain reads as conforming and
+  under-counts rather than inventing violations. (B7)
+
+- A degraded checker states nothing and says which of two things went wrong: a `tsconfig.json` that
+  could not be read keeps its own reason, and one that read cleanly while type resolution fell under
+  0.80 reports `low-resolution`. It closes its own rows and no syntactic one. The tier's real
+  requirement turned out to be unlike anything else here, and the measurement is what found it: it
+  needs the repository's own dependencies on disk. typeorm reported a config error because it extends
+  `@tsconfig/node20` and the clone has no `node_modules`; supabase resolved 29% across a monorepo for
+  the same reason. (B8)
+
+- The repository's own `tsconfig.json` is read through a host confined to the repository, so an
+  `extends` pointing outside it is refused and reported rather than followed. The file list is the
+  corpus rather than the config's globs, every option that writes to disk is forced off, and the lib
+  files come from the plugin's own `typescript` rather than the repository's, which can ship one of
+  its own. (B9)
+
+- A check whose map holds a type-checked claim says how many it did not measure when run without
+  `--deep`, instead of reading like a branch that broke nothing. (B7)
+
+- One committed intake table for what became a dimension, what collapsed into one, what was renamed
+  so a ratio does not read as a verdict, and what has no denominator and never ships. The collapses
+  were a finding in a document this repository does not hold, which is a finding nobody can act on
+  twice. Writing it found two the audit did not. A claim naming a principle now refuses to load at
+  all. (G2, G3, G4)
+
+- `scripts/ab.mjs`, one command for the only success measure this tool accepts: two worktrees off one
+  commit, one holding the map, injection verified in both arms before any trial runs, and every
+  written file scored by the dimension's own predicate rather than by a regex written for one task.
+  It refuses to run where the best stated claim has no headroom, because the one A/B done by hand
+  scored 10 of 10 in both arms and measured a ceiling. (G5)
+
 ### Fixed
 
 - A cast no longer hides the value it wraps. `return null as any` is a return of null and was not
