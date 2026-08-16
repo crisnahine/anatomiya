@@ -155,3 +155,21 @@ test("a checker that cannot start degrades the tier instead of crashing the scan
   assert.equal(r.records.size, 0);
   assert.ok(r.error, "the tier has to say why it could not run");
 });
+
+test("a checker that cannot be spawned degrades the tier instead of crashing the scan", async (t) => {
+  // fork emits 'error' on a spawn failure, which is EMFILE or EAGAIN under the
+  // fd pressure of eight parse workers and the ruby bridge. Unlistened, that is
+  // an uncaughtException that takes the whole scan down along with the
+  // syntactic pass that already finished. A missing cwd is the reachable
+  // version of the same failure: a missing script exits instead.
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-nospawn-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+  const r = await runSemantic(dir, [{ rel: "a.ts", abs: join(dir, "a.ts"), lang: "js" }], {
+    cwd: join(dir, "not-a-directory"),
+  });
+
+  assert.equal(r.status, "degraded");
+  assert.match(String(r.error ?? ""), /could not run/);
+  assert.equal(r.records.size, 0);
+});
