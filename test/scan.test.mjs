@@ -534,6 +534,9 @@ test("a corpus only partly answered states nothing at all", needsRuby, async (t)
 
   assert.equal(partial.corpus.truncated, true);
   assert.equal(partial.suppressAll, true);
+  assert.equal(partial.layout.truncated, true);
+  assert.equal(partial.layout.roots.length, 0, "a roster over an arbitrary subset is worse than none");
+  assert.ok(full.layout.roots.length > 0, "the same repository answered whole does get one");
   for (const d of partial.areas.flatMap((a) => a.dimensions)) {
     assert.equal(d.directive, false, "no directive survives a partial corpus");
     assert.equal(d.gate, "corpus-truncated");
