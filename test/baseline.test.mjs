@@ -818,6 +818,53 @@ test("a pinned blob that never came back closes the area, whatever HEAD says of 
   assert.equal(measured.get("aaaaaaaa").gate, "population-change");
 });
 
+test("a rejected file that was renamed is still found at HEAD under its new name", async (t) => {
+  // The HEAD lookup has to follow the rename map, or a file renamed since the
+  // pin is never matched, reads as having no HEAD record, and closes the area
+  // that E8 exists to keep open.
+  let sha;
+  const dir = repo(t, (d, { write, commit, git }) => {
+    write("src/a.ts", CONFORMING);
+    write("src/flow.ts", CONFORMING);
+    sha = commit("init");
+    git("mv", "src/flow.ts", "src/renamed.ts");
+    commit("rename");
+  });
+  const areas = [area("src", ["src/a.ts", "src/renamed.ts"])];
+  writePin(dir, buildPin([area("src", ["src/a.ts", "src/flow.ts"])], { sha }));
+  const state = await resolve(dir, { baseRef: "main" });
+
+  const measured = await measureWith(
+    dir, state, areas,
+    new Map([rec("src/a.ts", true), rec("src/flow.ts", false)]),
+    // At HEAD the file carries its new name, and it is still rejected.
+    new Map([rec("src/a.ts", true), rec("src/renamed.ts", false)])
+  );
+
+  assert.equal(measured.get("aaaaaaaa").gate, null, "rejected at both revisions, under either name");
+});
+
+test("a pinned record that parsed but carries no sites is not a counted file", async (t) => {
+  // `usable` is what the counts are taken over, so a record with no hits at all
+  // cannot join it. Dropping the `hits` half of the test let a record that
+  // answered nothing stand in for one that answered.
+  const { dir, sha } = twoFiles(t);
+  const areas = [area("src", ["src/a.ts", "src/other.ts"])];
+  writePin(dir, buildPin(areas, { sha }));
+  const state = await resolve(dir, { baseRef: "main" });
+
+  // Hitless on both sides: the file is unchanged, so `reuseUnchanged` hands the
+  // pin side today's record and a hitless one there is what reaches the loop.
+  const hitless = { rel: "src/other.ts", ok: true, kind: "ok" };
+  const measured = await measureWith(
+    dir, state, areas,
+    new Map([rec("src/a.ts", true), ["src/other.ts", hitless]]),
+    new Map([rec("src/a.ts", true), ["src/other.ts", hitless]])
+  );
+
+  assert.equal(measured.get("aaaaaaaa").gate, "population-change");
+});
+
 test("resolve reads the pin itself, so the caller never holds one", async (t) => {
   // The corpus size the layout was resolved from travels with the state: the
   // area floor is a step function of it, so deriving it from today's file count
