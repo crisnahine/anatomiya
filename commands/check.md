@@ -42,12 +42,11 @@ Run the check and report what it found.
 Findings never set the exit code. A non-zero exit means the check could not run: show its output and
 stop, and do not guess at what it found.
 
-### The type checker
+### Type-checked claims
 
-`--deep` adds the TypeScript checker. It is off by default because it was measured about 26x
-slower than the parse and cannot be narrowed to the files that changed. It needs the optional
-`typescript` dependency and the repository's own dependencies installed; without them it says
-so on the map rather than printing a clean-looking count.
+The check has no `--deep`: the checker is whole-program, so answering a branch with it would mean
+building the whole corpus at two revisions, which is a scan's cost. Type-checked claims are measured
+by `anatomiya scan --deep` and printed on the map.
 
-If the map holds a type-checked claim and you run without `--deep`, the report says how many
-were not measured. A report with no findings does not mean those were clean.
+If the map holds one, the report says so on its own line. A report with no findings does not mean
+that claim was clean on this branch, because it was not asked.

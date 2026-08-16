@@ -63,8 +63,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   files come from the plugin's own `typescript` rather than the repository's, which can ship one of
   its own. (B9)
 
-- A check whose map holds a type-checked claim says how many it did not measure when run without
-  `--deep`, instead of reading like a branch that broke nothing. (B7)
+- A check whose map holds a type-checked claim says so on its own line, instead of reading like a
+  branch that broke nothing. `--deep` is a scan option only: the checker is whole-program, so a check
+  would have to build the corpus at two revisions to answer with it. (B7)
 
 - One committed intake table for what became a dimension, what collapsed into one, what was renamed
   so a ratio does not read as a verdict, and what has no denominator and never ships. The collapses
