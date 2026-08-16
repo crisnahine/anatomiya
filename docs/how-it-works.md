@@ -120,8 +120,8 @@ continues.
 A `.js`, `.jsx`, `.mjs` or `.cjs` file the parser rejects is retried once with its Flow types
 stripped, because oxc refuses Flow by name and a Flow file is not a broken one. react is written in
 Flow: 287 of its 2,277 files were charged as unreadable before, and 2 are now. The strip replaces
-types with whitespace, so the byte length does not move and every offset still lands where it does
-on disk. A retry that still reports errors leaves the file rejected, since the retry may not turn a
+types with whitespace, so the length in UTF-16 code units does not move and every offset still
+lands where it does in the source, which is the unit oxc counts in. A retry that still reports errors leaves the file rejected, since the retry may not turn a
 genuine syntax error into a clean parse. The `.ts` family is not retried, because Flow is not legal
 there.
 

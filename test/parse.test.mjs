@@ -197,3 +197,27 @@ test("a file that is broken rather than Flow is still rejected", async () => {
 
   assert.equal(records.get("broken.js").kind, "rejected");
 });
+
+test("stripping Flow moves no offset, whatever alphabet the file is written in", async () => {
+  // B5 is about the unit: oxc reports offsets in UTF-16 code units and the
+  // walkers slice the same in-memory string, so that is the length the strip
+  // has to preserve. The byte length can move and does not matter, because
+  // nothing indexes bytes: `Café` is five code units and six bytes, and five
+  // spaces are five of each.
+  const source = [
+    "// @flow",
+    "// 日本語のコメント",
+    "type Café = string",
+    'const emoji = "🎉🎉"',
+    "export function greet(name: Café): string {",
+    "  try { return name + emoji } catch (e) { }",
+    "}",
+  ].join("\n");
+
+  const { records } = await parseAll([{ rel: "unicode.js", source, lang: "js" }]);
+  const r = records.get("unicode.js");
+
+  assert.equal(r.kind, "ok");
+  assert.equal(r.length, source.length, "the reported length is the source's own, not the stripped one");
+  assert.ok(r.hits.swallowed_error?.length >= 1);
+});

@@ -13,8 +13,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   and react is written in it: 287 of its 2,277 files were charged as syntax the parser rejected, so
   their sites counted nowhere and the areas holding them closed as a population that moved. Now 2
   are rejected and the repository states 78 claims instead of 65. The stripper replaces types with
-  whitespace rather than removing them, so every offset and line number still lands where it does on
-  disk. It is loaded the first time a file needs it, so a repository with no Flow never pays the
+  whitespace rather than removing them, so the length in UTF-16 code units does not move and every
+  offset still lands where it does in the source, which is the unit oxc counts in. It is loaded the first time a file needs it, so a repository with no Flow never pays the
   ~13 MB it costs. (B19)
 
 - Every dimension states which files could participate in its claim, and what its predicate cannot
