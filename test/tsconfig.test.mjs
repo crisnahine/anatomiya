@@ -1,12 +1,21 @@
 // test/tsconfig.test.mjs
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, isAbsolute, win32 } from "node:path";
+import { fileURLToPath } from "node:url";
 import { loadTypeScript } from "../lib/semantic.mjs";
 import { repo } from "./ts-repo.mjs";
-import { readConfig, FORCED_OPTIONS, confinedCompilerHost, toTsPath, within } from "../lib/tsconfig.mjs";
+import {
+  readConfig,
+  FORCED_OPTIONS,
+  confinedCompilerHost,
+  toTsPath,
+  within,
+  contains,
+  realpathOf,
+} from "../lib/tsconfig.mjs";
 
 const loaded = await loadTypeScript();
 const ts = loaded?.ts;
@@ -208,4 +217,28 @@ test("a path on another drive is outside, not inside", needsTs, () => {
 
   assert.equal(within(win32.relative("C:\\a\\lib", "C:\\a\\lib\\lib.d.ts")), true);
   assert.equal(within(win32.relative("C:\\a\\lib", "C:\\a\\other\\x.ts")), false);
+});
+
+test("containment folds case on Windows and does not on POSIX", () => {
+  // Windows is case-insensitive, so the same file reached through two spellings
+  // is one file there and two here. Folding on POSIX would make /repo/Secrets
+  // and /repo/secrets the same path, and they are not.
+  assert.equal(contains("/repo", "/repo/src/a.ts", "linux"), true);
+  assert.equal(contains("/repo", "/other/a.ts", "linux"), false);
+  assert.equal(contains("/repo", "/REPO/a.ts", "linux"), false, "POSIX keeps the two apart");
+
+  assert.equal(contains("/repo", "/REPO/a.ts", "win32"), true, "Windows reaches the same file either way");
+  assert.equal(contains("/repo", "/other/a.ts", "win32"), false);
+});
+
+test("the realpath used is the one that expands a Windows short name", () => {
+  // tmpdir() on a runner answers C:\Users\RUNNER~1\..., and the compiler
+  // resolves the same file to the long form. Comparing those two refused every
+  // file it discovered for itself, which is 0% resolution with nothing wrong.
+  assert.equal(typeof realpathOf, "function");
+  const here = fileURLToPath(new URL(".", import.meta.url));
+  assert.equal(realpathOf(here).replace(/[/\\]$/, ""), realpathSync(here).replace(/[/\\]$/, ""));
+  // A path that is not there resolves rather than throwing: module resolution
+  // probes far more candidates than exist.
+  assert.equal(typeof realpathOf(join(here, "no-such-file")), "string");
 });
