@@ -34,6 +34,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- The raw parser transfer is no longer asked for on Windows. oxc allocates a 6 GiB buffer per parsing
+  operation, `rawTransferSupported()` never asks which platform it is on, this pool runs up to eight
+  workers at once, and Windows both commits at allocation and is the one platform where the pool's
+  memory guard stands down. The parser answers the same tree without the flag. (B18)
+
 - `service_result_shape` refused every receiver, so `def self.call` was not a service entry point at
   all. That is the commonest Ruby service form, and the ratio was stated over whichever subset of a
   repository writes instance entry points instead. `def self.` counts now, the way the migration
