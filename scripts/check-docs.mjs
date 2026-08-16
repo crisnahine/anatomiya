@@ -135,7 +135,7 @@ for (const d of [...ALL_DIMENSIONS, ...PAIRINGS, ...NAMING_CORPUS]) {
 // Three files state this count and all three have been wrong at once: the table
 // held 55 rows while the README said 55 and CONTRIBUTING said 54. It is the one
 // number in the docs that moves on every substantive change.
-const rows = [...read("DECISIONS.md").matchAll(/^\| [A-G]\d+ \|/gm)].length;
+const rows = [...read("DECISIONS.md").matchAll(/^\| [A-H]\d+ \|/gm)].length;
 for (const rel of ["README.md", "docs/why.md", "CONTRIBUTING.md"]) {
   for (const m of read(rel).matchAll(/(\d+)\s+numbered (?:decisions|rows)/g)) {
     claim(rel, Number(m[1]) === rows, `says "${m[1]} numbered", DECISIONS.md holds ${rows} rows`);
@@ -143,7 +143,7 @@ for (const rel of ["README.md", "docs/why.md", "CONTRIBUTING.md"]) {
 }
 
 // A row number appearing twice is a row nobody can cite.
-const ids = [...read("DECISIONS.md").matchAll(/^\| ([A-G]\d+) \|/gm)].map((m) => m[1]);
+const ids = [...read("DECISIONS.md").matchAll(/^\| ([A-H]\d+) \|/gm)].map((m) => m[1]);
 claim("DECISIONS.md", new Set(ids).size === ids.length, "two rows share a number");
 
 // --- the gate table ---------------------------------------------------------

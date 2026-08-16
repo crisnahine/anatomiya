@@ -251,16 +251,21 @@ in `check`.
 | `reference_foreign_key` | partial | ruby | reference columns declare their foreign key |
 | `function_naming_case` | precise | js, jsx | functions are named `<style>`, learned |
 | `exported_symbol_case` | precise | js, jsx | exported names are `<style>`, learned |
+| `extends_base` | precise | js, jsx | classes here extend `<style>`, learned |
+| `interface_prefix` | precise | js, jsx | interfaces are named with a `<style>` prefix, learned |
+| `type_alias_prefix` | precise | js, jsx | type aliases are named with a `<style>` prefix, learned |
 | `doc_comment_style` | partial | js, jsx | exported functions carry a doc comment |
 | `route_logging` | partial | js, jsx | logging goes through the repository's own logger, not the console |
 | `route_network` | partial | js, jsx | network calls go through the repository's own client, not fetch directly |
 | `route_env` | partial | js, jsx | environment reads go through the repository's own config module, not process.env |
 | `logger_over_puts` | partial | ruby | output goes through a logger, not puts |
 | `http_through_client` | partial | ruby | HTTP goes through the repository's own client, not `Net::HTTP` |
+| `class_base` | precise | ruby | classes here inherit `<style>`, learned |
+| `module_include` | precise | ruby | classes here include `<style>`, learned |
 
-The five JSX rows are the ones that make the JSX total 27 rather than 22: a `.tsx` or `.jsx` file is
+The five JSX rows are the ones that make the JSX total 30 rather than 25: a `.tsx` or `.jsx` file is
 counted by every `js` dimension as well as these. The five migration rows are Rails and count as
-Ruby, which is what takes Ruby from 9 to 14.
+Ruby, which is what takes Ruby from 11 to 16.
 
 The three `route_` rows ask whether a cross-cutting concern goes through the repository's own
 module. The wrapper is learned per file from its relative imports, by filename vocabulary (log,
@@ -279,6 +284,18 @@ answer a different sentence than today's. The filename row has one candidate per
 the evidence gate an area needs 35 classifiable filenames to state it; in smaller areas the row
 feeds the check's learned enforcement and prints as counts, which is the gate working rather than
 a bug.
+
+Five learned rows vote with a name rather than with one of the four naming classes. `extends_base`
+and `class_base` take the plurality superclass a directory's classes name, `module_include` the
+plurality module its class and module bodies mix in directly, and `interface_prefix` and
+`type_alias_prefix` the leading capital a declared type name carries before a second capital, where
+`IComment` votes `I` while `Comment` and `IO` vote for no prefix at all. The first three learn a
+name out of the repository's own source, so it goes through the encoder where the sentence is
+filled rather than at each place the sentence is rendered. The last two can learn an absence, which
+renders as `interfaces carry no prefix` rather than being filled into the template, and which is
+the model default, so a repository that prefixes nothing prints counts and a prefixed one states.
+Whether a learned class may be enforced is asked of the row and not of the four classes, or the
+check would state all five in the map and enforce none of them.
 
 A dimension that finds zero sites in an area produces no slot at all. The area file only lists
 dimensions that appeared.
@@ -481,6 +498,175 @@ sentence rather than a repository-controlled value. It used to: the encoder stri
 boundary, so "defaults are taken with ??, not ||" rendered as "defaults are taken with ??, not" in
 every JavaScript area of every repository. Line breaks are still collapsed, and a test pins the
 registry to sentences that need nothing more than that.
+
+## 7b. What lives where
+
+The overview carries one more section, above the area listing: which directories this repository
+holds, what is in them, how they are tested, and two sentences the counts ground. Every word in it
+is counted from the repository, because this tool ships no vocabulary of kinds. A line is labelled
+with a directory name and a count is nouned with an extension, so the tests line reads
+`0 of 504 .tsx files have a namesake test` rather than calling anything a component.
+
+It goes there and nowhere else because the overview has no `paths` key, so it is loaded before any
+Read or Write. That is the one channel that reaches a write path nobody read in first, which is
+measured: on a 5,517-file Rails API the exploration phase ran as four subagents and no area file
+attached in any of them, the one dissected having made 54 `cat`, `grep` and `head` calls and no Read
+at all. The four directories that feature's code landed in never attached one either.
+
+### The layout corpus
+
+Every tracked file, from the same `git ls-files -z` pass and under the same deny list and excluded
+directories as section 1, and not only the source extensions: a directory holding 40 `.md` files is
+a fact about where things live. Nothing extra is parsed for it, and a file the parse never reached
+is counted under its extension and appears in no other count.
+
+It describes the tree as it is rather than the pinned population, because it is counts and never a
+directive: a tests line that moves when an agent adds a test file is a true count that flips
+nothing. A truncated corpus prints `layout: not counted, the scan was truncated` and no roots.
+
+### Which directories get a line
+
+There is no table of known roots, the same as area discovery. The walk starts at the repository
+root, which is never a root itself except on a repository that is one flat directory.
+
+| Rule | Value |
+|---|---|
+| floor | a directory needs `max(3, ceil(0.01 * N))` files cumulatively, `N` the corpus size |
+| descend instead of printing | the name is `src`, `lib`, `app`, `packages` or `source`, or one child holds 80% of the directory's files |
+| files sitting in a descended directory itself | their own candidate, printed as `lib (files at this level)` |
+| budget | 7 lines, sorted by source files, then total files, then path |
+
+Five shell names, because those are the directory names that say nothing about what is in them;
+anything else is a name worth printing. The 80% rule is what makes a Ruby gem's `lib/<gem>` read as
+the gem. webpack's `lib/*.js` is 300 files in none of `lib/`'s children, which is why a descended
+directory's own files are a candidate of their own. A directory under the floor folds into the
+nearest root above it, or into `and N more directories holding M files`. Sorting by source files
+first is what keeps an asset or documentation directory from displacing code.
+
+The three numbers scale with the corpus and are tuned by measurement. That is the decision; the
+values are the current ones.
+
+### Facets
+
+Per file, the parse worker keeps a few facts it can already see, beside the counts. They cross the
+IPC channel with `hits` and are a small object of flags and counts.
+
+For JavaScript and JSX: whether the file holds JSX; the modules it imports and the names it takes
+from each; whether it imports a test runner, from a closed table (`vitest`, `jest`,
+`@jest/globals`, `mocha`, `chai`, `ava`, `tap`, `node:test`, `cypress`, `@playwright/test`,
+`playwright`) or makes a top-level `describe`, `it`, `test` or `cy` call; and how many module-level
+functions it defines and does not export.
+
+For Ruby: whether it declares cases in the RSpec vocabulary, inherits a minitest test case, or
+defines a `test_` method inside a class. The superclass wins over the vocabulary, because
+shoulda-context writes `context` blocks inside an `ActiveSupport::TestCase` and that file is
+minitest whatever its bodies are written in.
+
+A file the table does not know is still a test file when its name carries `.test.`, `.spec.` or
+`.cy.`, or when a path segment is `test`, `tests`, `spec`, `__tests__`, `cypress` or `e2e`; its
+runner then prints as `test files` rather than being guessed at. A file in no language this tool
+parses is never a test file: twenty screenshots under `cypress/` are not twenty specs, and counting
+them made the denominator this section exists to be read 24 over 4.
+
+### What a root line says
+
+Every clause is dropped when it counts nothing.
+
+```
+- <root>: <n1> <ext1>[ (JSX)][, <n2> <ext2>][ and <k> other]
+        [; <t> <Runner> specs[ under <sub>]]
+        [; <c> of <n> have a namesake test[ under <test root>]]
+        [; <m> sibling modules named <three stems>; <f> files inline a helper]
+```
+
+- The top two extensions by count, then the rest as `and k other`. `(JSX)` marks the first of the
+  two printed whose files are at least half JSX; an extension the line does not print has nothing
+  to attach a mark to.
+- Tests inside a source root are counted per runner and named with the directory most of them share
+  (`under __tests__`), because a `*.test.tsx` beside its component and a `__tests__/` directory are
+  two different habits. A root more than half of which is tests prints as `<n> <Runner> specs` and
+  nothing else, since its extension counts are the specs themselves.
+- Namesakes: how many of the root's files have a test file of the same stem, `foo.rb` with
+  `foo_spec.rb` or `foo_test.rb`, `Foo.tsx` with `Foo.test.tsx`, `Foo.spec.tsx` or `Foo.cy.ts`.
+  Matched on the path tail the way `pairing.mjs` learns a companion root, so
+  `app/models/edition/foo.rb` is answered by `spec/models/edition/foo_spec.rb` and not by
+  `spec/services/foo_spec.rb`. The root the namesakes share is named, by a count of votes rather
+  than by the first match. The denominator is the top extension the line already printed, or
+  `0 of 620` stands beside `504 .tsx` and counts something the reader cannot see. It prints
+  wherever the root holds source files and the repository holds any test file at all, so
+  `0 of 40 have a spec` is a line rather than a silence: that is the shape an obligation cannot
+  carry, because it treats a missing companion as an absence rather than as a habit.
+- The helper facet, JavaScript and JSX roots only: how many non-test `.ts` and `.js` modules sit
+  beside the JSX files, the three commonest stems among them, and how many of the JSX files define
+  a module-level function they do not export. Both numbers print and no side is chosen.
+
+### The tests line
+
+One line for the whole repository, after the roots. A group per runner, named with the shortest
+directory prefix that runner's files share, biggest first, at most three and then `and k more`. The
+trailing clause takes the first root printed that is not a test directory and has a namesake count,
+and nouns it with that root's top extension, so a repository whose tests are all feature-named
+end-to-end specs says out loud that `0 of 504 .tsx files have a namesake test`. That clause is what
+makes the line a denominator rather than a total.
+
+### The two sentences
+
+Two, each with a gate read from the roster. Neither carries a number of its own; the numbers sit on
+the lines above, which is what makes a sentence a reading of the roster rather than a rule.
+
+| Sentence | Prints when |
+|---|---|
+| Match sibling test shape; skip tests where siblings have none. | the tests line printed |
+| Match directory granularity; don't extract into a sibling module what the directory's files inline. | at least one root printed a helper facet |
+
+### In an area file
+
+An area file gets the same counts over its own files, on one line under the heading:
+
+```
+kinds: 40 .mjs; 0 test files; 28 of 40 have a namesake test
+```
+
+and, for JavaScript and JSX areas, two roster lines under the directives:
+
+```
+most files here import: styled-components (84%), ~/components/base (61%), formik (60%)
+most imported from here: getFullName (42 files), Avatar (31), Timestamp (12)
+```
+
+The first counts importing files over the area's import-bearing files, and prints the top three when
+at least 5 files import anything and a module clears a 0.60 share. Relative specifiers are skipped,
+because a sibling import is a fact about one file rather than a habit the next one should copy, and
+so are the packages a framework area cannot be written without: `react`, `react-dom`,
+`react/jsx-runtime`, `vue`, `@angular/core`, `svelte`, `next`, matched on the package so every
+subpath is runtime too and `next-auth` is not. "This React area imports React" is a line the reader
+already has.
+
+The second counts, per name the area's files hand out, how many files outside the area import it,
+and prints the top five with 3 or more importers. A specifier is mapped to a file the way
+`pairing.mjs` learns a companion root: a relative one resolves against the importer's directory,
+anything else is matched on the path tail once a `~/`, `@/`, `#/` or `src/` prefix is cut, and a
+tail two files answer resolves to neither rather than to whichever sorted first. No `tsconfig` is
+read. Only importers outside the area count: a directory importing its own files is how it is
+written, not who depends on it. This is the counted form of "check before creating", and Ruby has
+no static import surface, so there is no Ruby line.
+
+### The budget
+
+The section is at most 15 lines: heading, blank, 7 roots, the fold line, the tests line, a blank,
+the two sentences, and the blank that closes it. `MAX_LINES` stays 40, and the section takes what is
+left after the head, the tail, the `## Areas` heading, and the one line each of the two listings
+below it never give up.
+
+It gives way in the order it is read backwards. Root lines fold into the count that was already
+there, then that count goes, then the two sentences, then the tests line, and under four lines the
+section prints nothing at all: a root line names one directory, and the tests line is the
+denominator for all of them.
+
+In an area file the `kinds` line and the two roster lines outlive a suppressed count and give way to
+a stated directive, and they are not offered at all when the `paths` cover has already taken the
+body budget. A directive is what the file exists to deliver; a description is what makes the next
+file fit beside the ones already there.
 
 ## 8. `check`
 
