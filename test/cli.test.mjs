@@ -446,3 +446,26 @@ test("the untracked summary reads at one and at many", (t) => {
   assert.match(build(1), /1 source file in the working tree is untracked\./);
   assert.match(build(3), /3 source files in the working tree are untracked\./);
 });
+
+test("--deep is refused on check, because the check cannot run a whole-program checker", () => {
+  // It was accepted, recorded as ran, and never ran: check.mjs has no runSemantic
+  // in it. So the report said "rerun with --deep", the user did, the note
+  // disappeared because ran was true, and nothing was measured either time.
+  // The checker is whole-program and would need the whole corpus built at two
+  // revisions to answer a branch, which is a scan's job and not a check's.
+  let code = 0;
+  let stderr = "";
+  try {
+    execFileSync(process.execPath, [join(ROOT, "bin", "anatomiya.mjs"), "check", ".", "--deep"], {
+      stdio: "pipe",
+      encoding: "utf8",
+    });
+  } catch (err) {
+    code = err.status;
+    stderr = String(err.stderr ?? "");
+  }
+
+  assert.equal(code, 2);
+  assert.match(stderr, /--deep is not a check option/);
+  assert.match(stderr, /anatomiya scan --deep/, "and it says where the tier does run");
+});

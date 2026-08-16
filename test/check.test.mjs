@@ -1467,7 +1467,7 @@ test("a claim is not silenced by a finding invented off the base's stripped tree
   );
 });
 
-test("a map holding a semantic claim, checked without --deep, says so rather than reporting clean", async (t) => {
+test("a map holding a type-checked claim says the check did not enforce it", async (t) => {
   // A check that reports no findings is what the command file tells the agent
   // to trust, so a whole class of claim going unasked has to be said out loud.
   // Same shape as B13 for a missing parser and F15 for an unreadable git, and
@@ -1516,5 +1516,6 @@ test("a map holding a semantic claim, checked without --deep, says so rather tha
     stdio: ["ignore", "pipe", "pipe"],
   });
 
-  assert.match(out, /type-checked claim was not measured on this branch: rerun with --deep/, out);
+  assert.match(out, /type-checked claim is stated in the map and not enforced on a branch/, out);
+  assert.match(out, /anatomiya scan --deep/, "and it says where the tier does run");
 });

@@ -14,11 +14,12 @@ import { listSome, LISTED, RULES_DIR } from "../lib/rules.mjs";
 
 const USAGE = [
   "usage: anatomiya scan  [path] [--dry-run] [--deep]",
-  "       anatomiya check [path] [--base <ref>] [--deep]",
+  "       anatomiya check [path] [--base <ref>]",
   "       anatomiya pin   [path] [--dry-run]",
   "",
-  "--deep adds the typescript checker: about 26x slower, and it needs the",
-  "optional typescript dependency. The default scan does not use it.",
+  "--deep adds the typescript checker to a scan: about 26x slower, and it needs",
+  "the optional typescript dependency. It is a scan option only, because the",
+  "checker is whole-program and a check would have to build the corpus twice.",
   "",
   "[path] picks the repository, not a subtree: every command covers the whole",
   "repository the path is in, and scan prints the root it resolved to.",
@@ -46,7 +47,13 @@ function parseArgs(argv) {
     const arg = argv[i];
     if (arg === "-h" || arg === "--help") return { ...opts, help: true };
     if (arg === "--deep") {
-      if (cmd === "pin") fail(`--deep is not a ${cmd} option\n${USAGE}`);
+      // The checker is whole-program. Answering a branch with it would mean
+      // building the whole corpus at two revisions, which is a scan's cost and
+      // not a check's, so the flag is refused here rather than accepted and
+      // quietly ignored: it was accepted, recorded as having run, and never run.
+      if (cmd !== "scan") {
+        fail(`--deep is not a ${cmd} option: the type checker runs on \`anatomiya scan --deep\`\n${USAGE}`);
+      }
       opts.deep = true;
       continue;
     }
@@ -233,8 +240,8 @@ function notInstalled(message, command) {
   return new Error(`${message}\nrun \`npm install --omit=dev\` in the plugin directory, then ${command} again`);
 }
 
-async function runCheck(cwd, { baseRef, deep = false }) {
-  const report = await check(cwd, { baseRef, deep });
+async function runCheck(cwd, { baseRef }) {
+  const report = await check(cwd, { baseRef });
   if (report.parse.missingParser) throw notInstalled(report.parse.missingParser, "check");
   process.stdout.write(formatReport(report));
   // Findings never set the exit code. A non-zero exit here means the check

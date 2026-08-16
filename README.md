@@ -251,11 +251,12 @@ enforces a rule, the map restating it is waste, not defence in depth.
 in JSX, 20 for Ruby.
 A Python, Go or Rust repository gets an overview with no claims in it.
 
-One of the 41 needs the type checker and is the only thing `--deep` adds: `a call chain stays inside
-one type`. It is off by default because the checker was measured about 26x slower than the parse and
-whole-program, so it cannot be narrowed to the files you changed. `--deep` needs the optional
-`typescript` dependency, refuses before doing any work if it is missing, and says on the map when the
-checker answered badly rather than printing a clean-looking count.
+One of the 41 needs the type checker and is the only thing `scan --deep` adds: `a call chain stays
+inside one type`. It is off by default because the checker was measured about 26x slower than the parse and
+whole-program, so it cannot be narrowed to the files you changed. It is a scan option only, for the same reason: a check would have to build the
+corpus twice. `--deep` needs the optional `typescript` dependency and the scanned repository's own
+dependencies on disk, refuses before doing any work if the first is missing, and says on the map when
+the checker answered badly rather than printing a clean-looking count.
 
 **Nine file-to-file obligations, and they are the newest and least settled part.** They ask whether a
 file of one shape ships with its companion: a model with its spec, a rake task with its spec. The

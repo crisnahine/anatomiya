@@ -2,6 +2,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { execFileSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
 import { writeFacts, readFacts, statedSide, FACTS_SCHEMA, FACTS_PATH } from "../lib/facts.mjs";
@@ -234,4 +236,34 @@ test("a record written before the polarity fields existed still names a side", (
 
   assert.equal(unreadable, null, "an older record stays readable");
   assert.equal(statedSide(facts.areas[0].dimensions[0]).states, "claim");
+});
+
+test("a stored dimension carries the tier the check filters on", async (t) => {
+  // check.mjs counts the map's semantic claims with `d.tier === "semantic"`.
+  // The writer never stored the field, so that count was 0 for every map any
+  // scan has ever produced and the unmeasured-claims note could not fire. Read
+  // off a real scan rather than a hand-built record: the test that covered this
+  // planted `tier` into facts.json by hand, which is a shape the writer cannot
+  // produce, so it passed while the product was broken.
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-tierfield-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
+  mkdirSync(join(dir, "src"), { recursive: true });
+  for (let i = 0; i < 14; i++) {
+    writeFileSync(join(dir, "src", `f${i}.ts`), `export function f${i}(): number {\n  return ${i}\n}\n`);
+  }
+  git("init", "-q", "-b", "main");
+  git("config", "user.email", "t@t.test");
+  git("config", "user.name", "T");
+  git("add", "-A");
+  git("commit", "-qm", "init");
+  const bin = fileURLToPath(new URL("../bin/anatomiya.mjs", import.meta.url));
+  execFileSync(process.execPath, [bin, "scan", dir], { stdio: "pipe" });
+
+  const stored = JSON.parse(readFileSync(join(dir, ".claude/anatomiya/facts.json"), "utf8"));
+  const dims = stored.areas.flatMap((a) => a.dimensions ?? []);
+
+  assert.ok(dims.length > 0, "the fixture produced no dimensions to check");
+  const missing = dims.filter((d) => d.tier === undefined).map((d) => d.key);
+  assert.deepEqual(missing, [], "a stored dimension with no tier is one the check cannot classify");
 });
