@@ -340,8 +340,10 @@ for what this repository does differently. The claim is still stated in `facts.j
 enforces it at full severity, because a model drifts off its own defaults as a session grows.
 Which side a model writes comes from `lib/model-defaults.json`, a committed table with provenance
 per entry, written by `scripts/measure-defaults.mjs` from the model's own output parsed through
-the same predicates the scan uses. An unmeasured entry reads `none` and fails open: the dimension
-keeps stating.
+the same predicates the scan uses. A learned row's default is a class rather than a side:
+"functions are named camelCase" in JavaScript is exactly what the model writes anyway, so a
+learned class equal to the model's own renders as counts too. An unmeasured entry reads `none`
+and fails open: the dimension keeps stating.
 
 ## 6. The baseline and `pin`
 
