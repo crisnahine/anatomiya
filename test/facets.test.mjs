@@ -4,6 +4,7 @@ import { rmSync } from "node:fs";
 import { join } from "node:path";
 
 import { repo } from "./ts-repo.mjs";
+import { needsRuby } from "./ruby-available.mjs";
 import { parseAll } from "../lib/parse.mjs";
 import { language } from "../lib/corpus.mjs";
 
@@ -77,4 +78,27 @@ test("a file whose Flow types were stripped still answers its facets", async (t)
   assert.deepEqual(r.facets.exports, ["greet"]);
   assert.equal(r.facets.inlineHelpers, 1);
   assert.equal(r.facets.jsx, false);
+});
+
+test("rubyFacets says which test runner a file speaks", needsRuby, async (t) => {
+  // Neither engine can read the runner off the path: `spec/` and `test/` are
+  // conventions a repository may hold either way round, and a Rails app puts
+  // its RSpec files under `spec/` while its generators write `test/`. What a
+  // file always carries is the DSL it is written in.
+  const dir = repo({
+    "spec/a_spec.rb": `RSpec.describe Foo do\n  it "x" do\n  end\nend\n`,
+    "test/b_test.rb": `class BTest < ActiveSupport::TestCase\n  def test_x\n  end\nend\n`,
+    "app/models/c.rb": `class C < ApplicationRecord\nend\n`,
+  });
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+  const rels = ["spec/a_spec.rb", "test/b_test.rb", "app/models/c.rb"];
+  const { records } = await parseAll(list(dir, rels));
+
+  assert.equal(records.get("spec/a_spec.rb").facets.testRunner, "rspec");
+  assert.equal(records.get("spec/a_spec.rb").facets.testCalls, true);
+  assert.equal(records.get("test/b_test.rb").facets.testRunner, "minitest");
+  assert.equal(records.get("test/b_test.rb").facets.testCalls, true);
+  assert.equal(records.get("app/models/c.rb").facets.testRunner, null);
+  assert.equal(records.get("app/models/c.rb").facets.testCalls, false);
 });
