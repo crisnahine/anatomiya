@@ -329,3 +329,17 @@ test("a record written before the roster existed reads as not counted, not as em
   assert.equal(facts.layout, null);
   assert.equal(facts.areas[0].kinds, null);
 });
+
+test("a null area on disk is carried, not thrown on", (t) => {
+  // `knownNames` in rules.mjs guards the same shape: a hand-edited or truncated
+  // record is the ordinary case of a file nobody promised, and reading it must
+  // not take the whole check down.
+  const dir = root(t);
+  mkdirSync(dirname(join(dir, FACTS_PATH)), { recursive: true });
+  writeFileSync(join(dir, FACTS_PATH), JSON.stringify({ schema: FACTS_SCHEMA, areas: [null] }));
+
+  const { facts, unreadable } = readFacts(dir);
+
+  assert.equal(unreadable, null);
+  assert.deepEqual(facts.areas, [null]);
+});
