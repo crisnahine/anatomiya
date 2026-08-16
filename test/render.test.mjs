@@ -1141,3 +1141,19 @@ test("a scan that could not load the stripper says so beside the rejected count"
 test("the stripper is not mentioned when nothing was rejected", () => {
   assert.deepEqual(unexaminedLines({ skipped: 1, missingStripper: true }), ["1 file exceeded the size cap"]);
 });
+
+/* --- the model-default filter (matchesDefault renders as counts) --- */
+
+test("a stated claim the model writes by default renders as a counts line, not a directive", () => {
+  const out = renderArea(area({ dimensions: [dim({ states: "claim", matchesDefault: true })] }));
+  assert.ok(out.includes("(matches model default)"), out);
+  assert.ok(!out.includes("sites across"), "the directive block shape must not appear");
+  assert.ok(!out.includes("no convention"), "and it is not a suppressed slot either");
+});
+
+test("an area whose only stated claim matches the model default is counted, not named, in the overview", () => {
+  const one = area({ dimensions: [dim({ states: "claim", matchesDefault: true })] });
+  const out = renderOverview(result({ areas: [one] }), { uncovered: 0 });
+  assert.ok(!out.includes("src/services —"), out);
+  assert.ok(out.includes("1 area in its own file"), out);
+});
