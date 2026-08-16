@@ -40,8 +40,12 @@ test("a relative specifier is a sibling import, not a convention", () => {
 });
 
 test("the runtime a JSX area cannot be written without is not a habit anyone chose", () => {
-  const records = files(6, (i) => record(`src/a${i}.tsx`, [...RUNTIME_MODULES, "styled-components"]));
+  // Spelled out rather than spread from the table: a list read off the thing
+  // under test agrees with it whatever it holds.
+  const runtime = ["react", "react-dom", "react/jsx-runtime", "vue", "@angular/core", "svelte", "next"];
+  const records = files(6, (i) => record(`src/a${i}.tsx`, [...runtime, "styled-components"]));
 
+  assert.deepEqual([...RUNTIME_MODULES].sort(), [...runtime].sort(), "and the table holds those seven");
   assert.deepEqual(commonImports(records), [{ module: "styled-components", files: 6, of: 6 }]);
 });
 

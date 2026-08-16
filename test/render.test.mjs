@@ -1397,7 +1397,8 @@ test("an area says which kinds of file it holds, right under its heading", () =>
 
   assert.equal(lines[6], "# src/services  40 files");
   assert.equal(lines[8], "kinds: 7 .tsx (JSX), 1 .ts; 0 test files; 0 of 7 have a namesake test");
-  assert.equal(lines[9], "catch blocks use the error they caught", "the directive follows it");
+  assert.equal(lines[9], "", "and a blank line under it, like the blocks below");
+  assert.equal(lines[10], "catch blocks use the error they caught", "the directive follows it");
   assert.doesNotMatch(out, /other/, "the area's denominator is not the root line's");
 });
 
@@ -1740,7 +1741,7 @@ test("the kinds line is budgeted where it gives way and printed where it is read
     );
   const out = renderArea(
     rosterArea({
-      globs: Array.from({ length: 25 }, (_, i) => glob(i)),
+      globs: Array.from({ length: 24 }, (_, i) => glob(i)),
       kinds: kindsOf(),
       dimensions: [...stated(2), ...counted(4)],
     })
@@ -1748,10 +1749,56 @@ test("the kinds line is budgeted where it gives way and printed where it is read
   const lines = out.split("\n");
 
   assert.ok(lineCount(out) <= MAX_LINES, `${lineCount(out)} lines is past the bound`);
-  assert.equal(lines[30], "# src/services  40 files");
-  assert.equal(lines[32], "kinds: 7 .tsx (JSX), 1 .ts; 0 test files; 0 of 7 have a namesake test");
+  assert.equal(lines[29], "# src/services  40 files");
+  assert.equal(lines[31], "kinds: 7 .tsx (JSX), 1 .ts; 0 test files; 0 of 7 have a namesake test");
+  assert.equal(lines[32], "");
   assert.equal(lines[33], "stated 0", "the directives follow it and outlive it");
   assert.match(out, /^stated 1$/m);
   assert.doesNotMatch(out, /^most files here import/m, "the roster gave way before the kinds line did");
   assert.doesNotMatch(out, /^counted 0: no convention/m);
+});
+
+/* --- fix wave 1 --- */
+
+test("a runner spread across the repository is summarised without a place", () => {
+  // `under (unnamed)` is what a null root printed, which names nowhere.
+  const spread = clientLayout({ tests: [{ runner: "vitest", root: null, files: 60 }] });
+
+  assert.equal(
+    layoutSummary(spread, []),
+    "layout: 7 roots, 6 folded, tests: 60 vitest; roster lines: 0 areas with imports, 0 with reuse"
+  );
+});
+
+test("a repository that is one flat directory says so in words", () => {
+  const lines = renderLayout(
+    clientLayout({
+      roots: [root(".", { files: 5, exts: [[".js", 5]] })],
+      more: { roots: 0, files: 0 },
+      tests: [],
+      principles: [],
+    })
+  );
+
+  assert.equal(lines[2], "- (repository root): 5 .js");
+});
+
+test("a layout record carrying no principles still prints its roster", () => {
+  const { principles, ...rest } = clientLayout();
+
+  assert.ok(renderLayout(rest).some((l) => l.startsWith("- src/pages")), "the roots are what the section is");
+});
+
+test("a dropped description is named as one rather than counted as a count", () => {
+  // The three kinds mean three different things: a lost directive is a
+  // convention undelivered, a lost count is a threshold nobody can audit, and a
+  // lost description is neither.
+  const out = renderArea(
+    rosterArea({
+      kinds: kindsOf(),
+      dimensions: Array.from({ length: 20 }, (_, i) => dim({ key: `s${i}`, claim: `stated ${i}` })),
+    })
+  );
+
+  assert.match(out, /^and \d+ more not shown here, \d+ of them stated, 3 of them descriptions$/m);
 });
