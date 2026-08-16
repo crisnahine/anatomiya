@@ -3,10 +3,10 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, isAbsolute } from "node:path";
+import { join, isAbsolute, win32 } from "node:path";
 import { loadTypeScript } from "../lib/semantic.mjs";
 import { repo } from "./ts-repo.mjs";
-import { readConfig, FORCED_OPTIONS, confinedCompilerHost, toTsPath } from "../lib/tsconfig.mjs";
+import { readConfig, FORCED_OPTIONS, confinedCompilerHost, toTsPath, within } from "../lib/tsconfig.mjs";
 
 const loaded = await loadTypeScript();
 const ts = loaded?.ts;
@@ -195,4 +195,17 @@ test("readConfig hands both TypeScript entry points a normalised path", needsTs,
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("a path on another drive is outside, not inside", needsTs, () => {
+  // `relative` between two Windows drives answers an absolute path, which does
+  // not start with "..", so a bare startsWith check reads D:\secrets as inside
+  // C:\...\typescript\lib. insideRoot already guards for this and the compiler
+  // host's own check did not. Driven through path.win32 so it holds here.
+  const rel = win32.relative("C:\\plugin\\node_modules\\typescript\\lib", "D:\\secrets\\x.ts");
+  assert.equal(rel.startsWith(".."), false, "this is why the bare check let it through");
+  assert.equal(within(rel), false, "a path on another drive is not contained");
+
+  assert.equal(within(win32.relative("C:\\a\\lib", "C:\\a\\lib\\lib.d.ts")), true);
+  assert.equal(within(win32.relative("C:\\a\\lib", "C:\\a\\other\\x.ts")), false);
 });

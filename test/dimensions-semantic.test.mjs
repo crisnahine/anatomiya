@@ -114,3 +114,27 @@ test("a chain through a dependency's types is resolved, not read as one type", n
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("a chain is still a chain through a non-null assertion or parentheses", needsTs, async () => {
+  // `this.model!.getState().update()` is routine under strictNullChecks, and
+  // the walk stopped dead at the TSNonNullExpression: the chain collected one
+  // receiver, was never counted, and both candidates and violations
+  // under-reported with nothing saying so. The same wrapper blindness C11 fixed
+  // on the syntactic side, inside the tier's only dimension.
+  const decls = [
+    "class Inner { go(): string { return '' } }",
+    "class Thing { inner(): Inner { return new Inner() }\n  maybe?: Inner }",
+  ].join("\n");
+
+  const plain = await counts(`${decls}\nexport function f(t: Thing) { return t.inner().go() }`);
+  assert.deepEqual(plain, { candidates: 1, conforming: 0 }, "Thing, Inner and string are three types");
+
+  for (const [label, body] of Object.entries({
+    "non-null": "export function f(t: Thing) { return t.maybe!.go() }",
+    parens: "export function f(t: Thing) { return (t.inner()).go() }",
+    both: "export function f(t: Thing) { return (t.maybe!).go() }",
+  })) {
+    const r = await counts(`${decls}\n${body}`);
+    assert.equal(r.candidates, 1, `${label}: the chain was not counted at all`);
+  }
+});
