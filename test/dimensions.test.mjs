@@ -544,3 +544,19 @@ test("a principle's name is matched as a word, not as a substring", () => {
     assert.throws(() => assertClaimIsNotAVerdict([{ key: "x", claim, counterClaim: null }]), /principle/, claim);
   }
 });
+
+test("a cast does not hide a result-shaped return either", () => {
+  // C11 closed this class on absent_is_null and nullish_default and left
+  // error_shape reading the raw argument, so `return { ok: true } as Result`,
+  // which is the ordinary way to write it in a typed repository, stopped being
+  // a conforming site while every throw beside it still counted.
+  assert.deepEqual(counts("error_shape", "export function f() { return { ok: true, value: 1 } }"), {
+    candidates: 1,
+    conforming: 1,
+  });
+
+  for (const cast of ["as Result", "satisfies Result", "!"]) {
+    const src = `export function f() { return { ok: true, value: 1 } ${cast} }`;
+    assert.deepEqual(counts("error_shape", src), { candidates: 1, conforming: 1 }, src);
+  }
+});
