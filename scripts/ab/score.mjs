@@ -14,11 +14,29 @@
  */
 import { parseAll } from "../../lib/parse.mjs";
 import { reduceArea } from "../../lib/reduce.mjs";
+import { classifyBasename } from "../../lib/dimensions-naming.mjs";
 
-export async function scoreFile({ rel, source, lang }, { key, frameworks = [] } = {}) {
+export async function scoreFile({ rel, source, lang }, { key, frameworks = [], learned = null } = {}) {
   const { records } = await parseAll([{ rel, source, lang }], { frameworks });
   const record = records.get(rel);
   if (!record || !record.ok) return null;
+
+  // A learned row's sentence is the class the map learned. Letting the scored
+  // file vote would measure it against itself: any single-class file reads
+  // 1.0, whichever class it picked.
+  if (learned !== null) {
+    // The filename row has no worker hits; its site is the name the trial chose.
+    if (key === "file_naming_case") {
+      const cls = classifyBasename(rel);
+      if (cls === null) return null;
+      const conforming = cls === learned ? 1 : 0;
+      return { candidates: 1, conforming, ratio: conforming };
+    }
+    const hits = (record.hits || {})[key] || [];
+    if (!hits.length) return null;
+    const conforming = hits.filter((h) => h.class === learned).length;
+    return { candidates: hits.length, conforming, ratio: conforming / hits.length };
+  }
 
   const area = { path: ".", langs: [lang], files: [{ rel, lang }], fileCount: 1 };
   const dims = reduceArea(area, [record], { frameworks });

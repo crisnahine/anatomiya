@@ -35,6 +35,8 @@ const USAGE = `usage: node scripts/ab.mjs --repo <path> --task <file> [options]
   --model <name>     model for every trial (default ${CLAUDE_DEFAULTS.model})
   --out <path>       where to write the result (default docs/measurements/<repo>.md)
   --min-headroom <r> refuse below this (default 0.05)
+  --key <dimension>  measure this claim rather than the top-ranked one
+  --area <path>      measure in this area rather than the top-ranked one
 `;
 
 function parseArgs(argv) {
@@ -49,6 +51,8 @@ function parseArgs(argv) {
       case "--model": out.model = value; break;
       case "--out": out.out = value; break;
       case "--min-headroom": out.minHeadroom = Number(value); break;
+      case "--key": out.key = value; break;
+      case "--area": out.area = value; break;
       default: return { error: `unknown option ${flag}` };
     }
   }
@@ -73,7 +77,11 @@ execFileSync(process.execPath, [bin, "scan", args.repo], { stdio: "inherit" });
 
 // 2. Where the arms could differ at all.
 const facts = JSON.parse(readFileSync(join(args.repo, ".claude/anatomiya/facts.json"), "utf8"));
-const ranked = rankAreas(facts);
+// A named target measures the claim the experiment is about; the ranking is
+// the default for when the question is only "where is there headroom".
+const ranked = rankAreas(facts).filter(
+  (r) => (!args.key || r.key === args.key) && (!args.area || r.path === args.area)
+);
 const target = ranked[0];
 if (!target || target.headroom < args.minHeadroom) {
   die(
@@ -138,7 +146,7 @@ try {
       for (const file of r.wrote) {
         const s = await scoreFile(
           { rel: file.rel, source: file.source, lang: language(file.rel) },
-          { key: target.key, frameworks: facts.corpus?.frameworks ?? [] }
+          { key: target.key, frameworks: facts.corpus?.frameworks ?? [], learned: target.learned ?? null }
         );
         if (!s) continue;
         out.filesScored++;

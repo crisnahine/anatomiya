@@ -267,3 +267,12 @@ test("a stored dimension carries the tier the check filters on", async (t) => {
   const missing = dims.filter((d) => d.tier === undefined).map((d) => d.key);
   assert.deepEqual(missing, [], "a stored dimension with no tier is one the check cannot classify");
 });
+
+test("matchesDefault survives the round trip and absent reads as false", (t) => {
+  const dir = root(t);
+  writeFacts(dir, result([dim({ matchesDefault: true }), dim({ key: "k2" })]));
+  const { facts } = readFacts(dir);
+  const [flagged, plain] = facts.areas[0].dimensions;
+  assert.equal(flagged.matchesDefault, true);
+  assert.equal("matchesDefault" in plain, false, "stored only when true, so a schema-9 record reads unchanged");
+});

@@ -1,0 +1,580 @@
+{
+  "swallowed_error": {
+    "default": "claim",
+    "provenance": {
+      "method": "measured",
+      "model": "claude-opus-5",
+      "date": "2026-08-16",
+      "samples": 30,
+      "sideCounts": {
+        "claim": 23,
+        "counter": 0
+      }
+    }
+  },
+  "error_shape": {
+    "default": "counter",
+    "provenance": {
+      "method": "measured",
+      "model": "claude-opus-5",
+      "date": "2026-08-16",
+      "samples": 30,
+      "sideCounts": {
+        "claim": 15,
+        "counter": 73
+      }
+    }
+  },
+  "module_state_const": {
+    "default": "claim",
+    "provenance": {
+      "method": "measured",
+      "model": "claude-opus-5",
+      "date": "2026-08-16",
+      "samples": 30,
+      "sideCounts": {
+        "claim": 54,
+        "counter": 0
+      }
+    }
+  },
+  "async_error_handling": {
+    "default": "none",
+    "provenance": {
+      "method": "measured",
+      "model": "claude-opus-5",
+      "date": "2026-08-16",
+      "samples": 30,
+      "sideCounts": {
+        "claim": 14,
+        "counter": 7
+      }
+    }
+  },
+  "optional_chaining": {
+    "default": "counter",
+    "provenance": {
+      "method": "measured",
+      "model": "claude-opus-5",
+      "date": "2026-08-16",
+      "samples": 30,
+      "sideCounts": {
+        "claim": 0,
+        "counter": 128
+      }
+    }
+  },
+  "function_style": {
+    "default": "claim",
+    "provenance": {
+      "method": "measured",
+      "model": "claude-opus-5",
+      "date": "2026-08-16",
+      "samples": 30,
+      "sideCounts": {
+        "claim": 119,
+        "counter": 0
+      }
+    }
+  },
+  "explicit_return_type": {
+    "default": "claim",
+    "provenance": {
+      "method": "measured",
+      "model": "claude-opus-5",
+      "date": "2026-08-16",
+      "samples": 30,
+      "sideCounts": {
+        "claim": 31,
+        "counter": 6
+      }
+    }
+  },
+  "type_only_import": {
+    "default": "none",
+    "provenance": {
+      "method": "seed",
+      "model": null,
+      "date": null,
+      "samples": null,
+      "sideCounts": null
+    }
+  },
+  "import_extension": {
+    "default": "none",
+    "provenance": {
+      "method": "measured",
+      "model": "claude-opus-5",
+      "date": "2026-08-16",
+      "samples": 30,
+      "sideCounts": {
+        "claim": 0,
+        "counter": 6
+      }
+    }
+  },
+  "nullish_default": {
+    "default": "none",
+    "provenance": {
+      "method": "seed",
+      "model": null,
+      "date": null,
+      "samples": null,
+      "sideCounts": null
+    }
+  },
+  "non_null_assertion": {
+    "default": "none",
+    "provenance": {
+      "method": "measured",
+      "model": "claude-opus-5",
+      "date": "2026-08-16",
+      "samples": 18,
+      "sideCounts": {
+        "claim": 1,
+        "counter": 0
+      }
+    }
+  },
+  "absent_is_null": {
+    "default": "none",
+    "provenance": {
+      "method": "measured",
+      "model": "claude-opus-5",
+      "date": "2026-08-16",
+      "samples": 12,
+      "sideCounts": {
+        "claim": 5,
+        "counter": 0
+      }
+    }
+  },
+  "iterate_with_for_of": {
+    "default": "none",
+    "provenance": {
+      "method": "measured",
+      "model": "claude-opus-5",
+      "date": "2026-08-16",
+      "samples": 30,
+      "sideCounts": {
+        "claim": 18,
+        "counter": 0
+      }
+    }
+  },
+  "test_call_style": {
+    "default": "counter",
+    "provenance": {
+      "method": "measured",
+      "model": "claude-opus-5",
+      "date": "2026-08-16",
+      "samples": 30,
+      "sideCounts": {
+        "claim": 0,
+        "counter": 51
+      }
+    }
+  },
+  "assertion_style": {
+    "default": "claim",
+    "provenance": {
+      "method": "measured",
+      "model": "claude-opus-5",
+      "date": "2026-08-16",
+      "samples": 30,
+      "sideCounts": {
+        "claim": 66,
+        "counter": 0
+      }
+    }
+  },
+  "rescue_uses_error": {
+    "default": "none",
+    "provenance": {
+      "method": "measured",
+      "model": "claude-opus-5",
+      "date": "2026-08-16",
+      "samples": 18,
+      "sideCounts": {
+        "claim": 3,
+        "counter": 0
+      }
+    }
+  },
+  "record_lookup": {
+    "default": "none",
+    "provenance": {
+      "method": "seed",
+      "model": null,
+      "date": null,
+      "samples": null,
+      "sideCounts": null
+    }
+  },
+  "model_callbacks": {
+    "default": "none",
+    "provenance": {
+      "method": "seed",
+      "model": null,
+      "date": null,
+      "samples": null,
+      "sideCounts": null
+    }
+  },
+  "service_result_shape": {
+    "default": "none",
+    "provenance": {
+      "method": "measured",
+      "model": "claude-opus-5",
+      "date": "2026-08-16",
+      "samples": 18,
+      "sideCounts": {
+        "claim": 3,
+        "counter": 0
+      }
+    }
+  },
+  "keyword_params": {
+    "default": "none",
+    "provenance": {
+      "method": "seed",
+      "model": null,
+      "date": null,
+      "samples": null,
+      "sideCounts": null
+    }
+  },
+  "zone_aware_time": {
+    "default": "none",
+    "provenance": {
+      "method": "seed",
+      "model": null,
+      "date": null,
+      "samples": null,
+      "sideCounts": null
+    }
+  },
+  "hook_call_style": {
+    "default": "none",
+    "provenance": {
+      "method": "seed",
+      "model": null,
+      "date": null,
+      "samples": null,
+      "sideCounts": null
+    }
+  },
+  "handler_is_named": {
+    "default": "none",
+    "provenance": {
+      "method": "measured",
+      "model": "claude-opus-5",
+      "date": "2026-08-16",
+      "samples": 30,
+      "sideCounts": {
+        "claim": 0,
+        "counter": 6
+      }
+    }
+  },
+  "spread_on_component": {
+    "default": "none",
+    "provenance": {
+      "method": "seed",
+      "model": null,
+      "date": null,
+      "samples": null,
+      "sideCounts": null
+    }
+  },
+  "text_translated": {
+    "default": "none",
+    "provenance": {
+      "method": "seed",
+      "model": null,
+      "date": null,
+      "samples": null,
+      "sideCounts": null
+    }
+  },
+  "handler_memoised": {
+    "default": "none",
+    "provenance": {
+      "method": "seed",
+      "model": null,
+      "date": null,
+      "samples": null,
+      "sideCounts": null
+    }
+  },
+  "migration_reversible": {
+    "default": "none",
+    "provenance": {
+      "method": "measured",
+      "model": "claude-opus-5",
+      "date": "2026-08-16",
+      "samples": 18,
+      "sideCounts": {
+        "claim": 3,
+        "counter": 0
+      }
+    }
+  },
+  "migration_schema_only": {
+    "default": "none",
+    "provenance": {
+      "method": "measured",
+      "model": "claude-opus-5",
+      "date": "2026-08-16",
+      "samples": 18,
+      "sideCounts": {
+        "claim": 3,
+        "counter": 0
+      }
+    }
+  },
+  "column_null_declared": {
+    "default": "none",
+    "provenance": {
+      "method": "measured",
+      "model": "claude-opus-5",
+      "date": "2026-08-16",
+      "samples": 18,
+      "sideCounts": {
+        "claim": 6,
+        "counter": 0
+      }
+    }
+  },
+  "table_primary_key_declared": {
+    "default": "none",
+    "provenance": {
+      "method": "measured",
+      "model": "claude-opus-5",
+      "date": "2026-08-16",
+      "samples": 18,
+      "sideCounts": {
+        "claim": 0,
+        "counter": 3
+      }
+    }
+  },
+  "reference_foreign_key": {
+    "default": "none",
+    "provenance": {
+      "method": "measured",
+      "model": "claude-opus-5",
+      "date": "2026-08-16",
+      "samples": 18,
+      "sideCounts": {
+        "claim": 3,
+        "counter": 0
+      }
+    }
+  },
+  "law_of_demeter": {
+    "default": "none",
+    "provenance": {
+      "method": "seed",
+      "model": null,
+      "date": null,
+      "samples": null,
+      "sideCounts": null
+    }
+  },
+  "rake_task_spec": {
+    "default": "none",
+    "provenance": {
+      "method": "seed",
+      "model": null,
+      "date": null,
+      "samples": null,
+      "sideCounts": null
+    }
+  },
+  "model_spec": {
+    "default": "none",
+    "provenance": {
+      "method": "seed",
+      "model": null,
+      "date": null,
+      "samples": null,
+      "sideCounts": null
+    }
+  },
+  "service_spec": {
+    "default": "none",
+    "provenance": {
+      "method": "seed",
+      "model": null,
+      "date": null,
+      "samples": null,
+      "sideCounts": null
+    }
+  },
+  "job_spec": {
+    "default": "none",
+    "provenance": {
+      "method": "seed",
+      "model": null,
+      "date": null,
+      "samples": null,
+      "sideCounts": null
+    }
+  },
+  "worker_spec": {
+    "default": "none",
+    "provenance": {
+      "method": "seed",
+      "model": null,
+      "date": null,
+      "samples": null,
+      "sideCounts": null
+    }
+  },
+  "controller_spec": {
+    "default": "none",
+    "provenance": {
+      "method": "seed",
+      "model": null,
+      "date": null,
+      "samples": null,
+      "sideCounts": null
+    }
+  },
+  "serializer_spec": {
+    "default": "none",
+    "provenance": {
+      "method": "seed",
+      "model": null,
+      "date": null,
+      "samples": null,
+      "sideCounts": null
+    }
+  },
+  "model_test": {
+    "default": "none",
+    "provenance": {
+      "method": "seed",
+      "model": null,
+      "date": null,
+      "samples": null,
+      "sideCounts": null
+    }
+  },
+  "job_test": {
+    "default": "none",
+    "provenance": {
+      "method": "seed",
+      "model": null,
+      "date": null,
+      "samples": null,
+      "sideCounts": null
+    }
+  },
+  "file_naming_case": {
+    "default": "none",
+    "provenance": {
+      "method": "measured",
+      "model": "claude-opus-5",
+      "date": "2026-08-16",
+      "samples": 12,
+      "sideCounts": null,
+      "classCounts": {
+        "PascalCase": 3
+      }
+    }
+  },
+  "function_naming_case": {
+    "default": "none",
+    "class": "camelCase",
+    "provenance": {
+      "method": "measured",
+      "model": "claude-opus-5",
+      "date": "2026-08-16",
+      "samples": 12,
+      "sideCounts": null,
+      "classCounts": {
+        "camelCase": 39,
+        "PascalCase": 3
+      }
+    }
+  },
+  "exported_symbol_case": {
+    "default": "none",
+    "provenance": {
+      "method": "measured",
+      "model": "claude-opus-5",
+      "date": "2026-08-16",
+      "samples": 12,
+      "sideCounts": null,
+      "classCounts": {
+        "PascalCase": 22,
+        "camelCase": 10
+      }
+    }
+  },
+  "doc_comment_style": {
+    "default": "counter",
+    "provenance": {
+      "method": "measured",
+      "model": "claude-opus-5",
+      "date": "2026-08-16",
+      "samples": 30,
+      "sideCounts": {
+        "claim": 1,
+        "counter": 39
+      }
+    }
+  },
+  "route_logging": {
+    "default": "none",
+    "provenance": {
+      "method": "seed",
+      "model": null,
+      "date": null,
+      "samples": null,
+      "sideCounts": null
+    }
+  },
+  "route_network": {
+    "default": "none",
+    "provenance": {
+      "method": "seed",
+      "model": null,
+      "date": null,
+      "samples": null,
+      "sideCounts": null
+    }
+  },
+  "route_env": {
+    "default": "none",
+    "provenance": {
+      "method": "seed",
+      "model": null,
+      "date": null,
+      "samples": null,
+      "sideCounts": null
+    }
+  },
+  "logger_over_puts": {
+    "default": "none",
+    "provenance": {
+      "method": "seed",
+      "model": null,
+      "date": null,
+      "samples": null,
+      "sideCounts": null
+    }
+  },
+  "http_through_client": {
+    "default": "none",
+    "provenance": {
+      "method": "seed",
+      "model": null,
+      "date": null,
+      "samples": null,
+      "sideCounts": null
+    }
+  }
+}

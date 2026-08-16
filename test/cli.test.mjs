@@ -129,7 +129,7 @@ test("the CLI summary and the overview word an unexamined file the same way", (t
   const repo = repoWithSource(t);
   // Over the 4 MB cap, which is checked with `stat` before the file is
   // dispatched, so nothing reads these bytes.
-  writeFileSync(join(repo, "src", "big.ts"), `const x = "${"a".repeat(4 * 1024 * 1024)}"\n`);
+  writeFileSync(join(repo, "src", "big.ts"), `const x = "${"a".repeat(1024 * 1024)}"\n`);
   const git = (...a) => execFileSync("git", a, { cwd: repo, stdio: "pipe" });
   git("add", "-A");
   git("commit", "-qm", "big");

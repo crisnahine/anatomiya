@@ -167,3 +167,57 @@ test("the result file names the repository without a local path in it", () => {
     assert.doesNotMatch(repoLabel(p, null), /Users|home|crisn/);
   }
 });
+
+test("a claim the model writes by default is not a candidate: the map no longer states it", async () => {
+  const { rankAreas } = await import("../scripts/ab/pick.mjs");
+  const facts = {
+    areas: [{
+      path: "src",
+      dimensions: [
+        { key: "module_state_const", states: "claim", directive: true, candidates: 80, conforming: 70, matchesDefault: true },
+        { key: "swallowed_error", states: "claim", directive: true, candidates: 80, conforming: 70 },
+      ],
+    }],
+  };
+  const ranked = rankAreas(facts);
+  assert.deepEqual(ranked.map((r) => r.key), ["swallowed_error"]);
+});
+
+test("a learned row is scored against the map's class, never the file's own vote", async () => {
+  const src = "export const my_thing = 1;\nexport const other_thing = 2;\nexport function fooBar() {}\n";
+  const self = await scoreFile({ rel: "t.ts", source: src, lang: "js" }, { key: "exported_symbol_case" });
+  assert.equal(self.ratio, 2 / 3, "self-learning scores the file against its own plurality, which is the trap");
+  const pinned = await scoreFile(
+    { rel: "t.ts", source: src, lang: "js" },
+    { key: "exported_symbol_case", learned: "camelCase" }
+  );
+  assert.deepEqual(pinned, { candidates: 3, conforming: 1, ratio: 1 / 3 });
+});
+
+test("the picker carries the learned class and the filled sentence", () => {
+  const learnedFacts = {
+    areas: [{
+      path: "src",
+      fileCount: 40,
+      dimensions: [
+        { key: "exported_symbol_case", states: "claim", directive: true, candidates: 300, conforming: 280, learned: "PascalCase" },
+      ],
+    }],
+  };
+  const [top] = rankAreas(learnedFacts);
+  assert.equal(top.learned, "PascalCase");
+  assert.equal(top.claim, "exported names are PascalCase");
+});
+
+test("a filename target is scored by the name the trial chose", async () => {
+  const s = await scoreFile(
+    { rel: "src/orderList.ts", source: "export const a = 1;\n", lang: "js" },
+    { key: "file_naming_case", learned: "kebab-case" }
+  );
+  assert.deepEqual(s, { candidates: 1, conforming: 0, ratio: 0 });
+  const t = await scoreFile(
+    { rel: "src/order-list.ts", source: "export const a = 1;\n", lang: "js" },
+    { key: "file_naming_case", learned: "kebab-case" }
+  );
+  assert.deepEqual(t, { candidates: 1, conforming: 1, ratio: 1 });
+});

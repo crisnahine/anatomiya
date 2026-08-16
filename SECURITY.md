@@ -151,12 +151,14 @@ Say the quiet part plainly.
   past the child process boundary, it runs as you.
 - **Dependencies are trusted.** `oxc-parser` and `flow-remove-types` from npm, `prism` from your
   Ruby install, `git`, and `ps`. Their supply chain is not something this tool checks.
-- **No semantic tier ships, so nothing here reads `tsconfig.json`.** A TypeScript-checker tier is
-  decisions B7 to B9 in `DECISIONS.md` and all three are `todo`: `typescript` is not a dependency and
-  the CLI takes no flag that would reach it. If it is ever built it will read the repository's
-  `tsconfig.json`, which would make the "libraries read no repository configuration" claim above
-  false for that mode; confining `extends` and forcing the root file list to the corpus are the
-  conditions B9 puts on building it.
+- **The opt-in `--deep` tier reads the repository's `tsconfig.json`.** It is the one mode that
+  reads repository configuration, and it is off by default: `typescript` is an optional dependency,
+  never a runtime one, and only `scan --deep` reaches it. Inside that mode an `extends` leaving the
+  repository is refused rather than followed, the root file list is forced to the corpus rather
+  than the config's globs, every option that writes to disk is forced off, and the lib files come
+  from the plugin's own `typescript`, never the repository's, because a repository can ship its own
+  and reading it runs its code in this process. Decisions B7 to B9 in `DECISIONS.md` carry the
+  measurements. Without `--deep`, nothing here reads `tsconfig.json`.
 - **No guarantee the map is correct.** The gates in `lib/reduce.mjs` are thresholds, not proofs. A
   wrong directive is a correctness problem, not a security one, but it is worth knowing that a
   repository can shape its own numbers if it wants to.
