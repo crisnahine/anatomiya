@@ -7,6 +7,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- A model-defaults table, `lib/model-defaults.json`. A stated side the model already writes
+  unprompted renders as a counts line, `matches model default`, never as a directive; the check
+  enforces it unchanged from `facts.json`. Entries carry provenance and an unmeasured entry fails
+  open. `scripts/measure-defaults.mjs` writes the table by parsing the model's own output through
+  the scan's predicates. Facts schema is 10.
+
 ## [0.1.11] - 2026-08-16
 
 Flow, so a repository oxc refuses by name is read rather than charged as broken: react goes from 287
