@@ -28,6 +28,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   imports or receivers named in the category vocabulary; each row is offered only where the
   corpus holds a wrapper-shaped file and at least three files already route through one, so a
   repository that logs to the console on purpose never carries a line that can only read zero.
+- A second A/B on vscode, this time on a claim with headroom that the model-defaults table does
+  not filter: `docs/measurements/2026-08-16-vscode-nonnull-2.md`. The arms differ (0.818 with the
+  map against 0.000 without, over 4 and 1 scored files), read with its own small-sample caveat.
 - The research catalogue this work answers: `docs/research/why-agents-miss-house-style.md`, 34
   failure modes with a primary source and an evidence label each, and
   `docs/measurements/2026-08-16-new-row-variance.md`, the per-repository variance record for the
