@@ -1,8 +1,19 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { parseSync } from "oxc-parser";
-import { DIMENSIONS, ALL_DIMENSIONS, dimensionsFor, assertPrecision, PRECISIONS } from "../lib/dimensions.mjs";
+import {
+  DIMENSIONS,
+  ALL_DIMENSIONS,
+  dimensionsFor,
+  assertPrecision,
+  assertApplicability,
+  assertClaimIsNotAVerdict,
+  assertTier,
+  PRINCIPLE_NAMES,
+  PRECISIONS,
+} from "../lib/dimensions.mjs";
 import { PAIRINGS } from "../lib/pairing.mjs";
+import { SEMANTIC_DIMENSIONS } from "../lib/dimensions-semantic.mjs";
 import { walk, collectHits } from "../lib/walk.mjs";
 
 const dim = (key) => DIMENSIONS.find((d) => d.key === key);
@@ -335,5 +346,217 @@ test("the obligations declare their precision like every other row (C5)", () => 
   // ALL_DIMENSIONS, and the reducer composes both lists.
   for (const p of PAIRINGS) {
     assert.ok(PRECISIONS.includes(p.precision), p.key);
+  }
+});
+
+test("every shipped row declares which files could participate (C2)", () => {
+  // The obligations are in here too. They are not in ALL_DIMENSIONS, the
+  // reducer composes both lists, and a checker blind to a whole class would
+  // pass while nine rows carried nothing.
+  assert.doesNotThrow(() => assertApplicability([...ALL_DIMENSIONS, ...PAIRINGS]));
+});
+
+test("a registry row that cannot say which files it speaks about does not ship (C2)", () => {
+  // C2: `applicability` is whatever `run` happened to emit, so a predicate
+  // seeing a tenth of its own construct gives 1.0 over four files and reads as
+  // a strong convention. The three numbers cannot show that; the sentence can.
+  assert.throws(
+    () => assertApplicability([{ key: "forgot", precision: "precise" }]),
+    /forgot declares no applicabilityPredicate\.sites/
+  );
+  // A sentence too short to be one is told apart from an absent field, or
+  // somebody who wrote `sites: "any file"` is sent looking for a key they can
+  // already see on the page.
+  assert.throws(
+    () => assertApplicability([{ key: "terse", precision: "precise", applicabilityPredicate: { sites: "files", blind: null } }]),
+    /terse states applicabilityPredicate\.sites as "files", which is a word rather than a predicate/
+  );
+});
+
+test("a row declaring no blind key at all is refused, because absent is not a third state (C2)", () => {
+  assert.throws(
+    () => assertApplicability([{ key: "silent", precision: "partial", applicabilityPredicate: { sites: "a file holding a catch clause" } }]),
+    /silent declares no applicabilityPredicate\.blind/
+  );
+});
+
+test("precision and the blind spot cannot disagree (C2)", () => {
+  // The marker and the reason are one decision. A precise row naming a blind
+  // spot is a partial row nobody marked, which is the direction that costs a
+  // severity level in the check.
+  assert.throws(
+    () =>
+      assertApplicability([
+        { key: "lying", precision: "precise", applicabilityPredicate: { sites: "a file holding a catch clause", blind: "a rethrow in a helper" } },
+      ]),
+    /lying is precise and names a blind spot/
+  );
+  assert.throws(
+    () =>
+      assertApplicability([
+        { key: "quiet", precision: "partial", applicabilityPredicate: { sites: "a file holding a catch clause", blind: null } },
+      ]),
+    /quiet is partial and names no blind spot/
+  );
+});
+
+test("a row whose precision this build does not know cannot have its blind spot checked (C2)", () => {
+  // The tie between the marker and the reason only holds against a precision
+  // this build knows. Both shipped registries run `assertPrecision` first, but
+  // this is exported, and a row spelling `"Precise"` would otherwise satisfy
+  // neither branch and pass with no blind spot checked at all.
+  assert.throws(
+    () =>
+      assertApplicability([
+        { key: "typo", precision: "Precise", applicabilityPredicate: { sites: "a file holding a catch clause", blind: null } },
+      ]),
+    /typo declares precision "Precise", so its blind spot cannot be checked/
+  );
+});
+
+test("assertApplicability returns the rows it accepted, so a registry can wrap itself", () => {
+  const rows = [
+    { key: "ok", precision: "partial", applicabilityPredicate: { sites: "a file holding a catch clause", blind: "a rethrow inside a helper" } },
+  ];
+
+  assert.equal(assertApplicability(rows), rows);
+});
+
+test("an ambient declaration is not module state", () => {
+  // `declare const x: number` binds nothing at run time: it describes something
+  // declared elsewhere. Counted as a module binding it moved the ratio on a
+  // claim about mutable state, and it vanishes when a file's types are
+  // stripped, so the same file counted two ways.
+  assert.deepEqual(counts("module_state_const", "declare const x: number;\ndeclare let y: string;\n"), {
+    candidates: 0,
+    conforming: 0,
+  });
+  // The ordinary declarations beside it still count.
+  assert.deepEqual(counts("module_state_const", "declare let y: string;\nlet a = 1;\nconst b = 2;\n"), {
+    candidates: 2,
+    conforming: 1,
+  });
+});
+
+test("a binding inside a namespace is not module state", () => {
+  // `declare module 'x' { export var y }` and `namespace N { var y }` are both
+  // scoped to the block, not to the module, and the first binds nothing at run
+  // time at all.
+  assert.deepEqual(counts("module_state_const", "declare module 'bar' {\n  export var foo: any;\n}\n"), {
+    candidates: 0,
+    conforming: 0,
+  });
+  assert.deepEqual(counts("module_state_const", "namespace N {\n  var inner = 1;\n}\nlet outer = 2;\n"), {
+    candidates: 1,
+    conforming: 0,
+  });
+});
+
+test("a claim naming a principle does not load", () => {
+  // `claim` is the sentence an agent reads. A rendered 1.0 beside a principle's
+  // name reads as agreement with the principle rather than as a count of this
+  // repository's sites, which is the one thing a counted claim cannot say.
+  assert.throws(
+    () => assertClaimIsNotAVerdict([{ key: "x", claim: "the code follows the Law of Demeter", counterClaim: null }]),
+    /Law of Demeter/
+  );
+  // The counter-claim is rendered too, so it is held to the same rule.
+  assert.throws(
+    () => assertClaimIsNotAVerdict([{ key: "x", claim: "calls stay shallow", counterClaim: "SOLID is ignored" }]),
+    /SOLID/
+  );
+});
+
+test("the principle check does not depend on how the name is capitalised", () => {
+  // Nobody writes a claim in the glossary's capitalisation. "law of demeter" in
+  // a lowercase sentence is the same endorsement.
+  assert.throws(
+    () => assertClaimIsNotAVerdict([{ key: "x", claim: "calls follow the law of demeter", counterClaim: null }]),
+    /Law of Demeter/
+  );
+  assert.throws(
+    () => assertClaimIsNotAVerdict([{ key: "x", claim: "the code is solid and tested", counterClaim: null }]),
+    /SOLID/
+  );
+});
+
+test("the names that have been proposed as labels are all on the list", () => {
+  // The list is the rule. Written out here rather than read from the module,
+  // since an expectation taken from the code agrees with it by construction.
+  for (const name of ["Postel's Law", "Law of Demeter", "Principle of least privilege", "SOLID", "DRY", "YAGNI"]) {
+    assert.ok(PRINCIPLE_NAMES.includes(name), `${name} is not on the list`);
+  }
+});
+
+test("a claim about the code loads", () => {
+  assert.doesNotThrow(() =>
+    assertClaimIsNotAVerdict([{ key: "y", claim: "a call chain stays inside one type", counterClaim: null }])
+  );
+});
+
+test("every shipped claim says what the code does", () => {
+  assert.doesNotThrow(() => assertClaimIsNotAVerdict(ALL_DIMENSIONS));
+});
+
+test("every registry row declares a tier, and an unknown one refuses to load", () => {
+  for (const d of ALL_DIMENSIONS) {
+    assert.ok(["syntactic", "semantic"].includes(d.tier), `${d.key} declares tier ${JSON.stringify(d.tier)}`);
+  }
+  assert.throws(() => assertTier([{ key: "x", tier: "Syntactic" }]), /tier/);
+  assert.throws(() => assertTier([{ key: "y" }]), /tier/);
+});
+
+test("the default caller is offered the syntactic tier only", () => {
+  // The tier is opt-in. A caller that forgets to ask must not get a claim that
+  // needs a checker nobody ran.
+  const keys = dimensionsFor(["js"]).map((d) => d.key);
+  for (const d of SEMANTIC_DIMENSIONS) assert.equal(keys.includes(d.key), false, `${d.key} leaked into the default set`);
+});
+
+test("asking for all tiers returns the semantic rows too", () => {
+  const keys = dimensionsFor(["js"], { tier: "all" }).map((d) => d.key);
+  for (const d of SEMANTIC_DIMENSIONS) assert.ok(keys.includes(d.key), `${d.key} is missing from the deep set`);
+});
+
+test("a principle's name is matched as a word, not as a substring", () => {
+  // The short entries are acronyms, and a bare substring match finds them
+  // inside ordinary English: "consolidated" holds SOLID, "dry-run" holds DRY,
+  // "kissed" holds KISS. The assert runs at module load over the whole
+  // registry, so one legitimate claim spelled that way kills scan, check and
+  // pin at startup and names a principle the sentence never mentions.
+  for (const claim of [
+    "errors are consolidated at the boundary",
+    "migrations are dry-run first",
+    "a stale handler is kissed goodbye",
+    "the payload is yagni-free",
+  ]) {
+    assert.doesNotThrow(() => assertClaimIsNotAVerdict([{ key: "x", claim, counterClaim: null }]), claim);
+  }
+
+  // The names themselves still refuse, whatever the surrounding case.
+  for (const claim of [
+    "the code follows SOLID",
+    "handlers are DRY",
+    "keep it KISS",
+    "YAGNI applies here",
+    "calls follow the law of demeter",
+  ]) {
+    assert.throws(() => assertClaimIsNotAVerdict([{ key: "x", claim, counterClaim: null }]), /principle/, claim);
+  }
+});
+
+test("a cast does not hide a result-shaped return either", () => {
+  // C11 closed this class on absent_is_null and nullish_default and left
+  // error_shape reading the raw argument, so `return { ok: true } as Result`,
+  // which is the ordinary way to write it in a typed repository, stopped being
+  // a conforming site while every throw beside it still counted.
+  assert.deepEqual(counts("error_shape", "export function f() { return { ok: true, value: 1 } }"), {
+    candidates: 1,
+    conforming: 1,
+  });
+
+  for (const cast of ["as Result", "satisfies Result", "!"]) {
+    const src = `export function f() { return { ok: true, value: 1 } ${cast} }`;
+    assert.deepEqual(counts("error_shape", src), { candidates: 1, conforming: 1 }, src);
   }
 });

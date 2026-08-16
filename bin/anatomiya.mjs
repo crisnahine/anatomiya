@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 import { scan } from "../lib/scan.mjs";
+import { loadTypeScript, notInstalledMessage } from "../lib/semantic.mjs";
 import { writeMap } from "../lib/write.mjs";
 import { check, formatReport } from "../lib/check.mjs";
-import { unexaminedLines } from "../lib/render.mjs";
+import { unexaminedLines, plural, untrackedSentence } from "../lib/render.mjs";
 import { statedSide } from "../lib/facts.mjs";
 import { collect, gitRoot } from "../lib/corpus.mjs";
 import { discover } from "../lib/areas.mjs";
@@ -12,9 +13,13 @@ import { encodePath } from "../lib/encode.mjs";
 import { listSome, LISTED, RULES_DIR } from "../lib/rules.mjs";
 
 const USAGE = [
-  "usage: anatomiya scan  [path] [--dry-run]",
+  "usage: anatomiya scan  [path] [--dry-run] [--deep]",
   "       anatomiya check [path] [--base <ref>]",
   "       anatomiya pin   [path] [--dry-run]",
+  "",
+  "--deep adds the typescript checker to a scan: about 26x slower, and it needs",
+  "the optional typescript dependency. It is a scan option only, because the",
+  "checker is whole-program and a check would have to build the corpus twice.",
   "",
   "[path] picks the repository, not a subtree: every command covers the whole",
   "repository the path is in, and scan prints the root it resolved to.",
@@ -36,11 +41,22 @@ function fail(message, code = 2) {
  */
 function parseArgs(argv) {
   const cmd = COMMANDS.has(argv[0]) ? argv.shift() : "scan";
-  const opts = { cmd, path: null, dryRun: false, baseRef: null };
+  const opts = { cmd, path: null, dryRun: false, baseRef: null, deep: false };
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === "-h" || arg === "--help") return { ...opts, help: true };
+    if (arg === "--deep") {
+      // The checker is whole-program. Answering a branch with it would mean
+      // building the whole corpus at two revisions, which is a scan's cost and
+      // not a check's, so the flag is refused here rather than accepted and
+      // quietly ignored: it was accepted, recorded as having run, and never run.
+      if (cmd !== "scan") {
+        fail(`--deep is not a ${cmd} option: the type checker runs on \`anatomiya scan --deep\`\n${USAGE}`);
+      }
+      opts.deep = true;
+      continue;
+    }
     if (arg === "--dry-run") {
       if (cmd === "check") fail(`--dry-run is not a ${cmd} option\n${USAGE}`);
       opts.dryRun = true;
@@ -79,8 +95,12 @@ try {
   process.exit(1);
 }
 
-async function runScan(cwd, { dryRun }) {
-  const result = await scan(cwd);
+async function runScan(cwd, { dryRun, deep = false }) {
+  // Refused before any work, not after the parse: --deep with no checker
+  // installed is an install problem, and a scan that runs for a minute and then
+  // says so has already spent the time (B13's shape).
+  if (deep && (await loadTypeScript()) === null) throw new Error(notInstalledMessage());
+  const result = await scan(cwd, { deep });
 
   if (result.parse.missingParser) throw notInstalled(result.parse.missingParser, "scan");
 
@@ -96,12 +116,12 @@ async function runScan(cwd, { dryRun }) {
   // `scan ./packages/api` in a monorepo maps the monorepo. Areas, the pin and
   // the baseline are all repository-anchored, so that is the behaviour they
   // need and the line is what says so.
-  console.log(`${result.corpus.files} files, ${result.areas.length} areas, ${result.durationMs}ms, root ${result.root}`);
+  console.log(`${plural(result.corpus.files, "file")}, ${plural(result.areas.length, "area")}, ${result.durationMs}ms, root ${result.root}`);
   if (result.corpus.untracked)
     console.log(
-      `${result.corpus.untracked} source files are untracked and were not counted: the corpus is tracked files only`
+      `${untrackedSentence(result.corpus.untracked)}. The corpus is tracked files only, so nothing there was counted`
     );
-  console.log(`${stated.length} of ${slots.length} claims stated, the rest print as counts`);
+  console.log(`${stated.length} of ${plural(slots.length, "claim")} stated, the rest print as counts`);
   console.log(baselineLine(result.baseline));
   if (result.corpus.truncated)
     console.log("only part of the corpus was read, so every directive is suppressed and only counts print");
@@ -109,8 +129,8 @@ async function runScan(cwd, { dryRun }) {
   // number printed beside "N files crashed the parser" invited exactly the
   // reading the overview line was fixed to stop.
   const barren = plan.uncovered - plan.orphaned;
-  if (plan.orphaned > 0) console.log(`${plan.orphaned} files in no area: too few per directory`);
-  if (barren > 0) console.log(`${barren} files in a directory nothing was counted in`);
+  if (plan.orphaned > 0) console.log(`${plural(plan.orphaned, "file")} in no area: too few per directory`);
+  if (barren > 0) console.log(`${plural(barren, "file")} in a directory nothing was counted in`);
   for (const line of unexaminedLines(result.parse)) console.log(line);
   if (result.authors.error)
     console.log(`history could not be read, so every claim fails the author gate: ${result.authors.error}`);
@@ -143,7 +163,7 @@ async function runScan(cwd, { dryRun }) {
     console.log("this is usually a missing interpreter rather than a repository that changed");
     return;
   }
-  console.log(dryRun ? `would write ${plan.write.length} files` : `wrote ${plan.write.length} files`);
+  console.log(dryRun ? `would write ${plural(plan.write.length, "file")}` : `wrote ${plural(plan.write.length, "file")}`);
   // Measured: a rewritten context file does not re-attach mid-session.
   if (!dryRun) console.log("a session already running still holds the old map; restart to pick it up");
 }
@@ -173,7 +193,7 @@ function baselineLine(b) {
     return `the pinned commit ${b.sha ? b.sha.slice(0, 8) : "?"} is gone from this clone, so every claim dropped to counts`;
   if (b.countsOnly)
     return "no baseline pinned: claims are measured against the current tree, and no finding can exceed FIX. `anatomiya pin` accepts one";
-  const drift = b.drift === null ? "" : `, ${b.drift} files changed since ${b.baseRef ? b.baseRef.ref : "the base"}`;
+  const drift = b.drift === null ? "" : `, ${plural(b.drift, "file")} changed since ${b.baseRef ? b.baseRef.ref : "the base"}`;
   return `baseline ${b.sha.slice(0, 8)}${drift}`;
 }
 

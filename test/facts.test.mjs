@@ -2,6 +2,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { execFileSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
 import { writeFacts, readFacts, statedSide, FACTS_SCHEMA, FACTS_PATH } from "../lib/facts.mjs";
@@ -55,6 +57,76 @@ test("what the writer emits is what the reader reads back", (t) => {
   assert.equal(facts.schema, FACTS_SCHEMA);
   assert.equal(facts.areas[0].dimensions[0].key, "k");
   assert.equal(statedSide(facts.areas[0].dimensions[0]).states, "claim");
+});
+
+test("a record written before the new counts existed still reads", (t) => {
+  // C10: an older record stays readable, and the three numbers the map prints
+  // are simply absent from one written before schema 6.
+  const dir = root(t);
+  mkdirSync(dirname(join(dir, FACTS_PATH)), { recursive: true });
+  writeFileSync(
+    join(dir, FACTS_PATH),
+    JSON.stringify({
+      schema: 5,
+      areas: [{ id: "a", path: "src", fileCount: 8, dimensions: [{ key: "k", directive: true, candidates: 4, conforming: 4 }] }],
+    })
+  );
+
+  const { facts, unreadable } = readFacts(dir);
+
+  assert.equal(unreadable, null, "a schema this build knows stays readable");
+  assert.equal(facts.areas[0].dimensions[0].moreExceptions, undefined, "and simply carries no such count");
+});
+
+test("the record carries the files this pass's dimension could speak about", (t) => {
+  // `applyGates` divides by `langFileCount`, the files the dimension could
+  // speak about, and the record stored only the numerator. So the one number a
+  // human needs to tell a narrow predicate from a rare construct was computed,
+  // shaped the gate, and was then dropped before anything could audit it
+  // (C2, C3). This pass's count beside this pass's `applicability`, which is
+  // the pair that divides: on a pinned repository the gate reads the
+  // baseline's, and storing that instead would put a numerator and a
+  // denominator from two populations on one line.
+  const dir = root(t);
+
+  writeFacts(dir, result([dim({ applicability: 3, langFileCount: 40 })]));
+  const { facts } = readFacts(dir);
+
+  assert.equal(facts.areas[0].dimensions[0].langFileCount, 40);
+});
+
+test("every number the rendered map prints comes back off the record", (t) => {
+  // The map is derivable from this file, which is why the check reads the
+  // record rather than the rendered map. Two numbers the renderer prints were
+  // computed, rendered and then dropped before the record was written: the
+  // count behind "and 6 more", and the namesake count that separates "this
+  // repository has no such habit" from "the predicate is looking in the wrong
+  // place" (C7).
+  const dir = root(t);
+
+  writeFacts(dir, result([
+    dim({
+      companionsElsewhere: 17,
+      exceptions: [{ path: "a.rb", count: 1 }],
+      moreExceptions: 6,
+      counterClaim: "the other way",
+      counterExceptions: [{ path: "b.rb", count: 1 }],
+      moreCounterExceptions: 2,
+    }),
+  ]));
+  const written = readFacts(dir).facts.areas[0].dimensions[0];
+
+  assert.equal(written.moreExceptions, 6, "the count behind the rendered \"and N more\"");
+  assert.equal(written.moreCounterExceptions, 2, "the same on the side the map may have stated");
+  assert.equal(written.companionsElsewhere, 17, "the namesake count an obligation renders (C7)");
+});
+
+test("a syntax dimension carries no companion count, because it has no companion", (t) => {
+  const dir = root(t);
+
+  writeFacts(dir, result([dim()]));
+
+  assert.equal("companionsElsewhere" in readFacts(dir).facts.areas[0].dimensions[0], false);
 });
 
 test("a stated inverse survives the trip, because the rendered map never says which side it is", (t) => {
@@ -164,4 +236,34 @@ test("a record written before the polarity fields existed still names a side", (
 
   assert.equal(unreadable, null, "an older record stays readable");
   assert.equal(statedSide(facts.areas[0].dimensions[0]).states, "claim");
+});
+
+test("a stored dimension carries the tier the check filters on", async (t) => {
+  // check.mjs counts the map's semantic claims with `d.tier === "semantic"`.
+  // The writer never stored the field, so that count was 0 for every map any
+  // scan has ever produced and the unmeasured-claims note could not fire. Read
+  // off a real scan rather than a hand-built record: the test that covered this
+  // planted `tier` into facts.json by hand, which is a shape the writer cannot
+  // produce, so it passed while the product was broken.
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-tierfield-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
+  mkdirSync(join(dir, "src"), { recursive: true });
+  for (let i = 0; i < 14; i++) {
+    writeFileSync(join(dir, "src", `f${i}.ts`), `export function f${i}(): number {\n  return ${i}\n}\n`);
+  }
+  git("init", "-q", "-b", "main");
+  git("config", "user.email", "t@t.test");
+  git("config", "user.name", "T");
+  git("add", "-A");
+  git("commit", "-qm", "init");
+  const bin = fileURLToPath(new URL("../bin/anatomiya.mjs", import.meta.url));
+  execFileSync(process.execPath, [bin, "scan", dir], { stdio: "pipe" });
+
+  const stored = JSON.parse(readFileSync(join(dir, ".claude/anatomiya/facts.json"), "utf8"));
+  const dims = stored.areas.flatMap((a) => a.dimensions ?? []);
+
+  assert.ok(dims.length > 0, "the fixture produced no dimensions to check");
+  const missing = dims.filter((d) => d.tier === undefined).map((d) => d.key);
+  assert.deepEqual(missing, [], "a stored dimension with no tier is one the check cannot classify");
 });

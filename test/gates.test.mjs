@@ -730,6 +730,9 @@ test("the counter-eligible set is exactly twelve named keys and every counter na
     // rewritten into the classic bug.
     "iterate_with_for_of",
     "spread_on_component", "text_translated",
+    // The inverse reads "a call chain crosses several types", which as a
+    // directive asks an agent to reach through one object to another.
+    "law_of_demeter",
     "migration_reversible", "migration_schema_only", "column_null_declared",
     "table_primary_key_declared", "reference_foreign_key",
   ];
@@ -870,4 +873,241 @@ test("a repository with no pin has no baseline to postdate", () => {
   const unpinned = { gate: null, pinned: null, dims: [], population: {} };
 
   assert.equal(blockedFor(unpinned, null), null);
+});
+
+test("a file the parser could not read is not a file the dimension could speak about", () => {
+  // `applicability` counts files that produced a site, and only an examined file
+  // can produce one. Counting every file of the language as the denominator
+  // divides a numerator over parsed files by a population that includes files
+  // nothing was read from, and the applicability gate then reads a predicate as
+  // narrow because the repository holds syntax this tool does not take.
+  // Measured: 55 of react's 122 areas hold at least one such file, one of them
+  // every file it has.
+  const area = {
+    path: "src",
+    langs: ["js"],
+    fileCount: 4,
+    files: [
+      { rel: "src/a.ts", lang: "js" },
+      { rel: "src/b.ts", lang: "js" },
+      { rel: "src/c.ts", lang: "js" },
+      { rel: "src/d.ts", lang: "js" },
+    ],
+  };
+  const hit = [{ conforming: true, where: null }];
+  const parsed = [
+    { rel: "src/a.ts", ok: true, hits: { swallowed_error: hit } },
+    { rel: "src/b.ts", ok: true, hits: { swallowed_error: hit } },
+    // Flow in a .js file, or any syntax the parser rejects: examined, and it
+    // answered that it could not read this.
+    { rel: "src/c.ts", ok: false, kind: "rejected" },
+    { rel: "src/d.ts", ok: false, kind: "crashed" },
+  ];
+
+  const [dim] = reduce.reduceArea(area, parsed).filter((d) => d.key === "swallowed_error");
+
+  assert.equal(dim.applicability, 2, "two files produced a site");
+  assert.equal(dim.langFileCount, 2, "and two are all this dimension could have spoken about");
+});
+
+test("the denominator counts the records handed in, not today's file list", () => {
+  // The baseline pass reduces records keyed by the PINNED paths against an area
+  // holding today's. Reading the denominator off `area.files` drops every file
+  // renamed since the pin, the applicability floor falls with it, and a `git mv`
+  // with no content change turns a suppressed claim into a directive the check
+  // then enforces. Reproduced end to end: 12 renames took a slot from
+  // gate "applicability" to states "claim".
+  const area = {
+    path: "src",
+    langs: ["js"],
+    fileCount: 20,
+    files: Array.from({ length: 20 }, (_, i) => ({ rel: `src/today${i}.ts`, lang: "js" })),
+  };
+  const hit = [{ conforming: true, where: null }];
+  // What the pinned pass hands in: the same twenty files under their old names.
+  const parsed = Array.from({ length: 20 }, (_, i) => ({
+    rel: `src/pinned${i}.ts`,
+    ok: true,
+    hits: i < 4 ? { module_state_const: hit } : {},
+  }));
+
+  const [dim] = reduce.reduceArea(area, parsed).filter((d) => d.key === "module_state_const");
+
+  assert.equal(dim.applicability, 4);
+  assert.equal(dim.langFileCount, 20, "twenty records were read, whatever they are called today");
+});
+
+test("an obligation's denominator is examined files too, because an unread producer answers nothing", () => {
+  // `applyPairings` skips a record that is not ok, so an unparsed producer
+  // contributes to no pairing site. Keeping it in the denominator is the same
+  // split between populations the syntax dimensions were just fixed for.
+  const area = {
+    path: "app/models",
+    langs: ["ruby"],
+    fileCount: 4,
+    files: ["a", "b", "c", "d"].map((n) => ({ rel: `app/models/${n}.rb`, lang: "ruby" })),
+  };
+  const hit = [{ conforming: true, elsewhere: false }];
+  const parsed = [
+    { rel: "app/models/a.rb", ok: true, hits: { model_spec: hit } },
+    { rel: "app/models/b.rb", ok: true, hits: { model_spec: hit } },
+    { rel: "app/models/c.rb", ok: false, kind: "rejected" },
+    { rel: "app/models/d.rb", ok: false, kind: "crashed" },
+  ];
+
+  const [dim] = reduce.reduceArea(area, parsed).filter((d) => d.key === "model_spec");
+
+  assert.equal(dim.applicability, 2);
+  assert.equal(dim.langFileCount, 2, "two producers were read, and two is what the ratio is over");
+});
+
+test("the denominator counts only the languages the dimension speaks, in a mixed area", () => {
+  // The whole reason `langFileCount` exists. The five JSX dimensions declare
+  // ["jsx"] and never ["js","jsx"] so they are judged against the .tsx files
+  // rather than against a directory of .ts, and nothing tested that: replacing
+  // the language test with `examined.length` passed the entire suite.
+  const area = {
+    path: "src",
+    langs: ["js", "jsx"],
+    fileCount: 10,
+    files: [
+      ...Array.from({ length: 8 }, (_, i) => ({ rel: `src/plain${i}.ts`, lang: "js" })),
+      ...Array.from({ length: 2 }, (_, i) => ({ rel: `src/view${i}.tsx`, lang: "jsx" })),
+    ],
+  };
+  const hit = [{ conforming: true, where: null }];
+  const parsed = area.files.map((f) => ({
+    rel: f.rel,
+    ok: true,
+    hits: f.lang === "jsx" ? { hook_call_style: hit, swallowed_error: hit } : { swallowed_error: hit },
+  }));
+
+  const dims = reduce.reduceArea(area, parsed);
+  const jsx = dims.find((d) => d.key === "hook_call_style");
+  const js = dims.find((d) => d.key === "swallowed_error");
+
+  assert.equal(jsx.langFileCount, 2, "a JSX claim speaks for the two .tsx files, not for all ten");
+  assert.equal(js.langFileCount, 10, "a js dimension reaches .tsx too, so it speaks for all ten");
+});
+
+test("a file whose types were stripped leaves the denominator of the dimensions it was never asked", () => {
+  // The retry blanks the annotations, so the type-reading dimensions are
+  // dropped for that file: it holds no answer either way. Counting it in their
+  // denominator anyway renders "10 of 10 sites across 10 of 20 files", which
+  // tells the agent half the directory declines a convention nobody measured
+  // there. Every other dimension did run on it and keeps it.
+  const plain = Array.from({ length: 10 }, (_, i) => `a/plain${i}.js`);
+  const flowed = Array.from({ length: 10 }, (_, i) => `a/flow${i}.js`);
+  const area = { langs: ["js"], files: [...plain, ...flowed].map((rel) => ({ rel, lang: "js" })) };
+  const parsed = [
+    ...plain.map((rel) => ({
+      rel,
+      ok: true,
+      hits: {
+        explicit_return_type: [{ conforming: true }],
+        function_style: [{ conforming: true }],
+      },
+    })),
+    ...flowed.map((rel) => ({
+      rel,
+      ok: true,
+      stripped: true,
+      hits: { function_style: [{ conforming: true }] },
+    })),
+  ];
+
+  const dims = reduce.reduceArea(area, parsed);
+  const typed = dims.find((d) => d.key === "explicit_return_type");
+  const untyped = dims.find((d) => d.key === "function_style");
+
+  assert.equal(typed.langFileCount, 10, "a stripped file is not a file this dimension declined");
+  assert.equal(untyped.langFileCount, 20, "every other dimension did run on it");
+});
+test("a semantic dimension states nothing when the tier ran degraded", () => {
+  const d = dim({ tier: "semantic" });
+  const r = verdictFor(d, {
+    current: { fileCount: 12, dirCount: 2 },
+    authors: 3,
+    repoAuthors: 3,
+    semantic: { status: "degraded", reason: "low-resolution" },
+  });
+  assert.equal(r.directive, false);
+  assert.equal(r.states, null);
+  assert.equal(r.gate, "degraded-semantic");
+  assert.equal(r.counterGate, "degraded-semantic", "a block closes both sides");
+});
+
+test("a degraded tier does not touch the syntactic dimensions beside it", () => {
+  const d = dim({ tier: "syntactic" });
+  const r = verdictFor(d, {
+    current: { fileCount: 12, dirCount: 2 },
+    authors: 3,
+    repoAuthors: 3,
+    semantic: { status: "degraded", reason: "low-resolution" },
+  });
+  assert.equal(r.directive, true);
+  assert.equal(r.gate, null);
+});
+
+test("a truncated corpus still outranks a degraded tier", () => {
+  const d = dim({ tier: "semantic" });
+  const r = verdictFor(d, {
+    current: { fileCount: 12, dirCount: 2 },
+    authors: 3,
+    repoAuthors: 3,
+    truncated: true,
+    semantic: { status: "degraded", reason: "low-resolution" },
+  });
+  assert.equal(r.gate, "corpus-truncated");
+});
+
+test("the reducer offers the semantic rows only when it is asked for them", () => {
+  // The scan passes a tier down and the reducer dropped it on the floor, so the
+  // checker's hits arrived on the records and no slot was ever built from them:
+  // typeorm ran the tier, produced 299 chains, and reported nothing.
+  const rels = ["a/0.ts", "a/1.ts"];
+  const area = { langs: ["js"], files: rels.map((rel) => ({ rel, lang: "js" })) };
+  const parsed = rels.map((rel) => ({
+    rel,
+    ok: true,
+    hits: { law_of_demeter: [{ conforming: false }, { conforming: true }] },
+  }));
+
+  assert.equal(
+    reduce.reduceArea(area, parsed).some((d) => d.key === "law_of_demeter"),
+    false,
+    "the default caller must not be handed a claim the checker never ran for"
+  );
+  const deep = reduce.reduceArea(area, parsed, { tier: "all" }).find((d) => d.key === "law_of_demeter");
+  assert.ok(deep, "asking for the tier has to reach dimensionsFor");
+  assert.equal(deep.candidates, 4);
+  assert.equal(deep.conforming, 2);
+});
+
+test("a semantic dimension with no baseline names the tier, not a greenfield directory", () => {
+  // The tier does not run at the pin and `pin --deep` is refused, so a semantic
+  // row on any pinned repository has no baselineDim and was gated
+  // postdates-baseline: permanently, and naming a cause that is not the reason.
+  // The area is not new; the checker was never asked there.
+  const d = dim({ tier: "semantic" });
+  const r = verdictFor(d, {
+    current: { fileCount: 24, dirCount: 2 },
+    authors: 3,
+    repoAuthors: 3,
+    measured: { gate: null, pinned: { fileCount: 24, dirCount: 2 }, dims: [] },
+    baselineDim: null,
+  });
+
+  assert.equal(r.gate, "semantic-unbaselined");
+  assert.equal(r.states, null);
+
+  // A syntactic row in a genuinely new directory still reads as greenfield.
+  const s = verdictFor(dim({ tier: "syntactic" }), {
+    current: { fileCount: 24, dirCount: 2 },
+    authors: 3,
+    repoAuthors: 3,
+    measured: { gate: null, pinned: { fileCount: 24, dirCount: 2 }, dims: [] },
+    baselineDim: null,
+  });
+  assert.equal(s.gate, "postdates-baseline");
 });

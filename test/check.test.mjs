@@ -5,9 +5,11 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, symlinkSync, rmSyn
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { execFileSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
+import { installWithoutStripper, FLOW_SOURCE } from "./no-stripper.mjs";
 
 import { needsRuby } from "./ruby-available.mjs";
-import { check, severityFor, formatReport } from "../lib/check.mjs";
+import { check, severityFor, formatReport, unreadReason } from "../lib/check.mjs";
 import { scan } from "../lib/scan.mjs";
 import { writeMap } from "../lib/write.mjs";
 import { writeFacts } from "../lib/facts.mjs";
@@ -1322,4 +1324,198 @@ test("a producer whose companion the branch never wrote is still reported", asyn
   assert.equal(owed.length, 1, `expected the missing spec to be reported: ${JSON.stringify(r.findings)}`);
   assert.equal(owed[0].path, "app/models/lonely.rb");
   assert.match(owed[0].reason, /no "spec\/models\/lonely_spec\.rb"/);
+});
+
+test("a file the check could not read names its own cause, in the singular", () => {
+  // This surface always names one file, so it always takes the singular verb,
+  // and the four causes are four different things to do about it: a crash is
+  // this tool's, rejected syntax is the branch's own code, the cap is a
+  // generated file nobody writes by hand, and the rest is this tool or the
+  // filesystem. Folding any of them into another sends the reader after the
+  // wrong thing.
+  assert.equal(unreadReason({ kind: "crashed" }), "crashed the parser");
+  assert.equal(unreadReason({ kind: "rejected" }), "holds syntax the parser rejected");
+  assert.equal(unreadReason({ kind: "oversize" }), "exceeded the size cap");
+  assert.equal(unreadReason({ kind: "unreadable" }), "could not be parsed");
+  assert.equal(unreadReason(null), "could not be parsed", "no record at all is the same as unreadable");
+});
+
+
+/**
+ * A repository whose branch adds a Flow file to an area that states the
+ * return-type claim. Flow is not TypeScript, so the parser rejects it and the
+ * worker retries with the annotations blanked.
+ */
+async function flowRepo(t) {
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-flow-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
+  mkdirSync(join(dir, "src"), { recursive: true });
+  for (let i = 0; i < 12; i++) {
+    writeFileSync(join(dir, "src", `f${i}.ts`), `export function f${i}(): number { return ${i} }\n`);
+  }
+  git("init", "-q", "-b", "main");
+  git("config", "user.email", "t@t.test");
+  git("config", "user.name", "T");
+  git("add", "-A");
+  git("commit", "-qm", "init");
+  const bin = fileURLToPath(new URL("../bin/anatomiya.mjs", import.meta.url));
+  execFileSync(process.execPath, [bin, "scan", dir], { stdio: "pipe" });
+  git("checkout", "-q", "-b", "probe");
+  writeFileSync(
+    join(dir, "src", "flowed.js"),
+    ["// @flow", "type Opts = {| name: string |}", "export function describe(o: Opts): string { return o.name }"].join("\n") + "\n"
+  );
+  git("add", "-A");
+  git("commit", "-qm", "flow");
+  return dir;
+}
+
+test("the check does not report a type claim against a file whose types were stripped", async (t) => {
+  // The check walks the same tree the scan counted, and on a retried file the
+  // annotations are blanked. Left alone it prints "exported functions declare
+  // their return type" next to a line that declares one.
+  const repo = await flowRepo(t);
+
+  const report = await check(repo, { baseRef: "main" });
+  const text = formatReport(report);
+
+  assert.doesNotMatch(
+    text,
+    /exported functions declare their return type/,
+    `a claim about annotations, on a file whose annotations were stripped:\n${text}`
+  );
+});
+
+test("a check that could not load the stripper names the dependency too", async (t) => {
+  // The check runs in CI, where nobody watched the scan output, so the caveat
+  // has to stand on its own: a Flow file it could not read reads as a broken
+  // file rather than a missing dependency.
+  const home = installWithoutStripper(t);
+
+  const repo = mkdtempSync(join(tmpdir(), "anatomiya-flowcheck-"));
+  t.after(() => rmSync(repo, { recursive: true, force: true }));
+  const git = (...a) => execFileSync("git", a, { cwd: repo, stdio: "pipe" });
+  mkdirSync(join(repo, "src"), { recursive: true });
+  for (let i = 0; i < 12; i++) {
+    writeFileSync(join(repo, "src", `f${i}.ts`), `export function f${i}(): number { return ${i} }\n`);
+  }
+  git("init", "-q", "-b", "main");
+  git("config", "user.email", "t@t.test");
+  git("config", "user.name", "T");
+  git("add", "-A");
+  git("commit", "-qm", "init");
+  execFileSync(process.execPath, [join(home, "bin", "anatomiya.mjs"), "scan", repo], { stdio: "pipe" });
+  git("checkout", "-q", "-b", "probe");
+  writeFileSync(join(repo, "src", "flowed.js"), FLOW_SOURCE + "\n");
+  git("add", "-A");
+  git("commit", "-qm", "flow");
+
+  const out = execFileSync(process.execPath, [join(home, "bin", "anatomiya.mjs"), "check", repo, "--base", "main"], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+
+  assert.match(out, /src\/flowed\.js/, `the Flow file was expected in the caveats:\n${out}`);
+  assert.match(out, /flow-remove-types is not installed/, `nothing named the missing dependency:\n${out}`);
+});
+
+test("a claim is not silenced by a finding invented off the base's stripped tree", async (t) => {
+  // The base side goes through the same retry, so on a Flow file its
+  // annotations are blanked too. Asking a blind row about that tree answers
+  // "no return type" for every function in it, and those answers cancel the
+  // real ones on the head side: a violation the branch genuinely has is
+  // reported as pre-existing and disappears.
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-basestrip-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
+  mkdirSync(join(dir, "src"), { recursive: true });
+  for (let i = 0; i < 14; i++) {
+    writeFileSync(join(dir, "src", `f${i}.ts`), `export function f${i}(): number {\n  return ${i}\n}\n`);
+  }
+  // Flow-only syntax, so the base is retried and its annotations blanked.
+  writeFileSync(
+    join(dir, "src", "legacy.js"),
+    ["// @flow", "type O = {| n: string |}", "export function legacy(o: O) {", "  return o.n", "}"].join("\n") + "\n"
+  );
+  git("init", "-q", "-b", "main");
+  git("config", "user.email", "t@t.test");
+  git("config", "user.name", "T");
+  git("add", "-A");
+  git("commit", "-qm", "init");
+  const bin = fileURLToPath(new URL("../bin/anatomiya.mjs", import.meta.url));
+  execFileSync(process.execPath, [bin, "scan", dir], { stdio: "pipe" });
+
+  git("checkout", "-q", "-b", "migrate");
+  // Same file, same missing return type. Only the Flow-only syntax goes, so the
+  // head parses as written and the base is still stripped.
+  writeFileSync(
+    join(dir, "src", "legacy.js"),
+    ["// @flow", "type O = {n: string}", "export function legacy(o: O) {", "  return o.n", "}"].join("\n") + "\n"
+  );
+  git("commit", "-qam", "migrate");
+
+  const out = execFileSync(process.execPath, [bin, "check", dir, "--base", "main"], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+
+  assert.match(
+    out,
+    /exported functions declare their return type/,
+    `the head file declares no return type and nothing said so:\n${out}`
+  );
+});
+
+test("a map holding a type-checked claim says the check did not enforce it", async (t) => {
+  // A check that reports no findings is what the command file tells the agent
+  // to trust, so a whole class of claim going unasked has to be said out loud.
+  // Same shape as B13 for a missing parser and F15 for an unreadable git, and
+  // both of those were real bugs.
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-deepcaveat-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
+  mkdirSync(join(dir, "src"), { recursive: true });
+  for (let i = 0; i < 14; i++) {
+    writeFileSync(join(dir, "src", `f${i}.ts`), `export function f${i}(s: string) {\n  return s.trim().toLowerCase()\n}\n`);
+  }
+  git("init", "-q", "-b", "main");
+  git("config", "user.email", "t@t.test");
+  git("config", "user.name", "T");
+  git("add", "-A");
+  git("commit", "-qm", "init");
+  const bin = fileURLToPath(new URL("../bin/anatomiya.mjs", import.meta.url));
+  execFileSync(process.execPath, [bin, "scan", dir], { stdio: "pipe" });
+
+  // Plant a stated semantic claim, which is what a --deep scan would have left.
+  const factsPath = join(dir, ".claude/anatomiya/facts.json");
+  const facts = JSON.parse(readFileSync(factsPath, "utf8"));
+  facts.areas[0].dimensions.push({
+    key: "law_of_demeter",
+    tier: "semantic",
+    claim: "a call chain stays inside one type",
+    precision: "partial",
+    applicability: 14,
+    langFileCount: 14,
+    candidates: 40,
+    conforming: 39,
+    files: [],
+    directive: true,
+    states: "claim",
+    gate: null,
+    exceptions: [],
+  });
+  writeFileSync(factsPath, JSON.stringify(facts));
+
+  git("checkout", "-q", "-b", "probe");
+  writeFileSync(join(dir, "src", "f0.ts"), `export function f0(s: string) {\n  return s.trim()\n}\n`);
+  git("commit", "-qam", "probe");
+
+  const out = execFileSync(process.execPath, [bin, "check", dir, "--base", "main"], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+
+  assert.match(out, /type-checked claim is stated in the map and not enforced on a branch/, out);
+  assert.match(out, /anatomiya scan --deep/, "and it says where the tier does run");
 });

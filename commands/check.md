@@ -41,3 +41,12 @@ Run the check and report what it found.
 
 Findings never set the exit code. A non-zero exit means the check could not run: show its output and
 stop, and do not guess at what it found.
+
+### Type-checked claims
+
+The check has no `--deep`: the checker is whole-program, so answering a branch with it would mean
+building the whole corpus at two revisions, which is a scan's cost. Type-checked claims are measured
+by `anatomiya scan --deep` and printed on the map.
+
+If the map holds one, the report says so on its own line. A report with no findings does not mean
+that claim was clean on this branch, because it was not asked.

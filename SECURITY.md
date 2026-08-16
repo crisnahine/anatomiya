@@ -38,7 +38,10 @@ them that configuration is code:
 - An `sgconfig.yml` `customLanguages` entry is a `dlopen` of a shared object the repository supplies.
 
 This is why anatomiya ships no third-party analysis CLI and calls parsers as libraries instead.
-`oxc-parser` is the only runtime dependency. Ruby files go through `prism`, which is a default gem,
+There are two runtime dependencies, `oxc-parser` and `flow-remove-types`. Neither runs a binary of
+its own: the second is pure JavaScript, is loaded only inside the parser child, and is reached only
+after `oxc-parser` has already rejected a `.js`, `.jsx`, `.mjs` or `.cjs` file. It rewrites that
+file's text in memory and nothing is written back to disk. Ruby files go through `prism`, which is a default gem,
 in a child started as `ruby --disable-gems -e <script>` with `RUBYOPT`, `RUBYLIB` and `GEM_HOME`
 dropped from its environment, because each of those can inject a `-r` into a process about to be
 pointed at repository files. The parser child gets `PATH` and `LANG` and nothing else.
@@ -146,8 +149,8 @@ Say the quiet part plainly.
 - **No sandbox.** The scan runs with your user's permissions, your filesystem and your network. There
   is no seccomp, no container, no dropped privileges. If a parser has a memory-safety bug that gets
   past the child process boundary, it runs as you.
-- **Dependencies are trusted.** `oxc-parser` from npm, `prism` from your Ruby install, `git`, and
-  `ps`. Their supply chain is not something this tool checks.
+- **Dependencies are trusted.** `oxc-parser` and `flow-remove-types` from npm, `prism` from your
+  Ruby install, `git`, and `ps`. Their supply chain is not something this tool checks.
 - **No semantic tier ships, so nothing here reads `tsconfig.json`.** A TypeScript-checker tier is
   decisions B7 to B9 in `DECISIONS.md` and all three are `todo`: `typescript` is not a dependency and
   the CLI takes no flag that would reach it. If it is ever built it will read the repository's

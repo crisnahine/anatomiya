@@ -117,6 +117,22 @@ millisecond, so a poison file costs one file rather than the run. The crash arri
 `exit` handler, the file is charged as a parse failure, the worker is replaced, and the scan
 continues.
 
+A `.js`, `.jsx`, `.mjs` or `.cjs` file the parser rejects is retried once with its Flow types
+stripped, because oxc refuses Flow by name and a Flow file is not a broken one. react is written in
+Flow: 287 of its 2,277 files were charged as rejected before, and 2 are now. The strip replaces
+types with whitespace, so the length in UTF-16 code units does not move and every offset still
+lands where it does in the source, which is the unit oxc counts in. A retry that still reports errors leaves the file rejected, since the retry may not turn a
+genuine syntax error into a clean parse. The `.ts` family is not retried, because Flow is not legal
+there.
+
+A retried file has its annotations blanked, so three claims go unanswered for it: the two that ask
+about the annotation itself, and `relative imports carry the file extension`, whose sites include the
+`import type` statements the strip deletes outright. The file is left out of those three
+denominators as well, because a file nobody asked is not a file that declined. Every claim that
+reads code is answered as usual. If `flow-remove-types` is not installed at all the retry cannot
+run, and the scan and the check both say so by name rather than leaving a pile of rejected files
+with no explanation.
+
 A file is unexamined in four ways, and the scan names them apart because the reader's next move
 differs: it crashed the parser, the parser rejected its syntax, this tool could not read it, or it
 was over the size cap. The second is new in this shape. Both parsers recover from a syntax error and
@@ -239,6 +255,22 @@ Ruby, which is what takes Ruby from 6 to 11.
 A dimension that finds zero sites in an area produces no slot at all. The area file only lists
 dimensions that appeared.
 
+Each dimension also states, in words, which files could have participated at all, and what its
+predicate cannot see where it is partial. `applicability` is otherwise whatever the predicate
+happened to emit, so one seeing a tenth of its own construct produces a ratio of 1.00 over four
+files and reads as a strong convention with nothing on the page to contradict it. The sentence is
+checked when the registry loads, and every row carries witness sources: the ones the sentence says
+are applicable, and the neighbouring constructs that must not count. Where a sentence names several
+forms, each one the code treats differently gets a source, because one source proves the sentence
+names something and nothing more. Where the predicate recognises its construct through a closed
+table of names, every member of that table is driven through it as well, since a table shrinking
+changes no shape and quietly narrows which repositories the dimension can speak about at all.
+
+`npm run audit:applicability` reads scanned repositories back and ranks every dimension by how much
+of an area it speaks for, which is how a narrow predicate is found before somebody reads the map
+rather than after. A low share is not a defect on its own: measured across express, sidekiq,
+vuejs/core and mastodon, every flagged row named a construct that is simply rare.
+
 ## 5. The gates
 
 A dimension may state a directive only if it clears every gate. Otherwise its counts print with the
@@ -307,6 +339,7 @@ Four conditions stop a directive before any gate is consulted:
 | `unreachable` | the pinned commit is gone from this clone, usually a squash-merge. Every claim drops to counts, and stored counts are never fallen back on |
 | `population-change` | a pinned file is no longer in this area, or would not come back or parse. Suppressed until a human re-pins |
 | `postdates-baseline` | nothing in this area, or nothing this dimension counts, existed at the pin. Greenfield directories are where agents write most, and there the baseline would be the agent's own output at 100% |
+| `semantic-unbaselined` | a type-checked claim on a pinned repository. The checker does not run over the pinned blobs and `pin --deep` is refused, so there is nothing at the pin to compare against and the counts print without a directive. Not the same as a greenfield directory, which is why it has its own name |
 | `corpus-truncated` | the scan hit a cap and answered for a subset of the repository |
 
 A rename map from `git diff --find-renames` is carried into the lookup, so a renamed directory finds
