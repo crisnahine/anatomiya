@@ -82,3 +82,35 @@ test("every semantic dimension is witnessed here", () => {
     "a semantic dimension without a witness ships a predicate nobody proved"
   );
 });
+
+test("a chain through a dependency's types is resolved, not read as one type", needsTs, async () => {
+  // The confinement compared the path TypeScript asked for against the root as
+  // given, and TypeScript asks through realpath. On macOS /tmp is a symlink, so
+  // every read of a file the compiler discovered itself was refused, every
+  // import resolved to any, and every chain read as conforming: the tier
+  // answered 0% resolution and stated nothing, everywhere.
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-dep-"));
+  try {
+    writeFileSync(join(dir, "tsconfig.json"), `{"compilerOptions":{"strict":true,"module":"commonjs"}}`);
+    mkdirSync(join(dir, "node_modules/dep"), { recursive: true });
+    writeFileSync(join(dir, "node_modules/dep/package.json"), `{"name":"dep","version":"1.0.0","types":"index.d.ts"}`);
+    writeFileSync(
+      join(dir, "node_modules/dep/index.d.ts"),
+      "export declare class Thing { inner(): Inner }\nexport declare class Inner { go(): string }\n"
+    );
+    writeFileSync(
+      join(dir, "a.ts"),
+      `import { Thing } from "dep"\nexport function f(t: Thing) {\n  return t.inner().go()\n}\n`
+    );
+
+    const r = await runSemantic(dir, [{ rel: "a.ts", abs: join(dir, "a.ts"), lang: "js" }]);
+    const hits = r.records.get("a.ts")?.hits?.law_of_demeter ?? [];
+
+    assert.ok(r.typedResolutionRate > 0.5, `types did not resolve: rate ${r.typedResolutionRate}`);
+    assert.equal(r.status, "ok", `the tier reported ${r.reason}`);
+    assert.equal(hits.length, 1);
+    assert.equal(hits[0].conforming, false, "Thing, Inner and string are three types");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

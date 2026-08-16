@@ -1060,3 +1060,26 @@ test("a truncated corpus still outranks a degraded tier", () => {
   });
   assert.equal(r.gate, "corpus-truncated");
 });
+
+test("the reducer offers the semantic rows only when it is asked for them", () => {
+  // The scan passes a tier down and the reducer dropped it on the floor, so the
+  // checker's hits arrived on the records and no slot was ever built from them:
+  // typeorm ran the tier, produced 299 chains, and reported nothing.
+  const rels = ["a/0.ts", "a/1.ts"];
+  const area = { langs: ["js"], files: rels.map((rel) => ({ rel, lang: "js" })) };
+  const parsed = rels.map((rel) => ({
+    rel,
+    ok: true,
+    hits: { law_of_demeter: [{ conforming: false }, { conforming: true }] },
+  }));
+
+  assert.equal(
+    reduce.reduceArea(area, parsed).some((d) => d.key === "law_of_demeter"),
+    false,
+    "the default caller must not be handed a claim the checker never ran for"
+  );
+  const deep = reduce.reduceArea(area, parsed, { tier: "all" }).find((d) => d.key === "law_of_demeter");
+  assert.ok(deep, "asking for the tier has to reach dimensionsFor");
+  assert.equal(deep.candidates, 4);
+  assert.equal(deep.conforming, 2);
+});
