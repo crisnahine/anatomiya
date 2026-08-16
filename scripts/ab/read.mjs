@@ -21,6 +21,15 @@ export function readingFor({ a, b }, headroom) {
     ].join("\n");
   }
 
+  if (ra === null || rb === null) {
+    const which = ra === null ? "with the map" : "without it";
+    return [
+      "**Only one arm wrote a site this claim counts.** The run",
+      `${which} produced nothing the dimension measures, so there are not two numbers to compare.`,
+      "Read it as a run that did not happen rather than as a score of zero.",
+    ].join(" ");
+  }
+
   if (ra === rb && Number(ra) === 1) {
     return [
       "**Both arms wrote conforming code every time.** That is a null result about this task, not",
@@ -31,7 +40,15 @@ export function readingFor({ a, b }, headroom) {
     ].join("\n");
   }
 
-  const [better, worse] = Number(ra) >= Number(rb) ? ["with the map", "without it"] : ["without the map", "with it"];
+  if (ra === rb) {
+    return [
+      `**Both arms scored ${ra}.** The map did not move this claim on this task. That is a result`,
+      "about the two arms rather than about the run, and it is only as strong as the trial counts",
+      "above: a handful of files either side is a handful of files.",
+    ].join(" ");
+  }
+
+  const [better, worse] = Number(ra) > Number(rb) ? ["with the map", "without it"] : ["without the map", "with it"];
   return [
     `**The arms differ: ${ra} against ${rb}.** The run ${better} produced the conforming form more`,
     `often than the run ${worse}. Read it against the trial counts above rather than on its own: a`,

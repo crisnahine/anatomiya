@@ -126,3 +126,21 @@ test("a result where both arms scored perfectly says so instead of leaving it to
   const nothing = readingFor({ a: { candidates: 0, conforming: 0 }, b: { candidates: 0, conforming: 0 } }, 0.077);
   assert.match(nothing, /neither arm wrote a site this claim counts/i);
 });
+
+test("equal ratios are not a difference, and a missing arm is not a loser", () => {
+  // The committed result file is the artifact the experiment is quoted from.
+  // It asserted "The arms differ: 0.900 against 0.900", and Number(null) is 0,
+  // so an arm that wrote no countable site was declared the loser and the word
+  // null landed in the doc.
+  const equal = readingFor({ a: { candidates: 30, conforming: 27 }, b: { candidates: 30, conforming: 27 } }, 0.1);
+  assert.doesNotMatch(equal, /arms differ/);
+  assert.match(equal, /both arms scored 0\.900/i);
+
+  const oneSided = readingFor({ a: { candidates: 0, conforming: 0 }, b: { candidates: 8, conforming: 7 } }, 0.1);
+  assert.doesNotMatch(oneSided, /null/);
+  assert.match(oneSided, /only one arm wrote a site this claim counts/i);
+
+  // A real difference still reads as one.
+  const moved = readingFor({ a: { candidates: 15, conforming: 15 }, b: { candidates: 9, conforming: 6 } }, 0.1);
+  assert.match(moved, /1\.000 against 0\.667/);
+});
