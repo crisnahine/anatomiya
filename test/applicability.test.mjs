@@ -395,6 +395,9 @@ const WITNESSES = {
     applicable: [
       `class W\n  include Sidekiq::Worker\nend`,
       `module M\n  include Enumerable\nend`,
+      // The sentence says once per constant, and `include A, B` is where that
+      // is either true or a half count.
+      { source: `class W\n  include A, B\nend`, sites: 2 },
     ],
     // Inside a method it is a call made when the method runs, not a mixin the
     // body declares.
