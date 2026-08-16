@@ -986,3 +986,37 @@ test("the denominator counts only the languages the dimension speaks, in a mixed
   assert.equal(jsx.langFileCount, 2, "a JSX claim speaks for the two .tsx files, not for all ten");
   assert.equal(js.langFileCount, 10, "a js dimension reaches .tsx too, so it speaks for all ten");
 });
+
+test("a file whose types were stripped leaves the denominator of the dimensions it was never asked", () => {
+  // The retry blanks the annotations, so the type-reading dimensions are
+  // dropped for that file: it holds no answer either way. Counting it in their
+  // denominator anyway renders "10 of 10 sites across 10 of 20 files", which
+  // tells the agent half the directory declines a convention nobody measured
+  // there. Every other dimension did run on it and keeps it.
+  const plain = Array.from({ length: 10 }, (_, i) => `a/plain${i}.js`);
+  const flowed = Array.from({ length: 10 }, (_, i) => `a/flow${i}.js`);
+  const area = { langs: ["js"], files: [...plain, ...flowed].map((rel) => ({ rel, lang: "js" })) };
+  const parsed = [
+    ...plain.map((rel) => ({
+      rel,
+      ok: true,
+      hits: {
+        explicit_return_type: [{ conforming: true }],
+        function_style: [{ conforming: true }],
+      },
+    })),
+    ...flowed.map((rel) => ({
+      rel,
+      ok: true,
+      stripped: true,
+      hits: { function_style: [{ conforming: true }] },
+    })),
+  ];
+
+  const dims = reduce.reduceArea(area, parsed);
+  const typed = dims.find((d) => d.key === "explicit_return_type");
+  const untyped = dims.find((d) => d.key === "function_style");
+
+  assert.equal(typed.langFileCount, 10, "a stripped file is not a file this dimension declined");
+  assert.equal(untyped.langFileCount, 20, "every other dimension did run on it");
+});
