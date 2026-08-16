@@ -195,6 +195,16 @@ const SRC = {
     end
   `,
 
+  http_model: `
+    class Order
+      def sync
+        Client.find(3)
+        client.update(name: "x")
+        ApiClient.get("/x")
+      end
+    end
+  `,
+
   scopes: `
     class Outer
       def run
@@ -636,4 +646,8 @@ test("an instance-variable logger conforms too", needsRuby, () => {
 
 test("Net::HTTP and URI.open are direct sites and client calls conform", needsRuby, () => {
   assert.deepEqual(counts("http_through_client", "http_mixed"), { candidates: 4, conforming: 2 });
+});
+
+test("an ActiveRecord-shaped call on a client-named constant is not an HTTP site", needsRuby, () => {
+  assert.deepEqual(counts("http_through_client", "http_model"), { candidates: 1, conforming: 1 });
 });

@@ -29,6 +29,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   corpus holds a wrapper-shaped file, so a repository that logs to the console on purpose never
   carries a line that can only read zero.
 
+- The research catalogue this work answers: `docs/research/why-agents-miss-house-style.md`, 34
+  failure modes with a primary source and an evidence label each, and
+  `docs/measurements/2026-08-16-new-row-variance.md`, the per-repository variance record for the
+  nine new rows.
+
 ### Fixed
 
 - `.yarn` is excluded from the corpus. Its bundles are machine-generated, and the 2 MB releases

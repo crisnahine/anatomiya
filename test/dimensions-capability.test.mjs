@@ -123,3 +123,8 @@ test("a capability is offered only where files already route through a wrapper",
   const adopted = adoptedCapabilities(records, new Set(["logging", "network", "env"]));
   assert.deepEqual([...adopted].sort(), ["logging"], "three adopting files across both engines; one is a habit, none is a vocabulary accident");
 });
+
+test("a destructuring read off process.env is a direct site per name", () => {
+  const r = counts("route_env", `const { PORT, HOST } = process.env;`);
+  assert.deepEqual(r, { candidates: 2, conforming: 0 });
+});

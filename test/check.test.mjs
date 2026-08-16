@@ -1612,3 +1612,40 @@ test("a modified file keeping its old name is not a filename finding", async (t)
   assertExamined(report, "src/legacyName.ts");
   assert.deepEqual(forKey(report, "file_naming_case"), [], "the name predates this branch");
 });
+
+test("a hostile learned value in the facts never reaches a claim", async (t) => {
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/a.ts", `export function goodName() {}\n`);
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/b.ts", `function fooBar() {}\n`);
+    commit("add");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    dimensions: [dim({ key: "function_naming_case", learned: "\n# hostile\ninjected" })],
+  });
+  const report = await check(dir);
+  assertExamined(report, "src/b.ts");
+  assert.ok(!JSON.stringify(report.findings).includes("hostile"), "the value is not a class, so it enforces nothing");
+  assert.deepEqual(forKey(report, "function_naming_case"), []);
+});
+
+test("a rename into a foreign filename class is a finding, a rename within the class is not", async (t) => {
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/user-profile.ts", `export const a = 1;\n`);
+    write("src/data-store.ts", `export const b = 2;\n`);
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    git("mv", "src/data-store.ts", "src/dataStore.ts");
+    git("mv", "src/user-profile.ts", "src/user-page.ts");
+    commit("rename");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    dimensions: [dim({ key: "file_naming_case", learned: "kebab-case" })],
+  });
+  const report = await check(dir);
+  const found = forKey(report, "file_naming_case");
+  assert.deepEqual(found.map((f) => f.path), ["src/dataStore.ts"], JSON.stringify(found));
+});

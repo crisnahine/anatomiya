@@ -708,7 +708,7 @@ test("one file may not hold the inverse over the bar by itself", () => {
   assert.equal(r.states, null);
 });
 
-test("the counter-eligible set is exactly twelve named keys and every counter names what to write", () => {
+test("the counter-eligible set is pinned by name and every counter names what to write", () => {
   // The ban list is a safety decision, not a detection detail. Pinning the set
   // makes a dimension arriving with a counter, or a refused one gaining it in a
   // refactor, cost a reviewed diff instead of being inherited.
