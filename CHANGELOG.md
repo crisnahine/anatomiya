@@ -26,8 +26,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Capability routing rows: `route_logging`, `route_network`, `route_env` (JS), and
   `logger_over_puts`, `http_through_client` (Ruby). The wrapper is learned per file from
   imports or receivers named in the category vocabulary; each row is offered only where the
-  corpus holds a wrapper-shaped file, so a repository that logs to the console on purpose never
-  carries a line that can only read zero.
+  corpus holds a wrapper-shaped file and at least three files already route through one, so a
+  repository that logs to the console on purpose never carries a line that can only read zero.
 - The research catalogue this work answers: `docs/research/why-agents-miss-house-style.md`, 34
   failure modes with a primary source and an evidence label each, and
   `docs/measurements/2026-08-16-new-row-variance.md`, the per-repository variance record for the

@@ -190,7 +190,7 @@ minutes and what a hung parse looks like is silence.
 
 ## 4. Dimensions and the three numbers
 
-A dimension is one claim about one area. 39 ship: 21 for JavaScript, 26 reachable in JSX, 13 for
+A dimension is one claim about one area. 40 ship: 22 for JavaScript, 27 reachable in JSX, 14 for
 Ruby. Each
 is defined by three quantities, not one.
 
@@ -263,9 +263,10 @@ Ruby, which with the two routing rows is what takes Ruby from 8 to 13.
 The three `route_` rows ask whether a cross-cutting concern goes through the repository's own
 module. The wrapper is learned per file from its relative imports, by filename vocabulary (log,
 logger, logging; client, http, api, request, fetcher; config, env, settings), and the direct forms
-are a closed table (console calls, fetch and axios, process.env reads). Each row is offered only
-where the corpus holds a wrapper-shaped file at all, the same posture as a framework claim, so a
-repository that logs to the console on purpose never carries a line that can only read zero.
+are a closed table (console calls, fetch and axios, process.env reads). Each row is offered only where the
+corpus holds a wrapper-shaped file and at least three examined files already route through one
+(C14), so a repository that logs to the console on purpose, or one holding a config.ts nobody
+imports, never carries a line that can only read zero.
 
 A row marked "learned" carries a template rather than a fixed sentence. Its sites vote with the
 naming class they spell, the plurality class becomes the sentence, and a tie learns nothing and
