@@ -138,3 +138,17 @@ test("a chain is still a chain through a non-null assertion or parentheses", nee
     assert.equal(r.candidates, 1, `${label}: the chain was not counted at all`);
   }
 });
+
+test("a wrapped chain is counted once, and a wrapped callee is still a link", needsTs, async () => {
+  // Two shapes the first fix did not reach. `(a.b().c())!.d()` is one chain,
+  // and markChain has to unwrap or the inner one is visited again and counted
+  // twice. `c.go!()` wraps the callee rather than the receiver, which is the
+  // other side of the same walk.
+  const decls = ["class C { go(): D { return new D() } }", "class D { end(): string { return '' } }"].join("\n");
+
+  const nested = await counts(`${decls}\nexport function f(c: C) { return (c.go().end())!.trim() }`);
+  assert.deepEqual(nested, { candidates: 1, conforming: 0 }, "the inner chain was counted a second time");
+
+  const callee = await counts(`${decls}\nexport function f(c: C) { return c.go!().end() }`);
+  assert.deepEqual(callee, { candidates: 1, conforming: 0 }, "a wrapped callee dropped the chain");
+});
