@@ -1466,3 +1466,55 @@ test("a claim is not silenced by a finding invented off the base's stripped tree
     `the head file declares no return type and nothing said so:\n${out}`
   );
 });
+
+test("a map holding a semantic claim, checked without --deep, says so rather than reporting clean", async (t) => {
+  // A check that reports no findings is what the command file tells the agent
+  // to trust, so a whole class of claim going unasked has to be said out loud.
+  // Same shape as B13 for a missing parser and F15 for an unreadable git, and
+  // both of those were real bugs.
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-deepcaveat-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
+  mkdirSync(join(dir, "src"), { recursive: true });
+  for (let i = 0; i < 14; i++) {
+    writeFileSync(join(dir, "src", `f${i}.ts`), `export function f${i}(s: string) {\n  return s.trim().toLowerCase()\n}\n`);
+  }
+  git("init", "-q");
+  git("config", "user.email", "t@t.test");
+  git("config", "user.name", "T");
+  git("add", "-A");
+  git("commit", "-qm", "init");
+  const bin = fileURLToPath(new URL("../bin/anatomiya.mjs", import.meta.url));
+  execFileSync(process.execPath, [bin, "scan", dir], { stdio: "pipe" });
+
+  // Plant a stated semantic claim, which is what a --deep scan would have left.
+  const factsPath = join(dir, ".claude/anatomiya/facts.json");
+  const facts = JSON.parse(readFileSync(factsPath, "utf8"));
+  facts.areas[0].dimensions.push({
+    key: "law_of_demeter",
+    tier: "semantic",
+    claim: "a call chain stays inside one type",
+    precision: "partial",
+    applicability: 14,
+    langFileCount: 14,
+    candidates: 40,
+    conforming: 39,
+    files: [],
+    directive: true,
+    states: "claim",
+    gate: null,
+    exceptions: [],
+  });
+  writeFileSync(factsPath, JSON.stringify(facts));
+
+  git("checkout", "-q", "-b", "probe");
+  writeFileSync(join(dir, "src", "f0.ts"), `export function f0(s: string) {\n  return s.trim()\n}\n`);
+  git("commit", "-qam", "probe");
+
+  const out = execFileSync(process.execPath, [bin, "check", dir, "--base", "main"], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+
+  assert.match(out, /type-checked claim was not measured on this branch: rerun with --deep/, out);
+});
