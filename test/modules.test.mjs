@@ -99,3 +99,35 @@ test("the bounded git reads stay on the buffered runner", () => {
     assert.match(git.get(name), /gitBuffered\(/, `${name} left the runner it belongs on`);
   }
 });
+
+/**
+ * The names the roster module defines, wherever they are read.
+ *
+ * `render.mjs` re-exported four of them so its own callers could keep taking
+ * them from there, which is two homes for one name: a reader who greps for
+ * `plural` finds the definition, the pass-through and importers of each, and
+ * nothing says which is the one to add the next name beside.
+ */
+const ROSTER_NAMES = ["kindsLine", "layoutSummary", "plural", "renderLayout", "ROOT_LABEL"];
+
+function sourceFiles() {
+  return ["bin", "lib", "scripts", "test"].flatMap((dir) =>
+    readdirSync(join(LIB, "..", dir), { recursive: true })
+      .filter((name) => typeof name === "string" && name.endsWith(".mjs"))
+      .map((name) => join(dir, name))
+  );
+}
+
+test("a roster name is taken from the module that defines it and from no other", () => {
+  const wrong = [];
+  for (const rel of sourceFiles()) {
+    const src = readFileSync(join(LIB, "..", rel), "utf8");
+    for (const m of src.matchAll(/import\s*\{([^}]*)\}\s*from\s*["']([^"']+)["']/g)) {
+      const names = m[1].split(",").map((n) => n.trim().split(/\s+as\s+/)[0]).filter(Boolean);
+      const taken = names.filter((n) => ROSTER_NAMES.includes(n));
+      if (taken.length > 0 && !m[2].endsWith("render-layout.mjs")) wrong.push(`${rel}: ${taken.join(", ")} from ${m[2]}`);
+    }
+  }
+
+  assert.deepEqual(wrong, []);
+});
