@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { installWithoutStripper, FLOW_SOURCE } from "./no-stripper.mjs";
 
 import { needsRuby } from "./ruby-available.mjs";
 import { check, severityFor, formatReport, unreadReason } from "../lib/check.mjs";
@@ -1384,4 +1385,37 @@ test("the check does not report a type claim against a file whose types were str
     /exported functions declare their return type/,
     `a claim about annotations, on a file whose annotations were stripped:\n${text}`
   );
+});
+
+test("a check that could not load the stripper names the dependency too", async (t) => {
+  // The check runs in CI, where nobody watched the scan output, so the caveat
+  // has to stand on its own: a Flow file it could not read reads as a broken
+  // file rather than a missing dependency.
+  const home = installWithoutStripper(t);
+
+  const repo = mkdtempSync(join(tmpdir(), "anatomiya-flowcheck-"));
+  t.after(() => rmSync(repo, { recursive: true, force: true }));
+  const git = (...a) => execFileSync("git", a, { cwd: repo, stdio: "pipe" });
+  mkdirSync(join(repo, "src"), { recursive: true });
+  for (let i = 0; i < 12; i++) {
+    writeFileSync(join(repo, "src", `f${i}.ts`), `export function f${i}(): number { return ${i} }\n`);
+  }
+  git("init", "-q");
+  git("config", "user.email", "t@t.test");
+  git("config", "user.name", "T");
+  git("add", "-A");
+  git("commit", "-qm", "init");
+  execFileSync(process.execPath, [join(home, "bin", "anatomiya.mjs"), "scan", repo], { stdio: "pipe" });
+  git("checkout", "-q", "-b", "probe");
+  writeFileSync(join(repo, "src", "flowed.js"), FLOW_SOURCE + "\n");
+  git("add", "-A");
+  git("commit", "-qm", "flow");
+
+  const out = execFileSync(process.execPath, [join(home, "bin", "anatomiya.mjs"), "check", repo, "--base", "main"], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+
+  assert.match(out, /src\/flowed\.js/, `the Flow file was expected in the caveats:\n${out}`);
+  assert.match(out, /flow-remove-types is not installed/, `nothing named the missing dependency:\n${out}`);
 });
