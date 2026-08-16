@@ -131,7 +131,7 @@ test("a file over the size cap is named apart from one that failed", async (t) =
   // Checked with `stat` before the file is dispatched, so nothing reads these
   // bytes. It is a generated or minified file, which is nobody's to fix.
   const d = dir(t);
-  const out = await parseAll([write(d, "big.ts", `const x = "${"a".repeat(4 * 1024 * 1024)}"\n`)]);
+  const out = await parseAll([write(d, "big.ts", `const x = "${"a".repeat(1024 * 1024)}"\n`)]);
 
   assert.equal(out.records.get("big.ts").kind, "oversize");
   assert.equal(out.tallies.oversize, 1);
@@ -412,4 +412,23 @@ test("a multi-line annotation leaves the line numbers where they were", async ()
   const marker = r.program.body.flatMap((n) => n.declarations ?? []).find((d) => d.id?.name === "marker");
   assert.ok(marker, "the fixture lost its marker");
   assert.equal(source.slice(0, marker.start).split("\n").length, 11, "the marker is on line 11 of the source");
+});
+
+test("withProgram also hands back the comments the tree carries", async () => {
+  const { records } = await parseAll(
+    [{ rel: "c.ts", lang: "js", source: "/** doc */\nexport function a() {}\n" }],
+    { withProgram: true }
+  );
+  const r = records.get("c.ts");
+  assert.equal(r.ok, true);
+  assert.equal(r.comments.length, 1);
+});
+
+test("the per-file cap sits under the parse timeout on any load, at one megabyte", () => {
+  // Measured across a 35-repository corpus: no hand-written source file
+  // exceeds 850 KB (vscode.d.ts at 725 KB is the largest), while every file
+  // between 1 and 4 MB is a bundle, compiled output or a perf fixture, and
+  // those sit at the 5 s parse timeout boundary, flipping between crashed and
+  // parsed with machine load. Each flip moves the always-loaded overview (A5).
+  assert.equal(MAX_FILE_BYTES, 1024 * 1024);
 });

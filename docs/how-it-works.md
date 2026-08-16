@@ -20,8 +20,8 @@ path and a newline split turns one hostile filename into two corpus entries.
 | Source extensions | `.ts .mts .cts .tsx .js .jsx .mjs .cjs .rb .rake .gemspec .jbuilder` |
 | Source filenames | `Rakefile`, `Gemfile`, `config.ru`, matched whole so a `Gemfile.lock` is not one |
 | Denied outright | `.git/`, `.env*`, `*.pem *.key *.p12 *.pfx *.jks *.keystore`, `.claude/settings.local.json`, `id_rsa`, `id_ed25519`, `.netrc`, `.npmrc` |
-| Excluded directories | `node_modules`, `vendor`, `fixtures`, `__fixtures__`, `__snapshots__`, `test_cases`, `testdata`, `test-data`, `golden`, `goldens`, `__mocks__`, `mocks`, `dist`, `build`, `coverage`, `.next`. Not `examples`: 8,967 paths in a 35-repository corpus match it and much of that is maintained code |
-| Caps | none on the repository; 4 MB per file, which skips one generated or minified file and says so |
+| Excluded directories | `node_modules`, `vendor`, `.yarn`, `fixtures`, `__fixtures__`, `__snapshots__`, `test_cases`, `testdata`, `test-data`, `golden`, `goldens`, `__mocks__`, `mocks`, `dist`, `build`, `coverage`, `.next`. Not `examples`: 8,967 paths in a 35-repository corpus match it and much of that is maintained code |
+| Caps | none on the repository; 1 MB per file, which skips a bundle or a compiled file and says so. Measured across 35 repositories, no hand-written source exceeds 850 KB, and every file between 1 and 4 MB sat at the parse timeout boundary, flipping between crashed and parsed with machine load |
 
 Fixture and vendor directories are excluded because that code is deliberately unidiomatic. In one
 measured repository, 18 of 85 discovered areas were fixture directories, and a map that teaches a
@@ -125,10 +125,13 @@ lands where it does in the source, which is the unit oxc counts in. A retry that
 genuine syntax error into a clean parse. The `.ts` family is not retried, because Flow is not legal
 there.
 
-A retried file has its annotations blanked, so three claims go unanswered for it: the two that ask
-about the annotation itself, and `relative imports carry the file extension`, whose sites include the
-`import type` statements the strip deletes outright. The file is left out of those three
-denominators as well, because a file nobody asked is not a file that declined. Every claim that
+A retried file has its annotations blanked, so five claims go unanswered for it: the two that ask
+about the annotation itself; `relative imports carry the file extension`, whose sites include the
+`import type` statements the strip deletes outright; `exported names are <style>`, whose sites
+include type-only exports the strip deletes the same way; and `exported functions carry a doc
+comment`, whose comment gap the scan and the check would otherwise measure against two different
+strings. The file is left out of those five denominators as well, because a file nobody asked is
+not a file that declined. Every claim that
 reads code is answered as usual. If `flow-remove-types` is not installed at all the retry cannot
 run, and the scan and the check both say so by name rather than leaving a pile of rejected files
 with no explanation.
@@ -146,7 +149,7 @@ otherwise be deleted as gone. A syntax error is not that: the parser ran and ans
 
 | Guard | Value | Enforced |
 |---|---|---|
-| File size | 4 MB | checked with `stat` before the file is dispatched |
+| File size | 1 MB | checked with `stat` before the file is dispatched |
 | Wall time | 5s | `SIGKILL` from the parent |
 | Resident memory | 1 GB | polled every 25ms via `ps`, starting 250ms after the file goes in flight |
 
@@ -190,8 +193,7 @@ minutes and what a hung parse looks like is silence.
 
 ## 4. Dimensions and the three numbers
 
-A dimension is one claim about one area. 31 ship: 15 for JavaScript, 20 reachable in JSX, 11 for
-Ruby. Each
+A dimension is one claim about one area. 41 ship, the filename row included: 22 for JavaScript, 27 reachable in JSX, and 14 that speak Ruby, plus the one type-checked row, which sits in the total and reaches a scan only with --deep. Each
 is defined by three quantities, not one.
 
 | Quantity | Meaning |
@@ -247,10 +249,36 @@ in `check`.
 | `column_null_declared` | partial | ruby | new columns are declared `null: false` |
 | `table_primary_key_declared` | partial | ruby | new tables declare their primary key type |
 | `reference_foreign_key` | partial | ruby | reference columns declare their foreign key |
+| `function_naming_case` | precise | js, jsx | functions are named `<style>`, learned |
+| `exported_symbol_case` | precise | js, jsx | exported names are `<style>`, learned |
+| `doc_comment_style` | partial | js, jsx | exported functions carry a doc comment |
+| `route_logging` | partial | js, jsx | logging goes through the repository's own logger, not the console |
+| `route_network` | partial | js, jsx | network calls go through the repository's own client, not fetch directly |
+| `route_env` | partial | js, jsx | environment reads go through the repository's own config module, not process.env |
+| `logger_over_puts` | partial | ruby | output goes through a logger, not puts |
+| `http_through_client` | partial | ruby | HTTP goes through the repository's own client, not `Net::HTTP` |
 
-The five JSX rows are the ones that make the JSX total 20 rather than 15: a `.tsx` or `.jsx` file is
+The five JSX rows are the ones that make the JSX total 27 rather than 22: a `.tsx` or `.jsx` file is
 counted by every `js` dimension as well as these. The five migration rows are Rails and count as
-Ruby, which is what takes Ruby from 6 to 11.
+Ruby, which is what takes Ruby from 9 to 14.
+
+The three `route_` rows ask whether a cross-cutting concern goes through the repository's own
+module. The wrapper is learned per file from its relative imports, by filename vocabulary (log,
+logger, logging; client, http, api, request, fetcher; config, env, settings), and the direct forms
+are a closed table (console calls, fetch and axios, process.env reads). Each row is offered only where at
+least three examined files already route through a wrapper (C14), so a repository that logs to
+the console on purpose, or one holding a config.ts nobody imports, never carries a line that can
+only read zero.
+
+A row marked "learned" carries a template rather than a fixed sentence. Its sites vote with the
+naming class they spell, the plurality class becomes the sentence, and a tie learns nothing and
+produces no slot. One more such row, `file_naming_case`, asks about filenames: it needs no parser,
+so the reducer composes it the way it composes the obligations. A learned class that has moved
+since the pin closes the slot (`learned-moved`) until a human re-pins, because the pinned counts
+answer a different sentence than today's. The filename row has one candidate per file, so under
+the evidence gate an area needs 35 classifiable filenames to state it; in smaller areas the row
+feeds the check's learned enforcement and prints as counts, which is the gate working rather than
+a bug.
 
 A dimension that finds zero sites in an area produces no slot at all. The area file only lists
 dimensions that appeared.
@@ -310,6 +338,18 @@ is the expected result on a fresh `git init`, not a bug.
 
 Counts print whether or not a directive fires. That is what makes a badly set threshold cost one
 sentence instead of a wrong convention, and it is why the gates can be set conservatively.
+
+One more filter sits after the gates and touches only the rendering. A stated side the model
+already writes unprompted prints as a counts line, `matches model default`, never as a directive:
+context files measurably pay only for what a model would not do anyway, so the directive lines are
+for what this repository does differently. The claim is still stated in `facts.json` and the check
+enforces it at full severity, because a model drifts off its own defaults as a session grows.
+Which side a model writes comes from `lib/model-defaults.json`, a committed table with provenance
+per entry, written by `scripts/measure-defaults.mjs` from the model's own output parsed through
+the same predicates the scan uses. A learned row's default is a class rather than a side:
+"functions are named camelCase" in JavaScript is exactly what the model writes anyway, so a
+learned class equal to the model's own renders as counts too. An unmeasured entry reads `none`
+and fails open: the dimension keeps stating.
 
 ## 6. The baseline and `pin`
 

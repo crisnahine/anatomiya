@@ -7,6 +7,79 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.1.12] - 2026-08-16
+
+The map now says only what a repository does differently from what the model writes anyway, and it
+grew the claim families reviewers actually fight about. Ten of the shipped claims are things the
+model does unprompted (measured, thirty runs through the deployed harness); those still count and
+still enforce, but they no longer spend a line of always-loaded context. Nine new rows ship: three
+that learn a naming class from the repository's own files, functions and exports; one that says
+whether exported functions carry a doc comment, with a real counter side; and five that ask whether
+logging, network and environment reads route through the repository's own module. A layering
+dimension was probed on four repositories and refused at this tool's own evidence bar, with the
+numbers.
+
+The per-file size cap moved from 4 MB to 1 MB, because a 35-repository sweep found the 1 to 4 MB
+band holds only bundles and compiled output sitting at the parse timeout, flipping between crashed
+and parsed with machine load, and each flip moved the always-loaded overview. Five review loops
+over the branch found two defects the tests had passed around: a facts-sourced value reaching a
+rendered claim unencoded, and the class-default filter reading a registry marker the reducer never
+carried. Both are pinned by tests that go through the real path.
+
+Closes #33.
+
+### Added
+
+- A model-defaults table, `lib/model-defaults.json`. A stated side the model already writes
+  unprompted renders as a counts line, `matches model default`, never as a directive; the check
+  enforces it unchanged from `facts.json`. Entries carry provenance and an unmeasured entry fails
+  open. `scripts/measure-defaults.mjs` writes the table by parsing the model's own output through
+  the scan's predicates. Facts schema is 10.
+- Learned-class naming rows: `file_naming_case`, `function_naming_case` and
+  `exported_symbol_case`. The class is the plurality of the area's own sites, a tie learns
+  nothing, and a class that moved since the pin closes the slot (`learned-moved`) until a human
+  re-pins. The check enforces the stored class, and a new file breaking the area's filename
+  class is a finding.
+- `doc_comment_style`, with a real counter side: repositories that document their export surface
+  state the claim, and repositories whose code explains itself state the counter, which is the
+  directive that stops tutorial-style over-commenting. The parse worker now hands each
+  dimension the tree's comments and the exact string it parsed.
+- Capability routing rows: `route_logging`, `route_network`, `route_env` (JS), and
+  `logger_over_puts`, `http_through_client` (Ruby). The wrapper is learned per file from
+  imports or receivers named in the category vocabulary; each row is offered only where at
+  least three files already route through one, so a repository that logs to the console on
+  purpose never carries a line that can only read zero.
+- A second A/B on vscode, this time on a claim with headroom that the model-defaults table does
+  not filter: `docs/measurements/2026-08-16-vscode-nonnull-2.md`. The arms differ (0.818 with the
+  map against 0.000 without, over 4 and 1 scored files), read with its own small-sample caveat.
+- A third A/B on the new family, `exported names are PascalCase` in a vscode protocol area:
+  `docs/measurements/2026-08-16-vscode-symbols.md`. A null result about the task, which asked
+  for constants and functions where the learned class is PascalCase, and a working record that
+  the harness scores a learned row against the map's class rather than the file's own vote.
+- The research catalogue this work answers: `docs/research/why-agents-miss-house-style.md`, 34
+  failure modes with a primary source and an evidence label each, and
+  `docs/measurements/2026-08-16-new-row-variance.md`, the per-repository variance record for the
+  nine new rows.
+
+### Fixed
+
+- A Rails migration's timestamp prefix is cut before its stem is classified (#33). Read whole,
+  `20260816120000_AddBadColumn.rb` classified as nothing, so conforming migration names counted on
+  scan and the realistic violating shape was the one the check could not see. Now the Pascal stem
+  is a MUST-FIX against a stated snake_case area with a clean baseline.
+- The per-file size cap is 1 MB, down from 4 MB. A 35-repository sweep found no hand-written
+  source above 850 KB and every file in the 1 to 4 MB band a bundle, compiled output or a perf
+  fixture sitting at the 5 s parse timeout boundary, flipping between crashed and parsed with
+  machine load; each flip moved the always-loaded overview (A5). A size cap is deterministic
+  where a wall-clock timeout is not. `.yarn` is excluded from the corpus outright for the same
+  reason.
+
+### Decided against
+
+- An import-direction (layering) dimension. Probed on four repositories: a require() repository
+  is invisible to an import-statement site, and at this tool's own Wilson gate 0 of 4 put even a
+  third of their area pairs over the bar. `docs/measurements/2026-08-16-layering-probe.md`.
+
 ## [0.1.11] - 2026-08-16
 
 Flow, so a repository oxc refuses by name is read rather than charged as broken: react goes from 287
@@ -753,6 +826,7 @@ which are partial; several listed there are not implemented yet.
 - No claim that this catches defects. Measured across ten repositories, 1 of 317 defect review
   comments was preventable by a conventions map.
 
+[0.1.12]: https://github.com/crisnahine/anatomiya/compare/v0.1.11...v0.1.12
 [0.1.11]: https://github.com/crisnahine/anatomiya/compare/v0.1.10...v0.1.11
 [0.1.10]: https://github.com/crisnahine/anatomiya/compare/v0.1.9...v0.1.10
 [0.1.9]: https://github.com/crisnahine/anatomiya/compare/v0.1.8...v0.1.9

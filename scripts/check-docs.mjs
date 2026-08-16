@@ -15,6 +15,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
 
 import { ALL_DIMENSIONS, dimensionsFor } from "../lib/dimensions.mjs";
+import { NAMING_CORPUS } from "../lib/dimensions-naming.mjs";
 import { PAIRINGS, pairingsFor } from "../lib/pairing.mjs";
 import { GATES } from "../lib/reduce.mjs";
 
@@ -73,10 +74,14 @@ function claim(where, ok, detail) {
 // Obligations count here too. A checker blind to a whole dimension class would
 // pass while the README undercounted by nine, which is the drift this script
 // exists to catch.
-const total = ALL_DIMENSIONS.length + PAIRINGS.length;
-const js = dimensionsFor(["js"]).length + pairingsFor(["js"]).length;
-const jsx = dimensionsFor(["jsx"]).length + pairingsFor(["jsx"]).length;
-const ruby = dimensionsFor(["ruby"]).length + pairingsFor(["ruby"]).length;
+// The corpus rows are composed by the reducer rather than the registry, and a
+// shipped claim outside every count is exactly the blindness this script
+// exists to catch.
+const corpusFor = (lang) => NAMING_CORPUS.filter((d) => d.langs.includes(lang)).length;
+const total = ALL_DIMENSIONS.length + PAIRINGS.length + NAMING_CORPUS.length;
+const js = dimensionsFor(["js"]).length + pairingsFor(["js"]).length + corpusFor("js");
+const jsx = dimensionsFor(["jsx"]).length + pairingsFor(["jsx"]).length + corpusFor("jsx");
+const ruby = dimensionsFor(["ruby"]).length + pairingsFor(["ruby"]).length + corpusFor("ruby");
 const obligations = PAIRINGS.length;
 
 // A released entry states the number that shipped in it and stays true forever.
@@ -97,13 +102,13 @@ for (const rel of ["README.md", "docs/how-it-works.md", "CHANGELOG.md"]) {
   for (const m of text.matchAll(/(\d+)\s+dimensions/g)) {
     claim(`${rel}`, Number(m[1]) === total, `says "${m[1]} dimensions", the registry holds ${total}`);
   }
-  for (const m of text.matchAll(/(\d+)\s+for JavaScript(?!\s+and)/g)) {
+  for (const m of text.matchAll(/(\d+)\s+for\s+JavaScript(?!\s+and)/g)) {
     claim(rel, Number(m[1]) === js, `says "${m[1]} for JavaScript", dimensionsFor(["js"]) is ${js}`);
   }
-  for (const m of text.matchAll(/(\d+)\s+reachable in JSX/g)) {
+  for (const m of text.matchAll(/(\d+)\s+reachable\s+in\s+JSX/g)) {
     claim(rel, Number(m[1]) === jsx, `says "${m[1]} reachable in JSX", dimensionsFor(["jsx"]) is ${jsx}`);
   }
-  for (const m of text.matchAll(/(\d+)\s+for Ruby/g)) {
+  for (const m of text.matchAll(/(\d+)\s+for\s+Ruby/g)) {
     claim(rel, Number(m[1]) === ruby, `says "${m[1]} for Ruby", dimensionsFor(["ruby"]) is ${ruby}`);
   }
   for (const m of text.matchAll(/(\d+)\s+file-to-file obligations/g)) {
@@ -117,7 +122,7 @@ claim("lib/dimensions.mjs", new Set(keys).size === keys.length, "two dimensions 
 
 // A dimension either states its inverse or records that it may not. An absent
 // field is indistinguishable from one nobody classified.
-for (const d of [...ALL_DIMENSIONS, ...PAIRINGS]) {
+for (const d of [...ALL_DIMENSIONS, ...PAIRINGS, ...NAMING_CORPUS]) {
   claim(
     "lib/dimensions.mjs",
     d.counterClaim === null || typeof d.counterClaim === "string",
@@ -192,7 +197,7 @@ for (const p of intake.problems) claim("docs/dimension-intake.md", false, p);
 
 const intakeByKey = new Map(intake.rows.filter((r) => r.key).map((r) => [r.key, r]));
 const droppedKeys = new Set(intake.rows.filter((r) => r.status === "dropped" && r.key).map((r) => r.key));
-for (const d of [...ALL_DIMENSIONS, ...PAIRINGS]) {
+for (const d of [...ALL_DIMENSIONS, ...PAIRINGS, ...NAMING_CORPUS]) {
   const row = intakeByKey.get(d.key);
   claim("docs/dimension-intake.md", !!row, `${d.key} ships and has no intake row`);
   if (row) {

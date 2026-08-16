@@ -162,6 +162,81 @@ const WITNESSES = {
     inapplicable: `export function f() { return 1 }`,
   },
 
+  doc_comment_style: {
+    lang: "js",
+    // Every exported form the walker treats apart. The comment is deliberately
+    // absent from most: applicability is about being a site, not conforming.
+    applicable: [
+      `export function fooBar() {}`,
+      `export class OrderList {}`,
+      `export const fetchAll = () => {}`,
+      `export default function () {}`,
+      `/** documented */\nexport function documented() {}`,
+    ],
+    inapplicable: `function local() {}\nexport const limit = 3;`,
+  },
+
+  // --- dimensions-capability.mjs ---
+  route_logging: {
+    lang: "js",
+    // Each direct form, and each import shape a wrapper binding arrives in.
+    applicable: [
+      `console.log("x")`,
+      `console.error("x")`,
+      `import logger from "./logger.js"; logger.info("x")`,
+      `import { log } from "./logging.ts"; log("x")`,
+      `import * as log from "../shared/app-logger.ts"; log.warn("x")`,
+    ],
+    inapplicable: `import winston from "winston"; winston.info("x")`,
+  },
+  route_network: {
+    lang: "js",
+    applicable: [
+      `const a = await fetch("/x")`,
+      `import axios from "axios"; await axios.get("/y")`,
+      `import { api } from "./api-client.ts"; await api.get("/z")`,
+      `import { request } from "./http.ts"; await request("/z")`,
+    ],
+    inapplicable: `import got from "got"; await got("/x")`,
+  },
+  route_env: {
+    lang: "js",
+    applicable: [
+      `const a = process.env.PORT`,
+      `const b = process.env["PORT"]`,
+      `import { config } from "./config.ts"; const c = config.port`,
+      `import settings from "./settings.js"; const d = settings.db.host`,
+    ],
+    inapplicable: `const e = process.argv[2]`,
+  },
+
+  // --- dimensions-naming.mjs ---
+  function_naming_case: {
+    lang: "js",
+    // Every form the walker treats apart: a declaration, an arrow bound to a
+    // const, a function expression bound to a const, in each spellable class.
+    applicable: [
+      `function fooBar() {}`,
+      `function foo_bar() {}`,
+      `const FooBar = () => {}`,
+      `const fetchAll = function () {}`,
+    ],
+    // A single lowercase word matches every class and votes for none, and a
+    // nested function is not module level.
+    inapplicable: `function outer() { function innerName() {} }`,
+  },
+  exported_symbol_case: {
+    lang: "js",
+    applicable: [
+      `export function fooBar() {}`,
+      `export const my_thing = 1`,
+      `export class OrderList {}`,
+      `const plain = 1; export { plain as renamedThing }`,
+      `export type UserShape = { id: string }`,
+    ],
+    inapplicable: `export default function fooBar() {}`,
+  },
+
   // --- dimensions-jsx.mjs ---
   hook_call_style: {
     lang: "jsx",
@@ -264,6 +339,30 @@ const WITNESSES = {
       `Time.zone.now`, `Time.zone.today`,
     ],
     inapplicable: `def f\n  1\nend`,
+  },
+
+  logger_over_puts: {
+    lang: "ruby",
+    applicable: [
+      `puts "x"`,
+      `pp result`,
+      `warn "careful"`,
+      `logger.info("x")`,
+      `Rails.logger.warn("x")`,
+      `@logger.debug("x")`,
+    ],
+    inapplicable: `compute(1)`,
+  },
+  http_through_client: {
+    lang: "ruby",
+    applicable: [
+      `Net::HTTP.get(uri)`,
+      `URI.open("https://x")`,
+      `ApiClient.get("/x")`,
+      `client.post("/y")`,
+      `@client.post("/y")`,
+    ],
+    inapplicable: `record.save`,
   },
 
   // --- dimensions-rails.mjs ---

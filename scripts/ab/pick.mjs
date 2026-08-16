@@ -15,11 +15,12 @@
  */
 import { ALL_DIMENSIONS } from "../../lib/dimensions.mjs";
 import { PAIRINGS } from "../../lib/pairing.mjs";
+import { NAMING_CORPUS, fillClass } from "../../lib/dimensions-naming.mjs";
 
 // The record stores counts, not sentences. Reading `claim` off it put the word
 // "undefined" in the result file where the claim belongs, so the sentence comes
 // from the one place that holds it.
-const CLAIMS = new Map([...ALL_DIMENSIONS, ...PAIRINGS].map((d) => [d.key, d.claim]));
+const CLAIMS = new Map([...ALL_DIMENSIONS, ...PAIRINGS, ...NAMING_CORPUS].map((d) => [d.key, d.claim]));
 
 export function rankAreas(facts, { minCandidates = 20 } = {}) {
   const out = [];
@@ -27,12 +28,19 @@ export function rankAreas(facts, { minCandidates = 20 } = {}) {
     for (const d of area.dimensions ?? []) {
       const stated = d.states === "claim" || (d.states === undefined && d.directive);
       if (!stated) continue;
+      // The renderer drops a default-matching claim to a counts line, so the
+      // map arm was never handed a directive to differ on.
+      if (d.matchesDefault === true) continue;
       if (!d.candidates || d.candidates < minCandidates) continue;
       const ratio = d.conforming / d.candidates;
+      const template = d.claim ?? CLAIMS.get(d.key) ?? d.key;
       out.push({
         path: area.path,
         key: d.key,
-        claim: d.claim ?? CLAIMS.get(d.key) ?? d.key,
+        // The record stores the class, not the sentence; the sentence is the
+        // template filled with it.
+        ...(d.learned !== undefined ? { learned: d.learned } : {}),
+        claim: d.learned !== undefined ? fillClass(template, d.learned) : template,
         candidates: d.candidates,
         ratio,
         headroom: Math.max(0, 1 - ratio),

@@ -708,7 +708,7 @@ test("one file may not hold the inverse over the bar by itself", () => {
   assert.equal(r.states, null);
 });
 
-test("the counter-eligible set is exactly twelve named keys and every counter names what to write", () => {
+test("the counter-eligible set is pinned by name and every counter names what to write", () => {
   // The ban list is a safety decision, not a detection detail. Pinning the set
   // makes a dimension arriving with a counter, or a refused one gaining it in a
   // refactor, cost a reviewed diff instead of being inherited.
@@ -717,7 +717,7 @@ test("the counter-eligible set is exactly twelve named keys and every counter na
   // the field reads as refused, and the registry cannot tell the two apart.
   const eligible = [
     "function_style", "type_only_import", "import_extension", "test_call_style",
-    "assertion_style", "absent_is_null",
+    "assertion_style", "absent_is_null", "doc_comment_style",
     "record_lookup", "model_callbacks", "service_result_shape",
     "hook_call_style", "handler_is_named", "handler_memoised",
   ];
@@ -735,6 +735,14 @@ test("the counter-eligible set is exactly twelve named keys and every counter na
     "law_of_demeter",
     "migration_reversible", "migration_schema_only", "column_null_declared",
     "table_primary_key_declared", "reference_foreign_key",
+    // The other side of a learned class is another class, which the learning
+    // already picks; a hand-written inverse would fight it.
+    "function_naming_case", "exported_symbol_case",
+    // "This repository logs to the console on purpose" is a repository with no
+    // wrapper, and there the row is not offered at all (C8): a counter would
+    // only ever state where a wrapper exists and is ignored, which is a defect.
+    "route_logging", "route_network", "route_env",
+    "logger_over_puts", "http_through_client",
   ];
 
   const carrying = ALL_DIMENSIONS.filter((d) => typeof d.counterClaim === "string").map((d) => d.key);
@@ -1110,4 +1118,65 @@ test("a semantic dimension with no baseline names the tier, not a greenfield dir
     baselineDim: null,
   });
   assert.equal(s.gate, "postdates-baseline");
+});
+
+/* --- the model-default filter --- */
+
+test("a stated side matching the model default is flagged", () => {
+  const r = verdictFor(dim({ applicability: 10 }), {
+    current: { fileCount: 12, dirCount: 2 },
+    authors: 3,
+    defaultSide: () => "claim",
+  });
+  assert.equal(r.states, "claim");
+  assert.equal(r.matchesDefault, true);
+});
+
+test("a counter stated against the model default is not flagged", () => {
+  const inverse = dim({
+    counterClaim: "the inverse sentence",
+    ...spread([12, 12, 12, 12, 12], [0, 0, 0, 0, 0]),
+    applicability: 10,
+    files: paths(5),
+  });
+  const r = verdictFor(inverse, {
+    current: { fileCount: 12, dirCount: 2 },
+    authors: 3,
+    defaultSide: () => "claim",
+  });
+  assert.equal(r.states, "counter");
+  assert.equal(r.matchesDefault, false, "the repository deviates, which is the map's whole value");
+});
+
+test("a counter matching a counter default is flagged too", () => {
+  const inverse = dim({
+    counterClaim: "the inverse sentence",
+    ...spread([12, 12, 12, 12, 12], [0, 0, 0, 0, 0]),
+    applicability: 10,
+    files: paths(5),
+  });
+  const r = verdictFor(inverse, {
+    current: { fileCount: 12, dirCount: 2 },
+    authors: 3,
+    defaultSide: () => "counter",
+  });
+  assert.equal(r.states, "counter");
+  assert.equal(r.matchesDefault, true);
+});
+
+test("a blocked slot is never flagged as matching the default", () => {
+  const r = verdictFor(onlyIt(), {
+    measured: { gate: null, pinned: shape, dims: [] },
+    current: shape,
+    authors: 1,
+    repoAuthors: 1,
+    defaultSide: () => "claim",
+  });
+  assert.equal(r.states, null);
+  assert.equal(r.matchesDefault, false);
+});
+
+test("with no override the shipped table decides, and unmeasured reads as no default", () => {
+  const r = verdictFor(dim({ applicability: 10 }), { current: { fileCount: 12, dirCount: 2 }, authors: 3 });
+  assert.equal(r.matchesDefault, false, "the fixture key is absent from the table, which fails open");
 });
