@@ -193,7 +193,7 @@ minutes and what a hung parse looks like is silence.
 
 ## 4. Dimensions and the three numbers
 
-A dimension is one claim about one area. 41 ship, the filename row included: 22 for JavaScript, 27 reachable in JSX, and 14 that speak Ruby, plus the one type-checked row, which sits in the total and reaches a scan only with --deep. Each
+A dimension is one claim about one area. 46 ship, the filename row included: 25 for JavaScript, 30 reachable in JSX, and 16 that speak Ruby, plus the one type-checked row, which sits in the total and reaches a scan only with --deep. Each
 is defined by three quantities, not one.
 
 | Quantity | Meaning |

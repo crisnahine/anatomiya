@@ -212,6 +212,16 @@ const SRC = {
     end
   `,
 
+  mixins: `
+    class Worker < ApplicationJob
+      include Sidekiq::Worker
+
+      def perform
+        include Ignored
+      end
+    end
+  `,
+
   scopes: `
     class Outer
       def run
