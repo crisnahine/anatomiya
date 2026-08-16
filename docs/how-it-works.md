@@ -311,6 +311,16 @@ is the expected result on a fresh `git init`, not a bug.
 Counts print whether or not a directive fires. That is what makes a badly set threshold cost one
 sentence instead of a wrong convention, and it is why the gates can be set conservatively.
 
+One more filter sits after the gates and touches only the rendering. A stated side the model
+already writes unprompted prints as a counts line, `matches model default`, never as a directive:
+context files measurably pay only for what a model would not do anyway, so the directive lines are
+for what this repository does differently. The claim is still stated in `facts.json` and the check
+enforces it at full severity, because a model drifts off its own defaults as a session grows.
+Which side a model writes comes from `lib/model-defaults.json`, a committed table with provenance
+per entry, written by `scripts/measure-defaults.mjs` from the model's own output parsed through
+the same predicates the scan uses. An unmeasured entry reads `none` and fails open: the dimension
+keeps stating.
+
 ## 6. The baseline and `pin`
 
 Every gate reads the **baseline** population, not today's files. The counts from today print beside
