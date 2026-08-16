@@ -53,9 +53,9 @@ test("a homoglyph path is rejected rather than rendered", () => {
 });
 
 test("markdown structure characters cannot survive", () => {
-  for (const s of ["a --- b", "a <!-- b", "a --> b", "a `b` c", "a | b", "a ~~~ b"]) {
+  for (const s of ["a --- b", "a <!-- b", "a --> b", "a --!> b", "a `b` c", "a | b", "a ~~~ b"]) {
     const out = encode(s);
-    assert.ok(!/---|~~~|<!--|-->|`|\|/.test(out), s);
+    assert.ok(!/---|~~~|<!--|--!?>|`|\|/.test(out), s);
   }
 });
 
@@ -121,4 +121,11 @@ test("one line of a log is still capped, because a line has no length limit", ()
   // A parser that dies mid-write emits one enormous line, and this string is
   // put into an error message a human reads.
   assert.equal(firstLine("x".repeat(500)).length, 200);
+});
+
+test("the HTML5 comment close --!> cannot survive, even inside an opened comment", () => {
+  // Parsers accept `--!>` as a comment end tag as well as `-->`, so a value
+  // holding it could close a comment the renderer never opened.
+  const out = encode("x<!--y--!>z");
+  assert.ok(!/--!>|-->|<!--/.test(out), out);
 });

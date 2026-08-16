@@ -22,3 +22,8 @@ export const needsShebang = WINDOWS
 export const needsPosixPermissions = WINDOWS
   ? { skip: "Windows chmod only toggles read-only, so a file cannot be made unreadable" }
   : {};
+
+// A fifo or a unix socket in a directory is a shape only POSIX can make.
+export const needsPosixSpecialFiles = WINDOWS
+  ? { skip: "Windows has no mkfifo and no filesystem-visible unix socket to test with" }
+  : {};

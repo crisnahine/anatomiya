@@ -207,7 +207,7 @@ test("no claim needs the encoder to be safe to render", () => {
       if (typeof s !== "string") continue;
       assert.ok(!/[\n\r`]/.test(s), `${d.key} carries a line break or a backtick`);
       assert.ok(!/^\s*(?:[#>*+-]|\d+[.)])/.test(s), `${d.key} opens a markdown block`);
-      assert.ok(!/^-{3,}|^~{3,}|<!--|-->/.test(s), `${d.key} carries a fence`);
+      assert.ok(!/^-{3,}|^~{3,}|<!--|--!?>/.test(s), `${d.key} carries a fence`);
       assert.ok(s.length <= 120, `${d.key} is ${s.length} chars, past the line budget`);
     }
   }
