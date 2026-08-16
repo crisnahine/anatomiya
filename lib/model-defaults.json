@@ -514,6 +514,38 @@
       }
     }
   },
+  "extends_base": {
+    "default": "none",
+    "provenance": {
+      "method": "seed",
+      "model": null,
+      "date": null,
+      "samples": null,
+      "sideCounts": null
+    }
+  },
+  "interface_prefix": {
+    "default": "none",
+    "class": "none",
+    "provenance": {
+      "method": "seed",
+      "model": null,
+      "date": null,
+      "samples": null,
+      "sideCounts": null
+    }
+  },
+  "type_alias_prefix": {
+    "default": "none",
+    "class": "none",
+    "provenance": {
+      "method": "seed",
+      "model": null,
+      "date": null,
+      "samples": null,
+      "sideCounts": null
+    }
+  },
   "doc_comment_style": {
     "default": "counter",
     "provenance": {
@@ -568,6 +600,26 @@
     }
   },
   "http_through_client": {
+    "default": "none",
+    "provenance": {
+      "method": "seed",
+      "model": null,
+      "date": null,
+      "samples": null,
+      "sideCounts": null
+    }
+  },
+  "class_base": {
+    "default": "none",
+    "provenance": {
+      "method": "seed",
+      "model": null,
+      "date": null,
+      "samples": null,
+      "sideCounts": null
+    }
+  },
+  "module_include": {
     "default": "none",
     "provenance": {
       "method": "seed",

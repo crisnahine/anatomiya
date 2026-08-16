@@ -236,6 +236,27 @@ const WITNESSES = {
     ],
     inapplicable: `export default function fooBar() {}`,
   },
+  extends_base: {
+    lang: "js",
+    // Both spellings of a superclass the sentence names, on both class forms.
+    applicable: [
+      `export class A extends B {}`,
+      `export class C extends React.Component {}`,
+      `export const D = class extends Foo.Bar.Baz {}`,
+    ],
+    // A class naming no superclass has nothing to vote with.
+    inapplicable: `export class E {}`,
+  },
+  interface_prefix: {
+    lang: "js",
+    applicable: [`export interface IFoo { a: string }`, `export interface Comment { a: string }`],
+    inapplicable: `export type TBar = 1`,
+  },
+  type_alias_prefix: {
+    lang: "js",
+    applicable: [`export type TBar = 1`, `export type Plain = 2`],
+    inapplicable: `export interface IFoo { a: string }`,
+  },
 
   // --- dimensions-jsx.mjs ---
   hook_call_style: {
@@ -363,6 +384,21 @@ const WITNESSES = {
       `@client.post("/y")`,
     ],
     inapplicable: `record.save`,
+  },
+  class_base: {
+    lang: "ruby",
+    applicable: [`class A < ApplicationController\nend`, `class B < ActionController::Base\nend`],
+    inapplicable: `class C\nend`,
+  },
+  module_include: {
+    lang: "ruby",
+    applicable: [
+      `class W\n  include Sidekiq::Worker\nend`,
+      `module M\n  include Enumerable\nend`,
+    ],
+    // Inside a method it is a call made when the method runs, not a mixin the
+    // body declares.
+    inapplicable: `class Late\n  def go\n    include Foo\n  end\nend`,
   },
 
   // --- dimensions-rails.mjs ---
