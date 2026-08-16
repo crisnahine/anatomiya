@@ -131,5 +131,10 @@ public measurement, a 4,616-comment classification, and a 237-entry glossary re-
 - **No MCP server.** Nothing to expose.
 - **No skill.** It would spend resident context describing the tool instead of the repository.
 - **No health score or grade.** It changes nothing about the next line of code.
+- **No import-direction (layering) dimension.** Probed on four repositories (2026-08-16): a
+  require() repository is invisible to an import-statement site, the cross-area graph is sparse
+  everywhere but vscode, and at this tool's own Wilson gate 0 of 4 repositories put even a third
+  of their pairs over the bar. `docs/measurements/2026-08-16-layering-probe.md` has the numbers
+  and the revisit conditions.
 - **No restating what the linter already enforces.**
 - **No "catches bugs earlier" claim.** Measured: 1 of 317 defect comments across ten repositories was preventable by a conventions map. Nine of ten repositories scored zero.
