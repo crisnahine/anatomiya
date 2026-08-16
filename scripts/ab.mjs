@@ -21,6 +21,7 @@ import { rankAreas, NO_HEADROOM } from "./ab/pick.mjs";
 import { buildArms, installMap, PROBE } from "./ab/arms.mjs";
 import { runTrial, CLAUDE_DEFAULTS } from "./ab/run.mjs";
 import { scoreFile } from "./ab/score.mjs";
+import { readingFor } from "./ab/read.mjs";
 import { language } from "../lib/corpus.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -178,9 +179,7 @@ Injection: arm A answered "${r.said.a}", arm B answered "${r.said.b}".
 
 ## Reading this
 
-Headroom was ${t.headroom.toFixed(3)}. A null result under 0.05 says the task had no room for the
-arms to differ, not that the map does nothing: the model would have to write the failing form about
-${Math.max(1, Math.round(t.headroom * 100))} times in a hundred sites before the two arms could look different at all.
+${readingFor({ a, b }, t.headroom)}
 
 Scored by ${t.key}'s own predicate through the same reducer the scan uses, so the number above and
 the number the map states are the same number. Files the dimension found no site in are not counted

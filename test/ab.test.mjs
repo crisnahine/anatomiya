@@ -3,6 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { rankAreas } from "../scripts/ab/pick.mjs";
 import { scoreFile } from "../scripts/ab/score.mjs";
+import { readingFor } from "../scripts/ab/read.mjs";
 
 const facts = {
   areas: [
@@ -109,4 +110,19 @@ test("a key the registry does not know says so instead of saying undefined", () 
   const [top] = rankAreas(stored, { minCandidates: 20 });
 
   assert.equal(top.claim, "gone_away");
+});
+
+test("a result where both arms scored perfectly says so instead of leaving it to the reader", () => {
+  // The first A/B ever run scored 10 of 10 in both arms and was written up as a
+  // null result about the map. It was a null result about the task. A file that
+  // does not say which of those it is invites the same mistake again.
+  const both = readingFor({ a: { candidates: 15, conforming: 15 }, b: { candidates: 9, conforming: 9 } }, 0.077);
+  assert.match(both, /both arms wrote conforming code every time/i);
+
+  const moved = readingFor({ a: { candidates: 15, conforming: 15 }, b: { candidates: 9, conforming: 6 } }, 0.077);
+  assert.doesNotMatch(moved, /both arms wrote conforming code every time/i);
+  assert.match(moved, /1\.000 against 0\.667/);
+
+  const nothing = readingFor({ a: { candidates: 0, conforming: 0 }, b: { candidates: 0, conforming: 0 } }, 0.077);
+  assert.match(nothing, /neither arm wrote a site this claim counts/i);
 });
