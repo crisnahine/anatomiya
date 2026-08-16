@@ -102,3 +102,21 @@ test("rubyFacets says which test runner a file speaks", needsRuby, async (t) => 
   assert.equal(records.get("app/models/c.rb").facets.testRunner, null);
   assert.equal(records.get("app/models/c.rb").facets.testCalls, false);
 });
+
+test("an ordinary call named like the DSL is not one, without a block", needsRuby, async (t) => {
+  // `context`, `it` and `feature` are ordinary Ruby method names: an Interactor
+  // service reads `context.amount` in every one of its files, and typing those
+  // as specs would put a runner on the whole service directory. Every call the
+  // DSL makes takes a block and an attribute read never does.
+  const dir = repo({
+    "app/services/charge.rb": `class Charge\n  include Interactor\n\n  def call\n    context.amount = 100\n  end\nend\n`,
+  });
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+  const { records } = await parseAll(list(dir, ["app/services/charge.rb"]));
+  const r = records.get("app/services/charge.rb");
+
+  assert.equal(r.kind, "ok");
+  assert.equal(r.facets.testRunner, null);
+  assert.equal(r.facets.testCalls, false);
+});
