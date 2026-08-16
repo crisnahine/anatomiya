@@ -343,3 +343,47 @@ test("a null area on disk is carried, not thrown on", (t) => {
   assert.equal(unreadable, null);
   assert.deepEqual(facts.areas, [null]);
 });
+
+test("the sibling rosters survive the round trip", (t) => {
+  const dir = root(t);
+  const imports = [
+    { module: "styled-components", files: 42, of: 50 },
+    { module: "~/components/base", files: 31, of: 50 },
+  ];
+  const reused = [{ name: "getFullName", file: "src/utils/user.ts", importers: 42 }];
+  const base = result([dim()]);
+
+  writeFacts(dir, { ...base, areas: [{ ...base.areas[0], imports, reused }] });
+  const { facts } = readFacts(dir);
+
+  assert.deepEqual(facts.areas[0].imports, imports);
+  assert.deepEqual(facts.areas[0].reused, reused);
+});
+
+test("an area with no import surface stores neither roster as a measured empty one", (t) => {
+  // The same distinction `kinds` carries: an empty roster is an area whose
+  // files import nothing, and a null one is an area nobody asked.
+  const dir = root(t);
+  const base = result([dim()]);
+
+  writeFacts(dir, { ...base, areas: [{ ...base.areas[0], imports: null, reused: [] }] });
+  const { facts } = readFacts(dir);
+
+  assert.equal(facts.areas[0].imports, null);
+  assert.deepEqual(facts.areas[0].reused, []);
+});
+
+test("a record written before the sibling rosters existed reads as not counted", (t) => {
+  const dir = root(t);
+  mkdirSync(dirname(join(dir, FACTS_PATH)), { recursive: true });
+  writeFileSync(
+    join(dir, FACTS_PATH),
+    JSON.stringify({ schema: 10, areas: [{ id: "a", path: "src", fileCount: 8, dimensions: [] }] })
+  );
+
+  const { facts, unreadable } = readFacts(dir);
+
+  assert.equal(unreadable, null);
+  assert.equal(facts.areas[0].imports, null);
+  assert.equal(facts.areas[0].reused, null);
+});
