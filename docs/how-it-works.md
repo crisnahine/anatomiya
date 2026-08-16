@@ -265,10 +265,10 @@ Ruby, which is what takes Ruby from 9 to 14.
 The three `route_` rows ask whether a cross-cutting concern goes through the repository's own
 module. The wrapper is learned per file from its relative imports, by filename vocabulary (log,
 logger, logging; client, http, api, request, fetcher; config, env, settings), and the direct forms
-are a closed table (console calls, fetch and axios, process.env reads). Each row is offered only where the
-corpus holds a wrapper-shaped file and at least three examined files already route through one
-(C14), so a repository that logs to the console on purpose, or one holding a config.ts nobody
-imports, never carries a line that can only read zero.
+are a closed table (console calls, fetch and axios, process.env reads). Each row is offered only where at
+least three examined files already route through a wrapper (C14), so a repository that logs to
+the console on purpose, or one holding a config.ts nobody imports, never carries a line that can
+only read zero.
 
 A row marked "learned" carries a template rather than a fixed sentence. Its sites vote with the
 naming class they spell, the plurality class becomes the sentence, and a tie learns nothing and

@@ -125,8 +125,15 @@ test("a capability is offered only where files already route through a wrapper",
     ["d.ts", rec("route_network", true)],
     ["e.ts", rec("route_env", false)],
   ]);
-  const adopted = adoptedCapabilities(records, new Set(["logging", "network", "env"]));
-  assert.deepEqual([...adopted].sort(), ["logging"], "three adopting files across both engines; one is a habit, none is a vocabulary accident");
+  const adopted = adoptedCapabilities(records);
+  assert.deepEqual([...adopted].sort(), ["logging"], "three adopting files across both engines; one is a habit");
+});
+
+test("adoption needs no filename vocabulary: Rails.logger carries none", async () => {
+  const { adoptedCapabilities } = await import("../lib/dimensions.mjs");
+  const rec = () => ({ ok: true, hits: { logger_over_puts: [{ conforming: true }] } });
+  const records = new Map([["a.rb", rec()], ["b.rb", rec()], ["c.rb", rec()]]);
+  assert.deepEqual([...adoptedCapabilities(records)], ["logging"]);
 });
 
 test("a destructuring read off process.env is a direct site per name", () => {

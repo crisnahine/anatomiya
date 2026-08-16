@@ -107,9 +107,10 @@ async function runScan(cwd, { dryRun, deep = false }) {
   const plan = writeMap(result, { dryRun });
 
   const slots = result.areas.flatMap((a) => a.dimensions);
-  // Through the renderer's own side selection, or the line undercounts every
-  // area that was handed the inverse and the summary disagrees with the map.
-  const stated = slots.filter((d) => statedSide(d).states !== null);
+  // Through the renderer's own partition, or the summary disagrees with the
+  // map: a stated slot the model writes by default renders as a counts line.
+  const stated = slots.filter((d) => statedSide(d).states !== null && d.matchesDefault !== true);
+  const matching = slots.filter((d) => statedSide(d).states !== null && d.matchesDefault === true);
 
   // The root, because a path argument does not scope the scan: `git rev-parse
   // --show-toplevel` resolves any path inside the repository to its root, so
@@ -121,7 +122,11 @@ async function runScan(cwd, { dryRun, deep = false }) {
     console.log(
       `${untrackedSentence(result.corpus.untracked)}. The corpus is tracked files only, so nothing there was counted`
     );
-  console.log(`${stated.length} of ${plural(slots.length, "claim")} stated, the rest print as counts`);
+  console.log(
+    `${stated.length} of ${plural(slots.length, "claim")} stated` +
+      (matching.length ? `, ${matching.length} match the model default` : "") +
+      ", the rest print as counts"
+  );
   console.log(baselineLine(result.baseline));
   if (result.corpus.truncated)
     console.log("only part of the corpus was read, so every directive is suppressed and only counts print");

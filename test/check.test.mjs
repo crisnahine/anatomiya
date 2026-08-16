@@ -75,7 +75,7 @@ const dim = (o = {}) => ({
  * because the pin stores no counts, so there is nothing to fall back to when
  * its sha goes unreachable.
  */
-function facts(dir, { sha, dimensions = [dim()], path = "src", fileCount = 8, pinned = null, areas = null } = {}) {
+function facts(dir, { sha, dimensions = [dim()], path = "src", fileCount = 8, pinned = null, areas = null, capabilities = [] } = {}) {
   const store = join(dir, ".claude/anatomiya");
   mkdirSync(store, { recursive: true });
   const mapped = areas
@@ -86,7 +86,7 @@ function facts(dir, { sha, dimensions = [dim()], path = "src", fileCount = 8, pi
   writeFacts(dir, {
     root: dir,
     scannedAt: "2026-01-01T00:00:00.000Z",
-    corpus: { files: fileCount, frameworks: [] },
+    corpus: { files: fileCount, frameworks: [], capabilities },
     parse: { parsed: fileCount },
     suppressAll: false,
     areas: mapped,
@@ -1651,4 +1651,42 @@ test("a rename into a foreign filename class is a finding, a rename within the c
   const found = forKey(report, "file_naming_case");
   assert.deepEqual(found.map((f) => f.path), ["src/dataStore.ts"], JSON.stringify(found));
   assert.equal(found[0].oldPath, "src/data-store.ts", "the rename provenance travels with the finding");
+});
+
+test("a stated routing claim is enforced at check time where the map offers it", async (t) => {
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/logger.ts", `export const logger = { info(_m) {} };\n`);
+    write("src/a.ts", `import { logger } from "./logger.js";\nlogger.info("x");\n`);
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/loud.ts", `console.log("direct");\n`);
+    commit("add");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    dimensions: [dim({ key: "route_logging", precision: "partial" })],
+    capabilities: ["logging"],
+  });
+  const report = await check(dir);
+  assertExamined(report, "src/loud.ts");
+  const found = forKey(report, "route_logging");
+  assert.equal(found.length, 1, JSON.stringify(report.findings));
+  assert.ok(found[0].snippet.includes("console.log"));
+});
+
+test("a badly named new file that does not parse is still a filename finding", async (t) => {
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/user-profile.ts", `export const a = 1;\n`);
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/badName.ts", `export const = 5 ((((\n`);
+    commit("add");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    dimensions: [dim({ key: "file_naming_case", learned: "kebab-case" })],
+  });
+  const report = await check(dir);
+  const found = forKey(report, "file_naming_case");
+  assert.deepEqual(found.map((f) => f.path), ["src/badName.ts"], "the name needs no tree");
 });

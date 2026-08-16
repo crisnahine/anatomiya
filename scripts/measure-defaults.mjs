@@ -265,6 +265,11 @@ async function main() {
   }
 
   const existing = JSON.parse(readFileSync(args.out, "utf8"));
+  for (const [key, held] of Object.entries(existing)) {
+    if (measured[key] && held.provenance?.method === "measured" && held.provenance.model !== args.model && !args.force) {
+      console.error(`${key}: held measurement is ${held.provenance.model}, this run is ${args.model}; kept the held one (--force replaces)`);
+    }
+  }
   const merged = mergeTable(existing, measured, { force: args.force });
   const body = JSON.stringify(merged, null, 2) + "\n";
   if (args.dry) {

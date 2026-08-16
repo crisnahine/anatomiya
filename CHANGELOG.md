@@ -25,9 +25,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   dimension the tree's comments and the exact string it parsed.
 - Capability routing rows: `route_logging`, `route_network`, `route_env` (JS), and
   `logger_over_puts`, `http_through_client` (Ruby). The wrapper is learned per file from
-  imports or receivers named in the category vocabulary; each row is offered only where the
-  corpus holds a wrapper-shaped file and at least three files already route through one, so a
-  repository that logs to the console on purpose never carries a line that can only read zero.
+  imports or receivers named in the category vocabulary; each row is offered only where at
+  least three files already route through one, so a repository that logs to the console on
+  purpose never carries a line that can only read zero.
 - A second A/B on vscode, this time on a claim with headroom that the model-defaults table does
   not filter: `docs/measurements/2026-08-16-vscode-nonnull-2.md`. The arms differ (0.818 with the
   map against 0.000 without, over 4 and 1 scored files), read with its own small-sample caveat.
