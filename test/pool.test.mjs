@@ -41,11 +41,42 @@ test("a file that kills the parser costs one file, not the run", async () => {
     // Without this the test still passes if oxc merely throws, which would no
     // longer be a test of process containment.
     assert.equal(rb.crashed, true, "the bomb died uncatchably, the process boundary caught it");
+    assert.equal(rb.attempts, 1, "a file that killed the worker itself is poison, and gets one attempt");
     assert.equal(rb.rel, bomb.rel, "the failure is keyed by the file that caused it");
 
     // The pool must still be usable afterwards.
     const after = await pool.parse(file(dir, "c.ts", "export const c = 3\n"));
     assert.equal(after.ok, true, "the pool recovered");
+  });
+});
+
+test("a parse the wall clock killed is tried again before it is charged", async (t) => {
+  // The flake A5 exists to stop: on a 35-repository run the same file was
+  // charged as crashed in one scan and parsed in the next, and the unexamined
+  // count moved the always-loaded overview. A guard of 1ms kills every parse,
+  // so what is under test is the second attempt, not the first one's timing.
+  const was = GUARDS.timeoutMs;
+  GUARDS.timeoutMs = 1;
+  t.after(() => {
+    GUARDS.timeoutMs = was;
+  });
+
+  await withPool({ size: 1 }, async (pool, dir) => {
+    const r = await pool.parse(file(dir, "slow.ts", "export const s = 1\n"));
+
+    assert.equal(r.ok, false);
+    assert.equal(r.crashed, true, "a file the pool never read is charged, not dropped");
+    assert.equal(r.attempts, 2, "the timed-out file went back on the queue once");
+    assert.match(r.error, /twice/, "the error says the retry ran out too");
+  });
+});
+
+test("a parse that answered is charged to one attempt", async () => {
+  await withPool({ size: 1 }, async (pool, dir) => {
+    const r = await pool.parse(file(dir, "fast.ts", "export const f = 1\n"));
+
+    assert.equal(r.ok, true);
+    assert.equal(r.attempts, 1);
   });
 });
 
