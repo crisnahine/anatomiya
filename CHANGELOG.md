@@ -29,6 +29,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   corpus holds a wrapper-shaped file, so a repository that logs to the console on purpose never
   carries a line that can only read zero.
 
+### Fixed
+
+- `.yarn` is excluded from the corpus. Its bundles are machine-generated, and the 2 MB releases
+  sat at the parse timeout boundary, flipping between crashed and rejected across runs, which
+  moved the always-loaded overview (A5). Found by an end-to-end sweep over the 35-repository
+  measurement corpus.
+
 ### Decided against
 
 - An import-direction (layering) dimension. Probed on four repositories: a require() repository
