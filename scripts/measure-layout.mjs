@@ -53,8 +53,8 @@ const stemOf = (rel) => {
   return dot > 0 ? base.slice(0, dot) : base;
 };
 
-const TEST_DIRS = new Set(["test", "tests", "spec", "__tests__", "cypress", "e2e"]);
-const TEST_NAME = /\.(test|spec|cy)\./;
+const TEST_DIRS = new Set(["__tests__"]);
+const TEST_NAME = /\.(test|spec|cy)\.|_(spec|test)\.rb$/;
 const MODULE_EXTS = new Set([".ts", ".js", ".mjs", ".cjs", ".mts", ".cts"]);
 const NAMESAKE_SUFFIXES = ["_spec", "_test", ".test", ".spec", ".cy"];
 
