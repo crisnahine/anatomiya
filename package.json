@@ -52,5 +52,8 @@
   "dependencies": {
     "flow-remove-types": "^2.328.0",
     "oxc-parser": "^0.144.0"
+  },
+  "optionalDependencies": {
+    "typescript": "^5.9.3"
   }
 }
