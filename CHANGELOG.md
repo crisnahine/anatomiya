@@ -7,6 +7,22 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.1.11] - 2026-08-16
+
+Flow, so a repository oxc refuses by name is read rather than charged as broken: react goes from 287
+rejected files and 36 stated claims to 2 and 79. An opt-in `typescript` checker behind
+`scan --deep`, with one dimension and a degraded mode that says which of two things went wrong. A
+committed intake table for what became a dimension, what collapsed into one, and what has no
+denominator and never ships. And one command for the only success measure this tool accepts, with
+the first measurement it took committed beside it.
+
+Every row the build contract carried as `todo` is closed, which is all seventy-eight of them.
+
+Four counting bugs came out of asking a different question: parse one file twice, once with its
+annotations blanked, and see which dimensions disagree. That comparison is a test now, so a
+dimension that answers two ways for one file fails CI. A further eight came from a review of the
+work above, and the two worst were both a test passing for the wrong reason.
+
 ### Added
 
 - A `.js`-family file oxc rejects is retried with its Flow types stripped. oxc refuses Flow by name,
@@ -737,7 +753,7 @@ which are partial; several listed there are not implemented yet.
 - No claim that this catches defects. Measured across ten repositories, 1 of 317 defect review
   comments was preventable by a conventions map.
 
-[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.1.10...HEAD
+[0.1.11]: https://github.com/crisnahine/anatomiya/compare/v0.1.10...v0.1.11
 [0.1.10]: https://github.com/crisnahine/anatomiya/compare/v0.1.9...v0.1.10
 [0.1.9]: https://github.com/crisnahine/anatomiya/compare/v0.1.8...v0.1.9
 [0.1.8]: https://github.com/crisnahine/anatomiya/compare/v0.1.7...v0.1.8
