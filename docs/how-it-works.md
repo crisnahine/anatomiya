@@ -20,7 +20,7 @@ path and a newline split turns one hostile filename into two corpus entries.
 | Source extensions | `.ts .mts .cts .tsx .js .jsx .mjs .cjs .rb .rake .gemspec .jbuilder` |
 | Source filenames | `Rakefile`, `Gemfile`, `config.ru`, matched whole so a `Gemfile.lock` is not one |
 | Denied outright | `.git/`, `.env*`, `*.pem *.key *.p12 *.pfx *.jks *.keystore`, `.claude/settings.local.json`, `id_rsa`, `id_ed25519`, `.netrc`, `.npmrc` |
-| Excluded directories | `node_modules`, `vendor`, `fixtures`, `__fixtures__`, `__snapshots__`, `test_cases`, `testdata`, `test-data`, `golden`, `goldens`, `__mocks__`, `mocks`, `dist`, `build`, `coverage`, `.next`. Not `examples`: 8,967 paths in a 35-repository corpus match it and much of that is maintained code |
+| Excluded directories | `node_modules`, `vendor`, `.yarn`, `fixtures`, `__fixtures__`, `__snapshots__`, `test_cases`, `testdata`, `test-data`, `golden`, `goldens`, `__mocks__`, `mocks`, `dist`, `build`, `coverage`, `.next`. Not `examples`: 8,967 paths in a 35-repository corpus match it and much of that is maintained code |
 | Caps | none on the repository; 4 MB per file, which skips one generated or minified file and says so |
 
 Fixture and vendor directories are excluded because that code is deliberately unidiomatic. In one
