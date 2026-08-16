@@ -31,7 +31,7 @@ const FIXTURE = [
   "const fixed: Config = {name: 'x'}",
   "",
   "export function describe(o: Opts, c: Config): string {",
-  "  const fallback = o.name ?? ('' as string)",
+  "  const fallback = o.name ?? '' as string",
   "  const other = c.name || 0",
   "  if (!fallback) return null as any",
   "  try {",
@@ -44,6 +44,7 @@ const FIXTURE = [
   "",
   "export const arrow = async (n: number): Promise<string> => {",
   "  const v = await run(n)",
+  "  if (!v) return undefined as any",
   "  return v?.name ?? undefined",
   "}",
 ].join("\n");
