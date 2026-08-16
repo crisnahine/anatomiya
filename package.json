@@ -49,6 +49,7 @@
     "coverage": "node --test --experimental-test-coverage --test-coverage-lines=95 --test-coverage-branches=87 --test-coverage-functions=95 'test/**/*.test.mjs'"
   },
   "dependencies": {
+    "flow-remove-types": "^2.328.0",
     "oxc-parser": "^0.144.0"
   }
 }

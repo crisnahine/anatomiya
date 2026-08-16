@@ -167,3 +167,33 @@ test("raw transfer is refused on the platform that cannot overcommit", () => {
   assert.equal(rawTransferAllowed("darwin"), true);
   assert.equal(rawTransferAllowed("win32"), false);
 });
+
+test("a Flow-typed file is read, not charged as syntax the parser rejected", async () => {
+  // React is written in Flow, which oxc rejects by name: 287 of its 2,277 files
+  // were unexamined for it, and the sites in them counted nowhere. Flow only
+  // ever appears in the .js family, so the retry is scoped there.
+  const source = [
+    "// @flow",
+    "import type { Node } from 'react'",
+    "type Props = {| name: string |}",
+    "export function greet(p: Props): string {",
+    "  try { return p.name } catch (e) { }",
+    "}",
+  ].join("\n");
+
+  const { records, tallies } = await parseAll([{ rel: "flow.js", source, lang: "js" }]);
+  const r = records.get("flow.js");
+
+  assert.equal(r.kind, "ok", `Flow file came back ${r.kind}: ${r.error ?? ""}`);
+  assert.equal(tallies.rejected, 0);
+  assert.ok(r.hits.swallowed_error?.length >= 1, "and its sites are counted");
+});
+
+test("a file that is broken rather than Flow is still rejected", async () => {
+  // The retry must not turn a genuine syntax error into a clean parse: a
+  // recovered tree is not the file, which is why a rejected parse contributes
+  // nothing in the first place.
+  const { records } = await parseAll([{ rel: "broken.js", source: "export function ( {{{ )", lang: "js" }]);
+
+  assert.equal(records.get("broken.js").kind, "rejected");
+});
