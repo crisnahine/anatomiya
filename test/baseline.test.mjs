@@ -716,13 +716,106 @@ test("a file the parser rejects at the pin and rejects today has not changed pop
     ["src/flow.ts", { rel: "src/flow.ts", ok: false, kind: "rejected" }],
   ]);
 
+  // The pin side has to carry a record too: an empty map is a blob that never
+  // came back, which is a different cause with a different answer.
+  const pinned = new Map([
+    ["src/a.ts", { rel: "src/a.ts", ok: true, hits: {}, kind: "ok" }],
+    ["src/flow.ts", { rel: "src/flow.ts", ok: false, kind: "rejected" }],
+  ]);
+
   const measured = await measure(dir, state, areas, {
     headParsed,
-    parse: async () => ({ records: new Map() }),
+    parse: async () => ({ records: pinned }),
     reduce: () => [{ key: "d", candidates: 4, conforming: 4 }],
   });
 
   assert.equal(measured.get("aaaaaaaa").gate, null, "a file rejected at both revisions is a constant, not a change");
+});
+
+/**
+ * The guard side of E8, which nothing reached: coverage named `unread++` as a
+ * line the whole suite never executes, so every mutation to this branch
+ * survived and the E1/E2 suppression could be deleted with CI green.
+ */
+const twoFiles = (t) => {
+  let sha;
+  const dir = repo(t, (d, { write, commit }) => {
+    write("src/a.ts", CONFORMING);
+    write("src/other.ts", CONFORMING);
+    sha = commit("init");
+  });
+  return { dir, sha };
+};
+
+const measureWith = (dir, state, areas, pinned, head) =>
+  measure(dir, state, areas, {
+    headParsed: head,
+    parse: async () => ({ records: pinned }),
+    reduce: () => [{ key: "d", candidates: 4, conforming: 4 }],
+  });
+
+const rec = (rel, ok) => [rel, ok ? { rel, ok: true, hits: {}, kind: "ok" } : { rel, ok: false, kind: "rejected" }];
+
+test("a pinned file readable today but not at the pin closes the area", async (t) => {
+  // The baseline is then missing sites today can see, which is a population
+  // this cannot count. The file has to differ between the two revisions or
+  // `reuseUnchanged` hands the pin side today's record and the blob is never
+  // read at all.
+  let sha;
+  const dir = repo(t, (d, { write, commit }) => {
+    write("src/a.ts", CONFORMING);
+    write("src/other.ts", CONFORMING);
+    sha = commit("init");
+    write("src/other.ts", `${CONFORMING}\nexport const changed = 1\n`);
+    commit("edit");
+  });
+  const areas = [area("src", ["src/a.ts", "src/other.ts"])];
+  writePin(dir, buildPin(areas, { sha }));
+  const state = await resolve(dir, { baseRef: "main" });
+
+  const measured = await measureWith(
+    dir, state, areas,
+    new Map([rec("src/a.ts", true), rec("src/other.ts", false)]),
+    new Map([rec("src/a.ts", true), rec("src/other.ts", true)])
+  );
+
+  assert.equal(measured.get("aaaaaaaa").gate, "population-change");
+});
+
+test("a pinned file with no record at HEAD at all closes the area", async (t) => {
+  // Absent is not the same as examined-and-rejected, and reading it as the
+  // second is how a blob nobody fetched became a stated directive.
+  const { dir, sha } = twoFiles(t);
+  const areas = [area("src", ["src/a.ts", "src/other.ts"])];
+  writePin(dir, buildPin(areas, { sha }));
+  const state = await resolve(dir, { baseRef: "main" });
+
+  const measured = await measureWith(
+    dir, state, areas,
+    new Map([rec("src/a.ts", true), rec("src/other.ts", false)]),
+    new Map([rec("src/a.ts", true)])
+  );
+
+  assert.equal(measured.get("aaaaaaaa").gate, "population-change");
+});
+
+test("a pinned blob that never came back closes the area, whatever HEAD says of it", async (t) => {
+  // `showBlob` refuses a file over the same 4 MiB cap the parser skips at, so
+  // an oversize pinned file is refused at the pin and skipped at HEAD. Read as
+  // a blind spot, the area stated a directive with that file's sites counted at
+  // neither revision and nothing saying so.
+  const { dir, sha } = twoFiles(t);
+  const areas = [area("src", ["src/a.ts", "src/other.ts"])];
+  writePin(dir, buildPin(areas, { sha }));
+  const state = await resolve(dir, { baseRef: "main" });
+
+  const measured = await measureWith(
+    dir, state, areas,
+    new Map([rec("src/a.ts", true)]),
+    new Map([rec("src/a.ts", true), rec("src/other.ts", false)])
+  );
+
+  assert.equal(measured.get("aaaaaaaa").gate, "population-change");
 });
 
 test("resolve reads the pin itself, so the caller never holds one", async (t) => {
@@ -771,4 +864,14 @@ test("a baseline pass that answered for part of its population says so", async (
   });
 
   assert.equal(measured.truncated, true, "the second corpus read carries the same flag the first does");
+});
+
+test("the pin delta agrees with its own counts, at one and at many", () => {
+  // This line is what a human reads before accepting a population, and the
+  // first pass at the plural fixed the noun and left both verbs plural.
+  const one = formatDelta({ from: null, to: "a".repeat(40), addedFiles: 1, removedFiles: 1, areas: [] });
+  const many = formatDelta({ from: null, to: "a".repeat(40), addedFiles: 3, removedFiles: 2, areas: [] });
+
+  assert.match(one, /^1 file enters the baseline population, 1 leaves it$/m);
+  assert.match(many, /^3 files enter the baseline population, 2 leave it$/m);
 });

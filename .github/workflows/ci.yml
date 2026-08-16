@@ -382,7 +382,7 @@ jobs:
           BIN="$GITHUB_WORKSPACE/bin/anatomiya.mjs"
 
           node "$BIN" pin . | tee "$RUNNER_TEMP/pin.out"
-          grep -q "files enter the baseline population" "$RUNNER_TEMP/pin.out"
+          grep -qE "files? enters? the baseline population" "$RUNNER_TEMP/pin.out"
           test -f .claude/anatomiya/baseline.json
 
           # A second pin at the same commit must move nothing. It moving is how
