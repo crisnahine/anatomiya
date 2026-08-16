@@ -1633,6 +1633,149 @@ test("a hostile learned value in the facts never reaches a claim", async (t) => 
   assert.deepEqual(forKey(report, "function_naming_case"), []);
 });
 
+test("a learned base class is enforced the way a learned naming class is", needsRuby, async (t) => {
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("app/controllers/users_controller.rb", "class UsersController < ApplicationController\nend\n");
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("app/controllers/x_controller.rb", "class XController < ActionController::Base\nend\n");
+    commit("add");
+  });
+  const rubyArea = (learned) => [{
+    id: "aaaaaaaa",
+    path: "app/controllers",
+    globs: [{ negated: false, dir: "app/controllers", tail: "**/*.rb" }],
+    fileCount: 8,
+    dimensions: [dim({ key: "class_base", learned })],
+  }];
+  facts(dir, { sha: sha(dir, "main"), areas: rubyArea("ApplicationController") });
+  const report = await check(dir);
+  assertExamined(report, "app/controllers/x_controller.rb");
+  assert.deepEqual(report.caveats.filter((c) => /schema/.test(c)), [], "the writer's own schema reads clean");
+  const found = forKey(report, "class_base");
+  assert.equal(found.length, 1, JSON.stringify(report.findings));
+  assert.equal(found[0].path, "app/controllers/x_controller.rb");
+  assert.equal(found[0].line, 1);
+  assert.equal(found[0].claim, "classes here inherit ApplicationController");
+});
+
+test("a learned superclass is enforced the way a learned naming class is", async (t) => {
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/panel.ts", "export class Panel extends React.Component {}\n");
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/widget.ts", "export class Widget extends Foo {}\n");
+    commit("add");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    dimensions: [dim({ key: "extends_base", learned: "React.Component" })],
+  });
+  const report = await check(dir);
+  assertExamined(report, "src/widget.ts");
+  const found = forKey(report, "extends_base");
+  assert.equal(found.length, 1, JSON.stringify(report.findings));
+  assert.equal(found[0].where, "Widget");
+  assert.equal(found[0].claim, "classes here extend React.Component");
+});
+
+test("a learned type prefix is enforced on a new interface", async (t) => {
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/a.ts", "export interface IThing { id: string }\n");
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/b.ts", "export interface Comment { id: string }\n");
+    commit("add");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    dimensions: [dim({ key: "interface_prefix", learned: "I" })],
+  });
+  const report = await check(dir);
+  assertExamined(report, "src/b.ts");
+  const found = forKey(report, "interface_prefix");
+  assert.equal(found.length, 1, JSON.stringify(report.findings));
+  assert.equal(found[0].where, "Comment");
+  assert.equal(found[0].claim, "interfaces are named with a I prefix");
+});
+
+test("a learned absence of a prefix is enforced against a prefixed interface", async (t) => {
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/a.ts", "export interface Thing { id: string }\n");
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/b.ts", "export interface IFoo { id: string }\n");
+    commit("add");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    dimensions: [dim({ key: "interface_prefix", learned: "none" })],
+  });
+  const report = await check(dir);
+  assertExamined(report, "src/b.ts");
+  const found = forKey(report, "interface_prefix");
+  assert.equal(found.length, 1, JSON.stringify(report.findings));
+  assert.equal(found[0].where, "IFoo");
+  assert.equal(found[0].claim, "interfaces carry no prefix", "an absence is written out, never filled in");
+});
+
+test("a learned class read off the source is encoded before it reaches a claim", async (t) => {
+  // The stored class of a source-learned row is repository text, so widening
+  // the check to enforce it widens what a committed record can render (F4).
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/panel.ts", "export class Panel extends Base {}\n");
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/widget.ts", "export class Widget extends Foo {}\n");
+    commit("add");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    dimensions: [dim({ key: "extends_base", learned: "Evil|Base\nX" })],
+  });
+  const report = await check(dir);
+  assertExamined(report, "src/widget.ts");
+  const found = forKey(report, "extends_base");
+  assert.equal(found.length, 1, JSON.stringify(report.findings));
+  assert.equal(found[0].claim, "classes here extend Evil Base X");
+  assert.ok(!/[|\n]/.test(found[0].claim), JSON.stringify(found[0].claim));
+});
+
+test("a learned class the encoder empties enforces nothing", async (t) => {
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/panel.ts", "export class Panel extends Base {}\n");
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/widget.ts", "export class Widget extends Foo {}\n");
+    commit("add");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    dimensions: [dim({ key: "extends_base", learned: "```" })],
+  });
+  const report = await check(dir);
+  assertExamined(report, "src/widget.ts");
+  assert.deepEqual(forKey(report, "extends_base"), [], "a sentence that would name nothing states nothing");
+});
+
+test("a learned prefix outside its own vocabulary enforces nothing", async (t) => {
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/a.ts", "export interface IThing { id: string }\n");
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/b.ts", "export interface Comment { id: string }\n");
+    commit("add");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    dimensions: [dim({ key: "interface_prefix", learned: "\n# hostile\ninjected" })],
+  });
+  const report = await check(dir);
+  assertExamined(report, "src/b.ts");
+  assert.ok(!JSON.stringify(report.findings).includes("hostile"), JSON.stringify(report.findings));
+  assert.deepEqual(forKey(report, "interface_prefix"), []);
+});
+
 test("a rename into a foreign filename class is a finding, a rename within the class is not", async (t) => {
   const dir = repo(t, ({ git, write, commit }) => {
     write("src/user-profile.ts", `export const a = 1;\n`);
