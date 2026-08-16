@@ -125,6 +125,14 @@ lands where it does in the source, which is the unit oxc counts in. A retry that
 genuine syntax error into a clean parse. The `.ts` family is not retried, because Flow is not legal
 there.
 
+A retried file has its annotations blanked, so three claims go unanswered for it: the two that ask
+about the annotation itself, and `relative imports carry the file extension`, whose sites include the
+`import type` statements the strip deletes outright. The file is left out of those three
+denominators as well, because a file nobody asked is not a file that declined. Every claim that
+reads code is answered as usual. If `flow-remove-types` is not installed at all the retry cannot
+run, and the scan and the check both say so by name rather than leaving a pile of rejected files
+with no explanation.
+
 A file is unexamined in four ways, and the scan names them apart because the reader's next move
 differs: it crashed the parser, the parser rejected its syntax, this tool could not read it, or it
 was over the size cap. The second is new in this shape. Both parsers recover from a syntax error and
