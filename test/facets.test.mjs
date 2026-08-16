@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { repo } from "./ts-repo.mjs";
 import { needsRuby } from "./ruby-available.mjs";
 import { parseAll } from "../lib/parse.mjs";
+import { TEST_RUNNER_MODULES } from "../lib/facets.mjs";
 import { language } from "../lib/corpus.mjs";
 
 /**
@@ -101,6 +102,55 @@ test("rubyFacets says which test runner a file speaks", needsRuby, async (t) => 
   assert.equal(records.get("test/b_test.rb").facets.testCalls, true);
   assert.equal(records.get("app/models/c.rb").facets.testRunner, null);
   assert.equal(records.get("app/models/c.rb").facets.testCalls, false);
+});
+
+/**
+ * Every module the runner table recognises, and the runner it maps to.
+ *
+ * Written out here rather than read from `TEST_RUNNER_MODULES`, for the reason
+ * `test/applicability.test.mjs` writes its closed tables out: an expectation
+ * read from the table agrees with the table by construction and can never
+ * disagree with it. A table is one shape, so dropping `qunit` from it makes
+ * every Ember repository's tests read as source and changes no shape any other
+ * test here can see.
+ *
+ * The comparison runs both ways. Driving each member through a real parse shows
+ * the table did not shrink; the equality below shows it did not grow, which is
+ * where somebody decides whether a new name belongs.
+ */
+const RUNNER_TABLE = [
+  ["vitest", "vitest"],
+  ["jest", "jest"],
+  ["@jest/globals", "jest"],
+  ["mocha", "mocha"],
+  ["chai", "chai"],
+  ["ava", "ava"],
+  ["tap", "tap"],
+  ["node:test", "node:test"],
+  ["cypress", "cypress"],
+  ["qunit", "qunit"],
+  ["@playwright/test", "playwright"],
+  ["playwright", "playwright"],
+];
+
+test("every module the runner table names is read off a real import", async (t) => {
+  const files = Object.fromEntries(
+    RUNNER_TABLE.map(([module], i) => [`m${i}.test.js`, `import * as runner from "${module}"\nrunner.test("x", () => {})\n`])
+  );
+  const dir = repo(files);
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+  const rels = Object.keys(files);
+  const { records } = await parseAll(list(dir, rels));
+
+  assert.deepEqual(
+    rels.map((rel) => [RUNNER_TABLE[Number(rel.slice(1, rel.indexOf(".")))][0], records.get(rel).facets.testRunner]),
+    RUNNER_TABLE
+  );
+});
+
+test("the runner table holds exactly the modules driven through it", () => {
+  assert.deepEqual([...TEST_RUNNER_MODULES], RUNNER_TABLE, "a module was added to the table or lost from it");
 });
 
 test("a runner the table names is read off the import, qunit included", async (t) => {
