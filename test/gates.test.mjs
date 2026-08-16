@@ -742,6 +742,7 @@ test("the counter-eligible set is exactly twelve named keys and every counter na
     // wrapper, and there the row is not offered at all (C8): a counter would
     // only ever state where a wrapper exists and is ignored, which is a defect.
     "route_logging", "route_network", "route_env",
+    "logger_over_puts", "http_through_client",
   ];
 
   const carrying = ALL_DIMENSIONS.filter((d) => typeof d.counterClaim === "string").map((d) => d.key);

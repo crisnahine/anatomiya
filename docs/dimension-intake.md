@@ -70,6 +70,8 @@ legitimate origin and the table says so rather than inventing an entry to point 
 | route_logging | - | - | shipped | The most cited agent symptom is framework-default code instead of the repository's wrapper. The wrapper is learned per file from relative imports whose filename says log, logger or logging; offered only where the corpus shows such a file (C8) |
 | route_network | - | - | shipped | Same shape over fetch and axios against a client, http, api, request or fetcher module |
 | route_env | - | - | shipped | Same shape over process.env against a config, env or settings module |
+| logger_over_puts | - | - | shipped | The Ruby side of route_logging: puts, print, p, pp and warn against any logger receiver. Offered only where the corpus shows a logging-shaped file (C8) |
+| http_through_client | - | - | shipped | The Ruby side of route_network: Net::HTTP and URI.open against a constant or variable named in the client vocabulary |
 | doc_comment_style | - | - | shipped | Written from the measured comment-divergence literature. Two real sides: repositories that document their export surface, and repositories whose files carry almost no comments, where the counter is the directive that stops tutorial-style over-commenting |
 | function_naming_case | - | - | shipped | The same learning over module-level function names. Module level only, matching function_style's altitude: a method answers to its class's convention |
 | exported_symbol_case | - | - | shipped | The same learning over a module's export surface, where a naming convention costs its consumers. Blind on a Flow-stripped file, because the retry deletes a type-only export whole |
