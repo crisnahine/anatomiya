@@ -1519,3 +1519,96 @@ test("a map holding a type-checked claim says the check did not enforce it", asy
   assert.match(out, /type-checked claim is stated in the map and not enforced on a branch/, out);
   assert.match(out, /anatomiya scan --deep/, "and it says where the tier does run");
 });
+
+/* --- the new claim families at check time --- */
+
+test("the doc-comment claim reads the comments, so a commented export is clean", async (t) => {
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/a.ts", `/** a */\nexport function fA() {}\n`);
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/b.ts", `/** what b does */\nexport function fB() {}\n`);
+    write("src/c.ts", `export function fC() {}\n`);
+    commit("add files");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    dimensions: [dim({ key: "doc_comment_style", precision: "partial" })],
+  });
+  const report = await check(dir);
+  assertExamined(report, "src/b.ts");
+  assertExamined(report, "src/c.ts");
+  const found = forKey(report, "doc_comment_style");
+  assert.deepEqual(found.map((f) => f.path), ["src/c.ts"], "only the uncommented export is a finding");
+});
+
+test("a learned naming class is enforced as the class the map stored", async (t) => {
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/a.ts", `export function goodName() {}\n`);
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/b.ts", `function anotherGood() {}\nfunction bad_name() {}\n`);
+    commit("add");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    dimensions: [dim({ key: "function_naming_case", learned: "camelCase" })],
+  });
+  const report = await check(dir);
+  assertExamined(report, "src/b.ts");
+  const found = forKey(report, "function_naming_case");
+  assert.equal(found.length, 1, JSON.stringify(found));
+  assert.equal(found[0].where, "bad_name");
+});
+
+test("a routing claim is not asked of a repository with no wrapper", async (t) => {
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/a.ts", `export const a = 1;\n`);
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("tools/loose.ts", `console.log("x");\n`);
+    commit("add");
+  });
+  facts(dir, { sha: sha(dir, "main") });
+  const report = await check(dir);
+  assertExamined(report, "tools/loose.ts");
+  assert.deepEqual(forKey(report, "route_logging"), []);
+});
+
+test("a new file breaking the area's learned filename class is a finding", async (t) => {
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/user-profile.ts", `export const a = 1;\n`);
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/orderList.ts", `export const b = 2;\n`);
+    write("src/data-store.ts", `export const c = 3;\n`);
+    commit("add");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    dimensions: [dim({ key: "file_naming_case", learned: "kebab-case" })],
+  });
+  const report = await check(dir);
+  assertExamined(report, "src/orderList.ts");
+  const found = forKey(report, "file_naming_case");
+  assert.deepEqual(found.map((f) => f.path), ["src/orderList.ts"]);
+  assert.equal(found[0].claim, "files here are named kebab-case");
+});
+
+test("a modified file keeping its old name is not a filename finding", async (t) => {
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/legacyName.ts", `export const a = 1;\n`);
+    write("src/user-profile.ts", `export const b = 2;\n`);
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/legacyName.ts", `export const a = 9;\n`);
+    commit("edit");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    dimensions: [dim({ key: "file_naming_case", learned: "kebab-case" })],
+  });
+  const report = await check(dir);
+  assertExamined(report, "src/legacyName.ts");
+  assert.deepEqual(forKey(report, "file_naming_case"), [], "the name predates this branch");
+});

@@ -131,9 +131,10 @@ async function main() {
         }
         runs++;
         for (const f of trial.wrote) {
-          const lang = language(f.rel);
-          if (!lang) continue;
-          outputs.push({ rel: `${task.id}-${i}/${f.rel}`, lang, source: f.source });
+          // `language` answers "js" for anything, so the extension filter is
+          // what keeps a README out of the parse.
+          if (!/\.(ts|mts|cts|tsx|js|jsx|mjs|cjs|rb|rake)$/.test(f.rel)) continue;
+          outputs.push({ rel: `${task.id}-${i}/${f.rel}`, lang: language(f.rel), source: f.source });
         }
         console.error(`${task.id}#${i}: ${trial.wrote.length} file(s)`);
       } finally {

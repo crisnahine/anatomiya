@@ -493,5 +493,38 @@
       "sideCounts": null,
       "source": "seed: unmeasured"
     }
+  },
+  "route_logging": {
+    "default": "none",
+    "provenance": {
+      "method": "literature",
+      "model": null,
+      "date": null,
+      "samples": null,
+      "sideCounts": null,
+      "source": "seed: unmeasured"
+    }
+  },
+  "route_network": {
+    "default": "none",
+    "provenance": {
+      "method": "literature",
+      "model": null,
+      "date": null,
+      "samples": null,
+      "sideCounts": null,
+      "source": "seed: unmeasured"
+    }
+  },
+  "route_env": {
+    "default": "none",
+    "provenance": {
+      "method": "literature",
+      "model": null,
+      "date": null,
+      "samples": null,
+      "sideCounts": null,
+      "source": "seed: unmeasured"
+    }
   }
 }

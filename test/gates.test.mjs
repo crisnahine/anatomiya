@@ -738,6 +738,10 @@ test("the counter-eligible set is exactly twelve named keys and every counter na
     // The other side of a learned class is another class, which the learning
     // already picks; a hand-written inverse would fight it.
     "function_naming_case", "exported_symbol_case",
+    // "This repository logs to the console on purpose" is a repository with no
+    // wrapper, and there the row is not offered at all (C8): a counter would
+    // only ever state where a wrapper exists and is ignored, which is a defect.
+    "route_logging", "route_network", "route_env",
   ];
 
   const carrying = ALL_DIMENSIONS.filter((d) => typeof d.counterClaim === "string").map((d) => d.key);

@@ -413,3 +413,13 @@ test("a multi-line annotation leaves the line numbers where they were", async ()
   assert.ok(marker, "the fixture lost its marker");
   assert.equal(source.slice(0, marker.start).split("\n").length, 11, "the marker is on line 11 of the source");
 });
+
+test("withProgram also hands back the comments the tree carries", async () => {
+  const { records } = await parseAll(
+    [{ rel: "c.ts", lang: "js", source: "/** doc */\nexport function a() {}\n" }],
+    { withProgram: true }
+  );
+  const r = records.get("c.ts");
+  assert.equal(r.ok, true);
+  assert.equal(r.comments.length, 1);
+});

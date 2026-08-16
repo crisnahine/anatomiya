@@ -176,6 +176,40 @@ const WITNESSES = {
     inapplicable: `function local() {}\nexport const limit = 3;`,
   },
 
+  // --- dimensions-capability.mjs ---
+  route_logging: {
+    lang: "js",
+    // Each direct form, and each import shape a wrapper binding arrives in.
+    applicable: [
+      `console.log("x")`,
+      `console.error("x")`,
+      `import logger from "./logger.js"; logger.info("x")`,
+      `import { log } from "./logging.ts"; log("x")`,
+      `import * as log from "../shared/app-logger.ts"; log.warn("x")`,
+    ],
+    inapplicable: `import winston from "winston"; winston.info("x")`,
+  },
+  route_network: {
+    lang: "js",
+    applicable: [
+      `const a = await fetch("/x")`,
+      `import axios from "axios"; await axios.get("/y")`,
+      `import { api } from "./api-client.ts"; await api.get("/z")`,
+      `import { request } from "./http.ts"; await request("/z")`,
+    ],
+    inapplicable: `import got from "got"; await got("/x")`,
+  },
+  route_env: {
+    lang: "js",
+    applicable: [
+      `const a = process.env.PORT`,
+      `const b = process.env["PORT"]`,
+      `import { config } from "./config.ts"; const c = config.port`,
+      `import settings from "./settings.js"; const d = settings.db.host`,
+    ],
+    inapplicable: `const e = process.argv[2]`,
+  },
+
   // --- dimensions-naming.mjs ---
   function_naming_case: {
     lang: "js",
