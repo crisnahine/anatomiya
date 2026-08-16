@@ -3,16 +3,14 @@ import assert from "node:assert/strict";
 
 import {
   renderArea,
-  renderLayout,
   renderOverview,
   unexaminedLines,
   unexaminedPhrase,
   untrackedSentence,
-  plural,
-  layoutSummary,
   OVERVIEW_AREAS,
   MAX_LINES,
 } from "../lib/render.mjs";
+import { layoutSummary, plural, renderLayout } from "../lib/render-layout.mjs";
 import { areaFilename, isOwned, GENERATOR } from "../lib/rules.mjs";
 import { layoutFacts } from "../lib/layout.mjs";
 import { principleKeys } from "../lib/principles.mjs";
@@ -1256,6 +1254,40 @@ test("the tests line is the denominator the roster exists for", () => {
   );
 });
 
+test("one file with a namesake takes the singular verb, on every line that prints the clause", () => {
+  // The subject is the count with a test, not the denominator: "1 of 504 have"
+  // is the same bug the file counts already had, one clause further along.
+  const withCount = (n) =>
+    clientLayout({
+      roots: clientLayout().roots.map((r) => (r.companions ? { ...r, companions: { ...r.companions, with: n } } : r)),
+    });
+
+  const one = renderLayout(withCount(1));
+  assert.match(one[3], /; 1 of 504 has a namesake test;/, one[3]);
+  assert.match(one[10], /; 1 of 504 \.tsx files has a namesake test$/, one[10]);
+
+  const two = renderLayout(withCount(2));
+  assert.match(two[3], /; 2 of 504 have a namesake test;/, two[3]);
+  assert.match(two[10], /; 2 of 504 \.tsx files have a namesake test$/, two[10]);
+});
+
+test("the kinds line agrees with its own namesake count", () => {
+  const kindsOf = (n) =>
+    renderArea(
+      area({
+        kinds: root("src/services", {
+          files: 13,
+          exts: [[".tsx", 7]],
+          jsxExt: ".tsx",
+          companions: { with: n, of: 7, root: null },
+        }),
+      })
+    ).split("\n")[8];
+
+  assert.equal(kindsOf(1), "kinds: 7 .tsx (JSX); 0 test files; 1 of 7 has a namesake test");
+  assert.equal(kindsOf(2), "kinds: 7 .tsx (JSX); 0 test files; 2 of 7 have a namesake test");
+});
+
 test("the roster prints only the sentences its counts ground", () => {
   const both = renderLayout(clientLayout());
   assert.equal(both[12], "Match sibling test shape; skip tests where siblings have none.");
@@ -1616,7 +1648,7 @@ test("a count of one reads as one on every clause of a root line", () => {
 
   assert.equal(
     lines[2],
-    "- src/one: 3 .tsx (JSX); 1 vitest spec; 1 of 1 have a namesake test; 1 sibling module named types; 1 file inlines a helper"
+    "- src/one: 3 .tsx (JSX); 1 vitest spec; 1 of 1 has a namesake test; 1 sibling module named types; 1 file inlines a helper"
   );
   assert.equal(lines[3], "- and 1 more directory holding 1 file");
 });
