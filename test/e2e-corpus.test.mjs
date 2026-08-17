@@ -9,7 +9,9 @@ import { FACTS_PATH, FACTS_SCHEMA } from "../lib/facts.mjs";
 import {
   COLUMNS,
   areaProblems,
+  byName,
   checkDirs,
+  corpusRepos,
   factsProblems,
   findingPaths,
   overviewProblems,
@@ -332,6 +334,27 @@ test("a scratch directory that reaches the corpus through a symlink is refused",
 
   assert.match(checkDirs(corpus, scratch, []), /inside the corpus/);
   assert.match(checkDirs(scratch, corpus, []), /removes/);
+});
+
+test("a corpus path that cannot be listed is a refusal, not a stack trace", (t) => {
+  // It threw ENOENT out of the driver, after the scratch directory had already
+  // been made for a run that was never going to happen.
+  const home = mkdtempSync(join(tmpdir(), "e2e-corpus-"));
+  t.after(() => rmSync(home, { recursive: true, force: true }));
+  mkdirSync(join(home, "errbit", ".git"), { recursive: true });
+  mkdirSync(join(home, "notes"));
+
+  assert.deepEqual(corpusRepos(home).repos, [{ name: "errbit", source: join(home, "errbit") }]);
+  assert.match(corpusRepos(join(home, "nope")).error, /nope/);
+});
+
+test("the repositories run in code-unit order, so the recorded table does not follow the locale", () => {
+  // Both measurement documents list the corpus in this order, and
+  // `localeCompare` orders case by whatever ICU tables the host was built with.
+  assert.deepEqual(
+    [{ name: "foo" }, { name: "Foo" }].sort(byName).map((r) => r.name),
+    ["Foo", "foo"]
+  );
 });
 
 test("the roots column is one string, whether or not the record was read", () => {

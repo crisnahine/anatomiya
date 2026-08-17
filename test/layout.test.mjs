@@ -11,6 +11,7 @@ import {
   mirroredTests,
   rootFacts,
   runnerOf,
+  tally,
   testsLine,
 } from "../lib/layout.mjs";
 import { roster } from "../lib/layout-scan.mjs";
@@ -207,10 +208,13 @@ test("a child has to hold four fifths of its parent to stand in for it", () => {
 });
 
 test("a namesake answers the file whose path tail it shares", () => {
-  const source = [file("app/models/edition/foo.rb", "ruby")];
-  const tests = [file("spec/models/edition/foo_spec.rb", "ruby")];
+  const source = [file("app/models/edition/foo.rb", "ruby"), file("app/models/edition/bar.rb", "ruby")];
+  const tests = [
+    file("spec/models/edition/foo_spec.rb", "ruby"),
+    file("spec/models/edition/bar_spec.rb", "ruby"),
+  ];
 
-  assert.deepEqual(namesakeCompanions(source, tests, "app/models"), { with: 1, of: 1, root: "spec/models" });
+  assert.deepEqual(namesakeCompanions(source, tests, "app/models"), { with: 2, of: 2, root: "spec/models" });
 });
 
 test("a namesake in another subtree answers nothing", () => {
@@ -224,12 +228,18 @@ test("an engine's spec tree answers the source tree beside it", () => {
   // openproject's `modules` read 0 of 2623: the tail is `budgets/app/models`
   // and the spec sits in `budgets/spec/models`, so `app` against `spec` is the
   // only thing between them.
-  const source = [file("modules/budgets/app/models/budget.rb", "ruby")];
-  const tests = [file("modules/budgets/spec/models/budget_spec.rb", "ruby")];
+  const source = [
+    file("modules/budgets/app/models/budget.rb", "ruby"),
+    file("modules/budgets/app/models/rate.rb", "ruby"),
+  ];
+  const tests = [
+    file("modules/budgets/spec/models/budget_spec.rb", "ruby"),
+    file("modules/budgets/spec/models/rate_spec.rb", "ruby"),
+  ];
 
   assert.deepEqual(namesakeCompanions(source, tests, "modules"), {
-    with: 1,
-    of: 1,
+    with: 2,
+    of: 2,
     root: "modules/budgets/spec",
   });
 });
@@ -238,12 +248,15 @@ test("a test tree one directory up the source path answers it", () => {
   // vscode reads `src/vs/base/test/common/foo.test.ts` against
   // `src/vs/base/common/foo.ts`: the tree segment is in the middle of the path
   // rather than at the front of it.
-  const source = [file("src/vs/base/common/foo.ts", "js")];
-  const tests = [file("src/vs/base/test/common/foo.test.ts", "js")];
+  const source = [file("src/vs/base/common/foo.ts", "js"), file("src/vs/base/common/bar.ts", "js")];
+  const tests = [
+    file("src/vs/base/test/common/foo.test.ts", "js"),
+    file("src/vs/base/test/common/bar.test.ts", "js"),
+  ];
 
   assert.deepEqual(namesakeCompanions(source, tests, "src/vs"), {
-    with: 1,
-    of: 1,
+    with: 2,
+    of: 2,
     root: "src/vs/base/test",
   });
 });
@@ -262,10 +275,32 @@ test("a mirror that parts on an ordinary name votes for no root", () => {
   // The two paths agree once the tree names are gone, and where they part is
   // `packages` against `integration`. Naming either as the test root would name
   // a directory neither side keeps tests in.
-  const source = [file("packages/app/models/foo.rb", "ruby")];
-  const tests = [file("integration/packages/spec/models/foo_spec.rb", "ruby")];
+  const source = [file("packages/app/models/foo.rb", "ruby"), file("packages/app/models/bar.rb", "ruby")];
+  const tests = [
+    file("integration/packages/spec/models/foo_spec.rb", "ruby"),
+    file("integration/packages/spec/models/bar_spec.rb", "ruby"),
+  ];
 
-  assert.deepEqual(namesakeCompanions(source, tests, ""), { with: 1, of: 1, root: null });
+  assert.deepEqual(namesakeCompanions(source, tests, ""), { with: 2, of: 2, root: null });
+});
+
+test("a clause resting on one answered file names no root", () => {
+  // One match names whatever it happens to touch: react's `packages/react`
+  // rests on a single answered file and named a compiled fixture bundle. The
+  // counts stand either way, and two files still name where they agree.
+  const tests = [file("spec/models/foo_spec.rb", "ruby"), file("spec/models/bar_spec.rb", "ruby")];
+  const source = [file("app/models/foo.rb", "ruby"), file("app/models/bar.rb", "ruby")];
+
+  assert.deepEqual(namesakeCompanions(source.slice(0, 1), tests, "app/models"), {
+    with: 1,
+    of: 1,
+    root: null,
+  });
+  assert.deepEqual(namesakeCompanions(source, tests, "app/models"), {
+    with: 2,
+    of: 2,
+    root: "spec/models",
+  });
 });
 
 test("a root nobody's namesake agrees on names no directory", () => {
@@ -278,23 +313,26 @@ test("a root nobody's namesake agrees on names no directory", () => {
 });
 
 test("a test directory beside the file is the root the namesakes share", () => {
-  const source = [file("src/components/Foo.tsx", "jsx")];
-  const tests = [file("src/components/__tests__/Foo.test.tsx", "jsx")];
+  const source = [file("src/components/Foo.tsx", "jsx"), file("src/components/Bar.tsx", "jsx")];
+  const tests = [
+    file("src/components/__tests__/Foo.test.tsx", "jsx"),
+    file("src/components/__tests__/Bar.test.tsx", "jsx"),
+  ];
 
   assert.deepEqual(namesakeCompanions(source, tests, "src/components"), {
-    with: 1,
-    of: 1,
+    with: 2,
+    of: 2,
     root: "src/components/__tests__",
   });
 });
 
 test("a colocated spec is a namesake, whatever suffix it spells", () => {
-  const source = [file("src/components/Foo.tsx", "jsx")];
-  const tests = [file("src/components/Foo.cy.ts", "js")];
+  const source = [file("src/components/Foo.tsx", "jsx"), file("src/components/Bar.tsx", "jsx")];
+  const tests = [file("src/components/Foo.cy.ts", "js"), file("src/components/Bar.cy.ts", "js")];
 
   assert.deepEqual(namesakeCompanions(source, tests, "src/components"), {
-    with: 1,
-    of: 1,
+    with: 2,
+    of: 2,
     root: "src/components",
   });
 });
@@ -321,13 +359,15 @@ test("a file votes for the first of its candidates that names a tree at all", ()
   // The first candidate parts from the source on `aaa`, which is no tree name,
   // so it votes for nothing. Stopping there threw the file's vote away while
   // still counting it answered, and the second candidate names `spec`.
-  const source = [file("app/models/user.rb", "ruby")];
+  const source = [file("app/models/user.rb", "ruby"), file("app/models/role.rb", "ruby")];
   const tests = [
     file("aaa/models/lib/user_spec.rb", "ruby"),
     file("spec/models/lib/user_spec.rb", "ruby"),
+    file("aaa/models/lib/role_spec.rb", "ruby"),
+    file("spec/models/lib/role_spec.rb", "ruby"),
   ];
 
-  assert.deepEqual(namesakeCompanions(source, tests, ""), { with: 1, of: 1, root: "spec" });
+  assert.deepEqual(namesakeCompanions(source, tests, ""), { with: 2, of: 2, root: "spec" });
 });
 
 test("the candidates sort by code unit, so the vote does not follow the machine's locale", () => {
@@ -338,6 +378,37 @@ test("the candidates sort by code unit, so the vote does not follow the machine'
   assert.deepEqual(
     index.get("x").map((t) => t.rel),
     ["Foo/x.test.ts", "foo/x.test.ts"]
+  );
+});
+
+test("a case tie in the roster orders by code unit, not by the host's locale", () => {
+  // Every sort here picks a line the section prints, and `localeCompare` orders
+  // case by whatever ICU tables the host was built with.
+  const roots = [
+    ...files(3, (i) => file(`Foo/a${i}.js`, "js")),
+    ...files(3, (i) => file(`foo/b${i}.js`, "js")),
+  ];
+  assert.deepEqual(paths(layoutRoots(roots, { minFiles: 3 }).roots), ["Foo", "foo"]);
+
+  assert.deepEqual(tally(["foo", "Foo"]), [["Foo", 1], ["foo", 1]]);
+
+  const specs = [
+    ...files(2, (i) => file(`Foo/x${i}.test.js`, "js", { testRunner: "zz" })),
+    ...files(2, (i) => file(`foo/y${i}.test.js`, "js", { testRunner: "aa" })),
+  ];
+  assert.deepEqual(
+    testsLine(specs).map((g) => g.root),
+    ["Foo", "foo"],
+    "the tests line breaks a count tie on the directory"
+  );
+
+  const runners = [
+    ...files(2, (i) => file(`t/a${i}.test.js`, "js", { testRunner: "Zz" })),
+    ...files(2, (i) => file(`t/b${i}.test.js`, "js", { testRunner: "zz" })),
+  ];
+  assert.deepEqual(
+    rootFacts({ path: "t", dir: "t", files: runners }, layoutIndexes(runners)).tests.map((t) => t.runner),
+    ["Zz", "zz"]
   );
 });
 
@@ -489,17 +560,19 @@ test("a root inside a test tree is not asked whether its fixtures have tests", (
   const corpus = [
     ...files(4, (i) => file(`test/cases/foo/lib${i}.js`, "js")),
     file("test/watch.test.js", "js", { testRunner: "jest" }),
+    file("test/build.test.js", "js", { testRunner: "jest" }),
     file("lib/watch.js", "js"),
+    file("lib/build.js", "js"),
   ];
   const indexes = layoutIndexes(corpus);
-  const record = rootFacts({ path: "test", dir: "test", files: corpus.slice(0, 5) }, indexes);
+  const record = rootFacts({ path: "test", dir: "test", files: corpus.slice(0, 6) }, indexes);
 
   assert.equal("companions" in record, false);
-  assert.deepEqual(record.exts, [[".js", 5]], "and the extension clause stays");
-  assert.deepEqual(record.tests, [{ runner: "jest", files: 1, sub: null }], "and the tests clause");
+  assert.deepEqual(record.exts, [[".js", 6]], "and the extension clause stays");
+  assert.deepEqual(record.tests, [{ runner: "jest", files: 2, sub: null }], "and the tests clause");
 
-  const outside = rootFacts({ path: "lib", dir: "lib", files: corpus.slice(5) }, indexes);
-  assert.deepEqual(outside.companions, { with: 1, of: 1, root: "test" }, "and a root outside is asked");
+  const outside = rootFacts({ path: "lib", dir: "lib", files: corpus.slice(6) }, indexes);
+  assert.deepEqual(outside.companions, { with: 2, of: 2, root: "test" }, "and a root outside is asked");
 });
 
 test("the JSX mark is only ever on an extension the line prints", () => {
@@ -564,12 +637,12 @@ test("an empty corpus has no root to print", () => {
 });
 
 test("a test file named after the file it covers is a namesake with no suffix at all", () => {
-  const source = [file("src/components/Foo.tsx", "jsx")];
-  const tests = [file("src/components/__tests__/Foo.ts", "js")];
+  const source = [file("src/components/Foo.tsx", "jsx"), file("src/components/Bar.tsx", "jsx")];
+  const tests = [file("src/components/__tests__/Foo.ts", "js"), file("src/components/__tests__/Bar.ts", "js")];
 
   assert.deepEqual(namesakeCompanions(source, tests, "src/components"), {
-    with: 1,
-    of: 1,
+    with: 2,
+    of: 2,
     root: "src/components/__tests__",
   });
 });
@@ -631,10 +704,10 @@ test("a file the parse never read is no sibling module", () => {
 
 test("a namesake whose root is the repository root names no directory", () => {
   // "under ." is not a place, and the renderer omits the clause on null.
-  const source = [file("a.ts", "js")];
-  const tests = [file("a.test.ts", "js")];
+  const source = [file("a.ts", "js"), file("b.ts", "js")];
+  const tests = [file("a.test.ts", "js"), file("b.test.ts", "js")];
 
-  assert.deepEqual(namesakeCompanions(source, tests, ""), { with: 1, of: 1, root: null });
+  assert.deepEqual(namesakeCompanions(source, tests, ""), { with: 2, of: 2, root: null });
 });
 
 test("one root reads the three indexes the corpus was walked for, and rebuilds none", () => {
@@ -646,26 +719,31 @@ test("one root reads the three indexes the corpus was walked for, and rebuilds n
     file("app/models/bar.rb", "ruby"),
     file("app/models/baz.rb", "ruby"),
     file("spec/models/foo_spec.rb", "ruby", { testRunner: "rspec" }),
+    file("spec/models/bar_spec.rb", "ruby", { testRunner: "rspec" }),
   ];
   const indexes = layoutIndexes(corpus);
 
   assert.deepEqual(Object.keys(indexes), ["testFiles", "mirrored", "byStem"]);
-  assert.deepEqual(indexes.testFiles.map((f) => f.rel), ["spec/models/foo_spec.rb"]);
+  assert.deepEqual(indexes.testFiles.map((f) => f.rel), [
+    "spec/models/foo_spec.rb",
+    "spec/models/bar_spec.rb",
+  ]);
 
   const root = { path: "app/models", dir: "app/models", files: corpus.slice(0, 3) };
 
-  assert.deepEqual(rootFacts(root, indexes).companions, { with: 1, of: 3, root: "spec/models" });
+  assert.deepEqual(rootFacts(root, indexes).companions, { with: 2, of: 3, root: "spec/models" });
 });
 
 test("the namesake index is built once and read by every root", () => {
   // A scan asks this per root over the same test files, and rebuilding the stem
   // map each time walks the whole corpus again for an answer that cannot differ.
-  const tests = [file("spec/models/foo_spec.rb", "ruby")];
+  const tests = [file("spec/models/foo_spec.rb", "ruby"), file("spec/models/bar_spec.rb", "ruby")];
   const index = namesakeIndex(tests);
+  const source = [file("app/models/foo.rb", "ruby"), file("app/models/bar.rb", "ruby")];
 
-  assert.deepEqual(namesakeCompanions([file("app/models/foo.rb", "ruby")], [], "app/models", index), {
-    with: 1,
-    of: 1,
+  assert.deepEqual(namesakeCompanions(source, [], "app/models", index), {
+    with: 2,
+    of: 2,
     root: "spec/models",
   });
 });
