@@ -7,6 +7,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.1.13] - 2026-08-17
+
+0.1.13 is the release where the map says where things live, not only how they are written. The
+always-loaded overview gains a `## What lives where` section counted over every tracked file; each
+area file says what kinds of files it holds, what its files import most, and what the rest of the
+repository imports from it; five learned rows state the base class, the mixin and the type-name
+prefixes a directory already uses; and the whole surface is accepted twice over a 35-repository
+corpus: a harness that re-derives every printed number, and an end-to-end run that drives the
+shipped CLI from a fresh clone of each repository through scan, a byte-identical rescan, pin and
+check.
 ### Added
 
 - The overview carries one fixed sentence beside the read-before-editing line: when unsure what the code does, read it, grep it, or run it instead of guessing, and say what you could not verify. Sources in `docs/research/one-line-that-stops-guessing.md`; decision A16.
@@ -871,6 +881,7 @@ which are partial; several listed there are not implemented yet.
 - No claim that this catches defects. Measured across ten repositories, 1 of 317 defect review
   comments was preventable by a conventions map.
 
+[0.1.13]: https://github.com/crisnahine/anatomiya/compare/v0.1.12...v0.1.13
 [0.1.12]: https://github.com/crisnahine/anatomiya/compare/v0.1.11...v0.1.12
 [0.1.11]: https://github.com/crisnahine/anatomiya/compare/v0.1.10...v0.1.11
 [0.1.10]: https://github.com/crisnahine/anatomiya/compare/v0.1.9...v0.1.10
