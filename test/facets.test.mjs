@@ -86,6 +86,24 @@ test("a CommonJS file's exports are read off its assignments", async (t) => {
   assert.equal(facets("named.js").inlineHelpers, 1, "make is exported, hidden is not");
 });
 
+test("a chained CommonJS assignment hands out the object at the end of the chain", async (t) => {
+  // `module.exports = exports = {...}` is how a file keeps both names pointing
+  // at the same object, and reading only the outer right-hand side saw an
+  // assignment rather than an object and published nothing.
+  const dir = repo({
+    "chain.js": `function a() {}\nfunction hidden() {}\nmodule.exports = exports = { a, b: 2 }\n`,
+    "lazy.js": `function plain() {}\nmodule.exports = { get other() { return require("./other") }, plain }\n`,
+  });
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+  const { records } = await parseAll(list(dir, ["chain.js", "lazy.js"]));
+  const facets = (rel) => records.get(rel).facets;
+
+  assert.deepEqual(facets("chain.js").exports, ["a", "b"]);
+  assert.equal(facets("chain.js").inlineHelpers, 1, "hidden alone; a is handed out");
+  assert.deepEqual(facets("lazy.js").exports, ["plain"], "a getter names no binding of this file's own");
+});
+
 test("a file whose Flow types were stripped still answers its facets", async (t) => {
   // The retry parses a blanked copy, so the module record the facets read is
   // that parse's own. The stripper deletes `import type` outright, which costs

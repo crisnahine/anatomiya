@@ -45,9 +45,13 @@ the renderer took the singular verb for a count of one in an earlier change and 
 spelling the plural, so babel's true `1 of 95 has a namesake test` read back as a failure. The verb
 comes off the renderer now.
 
-Re-run again after the mixin fix and the CommonJS one, which is the run recorded here: 35 of 35,
-and the only column that moved is `module_include`, on discourse, empire-flippers/api and forem
-(changes 13 and 14 below). The 35 rendered sections are byte-identical to the previous run's.
+Re-run again after the mixin fix and the CommonJS one: 35 of 35, and the only column that moved is
+`module_include`, on discourse, empire-flippers/api and forem (changes 13 and 14 below). The 35
+rendered sections were byte-identical to the previous run's.
+
+Re-run again after the vote-unit fix, which is the run recorded here: 35 of 35, no counted number in
+the table moved, the five learned tables are byte-identical, and three repositories moved an `under`
+clause (change 11 below).
 
 One byte-stability failure, on appsmith, in the first of seven full runs: `## Not covered` moved
 between the two scans. It did not reproduce in six later full runs or in four solo runs of that
@@ -66,41 +70,41 @@ are how many areas printed each roster line.
 
 | repo | tracked | roots | folded | testGroups | principles | extends_base | class_base | module_include | interface_prefix | type_alias_prefix | imports | reused | seconds |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| Homebrew__brew | 2501 | 3 | 0 | 3 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 14.9 |
-| TryGhost__Ghost | 7940 | 5 | 0 | 6 | 2 | 1 | 0 | 0 | 0 | 0 | 142 | 87 | 14.8 |
-| alphagov__whitehall | 2621 | 7 | 8 | 3 | 1 | 0 | 2 | 0 | 0 | 0 | 0 | 0 | 8.2 |
-| angular__angular | 8522 | 7 | 11 | 3 | 2 | 0 | 0 | 0 | 0 | 0 | 93 | 103 | 13.8 |
-| appsmithorg__appsmith | 13087 | 3 | 0 | 5 | 2 | 0 | 0 | 0 | 0 | 0 | 126 | 128 | 14.9 |
-| babel__babel | 2303 | 7 | 10 | 3 | 1 | 0 | 0 | 0 | 0 | 0 | 26 | 16 | 5.5 |
-| backstage__backstage | 11781 | 7 | 5 | 2 | 2 | 0 | 0 | 0 | 0 | 0 | 186 | 99 | 15.2 |
-| calcom__cal.diy | 7372 | 7 | 4 | 4 | 2 | 0 | 0 | 0 | 0 | 0 | 122 | 60 | 9.2 |
-| chef__chef | 2281 | 7 | 1 | 2 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 11.5 |
-| consul__consul | 6025 | 7 | 2 | 1 | 1 | 0 | 2 | 0 | 0 | 0 | 0 | 0 | 7.3 |
-| decidim__decidim | 11467 | 7 | 18 | 2 | 1 | 0 | 0 | 0 | 0 | 0 | 4 | 5 | 20.9 |
-| diaspora__diaspora | 1921 | 7 | 5 | 2 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 4.9 |
-| discourse__discourse | 23263 | 7 | 5 | 6 | 1 | 1 | 3 | 2 | 0 | 0 | 75 | 12 | 67.4 |
-| empire-flippers__api | 8986 | 7 | 2 | 2 | 1 | 0 | 7 | 3 | 0 | 0 | 0 | 0 | 18.9 |
-| empire-flippers__client | 2999 | 7 | 3 | 2 | 2 | 0 | 0 | 0 | 6 | 0 | 86 | 44 | 5.3 |
-| errbit__errbit | 529 | 7 | 7 | 2 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 1.1 |
-| eslint__eslint | 1533 | 7 | 10 | 3 | 1 | 0 | 0 | 0 | 0 | 0 | 1 | 7 | 4.4 |
-| fastlane__fastlane | 2136 | 7 | 7 | 2 | 1 | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 7.2 |
-| forem__forem | 6425 | 7 | 6 | 3 | 2 | 0 | 1 | 1 | 0 | 0 | 14 | 7 | 15.1 |
-| huginn__huginn | 729 | 7 | 9 | 1 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 2.8 |
-| instructure__canvas-lms | 21913 | 7 | 8 | 4 | 2 | 0 | 1 | 0 | 0 | 0 | 148 | 129 | 103.5 |
-| mastodon__mastodon | 9846 | 7 | 5 | 3 | 2 | 0 | 1 | 0 | 0 | 0 | 20 | 23 | 12.3 |
-| microsoft__vscode | 15712 | 4 | 0 | 6 | 2 | 0 | 0 | 0 | 14 | 0 | 164 | 90 | 58.7 |
-| openfoodfoundation__openfoodnetwork | 3882 | 7 | 7 | 2 | 1 | 0 | 0 | 0 | 0 | 0 | 3 | 1 | 10.7 |
-| opf__openproject | 22498 | 7 | 8 | 3 | 1 | 0 | 1 | 0 | 0 | 0 | 22 | 7 | 51.3 |
-| prisma__prisma | 6154 | 7 | 7 | 3 | 2 | 0 | 0 | 0 | 0 | 0 | 115 | 76 | 9.8 |
-| publiclab__plots2 | 860 | 7 | 6 | 2 | 1 | 0 | 0 | 0 | 0 | 0 | 1 | 0 | 2.6 |
-| puppetlabs__puppet | 2466 | 7 | 0 | 2 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 17.1 |
-| react__react | 2969 | 7 | 18 | 3 | 2 | 1 | 0 | 0 | 0 | 0 | 16 | 34 | 9.8 |
-| rubocop__rubocop | 2155 | 7 | 2 | 2 | 1 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 9.8 |
-| storybookjs__storybook | 7597 | 5 | 0 | 7 | 2 | 0 | 0 | 0 | 0 | 0 | 75 | 77 | 13.4 |
-| supabase__supabase | 16751 | 4 | 0 | 4 | 2 | 0 | 0 | 0 | 0 | 0 | 198 | 157 | 16.8 |
-| typeorm__typeorm | 3542 | 7 | 0 | 3 | 2 | 1 | 0 | 0 | 0 | 0 | 8 | 25 | 5.5 |
-| vercel__next.js | 28490 | 7 | 2 | 5 | 2 | 1 | 0 | 0 | 0 | 0 | 28 | 58 | 32.4 |
-| webpack__webpack | 14364 | 3 | 0 | 1 | 2 | 0 | 0 | 0 | 0 | 0 | 15 | 18 | 9.9 |
+| Homebrew__brew | 2501 | 3 | 0 | 3 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 24.4 |
+| TryGhost__Ghost | 7940 | 5 | 0 | 6 | 2 | 1 | 0 | 0 | 0 | 0 | 142 | 87 | 17.2 |
+| alphagov__whitehall | 2621 | 7 | 8 | 3 | 1 | 0 | 2 | 0 | 0 | 0 | 0 | 0 | 8.8 |
+| angular__angular | 8522 | 7 | 11 | 3 | 2 | 0 | 0 | 0 | 0 | 0 | 93 | 103 | 29.6 |
+| appsmithorg__appsmith | 13087 | 3 | 0 | 5 | 2 | 0 | 0 | 0 | 0 | 0 | 126 | 128 | 18.7 |
+| babel__babel | 2303 | 7 | 10 | 3 | 1 | 0 | 0 | 0 | 0 | 0 | 26 | 16 | 6.0 |
+| backstage__backstage | 11781 | 7 | 5 | 2 | 2 | 0 | 0 | 0 | 0 | 0 | 186 | 99 | 29.9 |
+| calcom__cal.diy | 7372 | 7 | 4 | 4 | 2 | 0 | 0 | 0 | 0 | 0 | 122 | 60 | 12.0 |
+| chef__chef | 2281 | 7 | 1 | 2 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 12.4 |
+| consul__consul | 6025 | 7 | 2 | 1 | 1 | 0 | 2 | 0 | 0 | 0 | 0 | 0 | 7.2 |
+| decidim__decidim | 11467 | 7 | 18 | 2 | 1 | 0 | 0 | 0 | 0 | 0 | 4 | 5 | 19.6 |
+| diaspora__diaspora | 1921 | 7 | 5 | 2 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 7.4 |
+| discourse__discourse | 23263 | 7 | 5 | 6 | 1 | 1 | 3 | 2 | 0 | 0 | 75 | 12 | 76.2 |
+| empire-flippers__api | 8986 | 7 | 2 | 2 | 1 | 0 | 7 | 3 | 0 | 0 | 0 | 0 | 22.0 |
+| empire-flippers__client | 2999 | 7 | 3 | 2 | 2 | 0 | 0 | 0 | 6 | 0 | 86 | 44 | 5.2 |
+| errbit__errbit | 529 | 7 | 7 | 2 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 1.2 |
+| eslint__eslint | 1533 | 7 | 10 | 3 | 1 | 0 | 0 | 0 | 0 | 0 | 1 | 7 | 4.2 |
+| fastlane__fastlane | 2136 | 7 | 7 | 2 | 1 | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 7.5 |
+| forem__forem | 6425 | 7 | 6 | 3 | 2 | 0 | 1 | 1 | 0 | 0 | 14 | 7 | 15.3 |
+| huginn__huginn | 729 | 7 | 9 | 1 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 2.7 |
+| instructure__canvas-lms | 21913 | 7 | 8 | 4 | 2 | 0 | 1 | 0 | 0 | 0 | 148 | 129 | 111.6 |
+| mastodon__mastodon | 9846 | 7 | 5 | 3 | 2 | 0 | 1 | 0 | 0 | 0 | 20 | 23 | 13.3 |
+| microsoft__vscode | 15712 | 4 | 0 | 6 | 2 | 0 | 0 | 0 | 14 | 0 | 164 | 90 | 62.2 |
+| openfoodfoundation__openfoodnetwork | 3882 | 7 | 7 | 2 | 1 | 0 | 0 | 0 | 0 | 0 | 3 | 1 | 11.6 |
+| opf__openproject | 22498 | 7 | 8 | 3 | 1 | 0 | 1 | 0 | 0 | 0 | 22 | 7 | 53.3 |
+| prisma__prisma | 6154 | 7 | 7 | 3 | 2 | 0 | 0 | 0 | 0 | 0 | 115 | 76 | 11.8 |
+| publiclab__plots2 | 860 | 7 | 6 | 2 | 1 | 0 | 0 | 0 | 0 | 0 | 1 | 0 | 2.7 |
+| puppetlabs__puppet | 2466 | 7 | 0 | 2 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 18.0 |
+| react__react | 2969 | 7 | 18 | 3 | 2 | 1 | 0 | 0 | 0 | 0 | 16 | 34 | 10.0 |
+| rubocop__rubocop | 2155 | 7 | 2 | 2 | 1 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 9.5 |
+| storybookjs__storybook | 7597 | 5 | 0 | 7 | 2 | 0 | 0 | 0 | 0 | 0 | 75 | 77 | 12.5 |
+| supabase__supabase | 16751 | 4 | 0 | 4 | 2 | 0 | 0 | 0 | 0 | 0 | 198 | 157 | 15.8 |
+| typeorm__typeorm | 3542 | 7 | 0 | 3 | 2 | 1 | 0 | 0 | 0 | 0 | 8 | 25 | 5.4 |
+| vercel__next.js | 28490 | 7 | 2 | 5 | 2 | 1 | 0 | 0 | 0 | 0 | 28 | 58 | 29.2 |
+| webpack__webpack | 14364 | 3 | 0 | 1 | 2 | 0 | 0 | 0 | 0 | 0 | 15 | 18 | 8.6 |
 
 ## Tuning, and why
 
@@ -279,6 +283,15 @@ had been won outright on one to three matches: angular's `packages/compiler-cli`
 `packages/core/schematics/migrations/signal-migration/test/golden-test` on one, and Ghost's
 `ghost/core` `apps/announcement-bar` on three.
 
+The unit is one vote per answered source file, cast for the first of its candidates once they are
+sorted by path. The half the top vote is measured against is a count of files, so a file answered
+from both a `spec` and a `test` tree voting once in each place compared two different things and
+could carry a root that under half the answered files ever named. Three roots moved when the unit
+was fixed: discourse's `frontend/discourse` dropped `under spec` and prints `14 of 1448 have a
+namesake test` bare, forem's `app/controllers` moved from `under spec/requests` to
+`under spec/controllers`, and react's `packages/react`, whose clause rests on a single answered
+file, named that file's first candidate instead.
+
 ### 12. A root inside a test tree is not asked about its fixtures
 
 A root whose path is, or sits under, a top-level `test`, `tests`, `spec`, `cypress`, `e2e` or
@@ -322,6 +335,10 @@ Was: the parser's static ESM record only. Now that, plus `module.exports = { a, 
 `module.exports = fn`, `module.exports = function () {}`, `exports.name = ...` and
 `module.exports.name = ...`. A repository written in `require` reported no exports at all, so every
 module-level function in it read as a private helper.
+
+The object at the end of a chain is the one that is published, so `module.exports = exports = { a }`
+hands out `a`. An accessor in that object is not an export name: it is read through the object
+rather than defined under that name in the file, and the usual shape is a lazy `require`.
 
 No repository's helper count moved. The clause that spends the facet is `N files inline a helper`,
 and `inlineFiles` counts JSX files only, so the fix can move a printed number only for a JSX file
@@ -1283,7 +1300,7 @@ Match sibling test shape; skip tests where siblings have none.
 
 - plugins: 4330 .rb, 4072 .yml and 2758 other; 1675 RSpec specs; 217 qunit specs; 1 test file under routes; 725 of 2655 have a namesake test
 - spec: 1680 RSpec specs, 7 test files and 498 other
-- frontend/discourse: 1907 .js, 1678 .gjs and 167 other; 456 qunit specs; 9 test files; 14 of 1448 have a namesake test under spec
+- frontend/discourse: 1907 .js, 1678 .gjs and 167 other; 456 qunit specs; 9 test files; 14 of 1448 have a namesake test
 - db/migrate: 1735 .rb, 1 .json; 7 of 1735 have a namesake test under spec/db/migrate
 - migrations: 392 .rb, 11 (none) and 24 other; 72 RSpec specs; 28 of 320 have a namesake test under migrations/tooling/spec
 - app/models: 379 .rb; 209 of 379 have a namesake test under spec/models
@@ -1394,7 +1411,7 @@ Match sibling test shape; skip tests where siblings have none.
 - db/migrate: 949 .rb; 0 of 949 have a namesake test
 - app/javascript: 321 .jsx (JSX), 297 .js and 33 other; 152 test files under __tests__; 66 of 240 have a namesake test; 220 sibling modules named index/actions/actionsPanel; 71 files inline a helper
 - app/services: 304 .rb; 266 of 304 have a namesake test under spec/services
-- app/controllers: 264 .rb, 1 (none); 14 of 264 have a namesake test under spec/requests
+- app/controllers: 264 .rb, 1 (none); 14 of 264 have a namesake test under spec/controllers
 - app/models: 166 .rb, 1 .md and 1 other; 134 of 166 have a namesake test under spec/models
 - app/workers: 157 .rb; 139 of 157 have a namesake test under spec/workers
 - and 6 more directories holding 2529 files
@@ -1577,7 +1594,7 @@ Match sibling test shape; skip tests where siblings have none.
 - packages/react-devtools-shared/src/devtools/views: 149 .js (JSX), 80 .css; 1 of 149 has a namesake test under packages/react-devtools-inline/__tests__/__e2e__; 27 sibling modules named utils/constants/types; 43 files inline a helper
 - packages/react-devtools-shared/src/hooks/__tests__/__source__/__compiled__: 144 test files and 67 other
 - packages/react-dom/src/__tests__: 133 test files
-- packages/react: 76 .js, 6 .ts and 3 other; 31 test files under __tests__; 1 of 51 has a namesake test under packages/react-devtools-shared/src/hooks/__tests__/__source__; 51 sibling modules named compiler-runtime/index/jsx-dev-runtime; 2 files inline a helper
+- packages/react: 76 .js, 6 .ts and 3 other; 31 test files under __tests__; 1 of 51 has a namesake test under packages/react-devtools-shared/src/hooks/__tests__/__source__/__compiled__/bundle; 51 sibling modules named compiler-runtime/index/jsx-dev-runtime; 2 files inline a helper
 - packages/react-reconciler/src (files at this level): 82 .js; 1 of 82 has a namesake test under packages/react-reconciler/src/forks
 - and 18 more directories holding 1460 files
 - tests: 583 test files under packages; 5 playwright; 1 node:test under compiler/apps/playground/__tests__; 0 of 205 .ts files have a namesake test

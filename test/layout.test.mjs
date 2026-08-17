@@ -299,6 +299,38 @@ test("a colocated spec is a namesake, whatever suffix it spells", () => {
   });
 });
 
+test("a file two trees both answer votes once, for the first of them", () => {
+  // The vote total is halved against the count of answered files, so a file
+  // counted once and voting twice compares two different units: `test` would
+  // win 2 votes out of 2 answered files here while `spec` answers one of them.
+  const source = [file("app/models/foo.rb", "ruby"), file("app/models/bar.rb", "ruby")];
+  const tests = [
+    file("test/models/foo_test.rb", "ruby"),
+    file("spec/models/foo_spec.rb", "ruby"),
+    file("test/models/bar_test.rb", "ruby"),
+  ];
+
+  assert.deepEqual(namesakeCompanions(source, tests, "app/models"), {
+    with: 2,
+    of: 2,
+    root: "spec/models",
+  });
+});
+
+test("the namesake index carries the two fields a pair would recompute", () => {
+  // `withoutTree` splits and filters the whole path, and it ran once per source
+  // file asking rather than once per test file.
+  const index = namesakeIndex([file("modules/budgets/spec/models/budget_spec.rb", "ruby")]);
+
+  assert.deepEqual(index.get("budget"), [
+    {
+      rel: "modules/budgets/spec/models/budget_spec.rb",
+      dir: "modules/budgets/spec/models",
+      bare: "modules/budgets/models",
+    },
+  ]);
+});
+
 test("a root whose files have no namesake reads zero of its own size", () => {
   const source = files(3, (i) => file(`app/workers/w${i}.rb`, "ruby"));
 

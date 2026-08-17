@@ -4,8 +4,14 @@ Date: 2026-08-17. End-to-end acceptance for the shipped command line: `scan`, `p
 as processes against a fresh clone that has never been scanned, and the files they leave on disk are
 read back and asserted.
 
-`scripts/e2e-corpus.mjs <corpusDir> <scratchDir>` runs it, and `npm run e2e:corpus` is the same
-thing. It is the sibling of `scripts/measure-layout.mjs` and deliberately not the same run: the
+`node scripts/e2e-corpus.mjs <corpusDir> <scratchDir>` runs it, and `npm run e2e:corpus -- <corpusDir>
+<scratchDir>` is the same thing. `--only <a,b>` runs those repositories rather than every child, and
+it is an error with nothing after it rather than a silent run of all of them. The scratch directory
+has to be empty and outside the corpus, either way round: the run clones into it and removes each
+clone by name, so an overlap is a write into the corpus or a removal of it, and both exit 2 before
+anything is made.
+
+It is the sibling of `scripts/measure-layout.mjs` and deliberately not the same run: the
 layout harness imports `scan` and calls it in process, which never touches argument parsing, exit
 codes, the summary lines, the writer, the pin file or the check. Those are the surface a user meets,
 and this is what exercises them.
@@ -45,14 +51,18 @@ with a learned class gets one new file in the area's own commonest extension:
 A repository that states none of the three gets a `.md` file instead and has to draw zero findings,
 because markdown is not source and nothing about it is claimed.
 
+A probe path that already exists is a failed assertion and the row ends there, unwritten. The clone
+is a copy and nothing reaches the corpus either way, but a probe body written over a real file would
+measure the check against a file this harness wrote rather than against the repository's own.
+
 ## What each column asserts
 
 | column | what it is, and what fails on it |
 |---|---|
 | files, areas | the first two numbers of the summary's head line; a missing head line is a failure |
 | stated | stated slots over every slot, off the claims line, by the renderer's own partition |
-| roots | three numbers: root lines printed, then areas carrying a non-null `imports` and a non-null `reused`. Null is an area with no static import surface, which was never asked, so it is not folded together with an area that was asked and imports nothing |
-| wrote | the write line's count, which also has to be the number of files in `.claude/rules/` |
+| roots | one string of three numbers, `roots/imports/reused`: root lines printed, then areas carrying a non-null `imports` and a non-null `reused`. Null is an area with no static import surface, which was never asked, so it is not folded together with an area that was asked and imports nothing. A run that never reached the record prints a dash for the last two rather than a shorter column |
+| wrote | the write line's count, which is asserted to be the number of files in `.claude/rules/` |
 | stable | the second scan wrote the same bytes and the same summary as the first |
 | pin | `pin` exited 0, wrote the baseline, and the scan after it named the pinned sha |
 | clean | findings on the clean tree, and the check exited 0 |
@@ -76,6 +86,11 @@ whose `paths` list alone runs past forty lines; every one of their bodies came i
 zero findings on its clean tree. 33 probes broke `file_naming_case`, react's broke `extends_base`,
 and errbit and this repository state none of the three rows, so both got the markdown probe and drew
 the zero findings it has to draw.
+
+This repository's own row was re-run alone, with `--only anatomiya`, after the harness grew the
+directory guard and the write-line assertion: 1 of 1, and the row below is that run. It is two files
+and one stated claim larger than the full run's, because the harness and its test were not yet
+committed when that one went. The other 35 rows are the full run's.
 
 ## The runs
 
@@ -116,7 +131,7 @@ the zero findings it has to draw.
 | typeorm__typeorm | 3347 | 120 | 96/1229 | 7/120/120 | 121 | yes | ok | 0 | yes file_naming_case | 7.9 |
 | vercel__next.js | 21368 | 500 | 97/6298 | 7/500/500 | 501 | yes | ok | 0 | yes file_naming_case | 57.3 |
 | webpack__webpack | 11925 | 393 | 14/2722 | 3/393/393 | 394 | yes | ok | 0 | yes file_naming_case | 18.1 |
-| anatomiya | 99 | 4 | 8/63 | 6/4/4 | 5 | yes | ok | 0 | n.a. | 3.0 |
+| anatomiya | 101 | 4 | 9/63 | 6/4/4 | 5 | yes | ok | 0 | n.a. | 3.4 |
 
 `files` is the corpus the scan counted, which is tracked source only, so it is smaller than the
 `tracked` column in the layout measurement: that one counts every tracked file the corpus filter
@@ -154,10 +169,10 @@ a session already running still holds the old map; restart to pick it up
 anatomiya:
 
 ```
-99 files, 4 areas, 433ms, root <scratch>/anatomiya
-8 of 63 claims stated, 5 match the model default, the rest print as counts
-layout: 6 roots, 0 folded, tests: 40 node:test under test; roster lines: 2 areas with imports, 1 with reuse
-baseline fb4d9c93, 0 files changed since origin/HEAD
+101 files, 4 areas, 516ms, root <scratch>/anatomiya
+9 of 63 claims stated, 6 match the model default, the rest print as counts
+layout: 6 roots, 0 folded, tests: 41 node:test under test; roster lines: 2 areas with imports, 1 with reuse
+baseline 4c8a6097, 0 files changed since origin/HEAD
 1 file in no area: too few per directory
 wrote 5 files
 a session already running still holds the old map; restart to pick it up

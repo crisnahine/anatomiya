@@ -19,7 +19,7 @@
  */
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { isSource, language } from "../lib/corpus.mjs";
@@ -161,6 +161,18 @@ export function rosterCounts(facts) {
   };
 }
 
+// The roots column, in the one shape a reader compares down the table: root
+// lines printed, then the two roster answers. A run that never got as far as
+// the record says so with a dash rather than with a shorter column.
+export const rootsColumn = (roots, roster = null) =>
+  `${roots}/${roster ? roster.imports : "-"}/${roster ? roster.reused : "-"}`;
+
+/** The write line's own count, against what is in the directory it wrote to. */
+export function wroteProblems(wrote, names) {
+  if (wrote === names.length) return [];
+  return [`the scan says it wrote ${wrote} files and ${RULES_DIR}/ holds ${names.length}: ${names.join(", ")}`];
+}
+
 // --- the synthetic violation ------------------------------------------------
 
 // In the order they are tried. The first is stated far more often than the two
@@ -260,6 +272,9 @@ export function parseArgs(argv) {
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === "--only") {
+      // Last on the line it read nothing and ran all thirty-six, which is an
+      // hour of clones for a run that asked for one repository.
+      if (i + 1 >= argv.length) return { error: "--only needs a comma-separated list of repository names" };
       opts.only = argv[++i];
       continue;
     }
@@ -271,6 +286,34 @@ export function parseArgs(argv) {
   return { ...opts, corpus: positional[0], scratch: positional[1] };
 }
 
+const inside = (path, dir) => path.startsWith(dir.endsWith(sep) ? dir : dir + sep);
+
+/**
+ * Whether these two directories are safe to run between, on resolved paths.
+ *
+ * The corpus is read-only and the scratch directory is a place this run makes
+ * and removes clones in, so one inside the other is either a write into the
+ * corpus or a removal of it. Swapped arguments are the ordinary way to reach
+ * both. Entries already there are the third refusal: a clone is removed by name
+ * before it is made, so a directory holding somebody else's work is a directory
+ * this run would delete from.
+ */
+export function checkDirs(corpus, scratch, entries) {
+  if (corpus === scratch) {
+    return `the corpus and the scratch directory are the same directory, ${corpus}, so every clone would be written into the corpus`;
+  }
+  if (inside(scratch, corpus)) {
+    return `the scratch directory ${scratch} is inside the corpus ${corpus}, so every clone would be written into the corpus`;
+  }
+  if (inside(corpus, scratch)) {
+    return `the corpus ${corpus} is inside the scratch directory ${scratch}, and this run removes what it finds under the scratch directory by name`;
+  }
+  if (entries.length) {
+    return `the scratch directory ${scratch} already holds ${entries.length} ${entries.length === 1 ? "entry" : "entries"} (${entries.join(", ")}), and a clone is removed by name before it is made`;
+  }
+  return null;
+}
+
 // --- the driver -------------------------------------------------------------
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -278,7 +321,10 @@ const BIN = join(HERE, "..", "bin", "anatomiya.mjs");
 const MAX_BUFFER = 256 * 1024 * 1024;
 
 const git = (args, cwd) => run("git", args, cwd);
-const anatomiya = (args) => run(process.execPath, [BIN, ...args], HERE);
+// Run from the scratch directory, not from this tool's own tree: a command
+// that reads the working directory would otherwise be answered by the
+// repository under test's own source.
+const anatomiya = (args, cwd) => run(process.execPath, [BIN, ...args], cwd);
 
 function run(cmd, args, cwd) {
   const r = spawnSync(cmd, args, { cwd, encoding: "utf8", maxBuffer: MAX_BUFFER });
@@ -340,32 +386,39 @@ async function runRepo(name, source, scratchDir) {
     const base = branch.out.trim();
 
     /* 1 and 2: the first scan, and what it wrote. */
-    const first = anatomiya(["scan", clone]);
+    const first = anatomiya(["scan", clone], scratchDir);
     if (first.status !== 0) {
       fail(`scan exited ${first.status}: ${first.err.split("\n")[0]}`);
       return { row, problems };
     }
     const s1 = parseSummary(first.out);
     for (const p of summaryProblems(s1)) fail(p);
-    Object.assign(row, { files: s1.files, areas: s1.areas, stated: `${s1.stated}/${s1.claims}`, roots: s1.roots, wrote: s1.wrote });
+    Object.assign(row, {
+      files: s1.files,
+      areas: s1.areas,
+      stated: `${s1.stated}/${s1.claims}`,
+      roots: rootsColumn(s1.roots),
+      wrote: s1.wrote,
+    });
 
     const overview = join(clone, RULES_DIR, OVERVIEW_FILE);
     if (!existsSync(overview)) fail(`no ${OVERVIEW_FILE} was written`);
     else for (const p of overviewProblems(readFileSync(overview, "utf8"))) fail(p);
     const written = ruleFiles(clone);
     for (const [n, body] of written) if (n !== OVERVIEW_FILE) for (const p of areaProblems(n, body)) fail(p);
+    for (const p of wroteProblems(s1.wrote, [...written.keys()])) fail(p);
 
     const factsFile = join(clone, FACTS_PATH);
     if (!existsSync(factsFile)) fail(`no ${FACTS_PATH} was written`);
     else {
       const facts = JSON.parse(readFileSync(factsFile, "utf8"));
       for (const p of factsProblems(facts)) fail(p);
-      const roster = rosterCounts(facts);
-      row.roots = `${s1.roots}/${roster.imports}/${roster.reused}`;
+      row.roots = rootsColumn(s1.roots, rosterCounts(facts));
     }
 
-    /* 3: the same source twice, byte for byte (A5). */
-    const second = anatomiya(["scan", clone]);
+    /* 3: the same source twice, byte for byte, or the map is not worth a
+       cached read. */
+    const second = anatomiya(["scan", clone], scratchDir);
     if (second.status !== 0) fail(`the second scan exited ${second.status}: ${second.err.split("\n")[0]}`);
     row.stable = sameFiles(written, ruleFiles(clone)) ? "yes" : "no";
     if (row.stable === "no") fail("the second scan wrote a different map over unchanged source");
@@ -375,19 +428,19 @@ async function runRepo(name, source, scratchDir) {
     }
 
     /* 4: pin, then scan against it. */
-    const pinned = anatomiya(["pin", clone]);
+    const pinned = anatomiya(["pin", clone], scratchDir);
     row.pin = pinned.status === 0 && existsSync(join(clone, PIN_PATH)) ? "ok" : "no";
     if (row.pin === "no") fail(`pin exited ${pinned.status}: ${pinned.err.split("\n")[0] || `no ${PIN_PATH}`}`);
     const sha = git(["rev-parse", "HEAD"], clone).out.trim();
 
-    const third = anatomiya(["scan", clone]);
+    const third = anatomiya(["scan", clone], scratchDir);
     if (third.status !== 0) fail(`the scan after the pin exited ${third.status}: ${third.err.split("\n")[0]}`);
     const s3 = parseSummary(third.out);
     if (s3.baselineSha !== sha.slice(0, 8)) fail(`the baseline line names ${s3.baselineSha}, not the pinned ${sha.slice(0, 8)}`);
     if (existsSync(overview)) for (const p of overviewProblems(readFileSync(overview, "utf8"))) fail(p);
 
     /* 5: the clean tree. Findings never set the exit code. */
-    const clean = anatomiya(["check", clone]);
+    const clean = anatomiya(["check", clone], scratchDir);
     if (clean.status !== 0) fail(`check exited ${clean.status} on a clean tree: ${clean.err.split("\n")[0]}`);
     row.clean = findingPaths(clean.out).length;
     const head = clean.out.split("\n")[0];
@@ -396,14 +449,19 @@ async function runRepo(name, source, scratchDir) {
     const plan = probePlan(JSON.parse(readFileSync(factsFile, "utf8")));
     const probePath = plan ? plan.path : "e2e-probe.md";
     if (git(["checkout", "-q", "-b", "e2e/probe"], clone).status !== 0) fail("could not branch the clone");
-    if (existsSync(join(clone, probePath))) fail(`${probePath} already exists, so the probe would edit real code`);
+    // The clone is a copy, but the probe body is not this repository's code and
+    // overwriting a real file would measure the tool against a file it wrote.
+    if (existsSync(join(clone, probePath))) {
+      fail(`${probePath} already exists, so the probe would overwrite real code`);
+      return { row, problems, head, summary: third.out };
+    }
     mkdirSync(dirname(join(clone, probePath)), { recursive: true });
     writeFileSync(join(clone, probePath), plan ? plan.body : "e2e probe\n");
     git(["add", "--", probePath], clone);
     const committed = git(["-c", "user.name=e2e", "-c", "user.email=e2e@local", "commit", "-qm", "e2e probe"], clone);
     if (committed.status !== 0) fail(`could not commit the probe: ${committed.err.split("\n")[0]}`);
 
-    const probed = anatomiya(["check", clone, "--base", base]);
+    const probed = anatomiya(["check", clone, "--base", base], scratchDir);
     if (probed.status !== 0) fail(`check exited ${probed.status} on the probe branch: ${probed.err.split("\n")[0]}`);
     const named = findingPaths(probed.out);
     if (plan) {
@@ -435,6 +493,14 @@ async function main() {
   const corpusDir = resolve(opts.corpus);
   const scratchDir = resolve(opts.scratch);
   const only = opts.only ? new Set(opts.only.split(",")) : null;
+
+  // Asked before the directory is made, so a scratch path inside the corpus is
+  // refused rather than created there.
+  const refused = checkDirs(corpusDir, scratchDir, existsSync(scratchDir) ? readdirSync(scratchDir) : []);
+  if (refused) {
+    console.error(`${refused}\n\n${USAGE}`);
+    process.exit(2);
+  }
   mkdirSync(scratchDir, { recursive: true });
 
   const repos = readdirSync(corpusDir, { withFileTypes: true })
