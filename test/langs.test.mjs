@@ -9,6 +9,7 @@ import {
   language,
   grammarFor,
   langHas,
+  assertRegistry,
 } from "../lib/langs.mjs";
 
 test("the Flow retry covers every JavaScript extension the corpus accepts", () => {
@@ -48,6 +49,14 @@ test("language answers by extension, then whole filename, then the fallback", ()
   }
   // Matched whole, so a lockfile is not its Gemfile.
   assert.equal(language("Gemfile.lock"), "js");
+  // A basename that is only a known extension is that extension's language,
+  // exactly as the old anchored regexes read it: a tracked `.rb` went to prism
+  // and moving it to the fallback engine moved the map.
+  assert.equal(language(".rb"), "ruby");
+  assert.equal(language("src/.tsx"), "jsx");
+  // An unowned dotfile still falls back.
+  assert.equal(language(".eslintrc"), "js");
+  assert.equal(language(".env"), "js");
   // The fallback is a declared fact, not a dangling else.
   assert.deepEqual(
     LANGUAGES.filter((l) => l.fallback).map((l) => l.id),
@@ -71,6 +80,13 @@ test("a scratch name routes back to its own declaration", () => {
 
 test("an undeclared id refuses loudly", () => {
   assert.throws(() => declOf("python"), /python/);
+});
+
+test("a declaration with positions no reader understands refuses to load", () => {
+  const bad = LANGUAGES.map((l) =>
+    l.id === "ruby" ? { ...l, positions: { offsets: "utf8", lines: true } } : l
+  );
+  assert.throws(() => assertRegistry(bad), /utf8/);
 });
 
 test("capabilities are the closed pair, declared per language", () => {

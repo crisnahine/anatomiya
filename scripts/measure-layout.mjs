@@ -38,7 +38,7 @@ import { baseOf, dirOf, extOf, stemOf } from "../lib/paths.mjs";
 import { scan } from "../lib/scan.mjs";
 import { MAX_LINES, renderOverview, splitUncovered } from "../lib/render.mjs";
 import { namesakeClause, ROOT_LABEL } from "../lib/render-layout.mjs";
-import { RUNNER_LABELS } from "../lib/test-shape.mjs";
+import { RUNNER_LABELS, UNNAMED_RUNNER } from "../lib/test-shape.mjs";
 import { readFacts, statedSide, writeFacts } from "../lib/facts.mjs";
 import { areaFilename, auditRules, knownNames, OVERVIEW_FILE } from "../lib/rules.mjs";
 import { encodePath } from "../lib/encode.mjs";
@@ -199,7 +199,7 @@ function readExtClause(clause) {
 
 const runnerLabel = (runner) => RUNNER_LABELS[runner] ?? runner;
 const specNoun = (n, runner) =>
-  runner === "test files" ? `test file${n === 1 ? "" : "s"}` : `${runnerLabel(runner)} spec${n === 1 ? "" : "s"}`;
+  runner === UNNAMED_RUNNER ? `test file${n === 1 ? "" : "s"}` : `${runnerLabel(runner)} spec${n === 1 ? "" : "s"}`;
 
 // --- the assertions ---------------------------------------------------------
 
@@ -326,7 +326,7 @@ function checkTestsLine(line, corpus, recordRoots, testFiles) {
   const clauses = line.slice("- tests: ".length).split("; ");
   const shown = recount.slice(0, TESTS_GROUPS);
   for (const [i, g] of shown.entries()) {
-    const noun = i === 0 ? specNoun(g.files, g.runner) : g.runner === "test files" ? `test file${g.files === 1 ? "" : "s"}` : runnerLabel(g.runner);
+    const noun = i === 0 ? specNoun(g.files, g.runner) : g.runner === UNNAMED_RUNNER ? `test file${g.files === 1 ? "" : "s"}` : runnerLabel(g.runner);
     const expected = `${g.files} ${noun}` + (g.root ? ` under ${pathLabel(g.root)}` : "");
     const clause = clauses.shift();
     if (clause !== expected) fail(`tests line group ${i + 1}: printed "${clause}", recount "${expected}"`);
