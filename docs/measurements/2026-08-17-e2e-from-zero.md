@@ -4,8 +4,14 @@ Date: 2026-08-17. End-to-end acceptance for the shipped command line: `scan`, `p
 as processes against a fresh clone that has never been scanned, and the files they leave on disk are
 read back and asserted.
 
-`scripts/e2e-corpus.mjs <corpusDir> <scratchDir>` runs it, and `npm run e2e:corpus` is the same
-thing. It is the sibling of `scripts/measure-layout.mjs` and deliberately not the same run: the
+`node scripts/e2e-corpus.mjs <corpusDir> <scratchDir>` runs it, and `npm run e2e:corpus -- <corpusDir>
+<scratchDir>` is the same thing. `--only <a,b>` runs those repositories rather than every child, and
+it is an error with nothing after it rather than a silent run of all of them. The scratch directory
+has to be empty and outside the corpus, either way round: the run clones into it and removes each
+clone by name, so an overlap is a write into the corpus or a removal of it, and both exit 2 before
+anything is made.
+
+It is the sibling of `scripts/measure-layout.mjs` and deliberately not the same run: the
 layout harness imports `scan` and calls it in process, which never touches argument parsing, exit
 codes, the summary lines, the writer, the pin file or the check. Those are the surface a user meets,
 and this is what exercises them.
@@ -45,14 +51,18 @@ with a learned class gets one new file in the area's own commonest extension:
 A repository that states none of the three gets a `.md` file instead and has to draw zero findings,
 because markdown is not source and nothing about it is claimed.
 
+A probe path that already exists is a failed assertion and the row ends there, unwritten. The clone
+is a copy and nothing reaches the corpus either way, but a probe body written over a real file would
+measure the check against a file this harness wrote rather than against the repository's own.
+
 ## What each column asserts
 
 | column | what it is, and what fails on it |
 |---|---|
 | files, areas | the first two numbers of the summary's head line; a missing head line is a failure |
 | stated | stated slots over every slot, off the claims line, by the renderer's own partition |
-| roots | three numbers: root lines printed, then areas carrying a non-null `imports` and a non-null `reused`. Null is an area with no static import surface, which was never asked, so it is not folded together with an area that was asked and imports nothing |
-| wrote | the write line's count, which also has to be the number of files in `.claude/rules/` |
+| roots | one string of three numbers, `roots/imports/reused`: root lines printed, then areas carrying a non-null `imports` and a non-null `reused`. Null is an area with no static import surface, which was never asked, so it is not folded together with an area that was asked and imports nothing. A run that never reached the record prints a dash for the last two rather than a shorter column |
+| wrote | the write line's count, which is asserted to be the number of files in `.claude/rules/` |
 | stable | the second scan wrote the same bytes and the same summary as the first |
 | pin | `pin` exited 0, wrote the baseline, and the scan after it named the pinned sha |
 | clean | findings on the clean tree, and the check exited 0 |
