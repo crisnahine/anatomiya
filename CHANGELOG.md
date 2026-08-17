@@ -7,6 +7,51 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-08-18
+
+0.2.2 closes two ways the tool answered clean about work it had not looked at. A class that forgot
+its `include` was not a site at all, so the map's own strongest reading, every class here carries
+this mixin, was the one reading the check could not enforce. And the check read commits, while an
+agent writes, checks, fixes and then commits, so the run that mattered most was the run about
+content still only in the working tree. Both are counted now, and the second says so on every run
+that reads one.
+
+Two review rounds over five reviewer passes found eighteen things in the fixes themselves, of which
+the ones worth naming are the forgeries: an uncommitted rename, and a path the index calls an
+addition whose committed version is right there, each charging a branch for every site in a file it
+had not written. Whether a path has a base version is a question about the merge base, and it is
+asked there now.
+
+### Fixed
+
+- `module_include` counts the body that declares nothing, so a class that forgot the include is
+  caught rather than invisible. A class body is a site when it includes something, and also when it
+  includes nothing, names no superclass and is not nested inside another class. A namespacing
+  module, a subclass and a nested helper each have somewhere else to have got the mixin and are not
+  sites. A body mixing in nothing has no constants to be told apart by, so it is fingerprinted by
+  its own qualified name: otherwise every include-less body in one file is the same site, a new one
+  absorbs an older one's finding, and the report names a class the branch never touched. A body that
+  prepends or extends a constant, and a reopening of a class that declares a mixin elsewhere in the
+  file, both declared one by another route and are not sites either. Measured over
+  twelve Ruby repositories: eleven do not move and empire-flippers/api is identical row for row.
+  Decision H16, issue #46.
+
+### Changed
+
+- `check` reads the head side from the working tree wherever the tree differs from the commit, and
+  examines a file that exists only in the tree. An agent writes, checks, fixes, then commits, so
+  the run that used to answer `0 MUST-FIX` about content it had not read now answers about the work
+  as it stands, and says how many files it read that way. The base side is still read at a commit,
+  so nothing an agent edits can move the population it is judged against, and the tree is read only
+  where a merge base exists to judge against it. A pending path is resolved rather than joined, so
+  a symlink out of the repository is refused the way the scan already refuses to write through one,
+  under the same size bound the committed side reads at, through one open handle so the size that was checked is the size that is read. Whether a pending path has a base version
+  is asked of the merge base rather than of the index letter, so `git rm --cached` and a
+  delete-then-restore no longer charge the branch for every site in the file. Decision E9, issue #48.
+- The two delivery facts that were folklore are written down: a Read that fails still attaches the
+  area file its path matched, and a subagent is served by the same channel, with the session's
+  working directory deciding what it holds before its first Read. Decision A18, issue #47.
+
 ## [0.2.1] - 2026-08-17
 
 0.2.1 changes no count and no rendered byte. It puts a number behind the one word three delivery
@@ -944,6 +989,7 @@ which are partial; several listed there are not implemented yet.
 - No claim that this catches defects. Measured across ten repositories, 1 of 317 defect review
   comments was preventable by a conventions map.
 
+[0.2.2]: https://github.com/crisnahine/anatomiya/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/crisnahine/anatomiya/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/crisnahine/anatomiya/compare/v0.1.13...v0.2.0
 [0.1.13]: https://github.com/crisnahine/anatomiya/compare/v0.1.12...v0.1.13

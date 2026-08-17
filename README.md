@@ -242,7 +242,7 @@ agent's own output cannot raise the bar it is judged against. Gates and threshol
 | Command | What it does |
 |---|---|
 | `/anatomiya:scan` | Walks tracked source, counts every dimension per directory, applies the gates, rewrites the map, and reports what it could not cover: files in no area, files that failed to parse, files over the size cap, and any file in `.claude/rules/` it did not write. |
-| `/anatomiya:check` | Diffs the branch against its merge base and reports which stated conventions the branch broke, as MUST-FIX, FIX or NIT. |
+| `/anatomiya:check` | Reports which stated conventions the branch broke, as MUST-FIX, FIX or NIT. The base side is the merge base; the side being judged is the working tree, so it answers before you commit. |
 | `/anatomiya:pin` | Accepts the current file population as the baseline the gates read, and prints which files enter and leave it. Without one, every claim is measured against the working tree and no finding can exceed FIX. |
 
 `check` blocks nothing. MUST-FIX means the baseline population held zero violations of that claim,
@@ -257,7 +257,7 @@ discourse, rails applications, monorepos). Two acceptance runs are committed as
 [docs/measurements](docs/measurements): the layout harness re-derives every printed number
 independently on all 35, and `npm run e2e:corpus` drives the shipped CLI from a fresh clone of each
 repository through scan, a byte-identical rescan, pin, check, and a synthetic violation the check
-must catch. The unit suite is 1,098 tests with enforced coverage floors, and CI runs it on Linux,
+must catch. The unit suite is 1,194 tests with enforced coverage floors, and CI runs it on Linux,
 macOS and Windows.
 
 ## Limits
@@ -269,6 +269,19 @@ tool call or an `@file` mention. It does not load on grep, on glob, on `cat` thr
 edit with no prior read. An agent that greps its way to a line and edits it never sees the area
 file; the overview, which has no `paths` key, is the one part that always loads. That is a real
 ceiling on coverage, not a rough edge.
+
+The Read has to be attempted, not to succeed: a Read of a path that does not exist yet still
+attaches the area file for it, so an agent checking whether its target is already there gets the
+counts at the moment it is about to write. And one delivery lasts one context window rather than
+the session; a compaction or a resume rebuilds the window and the map comes back from disk, the
+overview at the boundary and an area file on the next read that matches it.
+
+**A subagent gets the map, and where you started the session decides when.** Run at the mapped
+repository's root, the overview reaches a subagent on its first turn, before it reads anything: that
+is what five subagent transcripts here show. Run one directory up, with the repository as a
+subdirectory, nothing loads until a file under it is touched, so a subagent that only greps and
+`cat`s receives nothing at all. Same ceiling as above, one level worse, and it is the exploration
+phase of a fan-out that it costs.
 
 **The measured preventable share is 8% to 15% of human review comments.** That is from 4,616 review
 comments at one company and 3,015 from ten public repositories, hand-classified. Those are the
@@ -303,7 +316,7 @@ gate's second opinion. The full numbers and their caveats are in [docs/why.md](d
 
 ## Learn more
 
-- [DECISIONS.md](DECISIONS.md) is the build contract: 103 numbered decisions, each with the
+- [DECISIONS.md](DECISIONS.md) is the build contract: 106 numbered decisions, each with the
   measurement or the review finding that forced it. Why a threshold is where it is, why the parser
   runs in child processes, why there is no hook: that is the file.
 - [docs/why.md](docs/why.md) is the longer argument and the full numbers.
