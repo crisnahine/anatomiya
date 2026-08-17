@@ -317,6 +317,30 @@ test("a file two trees both answer votes once, for the first of them", () => {
   });
 });
 
+test("a file votes for the first of its candidates that names a tree at all", () => {
+  // The first candidate parts from the source on `aaa`, which is no tree name,
+  // so it votes for nothing. Stopping there threw the file's vote away while
+  // still counting it answered, and the second candidate names `spec`.
+  const source = [file("app/models/user.rb", "ruby")];
+  const tests = [
+    file("aaa/models/lib/user_spec.rb", "ruby"),
+    file("spec/models/lib/user_spec.rb", "ruby"),
+  ];
+
+  assert.deepEqual(namesakeCompanions(source, tests, ""), { with: 1, of: 1, root: "spec" });
+});
+
+test("the candidates sort by code unit, so the vote does not follow the machine's locale", () => {
+  // The sort now picks what gets rendered, and `localeCompare` orders case by
+  // the ICU tables the host was built with.
+  const index = namesakeIndex([file("foo/x.test.ts", "js"), file("Foo/x.test.ts", "js")]);
+
+  assert.deepEqual(
+    index.get("x").map((t) => t.rel),
+    ["Foo/x.test.ts", "foo/x.test.ts"]
+  );
+});
+
 test("the namesake index carries the two fields a pair would recompute", () => {
   // `withoutTree` splits and filters the whole path, and it ran once per source
   // file asking rather than once per test file.

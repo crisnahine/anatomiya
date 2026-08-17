@@ -72,7 +72,7 @@ test("a grouped row votes once per body and class", () => {
   assert.equal(learnClass(perFile), "A", "counted per site, the repeat wins it");
 });
 
-/* --- a body whose sites travel together (H14) --- */
+/* --- a body whose sites travel together, voting once per body and class --- */
 
 /**
  * One file per class body, hits shaped the way the worker emits them: one per
