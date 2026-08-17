@@ -1685,6 +1685,37 @@ test("a learned mixin is enforced the way a learned base class is", needsRuby, a
   assert.equal(found[0].claim, "classes here include Auditable");
 });
 
+test("a mixin finding fires once per class body, not once per included constant", needsRuby, async (t) => {
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("app/workers/a_worker.rb", "class AWorker\n  include Sidekiq::Worker\nend\n");
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    // The shape the row was written for: a worker mixing in the learned module
+    // and one more beside it.
+    write("app/workers/b_worker.rb", "class BWorker\n  include Sidekiq::Worker\n  include Sidekiq::Throttled::Worker\nend\n");
+    write("app/workers/c_worker.rb", "class CWorker\n  include Foo::Bar\nend\n");
+    write("app/workers/d_worker.rb", "class DWorker\n  include Foo::Bar\n  include Foo::Baz\nend\n");
+    commit("add");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    areas: [{
+      id: "aaaaaaaa",
+      path: "app/workers",
+      globs: [{ negated: false, dir: "app/workers", tail: "**/*.rb" }],
+      fileCount: 8,
+      dimensions: [dim({ key: "module_include", learned: "Sidekiq::Worker" })],
+    }],
+  });
+  const report = await check(dir);
+  const found = forKey(report, "module_include");
+  assert.deepEqual(
+    found.map((f) => f.path).sort(),
+    ["app/workers/c_worker.rb", "app/workers/d_worker.rb"],
+    JSON.stringify(report.findings)
+  );
+});
+
 test("a learned superclass is enforced the way a learned naming class is", async (t) => {
   const dir = repo(t, ({ git, write, commit }) => {
     write("src/panel.ts", "export class Panel extends React.Component {}\n");
