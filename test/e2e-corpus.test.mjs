@@ -1,5 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import { needsPosixSeparators } from "./platform.mjs";
 import { FACTS_PATH, FACTS_SCHEMA } from "../lib/facts.mjs";
@@ -308,6 +311,29 @@ test("a scratch directory that overlaps the corpus, or already holds entries, is
   assert.equal(checkDirs("/corpus", "/corpus-scratch", []), null, "a shared prefix is not a parent");
 });
 
+test("a scratch directory holding one dotfile is refused, and the message names it", () => {
+  // `.DS_Store` is the entry a mac puts there by looking at the directory, and
+  // a refusal that would not say which entry reads as a bug in the guard.
+  const refused = checkDirs("/corpus", "/scratch", [".DS_Store"]);
+
+  assert.match(refused, /1 entry/);
+  assert.match(refused, /\.DS_Store/);
+});
+
+test("a scratch directory that reaches the corpus through a symlink is refused", (t) => {
+  // Lexically the two are siblings. `resolve` normalises `..` and never follows
+  // a link, which is the repository's own reason for realpathing both sides.
+  const home = mkdtempSync(join(tmpdir(), "e2e-dirs-"));
+  t.after(() => rmSync(home, { recursive: true, force: true }));
+  const corpus = join(home, "corpus");
+  mkdirSync(join(corpus, "inner"), { recursive: true });
+  const scratch = join(home, "scratch");
+  symlinkSync(join(corpus, "inner"), scratch);
+
+  assert.match(checkDirs(corpus, scratch, []), /inside the corpus/);
+  assert.match(checkDirs(scratch, corpus, []), /removes/);
+});
+
 test("the roots column is one string, whether or not the record was read", () => {
   assert.equal(rootsColumn(7, { imports: 5, reused: 4 }), "7/5/4");
   assert.equal(rootsColumn(7), "7/-/-");
@@ -315,5 +341,5 @@ test("the roots column is one string, whether or not the record was read", () =>
 
 test("the write line's count has to be the number of files in the rules directory", () => {
   assert.deepEqual(wroteProblems(2, ["anatomiya-overview.md", "anatomiya-lib.md"]), []);
-  assert.match(wroteProblems(2, ["anatomiya-overview.md"])[0], /wrote 2 .* holds 1/);
+  assert.match(wroteProblems(2, ["anatomiya-overview.md"])[0], /wrote 2 .* holds 1 generated files/);
 });
