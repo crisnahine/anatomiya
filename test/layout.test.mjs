@@ -11,6 +11,7 @@ import {
   mirroredTests,
   rootFacts,
   runnerOf,
+  tally,
   testsLine,
 } from "../lib/layout.mjs";
 import { roster } from "../lib/layout-scan.mjs";
@@ -338,6 +339,37 @@ test("the candidates sort by code unit, so the vote does not follow the machine'
   assert.deepEqual(
     index.get("x").map((t) => t.rel),
     ["Foo/x.test.ts", "foo/x.test.ts"]
+  );
+});
+
+test("a case tie in the roster orders by code unit, not by the host's locale", () => {
+  // Every sort here picks a line the section prints, and `localeCompare` orders
+  // case by whatever ICU tables the host was built with.
+  const roots = [
+    ...files(3, (i) => file(`Foo/a${i}.js`, "js")),
+    ...files(3, (i) => file(`foo/b${i}.js`, "js")),
+  ];
+  assert.deepEqual(paths(layoutRoots(roots, { minFiles: 3 }).roots), ["Foo", "foo"]);
+
+  assert.deepEqual(tally(["foo", "Foo"]), [["Foo", 1], ["foo", 1]]);
+
+  const specs = [
+    ...files(2, (i) => file(`Foo/x${i}.test.js`, "js", { testRunner: "zz" })),
+    ...files(2, (i) => file(`foo/y${i}.test.js`, "js", { testRunner: "aa" })),
+  ];
+  assert.deepEqual(
+    testsLine(specs).map((g) => g.root),
+    ["Foo", "foo"],
+    "the tests line breaks a count tie on the directory"
+  );
+
+  const runners = [
+    ...files(2, (i) => file(`t/a${i}.test.js`, "js", { testRunner: "Zz" })),
+    ...files(2, (i) => file(`t/b${i}.test.js`, "js", { testRunner: "zz" })),
+  ];
+  assert.deepEqual(
+    rootFacts({ path: "t", dir: "t", files: runners }, layoutIndexes(runners)).tests.map((t) => t.runner),
+    ["Zz", "zz"]
   );
 });
 

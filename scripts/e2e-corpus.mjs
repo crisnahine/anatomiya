@@ -303,6 +303,10 @@ export function selectRepos(repos, only) {
   return { repos: repos.filter((r) => wanted.includes(r.name)) };
 }
 
+// The order both measurement documents record the corpus in. Code units, not
+// locale: ICU orders case by whatever tables the host was built with.
+export const byName = (a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
+
 const inside = (path, dir) => path.startsWith(dir.endsWith(sep) ? dir : dir + sep);
 
 // The three shapes one pair of directories is refused for.
@@ -548,7 +552,7 @@ async function main() {
   const repos = readdirSync(corpusDir, { withFileTypes: true })
     .filter((e) => e.isDirectory() && existsSync(join(corpusDir, e.name, ".git")))
     .map((e) => ({ name: e.name, source: join(corpusDir, e.name) }))
-    .sort((a, b) => a.name.localeCompare(b.name));
+    .sort(byName);
   // This tool's own repository, last, because the acceptance has to include the
   // one repository whose map its authors read every day.
   repos.push({ name: "anatomiya", source: resolve(HERE, "..") });
