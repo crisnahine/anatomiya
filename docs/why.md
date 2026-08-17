@@ -97,7 +97,8 @@ not a claim that it is built: three rows below are marked where the two differ.
 | `oxc-parser` raised an uncatchable SIGSEGV from inside `parseSync` at nesting depth. A worker thread did not contain it, and no static pre-screen predicted it. The child-process pool also measured 8,463 to 10,563 files/sec against 3,058 in-process | Parsing runs in a pool of warm child processes | B2 |
 | `oxc` reports offsets in UTF-16 code units, `prism` in UTF-8 bytes, and 5.4% of real files are non-ASCII | Never index a disk buffer with a parser-reported offset; slice the same in-memory string the parser was handed | B5 |
 | Reading a context file with the Read tool permanently suppressed its automatic injection for that path, for the rest of the process | The plugin never opens its own output with Read; the commands use `cat` | A7 |
-| A rewritten context file does not re-attach mid-session, and the change notice truncates head and tail, so a mid-file edit reaches the model in neither copy | Generated files stay short, and the scan prints a restart notice | A6, A8 |
+| A rewritten context file does not re-attach inside one context window, and the change notice truncates head and tail, so a mid-file edit reaches the model in neither copy | Generated files stay short, and the scan prints a restart notice | A6, A8 |
+| A delivery is deduped against the context window, not latched for the session: over 12,500 sessions, 84 paths arrived twice, 46 of them with a compaction between. Of the twelve sessions that compacted after a delivery, nine took a path back | Nothing is built to re-deliver after a compaction, because the platform already does it; the gap that stands is the stretch between two rebuilds | A17 |
 | A fixed table of area roots put 41% of one real repository's source in no area, and split `scripts/lib` from its larger sibling `scripts/hooks` for no stateable reason | Any directory holding enough source is an area candidate | see `lib/areas.mjs` |
 | Scanning per area cost 3 to 4.4x for nothing | One whole-corpus pass, attributed to areas in the reducer | see `lib/scan.mjs` |
 | An 85-area index costs about 1.2k tokens, a 977-area index about 15.8k | An area ceiling, smallest folded upward into a real parent directory; the overview summarises its listing past 200 | see `lib/areas.mjs` |
@@ -164,5 +165,5 @@ producing nothing.
 
 ## Further reading
 
-[`DECISIONS.md`](../DECISIONS.md) is the build contract: 102 numbered decisions with the finding
+[`DECISIONS.md`](../DECISIONS.md) is the build contract: 103 numbered decisions with the finding
 behind each. [`how-it-works.md`](how-it-works.md) is the mechanical walkthrough.
