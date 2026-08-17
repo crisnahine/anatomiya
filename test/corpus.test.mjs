@@ -6,7 +6,8 @@ import { tmpdir } from "node:os";
 import { join, isAbsolute, sep } from "node:path";
 import { execFileSync } from "node:child_process";
 
-import { collect, countUntrackedSource, isDenied, isExcludedDir, isSource, safeResolve, language, gitRoot, frameworksIn } from "../lib/corpus.mjs";
+import { collect, countUntrackedSource, isDenied, isExcludedDir, isSource, safeResolve, gitRoot, frameworksIn } from "../lib/corpus.mjs";
+import { language } from "../lib/langs.mjs";
 import * as areaLib from "../lib/areas.mjs";
 
 const { discover, globEntry, globText, assertGlobSafe, areaId, AREA } = areaLib;
