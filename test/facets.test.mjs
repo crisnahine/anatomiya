@@ -53,6 +53,39 @@ test("jsFacets reads imports, exports, jsx, runner and inline helpers", async (t
   assert.equal(c.testCalls, true);
 });
 
+/**
+ * What a CommonJS file hands out, which the parser's static export record does
+ * not hold.
+ *
+ * The record is the ESM one, so a repository written in `require` reported
+ * `exports: []` for every file and counted every module-level function as an
+ * inline helper. Both are what the reuse line and the helper count read, so a
+ * whole directory read as private plumbing nobody imports.
+ */
+test("a CommonJS file's exports are read off its assignments", async (t) => {
+  const dir = repo({
+    "obj.js": `function a() {}\nfunction b() {}\nfunction hidden() {}\nmodule.exports = { a, top: b, run() {} }\n`,
+    "one.js": `function run() {}\nmodule.exports = run\n`,
+    "anon.js": `module.exports = function () {}\n`,
+    "klass.js": `module.exports = class Widget {}\n`,
+    "named.js": `function make() {}\nexports.make = make\nmodule.exports.other = () => 1\nfunction hidden() {}\n`,
+  });
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+  const rels = ["obj.js", "one.js", "anon.js", "klass.js", "named.js"];
+  const { records } = await parseAll(list(dir, rels));
+  const facets = (rel) => records.get(rel).facets;
+
+  assert.deepEqual(facets("obj.js").exports, ["a", "top", "run"]);
+  assert.equal(facets("obj.js").inlineHelpers, 1, "hidden alone; a and b are handed out");
+  assert.deepEqual(facets("one.js").exports, ["default"]);
+  assert.equal(facets("one.js").inlineHelpers, 0, "the file is the function it assigns");
+  assert.deepEqual(facets("anon.js").exports, ["default"]);
+  assert.deepEqual(facets("klass.js").exports, ["default"]);
+  assert.deepEqual(facets("named.js").exports, ["make", "other"]);
+  assert.equal(facets("named.js").inlineHelpers, 1, "make is exported, hidden is not");
+});
+
 test("a file whose Flow types were stripped still answers its facets", async (t) => {
   // The retry parses a blanked copy, so the module record the facets read is
   // that parse's own. The stripper deletes `import type` outright, which costs
