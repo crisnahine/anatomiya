@@ -1,20 +1,24 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
+import { needsPosixPaths } from "./platform.mjs";
 import { FACTS_PATH, FACTS_SCHEMA } from "../lib/facts.mjs";
 import {
   COLUMNS,
   areaProblems,
+  checkDirs,
   factsProblems,
   findingPaths,
   overviewProblems,
   parseArgs,
   parseSummary,
   probePlan,
+  rootsColumn,
   rosterCounts,
   summaryProblems,
   tableOf,
   timeless,
+  wroteProblems,
 } from "../scripts/e2e-corpus.mjs";
 
 /** What a scan of a pinned Rails repository prints, line for line. */
@@ -273,4 +277,31 @@ test("the arguments name a corpus and a scratch directory, and refuse anything e
   assert.match(parseArgs(["/corpus"]).error, /scratch directory/);
   assert.match(parseArgs([]).error, /corpus directory/);
   assert.match(parseArgs(["--wat", "/c", "/s"]).error, /unknown option/);
+});
+
+test("--only with nothing after it is an error, not a run of everything", () => {
+  // It read the next argument, which was not there, and a run that was meant
+  // to be one repository silently became all thirty-six.
+  assert.match(parseArgs(["/corpus", "/scratch", "--only"]).error, /--only/);
+});
+
+test("a scratch directory that overlaps the corpus, or already holds entries, is refused", needsPosixPaths, () => {
+  assert.equal(checkDirs("/corpus", "/scratch", []), null);
+  assert.match(checkDirs("/corpus", "/corpus", []), /same directory/);
+  // The nested case: the clones land inside the corpus this run may not write.
+  assert.match(checkDirs("/corpus", "/corpus/scratch", []), /inside the corpus/);
+  // The swapped arguments: the corpus is what the removal would walk.
+  assert.match(checkDirs("/scratch/corpus", "/scratch", []), /removes/);
+  assert.match(checkDirs("/corpus", "/scratch", ["whitehall", "eslint"]), /2 entries/);
+  assert.equal(checkDirs("/corpus", "/corpus-scratch", []), null, "a shared prefix is not a parent");
+});
+
+test("the roots column is one string, whether or not the record was read", () => {
+  assert.equal(rootsColumn(7, { imports: 5, reused: 4 }), "7/5/4");
+  assert.equal(rootsColumn(7), "7/-/-");
+});
+
+test("the write line's count has to be the number of files in the rules directory", () => {
+  assert.deepEqual(wroteProblems(2, ["anatomiya-overview.md", "anatomiya-lib.md"]), []);
+  assert.match(wroteProblems(2, ["anatomiya-overview.md"])[0], /wrote 2 .* holds 1/);
 });
