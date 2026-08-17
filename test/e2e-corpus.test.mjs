@@ -9,6 +9,7 @@ import { FACTS_PATH, FACTS_SCHEMA } from "../lib/facts.mjs";
 import {
   COLUMNS,
   areaProblems,
+  byName,
   checkDirs,
   factsProblems,
   findingPaths,
@@ -332,6 +333,15 @@ test("a scratch directory that reaches the corpus through a symlink is refused",
 
   assert.match(checkDirs(corpus, scratch, []), /inside the corpus/);
   assert.match(checkDirs(scratch, corpus, []), /removes/);
+});
+
+test("the repositories run in code-unit order, so the recorded table does not follow the locale", () => {
+  // Both measurement documents list the corpus in this order, and
+  // `localeCompare` orders case by whatever ICU tables the host was built with.
+  assert.deepEqual(
+    [{ name: "foo" }, { name: "Foo" }].sort(byName).map((r) => r.name),
+    ["Foo", "foo"]
+  );
 });
 
 test("the roots column is one string, whether or not the record was read", () => {

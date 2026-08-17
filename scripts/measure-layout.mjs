@@ -52,6 +52,10 @@ export const LEARNED_ROWS = ["extends_base", "class_base", "module_include", "in
 
 // --- the recount ------------------------------------------------------------
 
+// The recount orders the way the roster it reads back does, and `localeCompare`
+// orders case by whatever ICU tables the host was built with.
+const byCode = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+
 // The mirror index the corpus decides, set once per repository before anything
 // is recounted: it is a fact about the whole tree, like the roster's own.
 let mirrored = new Set();
@@ -87,7 +91,7 @@ function testGroupsOf(own, dir) {
         sub: ranked.length > 0 && ranked[0][1] * 2 > group.length ? ranked[0][0] : null,
       };
     })
-    .sort((a, b) => b.files - a.files || a.runner.localeCompare(b.runner));
+    .sort((a, b) => b.files - a.files || byCode(a.runner, b.runner));
 }
 
 /** One root, recounted from the corpus under the path the section printed. */
@@ -137,10 +141,7 @@ function recountTests(corpus) {
   }
   return [...dirs]
     .map(([runner, group]) => ({ runner, root: majorityDir(group), files: group.length }))
-    .sort(
-      (a, b) =>
-        b.files - a.files || (a.root ?? "").localeCompare(b.root ?? "") || a.runner.localeCompare(b.runner)
-    );
+    .sort((a, b) => b.files - a.files || byCode(a.root ?? "", b.root ?? "") || byCode(a.runner, b.runner));
 }
 
 // --- reading the rendered section ------------------------------------------
@@ -541,7 +542,7 @@ export function learnedRows(repo, areas) {
     }
   }
   for (const [key, rows] of out) {
-    rows.sort((x, y) => y.candidates - x.candidates || x.area.localeCompare(y.area));
+    rows.sort((x, y) => y.candidates - x.candidates || byCode(x.area, y.area));
     out.set(key, rows.slice(0, ROW_AREAS));
   }
   return out;

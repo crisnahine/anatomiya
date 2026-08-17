@@ -243,6 +243,27 @@ test("the same records read against another corpus resolve against that corpus",
   ]);
 });
 
+test("a case tie in either roster orders by code unit, not by the host's locale", () => {
+  // Both rosters print, and `localeCompare` orders case by whatever ICU tables
+  // the host was built with.
+  const records = files(5, (i) => record(`src/a${i}.ts`, ["foo/x", "Foo/x"]));
+
+  assert.deepEqual(
+    commonImports(records).map((c) => c.module),
+    ["Foo/x", "foo/x"]
+  );
+
+  const rels = corpus("src/lib/a.ts");
+  const importers = new Map(
+    files(3, (i) => [`src/p${i}.ts`, record(`src/p${i}.ts`, [{ module: "~/lib/a", names: ["foo", "Foo"] }])])
+  );
+
+  assert.deepEqual(
+    mostImported(new Set(["src/lib/a.ts"]), importers, rels).map((r) => r.name),
+    ["Foo", "foo"]
+  );
+});
+
 test("a file under a directory named index is one file, not an ambiguous tail", () => {
   const rels = corpus("src/index/index.ts", "src/utils/user.ts");
 

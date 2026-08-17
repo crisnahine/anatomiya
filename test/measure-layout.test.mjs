@@ -64,6 +64,17 @@ test("a repository is capped at its five biggest areas, biggest first", () => {
   assert.deepEqual(rows.get("class_base").map((r) => r.candidates), [90, 70, 50, 30, 20]);
 });
 
+test("two areas at one candidate count order by code unit, not by the host's locale", () => {
+  // The five learned tables are recorded in the measurement document, and
+  // `localeCompare` orders case by whatever ICU tables the host was built with.
+  const areas = ["app/foo", "app/Foo"].map((path) => area(path, [dim("class_base", { candidates: 5 })]));
+
+  assert.deepEqual(
+    learnedRows("api", areas).get("class_base").map((r) => r.area),
+    ["app/Foo", "app/foo"]
+  );
+});
+
 test("the stated column carries the gate that stopped the row", () => {
   const areas = [
     area("app/models", [dim("class_base", { candidates: 30, conforming: 29 })]),
