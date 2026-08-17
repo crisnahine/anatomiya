@@ -330,6 +330,17 @@ test("a file votes for the first of its candidates that names a tree at all", ()
   assert.deepEqual(namesakeCompanions(source, tests, ""), { with: 1, of: 1, root: "spec" });
 });
 
+test("the candidates sort by code unit, so the vote does not follow the machine's locale", () => {
+  // The sort now picks what gets rendered, and `localeCompare` orders case by
+  // the ICU tables the host was built with.
+  const index = namesakeIndex([file("foo/x.test.ts", "js"), file("Foo/x.test.ts", "js")]);
+
+  assert.deepEqual(
+    index.get("x").map((t) => t.rel),
+    ["Foo/x.test.ts", "foo/x.test.ts"]
+  );
+});
+
 test("the namesake index carries the two fields a pair would recompute", () => {
   // `withoutTree` splits and filters the whole path, and it ran once per source
   // file asking rather than once per test file.
