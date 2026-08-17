@@ -107,7 +107,8 @@ ever decided it.
 Which parser reads a file is declared, not spelled. `lib/langs.mjs` holds one declaration per
 language: its extensions, its extensionless filenames, the scratch extension a path-less blob is
 written under, the grammar route per real extension, the dialect the retry may strip, the
-capabilities its callers ask about, and the name of the engine that hosts it. The seam routes each
+capabilities its callers ask about, how its tree nodes are addressed (`positions`: UTF-16 offsets
+or line numbers), and the name of the engine that hosts it. The seam routes each
 batch by that declaration, so nothing past it names a language or an engine. The registry is a leaf
 the parser child can read, which is what lets the corpus filter, the delivery globs, the grammar
 choice and the retry all take the same facts from one place; a wrong declaration fails at import,
