@@ -188,8 +188,18 @@ inside Node's own exit handler, with `maxBuffer` set far above the output size, 
 attributable to any file. Paths arrive on stdin as NUL-delimited pairs, never in argv. The Ruby
 process runs with `--disable-gems` and with `RUBYOPT`, `RUBYLIB` and `GEM_HOME` dropped, because
 each of those can inject a `-r` into a process about to be pointed at repository files. The timeout
-is 15s of **silence**, not a whole-run limit, because a large repository legitimately runs for
-minutes and what a hung parse looks like is silence.
+is 15s of **silence** rather than a whole-run limit, because a large repository legitimately runs
+for minutes and what a hung parse looks like is silence; behind it sits a wall clock sized to the
+number of files handed over, since a child that answers one file every fourteen seconds keeps the
+idle timer happy and never ends.
+
+A child either of those timers killed is spawned once more, for the files that never answered and no
+others, and only what is still unanswered after that is charged. Both timers measure the machine
+rather than the files, and a file charged as crashed in one scan and parsed in the next moves the
+always-loaded overview, which is the same reason a JavaScript parse the pool's own clock killed goes
+back on the queue once. A child that exited on its own, a missing interpreter and a fatal from the
+script are charged on the first attempt: a second child answers those the same way at twice the
+cost. Every record says which attempt answered it.
 
 ## 4. Dimensions and the three numbers
 
