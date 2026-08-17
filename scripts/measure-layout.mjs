@@ -24,12 +24,20 @@ import { pathToFileURL } from "node:url";
 
 import { namesakeCompanions } from "../lib/companions.mjs";
 import { collect, frameworksIn } from "../lib/corpus.mjs";
-import { isTestFile, majorityDir, mirroredTests, MODULE_EXTS, runnerOf, tally } from "../lib/layout.mjs";
+import {
+  isTestFile,
+  majorityDir,
+  mirroredTests,
+  MODULE_EXTS,
+  runnerOf,
+  tally,
+  underTestTree,
+} from "../lib/layout.mjs";
 import { parseAll } from "../lib/parse.mjs";
 import { baseOf, dirOf, extOf, stemOf } from "../lib/paths.mjs";
 import { scan } from "../lib/scan.mjs";
 import { MAX_LINES, renderOverview, splitUncovered } from "../lib/render.mjs";
-import { ROOT_LABEL } from "../lib/render-layout.mjs";
+import { namesakeVerb, plural, ROOT_LABEL } from "../lib/render-layout.mjs";
 import { readFacts, statedSide, writeFacts } from "../lib/facts.mjs";
 import { areaFilename, auditRules, knownNames, OVERVIEW_FILE } from "../lib/rules.mjs";
 import { encodePath } from "../lib/encode.mjs";
@@ -101,7 +109,9 @@ function recountRoot(path, corpus, testFiles) {
     tests: testGroupsOf(own, dir),
     testRoot: tests.length * 2 > own.length,
     companions:
-      producers.length > 0 && testFiles.length > 0 ? namesakeCompanions(producers, testFiles, dir) : null,
+      producers.length > 0 && testFiles.length > 0 && !underTestTree(dir)
+        ? namesakeCompanions(producers, testFiles, dir)
+        : null,
     helpers: null,
   };
 
@@ -190,6 +200,18 @@ const runnerLabel = (runner) => RUNNER_LABELS[runner] ?? runner;
 const specNoun = (n, runner) =>
   runner === "test files" ? `test file${n === 1 ? "" : "s"}` : `${runnerLabel(runner)} spec${n === 1 ? "" : "s"}`;
 
+/**
+ * The namesake clause as the section spells it, with the denominator nouned on
+ * the tests line and bare on a root line.
+ *
+ * The verb comes off the renderer rather than a copy here: it was copied once,
+ * the renderer took the singular for a count of one, and babel's true
+ * `1 of 95 has a namesake test` was read back as a failure.
+ */
+export const namesakeClause = ({ with: withTest, of, root }, noun = null) =>
+  `${withTest} of ${noun === null ? of : plural(of, noun)} ${namesakeVerb(withTest)} a namesake test` +
+  (root ? ` under ${pathLabel(root)}` : "");
+
 // --- the assertions ---------------------------------------------------------
 
 class Failed extends Error {}
@@ -258,9 +280,7 @@ function checkSection(section, corpus, root, recordRoots) {
 
     if (counted.companions) {
       const clause = clauses.shift();
-      const c = counted.companions;
-      const expected =
-        `${c.with} of ${c.of} have a namesake test` + (c.root ? ` under ${pathLabel(c.root)}` : "");
+      const expected = namesakeClause(counted.companions);
       if (clause !== expected) fail(`${parsed.label} namesake clause: printed "${clause}", recount "${expected}"`);
     }
 
@@ -334,8 +354,7 @@ function checkTestsLine(line, corpus, recordRoots, testFiles) {
   const top = topNamesakeRoot(recordRoots, corpus, testFiles);
   if (top) {
     const clause = clauses.shift();
-    const noun = `${top.exts[0][0]} file${top.companions.of === 1 ? "" : "s"}`;
-    const expected = `${top.companions.with} of ${top.companions.of} ${noun} have a namesake test`;
+    const expected = namesakeClause({ ...top.companions, root: null }, `${top.exts[0][0]} file`);
     if (clause !== expected) fail(`tests line namesake clause: printed "${clause}", recount "${expected}"`);
   }
   if (clauses.length) fail(`tests line carries a clause the recount has no ground for: ${clauses[0]}`);
