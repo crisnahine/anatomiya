@@ -1,8 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import { collectHits } from "../lib/walk.mjs";
 import { learnClass, verdictFor } from "../lib/reduce.mjs";
+import { needsRuby } from "./ruby-available.mjs";
 
 /* --- hits carry a class only when the dimension gives one --- */
 
@@ -17,6 +22,19 @@ test("collectHits keeps a hit's class and omits the key otherwise", () => {
   const hits = collectHits({ type: "Program", body: [] }, [dim]);
   assert.equal(hits.k[0].class, "kebab-case");
   assert.equal("class" in hits.k[1], false);
+});
+
+test("collectHits keeps a hit's group and omits the key otherwise", () => {
+  const dim = {
+    key: "k",
+    run(_program, add) {
+      add({ conforming: false, where: null, class: "A", group: 2 });
+      add({ conforming: false, where: null, class: "B" });
+    },
+  };
+  const hits = collectHits({ type: "Program", body: [] }, [dim]);
+  assert.equal(hits.k[0].group, 2);
+  assert.equal("group" in hits.k[1], false);
 });
 
 /* --- the majority class --- */
@@ -42,6 +60,95 @@ test("a tie learns nothing", () => {
 test("a hit with no class does not vote", () => {
   const perFile = new Map([["a.ts", [...sites("snake_case", 1), { conforming: false }]]]);
   assert.equal(learnClass(perFile), "snake_case");
+});
+
+test("a grouped row votes once per body and class", () => {
+  const inBody = (cls, group) => ({ conforming: false, class: cls, group });
+  const perFile = new Map([
+    ["a.rb", [inBody("A", 1), inBody("A", 1)]],
+    ["b.rb", [inBody("B", 1)]],
+  ]);
+  assert.equal(learnClass(perFile, { grouped: true }), null, "one body including A twice is one vote for A");
+  assert.equal(learnClass(perFile), "A", "counted per site, the repeat wins it");
+});
+
+/* --- a body whose sites travel together, voting once per body and class --- */
+
+/**
+ * One file per class body, hits shaped the way the worker emits them: one per
+ * included constant, every constant of a body carrying that body's group.
+ */
+const includeArea = (bodies, key = "module_include") => {
+  const rels = bodies.map((_, i) => `app/workers/w${i}.rb`);
+  return {
+    area: { langs: ["ruby"], files: rels.map((rel) => ({ rel, lang: "ruby" })) },
+    parsed: bodies.map((classes, i) => ({
+      rel: rels[i],
+      ok: true,
+      hits: { [key]: classes.map((cls) => ({ conforming: false, where: "W", class: cls, group: 1 })) },
+    })),
+  };
+};
+
+const includeSlot = async (bodies) => {
+  const { reduceArea } = await import("../lib/reduce.mjs");
+  const { area, parsed } = includeArea(bodies);
+  return reduceArea(area, parsed).find((d) => d.key === "module_include");
+};
+
+test("a class including two modules is one candidate, not one per constant", async () => {
+  const slot = await includeSlot([...Array(10).fill(["A", "B"]), ["A"]]);
+  assert.equal(slot.learned, "A");
+  assert.equal(slot.candidates, 11, "eleven bodies, not twenty-one includes");
+  assert.equal(slot.conforming, 11, "a body including A conforms whatever else it includes");
+  assert.deepEqual(slot.exceptions, []);
+});
+
+test("a row that is not grouped still counts one site per constant", async () => {
+  const { reduceArea } = await import("../lib/reduce.mjs");
+  const bodies = [...Array(10).fill(["A", "B"]), ["A"]];
+  const rels = bodies.map((_, i) => `src/m${i}.ts`);
+  const area = { langs: ["js"], files: rels.map((rel) => ({ rel, lang: "js" })) };
+  const parsed = bodies.map((classes, i) => ({
+    rel: rels[i],
+    ok: true,
+    hits: { extends_base: classes.map((cls) => ({ conforming: false, where: "W", class: cls })) },
+  }));
+  const slot = reduceArea(area, parsed).find((d) => d.key === "extends_base");
+  assert.equal(slot.candidates, 21);
+  assert.equal(slot.conforming, 11);
+});
+
+test("a body including nothing the area learned is one exception, not one per constant", async () => {
+  const slot = await includeSlot([...Array(10).fill(["A", "B"]), ["A"], ["C", "D"]]);
+  assert.equal(slot.learned, "A");
+  assert.equal(slot.candidates, 12);
+  assert.equal(slot.conforming, 11);
+  assert.deepEqual(slot.exceptions, [{ path: "app/workers/w11.rb", count: 1 }]);
+});
+
+test("a hit carrying no group is its own site", async () => {
+  // The fold reads the group off the hit, so a row that grouped nothing counts
+  // the way it did before: one site per constant, and every constant votes.
+  const { reduceArea } = await import("../lib/reduce.mjs");
+  const bodies = [...Array(10).fill(["A", "B"]), ["A"]];
+  const rels = bodies.map((_, i) => `app/workers/w${i}.rb`);
+  const area = { langs: ["ruby"], files: rels.map((rel) => ({ rel, lang: "ruby" })) };
+  const parsed = bodies.map((classes, i) => ({
+    rel: rels[i],
+    ok: true,
+    hits: { module_include: classes.map((cls) => ({ conforming: false, where: "W", class: cls })) },
+  }));
+  const slot = reduceArea(area, parsed).find((d) => d.key === "module_include");
+  assert.equal(slot.learned, "A");
+  assert.equal(slot.candidates, 21);
+  assert.equal(slot.conforming, 11);
+});
+
+test("a directory where every class includes both modules learns nothing", async () => {
+  // C13: a tie is a directory that has not said anything, and grouping the
+  // sites does not give it a casting vote.
+  assert.equal(await includeSlot(Array(12).fill(["A", "B"])), undefined);
 });
 
 /* --- the learned class moving since the pin closes the slot --- */
@@ -249,4 +356,203 @@ test("classifyWord answers a long uppercase run followed by a non-word in linear
   assert.equal(classifyWord("FooBar"), "PascalCase");
   assert.equal(classifyWord("foo"), null);
   assert.equal(classifyWord("FOO"), "PascalCase");
+});
+
+/* --- the class a declared type name's prefix votes for --- */
+
+test("prefixClass reads a leading capital only where a second capital and a lowercase follow", async () => {
+  const { prefixClass } = await import("../lib/dimensions-naming.mjs");
+  assert.equal(prefixClass("IFoo"), "I");
+  assert.equal(prefixClass("TCommentAuthor"), "T");
+  assert.equal(prefixClass("Comment"), "none");
+  assert.equal(prefixClass("IO"), "none", "a two-letter acronym is a word, not a prefix");
+  assert.equal(prefixClass("IOStream"), "none", "and neither is a three-letter one");
+  assert.equal(prefixClass("iFoo"), "none");
+});
+
+/* --- the base a class names --- */
+
+test("extends_base votes with the superclass as it is written", async () => {
+  const h = await astHits("extends_base", `
+    class A extends B {}
+    class C extends React.Component {}
+    const D = class extends Foo.Bar.Baz {}
+    class E {}
+  `);
+  assert.deepEqual(h.map((x) => x.class), ["B", "React.Component", "Foo.Bar.Baz"]);
+  assert.equal(h[0].where, "A");
+});
+
+test("a computed superclass names nothing and is not a site", async () => {
+  const h = await astHits("extends_base", `class A extends bases[0] {}`);
+  assert.equal(h.length, 0);
+});
+
+/* --- the prefix on a declared type name --- */
+
+test("interface_prefix and type_alias_prefix vote per declared name", async () => {
+  const i = await astHits("interface_prefix", `
+    interface IFoo { a: string }
+    interface Comment { a: string }
+    interface IO { a: string }
+  `);
+  assert.deepEqual(i.map((x) => x.class), ["I", "none", "none"]);
+  const t = await astHits("type_alias_prefix", `
+    type TBar = 1
+    type Plain = 2
+  `);
+  assert.deepEqual(t.map((x) => x.class), ["T", "none"]);
+  assert.equal(t[0].where, "TBar");
+});
+
+test("an interface is not a type alias and neither row answers for the other", async () => {
+  assert.equal((await astHits("type_alias_prefix", `interface IFoo { a: string }`)).length, 0);
+  assert.equal((await astHits("interface_prefix", `type TBar = 1`)).length, 0);
+});
+
+/* --- the Ruby half of the same two questions --- */
+
+const dir = mkdtempSync(join(tmpdir(), "anatomiya-naming-"));
+process.on("exit", () => rmSync(dir, { recursive: true, force: true }));
+
+async function rubyHits(key, src) {
+  const { parseRuby } = await import("../lib/ruby.mjs");
+  const { RUBY_DIMENSIONS } = await import("../lib/dimensions-ruby.mjs");
+  const abs = join(dir, `${key}.rb`);
+  writeFileSync(abs, src);
+  const file = (await parseRuby([{ rel: `${key}.rb`, abs }])).results[0];
+  assert.ok(file && file.ok, `the fixture did not parse: ${file && file.error}`);
+  const hits = [];
+  RUBY_DIMENSIONS.find((d) => d.key === key).run(file.program, (h) => hits.push(h));
+  return hits;
+}
+
+test("class_base votes with the superclass a Ruby class names", needsRuby, async () => {
+  const h = await rubyHits("class_base", `
+class A < ApplicationController
+end
+
+class B < ActionController::Base
+end
+
+class C
+end
+`);
+  assert.deepEqual(h.map((x) => x.class), ["ApplicationController", "ActionController::Base"]);
+  assert.equal(h[0].where, "A");
+});
+
+test("module_include votes with each constant a class or module body includes", needsRuby, async () => {
+  const h = await rubyHits("module_include", `
+class W
+  include Sidekiq::Worker
+  include Comparable
+end
+
+module M
+  include Enumerable
+end
+
+class Late
+  def go
+    include Foo
+  end
+end
+
+include TopLevel
+`);
+  assert.deepEqual(h.map((x) => x.class), ["Sidekiq::Worker", "Comparable", "Enumerable"]);
+  assert.equal(h[0].where, "W");
+});
+
+test("module_include groups the constants one class body includes", needsRuby, async () => {
+  const h = await rubyHits("module_include", `
+class W
+  include A, B
+  include C
+end
+
+class X
+  include A
+end
+`);
+  assert.deepEqual(h.map((x) => x.class), ["A", "B", "C", "A"]);
+  assert.equal(new Set(h.slice(0, 3).map((x) => x.group)).size, 1, "one body is one group");
+  assert.notEqual(h[3].group, h[0].group, "a second body is a second group");
+});
+
+/* --- the five rows ship --- */
+
+test("the five learned rows are reachable from the registry", async () => {
+  const { dimensionsFor } = await import("../lib/dimensions.mjs");
+  const js = dimensionsFor(["js"]).map((d) => d.key);
+  for (const key of ["extends_base", "interface_prefix", "type_alias_prefix"]) {
+    assert.ok(js.includes(key), `${key} is not offered to JavaScript`);
+  }
+  const ruby = dimensionsFor(["ruby"]).map((d) => d.key);
+  for (const key of ["class_base", "module_include"]) {
+    assert.ok(ruby.includes(key), `${key} is not offered to Ruby`);
+  }
+});
+
+/* --- a learned class that is repository text, and one that is an absence --- */
+
+const learnedSlot = async (key, cls, lang = "js") => {
+  const { reduceArea } = await import("../lib/reduce.mjs");
+  const rels = Array.from({ length: 6 }, (_, i) => `src/mod${i}.${lang === "ruby" ? "rb" : "ts"}`);
+  const area = { langs: [lang], files: rels.map((rel) => ({ rel, lang })) };
+  const parsed = rels.map((rel) => ({
+    rel,
+    ok: true,
+    hits: { [key]: [{ conforming: false, where: "X", class: cls }] },
+  }));
+  return reduceArea(area, parsed).find((d) => d.key === key);
+};
+
+test("a learned class taken from repository text is encoded into the claim", async () => {
+  const slot = await learnedSlot("extends_base", "Base|X");
+  assert.equal(slot.learned, "Base|X", "the record keeps what was measured");
+  assert.equal(slot.claim, "classes here extend Base X", "the sentence carries no table cell boundary");
+});
+
+test("a Ruby superclass reaches the claim through the same encoder", async () => {
+  const slot = await learnedSlot("class_base", "Application`Controller", "ruby");
+  assert.equal(slot.claim, "classes here inherit Application Controller");
+});
+
+test("a prefix row that learned none states the absence instead of filling the template", async () => {
+  const none = await learnedSlot("interface_prefix", "none");
+  assert.equal(none.claim, "interfaces carry no prefix");
+  const prefixed = await learnedSlot("interface_prefix", "I");
+  assert.equal(prefixed.claim, "interfaces are named with a I prefix");
+  assert.equal((await learnedSlot("type_alias_prefix", "none")).claim, "type aliases carry no prefix");
+});
+
+/* --- an area that prefixes nothing has said what the model already writes --- */
+
+test("none is the model's own prefix class, so an unprefixed area prints as counts", async () => {
+  const { defaultClassFor } = await import("../lib/model-defaults.mjs");
+  assert.equal(defaultClassFor("interface_prefix"), "none");
+  assert.equal(defaultClassFor("type_alias_prefix"), "none");
+  const r = verdictFor(gatedDim({ key: "interface_prefix", learned: "none", learnedClasses: true }), {
+    current: { fileCount: 12, dirCount: 2 },
+    authors: 3,
+  });
+  assert.equal(r.states, "claim");
+  assert.equal(r.matchesDefault, true);
+});
+
+test("an area that does prefix its interfaces states the prefix", () => {
+  const r = verdictFor(gatedDim({ key: "interface_prefix", learned: "I", learnedClasses: true }), {
+    current: { fileCount: 12, dirCount: 2 },
+    authors: 3,
+  });
+  assert.equal(r.matchesDefault, false);
+});
+
+test("a class read off the source has no model default, so the row keeps stating", async () => {
+  const { defaultClassFor } = await import("../lib/model-defaults.mjs");
+  for (const key of ["extends_base", "class_base", "module_include"]) {
+    assert.equal(defaultClassFor(key), null, `${key} cannot have a default the model writes`);
+  }
 });

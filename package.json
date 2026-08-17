@@ -1,6 +1,6 @@
 {
   "name": "anatomiya",
-  "version": "0.1.12",
+  "version": "0.1.13",
   "private": true,
   "description": "Counts what your code already does, directory by directory, and writes those counts into .claude/rules/ where a coding agent picks them up when it reads a file there",
   "keywords": [
@@ -46,6 +46,7 @@
     "validate": "node scripts/validate.mjs",
     "check:docs": "node scripts/check-docs.mjs",
     "audit:applicability": "node scripts/audit-applicability.mjs",
+    "e2e:corpus": "node scripts/e2e-corpus.mjs",
     "coverage": "node --test --experimental-test-coverage --test-coverage-lines=95 --test-coverage-branches=87 --test-coverage-functions=95 'test/**/*.test.mjs'",
     "ab": "node scripts/ab.mjs"
   },

@@ -3,7 +3,8 @@ import { scan } from "../lib/scan.mjs";
 import { loadTypeScript, notInstalledMessage } from "../lib/semantic.mjs";
 import { writeMap } from "../lib/write.mjs";
 import { check, formatReport } from "../lib/check.mjs";
-import { unexaminedLines, plural, untrackedSentence } from "../lib/render.mjs";
+import { unexaminedLines, untrackedSentence } from "../lib/render.mjs";
+import { layoutSummary, plural } from "../lib/render-layout.mjs";
 import { statedSide } from "../lib/facts.mjs";
 import { collect, gitRoot } from "../lib/corpus.mjs";
 import { discover } from "../lib/areas.mjs";
@@ -127,6 +128,8 @@ async function runScan(cwd, { dryRun, deep = false }) {
       (matching.length ? `, ${matching.length} match the model default` : "") +
       ", the rest print as counts"
   );
+  const layoutLine = layoutSummary(result.layout, result.areas);
+  if (layoutLine) console.log(layoutLine);
   console.log(baselineLine(result.baseline));
   if (result.corpus.truncated)
     console.log("only part of the corpus was read, so every directive is suppressed and only counts print");

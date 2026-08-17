@@ -7,8 +7,53 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.1.13] - 2026-08-17
+
+0.1.13 is the release where the map says where things live, not only how they are written. The
+always-loaded overview gains a `## What lives where` section counted over every tracked file; each
+area file says what kinds of files it holds, what its files import most, and what the rest of the
+repository imports from it; five learned rows state the base class, the mixin and the type-name
+prefixes a directory already uses; and the whole surface is accepted twice over a 35-repository
+corpus: a harness that re-derives every printed number, and an end-to-end run that drives the
+shipped CLI from a fresh clone of each repository through scan, a byte-identical rescan, pin and
+check.
+### Added
+
+- The overview carries one fixed sentence beside the read-before-editing line: when unsure what the code does, read it, grep it, or run it instead of guessing, and say what you could not verify. Sources in `docs/research/one-line-that-stops-guessing.md`; decision A16.
+
+- A `## What lives where` section on the overview, so a map says where a new file goes before the
+  agent has read anything. Up to seven directories, each with what it holds by extension, the test
+  runners inside it, how many of its files have a namesake test, and how many sibling modules sit
+  beside its components. The directories are chosen by a floor that scales with the corpus rather
+  than from a table of known roots, and there is no vocabulary of kinds: a line is labelled with a
+  directory name and a count is nouned with an extension. One line under them summarises the
+  repository's tests, with the namesake count that makes it a denominator rather than a total, and
+  two sentences print where the counts ground them. It rides the always-loaded overview because
+  that is the one channel reaching a write path nobody read in first (#34).
+- The same counts per area, as a `kinds` line under the heading, and two roster lines beside it:
+  the modules most of an area's files import, and the names it hands out that the rest of the
+  repository imports most. Both outlive a suppressed count and give way to a stated directive.
+  Facts schema is 11.
+- Five learned rows, so a map says what a new file in this directory is expected to sit on.
+  `extends_base` and `class_base` learn the superclass a directory's classes name, `module_include`
+  the module its class and module bodies mix in, and `interface_prefix` and `type_alias_prefix` the
+  letter its declared type names carry. The first three learn a name out of the repository's own
+  source, so the sentence is encoded before it is rendered. The last two can learn that there is no
+  prefix at all, which is what a model writes unprompted, so a repository that prefixes nothing
+  prints counts and a prefixed one states.
+
 ### Fixed
 
+- A Ruby child killed by the bridge's own idle window or wall clock is spawned once more, for the
+  files that never answered and no others, before anything is charged as crashed. Both timers
+  measure the machine rather than the files, so the same corpus answered on a quieter run and the
+  unexamined count moved the always-loaded overview. A child that exited on its own, a missing
+  interpreter and a fatal from the script are still charged on the first attempt, and every Ruby
+  record now carries `attempts` the way a pool record does.
+- A CommonJS file's exports are read off its assignments, not only off the parser's ESM record:
+  `module.exports = { a, b }`, `module.exports = fn`, `module.exports = function () {}`,
+  `exports.name = ...` and `module.exports.name = ...`. A repository written in `require` reported
+  `exports: []` for every file and counted every module-level function as an inline helper.
 - The encoder strips `--!>` as well as `-->`: parsers close a comment on either, so a
   repository-controlled value holding the first could close a comment the renderer never opened.
 - A rule file's head is opened first and typed on the handle it is read from, so a path swapped
@@ -836,6 +881,7 @@ which are partial; several listed there are not implemented yet.
 - No claim that this catches defects. Measured across ten repositories, 1 of 317 defect review
   comments was preventable by a conventions map.
 
+[0.1.13]: https://github.com/crisnahine/anatomiya/compare/v0.1.12...v0.1.13
 [0.1.12]: https://github.com/crisnahine/anatomiya/compare/v0.1.11...v0.1.12
 [0.1.11]: https://github.com/crisnahine/anatomiya/compare/v0.1.10...v0.1.11
 [0.1.10]: https://github.com/crisnahine/anatomiya/compare/v0.1.9...v0.1.10
