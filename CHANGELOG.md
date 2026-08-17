@@ -9,6 +9,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- The overview carries one fixed sentence beside the read-before-editing line: when unsure what the code does, read it, grep it, or run it instead of guessing, and say what you could not verify. Sources in `docs/research/one-line-that-stops-guessing.md`; decision A16.
+
 - A `## What lives where` section on the overview, so a map says where a new file goes before the
   agent has read anything. Up to seven directories, each with what it holds by extension, the test
   runners inside it, how many of its files have a namesake test, and how many sibling modules sit

@@ -420,6 +420,14 @@ That last row is the ceiling on the whole design. A `paths` rule attaches when t
 Read tool on a matching file or when an `@file` mention names it. It does not attach on grep, on
 glob, on `cat` through bash, or on an edit with no prior read.
 
+The overview head carries two fixed sentences beside the counts. "Read a file before editing it:
+these notes load when you read, not when you grep" is that ceiling said to the agent. "When unsure
+what this code does, read it, grep it, or run it instead of guessing, and say what you could not
+verify" is the one line here that is not a count: it names the tools the agent already has and
+permits the abstention, which is what keeps a guess from being written down as a fact. Its
+sources and the alternatives it was chosen over are in
+`docs/research/one-line-that-stops-guessing.md` (A16). Both are constant, so A5 holds.
+
 Writes are atomic: temp file in the same directory, then rename, so a crash never leaves half a
 context file. `.claude/anatomiya/facts.json` is written first and holds every count, gated or not,
 so no rendered file exists that is not derivable from facts on disk. It carries a schema version,

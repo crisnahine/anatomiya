@@ -323,6 +323,18 @@ test("the overview is byte-stable across scans of unchanged source", () => {
   assert.ok(!/\d+\s?ms/.test(first), "no duration");
 });
 
+test("the overview tells the agent to read, grep or run the code when unsure, and to say what it could not verify", () => {
+  // One constant sentence beside the read-before-editing line: it names the
+  // three tools the agent already has and permits the abstention, and it must
+  // never carry a count or a date (A5).
+  const lines = renderOverview(result(), { uncovered: 30 }).split("\n");
+  const at = lines.indexOf(
+    "When unsure what this code does, read it, grep it, or run it instead of guessing, and say what you could not verify."
+  );
+  assert.ok(at > 0, "the sentence is in the overview");
+  assert.equal(lines[at - 1], "Read a file before editing it: these notes load when you read, not when you grep.");
+});
+
 test("a repository with more areas than the overview lists summarises the tail", () => {
   // The overview loads on every turn, so it stays bounded while the number of
   // areas does not: a 100,000-file repository discovers 500 areas, and one line
