@@ -38,6 +38,7 @@ import { baseOf, dirOf, extOf, stemOf } from "../lib/paths.mjs";
 import { scan } from "../lib/scan.mjs";
 import { MAX_LINES, renderOverview, splitUncovered } from "../lib/render.mjs";
 import { namesakeClause, ROOT_LABEL } from "../lib/render-layout.mjs";
+import { RUNNER_LABELS } from "../lib/test-shape.mjs";
 import { readFacts, statedSide, writeFacts } from "../lib/facts.mjs";
 import { areaFilename, auditRules, knownNames, OVERVIEW_FILE } from "../lib/rules.mjs";
 import { encodePath } from "../lib/encode.mjs";
@@ -196,7 +197,6 @@ function readExtClause(clause) {
   return { exts, other: tail ? Number(tail[1]) : 0 };
 }
 
-const RUNNER_LABELS = { cypress: "Cypress", rspec: "RSpec" };
 const runnerLabel = (runner) => RUNNER_LABELS[runner] ?? runner;
 const specNoun = (n, runner) =>
   runner === "test files" ? `test file${n === 1 ? "" : "s"}` : `${runnerLabel(runner)} spec${n === 1 ? "" : "s"}`;
