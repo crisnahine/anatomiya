@@ -801,9 +801,9 @@ test("our frontmatter with no map naming it is reported apart from a foreign fil
   assert.ok(rendered.includes("anatomiya-area-99999999.md"));
 });
 
-test("uncommitted edits to a changed file are reported as unread", async (t) => {
-  // The diff is committed content. Silence here would let a working-tree fix,
-  // or a working-tree violation, pass unmentioned.
+test("a file edited since its commit is read as it stands, not as it was committed", async (t) => {
+  // One violation committed, a second added in the tree. The tree is what the
+  // agent has in front of it, so it is the side the head is read from.
   const dir = repo(t, ({ git, write, commit }) => {
     write("src/a.ts", clean(2));
     commit("init");
@@ -816,13 +816,14 @@ test("uncommitted edits to a changed file are reported as unread", async (t) => 
 
   const r = await check(dir, { baseRef: "main" });
 
-  assert.ok(r.caveats.some((c) => /uncommitted edits/.test(c)));
-  assert.equal(forKey(r, "swallowed_error").length, 1, "the committed site, not the working-tree one");
+  assert.ok(r.caveats.some((c) => /working tree/.test(c)));
+  assert.equal(forKey(r, "swallowed_error").length, 2, "both sites, the committed one and the pending one");
 });
 
-test("work that exists only in the working tree is still reported as unread", async (t) => {
-  // The state right before review is usually uncommitted. An empty diff plus a
-  // dirty tree has to say so, or a silent zero reads as "conforms".
+// An agent writes, checks, fixes, then commits. Run at the moment the findings
+// are cheapest, the check used to answer "0 MUST-FIX, 0 FIX, 0 NIT" and put the
+// one line that unsaid it in a caveat.
+test("an untracked file is examined, so the check answers before the commit", async (t) => {
   const dir = repo(t, ({ write, commit }) => {
     write("src/a.ts", clean(2));
     commit("init");
@@ -832,11 +833,43 @@ test("work that exists only in the working tree is still reported as unread", as
 
   const r = await check(dir, { baseRef: "main" });
 
-  assert.equal(r.examined.length, 0, "nothing committed, so nothing examined");
-  assert.ok(r.caveats.some((c) => /uncommitted edits/.test(c)));
+  assert.deepEqual(r.examined.map((f) => f.path), ["src/b.ts"]);
+  assert.equal(forKey(r, "swallowed_error").length, 2, JSON.stringify(r.findings));
 });
 
-test("a staged but uncommitted file is reported as unread", async (t) => {
+test("a tracked file edited only in the tree is judged against its base, not read as all new", async (t) => {
+  const dir = repo(t, ({ git, write, commit }) => {
+    // Two violations at the base, so a head side read as wholly new would
+    // report three rather than the one this branch added.
+    write("src/a.ts", swallow(2));
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/a.ts", swallow(3));
+  });
+  facts(dir, { sha: sha(dir, "main") });
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.equal(forKey(r, "swallowed_error").length, 1, JSON.stringify(r.findings));
+});
+
+test("a file read from the tree is named as read from the tree", async (t) => {
+  const dir = repo(t, ({ write, commit }) => {
+    write("src/a.ts", clean(2));
+    commit("init");
+    write("src/b.ts", swallow(2));
+  });
+  facts(dir, { sha: sha(dir, "main") });
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.ok(
+    r.caveats.some((c) => /working tree/.test(c)),
+    `a run that read uncommitted content says so: ${JSON.stringify(r.caveats)}`
+  );
+});
+
+test("a staged but uncommitted file is examined the same as an unstaged one", async (t) => {
   const dir = repo(t, ({ git, write, commit }) => {
     write("src/a.ts", clean(2));
     commit("init");
@@ -847,7 +880,8 @@ test("a staged but uncommitted file is reported as unread", async (t) => {
 
   const r = await check(dir, { baseRef: "main" });
 
-  assert.ok(r.caveats.some((c) => /uncommitted edits/.test(c)));
+  assert.deepEqual(r.examined.map((f) => f.path), ["src/b.ts"]);
+  assert.equal(forKey(r, "swallowed_error").length, 2, JSON.stringify(r.findings));
 });
 
 test("a renamed file counts once, and under its own name", async (t) => {
@@ -863,8 +897,8 @@ test("a renamed file counts once, and under its own name", async (t) => {
 
   const r = await check(dir, { baseRef: "main" });
 
-  const note = r.caveats.find((c) => /uncommitted edits/.test(c));
-  assert.ok(note, "the rename is uncommitted work the check did not read");
+  const note = r.caveats.find((c) => /working tree/.test(c));
+  assert.ok(note, "the rename is work the check read from the tree");
   assert.match(note, /^1 file/, "one file, not two");
 });
 
@@ -880,10 +914,11 @@ test("the store the map writes is not counted as pending work", async (t) => {
   const r = await check(dir, { baseRef: "main" });
 
   assert.equal(
-    r.caveats.filter((c) => /uncommitted edits/.test(c)).length,
+    r.caveats.filter((c) => /working tree/.test(c)).length,
     0,
     "a clean tree plus an untracked map is not pending work"
   );
+  assert.deepEqual(r.examined, [], "the map is not source this branch changed");
 });
 
 test("a repository with no commits examines nothing and refuses nothing", async (t) => {
@@ -1300,6 +1335,198 @@ test("an unreadable tree reports the obligation unchecked instead of failing eve
   );
 });
 
+// The companion listing is the tree at HEAD, and the producers now come from
+// the working tree, so an author who wrote both halves and committed neither
+// owed a spec that was sitting right there beside the model.
+test("a companion written but not committed satisfies the obligation", needsRuby, async (t) => {
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("app/models/thing.rb", "class Thing\nend\n");
+    write("spec/models/thing_spec.rb", "describe Thing do\nend\n");
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("app/models/other.rb", "class Other\nend\n");
+    write("spec/models/other_spec.rb", "describe Other do\nend\n");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    path: "app/models",
+    dimensions: [dim({ key: "model_spec", directive: true })],
+  });
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.deepEqual(
+    r.findings.filter((f) => f.dimension === "model_spec"),
+    [],
+    "both halves are in the tree, so nothing is owed"
+  );
+});
+
+// A rename's old path is where its base version lives. Read as a file with no
+// base, every site in it is new, and a `git mv` before committing reported the
+// whole file as this branch's work: the forgery the base side exists to stop.
+test("a file renamed but not committed is judged against its old path", async (t) => {
+  const dir = repo(t, ({ dir: root, git, write, commit }) => {
+    write("src/legacy.ts", swallow(3));
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    git("mv", "src/legacy.ts", "src/moved.ts");
+    // A fourth site, added after the move. Without the old path the base is
+    // unreadable and the file is skipped whole, which reports nothing and
+    // passes an assertion that only counts the three that predate the branch.
+    writeFileSync(join(root, "src", "moved.ts"), swallow(4));
+  });
+  facts(dir, { sha: sha(dir, "main") });
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.equal(
+    forKey(r, "swallowed_error").length,
+    1,
+    `three sites came with the file and one is new: ${JSON.stringify(r.findings)}`
+  );
+});
+
+// `--porcelain` defaults to `-unormal`, which collapses an untracked directory
+// to one entry ending in `/`. That path is not source, so it was dropped, and
+// a new service directory checked before its first commit read clean.
+test("a file in a wholly new directory is examined", async (t) => {
+  const dir = repo(t, ({ write, commit }) => {
+    write("src/a.ts", clean(2));
+    commit("init");
+    write("src/new/deep.ts", swallow(2));
+  });
+  facts(dir, { sha: sha(dir, "main") });
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.deepEqual(r.examined.map((f) => f.path), ["src/new/deep.ts"]);
+  assert.equal(forKey(r, "swallowed_error").length, 2, JSON.stringify(r.findings));
+});
+
+// The scan refuses to write through a link out of the repository. The check
+// reads, so it refuses to read through one: the matched text reaches a report
+// the agent then reads back.
+test("a pending path that resolves outside the repository is not read", needsPosixPaths, async (t) => {
+  const outside = mkdtempSync(join(tmpdir(), "anat-outside-"));
+  t.after(() => rmSync(outside, { recursive: true, force: true }));
+  writeFileSync(join(outside, "secret.ts"), swallow(2));
+
+  const dir = repo(t, ({ write, commit }) => {
+    write("src/a.ts", clean(2));
+    commit("init");
+  });
+  symlinkSync(join(outside, "secret.ts"), join(dir, "src", "leak.ts"));
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.deepEqual(forKey(r, "swallowed_error"), [], JSON.stringify(r.findings));
+});
+
+// The header counted the two sets and printed the second only when the numbers
+// differed, so two changed files and two examined ones read as the same two
+// even when one of the examined was never in the diff.
+test("the header says what was examined whenever it is not what changed", async (t) => {
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/a.ts", clean(2));
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/a.ts", clean(3));
+    write("notes.md", "not source\n");
+    commit("one source file and one not");
+    write("src/untracked.ts", swallow(2));
+  });
+  facts(dir, { sha: sha(dir, "main") });
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.equal(r.changed.length, 2, "the diff carries a source file and a markdown one");
+  assert.equal(r.examined.length, 2, "the markdown is not examined, the untracked source is");
+  assert.match(formatReport(r), /2 examined/);
+});
+
+// The index letter says the path is an addition; whether it has a base version
+// is a question about the merge base, and only that question decides whether
+// every site in the file is this branch's work.
+test("a tracked file unstaged from the index keeps the base version at its path", async (t) => {
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/a.ts", swallow(3));
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    git("rm", "-q", "--cached", "src/a.ts");
+  });
+  facts(dir, { sha: sha(dir, "main") });
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.deepEqual(forKey(r, "swallowed_error"), [], JSON.stringify(r.findings));
+});
+
+// A staged rename prints `R` and no `D`, so the path it moved away from was
+// never counted as gone: a companion renamed out from under its producer still
+// read as sitting right there.
+test("a companion renamed away in the tree no longer satisfies the obligation", needsRuby, async (t) => {
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("app/models/thing.rb", "class Thing\nend\n");
+    write("spec/models/thing_spec.rb", "describe Thing do\nend\n");
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("app/models/thing.rb", "class Thing\n  def name\n  end\nend\n");
+    git("mv", "spec/models/thing_spec.rb", "spec/models/renamed_spec.rb");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    path: "app/models",
+    dimensions: [dim({ key: "model_spec", directive: true })],
+  });
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.equal(
+    r.findings.filter((f) => f.dimension === "model_spec").length,
+    1,
+    `the spec this model owes was moved away: ${JSON.stringify(r.findings)}`
+  );
+});
+
+// The committed side stops at the file cap, and the two sides disagreeing on
+// what is too big is what `limits.mjs` exists to stop. Read through one open
+// handle, so the size that was checked is the size that is read.
+test("a pending file over the size cap is not read from the tree", async (t) => {
+  const dir = repo(t, ({ dir: root, write, commit }) => {
+    write("src/a.ts", clean(2));
+    commit("init");
+    writeFileSync(join(root, "src", "big.ts"), `${swallow(2)}\n// ${"x".repeat(1024 * 1024)}\n`);
+  });
+  facts(dir, { sha: sha(dir, "main") });
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.deepEqual(forKey(r, "swallowed_error"), [], JSON.stringify(r.findings));
+  assert.ok(
+    r.caveats.some((c) => /could not read src\/big\.ts/.test(c)),
+    `a file it refused to read is named, not silently dropped: ${JSON.stringify(r.caveats)}`
+  );
+});
+
+// `git status` lists a deletion, and a path that is gone cannot be read. It
+// reported one file read from the tree and one it could not read, in the same
+// run, about the same file.
+test("a file deleted in the working tree is not examined", async (t) => {
+  const dir = repo(t, ({ write, commit, git }) => {
+    write("src/a.ts", clean(2));
+    write("src/b.ts", clean(2));
+    commit("init");
+    git("rm", "-q", "src/b.ts");
+  });
+  facts(dir, { sha: sha(dir, "main") });
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.deepEqual(r.examined.map((f) => f.path), []);
+  assert.deepEqual(r.caveats.filter((c) => /could not read/.test(c)), []);
+});
+
 test("a producer whose companion the branch never wrote is still reported", async (t) => {
   // The control for the guard above. A `return` that fired on every tree rather
   // than on a missing one would turn the whole obligation off, and every case
@@ -1714,6 +1941,61 @@ test("a mixin finding fires once per class body, not once per included constant"
     ["app/workers/c_worker.rb", "app/workers/d_worker.rb"],
     JSON.stringify(report.findings)
   );
+});
+
+// The violation an agent actually commits. A new worker that forgets the
+// include used to pass clean on the same run that caught `include Comparable`.
+test("a body that forgets the include is caught, not only one that includes the wrong module", needsRuby, async (t) => {
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("app/workers/a_worker.rb", "class AWorker\n  include Sidekiq::Worker\nend\n");
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("app/workers/wrong_worker.rb", "class WrongWorker\n  include Comparable\nend\n");
+    write("app/workers/bare_worker.rb", "class BareWorker\n  def perform\n  end\nend\n");
+    commit("add");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    areas: [{
+      id: "aaaaaaaa",
+      path: "app/workers",
+      globs: [{ negated: false, dir: "app/workers", tail: "**/*.rb" }],
+      fileCount: 8,
+      dimensions: [dim({ key: "module_include", learned: "Sidekiq::Worker" })],
+    }],
+  });
+  const report = await check(dir);
+  const found = forKey(report, "module_include");
+  assert.deepEqual(
+    found.map((f) => f.path).sort(),
+    ["app/workers/bare_worker.rb", "app/workers/wrong_worker.rb"],
+    JSON.stringify(report.findings)
+  );
+});
+
+// A body declaring nothing has no constants to be identified by, so every bare
+// body in one file fingerprinted alike and a new one absorbed an older one's
+// finding: the report then names a class the branch never touched.
+test("a bare body added above two others is the one reported", needsRuby, async (t) => {
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("app/workers/a_worker.rb", "class AWorker\n  include Sidekiq::Worker\nend\n");
+    write("app/workers/w.rb", "class BWorker\nend\n\nclass CWorker\nend\n");
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("app/workers/w.rb", "class NewWorker\nend\n\nclass BWorker\nend\n\nclass CWorker\nend\n");
+    commit("a third bare body, written first");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    path: "app/workers",
+    dimensions: [dim({ key: "module_include", learned: "Sidekiq::Worker" })],
+  });
+
+  const r = await check(dir, { baseRef: "main" });
+  const found = forKey(r, "module_include");
+
+  assert.equal(found.length, 1, JSON.stringify(r.findings));
+  assert.equal(found[0].where, "NewWorker", "the body this branch added, not the one it sat above");
 });
 
 test("a body mixing in a different set of modules is not the body it replaced", needsRuby, async (t) => {

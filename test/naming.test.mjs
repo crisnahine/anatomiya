@@ -461,7 +461,9 @@ end
 
 include TopLevel
 `);
-  assert.deepEqual(h.map((x) => x.class), ["Sidekiq::Worker", "Comparable", "Enumerable"]);
+  // `Late` declares no mixin and is a site carrying no vote, which is its own
+  // test; a method body and the top level are not bodies and vote either way.
+  assert.deepEqual(h.filter((x) => x.class).map((x) => x.class), ["Sidekiq::Worker", "Comparable", "Enumerable"]);
   assert.equal(h[0].where, "W");
 });
 
@@ -479,6 +481,182 @@ end
   assert.deepEqual(h.map((x) => x.class), ["A", "B", "C", "A"]);
   assert.equal(new Set(h.slice(0, 3).map((x) => x.group)).size, 1, "one body is one group");
   assert.notEqual(h[3].group, h[0].group, "a second body is a second group");
+});
+
+// The row's predicate says the body is one site, and the walk only reached a
+// body that already had an include, so the omitted include was invisible: the
+// violation an agent actually commits passed clean.
+test("module_include counts a body that includes nothing as a site", needsRuby, async () => {
+  const h = await rubyHits("module_include", `
+class W
+  include Sidekiq::Worker
+end
+
+class Forgot
+end
+`);
+
+  assert.deepEqual(h.map((x) => x.where), ["W", "Forgot"]);
+  assert.equal(h[1].class, undefined, "a body that includes nothing votes for no class");
+  assert.notEqual(h[1].group, h[0].group, "the bare body is its own site");
+});
+
+test("a body whose only include sits inside a method declares no mixin", needsRuby, async () => {
+  const h = await rubyHits("module_include", `
+class Late
+  def go
+    include Foo
+  end
+end
+`);
+
+  assert.deepEqual(h.map((x) => [x.where, x.class]), [["Late", undefined]]);
+});
+
+test("a bare class inside another body is its own site, and the outer class is too", needsRuby, async () => {
+  const h = await rubyHits("module_include", `
+class Outer
+  class Inner
+    include A
+  end
+end
+`);
+
+  assert.deepEqual(h.map((x) => [x.where, x.class]), [["Outer", undefined], ["Inner", "A"]]);
+  assert.equal(new Set(h.map((x) => x.group)).size, 2);
+});
+
+// Namespacing is what a module is for. Counting a bare one as a forgotten
+// include put forem's `app/workers` at 88 of 176 and suppressed a claim that
+// was true of every worker in it: the 88 extra bodies were `module Users`
+// wrappers, not workers missing a mixin.
+test("a module that declares no include is namespacing, not a site", needsRuby, async () => {
+  const h = await rubyHits("module_include", `
+module Users
+  class DeleteWorker
+    include Sidekiq::Job
+  end
+end
+`);
+
+  assert.deepEqual(h.map((x) => [x.where, x.class]), [["DeleteWorker", "Sidekiq::Job"]]);
+});
+
+// A subclass can receive the mixin through its base, so its bare body is not
+// evidence of a forgotten include. Counting it read forem's `app/workers` at
+// 88 of 97, and all nine were `< BustCacheBaseWorker`, which carries the job
+// mixin for them. The same reasoning class_base states in the other direction.
+test("a class naming a superclass is not a forgotten include, because the base may carry it", needsRuby, async () => {
+  const h = await rubyHits("module_include", `
+class AWorker
+  include Sidekiq::Job
+end
+
+class BustCacheWorker < BustCacheBaseWorker
+  def perform
+  end
+end
+`);
+
+  assert.deepEqual(h.map((x) => [x.where, x.class]), [["AWorker", "Sidekiq::Job"]]);
+});
+
+// A class inside a class is that class's own helper, not a peer of the ones the
+// directory's claim is about. Discourse's `Chat::Channel::Policy::MessageCreation`
+// holds a bare `class Strategy`, and counting it made the policy object read as
+// a service that forgot `Service::Base`. A class inside a module is namespaced,
+// not owned, so it stays a subject.
+test("a class nested in another class is that class's helper, not a forgotten include", needsRuby, async () => {
+  const h = await rubyHits("module_include", `
+class Policy < Service::PolicyBase
+  class Strategy
+    def call
+    end
+  end
+end
+
+module Chat
+  class Destroyer
+  end
+end
+`);
+
+  assert.deepEqual(h.map((x) => [x.where, x.class]), [["Chat::Destroyer", undefined]]);
+});
+
+// The predicate says "names no superclass". Reading the superclass through
+// `constName` made every computed base read as none, so `Struct.new` and
+// `Data.define` classes were reported as forgetting an include their base may
+// carry.
+test("a class whose superclass is a call still names a superclass", needsRuby, async () => {
+  const h = await rubyHits("module_include", `
+class Point < Struct.new(:x, :y)
+end
+
+class Coord < Data.define(:x, :y)
+end
+`);
+
+  assert.deepEqual(h, []);
+});
+
+// `prepend` puts the module ahead of the class in the ancestry instead of
+// behind it. The body declared the mixin either way, so it has not forgotten
+// one.
+test("a body that prepends a module has not forgotten an include", needsRuby, async () => {
+  const h = await rubyHits("module_include", `
+class PWorker
+  prepend Sidekiq::Worker
+end
+`);
+
+  assert.deepEqual(h, []);
+});
+
+// One class, written in two parts. The second part is the same class as the
+// first, and the first is where it declares its mixins.
+test("a class reopened in the same file is one body, not a bare second one", needsRuby, async () => {
+  const h = await rubyHits("module_include", `
+class BWorker
+  include Sidekiq::Worker
+end
+
+class BWorker
+  def perform
+  end
+end
+`);
+
+  assert.deepEqual(h.map((x) => [x.where, x.class]), [["BWorker", "Sidekiq::Worker"]]);
+});
+
+// Two classes of the same short name under different namespaces are two
+// bodies. Told apart by the short name alone they fingerprint alike, and the
+// finding lands on whichever the branch did not touch.
+test("a bare body is named by its whole path, not by its last segment", needsRuby, async () => {
+  const h = await rubyHits("module_include", `
+module A
+  class Worker
+  end
+end
+
+module B
+  class Worker
+  end
+end
+`);
+
+  assert.deepEqual(h.map((x) => x.where), ["A::Worker", "B::Worker"]);
+});
+
+test("a module that declares an include is still a site, because it composed one", needsRuby, async () => {
+  const h = await rubyHits("module_include", `
+module M
+  include Enumerable
+end
+`);
+
+  assert.deepEqual(h.map((x) => [x.where, x.class]), [["M", "Enumerable"]]);
 });
 
 /* --- the five rows ship --- */
