@@ -7,6 +7,21 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-08-18
+
+0.2.2 closes two ways the tool answered clean about work it had not looked at. A class that forgot
+its `include` was not a site at all, so the map's own strongest reading, every class here carries
+this mixin, was the one reading the check could not enforce. And the check read commits, while an
+agent writes, checks, fixes and then commits, so the run that mattered most was the run about
+content still only in the working tree. Both are counted now, and the second says so on every run
+that reads one.
+
+Two review rounds over five reviewer passes found eighteen things in the fixes themselves, of which
+the ones worth naming are the forgeries: an uncommitted rename, and a path the index calls an
+addition whose committed version is right there, each charging a branch for every site in a file it
+had not written. Whether a path has a base version is a question about the merge base, and it is
+asked there now.
+
 ### Fixed
 
 - `module_include` counts the body that declares nothing, so a class that forgot the include is
@@ -974,6 +989,7 @@ which are partial; several listed there are not implemented yet.
 - No claim that this catches defects. Measured across ten repositories, 1 of 317 defect review
   comments was preventable by a conventions map.
 
+[0.2.2]: https://github.com/crisnahine/anatomiya/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/crisnahine/anatomiya/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/crisnahine/anatomiya/compare/v0.1.13...v0.2.0
 [0.1.13]: https://github.com/crisnahine/anatomiya/compare/v0.1.12...v0.1.13
