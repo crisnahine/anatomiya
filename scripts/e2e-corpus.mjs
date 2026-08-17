@@ -416,7 +416,8 @@ async function runRepo(name, source, scratchDir) {
       row.roots = rootsColumn(s1.roots, rosterCounts(facts));
     }
 
-    /* 3: the same source twice, byte for byte (A5). */
+    /* 3: the same source twice, byte for byte, or the map is not worth a
+       cached read. */
     const second = anatomiya(["scan", clone], scratchDir);
     if (second.status !== 0) fail(`the second scan exited ${second.status}: ${second.err.split("\n")[0]}`);
     row.stable = sameFiles(written, ruleFiles(clone)) ? "yes" : "no";
