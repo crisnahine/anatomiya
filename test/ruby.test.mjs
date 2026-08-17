@@ -6,7 +6,8 @@ import { mkdtempSync, writeFileSync, readFileSync, rmSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { parseRuby, walkRuby, constName, bodyOf, RUBY_GUARDS } from "../lib/ruby.mjs";
+import { parseRuby, RUBY_GUARDS } from "../lib/ruby.mjs";
+import { walkRuby, constName, bodyOf } from "../lib/ruby-walk.mjs";
 import { RUBY_DIMENSIONS } from "../lib/dimensions-ruby.mjs";
 
 const dir = mkdtempSync(join(tmpdir(), "anatomiya-ruby-"));
