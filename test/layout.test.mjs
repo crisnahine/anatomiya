@@ -669,3 +669,17 @@ test("the namesake index is built once and read by every root", () => {
     root: "spec/models",
   });
 });
+
+test("a namesake root tie breaks by code units, not locale", () => {
+  // The tie decides a rendered line, so it must not depend on ICU (A5).
+  const src = [
+    { rel: "app/models/a.rb", lang: "ruby", facets: null },
+    { rel: "app/models/b.rb", lang: "ruby", facets: null },
+  ];
+  const tests = [
+    { rel: "Foo/models/a_spec.rb", lang: "ruby", facets: { testRunner: "rspec", testCalls: true } },
+    { rel: "foo/models/b_spec.rb", lang: "ruby", facets: { testRunner: "rspec", testCalls: true } },
+  ];
+  const got = namesakeCompanions(src, tests, "app/models");
+  assert.equal(got.root, "Foo/models");
+});
