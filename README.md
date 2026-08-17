@@ -257,7 +257,7 @@ discourse, rails applications, monorepos). Two acceptance runs are committed as
 [docs/measurements](docs/measurements): the layout harness re-derives every printed number
 independently on all 35, and `npm run e2e:corpus` drives the shipped CLI from a fresh clone of each
 repository through scan, a byte-identical rescan, pin, check, and a synthetic violation the check
-must catch. The unit suite is 1,193 tests with enforced coverage floors, and CI runs it on Linux,
+must catch. The unit suite is 1,194 tests with enforced coverage floors, and CI runs it on Linux,
 macOS and Windows.
 
 ## Limits

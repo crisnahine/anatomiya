@@ -1489,6 +1489,26 @@ test("a companion renamed away in the tree no longer satisfies the obligation", 
   );
 });
 
+// The committed side stops at the file cap, and the two sides disagreeing on
+// what is too big is what `limits.mjs` exists to stop. Read through one open
+// handle, so the size that was checked is the size that is read.
+test("a pending file over the size cap is not read from the tree", async (t) => {
+  const dir = repo(t, ({ dir: root, write, commit }) => {
+    write("src/a.ts", clean(2));
+    commit("init");
+    writeFileSync(join(root, "src", "big.ts"), `${swallow(2)}\n// ${"x".repeat(1024 * 1024)}\n`);
+  });
+  facts(dir, { sha: sha(dir, "main") });
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.deepEqual(forKey(r, "swallowed_error"), [], JSON.stringify(r.findings));
+  assert.ok(
+    r.caveats.some((c) => /could not read src\/big\.ts/.test(c)),
+    `a file it refused to read is named, not silently dropped: ${JSON.stringify(r.caveats)}`
+  );
+});
+
 // `git status` lists a deletion, and a path that is gone cannot be read. It
 // reported one file read from the tree and one it could not read, in the same
 // run, about the same file.

@@ -45,7 +45,7 @@ asked there now.
   so nothing an agent edits can move the population it is judged against, and the tree is read only
   where a merge base exists to judge against it. A pending path is resolved rather than joined, so
   a symlink out of the repository is refused the way the scan already refuses to write through one,
-  under the same size bound the committed side reads at. Whether a pending path has a base version
+  under the same size bound the committed side reads at, through one open handle so the size that was checked is the size that is read. Whether a pending path has a base version
   is asked of the merge base rather than of the index letter, so `git rm --cached` and a
   delete-then-restore no longer charge the branch for every site in the file. Decision E9, issue #48.
 - The two delivery facts that were folklore are written down: a Read that fails still attaches the
