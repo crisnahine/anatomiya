@@ -18,8 +18,8 @@
  * hardlinks the object store, and nothing is ever written back into it.
  */
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { dirname, join, resolve, sep } from "node:path";
+import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { basename, dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { isSource, language } from "../lib/corpus.mjs";
@@ -167,10 +167,12 @@ export function rosterCounts(facts) {
 export const rootsColumn = (roots, roster = null) =>
   `${roots}/${roster ? roster.imports : "-"}/${roster ? roster.reused : "-"}`;
 
-/** The write line's own count, against what is in the directory it wrote to. */
+/** The write line's own count, against the generated names in the directory it wrote to. */
 export function wroteProblems(wrote, names) {
   if (wrote === names.length) return [];
-  return [`the scan says it wrote ${wrote} files and ${RULES_DIR}/ holds ${names.length}: ${names.join(", ")}`];
+  return [
+    `the scan says it wrote ${wrote} files and ${RULES_DIR}/ holds ${names.length} generated files: ${names.join(", ")}`,
+  ];
 }
 
 // --- the synthetic violation ------------------------------------------------
@@ -286,7 +288,49 @@ export function parseArgs(argv) {
   return { ...opts, corpus: positional[0], scratch: positional[1] };
 }
 
+/**
+ * The repositories the run covers, or the names `--only` asked for that the
+ * corpus does not hold.
+ *
+ * A typo used to select nothing and print `0 of 0 repositories passed`, which
+ * is exit 0 and reads as an acceptance of the corpus it never ran.
+ */
+export function selectRepos(repos, only) {
+  if (only === null) return { repos };
+  const wanted = only.split(",");
+  const missing = wanted.filter((name) => !repos.some((r) => r.name === name));
+  if (missing.length) return { error: `--only ${only}: the corpus holds no repository named ${missing.join(", ")}` };
+  return { repos: repos.filter((r) => wanted.includes(r.name)) };
+}
+
 const inside = (path, dir) => path.startsWith(dir.endsWith(sep) ? dir : dir + sep);
+
+// The three shapes one pair of directories is refused for.
+function overlap(corpus, scratch) {
+  if (corpus === scratch) {
+    return `the corpus and the scratch directory are the same directory, ${corpus}, so every clone would be written into the corpus`;
+  }
+  if (inside(scratch, corpus)) {
+    return `the scratch directory ${scratch} is inside the corpus ${corpus}, so every clone would be written into the corpus`;
+  }
+  if (inside(corpus, scratch)) {
+    return `the corpus ${corpus} is inside the scratch directory ${scratch}, and this run removes what it finds under the scratch directory by name`;
+  }
+  return null;
+}
+
+/**
+ * The path as the filesystem holds it. A directory this run has not made yet
+ * resolves through its parent, which is the link that would move it.
+ */
+function real(path) {
+  try {
+    return realpathSync(path);
+  } catch {
+    const up = dirname(path);
+    return up === path ? path : join(real(up), basename(path));
+  }
+}
 
 /**
  * Whether these two directories are safe to run between, on resolved paths.
@@ -297,16 +341,15 @@ const inside = (path, dir) => path.startsWith(dir.endsWith(sep) ? dir : dir + se
  * both. Entries already there are the third refusal: a clone is removed by name
  * before it is made, so a directory holding somebody else's work is a directory
  * this run would delete from.
+ *
+ * Asked twice, the shape the repository already confines paths with: lexically
+ * because it costs nothing, then on both realpaths, since `resolve` normalises
+ * `..` but never follows a symlink and every write here does.
  */
 export function checkDirs(corpus, scratch, entries) {
-  if (corpus === scratch) {
-    return `the corpus and the scratch directory are the same directory, ${corpus}, so every clone would be written into the corpus`;
-  }
-  if (inside(scratch, corpus)) {
-    return `the scratch directory ${scratch} is inside the corpus ${corpus}, so every clone would be written into the corpus`;
-  }
-  if (inside(corpus, scratch)) {
-    return `the corpus ${corpus} is inside the scratch directory ${scratch}, and this run removes what it finds under the scratch directory by name`;
+  for (const [c, s] of [[corpus, scratch], [real(corpus), real(scratch)]]) {
+    const refused = overlap(c, s);
+    if (refused) return refused;
   }
   if (entries.length) {
     return `the scratch directory ${scratch} already holds ${entries.length} ${entries.length === 1 ? "entry" : "entries"} (${entries.join(", ")}), and a clone is removed by name before it is made`;
@@ -492,7 +535,6 @@ async function main() {
   }
   const corpusDir = resolve(opts.corpus);
   const scratchDir = resolve(opts.scratch);
-  const only = opts.only ? new Set(opts.only.split(",")) : null;
 
   // Asked before the directory is made, so a scratch path inside the corpus is
   // refused rather than created there.
@@ -511,11 +553,17 @@ async function main() {
   // one repository whose map its authors read every day.
   repos.push({ name: "anatomiya", source: resolve(HERE, "..") });
 
+  const selected = selectRepos(repos, opts.only);
+  if (selected.error) {
+    console.error(`${selected.error}\n\n${USAGE}`);
+    process.exit(2);
+  }
+
   const rows = [];
   const problems = [];
   const heads = new Map();
   const summaries = new Map();
-  for (const { name, source } of repos.filter((r) => only === null || only.has(r.name))) {
+  for (const { name, source } of selected.repos) {
     const out = await runRepo(name, source, scratchDir);
     rows.push(out.row);
     problems.push(...out.problems);

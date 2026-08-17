@@ -595,8 +595,12 @@ names it hands out; and how many module-level functions it defines and does not 
 
 CommonJS is read as well as ESM, on both halves of that. A top-level `require` is an import, and
 `module.exports = { a, b }`, `module.exports = fn` and `exports.name = ...` are names the file hands
-out. The parser's static record holds only the ESM ones, so a repository written in `require`
-reported no exports at all and every function in it as a private helper.
+out. A chained `module.exports = exports = { a, b }` publishes the object at the end of the chain.
+An accessor in that object is deliberately not one of the names: it is read through the object
+rather than handed out, and the shape it is nearly always written in is a lazy `require`. A getter
+on `module.exports` is reachable at runtime, so that is a narrowing of the facet rather than a rule
+about CommonJS. The parser's static record holds only the ESM ones, so a repository written in
+`require` reported no exports at all and every function in it as a private helper.
 
 For Ruby: whether it declares cases in the RSpec vocabulary, inherits a minitest test case, or
 defines a `test_` method inside a class. A DSL call counts where it takes a block and sits outside
@@ -653,9 +657,12 @@ Every clause is dropped when it counts nothing.
   `src/vs/base/common/foo.ts`. Only those seven names drop, so `spec/support/user.rb` still answers
   no `app/models/user.rb`: `support` against `models` is left to compare. The root the namesakes
   share is named, by a count of votes rather than by the first match, a mirrored match voting for
-  the tree the two paths part on. A top vote under half the matched files names no root at all,
-  since a repository with one `__tests__` per component directory has an answer for every file and
-  no one place to name. A root that is or sits under a top-level `test`, `tests`, `spec`,
+  the tree the two paths part on. A file several candidates answer votes once, for the first of them
+  by path that names a tree at all: the total is halved against the count of answered files, so a
+  file counted once has to vote once, and a mirror parting on an ordinary name leaves the vote to
+  the next candidate rather than spending it on nothing. A top vote under half the matched files
+  names no root at all, since a repository with one `__tests__` per component directory has an
+  answer for every file and no one place to name. A root that is or sits under a top-level `test`, `tests`, `spec`,
   `cypress`, `e2e` or `__tests__` is not asked the question: its non-test files are what the tests
   run on, and webpack's `test` read `1 of 7858 has a namesake test under test` over the fixture
   modules its 2,607 tests exercise. The denominator is the top extension the line already printed,
