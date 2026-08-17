@@ -41,7 +41,14 @@ test("a file that kills the parser costs one file, not the run", async () => {
     // Without this the test still passes if oxc merely throws, which would no
     // longer be a test of process containment.
     assert.equal(rb.crashed, true, "the bomb died uncatchably, the process boundary caught it");
-    assert.equal(rb.attempts, 1, "a file that killed the worker itself is poison, and gets one attempt");
+    // On a fast machine the bomb dies by itself (one attempt, poison); on a
+    // loaded runner the wall clock kills it first, and a timer kill is retried
+    // once by design. Which happened is in the error, so the pin follows it.
+    if (rb.error.includes("timed out twice")) {
+      assert.equal(rb.attempts, 2, "a wall-clock kill was retried once, then charged");
+    } else {
+      assert.equal(rb.attempts, 1, "a file that killed the worker itself is poison, and gets one attempt");
+    }
     assert.equal(rb.rel, bomb.rel, "the failure is keyed by the file that caused it");
 
     // The pool must still be usable afterwards.

@@ -628,7 +628,7 @@ test("a child that keeps answering forever still ends at the wall clock", needsR
  * about 400ms on the first exec of a newly written file and about 5ms on the
  * next, so a cold stub trips a short idle guard before it runs a line.
  */
-function retryStub(home, first) {
+function retryStub(home, first, afterAnswers = []) {
   const path = join(home, "ruby");
   const script = [
     "#!/bin/sh",
@@ -644,6 +644,7 @@ function retryStub(home, first) {
     "while IFS= read -r rel && IFS= read -r abs; do",
     `  printf '{"rel":"%s","ok":true,"errors":0,"length":1,"ast":{"t":"program","line":1}}\\n' "$rel"`,
     `done < '${home}/in.'$n`,
+    ...afterAnswers,
     "",
   ].join("\n");
   writeFileSync(path, script, { mode: 0o755 });
@@ -659,10 +660,10 @@ test("a child our own timer killed is spawned once more for what never answered"
   // is a property of the machine: a file charged as crashed in one scan and
   // parsed in the next moves what every reader loads.
   const home = mkdtempSync(join(dir, "retry-"));
-  const stub = retryStub(home, ["  sleep 1"]);
+  const stub = retryStub(home, ["  sleep 30"]);
 
   const files = ["a.rb", "b.rb", "c.rb"].map((rel) => ({ rel, abs: join(dir, "rescue_none.rb") }));
-  const out = await parseRuby(files, { ruby: stub, guards: { idleMs: 150 } });
+  const out = await parseRuby(files, { ruby: stub, guards: { idleMs: 1500 } });
 
   assert.equal(out.error, null, "the second child answered, so the run did not fail");
   assert.equal(out.parsed, 3);
@@ -673,10 +674,10 @@ test("a child our own timer killed is spawned once more for what never answered"
 
 test("the second child is handed only what the first never answered", needsShebang, async () => {
   const home = mkdtempSync(join(dir, "retry-partial-"));
-  const stub = retryStub(home, [answer('"a.rb"'), "  sleep 1"]);
+  const stub = retryStub(home, [answer('"a.rb"'), "  sleep 30"]);
 
   const files = ["a.rb", "b.rb", "c.rb"].map((rel) => ({ rel, abs: join(dir, "rescue_none.rb") }));
-  const out = await parseRuby(files, { ruby: stub, guards: { idleMs: 150 } });
+  const out = await parseRuby(files, { ruby: stub, guards: { idleMs: 1500 } });
 
   assert.equal(out.parsed, 3);
   const attempts = new Map(out.results.map((r) => [r.rel, r.attempts]));
@@ -684,6 +685,20 @@ test("the second child is handed only what the first never answered", needsSheba
   // Every other line, since the paths arrive as rel and abs pairs.
   const handed = readFileSync(join(home, "in.1"), "utf8").split("\n").slice(0, -1);
   assert.deepEqual(handed.filter((_, i) => i % 2 === 0), ["b.rb", "c.rb"], "an answered file is not sent twice");
+});
+
+test("a retry killed after answering everything is not a failed run", needsShebang, async () => {
+  // A loaded machine can trip the idle guard after the answers are already in
+  // the pipe. Every file parsed, so there is no failure to report.
+  const home = mkdtempSync(join(dir, "retry-slowexit-"));
+  const stub = retryStub(home, ["  sleep 30"], ["  sleep 30"]);
+
+  const files = ["a.rb", "b.rb"].map((rel) => ({ rel, abs: join(dir, "rescue_none.rb") }));
+  const out = await parseRuby(files, { ruby: stub, guards: { idleMs: 1500 } });
+
+  assert.equal(out.parsed, 2);
+  assert.equal(out.crashed, 0);
+  assert.equal(out.error, null, "a run whose every file answered did not fail");
 });
 
 test("a file the retry left unanswered is charged with what killed the first child", needsShebang, async () => {
@@ -701,7 +716,7 @@ test("a file the retry left unanswered is charged with what killed the first chi
       `echo $((n + 1)) > '${home}/runs'`,
       `tr '\\0' '\\n' > '${home}/in.'$n`,
       `printf '{"ready":true,"prism":"1.0.0"}\\n'`,
-      `if [ "$n" = "0" ]; then sleep 1; fi`,
+      `if [ "$n" = "0" ]; then sleep 30; fi`,
       "exit 0",
       "",
     ].join("\n"),
@@ -710,7 +725,7 @@ test("a file the retry left unanswered is charged with what killed the first chi
   execFileSync(stub, ["--warm"]);
 
   const files = ["a.rb", "b.rb"].map((rel) => ({ rel, abs: join(dir, "rescue_none.rb") }));
-  const out = await parseRuby(files, { ruby: stub, guards: { idleMs: 150 } });
+  const out = await parseRuby(files, { ruby: stub, guards: { idleMs: 1500 } });
 
   assert.equal(readFileSync(join(home, "runs"), "utf8").trim(), "2", "the first child was killed by our own timer");
   assert.equal(out.crashed, 2);
