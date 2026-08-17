@@ -7,6 +7,45 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-08-17
+
+0.2.0 moves where the knowledge lives and not what a scan prints. Every fact a language owns is one
+declaration, every spelling of a test file's name is one module, every registry row carries its
+kind, and a framework is a profile. The whole surface is held to byte-identical output on unchanged
+repositories, over a six-repository diff harness at every step and the 36-repository from-zero run,
+and the overrides the rework found dead now work or refuse.
+
+### Changed
+
+- `lib/langs.mjs` is the language declaration registry: extensions, bare filenames, the scratch
+  extension, the grammar route per real extension, the dialect the retry may strip, capabilities,
+  node addressing, and the engine name, with load asserts so a wrong declaration fails at import.
+  The corpus filter, the delivery globs, the grammar choice and the Flow retry all read it, and a
+  basename that is only a known extension keeps its language, exactly as the old anchored regexes
+  read it. Decision B21.
+- The parse seam routes batches by declared engine and takes a per-language guards bag; nothing
+  past it names a language or an engine, and `rubyGuards` is gone. Decision B21.
+- The oxc worker is a thin shell over `lib/parse-file.mjs`, so the body that picks the grammar,
+  runs the dialect retry and answers the counts has direct in-process tests, and a conformance
+  suite holds both engines to one record contract by iterating the registry. Decision B22.
+- Every spelling of a test file's name lives in `lib/test-shape.mjs`, with the deliberate
+  differences between the spellings pinned beside each other. Decision H15.
+- Every registry row carries `kind`, the whole load battery runs over all three row lists,
+  pairings included, and the check finds corpus rows by kind rather than by a key literal.
+  Decision C15.
+- A framework is a profile in `lib/frameworks.mjs`, and `frameworksIn` folds over the profiles as
+  a set, so a corpus holding two frameworks can report both. Decision C16.
+- The Ruby dimension files import the leaf walker, and a test pins that nothing the parse worker
+  reaches imports `node:child_process`. Decision F18.
+
+### Fixed
+
+- A `maxBytes` override handed to the Ruby bridge now reaches the script's own size check; it was
+  interpolated from the module constant, so the override never worked. A non-numeric override
+  refuses loudly instead of dying inside the child, and a guards key naming no declared language
+  refuses instead of moving nothing.
+- The memory guard's `ps` timeout and byte cap now honor pool overrides.
+
 ## [0.1.13] - 2026-08-17
 
 0.1.13 is the release where the map says where things live, not only how they are written. The
@@ -881,6 +920,7 @@ which are partial; several listed there are not implemented yet.
 - No claim that this catches defects. Measured across ten repositories, 1 of 317 defect review
   comments was preventable by a conventions map.
 
+[0.2.0]: https://github.com/crisnahine/anatomiya/compare/v0.1.13...v0.2.0
 [0.1.13]: https://github.com/crisnahine/anatomiya/compare/v0.1.12...v0.1.13
 [0.1.12]: https://github.com/crisnahine/anatomiya/compare/v0.1.11...v0.1.12
 [0.1.11]: https://github.com/crisnahine/anatomiya/compare/v0.1.10...v0.1.11
