@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 
 import { ALL_DIMENSIONS } from "../lib/dimensions.mjs";
 import { PAIRINGS, applyPairings } from "../lib/pairing.mjs";
-import { parseAll, scratchExt } from "../lib/parse.mjs";
+import { parseAll } from "../lib/parse.mjs";
+import { declOf } from "../lib/langs.mjs";
 import { needsRuby } from "./ruby-available.mjs";
 import { REACT_HOOKS } from "../lib/dimensions-jsx.mjs";
 import { COLUMN_TYPE } from "../lib/dimensions-rails.mjs";
@@ -488,7 +489,7 @@ const rubyKeys = Object.keys(WITNESSES).filter((k) => WITNESSES[k].lang === "rub
 // of the table. The parse worker picks its grammar from the name, so a private
 // mapping that drifted would hand every JSX witness to the TypeScript grammar,
 // read `<button` as a type assertion, and report five broken predicates.
-const rel = (key, half, i = 0) => `${key}.${half}.${i}.${scratchExt(WITNESSES[key].lang)}`;
+const rel = (key, half, i = 0) => `${key}.${half}.${i}.${declOf(WITNESSES[key].lang).scratchExt}`;
 const listed = (v) => (Array.isArray(v) ? v : [v]);
 
 async function hitsFor(keys) {
@@ -726,14 +727,14 @@ end`,
 
 async function tableProblems(tables) {
   const files = tables.flatMap((t, ti) =>
-    t.members.map((m, mi) => ({ rel: `table${ti}.${mi}.${scratchExt(t.lang)}`, source: t.source(m), lang: t.lang }))
+    t.members.map((m, mi) => ({ rel: `table${ti}.${mi}.${declOf(t.lang).scratchExt}`, source: t.source(m), lang: t.lang }))
   );
   const { records } = await parseAll(files, { frameworks: ["rails"] });
   const problems = [];
 
   tables.forEach((t, ti) => {
     t.members.forEach((m, mi) => {
-      const record = records.get(`table${ti}.${mi}.${scratchExt(t.lang)}`);
+      const record = records.get(`table${ti}.${mi}.${declOf(t.lang).scratchExt}`);
       if (!record || record.ok !== true) {
         return problems.push(`${t.key}'s witness for ${JSON.stringify(m)} did not parse`);
       }
