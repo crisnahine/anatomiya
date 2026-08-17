@@ -443,12 +443,26 @@ Output goes to `.claude/rules/`, which is a context directory the agent loads fr
 
 | File | `paths` key | Loads |
 |---|---|---|
-| `anatomiya-overview.md` | none | every turn |
-| `anatomiya-area-<id>.md` | the area glob | when a file under that glob is read |
+| `anatomiya-overview.md` | none | every turn, and again from disk after a compaction |
+| `anatomiya-area-<id>.md` | the area glob | when a file under that glob is read, once per context window |
 
 That last row is the ceiling on the whole design. A `paths` rule attaches when the agent uses the
 Read tool on a matching file or when an `@file` mention names it. It does not attach on grep, on
 glob, on `cat` through bash, or on an edit with no prior read.
+
+Once is per context window, not per session. A second read in the same area delivers nothing,
+because that file is already in the window. A compaction or a resume rebuilds the window and the
+map comes back: the overview is re-injected from disk at the boundary, and an area file returns on
+the next read that matches it, also from disk, so a session that compacts after a re-scan gets the
+new counts rather than the ones it started with. Both halves are the platform's documented
+behaviour under [what survives compaction](https://code.claude.com/docs/en/context-window#what-survives-compaction),
+and both were counted over 12,500 sessions in
+`docs/measurements/2026-08-17-context-delivery.md`: of the twelve that compacted after a delivery,
+nine took a path back.
+
+What no rebuild reaches is the stretch between two of them. Inside one window the counts arrive
+once, at whatever turn the first matching read happened, and every turn after that is further from
+them. `SessionStart` fires at the boundaries, which is the one place this is not a problem.
 
 The overview head carries two fixed sentences beside the counts. "Read a file before editing it:
 these notes load when you read, not when you grep" is that ceiling said to the agent. "When unsure
@@ -470,9 +484,10 @@ Three constraints shape the rendering:
 
 - **The overview must be byte-stable between scans with no source change.** The token economics only
   work on a cached read, so there is no timestamp, no duration, and no count that moves per commit.
-- **Each generated file stays under 40 lines.** A rewritten context file does not re-attach inside a
-  live session, and the change notice truncates head and tail, so a long file loses its middle in
-  both copies. This is also why the scan prints a line telling you to restart. It is a bound the
+- **Each generated file stays under 40 lines.** A rewritten context file does not re-attach inside
+  one context window, and the change notice truncates head and tail, so a long file loses its middle
+  in both copies. This is also why the scan prints a line telling you to restart: a compaction would
+  pick the new file up on its own, and no session can be told to compact. It is a bound the
   renderer holds rather than a hope about how many dimensions an area has: an area file drops its
   suppressed counts before its stated directives and says how many did not fit, and the overview's
   area listing gets whatever the rest of that file leaves. The `paths` list is exempt, because a

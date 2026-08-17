@@ -7,6 +7,21 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- `scripts/measure-delivery.mjs` counts what the delivery channel did, off a Claude Code transcript
+  store rather than off the files a scan wrote. A delivery is read from the attachment entry that
+  carries it, so a session that has already run can be asked what it received and when. Decision
+  A17, run of record in `docs/measurements/2026-08-17-context-delivery.md`.
+
+### Changed
+
+- A delivery lasts one context window, not one session, and the docs now say so. A compaction or a
+  resume rebuilds the window and the map comes back from disk: the overview at the boundary, an
+  area file on the next read that matches it. Measured over 12,500 transcripts, 84 paths delivered
+  more than once and 46 of those with a compaction between; of the twelve sessions that compacted
+  after a delivery, nine took a path back. A6 and A8 keep their bounds and lose the word "session".
+
 ## [0.2.0] - 2026-08-17
 
 0.2.0 moves where the knowledge lives and not what a scan prints. Every fact a language owns is one
