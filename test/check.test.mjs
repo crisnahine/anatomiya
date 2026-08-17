@@ -1767,6 +1767,35 @@ test("reordering the modules a class body includes introduces nothing", needsRub
   assert.deepEqual(forKey(report, "module_include"), [], JSON.stringify(report.findings));
 });
 
+test("a violating body that gains a constant is charged again, and that is accepted", needsRuby, async (t) => {
+  // The accepted cost of keying the site on what the body mixes in: adding a
+  // module to a body that already violated moves its fingerprint, so the branch
+  // is charged for a violation it did not write. The branch did edit the
+  // violating body, and the severity is still capped by the baseline rules.
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("app/workers/a_worker.rb", "class AWorker\n  include Sidekiq::Worker\nend\n");
+    write("app/workers/c_worker.rb", "class CWorker\n  include Foo::Bar\nend\n");
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("app/workers/c_worker.rb", "class CWorker\n  include Foo::Bar\n  include Foo::Baz\nend\n");
+    commit("add one module to a body that already violated");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    areas: [{
+      id: "aaaaaaaa",
+      path: "app/workers",
+      globs: [{ negated: false, dir: "app/workers", tail: "**/*.rb" }],
+      fileCount: 8,
+      dimensions: [dim({ key: "module_include", learned: "Sidekiq::Worker" })],
+    }],
+  });
+  const report = await check(dir);
+  const found = forKey(report, "module_include");
+  assert.equal(found.length, 1, JSON.stringify(report.findings));
+  assert.equal(found[0].path, "app/workers/c_worker.rb");
+});
+
 test("a learned superclass is enforced the way a learned naming class is", async (t) => {
   const dir = repo(t, ({ git, write, commit }) => {
     write("src/panel.ts", "export class Panel extends React.Component {}\n");
