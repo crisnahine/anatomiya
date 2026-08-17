@@ -323,6 +323,10 @@ Was: the parser's static ESM record only. Now that, plus `module.exports = { a, 
 `module.exports.name = ...`. A repository written in `require` reported no exports at all, so every
 module-level function in it read as a private helper.
 
+The object at the end of a chain is the one that is published, so `module.exports = exports = { a }`
+hands out `a`. An accessor in that object is not an export name: it is read through the object
+rather than defined under that name in the file, and the usual shape is a lazy `require`.
+
 No repository's helper count moved. The clause that spends the facet is `N files inline a helper`,
 and `inlineFiles` counts JSX files only, so the fix can move a printed number only for a JSX file
 that publishes through `module.exports`, and the corpus holds none. The 35 sections are
