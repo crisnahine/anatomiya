@@ -20,6 +20,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
+import { ALL_DIMENSIONS } from "../lib/dimensions.mjs";
 import { parseAll } from "../lib/parse.mjs";
 import { language } from "../lib/corpus.mjs";
 import { classifyBasename } from "../lib/dimensions-naming.mjs";
@@ -115,6 +116,14 @@ export function decideDefaultClass(tally) {
   return count / total >= 0.8 ? top : null;
 }
 
+// A row whose class is a constant out of the repository's own source votes for
+// names like ApplicationController, and the table is validated against the
+// closed naming vocabulary, so writing one there fails every later scan.
+const FROM_SOURCE = new Set(ALL_DIMENSIONS.filter((d) => d.learnedFromSource).map((d) => d.key));
+
+/** The class this row may carry in the table, or null. */
+export const decideTableClass = (key, tally) => (FROM_SOURCE.has(key) ? null : decideDefaultClass(tally));
+
 /** A side is the default at 0.8 of at least 20 sites; anything less is none. */
 export function decideDefault({ claim, counter }) {
   const total = claim + counter;
@@ -130,7 +139,7 @@ export function decideDefault({ claim, counter }) {
  * which can clear the floor neither batch cleared alone. A different model is a
  * different question and never merges.
  */
-export function accumulate(a, b) {
+export function accumulate(a, b, key = null) {
   const pa = a.provenance;
   const pb = b.provenance;
   if (pa.method !== "measured" || pb.method !== "measured" || pa.model !== pb.model) return null;
@@ -142,7 +151,7 @@ export function accumulate(a, b) {
   };
   const sideCounts = sum(pa.sideCounts, pb.sideCounts);
   const classCounts = sum(pa.classCounts, pb.classCounts);
-  const cls = classCounts ? decideDefaultClass(classCounts) : null;
+  const cls = classCounts ? decideTableClass(key, classCounts) : null;
   return {
     default: sideCounts ? decideDefault(sideCounts) : "none",
     ...(cls ? { class: cls } : {}),
@@ -166,7 +175,7 @@ export function mergeTable(existing, incoming, { force = false } = {}) {
   for (const [key, entry] of Object.entries(incoming)) {
     const held = existing[key];
     if (held && held.provenance?.method === "measured" && entry.provenance?.method === "measured" && !force) {
-      out[key] = accumulate(held, entry) ?? held;
+      out[key] = accumulate(held, entry, key) ?? held;
       continue;
     }
     if (!force && held && held.provenance?.method === "measured") continue;
@@ -256,7 +265,7 @@ async function main() {
     };
   }
   for (const [key, tally] of classes) {
-    const cls = decideDefaultClass(tally);
+    const cls = decideTableClass(key, tally);
     measured[key] = {
       default: "none",
       ...(cls ? { class: cls } : {}),

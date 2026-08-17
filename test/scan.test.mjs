@@ -534,6 +534,12 @@ test("a corpus only partly answered states nothing at all", needsRuby, async (t)
 
   assert.equal(partial.corpus.truncated, true);
   assert.equal(partial.suppressAll, true);
+  assert.equal(partial.layout.truncated, true);
+  assert.equal(partial.layout.roots.length, 0, "a roster over an arbitrary subset is worse than none");
+  assert.ok(full.layout.roots.length > 0, "the same repository answered whole does get one");
+  for (const a of partial.areas) {
+    assert.equal(a.kinds, null, "and no area describes its own kinds from that subset either");
+  }
   for (const d of partial.areas.flatMap((a) => a.dimensions)) {
     assert.equal(d.directive, false, "no directive survives a partial corpus");
     assert.equal(d.gate, "corpus-truncated");
@@ -696,4 +702,86 @@ test("a degraded checker suppresses its own claims across a real scan", async (t
       assert.equal(d.gate, "degraded-semantic", `${area.path} closed it for ${d.gate} instead`);
     }
   }
+});
+
+test("the scan writes down which kinds of file live where", async (t) => {
+  // The denominator the roster exists for: five Cypress specs beside five
+  // components is a repository that tests in Cypress, and nothing in the map
+  // said so, because every other row counts a site inside a file.
+  const dir = repo(t, (d, { git, write }) => {
+    for (let i = 0; i < 5; i++) {
+      write(
+        `src/components/Thing${i}.tsx`,
+        `export const Thing${i} = () => {\n  const label = "thing${i}"\n  return <div className="thing">{label}</div>\n}\n`
+      );
+      write(
+        `cypress/integration/thing${i}.spec.js`,
+        `describe("thing${i}", () => {\n  it("loads", () => {\n    cy.visit("/")\n  })\n})\n`
+      );
+    }
+    git("add", "-A");
+    git("commit", "-qm", "init");
+  });
+
+  const result = await scan(dir);
+
+  assert.equal(result.layout.truncated, false);
+  assert.deepEqual(result.layout.roots.map((r) => r.path).sort(), ["cypress/integration", "src/components"]);
+  assert.equal(result.layout.tests[0].runner, "cypress", "the directory answers where the parse could not");
+  assert.equal(result.layout.tests[0].files, 5);
+  assert.deepEqual(result.layout.principles, ["test_shape"]);
+
+  const components = result.areas.find((a) => a.path === "src/components");
+  assert.ok(components, "the area exists");
+  assert.deepEqual(components.kinds.exts, [[".tsx", 5]], "an area is counted the way a root is");
+  assert.equal(components.kinds.jsx, 5);
+});
+
+test("an area names what its files import and what other files import from it", async (t) => {
+  const dir = repo(t, (d, { git, write }) => {
+    for (let i = 0; i < 6; i++) {
+      write(
+        `src/components/Thing${i}.tsx`,
+        `import styled from "styled-components"\nimport { fullName } from "../utils/user"\n` +
+          `const Box${i} = styled.div\`\`\nexport const Thing${i} = () => <Box${i}>{fullName()}</Box${i}>\n`
+      );
+    }
+    write("src/utils/user.ts", "export function fullName(): string {\n  return \"x\"\n}\n");
+    write("src/utils/dates.ts", "export function today(): number {\n  return 1\n}\n");
+    write("src/utils/ids.ts", "export function nextId(): number {\n  return 2\n}\n");
+    git("add", "-A");
+    git("commit", "-qm", "init");
+  });
+
+  const result = await scan(dir);
+
+  const components = result.areas.find((a) => a.path === "src/components");
+  assert.ok(components, "the importing area exists");
+  assert.deepEqual(
+    components.imports,
+    [{ module: "styled-components", files: 6, of: 6 }],
+    "a relative sibling import is not a convention, so only the package is named"
+  );
+
+  const utils = result.areas.find((a) => a.path === "src/utils");
+  assert.ok(utils, "the imported area exists");
+  assert.deepEqual(utils.reused, [{ name: "fullName", file: "src/utils/user.ts", importers: 6 }]);
+  assert.deepEqual(utils.imports, [], "nothing in here imports anything, which is a count and not a gap");
+});
+
+test("an area with no static import surface is asked neither question", needsRuby, async (t) => {
+  const dir = repo(t, (d, { git, write }) => {
+    for (let i = 0; i < 4; i++) {
+      write(`app/models/thing${i}.rb`, `class Thing${i}\n  def call\n    1\n  end\nend\n`);
+    }
+    git("add", "-A");
+    git("commit", "-qm", "init");
+  });
+
+  const result = await scan(dir);
+
+  const models = result.areas.find((a) => a.path === "app/models");
+  assert.ok(models, "the area exists");
+  assert.equal(models.imports, null, "Ruby has no import to count, and zero would read as a measured none");
+  assert.equal(models.reused, null);
 });

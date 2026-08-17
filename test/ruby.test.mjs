@@ -2,7 +2,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { needsPosixPaths, needsShebang } from "./platform.mjs";
 import { needsRuby } from "./ruby-available.mjs";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, writeFileSync, readFileSync, rmSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseRuby, walkRuby, constName, bodyOf, RUBY_GUARDS } from "../lib/ruby.mjs";
@@ -208,6 +209,16 @@ const SRC = {
         Client.find(3)
         client.update(name: "x")
         ApiClient.get("/x")
+      end
+    end
+  `,
+
+  mixins: `
+    class Worker < ApplicationJob
+      include Sidekiq::Worker
+
+      def perform
+        include Ignored
       end
     end
   `,
@@ -604,6 +615,142 @@ test("a child that keeps answering forever still ends at the wall clock", needsR
 
   assert.equal(out.error, "ruby ran past its wall clock");
   assert.equal(out.results[0].crashed, true, "what never answered is charged, not dropped");
+});
+
+/**
+ * A stub interpreter that counts its own runs and records what it was handed.
+ *
+ * Run 0 does `first` instead of answering; every run after it answers every
+ * path on its stdin. The counter is a file rather than an environment variable
+ * because the bridge hands the child a stripped environment.
+ *
+ * The warm-up run is what keeps the idle window below meaningful: macOS spends
+ * about 400ms on the first exec of a newly written file and about 5ms on the
+ * next, so a cold stub trips a short idle guard before it runs a line.
+ */
+function retryStub(home, first, afterAnswers = []) {
+  const path = join(home, "ruby");
+  const script = [
+    "#!/bin/sh",
+    `if [ "$1" = "--warm" ]; then exit 0; fi`,
+    `n=$(cat '${home}/runs' 2>/dev/null || echo 0)`,
+    `echo $((n + 1)) > '${home}/runs'`,
+    `tr '\\0' '\\n' > '${home}/in.'$n`,
+    `printf '{"ready":true,"prism":"1.0.0"}\\n'`,
+    `if [ "$n" = "0" ]; then`,
+    ...first,
+    "  exit 0",
+    "fi",
+    "while IFS= read -r rel && IFS= read -r abs; do",
+    `  printf '{"rel":"%s","ok":true,"errors":0,"length":1,"ast":{"t":"program","line":1}}\\n' "$rel"`,
+    `done < '${home}/in.'$n`,
+    ...afterAnswers,
+    "",
+  ].join("\n");
+  writeFileSync(path, script, { mode: 0o755 });
+  execFileSync(path, ["--warm"]);
+  return path;
+}
+
+const answer = (rel) =>
+  `  printf '{"rel":"%s","ok":true,"errors":0,"length":1,"ast":{"t":"program","line":1}}\\n' ${rel}`;
+
+test("a child our own timer killed is spawned once more for what never answered", needsShebang, async () => {
+  // The overview has to be byte-stable across scans, and how long a parse takes
+  // is a property of the machine: a file charged as crashed in one scan and
+  // parsed in the next moves what every reader loads.
+  const home = mkdtempSync(join(dir, "retry-"));
+  const stub = retryStub(home, ["  sleep 30"]);
+
+  const files = ["a.rb", "b.rb", "c.rb"].map((rel) => ({ rel, abs: join(dir, "rescue_none.rb") }));
+  const out = await parseRuby(files, { ruby: stub, guards: { idleMs: 1500 } });
+
+  assert.equal(out.error, null, "the second child answered, so the run did not fail");
+  assert.equal(out.parsed, 3);
+  assert.equal(out.crashed, 0);
+  assert.deepEqual(out.results.map((r) => r.attempts), [2, 2, 2]);
+  assert.equal(readFileSync(join(home, "runs"), "utf8").trim(), "2", "one more child, not a loop");
+});
+
+test("the second child is handed only what the first never answered", needsShebang, async () => {
+  const home = mkdtempSync(join(dir, "retry-partial-"));
+  const stub = retryStub(home, [answer('"a.rb"'), "  sleep 30"]);
+
+  const files = ["a.rb", "b.rb", "c.rb"].map((rel) => ({ rel, abs: join(dir, "rescue_none.rb") }));
+  const out = await parseRuby(files, { ruby: stub, guards: { idleMs: 1500 } });
+
+  assert.equal(out.parsed, 3);
+  const attempts = new Map(out.results.map((r) => [r.rel, r.attempts]));
+  assert.deepEqual([...attempts], [["a.rb", 1], ["b.rb", 2], ["c.rb", 2]]);
+  // Every other line, since the paths arrive as rel and abs pairs.
+  const handed = readFileSync(join(home, "in.1"), "utf8").split("\n").slice(0, -1);
+  assert.deepEqual(handed.filter((_, i) => i % 2 === 0), ["b.rb", "c.rb"], "an answered file is not sent twice");
+});
+
+test("a retry killed after answering everything is not a failed run", needsShebang, async () => {
+  // A loaded machine can trip the idle guard after the answers are already in
+  // the pipe. Every file parsed, so there is no failure to report.
+  const home = mkdtempSync(join(dir, "retry-slowexit-"));
+  const stub = retryStub(home, ["  sleep 30"], ["  sleep 30"]);
+
+  const files = ["a.rb", "b.rb"].map((rel) => ({ rel, abs: join(dir, "rescue_none.rb") }));
+  const out = await parseRuby(files, { ruby: stub, guards: { idleMs: 1500 } });
+
+  assert.equal(out.parsed, 2);
+  assert.equal(out.crashed, 0);
+  assert.equal(out.error, null, "a run whose every file answered did not fail");
+});
+
+test("a file the retry left unanswered is charged with what killed the first child", needsShebang, async () => {
+  // The retry starts with a clean error so its own ending is what it reports,
+  // and a second child that answers nothing and exits 0 leaves nothing to say.
+  // What happened is still the first kill, and "no result" names no cause.
+  const home = mkdtempSync(join(dir, "retry-silent-"));
+  const stub = join(home, "ruby");
+  writeFileSync(
+    stub,
+    [
+      "#!/bin/sh",
+      `if [ "$1" = "--warm" ]; then exit 0; fi`,
+      `n=$(cat '${home}/runs' 2>/dev/null || echo 0)`,
+      `echo $((n + 1)) > '${home}/runs'`,
+      `tr '\\0' '\\n' > '${home}/in.'$n`,
+      `printf '{"ready":true,"prism":"1.0.0"}\\n'`,
+      `if [ "$n" = "0" ]; then sleep 30; fi`,
+      "exit 0",
+      "",
+    ].join("\n"),
+    { mode: 0o755 }
+  );
+  execFileSync(stub, ["--warm"]);
+
+  const files = ["a.rb", "b.rb"].map((rel) => ({ rel, abs: join(dir, "rescue_none.rb") }));
+  const out = await parseRuby(files, { ruby: stub, guards: { idleMs: 1500 } });
+
+  assert.equal(readFileSync(join(home, "runs"), "utf8").trim(), "2", "the first child was killed by our own timer");
+  assert.equal(out.crashed, 2);
+  assert.deepEqual(out.results.map((r) => r.attempts), [2, 2]);
+  assert.deepEqual(out.results.map((r) => r.error), ["ruby went silent", "ruby went silent"]);
+});
+
+test("a child that died by itself is charged, not tried again", needsShebang, async () => {
+  // The other half of the ruling. An interpreter that exits on its own is a
+  // broken install or a fatal from the script, and a second child answers it
+  // the same way at twice the cost.
+  const home = mkdtempSync(join(dir, "no-retry-"));
+  const script = ["#!/bin/sh", `echo x >> '${home}/runs'`, "cat > /dev/null", "exit 1", ""].join("\n");
+  writeFileSync(join(home, "ruby"), script, { mode: 0o755 });
+
+  const files = ["a.rb", "b.rb"].map((rel) => ({ rel, abs: join(dir, "rescue_none.rb") }));
+  const out = await parseRuby(files, { ruby: join(home, "ruby") });
+
+  assert.equal(readFileSync(join(home, "runs"), "utf8"), "x\n", "one child, no second one");
+  assert.equal(out.parsed, 0);
+  assert.equal(out.crashed, 2);
+  assert.deepEqual(out.results.map((r) => r.attempts), [1, 1]);
+  assert.equal(out.results[0].crashed, true);
+  assert.equal(out.missingParser, null, "an interpreter that ran is not an absent one");
+  assert.match(out.error, /exited 1/);
 });
 
 test("the wall clock is derived from how much work was handed over", needsRuby, () => {

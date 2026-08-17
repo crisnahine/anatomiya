@@ -1633,6 +1633,286 @@ test("a hostile learned value in the facts never reaches a claim", async (t) => 
   assert.deepEqual(forKey(report, "function_naming_case"), []);
 });
 
+test("a learned base class is enforced the way a learned naming class is", needsRuby, async (t) => {
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("app/controllers/users_controller.rb", "class UsersController < ApplicationController\nend\n");
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("app/controllers/x_controller.rb", "class XController < ActionController::Base\nend\n");
+    commit("add");
+  });
+  const rubyArea = (learned) => [{
+    id: "aaaaaaaa",
+    path: "app/controllers",
+    globs: [{ negated: false, dir: "app/controllers", tail: "**/*.rb" }],
+    fileCount: 8,
+    dimensions: [dim({ key: "class_base", learned })],
+  }];
+  facts(dir, { sha: sha(dir, "main"), areas: rubyArea("ApplicationController") });
+  const report = await check(dir);
+  assertExamined(report, "app/controllers/x_controller.rb");
+  assert.deepEqual(report.caveats.filter((c) => /schema/.test(c)), [], "the writer's own schema reads clean");
+  const found = forKey(report, "class_base");
+  assert.equal(found.length, 1, JSON.stringify(report.findings));
+  assert.equal(found[0].path, "app/controllers/x_controller.rb");
+  assert.equal(found[0].line, 1);
+  assert.equal(found[0].claim, "classes here inherit ApplicationController");
+});
+
+test("a learned mixin is enforced the way a learned base class is", needsRuby, async (t) => {
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("app/models/user.rb", "class User\n  include Auditable\nend\n");
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("app/models/order.rb", "class Order\n  include Trackable\nend\n");
+    commit("add");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    areas: [{
+      id: "aaaaaaaa",
+      path: "app/models",
+      globs: [{ negated: false, dir: "app/models", tail: "**/*.rb" }],
+      fileCount: 8,
+      dimensions: [dim({ key: "module_include", learned: "Auditable" })],
+    }],
+  });
+  const report = await check(dir);
+  assertExamined(report, "app/models/order.rb");
+  const found = forKey(report, "module_include");
+  assert.equal(found.length, 1, JSON.stringify(report.findings));
+  assert.equal(found[0].path, "app/models/order.rb");
+  assert.equal(found[0].claim, "classes here include Auditable");
+});
+
+test("a mixin finding fires once per class body, not once per included constant", needsRuby, async (t) => {
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("app/workers/a_worker.rb", "class AWorker\n  include Sidekiq::Worker\nend\n");
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    // The shape the row was written for: a worker mixing in the learned module
+    // and one more beside it.
+    write("app/workers/b_worker.rb", "class BWorker\n  include Sidekiq::Worker\n  include Sidekiq::Throttled::Worker\nend\n");
+    write("app/workers/c_worker.rb", "class CWorker\n  include Foo::Bar\nend\n");
+    write("app/workers/d_worker.rb", "class DWorker\n  include Foo::Bar\n  include Foo::Baz\nend\n");
+    commit("add");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    areas: [{
+      id: "aaaaaaaa",
+      path: "app/workers",
+      globs: [{ negated: false, dir: "app/workers", tail: "**/*.rb" }],
+      fileCount: 8,
+      dimensions: [dim({ key: "module_include", learned: "Sidekiq::Worker" })],
+    }],
+  });
+  const report = await check(dir);
+  const found = forKey(report, "module_include");
+  assert.deepEqual(
+    found.map((f) => f.path).sort(),
+    ["app/workers/c_worker.rb", "app/workers/d_worker.rb"],
+    JSON.stringify(report.findings)
+  );
+});
+
+test("a body mixing in a different set of modules is not the body it replaced", needsRuby, async (t) => {
+  // The grouped site's identity used to be the include call's own node, which
+  // is `call include` for every body in the file, so one new violating body
+  // absorbed the one it was written next to.
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("app/workers/w.rb", "class AWorker\n  include Sidekiq::Worker\nend\n\nclass CWorker\n  include Foo::Bar\nend\n");
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("app/workers/w.rb", "class AWorker\n  include Sidekiq::Worker\nend\n\nclass DWorker\n  include Baz::Qux\nend\n");
+    commit("swap the body");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    areas: [{
+      id: "aaaaaaaa",
+      path: "app/workers",
+      globs: [{ negated: false, dir: "app/workers", tail: "**/*.rb" }],
+      fileCount: 8,
+      dimensions: [dim({ key: "module_include", learned: "Sidekiq::Worker" })],
+    }],
+  });
+  const report = await check(dir);
+  const found = forKey(report, "module_include");
+  assert.equal(found.length, 1, JSON.stringify(report.findings));
+  assert.equal(found[0].path, "app/workers/w.rb");
+});
+
+test("reordering the modules a class body includes introduces nothing", needsRuby, async (t) => {
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("app/workers/a_worker.rb", "class AWorker\n  include Sidekiq::Worker\nend\n");
+    write("app/workers/c_worker.rb", "class CWorker\n  include Foo::Bar\n  include Foo::Baz\nend\n");
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("app/workers/c_worker.rb", "class CWorker\n  include Foo::Baz\n  include Foo::Bar\nend\n");
+    commit("swap");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    areas: [{
+      id: "aaaaaaaa",
+      path: "app/workers",
+      globs: [{ negated: false, dir: "app/workers", tail: "**/*.rb" }],
+      fileCount: 8,
+      dimensions: [dim({ key: "module_include", learned: "Sidekiq::Worker" })],
+    }],
+  });
+  const report = await check(dir);
+  assertExamined(report, "app/workers/c_worker.rb");
+  assert.deepEqual(forKey(report, "module_include"), [], JSON.stringify(report.findings));
+});
+
+test("a violating body that gains a constant is charged again, and that is accepted", needsRuby, async (t) => {
+  // The accepted cost of keying the site on what the body mixes in: adding a
+  // module to a body that already violated moves its fingerprint, so the branch
+  // is charged for a violation it did not write. The branch did edit the
+  // violating body, and the severity is still capped by the baseline rules.
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("app/workers/a_worker.rb", "class AWorker\n  include Sidekiq::Worker\nend\n");
+    write("app/workers/c_worker.rb", "class CWorker\n  include Foo::Bar\nend\n");
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("app/workers/c_worker.rb", "class CWorker\n  include Foo::Bar\n  include Foo::Baz\nend\n");
+    commit("add one module to a body that already violated");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    areas: [{
+      id: "aaaaaaaa",
+      path: "app/workers",
+      globs: [{ negated: false, dir: "app/workers", tail: "**/*.rb" }],
+      fileCount: 8,
+      dimensions: [dim({ key: "module_include", learned: "Sidekiq::Worker" })],
+    }],
+  });
+  const report = await check(dir);
+  const found = forKey(report, "module_include");
+  assert.equal(found.length, 1, JSON.stringify(report.findings));
+  assert.equal(found[0].path, "app/workers/c_worker.rb");
+});
+
+test("a learned superclass is enforced the way a learned naming class is", async (t) => {
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/panel.ts", "export class Panel extends React.Component {}\n");
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/widget.ts", "export class Widget extends Foo {}\n");
+    commit("add");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    dimensions: [dim({ key: "extends_base", learned: "React.Component" })],
+  });
+  const report = await check(dir);
+  assertExamined(report, "src/widget.ts");
+  const found = forKey(report, "extends_base");
+  assert.equal(found.length, 1, JSON.stringify(report.findings));
+  assert.equal(found[0].where, "Widget");
+  assert.equal(found[0].claim, "classes here extend React.Component");
+});
+
+test("a learned type prefix is enforced on a new interface", async (t) => {
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/a.ts", "export interface IThing { id: string }\n");
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/b.ts", "export interface Comment { id: string }\n");
+    commit("add");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    dimensions: [dim({ key: "interface_prefix", learned: "I" })],
+  });
+  const report = await check(dir);
+  assertExamined(report, "src/b.ts");
+  const found = forKey(report, "interface_prefix");
+  assert.equal(found.length, 1, JSON.stringify(report.findings));
+  assert.equal(found[0].where, "Comment");
+  assert.equal(found[0].claim, "interfaces are named with a I prefix");
+});
+
+test("a learned absence of a prefix is enforced against a prefixed interface", async (t) => {
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/a.ts", "export interface Thing { id: string }\n");
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/b.ts", "export interface IFoo { id: string }\n");
+    commit("add");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    dimensions: [dim({ key: "interface_prefix", learned: "none" })],
+  });
+  const report = await check(dir);
+  assertExamined(report, "src/b.ts");
+  const found = forKey(report, "interface_prefix");
+  assert.equal(found.length, 1, JSON.stringify(report.findings));
+  assert.equal(found[0].where, "IFoo");
+  assert.equal(found[0].claim, "interfaces carry no prefix", "an absence is written out, never filled in");
+});
+
+test("a learned class read off the source is encoded before it reaches a claim", async (t) => {
+  // The stored class of a source-learned row is repository text, so widening
+  // the check to enforce it widens what a committed record can render (F4).
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/panel.ts", "export class Panel extends Base {}\n");
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/widget.ts", "export class Widget extends Foo {}\n");
+    commit("add");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    dimensions: [dim({ key: "extends_base", learned: "Evil|Base\nX" })],
+  });
+  const report = await check(dir);
+  assertExamined(report, "src/widget.ts");
+  const found = forKey(report, "extends_base");
+  assert.equal(found.length, 1, JSON.stringify(report.findings));
+  assert.equal(found[0].claim, "classes here extend Evil Base X");
+  assert.ok(!/[|\n]/.test(found[0].claim), JSON.stringify(found[0].claim));
+});
+
+test("a learned class the encoder empties enforces nothing", async (t) => {
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/panel.ts", "export class Panel extends Base {}\n");
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/widget.ts", "export class Widget extends Foo {}\n");
+    commit("add");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    dimensions: [dim({ key: "extends_base", learned: "```" })],
+  });
+  const report = await check(dir);
+  assertExamined(report, "src/widget.ts");
+  assert.deepEqual(forKey(report, "extends_base"), [], "a sentence that would name nothing states nothing");
+});
+
+test("a learned prefix outside its own vocabulary enforces nothing", async (t) => {
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/a.ts", "export interface IThing { id: string }\n");
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/b.ts", "export interface Comment { id: string }\n");
+    commit("add");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    dimensions: [dim({ key: "interface_prefix", learned: "\n# hostile\ninjected" })],
+  });
+  const report = await check(dir);
+  assertExamined(report, "src/b.ts");
+  assert.ok(!JSON.stringify(report.findings).includes("hostile"), JSON.stringify(report.findings));
+  assert.deepEqual(forKey(report, "interface_prefix"), []);
+});
+
 test("a rename into a foreign filename class is a finding, a rename within the class is not", async (t) => {
   const dir = repo(t, ({ git, write, commit }) => {
     write("src/user-profile.ts", `export const a = 1;\n`);

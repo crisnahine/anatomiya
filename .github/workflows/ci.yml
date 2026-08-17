@@ -95,9 +95,10 @@ jobs:
           node --test $files
 
   # A number that only ever gets quoted is worse than none, so the floors are
-  # enforced rather than reported. They sit a little under the measured 98.66
-  # line / 90.98 branch / 97.90 function, which is room for one refactor rather
-  # than room to stop writing tests.
+  # enforced rather than reported. They sit a little under the measured 97.2
+  # line / 94.2 branch / 97.0 function, which is room for one refactor rather
+  # than room to stop writing tests. The line share carries the corpus harness,
+  # which a test imports for its table builders and which CI never runs.
   coverage:
     name: coverage
     runs-on: ubuntu-latest

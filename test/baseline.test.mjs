@@ -879,7 +879,7 @@ test("resolve reads the pin itself, so the caller never holds one", async (t) =>
 
   const state = await resolve(dir, { baseRef: "main" });
 
-  assert.equal(state.layout, 41);
+  assert.equal(state.partitionSize, 41);
   assert.equal(state.countsOnly, false);
 });
 

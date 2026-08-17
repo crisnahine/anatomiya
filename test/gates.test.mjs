@@ -738,6 +738,8 @@ test("the counter-eligible set is pinned by name and every counter names what to
     // The other side of a learned class is another class, which the learning
     // already picks; a hand-written inverse would fight it.
     "function_naming_case", "exported_symbol_case",
+    "extends_base", "class_base", "module_include",
+    "interface_prefix", "type_alias_prefix",
     // "This repository logs to the console on purpose" is a repository with no
     // wrapper, and there the row is not offered at all (C8): a counter would
     // only ever state where a wrapper exists and is ignored, which is a defect.
