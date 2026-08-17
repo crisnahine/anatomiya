@@ -108,7 +108,7 @@ test("the bounded git reads stay on the buffered runner", () => {
  * `plural` finds the definition, the pass-through and importers of each, and
  * nothing says which is the one to add the next name beside.
  */
-const ROSTER_NAMES = ["kindsLine", "layoutSummary", "plural", "renderLayout", "ROOT_LABEL"];
+const ROSTER_NAMES = ["kindsLine", "layoutSummary", "namesakeClause", "plural", "renderLayout", "ROOT_LABEL"];
 
 function sourceFiles() {
   return ["bin", "lib", "scripts", "test"].flatMap((dir) =>
