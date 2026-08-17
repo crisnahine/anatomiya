@@ -303,7 +303,7 @@ only root in the corpus that moved on it, and it has `under spec` back. react's 
 not move: its one answered file, `packages/react/index.js`, sits directly in the root, so its tail
 is empty, every candidate is a whole-tail match and every one of them names a directory. The
 candidates sort by code unit rather than by `localeCompare`, because this order decides what gets
-rendered and ICU orders case by whatever tables the host was built with.
+rendered and ICU orders case by whatever tables the host was built with. The vote tie breaks the same way.
 
 ### 12. A root inside a test tree is not asked about its fixtures
 
@@ -394,7 +394,7 @@ the sort has no notion of a fixture.
 **One match can still name a namesake root.** mastodon prints `1 of 429 has a namesake test under
 app/javascript/mastodon/components/__tests__`, react `1 of 148 ... under
 scripts/error-codes/__tests__`, webpack `1 of 453 ... under test`. Change 11's half rule refuses a
-root most of the matches disagree with, and one match agrees with itself.
+root most of the matches disagree with, and one match agrees with itself. The worst-reading instance is react's `packages/react`, whose single answered file rests on a compiled fixture bundle under `__source__/__compiled__`; a floor that suppresses a root resting on one file is a rule change that needs its own corpus run first.
 
 **Files with no extension group under `(none)`.** chef reads `chef-utils: 37 .rb, 4 (none) and 2
 other`. A Rakefile and a Gemfile are counted and named by the only thing they share.
