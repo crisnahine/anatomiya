@@ -163,6 +163,11 @@ channel, where an AST serialises to about 16x the source it came from and the pa
 all of it. What crosses is a conforming flag and a scope name per site. The check asks for the tree
 as well, since it reports line numbers, and it only ever parses the files one diff touched.
 
+The facets are a second walk over the same tree, and they stay one because the cost was measured
+rather than assumed: stubbed to a constant, eslint's 1,489 files parse 40ms faster out of 1.45s.
+That is 0.03ms a file and under 3% of the run, against a shared visitor hook every dimension and
+every reader of them would have to be written around.
+
 Two things the parser publishes are taken rather than reimplemented. It can hand its tree across
 from Rust without building it through a serialisation step, which measured 3.06x on the parse itself
 (279ms to 91ms over 1,200 files) and found the same 11,751 sites with a byte-identical JSON encoding;
