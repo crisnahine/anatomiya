@@ -399,10 +399,26 @@ const WITNESSES = {
       // The sentence says once per constant, and `include A, B` is where that
       // is either true or a half count.
       { source: `class W\n  include A, B\nend`, sites: 2 },
+      // The class body is the site, so one declaring no mixin is a site too. An
+      // include inside a method runs when the method does and declares nothing,
+      // which leaves the body bare rather than outside the count.
+      `class Forgot\nend`,
+      `class Late\n  def go\n    include Foo\n  end\nend`,
     ],
-    // Inside a method it is a call made when the method runs, not a mixin the
-    // body declares.
-    inapplicable: `class Late\n  def go\n    include Foo\n  end\nend`,
+    inapplicable: [
+      // A module declaring nothing is namespacing, which is what modules are
+      // for. One declaring an include composed a mixin and is in the applicable
+      // half above.
+      `module Namespace\nend`,
+      // A subclass can be handed the mixin by its base, so its bare body is not
+      // the forgotten include.
+      `class BustCacheWorker < BustCacheBaseWorker\n  def perform\n  end\nend`,
+      // A class inside a class is that class's helper, not a peer of the ones
+      // the claim is about.
+      `class Policy < Service::PolicyBase\n  class Strategy\n  end\nend`,
+      // Not a body at all, so there is nothing for the sentence to be about.
+      `include TopLevel`,
+    ],
   },
 
   // --- dimensions-rails.mjs ---
