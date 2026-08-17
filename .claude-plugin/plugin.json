@@ -1,6 +1,6 @@
 {
   "name": "anatomiya",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Counts what your code already does, directory by directory, and puts those counts where the agent picks them up when it reads a file there",
   "author": {
     "name": "crisnahine",

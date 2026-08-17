@@ -7,6 +7,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-08-17
+
+0.2.1 changes no count and no rendered byte. It puts a number behind the one word three delivery
+decisions rested on. A6, A7 and A8 all say what happens to a context file "in a session", and
+nothing had ever measured how long one delivery lasts. It lasts one context window: a compaction or
+a resume rebuilds the window and the map comes back from disk, the overview at the boundary and an
+area file on the next read that matches it. So the gap the tool cannot reach is the stretch between
+two rebuilds, not the tail of a long session, and there is nothing here to build.
+
 ### Added
 
 - `scripts/measure-delivery.mjs` counts what the delivery channel did, off a Claude Code transcript
@@ -935,6 +944,7 @@ which are partial; several listed there are not implemented yet.
 - No claim that this catches defects. Measured across ten repositories, 1 of 317 defect review
   comments was preventable by a conventions map.
 
+[0.2.1]: https://github.com/crisnahine/anatomiya/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/crisnahine/anatomiya/compare/v0.1.13...v0.2.0
 [0.1.13]: https://github.com/crisnahine/anatomiya/compare/v0.1.12...v0.1.13
 [0.1.12]: https://github.com/crisnahine/anatomiya/compare/v0.1.11...v0.1.12
