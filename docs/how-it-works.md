@@ -583,8 +583,13 @@ IPC channel with `hits` and are a small object of flags and counts.
 For JavaScript and JSX: whether the file holds JSX; the modules it imports and the names it takes
 from each; whether it imports a test runner, from a closed table (`vitest`, `jest`,
 `@jest/globals`, `mocha`, `chai`, `ava`, `tap`, `node:test`, `cypress`, `qunit`,
-`@playwright/test`, `playwright`) or makes a top-level `describe`, `it`, `test` or `cy` call; and
-how many module-level functions it defines and does not export.
+`@playwright/test`, `playwright`) or makes a top-level `describe`, `it`, `test` or `cy` call; the
+names it hands out; and how many module-level functions it defines and does not export.
+
+CommonJS is read as well as ESM, on both halves of that. A top-level `require` is an import, and
+`module.exports = { a, b }`, `module.exports = fn` and `exports.name = ...` are names the file hands
+out. The parser's static record holds only the ESM ones, so a repository written in `require`
+reported no exports at all and every function in it as a private helper.
 
 For Ruby: whether it declares cases in the RSpec vocabulary, inherits a minitest test case, or
 defines a `test_` method inside a class. A DSL call counts where it takes a block and sits outside

@@ -40,6 +40,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   unexamined count moved the always-loaded overview. A child that exited on its own, a missing
   interpreter and a fatal from the script are still charged on the first attempt, and every Ruby
   record now carries `attempts` the way a pool record does.
+- A CommonJS file's exports are read off its assignments, not only off the parser's ESM record:
+  `module.exports = { a, b }`, `module.exports = fn`, `module.exports = function () {}`,
+  `exports.name = ...` and `module.exports.name = ...`. A repository written in `require` reported
+  `exports: []` for every file and counted every module-level function as an inline helper.
 - The encoder strips `--!>` as well as `-->`: parsers close a comment on either, so a
   repository-controlled value holding the first could close a comment the renderer never opened.
 - A rule file's head is opened first and typed on the handle it is read from, so a path swapped
