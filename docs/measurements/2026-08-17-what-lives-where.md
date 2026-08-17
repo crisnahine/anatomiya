@@ -391,10 +391,15 @@ The count is right and the names are not what a reader should copy. No rule sepa
 `packages/react-dom/src/__tests__`. They are two of its largest directories by source count and
 the sort has no notion of a fixture.
 
-**One match can still name a namesake root.** mastodon prints `1 of 429 has a namesake test under
-app/javascript/mastodon/components/__tests__`, react `1 of 148 ... under
-scripts/error-codes/__tests__`, webpack `1 of 453 ... under test`. Change 11's half rule refuses a
-root most of the matches disagree with, and one match agrees with itself. The worst-reading instance is react's `packages/react`, whose single answered file rests on a compiled fixture bundle under `__source__/__compiled__`; a floor that suppresses a root resting on one file is a rule change that needs its own corpus run first.
+**One match names no root now, and the count that rests on it is still one file.** A clause whose
+root had one answered source file behind it named whatever that file happened to touch: change 11's
+half rule refuses a root most of the matches disagree with, and one match agrees with itself.
+mastodon read `1 of 429 has a namesake test under app/javascript/mastodon/components/__tests__`,
+react `1 of 148 ... under scripts/error-codes/__tests__`, webpack `1 of 453 ... under test`, and
+react's `packages/react` named a compiled fixture bundle under `__source__/__compiled__`. The floor
+suppresses the name at one answered file and keeps the counts, so those clauses print bare. What is
+left to read is the count itself: `1 of 429` says one file in that root has a namesake and nothing
+about where the rest of them would go.
 
 **Files with no extension group under `(none)`.** chef reads `chef-utils: 37 .rb, 4 (none) and 2
 other`. A Rakefile and a Gemfile are counted and named by the only thing they share.
