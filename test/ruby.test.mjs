@@ -686,6 +686,38 @@ test("the second child is handed only what the first never answered", needsSheba
   assert.deepEqual(handed.filter((_, i) => i % 2 === 0), ["b.rb", "c.rb"], "an answered file is not sent twice");
 });
 
+test("a file the retry left unanswered is charged with what killed the first child", needsShebang, async () => {
+  // The retry starts with a clean error so its own ending is what it reports,
+  // and a second child that answers nothing and exits 0 leaves nothing to say.
+  // What happened is still the first kill, and "no result" names no cause.
+  const home = mkdtempSync(join(dir, "retry-silent-"));
+  const stub = join(home, "ruby");
+  writeFileSync(
+    stub,
+    [
+      "#!/bin/sh",
+      `if [ "$1" = "--warm" ]; then exit 0; fi`,
+      `n=$(cat '${home}/runs' 2>/dev/null || echo 0)`,
+      `echo $((n + 1)) > '${home}/runs'`,
+      `tr '\\0' '\\n' > '${home}/in.'$n`,
+      `printf '{"ready":true,"prism":"1.0.0"}\\n'`,
+      `if [ "$n" = "0" ]; then sleep 1; fi`,
+      "exit 0",
+      "",
+    ].join("\n"),
+    { mode: 0o755 }
+  );
+  execFileSync(stub, ["--warm"]);
+
+  const files = ["a.rb", "b.rb"].map((rel) => ({ rel, abs: join(dir, "rescue_none.rb") }));
+  const out = await parseRuby(files, { ruby: stub, guards: { idleMs: 150 } });
+
+  assert.equal(readFileSync(join(home, "runs"), "utf8").trim(), "2", "the first child was killed by our own timer");
+  assert.equal(out.crashed, 2);
+  assert.deepEqual(out.results.map((r) => r.attempts), [2, 2]);
+  assert.deepEqual(out.results.map((r) => r.error), ["ruby went silent", "ruby went silent"]);
+});
+
 test("a child that died by itself is charged, not tried again", needsShebang, async () => {
   // The other half of the ruling. An interpreter that exits on its own is a
   // broken install or a fatal from the script, and a second child answers it
