@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { needsPosixPaths } from "./platform.mjs";
+import { needsPosixSeparators } from "./platform.mjs";
 import { FACTS_PATH, FACTS_SCHEMA } from "../lib/facts.mjs";
 import {
   COLUMNS,
@@ -297,7 +297,7 @@ test("a --only name the corpus does not hold is an error, not a shorter run", ()
   assert.match(selectRepos(repos, "errbit,eslnit").error, /eslnit/);
 });
 
-test("a scratch directory that overlaps the corpus, or already holds entries, is refused", needsPosixPaths, () => {
+test("a scratch directory that overlaps the corpus, or already holds entries, is refused", needsPosixSeparators, () => {
   assert.equal(checkDirs("/corpus", "/scratch", []), null);
   assert.match(checkDirs("/corpus", "/corpus", []), /same directory/);
   // The nested case: the clones land inside the corpus this run may not write.
