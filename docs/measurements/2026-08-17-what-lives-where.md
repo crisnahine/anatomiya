@@ -276,7 +276,7 @@ The count is right and the names are not what a reader should copy. No rule sepa
 `packages/react-dom/src/__tests__`. They are two of its largest directories by source count and
 the sort has no notion of a fixture.
 
-**One match can name a namesake root.** angular prints `1 of 498 have a namesake test under
+**One match can name a namesake root.** angular prints `1 of 498 has a namesake test under
 packages/core/schematics/migrations/signal-migration/test/golden-test`. The root is a vote and a
 single match wins it outright.
 
@@ -888,7 +888,7 @@ The overview section:
 ## What lives where
 
 - src/pages: 1003 .tsx (JSX), 188 .ts and 71 other; 2 vitest specs under __tests__; 0 of 1003 have a namesake test; 186 sibling modules named types/schema/mapper; 214 files inline a helper
-- src/components: 504 .tsx (JSX), 65 .ts and 106 other; 2 vitest specs; 1 of 504 have a namesake test under cypress/integration/components; 66 sibling modules named index/schema/types; 117 files inline a helper
+- src/components: 504 .tsx (JSX), 65 .ts and 106 other; 2 vitest specs; 1 of 504 has a namesake test under cypress/integration/components; 66 sibling modules named index/schema/types; 117 files inline a helper
 - src/queries: 314 .ts, 1 .tsx; 0 of 314 have a namesake test
 - cypress/integration: 102 Cypress specs
 - src/hooks: 47 .tsx (JSX), 23 .ts; 0 of 47 have a namesake test; 23 sibling modules named mapper/payoutContext/schema; 6 files inline a helper
@@ -1035,9 +1035,9 @@ Match sibling test shape; skip tests where siblings have none.
 
 - packages/core: 1086 .ts, 82 .bazel and 84 other; 268 test files; 13 of 818 have a namesake test under packages/core
 - adev/src/content: 612 .ts, 384 .md and 837 other; 24 test files under src; 7 of 588 have a namesake test under adev/src/content
-- packages/compiler-cli: 535 .ts, 118 .bazel and 28 other; 37 test files under test; 1 of 498 have a namesake test under packages/core/schematics/migrations/signal-migration/test/golden-test
+- packages/compiler-cli: 535 .ts, 118 .bazel and 28 other; 37 test files under test; 1 of 498 has a namesake test under packages/core/schematics/migrations/signal-migration/test/golden-test
 - packages/compiler: 292 .ts, 8 .bazel and 4 other; 50 test files; 2 of 242 have a namesake test under packages/core/schematics/migrations/signal-migration/test/golden-test
-- packages/zone.js: 215 .ts, 38 .js and 65 other; 103 test files; 1 vitest spec under vitest; 1 of 117 have a namesake test under packages/zone.js/test/common
+- packages/zone.js: 215 .ts, 38 .js and 65 other; 103 test files; 1 vitest spec under vitest; 1 of 117 has a namesake test under packages/zone.js/test/common
 - devtools/projects: 256 .ts, 106 .bazel and 150 other; 68 test files; 61 of 188 have a namesake test under devtools/projects
 - adev/shared-docs: 136 .mts, 86 .ts and 230 other; 51 test files; 0 of 105 have a namesake test; 173 sibling modules named index/builder/defaults; 3 files inline a helper
 - and 11 more directories holding 3170 files
@@ -1108,7 +1108,7 @@ Match directory granularity; don't extract into a sibling module what the direct
 - packages/features: 901 .ts, 64 .tsx (JSX) and 16 other; 199 vitest specs; 3 test files under __tests__; 105 of 703 have a namesake test under packages/features; 703 sibling modules named types/index/tokens; 17 files inline a helper
 - packages/app-store: 680 .ts, 184 .json and 699 other; 33 vitest specs; 2 playwright specs under tests; 1 test file under __tests__; 17 of 647 have a namesake test under packages/app-store; 647 sibling modules named index/add/zod; 5 files inline a helper
 - packages/trpc/server/routers/viewer: 345 .ts, 20 .tsx; 26 vitest specs; 21 of 319 have a namesake test under packages/trpc/server/routers/viewer
-- packages/platform: 267 .ts, 81 .tsx (JSX) and 59 other; 6 playwright specs; 3 vitest specs under __tests__; 1 test file under tests; 1 of 258 have a namesake test under packages/platform; 266 sibling modules named index/types/permissions; 16 files inline a helper
+- packages/platform: 267 .ts, 81 .tsx (JSX) and 59 other; 6 playwright specs; 3 vitest specs under __tests__; 1 test file under tests; 1 of 258 has a namesake test under packages/platform; 266 sibling modules named index/types/permissions; 16 files inline a helper
 - packages/ui/components: 140 .tsx (JSX), 63 .ts and 14 other; 26 vitest specs; 8 test files; 9 of 108 have a namesake test under packages/ui/components; 62 sibling modules named index/types/dateRangeLogic; 24 files inline a helper
 - packages/lib (files at this level): 146 .ts, 4 .json and 4 other; 22 vitest specs; 21 of 124 have a namesake test under packages/lib; 124 sibling modules named array/availability/buildCalEventFromBooking; 1 file inlines a helper
 - and 4 more directories holding 1643 files
@@ -1197,7 +1197,7 @@ Match sibling test shape; skip tests where siblings have none.
 
 - plugins: 4330 .rb, 4072 .yml and 2758 other; 1675 RSpec specs; 217 qunit specs; 1 test file under routes; 0 of 2655 have a namesake test
 - spec: 1680 RSpec specs, 7 test files and 498 other
-- frontend/discourse: 1907 .js, 1678 .gjs and 167 other; 456 qunit specs; 9 test files; 1 of 1448 have a namesake test under plugins/discourse-ai/spec/lib/agents/tool_runner
+- frontend/discourse: 1907 .js, 1678 .gjs and 167 other; 456 qunit specs; 9 test files; 1 of 1448 has a namesake test under plugins/discourse-ai/spec/lib/agents/tool_runner
 - db/migrate: 1735 .rb, 1 .json; 7 of 1735 have a namesake test under spec/db/migrate
 - migrations: 392 .rb, 11 (none) and 24 other; 72 RSpec specs; 0 of 320 have a namesake test
 - app/models: 379 .rb; 209 of 379 have a namesake test under spec/models
@@ -1232,7 +1232,7 @@ Match sibling test shape; skip tests where siblings have none.
 ## What lives where
 
 - src/pages: 1003 .tsx (JSX), 188 .ts and 71 other; 2 vitest specs under __tests__; 0 of 1003 have a namesake test; 186 sibling modules named types/schema/mapper; 214 files inline a helper
-- src/components: 504 .tsx (JSX), 65 .ts and 106 other; 2 vitest specs; 1 of 504 have a namesake test under cypress/integration/components; 66 sibling modules named index/schema/types; 117 files inline a helper
+- src/components: 504 .tsx (JSX), 65 .ts and 106 other; 2 vitest specs; 1 of 504 has a namesake test under cypress/integration/components; 66 sibling modules named index/schema/types; 117 files inline a helper
 - src/queries: 314 .ts, 1 .tsx; 0 of 314 have a namesake test
 - cypress/integration: 102 Cypress specs
 - src/hooks: 47 .tsx (JSX), 23 .ts; 0 of 47 have a namesake test; 23 sibling modules named mapper/payoutContext/schema; 6 files inline a helper
@@ -1274,7 +1274,7 @@ Match sibling test shape; skip tests where siblings have none.
 - lib/linter: 20 .js; 17 of 20 have a namesake test under tests/lib/linter
 - lib/shared: 19 .js; 11 of 19 have a namesake test under tests/lib/shared
 - messages: 18 .js; 0 of 18 have a namesake test
-- lib/languages/js: 17 .js; 1 of 17 have a namesake test under tests/lib/languages/js
+- lib/languages/js: 17 .js; 1 of 17 has a namesake test under tests/lib/languages/js
 - and 10 more directories holding 830 files
 - tests: 359 test files under tests/lib/rules; 8 chai under tests; 1 Cypress; 301 of 305 .js files have a namesake test
 
@@ -1288,10 +1288,10 @@ Match sibling test shape; skip tests where siblings have none.
 
 - fastlane: 504 .rb, 53 .png and 134 other; 194 RSpec specs under actions_specs; 3 of 310 have a namesake test under fastlane/spec
 - spaceship: 312 .rb, 9 .md and 10 other; 104 RSpec specs; 2 test files under tunes; 0 of 206 have a namesake test
-- fastlane_core: 107 .rb, 7 .json and 6 other; 45 RSpec specs under spec; 1 of 62 have a namesake test under fastlane
-- match: 52 .rb, 4 .gif and 8 other; 21 RSpec specs under spec; 1 of 31 have a namesake test under fastlane
+- fastlane_core: 107 .rb, 7 .json and 6 other; 45 RSpec specs under spec; 1 of 62 has a namesake test under fastlane
+- match: 52 .rb, 4 .gif and 8 other; 21 RSpec specs under spec; 1 of 31 has a namesake test under fastlane
 - deliver: 41 .rb, 7 .mp4 and 13 other; 15 RSpec specs under spec; 0 of 26 have a namesake test
-- snapshot: 36 .rb, 22 .json and 58 other; 9 RSpec specs under spec; 1 of 27 have a namesake test under fastlane
+- snapshot: 36 .rb, 22 .json and 58 other; 9 RSpec specs under spec; 1 of 27 has a namesake test under fastlane
 - precheck: 28 .rb, 2 .md and 5 other; 7 RSpec specs under rules; 0 of 21 have a namesake test
 - and 7 more directories holding 718 files
 - tests: 449 RSpec specs; 2 test files under spaceship/spec/tunes; 3 of 310 .rb files have a namesake test
@@ -1326,7 +1326,7 @@ Match directory granularity; don't extract into a sibling module what the direct
 - spec: 155 RSpec specs and 49 other
 - app/models/agents: 75 .rb; 75 of 75 have a namesake test under spec/models/agents
 - db/migrate: 71 .rb; 2 of 71 have a namesake test under spec/migrations
-- config: 35 .rb, 4 .yml; 1 of 35 have a namesake test under spec
+- config: 35 .rb, 4 .yml; 1 of 35 has a namesake test under spec
 - app/concerns: 27 .rb; 13 of 27 have a namesake test under spec/concerns
 - lib (files at this level): 19 .rb; 16 of 19 have a namesake test under spec/lib
 - app/assets: 18 .js, 6 .scss and 5 other; 0 of 18 have a namesake test
@@ -1453,7 +1453,7 @@ Match directory granularity; don't extract into a sibling module what the direct
 - test: 75 minitest specs, 34 test files and 3 other
 - db/migrate: 103 .rb, 1 .unused; 0 of 103 have a namesake test
 - app/assets: 45 .js, 22 .css and 13 other; 3 of 45 have a namesake test under spec
-- config: 37 .rb, 22 .yml and 11 other; 1 of 37 have a namesake test under test/integration
+- config: 37 .rb, 22 .yml and 11 other; 1 of 37 has a namesake test under test/integration
 - app/models: 28 .rb; 12 of 28 have a namesake test under test/unit
 - app/controllers: 27 .rb; 25 of 27 have a namesake test under test/functional
 - app/helpers: 16 .rb; 9 of 16 have a namesake test under test/unit/helpers
@@ -1472,7 +1472,7 @@ Match sibling test shape; skip tests where siblings have none.
 - spec/unit: 676 RSpec specs, 4 test files and 5 other
 - acceptance: 255 .rb, 59 (none) and 12 other; 3 RSpec specs under acceptance; 2 test files under windows; 3 of 250 have a namesake test under acceptance
 - spec/integration: 69 RSpec specs
-- spec/lib: 38 .rb; 1 RSpec spec under matchers; 1 of 37 have a namesake test under spec/lib
+- spec/lib: 38 .rb; 1 RSpec spec under matchers; 1 of 37 has a namesake test under spec/lib
 - benchmarks: 49 .erb, 24 (none) and 34 other
 - references: 40 .md
 - and 183 more files in directories under the floor
@@ -1488,11 +1488,11 @@ Match sibling test shape; skip tests where siblings have none.
 
 - compiler: 223 .ts, 120 .rs and 230 other; 24 test files under __tests__; 2 playwright specs; 1 node:test spec under __tests__; 0 of 205 have a namesake test; 242 sibling modules named index/tsup.config/types.d; 8 files inline a helper
 - scripts: 161 .js, 6 .md and 29 other; 13 test files under __tests__; 0 of 148 have a namesake test; 149 sibling modules named build/benchmark/index; 0 files inline a helper
-- packages/react-devtools-shared/src/devtools/views: 149 .js (JSX), 80 .css; 1 of 149 have a namesake test under packages/react-devtools-inline/__tests__/__e2e__; 27 sibling modules named utils/constants/types; 43 files inline a helper
+- packages/react-devtools-shared/src/devtools/views: 149 .js (JSX), 80 .css; 1 of 149 has a namesake test under packages/react-devtools-inline/__tests__/__e2e__; 27 sibling modules named utils/constants/types; 43 files inline a helper
 - packages/react-devtools-shared/src/hooks/__tests__/__source__/__compiled__: 144 test files and 67 other
 - packages/react-dom/src/__tests__: 133 test files
-- packages/react: 76 .js, 6 .ts and 3 other; 31 test files under __tests__; 1 of 51 have a namesake test under packages/react-devtools-shared/src/hooks/__tests__/__source__; 51 sibling modules named compiler-runtime/index/jsx-dev-runtime; 2 files inline a helper
-- packages/react-reconciler/src (files at this level): 82 .js; 1 of 82 have a namesake test under packages/react-reconciler/src/forks
+- packages/react: 76 .js, 6 .ts and 3 other; 31 test files under __tests__; 1 of 51 has a namesake test under packages/react-devtools-shared/src/hooks/__tests__/__source__; 51 sibling modules named compiler-runtime/index/jsx-dev-runtime; 2 files inline a helper
+- packages/react-reconciler/src (files at this level): 82 .js; 1 of 82 has a namesake test under packages/react-reconciler/src/forks
 - and 18 more directories holding 1460 files
 - tests: 583 test files under packages; 5 playwright; 1 node:test under compiler/apps/playground/__tests__; 0 of 205 .ts files have a namesake test
 
@@ -1524,7 +1524,7 @@ Match sibling test shape; skip tests where siblings have none.
 ## What lives where
 
 - code: 3104 .ts, 785 .tsx (JSX) and 1607 other; 710 vitest specs; 33 playwright specs under e2e-sandbox; 23 test files under rules; 2 chai specs under test; 1 node:test spec under cli; 544 of 2383 have a namesake test under code; 2559 sibling modules named index/types/input.stories; 250 files inline a helper
-- agent-eval: 89 .ts, 78 .tsx and 138 other; 53 vitest specs; 1 of 36 have a namesake test under agent-eval; 48 sibling modules named main/vitest.config/preview; 0 files inline a helper
+- agent-eval: 89 .ts, 78 .tsx and 138 other; 53 vitest specs; 1 of 36 has a namesake test under agent-eval; 48 sibling modules named main/vitest.config/preview; 0 files inline a helper
 - scripts: 164 .ts, 8 .js and 20 other; 31 vitest specs; 3 test files under tasks; 1 playwright spec under bench; 23 of 130 have a namesake test under scripts
 - test-storybooks: 82 .ts, 51 .tsx (JSX) and 267 other; 8 playwright specs under e2e-tests; 7 vitest specs under tests; 4 test files under stories; 3 Cypress specs; 1 jest spec under stories; 0 of 64 have a namesake test; 99 sibling modules named main/preview/vite.config; 11 files inline a helper
 - docs: 684 .md, 183 .mdx and 217 other
@@ -1560,8 +1560,8 @@ Match directory granularity; don't extract into a sibling module what the direct
 - src/driver: 90 .ts; 0 of 90 have a namesake test
 - packages/codemod: 78 .ts, 5 .json and 6 other; 15 chai specs; 0 of 63 have a namesake test
 - src/decorator: 69 .ts; 0 of 69 have a namesake test
-- src/error: 61 .ts; 1 of 61 have a namesake test under test/functional/database-schema/custom-constraint-names/index
-- src/query-builder: 39 .ts; 1 of 39 have a namesake test under test/functional/database-schema/custom-constraint-names/index
+- src/error: 61 .ts; 1 of 61 has a namesake test under test/functional/database-schema/custom-constraint-names/index
+- src/query-builder: 39 .ts; 1 of 39 has a namesake test under test/functional/database-schema/custom-constraint-names/index
 - docs: 76 .md, 12 .svg and 26 other; 4 sibling modules named databases/docusaurus.config/redirects; 2 files inline a helper
 - and 323 more files in directories under the floor
 - tests: 684 chai specs under test; 277 test files under test; 1 mocha under test/github-issues/4956; 0 of 1803 .ts files have a namesake test
@@ -1594,11 +1594,11 @@ Match directory granularity; don't extract into a sibling module what the direct
 ```
 ## What lives where
 
-- test: 10418 .js, 814 .css and 1413 other; 2607 test files; 1 of 7858 have a namesake test under test
+- test: 10418 .js, 814 .css and 1413 other; 2607 test files; 1 of 7858 has a namesake test under test
 - lib: 651 .js, 1 .svg; 8 of 651 have a namesake test under test
 - examples: 453 .js, 181 .md and 118 other; 0 of 453 have a namesake test; 450 sibling modules named build/webpack.config/example; 0 files inline a helper
 - and 315 more files in directories under the floor
-- tests: 2608 test files under test; 1 of 7858 .js files have a namesake test
+- tests: 2608 test files under test; 1 of 7858 .js files has a namesake test
 
 Match sibling test shape; skip tests where siblings have none.
 Match directory granularity; don't extract into a sibling module what the directory's files inline.

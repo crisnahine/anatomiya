@@ -28,12 +28,11 @@ import { isTestFile, majorityDir, mirroredTests, MODULE_EXTS, runnerOf, tally } 
 import { parseAll } from "../lib/parse.mjs";
 import { baseOf, dirOf, extOf, stemOf } from "../lib/paths.mjs";
 import { scan } from "../lib/scan.mjs";
-import { MAX_LINES, renderOverview, ROOT_LABEL, splitUncovered } from "../lib/render.mjs";
+import { MAX_LINES, renderOverview, splitUncovered } from "../lib/render.mjs";
+import { ROOT_LABEL } from "../lib/render-layout.mjs";
 import { readFacts, statedSide, writeFacts } from "../lib/facts.mjs";
 import { areaFilename, auditRules, knownNames, OVERVIEW_FILE } from "../lib/rules.mjs";
 import { encodePath } from "../lib/encode.mjs";
-
-const DEFAULT_CORPUS = "/Users/crisn/Documents/Projects/anatomiya-corpus";
 
 const HEADING = "## What lives where";
 const TRUNCATED = "layout: not counted, the scan was truncated";
@@ -549,7 +548,15 @@ export function learnedTables(collected) {
   );
 }
 
-function parseArgs(argv) {
+const USAGE = `usage: node scripts/measure-layout.mjs <corpusDir> [options]
+
+  <corpusDir>        a directory whose children are the repositories to measure
+  --only <a,b>       measure these repositories rather than every child
+  --md <path>        write the table and the rendered sections here
+  --facts <dir>      write each repository's facts record under here
+`;
+
+export function parseArgs(argv) {
   const opts = { corpus: null, md: null, facts: null, only: null };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -557,18 +564,20 @@ function parseArgs(argv) {
       opts[arg.slice(2)] = argv[++i];
       continue;
     }
-    if (arg.startsWith("-")) {
-      console.error(`unknown option: ${arg}`);
-      process.exit(2);
-    }
+    if (arg.startsWith("-")) return { error: `unknown option: ${arg}` };
     opts.corpus = arg;
   }
+  if (opts.corpus === null) return { error: "the corpus directory is required" };
   return opts;
 }
 
 async function main() {
   const opts = parseArgs(process.argv.slice(2));
-  const corpusDir = resolve(opts.corpus ?? DEFAULT_CORPUS);
+  if (opts.error) {
+    console.error(`${opts.error}\n\n${USAGE}`);
+    process.exit(2);
+  }
+  const corpusDir = resolve(opts.corpus);
   const only = opts.only ? new Set(opts.only.split(",")) : null;
 
   const repos = readdirSync(corpusDir, { withFileTypes: true })
