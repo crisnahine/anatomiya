@@ -467,6 +467,20 @@ What no rebuild reaches is the stretch between two of them. Inside one window th
 once, at whatever turn the first matching read happened, and every turn after that is further from
 them. `SessionStart` fires at the boundaries, which is the one place this is not a problem.
 
+The Read has to be attempted rather than to succeed. A Read of a path that does not exist attaches
+the area file whose glob the path matches, because delivery keys on the path of the attempt. That
+falls the right way: an agent checking whether the file it is about to create is already there is
+handed the counts for that directory at exactly the moment it is about to write one.
+
+A subagent is reached by the same channel, and where the session was started decides what it gets
+before its first Read. With the mapped repository as the working directory the overview arrives on
+the subagent's first turn, ahead of any tool call: five subagent transcripts here show `CLAUDE.md`
+and `anatomiya-overview.md` delivered at entry, on 2.1.220 and 2.1.233. With the repository one
+directory down from where the session started, it is nested rather than root, and nothing arrives
+until a file under it is touched. A subagent that only greps and `cat`s never touches one, which is
+the exploration phase issue #34 measured going dark, and it is the whole of the gap: a subagent that
+Reads is served like the main thread, overview included.
+
 The overview head carries two fixed sentences beside the counts. "Read a file before editing it:
 these notes load when you read, not when you grep" is that ceiling said to the agent. "When unsure
 what this code does, read it, grep it, or run it instead of guessing, and say what you could not
@@ -789,6 +803,14 @@ check reports findings in code the author never touched.
 "Newly introduced" cannot be derived from one run at HEAD, so the analysis runs twice, at HEAD and
 at the merge base, and the two finding sets are differenced by content fingerprint rather than by
 position.
+
+The head side is read from the working tree wherever the tree differs from the commit, and a file
+that exists only in the tree is examined like any other file this branch added. An agent writes,
+checks, fixes, then commits, so the moment the findings are cheapest is the moment the work is not
+committed, and a check that answered `0 MUST-FIX` there was answering about a file it had not read.
+The run says how many files it read that way, because that many make it unreproducible from git
+alone. The base side never moves: it is read with `git cat-file` at the merge base, which is what
+keeps an agent's own edits from moving the population it is judged against (E2).
 
 Base ref resolution tries `origin/HEAD`, `origin/main`, `origin/master`, `main`, `master`, in that
 order, or whatever `--base` names. `@{upstream}` is deliberately absent: a pushed feature branch

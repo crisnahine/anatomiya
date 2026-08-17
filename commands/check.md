@@ -18,8 +18,8 @@ Run the check and report what it found.
    - every MUST-FIX, then every FIX: path, line, and the claim the site broke
    - the NIT count, listed one by one only if the user asks
    - every `note:` line it printed, and the capped-severity line above them: no map on disk, no
-     merge base, a shallow clone, files with uncommitted edits it could not see, files it
-     could not read or parse
+     merge base, a shallow clone, files read from the working tree rather than from a commit,
+     files it could not read or parse
    - any file in `.claude/rules/` this tool did not write, and any carrying our frontmatter that
      the map on disk does not name, since both reach the agent on every turn
 

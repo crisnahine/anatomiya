@@ -801,9 +801,9 @@ test("our frontmatter with no map naming it is reported apart from a foreign fil
   assert.ok(rendered.includes("anatomiya-area-99999999.md"));
 });
 
-test("uncommitted edits to a changed file are reported as unread", async (t) => {
-  // The diff is committed content. Silence here would let a working-tree fix,
-  // or a working-tree violation, pass unmentioned.
+test("a file edited since its commit is read as it stands, not as it was committed", async (t) => {
+  // One violation committed, a second added in the tree. The tree is what the
+  // agent has in front of it, so it is the side the head is read from.
   const dir = repo(t, ({ git, write, commit }) => {
     write("src/a.ts", clean(2));
     commit("init");
@@ -816,13 +816,14 @@ test("uncommitted edits to a changed file are reported as unread", async (t) => 
 
   const r = await check(dir, { baseRef: "main" });
 
-  assert.ok(r.caveats.some((c) => /uncommitted edits/.test(c)));
-  assert.equal(forKey(r, "swallowed_error").length, 1, "the committed site, not the working-tree one");
+  assert.ok(r.caveats.some((c) => /working tree/.test(c)));
+  assert.equal(forKey(r, "swallowed_error").length, 2, "both sites, the committed one and the pending one");
 });
 
-test("work that exists only in the working tree is still reported as unread", async (t) => {
-  // The state right before review is usually uncommitted. An empty diff plus a
-  // dirty tree has to say so, or a silent zero reads as "conforms".
+// An agent writes, checks, fixes, then commits. Run at the moment the findings
+// are cheapest, the check used to answer "0 MUST-FIX, 0 FIX, 0 NIT" and put the
+// one line that unsaid it in a caveat.
+test("an untracked file is examined, so the check answers before the commit", async (t) => {
   const dir = repo(t, ({ write, commit }) => {
     write("src/a.ts", clean(2));
     commit("init");
@@ -832,11 +833,43 @@ test("work that exists only in the working tree is still reported as unread", as
 
   const r = await check(dir, { baseRef: "main" });
 
-  assert.equal(r.examined.length, 0, "nothing committed, so nothing examined");
-  assert.ok(r.caveats.some((c) => /uncommitted edits/.test(c)));
+  assert.deepEqual(r.examined.map((f) => f.path), ["src/b.ts"]);
+  assert.equal(forKey(r, "swallowed_error").length, 2, JSON.stringify(r.findings));
 });
 
-test("a staged but uncommitted file is reported as unread", async (t) => {
+test("a tracked file edited only in the tree is judged against its base, not read as all new", async (t) => {
+  const dir = repo(t, ({ git, write, commit }) => {
+    // Two violations at the base, so a head side read as wholly new would
+    // report three rather than the one this branch added.
+    write("src/a.ts", swallow(2));
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/a.ts", swallow(3));
+  });
+  facts(dir, { sha: sha(dir, "main") });
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.equal(forKey(r, "swallowed_error").length, 1, JSON.stringify(r.findings));
+});
+
+test("a file read from the tree is named as read from the tree", async (t) => {
+  const dir = repo(t, ({ write, commit }) => {
+    write("src/a.ts", clean(2));
+    commit("init");
+    write("src/b.ts", swallow(2));
+  });
+  facts(dir, { sha: sha(dir, "main") });
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.ok(
+    r.caveats.some((c) => /working tree/.test(c)),
+    `a run that read uncommitted content says so: ${JSON.stringify(r.caveats)}`
+  );
+});
+
+test("a staged but uncommitted file is examined the same as an unstaged one", async (t) => {
   const dir = repo(t, ({ git, write, commit }) => {
     write("src/a.ts", clean(2));
     commit("init");
@@ -847,7 +880,8 @@ test("a staged but uncommitted file is reported as unread", async (t) => {
 
   const r = await check(dir, { baseRef: "main" });
 
-  assert.ok(r.caveats.some((c) => /uncommitted edits/.test(c)));
+  assert.deepEqual(r.examined.map((f) => f.path), ["src/b.ts"]);
+  assert.equal(forKey(r, "swallowed_error").length, 2, JSON.stringify(r.findings));
 });
 
 test("a renamed file counts once, and under its own name", async (t) => {
@@ -863,8 +897,8 @@ test("a renamed file counts once, and under its own name", async (t) => {
 
   const r = await check(dir, { baseRef: "main" });
 
-  const note = r.caveats.find((c) => /uncommitted edits/.test(c));
-  assert.ok(note, "the rename is uncommitted work the check did not read");
+  const note = r.caveats.find((c) => /working tree/.test(c));
+  assert.ok(note, "the rename is work the check read from the tree");
   assert.match(note, /^1 file/, "one file, not two");
 });
 
@@ -880,10 +914,11 @@ test("the store the map writes is not counted as pending work", async (t) => {
   const r = await check(dir, { baseRef: "main" });
 
   assert.equal(
-    r.caveats.filter((c) => /uncommitted edits/.test(c)).length,
+    r.caveats.filter((c) => /working tree/.test(c)).length,
     0,
     "a clean tree plus an untracked map is not pending work"
   );
+  assert.deepEqual(r.examined, [], "the map is not source this branch changed");
 });
 
 test("a repository with no commits examines nothing and refuses nothing", async (t) => {
