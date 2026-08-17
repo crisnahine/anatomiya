@@ -220,6 +220,63 @@ test("a namesake in another subtree answers nothing", () => {
   assert.deepEqual(namesakeCompanions(source, tests, "app/models"), { with: 0, of: 1, root: null });
 });
 
+test("an engine's spec tree answers the source tree beside it", () => {
+  // openproject's `modules` read 0 of 2623: the tail is `budgets/app/models`
+  // and the spec sits in `budgets/spec/models`, so `app` against `spec` is the
+  // only thing between them.
+  const source = [file("modules/budgets/app/models/budget.rb", "ruby")];
+  const tests = [file("modules/budgets/spec/models/budget_spec.rb", "ruby")];
+
+  assert.deepEqual(namesakeCompanions(source, tests, "modules"), {
+    with: 1,
+    of: 1,
+    root: "modules/budgets/spec",
+  });
+});
+
+test("a test tree one directory up the source path answers it", () => {
+  // vscode reads `src/vs/base/test/common/foo.test.ts` against
+  // `src/vs/base/common/foo.ts`: the tree segment is in the middle of the path
+  // rather than at the front of it.
+  const source = [file("src/vs/base/common/foo.ts", "js")];
+  const tests = [file("src/vs/base/test/common/foo.test.ts", "js")];
+
+  assert.deepEqual(namesakeCompanions(source, tests, "src/vs"), {
+    with: 1,
+    of: 1,
+    root: "src/vs/base/test",
+  });
+});
+
+test("a support file of the same name is no namesake", () => {
+  // Dropping the tree segments leaves `support` against `models`, which is the
+  // whole point of dropping only those: a spec tree's own helpers keep their
+  // directory and answer nothing.
+  const source = [file("app/models/user.rb", "ruby")];
+  const tests = [file("spec/support/user.rb", "ruby")];
+
+  assert.deepEqual(namesakeCompanions(source, tests, ""), { with: 0, of: 1, root: null });
+});
+
+test("a mirror that parts on an ordinary name votes for no root", () => {
+  // The two paths agree once the tree names are gone, and where they part is
+  // `packages` against `integration`. Naming either as the test root would name
+  // a directory neither side keeps tests in.
+  const source = [file("packages/app/models/foo.rb", "ruby")];
+  const tests = [file("integration/packages/spec/models/foo_spec.rb", "ruby")];
+
+  assert.deepEqual(namesakeCompanions(source, tests, ""), { with: 1, of: 1, root: null });
+});
+
+test("a root nobody's namesake agrees on names no directory", () => {
+  // One `__tests__` per component directory is a real answer and no place: the
+  // top vote holds one match of four, so the clause prints without `under`.
+  const source = files(4, (i) => file(`ui/f${i}/C.tsx`, "jsx"));
+  const tests = files(4, (i) => file(`ui/f${i}/__tests__/C.test.tsx`, "jsx"));
+
+  assert.deepEqual(namesakeCompanions(source, tests, "ui"), { with: 4, of: 4, root: null });
+});
+
 test("a test directory beside the file is the root the namesakes share", () => {
   const source = [file("src/components/Foo.tsx", "jsx")];
   const tests = [file("src/components/__tests__/Foo.test.tsx", "jsx")];
@@ -367,6 +424,26 @@ test("a root that is mostly tests carries no namesake or helper count", () => {
   assert.deepEqual(cypress.tests, [{ runner: "cypress", files: 102, sub: null }]);
   assert.equal("companions" in cypress, false);
   assert.equal("helpers" in cypress, false);
+});
+
+test("a root inside a test tree is not asked whether its fixtures have tests", () => {
+  // webpack's `test` is 12,645 files of which 2,607 are tests, so it stays a
+  // source root by the half rule and read `1 of 7858 has a namesake test under
+  // test`. Those 7,858 are what the tests run on.
+  const corpus = [
+    ...files(4, (i) => file(`test/cases/foo/lib${i}.js`, "js")),
+    file("test/watch.test.js", "js", { testRunner: "jest" }),
+    file("lib/watch.js", "js"),
+  ];
+  const indexes = layoutIndexes(corpus);
+  const record = rootFacts({ path: "test", dir: "test", files: corpus.slice(0, 5) }, indexes);
+
+  assert.equal("companions" in record, false);
+  assert.deepEqual(record.exts, [[".js", 5]], "and the extension clause stays");
+  assert.deepEqual(record.tests, [{ runner: "jest", files: 1, sub: null }], "and the tests clause");
+
+  const outside = rootFacts({ path: "lib", dir: "lib", files: corpus.slice(5) }, indexes);
+  assert.deepEqual(outside.companions, { with: 1, of: 1, root: "test" }, "and a root outside is asked");
 });
 
 test("the JSX mark is only ever on an extension the line prints", () => {
