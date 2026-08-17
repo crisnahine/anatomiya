@@ -117,6 +117,7 @@ Facts counted from this repository's own code, per directory.
 A claim states how many sites conform out of how many were eligible.
 
 Read a file before editing it: these notes load when you read, not when you grep.
+When unsure what this code does, read it, grep it, or run it instead of guessing, and say what you could not verify.
 
 ## Areas (127)
 
@@ -316,7 +317,7 @@ not cost coverage.
 
 ## Why it works the way it does
 
-[`DECISIONS.md`](DECISIONS.md) is the build contract: 94 numbered decisions, each with the
+[`DECISIONS.md`](DECISIONS.md) is the build contract: 95 numbered decisions, each with the
 measurement or the review finding that forced it. If you want to know why a threshold is where it
 is, why the parser runs in child processes, or why there is no hook, that is the file.
 
