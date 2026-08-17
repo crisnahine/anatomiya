@@ -530,7 +530,7 @@ test("a corpus only partly answered states nothing at all", needsRuby, async (t)
   const full = await scan(dir);
   assert.equal(full.suppressAll, false);
 
-  const partial = await scan(dir, { rubyGuards: { ...RUBY_GUARDS, maxLineBytes: 8 } });
+  const partial = await scan(dir, { guards: { ruby: { ...RUBY_GUARDS, maxLineBytes: 8 } } });
 
   assert.equal(partial.corpus.truncated, true);
   assert.equal(partial.suppressAll, true);

@@ -104,8 +104,20 @@ One module drives both parsers and reads what comes back. The scan and the check
 that themselves, which meant each decided separately what an unread file means, and only one of them
 ever decided it.
 
+Which parser reads a file is declared, not spelled. `lib/langs.mjs` holds one declaration per
+language: its extensions, its extensionless filenames, the scratch extension a path-less blob is
+written under, the grammar route per real extension, the dialect the retry may strip, the
+capabilities its callers ask about, and the name of the engine that hosts it. The seam routes each
+batch by that declaration, so nothing past it names a language or an engine. The registry is a leaf
+the parser child can read, which is what lets the corpus filter, the delivery globs, the grammar
+choice and the retry all take the same facts from one place; a wrong declaration fails at import,
+never mid-scan.
+
 JavaScript and TypeScript are parsed by `oxc-parser`. It runs in a pool of warm child processes,
-one parse per message. Never in-process, never in a worker thread.
+one parse per message. Never in-process, never in a worker thread. The worker itself is a thin
+shell over `lib/parse-file.mjs`: the body that picks the grammar, runs the retry and answers the
+counts is an in-process module tests cross without a fork, and the shell keeps only the read, the
+reply and the BigInt fallback.
 
 The reason is not speed, though the pool is also faster (8,463 to 10,563 files/sec against 3,058
 in-process). It is that `parseSync` raised an uncatchable SIGSEGV on deeply nested input. A
