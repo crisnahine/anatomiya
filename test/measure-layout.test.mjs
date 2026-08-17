@@ -1,13 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import {
-  LEARNED_ROWS,
-  learnedRows,
-  learnedTables,
-  namesakeClause,
-  parseArgs,
-} from "../scripts/measure-layout.mjs";
+import { LEARNED_ROWS, learnedRows, learnedTables, parseArgs } from "../scripts/measure-layout.mjs";
+import { namesakeClause } from "../lib/render-layout.mjs";
 
 /**
  * The per-repository numbers the dimension bar asks for, off a scan result.
@@ -88,10 +83,10 @@ test("the table prints one line per area, with the numbers the bar asks for", ()
   assert.equal(line, "| api | app/models | 8 | 40 | 20 | 19 | 0.950 | ApplicationRecord | yes |");
 });
 
-test("the namesake clause the recount reads back takes the renderer's own verb", () => {
-  // The renderer stopped writing "1 of 95 have a namesake test" and the recount
-  // kept expecting it, so babel's true line was read as a failure. The verb
-  // comes off the renderer now rather than off a second copy here.
+test("the namesake clause the recount reads back is the renderer's own", () => {
+  // The recount held a copy of this sentence, the renderer took the singular
+  // for a count of one, and babel's true line read back as a failure. There is
+  // one spelling now, and this is the harness reading it.
   assert.equal(namesakeClause({ with: 1, of: 95, root: "test" }), "1 of 95 has a namesake test under test");
   assert.equal(namesakeClause({ with: 8, of: 651, root: null }), "8 of 651 have a namesake test");
   assert.equal(

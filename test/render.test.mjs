@@ -10,7 +10,7 @@ import {
   OVERVIEW_AREAS,
   MAX_LINES,
 } from "../lib/render.mjs";
-import { layoutSummary, plural, renderLayout } from "../lib/render-layout.mjs";
+import { kindsLine, layoutSummary, namesakeClause, plural, renderLayout } from "../lib/render-layout.mjs";
 import { areaFilename, isOwned, GENERATOR } from "../lib/rules.mjs";
 import { layoutFacts } from "../lib/layout.mjs";
 import { principleKeys } from "../lib/principles.mjs";
@@ -1298,6 +1298,24 @@ test("the kinds line agrees with its own namesake count", () => {
 
   assert.equal(kindsOf(1), "kinds: 7 .tsx (JSX); 0 test files; 1 of 7 has a namesake test");
   assert.equal(kindsOf(2), "kinds: 7 .tsx (JSX); 0 test files; 2 of 7 have a namesake test");
+});
+
+test("the three lines that print a namesake clause spell it in one place", () => {
+  // A root line, the tests line and an area's kinds line all print the pair.
+  // Three copies of one sentence drifted on the verb once already, and the
+  // harness that reads the line back held a fourth.
+  const companions = { with: 1, of: 504, root: "src/components/__tests__" };
+  const lines = renderLayout(
+    clientLayout({ roots: clientLayout().roots.map((r) => (r.companions ? { ...r, companions } : r)) })
+  );
+
+  assert.equal(namesakeClause(companions), "1 of 504 has a namesake test under src/components/__tests__");
+  assert.ok(lines[3].includes(`; ${namesakeClause(companions)};`), lines[3]);
+  assert.ok(lines[10].endsWith(`; ${namesakeClause({ ...companions, root: null }, ".tsx file")}`), lines[10]);
+  assert.equal(
+    kindsLine(root("src/components", { exts: [[".tsx", 504]], companions })),
+    `kinds: 504 .tsx; 0 test files; ${namesakeClause({ ...companions, root: null })}`
+  );
 });
 
 test("the roster prints only the sentences its counts ground", () => {
