@@ -52,6 +52,10 @@ export const LEARNED_ROWS = ["extends_base", "class_base", "module_include", "in
 
 // --- the recount ------------------------------------------------------------
 
+// The recount orders the way the roster it reads back does, and `localeCompare`
+// orders case by whatever ICU tables the host was built with.
+const byCode = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+
 // The mirror index the corpus decides, set once per repository before anything
 // is recounted: it is a fact about the whole tree, like the roster's own.
 let mirrored = new Set();
@@ -87,7 +91,7 @@ function testGroupsOf(own, dir) {
         sub: ranked.length > 0 && ranked[0][1] * 2 > group.length ? ranked[0][0] : null,
       };
     })
-    .sort((a, b) => b.files - a.files || a.runner.localeCompare(b.runner));
+    .sort((a, b) => b.files - a.files || byCode(a.runner, b.runner));
 }
 
 /** One root, recounted from the corpus under the path the section printed. */
@@ -137,10 +141,7 @@ function recountTests(corpus) {
   }
   return [...dirs]
     .map(([runner, group]) => ({ runner, root: majorityDir(group), files: group.length }))
-    .sort(
-      (a, b) =>
-        b.files - a.files || (a.root ?? "").localeCompare(b.root ?? "") || a.runner.localeCompare(b.runner)
-    );
+    .sort((a, b) => b.files - a.files || byCode(a.root ?? "", b.root ?? "") || byCode(a.runner, b.runner));
 }
 
 // --- reading the rendered section ------------------------------------------
@@ -541,7 +542,7 @@ export function learnedRows(repo, areas) {
     }
   }
   for (const [key, rows] of out) {
-    rows.sort((x, y) => y.candidates - x.candidates || x.area.localeCompare(y.area));
+    rows.sort((x, y) => y.candidates - x.candidates || byCode(x.area, y.area));
     out.set(key, rows.slice(0, ROW_AREAS));
   }
   return out;
@@ -560,14 +561,24 @@ const USAGE = `usage: node scripts/measure-layout.mjs <corpusDir> [options]
   <corpusDir>        a directory whose children are the repositories to measure
   --only <a,b>       measure these repositories rather than every child
   --md <path>        write the table and the rendered sections here
+  --force            write over the --md path if a file is already there
   --facts <dir>      write each repository's facts record under here
 `;
 
+const VALUE_OPTIONS = ["--md", "--facts", "--only"];
+
 export function parseArgs(argv) {
-  const opts = { corpus: null, md: null, facts: null, only: null };
+  const opts = { corpus: null, md: null, facts: null, only: null, force: false };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
-    if (arg === "--md" || arg === "--facts" || arg === "--only") {
+    if (arg === "--force") {
+      opts.force = true;
+      continue;
+    }
+    if (VALUE_OPTIONS.includes(arg)) {
+      // Last on the line it read past the end, and `--only` reading undefined
+      // measured all thirty-five rather than the one repository asked for.
+      if (i + 1 >= argv.length) return { error: `${arg} needs a value after it` };
       opts[arg.slice(2)] = argv[++i];
       continue;
     }
@@ -578,6 +589,36 @@ export function parseArgs(argv) {
   return opts;
 }
 
+/**
+ * The repositories this run measures, or the names `--only` asked for that the
+ * corpus does not hold.
+ *
+ * The rule the e2e harness got first: a typo selected nothing and printed
+ * `0 of 0 repositories passed`, which is exit 0 and reads as an acceptance of a
+ * corpus this run never opened.
+ */
+export function selectRepos(names, only) {
+  if (only === null) return { repos: names };
+  const wanted = only.split(",");
+  const missing = wanted.filter((name) => !names.includes(name));
+  if (missing.length) {
+    return { error: `--only ${only}: the corpus holds no repository named ${missing.join(", ")}` };
+  }
+  return { repos: names.filter((name) => wanted.includes(name)) };
+}
+
+/**
+ * Whether the run may write where `--md` points.
+ *
+ * The target is written whole, and what usually sits there is a run of record
+ * somebody merged into a document by hand. `--force` is how a rerun says it
+ * meant that file.
+ */
+export function checkOutput(path, force, exists) {
+  if (path === null || force || !exists) return null;
+  return `${path} is already there, and this run writes its --md target whole; pass --force to write over it`;
+}
+
 async function main() {
   const opts = parseArgs(process.argv.slice(2));
   if (opts.error) {
@@ -585,13 +626,25 @@ async function main() {
     process.exit(2);
   }
   const corpusDir = resolve(opts.corpus);
-  const only = opts.only ? new Set(opts.only.split(",")) : null;
+  // Before anything is measured: an hour of scanning that ends in a refusal to
+  // write is an hour nobody gets back.
+  const md = opts.md === null ? null : resolve(opts.md);
+  const refused = checkOutput(md, opts.force, md !== null && existsSync(md));
+  if (refused) {
+    console.error(`${refused}\n\n${USAGE}`);
+    process.exit(2);
+  }
 
-  const repos = readdirSync(corpusDir, { withFileTypes: true })
+  const children = readdirSync(corpusDir, { withFileTypes: true })
     .filter((e) => e.isDirectory() && existsSync(join(corpusDir, e.name, ".git")))
     .map((e) => e.name)
-    .filter((name) => only === null || only.has(name))
     .sort();
+  const selected = selectRepos(children, opts.only);
+  if (selected.error) {
+    console.error(`${selected.error}\n\n${USAGE}`);
+    process.exit(2);
+  }
+  const repos = selected.repos;
 
   const rows = [];
   const sections = [];
@@ -622,14 +675,14 @@ async function main() {
   console.log("");
   console.log(learnedTables([...learned]));
 
-  if (opts.md) {
+  if (md) {
     const body = [
       tableOf(rows),
       "",
       learnedTables([...learned]),
       ...sections.flatMap((s) => [`## ${s.name}`, "", "```", s.section ?? "(no section)", "```", ""]),
     ];
-    writeFileSync(resolve(opts.md), body.join("\n"));
+    writeFileSync(md, body.join("\n"));
   }
 
   if (failures.length) {
