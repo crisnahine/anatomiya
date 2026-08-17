@@ -163,6 +163,11 @@ channel, where an AST serialises to about 16x the source it came from and the pa
 all of it. What crosses is a conforming flag and a scope name per site. The check asks for the tree
 as well, since it reports line numbers, and it only ever parses the files one diff touched.
 
+The facets are a second walk over the same tree, and they stay one because the cost was measured
+rather than assumed: stubbed to a constant, eslint's 1,489 files parse 40ms faster out of 1.45s.
+That is 0.03ms a file and under 3% of the run, against a shared visitor hook every dimension and
+every reader of them would have to be written around.
+
 Two things the parser publishes are taken rather than reimplemented. It can hand its tree across
 from Rust without building it through a serialisation step, which measured 3.06x on the parse itself
 (279ms to 91ms over 1,200 files) and found the same 11,751 sites with a byte-identical JSON encoding;
@@ -188,8 +193,18 @@ inside Node's own exit handler, with `maxBuffer` set far above the output size, 
 attributable to any file. Paths arrive on stdin as NUL-delimited pairs, never in argv. The Ruby
 process runs with `--disable-gems` and with `RUBYOPT`, `RUBYLIB` and `GEM_HOME` dropped, because
 each of those can inject a `-r` into a process about to be pointed at repository files. The timeout
-is 15s of **silence**, not a whole-run limit, because a large repository legitimately runs for
-minutes and what a hung parse looks like is silence.
+is 15s of **silence** rather than a whole-run limit, because a large repository legitimately runs
+for minutes and what a hung parse looks like is silence; behind it sits a wall clock sized to the
+number of files handed over, since a child that answers one file every fourteen seconds keeps the
+idle timer happy and never ends.
+
+A child either of those timers killed is spawned once more, for the files that never answered and no
+others, and only what is still unanswered after that is charged. Both timers measure the machine
+rather than the files, and a file charged as crashed in one scan and parsed in the next moves the
+always-loaded overview, which is the same reason a JavaScript parse the pool's own clock killed goes
+back on the queue once. A child that exited on its own, a missing interpreter and a fatal from the
+script are charged on the first attempt: a second child answers those the same way at twice the
+cost. Every record says which attempt answered it.
 
 ## 4. Dimensions and the three numbers
 
@@ -575,8 +590,13 @@ IPC channel with `hits` and are a small object of flags and counts.
 For JavaScript and JSX: whether the file holds JSX; the modules it imports and the names it takes
 from each; whether it imports a test runner, from a closed table (`vitest`, `jest`,
 `@jest/globals`, `mocha`, `chai`, `ava`, `tap`, `node:test`, `cypress`, `qunit`,
-`@playwright/test`, `playwright`) or makes a top-level `describe`, `it`, `test` or `cy` call; and
-how many module-level functions it defines and does not export.
+`@playwright/test`, `playwright`) or makes a top-level `describe`, `it`, `test` or `cy` call; the
+names it hands out; and how many module-level functions it defines and does not export.
+
+CommonJS is read as well as ESM, on both halves of that. A top-level `require` is an import, and
+`module.exports = { a, b }`, `module.exports = fn` and `exports.name = ...` are names the file hands
+out. The parser's static record holds only the ESM ones, so a repository written in `require`
+reported no exports at all and every function in it as a private helper.
 
 For Ruby: whether it declares cases in the RSpec vocabulary, inherits a minitest test case, or
 defines a `test_` method inside a class. A DSL call counts where it takes a block and sits outside
