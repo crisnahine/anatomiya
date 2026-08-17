@@ -541,14 +541,18 @@ root, which is never a root itself except on a repository that is one flat direc
 | floor | a directory needs `max(3, ceil(0.01 * N))` files cumulatively, `N` the corpus size |
 | descend instead of printing | the name is `src`, `lib`, `app`, `packages` or `source`, or one child holds 80% of the directory's files |
 | files sitting in a descended directory itself | their own candidate, printed as `lib (files at this level)` |
+| a descent that earns no line at all | the directory itself, over everything under it |
 | budget | 7 lines, sorted by source files, then total files, then path |
 
 Five shell names, because those are the directory names that say nothing about what is in them;
 anything else is a name worth printing. The 80% rule is what makes a Ruby gem's `lib/<gem>` read as
-the gem. webpack's `lib/*.js` is 300 files in none of `lib/`'s children, which is why a descended
-directory's own files are a candidate of their own. A directory under the floor folds into the
-nearest root above it, or into `and N more directories holding M files`. Sorting by source files
-first is what keeps an asset or documentation directory from displacing code.
+the gem. rubocop prints `lib/rubocop (files at this level): 45 .rb` beside `lib/rubocop/cop`, which
+is why a descended directory's own files are a candidate of their own. webpack's `lib` is 652 files
+with 117 of them at that level and no child clearing its 144-file floor, so the descent named
+nothing, and the map listed `test` and `examples` and never webpack's source at all: that is why a
+descent producing no root keeps the directory. A directory under the floor folds into the nearest
+root above it, or into `and N more directories holding M files`. Sorting by source files first is
+what keeps an asset or documentation directory from displacing code.
 
 The three numbers scale with the corpus and are tuned by measurement. That is the decision; the
 values are the current ones.
@@ -596,7 +600,7 @@ Every clause is dropped when it counts nothing.
 ```
 - <root>: <n1> <ext1>[ (JSX)][, <n2> <ext2>][ and <k> other]
         [; <t> <Runner> specs[ under <sub>]]
-        [; <c> of <n> have a namesake test[ under <test root>]]
+        [; <c> of <n> has|have a namesake test[ under <test root>]]
         [; <m> sibling modules named <three stems>; <f> files inline a helper]
 ```
 
@@ -613,10 +617,11 @@ Every clause is dropped when it counts nothing.
   `app/models/edition/foo.rb` is answered by `spec/models/edition/foo_spec.rb` and not by
   `spec/services/foo_spec.rb`. The root the namesakes share is named, by a count of votes rather
   than by the first match. The denominator is the top extension the line already printed, or
-  `0 of 620` stands beside `504 .tsx` and counts something the reader cannot see. It prints
-  wherever the root holds source files and the repository holds any test file at all, so
-  `0 of 40 have a spec` is a line rather than a silence: that is the shape an obligation cannot
-  carry, because it treats a missing companion as an absence rather than as a habit.
+  `0 of 620` stands beside `504 .tsx` and counts something the reader cannot see. That extension
+  has to be one this tool parses, so a root whose largest is `.png` or `.json` is never asked
+  whether its files have tests. Otherwise it prints wherever the repository holds any test file at
+  all, so `0 of 40 have a spec` is a line rather than a silence: that is the shape an obligation
+  cannot carry, because it treats a missing companion as an absence rather than as a habit.
 - The helper facet, JavaScript and JSX roots only: how many non-test `.ts` and `.js` modules sit
   beside the JSX files, the three commonest stems among them, and how many of the JSX files define
   a module-level function they do not export. Both numbers print and no side is chosen.
@@ -646,7 +651,7 @@ the lines above, which is what makes a sentence a reading of the roster rather t
 
 ### In an area file
 
-An area file gets the same counts over its own files, on one line under the heading:
+An area file gets the same counts over its own files, on one line under the heading, for example:
 
 ```
 kinds: 40 .mjs; 0 test files; 28 of 40 have a namesake test
