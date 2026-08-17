@@ -8,18 +8,23 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseRuby, RUBY_GUARDS } from "../lib/ruby.mjs";
 import { walkRuby, constName, bodyOf } from "../lib/ruby-walk.mjs";
-
-test("a mistyped size override refuses loudly instead of dying inside the child", async () => {
-  // Ungated: the refusal happens before any interpreter is spawned.
-  await assert.rejects(
-    parseRuby([{ rel: "a.rb", abs: "/nowhere/a.rb", lang: "ruby" }], { guards: { maxBytes: "abc" } }),
-    /maxBytes/
-  );
-});
 import { RUBY_DIMENSIONS } from "../lib/dimensions-ruby.mjs";
 
 const dir = mkdtempSync(join(tmpdir(), "anatomiya-ruby-"));
 process.on("exit", () => rmSync(dir, { recursive: true, force: true }));
+
+test("a mistyped size override refuses loudly instead of dying inside the child", async () => {
+  // Ungated: the refusal happens before any interpreter is spawned. `null` is
+  // the sharp half, because `Number(null)` is a finite zero and interpolated
+  // it marks every file over the cap without a word.
+  for (const bad of ["abc", null]) {
+    await assert.rejects(
+      parseRuby([{ rel: "a.rb", abs: "/nowhere/a.rb", lang: "ruby" }], { guards: { maxBytes: bad } }),
+      /maxBytes/,
+      JSON.stringify(bad)
+    );
+  }
+});
 
 function write(name, src) {
   const abs = join(dir, `${name}.rb`);
