@@ -584,6 +584,22 @@ end
   assert.deepEqual(h.map((x) => [x.where, x.class]), [["Destroyer", undefined]]);
 });
 
+// The predicate says "names no superclass". Reading the superclass through
+// `constName` made every computed base read as none, so `Struct.new` and
+// `Data.define` classes were reported as forgetting an include their base may
+// carry.
+test("a class whose superclass is a call still names a superclass", needsRuby, async () => {
+  const h = await rubyHits("module_include", `
+class Point < Struct.new(:x, :y)
+end
+
+class Coord < Data.define(:x, :y)
+end
+`);
+
+  assert.deepEqual(h, []);
+});
+
 test("a module that declares an include is still a site, because it composed one", needsRuby, async () => {
   const h = await rubyHits("module_include", `
 module M

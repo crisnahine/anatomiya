@@ -7,6 +7,29 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- `module_include` counts the body that declares nothing, so a class that forgot the include is
+  caught rather than invisible. A class body is a site when it includes something, and also when it
+  includes nothing, names no superclass and is not nested inside another class. A namespacing
+  module, a subclass and a nested helper each have somewhere else to have got the mixin and are not
+  sites. Measured over twelve Ruby repositories: eleven do not move and empire-flippers/api is
+  identical row for row. Decision H16, issue #46.
+- A bare body is fingerprinted by its own name. Every include-less body in one file was otherwise
+  the same site, so a new one absorbed an older one's finding and the report named a class the
+  branch never touched.
+
+### Changed
+
+- `check` reads the head side from the working tree wherever the tree differs from the commit, and
+  examines a file that exists only in the tree. An agent writes, checks, fixes, then commits, so
+  the run that used to answer `0 MUST-FIX` about content it had not read now answers about the work
+  as it stands, and says how many files it read that way. The base side is still read at a commit,
+  so nothing an agent edits can move the population it is judged against. Decision E9, issue #48.
+- The two delivery facts that were folklore are written down: a Read that fails still attaches the
+  area file its path matched, and a subagent is served by the same channel, with the session's
+  working directory deciding what it holds before its first Read. Decision A18, issue #47.
+
 ## [0.2.1] - 2026-08-17
 
 0.2.1 changes no count and no rendered byte. It puts a number behind the one word three delivery
