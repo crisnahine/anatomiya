@@ -404,6 +404,9 @@ const WITNESSES = {
       // which leaves the body bare rather than outside the count.
       `class Forgot\nend`,
       `class Late\n  def go\n    include Foo\n  end\nend`,
+      // A class written in two parts is one class, and the part carrying the
+      // mixins is where it declared them: one site, not a second bare one.
+      { source: `class BWorker\n  include Sidekiq::Worker\nend\n\nclass BWorker\n  def perform\n  end\nend`, sites: 1 },
     ],
     inapplicable: [
       // A module declaring nothing is namespacing, which is what modules are
@@ -416,6 +419,9 @@ const WITNESSES = {
       // A class inside a class is that class's helper, not a peer of the ones
       // the claim is about.
       `class Policy < Service::PolicyBase\n  class Strategy\n  end\nend`,
+      // `prepend` puts the module ahead of the class rather than behind it, so
+      // the body declared a mixin and has forgotten nothing.
+      `class PWorker\n  prepend Sidekiq::Worker\nend`,
       // Not a body at all, so there is nothing for the sentence to be about.
       `include TopLevel`,
     ],

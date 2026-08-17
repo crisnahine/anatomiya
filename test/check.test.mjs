@@ -1366,20 +1366,24 @@ test("a companion written but not committed satisfies the obligation", needsRuby
 // base, every site in it is new, and a `git mv` before committing reported the
 // whole file as this branch's work: the forgery the base side exists to stop.
 test("a file renamed but not committed is judged against its old path", async (t) => {
-  const dir = repo(t, ({ git, write, commit }) => {
+  const dir = repo(t, ({ dir: root, git, write, commit }) => {
     write("src/legacy.ts", swallow(3));
     commit("init");
     git("checkout", "-q", "-b", "work");
     git("mv", "src/legacy.ts", "src/moved.ts");
+    // A fourth site, added after the move. Without the old path the base is
+    // unreadable and the file is skipped whole, which reports nothing and
+    // passes an assertion that only counts the three that predate the branch.
+    writeFileSync(join(root, "src", "moved.ts"), swallow(4));
   });
   facts(dir, { sha: sha(dir, "main") });
 
   const r = await check(dir, { baseRef: "main" });
 
-  assert.deepEqual(
-    forKey(r, "swallowed_error"),
-    [],
-    `the three sites predate the branch: ${JSON.stringify(r.findings)}`
+  assert.equal(
+    forKey(r, "swallowed_error").length,
+    1,
+    `three sites came with the file and one is new: ${JSON.stringify(r.findings)}`
   );
 });
 
@@ -1417,6 +1421,72 @@ test("a pending path that resolves outside the repository is not read", needsPos
   const r = await check(dir, { baseRef: "main" });
 
   assert.deepEqual(forKey(r, "swallowed_error"), [], JSON.stringify(r.findings));
+});
+
+// The header counted the two sets and printed the second only when the numbers
+// differed, so two changed files and two examined ones read as the same two
+// even when one of the examined was never in the diff.
+test("the header says what was examined whenever it is not what changed", async (t) => {
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/a.ts", clean(2));
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/a.ts", clean(3));
+    write("notes.md", "not source\n");
+    commit("one source file and one not");
+    write("src/untracked.ts", swallow(2));
+  });
+  facts(dir, { sha: sha(dir, "main") });
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.equal(r.changed.length, 2, "the diff carries a source file and a markdown one");
+  assert.equal(r.examined.length, 2, "the markdown is not examined, the untracked source is");
+  assert.match(formatReport(r), /2 examined/);
+});
+
+// The index letter says the path is an addition; whether it has a base version
+// is a question about the merge base, and only that question decides whether
+// every site in the file is this branch's work.
+test("a tracked file unstaged from the index keeps the base version at its path", async (t) => {
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/a.ts", swallow(3));
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    git("rm", "-q", "--cached", "src/a.ts");
+  });
+  facts(dir, { sha: sha(dir, "main") });
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.deepEqual(forKey(r, "swallowed_error"), [], JSON.stringify(r.findings));
+});
+
+// A staged rename prints `R` and no `D`, so the path it moved away from was
+// never counted as gone: a companion renamed out from under its producer still
+// read as sitting right there.
+test("a companion renamed away in the tree no longer satisfies the obligation", needsRuby, async (t) => {
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("app/models/thing.rb", "class Thing\nend\n");
+    write("spec/models/thing_spec.rb", "describe Thing do\nend\n");
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("app/models/thing.rb", "class Thing\n  def name\n  end\nend\n");
+    git("mv", "spec/models/thing_spec.rb", "spec/models/renamed_spec.rb");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    path: "app/models",
+    dimensions: [dim({ key: "model_spec", directive: true })],
+  });
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.equal(
+    r.findings.filter((f) => f.dimension === "model_spec").length,
+    1,
+    `the spec this model owes was moved away: ${JSON.stringify(r.findings)}`
+  );
 });
 
 // `git status` lists a deletion, and a path that is gone cannot be read. It

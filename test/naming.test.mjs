@@ -581,7 +581,7 @@ module Chat
 end
 `);
 
-  assert.deepEqual(h.map((x) => [x.where, x.class]), [["Destroyer", undefined]]);
+  assert.deepEqual(h.map((x) => [x.where, x.class]), [["Chat::Destroyer", undefined]]);
 });
 
 // The predicate says "names no superclass". Reading the superclass through
@@ -598,6 +598,55 @@ end
 `);
 
   assert.deepEqual(h, []);
+});
+
+// `prepend` puts the module ahead of the class in the ancestry instead of
+// behind it. The body declared the mixin either way, so it has not forgotten
+// one.
+test("a body that prepends a module has not forgotten an include", needsRuby, async () => {
+  const h = await rubyHits("module_include", `
+class PWorker
+  prepend Sidekiq::Worker
+end
+`);
+
+  assert.deepEqual(h, []);
+});
+
+// One class, written in two parts. The second part is the same class as the
+// first, and the first is where it declares its mixins.
+test("a class reopened in the same file is one body, not a bare second one", needsRuby, async () => {
+  const h = await rubyHits("module_include", `
+class BWorker
+  include Sidekiq::Worker
+end
+
+class BWorker
+  def perform
+  end
+end
+`);
+
+  assert.deepEqual(h.map((x) => [x.where, x.class]), [["BWorker", "Sidekiq::Worker"]]);
+});
+
+// Two classes of the same short name under different namespaces are two
+// bodies. Told apart by the short name alone they fingerprint alike, and the
+// finding lands on whichever the branch did not touch.
+test("a bare body is named by its whole path, not by its last segment", needsRuby, async () => {
+  const h = await rubyHits("module_include", `
+module A
+  class Worker
+  end
+end
+
+module B
+  class Worker
+  end
+end
+`);
+
+  assert.deepEqual(h.map((x) => x.where), ["A::Worker", "B::Worker"]);
 });
 
 test("a module that declares an include is still a site, because it composed one", needsRuby, async () => {

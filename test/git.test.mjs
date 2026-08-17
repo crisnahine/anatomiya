@@ -7,7 +7,7 @@ import { execFileSync } from "node:child_process";
 
 import { needsShebang } from "./platform.mjs";
 
-import { gitBuffered, gitStreamed, nameStatusReader, parsePorcelainZ, showBlob } from "../lib/git.mjs";
+import { gitBuffered, gitStreamed, nameStatusReader, parsePorcelainRows, showBlob } from "../lib/git.mjs";
 
 /** Every row a NUL-delimited name-status listing yields, read as a stream. */
 function nameStatusRows(out) {
@@ -233,17 +233,25 @@ test("a porcelain record is a two-character status, a space, and the path", () =
   // The other grammar git prints NUL-delimited, read a fourth time in the
   // check. Slicing three characters off is the whole record format, and
   // getting the offset wrong takes three characters off every filename.
-  assert.deepEqual(parsePorcelainZ(" M lib/a.ts\0?? lib/b.ts\0"), ["lib/a.ts", "lib/b.ts"]);
+  assert.deepEqual(parsePorcelainRows(" M lib/a.ts\0?? lib/b.ts\0"), [
+    { x: " ", y: "M", path: "lib/a.ts", orig: null },
+    { x: "?", y: "?", path: "lib/b.ts", orig: null },
+  ]);
 });
 
 test("a porcelain rename names the file once, not once per path it carries", () => {
   // A rename is followed by its origin as a bare field. Read as another record
   // it counts the rename twice and takes three characters off the old name.
-  assert.deepEqual(parsePorcelainZ("R  lib/new.ts\0lib/old.ts\0M  lib/c.ts\0"), ["lib/new.ts", "lib/c.ts"]);
+  // The origin is kept, not dropped: it is where the file's committed version
+  // lives, and a caller comparing against it otherwise has nothing.
+  assert.deepEqual(parsePorcelainRows("R  lib/new.ts\0lib/old.ts\0M  lib/c.ts\0"), [
+    { x: "R", y: " ", path: "lib/new.ts", orig: "lib/old.ts" },
+    { x: "M", y: " ", path: "lib/c.ts", orig: null },
+  ]);
 });
 
 test("a porcelain path holding a newline stays one record", () => {
-  assert.deepEqual(parsePorcelainZ("A  lib/two\nlines.ts\0"), ["lib/two\nlines.ts"]);
+  assert.deepEqual(parsePorcelainRows("A  lib/two\nlines.ts\0").map((r) => r.path), ["lib/two\nlines.ts"]);
 });
 
 test("a caller that throws while reading ends the walk instead of hanging it", async (t) => {

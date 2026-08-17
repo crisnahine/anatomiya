@@ -242,7 +242,7 @@ agent's own output cannot raise the bar it is judged against. Gates and threshol
 | Command | What it does |
 |---|---|
 | `/anatomiya:scan` | Walks tracked source, counts every dimension per directory, applies the gates, rewrites the map, and reports what it could not cover: files in no area, files that failed to parse, files over the size cap, and any file in `.claude/rules/` it did not write. |
-| `/anatomiya:check` | Diffs the branch against its merge base and reports which stated conventions the branch broke, as MUST-FIX, FIX or NIT. |
+| `/anatomiya:check` | Reports which stated conventions the branch broke, as MUST-FIX, FIX or NIT. The base side is the merge base; the side being judged is the working tree, so it answers before you commit. |
 | `/anatomiya:pin` | Accepts the current file population as the baseline the gates read, and prints which files enter and leave it. Without one, every claim is measured against the working tree and no finding can exceed FIX. |
 
 `check` blocks nothing. MUST-FIX means the baseline population held zero violations of that claim,
@@ -257,7 +257,7 @@ discourse, rails applications, monorepos). Two acceptance runs are committed as
 [docs/measurements](docs/measurements): the layout harness re-derives every printed number
 independently on all 35, and `npm run e2e:corpus` drives the shipped CLI from a fresh clone of each
 repository through scan, a byte-identical rescan, pin, check, and a synthetic violation the check
-must catch. The unit suite is 1,098 tests with enforced coverage floors, and CI runs it on Linux,
+must catch. The unit suite is 1,193 tests with enforced coverage floors, and CI runs it on Linux,
 macOS and Windows.
 
 ## Limits
