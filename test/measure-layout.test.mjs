@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { LEARNED_ROWS, learnedRows, learnedTables } from "../scripts/measure-layout.mjs";
+import { LEARNED_ROWS, learnedRows, learnedTables, parseArgs } from "../scripts/measure-layout.mjs";
 
 /**
  * The per-repository numbers the dimension bar asks for, off a scan result.
@@ -80,4 +80,20 @@ test("the table prints one line per area, with the numbers the bar asks for", ()
   const line = learnedTables([...rows]).split("\n").find((l) => l.startsWith("| api |"));
 
   assert.equal(line, "| api | app/models | 8 | 40 | 20 | 19 | 0.950 | ApplicationRecord | yes |");
+});
+
+test("the corpus directory is an argument, never a path off this machine", () => {
+  // It read a home directory of the author's when nothing was passed, which
+  // runs the acceptance over whatever happens to be there or over nothing at
+  // all. The two other scripts in here take their input the same way.
+  assert.equal(parseArgs(["/corpus"]).corpus, "/corpus");
+  assert.match(parseArgs([]).error, /corpus/);
+  assert.match(parseArgs(["--only", "webpack"]).error, /corpus/);
+  assert.match(parseArgs(["--nope", "/corpus"]).error, /--nope/);
+});
+
+test("the options a run takes are read off the arguments beside the corpus", () => {
+  const opts = parseArgs(["--md", "out.md", "/corpus", "--only", "webpack,eslint", "--facts", "f"]);
+
+  assert.deepEqual(opts, { corpus: "/corpus", md: "out.md", facts: "f", only: "webpack,eslint" });
 });

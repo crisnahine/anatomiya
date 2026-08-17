@@ -20,6 +20,7 @@ test("a dotfile is a name with no extension, on both halves of the split", () =>
   // the namesake of a file called `.env`.
   assert.equal(extOf(".env"), "(none)");
   assert.equal(stemOf(".env"), ".env");
+  assert.equal(withoutExtension(".env"), ".env", "stripping the leading dot leaves no name at all");
 });
 
 test("the extension is everything from the last dot of the basename", () => {

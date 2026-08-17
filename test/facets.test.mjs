@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { repo } from "./ts-repo.mjs";
 import { needsRuby } from "./ruby-available.mjs";
 import { parseAll } from "../lib/parse.mjs";
-import { TEST_RUNNER_MODULES } from "../lib/facets.mjs";
+import { MINITEST_SUPERCLASSES, TEST_RUNNER_MODULES } from "../lib/facets.mjs";
 import { language } from "../lib/corpus.mjs";
 
 /**
@@ -164,6 +164,42 @@ test("a runner the table names is read off the import, qunit included", async (t
   const { records } = await parseAll(list(dir, ["tests/acceptance/login-test.js"]));
 
   assert.equal(records.get("tests/acceptance/login-test.js").facets.testRunner, "qunit");
+});
+
+/**
+ * Every base class that makes a Ruby file minitest, spelled out for the same
+ * reason `RUNNER_TABLE` is: an expectation read from the table agrees with it
+ * by construction. Six because Rails ships six, and the three beyond
+ * `Minitest::Test` and the two the spec named are what a controller, a job and
+ * a mailer test inherit in the corpus.
+ */
+const MINITEST_TABLE = [
+  "Minitest::Test",
+  "ActiveSupport::TestCase",
+  "ActionDispatch::IntegrationTest",
+  "ActionController::TestCase",
+  "ActiveJob::TestCase",
+  "ActionMailer::TestCase",
+];
+
+test("every minitest base class the table names is read off a real class", needsRuby, async (t) => {
+  const files = Object.fromEntries(
+    MINITEST_TABLE.map((base, i) => [`app/models/m${i}.rb`, `class M${i} < ${base}\nend\n`])
+  );
+  const dir = repo(files);
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+  const rels = Object.keys(files);
+  const { records } = await parseAll(list(dir, rels));
+
+  assert.deepEqual(
+    rels.map((rel) => records.get(rel).facets.testRunner),
+    MINITEST_TABLE.map(() => "minitest")
+  );
+});
+
+test("the minitest base table holds exactly the classes driven through it", () => {
+  assert.deepEqual(MINITEST_SUPERCLASSES, MINITEST_TABLE, "a base class was added to the table or lost from it");
 });
 
 test("a method named test_ in an ordinary class is not a minitest case", needsRuby, async (t) => {
