@@ -24,6 +24,19 @@ test("collectHits keeps a hit's class and omits the key otherwise", () => {
   assert.equal("class" in hits.k[1], false);
 });
 
+test("collectHits keeps a hit's group and omits the key otherwise", () => {
+  const dim = {
+    key: "k",
+    run(_program, add) {
+      add({ conforming: false, where: null, class: "A", group: 2 });
+      add({ conforming: false, where: null, class: "B" });
+    },
+  };
+  const hits = collectHits({ type: "Program", body: [] }, [dim]);
+  assert.equal(hits.k[0].group, 2);
+  assert.equal("group" in hits.k[1], false);
+});
+
 /* --- the majority class --- */
 
 const sites = (cls, n) => Array.from({ length: n }, () => ({ conforming: false, class: cls }));
@@ -47,6 +60,95 @@ test("a tie learns nothing", () => {
 test("a hit with no class does not vote", () => {
   const perFile = new Map([["a.ts", [...sites("snake_case", 1), { conforming: false }]]]);
   assert.equal(learnClass(perFile), "snake_case");
+});
+
+test("a grouped row votes once per body and class", () => {
+  const inBody = (cls, group) => ({ conforming: false, class: cls, group });
+  const perFile = new Map([
+    ["a.rb", [inBody("A", 1), inBody("A", 1)]],
+    ["b.rb", [inBody("B", 1)]],
+  ]);
+  assert.equal(learnClass(perFile, { grouped: true }), null, "one body including A twice is one vote for A");
+  assert.equal(learnClass(perFile), "A", "counted per site, the repeat wins it");
+});
+
+/* --- a body whose sites travel together (H14) --- */
+
+/**
+ * One file per class body, hits shaped the way the worker emits them: one per
+ * included constant, every constant of a body carrying that body's group.
+ */
+const includeArea = (bodies, key = "module_include") => {
+  const rels = bodies.map((_, i) => `app/workers/w${i}.rb`);
+  return {
+    area: { langs: ["ruby"], files: rels.map((rel) => ({ rel, lang: "ruby" })) },
+    parsed: bodies.map((classes, i) => ({
+      rel: rels[i],
+      ok: true,
+      hits: { [key]: classes.map((cls) => ({ conforming: false, where: "W", class: cls, group: 1 })) },
+    })),
+  };
+};
+
+const includeSlot = async (bodies) => {
+  const { reduceArea } = await import("../lib/reduce.mjs");
+  const { area, parsed } = includeArea(bodies);
+  return reduceArea(area, parsed).find((d) => d.key === "module_include");
+};
+
+test("a class including two modules is one candidate, not one per constant", async () => {
+  const slot = await includeSlot([...Array(10).fill(["A", "B"]), ["A"]]);
+  assert.equal(slot.learned, "A");
+  assert.equal(slot.candidates, 11, "eleven bodies, not twenty-one includes");
+  assert.equal(slot.conforming, 11, "a body including A conforms whatever else it includes");
+  assert.deepEqual(slot.exceptions, []);
+});
+
+test("a row that is not grouped still counts one site per constant", async () => {
+  const { reduceArea } = await import("../lib/reduce.mjs");
+  const bodies = [...Array(10).fill(["A", "B"]), ["A"]];
+  const rels = bodies.map((_, i) => `src/m${i}.ts`);
+  const area = { langs: ["js"], files: rels.map((rel) => ({ rel, lang: "js" })) };
+  const parsed = bodies.map((classes, i) => ({
+    rel: rels[i],
+    ok: true,
+    hits: { extends_base: classes.map((cls) => ({ conforming: false, where: "W", class: cls })) },
+  }));
+  const slot = reduceArea(area, parsed).find((d) => d.key === "extends_base");
+  assert.equal(slot.candidates, 21);
+  assert.equal(slot.conforming, 11);
+});
+
+test("a body including nothing the area learned is one exception, not one per constant", async () => {
+  const slot = await includeSlot([...Array(10).fill(["A", "B"]), ["A"], ["C", "D"]]);
+  assert.equal(slot.learned, "A");
+  assert.equal(slot.candidates, 12);
+  assert.equal(slot.conforming, 11);
+  assert.deepEqual(slot.exceptions, [{ path: "app/workers/w11.rb", count: 1 }]);
+});
+
+test("a hit carrying no group is its own site", async () => {
+  // The fold reads the group off the hit, so a row that grouped nothing counts
+  // the way it did before: one site per constant, and every constant votes.
+  const { reduceArea } = await import("../lib/reduce.mjs");
+  const bodies = [...Array(10).fill(["A", "B"]), ["A"]];
+  const rels = bodies.map((_, i) => `app/workers/w${i}.rb`);
+  const area = { langs: ["ruby"], files: rels.map((rel) => ({ rel, lang: "ruby" })) };
+  const parsed = bodies.map((classes, i) => ({
+    rel: rels[i],
+    ok: true,
+    hits: { module_include: classes.map((cls) => ({ conforming: false, where: "W", class: cls })) },
+  }));
+  const slot = reduceArea(area, parsed).find((d) => d.key === "module_include");
+  assert.equal(slot.learned, "A");
+  assert.equal(slot.candidates, 21);
+  assert.equal(slot.conforming, 11);
+});
+
+test("a directory where every class includes both modules learns nothing", async () => {
+  // C13: a tie is a directory that has not said anything, and grouping the
+  // sites does not give it a casting vote.
+  assert.equal(await includeSlot(Array(12).fill(["A", "B"])), undefined);
 });
 
 /* --- the learned class moving since the pin closes the slot --- */
@@ -361,6 +463,22 @@ include TopLevel
 `);
   assert.deepEqual(h.map((x) => x.class), ["Sidekiq::Worker", "Comparable", "Enumerable"]);
   assert.equal(h[0].where, "W");
+});
+
+test("module_include groups the constants one class body includes", needsRuby, async () => {
+  const h = await rubyHits("module_include", `
+class W
+  include A, B
+  include C
+end
+
+class X
+  include A
+end
+`);
+  assert.deepEqual(h.map((x) => x.class), ["A", "B", "C", "A"]);
+  assert.equal(new Set(h.slice(0, 3).map((x) => x.group)).size, 1, "one body is one group");
+  assert.notEqual(h[3].group, h[0].group, "a second body is a second group");
 });
 
 /* --- the five rows ship --- */
