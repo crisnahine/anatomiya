@@ -623,9 +623,21 @@ Every clause is dropped when it counts nothing.
   `foo_spec.rb` or `foo_test.rb`, `Foo.tsx` with `Foo.test.tsx`, `Foo.spec.tsx` or `Foo.cy.ts`.
   Matched on the path tail the way `pairing.mjs` learns a companion root, so
   `app/models/edition/foo.rb` is answered by `spec/models/edition/foo_spec.rb` and not by
-  `spec/services/foo_spec.rb`. The root the namesakes share is named, by a count of votes rather
-  than by the first match. The denominator is the top extension the line already printed, or
-  `0 of 620` stands beside `504 .tsx` and counts something the reader cannot see. That extension
+  `spec/services/foo_spec.rb`. The tail is asked twice. Whole first, then with the seven tree names
+  (`app`, `lib`, `src`, `spec`, `test`, `tests`, `__tests__`) dropped from both sides, because a
+  repository that splits a source tree from a spec tree writes the same path on both halves and
+  only the word for the tree differs: `modules/budgets/spec/models/budget_spec.rb` answers
+  `modules/budgets/app/models/budget.rb`, and `src/vs/base/test/common/foo.test.ts` answers
+  `src/vs/base/common/foo.ts`. Only those seven names drop, so `spec/support/user.rb` still answers
+  no `app/models/user.rb`: `support` against `models` is left to compare. The root the namesakes
+  share is named, by a count of votes rather than by the first match, a mirrored match voting for
+  the tree the two paths part on. A top vote under half the matched files names no root at all,
+  since a repository with one `__tests__` per component directory has an answer for every file and
+  no one place to name. A root that is or sits under a top-level `test`, `tests`, `spec`,
+  `cypress`, `e2e` or `__tests__` is not asked the question: its non-test files are what the tests
+  run on, and webpack's `test` read `1 of 7858 has a namesake test under test` over the fixture
+  modules its 2,607 tests exercise. The denominator is the top extension the line already printed,
+  or `0 of 620` stands beside `504 .tsx` and counts something the reader cannot see. That extension
   has to be one this tool parses, so a root whose largest is `.png` or `.json` is never asked
   whether its files have tests. Otherwise it prints wherever the repository holds any test file at
   all, so `0 of 40 have a spec` is a line rather than a silence: that is the shape an obligation
