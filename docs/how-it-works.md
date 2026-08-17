@@ -320,6 +320,8 @@ including two modules is one site rather than two the learned module can never b
 body that mixes in nothing is a site as well, since the forgotten include is the violation that
 actually happens; a module mixing in nothing is namespacing, a subclass may be handed the mixin by
 its base, and a class inside a class is that class's helper, so none of those three is a site.
+Nor is a body that prepends or extends a constant, or a reopening of a class that declares a mixin
+elsewhere in the file: both declared one by another route.
 `interface_prefix` and `type_alias_prefix` take the leading capital a declared type name carries
 before a second capital, where
 `IComment` votes `I` while `Comment` and `IO` vote for no prefix at all. The first three learn a

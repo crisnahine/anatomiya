@@ -13,11 +13,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   caught rather than invisible. A class body is a site when it includes something, and also when it
   includes nothing, names no superclass and is not nested inside another class. A namespacing
   module, a subclass and a nested helper each have somewhere else to have got the mixin and are not
-  sites. Measured over twelve Ruby repositories: eleven do not move and empire-flippers/api is
-  identical row for row. Decision H16, issue #46.
-- A bare body is fingerprinted by its own name. Every include-less body in one file was otherwise
-  the same site, so a new one absorbed an older one's finding and the report named a class the
-  branch never touched.
+  sites. A body mixing in nothing has no constants to be told apart by, so it is fingerprinted by
+  its own qualified name: otherwise every include-less body in one file is the same site, a new one
+  absorbs an older one's finding, and the report names a class the branch never touched. A body that
+  prepends or extends a constant, and a reopening of a class that declares a mixin elsewhere in the
+  file, both declared one by another route and are not sites either. Measured over
+  twelve Ruby repositories: eleven do not move and empire-flippers/api is identical row for row.
+  Decision H16, issue #46.
 
 ### Changed
 
@@ -25,7 +27,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   examines a file that exists only in the tree. An agent writes, checks, fixes, then commits, so
   the run that used to answer `0 MUST-FIX` about content it had not read now answers about the work
   as it stands, and says how many files it read that way. The base side is still read at a commit,
-  so nothing an agent edits can move the population it is judged against. Decision E9, issue #48.
+  so nothing an agent edits can move the population it is judged against, and the tree is read only
+  where a merge base exists to judge against it. A pending path is resolved rather than joined, so
+  a symlink out of the repository is refused the way the scan already refuses to write through one,
+  under the same size bound the committed side reads at. Whether a pending path has a base version
+  is asked of the merge base rather than of the index letter, so `git rm --cached` and a
+  delete-then-restore no longer charge the branch for every site in the file. Decision E9, issue #48.
 - The two delivery facts that were folklore are written down: a Read that fails still attaches the
   area file its path matched, and a subagent is served by the same channel, with the session's
   working directory deciding what it holds before its first Read. Decision A18, issue #47.
