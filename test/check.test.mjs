@@ -1716,6 +1716,57 @@ test("a mixin finding fires once per class body, not once per included constant"
   );
 });
 
+test("a body mixing in a different set of modules is not the body it replaced", needsRuby, async (t) => {
+  // The grouped site's identity used to be the include call's own node, which
+  // is `call include` for every body in the file, so one new violating body
+  // absorbed the one it was written next to.
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("app/workers/w.rb", "class AWorker\n  include Sidekiq::Worker\nend\n\nclass CWorker\n  include Foo::Bar\nend\n");
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("app/workers/w.rb", "class AWorker\n  include Sidekiq::Worker\nend\n\nclass DWorker\n  include Baz::Qux\nend\n");
+    commit("swap the body");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    areas: [{
+      id: "aaaaaaaa",
+      path: "app/workers",
+      globs: [{ negated: false, dir: "app/workers", tail: "**/*.rb" }],
+      fileCount: 8,
+      dimensions: [dim({ key: "module_include", learned: "Sidekiq::Worker" })],
+    }],
+  });
+  const report = await check(dir);
+  const found = forKey(report, "module_include");
+  assert.equal(found.length, 1, JSON.stringify(report.findings));
+  assert.equal(found[0].path, "app/workers/w.rb");
+});
+
+test("reordering the modules a class body includes introduces nothing", needsRuby, async (t) => {
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("app/workers/a_worker.rb", "class AWorker\n  include Sidekiq::Worker\nend\n");
+    write("app/workers/c_worker.rb", "class CWorker\n  include Foo::Bar\n  include Foo::Baz\nend\n");
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("app/workers/c_worker.rb", "class CWorker\n  include Foo::Baz\n  include Foo::Bar\nend\n");
+    commit("swap");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    areas: [{
+      id: "aaaaaaaa",
+      path: "app/workers",
+      globs: [{ negated: false, dir: "app/workers", tail: "**/*.rb" }],
+      fileCount: 8,
+      dimensions: [dim({ key: "module_include", learned: "Sidekiq::Worker" })],
+    }],
+  });
+  const report = await check(dir);
+  assertExamined(report, "app/workers/c_worker.rb");
+  assert.deepEqual(forKey(report, "module_include"), [], JSON.stringify(report.findings));
+});
+
 test("a learned superclass is enforced the way a learned naming class is", async (t) => {
   const dir = repo(t, ({ git, write, commit }) => {
     write("src/panel.ts", "export class Panel extends React.Component {}\n");
