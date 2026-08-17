@@ -303,7 +303,7 @@ gate's second opinion. The full numbers and their caveats are in [docs/why.md](d
 
 ## Learn more
 
-- [DECISIONS.md](DECISIONS.md) is the build contract: 100 numbered decisions, each with the
+- [DECISIONS.md](DECISIONS.md) is the build contract: 101 numbered decisions, each with the
   measurement or the review finding that forced it. Why a threshold is where it is, why the parser
   runs in child processes, why there is no hook: that is the file.
 - [docs/why.md](docs/why.md) is the longer argument and the full numbers.

@@ -9,9 +9,12 @@ import {
   assertApplicability,
   assertClaimIsNotAVerdict,
   assertTier,
+  assertRegistryRows,
+  KINDS,
   PRINCIPLE_NAMES,
   PRECISIONS,
 } from "../lib/dimensions.mjs";
+import { NAMING_CORPUS } from "../lib/dimensions-naming.mjs";
 import { PAIRINGS } from "../lib/pairing.mjs";
 import { SEMANTIC_DIMENSIONS } from "../lib/dimensions-semantic.mjs";
 import { walk, collectHits } from "../lib/walk.mjs";
@@ -559,4 +562,42 @@ test("a cast does not hide a result-shaped return either", () => {
     const src = `export function f() { return { ok: true, value: 1 } ${cast} }`;
     assert.deepEqual(counts("error_shape", src), { candidates: 1, conforming: 1 }, src);
   }
+});
+
+test("every registry row carries its kind after load, all three lists included", () => {
+  for (const d of [...ALL_DIMENSIONS, ...NAMING_CORPUS, ...PAIRINGS]) {
+    assert.ok(KINDS.includes(d.kind), `${d.key} carries kind ${JSON.stringify(d.kind)}`);
+  }
+});
+
+const probeRow = (over = {}) => ({
+  key: "probe_row",
+  tier: "syntactic",
+  claim: "widgets here are checked before they are returned",
+  counterClaim: null,
+  precision: "precise",
+  applicabilityPredicate: { sites: "a file holding at least one widget literal", blind: null },
+  langs: ["js"],
+  run: () => {},
+  ...over,
+});
+
+test("a tree row is stamped rather than spelled, and a wrong kind refuses", () => {
+  const row = probeRow();
+  assertRegistryRows([row]);
+  assert.equal(row.kind, "tree");
+  assert.throws(() => assertRegistryRows([probeRow({ kind: "Tree" })]), /Tree/);
+});
+
+test("the newest fields are held to shape at load", () => {
+  assert.throws(() => assertRegistryRows([probeRow({ groupedSites: true })]), /learning a class/);
+  assert.throws(() => assertRegistryRows([probeRow({ capability: "telemetry" })]), /telemetry/);
+  assert.throws(() => assertRegistryRows([probeRow({ framework: "django" })]), /django/);
+});
+
+test("a pairing row with a mistyped tier refuses to load now", () => {
+  // The battery reached `ALL_DIMENSIONS` and the corpus rows and never the
+  // pairings, so this exact misspelling shipped a row every reader would
+  // silently drop.
+  assert.throws(() => assertRegistryRows([{ ...PAIRINGS[0], tier: "Syntactic" }]), /Syntactic/);
 });
