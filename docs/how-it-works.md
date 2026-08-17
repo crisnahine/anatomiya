@@ -316,7 +316,10 @@ a bug.
 Five learned rows vote with a name rather than with one of the four naming classes. `extends_base`
 and `class_base` take the plurality superclass a directory's classes name, `module_include` the
 plurality module its class and module bodies mix in directly, counted once per body so a class
-including two modules is one site rather than two the learned module can never both answer, and
+including two modules is one site rather than two the learned module can never both answer. A class
+body that mixes in nothing is a site as well, since the forgotten include is the violation that
+actually happens; a module mixing in nothing is namespacing, a subclass may be handed the mixin by
+its base, and a class inside a class is that class's helper, so none of those three is a site. And
 `interface_prefix` and
 `type_alias_prefix` the leading capital a declared type name carries before a second capital, where
 `IComment` votes `I` while `Comment` and `IO` vote for no prefix at all. The first three learn a

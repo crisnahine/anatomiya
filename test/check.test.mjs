@@ -1716,6 +1716,36 @@ test("a mixin finding fires once per class body, not once per included constant"
   );
 });
 
+// The violation an agent actually commits. A new worker that forgets the
+// include used to pass clean on the same run that caught `include Comparable`.
+test("a body that forgets the include is caught, not only one that includes the wrong module", needsRuby, async (t) => {
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("app/workers/a_worker.rb", "class AWorker\n  include Sidekiq::Worker\nend\n");
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("app/workers/wrong_worker.rb", "class WrongWorker\n  include Comparable\nend\n");
+    write("app/workers/bare_worker.rb", "class BareWorker\n  def perform\n  end\nend\n");
+    commit("add");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    areas: [{
+      id: "aaaaaaaa",
+      path: "app/workers",
+      globs: [{ negated: false, dir: "app/workers", tail: "**/*.rb" }],
+      fileCount: 8,
+      dimensions: [dim({ key: "module_include", learned: "Sidekiq::Worker" })],
+    }],
+  });
+  const report = await check(dir);
+  const found = forKey(report, "module_include");
+  assert.deepEqual(
+    found.map((f) => f.path).sort(),
+    ["app/workers/bare_worker.rb", "app/workers/wrong_worker.rb"],
+    JSON.stringify(report.findings)
+  );
+});
+
 test("a body mixing in a different set of modules is not the body it replaced", needsRuby, async (t) => {
   // The grouped site's identity used to be the include call's own node, which
   // is `call include` for every body in the file, so one new violating body
