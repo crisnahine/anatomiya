@@ -655,9 +655,9 @@ const answer = (rel) =>
   `  printf '{"rel":"%s","ok":true,"errors":0,"length":1,"ast":{"t":"program","line":1}}\\n' ${rel}`;
 
 test("a child our own timer killed is spawned once more for what never answered", needsShebang, async () => {
-  // A5, read the way the pool already reads it: how long a parse takes is a
-  // property of the machine, so a file charged as crashed in one scan and
-  // parsed in the next moves the always-loaded overview.
+  // The overview has to be byte-stable across scans, and how long a parse takes
+  // is a property of the machine: a file charged as crashed in one scan and
+  // parsed in the next moves what every reader loads.
   const home = mkdtempSync(join(dir, "retry-"));
   const stub = retryStub(home, ["  sleep 1"]);
 
