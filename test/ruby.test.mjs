@@ -8,6 +8,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseRuby, RUBY_GUARDS } from "../lib/ruby.mjs";
 import { walkRuby, constName, bodyOf } from "../lib/ruby-walk.mjs";
+
+test("a mistyped size override refuses loudly instead of dying inside the child", async () => {
+  // Ungated: the refusal happens before any interpreter is spawned.
+  await assert.rejects(
+    parseRuby([{ rel: "a.rb", abs: "/nowhere/a.rb", lang: "ruby" }], { guards: { maxBytes: "abc" } }),
+    /maxBytes/
+  );
+});
 import { RUBY_DIMENSIONS } from "../lib/dimensions-ruby.mjs";
 
 const dir = mkdtempSync(join(tmpdir(), "anatomiya-ruby-"));
