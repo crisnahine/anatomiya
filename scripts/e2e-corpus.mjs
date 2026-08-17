@@ -22,7 +22,8 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync,
 import { basename, dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-import { isSource, language } from "../lib/corpus.mjs";
+import { isSource } from "../lib/corpus.mjs";
+import { language } from "../lib/langs.mjs";
 import { ALL_DIMENSIONS } from "../lib/dimensions.mjs";
 import { CLASSES, NAMING_CORPUS } from "../lib/dimensions-naming.mjs";
 import { FACTS_PATH, FACTS_SCHEMA, statedSide } from "../lib/facts.mjs";

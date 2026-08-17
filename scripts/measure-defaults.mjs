@@ -22,7 +22,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { ALL_DIMENSIONS } from "../lib/dimensions.mjs";
 import { parseAll } from "../lib/parse.mjs";
-import { language } from "../lib/corpus.mjs";
+import { language } from "../lib/langs.mjs";
 import { classifyBasename } from "../lib/dimensions-naming.mjs";
 import { runTrial, CLAUDE_DEFAULTS } from "./ab/run.mjs";
 

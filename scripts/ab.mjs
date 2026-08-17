@@ -23,7 +23,7 @@ import { runTrial, CLAUDE_DEFAULTS } from "./ab/run.mjs";
 import { scoreFile } from "./ab/score.mjs";
 import { readingFor } from "./ab/read.mjs";
 import { repoLabel } from "./ab/label.mjs";
-import { language } from "../lib/corpus.mjs";
+import { language } from "../lib/langs.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 

@@ -7,7 +7,7 @@ import { repo } from "./ts-repo.mjs";
 import { needsRuby } from "./ruby-available.mjs";
 import { parseAll } from "../lib/parse.mjs";
 import { MINITEST_SUPERCLASSES, TEST_RUNNER_MODULES } from "../lib/facets.mjs";
-import { language } from "../lib/corpus.mjs";
+import { language } from "../lib/langs.mjs";
 
 /**
  * What a file says about itself, beside what the dimensions counted in it.
