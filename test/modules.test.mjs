@@ -52,6 +52,27 @@ test("no module in lib imports its way back to itself", () => {
   assert.deepEqual([...new Set(cycles)], []);
 });
 
+test("no module the parse worker reaches imports node:child_process", () => {
+  // Every JS parse child loads `dimensions.mjs` for the registry, and the two
+  // Ruby dimension files took their walkers from `ruby.mjs`, the module that
+  // spawns Ruby. That put the spawn machinery and the inline prism script into
+  // all eight forked workers, which is the exact cost `langs.mjs` and
+  // `limits.mjs` exist to avoid. `ruby-walk.mjs` is the importable leaf.
+  const edges = graph();
+  const reached = new Set();
+  const walk = (file) => {
+    if (reached.has(file)) return;
+    reached.add(file);
+    for (const next of edges.get(file) || []) walk(next);
+  };
+  walk("parse-worker.mjs");
+
+  const offenders = [...reached].filter((file) =>
+    /from\s*["']node:child_process["']/.test(readFileSync(join(LIB, file), "utf8"))
+  );
+  assert.deepEqual(offenders, []);
+});
+
 /**
  * The bodies of the named exports in one lib module, keyed by name.
  *
