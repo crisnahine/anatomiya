@@ -1,7 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { LEARNED_ROWS, learnedRows, learnedTables, parseArgs } from "../scripts/measure-layout.mjs";
+import {
+  LEARNED_ROWS,
+  checkOutput,
+  learnedRows,
+  learnedTables,
+  parseArgs,
+  selectRepos,
+} from "../scripts/measure-layout.mjs";
 import { namesakeClause } from "../lib/render-layout.mjs";
 
 /**
@@ -119,5 +126,40 @@ test("the corpus directory is an argument, never a path off this machine", () =>
 test("the options a run takes are read off the arguments beside the corpus", () => {
   const opts = parseArgs(["--md", "out.md", "/corpus", "--only", "webpack,eslint", "--facts", "f"]);
 
-  assert.deepEqual(opts, { corpus: "/corpus", md: "out.md", facts: "f", only: "webpack,eslint" });
+  assert.deepEqual(opts, {
+    corpus: "/corpus",
+    md: "out.md",
+    facts: "f",
+    only: "webpack,eslint",
+    force: false,
+  });
+  assert.equal(parseArgs(["/corpus", "--force"]).force, true);
+});
+
+test("an option last on the line read the argument that was not there", () => {
+  // `--only` read nothing and measured all thirty-five, which is the run the
+  // one name was meant to replace.
+  assert.match(parseArgs(["/corpus", "--only"]).error, /--only/);
+  assert.match(parseArgs(["/corpus", "--md"]).error, /--md/);
+});
+
+test("a --only name the corpus does not hold is an error, not a shorter run", () => {
+  // The e2e harness got this rule first: a typo measured nothing and printed
+  // `0 of 0 repositories passed`, which is exit 0 and reads as an acceptance.
+  const repos = ["errbit", "eslint"];
+
+  assert.deepEqual(selectRepos(repos, null).repos, repos);
+  assert.deepEqual(selectRepos(repos, "eslint").repos, ["eslint"]);
+  assert.match(selectRepos(repos, "errbti").error, /errbti/);
+  assert.match(selectRepos(repos, "errbit,eslnit").error, /eslnit/);
+});
+
+test("a --md target that is already there is refused, and --force is how a rerun says it meant it", () => {
+  // The file is a run of record somebody merged into a document by hand, and
+  // this script writes its target whole.
+  assert.equal(checkOutput("/out/run.md", false, false), null);
+  assert.equal(checkOutput("/out/run.md", true, true), null);
+  assert.equal(checkOutput(null, false, true), null);
+  assert.match(checkOutput("/out/run.md", false, true), /\/out\/run\.md/);
+  assert.match(checkOutput("/out/run.md", false, true), /--force/);
 });
