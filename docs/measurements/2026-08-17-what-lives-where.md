@@ -38,12 +38,16 @@ moved, and eleven root lines on nine repositories dropped a sibling-module count
 Re-run again after the second review's Ruby facet fix: 35 of 35, no number in the table moved, and
 six Ruby repositories dropped test counts (change 10 below).
 
-Re-run again after the two follow-ups this document's own list of wrong readings named, which is
-the run recorded here: 35 of 35, no number in the table moved, and 23 repositories moved a namesake
-clause (changes 11 and 12 below). The first full run of that pair found a stale copy in the harness
-rather than in the tool: the renderer took the singular verb for a count of one in an earlier
-change and the recount kept spelling the plural, so babel's true `1 of 95 has a namesake test` read
-back as a failure. The verb comes off the renderer now.
+Re-run again after the two follow-ups this document's own list of wrong readings named: 35 of 35,
+no number in the table moved, and 23 repositories moved a namesake clause (changes 11 and 12
+below). The first full run of that pair found a stale copy in the harness rather than in the tool:
+the renderer took the singular verb for a count of one in an earlier change and the recount kept
+spelling the plural, so babel's true `1 of 95 has a namesake test` read back as a failure. The verb
+comes off the renderer now.
+
+Re-run again after the mixin fix and the CommonJS one, which is the run recorded here: 35 of 35,
+and the only column that moved is `module_include`, on discourse, empire-flippers/api and forem
+(changes 13 and 14 below). The 35 rendered sections are byte-identical to the previous run's.
 
 One byte-stability failure, on appsmith, in the first of seven full runs: `## Not covered` moved
 between the two scans. It did not reproduce in six later full runs or in four solo runs of that
@@ -62,47 +66,47 @@ are how many areas printed each roster line.
 
 | repo | tracked | roots | folded | testGroups | principles | extends_base | class_base | module_include | interface_prefix | type_alias_prefix | imports | reused | seconds |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| Homebrew__brew | 2501 | 3 | 0 | 3 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 20.9 |
-| TryGhost__Ghost | 7940 | 5 | 0 | 6 | 2 | 1 | 0 | 0 | 0 | 0 | 142 | 87 | 17.5 |
-| alphagov__whitehall | 2621 | 7 | 8 | 3 | 1 | 0 | 2 | 0 | 0 | 0 | 0 | 0 | 8.9 |
-| angular__angular | 8522 | 7 | 11 | 3 | 2 | 0 | 0 | 0 | 0 | 0 | 93 | 103 | 15.5 |
-| appsmithorg__appsmith | 13087 | 3 | 0 | 5 | 2 | 0 | 0 | 0 | 0 | 0 | 126 | 128 | 15.7 |
-| babel__babel | 2303 | 7 | 10 | 3 | 1 | 0 | 0 | 0 | 0 | 0 | 26 | 16 | 15.2 |
-| backstage__backstage | 11781 | 7 | 5 | 2 | 2 | 0 | 0 | 0 | 0 | 0 | 186 | 99 | 21.3 |
-| calcom__cal.diy | 7372 | 7 | 4 | 4 | 2 | 0 | 0 | 0 | 0 | 0 | 122 | 60 | 10.7 |
-| chef__chef | 2281 | 7 | 1 | 2 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 12.4 |
-| consul__consul | 6025 | 7 | 2 | 1 | 1 | 0 | 2 | 0 | 0 | 0 | 0 | 0 | 15.7 |
-| decidim__decidim | 11467 | 7 | 18 | 2 | 1 | 0 | 0 | 0 | 0 | 0 | 4 | 5 | 35.8 |
-| diaspora__diaspora | 1921 | 7 | 5 | 2 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 5.5 |
-| discourse__discourse | 23263 | 7 | 5 | 6 | 1 | 1 | 3 | 1 | 0 | 0 | 75 | 12 | 88.1 |
-| empire-flippers__api | 8986 | 7 | 2 | 2 | 1 | 0 | 7 | 0 | 0 | 0 | 0 | 0 | 31.2 |
-| empire-flippers__client | 2999 | 7 | 3 | 2 | 2 | 0 | 0 | 0 | 6 | 0 | 86 | 44 | 10.8 |
-| errbit__errbit | 529 | 7 | 7 | 2 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 3.5 |
-| eslint__eslint | 1533 | 7 | 10 | 3 | 1 | 0 | 0 | 0 | 0 | 0 | 1 | 7 | 12.9 |
-| fastlane__fastlane | 2136 | 7 | 7 | 2 | 1 | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 9.6 |
-| forem__forem | 6425 | 7 | 6 | 3 | 2 | 0 | 1 | 0 | 0 | 0 | 14 | 7 | 16.9 |
+| Homebrew__brew | 2501 | 3 | 0 | 3 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 14.9 |
+| TryGhost__Ghost | 7940 | 5 | 0 | 6 | 2 | 1 | 0 | 0 | 0 | 0 | 142 | 87 | 14.8 |
+| alphagov__whitehall | 2621 | 7 | 8 | 3 | 1 | 0 | 2 | 0 | 0 | 0 | 0 | 0 | 8.2 |
+| angular__angular | 8522 | 7 | 11 | 3 | 2 | 0 | 0 | 0 | 0 | 0 | 93 | 103 | 13.8 |
+| appsmithorg__appsmith | 13087 | 3 | 0 | 5 | 2 | 0 | 0 | 0 | 0 | 0 | 126 | 128 | 14.9 |
+| babel__babel | 2303 | 7 | 10 | 3 | 1 | 0 | 0 | 0 | 0 | 0 | 26 | 16 | 5.5 |
+| backstage__backstage | 11781 | 7 | 5 | 2 | 2 | 0 | 0 | 0 | 0 | 0 | 186 | 99 | 15.2 |
+| calcom__cal.diy | 7372 | 7 | 4 | 4 | 2 | 0 | 0 | 0 | 0 | 0 | 122 | 60 | 9.2 |
+| chef__chef | 2281 | 7 | 1 | 2 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 11.5 |
+| consul__consul | 6025 | 7 | 2 | 1 | 1 | 0 | 2 | 0 | 0 | 0 | 0 | 0 | 7.3 |
+| decidim__decidim | 11467 | 7 | 18 | 2 | 1 | 0 | 0 | 0 | 0 | 0 | 4 | 5 | 20.9 |
+| diaspora__diaspora | 1921 | 7 | 5 | 2 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 4.9 |
+| discourse__discourse | 23263 | 7 | 5 | 6 | 1 | 1 | 3 | 2 | 0 | 0 | 75 | 12 | 67.4 |
+| empire-flippers__api | 8986 | 7 | 2 | 2 | 1 | 0 | 7 | 3 | 0 | 0 | 0 | 0 | 18.9 |
+| empire-flippers__client | 2999 | 7 | 3 | 2 | 2 | 0 | 0 | 0 | 6 | 0 | 86 | 44 | 5.3 |
+| errbit__errbit | 529 | 7 | 7 | 2 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 1.1 |
+| eslint__eslint | 1533 | 7 | 10 | 3 | 1 | 0 | 0 | 0 | 0 | 0 | 1 | 7 | 4.4 |
+| fastlane__fastlane | 2136 | 7 | 7 | 2 | 1 | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 7.2 |
+| forem__forem | 6425 | 7 | 6 | 3 | 2 | 0 | 1 | 1 | 0 | 0 | 14 | 7 | 15.1 |
 | huginn__huginn | 729 | 7 | 9 | 1 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 2.8 |
-| instructure__canvas-lms | 21913 | 7 | 8 | 4 | 2 | 0 | 1 | 0 | 0 | 0 | 148 | 129 | 136.7 |
-| mastodon__mastodon | 9846 | 7 | 5 | 3 | 2 | 0 | 1 | 0 | 0 | 0 | 20 | 23 | 14.4 |
-| microsoft__vscode | 15712 | 4 | 0 | 6 | 2 | 0 | 0 | 0 | 14 | 0 | 164 | 90 | 80.6 |
-| openfoodfoundation__openfoodnetwork | 3882 | 7 | 7 | 2 | 1 | 0 | 0 | 0 | 0 | 0 | 3 | 1 | 10.4 |
-| opf__openproject | 22498 | 7 | 8 | 3 | 1 | 0 | 1 | 0 | 0 | 0 | 22 | 7 | 59.6 |
-| prisma__prisma | 6154 | 7 | 7 | 3 | 2 | 0 | 0 | 0 | 0 | 0 | 115 | 76 | 14.8 |
-| publiclab__plots2 | 860 | 7 | 6 | 2 | 1 | 0 | 0 | 0 | 0 | 0 | 1 | 0 | 3.7 |
-| puppetlabs__puppet | 2466 | 7 | 0 | 2 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 26.5 |
-| react__react | 2969 | 7 | 18 | 3 | 2 | 1 | 0 | 0 | 0 | 0 | 16 | 34 | 10.0 |
-| rubocop__rubocop | 2155 | 7 | 2 | 2 | 1 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 9.0 |
-| storybookjs__storybook | 7597 | 5 | 0 | 7 | 2 | 0 | 0 | 0 | 0 | 0 | 75 | 77 | 12.3 |
-| supabase__supabase | 16751 | 4 | 0 | 4 | 2 | 0 | 0 | 0 | 0 | 0 | 198 | 157 | 26.0 |
-| typeorm__typeorm | 3542 | 7 | 0 | 3 | 2 | 1 | 0 | 0 | 0 | 0 | 8 | 25 | 6.5 |
-| vercel__next.js | 28490 | 7 | 2 | 5 | 2 | 1 | 0 | 0 | 0 | 0 | 28 | 58 | 49.8 |
-| webpack__webpack | 14364 | 3 | 0 | 1 | 2 | 0 | 0 | 0 | 0 | 0 | 15 | 18 | 14.1 |
+| instructure__canvas-lms | 21913 | 7 | 8 | 4 | 2 | 0 | 1 | 0 | 0 | 0 | 148 | 129 | 103.5 |
+| mastodon__mastodon | 9846 | 7 | 5 | 3 | 2 | 0 | 1 | 0 | 0 | 0 | 20 | 23 | 12.3 |
+| microsoft__vscode | 15712 | 4 | 0 | 6 | 2 | 0 | 0 | 0 | 14 | 0 | 164 | 90 | 58.7 |
+| openfoodfoundation__openfoodnetwork | 3882 | 7 | 7 | 2 | 1 | 0 | 0 | 0 | 0 | 0 | 3 | 1 | 10.7 |
+| opf__openproject | 22498 | 7 | 8 | 3 | 1 | 0 | 1 | 0 | 0 | 0 | 22 | 7 | 51.3 |
+| prisma__prisma | 6154 | 7 | 7 | 3 | 2 | 0 | 0 | 0 | 0 | 0 | 115 | 76 | 9.8 |
+| publiclab__plots2 | 860 | 7 | 6 | 2 | 1 | 0 | 0 | 0 | 0 | 0 | 1 | 0 | 2.6 |
+| puppetlabs__puppet | 2466 | 7 | 0 | 2 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 17.1 |
+| react__react | 2969 | 7 | 18 | 3 | 2 | 1 | 0 | 0 | 0 | 0 | 16 | 34 | 9.8 |
+| rubocop__rubocop | 2155 | 7 | 2 | 2 | 1 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 9.8 |
+| storybookjs__storybook | 7597 | 5 | 0 | 7 | 2 | 0 | 0 | 0 | 0 | 0 | 75 | 77 | 13.4 |
+| supabase__supabase | 16751 | 4 | 0 | 4 | 2 | 0 | 0 | 0 | 0 | 0 | 198 | 157 | 16.8 |
+| typeorm__typeorm | 3542 | 7 | 0 | 3 | 2 | 1 | 0 | 0 | 0 | 0 | 8 | 25 | 5.5 |
+| vercel__next.js | 28490 | 7 | 2 | 5 | 2 | 1 | 0 | 0 | 0 | 0 | 28 | 58 | 32.4 |
+| webpack__webpack | 14364 | 3 | 0 | 1 | 2 | 0 | 0 | 0 | 0 | 0 | 15 | 18 | 9.9 |
 
 ## Tuning, and why
 
 Seven changes out of the corpus runs, then two more out of the first whole-branch review, one out
-of the second, and two against the clauses the list below this one named as reading wrong. Each has
-a test that fails before it and passes after. The three numbers the design left open are
+of the second, two against the clauses the list below this one named as reading wrong, and two that
+this document's own audit section asked for. Each has a test that fails before it and passes after. The three numbers the design left open are
 unchanged, and so is the shell list: the floor is still
 `max(3, ceil(0.01 * N))`, the wrapper share is still 0.8, the budget is still 7 root lines, and
 the five shell names are the same five words.
@@ -291,6 +295,40 @@ The tests line nouns the first root that has a clause, so webpack's now reads `8
 have a namesake test` off `lib`, next.js's `3 of 1943` off `turbopack/crates` and typeorm's
 `0 of 90` off `src/driver`. That is the line doing its job: the denominator is a directory that
 produces code rather than one that exercises it.
+
+### 13. The mixin row counts a class body once, however many modules it includes
+
+Was: one site per included constant. Now: one site per class or module body, conforming when any of
+its includes names the learned module. A learned row may declare `groupedSites`; `class_base` names
+one superclass per class and stays per site.
+
+This is the issue the audit section below named, and it is what a threshold that fails closed looks
+like. A Rails worker includes `Sidekiq::Worker` and one more module, so per constant the row could
+not pass 0.5 whatever the directory did: empire-flippers/api `app/workers/workers` read 125 of 234
+and `app/workers/cronjobs` 70 of 140, which is exactly one half. Grouped they read 125 of 125 and
+70 of 70, and both state.
+
+Seven areas of four repositories state the row where two of two did before: three of
+empire-flippers/api's worker directories, discourse's `plugins/chat/app/services/chat` (46 of 46)
+and `plugins/discourse-workflows/app/services/discourse_workflows` (45 of 45), forem's `app/workers`
+(88 of 88), and fastlane's `spaceship/lib/spaceship/connect_api/models`, which already did. In the
+table at the top of this file `module_include` moves on discourse (1 to 2),
+empire-flippers/api (0 to 3) and forem (0 to 1). Nothing else in the table moves, and no rendered
+section moves at all: this row is a directive, not a layout count.
+
+### 14. A CommonJS file's exports are read off its assignments
+
+Was: the parser's static ESM record only. Now that, plus `module.exports = { a, b }`,
+`module.exports = fn`, `module.exports = function () {}`, `exports.name = ...` and
+`module.exports.name = ...`. A repository written in `require` reported no exports at all, so every
+module-level function in it read as a private helper.
+
+No repository's helper count moved. The clause that spends the facet is `N files inline a helper`,
+and `inlineFiles` counts JSX files only, so the fix can move a printed number only for a JSX file
+that publishes through `module.exports`, and the corpus holds none. The 35 sections are
+byte-identical to the previous run's, and the `imports` and `reused` columns are unchanged. The
+record is correct now where it was wrong; what reads it is narrow enough that nothing here saw the
+difference.
 
 ## What still reads wrong, and why it was left
 
@@ -583,98 +621,98 @@ the five biggest per repository, so a row stated on a small area is not on the l
 
 | repo | area | applicability | langFileCount | candidates | conforming | ratio | learned | stated |
 |---|---|---|---|---|---|---|---|---|
-| Homebrew__brew | Library/Homebrew | 57 | 220 | 104 | 47 | 0.452 | Utils::Output::Mixin | no (ratio) |
-| Homebrew__brew | Library/Homebrew/rubocops/cask | 19 | 26 | 28 | 12 | 0.429 | CaskHelp | no (ratio) |
+| Homebrew__brew | Library/Homebrew | 57 | 220 | 66 | 47 | 0.712 | Utils::Output::Mixin | no (ratio) |
 | Homebrew__brew | Library/Homebrew/cmd | 23 | 77 | 23 | 13 | 0.565 | ShellCommand | no (ratio) |
 | Homebrew__brew | Library/Homebrew/unpack_strategy | 20 | 35 | 21 | 21 | 1.000 | UnpackStrategy | no (evidence) |
-| Homebrew__brew | Library/Homebrew/cask | 12 | 30 | 20 | 10 | 0.500 | Utils::Output::Mixin | no (ratio) |
-| alphagov__whitehall | app/models | 68 | 160 | 209 | 14 | 0.067 | PublishesToPublishingApi | no (ratio) |
-| alphagov__whitehall | app/presenters/publishing_api | 25 | 40 | 46 | 22 | 0.478 | GovspeakHelper | no (ratio) |
-| alphagov__whitehall | test/unit/app/models | 25 | 139 | 41 | 13 | 0.317 | ActionDispatch::TestProcess | no (ratio) |
-| alphagov__whitehall | test/integration | 16 | 34 | 35 | 12 | 0.343 | TaxonomyHelper | no (ratio) |
-| alphagov__whitehall | test/functional/admin | 25 | 94 | 27 | 12 | 0.444 | TaxonomyHelper | no (ratio) |
-| chef__chef | lib/chef | 46 | 146 | 81 | 15 | 0.185 | Chef::Mixin::ParamsValidate | no (ratio) |
-| chef__chef | lib/chef/resource | 41 | 196 | 43 | 8 | 0.186 | Chef::Mixin::OpenSSLHelper | no (ratio) |
-| chef__chef | lib/chef/win32 | 16 | 23 | 31 | 6 | 0.194 | Chef::Mixin::WideString | no (ratio) |
+| Homebrew__brew | Library/Homebrew/rubocops/cask | 19 | 26 | 19 | 12 | 0.632 | CaskHelp | no (ratio) |
+| Homebrew__brew | Library/Homebrew/dev-cmd | 17 | 60 | 17 | 10 | 0.588 | SystemCommand::Mixin | no (ratio) |
+| alphagov__whitehall | app/models | 68 | 160 | 69 | 14 | 0.203 | PublishesToPublishingApi | no (ratio) |
+| alphagov__whitehall | test/unit/app/models | 25 | 139 | 29 | 13 | 0.448 | ActionDispatch::TestProcess | no (ratio) |
+| alphagov__whitehall | app/presenters/publishing_api | 25 | 40 | 28 | 22 | 0.786 | GovspeakHelper | no (ratio) |
+| alphagov__whitehall | test/functional/admin | 25 | 94 | 25 | 12 | 0.480 | TaxonomyHelper | no (ratio) |
+| alphagov__whitehall | app/controllers/admin | 18 | 95 | 18 | 8 | 0.444 | TranslationControllerConcern | no (ratio) |
+| chef__chef | lib/chef | 46 | 146 | 49 | 15 | 0.306 | Chef::Mixin::ParamsValidate | no (ratio) |
+| chef__chef | lib/chef/resource | 41 | 196 | 41 | 8 | 0.195 | Chef::Mixin::OpenSSLHelper | no (ratio) |
 | chef__chef | spec/unit/mixin | 13 | 28 | 20 | 3 | 0.150 | Chef::Mixin::Properties | no (ratio) |
-| chef__chef | lib/chef/provider | 11 | 50 | 19 | 3 | 0.158 | Chef::Mixin::FileClass | no (ratio) |
-| consul__consul | app/models | 39 | 101 | 114 | 12 | 0.105 | Globalizable | no (ratio) |
-| consul__consul | app/models/legislation | 7 | 9 | 32 | 7 | 0.219 | ActsAsParanoidAliases | no (ratio) |
-| consul__consul | app/components/admin | 23 | 60 | 30 | 15 | 0.500 | Header | no (ratio) |
-| consul__consul | app/controllers | 13 | 45 | 28 | 9 | 0.321 | FeatureFlags | no (ratio) |
-| consul__consul | app/models/budget | 6 | 17 | 28 | 4 | 0.143 | Globalizable | no (ratio) |
-| decidim__decidim | decidim-core/app/controllers/decidim | 34 | 52 | 90 | 11 | 0.122 | FormFactory | no (ratio) |
-| decidim__decidim | decidim-core/app/models/decidim | 39 | 68 | 89 | 15 | 0.169 | Decidim::TranslatableResource | no (ratio) |
-| decidim__decidim | decidim-core/lib/decidim | 45 | 204 | 82 | 13 | 0.159 | Decidim::AttributeObject::Model | no (ratio) |
-| decidim__decidim | decidim-core/app/cells/decidim | 38 | 85 | 73 | 13 | 0.178 | Cell::ViewModel::Partial | no (ratio) |
-| decidim__decidim | decidim-debates/app | 16 | 36 | 59 | 4 | 0.068 | Decidim::MultipleAttachmentsMethods | no (ratio) |
-| diaspora__diaspora | app/models | 22 | 49 | 60 | 15 | 0.250 | Diaspora::Federated::Base | no (ratio) |
-| diaspora__diaspora | app/controllers | 3 | 41 | 6 | 2 | 0.333 | ApplicationHelper | no (ratio) |
+| chef__chef | lib/chef/win32 | 16 | 23 | 18 | 6 | 0.333 | Chef::Mixin::WideString | no (ratio) |
+| chef__chef | chef-utils/lib/chef-utils/dsl | 15 | 15 | 15 | 13 | 0.867 | Internal | no (ratio) |
+| consul__consul | app/models | 39 | 101 | 39 | 12 | 0.308 | Globalizable | no (ratio) |
+| consul__consul | app/components/admin | 23 | 60 | 23 | 15 | 0.652 | Header | no (ratio) |
+| consul__consul | app/controllers | 13 | 45 | 13 | 9 | 0.692 | FeatureFlags | no (ratio) |
+| consul__consul | app/components/admin/budgets_wizard | 8 | 15 | 8 | 8 | 1.000 | Header | no (evidence) |
+| consul__consul | app/components/sdg_management | 8 | 10 | 8 | 7 | 0.875 | Header | no (ratio) |
+| decidim__decidim | decidim-core/lib/decidim | 45 | 204 | 45 | 13 | 0.289 | Decidim::AttributeObject::Model | no (ratio) |
+| decidim__decidim | decidim-core/app/models/decidim | 39 | 68 | 39 | 15 | 0.385 | Decidim::TranslatableResource | no (ratio) |
+| decidim__decidim | decidim-core/app/cells/decidim | 38 | 85 | 38 | 13 | 0.342 | Cell::ViewModel::Partial | no (ratio) |
+| decidim__decidim | decidim-core/app/controllers/decidim | 34 | 52 | 34 | 11 | 0.324 | FormFactory | no (ratio) |
+| decidim__decidim | decidim-admin/app/controllers/decidim/admin | 33 | 56 | 33 | 6 | 0.182 | Decidim::Admin::Concerns::HasTabbedMenu | no (ratio) |
+| diaspora__diaspora | app/models | 22 | 49 | 22 | 15 | 0.682 | Diaspora::Federated::Base | no (ratio) |
 | diaspora__diaspora | app/controllers/api/v1 | 5 | 16 | 5 | 2 | 0.400 | PostsHelper | no (ratio) |
-| diaspora__diaspora | lib | 4 | 15 | 5 | 3 | 0.600 | Diaspora::Logging | no (ratio) |
-| diaspora__diaspora | lib/archive_importer | 4 | 7 | 5 | 4 | 0.800 | Diaspora::Logging | no (ratio) |
-| discourse__discourse | app/models | 66 | 301 | 160 | 11 | 0.069 | ActiveModel::Serialization | no (ratio) |
-| discourse__discourse | lib/onebox/engine | 69 | 73 | 158 | 64 | 0.405 | Engine | no (ratio) |
-| discourse__discourse | lib | 32 | 384 | 56 | 9 | 0.161 | ActiveModel::Serialization | no (ratio) |
-| discourse__discourse | plugins/discourse-workflows/app/services/discourse_workflows | 45 | 53 | 56 | 45 | 0.804 | Service::Base | no (ratio) |
-| discourse__discourse | app/services | 44 | 127 | 48 | 38 | 0.792 | Service::Base | no (ratio) |
-| empire-flippers__api | app/workers/workers | 125 | 125 | 234 | 125 | 0.534 | Sidekiq::Worker | no (ratio) |
-| empire-flippers__api | app/workers/cronjobs | 70 | 70 | 140 | 70 | 0.500 | Sidekiq::Worker | no (ratio) |
-| empire-flippers__api | app/workers/workers/listings | 38 | 38 | 74 | 38 | 0.514 | Sidekiq::Worker | no (ratio) |
-| empire-flippers__api | app/workers/workers/amazon_sp | 25 | 25 | 48 | 25 | 0.521 | Sidekiq::Worker | no (ratio) |
-| empire-flippers__api | app/models | 31 | 129 | 45 | 20 | 0.444 | ActiveModel::Dirty | no (ratio) |
-| errbit__errbit | app/models | 13 | 14 | 26 | 12 | 0.462 | Mongoid::Document | no (ratio) |
+| diaspora__diaspora | app/controllers | 3 | 41 | 4 | 2 | 0.500 | ApplicationHelper | no (ratio) |
+| diaspora__diaspora | lib | 4 | 15 | 4 | 3 | 0.750 | Diaspora::Logging | no (ratio) |
+| diaspora__diaspora | lib/archive_importer | 4 | 7 | 4 | 4 | 1.000 | Diaspora::Logging | no (evidence) |
+| discourse__discourse | app/models | 66 | 301 | 69 | 11 | 0.159 | ActiveModel::Serialization | no (ratio) |
+| discourse__discourse | lib/onebox/engine | 69 | 73 | 69 | 64 | 0.928 | Engine | no (evidence) |
+| discourse__discourse | plugins/chat/app/services/chat | 46 | 54 | 46 | 46 | 1.000 | Service::Base | yes |
+| discourse__discourse | plugins/discourse-workflows/app/services/discourse_workflows | 45 | 53 | 45 | 45 | 1.000 | Service::Base | yes |
+| discourse__discourse | app/services | 44 | 127 | 44 | 38 | 0.864 | Service::Base | no (ratio) |
+| empire-flippers__api | app/workers/workers | 125 | 125 | 125 | 125 | 1.000 | Sidekiq::Worker | yes |
+| empire-flippers__api | app/workers/cronjobs | 70 | 70 | 70 | 70 | 1.000 | Sidekiq::Worker | yes |
+| empire-flippers__api | app/workers/workers/listings | 38 | 38 | 38 | 38 | 1.000 | Sidekiq::Worker | yes |
+| empire-flippers__api | app/models | 31 | 129 | 31 | 20 | 0.645 | ActiveModel::Dirty | no (ratio) |
+| empire-flippers__api | app/workers/workers/amazon_sp | 25 | 25 | 25 | 25 | 1.000 | Sidekiq::Worker | no (evidence) |
+| errbit__errbit | app/models | 13 | 14 | 13 | 12 | 0.923 | Mongoid::Document | no (evidence) |
 | errbit__errbit | app/controllers | 3 | 13 | 3 | 2 | 0.667 | ProblemsSearcher | no (ratio) |
 | fastlane__fastlane | spaceship/lib/spaceship/connect_api/models | 71 | 71 | 71 | 71 | 1.000 | Spaceship::ConnectAPI::Model | yes |
 | fastlane__fastlane | trainer/lib/trainer/xcresult | 3 | 6 | 3 | 2 | 0.667 | TestCaseAttributes | no (ratio) |
 | fastlane__fastlane | fastlane_core/spec | 2 | 47 | 2 | 2 | 1.000 | Commander::Methods | no (evidence) |
 | fastlane__fastlane | cert | 1 | 8 | 1 | 1 | 1.000 | Commander::Methods | no (evidence) |
 | fastlane__fastlane | credentials_manager | 1 | 7 | 1 | 1 | 1.000 | Commander::Methods | no (evidence) |
-| forem__forem | app/workers | 87 | 95 | 101 | 88 | 0.871 | Sidekiq::Job | no (ratio) |
-| forem__forem | app/models | 17 | 142 | 38 | 6 | 0.158 | AlgoliaSearchable | no (ratio) |
-| forem__forem | app/liquid_tags | 19 | 83 | 30 | 9 | 0.300 | ActionView::Helpers::SanitizeHelper | no (ratio) |
-| forem__forem | app/workers/articles | 16 | 17 | 18 | 16 | 0.889 | Sidekiq::Job | no (ratio) |
-| forem__forem | app/workers/notifications | 16 | 16 | 17 | 16 | 0.941 | Sidekiq::Job | no (evidence) |
-| huginn__huginn | app/models/agents | 50 | 75 | 66 | 16 | 0.242 | FormConfigurable | no (ratio) |
-| huginn__huginn | app/models | 4 | 10 | 13 | 3 | 0.231 | JsonSerializedField | no (ratio) |
+| forem__forem | app/workers | 87 | 95 | 88 | 88 | 1.000 | Sidekiq::Job | yes |
+| forem__forem | app/liquid_tags | 19 | 83 | 19 | 9 | 0.474 | ActionView::Helpers::SanitizeHelper | no (ratio) |
+| forem__forem | app/models | 17 | 142 | 18 | 6 | 0.333 | AlgoliaSearchable | no (ratio) |
+| forem__forem | app/workers/articles | 16 | 17 | 16 | 16 | 1.000 | Sidekiq::Job | no (evidence) |
+| forem__forem | app/workers/notifications | 16 | 16 | 16 | 16 | 1.000 | Sidekiq::Job | no (evidence) |
+| huginn__huginn | app/models/agents | 50 | 75 | 51 | 16 | 0.314 | FormConfigurable | no (ratio) |
 | huginn__huginn | app/concerns | 9 | 27 | 9 | 7 | 0.778 | Oauthable | no (ratio) |
 | huginn__huginn | lib | 4 | 24 | 9 | 6 | 0.667 | SAXMachine | no (ratio) |
-| huginn__huginn | app/controllers | 5 | 18 | 7 | 4 | 0.571 | SortableTable | no (ratio) |
-| instructure__canvas-lms | app/controllers | 162 | 261 | 415 | 30 | 0.072 | HorizonMode | no (ratio) |
-| instructure__canvas-lms | app/models | 157 | 413 | 403 | 74 | 0.184 | Workflow | no (ratio) |
-| instructure__canvas-lms | lib/api/v1 | 104 | 115 | 247 | 89 | 0.360 | Api::V1::Json | no (ratio) |
-| instructure__canvas-lms | lib/cc | 26 | 53 | 70 | 10 | 0.143 | CC::CCHelper | no (ratio) |
-| instructure__canvas-lms | app/controllers/quizzes | 17 | 18 | 41 | 15 | 0.366 | Filters::Quizzes | no (ratio) |
-| mastodon__mastodon | app/models | 61 | 156 | 134 | 24 | 0.179 | Paginable | no (ratio) |
-| mastodon__mastodon | app/workers | 67 | 75 | 103 | 63 | 0.612 | Sidekiq::Worker | no (ratio) |
-| mastodon__mastodon | app/services | 44 | 79 | 66 | 25 | 0.379 | Payloadable | no (ratio) |
-| mastodon__mastodon | app/controllers | 25 | 48 | 51 | 9 | 0.176 | Authorization | no (ratio) |
-| mastodon__mastodon | app/services/activitypub | 19 | 20 | 33 | 19 | 0.576 | JsonLdHelper | no (ratio) |
-| openfoodfoundation__openfoodnetwork | app/models/spree | 14 | 55 | 21 | 3 | 0.143 | CalculatedAdjustments | no (ratio) |
-| openfoodfoundation__openfoodnetwork | app/controllers/api/v0 | 7 | 20 | 18 | 3 | 0.167 | PaginationData | no (ratio) |
-| openfoodfoundation__openfoodnetwork | lib/tasks/sample_data | 13 | 15 | 18 | 13 | 0.722 | Logging | no (ratio) |
-| openfoodfoundation__openfoodnetwork | app/mailers | 8 | 11 | 9 | 7 | 0.778 | I18nHelper | no (ratio) |
-| openfoodfoundation__openfoodnetwork | spec/controllers/api/v0 | 6 | 20 | 9 | 6 | 0.667 | AuthenticationHelper | no (ratio) |
-| opf__openproject | app/components | 76 | 135 | 163 | 53 | 0.325 | OpPrimer::ComponentHelpers | no (ratio) |
-| opf__openproject | app/controllers | 50 | 87 | 118 | 24 | 0.203 | OpTurbo::ComponentStream | no (ratio) |
-| opf__openproject | app/models | 44 | 243 | 115 | 21 | 0.183 | Scopes::Scoped | no (ratio) |
-| opf__openproject | lib/api/v3 | 49 | 170 | 90 | 20 | 0.222 | API::Decorators::LinkedResource | no (ratio) |
-| opf__openproject | modules/meeting/app/components/meeting_agenda_items | 25 | 25 | 73 | 25 | 0.342 | OpPrimer::ComponentHelpers | no (ratio) |
-| publiclab__plots2 | test/functional | 7 | 29 | 10 | 4 | 0.400 | ActiveJob::TestHelper | no (ratio) |
+| huginn__huginn | app/controllers | 5 | 18 | 5 | 4 | 0.800 | SortableTable | no (ratio) |
+| huginn__huginn | app/models | 4 | 10 | 4 | 3 | 0.750 | JsonSerializedField | no (ratio) |
+| instructure__canvas-lms | app/controllers | 162 | 261 | 163 | 30 | 0.184 | HorizonMode | no (ratio) |
+| instructure__canvas-lms | app/models | 157 | 413 | 159 | 74 | 0.465 | Workflow | no (ratio) |
+| instructure__canvas-lms | lib/api/v1 | 104 | 115 | 104 | 89 | 0.856 | Api::V1::Json | no (ratio) |
+| instructure__canvas-lms | spec/selenium | 29 | 192 | 29 | 28 | 0.966 | SeleniumDependencies | no (evidence) |
+| instructure__canvas-lms | lib/cc | 26 | 53 | 27 | 10 | 0.370 | CC::CCHelper | no (ratio) |
+| mastodon__mastodon | app/workers | 67 | 75 | 67 | 63 | 0.940 | Sidekiq::Worker | no (evidence) |
+| mastodon__mastodon | app/models | 61 | 156 | 61 | 24 | 0.393 | Paginable | no (ratio) |
+| mastodon__mastodon | app/services | 44 | 79 | 44 | 25 | 0.568 | Payloadable | no (ratio) |
+| mastodon__mastodon | app/controllers | 25 | 48 | 25 | 9 | 0.360 | Authorization | no (ratio) |
+| mastodon__mastodon | db/post_migrate | 22 | 80 | 22 | 18 | 0.818 | Mastodon::MigrationHelpers | no (ratio) |
+| openfoodfoundation__openfoodnetwork | app/models/spree | 14 | 55 | 14 | 3 | 0.214 | CalculatedAdjustments | no (ratio) |
+| openfoodfoundation__openfoodnetwork | lib/tasks/sample_data | 13 | 15 | 13 | 13 | 1.000 | Logging | no (evidence) |
+| openfoodfoundation__openfoodnetwork | app/mailers | 8 | 11 | 8 | 7 | 0.875 | I18nHelper | no (ratio) |
+| openfoodfoundation__openfoodnetwork | app/controllers/api/v0 | 7 | 20 | 7 | 3 | 0.429 | PaginationData | no (ratio) |
+| openfoodfoundation__openfoodnetwork | lib/reporting/reports/enterprise_fee_summary/data_representations | 7 | 8 | 7 | 4 | 0.571 | UsingEnterpriseFee | no (ratio) |
+| opf__openproject | app/components | 76 | 135 | 76 | 53 | 0.697 | OpPrimer::ComponentHelpers | no (ratio) |
+| opf__openproject | app/controllers | 50 | 87 | 50 | 24 | 0.480 | OpTurbo::ComponentStream | no (ratio) |
+| opf__openproject | lib/api/v3 | 49 | 170 | 49 | 20 | 0.408 | API::Decorators::LinkedResource | no (ratio) |
+| opf__openproject | app/models | 44 | 243 | 44 | 21 | 0.477 | Scopes::Scoped | no (ratio) |
+| opf__openproject | app/models/queries/work_packages/filter | 32 | 66 | 32 | 10 | 0.313 | Queries::WorkPackages::Filter::FilterOnDirectedRelationsMixin | no (ratio) |
+| publiclab__plots2 | test/functional | 7 | 29 | 7 | 4 | 0.571 | ActiveJob::TestHelper | no (ratio) |
 | publiclab__plots2 | app/mailers | 6 | 6 | 6 | 6 | 1.000 | ApplicationHelper | no (evidence) |
 | publiclab__plots2 | test/integration | 3 | 14 | 3 | 3 | 1.000 | ActiveJob::TestHelper | no (evidence) |
 | publiclab__plots2 | test/integration/incoming_mail_parsing_test | 3 | 3 | 3 | 3 | 1.000 | ActiveJob::TestHelper | no (evidence) |
 | publiclab__plots2 | test/unit | 3 | 23 | 3 | 2 | 0.667 | ActiveJob::TestHelper | no (ratio) |
-| puppetlabs__puppet | lib/puppet | 36 | 145 | 82 | 12 | 0.146 | Puppet::Util | no (ratio) |
-| puppetlabs__puppet | lib/puppet/util | 22 | 91 | 41 | 9 | 0.220 | Puppet::Util | no (ratio) |
-| puppetlabs__puppet | spec/unit/pops/types | 18 | 25 | 36 | 15 | 0.417 | PuppetSpec::Compiler | no (ratio) |
-| puppetlabs__puppet | lib/puppet/pops/types | 12 | 36 | 22 | 5 | 0.227 | Enumerable | no (ratio) |
+| puppetlabs__puppet | lib/puppet | 36 | 145 | 43 | 8 | 0.186 | Puppet::Util | no (ratio) |
+| puppetlabs__puppet | lib/puppet/util | 22 | 91 | 29 | 8 | 0.276 | Puppet::Util | no (ratio) |
 | puppetlabs__puppet | benchmarks | 20 | 24 | 20 | 20 | 1.000 | FileUtils | no (evidence) |
-| rubocop__rubocop | lib/rubocop/cop/style | 205 | 302 | 325 | 107 | 0.329 | RangeHelp | no (ratio) |
-| rubocop__rubocop | lib/rubocop/cop/layout | 95 | 100 | 168 | 49 | 0.292 | RangeHelp | no (ratio) |
-| rubocop__rubocop | lib/rubocop/cop/lint | 63 | 158 | 75 | 28 | 0.373 | RangeHelp | no (ratio) |
-| rubocop__rubocop | lib/rubocop/cop/mixin | 18 | 81 | 25 | 8 | 0.320 | RangeHelp | no (ratio) |
-| rubocop__rubocop | lib/rubocop/cop/metrics | 9 | 15 | 15 | 4 | 0.267 | CodeLength | no (ratio) |
+| puppetlabs__puppet | lib/puppet/pops/types | 12 | 36 | 19 | 5 | 0.263 | Enumerable | no (ratio) |
+| puppetlabs__puppet | spec/unit/pops/types | 18 | 25 | 19 | 15 | 0.789 | PuppetSpec::Compiler | no (ratio) |
+| rubocop__rubocop | lib/rubocop/cop/style | 205 | 302 | 209 | 107 | 0.512 | RangeHelp | no (ratio) |
+| rubocop__rubocop | lib/rubocop/cop/layout | 95 | 100 | 95 | 49 | 0.516 | RangeHelp | no (ratio) |
+| rubocop__rubocop | lib/rubocop/cop/lint | 63 | 158 | 63 | 28 | 0.444 | RangeHelp | no (ratio) |
+| rubocop__rubocop | lib/rubocop/cop/mixin | 18 | 81 | 19 | 8 | 0.421 | RangeHelp | no (ratio) |
+| rubocop__rubocop | lib/rubocop/cop/internal_affairs | 12 | 42 | 12 | 11 | 0.917 | RangeHelp | no (evidence) |
 
 ### interface_prefix
 
@@ -884,9 +922,10 @@ so the 0.90 in each sentence is the gate the ratio has to clear before any inter
   0.90, and it states on one area each of Ghost, discourse, react, typeorm and next.js.
 - **class_base** spreads from 0.109 to 1.000 over 96 areas of 20 repositories, 65 of them under
   0.90, and it states on 19 areas of nine Ruby repositories, seven of those empire-flippers/api's.
-- **module_include** spreads from 0.067 to 1.000 over 92 areas of 19 repositories, 82 of them under
-  0.90, and it states on one area each of discourse and fastlane; the paragraph below says why so
-  few, and it is the row counting sites rather than the corpus disagreeing.
+- **module_include** spreads from 0.150 to 1.000 over 92 areas of 19 repositories, 66 of them under
+  0.90, and it states on 7 areas of four repositories: three of empire-flippers/api's worker
+  directories, two of discourse's service directories, forem's `app/workers` and fastlane's
+  `spaceship` models. Before change 13 it stated on two, for the reason that change records.
 - **interface_prefix** spreads from 0.527 to 1.000 over 95 areas of 20 repositories, 9 of them
   under 0.90, and it states on 14 areas of vscode and 6 of the client. 33 more areas cleared every
   gate and print counts because `none` is what the model writes anyway.
@@ -898,13 +937,12 @@ Nothing stating `type_alias_prefix` is the row working rather than the row broke
 type alias is rare, `none` is the model default for the row, and a repository that prefixes nothing
 prints counts instead of a sentence nobody needs.
 
-`module_include` deserves an issue. On empire-flippers/api every worker includes `Sidekiq::Worker`
-and one more module, and the row counts include sites rather than classes, so the second include
-in each class is a site the learned base can never answer. `app/workers/workers` scores 125 of 234,
-which is 0.534, and `app/workers/cronjobs` 70 of 140, which is exactly one half. Two includes per
-class pin the row there whatever the repository does, and a third would push it lower; either way
-it sits far under the 0.90 gate and the ratio gate suppresses it everywhere. The counts line still
-prints, which is what makes the threshold auditable, and this is the audit finding it.
+`module_include` was the finding this audit was for, and change 13 above is what came of it. The row
+counted include sites rather than class bodies, so on empire-flippers/api, where every worker
+includes `Sidekiq::Worker` and one more module, `app/workers/workers` scored 125 of 234 and
+`app/workers/cronjobs` exactly one half. Two includes per class pinned it there whatever the
+repository did. The counts line kept printing throughout, which is what made the threshold
+auditable and what let this section find it.
 
 `class_base` = `ApplicationController` for `app/controllers` is a question the api does not have
 the shape to be asked. There is no `app/controllers` area in the partition: discovery found

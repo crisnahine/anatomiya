@@ -807,3 +807,8 @@ The honest expectation: most slots print as counts and a minority state. On the 
 114 of 1,507 slots stated. Across ten measured repositories it is 333 of 3,847, and three of the ten
 state nothing at all. If your run states almost everything, look at applicability before believing
 it.
+
+Two runs stand behind those numbers: `scripts/e2e-corpus.mjs` drives the shipped CLI from a fresh
+clone through scan, pin and check on 35 repositories and this one, and `scripts/measure-layout.mjs`
+recounts every number the `## What lives where` section prints, both recorded under
+`docs/measurements/`.
