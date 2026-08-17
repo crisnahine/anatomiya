@@ -286,6 +286,21 @@ export function parseArgs(argv) {
   return { ...opts, corpus: positional[0], scratch: positional[1] };
 }
 
+/**
+ * The repositories the run covers, or the names `--only` asked for that the
+ * corpus does not hold.
+ *
+ * A typo used to select nothing and print `0 of 0 repositories passed`, which
+ * is exit 0 and reads as an acceptance of the corpus it never ran.
+ */
+export function selectRepos(repos, only) {
+  if (only === null) return { repos };
+  const wanted = only.split(",");
+  const missing = wanted.filter((name) => !repos.some((r) => r.name === name));
+  if (missing.length) return { error: `--only ${only}: the corpus holds no repository named ${missing.join(", ")}` };
+  return { repos: repos.filter((r) => wanted.includes(r.name)) };
+}
+
 const inside = (path, dir) => path.startsWith(dir.endsWith(sep) ? dir : dir + sep);
 
 /**
@@ -492,7 +507,6 @@ async function main() {
   }
   const corpusDir = resolve(opts.corpus);
   const scratchDir = resolve(opts.scratch);
-  const only = opts.only ? new Set(opts.only.split(",")) : null;
 
   // Asked before the directory is made, so a scratch path inside the corpus is
   // refused rather than created there.
@@ -511,11 +525,17 @@ async function main() {
   // one repository whose map its authors read every day.
   repos.push({ name: "anatomiya", source: resolve(HERE, "..") });
 
+  const selected = selectRepos(repos, opts.only);
+  if (selected.error) {
+    console.error(`${selected.error}\n\n${USAGE}`);
+    process.exit(2);
+  }
+
   const rows = [];
   const problems = [];
   const heads = new Map();
   const summaries = new Map();
-  for (const { name, source } of repos.filter((r) => only === null || only.has(r.name))) {
+  for (const { name, source } of selected.repos) {
     const out = await runRepo(name, source, scratchDir);
     rows.push(out.row);
     problems.push(...out.problems);

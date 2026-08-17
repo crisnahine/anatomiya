@@ -15,6 +15,7 @@ import {
   probePlan,
   rootsColumn,
   rosterCounts,
+  selectRepos,
   summaryProblems,
   tableOf,
   timeless,
@@ -283,6 +284,17 @@ test("--only with nothing after it is an error, not a run of everything", () => 
   // It read the next argument, which was not there, and a run that was meant
   // to be one repository silently became all thirty-six.
   assert.match(parseArgs(["/corpus", "/scratch", "--only"]).error, /--only/);
+});
+
+test("a --only name the corpus does not hold is an error, not a shorter run", () => {
+  // A typo ran zero repositories and printed `0 of 0 repositories passed`,
+  // which is exit 0 and reads as an acceptance.
+  const repos = [{ name: "errbit" }, { name: "eslint" }];
+
+  assert.deepEqual(selectRepos(repos, null).repos, repos);
+  assert.deepEqual(selectRepos(repos, "eslint").repos, [{ name: "eslint" }]);
+  assert.match(selectRepos(repos, "errbti").error, /errbti/);
+  assert.match(selectRepos(repos, "errbit,eslnit").error, /eslnit/);
 });
 
 test("a scratch directory that overlaps the corpus, or already holds entries, is refused", needsPosixPaths, () => {
