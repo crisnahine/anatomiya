@@ -595,6 +595,13 @@ test("the newest fields are held to shape at load", () => {
   assert.throws(() => assertRegistryRows([probeRow({ framework: "django" })]), /django/);
 });
 
+test("a framework row may not be hosted where the worker selects its own dimensions", () => {
+  // The filter is applied where an engine's dimensions are chosen, and the oxc
+  // child chooses its own unfiltered: a framework row there would count
+  // ungated in the scan while the check filters, the split C8 exists to close.
+  assert.throws(() => assertRegistryRows([probeRow({ framework: "rails" })]), /selects its own dimensions/);
+});
+
 test("a pairing row with a mistyped tier refuses to load now", () => {
   // The battery reached `ALL_DIMENSIONS` and the corpus rows and never the
   // pairings, so this exact misspelling shipped a row every reader would

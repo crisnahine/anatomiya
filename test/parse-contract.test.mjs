@@ -109,3 +109,12 @@ test("one call answers a mixed batch, every rel exactly once", needsRuby, async 
 test("an undeclared language refuses before any engine starts", async () => {
   await assert.rejects(parseAll([{ rel: "a.py", source: "x = 1\n", lang: "python" }]), /python/);
 });
+
+test("a guards key naming no declared language refuses the call", async () => {
+  // A mistyped key would otherwise move nothing, silently, which is the
+  // override-that-never-worked class the contract suite exists to catch.
+  await assert.rejects(
+    parseAll([{ rel: "a.js", source: "export const a = 1;\n", lang: "js" }], { guards: { rubby: { maxBytes: 1 } } }),
+    /rubby/
+  );
+});
