@@ -270,6 +270,19 @@ edit with no prior read. An agent that greps its way to a line and edits it neve
 file; the overview, which has no `paths` key, is the one part that always loads. That is a real
 ceiling on coverage, not a rough edge.
 
+The Read has to be attempted, not to succeed: a Read of a path that does not exist yet still
+attaches the area file for it, so an agent checking whether its target is already there gets the
+counts at the moment it is about to write. And one delivery lasts one context window rather than
+the session; a compaction or a resume rebuilds the window and the map comes back from disk, the
+overview at the boundary and an area file on the next read that matches it.
+
+**A subagent gets the map, and where you started the session decides when.** Run at the mapped
+repository's root, the overview reaches a subagent on its first turn, before it reads anything: that
+is what five subagent transcripts here show. Run one directory up, with the repository as a
+subdirectory, nothing loads until a file under it is touched, so a subagent that only greps and
+`cat`s receives nothing at all. Same ceiling as above, one level worse, and it is the exploration
+phase of a fan-out that it costs.
+
 **The measured preventable share is 8% to 15% of human review comments.** That is from 4,616 review
 comments at one company and 3,015 from ten public repositories, hand-classified. Those are the
 cheapest comments in the corpus: they draw fewer replies than average, and about a quarter are
@@ -303,7 +316,7 @@ gate's second opinion. The full numbers and their caveats are in [docs/why.md](d
 
 ## Learn more
 
-- [DECISIONS.md](DECISIONS.md) is the build contract: 104 numbered decisions, each with the
+- [DECISIONS.md](DECISIONS.md) is the build contract: 106 numbered decisions, each with the
   measurement or the review finding that forced it. Why a threshold is where it is, why the parser
   runs in child processes, why there is no hook: that is the file.
 - [docs/why.md](docs/why.md) is the longer argument and the full numbers.

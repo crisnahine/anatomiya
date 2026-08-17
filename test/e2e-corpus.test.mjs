@@ -251,7 +251,7 @@ test("the report's finding paths are read off the finding lines and nothing else
   const report = [
     'base main (4bd14f9), 3 changed files, compare',
     "1 MUST-FIX, 0 FIX, 1 NIT",
-    "note: 2 files have uncommitted edits: 1 more",
+    "note: 2 files were read from the working tree rather than from a commit: 1 more",
     "",
     'MUST-FIX  "app/models/ZzProbeFile.rb":1  files here are named snake_case',
     "  ZzProbeFile.rb",
