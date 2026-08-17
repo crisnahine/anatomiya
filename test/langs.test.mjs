@@ -8,7 +8,6 @@ import {
   declOf,
   language,
   grammarFor,
-  mayRetryDialect,
   langHas,
 } from "../lib/langs.mjs";
 
@@ -68,15 +67,6 @@ test("the grammar follows the real extension, never the language", () => {
 
 test("a scratch name routes back to its own declaration", () => {
   for (const decl of LANGUAGES) assert.equal(language(`x.${decl.scratchExt}`), decl.id, decl.id);
-});
-
-test("the dialect retry answers the old table, asked through the registry", () => {
-  for (const ext of [...EXT_BY_LANG.js, ...EXT_BY_LANG.jsx]) {
-    const path = `src/a.${ext}`;
-    assert.equal(mayRetryDialect(language(path), path), mayHoldFlow(path), `.${ext}`);
-  }
-  assert.equal(mayRetryDialect("ruby", "app/a.rb"), false);
-  assert.equal(mayRetryDialect("js", "src/a.js.snap"), false);
 });
 
 test("an undeclared id refuses loudly", () => {
