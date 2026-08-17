@@ -307,6 +307,28 @@ export function selectRepos(repos, only) {
 // locale: ICU orders case by whatever tables the host was built with.
 export const byName = (a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
 
+/**
+ * Every child of the corpus directory that is a git repository, or why the path
+ * is not a corpus.
+ *
+ * A mistyped corpus threw ENOENT out of the driver as a stack trace, and by
+ * then the scratch directory had been made for a run that never started.
+ */
+export function corpusRepos(corpusDir) {
+  let entries;
+  try {
+    entries = readdirSync(corpusDir, { withFileTypes: true });
+  } catch (err) {
+    return { error: `the corpus directory ${corpusDir} cannot be listed: ${err.code ?? err.message}` };
+  }
+  return {
+    repos: entries
+      .filter((e) => e.isDirectory() && existsSync(join(corpusDir, e.name, ".git")))
+      .map((e) => ({ name: e.name, source: join(corpusDir, e.name) }))
+      .sort(byName),
+  };
+}
+
 const inside = (path, dir) => path.startsWith(dir.endsWith(sep) ? dir : dir + sep);
 
 // The three shapes one pair of directories is refused for.
@@ -547,21 +569,23 @@ async function main() {
     console.error(`${refused}\n\n${USAGE}`);
     process.exit(2);
   }
-  mkdirSync(scratchDir, { recursive: true });
-
-  const repos = readdirSync(corpusDir, { withFileTypes: true })
-    .filter((e) => e.isDirectory() && existsSync(join(corpusDir, e.name, ".git")))
-    .map((e) => ({ name: e.name, source: join(corpusDir, e.name) }))
-    .sort(byName);
+  const found = corpusRepos(corpusDir);
+  if (found.error) {
+    console.error(`${found.error}\n\n${USAGE}`);
+    process.exit(2);
+  }
   // This tool's own repository, last, because the acceptance has to include the
   // one repository whose map its authors read every day.
-  repos.push({ name: "anatomiya", source: resolve(HERE, "..") });
+  const repos = [...found.repos, { name: "anatomiya", source: resolve(HERE, "..") }];
 
   const selected = selectRepos(repos, opts.only);
   if (selected.error) {
     console.error(`${selected.error}\n\n${USAGE}`);
     process.exit(2);
   }
+  // Last, so a run refused for any of the reasons above leaves no directory
+  // behind it.
+  mkdirSync(scratchDir, { recursive: true });
 
   const rows = [];
   const problems = [];
