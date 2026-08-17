@@ -37,7 +37,7 @@ import { parseAll } from "../lib/parse.mjs";
 import { baseOf, dirOf, extOf, stemOf } from "../lib/paths.mjs";
 import { scan } from "../lib/scan.mjs";
 import { MAX_LINES, renderOverview, splitUncovered } from "../lib/render.mjs";
-import { namesakeVerb, plural, ROOT_LABEL } from "../lib/render-layout.mjs";
+import { namesakeClause, ROOT_LABEL } from "../lib/render-layout.mjs";
 import { readFacts, statedSide, writeFacts } from "../lib/facts.mjs";
 import { areaFilename, auditRules, knownNames, OVERVIEW_FILE } from "../lib/rules.mjs";
 import { encodePath } from "../lib/encode.mjs";
@@ -199,18 +199,6 @@ const RUNNER_LABELS = { cypress: "Cypress", rspec: "RSpec" };
 const runnerLabel = (runner) => RUNNER_LABELS[runner] ?? runner;
 const specNoun = (n, runner) =>
   runner === "test files" ? `test file${n === 1 ? "" : "s"}` : `${runnerLabel(runner)} spec${n === 1 ? "" : "s"}`;
-
-/**
- * The namesake clause as the section spells it, with the denominator nouned on
- * the tests line and bare on a root line.
- *
- * The verb comes off the renderer rather than a copy here: it was copied once,
- * the renderer took the singular for a count of one, and babel's true
- * `1 of 95 has a namesake test` was read back as a failure.
- */
-export const namesakeClause = ({ with: withTest, of, root }, noun = null) =>
-  `${withTest} of ${noun === null ? of : plural(of, noun)} ${namesakeVerb(withTest)} a namesake test` +
-  (root ? ` under ${pathLabel(root)}` : "");
 
 // --- the assertions ---------------------------------------------------------
 
