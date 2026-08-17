@@ -57,19 +57,18 @@ test("a file that kills the parser costs one file, not the run", async () => {
   });
 });
 
-test("a parse the wall clock killed is tried again before it is charged", async (t) => {
+test("a parse the wall clock killed is tried again before it is charged", async () => {
   // The flake A5 exists to stop: on a 35-repository run the same file was
   // charged as crashed in one scan and parsed in the next, and the unexamined
-  // count moved the always-loaded overview. A guard of 1ms kills every parse,
-  // so what is under test is the second attempt, not the first one's timing.
-  const was = GUARDS.timeoutMs;
-  GUARDS.timeoutMs = 1;
-  t.after(() => {
-    GUARDS.timeoutMs = was;
-  });
+  // count moved the always-loaded overview. A 1ms guard kills every parse of a
+  // file this large, so what is under test is the second attempt, not the
+  // first one's timing: a tiny file here raced the timer against a warm
+  // worker's sub-millisecond parse, and on a runner whose timers fire coarse
+  // the parse occasionally won. The body stays under the size cap.
+  const big = Array.from({ length: 30000 }, (_, i) => `export const s${i} = ${i}`).join("\n") + "\n";
 
-  await withPool({ size: 1 }, async (pool, dir) => {
-    const r = await pool.parse(file(dir, "slow.ts", "export const s = 1\n"));
+  await withPool({ size: 1, guards: { timeoutMs: 1 } }, async (pool, dir) => {
+    const r = await pool.parse(file(dir, "slow.ts", big));
 
     assert.equal(r.ok, false);
     assert.equal(r.crashed, true, "a file the pool never read is charged, not dropped");
