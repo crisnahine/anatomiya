@@ -10,7 +10,8 @@ it is an error with nothing after it rather than a silent run of all of them, an
 names a repository the corpus does not hold rather than a run of none. The scratch directory
 has to be empty and outside the corpus, either way round: the run clones into it and removes each
 clone by name, so an overlap is a write into the corpus or a removal of it, and both exit 2 before
-anything is made.
+anything is made. The overlap is asked lexically and then on both realpaths, so a scratch directory
+that reaches the corpus through a symlink is refused too.
 
 It is the sibling of `scripts/measure-layout.mjs` and deliberately not the same run: the
 layout harness imports `scan` and calls it in process, which never touches argument parsing, exit
