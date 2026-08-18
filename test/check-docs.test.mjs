@@ -174,3 +174,28 @@ test("the count of type-checked rows is read as a number even spelled as a word"
   assert.equal(status, 1);
   assert.match(output, /type-checked/);
 });
+
+test("a caveat code the walkthrough does not document fails", (t) => {
+  // The codes are a public surface as of `--format json`, and the one thing a
+  // reader cannot do is tell a code the table forgot from one that was never
+  // emitted.
+  const dir = repoCopy(t);
+  const path = join(dir, "docs", "how-it-works.md");
+  writeFileSync(path, readFileSync(path, "utf8").replace(/^\| `no-map` \|.*\n/m, ""));
+
+  const { status, output } = check(dir);
+
+  assert.equal(status, 1);
+  assert.match(output, /does not document the caveat code no-map/);
+});
+
+test("a documented code the report can never emit fails too", (t) => {
+  const dir = repoCopy(t);
+  const path = join(dir, "docs", "how-it-works.md");
+  writeFileSync(path, readFileSync(path, "utf8").replace("| `no-map` |", "| `no-map-at-all` |"));
+
+  const { status, output } = check(dir);
+
+  assert.equal(status, 1);
+  assert.match(output, /documents no-map-at-all, which is not a caveat code/);
+});

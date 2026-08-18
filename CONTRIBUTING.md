@@ -1,6 +1,6 @@
 # Contributing
 
-Read `DECISIONS.md` first. It is 107 numbered rows, each one a measurement or a review finding reduced
+Read `DECISIONS.md` first. It is 112 numbered rows, each one a measurement or a review finding reduced
 to the decision it forces on the code. It is the build contract, and most questions you will have
 about why something is shaped the way it is are answered there in one line.
 
@@ -112,15 +112,21 @@ superclass and need nothing, while `zone_aware_time` cannot tell Rails from plai
 
 Where the code goes:
 
-- `lib/dimensions.mjs` core JS and TS dimensions, plus the `ALL_DIMENSIONS` registry and
-  `dimensionsFor()`. A dimension not reachable from here does not ship, whichever file defines it
+- `lib/registry.mjs` the registry: `REGISTRY`, `REGISTRY_KEYS`, `rowsOfKind`, `rowsForLangs`,
+  `rowByKey`. Three lists are declared elsewhere and assembled here, and the load battery runs here
+  once over the union. A row not reachable from here does not ship, whichever file declares it. Ask
+  this module rather than spelling the union of the three lists yourself (C17)
+- `lib/dimensions.mjs` core JS and TS dimensions, the `ALL_DIMENSIONS` list, and `dimensionsFor()`,
+  which is the tree rows alone and the one view the parse worker reads
 - `lib/dimensions-extra.mjs` the rest of the JS and TS set
 - `lib/dimensions-jsx.mjs` the React surface, `langs: ["jsx"]` only
 - `lib/dimensions-ruby.mjs` Ruby, walking prism nodes through `walkRuby`
 - `lib/dimensions-rails.mjs` Rails schema and migrations, also prism
-- `lib/pairing.mjs` file-to-file obligations and the `PAIRINGS` registry. These are the one class not
-  reachable from `ALL_DIMENSIONS`, because the parse worker runs that list and an obligation has no
-  program to run against. `reduceArea` composes both registries
+- `lib/pairing.mjs` file-to-file obligations and the `PAIRINGS` list. These are the one class the
+  parse worker never runs, because it runs a program and an obligation has no program to run
+  against. `reduceArea` composes both
+- `lib/dimensions-naming.mjs` the learned rows, and `NAMING_CORPUS`, the filename row the reducer
+  composes off the corpus rather than off a tree
 
 The shape:
 
@@ -266,7 +272,9 @@ The row is one edit and the rest are scattered, two of them in files you have no
 order:
 
 1. `docs/dimension-intake.md` the intake row, before the code (G2, G3, G4). A review gate: nothing
-   writes it for you
+   writes it for you. It starts as `planned` and has to read `shipped` by the time the code does: the
+   checker reports a missing row and an unshipped row as two different things, and a key shipping
+   under a `planned` row is a decision nobody recorded
 2. `lib/dimensions.mjs`, or the file for the row's language, and the list that file exports. The
    key, the claim, the counter-claim or an explicit `null`, the precision, the applicability
    predicate
@@ -285,6 +293,15 @@ order:
 Then `node scripts/check-docs.mjs`. It lists every one of those it can see you have not reached, all
 of them in one run, with the move beside each. Two of them it will only ever report: the intake row
 and the counter pin are decisions, and a checker that wrote them would be deciding for you.
+
+Dropping a row runs the same list backwards, and one site fails harder than the rest. Delete the
+`lib/model-defaults.json` entry in the same change: the table is validated at load against the
+registry's keys, so an entry naming a key that no longer exists throws on every import of
+`lib/model-defaults.mjs`, which is every command. The intake row is the one site that stays: mark it
+`dropped` with the reason rather than deleting it, or the entry is proposed again next quarter (G4).
+Take the counter pin out of `ELIGIBLE` or `REFUSED`, take the witness pair out of
+`test/applicability.test.mjs`, and bring the counts in `README.md` and section 4 of
+`docs/how-it-works.md` down, which the checker fails on until you do.
 
 ## The bar a new dimension has to clear
 

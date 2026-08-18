@@ -21,6 +21,61 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   never call it. `--dry-run` prints the command and installs nothing, and on Windows that printed
   command is the whole answer: npm ships there as a batch file, running one needs a shell no
   subprocess here may use, so setup refuses and hands it over. Decisions B23 and F5.
+- `--format json` on `scan`, `check` and `pin`, and `--format github` on `check`. json prints the
+  same answer as a record, schema and caveat codes and all, so a CI job or another tool reads fields
+  rather than matching sentences nobody promised to keep; github prints one workflow command per
+  finding, MUST-FIX as an error, FIX as a warning and NIT as a notice, so a pull request shows each
+  one on the line it is about. The acceptance harness reads the record instead of regex-parsing
+  stdout, and the caveat codes are written down in `docs/how-it-works.md` section 8. Decision A20.
+- `npm run defaults:seed` writes an unmeasured `lib/model-defaults.json` entry for any registry key
+  that has none, so the table is seeded rather than hand-written. A seeded entry reads `none` and
+  fails open, which means the row keeps stating until somebody measures it. Decision A15.
+
+### Changed
+
+- `lib/registry.mjs` is the registry: the three declared row lists assembled once, the load battery
+  run once over the union, and `rowsOfKind`, `rowsForLangs`, `rowByKey` and `REGISTRY_KEYS` for the
+  readers that used to spell that union themselves, ten of them each spelling a different subset of
+  it. One key names one row. The parse worker still reaches `dimensionsFor` and nothing more, held
+  by a walk of the import graph rather than by convention. Decision C17.
+- The reducer and the check are the arbiters of which rows get a slot, so the registry no longer
+  refuses a framework row on a language the oxc worker parses and a framework row may live on
+  JavaScript. `adoptedCapabilities` is the one reader that selects through nothing, so a row may not
+  carry `framework` and `capability` at once: otherwise off-framework hits vote for the capability
+  rows the whole repository is then offered. Decisions C8 and C16.
+- Each command is one in-process entry answering with a record, and `bin/anatomiya.mjs` is argv,
+  calls, printing and exit codes. Deciding the map and putting it on disk are two calls, so the
+  caller that wanted the plan without creating anything no longer derives every rendered body a
+  second time, and every refusal fires while the plan is built rather than after it. The wording of
+  a printed line lives in one module, because four readers scrape those lines. Decision A19.
+- The check report is a record: a schema, 26 coded caveats and one encoder pass over the whole of
+  it, so no writer can be the one that missed a repository-controlled value, and the rules audit's
+  three fields ride the record rather than being folded into caveat prose. Decision A20.
+- Every engine declares its host, its module or command, its version floor and its remedy in one
+  table, one probe asks all of them, and a run that answered for no file names the engine that did
+  not answer instead of guessing at a missing interpreter. `facts.json` is schema 12 and carries
+  which engines answered. A blind run creates no `.claude` directory at all, having written nothing
+  into it. Decision B23.
+- One supervisor carries the spawn, the bounded stderr, the two clocks and the kill for all three
+  bridges: the parse pool, the Ruby stream and the type checker. Every number stays with the bridge
+  that measured it and only the shape is shared. Three hand-written copies of one battery had
+  drifted into three stderr caps that each overshot by a chunk, and one bridge holding a single
+  re-armed timeout where the other two held an idle window and a wall clock. A test fails a bridge
+  that guards a child of its own again. Decision B24.
+- One reader hands both the check and the baseline the content at a revision, in parallel and onto
+  one temporary tree. 80 of the 88 git processes a 40-file check spawned were `cat-file` waiting on
+  each other; the process count is unchanged and the run goes from about 2.1s to about 1.25s. The
+  base side is still read at the merge base, so nothing an agent edits moves the population it is
+  judged against. Decision E10.
+- `node scripts/check-docs.mjs` lists every site a new registry key has not reached, all of them in
+  one run with the move beside each. A row is one edit and its scaffolding is scattered, two sites of
+  it in files an author has no reason to open, so the list is the whole list rather than whichever
+  failure a run hit first. The counter pins live in one fixture. Two sites it will only ever report:
+  the intake row and the counter pin are decisions, and a checker that wrote them would be deciding
+  for you. Decisions G2 and C6.
+- The measurement scripts read the map's paths from the constants that own them instead of spelling
+  `.claude/rules` and `.claude/anatomiya` again, and a test fails a script under `scripts/` that
+  hardcodes either.
 
 ## [0.2.2] - 2026-08-18
 
