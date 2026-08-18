@@ -24,8 +24,8 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { isSource } from "../lib/corpus.mjs";
 import { language } from "../lib/langs.mjs";
-import { ALL_DIMENSIONS } from "../lib/dimensions.mjs";
-import { CLASSES, NAMING_CORPUS } from "../lib/dimensions-naming.mjs";
+import { CLASSES } from "../lib/dimensions-naming.mjs";
+import { rowByKey } from "../lib/registry.mjs";
 import { FACTS_PATH, FACTS_SCHEMA, statedSide } from "../lib/facts.mjs";
 import { PIN_PATH } from "../lib/baseline.mjs";
 import { MAX_LINES } from "../lib/render.mjs";
@@ -189,9 +189,7 @@ const PROBE_ROWS = ["file_naming_case", "extends_base", "class_base"];
 const OTHER_CLASS = { snake_case: "PascalCase", "kebab-case": "PascalCase", camelCase: "PascalCase", PascalCase: "snake_case" };
 const STEM = { camelCase: "zzProbeFile", PascalCase: "ZzProbeFile", "kebab-case": "zz-probe-file", snake_case: "zz_probe_file" };
 
-// Both halves of the registry: the filename row answers off the corpus and
-// never reaches the AST, so it lives outside `ALL_DIMENSIONS`.
-const langsOf = (key) => [...ALL_DIMENSIONS, ...NAMING_CORPUS].find((d) => d.key === key)?.langs ?? [];
+const langsOf = (key) => rowByKey(key)?.langs ?? [];
 
 /** The area's own commonest extension that the row speaks and a check opens. */
 function extFor(area, key) {
