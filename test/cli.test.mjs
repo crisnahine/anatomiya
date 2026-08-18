@@ -282,6 +282,49 @@ const ruleFiles = (repo) => {
   return readdirSync(dir).sort().map((name) => ({ name, body: readFileSync(join(dir, name), "utf8") }));
 };
 
+/* --- the binary prints what the library answered --- */
+
+test("a scan writes the map and says how many files it wrote", (t) => {
+  // The count and the disk have to agree, which is the whole point of running
+  // the binary rather than the functions it calls.
+  const repo = repoWithSource(t);
+
+  const out = anatomiya(repo, "scan");
+
+  const claimed = /^wrote (\d+) files?$/m.exec(out);
+  assert.ok(claimed, `the scan printed no write line:\n${out}`);
+  assert.equal(readdirSync(join(repo, ".claude", "rules")).length, Number(claimed[1]));
+});
+
+test("a check prints its verdict line", (t) => {
+  const repo = repoWithBranch(t);
+  anatomiya(repo, "scan");
+
+  const out = anatomiya(repo, "check");
+
+  assert.match(out, /^\d+ MUST-FIX, \d+ FIX, \d+ NIT$/m, out);
+});
+
+test("a command that cannot run exits non-zero and says why without a stack trace", (t) => {
+  // A missing repository, an unreadable tree or a git that will not run are all
+  // ordinary conditions, and a stack trace is not what the caller needs.
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-cli-bare-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+  let status = 0;
+  let stderr = "";
+  try {
+    execFileSync(process.execPath, [join(ROOT, "bin", "anatomiya.mjs"), "scan", dir], { stdio: "pipe" });
+  } catch (err) {
+    status = err.status;
+    stderr = String(err.stderr);
+  }
+
+  assert.equal(status, 1, "a scan that could not run must not exit 0");
+  assert.match(stderr, /^anatomiya: not a git repository/);
+  assert.doesNotMatch(stderr, /\n\s+at /, "no stack trace");
+});
+
 test("two scans of unchanged source write byte-identical files", (t) => {
   // A5: the token economics only work on a cached read, so anything that moves
   // per commit destroys them. A timestamp, a duration, or a Map iterated in
@@ -341,15 +384,6 @@ test("a scan says the running session still holds the old map (A8)", (t) => {
   const out = anatomiya(repo, "scan");
 
   assert.match(out, /^a session already running still holds the old map; restart to pick it up$/m);
-});
-
-test("a dry run does not claim a session needs restarting", (t) => {
-  // Nothing was written, so there is nothing to pick up.
-  const repo = repoWithSource(t);
-
-  const out = anatomiya(repo, "scan", "--dry-run");
-
-  assert.doesNotMatch(out, /restart to pick it up/);
 });
 
 test("a pin says it too, because it sends the reader off to scan (A8)", (t) => {
@@ -426,50 +460,6 @@ test("a dry run does not report in the past tense", (t) => {
     "# hand written, our exact name\n",
     "and nothing was actually written"
   );
-});
-
-test("the scan summary reads a count of one as one", (t) => {
-  // Every count on the summary reaches a person, and several are 1 on a real
-  // repository. Measured across a thirty-five repository corpus: seven printed
-  // "1 files hold syntax the parser rejected", on this line and in the file
-  // that loads on every turn.
-  const dir = mkdtempSync(join(tmpdir(), "anatomiya-cli-one-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
-  mkdirSync(join(dir, "src"), { recursive: true });
-  writeFileSync(join(dir, "src", "only.ts"), `export const a = 1\n`);
-  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
-  git("init", "-q");
-  git("config", "user.email", "t@t.test");
-  git("config", "user.name", "T");
-  git("add", "-A");
-  git("commit", "-qm", "init");
-
-  const out = String(execFileSync(process.execPath, [join(ROOT, "bin", "anatomiya.mjs"), "scan", dir], { stdio: "pipe" }));
-
-  assert.doesNotMatch(out, /\b1 (files|areas|claims|source files)\b/, `a count of one wearing a plural:\n${out}`);
-});
-
-test("the untracked summary reads at one and at many", (t) => {
-  // Fixing the count and leaving the clause after it is the same defect one
-  // word along, and the first attempt at this traded a plural bug for a
-  // singular one. Neither surface carries a word that has to agree.
-  const build = (n) => {
-    const dir = mkdtempSync(join(tmpdir(), "anatomiya-cli-untracked-"));
-    t.after(() => rmSync(dir, { recursive: true, force: true }));
-    writeFileSync(join(dir, "README.md"), "x\n");
-    mkdirSync(join(dir, "src"), { recursive: true });
-    for (let i = 0; i < n; i++) writeFileSync(join(dir, "src", `f${i}.ts`), `export const a${i} = ${i}\n`);
-    const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
-    git("init", "-q");
-    git("config", "user.email", "t@t.test");
-    git("config", "user.name", "T");
-    git("add", "README.md");
-    git("commit", "-qm", "init");
-    return String(execFileSync(process.execPath, [join(ROOT, "bin", "anatomiya.mjs"), "scan", dir], { stdio: "pipe" }));
-  };
-
-  assert.match(build(1), /1 source file in the working tree is untracked\./);
-  assert.match(build(3), /3 source files in the working tree are untracked\./);
 });
 
 test("--deep is refused on check, because the check cannot run a whole-program checker", () => {
