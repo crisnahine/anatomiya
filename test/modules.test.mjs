@@ -89,6 +89,19 @@ test("every bridge that runs a child takes the guards from the one supervisor", 
   assert.equal(reachedFrom("parse-worker.mjs", edges).has("child.mjs"), false);
 });
 
+test("the writers do not reach the pipeline that produced the record", () => {
+  // Three of the four readers of the old module wanted a writer or the caveat
+  // table and paid a parser, a git runner and the whole registry for it. The
+  // record is the only thing between the two halves, so the reach is the seam:
+  // a writer that reaches back into the pipeline has taken a second way to
+  // learn something the record already carries.
+  assert.deepEqual([...reachedFrom("check-report.mjs")].sort(), [
+    "check-report.mjs",
+    "encode.mjs",
+    "rules.mjs",
+  ]);
+});
+
 test("the parse worker does not reach the registry", () => {
   // The worker runs the tree rows off `dimensionsFor` and nothing else: an
   // obligation has no program to run against and a filename row answers off

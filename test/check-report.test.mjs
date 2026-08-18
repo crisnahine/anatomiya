@@ -6,15 +6,14 @@ import { join, dirname } from "node:path";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
+import { check, CHECK_SCHEMA } from "../lib/check.mjs";
 import {
-  check,
   encodeReport,
   formatReport,
   formatReportGithub,
   formatReportJson,
   CAVEATS,
-  CHECK_SCHEMA,
-} from "../lib/check.mjs";
+} from "../lib/check-report.mjs";
 import { writeFacts } from "../lib/facts.mjs";
 
 /**

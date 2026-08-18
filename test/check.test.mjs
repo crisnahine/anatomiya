@@ -10,7 +10,8 @@ import { fileURLToPath } from "node:url";
 import { installWithoutStripper, FLOW_SOURCE } from "./no-stripper.mjs";
 
 import { needsRuby } from "./ruby-available.mjs";
-import { check, severityFor, formatReport, unreadReason, unreadCode, CAVEATS } from "../lib/check.mjs";
+import { check, severityFor, unreadReason, unreadCode } from "../lib/check.mjs";
+import { formatReport, CAVEATS } from "../lib/check-report.mjs";
 import { scan } from "../lib/scan.mjs";
 import { writeMap } from "../lib/write.mjs";
 import { writeFacts } from "../lib/facts.mjs";
