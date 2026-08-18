@@ -155,3 +155,33 @@ test("namesakeIndex builds the stem map namesakeCompanions is handed", () => {
     { rel: "spec/models/foo_spec.rb", dir: "spec/models", bare: "models" },
   ]);
 });
+
+test("a flat repository still pairs its own top-level roots", () => {
+  // This repository's own shape: scripts/measure-layout.mjs is tested by
+  // test/measure-layout.test.mjs, and 8 of its 15 scripts pair that way. Both
+  // sides sit at the top of the tree, which is what separates this from the
+  // decoys above and from a package root answered by a repository-wide test/.
+  const scripts = [
+    file("scripts/measure-layout.mjs"),
+    file("scripts/seed-defaults.mjs"),
+    file("scripts/validate.mjs"),
+  ];
+  const tests = [file("test/measure-layout.test.mjs"), file("test/seed-defaults.test.mjs")];
+
+  assert.deepEqual(namesakeCompanions(scripts, tests, "scripts", namesakeIndex(tests)), {
+    with: 2,
+    of: 3,
+    root: "test",
+  });
+});
+
+test("a tree-word directory is the only shape an empty tail reaches", () => {
+  // The candidate's directory reduces to nothing, so it pairs. One carrying a
+  // real name of its own does not, however short that name is.
+  const source = [file("scripts/runner.mjs")];
+  const bare = [file("test/runner.test.mjs")];
+  const named = [file("test/vendor/runner.test.mjs")];
+
+  assert.equal(namesakeCompanions(source, bare, "scripts", namesakeIndex(bare)).with, 1);
+  assert.equal(namesakeCompanions(source, named, "scripts", namesakeIndex(named)).with, 0);
+});
