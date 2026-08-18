@@ -260,6 +260,32 @@ named a construct that is simply rare. The share is not what finds an under-coun
 cannot separate one from a rare construct, and the one under-count found so far was caught by a
 witness, on a row the share never flagged.
 
+### Every site the row has to reach
+
+The row is one edit and the rest are scattered, two of them in files you have no reason to open. In
+order:
+
+1. `docs/dimension-intake.md` the intake row, before the code (G2, G3, G4). A review gate: nothing
+   writes it for you
+2. `lib/dimensions.mjs`, or the file for the row's language, and the list that file exports. The
+   key, the claim, the counter-claim or an explicit `null`, the precision, the applicability
+   predicate
+3. `test/applicability.test.mjs` the witness pair: the sources your `sites` sentence says are
+   applicable, and the neighbouring construct that must not count
+4. the test file beside the one that declares the row: a conforming case, a violating case, and one
+   case that must not be counted at all
+5. `npm run defaults:seed` writes the key's entry in `lib/model-defaults.json`, seeded unmeasured.
+   It reads `none` and fails open, so the row keeps stating until somebody measures it
+6. `test/fixtures/counter-pins.mjs` the counter pin: `ELIGIBLE` where the row carries a
+   counter-claim, `REFUSED` where it refuses one, with the reason beside it. A review gate too (C6)
+7. `CHANGELOG.md` a line under `## [Unreleased]`
+8. `README.md` and section 4 of `docs/how-it-works.md`, which state how many rows ship and how many
+   speak each language
+
+Then `node scripts/check-docs.mjs`. It lists every one of those it can see you have not reached, all
+of them in one run, with the move beside each. Two of them it will only ever report: the intake row
+and the counter pin are decisions, and a checker that wrote them would be deciding for you.
+
 ## The bar a new dimension has to clear
 
 **A dimension is only worth shipping if repositories genuinely differ on it.**

@@ -1,7 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import * as reduce from "../lib/reduce.mjs";
-import { ALL_DIMENSIONS, assertRegistryRows } from "../lib/dimensions.mjs";
+import { assertRegistryRows } from "../lib/dimensions.mjs";
+import { REGISTRY } from "../lib/registry.mjs";
+import { ELIGIBLE, REFUSED } from "./fixtures/counter-pins.mjs";
 
 const { applyGates, verdictFor, blockedFor, GATES } = reduce;
 
@@ -711,53 +713,23 @@ test("one file may not hold the inverse over the bar by itself", () => {
 test("the counter-eligible set is pinned by name and every counter names what to write", () => {
   // The ban list is a safety decision, not a detection detail. Pinning the set
   // makes a dimension arriving with a counter, or a refused one gaining it in a
-  // refactor, cost a reviewed diff instead of being inherited.
+  // refactor, cost a reviewed diff instead of being inherited. The pin lives in
+  // `test/fixtures/counter-pins.mjs`, because `check-docs` reads the same two
+  // lists to tell an author which of them a new row still owes.
   //
   // Refusal is `null`, never an absent key: a dimension that simply never got
   // the field reads as refused, and the registry cannot tell the two apart.
-  const eligible = [
-    "function_style", "type_only_import", "import_extension", "test_call_style",
-    "assertion_style", "absent_is_null", "doc_comment_style",
-    "record_lookup", "model_callbacks", "service_result_shape",
-    "hook_call_style", "handler_is_named", "handler_memoised",
-  ];
-  const refused = [
-    "swallowed_error", "rescue_uses_error", "zone_aware_time", "non_null_assertion",
-    "optional_chaining", "nullish_default", "module_state_const", "keyword_params",
-    "explicit_return_type", "error_shape", "async_error_handling",
-    // `.forEach` cannot await, break, or return from the enclosing function.
-    // Stated as an area's convention, the check asked for an await loop to be
-    // rewritten into the classic bug.
-    "iterate_with_for_of",
-    "spread_on_component", "text_translated",
-    // The inverse reads "a call chain crosses several types", which as a
-    // directive asks an agent to reach through one object to another.
-    "law_of_demeter",
-    "migration_reversible", "migration_schema_only", "column_null_declared",
-    "table_primary_key_declared", "reference_foreign_key",
-    // The other side of a learned class is another class, which the learning
-    // already picks; a hand-written inverse would fight it.
-    "function_naming_case", "exported_symbol_case",
-    "extends_base", "class_base", "module_include",
-    "interface_prefix", "type_alias_prefix",
-    // "This repository logs to the console on purpose" is a repository with no
-    // wrapper, and there the row is not offered at all (C8): a counter would
-    // only ever state where a wrapper exists and is ignored, which is a defect.
-    "route_logging", "route_network", "route_env",
-    "logger_over_puts", "http_through_client",
-  ];
+  const carrying = REGISTRY.filter((d) => typeof d.counterClaim === "string").map((d) => d.key);
+  assert.deepEqual(carrying.slice().sort(), ELIGIBLE.slice().sort());
+  assert.equal(ELIGIBLE.length + REFUSED.length, REGISTRY.length, "a key escaped the classification");
 
-  const carrying = ALL_DIMENSIONS.filter((d) => typeof d.counterClaim === "string").map((d) => d.key);
-  assert.deepEqual(carrying.slice().sort(), eligible.slice().sort());
-  assert.equal(eligible.length + refused.length, ALL_DIMENSIONS.length, "a key escaped the classification");
-
-  for (const key of refused) {
-    const d = ALL_DIMENSIONS.find((x) => x.key === key);
+  for (const key of REFUSED) {
+    const d = REGISTRY.find((x) => x.key === key);
     assert.ok(d, `${key} left the registry`);
     assert.equal(d.counterClaim, null, `${key} may never state its inverse`);
   }
 
-  for (const d of ALL_DIMENSIONS.filter((x) => typeof x.counterClaim === "string")) {
+  for (const d of REGISTRY.filter((x) => typeof x.counterClaim === "string")) {
     assert.equal(typeof d.counterClaim, "string", d.key);
     assert.ok(d.counterClaim.trim().length > 0, d.key);
     assert.notEqual(d.counterClaim, d.claim, d.key);
