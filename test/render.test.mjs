@@ -6,6 +6,7 @@ import {
   renderOverview,
   unexaminedLines,
   unexaminedPhrase,
+  unreadLanguageFiles,
   untrackedSentence,
   OVERVIEW_AREAS,
   MAX_LINES,
@@ -445,6 +446,22 @@ test("the overview reports what the parser could not read", () => {
   // the reader's next move is to go and look at those files.
   assert.match(out, /^- 9 files hold syntax the parser rejected$/m);
   assert.match(out, /^- 3 files exceeded the size cap$/m);
+});
+
+test("unread language files sum per extension, ranked by count then name", () => {
+  // Two roots both hold some of a language's files, the way appsmith's Java
+  // backend and next.js's Rust workspace each spread across more than one
+  // directory.
+  const layout = {
+    roots: [
+      { exts: [[".java", 50], [".kt", 10]] },
+      { exts: [[".kt", 5], [".md", 900], [".go", 15]] },
+    ],
+  };
+
+  assert.deepEqual(unreadLanguageFiles(layout), [[".java", 50], [".go", 15], [".kt", 15]]);
+  assert.deepEqual(unreadLanguageFiles({ roots: [] }), []);
+  assert.deepEqual(unreadLanguageFiles(null), [], "an older record carries no layout");
 });
 
 test("a truncated scan names no area, because a truncated scan states nothing", () => {
@@ -1473,6 +1490,40 @@ test("the roster is byte-stable across two scans of unchanged source", () => {
   assert.equal(Buffer.compare(Buffer.from(first), Buffer.from(second)), 0);
 });
 
+test("the overview names a language it has no dimension for", () => {
+  // appsmith's app/server is 2,374 files, 2,077 of them .java, with a real
+  // JUnit suite, and the current map named none of it.
+  const layout = clientLayout({
+    roots: [root("app/server", { files: 2374, exts: [[".java", 2077], [".xml", 200]], other: 97 })],
+    more: { roots: 0, files: 0 },
+  });
+
+  const out = renderOverview(result({ layout }), { uncovered: 30 });
+
+  assert.match(out, /^- 2077 files hold a language this map does not read \(2077 \.java\)$/m);
+});
+
+test("an unread language sums across every directory that holds it", () => {
+  // next.js's Rust workspace is 1,016 .rs files split across crates/ and
+  // turbopack/crates/, and only the second directory's count ever printed.
+  const layout = clientLayout({
+    roots: [
+      root("crates", { files: 500, exts: [[".rs", 235], [".toml", 40]] }),
+      root("turbopack/crates", { files: 4447, exts: [[".js", 2194], [".rs", 781]], other: 1472 }),
+    ],
+    more: { roots: 0, files: 0 },
+  });
+
+  const out = renderOverview(result({ layout }), { uncovered: 30 });
+
+  assert.match(out, /^- 1016 files hold a language this map does not read \(1016 \.rs\)$/m);
+});
+
+test("a repository read in full carries no unread-language row", () => {
+  const out = renderOverview(result({ layout: clientLayout() }), { uncovered: 30 });
+  assert.doesNotMatch(out, /a language this map does not read/);
+});
+
 /* --- the scan summary's own layout line --- */
 
 test("the summary line says how many roots and test groups the layout counted", () => {
@@ -1825,17 +1876,54 @@ const kindsOf = () =>
     companions: { with: 0, of: 7, root: null },
   });
 
-test("an area whose paths list ate the budget describes nothing and delivers", () => {
+test("an area with no directive and a heavy paths list still says what it holds", () => {
+  // cal.diy's packages/app-store: 250 files, 38 exclusion lines, printed no
+  // kinds line and no roster line though the data exists and is counted in
+  // the summary.
+  const out = renderArea(
+    area({
+      globs: Array.from({ length: 35 }, (_, i) => glob(i)),
+      kinds: kindsOf(),
+      dimensions: [dim({ key: "c0", claim: "counted 0", states: null, directive: false, gate: "ratio" })],
+    })
+  );
+
+  assert.match(out, /^kinds: 7 \.tsx \(JSX\), 1 \.ts; 0 test files; 0 of 7 have a namesake test$/m);
+});
+
+test("the kinds line shares the floor with directives rather than sitting above it", () => {
+  // The same floor, not a bigger one: enough stated directives to fill it on
+  // their own still push the kinds line out, the way a fourth directive would.
+  const out = renderArea(
+    area({
+      globs: Array.from({ length: 35 }, (_, i) => glob(i)),
+      kinds: kindsOf(),
+      dimensions: [
+        dim({ key: "s0", claim: "stated 0" }),
+        dim({ key: "s1", claim: "stated 1" }),
+        dim({ key: "s2", claim: "stated 2" }),
+      ],
+    })
+  );
+
+  assert.match(out, /^stated 0$/m);
+  assert.match(out, /^stated 1$/m);
+  assert.doesNotMatch(out, /^stated 2$/m, "the third directive is what the floor ran out on");
+  assert.doesNotMatch(out, /^kinds:/m, "the kinds line gives way exactly where a fourth directive would");
+});
+
+test("an area whose paths list ate the budget still delivers its directive and its kinds line", () => {
   // The `paths` list is delivery and keeps every pattern, so the body floor can
-  // already run past the bound. A description of the area may not add to that.
+  // already run past the bound, and the kinds line takes that same floor now:
+  // it is what gives way last, not what gives way first.
   const out = renderArea(
     area({ globs: Array.from({ length: 30 }, (_, i) => glob(i)), kinds: kindsOf() })
   );
 
-  assert.ok(lineCount(out) <= MAX_LINES, `${lineCount(out)} lines is past the bound`);
+  assert.ok(lineCount(out) > MAX_LINES, "the routing overflows the bound, and that is allowed");
   assert.equal((out.match(/^ {2}- "/gm) || []).length, 30, "every glob is delivered");
   assert.match(out, /^catch blocks use the error they caught$/m, "the directive is delivered");
-  assert.doesNotMatch(out, /^kinds:/m, "the description is what there was no room for");
+  assert.match(out, /^kinds: 7 \.tsx \(JSX\), 1 \.ts; 0 test files; 0 of 7 have a namesake test$/m);
 });
 
 test("an area with room to spare still says what kinds of file it holds", () => {
