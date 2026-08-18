@@ -38,12 +38,17 @@ scan, pin and check on every commit.
 /plugin install anatomiya@crisnahine
 ```
 
-The scanner has two runtime dependencies, `oxc-parser` and `flow-remove-types`. Install them once
-in the plugin directory:
+`/plugin install` copies the files and does not install anything, and the scanner has two runtime
+dependencies, `oxc-parser` and `flow-remove-types`. Install them once:
 
 ```
-npm install --omit=dev
+/anatomiya:setup
 ```
+
+That runs `npm install` in the plugin's own directory, and it is the one command here that reaches
+the network: `/anatomiya:scan`, `/anatomiya:check` and `/anatomiya:pin` never call it. Outside
+Claude Code it is `node bin/anatomiya.mjs setup`. `/anatomiya:doctor` says which engines answered
+and what to do about one that did not.
 
 Or skip the plugin and run it from a clone:
 
@@ -237,17 +242,19 @@ agent's own output cannot raise the bar it is judged against. Gates and threshol
 [docs/how-it-works.md](docs/how-it-works.md); the reasons they sit where they sit are in
 [DECISIONS.md](DECISIONS.md).
 
-## The three commands
+## The commands
 
 | Command | What it does |
 |---|---|
 | `/anatomiya:scan` | Walks tracked source, counts every dimension per directory, applies the gates, rewrites the map, and reports what it could not cover: files in no area, files that failed to parse, files over the size cap, and any file in `.claude/rules/` it did not write. |
 | `/anatomiya:check` | Reports which stated conventions the branch broke, as MUST-FIX, FIX or NIT. The base side is the merge base; the side being judged is the working tree, so it answers before you commit. |
 | `/anatomiya:pin` | Accepts the current file population as the baseline the gates read, and prints which files enter and leave it. Without one, every claim is measured against the working tree and no finding can exceed FIX. |
+| `/anatomiya:doctor` | Says whether each engine this parses with is installed, with the version it answered and, for one that is not ready, what to do about it. Exits 0 either way. |
+| `/anatomiya:setup` | Installs the node-hosted engine's dependencies in the plugin's own directory. The one command here that reaches the network, and no other one runs it. |
 
-Every command takes `--format json`, which prints the same answer as a record rather than as lines,
-for a CI job or another tool to read. `check` also takes `--format github`, which prints one
-annotation per finding.
+The three that read a repository take `--format json`, which prints the same answer as a record
+rather than as lines, for a CI job or another tool to read. `check` also takes `--format github`,
+which prints one annotation per finding.
 
 `check` blocks nothing. MUST-FIX means the baseline population held zero violations of that claim,
 so this branch is the first. Severity caps at FIX whenever the map is stale, the predicate is
@@ -320,7 +327,7 @@ gate's second opinion. The full numbers and their caveats are in [docs/why.md](d
 
 ## Learn more
 
-- [DECISIONS.md](DECISIONS.md) is the build contract: 106 numbered decisions, each with the
+- [DECISIONS.md](DECISIONS.md) is the build contract: 107 numbered decisions, each with the
   measurement or the review finding that forced it. Why a threshold is where it is, why the parser
   runs in child processes, why there is no hook: that is the file.
 - [docs/why.md](docs/why.md) is the longer argument and the full numbers.

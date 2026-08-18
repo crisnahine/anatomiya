@@ -43,6 +43,17 @@ Run the scan and report what it found.
 
 If the scanner exits non-zero, show its output and stop. Do not guess at what it found.
 
+If it says a parser engine is not installed, run the readiness probe:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/bin/anatomiya.mjs" doctor
+```
+
+For the node-hosted engine, `node "${CLAUDE_PLUGIN_ROOT}/bin/anatomiya.mjs" setup` installs it.
+Tell the user first that setup runs npm in the plugin's own directory, which is the one command
+here that reaches the network. Any other engine carries its own remedy on its doctor line, and npm
+cannot install an interpreter. Then run the scan again.
+
 ### The type checker
 
 `--deep` adds the TypeScript checker. It is off by default because it was measured about 26x

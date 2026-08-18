@@ -6,6 +6,7 @@ import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
 
+import { needsPathControl, needsShebang } from "./platform.mjs";
 import { EXCLUDE_LINES } from "../lib/rules.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -535,4 +536,121 @@ test("a format nothing writes is refused, and the annotations are a check's", ()
   const wrongCommand = refused("scan", "--format", "github");
   assert.equal(wrongCommand.code, 2);
   assert.match(wrongCommand.stderr, /--format github is not a scan option/);
+});
+
+/* --- the two commands about this installation --- */
+
+/** The binary with no path argument, which is what doctor and setup take. */
+const cli = (...args) =>
+  execFileSync(process.execPath, [join(ROOT, "bin", "anatomiya.mjs"), ...args], {
+    stdio: "pipe",
+    encoding: "utf8",
+  });
+
+/** The same, from an install of the plugin, with a PATH of this test's choosing. */
+function runFrom(install, args, PATH) {
+  try {
+    return { code: 0, stdout: execFileSync(process.execPath, [join(install, "bin", "anatomiya.mjs"), ...args], {
+      stdio: "pipe",
+      encoding: "utf8",
+      env: { ...process.env, PATH },
+    }), stderr: "" };
+  } catch (err) {
+    return { code: err.status, stdout: String(err.stdout ?? ""), stderr: String(err.stderr ?? "") };
+  }
+}
+
+/** A directory on PATH holding one stub npm, so the install runs without reaching a registry. */
+function stubNpm(t, body) {
+  const bin = mkdtempSync(join(tmpdir(), "anatomiya-cli-npm-"));
+  t.after(() => rmSync(bin, { recursive: true, force: true }));
+  writeFileSync(join(bin, "npm"), body, { mode: 0o755 });
+  return bin;
+}
+
+test("doctor answers a line per engine and exits 0 whatever it found", () => {
+  // Exit 0 always: what it found is the report, and a non-zero exit would make
+  // a probe that says "ruby is not on PATH" indistinguishable from one that
+  // could not run.
+  const out = cli("doctor");
+
+  assert.match(out, /^oxc \d/m, out);
+  assert.match(out, /^flow-remove-types /m, out);
+  assert.match(out, /^prism /m, out);
+  assert.match(out, /^typescript /m, out);
+});
+
+test("setup --dry-run prints the command and installs nothing", () => {
+  const out = cli("setup", "--dry-run");
+
+  assert.match(out, /^would run npm install --omit=dev --ignore-scripts --no-audit --no-fund in /m, out);
+});
+
+test("setup runs npm in the plugin's own directory, with the arguments it printed", needsShebang, (t) => {
+  // `/plugin install` copies the files and does not run `npm install`, so this
+  // is the shape a marketplace user starts from. The stub stands in for npm:
+  // a test that runs the real one is a test that reaches the network.
+  const install = installWithoutDependencies(t);
+  const bin = stubNpm(t, "#!/bin/sh\nprintf '%s\\n' \"$@\" > npm-argv.txt\necho 'added 2 packages'\n");
+
+  const { code, stdout } = runFrom(install, ["setup"], bin);
+
+  assert.equal(code, 0, stdout);
+  assert.match(stdout, /^not installed: oxc, flow-remove-types$/m, stdout);
+  assert.match(stdout, /added 2 packages/, "npm's own words come back");
+  assert.deepEqual(
+    readFileSync(join(install, "npm-argv.txt"), "utf8").trim().split("\n"),
+    ["install", "--omit=dev", "--ignore-scripts", "--no-audit", "--no-fund"],
+    "the argv is what it said it would be, and it ran in the plugin's own directory"
+  );
+});
+
+test("a setup with no npm on PATH says the one thing that fixes it, and exits 2", needsPathControl, (t) => {
+  // npm cannot install itself, which is the same trap the Ruby remedy closed:
+  // the message has to name the thing that is actually missing.
+  const install = installWithoutDependencies(t);
+  const empty = mkdtempSync(join(tmpdir(), "anatomiya-cli-nonpm-"));
+  t.after(() => rmSync(empty, { recursive: true, force: true }));
+
+  const { code, stderr } = runFrom(install, ["setup"], empty);
+
+  assert.equal(code, 2);
+  assert.match(stderr, /^npm was not found; install Node\.js 22 with npm, then run setup again$/m, stderr);
+});
+
+test("a setup whose npm failed exits non-zero and shows what npm said", needsShebang, (t) => {
+  const install = installWithoutDependencies(t);
+  const bin = stubNpm(t, "#!/bin/sh\necho 'npm error code E404' >&2\nexit 1\n");
+
+  const { code, stderr } = runFrom(install, ["setup"], bin);
+
+  assert.equal(code, 2);
+  assert.match(stderr, /npm error code E404/, stderr);
+  assert.match(stderr, /failed/, stderr);
+});
+
+test("doctor and setup refuse the arguments they have no use for", () => {
+  // Same trade as --deep on a check: refused with the usage, rather than
+  // accepted and quietly not used.
+  const refused = (...args) => {
+    try {
+      cli(...args);
+      return { code: 0, stderr: "" };
+    } catch (err) {
+      return { code: err.status, stderr: String(err.stderr ?? "") };
+    }
+  };
+
+  for (const [args, message] of [
+    [["doctor", "--dry-run"], /--dry-run is not a doctor option/],
+    [["doctor", "--format", "json"], /--format json is not a doctor option/],
+    [["setup", "--format", "json"], /--format json is not a setup option/],
+    [["doctor", "."], /doctor takes no path/],
+    [["setup", "."], /setup takes no path/],
+  ]) {
+    const { code, stderr } = refused(...args);
+    assert.equal(code, 2, args.join(" "));
+    assert.match(stderr, message, args.join(" "));
+    assert.match(stderr, /usage: anatomiya scan/, `${args.join(" ")} prints the usage`);
+  }
 });
