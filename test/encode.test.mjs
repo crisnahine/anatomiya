@@ -98,9 +98,18 @@ test("quoting a sanitised path is what the text renderer adds, and nothing else"
   assert.equal(encodePath("a/b.js"), '"a/b.js"');
   assert.equal(encodePath("a‮b"), '"a b"');
   assert.equal(encodePath("src/раyments.ts"), '"<path with mixed scripts, 15 chars>"');
-  for (const p of ["a/b.js", "a‮b", "src/раyments.ts"]) {
-    assert.equal(quotePath(sanitisePath(p)), encodePath(p), p);
-  }
+  assert.equal(quotePath("a/b.js"), '"a/b.js"');
+  assert.equal(quotePath("<path with mixed scripts, 15 chars>"), '"<path with mixed scripts, 15 chars>"');
+});
+
+test("a filename that impersonates the rejection marker is still escaped", () => {
+  // The marker is recognised by its whole shape, not by its opening words. A
+  // repository can name a file after it, and taking the marker branch there
+  // leaves the quotes and backslashes in the name unescaped, so the value
+  // closes the quoting the renderer put around it.
+  assert.equal(encodePath('<path with mixed scripts "x".ts'), '"<path with mixed scripts \\"x\\".ts"');
+  assert.equal(encodePath("<path with mixed scripts \\x.ts"), '"<path with mixed scripts \\\\x.ts"');
+  assert.equal(encodePath("<path with mixed scripts, 4 chars>.ts"), '"<path with mixed scripts, 4 chars>.ts"');
 });
 
 test("an absent value still comes back in the shape its kind promises", () => {

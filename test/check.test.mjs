@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 import { installWithoutStripper, FLOW_SOURCE } from "./no-stripper.mjs";
 
 import { needsRuby } from "./ruby-available.mjs";
-import { check, severityFor, formatReport, unreadReason, CAVEATS } from "../lib/check.mjs";
+import { check, severityFor, formatReport, unreadReason, unreadCode, CAVEATS } from "../lib/check.mjs";
 import { scan } from "../lib/scan.mjs";
 import { writeMap } from "../lib/write.mjs";
 import { writeFacts } from "../lib/facts.mjs";
@@ -660,6 +660,10 @@ test("a file that crashed the parser is named apart from one it merely rejected"
     notes(r).some((m) => /crashed/.test(m)),
     `expected the crash to be named: ${notes(r).join(" | ")}`
   );
+  assert.ok(
+    r.caveats.some((c) => c.code === CAVEATS.HEAD_CRASHED),
+    `and named by its own code: ${JSON.stringify(r.caveats)}`
+  );
 });
 
 test("a file the parser rejected is named apart from one this tool could not read", async (t) => {
@@ -685,6 +689,12 @@ test("a file the parser rejected is named apart from one this tool could not rea
   assert.ok(
     notes(r).some((m) => /syntax/.test(m)),
     `expected the syntax cause to be named: ${notes(r).join(" | ")}`
+  );
+  // The code carries the same split the sentence does, or a reader that is not
+  // a human is back to matching "syntax" against a phrase nobody promised.
+  assert.ok(
+    r.caveats.some((c) => c.code === CAVEATS.HEAD_REJECTED),
+    `the branch's own code is not this tool crashing: ${JSON.stringify(r.caveats)}`
   );
 });
 
@@ -1568,6 +1578,27 @@ test("a file the check could not read names its own cause, in the singular", () 
   assert.equal(unreadReason({ kind: "oversize" }), "exceeded the size cap");
   assert.equal(unreadReason({ kind: "unreadable" }), "could not be parsed");
   assert.equal(unreadReason(null), "could not be parsed", "no record at all is the same as unreadable");
+});
+
+test("the four causes carry four codes, so nothing has to read the sentence", () => {
+  // The sentence above keeps them apart for a human. One code for all four put
+  // every other reader back to matching that prose, which is the substring
+  // match the codes exist to end.
+  const codes = [
+    unreadCode({ kind: "crashed" }),
+    unreadCode({ kind: "rejected" }),
+    unreadCode({ kind: "oversize" }),
+    unreadCode({ kind: "unreadable" }),
+  ];
+
+  assert.deepEqual(codes, [
+    CAVEATS.HEAD_CRASHED,
+    CAVEATS.HEAD_REJECTED,
+    CAVEATS.HEAD_OVERSIZE,
+    CAVEATS.HEAD_UNPARSED,
+  ]);
+  assert.equal(new Set(codes).size, 4, "four causes, four codes");
+  assert.equal(unreadCode(null), CAVEATS.HEAD_UNPARSED, "no record at all is the same as unreadable");
 });
 
 
