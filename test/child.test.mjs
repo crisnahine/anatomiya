@@ -120,6 +120,74 @@ test("a child that answers once and then goes quiet is killed by the idle clock"
   assert.equal(sup.killedBy(), "idle");
 });
 
+test("a child that keeps answering outlives the window between its answers", async () => {
+  // The re-arm is the whole idle clock. Armed once and never again, it is a
+  // wall clock wearing the other name, and a Ruby corpus that takes longer than
+  // one window dies mid-run with every file after the kill uncounted. Every
+  // stub in the suites that exercise this answers inside one window, so nothing
+  // else here can tell the two apart.
+  const path = child(
+    "steady",
+    "let n = 0\n" +
+      "const tick = () => {\n" +
+      "  process.send({ n: ++n })\n" +
+      "  if (n < 6) setTimeout(tick, 60)\n" +
+      "  else process.exit(0)\n" +
+      "}\n" +
+      "tick()\n"
+  );
+  const fired = [];
+  const sup = guardedChild({
+    kind: "fork",
+    modulePath: path,
+    stdio: STDIO,
+    stderrBytes: 2048,
+    idleMs: 150,
+    onTimeout: (reason) => fired.push(reason),
+  });
+
+  let answers = 0;
+  sup.child.on("message", () => {
+    answers++;
+    sup.touch();
+  });
+
+  const { code } = await closed(sup.child);
+  sup.settle();
+
+  assert.equal(answers, 6, "every answer arrived");
+  assert.deepEqual(fired, [], "a child still answering was never called idle");
+  assert.equal(sup.killedBy(), null);
+  assert.equal(code, 0);
+});
+
+test("a child under both clocks is killed by one of them and never by both", async () => {
+  // The Ruby bridge is the caller that arms both, and nothing armed the pair
+  // together: the clock that did not fire has to be dropped by the one that
+  // did, or the caller hears a second reason for a child that is already gone.
+  const path = child("both", "process.send({ answered: true })\nsetTimeout(() => {}, 60_000)\n");
+  const fired = [];
+  const sup = guardedChild({
+    kind: "fork",
+    modulePath: path,
+    stdio: STDIO,
+    stderrBytes: 2048,
+    idleMs: 120,
+    wallMs: 240,
+    onTimeout: (reason) => fired.push(reason),
+  });
+  sup.child.on("message", () => sup.touch());
+
+  await closed(sup.child);
+  // Past the wall clock, with the child already dead: the surviving timer is
+  // only visible after the window it would have fired in.
+  await new Promise((resolve) => setTimeout(resolve, 250));
+  sup.settle();
+
+  assert.deepEqual(fired, ["idle"]);
+  assert.equal(sup.killedBy(), "idle");
+});
+
 test("a spawn that found no interpreter is told apart from one that ran and failed", () => {
   // An interpreter that is not there is every file at once and an install
   // problem; anything else is one run that went wrong.
