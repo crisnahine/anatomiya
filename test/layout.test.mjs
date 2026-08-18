@@ -576,14 +576,14 @@ test("a root whose most common extension is not source still finds its producers
   const corpus = [
     ...files(5, (i) => file(`apps/www/img${i}.png`)),
     ...files(3, (i) => file(`apps/www/Page${i}.tsx`, "jsx")),
-    file("test/Page0.test.tsx", "jsx", { testRunner: "vitest" }),
-    file("test/Page1.test.tsx", "jsx", { testRunner: "vitest" }),
+    file("apps/www/test/Page0.test.tsx", "jsx", { testRunner: "vitest" }),
+    file("apps/www/test/Page1.test.tsx", "jsx", { testRunner: "vitest" }),
   ];
   const indexes = layoutIndexes(corpus);
   const record = rootFacts({ path: "apps/www", dir: "apps/www", files: corpus.slice(0, 8) }, indexes);
 
   assert.deepEqual(record.exts, [[".png", 5], [".tsx", 3]], "the printed line still leads with .png");
-  assert.deepEqual(record.companions, { with: 2, of: 3, root: "test" });
+  assert.deepEqual(record.companions, { with: 2, of: 3, root: "apps/www/test" });
 });
 
 test("a root whose top two extensions are both unparsed asks nothing", () => {
