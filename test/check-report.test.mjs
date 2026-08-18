@@ -349,3 +349,65 @@ test("what a reader would take for grammar is escaped, and the percent first", (
 test("a clean report is still an answer, not an empty file", () => {
   assert.equal(formatReportGithub(bare()), "::notice::0 MUST-FIX, 0 FIX, 0 NIT\n");
 });
+
+test("a caveat reaches the annotations carrying its code, so a degraded run cannot read as a clean one", () => {
+  const out = formatReportGithub(
+    bare({
+      caveats: [
+        { code: CAVEATS.NO_MAP, message: "no map on disk, so nothing was stated and nothing can be enforced" },
+        { code: CAVEATS.DIFF_UNREADABLE, message: "the diff against main could not be read" },
+      ],
+    })
+  );
+
+  assert.deepEqual(out.split("\n"), [
+    "::warning title=no-map::no map on disk, so nothing was stated and nothing can be enforced",
+    "::warning title=diff-unreadable::the diff against main could not be read",
+    "::notice::0 MUST-FIX, 0 FIX, 0 NIT",
+    "",
+  ]);
+});
+
+test("a capped run says which reason capped it", () => {
+  const out = formatReportGithub(bare({ stale: true, staleReason: "no baseline pinned" }));
+
+  assert.deepEqual(out.split("\n"), [
+    "::warning title=stale::severity capped at FIX: no baseline pinned",
+    "::notice::0 MUST-FIX, 0 FIX, 0 NIT",
+    "",
+  ]);
+});
+
+test("the rule files nobody here wrote are counted, since only the text writer lists them", () => {
+  const out = formatReportGithub(bare({ foreign: ["house.md", "team.md"], unknown: ["stale.md"] }));
+
+  assert.deepEqual(out.split("\n"), [
+    "::warning title=rules::2 file(s) in .claude/rules this tool did not write, " +
+      "1 the map on disk does not name",
+    "::notice::0 MUST-FIX, 0 FIX, 0 NIT",
+    "",
+  ]);
+});
+
+test("a rules directory holding nothing of either kind says nothing about it", () => {
+  assert.equal(formatReportGithub(bare()).includes("title=rules"), false);
+});
+
+test("a run against a repository with no map does not print as a clean one", async (t) => {
+  // The whole point of the writer: the text report says the map is absent, and
+  // a job reading annotations used to see `0 MUST-FIX, 0 FIX, 0 NIT` and stop.
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/a.ts", clean(2));
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/a.ts", clean(2) + swallow(1));
+    commit("swallow");
+  });
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.ok(
+    formatReportGithub(r).includes(`::warning title=${CAVEATS.NO_MAP}::`),
+    "the annotations never said the map was absent"
+  );
+});

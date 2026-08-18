@@ -862,8 +862,11 @@ One answer, three writers. Text is what the agent reads. `--format json` prints 
 schema and caveat codes and all, which is what the acceptance harness and a CI job read rather than
 matching sentences nobody promised to keep. `--format github` prints one workflow command per
 finding, MUST-FIX as an error, FIX as a warning and NIT as a notice, so a pull request shows each
-one on the line it is about. Every repository-controlled value goes through the encoder before any
-of the three sees it, and findings set the exit code in none of them.
+one on the line it is about; then a warning per caveat carrying its code, one for a capped run, and
+one counting the rule files nobody here wrote, because counts alone are what a run with no map and no
+readable diff prints and that reads exactly like a branch that broke nothing. Every
+repository-controlled value goes through the encoder before any of the three sees it, and findings
+set the exit code in none of them.
 
 `--format json` carries the record's own version, so a reader can refuse a shape it does not know
 rather than read fields positionally. It is the rule `facts.json` enforces on disk (C10), offered

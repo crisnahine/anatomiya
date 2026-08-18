@@ -436,6 +436,17 @@ jobs:
             console.log("schema", r.schema, "counts", JSON.stringify(r.counts));
           ' "$RUNNER_TEMP/check.json"
 
+      # The third writer, for the same reason: it is the one a pull-request job
+      # reads, and nothing else here had ever run it.
+      - name: Read the same check as annotations
+        shell: bash
+        run: |
+          cd "$RUNNER_TEMP/smoke"
+          node "$GITHUB_WORKSPACE/bin/anatomiya.mjs" check . --base "$SMOKE_REF" --format github \
+            > "$RUNNER_TEMP/check.github"
+          grep -qE "^::notice::[0-9]+ MUST-FIX, [0-9]+ FIX, [0-9]+ NIT$" "$RUNNER_TEMP/check.github" \
+            || { echo "::error::the annotations carry no counts line"; exit 1; }
+
       # The tier ships behind a flag, so nothing else in this workflow ever runs
       # it, and a leg that never runs is a leg that breaks quietly. One platform
       # is enough: the tier is Node and TypeScript, and the platform-specific
