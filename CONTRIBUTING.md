@@ -67,7 +67,9 @@ This is the rule that keeps the repository from drifting back into guesses.
 
 If you write code whose shape is not obvious from reading it, there must be a row in `DECISIONS.md`
 that says why, and the code comment should be a short version of that row rather than a pointer to
-it. Comments do not cite decision ids; git history carries provenance.
+it. A comment may end with the row's id in parentheses, `(F17)`, and `lib/` is full of them: an id
+here names this repository's own register rather than a ticket, and the row it points at is one file
+away. A ticket number, a PR number or a link to a conversation is none of that, and stays out.
 
 If there is no row yet, add one. A row needs three things:
 
@@ -290,9 +292,13 @@ order:
 8. `README.md` and section 4 of `docs/how-it-works.md`, which state how many rows ship and how many
    speak each language
 
-Then `node scripts/check-docs.mjs`. It lists every one of those it can see you have not reached, all
-of them in one run, with the move beside each. Two of them it will only ever report: the intake row
-and the counter pin are decisions, and a checker that wrote them would be deciding for you.
+Then `node scripts/check-docs.mjs`. It reaches four of the eight in one run, with the move beside
+each: the intake row, the model default, the counter pin, and the two counts. Two of those four it
+will only ever report rather than write: the intake row and the counter pin are decisions, and a
+checker that wrote them would be deciding for you. The witness pair is held elsewhere, by
+`test/applicability.test.mjs`, which fails on a shipped row that has none. The last two are held by
+nothing at all: the test beside the row's own file, and the changelog line. Those are on you and on
+whoever reviews it.
 
 Dropping a row runs the same list backwards, and one site fails harder than the rest. Delete the
 `lib/model-defaults.json` entry in the same change: the table is validated at load against the
