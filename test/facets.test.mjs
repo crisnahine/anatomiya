@@ -377,3 +377,72 @@ test("an ordinary call named like the DSL is not one, without a block", needsRub
   assert.equal(r.facets.testRunner, null);
   assert.equal(r.facets.testCalls, false);
 });
+
+test("an RSpec-named call with a block and no description is not a case", needsRuby, async (t) => {
+  // FactoryBot's own attribute block: `context { "tags" }` sets a column
+  // named `context` on a factory and never takes RSpec's description.
+  const dir = repo({
+    "spec/factories/taggings.rb": `FactoryBot.define do\n  factory :tagging do\n    context { "tags" }\n  end\nend\n`,
+  });
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+  const { records } = await parseAll(list(dir, ["spec/factories/taggings.rb"]));
+  const r = records.get("spec/factories/taggings.rb");
+
+  assert.equal(r.facets.testRunner, null);
+  assert.equal(r.facets.testCalls, false);
+});
+
+test("the declarative `test` macro inside a class body is minitest", needsRuby, async (t) => {
+  // ActiveSupport::Testing::Declarative, Rails's standard shape: no
+  // `def test_*`, no listed superclass, just the macro itself.
+  const dir = repo({
+    "app/models/concerns/testable.rb": `class ThingTest\n  test "does the thing" do\n    assert true\n  end\nend\n`,
+    "app/lib/bare_test_call.rb": `test "not inside anything" do\nend\n`,
+  });
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+  const rels = ["app/models/concerns/testable.rb", "app/lib/bare_test_call.rb"];
+  const { records } = await parseAll(list(dir, rels));
+
+  assert.equal(records.get("app/models/concerns/testable.rb").facets.testRunner, "minitest");
+  assert.equal(records.get("app/models/concerns/testable.rb").facets.testCalls, true);
+
+  const bare = records.get("app/lib/bare_test_call.rb").facets;
+  assert.equal(bare.testRunner, null, "the macro only reads as a case inside a class or module body");
+  assert.equal(bare.testCalls, false);
+});
+
+test("Beaker's `test_name` macro sets the runner", needsRuby, async (t) => {
+  const dir = repo({
+    "acceptance/tests/base/provision.rb": `test_name "provisions a node" do\n  step "installs the package"\nend\n`,
+  });
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+  const { records } = await parseAll(list(dir, ["acceptance/tests/base/provision.rb"]));
+  const r = records.get("acceptance/tests/base/provision.rb");
+
+  assert.equal(r.facets.testRunner, "beaker");
+  assert.equal(r.facets.testCalls, true);
+});
+
+test("minitestByPath only trusts a top-level test tree", needsRuby, async (t) => {
+  // Homebrew's whole app lives under Library/Homebrew, and a `def test_each`
+  // three directories under ITS `test/` is an RSpec helper, not minitest.
+  const dir = repo({
+    "Library/Homebrew/test/support/helper/test_each.rb": `module Test\n  module Helper\n    module TestEach\n      def test_each\n      end\n    end\n  end\nend\n`,
+    "test/support_helper.rb": `module SupportHelper\n  def test_shared_case\n  end\nend\n`,
+  });
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+  const rels = ["Library/Homebrew/test/support/helper/test_each.rb", "test/support_helper.rb"];
+  const { records } = await parseAll(list(dir, rels));
+
+  const nested = records.get("Library/Homebrew/test/support/helper/test_each.rb").facets;
+  assert.equal(nested.testRunner, null, "test/ three directories under the app's own root is not the tree's top");
+  assert.equal(nested.testCalls, false);
+
+  const shallow = records.get("test/support_helper.rb").facets;
+  assert.equal(shallow.testRunner, "minitest", "a def test_* directly under the tree's own top is still minitest");
+  assert.equal(shallow.testCalls, true);
+});
