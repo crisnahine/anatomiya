@@ -7,8 +7,8 @@
  * a checksum somebody remembered to run.
  *
  * Arm A gets the generated rule files and the pin. Arm B gets neither, and
- * getting that wrong is the whole experiment: a stale `.claude/rules/` left in
- * B measures nothing, twice.
+ * getting that wrong is the whole experiment: a stale copy of the rules
+ * directory left in B measures nothing, twice.
  */
 import { mkdtempSync, rmSync, cpSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -16,6 +16,8 @@ import { join } from "node:path";
 
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+
+import { RULES_DIR, STORE_DIR } from "../../lib/rules.mjs";
 
 const run = promisify(execFile);
 
@@ -77,7 +79,7 @@ export async function buildArms(repo, sha, { workdir = tmpdir() } = {}) {
  * every gate reads.
  */
 export function installMap(source, arm) {
-  for (const rel of [".claude/rules", ".claude/anatomiya"]) {
+  for (const rel of [RULES_DIR, STORE_DIR]) {
     const from = join(source, rel);
     if (existsSync(from)) cpSync(from, join(arm, rel), { recursive: true });
   }

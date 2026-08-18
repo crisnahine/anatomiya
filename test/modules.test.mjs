@@ -176,3 +176,16 @@ test("a roster name is taken from the module that defines it and from no other",
 
   assert.deepEqual(wrong, []);
 });
+
+test("no file under scripts/ hardcodes the rules or store directory instead of importing it", () => {
+  // A comment cannot import a constant: the only file left here names
+  // `.claude/rules/` in a prose aside about a past bash-output miscount.
+  const EXEMPT = new Set(["scripts/measure-delivery.mjs"]);
+  const offenders = [];
+  for (const rel of sourceFiles().filter((f) => f.split(/[\\/]/)[0] === "scripts")) {
+    if (EXEMPT.has(rel)) continue;
+    const src = readFileSync(join(LIB, "..", rel), "utf8");
+    if (src.includes(".claude/rules") || src.includes(".claude/anatomiya")) offenders.push(rel);
+  }
+  assert.deepEqual(offenders, []);
+});

@@ -24,6 +24,7 @@ import { scoreFile } from "./ab/score.mjs";
 import { readingFor } from "./ab/read.mjs";
 import { repoLabel } from "./ab/label.mjs";
 import { language } from "../lib/langs.mjs";
+import { FACTS_PATH } from "../lib/facts.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -76,7 +77,7 @@ execFileSync(process.execPath, [bin, "pin", args.repo], { stdio: "inherit" });
 execFileSync(process.execPath, [bin, "scan", args.repo], { stdio: "inherit" });
 
 // 2. Where the arms could differ at all.
-const facts = JSON.parse(readFileSync(join(args.repo, ".claude/anatomiya/facts.json"), "utf8"));
+const facts = JSON.parse(readFileSync(join(args.repo, FACTS_PATH), "utf8"));
 // A named target measures the claim the experiment is about; the ranking is
 // the default for when the question is only "where is there headroom".
 const ranked = rankAreas(facts).filter(
