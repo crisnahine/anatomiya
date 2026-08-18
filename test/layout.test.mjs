@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import { namesakeCompanions, namesakeIndex } from "../lib/companions.mjs";
 import {
+  isStoryFile,
   isTestFile,
   layoutFacts,
   layoutIndexes,
@@ -784,6 +785,61 @@ test("a file the parse never read is no sibling module", () => {
     f.facets === null ? { ...f, facets: { jsx: false, inlineHelpers: 0 } } : f);
 
   assert.equal(layoutFacts(read, { minFiles: 3 }).roots[0].helpers.siblingModules, 2);
+});
+
+test("a story file is neither a producer, even where its extension leads", () => {
+  // storybook's own component-shaped files split by incidental syntax: a
+  // `.stories.tsx` reads as literal JSX like any component beside it.
+  const corpus = [
+    ...files(3, (i) => file(`ui/C${i}.tsx`, "jsx", { jsx: true, inlineHelpers: 0 })),
+    file("ui/C0.stories.tsx", "jsx", { jsx: true, inlineHelpers: 0 }),
+    file("spec/C0.test.tsx", "jsx", { testRunner: "vitest" }),
+  ];
+  const indexes = layoutIndexes(corpus);
+  const record = rootFacts({ path: "ui", dir: "ui", files: corpus.slice(0, 4) }, indexes);
+
+  assert.equal(record.companions.of, 3, "the story file is not counted among the producers");
+});
+
+test("a story file is no sibling module either, whatever its incidental syntax", () => {
+  // storybook's own overview read "2559 sibling modules named
+  // index/types/input.stories", filing its own fixture convention beside
+  // private helper functions.
+  const corpus = [
+    file("ui/Button.tsx", "jsx", { jsx: true, inlineHelpers: 0 }),
+    file("ui/Button.stories.ts", "js", { jsx: false, inlineHelpers: 0 }),
+    file("ui/utils.ts", "js", { jsx: false, inlineHelpers: 0 }),
+  ];
+  const indexes = layoutIndexes(corpus);
+  const record = rootFacts({ path: "ui", dir: "ui", files: corpus }, indexes);
+
+  assert.equal(record.helpers.siblingModules, 1);
+  assert.deepEqual(record.helpers.stems, ["utils"]);
+});
+
+test("a root's story files are counted and named as their own kind", () => {
+  const corpus = [
+    file("ui/Button.tsx", "jsx", { jsx: true, inlineHelpers: 0 }),
+    file("ui/Button.stories.tsx", "jsx", { jsx: true, inlineHelpers: 0 }),
+    file("ui/Button.stories.ts", "js", { jsx: false, inlineHelpers: 0 }),
+  ];
+  const record = rootFacts({ path: "ui", dir: "ui", files: corpus }, layoutIndexes(corpus));
+
+  assert.equal(record.stories, 2);
+});
+
+test("a root with no story files carries no stories count", () => {
+  const corpus = [file("ui/Button.tsx", "jsx", { jsx: true, inlineHelpers: 0 })];
+
+  assert.equal("stories" in rootFacts({ path: "ui", dir: "ui", files: corpus }, layoutIndexes(corpus)), false);
+});
+
+test("a hyphenated story-like name is not the story convention", () => {
+  // Component Story Format is dotted: `Button.stories.tsx`. A file that
+  // merely mentions "stories" is an ordinary module.
+  assert.equal(isStoryFile("ui/stories-index.ts"), false);
+  assert.equal(isStoryFile("ui/Button.stories.tsx"), true);
+  assert.equal(isStoryFile("ui/Button.stories.mdx"), true);
 });
 
 test("a namesake whose root is the repository root names no directory", () => {
