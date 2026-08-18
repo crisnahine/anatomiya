@@ -175,13 +175,34 @@ test("a flat repository still pairs its own top-level roots", () => {
   });
 });
 
-test("a tree-word directory is the only shape an empty tail reaches", () => {
-  // The candidate's directory reduces to nothing, so it pairs. One carrying a
-  // real name of its own does not, however short that name is.
-  const source = [file("scripts/runner.mjs")];
-  const bare = [file("test/runner.test.mjs")];
-  const named = [file("test/vendor/runner.test.mjs")];
+test("a top-level test tree pairs however it files its tests inside itself", () => {
+  // Splitting tests by type under the test root is ordinary: test/unit,
+  // test/integration. `unit` is nobody's tree word, so requiring the candidate's
+  // own directory to reduce to nothing refused a real pair. What both sides
+  // share is the top of the tree, not the shape below it.
+  const source = [file("scripts/build.mjs"), file("scripts/deploy.mjs"), file("scripts/release.mjs")];
+  const typed = [file("test/unit/build.test.mjs"), file("test/unit/deploy.test.mjs")];
 
-  assert.equal(namesakeCompanions(source, bare, "scripts", namesakeIndex(bare)).with, 1);
-  assert.equal(namesakeCompanions(source, named, "scripts", namesakeIndex(named)).with, 0);
+  assert.equal(namesakeCompanions(source, typed, "scripts", namesakeIndex(typed)).with, 2);
+});
+
+test("a top-level pair still has to be written in the same language", () => {
+  // plots2 credited a 17-line WebSocket consumer with a server-side Ruby spec.
+  // The nested path never had to ask, since the directories part first; two
+  // files at the top of the tree share a stem and nothing else.
+  const source = [file("scripts/release.mjs")];
+  const other = [file("test/release_spec.rb")];
+  const same = [file("test/release.test.mjs")];
+
+  assert.equal(namesakeCompanions(source, other, "scripts", namesakeIndex(other)).with, 0);
+  assert.equal(namesakeCompanions(source, same, "scripts", namesakeIndex(same)).with, 1);
+});
+
+test("a test tree nested inside a package does not answer a top-level file", () => {
+  // The producer is at the top of the tree, so the candidate has to be too: a
+  // package's own test directory answers that package, not the repository root.
+  const source = [file("scripts/runner.mjs")];
+  const packaged = [file("packages/tool/test/runner.test.mjs")];
+
+  assert.equal(namesakeCompanions(source, packaged, "scripts", namesakeIndex(packaged)).with, 0);
 });

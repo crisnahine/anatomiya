@@ -1540,6 +1540,20 @@ test("a repository read in full carries no unread-language row", () => {
   assert.doesNotMatch(out, /a language this map does not read/);
 });
 
+test("files dropped as generated are named, since nothing else in the map says they exist", () => {
+  // `collect` drops them before anything counts, so without this row a reader
+  // who knows the directory is there sees a map that has never heard of it.
+  const dropped = { denied: 0, excluded: 0, escaped: 0, notSource: 0, generated: 24 };
+  const out = renderOverview(result({ corpus: { dropped } }), { uncovered: 30 });
+
+  assert.match(out, /^- 24 files say a generator wrote them, so nothing here is counted from them$/m);
+  assert.doesNotMatch(
+    renderOverview(result({}), { uncovered: 30 }),
+    /say a generator wrote them/,
+    "a repository with none carries no row"
+  );
+});
+
 /* --- the scan summary's own layout line --- */
 
 test("the summary line says how many roots and test groups the layout counted", () => {

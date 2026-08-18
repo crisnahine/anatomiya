@@ -466,6 +466,24 @@ test("a flat corpus learns the identical root and hits it always did", () => {
   ]));
 });
 
+test("a package's spec cannot answer the obligation of a model at the repository root", () => {
+  // The root is a package too, the one everything not inside another belongs
+  // to. Restricting only the named prefixes left it able to see every spec in
+  // the repository, so a nested package's spec of the same basename satisfied
+  // a root-level model that has none of its own.
+  const corpus = new Set([
+    "app/models/foo.rb",
+    "app/models/bar.rb",
+    "packages/x/app/models/foo.rb",
+    "packages/x/spec/models/foo_spec.rb",
+  ]);
+
+  const hits = pairingHits(corpus, MODEL_SPEC);
+
+  assert.deepEqual(hits.get("app/models/foo.rb"), [{ conforming: false, elsewhere: true }]);
+  assert.deepEqual(hits.get("packages/x/app/models/foo.rb"), [{ conforming: true, elsewhere: false }]);
+});
+
 test("a changed producer inside a package owes a companion inside that same package", () => {
   const changed = ["decidim-core/app/models/decidim/new_thing.rb"];
   const corpus = new Set([
