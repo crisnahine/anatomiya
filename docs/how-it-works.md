@@ -235,7 +235,7 @@ an idle window and a wall clock.
 
 ## 4. Dimensions and the three numbers
 
-A dimension is one claim about one area. 46 ship, the filename row included: 25 for JavaScript, 30 reachable in JSX, and 16 that speak Ruby, plus the one type-checked row, which sits in the total and reaches a scan only with --deep. Each
+A dimension is one claim about one area. 48 ship, the filename row included: 27 for JavaScript, 32 reachable in JSX, and 16 that speak Ruby, plus the one type-checked row, which sits in the total and reaches a scan only with --deep. Each
 is defined by three quantities, not one.
 
 | Quantity | Meaning |
@@ -293,6 +293,8 @@ in `check`.
 | `reference_foreign_key` | partial | ruby | reference columns declare their foreign key |
 | `function_naming_case` | precise | js, jsx | functions are named `<style>`, learned |
 | `exported_symbol_case` | precise | js, jsx | exported names are `<style>`, learned |
+| `exported_class_case` | precise | js, jsx | exported classes are named `<style>`, learned |
+| `exported_type_case` | precise | js, jsx | exported types are named `<style>`, learned |
 | `extends_base` | precise | js, jsx | classes here extend `<style>`, learned |
 | `interface_prefix` | precise | js, jsx | interfaces are named with a `<style>` prefix, learned |
 | `type_alias_prefix` | precise | js, jsx | type aliases are named with a `<style>` prefix, learned |
@@ -305,7 +307,7 @@ in `check`.
 | `class_base` | precise | ruby | classes here inherit `<style>`, learned |
 | `module_include` | precise | ruby | classes here include `<style>`, learned |
 
-The five JSX rows are the ones that make the JSX total 30 rather than 25: a `.tsx` or `.jsx` file is
+The five JSX rows are the ones that make the JSX total 32 rather than 27: a `.tsx` or `.jsx` file is
 counted by every `js` dimension as well as these. The five migration rows are Rails and count as
 Ruby, which is what takes Ruby from 11 to 16.
 

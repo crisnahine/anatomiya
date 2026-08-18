@@ -503,15 +503,31 @@
   "exported_symbol_case": {
     "default": "none",
     "provenance": {
-      "method": "measured",
-      "model": "claude-opus-5",
-      "date": "2026-08-16",
-      "samples": 12,
-      "sideCounts": null,
-      "classCounts": {
-        "PascalCase": 22,
-        "camelCase": 10
-      }
+      "method": "seed",
+      "model": null,
+      "date": null,
+      "samples": null,
+      "sideCounts": null
+    }
+  },
+  "exported_class_case": {
+    "default": "none",
+    "provenance": {
+      "method": "seed",
+      "model": null,
+      "date": null,
+      "samples": null,
+      "sideCounts": null
+    }
+  },
+  "exported_type_case": {
+    "default": "none",
+    "provenance": {
+      "method": "seed",
+      "model": null,
+      "date": null,
+      "samples": null,
+      "sideCounts": null
     }
   },
   "extends_base": {
