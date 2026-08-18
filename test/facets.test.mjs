@@ -279,9 +279,9 @@ test("an import alone does not set the test runner without a declared case", asy
 /**
  * Every base class that makes a Ruby file minitest, spelled out for the same
  * reason `RUNNER_TABLE` is: an expectation read from the table agrees with it
- * by construction. Six because Rails ships six, and the three beyond
- * `Minitest::Test` and the two the spec named are what a controller, a job and
- * a mailer test inherit in the corpus.
+ * by construction. Twelve: beside `Minitest::Test` and `ActiveSupport::TestCase`,
+ * an integration, controller, job, mailer, view and system test each name
+ * their own, and so do ActionCable's three and ActionMailbox's.
  */
 const MINITEST_TABLE = [
   "Minitest::Test",
@@ -290,6 +290,12 @@ const MINITEST_TABLE = [
   "ActionController::TestCase",
   "ActiveJob::TestCase",
   "ActionMailer::TestCase",
+  "ActionView::TestCase",
+  "ActionDispatch::SystemTestCase",
+  "ActionCable::TestCase",
+  "ActionCable::Channel::TestCase",
+  "ActionCable::Connection::TestCase",
+  "ActionMailbox::TestCase",
 ];
 
 test("every minitest base class the table names is read off a real class", needsRuby, async (t) => {
