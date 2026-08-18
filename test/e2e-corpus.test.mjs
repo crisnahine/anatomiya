@@ -6,6 +6,7 @@ import { join } from "node:path";
 
 import { needsPosixSeparators } from "./platform.mjs";
 import { FACTS_PATH, FACTS_SCHEMA } from "../lib/facts.mjs";
+import { scanJson, scanSummary } from "../lib/summary.mjs";
 import {
   COLUMNS,
   areaProblems,
@@ -68,6 +69,32 @@ test("the harness reads the fields the scan's record answers", () => {
   assert.equal(rootsPrinted(s), 7);
   assert.equal(rootsPrinted({ layoutLine: null }), null);
   assert.equal(readJson("wrote 33 files"), null, "a run that printed lines is not a record");
+});
+
+test("the record the scan really writes answers every field the harness reads", () => {
+  // The fixture above is hand-written, so a renamed field would go red in
+  // `summary.test.mjs` and quietly start reporting "no claims" here, on a run
+  // nobody watches. Through the writer, so what is read is what a scan prints.
+  const record = readJson(
+    scanJson(
+      scanSummary(
+        {
+          root: "/repo",
+          durationMs: 12,
+          corpus: { files: 40, untracked: 0, truncated: false },
+          areas: [{ path: "src", dimensions: [] }],
+          layout: { truncated: false, roots: ["."], more: { roots: 0 }, tests: [] },
+          baseline: { status: "unpinned", sha: null, countsOnly: true, baseRef: null, drift: null },
+          parse: { crashed: 0, failed: 0, syntaxErrors: 0, skipped: 0, missingStripper: false },
+          authors: { error: null },
+        },
+        { write: ["anatomiya-overview.md"], remove: [], foreign: [], unknown: [], replaced: [],
+          unreadableRules: [], listed: true, uncovered: 0, orphaned: 0, unreadable: [] }
+      )
+    )
+  );
+
+  assert.deepEqual(summaryProblems(record), []);
 });
 
 test("a record missing a field says which field, rather than reading as zero", () => {

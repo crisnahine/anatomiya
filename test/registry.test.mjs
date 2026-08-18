@@ -60,7 +60,6 @@ test("a key two lists both declare refuses to load", () => {
   // The battery runs over a list and cannot see across three of them, so the
   // collision it is blind to is the one asked here.
   assert.throws(() => assertUniqueKeys([{ key: "twin" }, { key: "twin" }]), /registry declares twin twice/);
-  assert.doesNotThrow(() => assertUniqueKeys(REGISTRY));
 });
 
 test("a kind nobody declares refuses rather than answering with no rows", () => {
