@@ -228,20 +228,25 @@ const WITNESSES = {
   },
   exported_symbol_case: {
     lang: "js",
-    applicable: [`export function fooBar() {}`, `export const my_thing = 1`, `export const doThing = () => {}`],
-    // A class and a type declaration are the other two rows' sites; a default
-    // export and a renaming specifier are nobody's.
+    applicable: [
+      `export function fooBar() {}`,
+      `export const my_thing = 1`,
+      `export const doThing = () => {}`,
+      `export default function fooBar() {}`,
+    ],
+    // A class and a type declaration are the other two rows' sites; an
+    // anonymous default export and a renaming specifier are nobody's.
     inapplicable: [
       `export class OrderList {}`,
       `export type UserShape = { id: string }`,
-      `export default function fooBar() {}`,
+      `export default function () {}`,
       `const plain = 1; export { plain as renamedThing }`,
     ],
   },
   exported_class_case: {
     lang: "js",
-    applicable: [`export class OrderList {}`, `export const Foo = class {}`],
-    inapplicable: [`export function fooBar() {}`, `export default class Foo {}`],
+    applicable: [`export class OrderList {}`, `export const Foo = class {}`, `export default class Foo {}`],
+    inapplicable: [`export function fooBar() {}`, `export default class {}`],
   },
   exported_type_case: {
     lang: "js",
