@@ -245,6 +245,10 @@ agent's own output cannot raise the bar it is judged against. Gates and threshol
 | `/anatomiya:check` | Reports which stated conventions the branch broke, as MUST-FIX, FIX or NIT. The base side is the merge base; the side being judged is the working tree, so it answers before you commit. |
 | `/anatomiya:pin` | Accepts the current file population as the baseline the gates read, and prints which files enter and leave it. Without one, every claim is measured against the working tree and no finding can exceed FIX. |
 
+Every command takes `--format json`, which prints the same answer as a record rather than as lines,
+for a CI job or another tool to read. `check` also takes `--format github`, which prints one
+annotation per finding.
+
 `check` blocks nothing. MUST-FIX means the baseline population held zero violations of that claim,
 so this branch is the first. Severity caps at FIX whenever the map is stale, the predicate is
 partial, or there was no merge base, so a clean run under a cap is a weaker signal rather than a

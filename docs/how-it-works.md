@@ -844,6 +844,13 @@ at all, since the first is the branch's own code and the second is this tool. An
 is asked only where the corpus shows that framework, read from the corpus rather than from the map,
 because the check runs on repositories that have no map at all.
 
+One answer, three writers. Text is what the agent reads. `--format json` prints the record itself,
+schema and caveat codes and all, which is what the acceptance harness and a CI job read rather than
+matching sentences nobody promised to keep. `--format github` prints one workflow command per
+finding, MUST-FIX as an error, FIX as a warning and NIT as a notice, so a pull request shows each
+one on the line it is about. Every repository-controlled value goes through the encoder before any
+of the three sees it, and findings set the exit code in none of them.
+
 ## 9. Predicting your own result
 
 Roughly, in order of how much they move the number of stated claims:

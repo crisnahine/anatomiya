@@ -1,16 +1,20 @@
 #!/usr/bin/env node
 import { runCheck, runPin, runScan } from "../lib/commands.mjs";
-import { pinLines, scanLines } from "../lib/summary.mjs";
-import { formatReport } from "../lib/check.mjs";
+import { pinJson, pinLines, scanJson, scanLines } from "../lib/summary.mjs";
+import { formatReport, formatReportGithub, formatReportJson } from "../lib/check.mjs";
 
 const USAGE = [
-  "usage: anatomiya scan  [path] [--dry-run] [--deep]",
-  "       anatomiya check [path] [--base <ref>]",
-  "       anatomiya pin   [path] [--dry-run]",
+  "usage: anatomiya scan  [path] [--dry-run] [--deep] [--format <name>]",
+  "       anatomiya check [path] [--base <ref>] [--format <name>]",
+  "       anatomiya pin   [path] [--dry-run] [--format <name>]",
   "",
   "--deep adds the typescript checker to a scan: about 26x slower, and it needs",
   "the optional typescript dependency. It is a scan option only, because the",
   "checker is whole-program and a check would have to build the corpus twice.",
+  "",
+  "--format is text by default. json prints the same answer as a record, for a",
+  "reader that is not a terminal. github prints one annotation per finding and",
+  "is a check option only, since nothing else here has findings.",
   "",
   "[path] picks the repository, not a subtree: every command covers the whole",
   "repository the path is in, and scan prints the root it resolved to.",
@@ -18,7 +22,9 @@ const USAGE = [
 
 const COMMANDS = new Set(["scan", "check", "pin"]);
 
-
+// One writer per format, and the set of names the flag takes.
+const CHECK_WRITERS = { text: formatReport, json: formatReportJson, github: formatReportGithub };
+const FORMATS = new Set(Object.keys(CHECK_WRITERS));
 
 function fail(message, code = 2) {
   console.error(message);
@@ -32,7 +38,7 @@ function fail(message, code = 2) {
  */
 function parseArgs(argv) {
   const cmd = COMMANDS.has(argv[0]) ? argv.shift() : "scan";
-  const opts = { cmd, path: null, dryRun: false, baseRef: null, deep: false };
+  const opts = { cmd, path: null, dryRun: false, baseRef: null, deep: false, format: "text" };
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -60,6 +66,19 @@ function parseArgs(argv) {
       opts.baseRef = value;
       continue;
     }
+    if (arg === "--format" || arg.startsWith("--format=")) {
+      const value = arg === "--format" ? argv[++i] : arg.slice("--format=".length);
+      if (!value || value.startsWith("-")) fail(`--format needs a name\n${USAGE}`);
+      if (!FORMATS.has(value)) fail(`unknown format: ${value}\n${USAGE}`);
+      // Refused rather than accepted and answered in text, which is the same
+      // trade --deep makes: a format that was asked for and quietly not used
+      // reads as a run whose output shape nobody has to check.
+      if (value === "github" && cmd !== "check") {
+        fail(`--format github is not a ${cmd} option: only a check has findings to annotate\n${USAGE}`);
+      }
+      opts.format = value;
+      continue;
+    }
     if (arg.startsWith("-")) fail(`unknown option: ${arg}\n${USAGE}`);
     if (opts.path !== null) fail(`only one path may be given\n${USAGE}`);
     opts.path = arg;
@@ -78,15 +97,18 @@ const cwd = opts.path === null ? process.cwd() : opts.path;
 try {
   if (opts.cmd === "check") {
     const { report } = await runCheck(cwd, { baseRef: opts.baseRef });
-    process.stdout.write(formatReport(report));
-    // Findings never set the exit code. A non-zero exit here means the check
-    // could not run, which is what the command file tells the agent to trust.
+    // Findings never set the exit code, in any format. A non-zero exit here
+    // means the check could not run, which is what the command file tells the
+    // agent to trust.
+    process.stdout.write(CHECK_WRITERS[opts.format](report));
   } else if (opts.cmd === "pin") {
     const { summary } = await runPin(cwd, { dryRun: opts.dryRun });
-    console.log(pinLines(summary).join("\n"));
+    if (opts.format === "json") process.stdout.write(pinJson(summary));
+    else console.log(pinLines(summary).join("\n"));
   } else {
     const { summary } = await runScan(cwd, { dryRun: opts.dryRun, deep: opts.deep });
-    console.log(scanLines(summary).join("\n"));
+    if (opts.format === "json") process.stdout.write(scanJson(summary));
+    else console.log(scanLines(summary).join("\n"));
   }
 } catch (err) {
   // A missing repository, an unreadable tree or a git that will not run are all

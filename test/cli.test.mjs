@@ -484,3 +484,55 @@ test("--deep is refused on check, because the check cannot run a whole-program c
   assert.match(stderr, /--deep is not a check option/);
   assert.match(stderr, /anatomiya scan --deep/, "and it says where the tier does run");
 });
+
+/* --- one answer, three writers --- */
+
+test("a scan answers as a record for a reader that is not a terminal", (t) => {
+  const repo = repoWithSource(t);
+
+  const s = JSON.parse(anatomiya(repo, "scan", "--format=json", "--dry-run"));
+
+  assert.equal(s.schema, 1);
+  assert.equal(s.files, 8);
+  assert.equal(s.dryRun, true);
+  assert.equal(typeof s.wrote, "number");
+  assert.equal(existsSync(join(repo, ".claude", "rules")), false, "and a dry run still wrote nothing");
+});
+
+test("a check answers as a record, and as annotations", (t) => {
+  const repo = repoWithBranch(t);
+  anatomiya(repo, "scan");
+
+  const report = JSON.parse(anatomiya(repo, "check", "--format", "json"));
+  const annotations = anatomiya(repo, "check", "--format", "github");
+
+  assert.equal(report.schema, 1);
+  assert.equal(typeof report.counts["MUST-FIX"], "number");
+  assert.ok(Array.isArray(report.findings));
+  assert.match(annotations, /^::notice::\d+ MUST-FIX, \d+ FIX, \d+ NIT$/m, annotations);
+});
+
+test("a format nothing writes is refused, and the annotations are a check's", () => {
+  // Same shape as every other option: refused with the usage rather than
+  // accepted and quietly answered in the format the caller did not ask for.
+  const refused = (...args) => {
+    try {
+      execFileSync(process.execPath, [join(ROOT, "bin", "anatomiya.mjs"), ...args, "."], {
+        stdio: "pipe",
+        encoding: "utf8",
+      });
+      return { code: 0, stderr: "" };
+    } catch (err) {
+      return { code: err.status, stderr: String(err.stderr ?? "") };
+    }
+  };
+
+  const unknown = refused("check", "--format", "yaml");
+  assert.equal(unknown.code, 2);
+  assert.match(unknown.stderr, /unknown format: yaml/);
+  assert.match(unknown.stderr, /usage: anatomiya scan/, "and it prints the usage");
+
+  const wrongCommand = refused("scan", "--format", "github");
+  assert.equal(wrongCommand.code, 2);
+  assert.match(wrongCommand.stderr, /--format github is not a scan option/);
+});

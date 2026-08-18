@@ -6,7 +6,15 @@ import { join, dirname } from "node:path";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
-import { check, encodeReport, formatReport, CAVEATS, CHECK_SCHEMA } from "../lib/check.mjs";
+import {
+  check,
+  encodeReport,
+  formatReport,
+  formatReportGithub,
+  formatReportJson,
+  CAVEATS,
+  CHECK_SCHEMA,
+} from "../lib/check.mjs";
 import { writeFacts } from "../lib/facts.mjs";
 
 /**
@@ -229,4 +237,105 @@ test("the rendered report has not moved", async (t) => {
       "1 file(s) in .claude/rules this tool did not write:\n" +
       '  "house.md"\n'
   );
+});
+
+/* --- the writers a machine reads --- */
+
+/** A report with nothing in it, so a case names only the fields it needs. */
+const bare = (o = {}) => ({
+  schema: CHECK_SCHEMA,
+  root: "/repo",
+  mode: "compare",
+  base: { ref: "main", sha: "a".repeat(40), mergeBase: "a".repeat(40), shallow: false },
+  stale: false,
+  staleReason: null,
+  changed: [],
+  examined: [],
+  findings: [],
+  counts: { "MUST-FIX": 0, FIX: 0, NIT: 0 },
+  caveats: [],
+  parse: { missingParser: null },
+  semantic: { claims: 0 },
+  foreign: [],
+  unknown: [],
+  rules: { escaped: false, listed: true, unreadable: [] },
+  ...o,
+});
+
+const finding = (o = {}) => ({
+  severity: "MUST-FIX",
+  reason: "all 60 baseline sites conform",
+  path: "src/a.ts",
+  oldPath: null,
+  line: 12,
+  area: "src",
+  dimension: "swallowed_error",
+  claim: "catch blocks use the error they caught",
+  precision: "precise",
+  where: "f0",
+  snippet: "catch (e) { }",
+  ...o,
+});
+
+test("the JSON writer answers the whole record, encoded", async (t) => {
+  const dir = reportRepo(t);
+  facts(dir);
+  const r = await check(dir, { baseRef: "main" });
+  // JSON.stringify escapes neither a bidi override nor a zero-width joiner, so
+  // a writer handed the raw record puts one straight into the file it writes.
+  r.findings[0].path = "src/ev‮li.ts";
+
+  const text = formatReportJson(r);
+  const out = JSON.parse(text);
+
+  assert.equal(out.schema, CHECK_SCHEMA);
+  assert.deepEqual(out.counts, r.counts);
+  assert.equal(out.findings.length, r.findings.length);
+  assert.equal(out.findings[0].path.includes("‮"), false);
+  assert.deepEqual(out.rules, r.rules);
+  assert.ok(text.endsWith("\n"), "one record, one trailing newline");
+});
+
+test("a finding is one annotation, and the counts are the last line", () => {
+  const out = formatReportGithub(
+    bare({ findings: [finding()], counts: { "MUST-FIX": 1, FIX: 0, NIT: 0 } })
+  );
+
+  assert.deepEqual(out.split("\n"), [
+    "::error file=src/a.ts,line=12,title=catch blocks use the error they caught::all 60 baseline sites conform",
+    "::notice::1 MUST-FIX, 0 FIX, 0 NIT",
+    "",
+  ]);
+});
+
+test("each severity is the level a reader of the annotations can act on", () => {
+  const findings = [finding(), finding({ severity: "FIX" }), finding({ severity: "NIT" })];
+
+  const levels = formatReportGithub(bare({ findings }))
+    .split("\n")
+    .slice(0, 3)
+    .map((l) => l.slice(0, l.indexOf(" ")));
+
+  assert.deepEqual(levels, ["::error", "::warning", "::notice"]);
+});
+
+test("what a reader would take for grammar is escaped, and the percent first", () => {
+  // A comma ends a property and a colon ends the property list, so either one
+  // unescaped moves the rest of the message into the annotation's own grammar.
+  // The percent goes first or the escapes below it are escaped a second time.
+  const out = formatReportGithub(
+    bare({
+      findings: [finding({ path: "src/a,b.ts", claim: "a, b: 100%\r\nnext", reason: "50% of sites" })],
+      counts: { "MUST-FIX": 1, FIX: 0, NIT: 0 },
+    })
+  );
+
+  assert.equal(
+    out.split("\n")[0],
+    "::error file=src/a%2Cb.ts,line=12,title=a%2C b%3A 100%25%0D%0Anext::50%25 of sites"
+  );
+});
+
+test("a clean report is still an answer, not an empty file", () => {
+  assert.equal(formatReportGithub(bare()), "::notice::0 MUST-FIX, 0 FIX, 0 NIT\n");
 });
