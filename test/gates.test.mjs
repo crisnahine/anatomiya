@@ -1095,10 +1095,9 @@ test("the reducer offers the semantic rows only when it is asked for them", () =
 });
 
 test("a framework row on a JS language gets a slot only where the corpus shows the framework", () => {
-  // The registry used to refuse this row outright, because the oxc worker
-  // selects its own dimensions unfiltered and its extra hits looked like counts
-  // nobody gated. They are not counted anywhere: the reducer selects, so the
-  // hits for a framework the corpus does not show are read by no slot.
+  // The oxc worker is offered every row and emits hits for all of them. This is
+  // where that is decided: the hits for a framework the corpus does not show
+  // reach no slot.
   const row = assertRegistryRows([
     {
       key: "probe_js_framework",
