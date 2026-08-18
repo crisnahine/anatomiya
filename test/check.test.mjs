@@ -1522,6 +1522,47 @@ test("a pending file over the size cap is not read from the tree", async (t) => 
   );
 });
 
+// Both committed sides are read in one pass per revision, so which revision a
+// blob failed to come back from is a lookup rather than the call that failed.
+// The three sentences say which of the three places was looked in, and an agent
+// reads them to know whether to fix the file or the run.
+test("a committed file that will not come back is named at HEAD", async (t) => {
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/a.ts", clean(2));
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/big.ts", `${swallow(2)}\n// ${"x".repeat(1024 * 1024)}\n`);
+    commit("over the cap");
+  });
+  facts(dir, { sha: sha(dir, "main") });
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.deepEqual(forKey(r, "swallowed_error"), [], JSON.stringify(r.findings));
+  assert.ok(notes(r).includes("could not read src/big.ts at HEAD"), JSON.stringify(r.caveats));
+  assert.ok(r.caveats.some((c) => c.code === CAVEATS.HEAD_UNREADABLE));
+});
+
+test("a base version that will not come back skips the file rather than charging it", async (t) => {
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/big.ts", `${swallow(2)}\n// ${"x".repeat(1024 * 1024)}\n`);
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/big.ts", swallow(3));
+    commit("under the cap");
+  });
+  facts(dir, { sha: sha(dir, "main") });
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.deepEqual(forKey(r, "swallowed_error"), [], "every site in it would otherwise read as newly introduced");
+  assert.ok(
+    notes(r).includes("could not read src/big.ts at the merge base, so src/big.ts was skipped"),
+    JSON.stringify(r.caveats)
+  );
+  assert.ok(r.caveats.some((c) => c.code === CAVEATS.BASE_UNREADABLE));
+});
+
 // `git status` lists a deletion, and a path that is gone cannot be read. It
 // reported one file read from the tree and one it could not read, in the same
 // run, about the same file.
