@@ -31,6 +31,45 @@ test("a child that floods stderr fills the cap and no more", async () => {
   assert.equal(sup.killedBy(), null, "a child that ended by itself was not killed");
 });
 
+test("a supervisor with no stderr cap refuses instead of collecting nothing", () => {
+  // `text.length < undefined` is false, so an omitted cap keeps no stderr at
+  // all and every death before the first answer loses its cause.
+  const path = child("unread", "process.stderr.write('boom')\n");
+
+  assert.throws(() => guardedChild({ kind: "fork", modulePath: path, stdio: STDIO }), /stderrBytes/);
+});
+
+test("the stderr cap stops on a character boundary, never inside one", async () => {
+  // The cap counts UTF-16 code units and an astral character is two of them,
+  // so cutting on the count alone hands back a lone surrogate no earlier path
+  // could produce (B5).
+  const path = child("astral", 'process.stderr.write("a" + "\\u{1F600}".repeat(4))\n');
+  const sup = guardedChild({ kind: "fork", modulePath: path, stdio: STDIO, stderrBytes: 4 });
+
+  await closed(sup.child);
+  sup.settle();
+
+  assert.equal(sup.stderr(), "a\u{1F600}", "the half character the cap landed on was dropped");
+});
+
+test("a forked child is handed the environment its caller scrubbed", async () => {
+  // The spawn branch has always taken one. A fork caller that scrubs an
+  // environment and silently gets the parent's is the failure this closes.
+  const path = child("env", "process.stderr.write(String(process.env.ANATOMIYA_HANDED))\n");
+  const sup = guardedChild({
+    kind: "fork",
+    modulePath: path,
+    stdio: STDIO,
+    stderrBytes: 64,
+    env: { ...process.env, ANATOMIYA_HANDED: "over" },
+  });
+
+  await closed(sup.child);
+  sup.settle();
+
+  assert.equal(sup.stderr(), "over");
+});
+
 test("a child that never ends is killed by the wall clock, once", async () => {
   const path = child("sleeper", "setTimeout(() => {}, 60_000)\n");
   const fired = [];
@@ -65,12 +104,13 @@ test("a child that answers once and then goes quiet is killed by the idle clock"
     onTimeout: (reason) => fired.push(reason),
   });
 
+  // Armed by the answer, never before the spawn: a window opened here has to
+  // cover the child loading Node too, and under load the boot alone outruns it.
   let answers = 0;
   sup.child.on("message", () => {
     answers++;
     sup.touch();
   });
-  sup.touch();
 
   await closed(sup.child);
   sup.settle();
