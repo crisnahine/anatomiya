@@ -13,6 +13,7 @@ import {
   runnerOf,
   tally,
   testsLine,
+  underTestTree,
 } from "../lib/layout.mjs";
 import { roster } from "../lib/layout-scan.mjs";
 
@@ -192,6 +193,20 @@ test("a monorepo descends past packages and past each package's own shell", () =
   assert.deepEqual(paths(roots).slice(0, 2), ["packages/p1/src", "packages/p2/src"]);
   assert.deepEqual(more, { roots: 5, files: 15 });
   assert.deepEqual(testsLine(corpus), [{ runner: "vitest", root: "packages", files: 2 }]);
+});
+
+test("apps is a shell name too, so a monorepo's apps/* sites are not one bullet", () => {
+  // supabase splits apps/* beside packages/*. packages already descended;
+  // apps rolled all seven sites into one bullet and blended studio's real
+  // namesake rate with a marketing site, two showcase sites and a docs site.
+  const corpus = [
+    ...files(10, (i) => file(`apps/studio/f${i}.ts`, "js")),
+    ...files(10, (i) => file(`apps/www/f${i}.ts`, "js")),
+  ];
+
+  const { roots } = layoutRoots(corpus, { minFiles: 3 });
+
+  assert.deepEqual(paths(roots), ["apps/studio", "apps/www"]);
 });
 
 test("a child has to hold four fifths of its parent to stand in for it", () => {
@@ -551,6 +566,35 @@ test("a root that is mostly tests carries no namesake or helper count", () => {
   assert.deepEqual(cypress.tests, [{ runner: "cypress", files: 102, sub: null }]);
   assert.equal("companions" in cypress, false);
   assert.equal("helpers" in cypress, false);
+});
+
+test("a root whose most common extension is not source still finds its producers", () => {
+  // supabase's apps/www: .png outcounts .tsx 2179 to 753. Matching only the
+  // first of the top two extensions read every producer there as zero, worse
+  // than naming none of them at all.
+  const corpus = [
+    ...files(5, (i) => file(`apps/www/img${i}.png`)),
+    ...files(3, (i) => file(`apps/www/Page${i}.tsx`, "jsx")),
+    file("test/Page0.test.tsx", "jsx", { testRunner: "vitest" }),
+    file("test/Page1.test.tsx", "jsx", { testRunner: "vitest" }),
+  ];
+  const indexes = layoutIndexes(corpus);
+  const record = rootFacts({ path: "apps/www", dir: "apps/www", files: corpus.slice(0, 8) }, indexes);
+
+  assert.deepEqual(record.exts, [[".png", 5], [".tsx", 3]], "the printed line still leads with .png");
+  assert.deepEqual(record.companions, { with: 2, of: 3, root: "test" });
+});
+
+test("a root whose top two extensions are both unparsed asks nothing", () => {
+  const corpus = [
+    ...files(5, (i) => file(`apps/marketing/img${i}.png`)),
+    ...files(3, (i) => file(`apps/marketing/copy${i}.mdx`)),
+    file("test/x.test.ts", "js", { testRunner: "vitest" }),
+  ];
+  const indexes = layoutIndexes(corpus);
+  const record = rootFacts({ path: "apps/marketing", dir: "apps/marketing", files: corpus.slice(0, 8) }, indexes);
+
+  assert.equal("companions" in record, false);
 });
 
 test("a root inside a test tree is not asked whether its fixtures have tests", () => {

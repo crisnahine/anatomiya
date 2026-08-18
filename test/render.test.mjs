@@ -1300,6 +1300,33 @@ test("the kinds line agrees with its own namesake count", () => {
   assert.equal(kindsOf(2), "kinds: 7 .tsx (JSX); 0 test files; 2 of 7 have a namesake test");
 });
 
+test("the kinds line names a runner the way the root line does", () => {
+  // plots2's `test/unit/helpers` stated "11 test files" two lines above
+  // "classes here inherit ActionView::TestCase: 11 of 11 sites", never once
+  // saying minitest even though every one of the 11 is minitest.
+  const kinds = root("test/unit/helpers", { exts: [[".rb", 11]], tests: [{ runner: "minitest", files: 11, sub: null }] });
+
+  assert.equal(kindsLine(kinds), "kinds: 11 .rb; 11 minitest specs");
+});
+
+test("a runner nothing named still prints as test files, on the kinds line too", () => {
+  const kinds = root("spec/support", { exts: [[".rb", 4]], tests: [{ runner: "test files", files: 4, sub: null }] });
+
+  assert.equal(kindsLine(kinds), "kinds: 4 .rb; 4 test files");
+});
+
+test("the kinds line names every runner group, not one summed total", () => {
+  const kinds = root("src", {
+    exts: [[".ts", 20]],
+    tests: [
+      { runner: "vitest", files: 4, sub: "__tests__" },
+      { runner: "jest", files: 3, sub: null },
+    ],
+  });
+
+  assert.equal(kindsLine(kinds), "kinds: 20 .ts; 4 vitest specs under __tests__; 3 jest specs");
+});
+
 test("the three lines that print a namesake clause spell it in one place", () => {
   // A root line, the tests line and an area's kinds line all print the pair.
   // Three copies of one sentence drifted on the verb once already, and the
@@ -1458,10 +1485,18 @@ test("an area says which kinds of file it holds, right under its heading", () =>
   const lines = out.split("\n");
 
   assert.equal(lines[6], "# src/services  40 files");
-  assert.equal(lines[8], "kinds: 7 .tsx (JSX), 1 .ts; 0 test files; 0 of 7 have a namesake test");
+  assert.equal(lines[8], "kinds: 7 .tsx (JSX), 1 .ts and 5 other; 0 test files; 0 of 7 have a namesake test");
   assert.equal(lines[9], "", "and a blank line under it, like the blocks below");
   assert.equal(lines[10], "catch blocks use the error they caught", "the directive follows it");
-  assert.doesNotMatch(out, /other/, "the area's denominator is not the root line's");
+});
+
+test("the kinds line names its own leftover: nobody's comparing it to a root line", () => {
+  // eslint's `packages/eslint-config-eslint`: 5 .js, 4 .ts, 1 .mts. The heading
+  // above this line already says 10 files, so hiding the tenth disagreed with
+  // its own heading, not with some other line.
+  const kinds = root("packages/eslint-config-eslint", { files: 10, exts: [[".js", 5], [".ts", 4]], other: 1 });
+
+  assert.equal(kindsLine(kinds), "kinds: 5 .js, 4 .ts and 1 other; 0 test files");
 });
 
 test("an area with no kinds record prints no kinds line", () => {
