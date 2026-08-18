@@ -9,6 +9,7 @@ import { pathToFileURL } from "node:url";
 import { needsRuby } from "./ruby-available.mjs";
 import { needsShebang } from "./platform.mjs";
 import { installWithoutStripper } from "./no-stripper.mjs";
+import { installWithoutDependencies } from "./plugin-install.mjs";
 import { ENGINES } from "../lib/langs.mjs";
 import { olderThan, pluginRoot, readiness, readinessLines, remedyFor } from "../lib/readiness.mjs";
 
@@ -92,6 +93,29 @@ test("an extra that is not installed is the row that says so, and the engine sti
   const stripper = rows.find((r) => r.extra === ENGINES.oxc.extras[0].module);
   assert.equal(stripper.present, false);
   assert.equal(stripper.ok, false);
+});
+
+test("the install this command exists for reports why, not a null", (t) => {
+  // `/plugin install` copies the files and does not run `npm install`, so a
+  // marketplace user's first doctor is this one, and it read `oxc absent: null`.
+  // Probed out of process for the reason above: module resolution is the thing
+  // under test, and an in-process fake resolves the same either way.
+  const home = installWithoutDependencies(t);
+  const script = `
+    import { readiness, readinessLines } from ${JSON.stringify(pathToFileURL(join(home, "lib", "readiness.mjs")).href)};
+    const rows = await readiness({ engines: ["oxc"] });
+    process.stdout.write(JSON.stringify({ rows, lines: readinessLines(rows) }));
+  `;
+
+  const { rows, lines } = JSON.parse(
+    execFileSync(process.execPath, ["--input-type=module", "-e", script], { encoding: "utf8" })
+  );
+
+  const oxc = rows.find((r) => r.extra === null);
+  assert.equal(oxc.present, false);
+  assert.equal(typeof oxc.reason, "string");
+  assert.ok(oxc.reason.includes(ENGINES.oxc.module), oxc.reason);
+  for (const line of lines) assert.doesNotMatch(line, /null/, line);
 });
 
 test("an interpreter that is not on PATH is absent, and carries the remedy that installs it", async () => {
