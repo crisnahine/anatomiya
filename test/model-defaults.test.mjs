@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import { MODEL_DEFAULTS, defaultSideFor, assertModelDefaults } from "../lib/model-defaults.mjs";
 import { REGISTRY_KEYS } from "../lib/registry.mjs";
+import { seedEntry } from "../scripts/seed-defaults.mjs";
 
 const entry = (over = {}) => ({
   default: "none",
@@ -30,6 +31,18 @@ test("a measured entry answers its side", () => {
   const table = new Map([["nullish_default", entry({ default: "claim", provenance: { method: "measured", model: "m", date: "2026-08-16", samples: 40, sideCounts: { claim: 37, counter: 2, neither: 1 } } })]]);
   assertModelDefaults(table, new Set(["nullish_default"]));
   assert.equal(table.get("nullish_default").default, "claim");
+});
+
+test("a seeded entry loads and reads as none", () => {
+  // The shape `npm run defaults:seed` writes for a key nobody has measured. It
+  // has to read `none`, which fails open, or seeding a new row would silently
+  // filter it out of every map.
+  const table = new Map([["nullish_default", seedEntry()]]);
+
+  assertModelDefaults(table, new Set(["nullish_default"]));
+
+  assert.equal(table.get("nullish_default").default, "none");
+  assert.equal(table.get("nullish_default").provenance.method, "seed");
 });
 
 test("an unknown key refuses to load", () => {

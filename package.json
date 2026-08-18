@@ -45,6 +45,7 @@
     "scan": "node bin/anatomiya.mjs scan .",
     "validate": "node scripts/validate.mjs",
     "check:docs": "node scripts/check-docs.mjs",
+    "defaults:seed": "node scripts/seed-defaults.mjs",
     "audit:applicability": "node scripts/audit-applicability.mjs",
     "e2e:corpus": "node scripts/e2e-corpus.mjs",
     "coverage": "node --test --experimental-test-coverage --test-coverage-lines=95 --test-coverage-branches=87 --test-coverage-functions=95 'test/**/*.test.mjs'",
