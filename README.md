@@ -270,8 +270,9 @@ discourse, rails applications, monorepos). Two acceptance runs are committed as
 [docs/measurements](docs/measurements): the layout harness re-derives every printed number
 independently on all 35, and `npm run e2e:corpus` drives the shipped CLI from a fresh clone of each
 repository through scan, a byte-identical rescan, pin, check, and a synthetic violation the check
-must catch. The unit suite is 1,194 tests with enforced coverage floors, and CI runs it on Linux,
-macOS and Windows.
+must catch. The unit suite runs under `node --test` with enforced coverage floors, and CI runs it on
+Linux, macOS and Windows. The number of tests is not written down here: `node --test` prints it on
+every run, and a copy of that number is stale by the next commit.
 
 ## Limits
 
@@ -329,7 +330,7 @@ gate's second opinion. The full numbers and their caveats are in [docs/why.md](d
 
 ## Learn more
 
-- [DECISIONS.md](DECISIONS.md) is the build contract: 107 numbered decisions, each with the
+- [DECISIONS.md](DECISIONS.md) is the build contract: 112 numbered decisions, each with the
   measurement or the review finding that forced it. Why a threshold is where it is, why the parser
   runs in child processes, why there is no hook: that is the file.
 - [docs/why.md](docs/why.md) is the longer argument and the full numbers.

@@ -19,6 +19,7 @@ import { execFileSync } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
 
+import { CAVEATS } from "../lib/check.mjs";
 import { dimensionsFor } from "../lib/dimensions.mjs";
 import { pairingsFor } from "../lib/pairing.mjs";
 import { REGISTRY, rowsOfKind } from "../lib/registry.mjs";
@@ -228,6 +229,31 @@ for (const dead of ["minCandidates", "minAuthors", "maxSingleFileShare"]) {
   claim("docs", !gateText.includes(dead), `the docs still name ${dead}, which the gates no longer read`);
 }
 
+// --- the caveat codes -------------------------------------------------------
+
+// The codes became a public surface the day `--format json` printed them, so
+// the table documenting them is held to the code in both directions: an
+// undocumented code is a field a CI job cannot branch on, and a documented one
+// that no longer exists is a branch nothing will ever take.
+function caveatSection(text) {
+  const start = text.indexOf("### The caveat codes");
+  claim("docs/how-it-works.md", start !== -1, "has no ### The caveat codes section to read");
+  if (start === -1) return "";
+  const next = text.indexOf("\n## ", start + 1);
+  return next === -1 ? text.slice(start) : text.slice(start, next);
+}
+
+const codes = new Set(Object.values(CAVEATS));
+const documented = new Set(
+  [...caveatSection(read("docs/how-it-works.md")).matchAll(/^\| `([a-z-]+)` \|/gm)].map((m) => m[1])
+);
+for (const code of codes) {
+  claim("docs/how-it-works.md", documented.has(code), `does not document the caveat code ${code}`);
+}
+for (const code of documented) {
+  claim("docs/how-it-works.md", codes.has(code), `documents ${code}, which is not a caveat code`);
+}
+
 // --- the command surface ----------------------------------------------------
 
 const usage = execFileSync(process.execPath, [join(root, "bin/anatomiya.mjs"), "--help"], {
@@ -345,5 +371,6 @@ if (isEntry && (problems.length || owed.size)) {
 if (isEntry)
   console.log(
   `docs match the code: ${total} dimensions (${js} js, ${jsx} jsx, ${ruby} ruby, ${obligations} of them file-to-file obligations), ` +
-    `${unique.length} commands, ${deps.length} runtime dependencies, ${intake.rows.length} intake rows, version ${pkg.version}`
+    `${unique.length} commands, ${codes.size} caveat codes, ${deps.length} runtime dependencies, ` +
+    `${intake.rows.length} intake rows, version ${pkg.version}`
 );
