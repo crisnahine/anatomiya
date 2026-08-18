@@ -357,15 +357,12 @@ if (isEntry && (problems.length || owed.size)) {
   for (const p of problems) console.error(`::error::${p}`);
   // One line per site, in key order, each naming the file and the move: the
   // list an author works through, and the annotations a pull request shows.
-  let unmet = 0;
+  const unmet = [...owed.values()].flat();
   for (const [key, missing] of owed) {
-    for (const m of missing) {
-      console.error(`::error::${m.site}: ${key} has ${m.missing}; ${m.remedy}`);
-      unmet++;
-    }
+    for (const m of missing) console.error(`::error::${m.site}: ${key} has ${m.missing}; ${m.remedy}`);
   }
   if (problems.length) console.error(`\n${problems.length} claim(s) in the documentation do not match the code.`);
-  if (owed.size) console.error(`\n${owed.size} registry key(s) still owe ${unmet} of the sites a row has to reach.`);
+  if (owed.size) console.error(`\n${owed.size} registry key(s) still owe ${unmet.length} of the sites a row has to reach.`);
   process.exit(1);
 }
 if (isEntry)
