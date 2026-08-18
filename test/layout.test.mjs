@@ -619,6 +619,46 @@ test("a root inside a test tree is not asked whether its fixtures have tests", (
   assert.deepEqual(outside.companions, { with: 2, of: 2, root: "test" }, "and a root outside is asked");
 });
 
+test("a test tree is caught at any segment, not only the first", () => {
+  // fastlane nests each gem's own tree one segment down: `gym/spec` never
+  // starts with "spec", so the old first-segment check never engaged on any
+  // of its 21 sibling gems. decidim nests one four segments down.
+  assert.equal(underTestTree("test"), true);
+  assert.equal(underTestTree("test/cases/foo"), true);
+  assert.equal(underTestTree("gym/spec"), true);
+  assert.equal(underTestTree("decidim-dev/lib/decidim/dev/test"), true);
+  assert.equal(underTestTree("app/models"), false);
+  assert.equal(underTestTree(""), false, "the repository root is not a tree");
+});
+
+test("a monorepo's own test tree is not asked either, wherever it nests", () => {
+  // fastlane's gym/spec stated "1 of 1 has a namesake test" over a single
+  // empty spec_helper.rb, credited by a same-named spec in an unrelated gem.
+  const corpus = [
+    file("gym/spec/spec_helper.rb", "ruby"),
+    file("gym/spec/options_spec.rb", "ruby", { testCalls: true }),
+    file("cert/spec/runner_spec.rb", "ruby", { testCalls: true }),
+  ];
+  const indexes = layoutIndexes(corpus);
+  const record = rootFacts({ path: "gym/spec", dir: "gym/spec", files: corpus.slice(0, 2) }, indexes);
+
+  assert.equal("companions" in record, false);
+});
+
+test("a package's own test tree is not asked either, however deep it nests", () => {
+  const corpus = [
+    file("decidim-dev/lib/decidim/dev/test/rspec_support/shared.rb", "ruby"),
+    file("some-gem/spec/x_spec.rb", "ruby", { testCalls: true }),
+  ];
+  const indexes = layoutIndexes(corpus);
+  const record = rootFacts(
+    { path: "decidim-dev/lib/decidim/dev/test", dir: "decidim-dev/lib/decidim/dev/test", files: corpus.slice(0, 1) },
+    indexes
+  );
+
+  assert.equal("companions" in record, false);
+});
+
 test("the JSX mark is only ever on an extension the line prints", () => {
   const corpus = [
     ...files(50, (i) => file(`web/d${i}.md`)),
