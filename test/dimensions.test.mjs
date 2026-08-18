@@ -16,6 +16,8 @@ import {
 } from "../lib/dimensions.mjs";
 import { NAMING_CORPUS } from "../lib/dimensions-naming.mjs";
 import { PAIRINGS } from "../lib/pairing.mjs";
+// The battery that stamps these rows runs where the registry is assembled.
+import "../lib/registry.mjs";
 import { SEMANTIC_DIMENSIONS } from "../lib/dimensions-semantic.mjs";
 import { walk, collectHits } from "../lib/walk.mjs";
 

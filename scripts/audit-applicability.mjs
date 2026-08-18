@@ -18,8 +18,7 @@
 import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
-import { ALL_DIMENSIONS } from "../lib/dimensions.mjs";
-import { PAIRINGS } from "../lib/pairing.mjs";
+import { REGISTRY } from "../lib/registry.mjs";
 import { schemaProblem } from "../lib/facts.mjs";
 
 export const NARROW_AND_PRECISE = "narrow and precise: check the predicate";
@@ -34,7 +33,7 @@ const median = (xs) => {
 };
 
 export function shareTable(factsList) {
-  const precisionOf = new Map([...ALL_DIMENSIONS, ...PAIRINGS].map((d) => [d.key, d.precision]));
+  const precisionOf = new Map(REGISTRY.map((d) => [d.key, d.precision]));
   const shares = new Map();
   // A slot that is there and whose denominator is not. A map written before
   // schema 5 carries every count and no `langFileCount`, and folding that into

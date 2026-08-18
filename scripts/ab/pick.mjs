@@ -13,14 +13,13 @@
  * so an arm holding the map and an arm holding none were handed the same
  * information about it.
  */
-import { ALL_DIMENSIONS } from "../../lib/dimensions.mjs";
-import { PAIRINGS } from "../../lib/pairing.mjs";
-import { NAMING_CORPUS, fillClass } from "../../lib/dimensions-naming.mjs";
+import { fillClass } from "../../lib/dimensions-naming.mjs";
+import { REGISTRY } from "../../lib/registry.mjs";
 
 // The record stores counts, not sentences. Reading `claim` off it put the word
 // "undefined" in the result file where the claim belongs, so the sentence comes
 // from the one place that holds it.
-const CLAIMS = new Map([...ALL_DIMENSIONS, ...PAIRINGS, ...NAMING_CORPUS].map((d) => [d.key, d.claim]));
+const CLAIMS = new Map(REGISTRY.map((d) => [d.key, d.claim]));
 
 export function rankAreas(facts, { minCandidates = 20 } = {}) {
   const out = [];

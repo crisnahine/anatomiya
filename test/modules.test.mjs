@@ -52,24 +52,48 @@ test("no module in lib imports its way back to itself", () => {
   assert.deepEqual([...new Set(cycles)], []);
 });
 
-test("no module the parse worker reaches imports node:child_process", () => {
-  // Every JS parse child loads `dimensions.mjs` for the registry, and the two
-  // Ruby dimension files took their walkers from `ruby.mjs`, the module that
-  // spawns Ruby. That put the spawn machinery and the inline prism script into
-  // all eight forked workers, which is the exact cost `langs.mjs` and
-  // `limits.mjs` exist to avoid. `ruby-walk.mjs` is the importable leaf.
-  const edges = graph();
+/** Every module in `lib/` this one can reach, itself included. */
+function reachedFrom(entry, edges = graph()) {
   const reached = new Set();
   const walk = (file) => {
     if (reached.has(file)) return;
     reached.add(file);
     for (const next of edges.get(file) || []) walk(next);
   };
-  walk("parse-worker.mjs");
+  walk(entry);
+  return reached;
+}
 
-  const offenders = [...reached].filter((file) =>
+test("no module the parse worker reaches imports node:child_process", () => {
+  // Every JS parse child loads `dimensions.mjs` for the registry, and the two
+  // Ruby dimension files took their walkers from `ruby.mjs`, the module that
+  // spawns Ruby. That put the spawn machinery and the inline prism script into
+  // all eight forked workers, which is the exact cost `langs.mjs` and
+  // `limits.mjs` exist to avoid. `ruby-walk.mjs` is the importable leaf.
+  const offenders = [...reachedFrom("parse-worker.mjs")].filter((file) =>
     /from\s*["']node:child_process["']/.test(readFileSync(join(LIB, file), "utf8"))
   );
+  assert.deepEqual(offenders, []);
+});
+
+test("the parse worker does not reach the registry", () => {
+  // The worker runs the tree rows off `dimensionsFor` and nothing else: an
+  // obligation has no program to run against and a filename row answers off
+  // the corpus, so composing all three in eight forked children buys nothing.
+  assert.equal(reachedFrom("parse-worker.mjs").has("registry.mjs"), false);
+});
+
+test("a module that branches on a row's kind loads the registry that stamps it", () => {
+  // `stampKind` writes the field in place while the registry is assembled, so
+  // a reader that never loads it reads undefined off a tree row and takes the
+  // other branch without a word. `dimensions.mjs` writes the stamp and
+  // `registry.mjs` runs it, which is where both of them read the field.
+  const offenders = [];
+  for (const [file, imports] of graph()) {
+    if (file === "dimensions.mjs" || file === "registry.mjs") continue;
+    if (!/\b(?:d|dim|dimension|row)\.kind\b/.test(readFileSync(join(LIB, file), "utf8"))) continue;
+    if (!imports.includes("registry.mjs")) offenders.push(file);
+  }
   assert.deepEqual(offenders, []);
 });
 

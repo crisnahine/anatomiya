@@ -14,9 +14,9 @@ import { execFileSync } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
 
-import { ALL_DIMENSIONS, dimensionsFor } from "../lib/dimensions.mjs";
-import { NAMING_CORPUS } from "../lib/dimensions-naming.mjs";
-import { PAIRINGS, pairingsFor } from "../lib/pairing.mjs";
+import { dimensionsFor } from "../lib/dimensions.mjs";
+import { pairingsFor } from "../lib/pairing.mjs";
+import { REGISTRY, rowsOfKind } from "../lib/registry.mjs";
 import { GATES } from "../lib/reduce.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -71,18 +71,15 @@ function claim(where, ok, detail) {
 
 // --- the dimension registry -------------------------------------------------
 
-// Obligations count here too. A checker blind to a whole dimension class would
-// pass while the README undercounted by nine, which is the drift this script
-// exists to catch.
-// The corpus rows are composed by the reducer rather than the registry, and a
-// shipped claim outside every count is exactly the blindness this script
-// exists to catch.
-const corpusFor = (lang) => NAMING_CORPUS.filter((d) => d.langs.includes(lang)).length;
-const total = ALL_DIMENSIONS.length + PAIRINGS.length + NAMING_CORPUS.length;
+// Obligations and filename rows count here too. A checker blind to a whole
+// dimension class would pass while the README undercounted by nine, which is
+// the drift this script exists to catch.
+const corpusFor = (lang) => rowsOfKind("corpus").filter((d) => d.langs.includes(lang)).length;
+const total = REGISTRY.length;
 const js = dimensionsFor(["js"]).length + pairingsFor(["js"]).length + corpusFor("js");
 const jsx = dimensionsFor(["jsx"]).length + pairingsFor(["jsx"]).length + corpusFor("jsx");
 const ruby = dimensionsFor(["ruby"]).length + pairingsFor(["ruby"]).length + corpusFor("ruby");
-const obligations = PAIRINGS.length;
+const obligations = rowsOfKind("pairing").length;
 
 // A released entry states the number that shipped in it and stays true forever.
 // Reading the whole changelog made every past release a claim about today, so
@@ -116,13 +113,9 @@ for (const rel of ["README.md", "docs/how-it-works.md", "CHANGELOG.md"]) {
   }
 }
 
-// Every key is unique, or a claim is dropped without a word.
-const keys = ALL_DIMENSIONS.map((d) => d.key);
-claim("lib/dimensions.mjs", new Set(keys).size === keys.length, "two dimensions share a key");
-
 // A dimension either states its inverse or records that it may not. An absent
 // field is indistinguishable from one nobody classified.
-for (const d of [...ALL_DIMENSIONS, ...PAIRINGS, ...NAMING_CORPUS]) {
+for (const d of REGISTRY) {
   claim(
     "lib/dimensions.mjs",
     d.counterClaim === null || typeof d.counterClaim === "string",
@@ -197,7 +190,7 @@ for (const p of intake.problems) claim("docs/dimension-intake.md", false, p);
 
 const intakeByKey = new Map(intake.rows.filter((r) => r.key).map((r) => [r.key, r]));
 const droppedKeys = new Set(intake.rows.filter((r) => r.status === "dropped" && r.key).map((r) => r.key));
-for (const d of [...ALL_DIMENSIONS, ...PAIRINGS, ...NAMING_CORPUS]) {
+for (const d of REGISTRY) {
   const row = intakeByKey.get(d.key);
   claim("docs/dimension-intake.md", !!row, `${d.key} ships and has no intake row`);
   if (row) {

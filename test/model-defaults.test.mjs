@@ -2,11 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { MODEL_DEFAULTS, defaultSideFor, assertModelDefaults } from "../lib/model-defaults.mjs";
-import { ALL_DIMENSIONS } from "../lib/dimensions.mjs";
-import { PAIRINGS } from "../lib/pairing.mjs";
-import { NAMING_CORPUS } from "../lib/dimensions-naming.mjs";
-
-const REGISTRY_KEYS = new Set([...ALL_DIMENSIONS, ...PAIRINGS, ...NAMING_CORPUS].map((d) => d.key));
+import { REGISTRY_KEYS } from "../lib/registry.mjs";
 
 const entry = (over = {}) => ({
   default: "none",
