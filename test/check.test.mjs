@@ -1198,7 +1198,7 @@ test("a branch that adds a rake task with no spec breaks a stated obligation", n
 
   assert.equal(found.length, 1, `expected one finding, got ${JSON.stringify(report.findings)}`);
   assert.equal(found[0].path, "lib/tasks/lonely.rake");
-  assert.match(found[0].reason, /spec\/lib\/tasks\/lonely_spec\.rb/);
+  assert.equal(found[0].companion, "spec/lib/tasks/lonely_spec.rb");
 });
 
 test("a rake task added with its spec in the same commit reports nothing", needsRuby, async (t) => {
@@ -1646,7 +1646,8 @@ test("a producer whose companion the branch never wrote is still reported", asyn
 
   assert.equal(owed.length, 1, `expected the missing spec to be reported: ${JSON.stringify(r.findings)}`);
   assert.equal(owed[0].path, "app/models/lonely.rb");
-  assert.match(owed[0].reason, /no "spec\/models\/lonely_spec\.rb"/);
+  // A field of its own rather than part of the reason, so each writer places it.
+  assert.equal(owed[0].companion, "spec/models/lonely_spec.rb");
 });
 
 test("a file the check could not read names its own cause, in the singular", () => {
