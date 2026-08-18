@@ -158,15 +158,25 @@ test("no caveat reaches the report without a code", () => {
   // One `push`, inside the helper that takes a code. Everywhere else calls it.
   assert.equal((src.match(/caveats\.push\(/g) ?? []).length, 1, "a caveat is still pushed without a code");
 
-  const named = [...src.matchAll(/(?<!function )\bcaveat\(\s*caveats,\s*([^,]+),/g)].map((m) => m[1].trim());
+  // Any first argument, not the literal `caveats`: a helper that spells the
+  // list some other way would otherwise be invisible to this count.
+  const named = [...src.matchAll(/(?<!function )\bcaveat\(\s*\w+,\s*([^,]+),/g)].map((m) => m[1].trim());
   assert.ok(named.length >= 23, `only ${named.length} coded caveat sites`);
   for (const name of named) {
-    // `code` is the one site that takes its caller's, since an unread corpus
-    // costs the framework claims or the routing claims depending on who asked.
-    assert.match(name, /^(?:CAVEATS\.\w+|code)$/, `${name} is not a code from the table`);
+    // Never a literal. Beside `CAVEATS.X` two sites read the table through
+    // something else: `code`, which an unread corpus takes from its caller
+    // because it costs the framework claims or the routing claims depending on
+    // who asked, and `unreadCode`, which pairs a code with the sentence it is
+    // stated beside.
+    assert.doesNotMatch(name, /^['"`]/, `${name} is a code spelled at the site rather than in the table`);
   }
-  for (const [, name] of src.matchAll(/CAVEATS\.(\w+)/g)) {
-    assert.ok(CAVEATS[name], `CAVEATS.${name} is not declared`);
+
+  // Both directions. A code nothing spells any more is one no reader can ever
+  // see, sitting in the table looking like a fact about the report.
+  const spelled = new Set([...src.matchAll(/CAVEATS\.(\w+)/g)].map((m) => m[1]));
+  for (const name of spelled) assert.ok(CAVEATS[name], `CAVEATS.${name} is not declared`);
+  for (const name of Object.keys(CAVEATS)) {
+    assert.ok(spelled.has(name), `CAVEATS.${name} is declared and nothing reaches it`);
   }
 });
 
