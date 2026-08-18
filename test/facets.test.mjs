@@ -186,7 +186,10 @@ const RUNNER_TABLE = [
 
 test("every module the runner table names is read off a real import", async (t) => {
   const files = Object.fromEntries(
-    RUNNER_TABLE.map(([module], i) => [`m${i}.test.js`, `import * as runner from "${module}"\nrunner.test("x", () => {})\n`])
+    RUNNER_TABLE.map(([module], i) => [
+      `m${i}.test.js`,
+      `import * as runner from "${module}"\ndescribe("x", () => {\n  it("y", () => {})\n})\n`,
+    ])
   );
   const dir = repo(files);
   t.after(() => rmSync(dir, { recursive: true, force: true }));
@@ -205,8 +208,9 @@ test("the runner table holds exactly the modules driven through it", () => {
 });
 
 test("a runner the table names is read off the import, qunit included", async (t) => {
-  // Ember writes `import { test } from "qunit"` and calls it inside an
-  // `acceptance(...)` block, so the import is the only thing the file says.
+  // Ember nests `test(...)` a level inside `acceptance(...)`, never at the
+  // file's own top level, so nothing here is a top-level case the way
+  // `describe`/`it` usually are; the runner still needs the import.
   const dir = repo({
     "tests/acceptance/login-test.js": `import { test } from "qunit"\nacceptance("Login", function () {\n  test("x", function (assert) { assert.ok(true) })\n})\n`,
   });
@@ -215,6 +219,61 @@ test("a runner the table names is read off the import, qunit included", async (t
   const { records } = await parseAll(list(dir, ["tests/acceptance/login-test.js"]));
 
   assert.equal(records.get("tests/acceptance/login-test.js").facets.testRunner, "qunit");
+});
+
+test("a type-only import does not set the test runner", async (t) => {
+  // oxc marks each specifier `isType`, for `import type { X }` and for a
+  // per-specifier `type` modifier; neither one ever runs, so neither can be
+  // what runs the file. `mixed.spec.ts` still counts: `test` is a value
+  // entry in the same statement as the type-only one.
+  const dir = repo({
+    "setup.ts": `import type { ProvidedContext } from "vitest"\nexport const ctx = 1\n`,
+    "mixed.spec.ts": `import { test, type TestInfo } from "@playwright/test"\ntest("x", (info: TestInfo) => {})\n`,
+  });
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+  const { records } = await parseAll(list(dir, ["setup.ts", "mixed.spec.ts"]));
+
+  const setup = records.get("setup.ts").facets;
+  assert.equal(setup.testRunner, null, "the only import of vitest here is type-only");
+  assert.equal(setup.testCalls, false);
+  assert.deepEqual(
+    setup.imports,
+    [{ module: "vitest", names: ["ProvidedContext"], relative: false }],
+    "the import still shows what the file references, type or not"
+  );
+
+  assert.equal(
+    records.get("mixed.spec.ts").facets.testRunner,
+    "playwright",
+    "test is a value entry in the same import statement"
+  );
+});
+
+test("an import alone does not set the test runner without a declared case", async (t) => {
+  const dir = repo({
+    "cypress.config.ts": `import { defineConfig } from "cypress"\nexport default defineConfig({ e2e: {} })\n`,
+    "page.ts": `import { Page } from "@playwright/test"\nexport class LoginPage {\n  page: Page\n  constructor(page: Page) { this.page = page }\n  async open() { await this.page.goto("/login") }\n}\n`,
+    "no-import.cy.js": `describe("login", () => {\n  it("works", () => {\n    cy.visit("/login")\n  })\n})\n`,
+  });
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+  const rels = ["cypress.config.ts", "page.ts", "no-import.cy.js"];
+  const { records } = await parseAll(list(dir, rels));
+
+  const config = records.get("cypress.config.ts").facets;
+  assert.equal(config.testRunner, null, "defineConfig is called, not a case declared");
+  assert.equal(config.testCalls, false);
+
+  assert.equal(
+    records.get("page.ts").facets.testRunner,
+    null,
+    "Page is a helper import, no case anywhere in the file"
+  );
+
+  const spec = records.get("no-import.cy.js").facets;
+  assert.equal(spec.testRunner, null, "cypress is never imported, so nothing names the runner");
+  assert.equal(spec.testCalls, true, "describe/it/cy still declare the case without an import");
 });
 
 /**
