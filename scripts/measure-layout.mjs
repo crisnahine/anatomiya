@@ -25,6 +25,7 @@ import { pathToFileURL } from "node:url";
 import { namesakeCompanions } from "../lib/companions.mjs";
 import { collect, frameworksIn } from "../lib/corpus.mjs";
 import {
+  isStoryFile,
   isTestFile,
   majorityDir,
   mirroredTests,
@@ -103,7 +104,13 @@ function recountRoot(path, corpus, testFiles) {
   const tests = own.filter(isTest);
   const jsxFiles = own.filter((f) => f.facets?.jsx);
   const exts = tally(own.map((f) => extOf(f.rel))).slice(0, 2);
-  const producers = own.filter((f) => f.lang && extOf(f.rel) === exts[0]?.[0] && !isTest(f));
+  // The first shown extension any source file wears, not simply the first: a
+  // root whose bulk is screenshots or markdown has real producers under the
+  // second one, and reading only exts[0] counts every one of them as zero.
+  const producerExt = exts.find(([ext]) => own.some((f) => f.lang && extOf(f.rel) === ext))?.[0];
+  const producers = own.filter(
+    (f) => f.lang && extOf(f.rel) === producerExt && !isTest(f) && !isStoryFile(f.rel));
+  const stories = own.filter((f) => isStoryFile(f.rel));
 
   const jsxByExt = new Map(tally(jsxFiles.map((f) => extOf(f.rel))));
   const out = {
@@ -120,8 +127,10 @@ function recountRoot(path, corpus, testFiles) {
         : null,
     helpers: null,
   };
+  if (stories.length > 0) out.stories = stories.length;
 
-  const modules = own.filter((f) => f.facets && MODULE_EXTS.has(extOf(f.rel)) && !f.facets.jsx && !isTest(f));
+  const modules = own.filter(
+    (f) => f.facets && MODULE_EXTS.has(extOf(f.rel)) && !f.facets.jsx && !isTest(f) && !isStoryFile(f.rel));
   if (jsxFiles.length > 0 && modules.length > 0) {
     out.helpers = {
       siblingModules: modules.length,
@@ -260,6 +269,12 @@ function checkSection(section, corpus, root, recordRoots) {
     );
     same(`${parsed.label} other`, ext.other, counted.other);
     same(`${parsed.label} JSX extension`, ext.exts.find((e) => e.jsx)?.ext ?? null, counted.jsxExt);
+
+    if (counted.stories) {
+      const clause = clauses.shift();
+      const expected = `${counted.stories} story file${counted.stories === 1 ? "" : "s"}`;
+      if (clause !== expected) fail(`${parsed.label} stories clause: printed "${clause}", recount "${expected}"`);
+    }
 
     for (const group of counted.tests) {
       const want = specNoun(group.files, group.runner);
