@@ -215,10 +215,25 @@ test("a doctor asks every engine and the optional checker, and answers a line ea
   assert.ok(lines.some((l) => l.startsWith("oxc ")), lines.join("\n"));
 });
 
-test("a setup with the dependencies already installed runs nothing", async () => {
-  // The case this checkout can prove: they are here, so npm has nothing to do.
-  // Nothing in this suite ever runs the real install, which reaches the network.
-  const { pluginRoot: root, needed, ran, ok, output } = await runSetup();
+/**
+ * What this checkout is missing, asked once, and the guard for the two tests
+ * that are about a setup with nothing left to do.
+ *
+ * Asked through `win32`, which is the seam that cannot reach npm: the probe
+ * covers the optional checker, so a checkout installed with `--omit=optional`
+ * has something to install, and a plain `runSetup()` here would install it into
+ * the repository the suite is running in. `semantic.test.mjs` steps aside on the
+ * same condition rather than assuming it.
+ */
+const { needed: MISSING } = await runSetup({ platform: "win32" });
+const needsEverything = MISSING.length === 0 ? {} : { skip: `this checkout has not installed ${MISSING.join(", ")}` };
+
+test("a setup with the dependencies already installed runs nothing", needsEverything, async () => {
+  // `win32` is the guarantee rather than the subject: the refusal sits after the
+  // short-circuit, so a checkout that has everything answers exactly what it
+  // answers on this platform, and one that does not refuses instead of
+  // installing. Nothing in this suite may run the real install.
+  const { pluginRoot: root, needed, ran, ok, output } = await runSetup({ platform: "win32" });
 
   assert.equal(ran, false);
   assert.deepEqual(needed, []);
@@ -257,7 +272,7 @@ test("a setup on Windows refuses rather than spawning an npm it cannot start", a
   assert.ok(output.includes(home), `it names the directory to run it in: ${output}`);
 });
 
-test("a Windows machine with everything installed is told that, not the refusal", async () => {
+test("a Windows machine with everything installed is told that, not the refusal", needsEverything, async () => {
   // The refusal sits after the two short-circuits: it is about an install that
   // has to happen, and a dry run's own line is the by-hand instruction.
   const done = await runSetup({ platform: "win32" });
@@ -280,9 +295,11 @@ test("a Windows machine with everything installed is told that, not the refusal"
  */
 function declarations() {
   const src = readFileSync(new URL("../lib/commands.mjs", import.meta.url), "utf8");
-  const starts = [...src.matchAll(/^(?:export )?(?:async )?(?:function|const|let|class) (\w+)/gm)];
+  // `var` and a destructured binding count too: a helper declared either way
+  // would otherwise be invisible to the guarantee below.
+  const starts = [...src.matchAll(/^(?:export )?(?:async )?(?:function|const|let|var|class)\s+([\w$]+|\{[^}]*\})/gm)];
   return starts.map((m, i) => ({
-    name: m[1],
+    names: m[1].match(/[\w$]+/g) ?? [],
     exported: m[0].startsWith("export "),
     body: src
       .slice(m.index, starts[i + 1]?.index ?? src.length)
@@ -296,8 +313,9 @@ test("setup is the only command that runs npm, so a scan, a check and a pin inst
   // reaches a package registry by finding a dependency missing and fetching it.
   // One hop out, since what a helper below does is charged to whoever calls it.
   const decls = declarations();
-  const npmish = decls.filter((d) => d.body.includes("npm")).map((d) => d.name);
-  const reaches = (d) => d.body.includes("npm") || npmish.some((n) => n !== d.name && new RegExp(`\\b${n}\\b`).test(d.body));
+  const npmish = decls.filter((d) => d.body.includes("npm")).flatMap((d) => d.names);
+  const reaches = (d) =>
+    d.body.includes("npm") || npmish.some((n) => !d.names.includes(n) && new RegExp(`\\b${n}\\b`).test(d.body));
 
-  assert.deepEqual(decls.filter((d) => d.exported && reaches(d)).map((d) => d.name), ["runSetup"]);
+  assert.deepEqual(decls.filter((d) => d.exported && reaches(d)).flatMap((d) => d.names), ["runSetup"]);
 });
