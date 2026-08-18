@@ -137,11 +137,11 @@ parse looks like.
 
 This is availability, not confidentiality. A repository can still make a scan slow.
 
-### Subprocesses, and the one command that reaches the network
+### Subprocesses, and the one command that installs anything
 
 Every subprocess here runs through `execFile`, `spawn` or `fork` with an argument array and never a
-shell. Beyond the two parser bridges there are four: `git`, `ps` for the memory guard, the `ruby`
-the readiness probe asks for a version, and `npm`.
+shell. Beyond the parser and checker children there are four: `git`, `ps` for the memory guard, the
+`ruby` the readiness probe asks for a version, and `npm`.
 
 `npm` runs from `anatomiya setup` and from nothing else. `scan`, `check` and `pin` never call it,
 which is the whole reason the install is a command of its own rather than something a scan does on
@@ -154,7 +154,15 @@ npm install --omit=dev --ignore-scripts --no-audit --no-fund
 
 with `cwd` set to the plugin's own directory rather than the repository being scanned, a 10 minute
 timeout and an 8 MB output bound. `--ignore-scripts` is the load-bearing flag: without it a
-dependency's install script runs arbitrary code in the plugin directory during the install.
+dependency's install script runs arbitrary code in the plugin directory during the install. On
+Windows there is no spawn at all: npm ships as `npm.cmd`, running a batch file needs a shell, and
+rather than take one, setup prints the command for you to run yourself.
+
+It is not the only outbound call in the tool, and this file will not claim it is. On a shallow clone
+the check runs `git ls-remote origin` and `git fetch --depth=1 origin <ref>` for the single base
+commit, because `merge-base` cannot answer without it and the alternative is reporting a branch
+against nothing (F5). That is the whole of it: no other command reaches anything, and the scan makes
+no outbound call at any point.
 
 `anatomiya doctor` spawns the other one, `ruby`, to ask which version of `prism` that interpreter
 ships. It runs under the same scrub the Ruby parser child gets, with `RUBYOPT`, `RUBYLIB` and

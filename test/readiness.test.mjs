@@ -33,7 +33,10 @@ test("the node engine's remedy spells the directory to run it in", () => {
   const remedy = remedyFor("oxc");
 
   assert.ok(remedy.includes(pluginRoot()), remedy);
-  assert.match(remedy, /npm install --omit=dev/);
+  // The command that installs, rather than the npm line it runs: the flags that
+  // make that install safe live in one place and are not a person's to retype.
+  assert.match(remedy, /bin\/anatomiya\.mjs setup/);
+  assert.doesNotMatch(remedy, /npm/);
 });
 
 test("the interpreter engine's remedy names the interpreter and never npm", () => {

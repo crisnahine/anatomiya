@@ -1,29 +1,16 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, appendFileSync, statSync, rmSync, cpSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, appendFileSync, statSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
 
-import { needsPathControl, needsShebang } from "./platform.mjs";
+import { needsPathControl, needsShebang, needsWindows } from "./platform.mjs";
+import { installWithoutDependencies } from "./plugin-install.mjs";
 import { EXCLUDE_LINES } from "../lib/rules.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
-
-/**
- * The plugin's own code with no `node_modules` beside it, which is what a
- * marketplace install actually looks like: `/plugin install` copies the files
- * and does not run `npm install`.
- */
-function installWithoutDependencies(t) {
-  const dir = mkdtempSync(join(tmpdir(), "anatomiya-cli-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
-
-  for (const part of ["lib", "bin"]) cpSync(join(ROOT, part), join(dir, part), { recursive: true });
-  cpSync(join(ROOT, "package.json"), join(dir, "package.json"));
-  return dir;
-}
 
 function repoWithSource(t) {
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-cli-repo-"));
@@ -63,7 +50,7 @@ test("a missing parser fails the scan instead of reporting an empty repository",
 
   assert.equal(status, 1, "a scan that parsed nothing must not exit 0");
   assert.match(stderr, /oxc-parser is not installed/);
-  assert.match(stderr, /npm install/, "the message says how to fix it");
+  assert.match(stderr, /bin\/anatomiya\.mjs setup/, "the message says how to fix it");
 });
 
 test("nothing is written to the repository when the parser is missing", (t) => {
@@ -118,7 +105,7 @@ test("a missing parser fails the check instead of reporting it found nothing", (
 
   assert.equal(status, 1, "a check that parsed nothing must not exit 0");
   assert.match(stderr, /oxc-parser is not installed/);
-  assert.match(stderr, /npm install/, "the message says how to fix it");
+  assert.match(stderr, /bin\/anatomiya\.mjs setup/, "the message says how to fix it");
 });
 
 test("the CLI summary and the overview word an unexamined file the same way", (t) => {
@@ -596,7 +583,7 @@ test("setup runs npm in the plugin's own directory, with the arguments it printe
   const { code, stdout } = runFrom(install, ["setup"], bin);
 
   assert.equal(code, 0, stdout);
-  assert.match(stdout, /^not installed: oxc, flow-remove-types$/m, stdout);
+  assert.match(stdout, /^not installed: oxc, flow-remove-types, typescript$/m, stdout);
   assert.match(stdout, /added 2 packages/, "npm's own words come back");
   assert.deepEqual(
     readFileSync(join(install, "npm-argv.txt"), "utf8").trim().split("\n"),
@@ -616,6 +603,25 @@ test("a setup with no npm on PATH says the one thing that fixes it, and exits 2"
 
   assert.equal(code, 2);
   assert.match(stderr, /^npm was not found; install Node\.js 22 with npm, then run setup again$/m, stderr);
+});
+
+test("setup on Windows refuses, and prints the command to run by hand", needsWindows, (t) => {
+  // The end of the same story the seam tells in `commands.test.mjs`, on the one
+  // platform where it is the real behaviour rather than an argument.
+  const install = installWithoutDependencies(t);
+
+  let code = 0;
+  let stderr = "";
+  try {
+    execFileSync(process.execPath, [join(install, "bin", "anatomiya.mjs"), "setup"], { stdio: "pipe", encoding: "utf8" });
+  } catch (err) {
+    code = err.status;
+    stderr = String(err.stderr ?? "");
+  }
+
+  assert.equal(code, 2);
+  assert.match(stderr, /npm install --omit=dev --ignore-scripts --no-audit --no-fund/, stderr);
+  assert.ok(stderr.includes(install), `it names the directory to run it in: ${stderr}`);
 });
 
 test("a setup whose npm failed exits non-zero and shows what npm said", needsShebang, (t) => {

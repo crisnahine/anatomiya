@@ -40,7 +40,7 @@ test("the refusal names the install command and the flag that needs it", () => {
   // table's sentence and this module holds only the frame around it.
   const m = notInstalledMessage(remedyFor("typescript"));
   assert.match(m, /--deep/);
-  assert.match(m, /npm install/);
+  assert.match(m, /bin\/anatomiya\.mjs setup/);
 });
 
 test("a clean config with a high resolution rate is not degraded", () => {

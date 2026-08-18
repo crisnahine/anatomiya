@@ -50,8 +50,8 @@ node "${CLAUDE_PLUGIN_ROOT}/bin/anatomiya.mjs" doctor
 ```
 
 For the node-hosted engine, `node "${CLAUDE_PLUGIN_ROOT}/bin/anatomiya.mjs" setup` installs it.
-Tell the user first that setup runs npm in the plugin's own directory, which is the one command
-here that reaches the network. Any other engine carries its own remedy on its doctor line, and npm
+Tell the user first that setup runs npm in the plugin's own directory, which is the only command
+here that installs anything. Any other engine carries its own remedy on its doctor line, and npm
 cannot install an interpreter. Then run the scan again.
 
 ### The type checker

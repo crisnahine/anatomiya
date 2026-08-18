@@ -17,8 +17,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - `anatomiya setup` installs the node-hosted engine's dependencies in the plugin's own directory,
   since `/plugin install` copies the files and does not run `npm install`. It runs
   `npm install --omit=dev --ignore-scripts --no-audit --no-fund` there and nowhere else, and it is
-  the one command here that reaches the network: `scan`, `check` and `pin` never call it, so they
-  stay offline. `--dry-run` prints the command and installs nothing. Decisions B23 and F5.
+  the only command that installs anything or reaches a package registry: `scan`, `check` and `pin`
+  never call it. `--dry-run` prints the command and installs nothing, and on Windows that printed
+  command is the whole answer: npm ships there as a batch file, running one needs a shell no
+  subprocess here may use, so setup refuses and hands it over. Decisions B23 and F5.
 
 ## [0.2.2] - 2026-08-18
 

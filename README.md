@@ -45,10 +45,12 @@ dependencies, `oxc-parser` and `flow-remove-types`. Install them once:
 /anatomiya:setup
 ```
 
-That runs `npm install` in the plugin's own directory, and it is the one command here that reaches
-the network: `/anatomiya:scan`, `/anatomiya:check` and `/anatomiya:pin` never call it. Outside
-Claude Code it is `node bin/anatomiya.mjs setup`. `/anatomiya:doctor` says which engines answered
-and what to do about one that did not.
+That runs `npm install` in the plugin's own directory. It is the only command that installs
+anything and the only one that reaches a package registry: `/anatomiya:scan`, `/anatomiya:check`
+and `/anatomiya:pin` never call it. Outside Claude Code it is `node bin/anatomiya.mjs setup`. On
+Windows it prints the npm command for you to run by hand, because npm ships there as a batch file
+and nothing here spawns a shell. `/anatomiya:doctor` says which engines answered and what to do
+about one that did not.
 
 Or skip the plugin and run it from a clone:
 
@@ -250,7 +252,7 @@ agent's own output cannot raise the bar it is judged against. Gates and threshol
 | `/anatomiya:check` | Reports which stated conventions the branch broke, as MUST-FIX, FIX or NIT. The base side is the merge base; the side being judged is the working tree, so it answers before you commit. |
 | `/anatomiya:pin` | Accepts the current file population as the baseline the gates read, and prints which files enter and leave it. Without one, every claim is measured against the working tree and no finding can exceed FIX. |
 | `/anatomiya:doctor` | Says whether each engine this parses with is installed, with the version it answered and, for one that is not ready, what to do about it. Exits 0 either way. |
-| `/anatomiya:setup` | Installs the node-hosted engine's dependencies in the plugin's own directory. The one command here that reaches the network, and no other one runs it. |
+| `/anatomiya:setup` | Installs the node-hosted engine's dependencies in the plugin's own directory. The only command that installs anything or reaches a package registry, and no other one runs it. On Windows it prints the command to run by hand. |
 
 The three that read a repository take `--format json`, which prints the same answer as a record
 rather than as lines, for a CI job or another tool to read. `check` also takes `--format github`,
