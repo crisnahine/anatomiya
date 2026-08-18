@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readdirSync, writeFileSync, readFileSync, rmSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
@@ -113,6 +113,36 @@ test("the bound git refused the blob under is the reason that comes back", async
 
   assert.deepEqual(out.files, []);
   assert.deepEqual(out.missing, [{ rel: "big.js", reason: "over size cap" }]);
+});
+
+test("a read that throws before it answers leaves no temporary tree behind", async (t) => {
+  // The directory is created before anything that can fail, so a throw past it
+  // is a directory nobody disposes. Unreachable from either caller today, and
+  // closed by construction rather than by auditing them again next time.
+  let sha;
+  const dir = repo(t, (d, { write, commit }) => {
+    write("a.js", FIRST);
+    sha = commit("first");
+  });
+
+  // A temporary root of its own, so what is left behind is countable rather
+  // than one directory among everything else the machine put there.
+  const home = mkdtempSync(join(tmpdir(), "anatomiya-revision-home-"));
+  t.after(() => rmSync(home, { recursive: true, force: true }));
+  const held = { TMPDIR: process.env.TMPDIR, TMP: process.env.TMP, TEMP: process.env.TEMP };
+  t.after(() => {
+    for (const [k, v] of Object.entries(held)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+  });
+  for (const k of ["TMPDIR", "TMP", "TEMP"]) process.env[k] = home;
+
+  // Not iterable: the pool spreads what it is handed, which throws after the
+  // directory exists and before a single blob has been asked for.
+  await assert.rejects(() => readAtRevision(dir, sha, null));
+
+  assert.deepEqual(readdirSync(home), []);
 });
 
 test("dispose removes the temporary tree", async (t) => {

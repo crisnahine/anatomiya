@@ -39,6 +39,18 @@ test("a supervisor with no stderr cap refuses instead of collecting nothing", ()
   assert.throws(() => guardedChild({ kind: "fork", modulePath: path, stdio: STDIO }), /stderrBytes/);
 });
 
+test("a kind this supervisor does not know refuses instead of spawning nothing", () => {
+  // Twelve fields and a discriminated union: a misspelled `kind` fell through
+  // to the spawn branch with `command` undefined, so the error named the wrong
+  // thing two lines from a module that refuses a missing stderr cap out loud.
+  const path = child("unknown-kind", "process.exit(0)\n");
+
+  assert.throws(
+    () => guardedChild({ kind: "forked", modulePath: path, stdio: STDIO, stderrBytes: 64 }),
+    /forked/
+  );
+});
+
 test("the stderr cap stops on a character boundary, never inside one", async () => {
   // The cap counts UTF-16 code units and an astral character is two of them,
   // so cutting on the count alone hands back a lone surrogate no earlier path
