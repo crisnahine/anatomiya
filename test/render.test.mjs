@@ -459,9 +459,25 @@ test("unread language files sum per extension, ranked by count then name", () =>
     ],
   };
 
-  assert.deepEqual(unreadLanguageFiles(layout), [[".java", 50], [".go", 15], [".kt", 15]]);
-  assert.deepEqual(unreadLanguageFiles({ roots: [] }), []);
-  assert.deepEqual(unreadLanguageFiles(null), [], "an older record carries no layout");
+  assert.deepEqual(unreadLanguageFiles({ layout }), [[".java", 50], [".go", 15], [".kt", 15]]);
+  assert.deepEqual(unreadLanguageFiles({ layout: { roots: [] } }), []);
+  assert.deepEqual(unreadLanguageFiles({}), [], "an older record carries no layout");
+});
+
+test("the unread count comes from the whole corpus, not from what the roster printed", () => {
+  // The layout shows a root's top two extensions and folds the rest away, so
+  // reading the tally back off it undercounts: next.js has 1,016 .rs files and
+  // the printed roots hold 781 of them. A row about what this map could not
+  // read is the last place to state a number it cannot stand behind.
+  const layout = { roots: [{ exts: [[".rs", 781], [".js", 2194]] }] };
+  const corpus = { otherExts: [[".rs", 1016], [".md", 502], [".json", 1306]] };
+
+  assert.deepEqual(unreadLanguageFiles({ layout, corpus }), [[".rs", 1016]]);
+  assert.deepEqual(
+    unreadLanguageFiles({ layout }),
+    [[".rs", 781]],
+    "a record written before the corpus carried the tally still answers from the roster"
+  );
 });
 
 test("a truncated scan names no area, because a truncated scan states nothing", () => {
