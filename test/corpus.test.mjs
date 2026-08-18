@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join, isAbsolute, sep } from "node:path";
 import { execFileSync } from "node:child_process";
 
-import { collect, countUntrackedSource, isDenied, isExcludedDir, isSource, safeResolve, gitRoot, frameworksIn } from "../lib/corpus.mjs";
+import { collect, countUntrackedSource, isDenied, isExcludedDir, isGeneratedFile, isSource, safeResolve, gitRoot, frameworksIn } from "../lib/corpus.mjs";
 import { language } from "../lib/langs.mjs";
 import * as areaLib from "../lib/areas.mjs";
 
@@ -84,7 +84,7 @@ test("a tracked .env contributes nothing even though git lists it", async (t) =>
   const { files, dropped } = await collect(dir);
 
   assert.deepEqual(files.map((f) => f.rel), ["src/a.ts"]);
-  assert.equal(dropped.denied, true);
+  assert.equal(dropped.denied, 1, "denied is a count beside the other three, not a flag");
 });
 
 test("a tracked symlink pointing outside the repository is dropped", async (t) => {
@@ -173,7 +173,7 @@ test("a repository with no commits yields an empty corpus, not an error", async 
 
   assert.deepEqual(files, []);
   assert.equal(truncated, false);
-  assert.deepEqual(dropped, { denied: false, excluded: 0, escaped: 0, notSource: 0 });
+  assert.deepEqual(dropped, { denied: 0, excluded: 0, escaped: 0, notSource: 0, generated: 0 });
 });
 
 test("staged-but-never-committed files are corpus, because git lists them", async (t) => {
@@ -241,6 +241,66 @@ test("the other names deliberately unidiomatic code goes by are excluded too", (
   for (const p of ["src/test_cases_helper/a.ts", "src/mocksmith/a.ts", "examples/basic/a.ts"]) {
     assert.equal(isExcludedDir(p), false, p);
   }
+});
+
+test("a repository's own fixture naming is caught by compounding, not just the bare word", () => {
+  // webpack: 347 of 393 areas and 3 of 14 stated directives, two contradicting
+  // each other on the same dimension, came from `cases`, `configCases`,
+  // `statsCases`, `watchCases`, `hotCases`, `benchmarkCases`,
+  // `memoryLimitCases` and `typesCases`, none of which matched a whole-segment
+  // `cases`. angular's `golden-test` is a hyphenated compound `/goldens?/`
+  // does not reach. prisma's `_fixture` is singular and underscore-prefixed
+  // (309 source files); diaspora's `jasmine_fixtures` is the same shape the
+  // other way round. next.js spells two of its fixture trees singular with no
+  // underscore at all: `tests/fixture`, `tests/snapshot` (75 of 500 areas).
+  for (const p of [
+    "test/cases/mjs/a.js",
+    "test/configCases/foo/a.js",
+    "test/statsCases/foo/a.js",
+    "test/watchCases/foo/a.js",
+    "test/hotCases/foo/a.js",
+    "test/benchmarkCases/foo/a.js",
+    "test/memoryLimitCases/foo/a.js",
+    "test/typesCases/foo/a.js",
+    "packages/core/schematics/migrations/signal-migration/test/golden-test/a.ts",
+    "prisma/relation-mode-gh-1-to-n/_fixture/contract.d.ts",
+    "spec/controllers/jasmine_fixtures/a.rb",
+    "tests/fixture/a.ts",
+    "tests/snapshot/a.ts",
+  ]) {
+    assert.equal(isExcludedDir(p), true, p);
+  }
+});
+
+test("the widened fixture match stops at a real word boundary", () => {
+  // A rule that reaches `golden-test` and `configCases` must not also reach a
+  // directory a human could plausibly name: `use-cases` and `showcases` are
+  // real compounds already in use, and `spec/data` and `tests/execution` are
+  // common enough words that excluding them bare would cost more real
+  // directories than the fixture trees it would catch. chef's own `spec/data`
+  // (8 of 70 areas) and next.js's `tests/execution` are the measured leaks
+  // this rule still does not reach.
+  for (const p of [
+    "docs/use-cases/a.ts",
+    "src/showcases/a.ts",
+    "spec/data/a.rb",
+    "tests/execution/a.ts",
+  ]) {
+    assert.equal(isExcludedDir(p), false, p);
+  }
+});
+
+test("a build/ nested under a repository's own source shell is not compiled output", () => {
+  // turbopack-cli/src/build/mod.rs is real Rust source: the bare-word match on
+  // `build` swallowed it, harmless there only because Rust is not parsed. A
+  // hand-written module named for the "build" verb has to survive this rule
+  // wherever the language it is written in is one this tool does read.
+  assert.equal(isExcludedDir("turbopack-cli/src/build/mod.rs"), false);
+  assert.equal(isExcludedDir("packages/cli/src/build/index.ts"), false);
+  // Compiled output at a package root, or nested one directory into a
+  // monorepo package, is unaffected: neither sits under a source shell.
+  assert.equal(isExcludedDir("build/index.js"), true);
+  assert.equal(isExcludedDir("packages/app/build/index.js"), true);
 });
 
 test("deny-list covers credential-shaped paths", () => {
@@ -829,4 +889,139 @@ test("a yarn directory is vendor, wherever it sits", () => {
   assert.equal(isExcludedDir(".yarn/releases/yarn-4.8.1.cjs"), true);
   assert.equal(isExcludedDir("workspaces/ui/.yarn/plugins/plugin-backstage.cjs"), true);
   assert.equal(isExcludedDir("src/yarn-utils/a.ts"), false, "a directory merely named yarn-ish stays");
+});
+
+// --- generated code ---
+
+test("a file stamped with a generated-file marker does not enter the corpus", async (t) => {
+  // babel's own runtime helpers carry no such marker and still are compiler
+  // output (DECISIONS.md has the fuller story); prisma's do, word for word:
+  // `// GENERATED FILE - DO NOT EDIT`, on an area of 24 files every one
+  // stamped, mined and reported as a 3-author human convention.
+  const dir = repo(t, (d, { git, write }) => {
+    write("gen/a.ts", "// GENERATED FILE - DO NOT EDIT\nexport const a = 1\n");
+    write("gen/b.ts", "export const b = 1\n");
+    git("add", "-A");
+    git("commit", "-qm", "init");
+  });
+
+  const { files, dropped } = await collect(dir);
+
+  assert.deepEqual(files.map((f) => f.rel), ["gen/b.ts"]);
+  assert.equal(dropped.generated, 1);
+});
+
+test("all three generated markers are read", async (t) => {
+  const dir = repo(t, (d, { git, write }) => {
+    write("a.ts", "// @generated\nexport const a = 1\n");
+    write("b.ts", "// DO NOT EDIT\nexport const b = 1\n");
+    write("c.ts", "// Code generated by protoc-gen-go.\nexport const c = 1\n");
+    write("d.ts", "export const d = 1\n");
+    git("add", "-A");
+    git("commit", "-qm", "init");
+  });
+
+  const { files } = await collect(dir);
+
+  assert.deepEqual(files.map((f) => f.rel), ["d.ts"]);
+});
+
+test("a marker found only past the head of the file does not count", async (t) => {
+  // The read is bounded rather than whole-file: a marker "in the first lines"
+  // means the first lines, and a bound protects against a pathological
+  // single-line bundle the same way the size cap protects the parser.
+  const dir = repo(t, (d, { git, write }) => {
+    write("a.ts", `${"x".repeat(5000)}\n// @generated\nexport const a = 1\n`);
+    git("add", "-A");
+    git("commit", "-qm", "init");
+  });
+
+  const { files } = await collect(dir);
+
+  assert.deepEqual(files.map((f) => f.rel), ["a.ts"], "the marker sits past the head cap");
+});
+
+test("a generated directory contributes nothing while an identical hand-written one does", async (t) => {
+  // The fixture-defence gates catch code that looks unusual; generated code
+  // looks ordinary. Excluding the marked files one by one is what keeps a
+  // wholly-generated directory from ever reaching a stated directive, with no
+  // second rule about directories at all.
+  const dir = repo(t, (d, { git, write }) => {
+    for (let i = 0; i < 6; i++) {
+      write(`lib/gen/f${i}.ts`, `// GENERATED FILE - DO NOT EDIT\nexport const f${i} = ${i}\n`);
+      write(`lib/hand/f${i}.ts`, `export const f${i} = ${i}\n`);
+    }
+    git("add", "-A");
+    git("commit", "-qm", "init");
+  });
+
+  const { files } = await collect(dir);
+  const rels = files.map((f) => f.rel);
+
+  assert.deepEqual(rels.filter((r) => r.startsWith("lib/gen/")), []);
+  assert.equal(rels.filter((r) => r.startsWith("lib/hand/")).length, 6);
+});
+
+test("a path .gitattributes marks linguist-generated is excluded with no marker in the file", async (t) => {
+  // next.js vendors ~678 files of byte-for-byte @babel/runtime, carrying no
+  // marker of its own: an unmodified copy of somebody else's published
+  // package has no reason to say so.
+  const dir = repo(t, (d, { git, write }) => {
+    write(".gitattributes", "compiled/** linguist-generated\n");
+    write("compiled/pkg/index.js", "export const x = 1\n");
+    write("src/a.ts", "export const a = 1\n");
+    git("add", "-A");
+    git("commit", "-qm", "init");
+  });
+
+  const { files } = await collect(dir);
+
+  assert.deepEqual(files.map((f) => f.rel), ["src/a.ts"]);
+});
+
+test("gitattributes negation, an extension pattern and an unsupported shape are all handled", async (t) => {
+  const dir = repo(t, (d, { git, write }) => {
+    write(".gitattributes", [
+      "# a comment, and a blank line below",
+      "",
+      "generated/** linguist-generated",
+      "generated/keep.ts -linguist-generated",
+      "*.pb.ts linguist-generated",
+      "*.txt text", // an unrelated attribute, never linguist-generated
+      "libs/*/output/** linguist-generated", // a mid-path wildcard this reader does not expand
+    ].join("\n") + "\n");
+    write("generated/drop.ts", "export const a = 1\n");
+    write("generated/keep.ts", "export const b = 1\n");
+    write("proto/thing.pb.ts", "export const c = 1\n");
+    write("libs/foo/output/index.ts", "export const e = 1\n");
+    write("src/a.ts", "export const d = 1\n");
+    git("add", "-A");
+    git("commit", "-qm", "init");
+  });
+
+  const { files } = await collect(dir);
+
+  assert.deepEqual(files.map((f) => f.rel).sort(), [
+    "generated/keep.ts",
+    "libs/foo/output/index.ts",
+    "src/a.ts",
+  ]);
+});
+
+test("isGeneratedFile answers false rather than throwing on anything but a regular file", (t) => {
+  const dir = tmp(t);
+  assert.equal(isGeneratedFile(dir), false, "a directory is not a file to read");
+  assert.equal(isGeneratedFile(join(dir, "missing.ts")), false, "nothing to open");
+});
+
+test("a repository with no .gitattributes reads as having no generated declarations", async (t) => {
+  const dir = repo(t, (d, { git, write }) => {
+    write("src/a.ts");
+    git("add", "-A");
+    git("commit", "-qm", "init");
+  });
+
+  const { files } = await collect(dir);
+
+  assert.deepEqual(files.map((f) => f.rel), ["src/a.ts"]);
 });
