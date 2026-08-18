@@ -38,7 +38,7 @@ export const REFUSED = [
   "table_primary_key_declared", "reference_foreign_key",
   // The other side of a learned class is another class, which the learning
   // already picks; a hand-written inverse would fight it.
-  "function_naming_case", "exported_symbol_case", "file_naming_case",
+  "function_naming_case", "exported_symbol_case", "exported_class_case", "exported_type_case", "file_naming_case",
   "extends_base", "class_base", "module_include",
   "interface_prefix", "type_alias_prefix",
   // "This repository logs to the console on purpose" is a repository with no

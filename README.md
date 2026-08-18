@@ -224,7 +224,7 @@ files, so the same row states a different sentence in a different repository.
 
 ## What it measures
 
-55 dimensions ship: 25 for JavaScript, 30 reachable in JSX, 25 for Ruby. Each is one claim about
+57 dimensions ship: 27 for JavaScript, 32 reachable in JSX, 25 for Ruby. Each is one claim about
 one area, with a precision marker where the predicate cannot see every site. Among them:
 
 - **Syntax habits**: error handling, `??` vs `||`, `?.` vs `!`, `import type`, hooks, handlers,
@@ -311,7 +311,7 @@ writes blocks a commit, a push, or a merge, and `check` reports rather than fail
 already enforces a rule, the map restating it is waste, not defence in depth.
 
 **JavaScript, TypeScript and Ruby, nothing else.** A Python, Go or Rust repository gets an overview
-with a layout section and no claims in it. One of the 55 needs the type checker and is the only
+with a layout section and no claims in it. One of the 57 needs the type checker and is the only
 thing `scan --deep` adds: `a call chain stays inside one type`. It is off by default because the
 checker was measured about 26x slower than the parse and whole-program, so it cannot be narrowed to
 the files you changed; `--deep` needs the optional `typescript` dependency and the scanned
