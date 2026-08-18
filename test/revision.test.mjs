@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 
 import { readAtRevision } from "../lib/revision.mjs";
+import { MAX_FILE_BYTES } from "../lib/limits.mjs";
 
 // Torn down through `t.after` rather than a call at the end of the body: a
 // failing assertion throws, and a cleanup line below it never runs.
@@ -98,13 +99,16 @@ test("a path that will not come back is named with the reason, not silently drop
 });
 
 test("the bound git refused the blob under is the reason that comes back", async (t) => {
+  // A real file past the cap rather than a cap narrowed for the test: the read
+  // gives up at exactly the size the parser skips at, so no caller sets it and
+  // a knob that only a test turns is one nothing production holds.
   let sha;
   const dir = repo(t, (d, { write, commit }) => {
-    write("big.js", `export const big = "${"x".repeat(4096)}"\n`);
+    write("big.js", `export const big = "${"x".repeat(MAX_FILE_BYTES)}"\n`);
     sha = commit("first");
   });
 
-  const out = await readAtRevision(dir, sha, [{ rel: "big.js" }], { maxBytes: 64 });
+  const out = await readAtRevision(dir, sha, [{ rel: "big.js" }]);
   t.after(out.dispose);
 
   assert.deepEqual(out.files, []);
