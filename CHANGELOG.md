@@ -25,8 +25,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   same answer as a record, schema and caveat codes and all, so a CI job or another tool reads fields
   rather than matching sentences nobody promised to keep; github prints one workflow command per
   finding, MUST-FIX as an error, FIX as a warning and NIT as a notice, so a pull request shows each
-  one on the line it is about. The acceptance harness reads the record instead of regex-parsing
-  stdout, and the caveat codes are written down in `docs/how-it-works.md` section 8. Decision A20.
+  one on the line it is about, then a warning per caveat carrying its code, one for a capped run, and
+  one counting the rule files nobody here wrote. The acceptance harness reads the record instead of
+  regex-parsing stdout, and the caveat codes are written down in `docs/how-it-works.md` section 8.
+  Decision A20.
 - `npm run defaults:seed` writes an unmeasured `lib/model-defaults.json` entry for any registry key
   that has none, so the table is seeded rather than hand-written. A seeded entry reads `none` and
   fails open, which means the row keeps stating until somebody measures it. Decision A15.
