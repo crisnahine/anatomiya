@@ -82,8 +82,8 @@ input like any other, and a ref is rejected if it starts with `-`.
 
 ### Everything rendered goes through one allowlist encoder
 
-`lib/encode.mjs` is the only way a repository-controlled value reaches a generated file. It is an
-allowlist, not a denylist, and that distinction is the finding.
+`lib/encode.mjs` is the only way a repository-controlled value reaches a generated file, or a record
+this tool prints. It is an allowlist, not a denylist, and that distinction is the finding.
 
 A denylist over control characters misses bidi overrides and zero-width joiners. Those are Unicode
 category Cf, not Cc, so an ASCII control filter passes them untouched, and `JSON.stringify` does not
@@ -98,6 +98,11 @@ quoted.
 
 Every repository-controlled value goes through it: paths, area names, author names and emails, commit
 subjects, branch names, and matched source text.
+
+The `--format json` and `--format github` writers run that pass over the whole record before they
+serialise it, rather than at each line. A machine reader was the one surface a crafted filename
+reached whole: the rendered lines had always encoded, and `JSON.stringify` escapes nothing the
+encoder does.
 
 ### The corpus is tracked files only
 

@@ -30,7 +30,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   regex-parsing stdout, and the caveat codes are written down in `docs/how-it-works.md` section 8.
   The writers and the caveat table live in `lib/check-report.mjs`, apart from the pipeline that
   produces the record, so a reader that wants a writer no longer loads a parser and a git runner to
-  get one. Decision A20.
+  get one. Every record goes through the encoder before it is serialised, the pin's `added` list
+  included, which is printed by its JSON writer and by nothing else. Decisions A20 and F4.
 - `npm run defaults:seed` writes an unmeasured `lib/model-defaults.json` entry for any registry key
   that has none, so the table is seeded rather than hand-written. A seeded entry reads `none` and
   fails open, which means the row keeps stating until somebody measures it. Decision A15.

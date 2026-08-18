@@ -456,3 +456,63 @@ test("a pin answers as a record, carrying the delta it accepted", () => {
   assert.equal(s.dryRun, true);
   assert.deepEqual(s.delta.areas, delta.areas);
 });
+
+// A bidi override and a zero-width joiner: `JSON.stringify` escapes neither,
+// because both are category Cf rather than Cc.
+const CF = /[​-‏‪-‮]/;
+
+test("the scan record neutralises every value the repository named", () => {
+  // The lines encode as they render, so a writer that is not the renderer is
+  // the one surface a crafted filename reaches whole.
+  const s = JSON.parse(
+    scanJson(
+      summary({
+        root: "/repo/ev‮li",
+        historyError: "fatal: bad object ‍head",
+        rules: {
+          foreign: ["ho‮use.md"],
+          unknown: ["un‍known.md"],
+          unreadable: ["unre‮adable.md"],
+          replaced: ["repl‍aced.md"],
+          listed: true,
+        },
+      })
+    )
+  );
+
+  const named = [
+    s.root,
+    s.historyError,
+    ...s.rules.foreign,
+    ...s.rules.unknown,
+    ...s.rules.unreadable,
+    ...s.rules.replaced,
+  ];
+  for (const value of named) assert.doesNotMatch(value, CF, value);
+});
+
+test("an ASCII scan record comes back from the writer unchanged", () => {
+  const s = summary({
+    historyError: "fatal: not a git repository",
+    rules: { foreign: ["house.md"], unknown: [], unreadable: [], listed: true, replaced: [] },
+  });
+
+  const out = JSON.parse(scanJson(s));
+
+  assert.equal(out.root, s.root);
+  assert.equal(out.historyError, s.historyError);
+  assert.deepEqual(out.rules, s.rules);
+});
+
+test("the pin record neutralises the paths only it prints", () => {
+  // The added list is printed by this writer and by nothing else, so it has no
+  // encoded counterpart anywhere: the line a human reads counts them.
+  const next = pinFor(["li‮b"]);
+  const delta = pinDelta(null, next);
+
+  const s = JSON.parse(pinJson(pinSummary({ previous: null, next, delta, path: PIN_PATH, dryRun: true })));
+
+  for (const a of s.delta.areas) {
+    for (const value of [a.path, ...a.added, ...a.removed]) assert.doesNotMatch(value, CF, value);
+  }
+});
