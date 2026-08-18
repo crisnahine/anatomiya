@@ -113,7 +113,7 @@ function bumpCount(dir, phrasing) {
   const path = join(dir, "docs", "how-it-works.md");
   const text = readFileSync(path, "utf8");
   const stated = text.match(phrasing);
-  assert.ok(stated, `section 4 states no count matching ${phrasing}`);
+  assert.ok(stated, `the walkthrough states no count matching ${phrasing}`);
   const wrong = stated[0].replace(stated[1], String(Number(stated[1]) + 1));
   writeFileSync(path, text.replace(stated[0], wrong));
   return wrong;
@@ -187,6 +187,18 @@ test("a caveat code the walkthrough does not document fails", (t) => {
 
   assert.equal(status, 1);
   assert.match(output, /does not document the caveat code no-map/);
+});
+
+test("a caveat-code count in the walkthrough the report does not hold fails", (t) => {
+  // The table is held to the code in both directions and the sentence over it
+  // was not, so a new code failed on the missing row and left the prose short.
+  const dir = repoCopy(t);
+  bumpCount(dir, /There\s+are (\d+)\./);
+
+  const { status, output } = check(dir);
+
+  assert.equal(status, 1);
+  assert.match(output, /does not say there are \d+ caveat codes/);
 });
 
 test("a documented code the report can never emit fails too", (t) => {
