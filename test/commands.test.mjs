@@ -2,9 +2,10 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 import { execFileSync } from "node:child_process";
 
+import { needsShebang } from "./platform.mjs";
 import { runCheck, runPin, runScan } from "../lib/commands.mjs";
 import { PIN_PATH } from "../lib/baseline.mjs";
 
@@ -38,6 +39,33 @@ function repoWithBranch(t) {
   git("add", "-A");
   git("commit", "-qm", "add");
   return dir;
+}
+
+/** The same repository with one Ruby file in it, so the scan needs an interpreter as well as a parser. */
+function repoWithRuby(t) {
+  const dir = repo(t);
+  writeFileSync(join(dir, "src", "a.rb"), "class A\n  def b\n    1\n  end\nend\n");
+  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
+  git("add", "-A");
+  git("commit", "-qm", "ruby");
+  return dir;
+}
+
+/**
+ * A PATH the version control system is on and the interpreter is not.
+ *
+ * Emptying PATH outright takes git with it, and every read a scan makes before
+ * the parse is a git read, so the run would fail long before reaching a parser.
+ */
+function withoutRuby(t) {
+  const bin = mkdtempSync(join(tmpdir(), "anatomiya-commands-path-"));
+  t.after(() => rmSync(bin, { recursive: true, force: true }));
+  const git = (process.env.PATH ?? "")
+    .split(delimiter)
+    .map((d) => join(d, "git"))
+    .find((p) => existsSync(p));
+  writeFileSync(join(bin, "git"), `#!/bin/sh\nexec "${git}" "$@"\n`, { mode: 0o755 });
+  return bin;
 }
 
 test("a dry-run scan plans the whole map and puts none of it on disk", async (t) => {
@@ -86,6 +114,29 @@ test("a scan of a directory that is not a repository refuses rather than reporti
   t.after(() => rmSync(dir, { recursive: true, force: true }));
 
   await assert.rejects(() => runScan(dir, { dryRun: true }), /not a git repository/);
+});
+
+test("a scan with no interpreter is told to install Ruby, never to run npm", needsShebang, async (t) => {
+  // Measured on a Ruby repository with no `ruby` on PATH: the scan exited 1
+  // with `spawn ruby ENOENT` and then "run `npm install --omit=dev` in the
+  // plugin directory". npm cannot install an interpreter, and the one remedy
+  // printed was the only one that could not work.
+  const dir = repoWithRuby(t);
+  const path = process.env.PATH;
+  t.after(() => {
+    process.env.PATH = path;
+  });
+  process.env.PATH = withoutRuby(t);
+
+  await assert.rejects(
+    () => runScan(dir),
+    (err) => {
+      assert.match(err.message, /install Ruby 3\.4 or newer/, err.message);
+      assert.doesNotMatch(err.message, /npm/, err.message);
+      assert.match(err.message, /then scan again$/, err.message);
+      return true;
+    }
+  );
 });
 
 test("a pin writes the baseline and answers with the delta it accepted", async (t) => {

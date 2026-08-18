@@ -78,6 +78,34 @@ test("a record written before the new counts existed still reads", (t) => {
   assert.equal(facts.areas[0].dimensions[0].moreExceptions, undefined, "and simply carries no such count");
 });
 
+test("the record says which engine answered this scan and at what version", (t) => {
+  const dir = root(t);
+  const scan = result([dim()]);
+  scan.parse = { parsed: 8, engines: { oxc: { version: "0.144.0" } } };
+
+  writeFacts(dir, scan);
+
+  assert.deepEqual(readFacts(dir).facts.parse.engines, { oxc: { version: "0.144.0" } });
+});
+
+test("a record written before the engines were stored still reads", (t) => {
+  // C10 again, for schema 12. A record that never asked which engine answered
+  // reads as absent rather than as a probe that found none, which is the
+  // difference between an older map and a machine with no parser on it.
+  const dir = root(t);
+  mkdirSync(dirname(join(dir, FACTS_PATH)), { recursive: true });
+  writeFileSync(
+    join(dir, FACTS_PATH),
+    JSON.stringify({ schema: 11, parse: { parsed: 8, crashed: 0 }, areas: [] })
+  );
+
+  const { facts, unreadable } = readFacts(dir);
+
+  assert.equal(unreadable, null, "a schema this build knows stays readable");
+  assert.equal(facts.parse.engines, null);
+  assert.equal(facts.parse.parsed, 8, "and everything it did carry is untouched");
+});
+
 test("the record carries the files this pass's dimension could speak about", (t) => {
   // `applyGates` divides by `langFileCount`, the files the dimension could
   // speak about, and the record stored only the numerator. So the one number a
@@ -307,7 +335,7 @@ test("the roster survives the round trip, at the top and under each area", (t) =
   writeFacts(dir, { ...base, layout, areas: [{ ...base.areas[0], kinds }] });
   const { facts } = readFacts(dir);
 
-  assert.equal(facts.schema, 11, "the roster arrived with a version of its own");
+  assert.equal(facts.schema, FACTS_SCHEMA, "and the record stamps the shape it was written in");
   assert.deepEqual(facts.layout, layout);
   assert.deepEqual(facts.areas[0].kinds, kinds);
 });

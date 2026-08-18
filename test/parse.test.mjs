@@ -93,6 +93,41 @@ test("Ruby the parser rejected is the same kind of unread as JavaScript it rejec
   assert.equal(out.records.get("bad.rb").kind, "rejected");
 });
 
+test("a parse says which engine answered it, and at what version", async () => {
+  // The parser child has always reported its version on the ready message and
+  // the bridge has always reported prism's. Both were dropped before anything
+  // could read them, so a map could not say which build produced its counts.
+  const out = await parseAll([{ rel: "a.ts", source: "export const a = 1\n", lang: "js" }]);
+
+  assert.match(out.engines.oxc.version, /^\d+\.\d+\.\d+/);
+  assert.deepEqual(out.missingEngines, []);
+  // An engine no file routed to never ran, which is a different fact from one
+  // that ran and reported nothing.
+  assert.equal(out.engines.prism, undefined);
+});
+
+test("the Ruby bridge reports its own engine's version the same way", needsRuby, async () => {
+  const out = await parseAll([{ rel: "a.rb", source: "class A\nend\n", lang: "ruby" }]);
+
+  assert.match(out.engines.prism.version, /^\d+\.\d+/);
+});
+
+test("an interpreter that is not there names its own engine and no other", async (t) => {
+  // The remedy is built from this: npm cannot install Ruby, and the scan told
+  // the reader to run npm because nothing said which engine was missing.
+  const path = process.env.PATH;
+  t.after(() => {
+    process.env.PATH = path;
+  });
+  process.env.PATH = "";
+
+  const out = await parseAll([{ rel: "a.rb", source: "class A\nend\n", lang: "ruby" }]);
+
+  assert.deepEqual(out.missingEngines, ["prism"]);
+  assert.match(out.missingParser, /ruby/);
+  assert.equal(out.engines.prism.version, null, "the child never started, so it reported no version");
+});
+
 test("a source held in memory is parsed without the caller finding it a path", async () => {
   // The check reads its versions out of git rather than off disk, and the
   // parser reads from a path because it runs in another process. Somewhere to

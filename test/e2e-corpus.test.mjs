@@ -131,7 +131,7 @@ test("a paths list past the bound is the documented exemption, and the body it c
 });
 
 const facts = (over = {}) => ({
-  schema: 11,
+  schema: FACTS_SCHEMA,
   layout: { roots: [], more: { roots: 0, files: 0 }, tests: [] },
   areas: [{ id: "a1", path: "lib", kinds: { exts: [[".mjs", 9]] }, imports: [], reused: null, dimensions: [] }],
   ...over,
