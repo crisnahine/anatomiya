@@ -117,6 +117,22 @@ test("a plan made by one call is committed by the other", () => {
   rmSync(dir, { recursive: true, force: true });
 });
 
+test("a plan is committed to the root it was made for, or to nothing", () => {
+  // The committer resolves the store from the root it is handed, and the record
+  // it writes there carries the root the plan was made for, so two roots put one
+  // repository's facts in another repository under that one's name.
+  const dir = workspace();
+  const elsewhere = workspace();
+
+  assert.throws(
+    () => commitMap(elsewhere, planMap(result(dir, [area("src/services")]))),
+    /was made for/
+  );
+  assert.equal(existsSync(join(elsewhere, ".claude")), false, "nothing was created there");
+  rmSync(elsewhere, { recursive: true, force: true });
+  rmSync(dir, { recursive: true, force: true });
+});
+
 test("a dry run writes nothing at all", () => {
   const dir = workspace();
 
@@ -697,6 +713,24 @@ test("a .claude symlinked outside the repository refuses the whole write", () =>
   rmSync(dir, { recursive: true, force: true });
 });
 
+test("a dry run refuses the symlinked directory a real write refuses", () => {
+  // The refusal belongs to the half that plans, or a dry run answers with a
+  // clean plan for a write that lands in `../victim` the moment one is asked
+  // for.
+  const dir = workspace();
+  const outside = mkdtempSync(join(tmpdir(), "anatomiya-outside-"));
+  symlinkSync(outside, join(dir, ".claude"));
+
+  assert.throws(
+    () => writeMap(result(dir, [area("src/services")]), { dryRun: true }),
+    /outside the repository/
+  );
+  assert.deepEqual(readdirSync(outside), [], "and nothing was written there either");
+
+  rmSync(outside, { recursive: true, force: true });
+  rmSync(dir, { recursive: true, force: true });
+});
+
 test("a .claude/rules symlinked outside the repository refuses it too", () => {
   // The link can sit at either level, and only the resolved path says so.
   const dir = workspace();
@@ -891,6 +925,19 @@ test("a directory holding a generated name is reported, not an errno", () => {
 
   assert.throws(
     () => writeMap(result(dir, [area("src/services")])),
+    /is not a file, so the map could not be written/
+  );
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("a dry run refuses the occupied name a real write refuses", () => {
+  // Same half, same reason: the plan is what a dry run answers with, so what
+  // says the write cannot happen has to run before the plan is built.
+  const dir = workspace();
+  mkdirSync(join(rules(dir), `${PREFIX}overview.md`), { recursive: true });
+
+  assert.throws(
+    () => writeMap(result(dir, [area("src/services")]), { dryRun: true }),
     /is not a file, so the map could not be written/
   );
   rmSync(dir, { recursive: true, force: true });
