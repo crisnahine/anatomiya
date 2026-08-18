@@ -413,6 +413,26 @@ test("the declarative `test` macro inside a class body is minitest", needsRuby, 
   assert.equal(bare.testCalls, false);
 });
 
+test("a class that reuses `test` as its own DSL is not minitest", needsRuby, async (t) => {
+  // An in-house rules engine naming its conditions with the same macro shape,
+  // description and all. A class body was the whole gate, so three production
+  // authorization classes read as `2 minitest specs` in their area's own line.
+  // The macro now asks the evidence `def test_*` already asks for: the class
+  // says so, the path says so, or the class is named the way minitest names one.
+  const dir = repo({
+    "app/policies/approval_policy.rb":
+      `class ApprovalPolicy\n  test "approver is not the requester" do\n    true\n  end\nend\n`,
+    "test/models/thing_test.rb": `class Whatever\n  test "still minitest by path" do\n    assert true\n  end\nend\n`,
+  });
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+  const rels = ["app/policies/approval_policy.rb", "test/models/thing_test.rb"];
+  const { records } = await parseAll(list(dir, rels));
+
+  assert.equal(records.get("app/policies/approval_policy.rb").facets.testRunner, null);
+  assert.equal(records.get("test/models/thing_test.rb").facets.testRunner, "minitest");
+});
+
 test("Beaker's `test_name` macro sets the runner", needsRuby, async (t) => {
   const dir = repo({
     "acceptance/tests/base/provision.rb": `test_name "provisions a node" do\n  step "installs the package"\nend\n`,

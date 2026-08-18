@@ -275,6 +275,22 @@ test("exported_class_case votes with a class declaration or a class bound to a v
   assert.deepEqual(h.map((x) => x.where).sort(), ["Foo", "OrderList"]);
 });
 
+test("a default export that names what it declares is a site", async () => {
+  // One class per file, default-exported, is the ordinary shape for a React
+  // component, and none of it was visible. On a six-class repository where
+  // five are default-exported PascalCase, the one named-export outlier was the
+  // whole evidence base and the row stated the opposite of the convention.
+  const h = await astHits("exported_class_case", `
+    export default class Header {}
+  `);
+  assert.deepEqual(h.map((x) => x.where), ["Header"]);
+
+  const anon = await astHits("exported_class_case", `
+    export default class {}
+  `);
+  assert.deepEqual(anon, [], "an anonymous default export names nothing and is still not a site");
+});
+
 test("exported_type_case votes with an interface, a type alias, or an enum", async () => {
   const h = await astHits("exported_type_case", `
     export interface IFoo { a: string }
@@ -286,9 +302,13 @@ test("exported_type_case votes with an interface, a type alias, or an enum", asy
   assert.deepEqual(h.map((x) => x.where).sort(), ["Color", "IFoo", "UserShape"]);
 });
 
-test("a default export, a namespace, and a renaming specifier answer none of the three rows", async () => {
+test("an anonymous default export, a namespace, and a renaming specifier answer none of the three rows", async () => {
+  // A default export used to be skipped whole. It names what it declares often
+  // enough that skipping it left a repository of default-exported components
+  // speaking through whichever one file used a named export instead, so only
+  // the anonymous one is out now.
   const src = `
-    export default function ignoredName() {}
+    export default function () {}
     export namespace NS { export const x = 1; }
     const plain = 1;
     export { plain as renamedThing };
