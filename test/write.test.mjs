@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 
-import { writeMap } from "../lib/write.mjs";
+import { commitMap, planMap, writeMap } from "../lib/write.mjs";
 import { areaFilename, isOwned, EXCLUDE_LINES, HEAD_BYTES, PREFIX } from "../lib/rules.mjs";
 import { areaId } from "../lib/areas.mjs";
 import { writeFacts, readFacts as readFactsFrom } from "../lib/facts.mjs";
@@ -83,6 +83,37 @@ test("files land in .claude/rules with the facts beside them", () => {
   assert.equal(plan.orphaned, 8, "the split reaches the plan, not just the render");
 
   assert.deepEqual(EXCLUDE_LINES, [`${RULES}/${PREFIX}*.md`, `${STORE}/`]);
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("a plan carries every body it would write, and puts none of them on disk", () => {
+  // The measurement harness held its own copy of this derivation, because the
+  // only way to see a body was to write it. A plan that renders is the one
+  // rendering, so a field added here cannot reach the map and miss the recount.
+  const dir = workspace();
+  const a = area("src/services");
+  const quiet = area("src/types", []);
+
+  const plan = planMap(result(dir, [a, quiet]));
+
+  assert.deepEqual([...plan.bodies.keys()], ["anatomiya-overview.md", areaFilename(a)]);
+  assert.deepEqual(plan.write, [...plan.bodies.keys()]);
+  assert.equal(plan.blind, false);
+  assert.equal(plan.root, dir);
+  assert.match(plan.bodies.get(areaFilename(a)), /catch blocks use the error they caught/);
+  assert.equal(existsSync(join(dir, ".claude")), false, "not even the directory");
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("a plan made by one call is committed by the other", () => {
+  const dir = workspace();
+  const a = area("src/services");
+
+  const plan = commitMap(dir, planMap(result(dir, [a])));
+
+  assert.deepEqual(listRules(dir), [areaFilename(a), "anatomiya-overview.md"].sort());
+  assert.equal(readFileSync(join(rules(dir), areaFilename(a)), "utf8"), plan.bodies.get(areaFilename(a)));
+  assert.ok(existsSync(join(dir, STORE, "facts.json")), "the facts are on disk beside the files");
   rmSync(dir, { recursive: true, force: true });
 });
 

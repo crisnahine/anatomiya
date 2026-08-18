@@ -36,11 +36,12 @@ import {
 import { parseAll } from "../lib/parse.mjs";
 import { baseOf, dirOf, extOf, stemOf } from "../lib/paths.mjs";
 import { scan } from "../lib/scan.mjs";
-import { MAX_LINES, renderOverview, splitUncovered } from "../lib/render.mjs";
+import { MAX_LINES } from "../lib/render.mjs";
 import { namesakeClause, ROOT_LABEL } from "../lib/render-layout.mjs";
 import { RUNNER_LABELS, UNNAMED_RUNNER } from "../lib/test-shape.mjs";
-import { readFacts, statedSide, writeFacts } from "../lib/facts.mjs";
-import { areaFilename, auditRules, knownNames, OVERVIEW_FILE } from "../lib/rules.mjs";
+import { statedSide, writeFacts } from "../lib/facts.mjs";
+import { OVERVIEW_FILE } from "../lib/rules.mjs";
+import { planMap } from "../lib/write.mjs";
 import { encodePath } from "../lib/encode.mjs";
 
 const HEADING = "## What lives where";
@@ -372,22 +373,14 @@ function checkPathOnDisk(label, root) {
 
 // --- one repository ---------------------------------------------------------
 
-/**
- * The `files` argument a real write would hand the overview: the uncovered
- * split, and whatever else is already loading out of the rules directory.
- * Mirrors `writeMap`, which cannot be called for a body it does not return.
- */
-function overviewFor(result) {
-  const uncovered = result.corpus.files - result.areas.reduce((s, a) => s + a.fileCount, 0);
-  const { orphaned } = splitUncovered(uncovered, result.corpus.orphaned ?? uncovered);
-  const planned = new Set([OVERVIEW_FILE, ...result.areas.filter((a) => a.dimensions.length > 0).map(areaFilename)]);
-  const audit = auditRules(result.root, knownNames(readFacts(result.root).facts));
-  const others = {
-    foreign: audit.foreign.filter((f) => !planned.has(f)).sort(),
-    unknown: audit.unknown.filter((f) => !planned.has(f)).sort(),
-    unreadable: audit.unreadable.filter((f) => !planned.has(f)).sort(),
-  };
-  return renderOverview(result, { uncovered, orphaned, others });
+/** The overview body a real write would put on disk, rendered and not written. */
+export function overviewFor(result) {
+  const plan = planMap(result);
+  const body = plan.bodies.get(OVERVIEW_FILE);
+  // A scan blind to a language renders nothing at all, and a recount of no
+  // overview is not a section this bar may report either way.
+  if (body === undefined) fail(`no overview was rendered: the scan read no ${plan.unreadable.join(" or ")} file at all`);
+  return body;
 }
 
 /** The layout corpus, rebuilt here rather than read out of the scan. */
