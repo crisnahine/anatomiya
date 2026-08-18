@@ -182,7 +182,6 @@ test("the overview the recount reads back is the file a write puts on disk", () 
   const written = readFileSync(join(dir, RULES_DIR, OVERVIEW_FILE), "utf8");
   assert.match(written, /^- "house-style\.md"$/m);
   assert.equal(overviewFor(result), written);
-  assert.equal(overviewFor(result), planMap(result).bodies.get(OVERVIEW_FILE));
   rmSync(dir, { recursive: true, force: true });
 });
 

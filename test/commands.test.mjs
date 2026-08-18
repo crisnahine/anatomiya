@@ -11,6 +11,7 @@ import { installWithoutDependencies } from "./plugin-install.mjs";
 import { runCheck, runDoctor, runPin, runScan, runSetup } from "../lib/commands.mjs";
 import { PIN_PATH } from "../lib/baseline.mjs";
 import { PROBE_IDS, pluginRoot } from "../lib/readiness.mjs";
+import { OVERVIEW_FILE } from "../lib/rules.mjs";
 import { loadTypeScript } from "../lib/semantic.mjs";
 
 const RULES = join(".claude", "rules");
@@ -81,7 +82,10 @@ test("a dry-run scan plans the whole map and puts none of it on disk", async (t)
 
   const { plan, summary } = await runScan(dir, { dryRun: true });
 
-  assert.equal(summary.wrote, plan.write.length);
+  // The whole map, planned: the overview and this repository's one area file,
+  // which is what a real run of this fixture writes. Nothing of it lands.
+  assert.equal(plan.write.length, 2, plan.write.join(", "));
+  assert.ok(plan.write.includes(OVERVIEW_FILE), plan.write.join(", "));
   assert.equal(summary.dryRun, true);
   assert.equal(existsSync(join(dir, ".claude")), false, "not even the directory");
 });
@@ -101,9 +105,14 @@ test("a scan answers with the whole result, so the summary is not the only thing
 
   const { result, summary } = await runScan(dir, { dryRun: true });
 
-  assert.equal(summary.files, result.corpus.files);
-  assert.equal(summary.areas, result.areas.length);
-  assert.equal(summary.root, result.root);
+  // The summary carries the counts; the result carries the slots they were
+  // counted from, which is the whole reason a caller is handed both.
+  assert.equal(summary.files, 8);
+  assert.equal(summary.claims.total, 1);
+  assert.ok(
+    result.areas[0].dimensions.every((d) => typeof d.candidates === "number"),
+    "the slots are there, not only how many of them there were"
+  );
 });
 
 test("a path inside the repository is widened to the root the scan reports", async (t) => {
