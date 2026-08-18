@@ -1021,11 +1021,17 @@ test("gitattributes negation, an extension pattern and an unsupported shape are 
       "*.pb.ts linguist-generated",
       "*.txt text", // an unrelated attribute, never linguist-generated
       "libs/*/output/** linguist-generated", // a mid-path wildcard this reader does not expand
+      // A character class, which git reads as matching `class1.ts`. Refusing
+      // the pattern and escaping it into a literal look alike on every path
+      // that holds no bracket, so the one that does is what tells them apart:
+      // escaped, this would drop a file git's own rule never names.
+      "class[1].ts linguist-generated",
     ].join("\n") + "\n");
     write("generated/drop.ts", "export const a = 1\n");
     write("generated/keep.ts", "export const b = 1\n");
     write("proto/thing.pb.ts", "export const c = 1\n");
     write("libs/foo/output/index.ts", "export const e = 1\n");
+    write("class[1].ts", "export const f = 1\n");
     write("src/a.ts", "export const d = 1\n");
     git("add", "-A");
     git("commit", "-qm", "init");
@@ -1034,6 +1040,7 @@ test("gitattributes negation, an extension pattern and an unsupported shape are 
   const { files } = await collect(dir);
 
   assert.deepEqual(files.map((f) => f.rel).sort(), [
+    "class[1].ts",
     "generated/keep.ts",
     "libs/foo/output/index.ts",
     "src/a.ts",

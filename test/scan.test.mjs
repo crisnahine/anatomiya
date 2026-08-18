@@ -216,6 +216,27 @@ test("a directory nothing could be counted in is not a directory that was too sm
   assert.equal(result.corpus.orphaned, 0, "and none of them was left without an area by discovery");
 });
 
+test("the corpus tallies every file it has no language for, by extension", async (t) => {
+  // The overview names an unread language from this field, and it exists
+  // because the roster cannot be counted back off for the number: a root prints
+  // its top two extensions and folds the rest away, which held 781 of next.js's
+  // 1,016 Rust files. Pinned here rather than only at the renderer, where a
+  // hand-built record would pass whatever the scan actually stored.
+  const dir = repo(t, (d, { git, write }) => {
+    for (let i = 0; i < 4; i++) write(`src/a${i}.ts`, `export const a${i} = 1\n`);
+    for (let i = 0; i < 3; i++) write(`crates/core/m${i}.rs`, `pub fn f${i}() -> i32 { ${i} }\n`);
+    write("crates/api/n0.rs", "pub fn g() -> i32 { 0 }\n");
+    write("README.md", "# hi\n");
+    git("add", "-A");
+    git("commit", "-qm", "init");
+  });
+
+  const result = await scan(dir);
+
+  assert.deepEqual(result.corpus.otherExts, [[".rs", 4], [".md", 1]]);
+  assert.equal(result.corpus.files, 4, "and the source count is the four it can read");
+});
+
 test("a language whose parser could not run at all is named", async (t) => {
   // The condition is "the parser never ran", which is what a missing
   // interpreter looks like: every file charged as a crash. It is not "no file

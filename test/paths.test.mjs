@@ -45,10 +45,16 @@ test("the three splits agree about where a declaration file's extension starts",
   // Left to the one-dot rule, this answers `packages/types/index.d`, which no
   // longer ends in `/index`, and the sibling index stops resolving a directory
   // through its own entry file.
+  // Written out rather than recomputed from `dirOf` and `stemOf`: reading the
+  // expectation off the same module the assertion tests leaves a loop that
+  // passes whenever all three move together, which is exactly the drift the
+  // shared split exists to prevent.
   assert.equal(withoutExtension("packages/types/index.d.ts"), "packages/types/index");
-  for (const rel of ["src/types/image.d.ts", "src/abcd.ts", "src/types/image.d.js", "Rakefile", ".env"]) {
-    assert.equal(withoutExtension(rel), `${dirOf(rel) ? `${dirOf(rel)}/` : ""}${stemOf(rel)}`, rel);
-  }
+  assert.equal(withoutExtension("src/types/image.d.ts"), "src/types/image");
+  assert.equal(withoutExtension("src/abcd.ts"), "src/abcd", "a stem merely ending in d is not a declaration");
+  assert.equal(withoutExtension("src/types/image.d.js"), "src/types/image.d", "JavaScript has no declaration file");
+  assert.equal(withoutExtension("Rakefile"), "Rakefile");
+  assert.equal(withoutExtension(".env"), ".env");
 });
 
 test("a TypeScript declaration file's extension is the whole .d.ts suffix", () => {

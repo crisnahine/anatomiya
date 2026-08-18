@@ -466,6 +466,26 @@ test("a flat corpus learns the identical root and hits it always did", () => {
   ]));
 });
 
+test("a package with no companion of its own is told a path under that package", () => {
+  // The fallback to the declared pair, mirrored under the prefix, is what the
+  // check prints to a reader. Nothing pinned the two sides of it apart: both a
+  // real path and the string "null/..." are equally absent from the corpus, so
+  // every existing test read the same either way.
+  const changed = ["decidim-admin/app/models/decidim/admin/dashboard.rb"];
+  const corpus = new Set([
+    "decidim-core/app/models/decidim/component.rb",
+    "decidim-core/spec/models/decidim/component_spec.rb",
+    "decidim-admin/app/models/decidim/admin/dashboard.rb",
+  ]);
+
+  assert.deepEqual(pairingViolations(changed, corpus, MODEL_SPEC), [
+    {
+      path: "decidim-admin/app/models/decidim/admin/dashboard.rb",
+      companion: "decidim-admin/spec/models/decidim/admin/dashboard_spec.rb",
+    },
+  ]);
+});
+
 test("a package's spec cannot answer the obligation of a model at the repository root", () => {
   // The root is a package too, the one everything not inside another belongs
   // to. Restricting only the named prefixes left it able to see every spec in
