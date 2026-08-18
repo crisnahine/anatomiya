@@ -226,12 +226,12 @@ back on the queue once. A child that exited on its own, a missing interpreter an
 script are charged on the first attempt: a second child answers those the same way at twice the
 cost. Every record says which attempt answered it.
 
-Every child this tool runs, the pool's parse workers, the Ruby stream and the type checker, goes
-through one supervisor that owns the spawn, the bounded stderr, the two clocks and the kill. The
-numbers stay with the bridge that measured them and only the shape is shared, because three
-hand-written copies of one battery had drifted into three stderr caps that each overshot by a chunk
-and one bridge holding a single re-armed timeout where the other two held an idle window and a wall
-clock.
+Every child this tool runs, the pool's parse workers, the Ruby stream and the type checker that
+`--deep` asks for, goes through one supervisor that owns the spawn, the bounded stderr, the two
+clocks and the kill. The numbers stay with the bridge that measured them and only the shape is
+shared, because three hand-written copies of one battery had drifted into three stderr caps that
+each overshot by a chunk and one bridge holding a single re-armed timeout where the other two held
+an idle window and a wall clock.
 
 ## 4. Dimensions and the three numbers
 

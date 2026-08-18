@@ -272,7 +272,7 @@ independently on all 35, and `npm run e2e:corpus` drives the shipped CLI from a 
 repository through scan, a byte-identical rescan, pin, check, and a synthetic violation the check
 must catch. The unit suite runs under `node --test` with enforced coverage floors, and CI runs it on
 Linux, macOS and Windows. The number of tests is not written down here: `node --test` prints it on
-every run, and a copy of that number is stale by the next commit.
+every run.
 
 ## Limits
 

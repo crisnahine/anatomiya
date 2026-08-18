@@ -239,20 +239,30 @@ function caveatSection(text) {
   const start = text.indexOf("### The caveat codes");
   claim("docs/how-it-works.md", start !== -1, "has no ### The caveat codes section to read");
   if (start === -1) return "";
-  const next = text.indexOf("\n## ", start + 1);
-  return next === -1 ? text.slice(start) : text.slice(start, next);
+  // To the next heading of either level, so the window is this subsection
+  // rather than whatever is written after it. It is the last of section 8
+  // today, which is the only reason stopping at the next `##` read the same.
+  const next = text.slice(start).search(/\n#{2,3} /);
+  return next === -1 ? text.slice(start) : text.slice(start, start + next);
 }
 
 const codes = new Set(Object.values(CAVEATS));
-const documented = new Set(
-  [...caveatSection(read("docs/how-it-works.md")).matchAll(/^\| `([a-z-]+)` \|/gm)].map((m) => m[1])
-);
+const caveatText = caveatSection(read("docs/how-it-works.md"));
+const documented = new Set([...caveatText.matchAll(/^\| `([a-z-]+)` \|/gm)].map((m) => m[1]));
 for (const code of codes) {
   claim("docs/how-it-works.md", documented.has(code), `does not document the caveat code ${code}`);
 }
 for (const code of documented) {
   claim("docs/how-it-works.md", codes.has(code), `documents ${code}, which is not a caveat code`);
 }
+// The prose count is the one thing the two directions above cannot catch: a
+// code added to both the record and the table still leaves the sentence over it
+// stating the old number. A RegExp because the sentence wraps mid-phrase.
+claim(
+  "docs/how-it-works.md",
+  new RegExp(`There\\s+are ${codes.size}\\.`).test(caveatText),
+  `does not say there are ${codes.size} caveat codes`
+);
 
 // --- the command surface ----------------------------------------------------
 

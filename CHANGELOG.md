@@ -64,9 +64,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   that guards a child of its own again. Decision B24.
 - One reader hands both the check and the baseline the content at a revision, in parallel and onto
   one temporary tree. 80 of the 88 git processes a 40-file check spawned were `cat-file` waiting on
-  each other; the process count is unchanged and the run goes from about 2.1s to about 1.25s. The
-  base side is still read at the merge base, so nothing an agent edits moves the population it is
-  judged against. Decision E10.
+  each other, and on this repository the run goes from about 2.1s to about 1.25s. The base side is
+  still read at the merge base, so nothing an agent edits moves the population it is judged
+  against. Decision E10.
 - `node scripts/check-docs.mjs` lists every site a new registry key has not reached, all of them in
   one run with the move beside each. A row is one edit and its scaffolding is scattered, two sites of
   it in files an author has no reason to open, so the list is the whole list rather than whichever
