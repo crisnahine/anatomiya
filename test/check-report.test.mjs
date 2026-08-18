@@ -291,6 +291,7 @@ const finding = (o = {}) => ({
   precision: "precise",
   where: "f0",
   snippet: "catch (e) { }",
+  companion: null,
   ...o,
 });
 
@@ -404,6 +405,39 @@ test("the rule files nobody here wrote are counted, since only the text writer l
     "::notice::0 MUST-FIX, 0 FIX, 0 NIT",
     "",
   ]);
+});
+
+test("the companion a producer owes is a field, so each writer places it", () => {
+  // Built into the reason it went through the encoder twice: once as a quoted
+  // path before the record existed, then again with the sentence around it. The
+  // annotation carried the text line's quoting, and the cap on the reason was
+  // spent partly on it.
+  const owed = finding({ reason: "all 60 baseline sites conform", companion: "spec/models/a_spec.rb" });
+
+  const text = formatReport(bare({ findings: [owed] }));
+  const github = formatReportGithub(bare({ findings: [owed] }));
+
+  assert.ok(
+    text.includes('all 60 baseline sites conform; no "spec/models/a_spec.rb"'),
+    "the line a human reads quotes the path, as it always did"
+  );
+  assert.ok(
+    github.includes("::all 60 baseline sites conform; no spec/models/a_spec.rb"),
+    `an annotation carries no quoting: ${github}`
+  );
+});
+
+test("a finding owing nothing says nothing about a companion", () => {
+  assert.ok(formatReportGithub(bare({ findings: [finding()] })).includes("conform\n"));
+  assert.equal(JSON.parse(formatReportJson(bare({ findings: [finding()] }))).findings[0].companion, null);
+});
+
+test("the companion is neutralised like every other path in the record", () => {
+  const owed = finding({ companion: "spec/ev‮li_spec.rb" });
+
+  const out = JSON.parse(formatReportJson(bare({ findings: [owed] })));
+
+  assert.equal(out.findings[0].companion.includes("‮"), false, out.findings[0].companion);
 });
 
 test("a rules directory holding nothing of either kind says nothing about it", () => {
