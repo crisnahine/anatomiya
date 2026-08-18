@@ -20,9 +20,8 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
 
 import { CAVEATS } from "../lib/check-report.mjs";
-import { dimensionsFor } from "../lib/dimensions.mjs";
 import { pairingsFor } from "../lib/pairing.mjs";
-import { REGISTRY, rowsOfKind } from "../lib/registry.mjs";
+import { REGISTRY, rowsForLangs, rowsOfKind } from "../lib/registry.mjs";
 import { GATES } from "../lib/reduce.mjs";
 import { ELIGIBLE, REFUSED } from "../test/fixtures/counter-pins.mjs";
 
@@ -127,18 +126,17 @@ function claim(where, ok, detail) {
 // Obligations and filename rows count here too. A checker blind to a whole
 // dimension class would pass while the README undercounted by nine, which is
 // the drift this script exists to catch.
-const corpusFor = (lang) => rowsOfKind("corpus").filter((d) => d.langs.includes(lang)).length;
 const total = REGISTRY.length;
-const js = dimensionsFor(["js"]).length + pairingsFor(["js"]).length + corpusFor("js");
-const jsx = dimensionsFor(["jsx"]).length + pairingsFor(["jsx"]).length + corpusFor("jsx");
-const ruby = dimensionsFor(["ruby"]).length + pairingsFor(["ruby"]).length + corpusFor("ruby");
+const js = rowsForLangs(["js"]).length;
+const jsx = rowsForLangs(["jsx"]).length;
+const ruby = rowsForLangs(["ruby"]).length;
 const obligations = rowsOfKind("pairing").length;
 
 // Section 4 of the walkthrough counts the rows asked of a file, so the
 // obligations are counted apart from them there: they are one question about
 // two paths rather than a question asked of a site.
 const shipping = total - obligations;
-const rubyRows = dimensionsFor(["ruby"]).length + corpusFor("ruby");
+const rubyRows = ruby - pairingsFor(["ruby"]).length;
 const typeChecked = REGISTRY.filter((d) => d.tier === "semantic").length;
 
 // Prose spells a count of one as a word, and a phrasing nothing parses is a
@@ -165,13 +163,13 @@ for (const rel of ["README.md", "docs/how-it-works.md", "CHANGELOG.md"]) {
     claim(`${rel}`, Number(m[1]) === total, `says "${m[1]} dimensions", the registry holds ${total}`);
   }
   for (const m of text.matchAll(/(\d+)\s+for\s+JavaScript(?!\s+and)/g)) {
-    claim(rel, Number(m[1]) === js, `says "${m[1]} for JavaScript", dimensionsFor(["js"]) is ${js}`);
+    claim(rel, Number(m[1]) === js, `says "${m[1]} for JavaScript", the registry holds ${js}`);
   }
   for (const m of text.matchAll(/(\d+)\s+reachable\s+in\s+JSX/g)) {
-    claim(rel, Number(m[1]) === jsx, `says "${m[1]} reachable in JSX", dimensionsFor(["jsx"]) is ${jsx}`);
+    claim(rel, Number(m[1]) === jsx, `says "${m[1]} reachable in JSX", the registry holds ${jsx}`);
   }
   for (const m of text.matchAll(/(\d+)\s+for\s+Ruby/g)) {
-    claim(rel, Number(m[1]) === ruby, `says "${m[1]} for Ruby", dimensionsFor(["ruby"]) is ${ruby}`);
+    claim(rel, Number(m[1]) === ruby, `says "${m[1]} for Ruby", the registry holds ${ruby}`);
   }
   for (const m of text.matchAll(/(\d+)\s+file-to-file obligations/g)) {
     claim(rel, Number(m[1]) === obligations, `says "${m[1]} file-to-file obligations", the registry holds ${obligations}`);
