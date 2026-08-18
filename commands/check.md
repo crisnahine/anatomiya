@@ -13,6 +13,9 @@ Run the check and report what it found.
    Add `--base <ref>` when the branch targets something other than the remote's default branch.
    Left alone it tries `origin/HEAD`, then `origin/main`, `origin/master`, `main`, `master`.
 
+   Leave the format alone: `--format json` prints the same run as a record for a machine reader,
+   and this report is read off the text.
+
 2. Report what came back, in this order:
    - the base ref it resolved, and how many files this branch changed against it
    - every MUST-FIX, then every FIX: path, line, and the claim the site broke

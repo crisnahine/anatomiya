@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { pinLines, pinSummary, scanLines, scanSummary } from "../lib/summary.mjs";
+import { pinJson, pinLines, pinSummary, scanJson, scanLines, scanSummary, SUMMARY_SCHEMA } from "../lib/summary.mjs";
 import { buildPin, pinDelta, PIN_PATH } from "../lib/baseline.mjs";
 
 const RESTART = "a session already running still holds the old map; restart to pick it up";
@@ -381,4 +381,36 @@ test("a first pin has no previous sha", () => {
   const next = pinFor(["lib"]);
 
   assert.equal(pinSummary({ previous: null, next, delta: pinDelta(null, next), path: PIN_PATH, dryRun: false }).previousSha, null);
+});
+
+/* --- the records a machine reads --- */
+
+test("a scan answers as a record, with the shape it is", () => {
+  const text = scanJson(summary({ layoutLine: "layout: 2 roots, 0 folded, tests: none" }));
+  const s = JSON.parse(text);
+
+  assert.equal(s.schema, SUMMARY_SCHEMA);
+  assert.equal(s.files, 40);
+  assert.equal(s.areas, 2);
+  assert.equal(s.claims.stated, 3);
+  assert.equal(s.claims.total, 9);
+  assert.equal(s.layoutLine, "layout: 2 roots, 0 folded, tests: none");
+  assert.equal(s.baseline.countsOnly, true);
+  assert.equal(s.wrote, 5);
+  assert.ok(text.endsWith("\n"), "one record, one trailing newline");
+});
+
+test("a pin answers as a record, carrying the delta it accepted", () => {
+  const next = pinFor(["lib"]);
+  const delta = pinDelta(null, next);
+
+  const s = JSON.parse(pinJson(pinSummary({ previous: null, next, delta, path: PIN_PATH, dryRun: true })));
+
+  assert.equal(s.schema, SUMMARY_SCHEMA);
+  assert.equal(s.sha, next.sha);
+  assert.equal(s.previousSha, null);
+  assert.equal(s.areas, 1);
+  assert.equal(s.path, PIN_PATH);
+  assert.equal(s.dryRun, true);
+  assert.deepEqual(s.delta.areas, delta.areas);
 });
