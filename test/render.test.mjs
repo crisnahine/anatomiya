@@ -1327,6 +1327,39 @@ test("the kinds line names every runner group, not one summed total", () => {
   assert.equal(kindsLine(kinds), "kinds: 20 .ts; 4 vitest specs under __tests__; 3 jest specs");
 });
 
+test("the kinds line names its story files as their own kind", () => {
+  const kinds = root("ui", { exts: [[".tsx", 3]], stories: 2 });
+
+  assert.equal(kindsLine(kinds), "kinds: 3 .tsx; 2 story files; 0 test files");
+});
+
+test("a root with no stories says nothing about them, on either line", () => {
+  const lines = renderLayout(
+    clientLayout({
+      roots: [root("src/utils", { files: 3, exts: [[".ts", 3]] })],
+      more: { roots: 0, files: 0 },
+      tests: [],
+      principles: [],
+    })
+  );
+
+  assert.doesNotMatch(lines[2], /story/);
+  assert.doesNotMatch(kindsLine(root("src/utils", { exts: [[".ts", 3]] })), /story/);
+});
+
+test("a root line names its story files the same way the kinds line does", () => {
+  const lines = renderLayout(
+    clientLayout({
+      roots: [root("ui/stories", { files: 5, exts: [[".tsx", 5]], stories: 5 })],
+      more: { roots: 0, files: 0 },
+      tests: [],
+      principles: [],
+    })
+  );
+
+  assert.equal(lines[2], "- ui/stories: 5 .tsx; 5 story files");
+});
+
 test("the three lines that print a namesake clause spell it in one place", () => {
   // A root line, the tests line and an area's kinds line all print the pair.
   // Three copies of one sentence drifted on the verb once already, and the
