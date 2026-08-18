@@ -3,9 +3,12 @@ import assert from "node:assert/strict";
 
 import {
   EXT_BY_LANG,
+  ENGINES,
+  MISSING_STRIPPER,
   mayHoldFlow,
   LANGUAGES,
   declOf,
+  engineOf,
   language,
   grammarFor,
   langHas,
@@ -87,6 +90,42 @@ test("a declaration with positions no reader understands refuses to load", () =>
     l.id === "ruby" ? { ...l, positions: { offsets: "utf8", lines: true } } : l
   );
   assert.throws(() => assertRegistry(bad), /utf8/);
+});
+
+test("the engine table declares exactly the engines the languages route to", () => {
+  assert.deepEqual(Object.keys(ENGINES).sort(), [...new Set(LANGUAGES.map((l) => l.engine))].sort());
+  // Keyed by its own id, so a caller holding a row can name it and a caller
+  // holding a name can look it up.
+  for (const [id, engine] of Object.entries(ENGINES)) assert.equal(engine.id, id, id);
+});
+
+test("every engine says what runs it and what to do when it is not there", () => {
+  // The two facts the readiness probe branches on. A row missing either was
+  // the whole defect: an absent Ruby was answered with the npm sentence.
+  for (const engine of Object.values(ENGINES)) {
+    assert.ok(engine.host === "node" || engine.host === "interpreter", `${engine.id} hosts nowhere`);
+    assert.equal(typeof engine.remedy, "string", engine.id);
+    assert.ok(engine.remedy.length > 0, `${engine.id} declares an empty remedy`);
+  }
+});
+
+test("a declaration naming an engine the table does not hold refuses to load", () => {
+  const bad = LANGUAGES.map((l) => (l.id === "ruby" ? { ...l, engine: "treesitter" } : l));
+  assert.throws(() => assertRegistry(bad), /ruby names no declared engine: treesitter/);
+});
+
+test("the engine a language routes to is read off its declaration", () => {
+  assert.equal(engineOf("js"), "oxc");
+  assert.equal(engineOf("jsx"), "oxc");
+  assert.equal(engineOf("ruby"), "prism");
+  assert.throws(() => engineOf("python"), /python/);
+});
+
+test("the sentence for an absent stripper names the module the engine declares", () => {
+  // Two printers said this, word for word, and a third would have been a third
+  // copy. The module name is the declaration's, so it cannot drift from it.
+  const stripper = ENGINES.oxc.extras.find((e) => e.role === "stripper");
+  assert.ok(MISSING_STRIPPER.startsWith(`${stripper.module} is not installed`), MISSING_STRIPPER);
 });
 
 test("capabilities are the closed pair, declared per language", () => {

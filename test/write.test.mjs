@@ -193,6 +193,24 @@ test("a scan that could not read a whole language removes nothing", () => {
   rmSync(dir, { recursive: true, force: true });
 });
 
+test("a blind run creates no directory either", () => {
+  // Both `mkdir`s ran before the blind check, so a container with no ruby left
+  // an empty `.claude/rules` and an empty `.claude/anatomiya` behind on every
+  // scan of a repository it could not read. Nothing is ever written into
+  // either, and an empty rules directory is what a repository nobody has
+  // scanned looks like.
+  const dir = workspace();
+  const blind = result(dir, []);
+  blind.parse = { ...blind.parse, crashed: blind.corpus.files, unreadable: ["ruby"] };
+
+  const plan = writeMap(blind);
+
+  assert.equal(plan.blind, true);
+  assert.deepEqual(plan.write, []);
+  assert.equal(existsSync(join(dir, ".claude")), false, "not even the directory");
+  rmSync(dir, { recursive: true, force: true });
+});
+
 test("a file of ours that this scan no longer covers is removed", () => {
   const dir = workspace();
   const stays = area("src/services");

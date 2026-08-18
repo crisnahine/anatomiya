@@ -278,7 +278,7 @@ test("every fixture parsed, through one child process", needsRuby, () => {
   assert.equal(parsed.results.length, Object.keys(SRC).length);
   assert.equal(parsed.crashed, 0);
   assert.equal(parsed.error, null);
-  assert.ok(parsed.engine, "the child reports which prism it loaded");
+  assert.ok(parsed.version, "the child reports which prism it loaded");
 });
 
 test("the tree carries no byte offsets, so none can index the wrong string", needsRuby, () => {
@@ -300,7 +300,7 @@ test("no files is an empty run, not a spawn", needsRuby, async () => {
   const out = await parseRuby([]);
   assert.deepEqual(out.results, []);
   assert.equal(out.parsed, 0);
-  assert.equal(out.engine, null, "nothing was started, so nothing reported a version");
+  assert.equal(out.version, null, "nothing was started, so nothing reported a version");
   assert.equal(out.error, null);
 });
 
@@ -347,7 +347,7 @@ test("a path that would need argv quoting never reaches the parser", needsRuby, 
   const out = await parseRuby([{ rel: "-rsocket.rb", abs: join(dir, "-rsocket.rb") }]);
   assert.equal(out.results[0].skipped, true);
   assert.equal(out.results[0].ok, false);
-  assert.equal(out.engine, null, "the interpreter never started, so the path never reached it");
+  assert.equal(out.version, null, "the interpreter never started, so the path never reached it");
 });
 
 test("no ruby on the machine charges the files instead of losing them", needsRuby, async () => {

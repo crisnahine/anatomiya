@@ -16,6 +16,7 @@ const summary = (o = {}) => ({
   root: "/repo",
   untracked: 0,
   claims: { stated: 3, matchingDefault: 0, total: 9 },
+  engines: null,
   layoutLine: null,
   baseline: { status: "unpinned", sha: null, drift: null, baseRef: null, countsOnly: true },
   truncated: false,
@@ -72,6 +73,25 @@ test("claims that match the model default are counted apart on the same line", (
     scanLines(summary({ claims: { stated: 3, matchingDefault: 6, total: 9 } }))[1],
     "3 of 9 claims stated, 6 match the model default, the rest print as counts"
   );
+});
+
+test("the engines that answered print with their versions, right after the head", () => {
+  // Which build produced these counts. A map is compared against the last one
+  // far more often than it is read fresh, and a parser version moving under it
+  // is the first thing to rule out.
+  const lines = scanLines(summary({ engines: { oxc: { version: "0.144.0" }, prism: { version: "1.5.2" } } }));
+
+  assert.equal(lines[1], "engines: oxc 0.144.0, prism 1.5.2");
+});
+
+test("an engine that answered no version is left off the line rather than printed as null", () => {
+  const one = scanLines(summary({ engines: { oxc: { version: "0.144.0" }, prism: { version: null } } }));
+  assert.equal(one[1], "engines: oxc 0.144.0");
+
+  // Nothing answered at all, so there is no line: a scan of a repository with
+  // no source in it has no engine to name.
+  const none = scanLines(summary({ engines: { prism: { version: null } } }));
+  assert.ok(!none.some((l) => l.startsWith("engines:")), none.join("\n"));
 });
 
 test("the layout line prints where there is one", () => {
@@ -179,6 +199,26 @@ test("a run that read no file of a language says so and stops", () => {
   assert.ok(!lines.includes(RESTART));
 });
 
+test("a run blind to a language names the engine behind it and what to do", () => {
+  // Measured with ruby on PATH and no prism: the scan said "this is usually a
+  // missing interpreter", which is true of the other cause. The interpreter was
+  // there; the library was not, and nothing on screen said so.
+  const lines = scanLines(summary({ blind: ["ruby"], wrote: 0, engines: { prism: { version: null } } }));
+
+  assert.deepEqual(lines.slice(-2), [
+    "read no ruby file at all, so nothing was written and the previous map was left alone",
+    "prism reported no version: install Ruby 3.4 or newer, which ships prism 1.x, and put ruby on PATH",
+  ]);
+});
+
+test("an engine that answered and still read nothing is not called a missing install", () => {
+  // It ran, so the remedy is not an install: the files are what failed, and
+  // saying otherwise sends the reader to fix something that is not broken.
+  const lines = scanLines(summary({ blind: ["ruby"], wrote: 0, engines: { prism: { version: "1.5.2" } } }));
+
+  assert.equal(lines.at(-1), "prism 1.5.2 ran and answered for none of them");
+});
+
 test("a run blind to two languages names both", () => {
   assert.ok(
     scanLines(summary({ blind: ["js", "ruby"], wrote: 0 })).includes(
@@ -234,7 +274,7 @@ const result = (o = {}) => ({
   areas: [{ path: "src", dimensions: [dim(), dim({ matchesDefault: true }), dim({ directive: false })] }],
   layout: null,
   baseline: { status: "unpinned", sha: null, countsOnly: true, baseRef: null, drift: null },
-  parse: { crashed: 0, failed: 0, syntaxErrors: 0, skipped: 0, missingStripper: false },
+  parse: { crashed: 0, failed: 0, syntaxErrors: 0, skipped: 0, missingStripper: false, engines: { oxc: { version: "0.144.0" } } },
   authors: { error: null },
   ...o,
 });
@@ -263,6 +303,7 @@ test("the summary carries every fact the scan prints", () => {
     root: "/repo",
     untracked: 0,
     claims: { stated: 1, matchingDefault: 1, total: 3 },
+    engines: { oxc: { version: "0.144.0" } },
     layoutLine: null,
     baseline: { status: "unpinned", sha: null, drift: null, baseRef: null, countsOnly: true },
     truncated: false,
@@ -315,6 +356,7 @@ test("the summary and its lines agree on a whole scan", () => {
 
   assert.deepEqual(scanLines(s), [
     "41 files, 1 area, 12ms, root /repo",
+    "engines: oxc 0.144.0",
     "2 source files in the working tree are untracked. The corpus is tracked files only, so nothing there was counted",
     "1 of 3 claims stated, 1 match the model default, the rest print as counts",
     UNPINNED,
