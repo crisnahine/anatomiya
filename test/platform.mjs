@@ -16,6 +16,13 @@ export const needsShebang = WINDOWS
   ? { skip: "Windows does not execute a shebang, so the stub interpreter cannot run" }
   : {};
 
+// Windows spells the variable `Path` and looks it up case-insensitively, so a
+// child handed a second `PATH` key may search either one. A test that cannot
+// decide what a child can find proves nothing about what it did.
+export const needsPathControl = WINDOWS
+  ? { skip: "Windows resolves PATH case-insensitively, so a replaced one is not the control this needs" }
+  : {};
+
 // `chmod` on Windows moves the read-only attribute and nothing else, so a file
 // this test needs to be unreadable stays readable and the case proves the
 // opposite of what it says.

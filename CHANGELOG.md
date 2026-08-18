@@ -7,6 +7,19 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- `anatomiya doctor` says whether each engine this parses with is installed, with the version it
+  answered and, for one that is not ready, what was wrong and what to do about it. The remedy is
+  the engine's own: npm cannot install an interpreter, and installing Ruby does not install a node
+  module. It exits 0 whatever it found, because a non-zero exit would read as a probe that could
+  not run. Decision B23.
+- `anatomiya setup` installs the node-hosted engine's dependencies in the plugin's own directory,
+  since `/plugin install` copies the files and does not run `npm install`. It runs
+  `npm install --omit=dev --ignore-scripts --no-audit --no-fund` there and nowhere else, and it is
+  the one command here that reaches the network: `scan`, `check` and `pin` never call it, so they
+  stay offline. `--dry-run` prints the command and installs nothing. Decisions B23 and F5.
+
 ## [0.2.2] - 2026-08-18
 
 0.2.2 closes two ways the tool answered clean about work it had not looked at. A class that forgot

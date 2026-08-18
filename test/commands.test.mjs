@@ -6,8 +6,9 @@ import { delimiter, join } from "node:path";
 import { execFileSync } from "node:child_process";
 
 import { needsShebang } from "./platform.mjs";
-import { runCheck, runPin, runScan } from "../lib/commands.mjs";
+import { runCheck, runDoctor, runPin, runScan, runSetup } from "../lib/commands.mjs";
 import { PIN_PATH } from "../lib/baseline.mjs";
+import { PROBE_IDS, pluginRoot } from "../lib/readiness.mjs";
 
 const RULES = join(".claude", "rules");
 
@@ -202,4 +203,51 @@ test("a check reads the base it was given", async (t) => {
   const { report } = await runCheck(dir, { baseRef: "main" });
 
   assert.equal(report.base.ref, "main");
+});
+
+test("a doctor asks every engine and the optional checker, and answers a line each", async () => {
+  const { rows, lines } = await runDoctor();
+
+  assert.deepEqual([...new Set(rows.map((r) => r.engine))], [...PROBE_IDS]);
+  assert.equal(lines.length, rows.length, "an extra answers a line of its own");
+  assert.ok(lines.some((l) => l.startsWith("oxc ")), lines.join("\n"));
+});
+
+test("a setup with the dependencies already installed runs nothing", async () => {
+  // The case this checkout can prove: they are here, so npm has nothing to do.
+  // Nothing in this suite ever runs the real install, which reaches the network.
+  const { pluginRoot: root, needed, ran, ok, output } = await runSetup();
+
+  assert.equal(ran, false);
+  assert.deepEqual(needed, []);
+  assert.equal(ok, true);
+  assert.equal(root, pluginRoot());
+  assert.match(output, /^nothing to install: oxc \d/, output);
+});
+
+test("a dry run answers the exact command and runs nothing", async () => {
+  // `--ignore-scripts` is the load-bearing one: without it a dependency's
+  // install script runs arbitrary code in the plugin directory.
+  const { command, ran, ok, output } = await runSetup({ dryRun: true });
+
+  assert.deepEqual(command, ["npm", "install", "--omit=dev", "--ignore-scripts", "--no-audit", "--no-fund"]);
+  assert.equal(ran, false);
+  assert.equal(ok, true);
+  assert.match(output, /would run npm install --omit=dev --ignore-scripts --no-audit --no-fund in /, output);
+  assert.ok(output.includes(pluginRoot()), `and it says which directory that is: ${output}`);
+});
+
+/** Every exported command in the module, as its own source. */
+function commandBodies() {
+  const src = readFileSync(new URL("../lib/commands.mjs", import.meta.url), "utf8");
+  const starts = [...src.matchAll(/^export (?:async )?function (\w+)\(/gm)];
+  return starts.map((m, i) => [m[1], src.slice(m.index, starts[i + 1]?.index ?? src.length)]);
+}
+
+test("setup is the only command that runs npm, so a scan, a check and a pin stay offline", () => {
+  // F5: the install is a command of its own precisely so that nothing else
+  // reaches the network by finding a dependency missing and fetching it.
+  const named = commandBodies().filter(([, body]) => body.includes("npm")).map(([name]) => name);
+
+  assert.deepEqual(named, ["runSetup"]);
 });

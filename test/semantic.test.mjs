@@ -14,6 +14,7 @@ import {
   SEMANTIC_GUARDS,
   runSemantic,
 } from "../lib/semantic.mjs";
+import { remedyFor } from "../lib/readiness.mjs";
 
 // The tier is optional, so every test that needs the checker says so rather
 // than failing on a machine that never installed it.
@@ -35,7 +36,9 @@ test("the loader answers the module and its version when it is there", async () 
 });
 
 test("the refusal names the install command and the flag that needs it", () => {
-  const m = notInstalledMessage();
+  // Composed the way the scan composes it, since the remedy is the engine
+  // table's sentence and this module holds only the frame around it.
+  const m = notInstalledMessage(remedyFor("typescript"));
   assert.match(m, /--deep/);
   assert.match(m, /npm install/);
 });

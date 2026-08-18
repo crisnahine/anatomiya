@@ -137,6 +137,30 @@ parse looks like.
 
 This is availability, not confidentiality. A repository can still make a scan slow.
 
+### Subprocesses, and the one command that reaches the network
+
+Every subprocess here runs through `execFile`, `spawn` or `fork` with an argument array and never a
+shell. Beyond the two parser bridges there are four: `git`, `ps` for the memory guard, the `ruby`
+the readiness probe asks for a version, and `npm`.
+
+`npm` runs from `anatomiya setup` and from nothing else. `scan`, `check` and `pin` never call it,
+which is the whole reason the install is a command of its own rather than something a scan does on
+finding a dependency missing: a scan that installed its own dependencies would make every run an
+outbound call. What it runs is fixed:
+
+```
+npm install --omit=dev --ignore-scripts --no-audit --no-fund
+```
+
+with `cwd` set to the plugin's own directory rather than the repository being scanned, a 10 minute
+timeout and an 8 MB output bound. `--ignore-scripts` is the load-bearing flag: without it a
+dependency's install script runs arbitrary code in the plugin directory during the install.
+
+`anatomiya doctor` spawns the other one, `ruby`, to ask which version of `prism` that interpreter
+ships. It runs under the same scrub the Ruby parser child gets, with `RUBYOPT`, `RUBYLIB` and
+`GEM_HOME` dropped and `cwd` outside the repository, because it points an interpreter at whatever
+`PATH` names.
+
 ## What this does not defend against
 
 Say the quiet part plainly.
@@ -183,7 +207,9 @@ These are real and they are tracked in `DECISIONS.md`.
   directive is then suppressed with the gate `corpus-truncated`, tested end to end. No repository
   size can set it; what can is the Ruby stream's per-line guard.
 - **Subprocess environment is not scrubbed everywhere.** The Ruby child gets a minimal environment.
-  The git calls inherit yours.
+  The git calls inherit yours, and so does `npm` under `setup`, deliberately: its registry, proxy
+  and credential configuration lives there and an install without them reaches the wrong place or
+  nothing at all.
 
 ## Reporting a vulnerability
 
