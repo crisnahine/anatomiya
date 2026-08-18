@@ -41,6 +41,16 @@ test("only an extension in the basename is stripped", () => {
   assert.equal(withoutExtension("app/models/user.rb"), "app/models/user");
 });
 
+test("the three splits agree about where a declaration file's extension starts", () => {
+  // Left to the one-dot rule, this answers `packages/types/index.d`, which no
+  // longer ends in `/index`, and the sibling index stops resolving a directory
+  // through its own entry file.
+  assert.equal(withoutExtension("packages/types/index.d.ts"), "packages/types/index");
+  for (const rel of ["src/types/image.d.ts", "src/abcd.ts", "src/types/image.d.js", "Rakefile", ".env"]) {
+    assert.equal(withoutExtension(rel), `${dirOf(rel) ? `${dirOf(rel)}/` : ""}${stemOf(rel)}`, rel);
+  }
+});
+
 test("a TypeScript declaration file's extension is the whole .d.ts suffix", () => {
   assert.equal(extOf("src/types/image.d.ts"), ".d.ts");
   assert.equal(extOf("src/types/image.d.mts"), ".d.mts");
