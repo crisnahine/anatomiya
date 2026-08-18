@@ -200,6 +200,14 @@ test("encodeReport neutralises the values a writer would otherwise emit raw", as
   assert.equal(JSON.stringify(r), before, "the input is not mutated");
 });
 
+test("the root is a path like any other, and the JSON writer is the one that prints it", () => {
+  // The one path-shaped value in the record the spread carried through
+  // untouched, while every other field beside it was overridden.
+  const out = JSON.parse(formatReportJson(bare({ root: "/repo/ev‮li" })));
+
+  assert.equal(out.root.includes("‮"), false, out.root);
+});
+
 test("an ASCII report comes back from the encoder unchanged", async (t) => {
   const dir = reportRepo(t);
   facts(dir);
@@ -347,6 +355,16 @@ test("what a reader would take for grammar is escaped, and the percent first", (
 
 test("a clean report is still an answer, not an empty file", () => {
   assert.equal(formatReportGithub(bare()), "::notice::0 MUST-FIX, 0 FIX, 0 NIT\n");
+});
+
+test("a base ref that is the empty string is no ref at all", () => {
+  // `??` and `||` disagree on exactly one value, and this header is the line
+  // that names the ref: an empty one printed `base none` and then printed
+  // nothing where the name goes. Not reachable from the CLI, which refuses an
+  // empty `--base`, and reachable from `check(cwd, { baseRef: "" })`.
+  const out = formatReport(bare({ base: { ref: "", sha: null, mergeBase: null, shallow: false } }));
+
+  assert.equal(out.split("\n")[0], "base none, 0 changed files, compare");
 });
 
 test("a caveat reaches the annotations carrying its code, so a degraded run cannot read as a clean one", () => {
