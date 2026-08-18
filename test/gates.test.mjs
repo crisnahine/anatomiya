@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import * as reduce from "../lib/reduce.mjs";
-import { ALL_DIMENSIONS } from "../lib/dimensions.mjs";
+import { ALL_DIMENSIONS, assertRegistryRows } from "../lib/dimensions.mjs";
 
 const { applyGates, verdictFor, blockedFor, GATES } = reduce;
 
@@ -1092,6 +1092,35 @@ test("the reducer offers the semantic rows only when it is asked for them", () =
   assert.ok(deep, "asking for the tier has to reach dimensionsFor");
   assert.equal(deep.candidates, 4);
   assert.equal(deep.conforming, 2);
+});
+
+test("a framework row on a JS language gets a slot only where the corpus shows the framework", () => {
+  // The registry used to refuse this row outright, because the oxc worker
+  // selects its own dimensions unfiltered and its extra hits looked like counts
+  // nobody gated. They are not counted anywhere: the reducer selects, so the
+  // hits for a framework the corpus does not show are read by no slot.
+  const row = assertRegistryRows([
+    {
+      key: "probe_js_framework",
+      tier: "syntactic",
+      precision: "precise",
+      langs: ["js"],
+      framework: "rails",
+      claim: "probe sites conform",
+      counterClaim: null,
+      applicabilityPredicate: { sites: "files holding a probe call site", blind: null },
+      run: () => {},
+    },
+  ])[0];
+  assert.equal(row.kind, "tree");
+
+  const area = { path: "src", langs: ["js"], fileCount: 1, files: [{ rel: "src/a.ts", lang: "js" }] };
+  const parsed = [{ rel: "src/a.ts", ok: true, hits: { probe_js_framework: [{ conforming: true, where: null }] } }];
+  const slots = (frameworks) =>
+    reduce.reduceArea(area, parsed, { frameworks, rows: [row] }).filter((d) => d.key === row.key);
+
+  assert.equal(slots([]).length, 0, "a corpus showing no Rails reads none of the worker's hits");
+  assert.equal(slots(["rails"]).length, 1, "and a corpus showing Rails gets the one slot");
 });
 
 test("a semantic dimension with no baseline names the tier, not a greenfield directory", () => {
