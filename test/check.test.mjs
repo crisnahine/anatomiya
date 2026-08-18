@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { needsPosixPaths } from "./platform.mjs";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, symlinkSync, rmSync } from "node:fs";
+import fs, { mkdtempSync, mkdirSync, writeFileSync, readFileSync, symlinkSync, rmSync, existsSync } from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { execFileSync } from "node:child_process";
@@ -1516,8 +1517,10 @@ test("a pending file over the size cap is not read from the tree", async (t) => 
   const r = await check(dir, { baseRef: "main" });
 
   assert.deepEqual(forKey(r, "swallowed_error"), [], JSON.stringify(r.findings));
+  // The whole sentence rather than the prefix, like the other two: which of
+  // the three places was looked in is the only thing the three of them say.
   assert.ok(
-    notes(r).some((m) => /could not read src\/big\.ts/.test(m)),
+    notes(r).includes("could not read src/big.ts in the working tree"),
     `a file it refused to read is named, not silently dropped: ${JSON.stringify(r.caveats)}`
   );
 });
@@ -1561,6 +1564,44 @@ test("a base version that will not come back skips the file rather than charging
     JSON.stringify(r.caveats)
   );
   assert.ok(r.caveats.some((c) => c.code === CAVEATS.BASE_UNREADABLE));
+});
+
+// Both trees are on disk before either is used, so the guard that removes them
+// has to be open from the first read: wrapped around the parse alone it left
+// the head tree behind whenever the base read or the loop threw.
+test("a revision tree does not outlive a check that threw", async (t) => {
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/a.ts", clean(2));
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/a.ts", swallow(2));
+    commit("second");
+  });
+  facts(dir, { sha: sha(dir, "main") });
+
+  // The read that fails is whichever one runs while an earlier tree is still
+  // on disk, which is the base read: no counting, and nothing to keep in step
+  // with the order the reads are made in.
+  const made = [];
+  const real = fs.mkdtempSync;
+  fs.mkdtempSync = (prefix, ...rest) => {
+    const ours = String(prefix).includes("anatomiya-revision-");
+    if (ours && made.some(existsSync)) throw new Error("no space left on device");
+    const out = real(prefix, ...rest);
+    if (ours) made.push(out);
+    return out;
+  };
+  syncBuiltinESMExports();
+  t.after(() => {
+    fs.mkdtempSync = real;
+    syncBuiltinESMExports();
+    for (const path of made) rmSync(path, { recursive: true, force: true });
+  });
+
+  await assert.rejects(() => check(dir, { baseRef: "main" }), /no space left on device/);
+
+  assert.equal(made.length, 1, "the head read wrote a tree and the base read threw");
+  assert.deepEqual(made.filter(existsSync), [], "the tree already on disk was removed on the way out");
 });
 
 // `git status` lists a deletion, and a path that is gone cannot be read. It
