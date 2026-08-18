@@ -250,6 +250,26 @@ test("a type-only import does not set the test runner", async (t) => {
   );
 });
 
+test("a declared case does not let a type-only import name the runner", async (t) => {
+  // The two gates have to be pinned apart. A file with no case at all answers
+  // null whichever one is asked, so the type-only rule was only ever exercised
+  // where the declaration rule already refused. Here the case is real, declared
+  // through an injected global, and the sole import of a runner is type-only:
+  // the file is a test, and vitest is not what runs it.
+  const dir = repo({
+    "suite.spec.ts":
+      `import type { TestContext } from "vitest"\n` +
+      `describe("thing", () => {\n  it("works", (c: TestContext) => {})\n})\n`,
+  });
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+  const { records } = await parseAll(list(dir, ["suite.spec.ts"]));
+  const f = records.get("suite.spec.ts").facets;
+
+  assert.equal(f.testRunner, null, "a type it borrows is not a runner it uses");
+  assert.equal(f.testCalls, true, "and the case it declares is still a case");
+});
+
 test("an import alone does not set the test runner without a declared case", async (t) => {
   const dir = repo({
     "cypress.config.ts": `import { defineConfig } from "cypress"\nexport default defineConfig({ e2e: {} })\n`,
