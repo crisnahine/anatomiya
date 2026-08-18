@@ -607,6 +607,16 @@ test("a framework row loads on any language, whichever engine reads it", () => {
   assert.equal(row.kind, "tree");
 });
 
+test("a row may not be both a framework's and a capability's, because adoption reads hits raw", () => {
+  // `adoptedCapabilities` counts adopting files off the worker's records and
+  // selects through nothing, the one hit reader the framework filter does not
+  // reach, so such a row would vote off-framework for a capability's adoption.
+  assert.throws(
+    () => assertRegistryRows([probeRow({ framework: "rails", capability: "logging" })]),
+    /framework and capability/
+  );
+});
+
 test("a pairing row with a mistyped tier refuses to load now", () => {
   // The battery reached `ALL_DIMENSIONS` and the corpus rows and never the
   // pairings, so this exact misspelling shipped a row every reader would
