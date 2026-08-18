@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { runCheck, runDoctor, runPin, runScan, runSetup } from "../lib/commands.mjs";
 import { pinJson, pinLines, scanJson, scanLines } from "../lib/summary.mjs";
-import { formatReport, formatReportGithub, formatReportJson } from "../lib/check.mjs";
+import { formatReport, formatReportGithub, formatReportJson } from "../lib/check-report.mjs";
 
 const USAGE = [
   "usage: anatomiya scan   [path] [--dry-run] [--deep] [--format <name>]",

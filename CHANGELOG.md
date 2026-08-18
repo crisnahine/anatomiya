@@ -28,7 +28,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   one on the line it is about, then a warning per caveat carrying its code, one for a capped run, and
   one counting the rule files nobody here wrote. The acceptance harness reads the record instead of
   regex-parsing stdout, and the caveat codes are written down in `docs/how-it-works.md` section 8.
-  Decision A20.
+  The writers and the caveat table live in `lib/check-report.mjs`, apart from the pipeline that
+  produces the record, so a reader that wants a writer no longer loads a parser and a git runner to
+  get one. Decision A20.
 - `npm run defaults:seed` writes an unmeasured `lib/model-defaults.json` entry for any registry key
   that has none, so the table is seeded rather than hand-written. A seeded entry reads `none` and
   fails open, which means the row keeps stating until somebody measures it. Decision A15.

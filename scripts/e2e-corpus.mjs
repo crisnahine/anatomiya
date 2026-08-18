@@ -31,7 +31,7 @@ import { PIN_PATH } from "../lib/baseline.mjs";
 import { MAX_LINES } from "../lib/render.mjs";
 import { isGeneratedName, OVERVIEW_FILE, RULES_DIR } from "../lib/rules.mjs";
 import { scanLines } from "../lib/summary.mjs";
-import { formatReport } from "../lib/check.mjs";
+import { formatReport } from "../lib/check-report.mjs";
 
 const LAYOUT_HEADING = "## What lives where";
 const TRUNCATED = "layout: not counted, the scan was truncated";

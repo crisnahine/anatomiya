@@ -19,7 +19,7 @@ import { execFileSync } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
 
-import { CAVEATS } from "../lib/check.mjs";
+import { CAVEATS } from "../lib/check-report.mjs";
 import { dimensionsFor } from "../lib/dimensions.mjs";
 import { pairingsFor } from "../lib/pairing.mjs";
 import { REGISTRY, rowsOfKind } from "../lib/registry.mjs";
