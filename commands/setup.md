@@ -5,8 +5,8 @@ description: Install what this plugin's own parser needs, in the plugin's own di
 Install the node-hosted engine's dependencies, and nothing else.
 
 1. Say this to the user before running anything: setup runs `npm install` in the plugin's own
-   directory, which is the one command here that reaches the network. `scan`, `check` and `pin`
-   never run it.
+   directory, which is the only command here that installs anything or reaches a package
+   registry. `scan`, `check` and `pin` never run it.
 
 2. Run it. Use Bash, and use the plugin's own copy:
 
@@ -26,5 +26,7 @@ Install the node-hosted engine's dependencies, and nothing else.
    suppresses its automatic injection for the rest of the session. Use `cat` or `head` through
    Bash if you need to show one.
 
-If setup exits non-zero, show its output and stop. It says which of the two happened: npm was not
-found at all, or npm ran and failed, and the second one carries npm's own words.
+If setup exits non-zero, show its output and stop. It says which of the three happened: this is
+Windows, where npm is a batch file and nothing here spawns a shell, so the printed command is for
+the user to run themselves; npm was not found at all; or npm ran and failed, and that one carries
+npm's own words.

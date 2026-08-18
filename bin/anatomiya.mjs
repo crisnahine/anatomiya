@@ -24,8 +24,9 @@ const USAGE = [
   "and setup take no path: they answer about this installation.",
   "",
   "setup installs the node-hosted engine's dependencies in the plugin's own",
-  "directory. It is the one command here that reaches the network, and nothing",
-  "else runs it, so a scan, a check and a pin stay offline.",
+  "directory. It is the only command that installs anything and the only one",
+  "that reaches a package registry, and nothing else here runs it. On Windows",
+  "it prints the command to run by hand instead.",
 ].join("\n");
 
 /**

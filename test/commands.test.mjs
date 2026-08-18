@@ -3,9 +3,11 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { execFileSync } from "node:child_process";
 
 import { needsShebang } from "./platform.mjs";
+import { installWithoutDependencies } from "./plugin-install.mjs";
 import { runCheck, runDoctor, runPin, runScan, runSetup } from "../lib/commands.mjs";
 import { PIN_PATH } from "../lib/baseline.mjs";
 import { PROBE_IDS, pluginRoot } from "../lib/readiness.mjs";
@@ -237,17 +239,65 @@ test("a dry run answers the exact command and runs nothing", async () => {
   assert.ok(output.includes(pluginRoot()), `and it says which directory that is: ${output}`);
 });
 
-/** Every exported command in the module, as its own source. */
-function commandBodies() {
+test("a setup on Windows refuses rather than spawning an npm it cannot start", async (t) => {
+  // libuv resolves an extension-less name against `.com` and `.exe` only, and
+  // npm ships `npm.cmd` and no `npm.exe`, so the spawn answers ENOENT on a
+  // machine that has npm installed and on PATH. Running a batch file needs a
+  // shell, which no subprocess here may use (F5), so this refuses instead of
+  // telling a Windows user to install what they already have.
+  const home = installWithoutDependencies(t);
+  const { runSetup: fromCopy } = await import(pathToFileURL(join(home, "lib", "commands.mjs")).href);
+
+  const { ok, ran, needed, output } = await fromCopy({ platform: "win32" });
+
+  assert.equal(ok, false);
+  assert.equal(ran, false);
+  assert.deepEqual(needed, ["oxc", "flow-remove-types", "typescript"], "the copy has no node_modules, so there is something to install");
+  assert.match(output, /npm install --omit=dev --ignore-scripts --no-audit --no-fund/, output);
+  assert.ok(output.includes(home), `it names the directory to run it in: ${output}`);
+});
+
+test("a Windows machine with everything installed is told that, not the refusal", async () => {
+  // The refusal sits after the two short-circuits: it is about an install that
+  // has to happen, and a dry run's own line is the by-hand instruction.
+  const done = await runSetup({ platform: "win32" });
+  const dry = await runSetup({ platform: "win32", dryRun: true });
+
+  assert.equal(done.ok, true);
+  assert.match(done.output, /^nothing to install: oxc \d/, done.output);
+  assert.equal(dry.ok, true);
+  assert.match(dry.output, /would run npm install --omit=dev/, dry.output);
+});
+
+/**
+ * Every top-level declaration in the module, as its own code.
+ *
+ * Bounded by the next declaration of any kind rather than by the next exported
+ * function: the last export otherwise swallows every helper below it, and a
+ * helper that runs npm would be charged to whichever function it sits under.
+ * Comments come out, since the next declaration's docblock sits inside this
+ * one's slice and prose about an install is not a call to one.
+ */
+function declarations() {
   const src = readFileSync(new URL("../lib/commands.mjs", import.meta.url), "utf8");
-  const starts = [...src.matchAll(/^export (?:async )?function (\w+)\(/gm)];
-  return starts.map((m, i) => [m[1], src.slice(m.index, starts[i + 1]?.index ?? src.length)]);
+  const starts = [...src.matchAll(/^(?:export )?(?:async )?(?:function|const|let|class) (\w+)/gm)];
+  return starts.map((m, i) => ({
+    name: m[1],
+    exported: m[0].startsWith("export "),
+    body: src
+      .slice(m.index, starts[i + 1]?.index ?? src.length)
+      .replace(/\/\*[\s\S]*?\*\//g, " ")
+      .replace(/^\s*\/\/.*$/gm, " "),
+  }));
 }
 
-test("setup is the only command that runs npm, so a scan, a check and a pin stay offline", () => {
+test("setup is the only command that runs npm, so a scan, a check and a pin install nothing", () => {
   // F5: the install is a command of its own precisely so that nothing else
-  // reaches the network by finding a dependency missing and fetching it.
-  const named = commandBodies().filter(([, body]) => body.includes("npm")).map(([name]) => name);
+  // reaches a package registry by finding a dependency missing and fetching it.
+  // One hop out, since what a helper below does is charged to whoever calls it.
+  const decls = declarations();
+  const npmish = decls.filter((d) => d.body.includes("npm")).map((d) => d.name);
+  const reaches = (d) => d.body.includes("npm") || npmish.some((n) => n !== d.name && new RegExp(`\\b${n}\\b`).test(d.body));
 
-  assert.deepEqual(named, ["runSetup"]);
+  assert.deepEqual(decls.filter((d) => d.exported && reaches(d)).map((d) => d.name), ["runSetup"]);
 });
