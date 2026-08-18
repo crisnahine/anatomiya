@@ -11,8 +11,13 @@ import { installWithoutDependencies } from "./plugin-install.mjs";
 import { runCheck, runDoctor, runPin, runScan, runSetup } from "../lib/commands.mjs";
 import { PIN_PATH } from "../lib/baseline.mjs";
 import { PROBE_IDS, pluginRoot } from "../lib/readiness.mjs";
+import { loadTypeScript } from "../lib/semantic.mjs";
 
 const RULES = join(".claude", "rules");
+
+// The tier is optional, so the half of the deep path that needs a checker says
+// so rather than failing on a machine that never installed one.
+const needsTs = (await loadTypeScript()) ? {} : { skip: "typescript is not installed" };
 
 /** A committed repository with one area's worth of source in it. */
 function repo(t, files = 8) {
@@ -117,6 +122,41 @@ test("a scan of a directory that is not a repository refuses rather than reporti
   t.after(() => rmSync(dir, { recursive: true, force: true }));
 
   await assert.rejects(() => runScan(dir, { dryRun: true }), /not a git repository/);
+});
+
+test("a deep scan with no checker refuses before it reads anything", (t) => {
+  // `/plugin install` copies the files and does not run `npm install`, so this
+  // is the shape a marketplace user's first `--deep` meets. Refused before the
+  // parse rather than after a minute of it, and out of process because that is
+  // where the whole deep path through this module can be exercised at all.
+  const install = installWithoutDependencies(t);
+  const dir = repo(t);
+
+  let status = 0;
+  let stderr = "";
+  try {
+    execFileSync(process.execPath, [join(install, "bin", "anatomiya.mjs"), "scan", dir, "--deep"], { stdio: "pipe" });
+  } catch (err) {
+    status = err.status;
+    stderr = String(err.stderr);
+  }
+
+  assert.equal(status, 1, stderr);
+  // The checker's own sentence, not the parser's: both are absent here, and the
+  // refusal that fires decides which install the reader goes and does.
+  assert.match(stderr, /--deep needs typescript/, stderr);
+  assert.match(stderr, /bin\/anatomiya\.mjs setup/, stderr);
+  assert.equal(existsSync(join(dir, ".claude")), false, "a refused scan wrote nothing");
+});
+
+test("a deep scan with the checker installed is not refused", needsTs, async (t) => {
+  // The other half. A refusal that fired on every deep scan would pass the test
+  // above just as loudly, and nothing else here runs this path at all.
+  const dir = repo(t);
+
+  const { summary } = await runScan(dir, { dryRun: true, deep: true });
+
+  assert.equal(summary.files, 8);
 });
 
 test("a scan with no interpreter is told to install Ruby, never to run npm", needsShebang, async (t) => {
