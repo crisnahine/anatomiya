@@ -76,6 +76,19 @@ test("no module the parse worker reaches imports node:child_process", () => {
   assert.deepEqual(offenders, []);
 });
 
+test("every bridge that runs a child takes the guards from the one supervisor", () => {
+  // The same rule read from the other end: `child.mjs` is where the spawn, the
+  // stderr cap, the clocks and the kill live for all three bridges, so it is
+  // also the module that must stay on the far side of the parse worker's walk.
+  // A fourth engine that wrote the battery a fourth time would fail here.
+  const edges = graph();
+
+  for (const bridge of ["pool.mjs", "ruby.mjs", "semantic.mjs"]) {
+    assert.ok(edges.get(bridge).includes("child.mjs"), `${bridge} guards a child of its own again`);
+  }
+  assert.equal(reachedFrom("parse-worker.mjs", edges).has("child.mjs"), false);
+});
+
 test("the parse worker does not reach the registry", () => {
   // The worker runs the tree rows off `dimensionsFor` and nothing else: an
   // obligation has no program to run against and a filename row answers off
