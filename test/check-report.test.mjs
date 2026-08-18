@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readdirSync, writeFileSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { execFileSync } from "node:child_process";
@@ -177,6 +177,36 @@ test("no caveat reaches the report without a code", () => {
   for (const name of Object.keys(CAVEATS)) {
     assert.ok(spelled.has(name), `CAVEATS.${name} is declared and nothing reaches it`);
   }
+});
+
+test("a code no case names is one of the five nobody could force cheaply", () => {
+  // The two checks above catch a code nothing spells and a code nothing
+  // declares. Neither catches a code spelled at the wrong site: exchanging
+  // `frameworks-unknown` and `capabilities-unknown` was green across every
+  // suite here. What catches that is a case that forces the condition and reads
+  // the code back, and this is the list of the ones no case does.
+  //
+  // Each needs a state a temporary repository cannot cheaply be put in: a
+  // shallow clone whose base commit is fetchable but shares no history, and one
+  // whose base cannot be fetched at all; a degraded-mode run whose added-line
+  // ranges fail while its diff succeeds; a `ls-tree` of HEAD that fails while
+  // every other read works; and a rule file the filesystem refuses to open,
+  // which is a permission bit a run as root does not have.
+  const dir = dirname(fileURLToPath(import.meta.url));
+  const suites = readdirSync(dir)
+    .filter((f) => f.endsWith(".test.mjs"))
+    .map((f) => readFileSync(join(dir, f), "utf8"))
+    .join("\n");
+
+  const unheld = Object.keys(CAVEATS).filter((name) => !new RegExp(`CAVEATS\\.${name}\\b`).test(suites));
+
+  assert.deepEqual(unheld, [
+    "SHALLOW_NO_HISTORY",
+    "SHALLOW_UNFETCHED",
+    "ADDED_RANGES_UNREADABLE",
+    "OBLIGATIONS_UNCHECKED",
+    "RULES_UNREADABLE",
+  ]);
 });
 
 test("encodeReport neutralises the values a writer would otherwise emit raw", async (t) => {

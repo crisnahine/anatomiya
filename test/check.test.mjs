@@ -1756,13 +1756,23 @@ test("a check that could not load the stripper names the dependency too", async 
   git("add", "-A");
   git("commit", "-qm", "flow");
 
-  const out = execFileSync(process.execPath, [join(home, "bin", "anatomiya.mjs"), "check", repo, "--base", "main"], {
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "pipe"],
-  });
+  // As the record rather than as the lines: what the caveat means to a reader
+  // is its code, and the sentence is wording nobody promised to keep.
+  const out = execFileSync(
+    process.execPath,
+    [join(home, "bin", "anatomiya.mjs"), "check", repo, "--base", "main", "--format", "json"],
+    { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }
+  );
+  const caveats = JSON.parse(out).caveats;
 
-  assert.match(out, /src\/flowed\.js/, `the Flow file was expected in the caveats:\n${out}`);
-  assert.match(out, /flow-remove-types is not installed/, `nothing named the missing dependency:\n${out}`);
+  assert.ok(
+    caveats.some((c) => c.code === CAVEATS.STRIPPER_MISSING),
+    `nothing named the missing dependency:\n${out}`
+  );
+  assert.ok(
+    caveats.some((c) => c.code === CAVEATS.HEAD_REJECTED && c.message.includes("src/flowed.js")),
+    `the Flow file was expected in the caveats:\n${out}`
+  );
 });
 
 test("a claim is not silenced by a finding invented off the base's stripped tree", async (t) => {
@@ -2390,4 +2400,139 @@ test("a Pascal-named migration breaks a stated snake_case claim (#33)", async (t
   const found = forKey(report, "file_naming_case");
   assert.deepEqual(found.map((f) => f.path), ["db/migrate/20260816120000_AddBadColumn.rb"], JSON.stringify(report.findings));
   assert.equal(found[0].severity, "MUST-FIX", "the baseline holds no violation, so this branch is the first");
+});
+
+/* --- the caveat codes, at the site each one is raised --- */
+
+/** The codes a run answered with, so a case names the code rather than its sentence. */
+const codesOf = (report) => report.caveats.map((c) => c.code);
+
+test("a map from a build this one cannot read is one code, whatever the sentence says", async (t) => {
+  // Two sentences answer this: a store directory resolving outside the
+  // repository, and a schema this build does not read. They are one fact to a
+  // reader, that there is a map and none of it was used.
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/a.ts", clean(2));
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/a.ts", clean(2) + swallow(1));
+    commit("swallow");
+  });
+  facts(dir, { sha: sha(dir, "main") });
+  const store = join(dir, ".claude", "anatomiya", "facts.json");
+  writeFileSync(store, JSON.stringify({ ...JSON.parse(readFileSync(store, "utf8")), schema: 999 }));
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.deepEqual(codesOf(r), [CAVEATS.MAP_UNREADABLE]);
+});
+
+test("a repository holding none of the base refs says so, by code", async (t) => {
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/a.ts", clean(2));
+    commit("init");
+    git("branch", "-m", "topic");
+    write("src/a.ts", clean(2) + swallow(1));
+    commit("swallow");
+  });
+
+  const r = await check(dir);
+
+  assert.ok(codesOf(r).includes(CAVEATS.NO_BASE_REF), JSON.stringify(codesOf(r)));
+});
+
+test("a branch sharing no history with its base is the degraded mode, not an empty answer", async (t) => {
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/a.ts", clean(2));
+    commit("init");
+    git("checkout", "-q", "--orphan", "work");
+    write("src/b.ts", swallow(1));
+    commit("orphan");
+    // Left in the tree: with no base to judge it against, a pending file is
+    // named rather than charged to whoever happens to be running the check.
+    write("src/c.ts", swallow(1));
+  });
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.ok(codesOf(r).includes(CAVEATS.NO_MERGE_BASE), JSON.stringify(codesOf(r)));
+  assert.ok(codesOf(r).includes(CAVEATS.PENDING_UNJUDGED), JSON.stringify(codesOf(r)));
+});
+
+/**
+ * A repository whose index git will not read.
+ *
+ * Every corpus probe goes through that index, and so does the pending edits
+ * listing, while a three-dot diff between two commits does not. That is what
+ * makes it the cheap way to reach the three codes below at once.
+ */
+function withUnreadableIndex(t, extra = null) {
+  return repo(t, ({ dir, git, write, commit }) => {
+    write("src/a.ts", clean(2));
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/a.ts", clean(2) + swallow(1));
+    if (extra) write(extra.path, extra.body);
+    commit("swallow");
+    writeFileSync(join(dir, ".git", "index"), "this is not a git index");
+  });
+}
+
+test("a corpus that will not list costs the routing claims and says so, by code", async (t) => {
+  // Nothing here refuses over it: a probe that failed is a question left
+  // unanswered rather than a branch nobody may report on.
+  const dir = withUnreadableIndex(t);
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.ok(codesOf(r).includes(CAVEATS.PENDING_UNLISTED), JSON.stringify(codesOf(r)));
+  assert.ok(codesOf(r).includes(CAVEATS.CAPABILITIES_UNKNOWN), JSON.stringify(codesOf(r)));
+  // The discriminator between the two single-use codes: nothing examined here
+  // could carry a framework, so the framework probe never ran. Exchanging the
+  // two codes at their sites passes every other test in this repository.
+  assert.ok(!codesOf(r).includes(CAVEATS.FRAMEWORKS_UNKNOWN), JSON.stringify(codesOf(r)));
+});
+
+test("a corpus that will not list costs the framework claims too, where one could signal", needsRuby, async (t) => {
+  const dir = withUnreadableIndex(t, { path: "app/models/thing.rb", body: "class Thing\nend\n" });
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.ok(codesOf(r).includes(CAVEATS.FRAMEWORKS_UNKNOWN), JSON.stringify(codesOf(r)));
+});
+
+test("a file that did not parse at the merge base is named apart from one that did not parse now", async (t) => {
+  // The branch fixed it, so there is no base side to difference against and
+  // every site in the file reads as newly introduced. The code is what tells
+  // that apart from a file this branch broke.
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/a.ts", clean(2));
+    write("src/broken.ts", "export function x( { !!!\n");
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/broken.ts", swallow(1));
+    commit("fixed");
+  });
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.deepEqual(codesOf(r), [CAVEATS.NO_MAP, CAVEATS.BASE_UNPARSED]);
+});
+
+test("a rules directory that is not a directory is one nobody could list", async (t) => {
+  // `.claude/rules` is a repository path like any other, so a clone can ship a
+  // regular file there. Reported rather than refused: the check has nothing to
+  // refuse and says what it could not look at.
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/a.ts", clean(2));
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/a.ts", clean(2) + swallow(1));
+    write(".claude/rules", "not a directory\n");
+    commit("swallow");
+  });
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.ok(codesOf(r).includes(CAVEATS.RULES_UNLISTED), JSON.stringify(codesOf(r)));
 });
