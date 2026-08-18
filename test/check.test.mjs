@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 import { installWithoutStripper, FLOW_SOURCE } from "./no-stripper.mjs";
 
 import { needsRuby } from "./ruby-available.mjs";
-import { check, severityFor, formatReport, unreadReason } from "../lib/check.mjs";
+import { check, severityFor, formatReport, unreadReason, CAVEATS } from "../lib/check.mjs";
 import { scan } from "../lib/scan.mjs";
 import { writeMap } from "../lib/write.mjs";
 import { writeFacts } from "../lib/facts.mjs";
@@ -111,6 +111,9 @@ const sha = (dir, ref = "HEAD") =>
 
 const forKey = (report, key) => report.findings.filter((f) => f.dimension === key);
 
+/** A caveat is a code and a sentence; these cases are about the sentence. */
+const notes = (report) => report.caveats.map((c) => c.message);
+
 /**
  * A "reports nothing" assertion is only worth anything if the file reached the
  * parser. Every one of the negative cases would otherwise pass just as well on
@@ -121,7 +124,7 @@ function assertExamined(report, path) {
     report.examined.some((c) => c.path === path),
     `${path} was never examined, so the case proves nothing`
   );
-  const skipped = report.caveats.filter((c) => c.includes(path));
+  const skipped = notes(report).filter((m) => m.includes(path));
   assert.deepEqual(skipped, [], `${path} was skipped: ${skipped.join("; ")}`);
 }
 
@@ -440,7 +443,7 @@ test("no map on disk enforces nothing and says so", async (t) => {
   const r = await check(dir, { baseRef: "main" });
   const hits = forKey(r, "swallowed_error");
 
-  assert.ok(r.caveats.some((c) => c.includes("no map on disk")));
+  assert.ok(r.caveats.some((c) => c.code === CAVEATS.NO_MAP));
   assert.equal(hits.length, 1);
   assert.equal(hits[0].severity, "NIT");
   assert.equal(hits[0].area, null);
@@ -472,8 +475,8 @@ test("a changed Ruby file is parsed by prism and its new violation is reported",
     "a Ruby file in the diff is examined, not skipped"
   );
   assert.ok(
-    !r.caveats.some((c) => /could not be parsed|not examined/.test(c)),
-    `no parse caveat: ${r.caveats.join(" | ")}`
+    !notes(r).some((m) => /could not be parsed|not examined/.test(m)),
+    `no parse caveat: ${notes(r).join(" | ")}`
   );
   assert.equal(r.findings.length, 1, "the rescue that ignores its error is newly introduced");
   assert.equal(r.findings[0].dimension, "rescue_uses_error");
@@ -503,8 +506,8 @@ test("a changed file the parser cannot read is named, not silently skipped", asy
   // Named, whatever the cause turned out to be: the sibling case above pins
   // which sentence each cause gets, this one pins that the file is reported.
   assert.ok(
-    r.caveats.some((c) => c.includes("src/a.ts")),
-    `expected a parse caveat naming the file: ${r.caveats.join(" | ")}`
+    notes(r).some((m) => m.includes("src/a.ts")),
+    `expected a parse caveat naming the file: ${notes(r).join(" | ")}`
   );
   assert.equal(r.findings.length, 0, "and nothing is claimed about a file nobody could read");
 });
@@ -529,8 +532,8 @@ test("a diff the check could not read is not reported as a branch that changed n
   const r = await check(dir, { baseRef: "main" });
 
   assert.ok(
-    r.caveats.some((c) => /diff/.test(c)),
-    `expected the unread diff to be named: ${r.caveats.join(" | ")}`
+    r.caveats.some((c) => c.code === CAVEATS.DIFF_UNREADABLE),
+    `expected the unread diff to be named: ${notes(r).join(" | ")}`
   );
 });
 
@@ -583,8 +586,8 @@ test("facts written by a newer scan are not read as if their shape were known", 
   const r = await check(dir, { baseRef: "main" });
 
   assert.ok(
-    r.caveats.some((c) => /schema/.test(c)),
-    `expected the unreadable map to be named: ${r.caveats.join(" | ")}`
+    notes(r).some((m) => /schema/.test(m)),
+    `expected the unreadable map to be named: ${notes(r).join(" | ")}`
   );
   assert.deepEqual(
     r.findings.filter((f) => f.severity !== "NIT"),
@@ -654,8 +657,8 @@ test("a file that crashed the parser is named apart from one it merely rejected"
   const r = await check(dir, { baseRef: "main" });
 
   assert.ok(
-    r.caveats.some((c) => /crashed/.test(c)),
-    `expected the crash to be named: ${r.caveats.join(" | ")}`
+    notes(r).some((m) => /crashed/.test(m)),
+    `expected the crash to be named: ${notes(r).join(" | ")}`
   );
 });
 
@@ -680,8 +683,8 @@ test("a file the parser rejected is named apart from one this tool could not rea
   const r = await check(dir, { baseRef: "main" });
 
   assert.ok(
-    r.caveats.some((c) => /syntax/.test(c)),
-    `expected the syntax cause to be named: ${r.caveats.join(" | ")}`
+    notes(r).some((m) => /syntax/.test(m)),
+    `expected the syntax cause to be named: ${notes(r).join(" | ")}`
   );
 });
 
@@ -816,7 +819,7 @@ test("a file edited since its commit is read as it stands, not as it was committ
 
   const r = await check(dir, { baseRef: "main" });
 
-  assert.ok(r.caveats.some((c) => /working tree/.test(c)));
+  assert.ok(r.caveats.some((c) => c.code === CAVEATS.READ_FROM_TREE));
   assert.equal(forKey(r, "swallowed_error").length, 2, "both sites, the committed one and the pending one");
 });
 
@@ -864,7 +867,7 @@ test("a file read from the tree is named as read from the tree", async (t) => {
   const r = await check(dir, { baseRef: "main" });
 
   assert.ok(
-    r.caveats.some((c) => /working tree/.test(c)),
+    r.caveats.some((c) => c.code === CAVEATS.READ_FROM_TREE),
     `a run that read uncommitted content says so: ${JSON.stringify(r.caveats)}`
   );
 });
@@ -897,9 +900,9 @@ test("a renamed file counts once, and under its own name", async (t) => {
 
   const r = await check(dir, { baseRef: "main" });
 
-  const note = r.caveats.find((c) => /working tree/.test(c));
+  const note = r.caveats.find((c) => c.code === CAVEATS.READ_FROM_TREE);
   assert.ok(note, "the rename is work the check read from the tree");
-  assert.match(note, /^1 file/, "one file, not two");
+  assert.match(note.message, /^1 file/, "one file, not two");
 });
 
 test("the store the map writes is not counted as pending work", async (t) => {
@@ -914,7 +917,7 @@ test("the store the map writes is not counted as pending work", async (t) => {
   const r = await check(dir, { baseRef: "main" });
 
   assert.equal(
-    r.caveats.filter((c) => /working tree/.test(c)).length,
+    r.caveats.filter((c) => c.code === CAVEATS.READ_FROM_TREE).length,
     0,
     "a clean tree plus an untracked map is not pending work"
   );
@@ -930,7 +933,7 @@ test("a repository with no commits examines nothing and refuses nothing", async 
 
   assert.equal(r.mode, "none");
   assert.deepEqual(r.findings, []);
-  assert.ok(r.caveats.some((c) => c.includes("nothing was examined")));
+  assert.ok(r.caveats.some((c) => c.code === CAVEATS.NOTHING_EXAMINED));
   assert.doesNotThrow(() => formatReport(r));
 });
 
@@ -946,7 +949,7 @@ test("an unresolvable base ref degrades to added lines rather than refusing", as
   const r = await check(dir, { baseRef: "no/such/ref" });
 
   assert.equal(r.mode, "added-lines");
-  assert.ok(r.caveats.some((c) => c.includes("added")), "the caveat must be stated");
+  assert.ok(notes(r).some((m) => m.includes("added")), "the caveat must be stated");
   assert.equal(forKey(r, "swallowed_error").length, 1, "the added line is still checked");
 });
 
@@ -1275,8 +1278,8 @@ test("a rules directory linked out of the repository is reported, not examined",
 
   assert.deepEqual(r.foreign, [], "nothing outside the repository was read");
   assert.ok(
-    r.caveats.some((c) => /resolves outside the repository/.test(c)),
-    `no caveat said so: ${r.caveats.join("; ")}`
+    r.caveats.some((c) => c.code === CAVEATS.RULES_ESCAPED),
+    `no caveat said so: ${notes(r).join("; ")}`
   );
 });
 
@@ -1504,7 +1507,7 @@ test("a pending file over the size cap is not read from the tree", async (t) => 
 
   assert.deepEqual(forKey(r, "swallowed_error"), [], JSON.stringify(r.findings));
   assert.ok(
-    r.caveats.some((c) => /could not read src\/big\.ts/.test(c)),
+    notes(r).some((m) => /could not read src\/big\.ts/.test(m)),
     `a file it refused to read is named, not silently dropped: ${JSON.stringify(r.caveats)}`
   );
 });
@@ -1524,7 +1527,7 @@ test("a file deleted in the working tree is not examined", async (t) => {
   const r = await check(dir, { baseRef: "main" });
 
   assert.deepEqual(r.examined.map((f) => f.path), []);
-  assert.deepEqual(r.caveats.filter((c) => /could not read/.test(c)), []);
+  assert.deepEqual(notes(r).filter((m) => /could not read/.test(m)), []);
 });
 
 test("a producer whose companion the branch never wrote is still reported", async (t) => {
@@ -1878,7 +1881,7 @@ test("a learned base class is enforced the way a learned naming class is", needs
   facts(dir, { sha: sha(dir, "main"), areas: rubyArea("ApplicationController") });
   const report = await check(dir);
   assertExamined(report, "app/controllers/x_controller.rb");
-  assert.deepEqual(report.caveats.filter((c) => /schema/.test(c)), [], "the writer's own schema reads clean");
+  assert.deepEqual(notes(report).filter((m) => /schema/.test(m)), [], "the writer's own schema reads clean");
   const found = forKey(report, "class_base");
   assert.equal(found.length, 1, JSON.stringify(report.findings));
   assert.equal(found[0].path, "app/controllers/x_controller.rb");
