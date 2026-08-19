@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -52,6 +52,22 @@ test("the walk up stops at the filesystem root rather than running off it", (t) 
   mkdirSync(join(dir, "a", "b", "c"), { recursive: true });
 
   assert.equal(echoContext(join(dir, "a", "b", "c"), {}), null);
+});
+
+test("the frontmatter comes off however the file's line endings are written", (t) => {
+  // `isOwned` in rules.mjs already reads a leading BOM and CRLF, because a map
+  // written or re-saved on Windows has both. This strip did not, so the
+  // delivery metadata leaked into the echoed body as content.
+  for (const [name, body] of [
+    ["CRLF", "---\r\ngenerator: anatomiya\r\n---\r\n\r\n# Repository map\r\n"],
+    ["BOM", "﻿---\ngenerator: anatomiya\n---\n\n# Repository map\n"],
+    ["BOM and CRLF", "﻿---\r\ngenerator: anatomiya\r\n---\r\n\r\n# Repository map\r\n"],
+  ]) {
+    const dir = mapped(t, body);
+    const out = echoContext(dir, {});
+    assert.doesNotMatch(out, /generator: anatomiya/, name);
+    assert.match(out, /# Repository map/, name);
+  }
 });
 
 test("a repository with no map echoes nothing rather than an empty map", (t) => {
@@ -114,6 +130,40 @@ test("installing twice adds one hook, not two", (t) => {
   const s = settings(dir);
   assert.equal(s.hooks.UserPromptSubmit.length, 1);
   assert.equal(s.hooks.PostToolUse.length, 1);
+});
+
+test("a settings path that leaves the repository is refused, and the file it pointed at is untouched", (t) => {
+  // F2, applied to the one write outside `.claude/rules/`. A tracked
+  // `.claude/settings.local.json -> ../../victim.json` survives a clone, and
+  // `join` normalises `..` while resolving no link, so the install landed in a
+  // file the repository does not own. Verified against a real scan before this
+  // test existed: a JSON file two directories up came back with our hooks in it.
+  const dir = mapped(t);
+  const outside = mkdtempSync(join(tmpdir(), "anatomiya-victim-"));
+  t.after(() => rmSync(outside, { recursive: true, force: true }));
+  const victim = join(outside, "important.json");
+  const body = '{ "belongs": "to somebody else" }';
+  writeFileSync(victim, body);
+
+  mkdirSync(join(dir, ".claude"), { recursive: true });
+  symlinkSync(victim, join(dir, SETTINGS_PATH));
+
+  assert.throws(() => planHook(dir), /outside|escape|left alone/i);
+  assert.equal(readFileSync(victim, "utf8"), body, "the file it pointed at is untouched");
+});
+
+test("a .claude directory that is a link out of the repository is refused too", (t) => {
+  // The link one level up, which is the shape the rules writer was fixed for:
+  // one link at `.claude` takes the settings file with it.
+  const dir = mapped(t);
+  const outside = mkdtempSync(join(tmpdir(), "anatomiya-victim-"));
+  t.after(() => rmSync(outside, { recursive: true, force: true }));
+
+  rmSync(join(dir, ".claude"), { recursive: true, force: true });
+  symlinkSync(outside, join(dir, ".claude"));
+
+  assert.throws(() => planHook(dir), /outside|escape|left alone/i);
+  assert.equal(existsSync(join(outside, "settings.local.json")), false, "nothing was created there");
 });
 
 test("settings that do not parse are refused, never overwritten", (t) => {

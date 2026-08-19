@@ -7,6 +7,33 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- A scan installs a hook that puts the map back in front of the model after every turn and every tool
+  call, stamped with the moment it was read. Nothing to wire: `anatomiya scan .` writes the map and the
+  hook together. The always-loaded channel still carries the overview once per turn and is unchanged;
+  what this adds is recency, so a run three hundred tool calls deep is not working from a fact it was
+  handed at the start, and a timestamp, so a map that has gone stale against the code reads as stale
+  rather than as the current answer. The echoed text is descriptive and says the code outranks it.
+  Decisions A24 and A25.
+- `anatomiya echo`, the command that hook runs. Deliberately absent from the usage block and from
+  `commands/`: no person runs it and no agent should. It reads the hook event on stdin, answers with one
+  JSON object, and every failure path answers `{}` and exits 0, because a hook that exits non-zero
+  interrupts the session it exists to help.
+- `.claude/settings.local.json` joins the documented exclude lines, and `check:docs` now asserts every
+  one of them appears in the README. They were spelled there by hand with nothing reading them, so a
+  fourth thing written would have left a reader with a dirty `git status` and a document saying
+  otherwise.
+
+### Changed
+
+- The hook install writes only the local settings scope, never the `settings.json` a team commits, and
+  merges around whatever is already there rather than replacing it. It is contained by F2, so a
+  `settings.local.json` symlinked out of the repository is refused rather than followed; it refuses a
+  file it cannot parse or cannot merge into rather than overwriting it; and a refusal is reported as a
+  line rather than thrown, so a settings file this will not touch cannot fail a scan that already wrote
+  the whole map.
+
 ## [0.2.3] - 2026-08-19
 
 0.2.3 is what a truth check of the map found. One agent per repository read the real code of 35 open
