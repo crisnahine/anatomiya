@@ -97,6 +97,41 @@ test("settings that do not parse are refused, never overwritten", (t) => {
   assert.equal(readFileSync(join(dir, SETTINGS_PATH), "utf8"), "{ this is not json", "left alone");
 });
 
+test("a hooks block that is not an object is refused, not spread into one", (t) => {
+  // The top-level object was checked and nothing below it was, so a spread
+  // turned whatever it found into indexed keys: `"hooks": "PreToolUse"` became
+  // `{"0":"P","1":"r","2":"e",...}` beside the real entries, and the file was
+  // written back that way. Refusing is the same rule A25 already states one
+  // level up: a writer that reads a shape it does not understand as the shape
+  // it expected is a writer that mangles what it could not read.
+  for (const hooks of ['"PreToolUse"', "[{\"matcher\":\"Bash\"}]", "42", "null"]) {
+    const dir = mapped(t);
+    const body = `{"permissions":{"allow":["Bash(x)"]},"hooks":${hooks}}`;
+    mkdirSync(join(dir, ".claude"), { recursive: true });
+    writeFileSync(join(dir, SETTINGS_PATH), body);
+
+    if (hooks === "null") {
+      // Absent and null are the same statement: no hooks yet.
+      commitHook(dir, planHook(dir));
+      assert.ok(settings(dir).hooks.PostToolUse, hooks);
+      assert.deepEqual(settings(dir).permissions.allow, ["Bash(x)"], hooks);
+      continue;
+    }
+    assert.throws(() => planHook(dir), /hooks/, hooks);
+    assert.equal(readFileSync(join(dir, SETTINGS_PATH), "utf8"), body, `${hooks} left alone`);
+  }
+});
+
+test("an event whose value is not a list is refused, not spread into characters", (t) => {
+  const dir = mapped(t);
+  const body = '{"hooks":{"PostToolUse":"bash ./fmt.sh"}}';
+  mkdirSync(join(dir, ".claude"), { recursive: true });
+  writeFileSync(join(dir, SETTINGS_PATH), body);
+
+  assert.throws(() => planHook(dir), /PostToolUse/);
+  assert.equal(readFileSync(join(dir, SETTINGS_PATH), "utf8"), body, "left alone");
+});
+
 test("a plan already satisfied says so and writes nothing", (t) => {
   const dir = mapped(t);
   commitHook(dir, planHook(dir));
