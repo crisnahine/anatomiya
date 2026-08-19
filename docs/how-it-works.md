@@ -467,6 +467,32 @@ Output goes to `.claude/rules/`, which is a context directory the agent loads fr
 | `anatomiya-overview.md` | none | every turn, and again from disk after a compaction |
 | `anatomiya-area-<id>.md` | the area glob | when a file under that glob is read, once per context window |
 
+There is a second delivery beside that one, and a scan installs it: a hook that echoes the overview back
+after every turn and every tool call, stamped with the moment it was read. The table above is what the
+platform loads; the hook is what keeps it recent. A run three hundred tool calls deep was working from a
+copy handed to it at the start, and nothing said when that copy was read, so a map that had drifted from
+the code looked exactly like one that had not.
+
+It is deliberately an addition rather than a replacement. "What is deliberately not built" refuses a hook
+as *the* channel, on complexity and on being flagged as prompt injection, and the 10-to-40% adherence
+that refusal cites was measured on a hook standing in for the always-loaded file. Here the 100% channel
+is untouched and nothing depends on the weaker one. The echoed text is descriptive rather than
+imperative for the same reason, and it says outright that the code outranks it.
+
+The hook runs `anatomiya echo`, which is absent from the usage block and from `commands/` on purpose: no
+person runs it and no agent should. It reads the event on stdin, answers with one JSON object, and every
+failure path answers `{}` and exits 0, because a hook that exits non-zero interrupts the session it
+exists to help. It finds the map by walking up from wherever it fired, since a hook carries the session's
+own working directory and the map is written once at the root.
+
+The entry goes in `.claude/settings.local.json`, the per-developer scope, never the `settings.json` a
+team commits. It merges around what is already there, refuses a file it cannot parse or cannot merge
+into, and is contained by F2 like every other write, so a settings file symlinked out of the repository
+is refused rather than followed. A refusal is a printed line, not a failed scan.
+
+The cost is roughly 480 tokens per turn and per tool call, so a session making 300 calls spends about
+144,000 on it. There is no flag to turn it down; this tool ships no options.
+
 That last row is the ceiling on the whole design. A `paths` rule attaches when the agent uses the
 Read tool on a matching file or when an `@file` mention names it. It does not attach on grep, on
 glob, on `cat` through bash, or on an edit with no prior read.
