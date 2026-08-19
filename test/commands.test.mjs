@@ -119,6 +119,23 @@ test("a settings file the hook cannot be installed into does not fail the scan",
   assert.ok(scanLines(summary).some((l) => l.includes("could not be read")), "and printed");
 });
 
+test("two scans over unchanged source say the same thing about the hook", async (t) => {
+  // The summary reports what is true, not what changed: every other line in it
+  // does, and the corpus harness asserts a second scan's summary equals the
+  // first beyond its timing. Saying it once made the summary a function of
+  // prior state rather than of the tree, and every repository in the corpus
+  // read as unstable because of it.
+  const dir = repo(t);
+
+  const first = (await runScan(dir)).summary;
+  const second = (await runScan(dir)).summary;
+
+  assert.equal(first.hookInstalled, true, "installed by the first");
+  assert.equal(second.hookInstalled, true, "and still installed for the second to report");
+  const timeless = (s) => scanLines(s).filter((l) => !/\dms, root /.test(l));
+  assert.deepEqual(timeless(second), timeless(first), "so the two summaries agree");
+});
+
 test("a settings file with a byte-order mark is read, not refused", async (t) => {
   // Editors write one. It is not a malformed file, it is a file with a BOM.
   const dir = repo(t);
