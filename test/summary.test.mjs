@@ -306,6 +306,12 @@ test("the summary carries every fact the scan prints", () => {
     engines: { oxc: { version: "0.144.0" } },
     layoutLine: null,
     baseline: { status: "unpinned", sha: null, drift: null, baseRef: null, countsOnly: true },
+    // Absent and unchanged read the same here on purpose: the line this drives
+    // is said once, when the settings actually moved. The refusal beside it is
+    // the other outcome, and a scan that neither installed nor refused says
+    // nothing about either.
+    hookInstalled: false,
+    hookRefused: null,
     truncated: false,
     orphaned: 0,
     barren: 0,

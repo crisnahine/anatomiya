@@ -7,6 +7,61 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.2.4] - 2026-08-19
+
+0.2.4 is one feature: the map stops being something the model was told once. It is put back in front of
+the model after every turn and every tool call, stamped with the moment it was read, and a scan installs
+that itself so there is nothing to wire.
+
+The always-loaded channel is unchanged and still carries the overview once per turn. What it never
+carried is recency. A run three hundred tool calls deep was working from a fact handed to it at the
+start, and nothing anywhere said when that fact was read, so a map that had gone stale against the code
+looked exactly like one that had not. Both are now on every copy.
+
+"What is deliberately not built" refuses a hook as the delivery channel, and the 10-to-40% adherence it
+cites was measured on a hook *instead of* the always-loaded file. This is a hook *on top of* it: the
+channel that scored 100% is untouched and nothing depends on the weaker one, so that refusal is scoped
+rather than reversed, and it still stands if the hook ever became the only delivery.
+
+The write needed the most care, because it is the first one outside `.claude/rules/` and A1 keeps this
+tool there so a writer bug cannot destroy something maintained by hand. It goes to the local settings
+scope and never the `settings.json` a team commits; it is contained by F2, so a settings file symlinked
+out of the repository is refused rather than followed; it merges around what is already there rather
+than replacing it; and a file it cannot parse or cannot merge into is refused rather than overwritten.
+A refusal is a reported line, not a thrown error, so a settings file this will not touch cannot fail a
+scan that already wrote the whole map.
+
+One number worth knowing before you run it: the echoed map is roughly 480 tokens, on every turn and
+every tool call, so a 300-call session spends about 144,000 on it. There is no knob, because this tool
+ships no options.
+
+### Added
+
+- A scan installs a hook that puts the map back in front of the model after every turn and every tool
+  call, stamped with the moment it was read. Nothing to wire: `anatomiya scan .` writes the map and the
+  hook together. The always-loaded channel still carries the overview once per turn and is unchanged;
+  what this adds is recency, so a run three hundred tool calls deep is not working from a fact it was
+  handed at the start, and a timestamp, so a map that has gone stale against the code reads as stale
+  rather than as the current answer. The echoed text is descriptive and says the code outranks it.
+  Decisions A24 and A25.
+- `anatomiya echo`, the command that hook runs. Deliberately absent from the usage block and from
+  `commands/`: no person runs it and no agent should. It reads the hook event on stdin, answers with one
+  JSON object, and every failure path answers `{}` and exits 0, because a hook that exits non-zero
+  interrupts the session it exists to help.
+- `.claude/settings.local.json` joins the documented exclude lines, and `check:docs` now asserts every
+  one of them appears in the README. They were spelled there by hand with nothing reading them, so a
+  fourth thing written would have left a reader with a dirty `git status` and a document saying
+  otherwise.
+
+### Changed
+
+- The hook install writes only the local settings scope, never the `settings.json` a team commits, and
+  merges around whatever is already there rather than replacing it. It is contained by F2, so a
+  `settings.local.json` symlinked out of the repository is refused rather than followed; it refuses a
+  file it cannot parse or cannot merge into rather than overwriting it; and a refusal is reported as a
+  line rather than thrown, so a settings file this will not touch cannot fail a scan that already wrote
+  the whole map.
+
 ## [0.2.3] - 2026-08-19
 
 0.2.3 is what a truth check of the map found. One agent per repository read the real code of 35 open
@@ -1145,6 +1200,7 @@ which are partial; several listed there are not implemented yet.
 - No claim that this catches defects. Measured across ten repositories, 1 of 317 defect review
   comments was preventable by a conventions map.
 
+[0.2.4]: https://github.com/crisnahine/anatomiya/compare/v0.2.3...v0.2.4
 [0.2.3]: https://github.com/crisnahine/anatomiya/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/crisnahine/anatomiya/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/crisnahine/anatomiya/compare/v0.2.0...v0.2.1

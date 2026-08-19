@@ -22,6 +22,7 @@ import { dirname, join } from "node:path";
 import { CAVEATS } from "../lib/check-report.mjs";
 import { pairingsFor } from "../lib/pairing.mjs";
 import { REGISTRY, rowsForLangs, rowsOfKind } from "../lib/registry.mjs";
+import { EXCLUDE_LINES } from "../lib/rules.mjs";
 import { GATES } from "../lib/reduce.mjs";
 import { ELIGIBLE, REFUSED } from "../test/fixtures/counter-pins.mjs";
 
@@ -261,6 +262,15 @@ claim(
   new RegExp(`There\\s+are ${codes.size}\\.`).test(caveatText),
   `does not say there are ${codes.size} caveat codes`
 );
+
+// --- what a scan leaves in the working tree ---------------------------------
+
+// The README spells these by hand, and nothing read them: adding a fourth thing
+// a scan writes without adding its line leaves a reader with a dirty
+// `git status` and a document that says the opposite.
+for (const line of EXCLUDE_LINES) {
+  claim("README.md", read("README.md").includes(`'${line}'`), `does not tell a reader to exclude ${line}`);
+}
 
 // --- the command surface ----------------------------------------------------
 
