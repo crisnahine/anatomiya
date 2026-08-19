@@ -124,9 +124,20 @@ function parseArgs(argv) {
 function readPayload() {
   return new Promise((resolve) => {
     let data = "";
-    const done = (value) => resolve(value);
+    let settled = false;
+    // Resolving the promise is not enough to end the process: an open stdin is
+    // a live handle, so a harness that opens the pipe and writes nothing kept
+    // this alive for as long as it held it, measured at 8 seconds against the
+    // 2 this claims. The bound has to release the handle, not just answer.
+    const done = (value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      process.stdin.pause();
+      process.stdin.destroy();
+      resolve(value);
+    };
     const timer = setTimeout(() => done({}), 2000);
-    timer.unref();
     process.stdin.setEncoding("utf8");
     process.stdin.on("data", (chunk) => {
       data += chunk;
@@ -134,7 +145,6 @@ function readPayload() {
     });
     process.stdin.on("error", () => done({}));
     process.stdin.on("end", () => {
-      clearTimeout(timer);
       try {
         done(JSON.parse(data || "{}"));
       } catch {
