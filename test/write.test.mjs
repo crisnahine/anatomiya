@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 
 import { commitMap, planMap, writeMap } from "../lib/write.mjs";
-import { areaFilename, isOwned, EXCLUDE_LINES, HEAD_BYTES, PREFIX } from "../lib/rules.mjs";
+import { areaFilename, isOwned, EXCLUDE_LINES, HEAD_BYTES, PREFIX, SETTINGS_PATH } from "../lib/rules.mjs";
 import { areaId } from "../lib/areas.mjs";
 import { writeFacts, readFacts as readFactsFrom } from "../lib/facts.mjs";
 import { severityFor } from "../lib/check.mjs";
@@ -85,7 +85,7 @@ test("files land in .claude/rules with the facts beside them", () => {
   // Everything a scan can leave untracked, including the settings file the hook
   // is installed into: a fourth thing written without a fourth line here is a
   // dirty `git status` for anyone who followed the documented exclude.
-  assert.deepEqual(EXCLUDE_LINES, [`${RULES}/${PREFIX}*.md`, `${STORE}/`, ".claude/settings.local.json"]);
+  assert.deepEqual(EXCLUDE_LINES, [`${RULES}/${PREFIX}*.md`, `${STORE}/`, SETTINGS_PATH]);
   rmSync(dir, { recursive: true, force: true });
 });
 
