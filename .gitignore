@@ -16,3 +16,4 @@ Thumbs.db
 # What this tool writes when it scans itself. Derived from the source, so a scan regenerates it.
 .claude/anatomiya/
 .claude/rules/anatomiya-*.md
+.claude/settings.local.json
