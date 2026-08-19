@@ -30,6 +30,30 @@ test("the echoed map is stamped with the moment it was read", (t) => {
   assert.doesNotMatch(out, /generator: anatomiya/, "the frontmatter is delivery metadata, not content");
 });
 
+test("the map is found from anywhere inside the repository, not only from its root", (t) => {
+  // A hook fires with the session's own working directory, which is wherever
+  // the model happens to be, and the map is written once at the root. Joining
+  // the two without walking up answered `{}` from one directory down, silently,
+  // for the rest of the session. Walked rather than asked of git: this runs on
+  // every tool call, and a subprocess per call to learn a path is a subprocess
+  // per call.
+  const dir = mapped(t);
+  mkdirSync(join(dir, "src", "deep", "deeper"), { recursive: true });
+
+  assert.match(echoContext(join(dir, "src", "deep", "deeper"), {}), /# Repository map/);
+  assert.match(echoContext(join(dir, "src"), {}), /# Repository map/);
+});
+
+test("the walk up stops at the filesystem root rather than running off it", (t) => {
+  // A path with no map above it anywhere answers null, and does so without
+  // walking forever or throwing at the top.
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-hook-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  mkdirSync(join(dir, "a", "b", "c"), { recursive: true });
+
+  assert.equal(echoContext(join(dir, "a", "b", "c"), {}), null);
+});
+
 test("a repository with no map echoes nothing rather than an empty map", (t) => {
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-hook-"));
   assert.equal(echoContext(dir, {}), null);
@@ -55,6 +79,10 @@ test("a repository with no settings of its own is given only what the hook needs
   assert.deepEqual(Object.keys(s), ["hooks"], "nothing else is invented");
   assert.equal(s.hooks.UserPromptSubmit[0].hooks[0].command, HOOK_COMMAND);
   assert.equal(s.hooks.PostToolUse[0].matcher, "*", "every tool, which is what every move means");
+  // A tool call that failed is still a move, and `PostToolUse` fires only when
+  // one succeeds: the failure is its own event, so a run of denied edits or
+  // failing commands would otherwise be the run that hears the map least.
+  assert.equal(s.hooks.PostToolUseFailure[0].matcher, "*");
 });
 
 test("settings this did not write are left exactly as they were", (t) => {
