@@ -14,6 +14,7 @@ import {
   SEMANTIC_GUARDS,
   runSemantic,
 } from "../lib/semantic.mjs";
+import { remedyFor } from "../lib/readiness.mjs";
 
 // The tier is optional, so every test that needs the checker says so rather
 // than failing on a machine that never installed it.
@@ -35,9 +36,11 @@ test("the loader answers the module and its version when it is there", async () 
 });
 
 test("the refusal names the install command and the flag that needs it", () => {
-  const m = notInstalledMessage();
+  // Composed the way the scan composes it, since the remedy is the engine
+  // table's sentence and this module holds only the frame around it.
+  const m = notInstalledMessage(remedyFor("typescript"));
   assert.match(m, /--deep/);
-  assert.match(m, /npm install/);
+  assert.match(m, /bin\/anatomiya\.mjs setup/);
 });
 
 test("a clean config with a high resolution rate is not degraded", () => {
@@ -138,6 +141,55 @@ test("a checker that dies partway through is a failure, not a clean partial answ
 
   assert.equal(r.status, "degraded", "a half-finished run reported its partial counts as ok");
   assert.match(String(r.error ?? ""), /before it finished/);
+});
+
+/** A worker that answers what it is told to and then never speaks again. */
+function stallingWorker(t, name, says) {
+  const dir = mkdtempSync(join(tmpdir(), `anatomiya-${name}-`));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const worker = join(dir, `${name}.mjs`);
+  writeFileSync(
+    worker,
+    ["process.send({ ready: true });", "process.on('message', () => {", says, "});", "setTimeout(() => {}, 60_000);"].join("\n")
+  );
+  return { dir, worker };
+}
+
+test("a checker that never finishes its program build is killed by the clock that waits for it", { timeout: 15_000 }, async (t) => {
+  // The build is one long silence before any file is answered, so the first
+  // window is the only thing between a checker that is working and one that
+  // will never speak again. With nothing arming it the run hangs forever, and
+  // the suite could only ever say the number existed.
+  const { dir, worker } = stallingWorker(t, "nobuild", "");
+
+  const r = await runSemantic(dir, [{ rel: "a.ts", abs: join(dir, "a.ts"), lang: "js" }], {
+    workerPath: worker,
+    guards: { buildMs: 150, idleMs: 150 },
+  });
+
+  assert.equal(r.status, "degraded");
+  assert.match(String(r.error ?? ""), /went quiet/);
+  assert.equal(r.records.size, 0);
+});
+
+test("a checker that built its program and then stalled is killed by the shorter clock", { timeout: 15_000 }, async (t) => {
+  // The window moves once the build lands: after it, silence is a stall rather
+  // than a large repository, and a run that answered one file of a thousand is
+  // the partial answer the tier refuses.
+  const { dir, worker } = stallingWorker(
+    t,
+    "stalled",
+    "  process.send({ built: true, resolution: { resolved: 90, total: 100 }, config: { status: 'ok', reason: null } });\n" +
+      "  process.send({ rel: 'a.ts', hits: {} });"
+  );
+
+  const r = await runSemantic(dir, [{ rel: "a.ts", abs: join(dir, "a.ts"), lang: "js" }], {
+    workerPath: worker,
+    guards: { buildMs: 60_000, idleMs: 150 },
+  });
+
+  assert.equal(r.status, "degraded");
+  assert.match(String(r.error ?? ""), /went quiet/);
 });
 
 test("a checker that cannot start degrades the tier instead of crashing the scan", async (t) => {

@@ -52,24 +52,74 @@ test("no module in lib imports its way back to itself", () => {
   assert.deepEqual([...new Set(cycles)], []);
 });
 
-test("no module the parse worker reaches imports node:child_process", () => {
-  // Every JS parse child loads `dimensions.mjs` for the registry, and the two
-  // Ruby dimension files took their walkers from `ruby.mjs`, the module that
-  // spawns Ruby. That put the spawn machinery and the inline prism script into
-  // all eight forked workers, which is the exact cost `langs.mjs` and
-  // `limits.mjs` exist to avoid. `ruby-walk.mjs` is the importable leaf.
-  const edges = graph();
+/** Every module in `lib/` this one can reach, itself included. */
+function reachedFrom(entry, edges = graph()) {
   const reached = new Set();
   const walk = (file) => {
     if (reached.has(file)) return;
     reached.add(file);
     for (const next of edges.get(file) || []) walk(next);
   };
-  walk("parse-worker.mjs");
+  walk(entry);
+  return reached;
+}
 
-  const offenders = [...reached].filter((file) =>
+test("no module the parse worker reaches imports node:child_process", () => {
+  // Every JS parse child loads `dimensions.mjs` for the registry, and the two
+  // Ruby dimension files took their walkers from `ruby.mjs`, the module that
+  // spawns Ruby. That put the spawn machinery and the inline prism script into
+  // all eight forked workers, which is the exact cost `langs.mjs` and
+  // `limits.mjs` exist to avoid. `ruby-walk.mjs` is the importable leaf.
+  const offenders = [...reachedFrom("parse-worker.mjs")].filter((file) =>
     /from\s*["']node:child_process["']/.test(readFileSync(join(LIB, file), "utf8"))
   );
+  assert.deepEqual(offenders, []);
+});
+
+test("every bridge that runs a child takes the guards from the one supervisor", () => {
+  // The same rule read from the other end: `child.mjs` is where the spawn, the
+  // stderr cap, the clocks and the kill live for all three bridges, so it is
+  // also the module that must stay on the far side of the parse worker's walk.
+  // A fourth engine that wrote the battery a fourth time would fail here.
+  const edges = graph();
+
+  for (const bridge of ["pool.mjs", "ruby.mjs", "semantic.mjs"]) {
+    assert.ok(edges.get(bridge).includes("child.mjs"), `${bridge} guards a child of its own again`);
+  }
+  assert.equal(reachedFrom("parse-worker.mjs", edges).has("child.mjs"), false);
+});
+
+test("the writers do not reach the pipeline that produced the record", () => {
+  // Three of the four readers of the old module wanted a writer or the caveat
+  // table and paid a parser, a git runner and the whole registry for it. The
+  // record is the only thing between the two halves, so the reach is the seam:
+  // a writer that reaches back into the pipeline has taken a second way to
+  // learn something the record already carries.
+  assert.deepEqual([...reachedFrom("check-report.mjs")].sort(), [
+    "check-report.mjs",
+    "encode.mjs",
+    "rules.mjs",
+  ]);
+});
+
+test("the parse worker does not reach the registry", () => {
+  // The worker runs the tree rows off `dimensionsFor` and nothing else: an
+  // obligation has no program to run against and a filename row answers off
+  // the corpus, so composing all three in eight forked children buys nothing.
+  assert.equal(reachedFrom("parse-worker.mjs").has("registry.mjs"), false);
+});
+
+test("a module that branches on a row's kind loads the registry that stamps it", () => {
+  // `stampKind` writes the field in place while the registry is assembled, so
+  // a reader that never loads it reads undefined off a tree row and takes the
+  // other branch without a word. `dimensions.mjs` writes the stamp and
+  // `registry.mjs` runs it, which is where both of them read the field.
+  const offenders = [];
+  for (const [file, imports] of graph()) {
+    if (file === "dimensions.mjs" || file === "registry.mjs") continue;
+    if (!/\b(?:d|dim|dimension|row)\.kind\b/.test(readFileSync(join(LIB, file), "utf8"))) continue;
+    if (!imports.includes("registry.mjs")) offenders.push(file);
+  }
   assert.deepEqual(offenders, []);
 });
 
@@ -151,4 +201,19 @@ test("a roster name is taken from the module that defines it and from no other",
   }
 
   assert.deepEqual(wrong, []);
+});
+
+test("no file under scripts/ hardcodes the rules or store directory instead of importing it", () => {
+  // A comment cannot import a constant: the only file left here names
+  // `.claude/rules/` in a prose aside about a past bash-output miscount.
+  const EXEMPT = new Set(["scripts/measure-delivery.mjs"]);
+  const offenders = [];
+  for (const rel of sourceFiles().filter((f) => f.split(/[\\/]/)[0] === "scripts")) {
+    // The listing carries the host's separator and this set is written in the
+    // one every other path here uses, so the exemption is looked up in posix.
+    if (EXEMPT.has(rel.split(/[\\/]/).join("/"))) continue;
+    const src = readFileSync(join(LIB, "..", rel), "utf8");
+    if (src.includes(".claude/rules") || src.includes(".claude/anatomiya")) offenders.push(rel);
+  }
+  assert.deepEqual(offenders, []);
 });

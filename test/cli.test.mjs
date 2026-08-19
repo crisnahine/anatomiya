@@ -1,28 +1,16 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, appendFileSync, statSync, rmSync, cpSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, appendFileSync, statSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
 
+import { needsPathControl, needsShebang, needsWindows } from "./platform.mjs";
+import { installWithoutDependencies } from "./plugin-install.mjs";
 import { EXCLUDE_LINES } from "../lib/rules.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
-
-/**
- * The plugin's own code with no `node_modules` beside it, which is what a
- * marketplace install actually looks like: `/plugin install` copies the files
- * and does not run `npm install`.
- */
-function installWithoutDependencies(t) {
-  const dir = mkdtempSync(join(tmpdir(), "anatomiya-cli-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
-
-  for (const part of ["lib", "bin"]) cpSync(join(ROOT, part), join(dir, part), { recursive: true });
-  cpSync(join(ROOT, "package.json"), join(dir, "package.json"));
-  return dir;
-}
 
 function repoWithSource(t) {
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-cli-repo-"));
@@ -62,7 +50,7 @@ test("a missing parser fails the scan instead of reporting an empty repository",
 
   assert.equal(status, 1, "a scan that parsed nothing must not exit 0");
   assert.match(stderr, /oxc-parser is not installed/);
-  assert.match(stderr, /npm install/, "the message says how to fix it");
+  assert.match(stderr, /bin\/anatomiya\.mjs setup/, "the message says how to fix it");
 });
 
 test("nothing is written to the repository when the parser is missing", (t) => {
@@ -117,7 +105,7 @@ test("a missing parser fails the check instead of reporting it found nothing", (
 
   assert.equal(status, 1, "a check that parsed nothing must not exit 0");
   assert.match(stderr, /oxc-parser is not installed/);
-  assert.match(stderr, /npm install/, "the message says how to fix it");
+  assert.match(stderr, /bin\/anatomiya\.mjs setup/, "the message says how to fix it");
 });
 
 test("the CLI summary and the overview word an unexamined file the same way", (t) => {
@@ -282,6 +270,49 @@ const ruleFiles = (repo) => {
   return readdirSync(dir).sort().map((name) => ({ name, body: readFileSync(join(dir, name), "utf8") }));
 };
 
+/* --- the binary prints what the library answered --- */
+
+test("a scan writes the map and says how many files it wrote", (t) => {
+  // The count and the disk have to agree, which is the whole point of running
+  // the binary rather than the functions it calls.
+  const repo = repoWithSource(t);
+
+  const out = anatomiya(repo, "scan");
+
+  const claimed = /^wrote (\d+) files?$/m.exec(out);
+  assert.ok(claimed, `the scan printed no write line:\n${out}`);
+  assert.equal(readdirSync(join(repo, ".claude", "rules")).length, Number(claimed[1]));
+});
+
+test("a check prints its verdict line", (t) => {
+  const repo = repoWithBranch(t);
+  anatomiya(repo, "scan");
+
+  const out = anatomiya(repo, "check");
+
+  assert.match(out, /^\d+ MUST-FIX, \d+ FIX, \d+ NIT$/m, out);
+});
+
+test("a command that cannot run exits non-zero and says why without a stack trace", (t) => {
+  // A missing repository, an unreadable tree or a git that will not run are all
+  // ordinary conditions, and a stack trace is not what the caller needs.
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-cli-bare-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+  let status = 0;
+  let stderr = "";
+  try {
+    execFileSync(process.execPath, [join(ROOT, "bin", "anatomiya.mjs"), "scan", dir], { stdio: "pipe" });
+  } catch (err) {
+    status = err.status;
+    stderr = String(err.stderr);
+  }
+
+  assert.equal(status, 1, "a scan that could not run must not exit 0");
+  assert.match(stderr, /^anatomiya: not a git repository/);
+  assert.doesNotMatch(stderr, /\n\s+at /, "no stack trace");
+});
+
 test("two scans of unchanged source write byte-identical files", (t) => {
   // A5: the token economics only work on a cached read, so anything that moves
   // per commit destroys them. A timestamp, a duration, or a Map iterated in
@@ -341,15 +372,6 @@ test("a scan says the running session still holds the old map (A8)", (t) => {
   const out = anatomiya(repo, "scan");
 
   assert.match(out, /^a session already running still holds the old map; restart to pick it up$/m);
-});
-
-test("a dry run does not claim a session needs restarting", (t) => {
-  // Nothing was written, so there is nothing to pick up.
-  const repo = repoWithSource(t);
-
-  const out = anatomiya(repo, "scan", "--dry-run");
-
-  assert.doesNotMatch(out, /restart to pick it up/);
 });
 
 test("a pin says it too, because it sends the reader off to scan (A8)", (t) => {
@@ -428,50 +450,6 @@ test("a dry run does not report in the past tense", (t) => {
   );
 });
 
-test("the scan summary reads a count of one as one", (t) => {
-  // Every count on the summary reaches a person, and several are 1 on a real
-  // repository. Measured across a thirty-five repository corpus: seven printed
-  // "1 files hold syntax the parser rejected", on this line and in the file
-  // that loads on every turn.
-  const dir = mkdtempSync(join(tmpdir(), "anatomiya-cli-one-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
-  mkdirSync(join(dir, "src"), { recursive: true });
-  writeFileSync(join(dir, "src", "only.ts"), `export const a = 1\n`);
-  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
-  git("init", "-q");
-  git("config", "user.email", "t@t.test");
-  git("config", "user.name", "T");
-  git("add", "-A");
-  git("commit", "-qm", "init");
-
-  const out = String(execFileSync(process.execPath, [join(ROOT, "bin", "anatomiya.mjs"), "scan", dir], { stdio: "pipe" }));
-
-  assert.doesNotMatch(out, /\b1 (files|areas|claims|source files)\b/, `a count of one wearing a plural:\n${out}`);
-});
-
-test("the untracked summary reads at one and at many", (t) => {
-  // Fixing the count and leaving the clause after it is the same defect one
-  // word along, and the first attempt at this traded a plural bug for a
-  // singular one. Neither surface carries a word that has to agree.
-  const build = (n) => {
-    const dir = mkdtempSync(join(tmpdir(), "anatomiya-cli-untracked-"));
-    t.after(() => rmSync(dir, { recursive: true, force: true }));
-    writeFileSync(join(dir, "README.md"), "x\n");
-    mkdirSync(join(dir, "src"), { recursive: true });
-    for (let i = 0; i < n; i++) writeFileSync(join(dir, "src", `f${i}.ts`), `export const a${i} = ${i}\n`);
-    const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
-    git("init", "-q");
-    git("config", "user.email", "t@t.test");
-    git("config", "user.name", "T");
-    git("add", "README.md");
-    git("commit", "-qm", "init");
-    return String(execFileSync(process.execPath, [join(ROOT, "bin", "anatomiya.mjs"), "scan", dir], { stdio: "pipe" }));
-  };
-
-  assert.match(build(1), /1 source file in the working tree is untracked\./);
-  assert.match(build(3), /3 source files in the working tree are untracked\./);
-});
-
 test("--deep is refused on check, because the check cannot run a whole-program checker", () => {
   // It was accepted, recorded as ran, and never ran: check.mjs has no runSemantic
   // in it. So the report said "rerun with --deep", the user did, the note
@@ -493,4 +471,192 @@ test("--deep is refused on check, because the check cannot run a whole-program c
   assert.equal(code, 2);
   assert.match(stderr, /--deep is not a check option/);
   assert.match(stderr, /anatomiya scan --deep/, "and it says where the tier does run");
+});
+
+/* --- one answer, three writers --- */
+
+test("a scan answers as a record for a reader that is not a terminal", (t) => {
+  const repo = repoWithSource(t);
+
+  const s = JSON.parse(anatomiya(repo, "scan", "--format=json", "--dry-run"));
+
+  assert.equal(s.schema, 1);
+  assert.equal(s.files, 8);
+  assert.equal(s.dryRun, true);
+  assert.equal(typeof s.wrote, "number");
+  assert.equal(existsSync(join(repo, ".claude", "rules")), false, "and a dry run still wrote nothing");
+});
+
+test("a check answers as a record, and as annotations", (t) => {
+  const repo = repoWithBranch(t);
+  anatomiya(repo, "scan");
+
+  const report = JSON.parse(anatomiya(repo, "check", "--format", "json"));
+  const annotations = anatomiya(repo, "check", "--format", "github");
+
+  assert.equal(report.schema, 1);
+  assert.equal(typeof report.counts["MUST-FIX"], "number");
+  assert.ok(Array.isArray(report.findings));
+  assert.match(annotations, /^::notice::\d+ MUST-FIX, \d+ FIX, \d+ NIT$/m, annotations);
+});
+
+test("a format nothing writes is refused, and the annotations are a check's", () => {
+  // Same shape as every other option: refused with the usage rather than
+  // accepted and quietly answered in the format the caller did not ask for.
+  const refused = (...args) => {
+    try {
+      execFileSync(process.execPath, [join(ROOT, "bin", "anatomiya.mjs"), ...args, "."], {
+        stdio: "pipe",
+        encoding: "utf8",
+      });
+      return { code: 0, stderr: "" };
+    } catch (err) {
+      return { code: err.status, stderr: String(err.stderr ?? "") };
+    }
+  };
+
+  const unknown = refused("check", "--format", "yaml");
+  assert.equal(unknown.code, 2);
+  assert.match(unknown.stderr, /unknown format: yaml/);
+  assert.match(unknown.stderr, /usage: anatomiya scan/, "and it prints the usage");
+
+  const wrongCommand = refused("scan", "--format", "github");
+  assert.equal(wrongCommand.code, 2);
+  assert.match(wrongCommand.stderr, /--format github is not a scan option/);
+});
+
+/* --- the two commands about this installation --- */
+
+/** The binary with no path argument, which is what doctor and setup take. */
+const cli = (...args) =>
+  execFileSync(process.execPath, [join(ROOT, "bin", "anatomiya.mjs"), ...args], {
+    stdio: "pipe",
+    encoding: "utf8",
+  });
+
+/** The same, from an install of the plugin, with a PATH of this test's choosing. */
+function runFrom(install, args, PATH) {
+  try {
+    return { code: 0, stdout: execFileSync(process.execPath, [join(install, "bin", "anatomiya.mjs"), ...args], {
+      stdio: "pipe",
+      encoding: "utf8",
+      env: { ...process.env, PATH },
+    }), stderr: "" };
+  } catch (err) {
+    return { code: err.status, stdout: String(err.stdout ?? ""), stderr: String(err.stderr ?? "") };
+  }
+}
+
+/** A directory on PATH holding one stub npm, so the install runs without reaching a registry. */
+function stubNpm(t, body) {
+  const bin = mkdtempSync(join(tmpdir(), "anatomiya-cli-npm-"));
+  t.after(() => rmSync(bin, { recursive: true, force: true }));
+  writeFileSync(join(bin, "npm"), body, { mode: 0o755 });
+  return bin;
+}
+
+test("doctor answers a line per engine and exits 0 whatever it found", () => {
+  // Exit 0 always: what it found is the report, and a non-zero exit would make
+  // a probe that says "ruby is not on PATH" indistinguishable from one that
+  // could not run.
+  const out = cli("doctor");
+
+  assert.match(out, /^oxc \d/m, out);
+  assert.match(out, /^flow-remove-types /m, out);
+  assert.match(out, /^prism /m, out);
+  assert.match(out, /^typescript /m, out);
+});
+
+test("setup --dry-run prints the command and installs nothing", () => {
+  const out = cli("setup", "--dry-run");
+
+  assert.match(out, /^would run npm install --omit=dev --ignore-scripts --no-audit --no-fund in /m, out);
+});
+
+test("setup runs npm in the plugin's own directory, with the arguments it printed", needsShebang, (t) => {
+  // `/plugin install` copies the files and does not run `npm install`, so this
+  // is the shape a marketplace user starts from. The stub stands in for npm:
+  // a test that runs the real one is a test that reaches the network.
+  const install = installWithoutDependencies(t);
+  const bin = stubNpm(t, "#!/bin/sh\nprintf '%s\\n' \"$@\" > npm-argv.txt\necho 'added 2 packages'\n");
+
+  const { code, stdout } = runFrom(install, ["setup"], bin);
+
+  assert.equal(code, 0, stdout);
+  assert.match(stdout, /^not installed: oxc, flow-remove-types, typescript$/m, stdout);
+  assert.match(stdout, /added 2 packages/, "npm's own words come back");
+  assert.deepEqual(
+    readFileSync(join(install, "npm-argv.txt"), "utf8").trim().split("\n"),
+    ["install", "--omit=dev", "--ignore-scripts", "--no-audit", "--no-fund"],
+    "the argv is what it said it would be, and it ran in the plugin's own directory"
+  );
+});
+
+test("a setup with no npm on PATH says the one thing that fixes it, and exits 2", needsPathControl, (t) => {
+  // npm cannot install itself, which is the same trap the Ruby remedy closed:
+  // the message has to name the thing that is actually missing.
+  const install = installWithoutDependencies(t);
+  const empty = mkdtempSync(join(tmpdir(), "anatomiya-cli-nonpm-"));
+  t.after(() => rmSync(empty, { recursive: true, force: true }));
+
+  const { code, stderr } = runFrom(install, ["setup"], empty);
+
+  assert.equal(code, 2);
+  assert.match(stderr, /^npm was not found; install Node\.js 22 with npm, then run setup again$/m, stderr);
+});
+
+test("setup on Windows refuses, and prints the command to run by hand", needsWindows, (t) => {
+  // The end of the same story the seam tells in `commands.test.mjs`, on the one
+  // platform where it is the real behaviour rather than an argument.
+  const install = installWithoutDependencies(t);
+
+  let code = 0;
+  let stderr = "";
+  try {
+    execFileSync(process.execPath, [join(install, "bin", "anatomiya.mjs"), "setup"], { stdio: "pipe", encoding: "utf8" });
+  } catch (err) {
+    code = err.status;
+    stderr = String(err.stderr ?? "");
+  }
+
+  assert.equal(code, 2);
+  assert.match(stderr, /npm install --omit=dev --ignore-scripts --no-audit --no-fund/, stderr);
+  assert.ok(stderr.includes(install), `it names the directory to run it in: ${stderr}`);
+});
+
+test("a setup whose npm failed exits non-zero and shows what npm said", needsShebang, (t) => {
+  const install = installWithoutDependencies(t);
+  const bin = stubNpm(t, "#!/bin/sh\necho 'npm error code E404' >&2\nexit 1\n");
+
+  const { code, stderr } = runFrom(install, ["setup"], bin);
+
+  assert.equal(code, 2);
+  assert.match(stderr, /npm error code E404/, stderr);
+  assert.match(stderr, /failed/, stderr);
+});
+
+test("doctor and setup refuse the arguments they have no use for", () => {
+  // Same trade as --deep on a check: refused with the usage, rather than
+  // accepted and quietly not used.
+  const refused = (...args) => {
+    try {
+      cli(...args);
+      return { code: 0, stderr: "" };
+    } catch (err) {
+      return { code: err.status, stderr: String(err.stderr ?? "") };
+    }
+  };
+
+  for (const [args, message] of [
+    [["doctor", "--dry-run"], /--dry-run is not a doctor option/],
+    [["doctor", "--format", "json"], /--format json is not a doctor option/],
+    [["setup", "--format", "json"], /--format json is not a setup option/],
+    [["doctor", "."], /doctor takes no path/],
+    [["setup", "."], /setup takes no path/],
+  ]) {
+    const { code, stderr } = refused(...args);
+    assert.equal(code, 2, args.join(" "));
+    assert.match(stderr, message, args.join(" "));
+    assert.match(stderr, /usage: anatomiya scan/, `${args.join(" ")} prints the usage`);
+  }
 });

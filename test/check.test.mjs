@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { needsPosixPaths } from "./platform.mjs";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, symlinkSync, rmSync } from "node:fs";
+import fs, { mkdtempSync, mkdirSync, writeFileSync, readFileSync, symlinkSync, rmSync, existsSync } from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { execFileSync } from "node:child_process";
@@ -9,7 +10,8 @@ import { fileURLToPath } from "node:url";
 import { installWithoutStripper, FLOW_SOURCE } from "./no-stripper.mjs";
 
 import { needsRuby } from "./ruby-available.mjs";
-import { check, severityFor, formatReport, unreadReason } from "../lib/check.mjs";
+import { check, severityFor, unreadReason, unreadCode } from "../lib/check.mjs";
+import { formatReport, CAVEATS } from "../lib/check-report.mjs";
 import { scan } from "../lib/scan.mjs";
 import { writeMap } from "../lib/write.mjs";
 import { writeFacts } from "../lib/facts.mjs";
@@ -111,6 +113,9 @@ const sha = (dir, ref = "HEAD") =>
 
 const forKey = (report, key) => report.findings.filter((f) => f.dimension === key);
 
+/** A caveat is a code and a sentence; these cases are about the sentence. */
+const notes = (report) => report.caveats.map((c) => c.message);
+
 /**
  * A "reports nothing" assertion is only worth anything if the file reached the
  * parser. Every one of the negative cases would otherwise pass just as well on
@@ -121,7 +126,7 @@ function assertExamined(report, path) {
     report.examined.some((c) => c.path === path),
     `${path} was never examined, so the case proves nothing`
   );
-  const skipped = report.caveats.filter((c) => c.includes(path));
+  const skipped = notes(report).filter((m) => m.includes(path));
   assert.deepEqual(skipped, [], `${path} was skipped: ${skipped.join("; ")}`);
 }
 
@@ -440,7 +445,7 @@ test("no map on disk enforces nothing and says so", async (t) => {
   const r = await check(dir, { baseRef: "main" });
   const hits = forKey(r, "swallowed_error");
 
-  assert.ok(r.caveats.some((c) => c.includes("no map on disk")));
+  assert.ok(r.caveats.some((c) => c.code === CAVEATS.NO_MAP));
   assert.equal(hits.length, 1);
   assert.equal(hits[0].severity, "NIT");
   assert.equal(hits[0].area, null);
@@ -472,8 +477,8 @@ test("a changed Ruby file is parsed by prism and its new violation is reported",
     "a Ruby file in the diff is examined, not skipped"
   );
   assert.ok(
-    !r.caveats.some((c) => /could not be parsed|not examined/.test(c)),
-    `no parse caveat: ${r.caveats.join(" | ")}`
+    !notes(r).some((m) => /could not be parsed|not examined/.test(m)),
+    `no parse caveat: ${notes(r).join(" | ")}`
   );
   assert.equal(r.findings.length, 1, "the rescue that ignores its error is newly introduced");
   assert.equal(r.findings[0].dimension, "rescue_uses_error");
@@ -503,8 +508,8 @@ test("a changed file the parser cannot read is named, not silently skipped", asy
   // Named, whatever the cause turned out to be: the sibling case above pins
   // which sentence each cause gets, this one pins that the file is reported.
   assert.ok(
-    r.caveats.some((c) => c.includes("src/a.ts")),
-    `expected a parse caveat naming the file: ${r.caveats.join(" | ")}`
+    notes(r).some((m) => m.includes("src/a.ts")),
+    `expected a parse caveat naming the file: ${notes(r).join(" | ")}`
   );
   assert.equal(r.findings.length, 0, "and nothing is claimed about a file nobody could read");
 });
@@ -529,8 +534,8 @@ test("a diff the check could not read is not reported as a branch that changed n
   const r = await check(dir, { baseRef: "main" });
 
   assert.ok(
-    r.caveats.some((c) => /diff/.test(c)),
-    `expected the unread diff to be named: ${r.caveats.join(" | ")}`
+    r.caveats.some((c) => c.code === CAVEATS.DIFF_UNREADABLE),
+    `expected the unread diff to be named: ${notes(r).join(" | ")}`
   );
 });
 
@@ -583,8 +588,8 @@ test("facts written by a newer scan are not read as if their shape were known", 
   const r = await check(dir, { baseRef: "main" });
 
   assert.ok(
-    r.caveats.some((c) => /schema/.test(c)),
-    `expected the unreadable map to be named: ${r.caveats.join(" | ")}`
+    notes(r).some((m) => /schema/.test(m)),
+    `expected the unreadable map to be named: ${notes(r).join(" | ")}`
   );
   assert.deepEqual(
     r.findings.filter((f) => f.severity !== "NIT"),
@@ -654,8 +659,12 @@ test("a file that crashed the parser is named apart from one it merely rejected"
   const r = await check(dir, { baseRef: "main" });
 
   assert.ok(
-    r.caveats.some((c) => /crashed/.test(c)),
-    `expected the crash to be named: ${r.caveats.join(" | ")}`
+    notes(r).some((m) => /crashed/.test(m)),
+    `expected the crash to be named: ${notes(r).join(" | ")}`
+  );
+  assert.ok(
+    r.caveats.some((c) => c.code === CAVEATS.HEAD_CRASHED),
+    `and named by its own code: ${JSON.stringify(r.caveats)}`
   );
 });
 
@@ -680,8 +689,14 @@ test("a file the parser rejected is named apart from one this tool could not rea
   const r = await check(dir, { baseRef: "main" });
 
   assert.ok(
-    r.caveats.some((c) => /syntax/.test(c)),
-    `expected the syntax cause to be named: ${r.caveats.join(" | ")}`
+    notes(r).some((m) => /syntax/.test(m)),
+    `expected the syntax cause to be named: ${notes(r).join(" | ")}`
+  );
+  // The code carries the same split the sentence does, or a reader that is not
+  // a human is back to matching "syntax" against a phrase nobody promised.
+  assert.ok(
+    r.caveats.some((c) => c.code === CAVEATS.HEAD_REJECTED),
+    `the branch's own code is not this tool crashing: ${JSON.stringify(r.caveats)}`
   );
 });
 
@@ -816,7 +831,7 @@ test("a file edited since its commit is read as it stands, not as it was committ
 
   const r = await check(dir, { baseRef: "main" });
 
-  assert.ok(r.caveats.some((c) => /working tree/.test(c)));
+  assert.ok(r.caveats.some((c) => c.code === CAVEATS.READ_FROM_TREE));
   assert.equal(forKey(r, "swallowed_error").length, 2, "both sites, the committed one and the pending one");
 });
 
@@ -864,7 +879,7 @@ test("a file read from the tree is named as read from the tree", async (t) => {
   const r = await check(dir, { baseRef: "main" });
 
   assert.ok(
-    r.caveats.some((c) => /working tree/.test(c)),
+    r.caveats.some((c) => c.code === CAVEATS.READ_FROM_TREE),
     `a run that read uncommitted content says so: ${JSON.stringify(r.caveats)}`
   );
 });
@@ -897,9 +912,9 @@ test("a renamed file counts once, and under its own name", async (t) => {
 
   const r = await check(dir, { baseRef: "main" });
 
-  const note = r.caveats.find((c) => /working tree/.test(c));
+  const note = r.caveats.find((c) => c.code === CAVEATS.READ_FROM_TREE);
   assert.ok(note, "the rename is work the check read from the tree");
-  assert.match(note, /^1 file/, "one file, not two");
+  assert.match(note.message, /^1 file/, "one file, not two");
 });
 
 test("the store the map writes is not counted as pending work", async (t) => {
@@ -914,7 +929,7 @@ test("the store the map writes is not counted as pending work", async (t) => {
   const r = await check(dir, { baseRef: "main" });
 
   assert.equal(
-    r.caveats.filter((c) => /working tree/.test(c)).length,
+    r.caveats.filter((c) => c.code === CAVEATS.READ_FROM_TREE).length,
     0,
     "a clean tree plus an untracked map is not pending work"
   );
@@ -930,7 +945,7 @@ test("a repository with no commits examines nothing and refuses nothing", async 
 
   assert.equal(r.mode, "none");
   assert.deepEqual(r.findings, []);
-  assert.ok(r.caveats.some((c) => c.includes("nothing was examined")));
+  assert.ok(r.caveats.some((c) => c.code === CAVEATS.NOTHING_EXAMINED));
   assert.doesNotThrow(() => formatReport(r));
 });
 
@@ -946,7 +961,7 @@ test("an unresolvable base ref degrades to added lines rather than refusing", as
   const r = await check(dir, { baseRef: "no/such/ref" });
 
   assert.equal(r.mode, "added-lines");
-  assert.ok(r.caveats.some((c) => c.includes("added")), "the caveat must be stated");
+  assert.ok(notes(r).some((m) => m.includes("added")), "the caveat must be stated");
   assert.equal(forKey(r, "swallowed_error").length, 1, "the added line is still checked");
 });
 
@@ -1183,7 +1198,7 @@ test("a branch that adds a rake task with no spec breaks a stated obligation", n
 
   assert.equal(found.length, 1, `expected one finding, got ${JSON.stringify(report.findings)}`);
   assert.equal(found[0].path, "lib/tasks/lonely.rake");
-  assert.match(found[0].reason, /spec\/lib\/tasks\/lonely_spec\.rb/);
+  assert.equal(found[0].companion, "spec/lib/tasks/lonely_spec.rb");
 });
 
 test("a rake task added with its spec in the same commit reports nothing", needsRuby, async (t) => {
@@ -1275,8 +1290,8 @@ test("a rules directory linked out of the repository is reported, not examined",
 
   assert.deepEqual(r.foreign, [], "nothing outside the repository was read");
   assert.ok(
-    r.caveats.some((c) => /resolves outside the repository/.test(c)),
-    `no caveat said so: ${r.caveats.join("; ")}`
+    r.caveats.some((c) => c.code === CAVEATS.RULES_ESCAPED),
+    `no caveat said so: ${notes(r).join("; ")}`
   );
 });
 
@@ -1503,10 +1518,91 @@ test("a pending file over the size cap is not read from the tree", async (t) => 
   const r = await check(dir, { baseRef: "main" });
 
   assert.deepEqual(forKey(r, "swallowed_error"), [], JSON.stringify(r.findings));
+  // The whole sentence rather than the prefix, like the other two: which of
+  // the three places was looked in is the only thing the three of them say.
   assert.ok(
-    r.caveats.some((c) => /could not read src\/big\.ts/.test(c)),
+    notes(r).includes("could not read src/big.ts in the working tree"),
     `a file it refused to read is named, not silently dropped: ${JSON.stringify(r.caveats)}`
   );
+});
+
+// Both committed sides are read in one pass per revision, so which revision a
+// blob failed to come back from is a lookup rather than the call that failed.
+// The three sentences say which of the three places was looked in, and an agent
+// reads them to know whether to fix the file or the run.
+test("a committed file that will not come back is named at HEAD", async (t) => {
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/a.ts", clean(2));
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/big.ts", `${swallow(2)}\n// ${"x".repeat(1024 * 1024)}\n`);
+    commit("over the cap");
+  });
+  facts(dir, { sha: sha(dir, "main") });
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.deepEqual(forKey(r, "swallowed_error"), [], JSON.stringify(r.findings));
+  assert.ok(notes(r).includes("could not read src/big.ts at HEAD"), JSON.stringify(r.caveats));
+  assert.ok(r.caveats.some((c) => c.code === CAVEATS.HEAD_UNREADABLE));
+});
+
+test("a base version that will not come back skips the file rather than charging it", async (t) => {
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/big.ts", `${swallow(2)}\n// ${"x".repeat(1024 * 1024)}\n`);
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/big.ts", swallow(3));
+    commit("under the cap");
+  });
+  facts(dir, { sha: sha(dir, "main") });
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.deepEqual(forKey(r, "swallowed_error"), [], "every site in it would otherwise read as newly introduced");
+  assert.ok(
+    notes(r).includes("could not read src/big.ts at the merge base, so src/big.ts was skipped"),
+    JSON.stringify(r.caveats)
+  );
+  assert.ok(r.caveats.some((c) => c.code === CAVEATS.BASE_UNREADABLE));
+});
+
+// Both trees are on disk before either is used, so the guard that removes them
+// has to be open from the first read: wrapped around the parse alone it left
+// the head tree behind whenever the base read or the loop threw.
+test("a revision tree does not outlive a check that threw", async (t) => {
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/a.ts", clean(2));
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/a.ts", swallow(2));
+    commit("second");
+  });
+  facts(dir, { sha: sha(dir, "main") });
+
+  // The read that fails is whichever one runs while an earlier tree is still
+  // on disk, which is the base read: no counting, and nothing to keep in step
+  // with the order the reads are made in.
+  const made = [];
+  const real = fs.mkdtempSync;
+  fs.mkdtempSync = (prefix, ...rest) => {
+    const ours = String(prefix).includes("anatomiya-revision-");
+    if (ours && made.some(existsSync)) throw new Error("no space left on device");
+    const out = real(prefix, ...rest);
+    if (ours) made.push(out);
+    return out;
+  };
+  syncBuiltinESMExports();
+  t.after(() => {
+    fs.mkdtempSync = real;
+    syncBuiltinESMExports();
+    for (const path of made) rmSync(path, { recursive: true, force: true });
+  });
+
+  await assert.rejects(() => check(dir, { baseRef: "main" }), /no space left on device/);
+
+  assert.equal(made.length, 1, "the head read wrote a tree and the base read threw");
+  assert.deepEqual(made.filter(existsSync), [], "the tree already on disk was removed on the way out");
 });
 
 // `git status` lists a deletion, and a path that is gone cannot be read. It
@@ -1524,7 +1620,7 @@ test("a file deleted in the working tree is not examined", async (t) => {
   const r = await check(dir, { baseRef: "main" });
 
   assert.deepEqual(r.examined.map((f) => f.path), []);
-  assert.deepEqual(r.caveats.filter((c) => /could not read/.test(c)), []);
+  assert.deepEqual(notes(r).filter((m) => /could not read/.test(m)), []);
 });
 
 test("a producer whose companion the branch never wrote is still reported", async (t) => {
@@ -1550,7 +1646,8 @@ test("a producer whose companion the branch never wrote is still reported", asyn
 
   assert.equal(owed.length, 1, `expected the missing spec to be reported: ${JSON.stringify(r.findings)}`);
   assert.equal(owed[0].path, "app/models/lonely.rb");
-  assert.match(owed[0].reason, /no "spec\/models\/lonely_spec\.rb"/);
+  // A field of its own rather than part of the reason, so each writer places it.
+  assert.equal(owed[0].companion, "spec/models/lonely_spec.rb");
 });
 
 test("a file the check could not read names its own cause, in the singular", () => {
@@ -1565,6 +1662,27 @@ test("a file the check could not read names its own cause, in the singular", () 
   assert.equal(unreadReason({ kind: "oversize" }), "exceeded the size cap");
   assert.equal(unreadReason({ kind: "unreadable" }), "could not be parsed");
   assert.equal(unreadReason(null), "could not be parsed", "no record at all is the same as unreadable");
+});
+
+test("the four causes carry four codes, so nothing has to read the sentence", () => {
+  // The sentence above keeps them apart for a human. One code for all four put
+  // every other reader back to matching that prose, which is the substring
+  // match the codes exist to end.
+  const codes = [
+    unreadCode({ kind: "crashed" }),
+    unreadCode({ kind: "rejected" }),
+    unreadCode({ kind: "oversize" }),
+    unreadCode({ kind: "unreadable" }),
+  ];
+
+  assert.deepEqual(codes, [
+    CAVEATS.HEAD_CRASHED,
+    CAVEATS.HEAD_REJECTED,
+    CAVEATS.HEAD_OVERSIZE,
+    CAVEATS.HEAD_UNPARSED,
+  ]);
+  assert.equal(new Set(codes).size, 4, "four causes, four codes");
+  assert.equal(unreadCode(null), CAVEATS.HEAD_UNPARSED, "no record at all is the same as unreadable");
 });
 
 
@@ -1638,13 +1756,23 @@ test("a check that could not load the stripper names the dependency too", async 
   git("add", "-A");
   git("commit", "-qm", "flow");
 
-  const out = execFileSync(process.execPath, [join(home, "bin", "anatomiya.mjs"), "check", repo, "--base", "main"], {
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "pipe"],
-  });
+  // As the record rather than as the lines: what the caveat means to a reader
+  // is its code, and the sentence is wording nobody promised to keep.
+  const out = execFileSync(
+    process.execPath,
+    [join(home, "bin", "anatomiya.mjs"), "check", repo, "--base", "main", "--format", "json"],
+    { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }
+  );
+  const caveats = JSON.parse(out).caveats;
 
-  assert.match(out, /src\/flowed\.js/, `the Flow file was expected in the caveats:\n${out}`);
-  assert.match(out, /flow-remove-types is not installed/, `nothing named the missing dependency:\n${out}`);
+  assert.ok(
+    caveats.some((c) => c.code === CAVEATS.STRIPPER_MISSING),
+    `nothing named the missing dependency:\n${out}`
+  );
+  assert.ok(
+    caveats.some((c) => c.code === CAVEATS.HEAD_REJECTED && c.message.includes("src/flowed.js")),
+    `the Flow file was expected in the caveats:\n${out}`
+  );
 });
 
 test("a claim is not silenced by a finding invented off the base's stripped tree", async (t) => {
@@ -1878,7 +2006,7 @@ test("a learned base class is enforced the way a learned naming class is", needs
   facts(dir, { sha: sha(dir, "main"), areas: rubyArea("ApplicationController") });
   const report = await check(dir);
   assertExamined(report, "app/controllers/x_controller.rb");
-  assert.deepEqual(report.caveats.filter((c) => /schema/.test(c)), [], "the writer's own schema reads clean");
+  assert.deepEqual(notes(report).filter((m) => /schema/.test(m)), [], "the writer's own schema reads clean");
   const found = forKey(report, "class_base");
   assert.equal(found.length, 1, JSON.stringify(report.findings));
   assert.equal(found[0].path, "app/controllers/x_controller.rb");
@@ -2272,4 +2400,139 @@ test("a Pascal-named migration breaks a stated snake_case claim (#33)", async (t
   const found = forKey(report, "file_naming_case");
   assert.deepEqual(found.map((f) => f.path), ["db/migrate/20260816120000_AddBadColumn.rb"], JSON.stringify(report.findings));
   assert.equal(found[0].severity, "MUST-FIX", "the baseline holds no violation, so this branch is the first");
+});
+
+/* --- the caveat codes, at the site each one is raised --- */
+
+/** The codes a run answered with, so a case names the code rather than its sentence. */
+const codesOf = (report) => report.caveats.map((c) => c.code);
+
+test("a map from a build this one cannot read is one code, whatever the sentence says", async (t) => {
+  // Two sentences answer this: a store directory resolving outside the
+  // repository, and a schema this build does not read. They are one fact to a
+  // reader, that there is a map and none of it was used.
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/a.ts", clean(2));
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/a.ts", clean(2) + swallow(1));
+    commit("swallow");
+  });
+  facts(dir, { sha: sha(dir, "main") });
+  const store = join(dir, ".claude", "anatomiya", "facts.json");
+  writeFileSync(store, JSON.stringify({ ...JSON.parse(readFileSync(store, "utf8")), schema: 999 }));
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.deepEqual(codesOf(r), [CAVEATS.MAP_UNREADABLE]);
+});
+
+test("a repository holding none of the base refs says so, by code", async (t) => {
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/a.ts", clean(2));
+    commit("init");
+    git("branch", "-m", "topic");
+    write("src/a.ts", clean(2) + swallow(1));
+    commit("swallow");
+  });
+
+  const r = await check(dir);
+
+  assert.ok(codesOf(r).includes(CAVEATS.NO_BASE_REF), JSON.stringify(codesOf(r)));
+});
+
+test("a branch sharing no history with its base is the degraded mode, not an empty answer", async (t) => {
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/a.ts", clean(2));
+    commit("init");
+    git("checkout", "-q", "--orphan", "work");
+    write("src/b.ts", swallow(1));
+    commit("orphan");
+    // Left in the tree: with no base to judge it against, a pending file is
+    // named rather than charged to whoever happens to be running the check.
+    write("src/c.ts", swallow(1));
+  });
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.ok(codesOf(r).includes(CAVEATS.NO_MERGE_BASE), JSON.stringify(codesOf(r)));
+  assert.ok(codesOf(r).includes(CAVEATS.PENDING_UNJUDGED), JSON.stringify(codesOf(r)));
+});
+
+/**
+ * A repository whose index git will not read.
+ *
+ * Every corpus probe goes through that index, and so does the pending edits
+ * listing, while a three-dot diff between two commits does not. That is what
+ * makes it the cheap way to reach the three codes below at once.
+ */
+function withUnreadableIndex(t, extra = null) {
+  return repo(t, ({ dir, git, write, commit }) => {
+    write("src/a.ts", clean(2));
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/a.ts", clean(2) + swallow(1));
+    if (extra) write(extra.path, extra.body);
+    commit("swallow");
+    writeFileSync(join(dir, ".git", "index"), "this is not a git index");
+  });
+}
+
+test("a corpus that will not list costs the routing claims and says so, by code", async (t) => {
+  // Nothing here refuses over it: a probe that failed is a question left
+  // unanswered rather than a branch nobody may report on.
+  const dir = withUnreadableIndex(t);
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.ok(codesOf(r).includes(CAVEATS.PENDING_UNLISTED), JSON.stringify(codesOf(r)));
+  assert.ok(codesOf(r).includes(CAVEATS.CAPABILITIES_UNKNOWN), JSON.stringify(codesOf(r)));
+  // The discriminator between the two single-use codes: nothing examined here
+  // could carry a framework, so the framework probe never ran. Exchanging the
+  // two codes at their sites passes every other test in this repository.
+  assert.ok(!codesOf(r).includes(CAVEATS.FRAMEWORKS_UNKNOWN), JSON.stringify(codesOf(r)));
+});
+
+test("a corpus that will not list costs the framework claims too, where one could signal", needsRuby, async (t) => {
+  const dir = withUnreadableIndex(t, { path: "app/models/thing.rb", body: "class Thing\nend\n" });
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.ok(codesOf(r).includes(CAVEATS.FRAMEWORKS_UNKNOWN), JSON.stringify(codesOf(r)));
+});
+
+test("a file that did not parse at the merge base is named apart from one that did not parse now", async (t) => {
+  // The branch fixed it, so there is no base side to difference against and
+  // every site in the file reads as newly introduced. The code is what tells
+  // that apart from a file this branch broke.
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/a.ts", clean(2));
+    write("src/broken.ts", "export function x( { !!!\n");
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/broken.ts", swallow(1));
+    commit("fixed");
+  });
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.deepEqual(codesOf(r), [CAVEATS.NO_MAP, CAVEATS.BASE_UNPARSED]);
+});
+
+test("a rules directory that is not a directory is one nobody could list", async (t) => {
+  // `.claude/rules` is a repository path like any other, so a clone can ship a
+  // regular file there. Reported rather than refused: the check has nothing to
+  // refuse and says what it could not look at.
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/a.ts", clean(2));
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/a.ts", clean(2) + swallow(1));
+    write(".claude/rules", "not a directory\n");
+    commit("swallow");
+  });
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.ok(codesOf(r).includes(CAVEATS.RULES_UNLISTED), JSON.stringify(codesOf(r)));
 });

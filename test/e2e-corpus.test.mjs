@@ -6,6 +6,7 @@ import { join } from "node:path";
 
 import { needsPosixSeparators } from "./platform.mjs";
 import { FACTS_PATH, FACTS_SCHEMA } from "../lib/facts.mjs";
+import { scanJson, scanSummary } from "../lib/summary.mjs";
 import {
   COLUMNS,
   areaProblems,
@@ -16,9 +17,10 @@ import {
   findingPaths,
   overviewProblems,
   parseArgs,
-  parseSummary,
   probePlan,
+  readJson,
   rootsColumn,
+  rootsPrinted,
   rosterCounts,
   selectRepos,
   summaryProblems,
@@ -39,72 +41,69 @@ const SCAN = [
   "",
 ].join("\n");
 
-test("the summary parser reads every line the scan's own summary prints", () => {
-  const s = parseSummary(SCAN);
+/** The same scan as the record `--format json` prints. */
+const RECORD = {
+  schema: 1,
+  files: 252,
+  areas: 32,
+  durationMs: 517,
+  root: "/tmp/e2e/errbit",
+  claims: { stated: 0, matchingDefault: 0, total: 71 },
+  layoutLine: "layout: 7 roots, 7 folded, tests: 100 rspec under spec; roster lines: 0 areas with imports, 0 with reuse",
+  baseline: { status: "ok", sha: "4bd14f9f0000000000000000000000000000abcd", drift: 0, baseRef: null, countsOnly: false },
+  wrote: 33,
+};
 
+test("the harness reads the fields the scan's record answers", () => {
+  const s = readJson(JSON.stringify(RECORD));
+
+  assert.deepEqual(summaryProblems(s), []);
   assert.equal(s.files, 252);
   assert.equal(s.areas, 32);
-  assert.equal(s.ms, 517);
-  assert.equal(s.root, "/tmp/e2e/errbit");
-  assert.equal(s.stated, 0);
-  assert.equal(s.claims, 71);
-  assert.equal(s.roots, 7);
-  assert.equal(s.folded, 7);
-  assert.equal(s.baselineSha, "4bd14f9f");
+  assert.equal(s.claims.stated, 0);
+  assert.equal(s.claims.total, 71);
+  assert.equal(s.baseline.sha, RECORD.baseline.sha);
   assert.equal(s.wrote, 33);
-  assert.deepEqual(summaryProblems(s), []);
+  // The table's roots column is what the scan printed, so it comes off the
+  // layout line rather than from a second count of the areas.
+  assert.equal(rootsPrinted(s), 7);
+  assert.equal(rootsPrinted({ layoutLine: null }), null);
+  assert.equal(readJson("wrote 33 files"), null, "a run that printed lines is not a record");
 });
 
-test("the summary parser reads a count of one, which the scan spells singular", () => {
-  // `plural` drops the s at one on four of these lines at once, so a parser
-  // written against the plural spelling reads a one-file repository as a scan
-  // that printed nothing.
-  const s = parseSummary(
-    [
-      "1 file, 1 area, 8ms, root /tmp/e2e/tiny",
-      "1 of 1 claim stated, the rest print as counts",
-      "layout: 1 root, 0 folded, tests: none; roster lines: 1 area with imports, 0 with reuse",
-      "no baseline pinned: claims are measured against the current tree, and no finding can exceed FIX. `anatomiya pin` accepts one",
-      "wrote 1 file",
-      "",
-    ].join("\n")
+test("the record the scan really writes answers every field the harness reads", () => {
+  // The fixture above is hand-written, so a renamed field would go red in
+  // `summary.test.mjs` and quietly start reporting "no claims" here, on a run
+  // nobody watches. Through the writer, so what is read is what a scan prints.
+  const record = readJson(
+    scanJson(
+      scanSummary(
+        {
+          root: "/repo",
+          durationMs: 12,
+          corpus: { files: 40, untracked: 0, truncated: false },
+          areas: [{ path: "src", dimensions: [] }],
+          layout: { truncated: false, roots: ["."], more: { roots: 0 }, tests: [] },
+          baseline: { status: "unpinned", sha: null, countsOnly: true, baseRef: null, drift: null },
+          parse: { crashed: 0, failed: 0, syntaxErrors: 0, skipped: 0, missingStripper: false },
+          authors: { error: null },
+        },
+        { write: ["anatomiya-overview.md"], remove: [], foreign: [], unknown: [], replaced: [],
+          unreadableRules: [], listed: true, uncovered: 0, orphaned: 0, unreadable: [] }
+      )
+    )
   );
 
-  assert.equal(s.files, 1);
-  assert.equal(s.areas, 1);
-  assert.equal(s.stated, 1);
-  assert.equal(s.claims, 1);
-  assert.equal(s.roots, 1);
-  assert.equal(s.wrote, 1);
-  assert.equal(s.baselineSha, null);
-  assert.deepEqual(summaryProblems(s), []);
+  assert.deepEqual(summaryProblems(record), []);
 });
 
-test("a pinned commit this clone cannot reach is a baseline line, not a missing one", () => {
-  const s = parseSummary(
-    [
-      "8 files, 1 area, 8ms, root /tmp/e2e/tiny",
-      "0 of 4 claims stated, the rest print as counts",
-      "layout: 1 root, 0 folded, tests: none; roster lines: 0 areas with imports, 0 with reuse",
-      "the pinned commit deadbeef is gone from this clone, so every claim dropped to counts",
-      "wrote 2 files",
-      "",
-    ].join("\n")
-  );
-
-  assert.equal(s.baselineSha, null);
-  assert.equal(s.baseline, "the pinned commit deadbeef is gone from this clone, so every claim dropped to counts");
-  assert.deepEqual(summaryProblems(s), []);
-});
-
-test("a summary missing a line says which line, rather than reading as zero", () => {
-  const problems = summaryProblems(parseSummary("wrote 3 files\n"));
-
-  assert.deepEqual(problems, [
-    "no files/areas line",
-    "no claims line",
+test("a record missing a field says which field, rather than reading as zero", () => {
+  assert.deepEqual(summaryProblems({ wrote: 3 }), [
+    "no file count",
+    "no area count",
+    "no claims",
     "no layout line",
-    "no baseline line",
+    "no baseline",
   ]);
 });
 
@@ -159,7 +158,7 @@ test("a paths list past the bound is the documented exemption, and the body it c
 });
 
 const facts = (over = {}) => ({
-  schema: 11,
+  schema: FACTS_SCHEMA,
   layout: { roots: [], more: { roots: 0, files: 0 }, tests: [] },
   areas: [{ id: "a1", path: "lib", kinds: { exts: [[".mjs", 9]] }, imports: [], reused: null, dimensions: [] }],
   ...over,
@@ -247,19 +246,14 @@ test("an area whose dominant extension the check would not read is not where the
   assert.equal(probePlan({ areas: both }).path, "app/models/ZzProbeFile.rb");
 });
 
-test("the report's finding paths are read off the finding lines and nothing else", () => {
-  const report = [
-    'base main (4bd14f9), 3 changed files, compare',
-    "1 MUST-FIX, 0 FIX, 1 NIT",
-    "note: 2 files were read from the working tree rather than from a commit: 1 more",
-    "",
-    'MUST-FIX  "app/models/ZzProbeFile.rb":1  files here are named snake_case',
-    "  ZzProbeFile.rb",
-    "",
-    'NIT  "app/models/other.rb":12  classes here inherit ApplicationRecord',
-    "  no convention stated here (ratio)",
-    "",
-  ].join("\n");
+test("the report's finding paths are read off its findings and nothing else", () => {
+  const report = {
+    counts: { "MUST-FIX": 1, FIX: 0, NIT: 1 },
+    findings: [
+      { severity: "MUST-FIX", path: "app/models/ZzProbeFile.rb", line: 1, claim: "files here are named snake_case" },
+      { severity: "NIT", path: "app/models/other.rb", line: 12, claim: "classes here inherit ApplicationRecord" },
+    ],
+  };
 
   assert.deepEqual(findingPaths(report), ["app/models/ZzProbeFile.rb", "app/models/other.rb"]);
 });

@@ -42,6 +42,40 @@ test("a Flow file is retried blanked, and the rows the blanking blinds are not a
   assert.ok(p.hits.import_extension.length > 0);
 });
 
+test("a guarded top-level return is Node's own CommonJS wrapper, not a syntax error", async () => {
+  // Real shape: backstage's OpenTelemetry preload and next.js's vendored bull
+  // and bullmq, all node --check clean, all rejected before this retry.
+  const cjs = 'if (typeof require === "undefined") {\n  return;\n}\nmodule.exports = { ready: true };\n';
+  const r = await parseFile(cjs, "src/preload.js", "js");
+  assert.equal(r.ok, true);
+  // The retry blanks a keyword, not a type: nothing here goes blind.
+  assert.equal(r.stripped, false);
+});
+
+test("sourceType: script does not fix it either, so a .mjs with the same shape stays rejected", async () => {
+  // Node always loads .mjs as ESM, so a top-level return there is really broken.
+  const cjs = 'if (typeof require === "undefined") {\n  return;\n}\nmodule.exports = { ready: true };\n';
+  const r = await parseFile(cjs, "src/preload.mjs", "js");
+  assert.equal(r.ok, false);
+});
+
+test("two guarded returns in one file are each patched", async () => {
+  const cjs = [
+    'if (typeof require === "undefined") { return; }',
+    'if (typeof module === "undefined") { return; }',
+    "module.exports = {};",
+    "",
+  ].join("\n");
+  const r = await parseFile(cjs, "src/a.cjs", "js");
+  assert.equal(r.ok, true);
+});
+
+test("a top-level return beside a real syntax error stays rejected", async () => {
+  const broken = 'if (x) {\n  return;\n}\nfunction( {\n';
+  const r = await parseFile(broken, "src/a.js", "js");
+  assert.equal(r.ok, false);
+});
+
 test("an absent stripper leaves the file rejected and says which absence it was", async () => {
   const flow = "type Opts = {| n: number |};\nexport const f = (o: Opts) => o.n;\n";
   const r = await parseFile(flow, "src/a.js", "js", { stripper: false });

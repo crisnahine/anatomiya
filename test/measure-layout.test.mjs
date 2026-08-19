@@ -1,15 +1,21 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import {
   LEARNED_ROWS,
   checkOutput,
   learnedRows,
   learnedTables,
+  overviewFor,
   parseArgs,
   selectRepos,
 } from "../scripts/measure-layout.mjs";
 import { namesakeClause } from "../lib/render-layout.mjs";
+import { OVERVIEW_FILE, RULES_DIR } from "../lib/rules.mjs";
+import { planMap, writeMap } from "../lib/write.mjs";
 
 /**
  * The per-repository numbers the dimension bar asks for, off a scan result.
@@ -152,6 +158,31 @@ test("a --only name the corpus does not hold is an error, not a shorter run", ()
   assert.deepEqual(selectRepos(repos, "eslint").repos, ["eslint"]);
   assert.match(selectRepos(repos, "errbti").error, /errbti/);
   assert.match(selectRepos(repos, "errbit,eslnit").error, /eslnit/);
+});
+
+test("the overview the recount reads back is the file a write puts on disk", () => {
+  // The recount used to derive this body itself, because the writer would not
+  // hand one back. The drift that hid in there is the rules directory: the
+  // overview names the files it did not write, and the copy had to be told to.
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-layout-"));
+  mkdirSync(join(dir, RULES_DIR), { recursive: true });
+  writeFileSync(join(dir, RULES_DIR, "house-style.md"), "# theirs\n");
+  const result = {
+    root: dir,
+    scannedAt: "2026-01-01T00:00:00.000Z",
+    durationMs: 12,
+    corpus: { files: 20, truncated: false, dropped: {}, orphaned: 8 },
+    parse: { parsed: 20, crashed: 0, skipped: 0 },
+    suppressAll: false,
+    areas: [],
+  };
+
+  writeMap(result);
+
+  const written = readFileSync(join(dir, RULES_DIR, OVERVIEW_FILE), "utf8");
+  assert.match(written, /^- "house-style\.md"$/m);
+  assert.equal(overviewFor(result), written);
+  rmSync(dir, { recursive: true, force: true });
 });
 
 test("a --md target that is already there is refused, and --force is how a rerun says it meant it", () => {

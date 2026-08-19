@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import { namesakeCompanions, namesakeIndex } from "../lib/companions.mjs";
 import {
+  isStoryFile,
   isTestFile,
   layoutFacts,
   layoutIndexes,
@@ -13,6 +14,7 @@ import {
   runnerOf,
   tally,
   testsLine,
+  underTestTree,
 } from "../lib/layout.mjs";
 import { roster } from "../lib/layout-scan.mjs";
 
@@ -192,6 +194,20 @@ test("a monorepo descends past packages and past each package's own shell", () =
   assert.deepEqual(paths(roots).slice(0, 2), ["packages/p1/src", "packages/p2/src"]);
   assert.deepEqual(more, { roots: 5, files: 15 });
   assert.deepEqual(testsLine(corpus), [{ runner: "vitest", root: "packages", files: 2 }]);
+});
+
+test("apps is a shell name too, so a monorepo's apps/* sites are not one bullet", () => {
+  // supabase splits apps/* beside packages/*. packages already descended;
+  // apps rolled all seven sites into one bullet and blended studio's real
+  // namesake rate with a marketing site, two showcase sites and a docs site.
+  const corpus = [
+    ...files(10, (i) => file(`apps/studio/f${i}.ts`, "js")),
+    ...files(10, (i) => file(`apps/www/f${i}.ts`, "js")),
+  ];
+
+  const { roots } = layoutRoots(corpus, { minFiles: 3 });
+
+  assert.deepEqual(paths(roots), ["apps/studio", "apps/www"]);
 });
 
 test("a child has to hold four fifths of its parent to stand in for it", () => {
@@ -553,6 +569,35 @@ test("a root that is mostly tests carries no namesake or helper count", () => {
   assert.equal("helpers" in cypress, false);
 });
 
+test("a root whose most common extension is not source still finds its producers", () => {
+  // supabase's apps/www: .png outcounts .tsx 2179 to 753. Matching only the
+  // first of the top two extensions read every producer there as zero, worse
+  // than naming none of them at all.
+  const corpus = [
+    ...files(5, (i) => file(`apps/www/img${i}.png`)),
+    ...files(3, (i) => file(`apps/www/Page${i}.tsx`, "jsx")),
+    file("apps/www/test/Page0.test.tsx", "jsx", { testRunner: "vitest" }),
+    file("apps/www/test/Page1.test.tsx", "jsx", { testRunner: "vitest" }),
+  ];
+  const indexes = layoutIndexes(corpus);
+  const record = rootFacts({ path: "apps/www", dir: "apps/www", files: corpus.slice(0, 8) }, indexes);
+
+  assert.deepEqual(record.exts, [[".png", 5], [".tsx", 3]], "the printed line still leads with .png");
+  assert.deepEqual(record.companions, { with: 2, of: 3, root: "apps/www/test" });
+});
+
+test("a root whose top two extensions are both unparsed asks nothing", () => {
+  const corpus = [
+    ...files(5, (i) => file(`apps/marketing/img${i}.png`)),
+    ...files(3, (i) => file(`apps/marketing/copy${i}.mdx`)),
+    file("test/x.test.ts", "js", { testRunner: "vitest" }),
+  ];
+  const indexes = layoutIndexes(corpus);
+  const record = rootFacts({ path: "apps/marketing", dir: "apps/marketing", files: corpus.slice(0, 8) }, indexes);
+
+  assert.equal("companions" in record, false);
+});
+
 test("a root inside a test tree is not asked whether its fixtures have tests", () => {
   // webpack's `test` is 12,645 files of which 2,607 are tests, so it stays a
   // source root by the half rule and read `1 of 7858 has a namesake test under
@@ -573,6 +618,46 @@ test("a root inside a test tree is not asked whether its fixtures have tests", (
 
   const outside = rootFacts({ path: "lib", dir: "lib", files: corpus.slice(6) }, indexes);
   assert.deepEqual(outside.companions, { with: 2, of: 2, root: "test" }, "and a root outside is asked");
+});
+
+test("a test tree is caught at any segment, not only the first", () => {
+  // fastlane nests each gem's own tree one segment down: `gym/spec` never
+  // starts with "spec", so the old first-segment check never engaged on any
+  // of its 21 sibling gems. decidim nests one four segments down.
+  assert.equal(underTestTree("test"), true);
+  assert.equal(underTestTree("test/cases/foo"), true);
+  assert.equal(underTestTree("gym/spec"), true);
+  assert.equal(underTestTree("decidim-dev/lib/decidim/dev/test"), true);
+  assert.equal(underTestTree("app/models"), false);
+  assert.equal(underTestTree(""), false, "the repository root is not a tree");
+});
+
+test("a monorepo's own test tree is not asked either, wherever it nests", () => {
+  // fastlane's gym/spec stated "1 of 1 has a namesake test" over a single
+  // empty spec_helper.rb, credited by a same-named spec in an unrelated gem.
+  const corpus = [
+    file("gym/spec/spec_helper.rb", "ruby"),
+    file("gym/spec/options_spec.rb", "ruby", { testCalls: true }),
+    file("cert/spec/runner_spec.rb", "ruby", { testCalls: true }),
+  ];
+  const indexes = layoutIndexes(corpus);
+  const record = rootFacts({ path: "gym/spec", dir: "gym/spec", files: corpus.slice(0, 2) }, indexes);
+
+  assert.equal("companions" in record, false);
+});
+
+test("a package's own test tree is not asked either, however deep it nests", () => {
+  const corpus = [
+    file("decidim-dev/lib/decidim/dev/test/rspec_support/shared.rb", "ruby"),
+    file("some-gem/spec/x_spec.rb", "ruby", { testCalls: true }),
+  ];
+  const indexes = layoutIndexes(corpus);
+  const record = rootFacts(
+    { path: "decidim-dev/lib/decidim/dev/test", dir: "decidim-dev/lib/decidim/dev/test", files: corpus.slice(0, 1) },
+    indexes
+  );
+
+  assert.equal("companions" in record, false);
 });
 
 test("the JSX mark is only ever on an extension the line prints", () => {
@@ -700,6 +785,61 @@ test("a file the parse never read is no sibling module", () => {
     f.facets === null ? { ...f, facets: { jsx: false, inlineHelpers: 0 } } : f);
 
   assert.equal(layoutFacts(read, { minFiles: 3 }).roots[0].helpers.siblingModules, 2);
+});
+
+test("a story file is neither a producer, even where its extension leads", () => {
+  // storybook's own component-shaped files split by incidental syntax: a
+  // `.stories.tsx` reads as literal JSX like any component beside it.
+  const corpus = [
+    ...files(3, (i) => file(`ui/C${i}.tsx`, "jsx", { jsx: true, inlineHelpers: 0 })),
+    file("ui/C0.stories.tsx", "jsx", { jsx: true, inlineHelpers: 0 }),
+    file("spec/C0.test.tsx", "jsx", { testRunner: "vitest" }),
+  ];
+  const indexes = layoutIndexes(corpus);
+  const record = rootFacts({ path: "ui", dir: "ui", files: corpus.slice(0, 4) }, indexes);
+
+  assert.equal(record.companions.of, 3, "the story file is not counted among the producers");
+});
+
+test("a story file is no sibling module either, whatever its incidental syntax", () => {
+  // storybook's own overview read "2559 sibling modules named
+  // index/types/input.stories", filing its own fixture convention beside
+  // private helper functions.
+  const corpus = [
+    file("ui/Button.tsx", "jsx", { jsx: true, inlineHelpers: 0 }),
+    file("ui/Button.stories.ts", "js", { jsx: false, inlineHelpers: 0 }),
+    file("ui/utils.ts", "js", { jsx: false, inlineHelpers: 0 }),
+  ];
+  const indexes = layoutIndexes(corpus);
+  const record = rootFacts({ path: "ui", dir: "ui", files: corpus }, indexes);
+
+  assert.equal(record.helpers.siblingModules, 1);
+  assert.deepEqual(record.helpers.stems, ["utils"]);
+});
+
+test("a root's story files are counted and named as their own kind", () => {
+  const corpus = [
+    file("ui/Button.tsx", "jsx", { jsx: true, inlineHelpers: 0 }),
+    file("ui/Button.stories.tsx", "jsx", { jsx: true, inlineHelpers: 0 }),
+    file("ui/Button.stories.ts", "js", { jsx: false, inlineHelpers: 0 }),
+  ];
+  const record = rootFacts({ path: "ui", dir: "ui", files: corpus }, layoutIndexes(corpus));
+
+  assert.equal(record.stories, 2);
+});
+
+test("a root with no story files carries no stories count", () => {
+  const corpus = [file("ui/Button.tsx", "jsx", { jsx: true, inlineHelpers: 0 })];
+
+  assert.equal("stories" in rootFacts({ path: "ui", dir: "ui", files: corpus }, layoutIndexes(corpus)), false);
+});
+
+test("a hyphenated story-like name is not the story convention", () => {
+  // Component Story Format is dotted: `Button.stories.tsx`. A file that
+  // merely mentions "stories" is an ordinary module.
+  assert.equal(isStoryFile("ui/stories-index.ts"), false);
+  assert.equal(isStoryFile("ui/Button.stories.tsx"), true);
+  assert.equal(isStoryFile("ui/Button.stories.mdx"), true);
 });
 
 test("a namesake whose root is the repository root names no directory", () => {

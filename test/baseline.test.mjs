@@ -8,7 +8,7 @@ import { execFileSync } from "node:child_process";
 
 import {
   buildPin, loadPin, writePin, pinDelta, formatDelta,
-  baselinePopulation, materialize, measure, resolve, PIN_PATH,
+  baselinePopulation, measure, resolve, PIN_PATH,
 } from "../lib/baseline.mjs";
 import {
   showBlob, mergeBase, diffRange, shaReachable, resolveBaseRef, isSha,
@@ -573,65 +573,6 @@ test("a path holding a newline stays one path through the rename map", needsPosi
 
   const counts = await countAtBaseline(dir, sha, population.files.map((f) => f.rel));
   assert.equal(counts.candidates, 2, "both blobs come back by their pinned paths");
-});
-
-// --- the blob bridge into the parser pool ---
-
-test("materialize writes baseline blobs the pool can read", async (t) => {
-  const files = ["src/a/x.ts", "src/a/deep/y.ts"];
-  let sha;
-
-  const dir = repo(t, (d, { write, commit }) => {
-    write("src/a/x.ts", VIOLATING);
-    write("src/a/deep/y.ts", CONFORMING);
-    sha = commit("init");
-    writeFileSync(join(d, "src/a/x.ts"), CONFORMING);
-  });
-
-  const out = await materialize(dir, sha, files.map((rel) => ({ rel, lang: "js" })));
-  t.after(out.dispose);
-
-  assert.equal(out.files.length, 2);
-  assert.equal(out.missing.length, 0);
-  assert.deepEqual(out.files.map((f) => f.rel), ["src/a/deep/y.ts", "src/a/x.ts"]);
-  assert.equal(readFileSync(out.files[0].abs, "utf8"), CONFORMING);
-  assert.ok(readFileSync(out.files[1].abs, "utf8").includes("throw "), "the blob, not the fixed working tree");
-
-  // The nested path is rebuilt under the temporary root rather than flattened,
-  // so two baseline files with the same basename cannot overwrite each other.
-  assert.ok(out.files[0].abs.endsWith(join("src", "a", "deep", "y.ts")));
-
-  out.dispose();
-  assert.equal(existsSync(out.dir), false, "the temporary tree outlives dispose");
-});
-
-test("a blob that will not come back is reported, not silently dropped", async (t) => {
-  let sha;
-  const dir = repo(t, (d, { write, commit }) => {
-    write("src/a/x.ts", CONFORMING);
-    sha = commit("init");
-  });
-
-  const out = await materialize(dir, sha, [
-    { rel: "src/a/x.ts", lang: "js" },
-    { rel: "src/a/gone.ts", lang: "js" },
-    { rel: "../escape.ts", lang: "js" },
-    { rel: "/etc/passwd", lang: "js" },
-    { rel: "", lang: "js" },
-    null,
-  ]);
-  t.after(out.dispose);
-
-  assert.equal(out.files.length, 1);
-  assert.equal(out.files[0].rel, "src/a/x.ts");
-  assert.deepEqual(
-    out.missing.map((m) => m.reason).sort(),
-    ["absent", "unsafe path", "unsafe path", "unsafe path", "unsafe path"],
-  );
-  // An absolute rel resolves away from the temporary root without ever passing
-  // through "..", so a prefix check on the joined string is not the guard.
-  assert.ok(out.missing.some((m) => m.rel === "/etc/passwd"));
-  assert.ok(out.missing.some((m) => m.rel === null), "a malformed entry is reported, not thrown on");
 });
 
 // --- the scan-facing seam ---

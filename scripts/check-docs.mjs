@@ -1,10 +1,15 @@
 /**
- * Facts the prose states that the code also states.
+ * Facts the prose states that the code also states, and the sites a new
+ * registry key has yet to reach.
  *
  * Every number here drifted at least once: the README claimed 21 dimensions
  * after 31 shipped, and a gate table listed floors the gates had stopped
  * reading. A reader cannot tell a stale number from a true one, and a wrong
  * number in the file that explains the tool is worse than no file.
+ *
+ * The sites are here for the same reason from the other end: a row's
+ * scaffolding is scattered, and two of the sites fail in files an author has
+ * never opened. This is the one place that lists all of them.
  *
  * Only mechanically derivable claims are checked. Prose that describes a
  * measurement is left to a human.
@@ -14,10 +19,11 @@ import { execFileSync } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
 
-import { ALL_DIMENSIONS, dimensionsFor } from "../lib/dimensions.mjs";
-import { NAMING_CORPUS } from "../lib/dimensions-naming.mjs";
-import { PAIRINGS, pairingsFor } from "../lib/pairing.mjs";
+import { CAVEATS } from "../lib/check-report.mjs";
+import { pairingsFor } from "../lib/pairing.mjs";
+import { REGISTRY, rowsForLangs, rowsOfKind } from "../lib/registry.mjs";
 import { GATES } from "../lib/reduce.mjs";
+import { ELIGIBLE, REFUSED } from "../test/fixtures/counter-pins.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const read = (rel) => readFileSync(join(root, rel), "utf8");
@@ -65,24 +71,78 @@ export function readIntake(text) {
 }
 
 
+/**
+ * Which of the sites a row owes it has not reached, all of them rather than the
+ * first.
+ *
+ * The row itself is one edit and the rest are scattered: the model-defaults
+ * table fails a test that names no remedy, the counter pin fails a gate battery
+ * on a count, and the intake row is the decision the key exists because of. An
+ * author who missed one reads a failure in a file they have never opened, so
+ * every site is asked at once and each answer says what to do about it.
+ *
+ * The intake row and the counter pin are review gates (G2, C6), so neither
+ * remedy is a command to run. Saying a person has not decided yet is the whole
+ * job; deciding for them is what the gates exist to stop.
+ */
+export function sitesOwed(row, { defaults, intake, dropped, eligible, refused }) {
+  const owed = [];
+  const pin = "test/fixtures/counter-pins.mjs";
+
+  if (!defaults.has(row.key)) {
+    owed.push({ site: "lib/model-defaults.json", missing: "no entry", remedy: "run npm run defaults:seed" });
+  }
+
+  const written = intake.get(row.key);
+  if (!written) {
+    owed.push({
+      site: "docs/dimension-intake.md",
+      missing: "no row",
+      remedy: "write one: the glossary entries the key answers, what it is renamed from, and why (G2)",
+    });
+  } else if (written.status !== "shipped") {
+    owed.push({ site: "docs/dimension-intake.md", missing: `a row marked ${written.status}`, remedy: "mark it shipped, or stop shipping it" });
+  }
+  if (dropped.has(row.key)) {
+    owed.push({ site: "docs/dimension-intake.md", missing: "a dropped row as well", remedy: "a key ships or it is dropped, never both" });
+  }
+
+  if (typeof row.counterClaim === "string" && !eligible.has(row.key)) {
+    owed.push({ site: pin, missing: "no entry in ELIGIBLE", remedy: "pin it there, and measure the counter its own cross-repository spread (C6)" });
+  }
+  if (row.counterClaim === null && !refused.has(row.key)) {
+    owed.push({ site: pin, missing: "no entry in REFUSED", remedy: "pin it there, with the reason its inverse is a defect beside it (C6)" });
+  }
+
+  return owed;
+}
+
 function claim(where, ok, detail) {
   if (!ok) problems.push(`${where}: ${detail}`);
 }
 
 // --- the dimension registry -------------------------------------------------
 
-// Obligations count here too. A checker blind to a whole dimension class would
-// pass while the README undercounted by nine, which is the drift this script
-// exists to catch.
-// The corpus rows are composed by the reducer rather than the registry, and a
-// shipped claim outside every count is exactly the blindness this script
-// exists to catch.
-const corpusFor = (lang) => NAMING_CORPUS.filter((d) => d.langs.includes(lang)).length;
-const total = ALL_DIMENSIONS.length + PAIRINGS.length + NAMING_CORPUS.length;
-const js = dimensionsFor(["js"]).length + pairingsFor(["js"]).length + corpusFor("js");
-const jsx = dimensionsFor(["jsx"]).length + pairingsFor(["jsx"]).length + corpusFor("jsx");
-const ruby = dimensionsFor(["ruby"]).length + pairingsFor(["ruby"]).length + corpusFor("ruby");
-const obligations = PAIRINGS.length;
+// Obligations and filename rows count here too. A checker blind to a whole
+// dimension class would pass while the README undercounted by nine, which is
+// the drift this script exists to catch.
+const total = REGISTRY.length;
+const js = rowsForLangs(["js"]).length;
+const jsx = rowsForLangs(["jsx"]).length;
+const ruby = rowsForLangs(["ruby"]).length;
+const obligations = rowsOfKind("pairing").length;
+
+// Section 4 of the walkthrough counts the rows asked of a file, so the
+// obligations are counted apart from them there: they are one question about
+// two paths rather than a question asked of a site.
+const shipping = total - obligations;
+const rubyRows = ruby - pairingsFor(["ruby"]).length;
+const typeChecked = REGISTRY.filter((d) => d.tier === "semantic").length;
+
+// Prose spells a count of one as a word, and a phrasing nothing parses is a
+// number that drifts in silence, which is what this file is for.
+const NUMERALS = new Map([["one", 1], ["two", 2], ["three", 3]]);
+const counted = (word) => NUMERALS.get(word) ?? Number(word);
 
 // A released entry states the number that shipped in it and stays true forever.
 // Reading the whole changelog made every past release a claim about today, so
@@ -103,26 +163,31 @@ for (const rel of ["README.md", "docs/how-it-works.md", "CHANGELOG.md"]) {
     claim(`${rel}`, Number(m[1]) === total, `says "${m[1]} dimensions", the registry holds ${total}`);
   }
   for (const m of text.matchAll(/(\d+)\s+for\s+JavaScript(?!\s+and)/g)) {
-    claim(rel, Number(m[1]) === js, `says "${m[1]} for JavaScript", dimensionsFor(["js"]) is ${js}`);
+    claim(rel, Number(m[1]) === js, `says "${m[1]} for JavaScript", the registry holds ${js}`);
   }
   for (const m of text.matchAll(/(\d+)\s+reachable\s+in\s+JSX/g)) {
-    claim(rel, Number(m[1]) === jsx, `says "${m[1]} reachable in JSX", dimensionsFor(["jsx"]) is ${jsx}`);
+    claim(rel, Number(m[1]) === jsx, `says "${m[1]} reachable in JSX", the registry holds ${jsx}`);
   }
   for (const m of text.matchAll(/(\d+)\s+for\s+Ruby/g)) {
-    claim(rel, Number(m[1]) === ruby, `says "${m[1]} for Ruby", dimensionsFor(["ruby"]) is ${ruby}`);
+    claim(rel, Number(m[1]) === ruby, `says "${m[1]} for Ruby", the registry holds ${ruby}`);
   }
   for (const m of text.matchAll(/(\d+)\s+file-to-file obligations/g)) {
     claim(rel, Number(m[1]) === obligations, `says "${m[1]} file-to-file obligations", the registry holds ${obligations}`);
   }
+  for (const m of text.matchAll(/(\d+)\s+ship\b/g)) {
+    claim(rel, Number(m[1]) === shipping, `says "${m[1]} ship", the registry holds ${shipping} outside the obligations`);
+  }
+  for (const m of text.matchAll(/(\d+)\s+that speak Ruby/g)) {
+    claim(rel, Number(m[1]) === rubyRows, `says "${m[1]} that speak Ruby", the registry holds ${rubyRows} outside the obligations`);
+  }
+  for (const m of text.matchAll(/plus the (\w+) type-checked rows?/g)) {
+    claim(rel, counted(m[1]) === typeChecked, `says "${m[1]} type-checked", the registry holds ${typeChecked}`);
+  }
 }
-
-// Every key is unique, or a claim is dropped without a word.
-const keys = ALL_DIMENSIONS.map((d) => d.key);
-claim("lib/dimensions.mjs", new Set(keys).size === keys.length, "two dimensions share a key");
 
 // A dimension either states its inverse or records that it may not. An absent
 // field is indistinguishable from one nobody classified.
-for (const d of [...ALL_DIMENSIONS, ...PAIRINGS, ...NAMING_CORPUS]) {
+for (const d of REGISTRY) {
   claim(
     "lib/dimensions.mjs",
     d.counterClaim === null || typeof d.counterClaim === "string",
@@ -162,6 +227,41 @@ for (const dead of ["minCandidates", "minAuthors", "maxSingleFileShare"]) {
   claim("docs", !gateText.includes(dead), `the docs still name ${dead}, which the gates no longer read`);
 }
 
+// --- the caveat codes -------------------------------------------------------
+
+// The codes became a public surface the day `--format json` printed them, so
+// the table documenting them is held to the code in both directions: an
+// undocumented code is a field a CI job cannot branch on, and a documented one
+// that no longer exists is a branch nothing will ever take.
+function caveatSection(text) {
+  const start = text.indexOf("### The caveat codes");
+  claim("docs/how-it-works.md", start !== -1, "has no ### The caveat codes section to read");
+  if (start === -1) return "";
+  // To the next heading of either level, so the window is this subsection
+  // rather than whatever is written after it. It is the last of section 8
+  // today, which is the only reason stopping at the next `##` read the same.
+  const next = text.slice(start).search(/\n#{2,3} /);
+  return next === -1 ? text.slice(start) : text.slice(start, start + next);
+}
+
+const codes = new Set(Object.values(CAVEATS));
+const caveatText = caveatSection(read("docs/how-it-works.md"));
+const documented = new Set([...caveatText.matchAll(/^\| `([a-z-]+)` \|/gm)].map((m) => m[1]));
+for (const code of codes) {
+  claim("docs/how-it-works.md", documented.has(code), `does not document the caveat code ${code}`);
+}
+for (const code of documented) {
+  claim("docs/how-it-works.md", codes.has(code), `documents ${code}, which is not a caveat code`);
+}
+// The prose count is the one thing the two directions above cannot catch: a
+// code added to both the record and the table still leaves the sentence over it
+// stating the old number. A RegExp because the sentence wraps mid-phrase.
+claim(
+  "docs/how-it-works.md",
+  new RegExp(`There\\s+are ${codes.size}\\.`).test(caveatText),
+  `does not say there are ${codes.size} caveat codes`
+);
+
 // --- the command surface ----------------------------------------------------
 
 const usage = execFileSync(process.execPath, [join(root, "bin/anatomiya.mjs"), "--help"], {
@@ -195,17 +295,6 @@ for (const cmd of unique) {
 const intake = readIntake(read("docs/dimension-intake.md"));
 for (const p of intake.problems) claim("docs/dimension-intake.md", false, p);
 
-const intakeByKey = new Map(intake.rows.filter((r) => r.key).map((r) => [r.key, r]));
-const droppedKeys = new Set(intake.rows.filter((r) => r.status === "dropped" && r.key).map((r) => r.key));
-for (const d of [...ALL_DIMENSIONS, ...PAIRINGS, ...NAMING_CORPUS]) {
-  const row = intakeByKey.get(d.key);
-  claim("docs/dimension-intake.md", !!row, `${d.key} ships and has no intake row`);
-  if (row) {
-    claim("docs/dimension-intake.md", row.status === "shipped", `${d.key} ships and its intake row says ${row.status}`);
-  }
-  claim("docs/dimension-intake.md", !droppedKeys.has(d.key), `${d.key} ships and is also marked dropped`);
-}
-
 // Two rows claiming one entry print the same three numbers twice under two
 // names, which is the duplication the collapse exists to stop.
 const absorbedBy = new Map();
@@ -215,6 +304,22 @@ for (const r of intake.rows) {
     claim("docs/dimension-intake.md", previous === undefined, `"${entry}" is absorbed by both ${previous} and ${r.key ?? "a dropped row"}`);
     absorbedBy.set(entry, r.key ?? "a dropped row");
   }
+}
+
+// --- the sites a new registry key has to reach ------------------------------
+
+const sites = {
+  defaults: new Set(Object.keys(JSON.parse(read("lib/model-defaults.json")))),
+  intake: new Map(intake.rows.filter((r) => r.key).map((r) => [r.key, r])),
+  dropped: new Set(intake.rows.filter((r) => r.status === "dropped" && r.key).map((r) => r.key)),
+  eligible: new Set(ELIGIBLE),
+  refused: new Set(REFUSED),
+};
+
+const owed = new Map();
+for (const row of REGISTRY) {
+  const missing = sitesOwed(row, sites);
+  if (missing.length) owed.set(row.key, missing);
 }
 
 // --- runtime dependencies ---------------------------------------------------
@@ -256,13 +361,21 @@ claim("CHANGELOG.md", read("CHANGELOG.md").includes(`## [${pkg.version}]`), `has
 // `process.exit(1)` at module scope would take the test process with it the
 // moment a doc claim failed.
 const isEntry = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
-if (isEntry && problems.length) {
+if (isEntry && (problems.length || owed.size)) {
   for (const p of problems) console.error(`::error::${p}`);
-  console.error(`\n${problems.length} claim(s) in the documentation do not match the code.`);
+  // One line per site, in key order, each naming the file and the move: the
+  // list an author works through, and the annotations a pull request shows.
+  const unmet = [...owed.values()].flat();
+  for (const [key, missing] of owed) {
+    for (const m of missing) console.error(`::error::${m.site}: ${key} has ${m.missing}; ${m.remedy}`);
+  }
+  if (problems.length) console.error(`\n${problems.length} claim(s) in the documentation do not match the code.`);
+  if (owed.size) console.error(`\n${owed.size} registry key(s) still owe ${unmet.length} of the sites a row has to reach.`);
   process.exit(1);
 }
 if (isEntry)
   console.log(
   `docs match the code: ${total} dimensions (${js} js, ${jsx} jsx, ${ruby} ruby, ${obligations} of them file-to-file obligations), ` +
-    `${unique.length} commands, ${deps.length} runtime dependencies, ${intake.rows.length} intake rows, version ${pkg.version}`
+    `${unique.length} commands, ${codes.size} caveat codes, ${deps.length} runtime dependencies, ` +
+    `${intake.rows.length} intake rows, version ${pkg.version}`
 );

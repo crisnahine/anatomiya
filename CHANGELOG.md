@@ -7,6 +7,162 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-08-19
+
+0.2.3 is what a truth check of the map found. One agent per repository read the real code of 35 open
+source projects and judged whether the sentences the map writes are true of them, which is the one
+question the test suite cannot ask. Not a single stated directive was wrong about its arithmetic on
+any repository. Twenty-one things were wrong about what the arithmetic was counting, or about what
+the sentence beside it said, and this release closes all of them.
+
+Three mattered most. The obligation that asks whether new code ships with a test was completely dead
+on a monorepo, because the producer path was hardcoded to the repository root while only the
+companion path was ever learned: on a 28-gem Rails engine repository, seven of nine obligations
+found nothing, the words "ships with a" appeared in none of 339 generated files, and a brand-new
+model with no spec passed `check` with nothing to say. The namesake match waived its directory check
+for any file sitting at its own area's level, which on one repository made 668 of 1,536 credits
+false, 43.5%, and told a reader a class was tested by a spec for a different class in a different
+package. And generated, build-output and vendored code reached the enforced tier and was defended
+there: `check` asked a hand edit to keep a file stamped `DO NOT EDIT` compliant with a convention
+mined from other generated files.
+
+The rest are the same shape at smaller scale: a config file counted as a spec, a type-only import
+naming a runner, a story file filed as a private helper, a declaration file parsed as a module, a
+whole language present and never mentioned. Every fix carries the repository that measured it.
+
+### Added
+
+- `anatomiya doctor` says whether each engine this parses with is installed, with the version it
+  answered and, for one that is not ready, what was wrong and what to do about it. The remedy is
+  the engine's own: npm cannot install an interpreter, and installing Ruby does not install a node
+  module. It exits 0 whatever it found, because a non-zero exit would read as a probe that could
+  not run. Decision B23.
+- `anatomiya setup` installs the node-hosted engine's dependencies in the plugin's own directory,
+  since `/plugin install` copies the files and does not run `npm install`. It runs
+  `npm install --omit=dev --ignore-scripts --no-audit --no-fund` there and nowhere else, and it is
+  the only command that installs anything or reaches a package registry: `scan`, `check` and `pin`
+  never call it. `--dry-run` prints the command and installs nothing, and on Windows that printed
+  command is the whole answer: npm ships there as a batch file, running one needs a shell no
+  subprocess here may use, so setup refuses and hands it over. Decisions B23 and F5.
+- `--format json` on `scan`, `check` and `pin`, and `--format github` on `check`. json prints the
+  same answer as a record, schema and caveat codes and all, so a CI job or another tool reads fields
+  rather than matching sentences nobody promised to keep; github prints one workflow command per
+  finding, MUST-FIX as an error, FIX as a warning and NIT as a notice, so a pull request shows each
+  one on the line it is about, then a warning per caveat carrying its code, one for a capped run, and
+  one counting the rule files nobody here wrote. The acceptance harness reads the record instead of
+  regex-parsing stdout, and the caveat codes are written down in `docs/how-it-works.md` section 8.
+  The writers and the caveat table live in `lib/check-report.mjs`, apart from the pipeline that
+  produces the record, so a reader that wants a writer no longer loads a parser and a git runner to
+  get one. Every record goes through the encoder before it is serialised, the pin's `added` list
+  included, which is printed by its JSON writer and by nothing else. Decisions A20 and F4.
+- `npm run defaults:seed` writes an unmeasured `lib/model-defaults.json` entry for any registry key
+  that has none, so the table is seeded rather than hand-written. A seeded entry reads `none` and
+  fails open, which means the row keeps stating until somebody measures it. Decision A15.
+- The overview names a language it has no dimension for. `lib/langs.mjs` declares three, and
+  everything else joined the same bucket as images and markdown with nothing in the prose saying so:
+  one repository is 2,374 files of Java with a real JUnit suite, another carries its own bundler as
+  1,016 Rust files, and the words Rust and cargo appeared in none of its 501 generated files. Counted
+  over the whole corpus rather than summed back off the roster, which prints a root's top two
+  extensions and folds the rest away and so held 781 of those 1,016. Decision A22.
+- A file dropped as generated is named in "Not covered". The drop happens before anything counts, so
+  without the row nothing anywhere said the file existed. Decision G10.
+- A file whose head says a generator wrote it leaves the corpus, and so does one a root
+  `.gitattributes` declares `linguist-generated`. The fixture gates catch code that looks unusual;
+  generated code looks ordinary, because it was ordinary somewhere else, and carries the real authors
+  of whoever ran the generator. Decision G10.
+- Beaker's `test_name "..." do` is a runner of its own: one repository writes 223 acceptance
+  scenarios that way and 221 were counted as production code owing a test they already were.
+  Decision B29.
+- A Component Story Format file is its own kind, kept out of the producer and sibling-module counts.
+  One repository's own overview read `2559 sibling modules named index/types/input.stories`, filing
+  its most common fixture name beside private helper functions. Decision H22.
+
+### Changed
+
+- `lib/registry.mjs` is the registry: the three declared row lists assembled once, the load battery
+  run once over the union, and `rowsOfKind`, `rowsForLangs`, `rowByKey` and `REGISTRY_KEYS` for the
+  readers that used to spell that union themselves, ten of them each spelling a different subset of
+  it. One key names one row. The parse worker still reaches `dimensionsFor` and nothing more, held
+  by a walk of the import graph rather than by convention. Decision C17.
+- The reducer and the check are the arbiters of which rows get a slot, so the registry no longer
+  refuses a framework row on a language the oxc worker parses and a framework row may live on
+  JavaScript. `adoptedCapabilities` is the one reader that selects through nothing, so a row may not
+  carry `framework` and `capability` at once: otherwise off-framework hits vote for the capability
+  rows the whole repository is then offered. Decisions C8 and C16.
+- Each command is one in-process entry answering with a record, and `bin/anatomiya.mjs` is argv,
+  calls, printing and exit codes. Deciding the map and putting it on disk are two calls, so the
+  caller that wanted the plan without creating anything no longer derives every rendered body a
+  second time, and every refusal fires while the plan is built rather than after it. The wording of
+  a printed line lives in one module, because four readers scrape those lines. Decision A19.
+- The check report is a record: a schema, 26 coded caveats and one encoder pass over the whole of
+  it, so no writer can be the one that missed a repository-controlled value, and the rules audit's
+  three fields ride the record rather than being folded into caveat prose. Decision A20.
+- Every engine declares its host, its module or command, its version floor and its remedy in one
+  table, one probe asks all of them, and a run that answered for no file names the engine that did
+  not answer instead of guessing at a missing interpreter. `facts.json` is schema 12 and carries
+  which engines answered. A blind run creates no `.claude` directory at all, having written nothing
+  into it. Decision B23.
+- One supervisor carries the spawn, the bounded stderr, the two clocks and the kill for all three
+  bridges: the parse pool, the Ruby stream and the type checker. Every number stays with the bridge
+  that measured it and only the shape is shared. Three hand-written copies of one battery had
+  drifted into three stderr caps that each overshot by a chunk, and one bridge holding a single
+  re-armed timeout where the other two held an idle window and a wall clock. A test fails a bridge
+  that guards a child of its own again. Decision B24.
+- One reader hands both the check and the baseline the content at a revision, in parallel and onto
+  one temporary tree. 80 of the 88 git processes a 40-file check spawned were `cat-file` waiting on
+  each other, and on this repository the run goes from about 2.1s to about 1.25s. The base side is
+  still read at the merge base, so nothing an agent edits moves the population it is judged
+  against. Decision E10.
+- `node scripts/check-docs.mjs` lists every site a new registry key has not reached, all of them in
+  one run with the move beside each. A row is one edit and its scaffolding is scattered, two sites of
+  it in files an author has no reason to open, so the list is the whole list rather than whichever
+  failure a run hit first. The counter pins live in one fixture. Two sites it will only ever report:
+  the intake row and the counter pin are decisions, and a checker that wrote them would be deciding
+  for you. Decisions G2 and C6.
+- The measurement scripts read the map's paths from the constants that own them instead of spelling
+  `.claude/rules` and `.claude/anatomiya` again, and a test fails a script under `scripts/` that
+  hardcodes either.
+- An obligation learns its producer root the way it already learned the companion root, scoped to one
+  package, and a companion may vote only from inside that package. The repository root is a package
+  too, and a package is named by a producer under it rather than by a companion. Decision C18.
+- The namesake match asks the same mirror test for a file at its area's own level that it already
+  asked for a nested one, with one further shape: both sides at the top of the tree, which is the
+  flat repository this tool is itself. Decision H18.
+- Exported names are judged per declaration kind. Classes, types and functions carry different and
+  equally universal conventions, and pooling them made `check` wrong in both directions on one
+  directory: it flagged a correct camelCase function export and passed an incorrect PascalCase one.
+  A default export that names what it declares is read, since one class per file is the ordinary
+  component shape. Decisions C19 and C20.
+- A test runner needs a declared case, not merely an import, and a type-only import decides nothing.
+  Config files, page objects and setup hooks were counted as specs; on one repository all twelve
+  "playwright specs" were non-tests while the six real ones were missed. Decisions B25 and B26.
+- The Rails declarative `test "..." do` macro sets minitest, and asks for the same evidence
+  `def test_*` asks for: `test` is an ordinary word, and an in-house rules engine read three
+  authorization classes as specs. The minitest base-class list is what a repository has been seen to
+  inherit rather than a count of what Rails ships. Decisions B27 and B28.
+- A declaration file keeps its own extension end to end and is parsed with its own grammar, and a
+  valid CommonJS file using a guarded top-level `return` is retried rather than charged with a syntax
+  error. `sourceType: "script"` does not fix that second one and was measured not to. Decisions B32,
+  B33 and H17.
+- An area's `kinds:` line prints its own leftover and names its runners, the way a root line already
+  did. One repository hid a nonzero leftover on 107 of 497 areas. Decisions H19 and H20.
+- `apps` joins the shell names a monorepo splits under, and a root whose largest extension is
+  screenshots still finds its real producers. Fixed together: separating them would have made two
+  sites report zero producers instead of a blend. Decisions H3 and H21.
+- A test tree suppresses the namesake question wherever it nests, not only at the repository root.
+  Decision H6.
+- The fixture exclusion reaches a repository's own compounds. One project spells its fixture cases
+  eight ways and none was a whole segment. Decision G8.
+- An area's kinds line takes the same floor a directive gets, so an area carved into many children no
+  longer prints a bare file count and nothing else. Decision A23.
+- `dropped.denied` is a count, matching the three beside it. Decision A21.
+
+### Fixed
+
+- `exported_symbol_case` gives up the exported interface, which resolves the pair that could not both
+  be satisfied: obeying the naming FIX produced a prefix MUST-FIX, and no name satisfied both.
+  Closes #63.
+
 ## [0.2.2] - 2026-08-18
 
 0.2.2 closes two ways the tool answered clean about work it had not looked at. A class that forgot
@@ -989,6 +1145,7 @@ which are partial; several listed there are not implemented yet.
 - No claim that this catches defects. Measured across ten repositories, 1 of 317 defect review
   comments was preventable by a conventions map.
 
+[0.2.3]: https://github.com/crisnahine/anatomiya/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/crisnahine/anatomiya/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/crisnahine/anatomiya/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/crisnahine/anatomiya/compare/v0.1.13...v0.2.0

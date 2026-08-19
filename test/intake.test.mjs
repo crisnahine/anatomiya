@@ -4,13 +4,13 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
-import { ALL_DIMENSIONS, PRINCIPLE_NAMES } from "../lib/dimensions.mjs";
-import { PAIRINGS } from "../lib/pairing.mjs";
+import { PRINCIPLE_NAMES } from "../lib/dimensions.mjs";
+import { REGISTRY } from "../lib/registry.mjs";
 import { readIntake } from "../scripts/check-docs.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const intake = readIntake(readFileSync(join(root, "docs/dimension-intake.md"), "utf8"));
-const shipped = [...ALL_DIMENSIONS, ...PAIRINGS];
+const shipped = REGISTRY;
 
 test("the table parses with no structural problem", () => {
   assert.deepEqual(intake.problems, []);

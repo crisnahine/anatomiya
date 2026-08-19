@@ -10,9 +10,9 @@
  *
  * It runs the shipped `bin/anatomiya.mjs` in its own process rather than
  * importing `scan`, which is what separates this from `measure-layout.mjs`: the
- * argument parsing, the exit codes, the summary lines and the files that land on
- * disk are the surface a user meets, and none of them are exercised by an
- * in-process call.
+ * argument parsing, the exit codes, the records the commands print and the files
+ * that land on disk are the surface a user meets, and none of them are exercised
+ * by an in-process call.
  *
  * Read-only over the corpus. A repository is cloned with `--local`, which
  * hardlinks the object store, and nothing is ever written back into it.
@@ -24,67 +24,57 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { isSource } from "../lib/corpus.mjs";
 import { language } from "../lib/langs.mjs";
-import { ALL_DIMENSIONS } from "../lib/dimensions.mjs";
-import { CLASSES, NAMING_CORPUS } from "../lib/dimensions-naming.mjs";
+import { CLASSES } from "../lib/dimensions-naming.mjs";
+import { rowByKey } from "../lib/registry.mjs";
 import { FACTS_PATH, FACTS_SCHEMA, statedSide } from "../lib/facts.mjs";
 import { PIN_PATH } from "../lib/baseline.mjs";
 import { MAX_LINES } from "../lib/render.mjs";
 import { isGeneratedName, OVERVIEW_FILE, RULES_DIR } from "../lib/rules.mjs";
+import { scanLines } from "../lib/summary.mjs";
+import { formatReport } from "../lib/check-report.mjs";
 
 const LAYOUT_HEADING = "## What lives where";
 const TRUNCATED = "layout: not counted, the scan was truncated";
 
-// --- the summary lines ------------------------------------------------------
+// --- the records the commands print -----------------------------------------
 
 /**
- * The scan's own summary, read back off stdout.
+ * What a command answered, off `--format json`, or null when it printed
+ * something else.
  *
- * Every count is spelled by `plural`, so each of these lines drops its `s` at
- * one: a parser written against the plural spelling reads a one-file repository
- * as a scan that printed nothing at all.
+ * Read as a record rather than scraped off the lines: every count on those
+ * lines is spelled by `plural`, so each drops its `s` at one, and a parser
+ * written against the plural spelling read a one-file repository as a run that
+ * printed nothing at all.
  */
-export function parseSummary(stdout) {
-  const lines = stdout.split("\n").filter((l) => l !== "");
-  const head = /^(\d+) files?, (\d+) areas?, (\d+)ms, root (.+)$/.exec(lines[0] ?? "");
-  const claims = firstMatch(lines, /^(\d+) of (\d+) claims? stated/);
-  const layout = lines.find((l) => l.startsWith("layout: ")) ?? null;
-  const roots = layout && /^layout: (\d+) roots?, (\d+) folded/.exec(layout);
-  const baseline = lines.find((l) => BASELINE.test(l)) ?? null;
-  const wrote = firstMatch(lines, /^(?:would write|wrote) (\d+) files?$/);
-
-  return {
-    files: head && Number(head[1]),
-    areas: head && Number(head[2]),
-    ms: head && Number(head[3]),
-    root: head ? head[4] : null,
-    stated: claims && Number(claims[1]),
-    claims: claims && Number(claims[2]),
-    layout,
-    roots: roots ? Number(roots[1]) : null,
-    folded: roots ? Number(roots[2]) : null,
-    baseline,
-    baselineSha: baseline ? (/^baseline ([0-9a-f]+)/.exec(baseline)?.[1] ?? null) : null,
-    wrote: wrote && Number(wrote[1]),
-    lines,
-  };
+export function readJson(stdout) {
+  try {
+    return JSON.parse(stdout);
+  } catch {
+    return null;
+  }
 }
 
-// The three shapes `baselineLine` writes. An unreachable pin and an unpinned
-// repository are answers, not missing lines, so all three count as present.
-const BASELINE = /^(baseline [0-9a-f]|no baseline pinned|the pinned commit )/;
-
-const firstMatch = (lines, re) => lines.map((l) => re.exec(l)).find(Boolean) ?? null;
-
-/** Which of the lines a scan always prints this run did not. */
+/** Which of the facts a scan always answers this run did not. */
 export function summaryProblems(s) {
   const problems = [];
-  if (!s.files && s.files !== 0) problems.push("no files/areas line");
-  if (!s.claims && s.claims !== 0) problems.push("no claims line");
-  if (s.layout === null) problems.push("no layout line");
-  if (s.baseline === null) problems.push("no baseline line");
-  if (!s.wrote && s.wrote !== 0) problems.push("no wrote line");
+  if (typeof s.files !== "number") problems.push("no file count");
+  if (typeof s.areas !== "number") problems.push("no area count");
+  if (typeof s.claims?.stated !== "number") problems.push("no claims");
+  // Null is a scan that counted no layout at all, which the lines say by
+  // printing nothing, and this harness has always read that as a failure.
+  if (!s.layoutLine) problems.push("no layout line");
+  if (!s.baseline) problems.push("no baseline");
+  if (typeof s.wrote !== "number") problems.push("no wrote count");
   return problems;
 }
+
+// The roots column is what the scan printed, so it is read off the layout line
+// the scan wrote rather than recounted from the areas.
+export const rootsPrinted = (s) => {
+  const m = /^layout: (\d+) roots?/.exec(s.layoutLine ?? "");
+  return m ? Number(m[1]) : null;
+};
 
 /**
  * The summary with the one number that legitimately moves taken out, so two
@@ -93,6 +83,11 @@ export function summaryProblems(s) {
 export function timeless(stdout) {
   return stdout.replace(/, \d+ms, root /, ", <ms>, root ");
 }
+
+// The lines a scan prints, rendered from the record it printed. Through the
+// module that owns the wording, so the acceptance run and the terminal never
+// come to two spellings of one summary.
+const printed = (s) => scanLines(s).join("\n");
 
 // --- what landed on disk ----------------------------------------------------
 
@@ -189,9 +184,7 @@ const PROBE_ROWS = ["file_naming_case", "extends_base", "class_base"];
 const OTHER_CLASS = { snake_case: "PascalCase", "kebab-case": "PascalCase", camelCase: "PascalCase", PascalCase: "snake_case" };
 const STEM = { camelCase: "zzProbeFile", PascalCase: "ZzProbeFile", "kebab-case": "zz-probe-file", snake_case: "zz_probe_file" };
 
-// Both halves of the registry: the filename row answers off the corpus and
-// never reaches the AST, so it lives outside `ALL_DIMENSIONS`.
-const langsOf = (key) => [...ALL_DIMENSIONS, ...NAMING_CORPUS].find((d) => d.key === key)?.langs ?? [];
+const langsOf = (key) => rowByKey(key)?.langs ?? [];
 
 /** The area's own commonest extension that the row speaks and a check opens. */
 function extFor(area, key) {
@@ -231,13 +224,9 @@ export function probePlan(facts) {
   return null;
 }
 
-/** The paths the report's finding lines name, and nothing off its head lines. */
+/** The paths the report's findings name, and nothing off the rest of it. */
 export function findingPaths(report) {
-  return report
-    .split("\n")
-    .map((l) => /^(?:MUST-FIX|FIX|NIT) {2}("(?:[^"\\]|\\.)*"):\d+ {2}/.exec(l))
-    .filter(Boolean)
-    .map((m) => JSON.parse(m[1]));
+  return report.findings.map((f) => f.path);
 }
 
 // --- the report -------------------------------------------------------------
@@ -456,18 +445,22 @@ async function runRepo(name, source, scratchDir) {
     const base = branch.out.trim();
 
     /* 1 and 2: the first scan, and what it wrote. */
-    const first = anatomiya(["scan", clone], scratchDir);
+    const first = anatomiya(["scan", clone, "--format", "json"], scratchDir);
     if (first.status !== 0) {
       fail(`scan exited ${first.status}: ${first.err.split("\n")[0]}`);
       return { row, problems };
     }
-    const s1 = parseSummary(first.out);
+    const s1 = readJson(first.out);
+    if (s1 === null) {
+      fail(`the scan printed no record: ${first.out.split("\n")[0]}`);
+      return { row, problems };
+    }
     for (const p of summaryProblems(s1)) fail(p);
     Object.assign(row, {
       files: s1.files,
       areas: s1.areas,
-      stated: `${s1.stated}/${s1.claims}`,
-      roots: rootsColumn(s1.roots),
+      stated: `${s1.claims?.stated}/${s1.claims?.total}`,
+      roots: rootsColumn(rootsPrinted(s1)),
       wrote: s1.wrote,
     });
 
@@ -483,16 +476,18 @@ async function runRepo(name, source, scratchDir) {
     else {
       const facts = JSON.parse(readFileSync(factsFile, "utf8"));
       for (const p of factsProblems(facts)) fail(p);
-      row.roots = rootsColumn(s1.roots, rosterCounts(facts));
+      row.roots = rootsColumn(rootsPrinted(s1), rosterCounts(facts));
     }
 
     /* 3: the same source twice, byte for byte, or the map is not worth a
        cached read. */
-    const second = anatomiya(["scan", clone], scratchDir);
+    const second = anatomiya(["scan", clone, "--format", "json"], scratchDir);
     if (second.status !== 0) fail(`the second scan exited ${second.status}: ${second.err.split("\n")[0]}`);
     row.stable = sameFiles(written, ruleFiles(clone)) ? "yes" : "no";
     if (row.stable === "no") fail("the second scan wrote a different map over unchanged source");
-    if (timeless(second.out) !== timeless(first.out)) {
+    const s2 = readJson(second.out);
+    if (s2 === null) fail("the second scan printed no record");
+    else if (timeless(printed(s2)) !== timeless(printed(s1))) {
       fail("the second scan's summary differs from the first beyond its timing");
       row.stable = "no";
     }
@@ -503,17 +498,26 @@ async function runRepo(name, source, scratchDir) {
     if (row.pin === "no") fail(`pin exited ${pinned.status}: ${pinned.err.split("\n")[0] || `no ${PIN_PATH}`}`);
     const sha = git(["rev-parse", "HEAD"], clone).out.trim();
 
-    const third = anatomiya(["scan", clone], scratchDir);
+    const third = anatomiya(["scan", clone, "--format", "json"], scratchDir);
     if (third.status !== 0) fail(`the scan after the pin exited ${third.status}: ${third.err.split("\n")[0]}`);
-    const s3 = parseSummary(third.out);
-    if (s3.baselineSha !== sha.slice(0, 8)) fail(`the baseline line names ${s3.baselineSha}, not the pinned ${sha.slice(0, 8)}`);
+    const s3 = readJson(third.out);
+    if (s3 === null) fail("the scan after the pin printed no record");
+    else if (s3.baseline?.countsOnly || s3.baseline?.sha !== sha) {
+      fail(`the baseline reads ${s3.baseline?.countsOnly ? "counts only" : s3.baseline?.sha}, not the pinned ${sha}`);
+    }
+    const summary = s3 ? printed(s3) : "";
     if (existsSync(overview)) for (const p of overviewProblems(readFileSync(overview, "utf8"))) fail(p);
 
     /* 5: the clean tree. Findings never set the exit code. */
-    const clean = anatomiya(["check", clone], scratchDir);
+    const clean = anatomiya(["check", clone, "--format", "json"], scratchDir);
     if (clean.status !== 0) fail(`check exited ${clean.status} on a clean tree: ${clean.err.split("\n")[0]}`);
-    row.clean = findingPaths(clean.out).length;
-    const head = clean.out.split("\n")[0];
+    const cleanReport = readJson(clean.out);
+    if (cleanReport === null) fail("the check printed no record on the clean tree");
+    else row.clean = findingPaths(cleanReport).length;
+    // The head line the check prints, rendered from the record it printed: the
+    // writer owns that wording. The record has already been through the
+    // encoder, which passes an encoded value through unchanged.
+    const head = cleanReport ? formatReport(cleanReport).split("\n")[0] : null;
 
     /* 6: one file built to break a row the map stated. */
     const plan = probePlan(JSON.parse(readFileSync(factsFile, "utf8")));
@@ -523,7 +527,7 @@ async function runRepo(name, source, scratchDir) {
     // overwriting a real file would measure the tool against a file it wrote.
     if (existsSync(join(clone, probePath))) {
       fail(`${probePath} already exists, so the probe would overwrite real code`);
-      return { row, problems, head, summary: third.out };
+      return { row, problems, head, summary };
     }
     mkdirSync(dirname(join(clone, probePath)), { recursive: true });
     writeFileSync(join(clone, probePath), plan ? plan.body : "e2e probe\n");
@@ -531,9 +535,11 @@ async function runRepo(name, source, scratchDir) {
     const committed = git(["-c", "user.name=e2e", "-c", "user.email=e2e@local", "commit", "-qm", "e2e probe"], clone);
     if (committed.status !== 0) fail(`could not commit the probe: ${committed.err.split("\n")[0]}`);
 
-    const probed = anatomiya(["check", clone, "--base", base], scratchDir);
+    const probed = anatomiya(["check", clone, "--base", base, "--format", "json"], scratchDir);
     if (probed.status !== 0) fail(`check exited ${probed.status} on the probe branch: ${probed.err.split("\n")[0]}`);
-    const named = findingPaths(probed.out);
+    const probeReport = readJson(probed.out);
+    if (probeReport === null) fail("the check printed no record on the probe branch");
+    const named = probeReport ? findingPaths(probeReport) : [];
     if (plan) {
       row.probe = named.includes(probePath) ? `yes ${plan.dimension}` : "no";
       if (row.probe === "no") fail(`no finding names ${probePath}, and ${plan.dimension} states ${plan.learned} in ${plan.area}`);
@@ -541,7 +547,7 @@ async function runRepo(name, source, scratchDir) {
       row.probe = "n.a.";
       if (named.length !== 0) fail(`a markdown file drew ${named.length} finding(s)`);
     }
-    return { row, problems, head, summary: third.out };
+    return { row, problems, head, summary };
   } catch (err) {
     fail(err && err.stack ? err.stack : String(err));
     return { row, problems };

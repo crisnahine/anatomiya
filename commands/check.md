@@ -13,6 +13,9 @@ Run the check and report what it found.
    Add `--base <ref>` when the branch targets something other than the remote's default branch.
    Left alone it tries `origin/HEAD`, then `origin/main`, `origin/master`, `main`, `master`.
 
+   Leave the format alone: `--format json` prints the same run as a record for a machine reader,
+   and this report is read off the text.
+
 2. Report what came back, in this order:
    - the base ref it resolved, and how many files this branch changed against it
    - every MUST-FIX, then every FIX: path, line, and the claim the site broke
@@ -41,6 +44,17 @@ Run the check and report what it found.
 
 Findings never set the exit code. A non-zero exit means the check could not run: show its output and
 stop, and do not guess at what it found.
+
+If it says a parser engine is not installed, run the readiness probe:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/bin/anatomiya.mjs" doctor
+```
+
+For the node-hosted engine, `node "${CLAUDE_PLUGIN_ROOT}/bin/anatomiya.mjs" setup` installs it.
+Tell the user first that setup runs npm in the plugin's own directory, which is the only command
+here that installs anything. Any other engine carries its own remedy on its doctor line, and npm
+cannot install an interpreter. Then run the check again.
 
 ### Type-checked claims
 

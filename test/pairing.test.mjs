@@ -180,6 +180,7 @@ test("a file the branch did not touch is not reported, however unpaired", () => 
 });
 
 const MODEL_TEST = { from: "app/models", to: "test/models", ext: ".rb", companionSuffix: "_test.rb" };
+const MODEL_SPEC = { from: "app/models", to: "spec/models", ext: ".rb", companionSuffix: "_spec.rb" };
 
 
 
@@ -348,6 +349,30 @@ test("no companion anywhere learns no root, so the obligation is not asked", () 
   assert.equal(companionRoot(corpus, shape), null);
 });
 
+test("the companion root is learned inside one package, not the whole corpus", () => {
+  // decidim: every gem nests its own app/ one level down. The vote has to stay
+  // inside decidim-core, or a same-named spec anywhere else in the monorepo
+  // could win it.
+  const corpus = new Set([
+    "decidim-core/app/models/foo.rb",
+    "decidim-core/spec/models/foo_spec.rb",
+    "decidim-admin/spec/models/bar_spec.rb",
+  ]);
+  const shape = { from: "app/models", to: "spec/models", ext: ".rb", companionSuffix: "_spec.rb" };
+
+  assert.equal(companionRoot(corpus, shape, "decidim-core"), "decidim-core/spec/models");
+});
+
+test("a package with the producer but no companion of its own learns nothing, even if a sibling package has one", () => {
+  const corpus = new Set([
+    "decidim-admin/app/models/bar.rb",
+    "decidim-core/spec/models/foo_spec.rb",
+  ]);
+  const shape = { from: "app/models", to: "spec/models", ext: ".rb", companionSuffix: "_spec.rb" };
+
+  assert.equal(companionRoot(corpus, shape, "decidim-admin"), null);
+});
+
 test("an obligation counts against the root this repository uses", () => {
   // The whitehall shape end to end: 3 models, 2 with a test, under a root the
   // hardcoded pair never named. Before this the row read 0 of 3.
@@ -386,4 +411,126 @@ test("a tie the declared pair has no part in learns nothing", () => {
   const shape = { from: "app/models", to: "spec/models", ext: ".rb", companionSuffix: "_spec.rb" };
 
   assert.equal(companionRoot(corpus, shape), null);
+});
+
+test("a producer root nested inside a package is learned, and the obligation fires inside that package", () => {
+  // decidim: PAIRINGS declares "app/models" literally, so on a monorepo where
+  // every gem nests its own app/ one level down, the producer set was empty
+  // and the obligation never fired on any of the 28 gems.
+  const corpus = new Set([
+    "decidim-core/app/models/decidim/component.rb",
+    "decidim-core/spec/models/decidim/component_spec.rb",
+    "decidim-core/app/models/decidim/untested.rb",
+  ]);
+
+  const hits = pairingHits(corpus, MODEL_SPEC);
+
+  assert.deepEqual(hits.get("decidim-core/app/models/decidim/component.rb"), [{ conforming: true, elsewhere: false }]);
+  assert.deepEqual(hits.get("decidim-core/app/models/decidim/untested.rb"), [{ conforming: false, elsewhere: false }]);
+});
+
+test("a producer pairs only within its own package, never across a sibling package", () => {
+  // A model in decidim-admin must never be credited by decidim-core's spec of
+  // the identical basename. That cross-package credit is the one thing this
+  // learning must refuse.
+  const corpus = new Set([
+    "decidim-core/app/models/decidim/foo.rb",
+    "decidim-core/spec/models/decidim/foo_spec.rb",
+    "decidim-admin/app/models/decidim/foo.rb",
+  ]);
+
+  const hits = pairingHits(corpus, MODEL_SPEC);
+
+  assert.deepEqual(hits.get("decidim-core/app/models/decidim/foo.rb"), [{ conforming: true, elsewhere: false }]);
+  assert.deepEqual(hits.get("decidim-admin/app/models/decidim/foo.rb"), [{ conforming: false, elsewhere: true }]);
+});
+
+test("a flat corpus learns the identical root and hits it always did", () => {
+  // Pin: package-prefix learning must be a no-op with no package boundary.
+  // Hand-computed against the pre-fix algorithm: user and post tie the root
+  // vote one each, spec/models wins on being the declared pair.
+  const corpus = new Set([
+    "app/models/user.rb",
+    "app/models/post.rb",
+    "app/models/order.rb",
+    "spec/models/user_spec.rb",
+    "spec/legacy/post_spec.rb",
+  ]);
+
+  const hits = pairingHits(corpus, MODEL_SPEC);
+
+  assert.deepEqual(hits, new Map([
+    ["app/models/user.rb", [{ conforming: true, elsewhere: false }]],
+    ["app/models/post.rb", [{ conforming: false, elsewhere: true }]],
+    ["app/models/order.rb", [{ conforming: false, elsewhere: false }]],
+  ]));
+});
+
+test("a package with no companion of its own is told a path under that package", () => {
+  // The fallback to the declared pair, mirrored under the prefix, is what the
+  // check prints to a reader. Nothing pinned the two sides of it apart: both a
+  // real path and the string "null/..." are equally absent from the corpus, so
+  // every existing test read the same either way.
+  const changed = ["decidim-admin/app/models/decidim/admin/dashboard.rb"];
+  const corpus = new Set([
+    "decidim-core/app/models/decidim/component.rb",
+    "decidim-core/spec/models/decidim/component_spec.rb",
+    "decidim-admin/app/models/decidim/admin/dashboard.rb",
+  ]);
+
+  assert.deepEqual(pairingViolations(changed, corpus, MODEL_SPEC), [
+    {
+      path: "decidim-admin/app/models/decidim/admin/dashboard.rb",
+      companion: "decidim-admin/spec/models/decidim/admin/dashboard_spec.rb",
+    },
+  ]);
+});
+
+test("a package's spec cannot answer the obligation of a model at the repository root", () => {
+  // The root is a package too, the one everything not inside another belongs
+  // to. Restricting only the named prefixes left it able to see every spec in
+  // the repository, so a nested package's spec of the same basename satisfied
+  // a root-level model that has none of its own.
+  const corpus = new Set([
+    "app/models/foo.rb",
+    "app/models/bar.rb",
+    "packages/x/app/models/foo.rb",
+    "packages/x/spec/models/foo_spec.rb",
+  ]);
+
+  const hits = pairingHits(corpus, MODEL_SPEC);
+
+  assert.deepEqual(hits.get("app/models/foo.rb"), [{ conforming: false, elsewhere: true }]);
+  assert.deepEqual(hits.get("packages/x/app/models/foo.rb"), [{ conforming: true, elsewhere: false }]);
+});
+
+test("a changed producer inside a package owes a companion inside that same package", () => {
+  const changed = ["decidim-core/app/models/decidim/new_thing.rb"];
+  const corpus = new Set([
+    "decidim-core/app/models/decidim/new_thing.rb",
+    "decidim-core/app/models/decidim/existing.rb",
+    "decidim-core/spec/models/decidim/existing_spec.rb",
+  ]);
+
+  assert.deepEqual(pairingViolations(changed, corpus, MODEL_SPEC), [
+    {
+      path: "decidim-core/app/models/decidim/new_thing.rb",
+      companion: "decidim-core/spec/models/decidim/new_thing_spec.rb",
+    },
+  ]);
+});
+
+test("applying pairings on a monorepo credits each package's own producers, not a sibling's", () => {
+  const corpus = new Set([
+    "decidim-core/app/models/decidim/component.rb",
+    "decidim-core/spec/models/decidim/component_spec.rb",
+    "decidim-admin/app/models/decidim/admin/dashboard.rb",
+  ]);
+  const parsed = new Map([...corpus].map((rel) => [rel, { rel, ok: true, hits: {} }]));
+
+  const applied = applyPairings(parsed, corpus, ["ruby"]);
+
+  assert.ok(applied.has("model_spec"));
+  assert.equal(parsed.get("decidim-core/app/models/decidim/component.rb").hits.model_spec[0].conforming, true);
+  assert.equal(parsed.get("decidim-admin/app/models/decidim/admin/dashboard.rb").hits.model_spec[0].conforming, false);
 });
