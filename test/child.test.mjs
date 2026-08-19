@@ -191,13 +191,20 @@ test("a child under both clocks is killed by one of them and never by both", asy
   sup.child.on("message", () => sup.touch());
 
   await closed(sup.child);
-  // Past the wall clock, with the child already dead: the surviving timer is
+  // Past both windows, with the child already dead: the surviving timer is
   // only visible after the window it would have fired in.
-  await new Promise((resolve) => setTimeout(resolve, 250));
+  await new Promise((resolve) => setTimeout(resolve, 500));
   sup.settle();
 
-  assert.deepEqual(fired, ["idle"]);
-  assert.equal(sup.killedBy(), "idle");
+  // Which clock wins is a race against how long the fork took to answer, and
+  // that is the machine's property rather than this code's: a loaded runner
+  // spent longer than the idle window getting the first message out, and the
+  // wall fired first. What this test is named for is that exactly one of them
+  // fires and the supervisor agrees with it, which holds either way. The two
+  // tests above pin each clock firing on its own.
+  assert.equal(fired.length, 1, `one reason, got ${JSON.stringify(fired)}`);
+  assert.ok(["idle", "wall"].includes(fired[0]), fired[0]);
+  assert.equal(sup.killedBy(), fired[0]);
 });
 
 test("a spawn that found no interpreter is told apart from one that ran and failed", () => {
