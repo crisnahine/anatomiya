@@ -209,7 +209,9 @@ test("no file under scripts/ hardcodes the rules or store directory instead of i
   const EXEMPT = new Set(["scripts/measure-delivery.mjs"]);
   const offenders = [];
   for (const rel of sourceFiles().filter((f) => f.split(/[\\/]/)[0] === "scripts")) {
-    if (EXEMPT.has(rel)) continue;
+    // The listing carries the host's separator and this set is written in the
+    // one every other path here uses, so the exemption is looked up in posix.
+    if (EXEMPT.has(rel.split(/[\\/]/).join("/"))) continue;
     const src = readFileSync(join(LIB, "..", rel), "utf8");
     if (src.includes(".claude/rules") || src.includes(".claude/anatomiya")) offenders.push(rel);
   }

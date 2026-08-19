@@ -158,8 +158,11 @@ test("a library older than the floor names both numbers", needsShebang, async (t
   assert.equal(row.present, true);
   assert.equal(row.version, "0.19.0");
   assert.equal(row.ok, false);
+  // Both numbers by substring rather than by a regex built from one of them:
+  // escaping only the dots leaves every other metacharacter live, which is a
+  // sanitiser that reads complete and is not.
   assert.match(row.reason, /0\.19\.0/);
-  assert.match(row.reason, new RegExp(ENGINES.prism.floor.replace(/\./g, "\\.")));
+  assert.ok(row.reason.includes(ENGINES.prism.floor), `${row.reason} names the floor`);
 });
 
 test("an interpreter that answers reports its version and the floor it is held to", needsRuby, async () => {

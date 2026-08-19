@@ -181,7 +181,10 @@ test("a caveat code the walkthrough does not document fails", (t) => {
   // emitted.
   const dir = repoCopy(t);
   const path = join(dir, "docs", "how-it-works.md");
-  writeFileSync(path, readFileSync(path, "utf8").replace(/^\| `no-map` \|.*\n/m, ""));
+  // `\r?` because `.` does not match a carriage return: on a checkout with CRLF
+  // endings `.*\n` never reached the newline, the row was never removed, and
+  // the checker correctly reported a table with nothing missing from it.
+  writeFileSync(path, readFileSync(path, "utf8").replace(/^\| `no-map` \|.*\r?\n/m, ""));
 
   const { status, output } = check(dir);
 
