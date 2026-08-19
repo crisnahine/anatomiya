@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { runCheck, runDoctor, runPin, runScan, runSetup } from "../lib/commands.mjs";
+import { runCheck, runDoctor, runEcho, runPin, runScan, runSetup } from "../lib/commands.mjs";
 import { pinJson, pinLines, scanJson, scanLines } from "../lib/summary.mjs";
 import { formatReport, formatReportGithub, formatReportJson } from "../lib/check-report.mjs";
 
@@ -40,6 +40,10 @@ const COMMANDS = {
   pin: { path: true, dryRun: true, formats: ["text", "json"] },
   doctor: { path: false, dryRun: false, formats: ["text"] },
   setup: { path: false, dryRun: true, formats: ["text"] },
+  // Not for a person: a hook runs this, hands it the event on stdin and reads
+  // one JSON object back. It takes a path because a hook's own cwd is the
+  // repository it fired in.
+  echo: { path: true, dryRun: false, formats: ["json"] },
 };
 
 // One writer per format, and the set of names the flag takes.
@@ -109,6 +113,37 @@ function parseArgs(argv) {
   return opts;
 }
 
+/**
+ * The hook event on stdin, or an empty object where there is none to read.
+ *
+ * Bounded and timed out, because this runs on every tool call and a hook that
+ * waits on a pipe nobody writes to holds the whole session there. Unparseable
+ * is the same answer as absent: the caller has nothing to say either way, and
+ * throwing would exit non-zero, which is the one outcome a hook must not have.
+ */
+function readPayload() {
+  return new Promise((resolve) => {
+    let data = "";
+    const done = (value) => resolve(value);
+    const timer = setTimeout(() => done({}), 2000);
+    timer.unref();
+    process.stdin.setEncoding("utf8");
+    process.stdin.on("data", (chunk) => {
+      data += chunk;
+      if (data.length > 1024 * 1024) done({});
+    });
+    process.stdin.on("error", () => done({}));
+    process.stdin.on("end", () => {
+      clearTimeout(timer);
+      try {
+        done(JSON.parse(data || "{}"));
+      } catch {
+        done({});
+      }
+    });
+  });
+}
+
 const opts = parseArgs(process.argv.slice(2));
 if (opts.help) {
   console.log(USAGE);
@@ -136,6 +171,11 @@ try {
     const { ok, output } = await runSetup({ dryRun: opts.dryRun });
     if (!ok) fail(output);
     console.log(output);
+  } else if (opts.cmd === "echo") {
+    // A hook, so its own failure is the one thing it must never be: a non-zero
+    // exit interrupts the run it exists to help. Every path here writes an
+    // object and exits 0, including the one where stdin was never readable.
+    process.stdout.write(JSON.stringify(runEcho(cwd, await readPayload())));
   } else {
     const { summary } = await runScan(cwd, { dryRun: opts.dryRun, deep: opts.deep });
     if (opts.format === "json") process.stdout.write(scanJson(summary));

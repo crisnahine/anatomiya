@@ -82,7 +82,10 @@ test("files land in .claude/rules with the facts beside them", () => {
   // an area that counted nothing, and the overview names the two apart.
   assert.equal(plan.orphaned, 8, "the split reaches the plan, not just the render");
 
-  assert.deepEqual(EXCLUDE_LINES, [`${RULES}/${PREFIX}*.md`, `${STORE}/`]);
+  // Everything a scan can leave untracked, including the settings file the hook
+  // is installed into: a fourth thing written without a fourth line here is a
+  // dirty `git status` for anyone who followed the documented exclude.
+  assert.deepEqual(EXCLUDE_LINES, [`${RULES}/${PREFIX}*.md`, `${STORE}/`, ".claude/settings.local.json"]);
   rmSync(dir, { recursive: true, force: true });
 });
 

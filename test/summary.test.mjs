@@ -306,6 +306,9 @@ test("the summary carries every fact the scan prints", () => {
     engines: { oxc: { version: "0.144.0" } },
     layoutLine: null,
     baseline: { status: "unpinned", sha: null, drift: null, baseRef: null, countsOnly: true },
+    // Absent and unchanged read the same here on purpose: the line this drives
+    // is said once, when the settings actually moved.
+    hookInstalled: false,
     truncated: false,
     orphaned: 0,
     barren: 0,
