@@ -156,9 +156,16 @@ hand back a tree, oxc to an almost empty one and prism to one holding nodes nobo
 counting either moves the denominator without moving the code. So a parse reporting errors answers
 `ok: false` and contributes no sites, which is what every other unexamined file already gets.
 
-Where a language's parser answered for **no** file at all, which is what a missing interpreter looks
-like, the scan writes nothing and removes nothing. A blind run's areas all count nothing and would
-otherwise be deleted as gone. A syntax error is not that: the parser ran and answered.
+Where a language's parser answered for **no** file at all, the scan writes nothing and removes
+nothing, and creates no `.claude` directory it would have written into. A blind run's areas all count
+nothing and would otherwise be deleted as gone. A syntax error is not that: the parser ran and
+answered.
+
+Why a run went blind is asked of the engine rather than guessed. An engine that reported a version
+ran, so the files are what failed; one that reported none is the install, and its line carries that
+engine's own remedy. Guessing was measured wrong on a real machine: with `ruby` on `PATH` and no
+`prism`, one sentence naming a missing interpreter was the wrong answer, and no version anywhere on
+screen said so.
 
 | Guard | Value | Enforced |
 |---|---|---|
@@ -219,9 +226,16 @@ back on the queue once. A child that exited on its own, a missing interpreter an
 script are charged on the first attempt: a second child answers those the same way at twice the
 cost. Every record says which attempt answered it.
 
+Every child this tool runs, the pool's parse workers, the Ruby stream and the type checker that
+`--deep` asks for, goes through one supervisor that owns the spawn, the bounded stderr, the two
+clocks and the kill. The numbers stay with the bridge that measured them and only the shape is
+shared, because three hand-written copies of one battery had drifted into three stderr caps that
+each overshot by a chunk and one bridge holding a single re-armed timeout where the other two held
+an idle window and a wall clock.
+
 ## 4. Dimensions and the three numbers
 
-A dimension is one claim about one area. 46 ship, the filename row included: 25 for JavaScript, 30 reachable in JSX, and 16 that speak Ruby, plus the one type-checked row, which sits in the total and reaches a scan only with --deep. Each
+A dimension is one claim about one area. 48 ship, the filename row included: 27 for JavaScript, 32 reachable in JSX, and 16 that speak Ruby, plus the one type-checked row, which sits in the total and reaches a scan only with --deep. Each
 is defined by three quantities, not one.
 
 | Quantity | Meaning |
@@ -279,6 +293,8 @@ in `check`.
 | `reference_foreign_key` | partial | ruby | reference columns declare their foreign key |
 | `function_naming_case` | precise | js, jsx | functions are named `<style>`, learned |
 | `exported_symbol_case` | precise | js, jsx | exported names are `<style>`, learned |
+| `exported_class_case` | precise | js, jsx | exported classes are named `<style>`, learned |
+| `exported_type_case` | precise | js, jsx | exported types are named `<style>`, learned |
 | `extends_base` | precise | js, jsx | classes here extend `<style>`, learned |
 | `interface_prefix` | precise | js, jsx | interfaces are named with a `<style>` prefix, learned |
 | `type_alias_prefix` | precise | js, jsx | type aliases are named with a `<style>` prefix, learned |
@@ -291,7 +307,7 @@ in `check`.
 | `class_base` | precise | ruby | classes here inherit `<style>`, learned |
 | `module_include` | precise | ruby | classes here include `<style>`, learned |
 
-The five JSX rows are the ones that make the JSX total 30 rather than 25: a `.tsx` or `.jsx` file is
+The five JSX rows are the ones that make the JSX total 32 rather than 27: a `.tsx` or `.jsx` file is
 counted by every `js` dimension as well as these. The five migration rows are Rails and count as
 Ruby, which is what takes Ruby from 11 to 16.
 
@@ -844,6 +860,67 @@ at all, since the first is the branch's own code and the second is this tool. An
 is asked only where the corpus shows that framework, read from the corpus rather than from the map,
 because the check runs on repositories that have no map at all.
 
+One answer, three writers. Text is what the agent reads. `--format json` prints the record itself,
+schema and caveat codes and all, which is what the acceptance harness and a CI job read rather than
+matching sentences nobody promised to keep. `--format github` prints one workflow command per
+finding, MUST-FIX as an error, FIX as a warning and NIT as a notice, so a pull request shows each
+one on the line it is about; then a warning per caveat carrying its code, one for a capped run, and
+one counting the rule files nobody here wrote, because counts alone are what a run with no map and no
+readable diff prints and that reads exactly like a branch that broke nothing. Every
+repository-controlled value goes through the encoder before any of the three sees it, and findings
+set the exit code in none of them.
+
+`--format json` carries the record's own version, so a reader can refuse a shape it does not know
+rather than read fields positionally. It is the rule `facts.json` enforces on disk (C10), offered
+here to whatever reads the stdout; the scan's and the pin's records carry a version of their own for
+the same reason.
+
+### The caveat codes
+
+A caveat is why a run could not answer in full. The sentence is what a human reads; the code is what
+anything else reads, because with prose alone "the diff could not be read" and "one file was read
+from the working tree" are told apart by a substring match on wording nobody promised to keep. There
+are 26. Most appear at most once in a run; the ones that repeat are named under the table.
+
+| Code | What it means |
+|---|---|
+| `map-unreadable` | there is a map and none of it was used: the store resolves outside the repository, or its schema is past the one this build reads |
+| `no-map` | no map on disk, so nothing was stated and nothing can be enforced |
+| `no-base-ref` | none of the candidate base refs resolved |
+| `no-merge-base` | a base was found and shares no fork point with HEAD, so nothing can be called newly introduced |
+| `nothing-examined` | no merge base and no earlier commit either, so no file was looked at |
+| `shallow-no-history` | shallow clone: the base commit is present and shares no held history with HEAD |
+| `shallow-unfetched` | shallow clone and the base commit could not be fetched |
+| `diff-unreadable` | the diff against the base could not be read, so no file was examined |
+| `added-ranges-unreadable` | in the degraded mode, the added-line ranges could not be read, so nothing was attributed to this branch |
+| `pending-unlisted` | the working tree's pending edits could not be listed, so only committed content was read |
+| `pending-unjudged` | files carry uncommitted edits and there was no base to judge them against |
+| `read-from-tree` | files were read from the working tree rather than from a commit, which is what makes the run unreproducible from git alone; the message says how many |
+| `frameworks-unknown` | the corpus could not be listed, so no framework's claims were checked |
+| `capabilities-unknown` | the corpus could not be listed, so no routing claim was checked |
+| `head-unreadable` | a file's head version could not be read, in the tree or at HEAD |
+| `base-unreadable` | a file's version at the merge base could not be read, so the file was skipped |
+| `head-crashed` | a file crashed the parser at the head side |
+| `head-rejected` | the parser rejected a file's syntax at the head side |
+| `head-oversize` | a file was past the size cap at the head side |
+| `head-unparsed` | a file went unread at the head side for none of the three above: this tool or the filesystem could not produce it |
+| `base-unparsed` | a file did not parse at the merge base, so it was skipped |
+| `stripper-missing` | `flow-remove-types` is not installed, so a file written in Flow is rejected rather than read |
+| `obligations-unchecked` | the file list at HEAD could not be read, so no file-to-file obligation was checked |
+| `rules-escaped` | `.claude/rules/` resolves outside the repository, so nothing there was examined |
+| `rules-unlisted` | `.claude/rules/` could not be listed |
+| `rules-unreadable` | files in `.claude/rules/` could not be read, so whose they are is unknown |
+
+The four head-side unread causes are four codes rather than one because the reader's next move
+differs for each: a crash is this tool's, rejected syntax is the branch's own code, the cap is a
+generated file, and the fourth is this tool or the filesystem. Each of those four can appear once per
+file, and so can `head-unreadable`, `base-unreadable` and `base-unparsed`.
+
+`no-merge-base` is the one code that can appear twice in one run. Resolving the base emits it when a
+candidate ref resolves and has no fork point with HEAD, and the run then falls to the added-lines
+mode, which emits it again to say what that mode does and does not answer. Where no ref resolved at
+all, the first is `no-base-ref` and `no-merge-base` appears once.
+
 ## 9. Predicting your own result
 
 Roughly, in order of how much they move the number of stated claims:
@@ -874,3 +951,39 @@ Two runs stand behind those numbers: `scripts/e2e-corpus.mjs` drives the shipped
 clone through scan, pin and check on 35 repositories and this one, and `scripts/measure-layout.mjs`
 recounts every number the `## What lives where` section prints, both recorded under
 `docs/measurements/`.
+
+## 10. Readiness and setup
+
+`/plugin install` copies the files and runs no install, so a marketplace user's first run has no
+parser in it until something puts one there. Two commands do that, and a scan is neither of them: a
+scan that installed on finding a dependency missing would make every scan an outbound call.
+
+`anatomiya doctor` probes what the parsers need and prints one line each: the version where it
+answered, and otherwise what was wrong and what to do about it. The remedy is the engine's own,
+because npm cannot install an interpreter and installing Ruby does not install a node module. The
+type checker is probed beside the engines and marked optional, since only `--deep` asks for it.
+`doctor` exits 0 whatever it found: a non-zero exit would read as a probe that could not run.
+
+| Row | Host | Ready when | Remedy |
+|---|---|---|---|
+| `oxc` | node | `oxc-parser` imports | `anatomiya setup` in the plugin directory |
+| `flow-remove-types` | node | it imports. A row of its own, and not an engine: it is `oxc`'s dialect stripper, and one absent costs a dialect where the other costs the run | the same install |
+| `prism` | the `ruby` interpreter | `ruby -rprism` answers a version of 1.0.0 or newer | install Ruby 3.4 or newer, which ships prism 1.x, and put `ruby` on `PATH` |
+| `typescript` | node | it imports. Optional: only `--deep` needs it | the same install |
+
+`anatomiya setup` installs what node hosts, and only that. It runs
+`npm install --omit=dev --ignore-scripts --no-audit --no-fund` with `cwd` set to the plugin's own
+directory, resolved from the module rather than from `process.cwd()`, because every command runs
+inside somebody else's tree and installing there would put this tool's dependencies in it.
+`--ignore-scripts` is the load-bearing flag: without it a dependency's install script runs arbitrary
+code in the plugin directory. It is the only command that installs anything and the only one that
+reaches a package registry; `scan`, `check` and `pin` never call it. The only other outbound call
+anywhere here is the check's shallow-clone path, which is one `ls-remote` and one `fetch --depth=1`
+and nothing else (F5).
+
+Two refusals rather than an attempt. npm that is not on `PATH` is answered with the one sentence that
+fixes it, since npm cannot install itself. And on Windows `setup` refuses and hands over the command
+instead of spawning: npm ships there as `npm.cmd` with no `npm.exe`, an extension-less spawn resolves
+against `.com` and `.exe` only, so the attempt answers ENOENT on a machine that has npm installed,
+and running a batch file needs the shell nothing here may use. The refusal prints the same argv and
+directory a dry run does, so one spelling of the command survives on every platform.

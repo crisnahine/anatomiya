@@ -16,6 +16,8 @@ import {
 } from "../lib/dimensions.mjs";
 import { NAMING_CORPUS } from "../lib/dimensions-naming.mjs";
 import { PAIRINGS } from "../lib/pairing.mjs";
+// The battery that stamps these rows runs where the registry is assembled.
+import "../lib/registry.mjs";
 import { SEMANTIC_DIMENSIONS } from "../lib/dimensions-semantic.mjs";
 import { walk, collectHits } from "../lib/walk.mjs";
 
@@ -595,11 +597,24 @@ test("the newest fields are held to shape at load", () => {
   assert.throws(() => assertRegistryRows([probeRow({ framework: "django" })]), /django/);
 });
 
-test("a framework row may not be hosted where the worker selects its own dimensions", () => {
-  // The filter is applied where an engine's dimensions are chosen, and the oxc
-  // child chooses its own unfiltered: a framework row there would count
-  // ungated in the scan while the check filters, the split C8 exists to close.
-  assert.throws(() => assertRegistryRows([probeRow({ framework: "rails" })]), /selects its own dimensions/);
+test("a framework row loads on any language, whichever engine reads it", () => {
+  // The registry once refused this, on the reading that the oxc worker selects
+  // its own dimensions unfiltered and so would count the row ungated. It counts
+  // nothing: the reducer and the check both select through `dimensionsFor`, and
+  // a hit no slot reads is a hit nobody counted.
+  const row = probeRow({ framework: "rails" });
+  assertRegistryRows([row]);
+  assert.equal(row.kind, "tree");
+});
+
+test("a row may not be both a framework's and a capability's, because adoption reads hits raw", () => {
+  // `adoptedCapabilities` counts adopting files off the worker's records and
+  // selects through nothing, the one hit reader the framework filter does not
+  // reach, so such a row would vote off-framework for a capability's adoption.
+  assert.throws(
+    () => assertRegistryRows([probeRow({ framework: "rails", capability: "logging" })]),
+    /framework and capability/
+  );
 });
 
 test("a pairing row with a mistyped tier refuses to load now", () => {

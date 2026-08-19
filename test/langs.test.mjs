@@ -3,9 +3,13 @@ import assert from "node:assert/strict";
 
 import {
   EXT_BY_LANG,
+  ENGINES,
+  MISSING_STRIPPER,
   mayHoldFlow,
+  mayBeCommonJS,
   LANGUAGES,
   declOf,
+  engineOf,
   language,
   grammarFor,
   langHas,
@@ -29,6 +33,19 @@ test("Flow is not looked for outside the JavaScript family", () => {
   assert.equal(mayHoldFlow("README.md"), false);
   // The extension is the end of the name, not a substring of it.
   assert.equal(mayHoldFlow("src/a.js.snap"), false);
+});
+
+test("only .js and .cjs may run under Node's own CommonJS wrapper", () => {
+  assert.equal(mayBeCommonJS("src/a.js"), true);
+  assert.equal(mayBeCommonJS("src/a.cjs"), true);
+  // Node always loads .mjs as ESM, whatever a package.json says.
+  assert.equal(mayBeCommonJS("src/a.mjs"), false);
+  // TypeScript rejects a top-level return as source, before any module format
+  // is chosen, so neither .ts nor .tsx can hold the legal version of it.
+  assert.equal(mayBeCommonJS("src/a.ts"), false);
+  assert.equal(mayBeCommonJS("src/a.tsx"), false);
+  assert.equal(mayBeCommonJS("src/a.jsx"), false);
+  for (const ext of EXT_BY_LANG.ruby) assert.equal(mayBeCommonJS(`app/a.${ext}`), false, `.${ext}`);
 });
 
 test("the registry declares three languages, frozen, in engine-group order", () => {
@@ -74,6 +91,16 @@ test("the grammar follows the real extension, never the language", () => {
   assert.equal(grammarFor("js", "head:src/x.ts"), "ts");
 });
 
+test("a .d.ts/.d.mts/.d.cts file routes to its own declaration grammar", () => {
+  assert.equal(grammarFor("js", "src/a.d.ts"), "d.ts");
+  assert.equal(grammarFor("js", "src/a.d.mts"), "d.mts");
+  assert.equal(grammarFor("js", "src/a.d.cts"), "d.cts");
+  // The check hands rels under a revision prefix; the suffix still decides.
+  assert.equal(grammarFor("js", "head:src/a.d.ts"), "d.ts");
+  assert.equal(grammarFor("js", "src/abcd.ts"), "ts", "a stem that merely ends in d is not a declaration");
+  assert.equal(grammarFor("jsx", "src/a.d.tsx"), "tsx", "jsx has no declaration grammar to route to");
+});
+
 test("a scratch name routes back to its own declaration", () => {
   for (const decl of LANGUAGES) assert.equal(language(`x.${decl.scratchExt}`), decl.id, decl.id);
 });
@@ -82,11 +109,52 @@ test("an undeclared id refuses loudly", () => {
   assert.throws(() => declOf("python"), /python/);
 });
 
+test("a declaration retrying a commonjs wrapper for an extension it does not own refuses to load", () => {
+  const bad = LANGUAGES.map((l) => (l.id === "js" ? { ...l, commonjs: { exts: ["rb"] } } : l));
+  assert.throws(() => assertRegistry(bad), /js retries a commonjs wrapper for \.rb, which it does not own/);
+});
+
 test("a declaration with positions no reader understands refuses to load", () => {
   const bad = LANGUAGES.map((l) =>
     l.id === "ruby" ? { ...l, positions: { offsets: "utf8", lines: true } } : l
   );
   assert.throws(() => assertRegistry(bad), /utf8/);
+});
+
+test("the engine table declares exactly the engines the languages route to", () => {
+  assert.deepEqual(Object.keys(ENGINES).sort(), [...new Set(LANGUAGES.map((l) => l.engine))].sort());
+  // Keyed by its own id, so a caller holding a row can name it and a caller
+  // holding a name can look it up.
+  for (const [id, engine] of Object.entries(ENGINES)) assert.equal(engine.id, id, id);
+});
+
+test("every engine says what runs it and what to do when it is not there", () => {
+  // The two facts the readiness probe branches on. A row missing either was
+  // the whole defect: an absent Ruby was answered with the npm sentence.
+  for (const engine of Object.values(ENGINES)) {
+    assert.ok(engine.host === "node" || engine.host === "interpreter", `${engine.id} hosts nowhere`);
+    assert.equal(typeof engine.remedy, "string", engine.id);
+    assert.ok(engine.remedy.length > 0, `${engine.id} declares an empty remedy`);
+  }
+});
+
+test("a declaration naming an engine the table does not hold refuses to load", () => {
+  const bad = LANGUAGES.map((l) => (l.id === "ruby" ? { ...l, engine: "treesitter" } : l));
+  assert.throws(() => assertRegistry(bad), /ruby names no declared engine: treesitter/);
+});
+
+test("the engine a language routes to is read off its declaration", () => {
+  assert.equal(engineOf("js"), "oxc");
+  assert.equal(engineOf("jsx"), "oxc");
+  assert.equal(engineOf("ruby"), "prism");
+  assert.throws(() => engineOf("python"), /python/);
+});
+
+test("the sentence for an absent stripper names the module the engine declares", () => {
+  // Two printers said this, word for word, and a third would have been a third
+  // copy. The module name is the declaration's, so it cannot drift from it.
+  const stripper = ENGINES.oxc.extras.find((e) => e.role === "stripper");
+  assert.ok(MISSING_STRIPPER.startsWith(`${stripper.module} is not installed`), MISSING_STRIPPER);
 });
 
 test("capabilities are the closed pair, declared per language", () => {

@@ -186,7 +186,10 @@ const RUNNER_TABLE = [
 
 test("every module the runner table names is read off a real import", async (t) => {
   const files = Object.fromEntries(
-    RUNNER_TABLE.map(([module], i) => [`m${i}.test.js`, `import * as runner from "${module}"\nrunner.test("x", () => {})\n`])
+    RUNNER_TABLE.map(([module], i) => [
+      `m${i}.test.js`,
+      `import * as runner from "${module}"\ndescribe("x", () => {\n  it("y", () => {})\n})\n`,
+    ])
   );
   const dir = repo(files);
   t.after(() => rmSync(dir, { recursive: true, force: true }));
@@ -205,8 +208,9 @@ test("the runner table holds exactly the modules driven through it", () => {
 });
 
 test("a runner the table names is read off the import, qunit included", async (t) => {
-  // Ember writes `import { test } from "qunit"` and calls it inside an
-  // `acceptance(...)` block, so the import is the only thing the file says.
+  // Ember nests `test(...)` a level inside `acceptance(...)`, never at the
+  // file's own top level, so nothing here is a top-level case the way
+  // `describe`/`it` usually are; the runner still needs the import.
   const dir = repo({
     "tests/acceptance/login-test.js": `import { test } from "qunit"\nacceptance("Login", function () {\n  test("x", function (assert) { assert.ok(true) })\n})\n`,
   });
@@ -217,12 +221,87 @@ test("a runner the table names is read off the import, qunit included", async (t
   assert.equal(records.get("tests/acceptance/login-test.js").facets.testRunner, "qunit");
 });
 
+test("a type-only import does not set the test runner", async (t) => {
+  // oxc marks each specifier `isType`, for `import type { X }` and for a
+  // per-specifier `type` modifier; neither one ever runs, so neither can be
+  // what runs the file. `mixed.spec.ts` still counts: `test` is a value
+  // entry in the same statement as the type-only one.
+  const dir = repo({
+    "setup.ts": `import type { ProvidedContext } from "vitest"\nexport const ctx = 1\n`,
+    "mixed.spec.ts": `import { test, type TestInfo } from "@playwright/test"\ntest("x", (info: TestInfo) => {})\n`,
+  });
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+  const { records } = await parseAll(list(dir, ["setup.ts", "mixed.spec.ts"]));
+
+  const setup = records.get("setup.ts").facets;
+  assert.equal(setup.testRunner, null, "the only import of vitest here is type-only");
+  assert.equal(setup.testCalls, false);
+  assert.deepEqual(
+    setup.imports,
+    [{ module: "vitest", names: ["ProvidedContext"], relative: false }],
+    "the import still shows what the file references, type or not"
+  );
+
+  assert.equal(
+    records.get("mixed.spec.ts").facets.testRunner,
+    "playwright",
+    "test is a value entry in the same import statement"
+  );
+});
+
+test("a declared case does not let a type-only import name the runner", async (t) => {
+  // The two gates have to be pinned apart. A file with no case at all answers
+  // null whichever one is asked, so the type-only rule was only ever exercised
+  // where the declaration rule already refused. Here the case is real, declared
+  // through an injected global, and the sole import of a runner is type-only:
+  // the file is a test, and vitest is not what runs it.
+  const dir = repo({
+    "suite.spec.ts":
+      `import type { TestContext } from "vitest"\n` +
+      `describe("thing", () => {\n  it("works", (c: TestContext) => {})\n})\n`,
+  });
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+  const { records } = await parseAll(list(dir, ["suite.spec.ts"]));
+  const f = records.get("suite.spec.ts").facets;
+
+  assert.equal(f.testRunner, null, "a type it borrows is not a runner it uses");
+  assert.equal(f.testCalls, true, "and the case it declares is still a case");
+});
+
+test("an import alone does not set the test runner without a declared case", async (t) => {
+  const dir = repo({
+    "cypress.config.ts": `import { defineConfig } from "cypress"\nexport default defineConfig({ e2e: {} })\n`,
+    "page.ts": `import { Page } from "@playwright/test"\nexport class LoginPage {\n  page: Page\n  constructor(page: Page) { this.page = page }\n  async open() { await this.page.goto("/login") }\n}\n`,
+    "no-import.cy.js": `describe("login", () => {\n  it("works", () => {\n    cy.visit("/login")\n  })\n})\n`,
+  });
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+  const rels = ["cypress.config.ts", "page.ts", "no-import.cy.js"];
+  const { records } = await parseAll(list(dir, rels));
+
+  const config = records.get("cypress.config.ts").facets;
+  assert.equal(config.testRunner, null, "defineConfig is called, not a case declared");
+  assert.equal(config.testCalls, false);
+
+  assert.equal(
+    records.get("page.ts").facets.testRunner,
+    null,
+    "Page is a helper import, no case anywhere in the file"
+  );
+
+  const spec = records.get("no-import.cy.js").facets;
+  assert.equal(spec.testRunner, null, "cypress is never imported, so nothing names the runner");
+  assert.equal(spec.testCalls, true, "describe/it/cy still declare the case without an import");
+});
+
 /**
  * Every base class that makes a Ruby file minitest, spelled out for the same
  * reason `RUNNER_TABLE` is: an expectation read from the table agrees with it
- * by construction. Six because Rails ships six, and the three beyond
- * `Minitest::Test` and the two the spec named are what a controller, a job and
- * a mailer test inherit in the corpus.
+ * by construction. Twelve: beside `Minitest::Test` and `ActiveSupport::TestCase`,
+ * an integration, controller, job, mailer, view and system test each name
+ * their own, and so do ActionCable's three and ActionMailbox's.
  */
 const MINITEST_TABLE = [
   "Minitest::Test",
@@ -231,6 +310,12 @@ const MINITEST_TABLE = [
   "ActionController::TestCase",
   "ActiveJob::TestCase",
   "ActionMailer::TestCase",
+  "ActionView::TestCase",
+  "ActionDispatch::SystemTestCase",
+  "ActionCable::TestCase",
+  "ActionCable::Channel::TestCase",
+  "ActionCable::Connection::TestCase",
+  "ActionMailbox::TestCase",
 ];
 
 test("every minitest base class the table names is read off a real class", needsRuby, async (t) => {
@@ -311,4 +396,93 @@ test("an ordinary call named like the DSL is not one, without a block", needsRub
   assert.equal(r.kind, "ok");
   assert.equal(r.facets.testRunner, null);
   assert.equal(r.facets.testCalls, false);
+});
+
+test("an RSpec-named call with a block and no description is not a case", needsRuby, async (t) => {
+  // FactoryBot's own attribute block: `context { "tags" }` sets a column
+  // named `context` on a factory and never takes RSpec's description.
+  const dir = repo({
+    "spec/factories/taggings.rb": `FactoryBot.define do\n  factory :tagging do\n    context { "tags" }\n  end\nend\n`,
+  });
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+  const { records } = await parseAll(list(dir, ["spec/factories/taggings.rb"]));
+  const r = records.get("spec/factories/taggings.rb");
+
+  assert.equal(r.facets.testRunner, null);
+  assert.equal(r.facets.testCalls, false);
+});
+
+test("the declarative `test` macro inside a class body is minitest", needsRuby, async (t) => {
+  // ActiveSupport::Testing::Declarative, Rails's standard shape: no
+  // `def test_*`, no listed superclass, just the macro itself.
+  const dir = repo({
+    "app/models/concerns/testable.rb": `class ThingTest\n  test "does the thing" do\n    assert true\n  end\nend\n`,
+    "app/lib/bare_test_call.rb": `test "not inside anything" do\nend\n`,
+  });
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+  const rels = ["app/models/concerns/testable.rb", "app/lib/bare_test_call.rb"];
+  const { records } = await parseAll(list(dir, rels));
+
+  assert.equal(records.get("app/models/concerns/testable.rb").facets.testRunner, "minitest");
+  assert.equal(records.get("app/models/concerns/testable.rb").facets.testCalls, true);
+
+  const bare = records.get("app/lib/bare_test_call.rb").facets;
+  assert.equal(bare.testRunner, null, "the macro only reads as a case inside a class or module body");
+  assert.equal(bare.testCalls, false);
+});
+
+test("a class that reuses `test` as its own DSL is not minitest", needsRuby, async (t) => {
+  // An in-house rules engine naming its conditions with the same macro shape,
+  // description and all. A class body was the whole gate, so three production
+  // authorization classes read as `2 minitest specs` in their area's own line.
+  // The macro now asks the evidence `def test_*` already asks for: the class
+  // says so, the path says so, or the class is named the way minitest names one.
+  const dir = repo({
+    "app/policies/approval_policy.rb":
+      `class ApprovalPolicy\n  test "approver is not the requester" do\n    true\n  end\nend\n`,
+    "test/models/thing_test.rb": `class Whatever\n  test "still minitest by path" do\n    assert true\n  end\nend\n`,
+  });
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+  const rels = ["app/policies/approval_policy.rb", "test/models/thing_test.rb"];
+  const { records } = await parseAll(list(dir, rels));
+
+  assert.equal(records.get("app/policies/approval_policy.rb").facets.testRunner, null);
+  assert.equal(records.get("test/models/thing_test.rb").facets.testRunner, "minitest");
+});
+
+test("Beaker's `test_name` macro sets the runner", needsRuby, async (t) => {
+  const dir = repo({
+    "acceptance/tests/base/provision.rb": `test_name "provisions a node" do\n  step "installs the package"\nend\n`,
+  });
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+  const { records } = await parseAll(list(dir, ["acceptance/tests/base/provision.rb"]));
+  const r = records.get("acceptance/tests/base/provision.rb");
+
+  assert.equal(r.facets.testRunner, "beaker");
+  assert.equal(r.facets.testCalls, true);
+});
+
+test("minitestByPath only trusts a top-level test tree", needsRuby, async (t) => {
+  // Homebrew's whole app lives under Library/Homebrew, and a `def test_each`
+  // three directories under ITS `test/` is an RSpec helper, not minitest.
+  const dir = repo({
+    "Library/Homebrew/test/support/helper/test_each.rb": `module Test\n  module Helper\n    module TestEach\n      def test_each\n      end\n    end\n  end\nend\n`,
+    "test/support_helper.rb": `module SupportHelper\n  def test_shared_case\n  end\nend\n`,
+  });
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+  const rels = ["Library/Homebrew/test/support/helper/test_each.rb", "test/support_helper.rb"];
+  const { records } = await parseAll(list(dir, rels));
+
+  const nested = records.get("Library/Homebrew/test/support/helper/test_each.rb").facets;
+  assert.equal(nested.testRunner, null, "test/ three directories under the app's own root is not the tree's top");
+  assert.equal(nested.testCalls, false);
+
+  const shallow = records.get("test/support_helper.rb").facets;
+  assert.equal(shallow.testRunner, "minitest", "a def test_* directly under the tree's own top is still minitest");
+  assert.equal(shallow.testCalls, true);
 });

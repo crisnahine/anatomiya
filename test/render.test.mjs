@@ -6,6 +6,7 @@ import {
   renderOverview,
   unexaminedLines,
   unexaminedPhrase,
+  unreadLanguageFiles,
   untrackedSentence,
   OVERVIEW_AREAS,
   MAX_LINES,
@@ -445,6 +446,38 @@ test("the overview reports what the parser could not read", () => {
   // the reader's next move is to go and look at those files.
   assert.match(out, /^- 9 files hold syntax the parser rejected$/m);
   assert.match(out, /^- 3 files exceeded the size cap$/m);
+});
+
+test("unread language files sum per extension, ranked by count then name", () => {
+  // Two roots both hold some of a language's files, the way appsmith's Java
+  // backend and next.js's Rust workspace each spread across more than one
+  // directory.
+  const layout = {
+    roots: [
+      { exts: [[".java", 50], [".kt", 10]] },
+      { exts: [[".kt", 5], [".md", 900], [".go", 15]] },
+    ],
+  };
+
+  assert.deepEqual(unreadLanguageFiles({ layout }), [[".java", 50], [".go", 15], [".kt", 15]]);
+  assert.deepEqual(unreadLanguageFiles({ layout: { roots: [] } }), []);
+  assert.deepEqual(unreadLanguageFiles({}), [], "an older record carries no layout");
+});
+
+test("the unread count comes from the whole corpus, not from what the roster printed", () => {
+  // The layout shows a root's top two extensions and folds the rest away, so
+  // reading the tally back off it undercounts: next.js has 1,016 .rs files and
+  // the printed roots hold 781 of them. A row about what this map could not
+  // read is the last place to state a number it cannot stand behind.
+  const layout = { roots: [{ exts: [[".rs", 781], [".js", 2194]] }] };
+  const corpus = { otherExts: [[".rs", 1016], [".md", 502], [".json", 1306]] };
+
+  assert.deepEqual(unreadLanguageFiles({ layout, corpus }), [[".rs", 1016]]);
+  assert.deepEqual(
+    unreadLanguageFiles({ layout }),
+    [[".rs", 781]],
+    "a record written before the corpus carried the tally still answers from the roster"
+  );
 });
 
 test("a truncated scan names no area, because a truncated scan states nothing", () => {
@@ -1300,6 +1333,66 @@ test("the kinds line agrees with its own namesake count", () => {
   assert.equal(kindsOf(2), "kinds: 7 .tsx (JSX); 0 test files; 2 of 7 have a namesake test");
 });
 
+test("the kinds line names a runner the way the root line does", () => {
+  // plots2's `test/unit/helpers` stated "11 test files" two lines above
+  // "classes here inherit ActionView::TestCase: 11 of 11 sites", never once
+  // saying minitest even though every one of the 11 is minitest.
+  const kinds = root("test/unit/helpers", { exts: [[".rb", 11]], tests: [{ runner: "minitest", files: 11, sub: null }] });
+
+  assert.equal(kindsLine(kinds), "kinds: 11 .rb; 11 minitest specs");
+});
+
+test("a runner nothing named still prints as test files, on the kinds line too", () => {
+  const kinds = root("spec/support", { exts: [[".rb", 4]], tests: [{ runner: "test files", files: 4, sub: null }] });
+
+  assert.equal(kindsLine(kinds), "kinds: 4 .rb; 4 test files");
+});
+
+test("the kinds line names every runner group, not one summed total", () => {
+  const kinds = root("src", {
+    exts: [[".ts", 20]],
+    tests: [
+      { runner: "vitest", files: 4, sub: "__tests__" },
+      { runner: "jest", files: 3, sub: null },
+    ],
+  });
+
+  assert.equal(kindsLine(kinds), "kinds: 20 .ts; 4 vitest specs under __tests__; 3 jest specs");
+});
+
+test("the kinds line names its story files as their own kind", () => {
+  const kinds = root("ui", { exts: [[".tsx", 3]], stories: 2 });
+
+  assert.equal(kindsLine(kinds), "kinds: 3 .tsx; 2 story files; 0 test files");
+});
+
+test("a root with no stories says nothing about them, on either line", () => {
+  const lines = renderLayout(
+    clientLayout({
+      roots: [root("src/utils", { files: 3, exts: [[".ts", 3]] })],
+      more: { roots: 0, files: 0 },
+      tests: [],
+      principles: [],
+    })
+  );
+
+  assert.doesNotMatch(lines[2], /story/);
+  assert.doesNotMatch(kindsLine(root("src/utils", { exts: [[".ts", 3]] })), /story/);
+});
+
+test("a root line names its story files the same way the kinds line does", () => {
+  const lines = renderLayout(
+    clientLayout({
+      roots: [root("ui/stories", { files: 5, exts: [[".tsx", 5]], stories: 5 })],
+      more: { roots: 0, files: 0 },
+      tests: [],
+      principles: [],
+    })
+  );
+
+  assert.equal(lines[2], "- ui/stories: 5 .tsx; 5 story files");
+});
+
 test("the three lines that print a namesake clause spell it in one place", () => {
   // A root line, the tests line and an area's kinds line all print the pair.
   // Three copies of one sentence drifted on the verb once already, and the
@@ -1413,6 +1506,54 @@ test("the roster is byte-stable across two scans of unchanged source", () => {
   assert.equal(Buffer.compare(Buffer.from(first), Buffer.from(second)), 0);
 });
 
+test("the overview names a language it has no dimension for", () => {
+  // appsmith's app/server is 2,374 files, 2,077 of them .java, with a real
+  // JUnit suite, and the current map named none of it.
+  const layout = clientLayout({
+    roots: [root("app/server", { files: 2374, exts: [[".java", 2077], [".xml", 200]], other: 97 })],
+    more: { roots: 0, files: 0 },
+  });
+
+  const out = renderOverview(result({ layout }), { uncovered: 30 });
+
+  assert.match(out, /^- 2077 files hold a language this map does not read \(2077 \.java\)$/m);
+});
+
+test("an unread language sums across every directory that holds it", () => {
+  // next.js's Rust workspace is 1,016 .rs files split across crates/ and
+  // turbopack/crates/, and only the second directory's count ever printed.
+  const layout = clientLayout({
+    roots: [
+      root("crates", { files: 500, exts: [[".rs", 235], [".toml", 40]] }),
+      root("turbopack/crates", { files: 4447, exts: [[".js", 2194], [".rs", 781]], other: 1472 }),
+    ],
+    more: { roots: 0, files: 0 },
+  });
+
+  const out = renderOverview(result({ layout }), { uncovered: 30 });
+
+  assert.match(out, /^- 1016 files hold a language this map does not read \(1016 \.rs\)$/m);
+});
+
+test("a repository read in full carries no unread-language row", () => {
+  const out = renderOverview(result({ layout: clientLayout() }), { uncovered: 30 });
+  assert.doesNotMatch(out, /a language this map does not read/);
+});
+
+test("files dropped as generated are named, since nothing else in the map says they exist", () => {
+  // `collect` drops them before anything counts, so without this row a reader
+  // who knows the directory is there sees a map that has never heard of it.
+  const dropped = { denied: 0, excluded: 0, escaped: 0, notSource: 0, generated: 24 };
+  const out = renderOverview(result({ corpus: { dropped } }), { uncovered: 30 });
+
+  assert.match(out, /^- 24 files say a generator wrote them, so nothing here is counted from them$/m);
+  assert.doesNotMatch(
+    renderOverview(result({}), { uncovered: 30 }),
+    /say a generator wrote them/,
+    "a repository with none carries no row"
+  );
+});
+
 /* --- the scan summary's own layout line --- */
 
 test("the summary line says how many roots and test groups the layout counted", () => {
@@ -1458,10 +1599,18 @@ test("an area says which kinds of file it holds, right under its heading", () =>
   const lines = out.split("\n");
 
   assert.equal(lines[6], "# src/services  40 files");
-  assert.equal(lines[8], "kinds: 7 .tsx (JSX), 1 .ts; 0 test files; 0 of 7 have a namesake test");
+  assert.equal(lines[8], "kinds: 7 .tsx (JSX), 1 .ts and 5 other; 0 test files; 0 of 7 have a namesake test");
   assert.equal(lines[9], "", "and a blank line under it, like the blocks below");
   assert.equal(lines[10], "catch blocks use the error they caught", "the directive follows it");
-  assert.doesNotMatch(out, /other/, "the area's denominator is not the root line's");
+});
+
+test("the kinds line names its own leftover: nobody's comparing it to a root line", () => {
+  // eslint's `packages/eslint-config-eslint`: 5 .js, 4 .ts, 1 .mts. The heading
+  // above this line already says 10 files, so hiding the tenth disagreed with
+  // its own heading, not with some other line.
+  const kinds = root("packages/eslint-config-eslint", { files: 10, exts: [[".js", 5], [".ts", 4]], other: 1 });
+
+  assert.equal(kindsLine(kinds), "kinds: 5 .js, 4 .ts and 1 other; 0 test files");
 });
 
 test("an area with no kinds record prints no kinds line", () => {
@@ -1757,17 +1906,54 @@ const kindsOf = () =>
     companions: { with: 0, of: 7, root: null },
   });
 
-test("an area whose paths list ate the budget describes nothing and delivers", () => {
+test("an area with no directive and a heavy paths list still says what it holds", () => {
+  // cal.diy's packages/app-store: 250 files, 38 exclusion lines, printed no
+  // kinds line and no roster line though the data exists and is counted in
+  // the summary.
+  const out = renderArea(
+    area({
+      globs: Array.from({ length: 35 }, (_, i) => glob(i)),
+      kinds: kindsOf(),
+      dimensions: [dim({ key: "c0", claim: "counted 0", states: null, directive: false, gate: "ratio" })],
+    })
+  );
+
+  assert.match(out, /^kinds: 7 \.tsx \(JSX\), 1 \.ts; 0 test files; 0 of 7 have a namesake test$/m);
+});
+
+test("the kinds line shares the floor with directives rather than sitting above it", () => {
+  // The same floor, not a bigger one: enough stated directives to fill it on
+  // their own still push the kinds line out, the way a fourth directive would.
+  const out = renderArea(
+    area({
+      globs: Array.from({ length: 35 }, (_, i) => glob(i)),
+      kinds: kindsOf(),
+      dimensions: [
+        dim({ key: "s0", claim: "stated 0" }),
+        dim({ key: "s1", claim: "stated 1" }),
+        dim({ key: "s2", claim: "stated 2" }),
+      ],
+    })
+  );
+
+  assert.match(out, /^stated 0$/m);
+  assert.match(out, /^stated 1$/m);
+  assert.doesNotMatch(out, /^stated 2$/m, "the third directive is what the floor ran out on");
+  assert.doesNotMatch(out, /^kinds:/m, "the kinds line gives way exactly where a fourth directive would");
+});
+
+test("an area whose paths list ate the budget still delivers its directive and its kinds line", () => {
   // The `paths` list is delivery and keeps every pattern, so the body floor can
-  // already run past the bound. A description of the area may not add to that.
+  // already run past the bound, and the kinds line takes that same floor now:
+  // it is what gives way last, not what gives way first.
   const out = renderArea(
     area({ globs: Array.from({ length: 30 }, (_, i) => glob(i)), kinds: kindsOf() })
   );
 
-  assert.ok(lineCount(out) <= MAX_LINES, `${lineCount(out)} lines is past the bound`);
+  assert.ok(lineCount(out) > MAX_LINES, "the routing overflows the bound, and that is allowed");
   assert.equal((out.match(/^ {2}- "/gm) || []).length, 30, "every glob is delivered");
   assert.match(out, /^catch blocks use the error they caught$/m, "the directive is delivered");
-  assert.doesNotMatch(out, /^kinds:/m, "the description is what there was no room for");
+  assert.match(out, /^kinds: 7 \.tsx \(JSX\), 1 \.ts; 0 test files; 0 of 7 have a namesake test$/m);
 });
 
 test("an area with room to spare still says what kinds of file it holds", () => {

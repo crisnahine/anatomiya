@@ -419,6 +419,34 @@ jobs:
           grep -qE "MUST-FIX, [0-9]+ FIX, [0-9]+ NIT" "$RUNNER_TEMP/check.out" \
             || { echo "::error::check printed no verdict line"; exit 1; }
 
+      # The record is what a job reads instead of matching the sentences above,
+      # so a writer nothing runs is a writer that breaks quietly.
+      - name: Read the same check as a record
+        shell: bash
+        run: |
+          cd "$RUNNER_TEMP/smoke"
+          node "$GITHUB_WORKSPACE/bin/anatomiya.mjs" check . --base "$SMOKE_REF" --format json \
+            > "$RUNNER_TEMP/check.json"
+          node -e '
+            const r = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+            if (!r.schema || !r.counts) {
+              console.error("::error::the JSON report carries no schema or no counts");
+              process.exit(1);
+            }
+            console.log("schema", r.schema, "counts", JSON.stringify(r.counts));
+          ' "$RUNNER_TEMP/check.json"
+
+      # The third writer, for the same reason: it is the one a pull-request job
+      # reads, and nothing else here had ever run it.
+      - name: Read the same check as annotations
+        shell: bash
+        run: |
+          cd "$RUNNER_TEMP/smoke"
+          node "$GITHUB_WORKSPACE/bin/anatomiya.mjs" check . --base "$SMOKE_REF" --format github \
+            > "$RUNNER_TEMP/check.github"
+          grep -qE "^::notice::[0-9]+ MUST-FIX, [0-9]+ FIX, [0-9]+ NIT$" "$RUNNER_TEMP/check.github" \
+            || { echo "::error::the annotations carry no counts line"; exit 1; }
+
       # The tier ships behind a flag, so nothing else in this workflow ever runs
       # it, and a leg that never runs is a leg that breaks quietly. One platform
       # is enough: the tier is Node and TypeScript, and the platform-specific

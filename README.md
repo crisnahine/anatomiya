@@ -38,12 +38,19 @@ scan, pin and check on every commit.
 /plugin install anatomiya@crisnahine
 ```
 
-The scanner has two runtime dependencies, `oxc-parser` and `flow-remove-types`. Install them once
-in the plugin directory:
+`/plugin install` copies the files and does not install anything, and the scanner has two runtime
+dependencies, `oxc-parser` and `flow-remove-types`. Install them once:
 
 ```
-npm install --omit=dev
+/anatomiya:setup
 ```
+
+That runs `npm install` in the plugin's own directory. It is the only command that installs
+anything and the only one that reaches a package registry: `/anatomiya:scan`, `/anatomiya:check`
+and `/anatomiya:pin` never call it. Outside Claude Code it is `node bin/anatomiya.mjs setup`. On
+Windows it prints the npm command for you to run by hand, because npm ships there as a batch file
+and nothing here spawns a shell. `/anatomiya:doctor` says which engines answered and what to do
+about one that did not.
 
 Or skip the plugin and run it from a clone:
 
@@ -217,7 +224,7 @@ files, so the same row states a different sentence in a different repository.
 
 ## What it measures
 
-55 dimensions ship: 25 for JavaScript, 30 reachable in JSX, 25 for Ruby. Each is one claim about
+57 dimensions ship: 27 for JavaScript, 32 reachable in JSX, 25 for Ruby. Each is one claim about
 one area, with a precision marker where the predicate cannot see every site. Among them:
 
 - **Syntax habits**: error handling, `??` vs `||`, `?.` vs `!`, `import type`, hooks, handlers,
@@ -237,13 +244,19 @@ agent's own output cannot raise the bar it is judged against. Gates and threshol
 [docs/how-it-works.md](docs/how-it-works.md); the reasons they sit where they sit are in
 [DECISIONS.md](DECISIONS.md).
 
-## The three commands
+## The commands
 
 | Command | What it does |
 |---|---|
 | `/anatomiya:scan` | Walks tracked source, counts every dimension per directory, applies the gates, rewrites the map, and reports what it could not cover: files in no area, files that failed to parse, files over the size cap, and any file in `.claude/rules/` it did not write. |
 | `/anatomiya:check` | Reports which stated conventions the branch broke, as MUST-FIX, FIX or NIT. The base side is the merge base; the side being judged is the working tree, so it answers before you commit. |
 | `/anatomiya:pin` | Accepts the current file population as the baseline the gates read, and prints which files enter and leave it. Without one, every claim is measured against the working tree and no finding can exceed FIX. |
+| `/anatomiya:doctor` | Says whether each engine this parses with is installed, with the version it answered and, for one that is not ready, what to do about it. Exits 0 either way. |
+| `/anatomiya:setup` | Installs the node-hosted engine's dependencies in the plugin's own directory. The only command that installs anything or reaches a package registry, and no other one runs it. On Windows it prints the command to run by hand. |
+
+The three that read a repository take `--format json`, which prints the same answer as a record
+rather than as lines, for a CI job or another tool to read. `check` also takes `--format github`,
+which prints one annotation per finding.
 
 `check` blocks nothing. MUST-FIX means the baseline population held zero violations of that claim,
 so this branch is the first. Severity caps at FIX whenever the map is stale, the predicate is
@@ -257,8 +270,9 @@ discourse, rails applications, monorepos). Two acceptance runs are committed as
 [docs/measurements](docs/measurements): the layout harness re-derives every printed number
 independently on all 35, and `npm run e2e:corpus` drives the shipped CLI from a fresh clone of each
 repository through scan, a byte-identical rescan, pin, check, and a synthetic violation the check
-must catch. The unit suite is 1,194 tests with enforced coverage floors, and CI runs it on Linux,
-macOS and Windows.
+must catch. The unit suite runs under `node --test` with enforced coverage floors, and CI runs it on
+Linux, macOS and Windows. The number of tests is not written down here: `node --test` prints it on
+every run.
 
 ## Limits
 
@@ -297,7 +311,7 @@ writes blocks a commit, a push, or a merge, and `check` reports rather than fail
 already enforces a rule, the map restating it is waste, not defence in depth.
 
 **JavaScript, TypeScript and Ruby, nothing else.** A Python, Go or Rust repository gets an overview
-with a layout section and no claims in it. One of the 55 needs the type checker and is the only
+with a layout section and no claims in it. One of the 57 needs the type checker and is the only
 thing `scan --deep` adds: `a call chain stays inside one type`. It is off by default because the
 checker was measured about 26x slower than the parse and whole-program, so it cannot be narrowed to
 the files you changed; `--deep` needs the optional `typescript` dependency and the scanned
@@ -316,7 +330,7 @@ gate's second opinion. The full numbers and their caveats are in [docs/why.md](d
 
 ## Learn more
 
-- [DECISIONS.md](DECISIONS.md) is the build contract: 106 numbered decisions, each with the
+- [DECISIONS.md](DECISIONS.md) is the build contract: 137 numbered decisions, each with the
   measurement or the review finding that forced it. Why a threshold is where it is, why the parser
   runs in child processes, why there is no hook: that is the file.
 - [docs/why.md](docs/why.md) is the longer argument and the full numbers.

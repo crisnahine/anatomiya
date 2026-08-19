@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 
-import { writeMap } from "../lib/write.mjs";
+import { commitMap, planMap, writeMap } from "../lib/write.mjs";
 import { areaFilename, isOwned, EXCLUDE_LINES, HEAD_BYTES, PREFIX } from "../lib/rules.mjs";
 import { areaId } from "../lib/areas.mjs";
 import { writeFacts, readFacts as readFactsFrom } from "../lib/facts.mjs";
@@ -86,6 +86,53 @@ test("files land in .claude/rules with the facts beside them", () => {
   rmSync(dir, { recursive: true, force: true });
 });
 
+test("a plan carries every body it would write, and puts none of them on disk", () => {
+  // The measurement harness held its own copy of this derivation, because the
+  // only way to see a body was to write it. A plan that renders is the one
+  // rendering, so a field added here cannot reach the map and miss the recount.
+  const dir = workspace();
+  const a = area("src/services");
+  const quiet = area("src/types", []);
+
+  const plan = planMap(result(dir, [a, quiet]));
+
+  assert.deepEqual([...plan.bodies.keys()], ["anatomiya-overview.md", areaFilename(a)]);
+  assert.deepEqual(plan.write, [...plan.bodies.keys()]);
+  assert.equal(plan.blind, false);
+  assert.equal(plan.root, dir);
+  assert.match(plan.bodies.get(areaFilename(a)), /catch blocks use the error they caught/);
+  assert.equal(existsSync(join(dir, ".claude")), false, "not even the directory");
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("a plan made by one call is committed by the other", () => {
+  const dir = workspace();
+  const a = area("src/services");
+
+  const plan = commitMap(dir, planMap(result(dir, [a])));
+
+  assert.deepEqual(listRules(dir), [areaFilename(a), "anatomiya-overview.md"].sort());
+  assert.equal(readFileSync(join(rules(dir), areaFilename(a)), "utf8"), plan.bodies.get(areaFilename(a)));
+  assert.ok(existsSync(join(dir, STORE, "facts.json")), "the facts are on disk beside the files");
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("a plan is committed to the root it was made for, or to nothing", () => {
+  // The committer resolves the store from the root it is handed, and the record
+  // it writes there carries the root the plan was made for, so two roots put one
+  // repository's facts in another repository under that one's name.
+  const dir = workspace();
+  const elsewhere = workspace();
+
+  assert.throws(
+    () => commitMap(elsewhere, planMap(result(dir, [area("src/services")]))),
+    /was made for/
+  );
+  assert.equal(existsSync(join(elsewhere, ".claude")), false, "nothing was created there");
+  rmSync(elsewhere, { recursive: true, force: true });
+  rmSync(dir, { recursive: true, force: true });
+});
+
 test("a dry run writes nothing at all", () => {
   const dir = workspace();
 
@@ -143,6 +190,24 @@ test("a scan that could not read a whole language removes nothing", () => {
   // break the one invariant this writer has: nothing rendered that the facts on
   // disk do not derive. check reads facts.json, so it would read the empty one.
   assert.equal(readFileSync(join(dir, STORE, "facts.json"), "utf8"), factsBefore, "and so are the facts");
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("a blind run creates no directory either", () => {
+  // Both `mkdir`s ran before the blind check, so a container with no ruby left
+  // an empty `.claude/rules` and an empty `.claude/anatomiya` behind on every
+  // scan of a repository it could not read. Nothing is ever written into
+  // either, and an empty rules directory is what a repository nobody has
+  // scanned looks like.
+  const dir = workspace();
+  const blind = result(dir, []);
+  blind.parse = { ...blind.parse, crashed: blind.corpus.files, unreadable: ["ruby"] };
+
+  const plan = writeMap(blind);
+
+  assert.equal(plan.blind, true);
+  assert.deepEqual(plan.write, []);
+  assert.equal(existsSync(join(dir, ".claude")), false, "not even the directory");
   rmSync(dir, { recursive: true, force: true });
 });
 
@@ -666,6 +731,24 @@ test("a .claude symlinked outside the repository refuses the whole write", () =>
   rmSync(dir, { recursive: true, force: true });
 });
 
+test("a dry run refuses the symlinked directory a real write refuses", () => {
+  // The refusal belongs to the half that plans, or a dry run answers with a
+  // clean plan for a write that lands in `../victim` the moment one is asked
+  // for.
+  const dir = workspace();
+  const outside = mkdtempSync(join(tmpdir(), "anatomiya-outside-"));
+  symlinkSync(outside, join(dir, ".claude"));
+
+  assert.throws(
+    () => writeMap(result(dir, [area("src/services")]), { dryRun: true }),
+    /outside the repository/
+  );
+  assert.deepEqual(readdirSync(outside), [], "and nothing was written there either");
+
+  rmSync(outside, { recursive: true, force: true });
+  rmSync(dir, { recursive: true, force: true });
+});
+
 test("a .claude/rules symlinked outside the repository refuses it too", () => {
   // The link can sit at either level, and only the resolved path says so.
   const dir = workspace();
@@ -860,6 +943,19 @@ test("a directory holding a generated name is reported, not an errno", () => {
 
   assert.throws(
     () => writeMap(result(dir, [area("src/services")])),
+    /is not a file, so the map could not be written/
+  );
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("a dry run refuses the occupied name a real write refuses", () => {
+  // Same half, same reason: the plan is what a dry run answers with, so what
+  // says the write cannot happen has to run before the plan is built.
+  const dir = workspace();
+  mkdirSync(join(rules(dir), `${PREFIX}overview.md`), { recursive: true });
+
+  assert.throws(
+    () => writeMap(result(dir, [area("src/services")]), { dryRun: true }),
     /is not a file, so the map could not be written/
   );
   rmSync(dir, { recursive: true, force: true });

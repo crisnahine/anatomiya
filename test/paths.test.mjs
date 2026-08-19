@@ -40,3 +40,36 @@ test("only an extension in the basename is stripped", () => {
   assert.equal(withoutExtension("src/a.b/Rakefile"), "src/a.b/Rakefile");
   assert.equal(withoutExtension("app/models/user.rb"), "app/models/user");
 });
+
+test("the three splits agree about where a declaration file's extension starts", () => {
+  // Left to the one-dot rule, this answers `packages/types/index.d`, which no
+  // longer ends in `/index`, and the sibling index stops resolving a directory
+  // through its own entry file.
+  // Written out rather than recomputed from `dirOf` and `stemOf`: reading the
+  // expectation off the same module the assertion tests leaves a loop that
+  // passes whenever all three move together, which is exactly the drift the
+  // shared split exists to prevent.
+  assert.equal(withoutExtension("packages/types/index.d.ts"), "packages/types/index");
+  assert.equal(withoutExtension("src/types/image.d.ts"), "src/types/image");
+  assert.equal(withoutExtension("src/abcd.ts"), "src/abcd", "a stem merely ending in d is not a declaration");
+  assert.equal(withoutExtension("src/types/image.d.js"), "src/types/image.d", "JavaScript has no declaration file");
+  assert.equal(withoutExtension("Rakefile"), "Rakefile");
+  assert.equal(withoutExtension(".env"), ".env");
+});
+
+test("a TypeScript declaration file's extension is the whole .d.ts suffix", () => {
+  assert.equal(extOf("src/types/image.d.ts"), ".d.ts");
+  assert.equal(extOf("src/types/image.d.mts"), ".d.mts");
+  assert.equal(extOf("src/types/image.d.cts"), ".d.cts");
+  // Declarations are a TypeScript idiom; a plain .ts keeps its one-dot rule.
+  assert.equal(extOf("src/abcd.ts"), ".ts", "a stem that merely ends in d is not a declaration");
+  assert.equal(extOf("src/types/image.d.js"), ".js", "JavaScript has no declaration file of its own");
+});
+
+test("a declaration file's stem drops the whole .d.ts suffix, not just the last dot", () => {
+  assert.equal(stemOf("src/types/image.d.ts"), "image");
+  assert.equal(stemOf("src/types/image.d.mts"), "image");
+  assert.equal(stemOf("src/types/image.d.cts"), "image");
+  assert.equal(stemOf("src/abcd.ts"), "abcd");
+  assert.equal(stemOf("src/types/image.d.js"), "image.d");
+});

@@ -25,6 +25,7 @@ import { pathToFileURL } from "node:url";
 import { namesakeCompanions } from "../lib/companions.mjs";
 import { collect, frameworksIn } from "../lib/corpus.mjs";
 import {
+  isStoryFile,
   isTestFile,
   majorityDir,
   mirroredTests,
@@ -36,11 +37,12 @@ import {
 import { parseAll } from "../lib/parse.mjs";
 import { baseOf, dirOf, extOf, stemOf } from "../lib/paths.mjs";
 import { scan } from "../lib/scan.mjs";
-import { MAX_LINES, renderOverview, splitUncovered } from "../lib/render.mjs";
+import { MAX_LINES } from "../lib/render.mjs";
 import { namesakeClause, ROOT_LABEL } from "../lib/render-layout.mjs";
 import { RUNNER_LABELS, UNNAMED_RUNNER } from "../lib/test-shape.mjs";
-import { readFacts, statedSide, writeFacts } from "../lib/facts.mjs";
-import { areaFilename, auditRules, knownNames, OVERVIEW_FILE } from "../lib/rules.mjs";
+import { statedSide, writeFacts } from "../lib/facts.mjs";
+import { OVERVIEW_FILE } from "../lib/rules.mjs";
+import { planMap } from "../lib/write.mjs";
 import { encodePath } from "../lib/encode.mjs";
 
 const HEADING = "## What lives where";
@@ -102,7 +104,13 @@ function recountRoot(path, corpus, testFiles) {
   const tests = own.filter(isTest);
   const jsxFiles = own.filter((f) => f.facets?.jsx);
   const exts = tally(own.map((f) => extOf(f.rel))).slice(0, 2);
-  const producers = own.filter((f) => f.lang && extOf(f.rel) === exts[0]?.[0] && !isTest(f));
+  // The first shown extension any source file wears, not simply the first: a
+  // root whose bulk is screenshots or markdown has real producers under the
+  // second one, and reading only exts[0] counts every one of them as zero.
+  const producerExt = exts.find(([ext]) => own.some((f) => f.lang && extOf(f.rel) === ext))?.[0];
+  const producers = own.filter(
+    (f) => f.lang && extOf(f.rel) === producerExt && !isTest(f) && !isStoryFile(f.rel));
+  const stories = own.filter((f) => isStoryFile(f.rel));
 
   const jsxByExt = new Map(tally(jsxFiles.map((f) => extOf(f.rel))));
   const out = {
@@ -119,8 +127,10 @@ function recountRoot(path, corpus, testFiles) {
         : null,
     helpers: null,
   };
+  if (stories.length > 0) out.stories = stories.length;
 
-  const modules = own.filter((f) => f.facets && MODULE_EXTS.has(extOf(f.rel)) && !f.facets.jsx && !isTest(f));
+  const modules = own.filter(
+    (f) => f.facets && MODULE_EXTS.has(extOf(f.rel)) && !f.facets.jsx && !isTest(f) && !isStoryFile(f.rel));
   if (jsxFiles.length > 0 && modules.length > 0) {
     out.helpers = {
       siblingModules: modules.length,
@@ -260,6 +270,12 @@ function checkSection(section, corpus, root, recordRoots) {
     same(`${parsed.label} other`, ext.other, counted.other);
     same(`${parsed.label} JSX extension`, ext.exts.find((e) => e.jsx)?.ext ?? null, counted.jsxExt);
 
+    if (counted.stories) {
+      const clause = clauses.shift();
+      const expected = `${counted.stories} story file${counted.stories === 1 ? "" : "s"}`;
+      if (clause !== expected) fail(`${parsed.label} stories clause: printed "${clause}", recount "${expected}"`);
+    }
+
     for (const group of counted.tests) {
       const want = specNoun(group.files, group.runner);
       const clause = clauses.shift();
@@ -372,22 +388,14 @@ function checkPathOnDisk(label, root) {
 
 // --- one repository ---------------------------------------------------------
 
-/**
- * The `files` argument a real write would hand the overview: the uncovered
- * split, and whatever else is already loading out of the rules directory.
- * Mirrors `writeMap`, which cannot be called for a body it does not return.
- */
-function overviewFor(result) {
-  const uncovered = result.corpus.files - result.areas.reduce((s, a) => s + a.fileCount, 0);
-  const { orphaned } = splitUncovered(uncovered, result.corpus.orphaned ?? uncovered);
-  const planned = new Set([OVERVIEW_FILE, ...result.areas.filter((a) => a.dimensions.length > 0).map(areaFilename)]);
-  const audit = auditRules(result.root, knownNames(readFacts(result.root).facts));
-  const others = {
-    foreign: audit.foreign.filter((f) => !planned.has(f)).sort(),
-    unknown: audit.unknown.filter((f) => !planned.has(f)).sort(),
-    unreadable: audit.unreadable.filter((f) => !planned.has(f)).sort(),
-  };
-  return renderOverview(result, { uncovered, orphaned, others });
+/** The overview body a real write would put on disk, rendered and not written. */
+export function overviewFor(result) {
+  const plan = planMap(result);
+  const body = plan.bodies.get(OVERVIEW_FILE);
+  // A scan blind to a language renders nothing at all, and a recount of no
+  // overview is not a section this bar may report either way.
+  if (body === undefined) fail(`no overview was rendered: the scan read no ${plan.unreadable.join(" or ")} file at all`);
+  return body;
 }
 
 /** The layout corpus, rebuilt here rather than read out of the scan. */

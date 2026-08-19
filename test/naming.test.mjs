@@ -252,23 +252,169 @@ test("a class method is not a module-level function site", async () => {
   assert.equal(h.length, 0);
 });
 
-test("exported_symbol_case reads declarations and specifiers, never default", async () => {
+test("exported_symbol_case votes with a function or a variable, never a class or a type", async () => {
   const h = await astHits("exported_symbol_case", `
     export function fooBar() {}
     export const my_thing = 1;
+    export const doThing = () => {};
     export class OrderList {}
-    const plain = 1;
-    export { plain as renamedThing };
-    export default function ignoredName() {}
+    export interface IFoo { a: string }
+    export type UserShape = { id: string };
+    export enum Color { Red, Green }
   `);
-  assert.deepEqual(h.map((x) => x.class).sort(), ["PascalCase", "camelCase", "camelCase", "snake_case"]);
+  assert.deepEqual(h.map((x) => x.where).sort(), ["doThing", "fooBar", "my_thing"]);
 });
 
-test("both AST naming rows are reachable from the registry", async () => {
+test("exported_class_case votes with a class declaration or a class bound to a variable", async () => {
+  const h = await astHits("exported_class_case", `
+    export class OrderList {}
+    export const Foo = class {};
+    export function fooBar() {}
+    export const my_thing = 1;
+  `);
+  assert.deepEqual(h.map((x) => x.where).sort(), ["Foo", "OrderList"]);
+});
+
+test("a default export that names what it declares is a site", async () => {
+  // One class per file, default-exported, is the ordinary shape for a React
+  // component, and none of it was visible. On a six-class repository where
+  // five are default-exported PascalCase, the one named-export outlier was the
+  // whole evidence base and the row stated the opposite of the convention.
+  const h = await astHits("exported_class_case", `
+    export default class Header {}
+  `);
+  assert.deepEqual(h.map((x) => x.where), ["Header"]);
+
+  const anon = await astHits("exported_class_case", `
+    export default class {}
+  `);
+  assert.deepEqual(anon, [], "an anonymous default export names nothing and is still not a site");
+});
+
+test("exported_type_case votes with an interface, a type alias, or an enum", async () => {
+  const h = await astHits("exported_type_case", `
+    export interface IFoo { a: string }
+    export type UserShape = { id: string };
+    export enum Color { Red, Green }
+    export class OrderList {}
+    export function fooBar() {}
+  `);
+  assert.deepEqual(h.map((x) => x.where).sort(), ["Color", "IFoo", "UserShape"]);
+});
+
+test("an anonymous default export, a namespace, and a renaming specifier answer none of the three rows", async () => {
+  // A default export used to be skipped whole. It names what it declares often
+  // enough that skipping it left a repository of default-exported components
+  // speaking through whichever one file used a named export instead, so only
+  // the anonymous one is out now.
+  const src = `
+    export default function () {}
+    export namespace NS { export const x = 1; }
+    const plain = 1;
+    export { plain as renamedThing };
+  `;
+  for (const key of ["exported_symbol_case", "exported_class_case", "exported_type_case"]) {
+    assert.deepEqual(await astHits(key, src), [], key);
+  }
+});
+
+test("an export declared inside an ambient module is not a top-level site", async () => {
+  // `declare module "legacy" { export var legacyGlobal: number }` is Flow's
+  // way to describe a dependency with no types of its own, and the Flow retry
+  // deletes the whole block: a site counted inside it would move once the
+  // retry ran, which stripped-consistency.test.mjs exists to catch.
+  const src = `
+    declare module "legacy" {
+      export var legacyGlobal: number;
+    }
+  `;
+  for (const key of ["exported_symbol_case", "exported_class_case", "exported_type_case"]) {
+    assert.deepEqual(await astHits(key, src), [], key);
+  }
+});
+
+test("the naming AST rows are reachable from the registry", async () => {
   const { dimensionsFor } = await import("../lib/dimensions.mjs");
   const keys = dimensionsFor(["js"]).map((d) => d.key);
-  assert.ok(keys.includes("function_naming_case"));
-  assert.ok(keys.includes("exported_symbol_case"));
+  for (const key of ["function_naming_case", "exported_symbol_case", "exported_class_case", "exported_type_case"]) {
+    assert.ok(keys.includes(key), key);
+  }
+});
+
+/* --- the three exported-name populations are judged apart, never against
+   each other: a defect shown on typeorm and mastodon by planting a change and
+   running the real CLI (percheck-fixes task 8) --- */
+
+test("a class-only area's class row ignores a planted function, whichever way the function is cased (typeorm shape)", async () => {
+  const { reduceArea } = await import("../lib/reduce.mjs");
+  const classFiles = Array.from({ length: 9 }, (_, i) => ({
+    rel: `entity/Model${i}.ts`,
+    ok: true,
+    hits: { exported_class_case: [{ conforming: false, where: `Model${i}`, class: "PascalCase" }] },
+  }));
+  const fnFiles = [
+    { rel: "entity/good1.ts", ok: true, hits: { exported_symbol_case: [{ conforming: false, where: "isValidPost", class: "camelCase" }] } },
+    { rel: "entity/good2.ts", ok: true, hits: { exported_symbol_case: [{ conforming: false, where: "filterByCte", class: "camelCase" }] } },
+    { rel: "entity/good3.ts", ok: true, hits: { exported_symbol_case: [{ conforming: false, where: "loadEntity", class: "camelCase" }] } },
+    { rel: "entity/bad.ts", ok: true, hits: { exported_symbol_case: [{ conforming: false, where: "IsValidPost", class: "PascalCase" }] } },
+  ];
+  const files = [...classFiles, ...fnFiles];
+  const area = { langs: ["js"], files: files.map((f) => ({ rel: f.rel, lang: "js" })) };
+  const dims = reduceArea(area, files);
+
+  const classSlot = dims.find((d) => d.key === "exported_class_case");
+  assert.equal(classSlot.learned, "PascalCase");
+  assert.equal(classSlot.candidates, 9, "a function export must not be a site for the class row");
+
+  const fnSlot = dims.find((d) => d.key === "exported_symbol_case");
+  assert.equal(fnSlot.learned, "camelCase", "the function population states its own convention, not the class population's");
+  assert.deepEqual(
+    fnSlot.exceptions.map((e) => e.path),
+    ["entity/bad.ts"],
+    "the camelCase function is not an exception; only the PascalCase one is"
+  );
+});
+
+test("a value-dominated area's type row learns its own PascalCase and calls no idiomatic type export a violation (mastodon shape)", async () => {
+  const { reduceArea } = await import("../lib/reduce.mjs");
+  const valueFiles = Array.from({ length: 20 }, (_, i) => ({
+    rel: `app/mod${i}.ts`,
+    ok: true,
+    hits: { exported_symbol_case: [{ conforming: false, where: `doThing${i}`, class: "camelCase" }] },
+  }));
+  const typeFiles = [
+    { rel: "app/api_types/timeline.ts", ok: true, hits: { exported_type_case: [{ conforming: false, where: "TimelineParams", class: "PascalCase" }] } },
+    { rel: "app/api_types/status.ts", ok: true, hits: { exported_type_case: [{ conforming: false, where: "StatusInteractionIntent", class: "PascalCase" }] } },
+    { rel: "app/api_types/modal.ts", ok: true, hits: { exported_type_case: [{ conforming: false, where: "ModalType", class: "PascalCase" }] } },
+  ];
+  const files = [...valueFiles, ...typeFiles];
+  const area = { langs: ["js"], files: files.map((f) => ({ rel: f.rel, lang: "js" })) };
+  const dims = reduceArea(area, files);
+
+  const typeSlot = dims.find((d) => d.key === "exported_type_case");
+  assert.equal(typeSlot.learned, "PascalCase");
+  assert.equal(typeSlot.candidates, 3, "the value exports must not be sites for the type row");
+  assert.equal(typeSlot.exceptions.length, 0, "an idiomatic PascalCase type export is not a violation of its own row");
+});
+
+test("a mixed area lets the class claim and the function claim disagree on casing", async () => {
+  const { reduceArea } = await import("../lib/reduce.mjs");
+  const files = [
+    ...Array.from({ length: 5 }, (_, i) => ({
+      rel: `src/Model${i}.ts`,
+      ok: true,
+      hits: { exported_class_case: [{ conforming: false, where: `Model${i}`, class: "PascalCase" }] },
+    })),
+    ...Array.from({ length: 5 }, (_, i) => ({
+      rel: `src/helper${i}.ts`,
+      ok: true,
+      hits: { exported_symbol_case: [{ conforming: false, where: `helper${i}`, class: "camelCase" }] },
+    })),
+  ];
+  const area = { langs: ["js"], files: files.map((f) => ({ rel: f.rel, lang: "js" })) };
+  const dims = reduceArea(area, files);
+  assert.equal(dims.find((d) => d.key === "exported_class_case").learned, "PascalCase");
+  assert.equal(dims.find((d) => d.key === "exported_symbol_case").learned, "camelCase");
 });
 
 /* --- a learned class matching the model's own class is map-noise --- */
