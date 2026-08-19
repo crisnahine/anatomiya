@@ -75,10 +75,21 @@ To keep the map out of git:
 exclude="$(git rev-parse --git-common-dir)/info/exclude"
 echo '.claude/rules/anatomiya-*.md' >> "$exclude"
 echo '.claude/anatomiya/' >> "$exclude"
+echo '.claude/settings.local.json' >> "$exclude"
 ```
 
 `--git-common-dir` rather than `.git`, because inside a linked worktree `.git` is a file holding a
-pointer. The common dir is shared, so one pair of lines covers every worktree.
+pointer. The common dir is shared, so one set of lines covers every worktree.
+
+The third line is there because a scan also installs the hook that re-delivers the map after every
+turn and every tool call, and a hook lives in a settings file. It goes in the local scope, which is
+Claude Code's own per-developer file: your `settings.json`, with your permissions and anyone else's
+hooks in it, is never opened. Whatever is already in the local file is merged around, not replaced,
+and a file that does not parse is refused rather than overwritten.
+
+An exclude only covers a file git is not already tracking. If you have committed
+`.claude/settings.local.json`, the install shows up as a modification to it instead, and committing
+that would hand your teammates a hook pointing at a plugin path they may not have.
 
 > [!NOTE]
 > A session that is already running still holds the old map. Restart to pick up the new one.
@@ -330,7 +341,7 @@ gate's second opinion. The full numbers and their caveats are in [docs/why.md](d
 
 ## Learn more
 
-- [DECISIONS.md](DECISIONS.md) is the build contract: 137 numbered decisions, each with the
+- [DECISIONS.md](DECISIONS.md) is the build contract: 139 numbered decisions, each with the
   measurement or the review finding that forced it. Why a threshold is where it is, why the parser
   runs in child processes, why there is no hook: that is the file.
 - [docs/why.md](docs/why.md) is the longer argument and the full numbers.

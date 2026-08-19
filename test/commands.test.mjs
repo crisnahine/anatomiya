@@ -9,6 +9,7 @@ import { execFileSync } from "node:child_process";
 import { needsShebang } from "./platform.mjs";
 import { installWithoutDependencies } from "./plugin-install.mjs";
 import { runCheck, runDoctor, runPin, runScan, runSetup } from "../lib/commands.mjs";
+import { scanLines } from "../lib/summary.mjs";
 import { PIN_PATH } from "../lib/baseline.mjs";
 import { PROBE_IDS, pluginRoot } from "../lib/readiness.mjs";
 import { OVERVIEW_FILE } from "../lib/rules.mjs";
@@ -98,6 +99,54 @@ test("a scan writes the files its summary counted", async (t) => {
   assert.equal(summary.dryRun, false);
   assert.equal(readdirSync(join(dir, RULES)).length, summary.wrote);
   assert.ok(summary.wrote > 0, "a repository with an area writes a map");
+});
+
+test("a settings file the hook cannot be installed into does not fail the scan", async (t) => {
+  // The map is the product and the hook is an addition to it, so a refusal to
+  // install the addition is reported rather than thrown: a scan that wrote the
+  // whole map and then exited 1 over an unrelated file is the map not arriving.
+  const dir = repo(t);
+  mkdirSync(join(dir, ".claude"), { recursive: true });
+  const settings = join(dir, ".claude", "settings.local.json");
+  writeFileSync(settings, "{ not json");
+
+  const { summary } = await runScan(dir);
+
+  assert.ok(summary.wrote > 0, "the map is still written");
+  assert.equal(summary.hookInstalled, false);
+  assert.match(summary.hookRefused, /could not be read/, "and the reason is carried, not swallowed");
+  assert.equal(readFileSync(settings, "utf8"), "{ not json", "the file is left alone");
+  assert.ok(scanLines(summary).some((l) => l.includes("could not be read")), "and printed");
+});
+
+test("two scans over unchanged source say the same thing about the hook", async (t) => {
+  // The summary reports what is true, not what changed: every other line in it
+  // does, and the corpus harness asserts a second scan's summary equals the
+  // first beyond its timing. Saying it once made the summary a function of
+  // prior state rather than of the tree, and every repository in the corpus
+  // read as unstable because of it.
+  const dir = repo(t);
+
+  const first = (await runScan(dir)).summary;
+  const second = (await runScan(dir)).summary;
+
+  assert.equal(first.hookInstalled, true, "installed by the first");
+  assert.equal(second.hookInstalled, true, "and still installed for the second to report");
+  const timeless = (s) => scanLines(s).filter((l) => !/\dms, root /.test(l));
+  assert.deepEqual(timeless(second), timeless(first), "so the two summaries agree");
+});
+
+test("a settings file with a byte-order mark is read, not refused", async (t) => {
+  // Editors write one. It is not a malformed file, it is a file with a BOM.
+  const dir = repo(t);
+  mkdirSync(join(dir, ".claude"), { recursive: true });
+  writeFileSync(join(dir, ".claude", "settings.local.json"), '﻿{"permissions":{"allow":["Bash(x)"]}}');
+
+  const { summary } = await runScan(dir);
+
+  assert.equal(summary.hookInstalled, true);
+  const s = JSON.parse(readFileSync(join(dir, ".claude", "settings.local.json"), "utf8"));
+  assert.deepEqual(s.permissions.allow, ["Bash(x)"], "and what was in it survives");
 });
 
 test("a scan answers with the whole result, so the summary is not the only thing it derived", async (t) => {
