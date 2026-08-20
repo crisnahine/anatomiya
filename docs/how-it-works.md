@@ -483,7 +483,29 @@ The hook runs `anatomiya echo`, which is absent from the usage block and from `c
 person runs it and no agent should. It reads the event on stdin, answers with one JSON object, and every
 failure path answers `{}` and exits 0, because a hook that exits non-zero interrupts the session it
 exists to help. It finds the map by walking up from wherever it fired, since a hook carries the session's
-own working directory and the map is written once at the root.
+own working directory and the map is written once at the root. The walk ends at a repository
+boundary: anything named `.git` is where one checkout's counts stop being about the code under it,
+so a level carrying that marker and no map of its own answers nothing rather than reaching past
+it. The map is asked for before the boundary at each level, so a checkout that was
+scanned still answers from anywhere below its own root, whichever shape its marker takes. Measured:
+a worktree under `.claude/worktrees/`, which is where a session that branches off puts one, was
+handed the main checkout's map, stamped as read just now, on a branch it had never been counted
+over.
+
+The working directory is resolved through its links before any of that, since one reached through a
+link walks the link's own parents and steps around every boundary beneath it, and the marker is
+read without following one, since a marker pointing at a target that has gone is still a marker. A
+level that cannot be resolved or cannot be looked at answers no map rather than throwing: every
+failure path here has to end in `{}` and exit 0, and this one runs on every turn and every tool
+call.
+
+Three things this does not do, each named rather than probed for, since the cost is per tool call:
+a directory named `.git` that is somebody's fixture reads as a boundary, a nested repository in
+another version control system carries no marker to stop at, and the map itself is opened through
+its links, so a `.claude` symlinked out of the checkout is read and echoed. The last is the one
+that differs from the write side, which refuses it (A25): writing outside the repository destroys
+what this tool does not own, while refusing to read there would break anyone keeping `.claude` in
+their dotfiles.
 
 The entry goes in `.claude/settings.local.json`, the per-developer scope, never the `settings.json` a
 team commits. It merges around what is already there, refuses a file it cannot parse or cannot merge
