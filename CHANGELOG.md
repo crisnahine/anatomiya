@@ -7,6 +7,63 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.2.5] - 2026-08-20
+
+0.2.5 is one bug, reported from the field: the plugin does nothing useful in a worktree. It did
+something worse than nothing. A session working in a worktree, a submodule or a nested repository
+below a scanned checkout was handed the enclosing checkout's map, stamped as read just now, against
+a branch those counts had never been taken over.
+
+The hook finds the map by walking up from the session's own working directory, and the walk was
+lexical, so it went straight past the point where one checkout ends and another begins. It now stops
+at a boundary, which is anything named `.git` at a level holding no map of its own. The map is asked
+for before the boundary at each level, so a checkout that was itself scanned still answers from
+anywhere below its own root, whichever shape its own marker takes. That last part is what keeps the
+fix from being a regression: a worktree you have scanned is served its own counts, and only one that
+nobody scanned goes quiet.
+
+Two ways around the boundary are closed with it, both the same class as the bug. A working directory
+reached through a symlink was walked through the link's own parents rather than the code's, which
+steps around every boundary beneath it, and a marker that was a link to a target that had gone read
+as no marker at all. The starting directory is now resolved through its links, and the marker is read
+without following its last component.
+
+The rest is the guarantee underneath all of it. `echo` runs on every turn and every tool call, and a
+hook that exits non-zero interrupts the session it exists to help, so every failure has to end in an
+empty object and exit 0. Two did not. A level the walk may not look at refused with EACCES rather
+than answering, and `process.cwd()` refuses with ENOENT once the directory a session was started in
+is removed, which is what removing a worktree under a live session does. Both exited 1, the second
+with a stack from inside Node's own bootstrap, and both would have done it on every turn for the rest
+of that session. A level that cannot be resolved or cannot be looked at is now read as a boundary,
+and the guarantee is enforced at the process boundary rather than at each site that might throw.
+
+Three things this deliberately does not do, named in `DECISIONS.md` rather than probed for, because
+the cost is paid on every tool call: a directory named `.git` that is somebody's fixture reads as a
+boundary, a nested repository in another version control system carries no marker to stop at, and the
+map itself is opened through its links, so a `.claude` symlinked out of the checkout is read. That
+last one differs from the write side on purpose, which refuses it: writing outside the repository
+destroys what this tool does not own, while refusing to read there would break anyone who keeps
+`.claude` in their dotfiles.
+
+### Fixed
+
+- The echo hook no longer serves an enclosing checkout's map to a session inside a worktree, a
+  submodule or a nested repository. Anything named `.git` at a level with no map of its own ends the
+  walk, and the map is asked for first, so a scanned checkout still answers from below its own root.
+- A working directory reached through a symlink is resolved before the walk, rather than being walked
+  through the link's own parents.
+- A `.git` marker that is a broken symlink is still a boundary. The probe no longer follows the last
+  component.
+- `anatomiya echo` answers an empty object and exits 0 when a level cannot be looked at, and when the
+  directory the session was started in has been removed. Both exited 1 before, on every turn and
+  every tool call for the life of the session.
+
+### Changed
+
+- `realpathOf` moved from `lib/tsconfig.mjs` to `lib/rules.mjs` and gained `realpathOrNull` beside
+  it. One spelling of a resolved path for both callers, and the one that has to decide where it is
+  no longer falls back to the lexical answer.
+
 ## [0.2.4] - 2026-08-19
 
 0.2.4 is one feature: the map stops being something the model was told once. It is put back in front of
@@ -1200,6 +1257,7 @@ which are partial; several listed there are not implemented yet.
 - No claim that this catches defects. Measured across ten repositories, 1 of 317 defect review
   comments was preventable by a conventions map.
 
+[0.2.5]: https://github.com/crisnahine/anatomiya/compare/v0.2.4...v0.2.5
 [0.2.4]: https://github.com/crisnahine/anatomiya/compare/v0.2.3...v0.2.4
 [0.2.3]: https://github.com/crisnahine/anatomiya/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/crisnahine/anatomiya/compare/v0.2.1...v0.2.2
