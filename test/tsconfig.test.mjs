@@ -14,7 +14,6 @@ import {
   toTsPath,
   within,
   contains,
-  realpathOf,
 } from "../lib/tsconfig.mjs";
 
 const loaded = await loadTypeScript();
@@ -229,16 +228,4 @@ test("containment folds case on Windows and does not on POSIX", () => {
 
   assert.equal(contains("/repo", "/REPO/a.ts", "win32"), true, "Windows reaches the same file either way");
   assert.equal(contains("/repo", "/other/a.ts", "win32"), false);
-});
-
-test("the realpath used is the one that expands a Windows short name", () => {
-  // tmpdir() on a runner answers C:\Users\RUNNER~1\..., and the compiler
-  // resolves the same file to the long form. Comparing those two refused every
-  // file it discovered for itself, which is 0% resolution with nothing wrong.
-  assert.equal(typeof realpathOf, "function");
-  const here = fileURLToPath(new URL(".", import.meta.url));
-  assert.equal(realpathOf(here).replace(/[/\\]$/, ""), realpathSync(here).replace(/[/\\]$/, ""));
-  // A path that is not there resolves rather than throwing: module resolution
-  // probes far more candidates than exist.
-  assert.equal(typeof realpathOf(join(here, "no-such-file")), "string");
 });

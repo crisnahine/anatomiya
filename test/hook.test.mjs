@@ -1,9 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { needsUnreadableDirs } from "./platform.mjs";
 import { echoContext, planHook, commitHook, HOOK_COMMAND, SETTINGS_PATH } from "../lib/hook.mjs";
 
 /** A repository with a map already written, the state a scan leaves behind. */
@@ -42,6 +43,136 @@ test("the map is found from anywhere inside the repository, not only from its ro
 
   assert.match(echoContext(join(dir, "src", "deep", "deeper"), {}), /# Repository map/);
   assert.match(echoContext(join(dir, "src"), {}), /# Repository map/);
+});
+
+test("the walk stops at a repository boundary: a worktree or submodule below the scanned checkout gets nothing", (t) => {
+  // A worktree and a submodule both mark their root with a `.git` file, and the
+  // hook fires with the session's cwd, which may be inside either. The walk
+  // crossed that marker and served the enclosing checkout's map, stamped as
+  // re-read just now, into a session whose branch the counts never described.
+  // Probed with `git worktree add` inside the checkout (Claude Code's own
+  // `.claude/worktrees/` layout): the main checkout's map came back every time.
+  const dir = mapped(t);
+  const wt = join(dir, ".claude", "worktrees", "w");
+  mkdirSync(join(wt, "src"), { recursive: true });
+  writeFileSync(join(wt, ".git"), "gitdir: /elsewhere\n");
+
+  assert.equal(echoContext(wt, {}), null);
+  assert.equal(echoContext(join(wt, "src"), {}), null);
+});
+
+test("the walk stops at a repository boundary: a nested repository gets nothing, not the parent's map", (t) => {
+  // An independent repository nested below the scanned one carries a `.git`
+  // directory, the other shape of the same boundary. The walk crossed it too,
+  // so the nested repo's sessions were handed the parent's counts.
+  const dir = mapped(t);
+  mkdirSync(join(dir, "nested", ".git"), { recursive: true });
+  mkdirSync(join(dir, "nested", "src"));
+
+  assert.equal(echoContext(join(dir, "nested", "src"), {}), null);
+});
+
+test("the checkout that owns the map still answers from anywhere below its root", (t) => {
+  // The boundary stop must not eat the ordinary case: a scanned checkout holds
+  // its marker at the same level its map is found at, so the map has to win
+  // there before the boundary is consulted. Both shapes of the marker, since a
+  // scanned worktree's own is the file one.
+  for (const [name, mark] of [
+    ["directory", (dir) => mkdirSync(join(dir, ".git"))],
+    ["file", (dir) => writeFileSync(join(dir, ".git"), "gitdir: /elsewhere\n")],
+  ]) {
+    const dir = mapped(t);
+    mark(dir);
+    mkdirSync(join(dir, "src", "deep"), { recursive: true });
+
+    assert.match(echoContext(dir, {}), /# Repository map/, name);
+    assert.match(echoContext(join(dir, "src", "deep"), {}), /# Repository map/, name);
+  }
+});
+
+test("a nested repository that was scanned answers with its own map, not the one above it", (t) => {
+  // The other side of the boundary: the stop is what a nested checkout hears
+  // when nobody scanned it, and its own map is what it hears when somebody did.
+  const dir = mapped(t);
+  mkdirSync(join(dir, ".git"));
+  const nested = join(dir, "nested");
+  mkdirSync(join(nested, ".git"), { recursive: true });
+  mkdirSync(join(nested, ".claude", "rules"), { recursive: true });
+  writeFileSync(
+    join(nested, ".claude", "rules", "anatomiya-overview.md"),
+    "---\ngenerator: anatomiya\n---\n\n# Nested map\n"
+  );
+  mkdirSync(join(nested, "src"));
+
+  assert.match(echoContext(nested, {}), /# Nested map/, "the nearest map wins, not the parent's");
+  assert.match(echoContext(join(nested, "src"), {}), /# Nested map/, "and from below its own root too");
+});
+
+test("a boundary marker that is a broken link is still a boundary", (t) => {
+  // `existsSync` follows a link, so a `.git` pointing at a target that has gone
+  // answered no-marker and the walk crossed into the enclosing checkout's map:
+  // the failure this stop exists to prevent, through a rarer door. A worktree
+  // whose repository moved leaves exactly that shape.
+  const dir = mapped(t);
+  const wt = join(dir, "wt");
+  mkdirSync(wt);
+  symlinkSync(join(dir, "gone"), join(wt, ".git"));
+
+  assert.equal(echoContext(wt, {}), null);
+});
+
+test("a working directory reached through a link is read where it really is", (t) => {
+  // `resolve` normalises `..` and follows no link, so a session whose cwd
+  // reaches the checkout through a link walked the link's own parents instead
+  // of the repository's: the boundary is stepped around entirely, and a map
+  // above the link's location is served for code that is not under it. Same
+  // reasoning F2 already applies to the settings write one function down.
+  const dir = mapped(t);
+  const real = mkdtempSync(join(tmpdir(), "anatomiya-real-"));
+  t.after(() => rmSync(real, { recursive: true, force: true }));
+  mkdirSync(join(real, ".git"));
+  mkdirSync(join(real, "src"));
+  symlinkSync(join(real, "src"), join(dir, "link"));
+
+  assert.equal(echoContext(join(dir, "link"), {}), null, "the link's parents are not the code's");
+});
+
+test("a level this cannot read is a boundary, not a thrown hook", needsUnreadableDirs, (t) => {
+  // `existsSync` answered false for a path it may not look at; `lstat` refuses
+  // with EACCES, and nothing between here and the process catches it, so the
+  // hook exited 1 with a stack on its way out, which is the one thing a hook
+  // must never do. Two answers cover it, because they cover different levels:
+  // the start of the walk cannot be resolved, and a level reached later cannot
+  // be looked at. Either alone answers this fixture; what is pinned here is the
+  // guarantee rather than which of them delivered it.
+  const dir = mapped(t);
+  const locked = join(dir, "locked");
+  mkdirSync(join(locked, "inner"), { recursive: true });
+  chmodSync(locked, 0o000);
+
+  // Restored here rather than in an `after`: the fixture registers its own
+  // removal first, and a directory nobody may read cannot be removed.
+  try {
+    // Two levels, because each answer covers one of them and the other is
+    // where it never runs. Below the denial the walk cannot resolve its own
+    // start; at the denial it resolves, and asking for the marker is what
+    // refuses.
+    assert.equal(echoContext(join(locked, "inner"), {}), null, "below the level nobody may read");
+    assert.equal(echoContext(locked, {}), null, "and at it, where the marker is what refuses");
+  } finally {
+    chmodSync(locked, 0o755);
+  }
+});
+
+test("a working directory that will not resolve answers no map, rather than one from the path it was spelled", (t) => {
+  // The lexical spelling of an unresolvable path still has parents, and one of
+  // them here holds a map. Walking it would deliver counts for code the cwd is
+  // not under, which is the hole this closes from the other side: the reader
+  // cannot say where it is, so it cannot say the map above is about it.
+  const dir = mapped(t);
+  symlinkSync(join(dir, "nowhere"), join(dir, "broken"));
+
+  assert.equal(echoContext(join(dir, "broken", "deep"), {}), null);
 });
 
 test("the walk up stops at the filesystem root rather than running off it", (t) => {

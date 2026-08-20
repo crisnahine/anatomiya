@@ -159,9 +159,12 @@ if (opts.help) {
   console.log(USAGE);
   process.exit(0);
 }
-const cwd = opts.path === null ? process.cwd() : opts.path;
-
 try {
+  // Read inside the guard, because reading it is one of the things that fails:
+  // `process.cwd()` refuses with ENOENT once the directory a session was
+  // started in is unlinked, which a removed worktree does.
+  const cwd = opts.path === null ? process.cwd() : opts.path;
+
   if (opts.cmd === "check") {
     const { report } = await runCheck(cwd, { baseRef: opts.baseRef });
     // Findings never set the exit code, in any format. A non-zero exit here
@@ -192,6 +195,14 @@ try {
     else console.log(scanLines(summary).join("\n"));
   }
 } catch (err) {
+  // The hook answers for itself, whatever went wrong and wherever it came from.
+  // A non-zero exit interrupts the run it exists to help, and it would do it on
+  // every turn and every tool call for the life of that session, so the
+  // guarantee belongs at the boundary rather than at each site that might throw.
+  if (opts.cmd === "echo") {
+    process.stdout.write("{}");
+    process.exit(0);
+  }
   // A missing repository, an unreadable tree or a git that will not run are all
   // ordinary conditions here, and a stack trace is not what the caller needs.
   console.error(`anatomiya: ${err && err.message ? err.message : String(err)}`);

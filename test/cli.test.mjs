@@ -1,12 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, appendFileSync, statSync, rmSync } from "node:fs";
+import { chmodSync, mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, appendFileSync, statSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
 
-import { needsPathControl, needsShebang, needsWindows } from "./platform.mjs";
+import { needsPathControl, needsRemovableCwd, needsShebang, needsUnreadableDirs, needsWindows } from "./platform.mjs";
 import { installWithoutDependencies } from "./plugin-install.mjs";
 import { EXCLUDE_LINES } from "../lib/rules.mjs";
 
@@ -659,4 +659,51 @@ test("doctor and setup refuse the arguments they have no use for", () => {
     assert.match(stderr, message, args.join(" "));
     assert.match(stderr, /usage: anatomiya scan/, `${args.join(" ")} prints the usage`);
   }
+});
+
+test("echo answers an object and exits 0 whatever the filesystem does to it", needsUnreadableDirs, (t) => {
+  // The one command a person never runs and a session runs on every tool call.
+  // A non-zero exit interrupts the run it exists to help, so the guarantee is
+  // the exit code rather than the answer: a directory the walk may not look at
+  // refused with EACCES, and the error reached the top of the process.
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-echo-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const locked = join(dir, "locked");
+  mkdirSync(join(locked, "inner"), { recursive: true });
+  chmodSync(locked, 0o000);
+
+  // Restored before the temp directory's own removal runs, since a directory
+  // nobody may read cannot be removed.
+  let out;
+  try {
+    out = execFileSync(process.execPath, [join(ROOT, "bin", "anatomiya.mjs"), "echo", join(locked, "inner")], {
+      input: '{"hook_event_name":"PostToolUse"}',
+      encoding: "utf8",
+    });
+  } finally {
+    chmodSync(locked, 0o755);
+  }
+
+  assert.equal(out, "{}", "an empty object, and the exit code execFileSync would have thrown on");
+});
+
+test("echo answers an object and exits 0 when the directory it fired in is gone", needsRemovableCwd, (t) => {
+  // A worktree removed while a session sits in it, or any `rm -rf` of the
+  // directory the session was started from. `process.cwd()` refuses with ENOENT
+  // once the directory is unlinked, it is read before the command runs, and the
+  // hook exited 1 with a bootstrap stack that never reached this tool's own
+  // error line. Every turn and every tool call after that, for the life of the
+  // session.
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-gone-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const work = join(dir, "work");
+  mkdirSync(work);
+
+  const out = execFileSync(
+    "sh",
+    ["-c", `cd "${work}" && rm -rf "${work}" && exec "${process.execPath}" "${join(ROOT, "bin", "anatomiya.mjs")}" echo`],
+    { input: '{"hook_event_name":"PostToolUse"}', encoding: "utf8" }
+  );
+
+  assert.equal(out, "{}", "an empty object, and the exit code execFileSync would have thrown on");
 });
