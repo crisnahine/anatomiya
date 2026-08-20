@@ -1,13 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { needsPosixPermissions, needsPosixSpecialFiles } from "./platform.mjs";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, statSync, symlinkSync, chmodSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, realpathSync, statSync, symlinkSync, chmodSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
 
 import { commitMap, planMap, writeMap } from "../lib/write.mjs";
-import { areaFilename, isOwned, EXCLUDE_LINES, HEAD_BYTES, PREFIX, SETTINGS_PATH } from "../lib/rules.mjs";
+import { areaFilename, isOwned, realpathOf, realpathOrNull, EXCLUDE_LINES, HEAD_BYTES, PREFIX, SETTINGS_PATH } from "../lib/rules.mjs";
 import { areaId } from "../lib/areas.mjs";
 import { writeFacts, readFacts as readFactsFrom } from "../lib/facts.mjs";
 import { severityFor } from "../lib/check.mjs";
@@ -1077,4 +1078,24 @@ test("a rules directory that does not exist yet was looked in, not refused", () 
   assert.deepEqual(first.remove, []);
 
   rmSync(dir, { recursive: true, force: true });
+});
+
+test("the realpath used is the one that expands a Windows short name", () => {
+  // tmpdir() on a runner answers C:\Users\RUNNER~1\..., and the compiler
+  // resolves the same file to the long form. Comparing those two refused every
+  // file it discovered for itself, which is 0% resolution with nothing wrong.
+  const here = fileURLToPath(new URL(".", import.meta.url));
+
+  assert.equal(realpathOf(here).replace(/[/\\]$/, ""), realpathSync(here).replace(/[/\\]$/, ""));
+});
+
+test("the two spellings of an unresolvable path are the whole reason there are two", () => {
+  // One reader is deciding where it is and has to refuse; the other is
+  // comparing two paths and may fall back. A single helper served whichever
+  // caller was written first, and the hook took the lexical path, which walks
+  // the parents of a link rather than of the code.
+  const missing = join(fileURLToPath(new URL(".", import.meta.url)), "no-such-file");
+
+  assert.equal(realpathOrNull(missing), null);
+  assert.equal(realpathOf(missing), resolve(missing));
 });

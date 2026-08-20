@@ -47,3 +47,19 @@ export const needsPosixSeparators = WINDOWS
 export const needsPosixSpecialFiles = WINDOWS
   ? { skip: "Windows has no mkfifo and no filesystem-visible unix socket to test with" }
   : {};
+
+// A directory mode of 000 is not a permission denial for a superuser, and CI
+// commonly runs as one, so a test that needs the denial cannot prove anything
+// where it does not happen.
+export const needsUnreadableDirs = WINDOWS
+  ? { skip: "Windows does not deny a directory by POSIX mode, so the fixture cannot exist" }
+  : typeof process.getuid === "function" && process.getuid() === 0
+    ? { skip: "root traverses a mode-000 directory, so the denial this needs cannot happen" }
+    : {};
+
+// Windows holds a lock on the directory a process is running in, so the state
+// this needs, a live process whose own cwd has been removed, cannot be reached
+// there at all.
+export const needsRemovableCwd = WINDOWS
+  ? { skip: "Windows locks a process's own directory, so it cannot be removed under it" }
+  : {};
