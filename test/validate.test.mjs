@@ -308,3 +308,25 @@ test("an entry with neither a name nor a source reports both", (t) => {
     "marketplace.json plugins[1] has no source",
   ]);
 });
+
+test("a hook command that carries arguments names the file, not the flags", (t) => {
+  const dir = marketplace(t);
+  writeFileSync(
+    join(dir, "second", "hooks", "hooks.json"),
+    JSON.stringify({ hooks: { UserPromptSubmit: [{ hooks: [{ command: "node ${CLAUDE_PLUGIN_ROOT}/hooks/run.mjs --flag" }] }] } }),
+  );
+
+  assert.deepEqual(validate(dir), []);
+});
+
+test("problems come back as annotations where a workflow is reading them", (t) => {
+  const dir = marketplace(t);
+  rmSync(join(dir, ".claude-plugin", "plugin.json"));
+  const run = spawnSync(process.execPath, [join(ROOT, "scripts", "validate.mjs"), dir], {
+    encoding: "utf8",
+    env: { ...process.env, GITHUB_ACTIONS: "true" },
+  });
+
+  assert.equal(run.status, 1);
+  assert.match(run.stderr, /^::error::/m);
+});

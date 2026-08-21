@@ -57,7 +57,8 @@ one in the README rather than leaving the claim standing.
 
 - `CALIBRATED_AGAINST` in `hooks/upstream.mjs`, and the version in this file.
 - `MARKERS` there, if a string moved and the premise still holds under a new spelling.
-- The README, if any claim in it is no longer what the diff shows.
+- The README, if any claim in it is no longer what the diff shows: the site count, the character
+  counts, and the timing figures are all measurements of one build on one machine.
 - The cadence in `FULL_EVERY`, if `TURNS_BETWEEN_MAINTENANCE` moved.
 
 If the premise no longer holds at all, the honest change is to remove the plugin from the

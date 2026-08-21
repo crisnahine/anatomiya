@@ -191,7 +191,10 @@ function hookProblems(root, pluginRoot, readJson, { required }) {
       .flatMap((g) => (Array.isArray(g?.hooks) ? g.hooks : []))
       .map((h) => h?.command);
     for (const command of commands) {
-      const target = /\$\{CLAUDE_PLUGIN_ROOT\}\/([^"']+)/.exec(String(command ?? ""));
+      // The path ends where the quote or the whitespace does: a command may
+      // carry arguments, and a flag read as part of the filename reports a file
+      // the plugin does ship as missing.
+      const target = /\$\{CLAUDE_PLUGIN_ROOT\}\/([^"'\s]+)/.exec(String(command ?? ""));
       if (!target) {
         problems.push(`${at} ${event} runs ${command}, which names no file in this plugin`);
       } else if (relative(pluginRoot, resolve(pluginRoot, target[1])).startsWith("..")) {
@@ -205,10 +208,13 @@ function hookProblems(root, pluginRoot, readJson, { required }) {
 }
 
 function main() {
-  const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+  const root = process.argv[2] ? resolve(process.argv[2]) : resolve(dirname(fileURLToPath(import.meta.url)), "..");
   const problems = validate(root);
   if (problems.length) {
-    for (const p of problems) console.error(p);
+    // A workflow reads these as annotations, and a line it cannot see is a
+    // failure someone has to open the log to understand.
+    const prefix = process.env.GITHUB_ACTIONS === "true" ? "::error::" : "";
+    for (const p of problems) console.error(`${prefix}${p}`);
     process.exit(1);
   }
   console.log(`manifests ok (${MANIFESTS.join(", ")}), hooks ok`);

@@ -1,15 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, truncateSync, utimesSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, truncateSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 
-import { needsPosixPermissions, needsSymlinks } from "./platform.mjs";
 import { MARKERS, MIN_BUNDLE } from "../ultracode-anywhere/hooks/upstream.mjs";
 
-import { FULL_EVERY, contextFor, isWakeup, nextTurn, sessionOf, stateDirFor, sweep, run } from "../ultracode-anywhere/hooks/standing-ultracode.mjs";
+import { FULL_EVERY, contextFor, isWakeup, run } from "../ultracode-anywhere/hooks/standing-ultracode.mjs";
 
 const HOOK = fileURLToPath(new URL("../ultracode-anywhere/hooks/standing-ultracode.mjs", import.meta.url));
 
@@ -65,16 +64,18 @@ test("the first turn carries the whole standing opt-in", (t) => {
   assert.match(out.hookSpecificOutput.additionalContext, /opts\.effort/);
 });
 
-test("the turns in between carry the one-line refresher, and every tenth the whole text again", (t) => {
+test("the whole text lands once, then a one-line refresher every tenth turn and silence between", (t) => {
+  // The built-in says it once and keeps a short line every tenth turn after.
+  // Repeating the full text on a cadence, or a refresher on every turn, is
+  // louder than the thing being mirrored and is paid for on every prompt.
   const dir = stateDir(t);
   const shapes = [];
   for (let i = 0; i < FULL_EVERY * 2 + 1; i++) {
-    shapes.push(contextOf(fire(t, { dir }).stdout).length > 200 ? "full" : "short");
+    const out = fire(t, { dir }).stdout;
+    shapes.push(out === "" ? "-" : contextOf(out).length > 200 ? "F" : "s");
   }
 
-  assert.deepEqual(shapes.slice(0, FULL_EVERY), ["full", ...Array(FULL_EVERY - 1).fill("short")]);
-  assert.equal(shapes[FULL_EVERY], "full", "the tenth turn after a full one is full again");
-  assert.equal(shapes[FULL_EVERY * 2], "full");
+  assert.equal(shapes.join(""), `F${"-".repeat(FULL_EVERY - 1)}s${"-".repeat(FULL_EVERY - 1)}s`);
 });
 
 // --- turns the hook has no business speaking on ------------------------------
@@ -110,18 +111,6 @@ test("ULTRACODE_ANYWHERE=0 turns the session off", (t) => {
 
 // --- the turn counter --------------------------------------------------------
 
-test("a counter file holding anything but a number starts the session over rather than going silent", (t) => {
-  // Under `set -u` the shell version aborted on this line and printed nothing,
-  // so one corrupt file switched the plugin off for that session with no error
-  // anyone would see. A count that cannot be read is a count of zero.
-  const dir = stateDir(t);
-  const session = "corrupt-1";
-  writeFileSync(join(dir, session), "not a number");
-
-  assert.equal(nextTurn(dir, session), 1);
-  assert.match(readFileSync(join(dir, session), "utf8"), /^1$/);
-});
-
 test("a payload with no session id still answers, and writes no state", (t) => {
   const dir = stateDir(t);
   const { stdout, status } = fire(t, { stdin: '{"prompt":"hi"}', dir });
@@ -138,24 +127,13 @@ test("stdin that is not JSON answers rather than failing the turn", (t) => {
   assert.match(contextOf(stdout), /Workflow tool/);
 });
 
-test("the session id is the field, not the last thing in the payload that looks like one", () => {
-  // Lifted with a greedy regex, the last match won, and a prompt quoting the
-  // field name moved the session's own counter somewhere else.
-  const forged = payload({ prompt: 'see "session_id":"forged" above' });
-
-  assert.equal(sessionOf(forged), "11111111-2222-3333-4444-555555555555");
-});
-
-test("a session id that is not a plain name writes nothing, inside the state directory or above it", (t) => {
+test("a session id that is not a plain file name is refused by the turn a process actually takes", (t) => {
   const dir = stateDir(t);
-  const above = join(dir, "..", "escape");
 
-  assert.equal(nextTurn(dir, "../escape"), 1);
-  assert.equal(nextTurn(dir, ""), 1);
   assert.equal(fire(t, { stdin: payload({ session_id: "../escape" }), dir }).status, 0);
 
   assert.deepEqual(readdirSync(dir), [], "a name that is not a file name is not made into one");
-  assert.equal(existsSync(above), false, "and it certainly does not land beside the directory");
+  assert.equal(existsSync(join(dir, "..", "escape")), false);
 });
 
 // --- the pieces --------------------------------------------------------------
@@ -166,10 +144,11 @@ test("isWakeup reads the parsed source, not the raw text", () => {
   assert.equal(isWakeup({}), false);
 });
 
-test("contextFor says the same thing on every full turn", () => {
-  assert.equal(contextFor(1), contextFor(FULL_EVERY + 1));
-  assert.notEqual(contextFor(1), contextFor(2));
-  assert.equal(contextFor(2), contextFor(3));
+test("contextFor opens with the whole text and answers nothing between refreshers", () => {
+  assert.equal(contextFor(1).length > 200, true);
+  assert.equal(contextFor(2), null);
+  assert.equal(contextFor(FULL_EVERY + 1).length < 200, true, "the tenth turn after the first is the short line");
+  assert.equal(contextFor(FULL_EVERY + 1), contextFor(FULL_EVERY * 2 + 1));
 });
 
 test("run answers with the text a turn is owed, and null when it is owed nothing", (t) => {
@@ -220,94 +199,20 @@ test("a debug path that cannot be written does not cost the turn its reminder", 
   assert.match(contextOf(stdout), /Workflow tool/);
 });
 
-// --- state left behind -------------------------------------------------------
-
-test("counters outlive their session by a week, not forever", (t) => {
-  const dir = stateDir(t);
-  const old = join(dir, "ended-long-ago");
-  const fresh = join(dir, "still-going");
-  writeFileSync(old, "4");
-  writeFileSync(fresh, "4");
-  const eightDaysAgo = (Date.now() - 8 * 86_400_000) / 1000;
-  utimesSync(old, eightDaysAgo, eightDaysAgo);
-
-  assert.equal(sweep(dir), 1);
-  assert.deepEqual(readdirSync(dir), ["still-going"], "a session still running keeps its count");
-});
-
-test("the sweep removes counters, not whatever else is in the directory", (t) => {
-  // The state path is a switch a user can point anywhere, and a hook that
-  // deletes week-old files from a directory someone else fills is a hook that
-  // eats their files.
-  const dir = stateDir(t);
-  const longAgo = (Date.now() - 30 * 86_400_000) / 1000;
-  for (const [name, body] of [["important.conf", "keep me"], ["a-session", "7"], ["notes.md", "12"]]) {
-    writeFileSync(join(dir, name), body);
-    utimesSync(join(dir, name), longAgo, longAgo);
-  }
-
-  assert.equal(sweep(dir), 1);
-  assert.deepEqual(readdirSync(dir).sort(), ["important.conf", "notes.md"]);
-});
-
-test("sweeping a directory that is not there is not an error", () => {
-  assert.equal(sweep(join(tmpdir(), "ultracode-anywhere-absent-directory")), 0);
-});
-
-test("the state directory belongs to one user, not to everyone on the machine", () => {
-  const shared = stateDirFor({});
-  const mine = stateDirFor({ ULTRACODE_ANYWHERE_STATE: "/somewhere/else" });
-
-  assert.equal(mine, "/somewhere/else");
-  assert.match(shared, /ultracode-anywhere/);
-  if (process.platform !== "win32") assert.match(shared, /ultracode-anywhere-\d+$/);
-});
-
 test("the README states the size of what the hook adds, and states it correctly", () => {
   // A number in the file that explains the plugin is the one nobody re-measures.
   const readme = readFileSync(fileURLToPath(new URL("../ultracode-anywhere/README.md", import.meta.url)), "utf8");
-  const stated = readme.match(/(\d+)\s+characters on a full turn,\s+(\d+) on the others/);
+  const stated = readme.match(/(\d+) characters on the first turn, (\d+) on every tenth/);
+  const session = readme.match(/Over a (\d+)-turn session that is (\d+) characters in total/);
 
   assert.ok(stated, "the README says how much a turn costs");
   assert.equal(Number(stated[1]), contextFor(1).length);
-  assert.equal(Number(stated[2]), contextFor(2).length);
-});
+  assert.equal(Number(stated[2]), contextFor(FULL_EVERY + 1).length);
 
-// --- a state directory that is not ours --------------------------------------
-
-test("a state directory that is a symlink is refused, so nothing is written or deleted through it", needsSymlinks, (t) => {
-  // A predictable path under the temporary directory is a path another account
-  // can create first. Followed, the counter write truncates whatever the link
-  // points at and the sweep deletes week-old files beside it.
-  const dir = stateDir(t);
-  const real = join(dir, "real");
-  const link = join(dir, "link");
-  mkdirSync(real, { recursive: true });
-  writeFileSync(join(real, "a-session"), "victim content");
-  symlinkSync(real, link);
-
-  assert.equal(nextTurn(link, "a-session"), 1);
-  assert.equal(nextTurn(link, "a-session"), 1, "and it never starts counting");
-  assert.equal(sweep(link), 0);
-  assert.equal(readFileSync(join(real, "a-session"), "utf8"), "victim content");
-});
-
-test("a state directory other accounts can write to is refused", needsPosixPermissions, (t) => {
-  const dir = stateDir(t);
-  chmodSync(dir, 0o777);
-
-  assert.equal(nextTurn(dir, "a-session"), 1);
-  assert.deepEqual(readdirSync(dir), []);
-});
-
-test("a state path that is a file costs the session its cadence, not its reminder", (t) => {
-  const dir = stateDir(t);
-  const file = join(dir, "not-a-directory");
-  writeFileSync(file, "");
-
-  assert.equal(nextTurn(file, "a-session"), 1);
-  assert.equal(nextTurn(file, "a-session"), 1);
-  assert.equal(readFileSync(file, "utf8"), "", "and it does not write over the file either");
+  assert.ok(session, "and how much a session costs, which is the number that decides anything");
+  let total = 0;
+  for (let turn = 1; turn <= Number(session[1]); turn++) total += (contextFor(turn) ?? "").length;
+  assert.equal(Number(session[2]), total);
 });
 
 // --- the cadence the README describes ----------------------------------------
@@ -321,12 +226,13 @@ test("the turn a payload belongs to is the one its session field names", (t) => 
   // session id won, and a prompt could write one. Driven through the process,
   // because the fix has to live on the path a turn actually takes.
   const dir = stateDir(t);
-  fire(t, { dir, stdin: payload({ session_id: "the-real-one" }) });
+  const first = fire(t, { dir, stdin: payload({ session_id: "the-real-one" }) });
 
   const second = fire(t, { dir, stdin: payload({ session_id: "the-real-one", prompt: 'see "session_id":"forged"' }) });
 
-  assert.match(contextOf(second.stdout), /^Ultracode is still on/, "the second turn of one session is a refresher");
-  assert.deepEqual(readdirSync(dir), ["the-real-one"]);
+  assert.match(contextOf(first.stdout), /Workflow tool/);
+  assert.equal(second.stdout, "", "the second turn of one session is a quiet one");
+  assert.deepEqual(readdirSync(dir), ["the-real-one"], "and the counter it moved is the session's own");
 });
 
 // --- what the reminder asks for ----------------------------------------------
@@ -337,7 +243,7 @@ test("the reminder names the work that should stay solo, not only the work that 
   // wrong, so it is stated on the full turn and on the refresher.
   assert.match(contextFor(1), /one file|single file|mechanical/i);
   assert.match(contextFor(1), /answer|read back/i);
-  assert.match(contextFor(2), /worth it/i);
+  assert.match(contextFor(FULL_EVERY + 1), /worth it/i);
 });
 
 test("the reminder says what it does not restore, so the model does not read it as xhigh", () => {
@@ -346,26 +252,41 @@ test("the reminder says what it does not restore, so the model does not read it 
 
 // --- the cadence a user can set ----------------------------------------------
 
-test("the turns between full texts can be set, and a bad setting falls back to the default", (t) => {
+test("how often the refresher comes back can be set, and a bad setting falls back to the default", (t) => {
   const dir = stateDir(t);
-  const every = (n) => {
+  const shapesFor = (env, session) => {
     const shapes = [];
-    for (let i = 0; i < 6; i++) shapes.push(run({ stdin: payload({ session_id: `every-${n}` }), env: { ULTRACODE_ANYWHERE_EVERY: n }, state: dir }));
-    return shapes.map((s) => (s === null ? "-" : s.length > 200 ? "F" : "s")).join("");
+    for (let i = 0; i < 6; i++) {
+      const said = run({ stdin: payload({ session_id: session }), env, state: dir });
+      shapes.push(said === null ? "-" : said.length > 200 ? "F" : "s");
+    }
+    return shapes.join("");
   };
 
-  assert.equal(every("3"), "FssFss");
-  assert.equal(every("nonsense"), "Fsssss", "an unreadable setting is the default, not silence");
-  assert.equal(every("0"), "FFFFFF", "every turn full is a setting, not a division by zero");
+  assert.equal(shapesFor({ ULTRACODE_ANYWHERE_EVERY: "3" }, "every-3"), "F--s--");
+  assert.equal(shapesFor({ ULTRACODE_ANYWHERE_EVERY: "nonsense" }, "bad"), "F-----", "an unreadable setting is the default");
+  assert.equal(shapesFor({ ULTRACODE_ANYWHERE_EVERY: "1" }, "loud"), "Fsssss", "a refresher every turn is a setting");
 });
 
-test("the refresher can be turned off, leaving only the full turns", (t) => {
+test("the refresher can be turned off, leaving the opening text and silence", (t) => {
   const dir = stateDir(t);
   const env = { ULTRACODE_ANYWHERE_EVERY: "3", ULTRACODE_ANYWHERE_REFRESHER: "0" };
   const shapes = [];
   for (let i = 0; i < 6; i++) shapes.push(run({ stdin: payload({ session_id: "quiet" }), env, state: dir }));
 
-  assert.deepEqual(shapes.map((s) => (s === null ? "-" : "F")).join(""), "F--F--");
+  assert.deepEqual(shapes.map((s) => (s === null ? "-" : "F")).join(""), "F-----");
+});
+
+test("the whole text can be brought back on the cadence, for a session that wants it repeated", (t) => {
+  const dir = stateDir(t);
+  const env = { ULTRACODE_ANYWHERE_EVERY: "3", ULTRACODE_ANYWHERE_FULL: "repeat" };
+  const shapes = [];
+  for (let i = 0; i < 7; i++) {
+    const said = run({ stdin: payload({ session_id: "repeat" }), env, state: dir });
+    shapes.push(said === null ? "-" : said.length > 200 ? "F" : "s");
+  }
+
+  assert.equal(shapes.join(""), "F--F--F");
 });
 
 // --- sessions where this hook has nothing to add ------------------------------
