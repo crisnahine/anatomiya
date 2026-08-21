@@ -7,6 +7,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.2.9] - 2026-08-21
+
 A second plugin in this marketplace, and the manifest check that now reads every plugin the
 marketplace lists. Claude Code gates its standing Workflow orchestration on `effort === "xhigh"`,
 and what that gate controls is one system-reminder rather than the Workflow tool, whose
@@ -1507,6 +1509,7 @@ which are partial; several listed there are not implemented yet.
 - No claim that this catches defects. Measured across ten repositories, 1 of 317 defect review
   comments was preventable by a conventions map.
 
+[0.2.9]: https://github.com/crisnahine/anatomiya/compare/v0.2.8...v0.2.9
 [0.2.8]: https://github.com/crisnahine/anatomiya/compare/v0.2.7...v0.2.8
 [0.2.7]: https://github.com/crisnahine/anatomiya/compare/v0.2.6...v0.2.7
 [0.2.6]: https://github.com/crisnahine/anatomiya/compare/v0.2.5...v0.2.6
