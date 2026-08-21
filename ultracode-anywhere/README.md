@@ -172,7 +172,8 @@ time, for the same reason.
 The state directory is the hook's alone. It is refused unless it is a real directory this account
 owns with no access for anyone else. That check was written when this state lived under `/tmp`,
 where a predictable path is one another account can create first; the state moved out of there, and
-the check stayed for the switch below and for a machine with no home directory to write into. Inside it, a file is only removed when its name is a plain word and its contents
+the check stayed for the switch below. A machine with no home to write into keeps no state at all,
+which costs the cadence and not the reminder. Inside it, a file is only removed when its name is a plain word and its contents
 are a count, and a file standing where a counter would go, holding anything else, is left alone
 rather than written over. Two dotfiles live there too and are never swept: what the build check
 last answered, and whether the cap line has been said. A directory it refuses costs the cadence,

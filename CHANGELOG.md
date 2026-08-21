@@ -61,7 +61,8 @@ restore.
   a hook command names, and no longer reads a quoted flag as part of a filename.
 - The turn counters live in `~/.claude/ultracode-anywhere/` rather than in the temporary
   directory. The ownership and link checks around them were written to survive a shared `/tmp`;
-  keeping state out of it removes that class instead, and the checks stay for the state switch.
+  keeping state out of it removes that class instead, and the checks stay for the state switch. A
+  machine with no home to write into keeps no state, which costs the cadence and not the reminder.
 - CI found two more that a laptop could not. Two version files written in the same millisecond are
   a tie, so the build a version-managed install keeps is chosen by version rather than by
   timestamp, which a rollback also gets right. And the read of this plugin's own state refuses a

@@ -175,11 +175,16 @@ test("state lives in this account's own configuration directory, not in the shar
   assert.doesNotMatch(stateDirFor({ HOME: "/home/someone" }), /tmp/i);
 });
 
-test("a machine with no home to write into still has somewhere of its own", () => {
-  const nowhere = stateDirFor({ HOME: "", USERPROFILE: "" });
-
-  assert.match(nowhere, /ultracode-anywhere/);
-  if (process.platform !== "win32") assert.match(nowhere, /ultracode-anywhere-\d+$/, "and it is this user's own");
+test("a machine with no home to write into keeps no state rather than keeping it anywhere", (t) => {
+  // The temporary directory is the one place a plugin can always write and the
+  // one place it should not. Without a home there is nowhere of this account's
+  // own, so the session loses its cadence and keeps its reminder.
+  assert.equal(stateDirFor({ HOME: "", USERPROFILE: "" }), "");
+  assert.equal(ownState(""), false);
+  assert.equal(nextTurn("", "a-session"), 1);
+  assert.equal(sweep(""), 0);
+  assert.equal(firstTime("", "cap-said"), true);
+  assert.equal(cached("", "drift", "k", () => "answer"), "answer");
 });
 
 // --- an answer worth keeping between turns ------------------------------------
