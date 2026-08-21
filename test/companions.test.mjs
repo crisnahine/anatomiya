@@ -4,6 +4,12 @@ import assert from "node:assert/strict";
 import { namesakeCompanions, namesakeIndex } from "../lib/companions.mjs";
 
 const file = (rel) => ({ rel });
+// A test file that names what it covers. The specifiers are what the parser
+// records for a real file, relative to the test's own directory.
+const imports = (rel, modules) => ({
+  rel,
+  facets: { imports: modules.map((module) => ({ module, names: [], relative: true })) },
+});
 
 test("a same-stem spec in an unrelated directory is not credited", () => {
   // puppet: lib/puppet/network.rb has no test anywhere. A decoy spec planted at
@@ -152,7 +158,7 @@ test("namesakeIndex builds the stem map namesakeCompanions is handed", () => {
   const index = namesakeIndex([file("spec/models/foo_spec.rb")]);
 
   assert.deepEqual(index.get("foo"), [
-    { rel: "spec/models/foo_spec.rb", dir: "spec/models", bare: "models" },
+    { rel: "spec/models/foo_spec.rb", dir: "spec/models", bare: "models", covers: new Set() },
   ]);
 });
 
@@ -205,4 +211,89 @@ test("a test tree nested inside a package does not answer a top-level file", () 
   const packaged = [file("packages/tool/test/runner.test.mjs")];
 
   assert.equal(namesakeCompanions(source, packaged, "scripts", namesakeIndex(packaged)).with, 0);
+});
+
+test("a nested producer is credited by the test of its own name that imports it", () => {
+  // This repository's second plugin: the sources sit at
+  // ultracode-anywhere/hooks and every test sits flat under test/. The tail
+  // `hooks` mirrors nothing on the other side, so path shape alone reads 0 of 5
+  // over five files that are each genuinely tested. The import edge is what
+  // separates this from the decoys above, which name nothing they cover.
+  const names = ["counters", "hook-io", "session-start", "standing-ultracode", "upstream"];
+  const source = names.map((n) => file(`ultracode-anywhere/hooks/${n}.mjs`));
+  const tests = names.map((n) =>
+    imports(`test/${n}.test.mjs`, [`../ultracode-anywhere/hooks/${n}.mjs`]));
+
+  assert.deepEqual(namesakeCompanions(source, tests, "ultracode-anywhere", namesakeIndex(tests)), {
+    with: 5,
+    of: 5,
+    root: "test",
+  });
+});
+
+test("a test that imports another file of the same stem does not credit this one", () => {
+  // The import edge is only evidence for the file it actually names. Two
+  // packages holding an index.mjs are answered by the test that imports each,
+  // never by the other, which is the openproject engine_spec shape read through
+  // the new branch rather than through the tail.
+  const source = [file("packages/one/index.mjs"), file("packages/two/index.mjs")];
+  const tests = [imports("test/index.test.mjs", ["../packages/one/index.mjs"])];
+
+  assert.deepEqual(namesakeCompanions(source, tests, "packages", namesakeIndex(tests)), {
+    with: 1,
+    of: 2,
+    root: null,
+  });
+});
+
+test("a bare package specifier names no file in this repository", () => {
+  // `import { counters } from "counters"` is a dependency, not the file beside
+  // it, and resolving it as a path would credit any file that shares the name.
+  const source = [file("ultracode-anywhere/hooks/counters.mjs")];
+  const tests = [imports("test/counters.test.mjs", ["counters"])];
+
+  assert.equal(namesakeCompanions(source, tests, "ultracode-anywhere", namesakeIndex(tests)).with, 0);
+});
+
+test("an import climbing above the repository root names nothing", () => {
+  // Nested, so the top-level pair cannot be what answers it: only the import
+  // edge could, and it names a file above the tree that this corpus never held.
+  const source = [file("pkg/hooks/counters.mjs")];
+  const tests = [imports("test/counters.test.mjs", ["../../outside/counters.mjs"])];
+
+  assert.equal(namesakeCompanions(source, tests, "pkg", namesakeIndex(tests)).with, 0);
+});
+
+test("an extension-less specifier answers the file it resolves to", () => {
+  // TypeScript and bundler resolution both write the import without the
+  // extension, so the two spellings have to reach the same file.
+  const source = [file("src/deep/parser.ts")];
+  const tests = [imports("test/parser.test.ts", ["../src/deep/parser"])];
+
+  assert.equal(namesakeCompanions(source, tests, "src", namesakeIndex(tests)).with, 1);
+});
+
+test("a test naming nothing it covers is still refused by path shape alone", () => {
+  // The pinned apps/www decoy, restated with facets present but empty: a parsed
+  // file that imports nothing has said nothing, and the tail still governs.
+  const source = [file("apps/www/Page0.tsx"), file("apps/www/Page1.tsx")];
+  const tests = [imports("test/Page0.test.tsx", []), imports("test/Page1.test.tsx", [])];
+
+  assert.deepEqual(namesakeCompanions(source, tests, "apps/www", namesakeIndex(tests)), {
+    with: 0,
+    of: 2,
+    root: null,
+  });
+});
+
+test("a data file of the same name is not the module beside it", () => {
+  // Dropping the extension to let `./parser` answer `parser.ts` also let
+  // `./defaults.json` answer `defaults.mjs`, crediting a module with a test
+  // that only ever reads the table next to it.
+  // Nested, so only the import edge could answer it, and the edge names the
+  // table rather than the module.
+  const source = [file("pkg/lib/defaults.mjs")];
+  const tests = [imports("test/defaults.test.mjs", ["../pkg/lib/defaults.json"])];
+
+  assert.equal(namesakeCompanions(source, tests, "pkg", namesakeIndex(tests)).with, 0);
 });

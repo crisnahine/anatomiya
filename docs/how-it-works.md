@@ -794,7 +794,16 @@ Every clause is dropped when it counts nothing.
   only the word for the tree differs: `modules/budgets/spec/models/budget_spec.rb` answers
   `modules/budgets/app/models/budget.rb`, and `src/vs/base/test/common/foo.test.ts` answers
   `src/vs/base/common/foo.ts`. Only those seven names drop, so `spec/support/user.rb` still answers
-  no `app/models/user.rb`: `support` against `models` is left to compare. The root the namesakes
+  no `app/models/user.rb`: `support` against `models` is left to compare. Where neither reading of
+  the tail answers, one last question is asked of the candidate itself: whether it imports the
+  producer outright. A test that writes `from "../ultracode-anywhere/hooks/counters.mjs"` has named
+  what it covers, which is evidence a path cannot carry, and it is the only thing separating a
+  nested source answered by a flat test root from the decoy that looks exactly like it. The stem
+  still has to match, so the sentence stays the one it always was, and a specifier that carries an
+  extension has to agree on it, or `./defaults.json` would answer `defaults.mjs`. Nothing is
+  resolved against the filesystem, so a directory reached through its own `index` reads as no
+  evidence rather than as a guess, and a language whose tests never name what they cover gains
+  nothing here. The root the namesakes
   share is named, by a count of votes rather than by the first match, a mirrored match voting for
   the tree the two paths part on. A file several candidates answer votes once, for the first of them
   by path that names a tree at all: the total is halved against the count of answered files, so a
