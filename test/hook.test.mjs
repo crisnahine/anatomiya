@@ -4,10 +4,11 @@ import { chmodSync, existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, sy
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { spawnSync } from "node:child_process";
+import { spawnSync, execFileSync } from "node:child_process";
 
 import { needsUnreadableDirs } from "./platform.mjs";
 import { echoContext, planRemoval, commitRemoval, HOOK_COMMAND, SETTINGS_PATH } from "../lib/hook.mjs";
+import { HEAD_BYTES } from "../lib/rules.mjs";
 
 /** The three entries 0.2.4 through 0.2.6 wrote into a scanned repository. */
 const OLD_SETTINGS = {
@@ -210,6 +211,81 @@ test("the frontmatter comes off however the file's line endings are written", (t
     assert.doesNotMatch(out, /generator: anatomiya/, name);
     assert.match(out, /# Repository map/, name);
   }
+});
+
+test("a file at our path this tool did not write is not echoed", (t) => {
+  // The writer refuses to touch a file it does not own and the check reports
+  // one, while the read path went by filename alone: anything at that exact
+  // path reached the model on every turn. It matters more now that the hook is
+  // the plugin's and runs in every session rather than only in a scanned one.
+  const dir = mapped(t, "---\ngenerator: somebody-else\n---\n\n# not ours\n");
+
+  assert.equal(echoContext(dir), null);
+});
+
+test("a map with no frontmatter at all is not echoed either", (t) => {
+  const dir = mapped(t, "# Repository map\n\n- lib: 3 .mjs\n");
+
+  assert.equal(echoContext(dir), null);
+});
+
+test("a map past the size a rule file may be is not echoed", (t) => {
+  // Ownership is a frontmatter test, so a file carrying our key and five
+  // megabytes of anything else passed it and all five megabytes went into the
+  // model's context, on every prompt and every tool call. `HEAD_BYTES` is the
+  // size this repository already decided a rule file may be, measured off its
+  // own longest cover; past it the file is not one this tool wrote.
+  const dir = mapped(t);
+  const path = join(dir, ".claude", "rules", "anatomiya-overview.md");
+  writeFileSync(path, `---\ngenerator: anatomiya\n---\n\n# Repository map\n\n${"x".repeat(HEAD_BYTES)}\n`);
+
+  assert.equal(echoContext(dir), null);
+});
+
+test("a map filling the cap exactly is still echoed", (t) => {
+  // The boundary in the direction that matters: a real map is kilobytes, and a
+  // cap that refused one at its own edge is a map that vanishes for a reason
+  // nobody can see.
+  const dir = mapped(t);
+  const head = "---\ngenerator: anatomiya\n---\n\n";
+  writeFileSync(join(dir, ".claude", "rules", "anatomiya-overview.md"), head + "x".repeat(HEAD_BYTES - head.length));
+
+  assert.match(echoContext(dir), /<repository-map delivered="/);
+});
+
+test("a named pipe at the map's path answers nothing rather than blocking", (t) => {
+  // The read runs on every turn and every tool call, so a path that never
+  // returns is a session that never returns: measured, the read on a fifo there
+  // never came back at all. Run as a process with a budget, because a
+  // synchronous call that hangs cannot be failed from inside this one.
+  const dir = mapped(t);
+  const path = join(dir, ".claude", "rules", "anatomiya-overview.md");
+  rmSync(path);
+  execFileSync("mkfifo", [path]);
+
+  const run = spawnSync(process.execPath, [fileURLToPath(new URL("../bin/anatomiya.mjs", import.meta.url)), "echo"], {
+    cwd: dir,
+    input: JSON.stringify({ hook_event_name: "UserPromptSubmit" }),
+    encoding: "utf8",
+    timeout: 10_000,
+  });
+
+  assert.equal(run.signal, null, "it came back on its own");
+  assert.equal(run.status, 0);
+  assert.deepEqual(JSON.parse(run.stdout), {});
+});
+
+test("a foreign map below the root does not hide the real one above it", (t) => {
+  // The walk committed to the first file it found and only then asked whose it
+  // was, so a hand-written file in a subdirectory silenced the repository's own
+  // map for every session under that directory. Whose it is decides whether the
+  // walk stops, not only whether it answers.
+  const dir = mapped(t);
+  const below = join(dir, "sub");
+  mkdirSync(join(below, ".claude", "rules"), { recursive: true });
+  writeFileSync(join(below, ".claude", "rules", "anatomiya-overview.md"), "---\ngenerator: nobody\n---\n\n# theirs\n");
+
+  assert.match(echoContext(below), /# Repository map/, "the root's map, walked past the foreign one");
 });
 
 test("a repository with no map echoes nothing rather than an empty map", (t) => {

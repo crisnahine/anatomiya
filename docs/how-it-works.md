@@ -523,7 +523,16 @@ not substituted, and Claude Code refuses the hook by name on every prompt and ev
 the life of that session, which is what 0.2.4 through 0.2.6 shipped. A plugin hook runs in every
 session the plugin is installed for, with no way to scope it to one repository, so the scoping is
 the hook's own job: it walks up from the working directory for a map, and a session with none gets
-`{}` in about 50ms.
+`{}`. That answer costs one node process and almost nothing else: three runs on one laptop put the median
+at 73ms, 104ms and 237ms, and which `node` is on `PATH` moves it more than anything the tool does. It is
+paid per turn and per tool call.
+
+The map it echoes has to be one this tool wrote, which is A3's rule arriving on the read side. The file is
+read through the same bounded reader the audit uses, so a named pipe at that path does not hang the session
+and a file far larger than any map this writes is refused rather than echoed whole. A file at that path
+carrying somebody else's frontmatter does not stop the walk either: it goes past to the repository's own map
+above. Two of A3's three facts are checkable here and the third is not, since `facts.json` belongs to a scan
+rather than to a session, so a file anyone writes carrying `generator: anatomiya` is still echoed.
 
 A scan takes the old entry out of `.claude/settings.local.json` when it finds one, on any of the
 spellings that shipped, and leaves everything else in that file alone: permission lists, other
