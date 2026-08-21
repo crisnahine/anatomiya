@@ -170,11 +170,17 @@ test("a manifest that does not parse is named, and nothing after it is guessed a
   assert.match(problems[0], /^\.claude-plugin\/marketplace\.json: /);
 });
 
-test("a repository with no manifest directory says so once", (t) => {
+test("a repository with no manifest directory names the directory and both manifests", (t) => {
+  // Reported together rather than one at a time: the check runs in CI, and a
+  // second red build to learn the second sentence is a second round trip.
   const dir = marketplace(t);
   rmSync(join(dir, ".claude-plugin"), { recursive: true, force: true });
 
-  assert.deepEqual(validate(dir), [".claude-plugin/ is missing"]);
+  assert.deepEqual(validate(dir), [
+    ".claude-plugin/ is missing",
+    ".claude-plugin/plugin.json is missing",
+    ".claude-plugin/marketplace.json is missing",
+  ]);
 });
 
 test("the root plugin's name still has to match package.json", (t) => {
@@ -240,4 +246,65 @@ test("the root plugin's own hook file is required, since it is what re-delivers 
   rmSync(join(dir, "hooks", "hooks.json"));
 
   assert.deepEqual(validate(dir), ["hooks/hooks.json is missing, so the map is never re-delivered"]);
+});
+
+// --- what the workflow used to check inline -----------------------------------
+
+test("a marketplace with no name and no owner is caught here, not by the loader", (t) => {
+  const dir = marketplace(t);
+  const path = join(dir, ".claude-plugin", "marketplace.json");
+  const manifest = JSON.parse(readFileSync(path, "utf8"));
+  delete manifest.name;
+  delete manifest.owner;
+  writeFileSync(path, JSON.stringify(manifest));
+
+  assert.deepEqual(validate(dir).sort(), [
+    'marketplace.json has no "name"',
+    'marketplace.json has no "owner"',
+  ]);
+});
+
+test("a path a plugin manifest names has to exist and stay inside that plugin", (t) => {
+  const dir = marketplace(t);
+  const path = join(dir, ".claude-plugin", "plugin.json");
+  const manifest = JSON.parse(readFileSync(path, "utf8"));
+  manifest.commands = ["./commands", "../outside"];
+  writeFileSync(path, JSON.stringify(manifest));
+
+  assert.deepEqual(validate(dir).sort(), [
+    ".claude-plugin/plugin.json commands[0] points at a missing path: ./commands",
+    ".claude-plugin/plugin.json commands[1] points outside the plugin: ../outside",
+  ]);
+});
+
+test("a hook may not run a file outside its own plugin", (t) => {
+  const dir = marketplace(t);
+  writeFileSync(
+    join(dir, "second", "hooks", "hooks.json"),
+    JSON.stringify({ hooks: { UserPromptSubmit: [{ hooks: [{ command: 'node "${CLAUDE_PLUGIN_ROOT}/../hooks/hooks.json"' }] }] } }),
+  );
+
+  assert.deepEqual(validate(dir), [
+    "second/hooks/hooks.json UserPromptSubmit runs ../hooks/hooks.json, which is outside that plugin",
+  ]);
+});
+
+test("a package.json that is not there is a problem, not a check that quietly stops", (t) => {
+  const dir = marketplace(t);
+  rmSync(join(dir, "package.json"));
+
+  assert.deepEqual(validate(dir), ["package.json is missing, so no version can be compared against it"]);
+});
+
+test("an entry with neither a name nor a source reports both", (t) => {
+  const dir = marketplace(t);
+  const path = join(dir, ".claude-plugin", "marketplace.json");
+  const manifest = JSON.parse(readFileSync(path, "utf8"));
+  manifest.plugins = [{ name: "anatomiya", source: "./" }, {}];
+  writeFileSync(path, JSON.stringify(manifest));
+
+  assert.deepEqual(validate(dir), [
+    "marketplace.json has a plugin entry with no name",
+    "marketplace.json plugins[1] has no source",
+  ]);
 });

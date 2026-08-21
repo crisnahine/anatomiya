@@ -9,13 +9,28 @@
  * machine the plugin is installed on, Windows included, where a bare `.sh` has
  * no interpreter to run it.
  */
-import { closeSync, constants, mkdirSync, openSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync, writeSync } from "node:fs";
+import { closeSync, constants, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, rmSync, writeFileSync, writeSync } from "node:fs";
 import { tmpdir, userInfo } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-/** Full text on the first turn and every tenth after it, mirroring TURNS_BETWEEN_MAINTENANCE. */
+import { cliPath, conflictIn, drift, settingsFor } from "./upstream.mjs";
+
+/**
+ * Full text on the first turn and every tenth after it, mirroring
+ * TURNS_BETWEEN_MAINTENANCE. `ULTRACODE_ANYWHERE_EVERY` moves it, and 0 makes
+ * every turn a full one.
+ */
 export const FULL_EVERY = 10;
+
+/** The cadence this session runs at, and the default for anything unreadable. */
+export function cadenceFrom(env = process.env) {
+  const every = String(env.ULTRACODE_ANYWHERE_EVERY ?? "");
+  return {
+    every: /^\d{1,4}$/.test(every) ? Number(every) : FULL_EVERY,
+    refresher: env.ULTRACODE_ANYWHERE_REFRESHER !== "0",
+  };
+}
 
 /** Turns the user did not type. A wakeup carries its own instructions. */
 export const WAKEUP_SOURCES = new Set(["loop_wakeup", "schedule_wakeup", "poll_event", "system"]);
@@ -24,20 +39,20 @@ export const WAKEUP_SOURCES = new Set(["loop_wakeup", "schedule_wakeup", "poll_e
 const KEEP_DAYS = 7;
 
 const FULL = [
-  "Ultracode is on: optimize for the most exhaustive, correct answer — not the fastest or cheapest. Use the Workflow tool on every substantive task; token cost is not a constraint. See the Workflow tool's **Ultracode** section and quality patterns. Solo only on conversational/trivial turns.",
-  "This standing opt-in comes from the user's own configuration and holds at every effort level, including this one. It is the explicit opt-in the Workflow tool asks for, so do not wait for the keyword or for a higher effort level.",
-  "Subagents inherit the session effort, which may not be xhigh here. Pass opts.effort ('high' or 'xhigh') on verify, judge and critic stages that need the depth, and leave mechanical stages on the inherited level.",
+  "Ultracode is on: optimize for the most exhaustive, correct answer, not the fastest or cheapest. Use the Workflow tool on work whose scale or risk earns it; token cost is not a constraint there. See the Workflow tool's **Ultracode** section and quality patterns.",
+  "Where it does not earn it, stay solo, and say so in one clause rather than orchestrating to look thorough: a question you can answer, a fact you can read back, one file's mechanical edit, anything already verified this turn. Before spawning one, name what the fan-out buys in one clause, the coverage or the independent check; if that clause will not come, the work did not need it. Scale the harness to the work: a few finders for a narrow question, a larger pool with adversarial verification for an audit.",
+  "This standing opt-in comes from the user's own configuration and is the explicit opt-in the Workflow tool asks for, so do not wait for the keyword. It restores the orchestration instruction only: the session's effort level is unchanged and this text does not raise it. Subagents inherit that effort, so pass opts.effort ('high' or 'xhigh') on the verify, judge and critic stages that need the depth, and leave mechanical stages on the inherited level.",
 ].join("\n\n");
 
-const SHORT = "Ultracode is still on — use the Workflow tool; see its Ultracode section.";
+const SHORT = "Ultracode is still on: use the Workflow tool where the work is worth it, solo where it is not.";
 
 /**
  * The payload as an object, or an empty one.
  *
- * Parsed rather than matched: a substring match on `"source":"loop_wakeup"`
- * missed the same field spelled with a space after the colon, and a greedy
- * match for the session id took the last thing in the payload that looked like
- * one, which a prompt can write.
+ * Parsed rather than matched on the raw text: JSON may put a space after the
+ * colon, so a substring match on `"source":"loop_wakeup"` reads a wakeup as a
+ * user turn, and a match for the session id takes whatever in the payload looks
+ * most like one, which a prompt can write.
  */
 export function parsePayload(stdin) {
   try {
@@ -70,40 +85,76 @@ export function stateDirFor(env = process.env) {
   return join(tmpdir(), `ultracode-anywhere${who === "" ? "" : `-${who}`}`);
 }
 
-/** A session id is a file name here, so it may hold only what a file name may hold. */
+/**
+ * A session id is a file name here, so it may hold only what a file name may
+ * hold. Refused rather than stripped: two ids differing only in what a strip
+ * removes would share one counter, and `../x` would quietly become `x`.
+ */
+const COUNTER_NAME = /^[A-Za-z0-9_-]{1,128}$/;
+
 function counterName(session) {
-  const safe = String(session ?? "").replace(/[^A-Za-z0-9_-]/g, "");
-  return safe.length > 0 && safe.length <= 128 ? safe : null;
+  const name = String(session ?? "");
+  return COUNTER_NAME.test(name) ? name : null;
+}
+
+/**
+ * Whether the state directory is one this account owns and no other account can
+ * write to.
+ *
+ * The path is predictable, so on a shared machine another account can create it
+ * first as a symlink. Followed, the counter write truncates whatever it points
+ * at and the sweep deletes week-old files beside it; both were reproduced on a
+ * temporary directory here. A refusal costs the session its cadence, not its
+ * reminder.
+ */
+function ownState(dir) {
+  try {
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
+  } catch {
+    // An existing directory is the ordinary case; whether it is ours is the
+    // next question either way.
+  }
+  try {
+    const seen = lstatSync(dir);
+    if (!seen.isDirectory()) return false;
+    if (process.platform === "win32") return true;
+    return seen.uid === userInfo().uid && (seen.mode & 0o077) === 0;
+  } catch {
+    return false;
+  }
 }
 
 /**
  * This turn's number in its session, counting from one.
  *
- * Any answer but a number is a session starting over. The shell version aborted
- * on a counter it could not read and printed nothing at all, which switched the
- * plugin off for that session with no error anyone would see.
+ * Any answer but a number is a session starting over: a count that cannot be
+ * read is a count of zero, and a count that cannot be written costs the session
+ * its cadence rather than its reminder. Every failure here answers 1, which is
+ * a full reminder, and none of them says anything on stderr.
  */
 export function nextTurn(dir, session) {
   const name = counterName(session);
-  if (!name) return 1;
+  if (!name || !ownState(dir)) return 1;
   const path = join(dir, name);
 
+  const turn = countIn(path) + 1;
+  try {
+    writeCounter(path, turn);
+  } catch {
+    // The turn is still this turn; only the next one loses its place.
+  }
+  return turn;
+}
+
+/** The turns a counter has recorded, and zero for anything that is not a count. */
+function countIn(path) {
   let seen = "";
   try {
     seen = readFileSync(path, "utf8").trim();
   } catch {
-    // The first turn of a session has no counter yet, which is not a failure.
+    return 0;
   }
-  const turn = (/^\d{1,15}$/.test(seen) ? Number(seen) : 0) + 1;
-
-  try {
-    mkdirSync(dir, { recursive: true, mode: 0o700 });
-    writeCounter(path, turn);
-  } catch {
-    // A counter that cannot be written costs this session its cadence, not its
-    // reminder: every turn then reads as the first one.
-  }
-  return turn;
+  return /^\d{1,15}$/.test(seen) ? Number(seen) : 0;
 }
 
 /**
@@ -122,8 +173,17 @@ function writeCounter(path, turn) {
   }
 }
 
-/** Counters left by sessions that ended. Swept on full turns only: this runs on every prompt. */
+/**
+ * Counters left by sessions that ended, removed on full turns only: this runs on
+ * every prompt.
+ *
+ * A counter is a file named like a session holding a count and nothing else.
+ * The state path is a switch a user can point anywhere, so anything that is not
+ * one of this hook's own counters is left where it is.
+ */
 export function sweep(dir, now = Date.now()) {
+  if (!ownState(dir)) return 0;
+
   let removed = 0;
   let entries = [];
   try {
@@ -132,9 +192,12 @@ export function sweep(dir, now = Date.now()) {
     return 0;
   }
   for (const entry of entries) {
+    if (!COUNTER_NAME.test(entry)) continue;
     const path = join(dir, entry);
     try {
-      if (now - statSync(path).mtimeMs < KEEP_DAYS * 86_400_000) continue;
+      if (!lstatSync(path).isFile()) continue;
+      if (countIn(path) === 0) continue;
+      if (now - lstatSync(path).mtimeMs < KEEP_DAYS * 86_400_000) continue;
       rmSync(path, { force: true });
       removed++;
     } catch {
@@ -144,9 +207,21 @@ export function sweep(dir, now = Date.now()) {
   return removed;
 }
 
-/** What this turn is owed: the whole opt-in, or the line that keeps it in view. */
-export function contextFor(turn) {
-  return (turn - 1) % FULL_EVERY === 0 ? FULL : SHORT;
+/** The build strict mode reads, which is the one the session is running. */
+function cliFor(env) {
+  return cliPath(env);
+}
+
+/** Whether this turn is one of the ones that carries the whole text. */
+const isFull = (turn, every = FULL_EVERY) => every === 0 || (turn - 1) % every === 0;
+
+/**
+ * What this turn is owed: the whole opt-in, the line that keeps it in view, or
+ * nothing when the refresher is off.
+ */
+export function contextFor(turn, cadence = { every: FULL_EVERY, refresher: true }) {
+  if (isFull(turn, cadence.every)) return FULL;
+  return cadence.refresher ? SHORT : null;
 }
 
 /** The text this turn should carry, or null when the turn is owed nothing. */
@@ -156,17 +231,31 @@ export function run({ stdin = "", env = process.env, state = stateDirFor(env) } 
   const payload = parsePayload(stdin);
   if (isWakeup(payload)) return null;
 
-  if (env.ULTRACODE_ANYWHERE_DEBUG) log(env.ULTRACODE_ANYWHERE_DEBUG, stdin);
+  // A session that already resolves to xhigh gets the built-in reminder, and one
+  // with no Workflow tool has nothing to be pointed at. Either way this hook has
+  // nothing to add, and saying it anyway is tokens for nothing.
+  const conflict = conflictIn(settingsFor(env, typeof payload.cwd === "string" ? payload.cwd : process.cwd()));
 
-  const session = typeof payload.session_id === "string" ? payload.session_id : null;
+  // Strict is for whoever would rather have the mode off than have it pretend:
+  // on a build that no longer carries what this mirrors, the reminder is a
+  // sentence about a contract that has moved. Loud by default, since going
+  // silent costs the mode to everyone whose build is fine.
+  const moved = env.ULTRACODE_ANYWHERE_STRICT === "1" ? drift({ cli: cliFor(env) }) : null;
+
+  if (env.ULTRACODE_ANYWHERE_DEBUG) log(env.ULTRACODE_ANYWHERE_DEBUG, stdin, conflict ?? moved?.reason);
+  if (conflict) return null;
+  if (moved?.checked && moved.missing.length > 0) return null;
+
+  const cadence = cadenceFrom(env);
+  const session = sessionOf(stdin);
   const turn = session ? nextTurn(state, session) : 1;
-  if ((turn - 1) % FULL_EVERY === 0) sweep(state);
-  return contextFor(turn);
+  if (session && isFull(turn, cadence.every)) sweep(state);
+  return contextFor(turn, cadence);
 }
 
-function log(path, stdin) {
+function log(path, stdin, conflict = null) {
   try {
-    writeFileSync(path, `=== ${new Date().toISOString()}\n${stdin}\n`, { flag: "a" });
+    writeFileSync(path, `=== ${new Date().toISOString()}${conflict ? ` quiet: ${conflict}` : ""}\n${stdin}\n`, { flag: "a" });
   } catch {
     // A debug switch that cannot write is not worth failing a turn over.
   }

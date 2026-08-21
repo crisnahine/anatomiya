@@ -13,9 +13,23 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   Workflow orchestration on `effort === "xhigh"`, but what that gate controls is one
   system-reminder rather than the Workflow tool, whose availability carries no effort term. A
   `UserPromptSubmit` hook restates the reminder each prompt so the mode holds wherever
-  `effortLevel` is set. It shares the repository and nothing else: no code here imports it, and
-  `anatomiya` installs exactly as before. The hook runs through `node`, so it fires on a machine
+  `effortLevel` is set. It shares the repository and nothing else: no shipped `anatomiya` code
+  imports it, the npm package still excludes it, and `anatomiya` installs exactly as before. Its
+  tests and coverage do run with the suite. The hook runs through `node`, so it fires on a machine
   with no shell, and its tests cover the turn it speaks on and the turns it does not.
+
+  What it restores is the instruction, not the effort level, and it says so in the reminder rather
+  than leaving a model to report itself as running at xhigh. The reminder carries its own floor,
+  since a fan-out over work that did not need one costs more than the tokens it saves: name what
+  the fan-out buys, or stay solo. It reads the settings Claude Code reads and stays quiet in a
+  session where `"ultracode": true` already forces the built-in reminder or `"enableWorkflows"` is
+  false. A `SessionStart` check reads the installed build for the four things the premise rests on,
+  three names and the sentence in the Workflow tool's description that makes a standing mode count
+  as an explicit opt-in, and names anything missing rather than letting the plugin rot quietly;
+  `ULTRACODE_ANYWHERE_STRICT=1` makes that a switch. A build whose minor differs from the one this
+  was calibrated against is named too, and `ultracode-anywhere/VERIFYING.md` is the list a person
+  works to re-check it. The concurrent-subagent cap it cannot lift is named once per machine, with
+  the setting that lifts it.
 
 ### Changed
 
