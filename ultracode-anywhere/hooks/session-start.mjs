@@ -54,7 +54,21 @@ function capRaised(settings, env) {
   return Boolean(settings?.env?.CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS || env.CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS);
 }
 
+// The same boundary the prompt hook keeps, for the same reason: whatever throws,
+// a hook that fails is worse than a hook that said nothing (A24).
 if (invokedAs(import.meta.url)) {
-  const payload = parsePayload(readStdin());
-  respond("SessionStart", notice({ cwd: typeof payload.cwd === "string" ? payload.cwd : process.cwd() }));
+  try {
+    const payload = parsePayload(readStdin());
+    respond("SessionStart", notice({ cwd: typeof payload.cwd === "string" ? payload.cwd : here() }));
+  } catch {
+    // Nothing to say, and nothing worth failing a session's first turn over.
+  }
+}
+
+function here() {
+  try {
+    return process.cwd();
+  } catch {
+    return "";
+  }
 }

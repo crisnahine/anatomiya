@@ -38,6 +38,11 @@ scan, pin and check on every commit.
 /plugin install anatomiya@crisnahine
 ```
 
+The marketplace lists a second plugin, `ultracode-anywhere`, which shares this repository and
+nothing else: no code here imports it and the npm package excludes it. It keeps Claude Code's
+standing Workflow orchestration on at any effort level, and its own README says what it does and
+does not restore. Installing `anatomiya` does not install it.
+
 `/plugin install` copies the files and does not install anything, and the scanner has two runtime
 dependencies, `oxc-parser` and `flow-remove-types`. Install them once:
 
@@ -337,7 +342,7 @@ gate's second opinion. The full numbers and their caveats are in [docs/why.md](d
 
 ## Learn more
 
-- [DECISIONS.md](DECISIONS.md) is the build contract: 158 numbered decisions, each with the
+- [DECISIONS.md](DECISIONS.md) is the build contract: 159 numbered decisions, each with the
   measurement or the review finding that forced it. Why a threshold is where it is, why the parser
   runs in child processes, why there is no hook: that is the file.
 - [docs/why.md](docs/why.md) is the longer argument and the full numbers.

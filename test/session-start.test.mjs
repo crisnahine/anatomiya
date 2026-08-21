@@ -6,12 +6,16 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 
+import { needsRemovableCwd } from "./platform.mjs";
 import { CALIBRATED_AGAINST, MARKERS, MIN_BUNDLE } from "../ultracode-anywhere/hooks/upstream.mjs";
 import { notice } from "../ultracode-anywhere/hooks/session-start.mjs";
 
+/** What a build carries: the four names, and the gate the reminder is emitted under. */
+const whole = () => `function Mae(e,t,r){return r===!0&&ZL()&&zZ(e,t)==="xhigh"}\n${MARKERS.join("\n")}`;
+
 const HOOK = fileURLToPath(new URL("../ultracode-anywhere/hooks/session-start.mjs", import.meta.url));
 
-function tree(t, { bundle = MARKERS.join("\n"), settings = null } = {}) {
+function tree(t, { bundle = whole(), settings = null } = {}) {
   const dir = mkdtempSync(join(tmpdir(), "ultracode-session-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const cli = join(dir, "cli.js");
@@ -29,7 +33,7 @@ test("a session where everything lines up is told nothing", (t) => {
 });
 
 test("a build that dropped a marker is reported at the start of the session, once", (t) => {
-  const t1 = tree(t, { bundle: MARKERS.slice(1).join("\n") });
+  const t1 = tree(t, { bundle: `${whole()}`.replace(MARKERS[0], "") });
 
   const said = notice({ cli: t1.cli, state: t1.state, env: { CLAUDE_CONFIG_DIR: t1.config, ULTRACODE_ANYWHERE_CAP_NOTICE: "0" } });
 
@@ -51,7 +55,7 @@ test("a machine with no build to read is not warned about", (t) => {
 });
 
 test("the hook prints one SessionStart object and nothing when there is nothing to say", (t) => {
-  const t1 = tree(t, { bundle: MARKERS.slice(1).join("\n") });
+  const t1 = tree(t, { bundle: `${whole()}`.replace(MARKERS[0], "") });
   const fire = (env) =>
     spawnSync(process.execPath, [HOOK], {
       input: JSON.stringify({ session_id: "s", hook_event_name: "SessionStart", source: "startup", cwd: t1.dir }),
@@ -66,7 +70,7 @@ test("the hook prints one SessionStart object and nothing when there is nothing 
   assert.equal(out.hookSpecificOutput.hookEventName, "SessionStart");
   assert.match(out.hookSpecificOutput.additionalContext, new RegExp(MARKERS[0]));
 
-  writeFileSync(t1.cli, MARKERS.join("\n"));
+  writeFileSync(t1.cli, whole());
   const clean = fire(t1.cli);
   assert.equal(clean.stdout, "");
   assert.equal(clean.status, 0);
@@ -87,7 +91,7 @@ test("a build whose minor differs from the calibrated one is named at the start 
   const versions = join(dir, ".local", "share", "claude", "versions");
   mkdirSync(versions, { recursive: true });
   const cli = join(versions, "99.9.9");
-  writeFileSync(cli, MARKERS.join("\n"));
+  writeFileSync(cli, whole());
   truncateSync(cli, MIN_BUNDLE + 1);
   mkdirSync(join(dir, "config"), { recursive: true });
 
@@ -138,8 +142,24 @@ test("a build that changed under the same path is read again", (t) => {
 });
 
 test("the switch that turns the plugin off for a session turns off both its hooks", (t) => {
-  const t1 = tree(t, { bundle: MARKERS.slice(1).join("\n"), settings: { ultracode: true } });
+  const t1 = tree(t, { bundle: `${whole()}`.replace(MARKERS[0], ""), settings: { ultracode: true } });
 
   assert.equal(notice({ cli: t1.cli, state: t1.state, env: { CLAUDE_CONFIG_DIR: t1.config, ULTRACODE_ANYWHERE: "0" } }), null);
   assert.equal(existsSync(t1.state), false, "and it writes nothing on the way");
+});
+
+test("a session started from a directory that is no longer there still starts", needsRemovableCwd, (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "ultracode-session-gone-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const gone = join(dir, "gone");
+  mkdirSync(gone, { recursive: true });
+
+  const run = spawnSync("/bin/sh", ["-c", `cd "${gone}" && rm -rf "${gone}" && exec "${process.execPath}" "${HOOK}"`], {
+    input: "",
+    encoding: "utf8",
+    env: { ...process.env, CLAUDE_CONFIG_DIR: join(dir, "config"), HOME: dir, ULTRACODE_ANYWHERE_STATE: join(dir, "state") },
+  });
+
+  assert.equal(run.status, 0, run.stderr);
+  assert.equal(run.stderr, "");
 });

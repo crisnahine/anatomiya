@@ -5,10 +5,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { cached } from "../ultracode-anywhere/hooks/counters.mjs";
-import { CALIBRATED_AGAINST, MARKERS, MIN_BUNDLE, behind, cliPath, drift, driftCached, settingsFor } from "../ultracode-anywhere/hooks/upstream.mjs";
+import { CALIBRATED_AGAINST, GATE_SHAPE, MARKERS, MIN_BUNDLE, behind, cliPath, drift, driftCached, settingsFor } from "../ultracode-anywhere/hooks/upstream.mjs";
+
+/** What a build carries: the four names, and the gate the reminder is emitted under. */
+const whole = () => `function Mae(e,t,r){return r===!0&&ZL()&&zZ(e,t)==="xhigh"}\n${MARKERS.join("\n")}`;
 
 /** A tree standing in for an installed Claude Code and a user's config directory. */
-function installed(t, { bundle = MARKERS.join("\n"), settings = null, project = null } = {}) {
+function installed(t, { bundle = whole(), settings = null, project = null } = {}) {
   const dir = mkdtempSync(join(tmpdir(), "ultracode-upstream-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
 
@@ -66,7 +69,7 @@ test("a build carrying every marker this plugin was calibrated against has not d
 });
 
 test("a build that dropped a marker says which one, so the plugin is not trusted in silence", (t) => {
-  const tree = installed(t, { bundle: MARKERS.slice(1).join("\n") });
+  const tree = installed(t, { bundle: `${whole()}`.replace(MARKERS[0], "") });
 
   const answer = drift({ cli: tree.cli });
 
@@ -135,8 +138,8 @@ test("the build a version-managed install keeps is found when only a shim is on 
   writeFileSync(join(bin, "claude"), "#!/bin/sh\nexec claude\n");
   const versions = join(dir, ".local", "share", "claude", "versions");
   mkdirSync(versions, { recursive: true });
-  bundle(join(versions, "2.0.0"), MARKERS.slice(1).join("\n"));
-  bundle(join(versions, "2.1.238"), MARKERS.join("\n"));
+  bundle(join(versions, "2.0.0"), `${whole()}`.replace(MARKERS[0], ""));
+  bundle(join(versions, "2.1.238"), whole());
 
   const found = cliPath({ PATH: bin, HOME: dir });
 
@@ -165,8 +168,9 @@ test("the version this plugin was checked against is stated, and a newer one is 
 // --- what counts as evidence about the build ----------------------------------
 
 test("the build is taken from the variable Claude Code actually sets", (t) => {
-  // `CLAUDE_CODE_EXECPATH` appears nowhere in the shipped build and is
-  // never set; `CLAUDE_CODE_EXECPATH` is set to the running build's own path.
+  // The name this once read, `CLAUDE_CODE_ENTRYPOINT_PATH`, appears nowhere in
+  // the shipped build and is never set. `CLAUDE_CODE_EXECPATH` is, and it holds
+  // the running build's own path.
   const tree = installed(t);
 
   assert.equal(cliPath({ CLAUDE_CODE_EXECPATH: tree.cli, PATH: "", HOME: tree.dir }), realpathSync(tree.cli));
@@ -181,7 +185,7 @@ test("a file called claude that is not a Claude Code build is no evidence, not a
 });
 
 test("a build carrying some of the four and not others is the drift this looks for", (t) => {
-  const tree = installed(t, { bundle: MARKERS.slice(1).join("\n") });
+  const tree = installed(t, { bundle: `${whole()}`.replace(MARKERS[0], "") });
 
   assert.deepEqual(drift({ cli: tree.cli }).missing, [MARKERS[0]]);
 });
@@ -190,7 +194,7 @@ test("an answer nobody could read is not kept, so the next session asks again", 
   // Keeping only the reason collapsed "the build is fine" and "I could not read
   // the build" into the same null, and cached that under a key an unreadable
   // build does not move.
-  const tree = installed(t, { bundle: MARKERS.slice(1).join("\n") });
+  const tree = installed(t, { bundle: `${whole()}`.replace(MARKERS[0], "") });
   const state = join(tree.dir, "state");
 
   assert.match(driftCached(tree.cli, state, cached), new RegExp(MARKERS[0]));
@@ -198,4 +202,39 @@ test("an answer nobody could read is not kept, so the next session asks again", 
 
   assert.deepEqual(readdirSync(state), [".drift"]);
   assert.match(readFileSync(join(state, ".drift"), "utf8"), new RegExp(MARKERS[0]), "the answer kept is the one that was read");
+});
+
+test("a memoiser that knows nothing of this module still gets an answer", (t) => {
+  // The refusal to keep an answer is this module's business, not the caller's.
+  const tree = installed(t, { bundle: `${whole()}`.replace(MARKERS[0], "") });
+  const plain = (dir, name, key, compute) => compute();
+
+  assert.match(driftCached(tree.cli, "unused", plain), new RegExp(MARKERS[0]));
+  assert.equal(driftCached(null, "unused", plain), null);
+});
+
+// --- the gate itself, now that the build can be read --------------------------
+
+test("the predicate this plugin is built on is still in the build, shape and all", (t) => {
+  // Better than a name: the gate is one readable function, and what matters is
+  // that the xhigh term is a conjunct rather than something the reminder sets.
+  const tree = installed(t, { bundle: whole() });
+
+  assert.deepEqual(drift({ cli: tree.cli }).missing, []);
+});
+
+test("a build whose gate stopped requiring xhigh is a build this no longer describes", (t) => {
+  const tree = installed(t, { bundle: `function Mae(e,t,r){return r===!0&&ZL()}\n${MARKERS.join("\n")}` });
+
+  assert.deepEqual(drift({ cli: tree.cli }).missing, [GATE_SHAPE]);
+});
+
+test("the installed build still carries that shape", (t) => {
+  const cli = cliPath();
+  if (!cli) return t.skip("no Claude Code build on this machine to read");
+
+  const answer = drift({ cli });
+  if (!answer.checked) return t.skip("the installed build could not be read");
+
+  assert.deepEqual(answer.missing, [], answer.reason ?? "");
 });

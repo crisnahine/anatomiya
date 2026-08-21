@@ -3,7 +3,7 @@
  * object back. Shared so the two entry points cannot spell the answer
  * differently, which is the shape Claude Code parses.
  */
-import { readFileSync, realpathSync, statSync } from "node:fs";
+import { closeSync, constants, fstatSync, openSync, readSync, realpathSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -13,19 +13,15 @@ const MOST = 1024 * 1024;
 /**
  * The payload, and an empty string where there is none to read.
  *
- * Bounded and typed, because a hook runs on every prompt: an unbounded read of
- * a pipe nobody writes to holds the session until the hook times out, and the
- * same read of a device returns for as long as the device is willing to talk.
+ * Read a megabyte at most and stopped there, because a hook runs on every
+ * prompt: reading a stream whole holds the session until the hook times out if
+ * nobody closes the other end, and costs whatever the writer sends if somebody
+ * does. Three hundred megabytes piped in read as 1.2 GB of memory before this
+ * counted what it had taken.
  */
 export function readStdin(fd = 0) {
   try {
-    const seen = statSync(fd);
-    if (seen.isFile() && seen.size > MOST) return "";
-  } catch {
-    // A pipe has no size to check, which is the ordinary case here.
-  }
-  try {
-    return readFileSync(fd, "utf8").slice(0, MOST);
+    return upTo(fd, MOST);
   } catch {
     return "";
   }
@@ -33,19 +29,46 @@ export function readStdin(fd = 0) {
 
 /**
  * A file's text, or an empty string for anything that is not a plain file this
- * size. A fifo blocks and a device never ends, and either is the whole turn.
+ * size.
+ *
+ * Opened first and asked what it is afterwards, through the handle rather than
+ * the path: a fifo blocks and a device never ends, and a path checked and then
+ * opened is a path something else can swap in between.
  */
 export function readIfFile(path, most = MOST) {
+  let fd;
   try {
-    if (!statSync(path).isFile() || statSync(path).size > most) return "";
+    fd = openSync(path, constants.O_RDONLY | (constants.O_NONBLOCK ?? 0));
+    const seen = fstatSync(fd);
+    if (!seen.isFile() || seen.size > most) return "";
+    return upTo(fd, most);
   } catch {
     return "";
+  } finally {
+    if (fd !== undefined) closeSync(fd);
   }
-  try {
-    return readFileSync(path, "utf8");
-  } catch {
-    return "";
+}
+
+/** At most `most` bytes off a handle, however much the far end wants to send. */
+function upTo(fd, most) {
+  const buffer = Buffer.allocUnsafe(Math.min(most, 1 << 20));
+  const parts = [];
+  let taken = 0;
+  while (taken < most) {
+    let read;
+    try {
+      read = readSync(fd, buffer, 0, Math.min(buffer.length, most - taken), null);
+    } catch (err) {
+      // A non-blocking handle with nothing ready to read says so rather than
+      // waiting, and a turn is not worth waiting for the rest.
+      if (err?.code === "EAGAIN" || err?.code === "EOF") break;
+      throw err;
+    }
+    if (read <= 0) break;
+    parts.push(buffer.toString("utf8", 0, read));
+    taken += read;
   }
+  return parts.join("");
 }
 
 /** The payload as an object, or an empty one. */

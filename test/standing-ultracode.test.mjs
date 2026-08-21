@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { spawn, spawnSync } from "node:child_process";
 import { once } from "node:events";
 
-import { needsSymlinks } from "./platform.mjs";
+import { needsRemovableCwd, needsSymlinks } from "./platform.mjs";
 import { MARKERS, MIN_BUNDLE } from "../ultracode-anywhere/hooks/upstream.mjs";
 
 import { FULL_EVERY, contextFor, isWakeup, run } from "../ultracode-anywhere/hooks/standing-ultracode.mjs";
@@ -33,12 +33,26 @@ function payload(fields = {}) {
   });
 }
 
+/**
+ * A settings directory and a home of this test's own.
+ *
+ * Without them a run reads the machine's `~/.claude/settings.json`, and the
+ * likeliest reader of this suite is somebody who has `"ultracode": true` in it,
+ * which silences the hook and fails sixteen tests that are about something
+ * else.
+ */
+function nowhere(t) {
+  const dir = mkdtempSync(join(tmpdir(), "ultracode-elsewhere-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  return { CLAUDE_CONFIG_DIR: dir, HOME: dir, USERPROFILE: dir };
+}
+
 /** The hook as Claude Code runs it: a process, a payload on stdin, JSON on stdout. */
 function fire(t, { stdin = payload(), env = {}, dir = stateDir(t) } = {}) {
   const result = spawnSync(process.execPath, [HOOK], {
     input: stdin,
     encoding: "utf8",
-    env: { ...process.env, ULTRACODE_ANYWHERE_STATE: dir, ...env },
+    env: { ...process.env, ...nowhere(t), ULTRACODE_ANYWHERE_STATE: dir, ...env },
   });
   return { ...result, dir };
 }
@@ -157,9 +171,9 @@ test("contextFor opens with the whole text and answers nothing between refresher
 test("run answers with the text a turn is owed, and null when it is owed nothing", (t) => {
   const dir = stateDir(t);
 
-  assert.match(run({ stdin: payload(), env: {}, state: dir }), /Workflow tool/);
-  assert.equal(run({ stdin: payload({ source: "loop_wakeup" }), env: {}, state: dir }), null);
-  assert.equal(run({ stdin: payload(), env: { ULTRACODE_ANYWHERE: "0" }, state: dir }), null);
+  assert.match(run({ stdin: payload(), env: nowhere(t), state: dir }), /Workflow tool/);
+  assert.equal(run({ stdin: payload({ source: "loop_wakeup" }), env: nowhere(t), state: dir }), null);
+  assert.equal(run({ stdin: payload(), env: { ...nowhere(t), ULTRACODE_ANYWHERE: "0" }, state: dir }), null);
 });
 
 // --- what the plugin ships ---------------------------------------------------
@@ -301,20 +315,20 @@ test("a session whose settings already force ultracode says nothing, rather than
   const dir = stateDir(t);
   const config = configWith(t, { ultracode: true });
 
-  assert.equal(run({ stdin: payload(), env: { CLAUDE_CONFIG_DIR: config }, state: dir }), null);
+  assert.equal(run({ stdin: payload(), env: { ...nowhere(t), CLAUDE_CONFIG_DIR: config }, state: dir }), null);
   assert.deepEqual(readdirSync(dir), [], "and it does not count a turn it did not speak on");
 });
 
 test("a session with the Workflow tool switched off says nothing, since there is no tool to point at", (t) => {
   const config = configWith(t, { enableWorkflows: false });
 
-  assert.equal(run({ stdin: payload(), env: { CLAUDE_CONFIG_DIR: config }, state: stateDir(t) }), null);
+  assert.equal(run({ stdin: payload(), env: { ...nowhere(t), CLAUDE_CONFIG_DIR: config }, state: stateDir(t) }), null);
 });
 
 test("a session that only sets an effort level is the ordinary case and still gets the reminder", (t) => {
   const config = configWith(t, { effortLevel: "medium", enableWorkflows: true });
 
-  assert.match(run({ stdin: payload(), env: { CLAUDE_CONFIG_DIR: config }, state: stateDir(t) }), /Workflow tool/);
+  assert.match(run({ stdin: payload(), env: { ...nowhere(t), CLAUDE_CONFIG_DIR: config }, state: stateDir(t) }), /Workflow tool/);
 });
 
 // --- the model still decides, so the reminder says how to decide --------------
@@ -331,21 +345,21 @@ test("strict mode goes quiet on a build that no longer carries what the plugin m
   const cli = join(dir, "moved-build");
   writeFileSync(cli, "a build carrying none of the names this plugin mirrors");
   truncateSync(cli, MIN_BUNDLE + 1);
-  const env = { CLAUDE_CODE_EXECPATH: cli, CLAUDE_CONFIG_DIR: configWith(t, {}) };
+  const env = { ...nowhere(t), CLAUDE_CODE_EXECPATH: cli, CLAUDE_CONFIG_DIR: configWith(t, {}) };
 
   assert.match(run({ stdin: payload(), env, state: dir }), /Workflow tool/, "loud by default");
-  assert.equal(run({ stdin: payload(), env: { ...env, ULTRACODE_ANYWHERE_STRICT: "1" }, state: dir }), null);
+  assert.equal(run({ stdin: payload(), env: { ...nowhere(t), ...env, ULTRACODE_ANYWHERE_STRICT: "1" }, state: dir }), null);
 });
 
 test("strict mode still speaks where the build is the one this was calibrated against", (t) => {
   const dir = stateDir(t);
   const cli = join(dir, "current-build");
-  writeFileSync(cli, MARKERS.join("\n"));
+  writeFileSync(cli, `function Mae(e,t,r){return r===!0&&ZL()&&zZ(e,t)==="xhigh"}\n${MARKERS.join("\n")}`);
   truncateSync(cli, MIN_BUNDLE + 1);
 
   const said = run({
     stdin: payload(),
-    env: { CLAUDE_CODE_EXECPATH: cli, CLAUDE_CONFIG_DIR: configWith(t, {}), ULTRACODE_ANYWHERE_STRICT: "1" },
+    env: { ...nowhere(t), CLAUDE_CODE_EXECPATH: cli, CLAUDE_CONFIG_DIR: configWith(t, {}), ULTRACODE_ANYWHERE_STRICT: "1" },
     state: dir,
   });
 
@@ -369,7 +383,7 @@ test("the hook runs when it is reached through a symlinked directory", needsSyml
   const through = spawnSync(process.execPath, [join(dir, "link", "ultracode-anywhere", "hooks", "standing-ultracode.mjs")], {
     input: payload(),
     encoding: "utf8",
-    env: { ...process.env, ULTRACODE_ANYWHERE_STATE: join(dir, "state") },
+    env: { ...process.env, ...nowhere(t), ULTRACODE_ANYWHERE_STATE: join(dir, "state") },
   });
 
   assert.equal(through.status, 0);
@@ -380,7 +394,7 @@ test("a reader that goes away mid-write does not turn the hook into a failed one
   // The one path in this plugin that could reach stderr and a non-zero exit,
   // which is the outcome a hook must not have.
   const dir = stateDir(t);
-  const child = spawn(process.execPath, [HOOK], { env: { ...process.env, ULTRACODE_ANYWHERE_STATE: dir } });
+  const child = spawn(process.execPath, [HOOK], { env: { ...process.env, ...nowhere(t), ULTRACODE_ANYWHERE_STATE: dir } });
   let stderr = "";
   child.stderr.on("data", (chunk) => {
     stderr += chunk;
@@ -394,7 +408,7 @@ test("a reader that goes away mid-write does not turn the hook into a failed one
   assert.equal(stderr, "");
 });
 
-test("a settings file that is not a regular file is read as no settings, not waited on", (t) => {
+test("a settings file that is not a regular file is read as no settings, not waited on", needsSymlinks, (t) => {
   // A repository can carry `.claude/settings.json` as a symlink to a device or
   // a fifo, and a clone of it made the hook read for as long as the timeout
   // allowed, allocating as it went.
@@ -417,7 +431,7 @@ test("a cadence of zero turns between refreshers falls back to the default", (t)
   const dir = stateDir(t);
   const shapes = [];
   for (let i = 0; i < 12; i++) {
-    const said = run({ stdin: payload({ session_id: "zero" }), env: { ULTRACODE_ANYWHERE_EVERY: "0" }, state: dir });
+    const said = run({ stdin: payload({ session_id: "zero" }), env: { ...nowhere(t), ULTRACODE_ANYWHERE_EVERY: "0" }, state: dir });
     shapes.push(said === null ? "-" : said.length > 200 ? "F" : "s");
   }
 
@@ -438,4 +452,24 @@ test("the debug log records the fires it stayed quiet on, which are the ones bei
   assert.match(lines[0], /quiet: a wakeup/);
   assert.match(lines[1], /quiet: ULTRACODE_ANYWHERE=0/);
   assert.equal(/quiet:/.test(lines[2]), false, "and the turn it spoke on says nothing about being quiet");
+});
+
+test("a turn taken from a directory that is no longer there is still a turn that succeeds", needsRemovableCwd, (t) => {
+  // Whatever throws, wherever it came from: a hook that exits non-zero
+  // interrupts the run it exists to help, and it would do it on every prompt
+  // for the life of the session. Here it is `process.cwd()`, reached when the
+  // payload names none and the session's own directory has been removed.
+  const dir = mkdtempSync(join(tmpdir(), "ultracode-gone-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const gone = join(dir, "gone");
+  mkdirSync(gone, { recursive: true });
+
+  const run = spawnSync("/bin/sh", ["-c", `cd "${gone}" && rm -rf "${gone}" && exec "${process.execPath}" "${HOOK}"`], {
+    input: "",
+    encoding: "utf8",
+    env: { ...process.env, ULTRACODE_ANYWHERE_STATE: join(dir, "state"), CLAUDE_CONFIG_DIR: join(dir, "config") },
+  });
+
+  assert.equal(run.status, 0, run.stderr);
+  assert.equal(run.stderr, "");
 });

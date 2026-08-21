@@ -7,59 +7,58 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+A second plugin in this marketplace, and the manifest check that now reads every plugin the
+marketplace lists. Claude Code gates its standing Workflow orchestration on `effort === "xhigh"`,
+and what that gate controls is one system-reminder rather than the Workflow tool, whose
+availability carries no effort term. `ultracode-anywhere` restates that reminder on the built-in's
+own cadence, so the mode holds wherever `effortLevel` is set, and says out loud what it does not
+restore.
+
 ### Added
 
-- `ultracode-anywhere`, a second plugin in this marketplace. Claude Code gates its standing
-  Workflow orchestration on `effort === "xhigh"`, but what that gate controls is one
-  system-reminder rather than the Workflow tool, whose availability carries no effort term. A
-  `UserPromptSubmit` hook restates that reminder on the cadence the built-in uses, so the mode
-  holds wherever `effortLevel` is set. It shares the repository and nothing else: no shipped `anatomiya` code
-  imports it, the npm package still excludes it, and `anatomiya` installs exactly as before. Its
-  tests and coverage do run with the suite. The hook runs through `node`, so it fires on a machine
-  with no shell, and its tests cover the turn it speaks on and the turns it does not.
-
-  What it restores is the instruction, not the effort level, and it says so in the reminder rather
-  than leaving a model to report itself as running at xhigh. The reminder carries its own floor,
-  since a fan-out over work that did not need one costs more than the tokens it saves: name what
-  the fan-out buys, or stay solo. It reads the settings Claude Code reads and stays quiet in a
-  session where `"ultracode": true` already forces the built-in reminder or `"enableWorkflows"` is
-  false. A `SessionStart` check reads the installed build for the four things the premise rests on,
-  three names and the sentence in the Workflow tool's description that makes a standing mode count
-  as an explicit opt-in, and names anything missing rather than letting the plugin rot quietly;
-  `ULTRACODE_ANYWHERE_STRICT=1` makes that a switch. A build whose minor differs from the one this
-  was calibrated against is named too, and `ultracode-anywhere/VERIFYING.md` is the list a person
-  works to re-check it. The concurrent-subagent cap it cannot lift is named once per machine, with
-  the setting that lifts it.
-
-  Everything the plugin keeps between turns goes through one module, which refuses a state
-  directory that is a symlink, is not a directory, or lets other accounts in, and writes without
-  following a link standing where a file should be.
-
-  The cadence matches the built-in rather than beating it: the whole text opens the session, a
-  one-line refresher comes back every tenth turn, and the turns in between say nothing, which is
-  1412 characters over a 30-turn session where a line on every turn would be 3950. The build is
-  read once per build rather than once per session. What the check cannot prove is written down
-  rather than asserted: the shipped build is a compiled binary, so a claim about the
-  concurrent-subagent cap that nothing here can show was cut from the README, and the README now
-  carries a table of the four ways this deliberately differs from the native mode.
-
-  Review round two: the hook did nothing at all when the plugin was reached through a symlinked
-  directory, which is what a relocated home looks like, because the guard compared a resolved path
-  against the one the loader spelled. A repository carrying `.claude/settings.json` as a link to a
-  device could hold a prompt until the hook timed out; every read here is bounded and refuses
-  anything that is not a plain file. A file called `claude` earlier on the path that is not a build
-  counts as no evidence rather than as drift, the build is found through the variable Claude Code
-  actually sets, and an answer nobody could read is not kept. A counter slot holding something
-  other than a count is left alone rather than written over. `scripts/validate.mjs` refuses a
-  manifest that parses to `null`, an absolute source, a plugin directory symlinked out of the
-  repository, and the same plugin listed twice, and it reads every file a hook command names.
+- `ultracode-anywhere`, a second plugin. A `UserPromptSubmit` hook opens the session with the
+  standing opt-in and comes back as one line every tenth turn, 1412 characters over a 30-turn
+  session. It runs through `node`, so it fires where there is no shell.
+- The reminder carries its own floor: name what a fan-out buys, or stay solo. A dozen agents on a
+  one-file edit costs more than the tokens the text saves.
+- What it restores is the instruction, not the effort level, and the text says so rather than
+  leaving a model to report itself as running at xhigh.
+- A `SessionStart` check reads the installed build for the four things the premise rests on and
+  for the gate itself, and names anything missing. `ULTRACODE_ANYWHERE_STRICT=1` turns that into a
+  switch; `ultracode-anywhere/VERIFYING.md` is the list a person works when the version moves.
+- It stays quiet where it would be noise: `"ultracode": true` already fires the built-in reminder,
+  and `"enableWorkflows": false` leaves no tool to point at. A line says which setting silenced it.
+- The concurrent-subagent cap it does not lift is named once per machine, with the setting that
+  lifts it and the evidence that native ultracode does.
+- It shares the repository and nothing else: no shipped `anatomiya` code imports it and the npm
+  package still excludes it. Its tests and coverage run with the suite.
 
 ### Changed
 
-- `npm run validate` reads every plugin the marketplace lists, not only the one at the root. A
-  second entry was checked for its directory being there, and a directory with no manifest in it
-  installs as nothing. It now reads each listed plugin's own manifest and the files its hooks
-  name, it is covered by its own tests, and CI runs it.
+- `npm run validate` reads every plugin the marketplace lists, not only the one at the root: each
+  plugin's own manifest, the paths that manifest names, and the files its hooks run. The workflow's
+  inline copy of those checks is gone, the script is the copy that has tests, and CI runs it.
+- Everything the plugin keeps between turns goes through one module, which refuses a state
+  directory that is a symlink, is not a directory, or lets other accounts in, and writes without
+  following a link standing where a file should be.
+
+### Fixed
+
+- Three review rounds, each against the round before it. A hook reached through a symlinked
+  directory did nothing at all and said nothing about it, because the guard compared a resolved
+  path against the one the loader spelled; the same equality still sat in `scripts/validate.mjs`,
+  which is CI's only manifest gate.
+- A repository carrying `.claude/settings.json` as a link to a device could hold a prompt until the
+  hook timed out. Every read here is bounded and asks an open handle what it is rather than asking
+  the path.
+- A file called `claude` earlier on the path that is not a build counted as drift. It counts as no
+  evidence now, the build is found through the variable Claude Code sets, and an answer nobody
+  could read is not kept.
+- A counter slot holding something other than a count is left alone rather than written over, and
+  the sweep looks at a bounded number of entries.
+- `scripts/validate.mjs` refuses a manifest that parses to `null`, an absolute source, a plugin
+  directory symlinked out of the repository, and the same plugin listed twice; it reads every file
+  a hook command names, and no longer reads a quoted flag as part of a filename.
 
 ## [0.2.8] - 2026-08-21
 

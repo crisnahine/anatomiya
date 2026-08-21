@@ -38,6 +38,22 @@ export const CALIBRATED_AGAINST = "2.1.238";
  * in the build this was read off, so it would have failed on the build it was
  * calibrated against (A29).
  */
+/**
+ * The gate itself, as a shape rather than a name.
+ *
+ * The build ships as a compiled binary but its JavaScript is readable inside:
+ * the predicate is one minified function whose names change between builds and
+ * whose shape does not. What the premise needs is that the xhigh term is a
+ * conjunct, so this matches a function of three arguments returning a flag, a
+ * call and an effort comparison against "xhigh". A build that stops requiring
+ * xhigh there is a build this plugin no longer describes, whatever names
+ * survive (A31).
+ */
+export const GATE = /function [A-Za-z_$][\w$]*\([^)]{0,24}\)\{return [\w$]+===!0&&[\w$]+\(\)&&[\w$]+\([^)]{0,24}\)==="xhigh"\}/;
+
+/** What a missing gate is called when the check reports it. */
+export const GATE_SHAPE = "the xhigh gate the reminder is emitted under";
+
 export const MARKERS = [
   "ultra_effort_enter",
   "enableWorkflows",
@@ -63,17 +79,23 @@ const CHUNK = 1 << 20;
 export const MIN_BUNDLE = 5_000_000;
 
 /** The settings Claude Code would read here: the user's, with a project's own on top. */
-export function settingsFor(env = process.env, cwd = process.cwd()) {
-  const config = env.CLAUDE_CONFIG_DIR || join(homedir(), ".claude");
+export function settingsFor(env = process.env, cwd = "") {
+  const config = env.CLAUDE_CONFIG_DIR || join(homeOf(env), ".claude");
+  const paths = [join(config, "settings.json")];
+  if (cwd) paths.push(join(cwd, ".claude", "settings.json"), join(cwd, ".claude", "settings.local.json"));
+
   const merged = {};
-  for (const path of [
-    join(config, "settings.json"),
-    join(cwd, ".claude", "settings.json"),
-    join(cwd, ".claude", "settings.local.json"),
-  ]) {
-    Object.assign(merged, readSettings(path));
-  }
+  for (const path of paths) Object.assign(merged, readSettings(path));
   return merged;
+}
+
+/** The home Claude Code would read, which a test may point somewhere of its own. */
+function homeOf(env) {
+  try {
+    return env.CLAUDE_CONFIG_DIR ? "" : env.HOME || env.USERPROFILE || homedir();
+  } catch {
+    return "";
+  }
 }
 
 function readSettings(path) {
@@ -121,7 +143,7 @@ function* candidates(env) {
     for (const name of names) yield real(join(dir, name));
   }
 
-  const home = env.HOME || env.USERPROFILE || homedir();
+  const home = homeOf(env) || homedir();
   const versions = join(home, ".local", "share", "claude", "versions");
   for (const name of newestFirst(versions)) yield real(join(versions, name));
   yield real(join(home, ".claude", "local", "node_modules", "@anthropic-ai", "claude-code", "cli.js"));
@@ -182,14 +204,21 @@ export function behind(installed, calibrated = CALIBRATED_AGAINST) {
  * while the file it was read from has not.
  */
 export function driftCached(cli, state, remember) {
-  return remember(state, "drift", buildKey(cli), () => {
-    const read = drift({ cli });
-    // An answer nobody could read is not an answer: kept, it would say "fine"
-    // for as long as the build's size and timestamp hold still, which an
-    // unreadable build does not move.
-    if (!read.checked) throw new Unkept(null);
-    return read.reason;
-  });
+  try {
+    return remember(state, "drift", buildKey(cli), () => {
+      const read = drift({ cli });
+      // An answer nobody could read is not an answer: kept, it would say "fine"
+      // for as long as the build's size and timestamp hold still, which an
+      // unreadable build does not move.
+      if (!read.checked) throw new Unkept(null);
+      return read.reason;
+    });
+  } catch (err) {
+    // Whether the memoiser understands a refusal is its business, not the
+    // caller's: this module asked for it, so this module answers for it.
+    if (err instanceof Unkept) return err.answer;
+    throw err;
+  }
 }
 
 /** What the answer depends on: this build, at this size, written at this moment. */
@@ -225,16 +254,33 @@ export function drift({ cli = cliPath(), markers = MARKERS } = {}) {
     return absent;
   }
 
+  const gate = markers === MARKERS ? gateIn(cli) : true;
+
   // A file carrying none of them is not a build that dropped them, it is some
   // other program of the same name, and a 5 MB file called `claude` earlier on
   // PATH is all it takes. Drift is some of the four missing, not all.
   const missing = markers.filter((m) => !found.has(m));
   if (missing.length === markers.length) return absent;
+  if (!gate) missing.push(GATE_SHAPE);
   return {
     checked: true,
     missing,
     reason: missing.length === 0 ? null : `this Claude Code build no longer carries ${missing.join(", ")}`,
   };
+}
+
+/** Whether the gate is still spelled the way the premise needs it spelled. */
+function gateIn(path) {
+  let found = false;
+  try {
+    scan(path, 200, (text) => {
+      found = GATE.test(text);
+      return found;
+    });
+  } catch {
+    return true;
+  }
+  return found;
 }
 
 /**

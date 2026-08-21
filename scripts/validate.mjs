@@ -113,8 +113,15 @@ export function validate(root) {
         // A remote source is somebody else's repository to validate. An absolute
         // path is neither that nor a path in this one: it resolves on the
         // machine it was written on and nowhere else.
-        if (typeof entry.source === "string" && !/^[a-z][a-z0-9+.-]*:/i.test(entry.source)) {
+        // A remote source is somebody else's repository to validate. A drive
+        // letter is not a scheme, whatever it looks like, and a bare relative
+        // path is a path this reads differently from the loader.
+        const source = typeof entry.source === "string" ? entry.source : "";
+        if (/^[a-z][a-z0-9+.-]+:/i.test(source) && !/^[a-z]:[\\/]/i.test(source)) continue;
+        if (/^(\.\.?[\\/]|[\\/]|[a-z]:[\\/])/i.test(source) || source === "") {
           problems.push(`marketplace.json ${at} names a source that is not a path in this repository: ${entry.source}`);
+        } else {
+          problems.push(`marketplace.json ${at} has a source that does not start with "./": ${entry.source}`);
         }
         continue;
       }
@@ -133,6 +140,14 @@ export function validate(root) {
       if (!existsSync(pluginRoot)) {
         problems.push(`marketplace.json entry ${entry.name} points at a missing path ${entry.source}`);
         continue;
+      }
+
+      const ownDir = join(pluginRoot, ".claude-plugin");
+      const alreadyRead = pluginRoot === resolve(root);
+      for (const name of !alreadyRead && existsSync(ownDir) ? readdirSync(ownDir) : []) {
+        if (!MANIFESTS.includes(name)) {
+          problems.push(`${label(root, join(ownDir, name))} is not a manifest; manifests only in that directory`);
+        }
       }
 
       const manifest = join(pluginRoot, ".claude-plugin", "plugin.json");
@@ -237,7 +252,7 @@ function hookProblems(root, pluginRoot, readJson, { required }) {
       // where its quote does or where the whitespace does: a command may carry
       // arguments, a quoted path may carry a space, and a command may name the
       // plugin root on its own, which names no file to check.
-      for (const [, quoted, bare] of command.matchAll(/\$\{CLAUDE_PLUGIN_ROOT\}\/(?:([^"']+?)(?=["'])|([^"'\s]+))/g)) {
+      for (const [, , quoted, bare] of command.matchAll(/(["'])\$\{CLAUDE_PLUGIN_ROOT\}\/([^"']+)\1|\$\{CLAUDE_PLUGIN_ROOT\}\/([^"'\s]+)/g)) {
         const named = quoted ?? bare;
         if (relative(pluginRoot, resolve(pluginRoot, named)).startsWith("..")) {
           problems.push(`${at} ${event} runs ${named}, which is outside that plugin`);
@@ -263,4 +278,16 @@ function main() {
   console.log(`manifests ok (${MANIFESTS.join(", ")}), hooks ok`);
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) main();
+// Compared through the real path on both sides: `import.meta.url` is always
+// resolved and `process.argv[1]` is whatever the caller spelled, so a checkout
+// reached through a symlink ran nothing and exited 0, which for CI's only
+// manifest gate is a pass nobody asked for.
+if (process.argv[1] && realOf(fileURLToPath(import.meta.url)) === realOf(resolve(process.argv[1]))) main();
+
+function realOf(path) {
+  try {
+    return realpathSync(path);
+  } catch {
+    return path;
+  }
+}
