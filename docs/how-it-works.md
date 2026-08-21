@@ -517,10 +517,19 @@ that differs from the write side, which refuses it (A25): writing outside the re
 what this tool does not own, while refusing to read there would break anyone keeping `.claude` in
 their dotfiles.
 
-The entry goes in `.claude/settings.local.json`, the per-developer scope, never the `settings.json` a
-team commits. It merges around what is already there, refuses a file it cannot parse or cannot merge
-into, and is contained by F2 like every other write, so a settings file symlinked out of the repository
-is refused rather than followed. A refusal is a printed line, not a failed scan.
+The entry is the plugin's own, in `hooks/hooks.json`, and no repository's settings are written at
+all. `${CLAUDE_PLUGIN_ROOT}` is substituted only there: written into a repository's settings it is
+not substituted, and Claude Code refuses the hook by name on every prompt and every tool call for
+the life of that session, which is what 0.2.4 through 0.2.6 shipped. A plugin hook runs in every
+session the plugin is installed for, with no way to scope it to one repository, so the scoping is
+the hook's own job: it walks up from the working directory for a map, and a session with none gets
+`{}` in about 50ms.
+
+A scan takes the old entry out of `.claude/settings.local.json` when it finds one, on any of the
+spellings that shipped, and leaves everything else in that file alone: permission lists, other
+people's hooks, and an event that still holds one. The file goes only when it holds nothing else.
+That read is contained by F2 like every write, so a settings file symlinked out of the repository is
+refused rather than followed, and a refusal is a printed line rather than a failed scan.
 
 The cost is roughly 480 tokens per turn and per tool call, so a session making 300 calls spends about
 144,000 on it. There is no flag to turn it down; this tool ships no options.

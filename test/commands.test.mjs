@@ -78,6 +78,15 @@ function withoutRuby(t) {
   return bin;
 }
 
+/** The three entries 0.2.4 through 0.2.6 wrote into a scanned repository. */
+const OLD_HOOK_SETTINGS = {
+  hooks: {
+    UserPromptSubmit: [{ hooks: [{ type: "command", command: 'node "${CLAUDE_PLUGIN_ROOT}/bin/anatomiya.mjs" echo' }] }],
+    PostToolUse: [{ matcher: "*", hooks: [{ type: "command", command: 'node "${CLAUDE_PLUGIN_ROOT}/bin/anatomiya.mjs" echo' }] }],
+    PostToolUseFailure: [{ matcher: "*", hooks: [{ type: "command", command: 'node "${CLAUDE_PLUGIN_ROOT}/bin/anatomiya.mjs" echo' }] }],
+  },
+};
+
 test("a dry-run scan plans the whole map and puts none of it on disk", async (t) => {
   const dir = repo(t);
 
@@ -101,10 +110,10 @@ test("a scan writes the files its summary counted", async (t) => {
   assert.ok(summary.wrote > 0, "a repository with an area writes a map");
 });
 
-test("a settings file the hook cannot be installed into does not fail the scan", async (t) => {
-  // The map is the product and the hook is an addition to it, so a refusal to
-  // install the addition is reported rather than thrown: a scan that wrote the
-  // whole map and then exited 1 over an unrelated file is the map not arriving.
+test("a settings file the stale hook cannot be taken out of does not fail the scan", async (t) => {
+  // The map is the product and this is a repair beside it, so a refusal is
+  // reported rather than thrown: a scan that wrote the whole map and then
+  // exited 1 over an unrelated file is the map not arriving.
   const dir = repo(t);
   mkdirSync(join(dir, ".claude"), { recursive: true });
   const settings = join(dir, ".claude", "settings.local.json");
@@ -113,25 +122,40 @@ test("a settings file the hook cannot be installed into does not fail the scan",
   const { summary } = await runScan(dir);
 
   assert.ok(summary.wrote > 0, "the map is still written");
-  assert.equal(summary.hookInstalled, false);
+  assert.equal(summary.hookRemoved, false);
   assert.match(summary.hookRefused, /could not be read/, "and the reason is carried, not swallowed");
   assert.equal(readFileSync(settings, "utf8"), "{ not json", "the file is left alone");
   assert.ok(scanLines(summary).some((l) => l.includes("could not be read")), "and printed");
 });
 
-test("two scans over unchanged source say the same thing about the hook", async (t) => {
-  // The summary reports what is true, not what changed: every other line in it
-  // does, and the corpus harness asserts a second scan's summary equals the
-  // first beyond its timing. Saying it once made the summary a function of
-  // prior state rather than of the tree, and every repository in the corpus
-  // read as unstable because of it.
+test("a scan takes out the hook an older version wrote, and says so once", async (t) => {
+  // The one line in the summary that is a function of what this run did rather
+  // than of the tree, and it can only fire once: the second scan finds nothing
+  // to take out. The corpus harness compares two consecutive summaries, and no
+  // repository in it carries the old file.
+  const dir = repo(t);
+  mkdirSync(join(dir, ".claude"), { recursive: true });
+  const settings = join(dir, ".claude", "settings.local.json");
+  writeFileSync(settings, JSON.stringify(OLD_HOOK_SETTINGS));
+
+  const first = (await runScan(dir)).summary;
+  const second = (await runScan(dir)).summary;
+
+  assert.equal(first.hookRemoved, true);
+  assert.ok(scanLines(first).some((l) => l.includes("taken out")), "and printed");
+  assert.equal(existsSync(settings), false, "the file held nothing else");
+  assert.equal(second.hookRemoved, false, "nothing left to take out");
+});
+
+test("two scans over unchanged source say the same thing", async (t) => {
+  // The corpus harness asserts a second scan's summary equals the first beyond
+  // its timing, and every line but the repair one is a function of the tree.
   const dir = repo(t);
 
   const first = (await runScan(dir)).summary;
   const second = (await runScan(dir)).summary;
 
-  assert.equal(first.hookInstalled, true, "installed by the first");
-  assert.equal(second.hookInstalled, true, "and still installed for the second to report");
+  assert.equal(first.hookRemoved, false, "there was nothing to repair");
   const timeless = (s) => scanLines(s).filter((l) => !/\dms, root /.test(l));
   assert.deepEqual(timeless(second), timeless(first), "so the two summaries agree");
 });
@@ -140,15 +164,17 @@ test("a settings file with a byte-order mark is read, not refused", async (t) =>
   // Editors write one. It is not a malformed file, it is a file with a BOM.
   const dir = repo(t);
   mkdirSync(join(dir, ".claude"), { recursive: true });
-  writeFileSync(join(dir, ".claude", "settings.local.json"), '﻿{"permissions":{"allow":["Bash(x)"]}}');
+  const settings = join(dir, ".claude", "settings.local.json");
+  const body = JSON.stringify({ permissions: { allow: ["Bash(x)"] }, ...OLD_HOOK_SETTINGS });
+  writeFileSync(settings, `﻿${body}`);
 
   const { summary } = await runScan(dir);
 
-  assert.equal(summary.hookInstalled, true);
-  const s = JSON.parse(readFileSync(join(dir, ".claude", "settings.local.json"), "utf8"));
+  assert.equal(summary.hookRemoved, true);
+  const s = JSON.parse(readFileSync(settings, "utf8"));
   assert.deepEqual(s.permissions.allow, ["Bash(x)"], "and what was in it survives");
+  assert.equal("hooks" in s, false, "while the hook that cannot run goes");
 });
-
 test("a scan answers with the whole result, so the summary is not the only thing it derived", async (t) => {
   const dir = repo(t);
 
