@@ -7,6 +7,41 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.2.7] - 2026-08-21
+
+One bug, reported from the field, and it is the worst kind this tool can have: the hook a scan
+installed does not run, and Claude Code says so on every prompt and every tool call for the life of
+the session.
+
+`${CLAUDE_PLUGIN_ROOT}` is substituted only for a hook a plugin declares in its own
+`hooks/hooks.json`. Versions 0.2.4 through 0.2.6 wrote it into the scanned repository's
+`.claude/settings.local.json` instead, where nothing substitutes it, so every session in a scanned
+repository answered a prompt with `UserPromptSubmit hook error: Hook command references
+${CLAUDE_PLUGIN_ROOT} but the hook is not associated with a plugin`. No test caught it because every
+test ran the command directly rather than through the loader.
+
+The plugin declares the hook now. A scan writes nothing into any settings file, which puts it back
+inside `.claude/rules/` and `.claude/anatomiya/` where A1 says it belongs, and it takes out the entry
+an older version wrote when it finds one, on any spelling that shipped. Permission lists, other
+people's hooks and any event still holding one are left exactly as they were; the file goes only
+when it holds nothing else.
+
+### Fixed
+
+- The re-delivery hook was installed where its own plugin path is never substituted, so Claude Code
+  refused it by name on every prompt and every tool call in every scanned repository.
+- A scan takes that entry out of `.claude/settings.local.json` when it finds one, so upgrading
+  repairs the repositories the older versions broke.
+
+### Changed
+
+- The documented exclude is two lines rather than three. A scan no longer writes a settings file, so
+  there is nothing there to keep out of git.
+- `npm run validate` refuses a `hooks/hooks.json` the loader would silently ignore, and one naming a
+  file the plugin does not ship. The shape matters: without its top-level `hooks` key the file loads
+  nothing and says nothing about it.
+- The scan summary says when it took an old hook out, and says it once.
+
 ## [0.2.6] - 2026-08-21
 
 Twenty-eight reported defects, worked from the issue tracker. The largest single class, and the one
@@ -1355,6 +1390,7 @@ which are partial; several listed there are not implemented yet.
 - No claim that this catches defects. Measured across ten repositories, 1 of 317 defect review
   comments was preventable by a conventions map.
 
+[0.2.7]: https://github.com/crisnahine/anatomiya/compare/v0.2.6...v0.2.7
 [0.2.6]: https://github.com/crisnahine/anatomiya/compare/v0.2.5...v0.2.6
 [0.2.5]: https://github.com/crisnahine/anatomiya/compare/v0.2.4...v0.2.5
 [0.2.4]: https://github.com/crisnahine/anatomiya/compare/v0.2.3...v0.2.4
