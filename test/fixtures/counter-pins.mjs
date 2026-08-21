@@ -26,6 +26,9 @@ export const REFUSED = [
   "swallowed_error", "rescue_uses_error", "zone_aware_time", "non_null_assertion",
   "optional_chaining", "nullish_default", "module_state_const", "keyword_params",
   "explicit_return_type", "error_shape", "async_error_handling",
+  // The inverse reads "a module exports several hooks", which as a directive
+  // asks an agent to grow a module rather than describing a habit anyone chose.
+  "hook_per_module",
   // `.forEach` cannot await, break, or return from the enclosing function.
   // Stated as an area's convention, the check asked for an await loop to be
   // rewritten into the classic bug.

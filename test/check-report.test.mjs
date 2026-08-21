@@ -189,11 +189,13 @@ test("a code no case names is one of the five nobody could force cheaply", () =>
   // the code back, and this is the list of the ones no case does.
   //
   // Each needs a state a temporary repository cannot cheaply be put in: a
-  // shallow clone whose base commit is fetchable but shares no history, and one
-  // whose base cannot be fetched at all; a degraded-mode run whose added-line
-  // ranges fail while its diff succeeds; a `ls-tree` of HEAD that fails while
-  // every other read works; and a rule file the filesystem refuses to open,
-  // which is a permission bit a run as root does not have.
+  // shallow clone whose base commit is fetchable but shares no history; a
+  // degraded-mode run whose added-line ranges fail while its diff succeeds; a
+  // `ls-tree` of HEAD that fails while every other read works; and a rule file
+  // the filesystem refuses to open, which is a permission bit a run as root
+  // does not have. `SHALLOW_UNFETCHED` left this list when the refusal a typed
+  // `--base` now gets made the shallow arm worth reaching: a depth-1 clone of a
+  // `file://` origin is one `git clone` away.
   const dir = dirname(fileURLToPath(import.meta.url));
   const suites = readdirSync(dir)
     .filter((f) => f.endsWith(".test.mjs"))
@@ -204,7 +206,6 @@ test("a code no case names is one of the five nobody could force cheaply", () =>
 
   assert.deepEqual(unheld, [
     "SHALLOW_NO_HISTORY",
-    "SHALLOW_UNFETCHED",
     "ADDED_RANGES_UNREADABLE",
     "OBLIGATIONS_UNCHECKED",
     "RULES_UNREADABLE",
@@ -493,4 +494,47 @@ test("a run against a repository with no map does not print as a clean one", asy
     formatReportGithub(r).includes(`::warning title=${CAVEATS.NO_MAP}::`),
     "the annotations never said the map was absent"
   );
+});
+
+/* --- the drift the check already measured reaches the reader (#69) --- */
+
+test("a map drifting under the cliff says how far, rather than nothing", () => {
+  // The share was assigned, compared against 0.25 and returned, and no caller
+  // ever read it: below the cliff the reader was told nothing at all, although
+  // the tool knew exactly how far the map had drifted. Measured, the crossing
+  // is arithmetic: 0.25 * mapped / files-touched-per-commit predicted 212, 143
+  // and 47 against 211, 144 and 47.
+  const out = formatReport(bare({ drift: { changed: 640, mapped: 5505, share: 640 / 5505 } }));
+
+  assert.match(out, /^note: 640 of 5505 mapped files have changed since the pin \(12%\)$/m, out);
+});
+
+test("a freshly pinned repository does not print its own drift into every context window", () => {
+  // A floor, so 0% drift is not a line. 5% is one week of drift on the fastest
+  // repository measured and a fortnight on the next.
+  assert.doesNotMatch(formatReport(bare({ drift: { changed: 0, mapped: 5505, share: 0 } })), /mapped files have changed/);
+  assert.doesNotMatch(formatReport(bare({ drift: { changed: 100, mapped: 5505, share: 100 / 5505 } })), /mapped files have changed/);
+  assert.doesNotMatch(formatReport(bare({ drift: null })), /mapped files have changed/);
+});
+
+test("past the cliff the stale line says it, and the drift note does not say it twice", () => {
+  const out = formatReport(
+    bare({
+      stale: true,
+      staleReason: "1500 of 5505 mapped files changed since the pin",
+      drift: { changed: 1500, mapped: 5505, share: 1500 / 5505 },
+    })
+  );
+
+  assert.match(out, /^severity capped at FIX: 1500 of 5505 mapped files changed since the pin$/m);
+  assert.doesNotMatch(out, /mapped files have changed/);
+});
+
+test("a drift share above 1 is printed as it was measured", () => {
+  // The share is not bounded by 1: numerator and denominator are different
+  // sets, so a file created in a mapped area after the pin counts and a rename
+  // counts both sides. The front end at three years reads 126%.
+  const out = formatReport(bare({ drift: { changed: 2873, mapped: 2280, share: 2873 / 2280 } }));
+
+  assert.match(out, /^note: 2873 of 2280 mapped files have changed since the pin \(126%\)$/m, out);
 });

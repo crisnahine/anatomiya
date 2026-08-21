@@ -136,22 +136,19 @@ test("a violation's reported node is the attribute name, so an edit inside the a
 // --- spread_on_component ---
 
 const SPREADS = `const A = () => <div {...a} {...b} />;
-const B = () => <Menu.Item {...c} />;
-const C = () => <input {...getInputProps()} />;`;
+const B = () => <Menu.Item {...c} />;`;
 
 test("two spreads on one host element are two violations, and a member-named element is judged by its last segment", () => {
-  // The third line is empire-flippers/client src/components/DirectUpload.tsx:119
-  // verbatim. Counting one site per element reads 3 candidates and hides one of
-  // the two divs, understating the non-conforming side exactly where a wrapper
-  // spreads twice; reading a member element off its object segment rather than
-  // its property segment misnames <ns.div>. EF measures 2158 of 2176 with the
+  // Counting one site per element reads 2 candidates and hides one of the two
+  // divs, understating the non-conforming side exactly where a wrapper spreads
+  // twice; reading a member element off its object segment rather than its
+  // property segment misnames <ns.div>. EF measures 2158 of 2176 with the
   // per-attribute shape and GitNexus 0 of 7.
   const h = hits("spread_on_component", SPREADS);
   assert.deepEqual(shape(SPREADS, h), [
     ["{...a}", false],
     ["{...b}", false],
     ["{...c}", true],
-    ["{...getInputProps()}", false],
   ]);
   for (const x of h) assert.equal(x.node.type, "JSXSpreadAttribute");
 });
@@ -438,4 +435,177 @@ test("a handler that arrived as a prop is nobody's decision here", () => {
     const A = ({ onSave }) => <Child onSave={onSave} />
   `);
   assert.equal(h.length, 0);
+});
+
+/* --- something has to reach the DOM (#60) --- */
+
+test("a forwarded rest binding on a host element is not a site, because no list of prop names exists", () => {
+  // A wrapper forwarding `ComponentPropsWithoutRef<"button">` has no list of
+  // names to write out instead. A rest element is by definition the props
+  // nobody named, which is the line.
+  const src = `const ForwardButton = ({ children, ...rest }: Props) => <button {...rest}>{children}</button>`;
+  assert.deepEqual(hits("spread_on_component", src), []);
+});
+
+test("a prop getter and a destructured hook return are the same forwarding", () => {
+  // react-dropzone documents getRootProps() and getInputProps() as spread onto
+  // a host element, returning objects with a ref callback among them that the
+  // author cannot enumerate. dnd-kit's attributes and listeners are the same
+  // shape one destructuring away.
+  const dropzone = `const D = () => { const { getRootProps, getInputProps } = useDropzone();
+    return <div {...getRootProps()}><input {...getInputProps()} /></div> }`;
+  const sortable = `const S = () => { const { attributes, listeners } = useSortable({ id });
+    return <div {...attributes} {...listeners} /> }`;
+
+  assert.deepEqual(hits("spread_on_component", dropzone), []);
+  assert.deepEqual(hits("spread_on_component", sortable), []);
+});
+
+test("a cast is peeled, because it is the same forwarding one wrapper deep", () => {
+  assert.deepEqual(hits("spread_on_component", `const A = ({ ...rest }) => <div {...(rest as any)} />`), []);
+});
+
+test("what the author could have written out stays a site", () => {
+  // `{...{ className }}` is `className={className}` and is a free choice. A
+  // local object binding and a whole props parameter both have their keys
+  // visible in the file.
+  for (const src of [
+    `const A = () => <div {...{ className }} />`,
+    `const A = () => { const o = { className: "x" }; return <div {...o} /> }`,
+    `const A = (props: P) => <div {...props} />`,
+  ]) {
+    const h = hits("spread_on_component", src);
+    assert.equal(h.length, 1, src);
+    assert.equal(h[0].conforming, false, src);
+  }
+});
+
+test("a spread that already landed on a component stays a site whatever it spreads", () => {
+  // Asymmetric on purpose: that spread answered the claim.
+  const src = `const A = ({ ...rest }) => <Button {...rest} {...useThing()} />`;
+  const h = hits("spread_on_component", src);
+
+  assert.equal(h.length, 2);
+  assert.deepEqual(h.map((x) => x.conforming), [true, true]);
+});
+
+/* --- the two questions a row outside this file asks about JSX --- */
+
+test("jsxElementNames names the binding an element resolves through, and nothing else", async () => {
+  const { jsxElementNames } = await import("../lib/dimensions-jsx.mjs");
+  const { program } = parseSync("f.tsx", `
+    const A = () => <Button className="x" />
+    const B = () => <Menu.Item />
+    const C = () => <Box>hi</Box>
+    const D = () => <div id="y" />
+  `, { sourceType: "module" });
+
+  assert.deepEqual([...jsxElementNames(program)].sort(), ["Box", "Button", "Menu", "div"]);
+});
+
+test("yieldsJsx asks whether this function's own body yields an element", async () => {
+  const { yieldsJsx } = await import("../lib/dimensions-jsx.mjs");
+  const fnOf = (src) => {
+    const { program } = parseSync("f.tsx", src, { sourceType: "module" });
+    const d = program.body[0];
+    return d.type === "FunctionDeclaration" ? d : d.declarations[0].init;
+  };
+
+  assert.equal(yieldsJsx(fnOf(`const A = () => <div />`)), true, "an expression body");
+  assert.equal(yieldsJsx(fnOf(`function A() { if (x) return null; return <div /> }`)), true, "a guarded return");
+  assert.equal(yieldsJsx(fnOf(`const A = () => <></>`)), true, "a fragment");
+  assert.equal(yieldsJsx(fnOf(`function A() { return 1 }`)), false);
+  assert.equal(
+    yieldsJsx(fnOf(`function A() { const inner = () => <div />; return inner }`)),
+    false,
+    "a return inside a nested function belongs to that function"
+  );
+  assert.equal(yieldsJsx(null), false);
+});
+
+test("a component that renders conditionally is still a component", async () => {
+  // Only a bare `return <div/>` was seen, so a ternary or an `&&` left the
+  // component in the naming vote. In a directory of 40 components beside 40
+  // helpers that flipped the learned class to camelCase and the check then
+  // asked for `<auditBadge/>`, a host element: the impossible ask this
+  // exclusion exists to prevent. Counted on the corpus: 62, 35, 33 and 33
+  // module-level PascalCase functions on four repositories read this way.
+  const { yieldsJsx } = await import("../lib/dimensions-jsx.mjs");
+  const fnOf = (src) => {
+    const { program } = parseSync("f.tsx", src, { sourceType: "module" });
+    const d = program.body[0];
+    return d.type === "FunctionDeclaration" ? d : d.declarations[0].init;
+  };
+
+  assert.equal(yieldsJsx(fnOf(`function A() { return on ? <div /> : null }`)), true, "a ternary");
+  assert.equal(yieldsJsx(fnOf(`function A() { return on && <div /> }`)), true, "a guard");
+  assert.equal(yieldsJsx(fnOf(`const A = () => on ? <div /> : <span />`)), true, "a ternary expression body");
+  assert.equal(yieldsJsx(fnOf(`function* A() { yield <div /> }`)), true, "a yield hands it out too");
+  assert.equal(
+    yieldsJsx(fnOf(`function renderRows() { return items.map((i) => <li key={i} />) }`)),
+    false,
+    "the element is the nested arrow's, and a render helper is named like a function"
+  );
+});
+
+test("a function that builds an element and hands out something else is still a site", async () => {
+  const { yieldsJsx } = await import("../lib/dimensions-jsx.mjs");
+  // The under-count direction, which the applicability contract calls the
+  // dangerous one: the sentence says a function whose body yields JSX, and
+  // these three do not. Ten such functions across two measured repositories.
+  const fnOf = (src) => {
+    const { program } = parseSync("f.tsx", src, { sourceType: "module" });
+    const d = program.body[0];
+    return d.type === "FunctionDeclaration" ? d : d.declarations[0].init;
+  };
+
+  assert.equal(yieldsJsx(fnOf(`function fetchData() { const unused = <div />; return fetch('/x') }`)), false);
+  assert.equal(yieldsJsx(fnOf(`function assertThing(x) { if (!x) throw new Error(String(<div />)) }`)), false);
+  assert.equal(
+    yieldsJsx(fnOf(`const buildPayload = (m) => ({ text: 'a', html: renderToStaticMarkup(<div>{m}</div>) })`)),
+    false
+  );
+});
+
+test("both naming rows leave a component out of their vote, not just one", async () => {
+  // `function_naming_case` excluded components and `exported_symbol_case` did
+  // not, so the same declaration still drew "exported names are camelCase" and
+  // the remedy it named was a lowercase component, a host tag.
+  const { NAMING_AST } = await import("../lib/dimensions-naming.mjs");
+  const classesOf = (key, src) => {
+    const row = NAMING_AST.find((d) => d.key === key);
+    const { program } = parseSync("f.tsx", src, { sourceType: "module" });
+    const out = [];
+    row.run(program, (h) => out.push(h.class));
+    return out;
+  };
+  const sources = [
+    `export const UserCard = ({ n }) => (n ? <div>{n}</div> : null)`,
+    `export function UserCard() { return <div /> }`,
+    `export default function UserCard() { return <div /> }`,
+  ];
+
+  for (const src of sources) {
+    assert.deepEqual(classesOf("exported_symbol_case", src), [], src);
+    assert.deepEqual(classesOf("function_naming_case", src), [], src);
+  }
+
+  assert.deepEqual(classesOf("exported_symbol_case", `export const formatDate = (d) => String(d)`), ["camelCase"]);
+  assert.deepEqual(classesOf("exported_symbol_case", `export function helperThing() { return 1 }`), ["camelCase"]);
+});
+
+test("the naming row leaves a conditional component out of its vote", async () => {
+  const { NAMING_AST } = await import("../lib/dimensions-naming.mjs");
+  const row = NAMING_AST.find((d) => d.key === "function_naming_case");
+  const classesOf = (src) => {
+    const { program } = parseSync("f.tsx", src, { sourceType: "module" });
+    const out = [];
+    row.run(program, (h) => out.push(h.class));
+    return out;
+  };
+
+  assert.deepEqual(classesOf(`export function CardBox() { return <div /> }`), []);
+  assert.deepEqual(classesOf(`export function CardBox() { return a ? <div /> : null }`), []);
+  assert.deepEqual(classesOf(`export function CardBox() { return a && <div /> }`), []);
+  assert.deepEqual(classesOf(`export function formatDate(d) { return String(d) }`), ["camelCase"]);
 });

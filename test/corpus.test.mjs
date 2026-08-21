@@ -445,6 +445,49 @@ test("an area's globs match the files it counted and no others", () => {
   }
 });
 
+test("globsReach answers what the delivery channel would, over every glob shape", () => {
+  // `check` reads this to decide whether the map ever handed this file's author
+  // the sentence it is about to enforce. Held against the reference matcher
+  // above rather than against itself: reading only the directory half said a
+  // `.jsx` file in a `.js` area was delivered, and the check reported MUST-FIX
+  // on a claim whose `paths` list cannot spell that extension.
+  const layouts = [
+    [
+      ...Array.from({ length: 5 }, (_, i) => ({ rel: `lib/c${i}.js`, lang: "js" })),
+      ...Array.from({ length: 5 }, (_, i) => ({ rel: `lib/deep/d${i}.js`, lang: "js" })),
+    ],
+    [
+      ...Array.from({ length: 5 }, (_, i) => ({ rel: `lib/tasks/t${i}.rake`, lang: "ruby" })),
+      { rel: "lib/tasks/Rakefile", lang: "ruby" },
+    ],
+    [
+      ...Array.from({ length: 6 }, (_, i) => ({ rel: `src/c${i}.tsx`, lang: "jsx" })),
+      ...Array.from({ length: 6 }, (_, i) => ({ rel: `src/util/u${i}.ts`, lang: "js" })),
+    ],
+    Array.from({ length: 5 }, (_, i) => ({ rel: `m${i}.mjs`, lang: "js" })),
+  ];
+  const probes = [
+    "lib/c0.js", "lib/deep/d0.js", "lib/BadName.jsx", "lib/deep/x.jsx", "lib/tasks/Rakefile",
+    "lib/tasks/t0.rake", "lib/tasks/sub/Rakefile", "src/c0.tsx", "src/util/u0.ts", "src/util/u0.tsx",
+    "src/new/Late.tsx", "m0.mjs", "sub/m0.mjs", "README.md", "lib/deep/deeper/x.js",
+  ];
+
+  for (const files of layouts) {
+    for (const a of discover(files)) {
+      for (const rel of probes) {
+        assert.equal(areaLib.globsReach(a.globs, rel), matches(a.globs, rel), `${a.path} vs ${rel}`);
+      }
+    }
+  }
+});
+
+test("a record written before the globs were stored reads as delivered", () => {
+  // Which is what the check did before this existed, and the only honest answer
+  // when the record does not say.
+  assert.equal(areaLib.globsReach(undefined, "lib/x.js"), true);
+  assert.equal(areaLib.globsReach([], "lib/x.js"), true);
+});
+
 test("an area's globs reach every shape it counted, extension or not", () => {
   // The rule #4 established: an area's paths matches the files its counts were
   // taken over. A brace of extensions cannot spell `Rakefile`, so admitting a

@@ -11,7 +11,9 @@ Run the check and report what it found.
    ```
 
    Add `--base <ref>` when the branch targets something other than the remote's default branch.
-   Left alone it tries `origin/HEAD`, then `origin/main`, `origin/master`, `main`, `master`.
+   Left alone it tries `origin/HEAD`, then `origin/main`, `origin/master`, `main`, `master`. A
+   `--base` you named and that resolves to no commit is refused by name rather than fallen back
+   from, because a whole-branch review at exit 0 reads as a clean one.
 
    Leave the format alone: `--format json` prints the same run as a record for a machine reader,
    and this report is read off the text.

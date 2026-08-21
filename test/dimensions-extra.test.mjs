@@ -314,6 +314,7 @@ test("every hit carries a typed node with offsets into the parsed source", () =>
   const src = `
     import type { A } from "./a.ts"
     import { B } from "./b"
+    export const useThing = () => 1
     export const handler = (x: A) => {
       const name = x!.name || "anon"
       items.forEach((i) => i)
@@ -501,4 +502,335 @@ test("collectHits hands the extras through to the dimension", async () => {
   };
   const hits = collectHits({ type: "Program", body: [] }, [probe], { marker: true });
   assert.equal(hits.probe[0].conforming, true);
+});
+
+/* --- an overload set has no arrow form (#53) --- */
+
+test("an overload set is not a function-style site, because it has no arrow form", () => {
+  // Overload signatures attach only to a function declaration, so the finding
+  // asked for a form the language does not have. A 280-of-280 area is real:
+  // nobody has needed overloads yet, so the first person who does is told their
+  // only available syntax is the first violation in the area's history.
+  const r = counts("function_style", `
+    export function tmpP311(x: string): string;
+    export function tmpP311(x: number): number;
+    export function tmpP311(x: string | number): string | number { return x }
+  `);
+  assert.deepEqual(r, { candidates: 0, conforming: 0 });
+});
+
+test("a declaration with no signature above it counts exactly as before", () => {
+  const r = counts("function_style", `
+    function a(x: string): string;
+    function a(x: any): any { return x }
+    function b() { return 1 }
+  `);
+  assert.deepEqual(r, { candidates: 1, conforming: 1 }, "only b is a site");
+});
+
+test("a signature whose implementation is not the next statement leaves that declaration a site", () => {
+  // TS2391 requires the implementation to immediately follow its signatures, so
+  // adjacency is the language's own rule rather than an approximation of it.
+  const r = counts("function_style", `
+    function a(x: string): string;
+    const noise = 1
+    function a2(x: any): any { return x }
+  `);
+  assert.deepEqual(r, { candidates: 1, conforming: 1 }, "a2 carries no signatures");
+});
+
+/* --- a directive is not documentation (#52) --- */
+
+test("a tool directive above an export is not a doc comment", () => {
+  // None of these is documentation. The first silences a lint rule, the second
+  // acknowledges a type gap the compiler enforces, the third is a compiler
+  // directive. An agent that obeys the finding deletes a directive and breaks
+  // the build, or un-silences a rule CI enforces.
+  const each = [
+    `// eslint-disable-next-line import/prefer-default-export\nexport const a = (): number => 1`,
+    `// @ts-expect-error upstream types lag the runtime\nexport const b = (): number => 1`,
+    `/// <reference types="node" />\nexport const c = (): number => 1`,
+    `/* eslint-disable no-console */\nexport const d = (): number => 1`,
+    `// @ts-nocheck\nexport const e = (): number => 1`,
+    `// #region helpers\nexport const f = (): number => 1`,
+    `// prettier-ignore\nexport const g = (): number => 1`,
+    `/* istanbul ignore next */\nexport const h = (): number => 1`,
+  ];
+
+  for (const src of each) {
+    assert.deepEqual(docHits(src).map((x) => x.conforming), [false], src.split("\n")[0]);
+  }
+});
+
+test("a real doc comment above a directive still documents the export", () => {
+  // The run is walked upward through the directives it steps over, or a doc
+  // comment sitting above an `eslint-disable-next-line` would stop attaching.
+  const h = docHits(`/** what a does */\n// eslint-disable-next-line no-console\nexport const a = (): number => 1`);
+  assert.deepEqual(h.map((x) => x.conforming), [true]);
+});
+
+test("a directive above a doc comment leaves the doc comment attached", () => {
+  const h = docHits(`// eslint-disable-next-line no-console\n/** what a does */\nexport const a = (): number => 1`);
+  assert.deepEqual(h.map((x) => x.conforming), [true]);
+});
+
+test("commented-out code still counts as a doc comment", () => {
+  // Harder to recognise than a directive, and the issue leaves it counted.
+  const h = docHits(`// export function fake() {}\nexport const a = (): number => 1`);
+  assert.deepEqual(h.map((x) => x.conforming), [true]);
+});
+
+test("a trailing comment on another statement does not document the export below it", () => {
+  const h = docHits(`const x = 1 // note\nexport const a = (): number => 1`);
+  assert.deepEqual(h.map((x) => x.conforming), [false]);
+});
+
+/* --- an assertion with no ?. form is not a site (#77 row 1) --- */
+
+test("an assertion with no member read or call after it has no ?. form", () => {
+  // `x?` is TS1109: Expression expected. There is no optional form of a bare
+  // assertion, so the finding asks for something the language does not have.
+  assert.equal(hits("non_null_assertion", `export function f(x?: string) { return x! }`).length, 0);
+  assert.equal(hits("non_null_assertion", `export function f(x?: any) { g(x!) }`).length, 0);
+});
+
+test("an assertion in a position the grammar refuses an optional chain is not a site", () => {
+  // `?.` is illegal on an assignment target (TS2779) and in a `new` callee
+  // ("Invalid optional chain from new expression").
+  for (const src of [
+    `export function g(o?: any) { o!.r = 3 }`,
+    `export function g(o?: any) { o!.a.b = 3 }`,
+    `export function g(o?: any) { o!.r += 1 }`,
+    `export function g(o?: any) { o!.r++ }`,
+    `export function h(m?: any) { return new m!.C() }`,
+    `export function h(m?: any) { return new m!() }`,
+    `export function h(o?: any) { [o!.y] = [2] }`,
+    `export function h(o?: any, q?: any) { ({ a: o!.x } = q) }`,
+    "export function h(q?: any) { q!.tag`s` }",
+    `export function h(o?: any, xs?: any) { for (o!.a of xs) {} }`,
+  ]) {
+    assert.equal(hits("non_null_assertion", src).length, 0, src);
+  }
+});
+
+test("every shape ?. really replaces is still a site", () => {
+  for (const src of [
+    `export function f(o?: any) { return o!.r }`,
+    `export function f(o?: any, i = 0) { return o![i] }`,
+    `export function f(o?: any) { return o!() }`,
+    `export function f(o?: any) { return o!.a.b }`,
+    `export function f(o?: any) { const x = { a: o!.r }; return x }`,
+    `export function f(o?: any) { delete o!.r }`,
+  ]) {
+    assert.deepEqual(counts("non_null_assertion", src), { candidates: 1, conforming: 0 }, src);
+  }
+});
+
+/* --- a component read as JSX is a value read (#77 row 4) --- */
+
+test("a component read as a JSX element is a value read, not a type-only import", () => {
+  // `valueReads` matches Identifier and a JSX element name is a JSXIdentifier,
+  // so a component used in JSX plus once in a type position read as type-only.
+  // Obeying gives TS1361: cannot be used as a value because it was imported
+  // using import type.
+  for (const src of [
+    `import { Button } from "./b";\ntype P = { b: Button };\nexport const X = (p: P) => <Button {...p} />`,
+    `import { Menu } from "./m";\ntype P = { m: Menu };\nexport const X = (p: P) => <Menu.Item {...p} />`,
+    `import { Box } from "./b";\ntype P = Box;\nexport const X = (p: P) => <Box>hi</Box>`,
+  ]) {
+    assert.equal(hits("type_only_import", src).length, 0, src);
+  }
+});
+
+test("an attribute name spelling an imported type is not a value read", () => {
+  assert.deepEqual(
+    counts(
+      "type_only_import",
+      `import { className } from "./c";\nexport const f = (x: className) => <div className="a">{String(x)}</div>`
+    ),
+    { candidates: 1, conforming: 0 }
+  );
+});
+
+/* --- a mixed chain cannot be flipped one operator at a time (#77 row 5) --- */
+
+test("an unparenthesised mixed chain cannot be flipped one operator at a time", () => {
+  // `a || b ?? {}` is TS5076: '||' and '??' operations cannot be mixed without
+  // parentheses, and adding them changes the expression. This is the one live
+  // row of the nine that is `precise` and can reach MUST-FIX.
+  assert.equal(hits("nullish_default", `const x = a || b || {}`).length, 0, "the left mixes");
+  assert.equal(hits("nullish_default", `const x = a && b || {}`).length, 0, "the left mixes");
+  assert.equal(hits("nullish_default", `const x = a || {} || b`).length, 0, "the parent mixes");
+});
+
+test("a chain somebody already bracketed is still a site", () => {
+  assert.deepEqual(counts("nullish_default", `const q = (a || b) ?? {}`), { candidates: 1, conforming: 1 });
+  assert.deepEqual(counts("nullish_default", `const r = a ?? (b || {})`), { candidates: 1, conforming: 0 });
+  assert.deepEqual(counts("nullish_default", `const s = a || 0`), { candidates: 1, conforming: 0 });
+});
+
+/* --- a function that cannot return a value has no other side to choose (#77 row 6) --- */
+
+test("a void annotation is left counted, and the reason is written down", () => {
+  // `return null` under a void annotation is TS2322, so this site cannot
+  // conform. It is still counted on purpose: the annotation is exactly what the
+  // Flow retry blanks, so a rule reading it would answer differently on a
+  // stripped tree than on the same file unstripped, and a stripped base beside
+  // an unstripped head would cancel real findings. The row is `partial`, so it
+  // is capped at FIX either way.
+  assert.equal(hits("absent_is_null", `function reset(): void { if (a) return; return undefined }`).length, 1);
+  const blind = EXTRA_DIMENSIONS.find((d) => d.key === "absent_is_null").applicabilityPredicate.blind;
+  assert.match(blind, /void/, blind);
+});
+
+test("a React effect may not return null, so its undefined is not the other side", () => {
+  // React's own words: "You returned null. If your effect does not require
+  // clean up, return undefined."
+  for (const hook of ["useEffect", "useLayoutEffect", "useInsertionEffect"]) {
+    const src = `const C = () => { ${hook}(() => { if (a) return cleanup; return undefined }, []) }`;
+    assert.equal(hits("absent_is_null", src).length, 0, src);
+    const dotted = `const C = () => { React.${hook}(() => { if (a) return cleanup; return undefined }, []) }`;
+    assert.equal(hits("absent_is_null", dotted).length, 0, dotted);
+  }
+});
+
+test("an effect callback is not a site on either side of the choice", () => {
+  // The exclusion guarded the `undefined` arms only, so a `return null` in an
+  // effect landed in the conforming numerator of a row whose own published
+  // predicate says an effect callback is not a site at all. React refuses null
+  // there, which is the reason the sentence gives, and it argues for both arms.
+  for (const body of ["return null", "return undefined", "return"]) {
+    const src = `const C = () => { useEffect(() => { ${body} }, []) }`;
+    assert.deepEqual(counts("absent_is_null", src), { candidates: 0, conforming: 0 }, src);
+  }
+  assert.deepEqual(counts("absent_is_null", `const C = () => { useEffect(() => null, []) }`), {
+    candidates: 0,
+    conforming: 0,
+  });
+});
+
+test("an ordinary callback that returns a value and an undefined is still judged", () => {
+  const src = `const C = () => { onThing(() => { if (a) return cleanup; return undefined }, []) }`;
+  assert.deepEqual(counts("absent_is_null", src), { candidates: 1, conforming: 0 });
+});
+
+// --- hook_per_module ---
+
+test("a module exporting two hooks is a violation, reported at the second", () => {
+  // The site is the module, but the node reported is never the Program: the
+  // check fingerprints a finding off the node's own text, so a Program node
+  // would make that text the whole file and move the fingerprint on every edit
+  // anywhere in it.
+  const h = hits("hook_per_module", `
+    export const useListings = () => 1
+    export function useOwners() { return 2 }
+  `);
+
+  assert.equal(h.length, 1);
+  assert.equal(h[0].conforming, false);
+  assert.equal(h[0].where, "useOwners");
+  assert.equal(h[0].node.type, "Identifier");
+});
+
+test("a module exporting one hook conforms, and one exporting none is not a site", () => {
+  assert.deepEqual(counts("hook_per_module", `export const useListings = () => 1`), {
+    candidates: 1,
+    conforming: 1,
+  });
+  assert.equal(hits("hook_per_module", `export const listings = () => 1`).length, 0);
+  assert.equal(hits("hook_per_module", `export const User = () => 1`).length, 0, "a component is not a hook");
+});
+
+test("a hook that is not exported is nobody else's to call", () => {
+  assert.equal(hits("hook_per_module", `const useLocal = () => 1\nexport const useOne = () => 2`).length, 1);
+});
+
+test("a hook declared inside a namespace is ambient scaffolding, not a module export", () => {
+  const src = `declare module "x" {\n  export const useA: () => number\n  export const useB: () => number\n}\nexport const useOne = () => 1`;
+  const h = hits("hook_per_module", src);
+
+  assert.equal(h.length, 1);
+  assert.equal(h[0].conforming, true);
+});
+
+test("a mid-chain assertion does not carry a write position past the grammar test", () => {
+  // `opts.a!.b = 1` is AssignmentExpression > MemberExpression >
+  // TSNonNullExpression > MemberExpression, so a walk that only steps through
+  // members and calls stops at the `!` and never sees the assignment. Every
+  // remedy is still refused: `o?.a!.b = 1` is "Cannot assign to this expression".
+  for (const src of [
+    `export function g(o?: any) { o!.a!.b = 3 }`,
+    `export function g(o?: any) { (o!.a as any).b = 3 }`,
+    `export function h(m?: any) { return new (m!.C)() }`,
+  ]) {
+    assert.equal(hits("non_null_assertion", src).length, 0, src);
+  }
+});
+
+test("an overload set inside a namespace or a block is not a function-style site either", () => {
+  // `overloadImplementations` read `program.body` alone, and a function inside
+  // `namespace N { }` has no enclosing declaration, so it was a module-level
+  // site the exclusion could not reach: the only syntax an overload set has,
+  // reported at MUST-FIX.
+  const inNamespace = `namespace N {
+    export function f(a: string): void;
+    export function f(a: number): void;
+    export function f(a: any): void {}
+  }`;
+  const inBlock = `if (x) {
+    function f(a: string): void;
+    function f(a: any): void {}
+  }`;
+
+  assert.deepEqual(counts("function_style", inNamespace), { candidates: 0, conforming: 0 });
+  assert.deepEqual(counts("function_style", inBlock), { candidates: 0, conforming: 0 });
+});
+
+test("one hook written as an overload set is one hook", () => {
+  // The signatures and the implementation are three exported declarations of
+  // one name, and counting them separately made a single hook a violation of
+  // the claim that a module exports one.
+  const r = counts("hook_per_module", `
+    export function useThing(a: string): number;
+    export function useThing(a: number): number;
+    export function useThing(a: any): number { return 1 }
+  `);
+
+  assert.deepEqual(r, { candidates: 1, conforming: 1 });
+});
+
+test("every directive spelling the table names is recognised", () => {
+  // A closed table is only as true as the members somebody wrote a source for,
+  // which is the rule `test/applicability.test.mjs` already holds tables to.
+  for (const directive of [
+    "// eslint-disable-next-line no-console",
+    "/* eslint-disable no-console */",
+    "// @ts-expect-error x",
+    "// @ts-ignore",
+    "// @ts-nocheck",
+    "// prettier-ignore",
+    "// biome-ignore lint/style/noVar: x",
+    "/* istanbul ignore next */",
+    "/* c8 ignore next */",
+    "/* v8 ignore next */",
+    "// #region helpers",
+    "// #endregion",
+    '/// <reference types="node" />',
+  ]) {
+    const src = `${directive}\nexport const a = (): number => 1`;
+    assert.deepEqual(docHits(src).map((x) => x.conforming), [false], directive);
+  }
+});
+
+test("a hook declared without a body is still the hook this module exports", () => {
+  // `export declare function useThing(): number` is a TSDeclareFunction, and a
+  // module that publishes one publishes a hook.
+  assert.deepEqual(counts("hook_per_module", `export declare function useThing(): number;`), {
+    candidates: 1,
+    conforming: 1,
+  });
+  assert.deepEqual(
+    counts("hook_per_module", `export declare function useThing(): number;\nexport const useOther = () => 1`),
+    { candidates: 1, conforming: 0 }
+  );
 });

@@ -949,16 +949,20 @@ test("a repository with no commits examines nothing and refuses nothing", async 
   assert.doesNotThrow(() => formatReport(r));
 });
 
-test("an unresolvable base ref degrades to added lines rather than refusing", async (t) => {
-  const dir = repo(t, ({ write, commit }) => {
+test("a repository holding none of the base refs degrades to added lines rather than refusing", async (t) => {
+  // The guessed candidate list not resolving is a repository that keeps its
+  // trunk somewhere else. A ref somebody typed is a different question, and
+  // #51 made that one a refusal.
+  const dir = repo(t, ({ git, write, commit }) => {
     write("src/a.ts", clean(2));
     commit("init");
+    git("branch", "-m", "topic");
     write("src/a.ts", clean(2) + swallow(1));
     commit("swallow");
   });
   facts(dir, { sha: sha(dir, "HEAD~1") });
 
-  const r = await check(dir, { baseRef: "no/such/ref" });
+  const r = await check(dir);
 
   assert.equal(r.mode, "added-lines");
   assert.ok(notes(r).some((m) => m.includes("added")), "the caveat must be stated");
@@ -968,15 +972,16 @@ test("an unresolvable base ref degrades to added lines rather than refusing", as
 test("added-lines mode reports only sites on the added lines", async (t) => {
   // Without a base version to difference against, the added-line ranges are the
   // only thing separating what this change wrote from what the file held.
-  const dir = repo(t, ({ write, commit }) => {
+  const dir = repo(t, ({ git, write, commit }) => {
     write("src/a.ts", swallow(3));
     commit("init");
+    git("branch", "-m", "topic");
     write("src/a.ts", swallow(3) + swallow(1).replace("f0", "z0"));
     commit("one more");
   });
   facts(dir, { sha: sha(dir, "HEAD~1") });
 
-  const r = await check(dir, { baseRef: "no/such/ref" });
+  const r = await check(dir);
   const hits = forKey(r, "swallowed_error");
 
   assert.equal(r.mode, "added-lines");
@@ -985,15 +990,16 @@ test("added-lines mode reports only sites on the added lines", async (t) => {
 });
 
 test("added lines cannot reach MUST-FIX either", async (t) => {
-  const dir = repo(t, ({ write, commit }) => {
+  const dir = repo(t, ({ git, write, commit }) => {
     write("src/a.ts", clean(2));
     commit("init");
+    git("branch", "-m", "topic");
     write("src/a.ts", clean(2) + swallow(1));
     commit("swallow");
   });
   facts(dir, { sha: sha(dir, "HEAD~1") });
 
-  const r = await check(dir, { baseRef: "no/such/ref" });
+  const r = await check(dir);
 
   assert.equal(forKey(r, "swallowed_error")[0].severity, "FIX");
 });
@@ -1777,21 +1783,23 @@ test("a check that could not load the stripper names the dependency too", async 
 
 test("a claim is not silenced by a finding invented off the base's stripped tree", async (t) => {
   // The base side goes through the same retry, so on a Flow file its
-  // annotations are blanked too. Asking a blind row about that tree answers
-  // "no return type" for every function in it, and those answers cancel the
-  // real ones on the head side: a violation the branch genuinely has is
-  // reported as pre-existing and disappears.
+  // annotations are blanked too. Asking a blind row about that tree answers for
+  // every function in it, and those answers cancel the real ones on the head
+  // side: a violation the branch genuinely has is reported as pre-existing and
+  // disappears. Asked through `doc_comment_style` rather than
+  // `explicit_return_type`, because a plain `.js` file cannot carry a return
+  // type at all and no longer answers that row on either side.
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-basestrip-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
   mkdirSync(join(dir, "src"), { recursive: true });
   for (let i = 0; i < 14; i++) {
-    writeFileSync(join(dir, "src", `f${i}.ts`), `export function f${i}(): number {\n  return ${i}\n}\n`);
+    writeFileSync(join(dir, "src", `f${i}.ts`), `/** doc */\nexport function f${i}(): number {\n  return ${i}\n}\n`);
   }
   // Flow-only syntax, so the base is retried and its annotations blanked.
   writeFileSync(
     join(dir, "src", "legacy.js"),
-    ["// @flow", "type O = {| n: string |}", "export function legacy(o: O) {", "  return o.n", "}"].join("\n") + "\n"
+    ["// @flow", "type O = {| n: string |}", "/** doc */", "export function legacy(o: O) {", "  return o.n", "}"].join("\n") + "\n"
   );
   git("init", "-q", "-b", "main");
   git("config", "user.email", "t@t.test");
@@ -1802,11 +1810,21 @@ test("a claim is not silenced by a finding invented off the base's stripped tree
   execFileSync(process.execPath, [bin, "scan", dir], { stdio: "pipe" });
 
   git("checkout", "-q", "-b", "migrate");
-  // Same file, same missing return type. Only the Flow-only syntax goes, so the
-  // head parses as written and the base is still stripped.
+  // Only the Flow-only syntax goes, so the head parses as written and the base
+  // is still stripped. The branch adds one export with no doc comment.
   writeFileSync(
     join(dir, "src", "legacy.js"),
-    ["// @flow", "type O = {n: string}", "export function legacy(o: O) {", "  return o.n", "}"].join("\n") + "\n"
+    [
+      "// @flow",
+      "type O = {n: string}",
+      "/** doc */",
+      "export function legacy(o: O) {",
+      "  return o.n",
+      "}",
+      "export function bare(o: O) {",
+      "  return o.n",
+      "}",
+    ].join("\n") + "\n"
   );
   git("commit", "-qam", "migrate");
 
@@ -1817,8 +1835,8 @@ test("a claim is not silenced by a finding invented off the base's stripped tree
 
   assert.match(
     out,
-    /exported functions declare their return type/,
-    `the head file declares no return type and nothing said so:\n${out}`
+    /exported functions carry a doc comment/,
+    `the head file added an undocumented export and nothing said so:\n${out}`
   );
 });
 
@@ -2535,4 +2553,1138 @@ test("a rules directory that is not a directory is one nobody could list", async
   const r = await check(dir, { baseRef: "main" });
 
   assert.ok(codesOf(r).includes(CAVEATS.RULES_UNLISTED), JSON.stringify(codesOf(r)));
+});
+
+test("a new file whose stem spells no naming class at all is a finding", async (t) => {
+  // The one-sided shape H16 fixed for `module_include`, on the filename row: a
+  // stem spelling a different class was caught and a stem spelling no class
+  // escaped, so `TMP_FILE.ts` and `_tmpProbe.ts` passed a stated camelCase
+  // claim while `TmpFile.ts` and `tmp_file.ts` were both caught.
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/user-profile.ts", `export const a = 1;\n`);
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/TMP_FILE.ts", `export const b = 2;\n`);
+    write("src/_tmpProbe.ts", `export const c = 3;\n`);
+    commit("add");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    dimensions: [dim({ key: "file_naming_case", learned: "kebab-case" })],
+  });
+  const report = await check(dir);
+  const found = forKey(report, "file_naming_case");
+  assert.deepEqual(found.map((f) => f.path).sort(), ["src/TMP_FILE.ts", "src/_tmpProbe.ts"]);
+  assert.equal(found[0].claim, "files here are named kebab-case");
+});
+
+test("the two names that match every class are still not sites", async (t) => {
+  // A single lowercase run and a bare filename are the predicate's own two
+  // exclusions, and they are kept: counting them would let a directory of
+  // `index.ts` state a convention no filename ever expressed, and then break
+  // its own claim on the next one.
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/user-profile.ts", `export const a = 1;\n`);
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/index.ts", `export const b = 2;\n`);
+    write("src/Rakefile", `task :x\n`);
+    commit("add");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    dimensions: [dim({ key: "file_naming_case", learned: "kebab-case" })],
+  });
+  const report = await check(dir);
+  assert.deepEqual(forKey(report, "file_naming_case"), []);
+});
+
+/* --- an explicit base that names nothing is a refusal (#51) --- */
+
+test("an explicit base that resolves nowhere is refused, with the ref echoed back", async (t) => {
+  // The command file's own contract is that a non-zero exit means the check
+  // could not run. A typo used to be answered with 685 added-lines findings
+  // over 2,150 files at exit 0, and the agent reading it saw a giant review it
+  // never asked for on a branch that changed nothing.
+  const dir = repo(t, ({ write, commit }) => {
+    write("src/a.ts", clean(2));
+    commit("init");
+    write("src/a.ts", clean(2) + swallow(1));
+    commit("swallow");
+  });
+  facts(dir, { sha: sha(dir, "HEAD~1") });
+
+  await assert.rejects(
+    () => check(dir, { baseRef: "no/such/ref" }),
+    (err) => {
+      assert.match(err.message, /no\/such\/ref/, err.message);
+      assert.match(err.message, /--base/, "the fix named is the argument, not the repository");
+      return true;
+    }
+  );
+});
+
+test("HEAD resolves locally, so it is refused for what it is rather than as unfetchable", async (t) => {
+  // `HEAD` resolves in every repository that has a commit, so reporting it as a
+  // base the shallow clone could not fetch names the wrong cause and the wrong
+  // fix. It is refused because it is this branch's own tip (E6).
+  const dir = repo(t, ({ write, commit }) => {
+    write("src/a.ts", clean(2));
+    commit("init");
+  });
+  facts(dir, { sha: sha(dir, "HEAD") });
+
+  await assert.rejects(
+    () => check(dir, { baseRef: "HEAD" }),
+    (err) => {
+      assert.match(err.message, /HEAD/);
+      assert.doesNotMatch(err.message, /fetch/, err.message);
+      return true;
+    }
+  );
+});
+
+test("a base that does resolve is used, whatever its spelling", async (t) => {
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/a.ts", clean(2));
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/a.ts", clean(2) + swallow(1));
+    commit("swallow");
+  });
+  facts(dir, { sha: sha(dir, "main") });
+
+  for (const ref of ["main", sha(dir, "main")]) {
+    const r = await check(dir, { baseRef: ref });
+    assert.equal(r.mode, "compare", `${ref} resolves`);
+  }
+});
+
+test("the default candidate list still degrades rather than refusing", async (t) => {
+  // The degradation stays for the case it was built for: a repository holding
+  // none of the base refs was never asked for one, so nothing was mistyped.
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/a.ts", clean(2));
+    commit("init");
+    git("branch", "-m", "topic");
+    write("src/a.ts", clean(2) + swallow(1));
+    commit("swallow");
+  });
+  facts(dir, { sha: sha(dir, "HEAD~1") });
+
+  const r = await check(dir);
+
+  assert.equal(r.mode, "added-lines");
+  assert.ok(codesOf(r).includes(CAVEATS.NO_BASE_REF), JSON.stringify(codesOf(r)));
+});
+
+test("a small plurality does not turn the practice most of the repository follows into a finding", async (t) => {
+  // Measured end to end: a 7-site area at 3 named and 4 inline flipped the
+  // printed sentence, and a branch adding a *named* handler was then reported
+  // against the inverse. `handler_is_named` is 0.757 the other way repo-wide.
+  const named = 'export const A = () => { const h = () => {}; return <button onClick={h} /> }\n';
+  const inline = 'export const B = () => <button onClick={() => {}} />\n';
+  const dir = repo(t, ({ git, write, commit }) => {
+    for (let i = 0; i < 3; i++) write(`src/n${i}.tsx`, named.replace(/A/g, `A${i}`).replace("h", `h${i}`));
+    for (let i = 0; i < 4; i++) write(`src/i${i}.tsx`, inline.replace("B", `B${i}`));
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/new.tsx", named.replace(/A/g, "N").replace("h", "hn"));
+    commit("add");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    fileCount: 7,
+    pinned: ["src/n0.tsx", "src/n1.tsx", "src/n2.tsx", "src/i0.tsx", "src/i1.tsx", "src/i2.tsx", "src/i3.tsx"],
+    dimensions: [
+      dim({
+        key: "handler_is_named",
+        directive: false,
+        states: null,
+        gate: "ratio",
+        candidates: 7,
+        conforming: 3,
+        counterClaim: "an event handler prop is given an inline arrow, not a named function",
+        counterGate: "ratio",
+        baseline: { candidates: 7, conforming: 3, exceptions: [] },
+      }),
+    ],
+  });
+
+  const r = await check(dir);
+
+  assert.deepEqual(forKey(r, "handler_is_named"), [], JSON.stringify(forKey(r, "handler_is_named")));
+});
+
+test("a claim stated on borrowed confidence is capped, and the reason says whose confidence it was", () => {
+  // The map may state a nine-site claim on the strength of the rest of the
+  // repository, and the check may not then enforce it at the severity that
+  // means "this branch is the first violation in the area's history". The old
+  // reason read "9 of 9 baseline sites is thin" under a map that had just
+  // stated it, which is a contradiction rather than an explanation.
+  const d = dim({ borrowed: true, baseline: { candidates: 9, conforming: 9, exceptions: [] } });
+  const v = severityFor({ path: "src/a.ts" }, { dim: d, fresh: true });
+
+  assert.equal(v.severity, "FIX");
+  assert.match(v.reason, /rest of the repository/, v.reason);
+  assert.doesNotMatch(v.reason, /thin/);
+});
+
+test("a thin baseline nobody lent anything to still reads as thin", () => {
+  const d = dim({ baseline: { candidates: 9, conforming: 9, exceptions: [] } });
+
+  assert.match(severityFor({ path: "src/a.ts" }, { dim: d, fresh: true }).reason, /9 of 9 baseline sites is thin/);
+});
+
+test("an @ base is refused before anything is fetched, so a remote branch named HEAD cannot become one", async (t) => {
+  // E6: over `<HEAD>..HEAD` the branch's own edits count as map drift, so the
+  // literal ref is refused rather than quietly accepted. The shallow fallback
+  // fetches by branch name, so the refusal has to come before it.
+  const dir = repo(t, ({ write, commit }) => {
+    write("src/a.ts", clean(2));
+    commit("init");
+  });
+  facts(dir, { sha: sha(dir, "HEAD") });
+
+  await assert.rejects(() => check(dir, { baseRef: "@" }), /--base @ names this branch's own tip/);
+});
+
+test("a base spelled in a way git will not take resolves to nothing and is refused as such", async (t) => {
+  const dir = repo(t, ({ write, commit }) => {
+    write("src/a.ts", clean(2));
+    commit("init");
+  });
+  facts(dir, { sha: sha(dir, "HEAD") });
+
+  await assert.rejects(() => check(dir, { baseRef: "bad..name" }), /--base bad\.\.name resolves to no commit/);
+});
+
+/* --- an area with no slot for a dimension inherits the nearest one that states (#55) --- */
+
+test("the first site of a kind an area has never held is answered by the area it sits inside", async (t) => {
+  // A dimension that finds zero sites in an area produces no slot at all, so
+  // the area has no sentence to ask and the first `Net::HTTP` call it ever
+  // sees, the one that decides whether the area's HTTP goes through the
+  // repository's own client, could never be flagged at any severity. Covered
+  // but first-of-kind was blinder than uncovered, which at least gets a NIT.
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/a.ts", clean(2));
+    write("src/api/b.ts", `export const b = 1;\n`);
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/api/b.ts", `export const b = 1;\n` + swallow(1));
+    commit("swallow");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    areas: [
+      { id: "aaaaaaaa", path: "src", globs: [glob("src")], fileCount: 8, dimensions: [dim()] },
+      { id: "bbbbbbbb", path: "src/api", globs: [glob("src/api")], fileCount: 8, dimensions: [] },
+    ],
+  });
+
+  const r = await check(dir, { baseRef: "main" });
+  const hits = forKey(r, "swallowed_error");
+
+  assert.equal(hits.length, 1, JSON.stringify(hits));
+  assert.equal(hits[0].area, "src/api");
+  assert.equal(hits[0].severity, "FIX", "the ancestor's file is not delivered to this directory, so not MUST-FIX");
+  assert.match(hits[0].reason, /counted in src/);
+});
+
+test("no slot anywhere on the path keeps today's silence", async (t) => {
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/a.ts", clean(2));
+    write("src/api/b.ts", `export const b = 1;\n`);
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/api/b.ts", `export const b = 1;\n` + swallow(1));
+    commit("swallow");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    areas: [
+      { id: "aaaaaaaa", path: "src", globs: [glob("src")], fileCount: 8, dimensions: [dim({ directive: false, states: null, gate: "authors" })] },
+      { id: "bbbbbbbb", path: "src/api", globs: [glob("src/api")], fileCount: 8, dimensions: [] },
+    ],
+  });
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.deepEqual(forKey(r, "swallowed_error"), [], "an ancestor that states nothing lends nothing");
+});
+
+test("an area that holds its own slot never reads an ancestor's", async (t) => {
+  // The deepest area containing a file supplies its claims. Inheriting past a
+  // slot the area does have would judge the file against a convention counted
+  // over a different population.
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/a.ts", clean(2));
+    write("src/api/b.ts", `export const b = 1;\n`);
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/api/b.ts", `export const b = 1;\n` + swallow(1));
+    commit("swallow");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    areas: [
+      { id: "aaaaaaaa", path: "src", globs: [glob("src")], fileCount: 8, dimensions: [dim()] },
+      { id: "bbbbbbbb", path: "src/api", globs: [glob("src/api")], fileCount: 8, dimensions: [dim({ directive: false, states: null, gate: "authors" })] },
+    ],
+  });
+
+  const r = await check(dir, { baseRef: "main" });
+  const hits = forKey(r, "swallowed_error");
+
+  assert.equal(hits.length, 1);
+  assert.equal(hits[0].severity, "NIT", "its own suppressed slot, not the parent's stated one");
+});
+
+test("an inherited slot is judged on the side the ancestor was handed", async (t) => {
+  // The polarity travels with the slot. Reading the ancestor for the finding
+  // and the area for the side would charge an author for writing the sentence
+  // the ancestor's map handed them.
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/a.ts", `export function a() { try { go() } catch (e) { log(e) } }\n`);
+    write("src/api/b.ts", `export const b = 1;\n`);
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write(
+      "src/api/b.ts",
+      `export const b = 1;\n` +
+        "/** documented */\nexport function documented() { return 1 }\n" +
+        "export function bare() { return 2 }\n"
+    );
+    commit("two exports");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    areas: [
+      {
+        id: "aaaaaaaa",
+        path: "src",
+        globs: [glob("src")],
+        fileCount: 8,
+        dimensions: [
+          dim({
+            key: "doc_comment_style",
+            states: "counter",
+            directive: false,
+            gate: "ratio",
+            counterClaim: "code here explains itself; exported functions carry no doc comment",
+            counterGate: null,
+            counterExceptions: [],
+          }),
+        ],
+      },
+      { id: "bbbbbbbb", path: "src/api", globs: [glob("src/api")], fileCount: 8, dimensions: [] },
+    ],
+  });
+
+  const r = await check(dir, { baseRef: "main" });
+  const hits = forKey(r, "doc_comment_style");
+
+  assert.equal(hits.length, 1, JSON.stringify(hits));
+  assert.equal(hits[0].where, "documented", "the documented export is what breaks the inherited sentence");
+  assert.equal(hits[0].claim, "code here explains itself; exported functions carry no doc comment");
+});
+
+/* --- a directive the 40-line budget dropped may not reach MUST-FIX (#70) --- */
+
+test("a claim the area file had no room to print is capped, and the reason says why", () => {
+  const d = dim({ baseline: { candidates: 60, conforming: 60, exceptions: [] } });
+
+  assert.equal(severityFor({ path: "src/a.ts" }, { dim: d, fresh: true }).severity, "MUST-FIX");
+  const capped = severityFor({ path: "src/a.ts" }, { dim: d, fresh: true, dropped: true });
+  assert.equal(capped.severity, "FIX");
+  assert.match(capped.reason, /no room/, capped.reason);
+});
+
+test("a directive the file dropped is enforced, but never at the top severity", async (t) => {
+  // `check` reads facts.json, not the rendered area file, so a sentence the map
+  // never printed was still reported as "all 60 baseline sites conform", which
+  // means the map told the agent and they were the first to break it. On a
+  // measured repository three slots with a perfect baseline reached MUST-FIX on
+  // a claim that appears nowhere in the file the agent reads.
+  const filler = [
+    "error_shape", "module_state_const", "async_error_handling", "optional_chaining",
+    "function_style", "explicit_return_type", "nullish_default", "non_null_assertion",
+    "absent_is_null", "doc_comment_style",
+  ];
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/a.ts", clean(2));
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/a.ts", clean(2) + swallow(1));
+    commit("swallow");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    // `swallowed_error` sits last, so it is the block the budget drops.
+    dimensions: [...filler.map((key) => dim({ key, precision: "partial" })), dim()],
+  });
+
+  const r = await check(dir, { baseRef: "main" });
+  const hits = forKey(r, "swallowed_error");
+
+  assert.equal(hits.length, 1, JSON.stringify(hits));
+  assert.equal(hits[0].severity, "FIX");
+  assert.match(hits[0].reason, /no room/, hits[0].reason);
+});
+
+test("an error class is not held to the base the area learned", needsRuby, async (t) => {
+  // Every Rails service directory grows error classes, so on a perfect
+  // baseline the next one anyone adds was a MUST-FIX asking for a class Ruby
+  // refuses to raise.
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("app/services/a.rb", "class A < ActiveInteraction::Base\nend\n");
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("app/services/quota_exceeded_error.rb", "class QuotaExceededError < StandardError\nend\n");
+    commit("add");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    areas: [{
+      id: "aaaaaaaa",
+      path: "app/services",
+      globs: [{ negated: false, dir: "app/services", tail: "**/*.rb" }],
+      fileCount: 8,
+      dimensions: [dim({ key: "class_base", learned: "ActiveInteraction::Base" })],
+    }],
+  });
+
+  const report = await check(dir);
+
+  assert.deepEqual(forKey(report, "class_base"), [], JSON.stringify(forKey(report, "class_base")));
+});
+
+test("the class an area learned is not asked to inherit itself", needsRuby, async (t) => {
+  // `class ApplicationRecord < ApplicationRecord` is a NameError.
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("app/models/user.rb", "class User < ApplicationRecord\nend\n");
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("app/models/application_record.rb", "class ApplicationRecord < ActiveRecord::Base\nend\n");
+    commit("add");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    areas: [{
+      id: "aaaaaaaa",
+      path: "app/models",
+      globs: [{ negated: false, dir: "app/models", tail: "**/*.rb" }],
+      fileCount: 8,
+      dimensions: [dim({ key: "class_base", learned: "ApplicationRecord" })],
+    }],
+  });
+
+  const report = await check(dir);
+
+  assert.deepEqual(forKey(report, "class_base"), [], JSON.stringify(forKey(report, "class_base")));
+});
+
+/* --- an omission is only a finding where the map stated the claim (#54) --- */
+
+test("a body that includes nothing is not judged against a row the map did not state", needsRuby, async (t) => {
+  // H16's new site is the forgotten include, and its whole meaning is "you
+  // should have written X". On a row the map holds at "20 of 31 sites, no
+  // convention" that is advice the map itself refuses to print: a count failing
+  // the gate prints as a count and never as a directive. The NIT tier softens
+  // it, not the direction.
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("app/models/a.rb", "class A\n  include ActiveModel::Dirty\nend\n");
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("app/models/tmp_probe.rb", "class TmpProbe\n  def name; end\nend\n");
+    commit("add");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    areas: [{
+      id: "aaaaaaaa",
+      path: "app/models",
+      globs: [{ negated: false, dir: "app/models", tail: "**/*.rb" }],
+      fileCount: 8,
+      dimensions: [dim({ key: "module_include", learned: "ActiveModel::Dirty", directive: false, states: null, gate: "ratio" })],
+    }],
+  });
+
+  const r = await check(dir);
+
+  assert.deepEqual(forKey(r, "module_include"), [], JSON.stringify(forKey(r, "module_include")));
+});
+
+test("a body that includes the wrong module is still counted where the map said nothing", needsRuby, async (t) => {
+  // The difference is the direction of the advice. "you wrote a different
+  // module from the one this area writes" is the count speaking; "add this
+  // module" is a directive the gates refused.
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("app/models/a.rb", "class A\n  include ActiveModel::Dirty\nend\n");
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("app/models/tmp_probe.rb", "class TmpProbe\n  include Comparable\nend\n");
+    commit("add");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    areas: [{
+      id: "aaaaaaaa",
+      path: "app/models",
+      globs: [{ negated: false, dir: "app/models", tail: "**/*.rb" }],
+      fileCount: 8,
+      dimensions: [dim({ key: "module_include", learned: "ActiveModel::Dirty", directive: false, states: null, gate: "ratio" })],
+    }],
+  });
+
+  const r = await check(dir);
+  const hits = forKey(r, "module_include");
+
+  assert.equal(hits.length, 1, JSON.stringify(hits));
+  assert.equal(hits[0].severity, "NIT");
+});
+
+test("a forgotten include is still a finding where the map did state the claim", needsRuby, async (t) => {
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("app/models/a.rb", "class A\n  include ActiveModel::Dirty\nend\n");
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("app/models/tmp_probe.rb", "class TmpProbe\n  def name; end\nend\n");
+    commit("add");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    areas: [{
+      id: "aaaaaaaa",
+      path: "app/models",
+      globs: [{ negated: false, dir: "app/models", tail: "**/*.rb" }],
+      fileCount: 8,
+      dimensions: [dim({ key: "module_include", learned: "ActiveModel::Dirty" })],
+    }],
+  });
+
+  const r = await check(dir);
+
+  assert.equal(forKey(r, "module_include").length, 1, JSON.stringify(r.findings));
+});
+
+test("the check excuses the wrapper the scan excused", async (t) => {
+  // A scan-only exclusion is the H12 asymmetry in reverse: the map stops
+  // naming the client as its own exception and the check keeps reporting it.
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/a.ts", `export const a = 1;\n`);
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/request.ts", `export const go = () => fetch("/x");\n`);
+    write("src/userApi.ts", `export const go = () => fetch("/y");\n`);
+    commit("add");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    capabilities: ["network"],
+    dimensions: [dim({ key: "route_network", precision: "partial" })],
+  });
+
+  const r = await check(dir);
+
+  assert.deepEqual(forKey(r, "route_network").map((f) => f.path), ["src/userApi.ts"], JSON.stringify(r.findings));
+});
+
+test("a branch that edits an abstract base is not asked for a spec for it", needsRuby, async (t) => {
+  // A scan-only exclusion makes the one commit in 483 that edits a base
+  // controller a finding against a file the map never counted.
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("app/controllers/api/v1/base_controller.rb", "class Api::V1::BaseController\nend\n");
+    write("app/controllers/api/v1/listings_controller.rb", "class Api::V1::ListingsController\nend\n");
+    write("spec/controllers/api/v1/listings_controller_spec.rb", "describe Api::V1::ListingsController do\nend\n");
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("app/controllers/api/v1/base_controller.rb", "class Api::V1::BaseController\n  def x; end\nend\n");
+    commit("edit the base");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    areas: [{
+      id: "aaaaaaaa",
+      path: "app/controllers",
+      globs: [{ negated: false, dir: "app/controllers", tail: "**/*.rb" }],
+      fileCount: 8,
+      dimensions: [dim({ key: "controller_spec" })],
+    }],
+  });
+
+  const r = await check(dir);
+
+  assert.deepEqual(forKey(r, "controller_spec"), [], JSON.stringify(r.findings));
+});
+
+test("a plain JavaScript file on a branch is not asked for a return type", async (t) => {
+  // The scan does not count it, so the check must not enforce it: the two
+  // disagreeing about what a site is is the asymmetry every one of these rules
+  // is written to close.
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/a.ts", `export function a(): number { return 1 }\n`);
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/b.js", `export function b(rows) { return rows.length }\n`);
+    commit("add");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    dimensions: [dim({ key: "explicit_return_type", precision: "partial" })],
+  });
+
+  const r = await check(dir);
+
+  assert.deepEqual(forKey(r, "explicit_return_type"), [], JSON.stringify(r.findings));
+});
+
+test("a file that gains JSX on the branch does not have its whole base side skipped", async (t) => {
+  // The kind was answered per revision, so a file whose base version held no
+  // JSX had its base side judged as the other kind and skipped whole: every
+  // pre-existing violation in it came back as newly introduced, at MUST-FIX, on
+  // lines the diff never touched.
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/UserCard.tsx", `export const UserCard = () => <div />\n`);
+    write("src/Helper.tsx", `export function bad_helper(x) { return x + 1 }\n`);
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/Helper.tsx", `export function bad_helper(x) { return x + 1 }\nexport const Extra = () => <div />\n`);
+    commit("add a component to the helper file");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    dimensions: [dim({ key: "function_naming_case", learned: "camelCase", learnedKind: "jsx", narrowed: true })],
+  });
+
+  const r = await check(dir);
+
+  assert.deepEqual(
+    forKey(r, "function_naming_case").map((f) => f.where),
+    [],
+    JSON.stringify(r.findings)
+  );
+});
+
+test("the sentence the check quotes is the one the map printed", async (t) => {
+  // The map names the kind a narrowed row was learned over. The check built its
+  // own text from the registry template and quoted the unqualified sentence,
+  // the one that pools the excluded files back in, in the finding, the JSON and
+  // the annotations at once.
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/formatDate.ts", `export const formatDate = (x) => x\n`);
+    write("src/UserCard.tsx", `export const UserCard = () => <div />\n`);
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/SyncTooltip.ts", `export function SyncTooltip(x) { return x }\n`);
+    commit("add");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    dimensions: [
+      dim({ key: "file_naming_case", learned: "camelCase", learnedKind: "module", narrowed: true }),
+      dim({ key: "function_naming_case", learned: "camelCase", learnedKind: "module", narrowed: true }),
+    ],
+  });
+
+  const r = await check(dir);
+  const claims = r.findings.map((f) => f.claim);
+
+  assert.ok(claims.length >= 2, JSON.stringify(r.findings));
+  for (const c of claims) {
+    assert.match(c, /files that hold no JSX|files here that hold no JSX/, JSON.stringify(claims));
+  }
+});
+
+test("an area the narrowing left whole keeps the plain sentence in the finding too", async (t) => {
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/formatDate.ts", `export const formatDate = (x) => x\n`);
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/SyncTooltip.ts", `export function SyncTooltip(x) { return x }\n`);
+    commit("add");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    dimensions: [dim({ key: "function_naming_case", learned: "camelCase", learnedKind: "module" })],
+  });
+
+  const r = await check(dir);
+
+  assert.deepEqual(
+    [...new Set(r.findings.map((f) => f.claim))],
+    ["functions are named camelCase"],
+    JSON.stringify(r.findings)
+  );
+});
+
+test("a claim the owning area's own globs never deliver here is capped", async (t) => {
+  // Ownership is the directory prefix and delivery is the glob, and A10 makes
+  // the glob the narrower of the two: an area listing only its own files owns
+  // every new subdirectory under it and delivers its sentences to none of them.
+  // On one measured repository 11 of 156 areas carry no recursive glob of their
+  // own, and a planted file in a new subdirectory of one of them drew MUST-FIX
+  // on a claim its author was never handed.
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/one.ts", `export const one = 1\n`);
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/nested/deep.ts", `let two = 2\nexport { two }\n`);
+    commit("add");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    areas: [
+      {
+        id: "aaaaaaaa",
+        path: "src",
+        globs: [{ negated: false, dir: "src", tail: "*.ts" }],
+        fileCount: 8,
+        dimensions: [dim({ key: "module_state_const" })],
+      },
+    ],
+  });
+
+  const r = await check(dir);
+  const found = forKey(r, "module_state_const");
+
+  assert.equal(found.length, 1, JSON.stringify(r.findings));
+  assert.equal(found[0].severity, "FIX", JSON.stringify(found[0]));
+  assert.match(found[0].reason, /which this directory sits inside/);
+});
+
+test("an obligation is capped on a path the area's globs never deliver to, like every other finding", async (t) => {
+  // The cap reached the tree rows and the filename rows and not the third
+  // producer, so one file could draw a FIX for its name and a MUST-FIX for its
+  // missing spec off the same undelivered area file.
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("app/models/thing.rb", "class Thing\nend\n");
+    write("spec/models/thing_spec.rb", "describe Thing do\nend\n");
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("app/models/nested/other.rb", "class Other\nend\n");
+    commit("a model in a new subdirectory, no spec");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    areas: [
+      {
+        id: "aaaaaaaa",
+        path: "app/models",
+        globs: [{ negated: false, dir: "app/models", tail: "*.rb" }],
+        fileCount: 8,
+        dimensions: [dim({ key: "model_spec", directive: true })],
+      },
+    ],
+  });
+
+  const r = await check(dir, { baseRef: "main" });
+  const found = forKey(r, "model_spec");
+
+  assert.equal(found.length, 1, JSON.stringify(r.findings));
+  assert.equal(found[0].severity, "FIX", JSON.stringify(found[0]));
+  assert.match(found[0].reason, /which this directory sits inside/);
+});
+
+test("an undelivered claim the gates suppressed is still only a NIT", async (t) => {
+  // The cap replaced the verdict instead of capping it, so a slot the map
+  // prints as "no convention" was raised from NIT to FIX on exactly the paths
+  // the map never delivered to, with a reason claiming it was counted there.
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/one.ts", `export const one = 1\n`);
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/nested/deep.ts", `let two = 2\nexport { two }\n`);
+    commit("add");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    areas: [
+      {
+        id: "aaaaaaaa",
+        path: "src",
+        globs: [{ negated: false, dir: "src", tail: "*.ts" }],
+        fileCount: 8,
+        dimensions: [dim({ key: "module_state_const", states: null, directive: false, gate: "ratio" })],
+      },
+    ],
+  });
+
+  const r = await check(dir);
+  const found = forKey(r, "module_state_const");
+
+  assert.equal(found.length, 1, JSON.stringify(r.findings));
+  assert.equal(found[0].severity, "NIT", JSON.stringify(found[0]));
+  assert.match(found[0].reason, /no convention stated here/);
+});
+
+test("a helper in a directory of components is not judged by the components' naming class", async (t) => {
+  // The map learned PascalCase over the files that hold JSX. A camelCase helper
+  // beside them expresses no opinion about that convention, and judging it by
+  // one produced 5 of the 9 findings on one measured pull request.
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/UserCard.tsx", `export const UserCard = () => <div />\n`);
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/syncStatusTooltip.ts", `export const syncStatusTooltip = (x) => x\n`);
+    write("src/orderList.tsx", `export const orderList = () => <div />\n`);
+    commit("add");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    dimensions: [dim({ key: "file_naming_case", learned: "PascalCase", learnedKind: "jsx" })],
+  });
+
+  const r = await check(dir);
+
+  assert.deepEqual(
+    forKey(r, "file_naming_case").map((f) => f.path),
+    ["src/orderList.tsx"],
+    JSON.stringify(forKey(r, "file_naming_case"))
+  );
+});
+
+test("a file the parser could not read is not sorted into a kind by its absence", async (t) => {
+  // `facets: null` read as "module", so a row narrowed to the module side
+  // judged an unread `.tsx` at MUST-FIX, one line under the caveat saying the
+  // file was not checked, and the rename it asked for turns a component into a
+  // host element.
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/formatDate.ts", `export const formatDate = (x) => x\n`);
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/WidgetNew.tsx", `export function WidgetNew() {\n  return <div>x</div>\n`);
+    commit("add");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    dimensions: [dim({ key: "file_naming_case", learned: "camelCase", learnedKind: "module" })],
+  });
+
+  const r = await check(dir);
+
+  assert.deepEqual(forKey(r, "file_naming_case"), [], JSON.stringify(r.findings));
+});
+
+test("a map with no learned kind judges every file, which is what an older record means", async (t) => {
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/UserCard.tsx", `export const UserCard = () => <div />\n`);
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/syncStatusTooltip.ts", `export const syncStatusTooltip = (x) => x\n`);
+    commit("add");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    dimensions: [dim({ key: "file_naming_case", learned: "PascalCase" })],
+  });
+
+  const r = await check(dir);
+
+  assert.equal(forKey(r, "file_naming_case").length, 1);
+});
+
+test("a sibling whose path merely starts with another area's is not inside it", async (t) => {
+  // `src/apiary` is not inside `src/api`. The separator is what makes the
+  // prefix a containment rather than a spelling coincidence.
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/api/a.ts", clean(2));
+    write("src/apiary/b.ts", `export const b = 1;\n`);
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/apiary/b.ts", `export const b = 1;\n` + swallow(1));
+    commit("swallow");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    areas: [
+      { id: "aaaaaaaa", path: "src/api", globs: [glob("src/api")], fileCount: 8, dimensions: [dim()] },
+      { id: "bbbbbbbb", path: "src/apiary", globs: [glob("src/apiary")], fileCount: 8, dimensions: [] },
+    ],
+  });
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.deepEqual(forKey(r, "swallowed_error"), [], JSON.stringify(forKey(r, "swallowed_error")));
+});
+
+test("the repository root is an ancestor of everything and is asked last", async (t) => {
+  // "." contains every path without being a prefix of any of them, the same
+  // rule `areaOwner` already carries.
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("root.ts", clean(2));
+    write("src/api/b.ts", `export const b = 1;\n`);
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/api/b.ts", `export const b = 1;\n` + swallow(1));
+    commit("swallow");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    areas: [
+      { id: "aaaaaaaa", path: ".", globs: [glob(".")], fileCount: 8, dimensions: [dim()] },
+      { id: "bbbbbbbb", path: "src", globs: [glob("src")], fileCount: 8, dimensions: [dim({ key: "error_shape" })] },
+      { id: "cccccccc", path: "src/api", globs: [glob("src/api")], fileCount: 8, dimensions: [] },
+    ],
+  });
+
+  const r = await check(dir, { baseRef: "main" });
+  const hits = forKey(r, "swallowed_error");
+
+  assert.equal(hits.length, 1, JSON.stringify(r.findings));
+  assert.match(hits[0].reason, /counted in \./, hits[0].reason);
+});
+
+test("the nearest ancestor that states wins over a further one", async (t) => {
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("root.ts", clean(2));
+    write("src/api/b.ts", `export const b = 1;\n`);
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/api/b.ts", `export const b = 1;\n` + swallow(1));
+    commit("swallow");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    areas: [
+      { id: "aaaaaaaa", path: ".", globs: [glob(".")], fileCount: 8, dimensions: [dim()] },
+      { id: "bbbbbbbb", path: "src", globs: [glob("src")], fileCount: 8, dimensions: [dim()] },
+      { id: "cccccccc", path: "src/api", globs: [glob("src/api")], fileCount: 8, dimensions: [] },
+    ],
+  });
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.match(forKey(r, "swallowed_error")[0].reason, /counted in src/);
+});
+
+test("an inherited slot is judged over the population its ancestor measured, not over this file", async (t) => {
+  // The two rules have to compose: a slot inherited from an ancestor is still
+  // a class learned over one kind of file, and a helper does not answer it just
+  // because it sits one directory further down.
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/UserCard.tsx", `export const UserCard = () => <div />\n`);
+    write("src/api/keep.tsx", `export const Keep = () => <div />\n`);
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/api/syncStatusTooltip.ts", `export const syncStatusTooltip = (x) => x\n`);
+    write("src/api/orderList.tsx", `export const orderList = () => <div />\n`);
+    commit("add");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    areas: [
+      {
+        id: "aaaaaaaa",
+        path: "src",
+        globs: [glob("src")],
+        fileCount: 8,
+        dimensions: [dim({ key: "file_naming_case", learned: "PascalCase", learnedKind: "jsx" })],
+      },
+      { id: "bbbbbbbb", path: "src/api", globs: [glob("src/api")], fileCount: 8, dimensions: [] },
+    ],
+  });
+
+  const r = await check(dir);
+
+  assert.deepEqual(
+    forKey(r, "file_naming_case").map((f) => f.path),
+    ["src/api/orderList.tsx"],
+    JSON.stringify(forKey(r, "file_naming_case"))
+  );
+});
+
+test("a filename claim is inherited from the area above, capped at FIX", async (t) => {
+  // An area with no slot for the filename row is one where nothing classified,
+  // not one that declined the convention.
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/user-profile.ts", `export const a = 1;\n`);
+    write("src/api/index.ts", `export const b = 1;\n`);
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/api/orderList.ts", `export const c = 3;\n`);
+    commit("add");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    areas: [
+      {
+        id: "aaaaaaaa",
+        path: "src",
+        globs: [glob("src")],
+        fileCount: 8,
+        dimensions: [dim({ key: "file_naming_case", learned: "kebab-case" })],
+      },
+      { id: "bbbbbbbb", path: "src/api", globs: [glob("src/api")], fileCount: 8, dimensions: [] },
+    ],
+  });
+
+  const r = await check(dir);
+  const hits = forKey(r, "file_naming_case");
+
+  assert.deepEqual(hits.map((f) => f.path), ["src/api/orderList.ts"]);
+  assert.equal(hits[0].severity, "FIX");
+  assert.match(hits[0].reason, /counted in src/);
+});
+
+test("renaming a file that was not a site to one that is is still a finding", async (t) => {
+  // The rename guard compared the two classes, and a name that spells no class
+  // and a name that spells every class both classify to null, so renaming
+  // `index.ts` to `TMP_FILE.ts` compared null against null and answered
+  // "the name did not change class".
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/user-profile.ts", `export const a = 1;\n`);
+    write("src/index.ts", `export const b = 2;\n`);
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    git("mv", "src/index.ts", "src/TMP_FILE.ts");
+    commit("rename");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    dimensions: [dim({ key: "file_naming_case", learned: "kebab-case" })],
+  });
+
+  const r = await check(dir);
+
+  assert.deepEqual(forKey(r, "file_naming_case").map((f) => f.path), ["src/TMP_FILE.ts"]);
+});
+
+test("renaming between two names that both spell no class is not a new finding", async (t) => {
+  // The old name predates the branch and both are the same non-answer.
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/user-profile.ts", `export const a = 1;\n`);
+    write("src/TMP_A.ts", `export const b = 2;\n`);
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    git("mv", "src/TMP_A.ts", "src/TMP_B.ts");
+    commit("rename");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    dimensions: [dim({ key: "file_naming_case", learned: "kebab-case" })],
+  });
+
+  const r = await check(dir);
+
+  assert.deepEqual(forKey(r, "file_naming_case"), []);
+});
+
+test("a hand-edited area with no path does not take the whole check down", async (t) => {
+  // The record is repository-committed, so a shape nobody wrote by machine has
+  // to degrade rather than throw: the array is checked, its entries are not.
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/a.ts", clean(2));
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/a.ts", clean(2) + swallow(1));
+    commit("swallow");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    areas: [
+      { id: "aaaaaaaa", path: "src", globs: [glob("src")], fileCount: 8, dimensions: [dim()] },
+      { id: "bbbbbbbb", path: null, globs: [glob("src")], fileCount: 8, dimensions: [] },
+    ],
+  });
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.equal(forKey(r, "swallowed_error").length, 1, JSON.stringify(r.findings));
+});
+
+test("a name spelling no class is an omission too, so it needs a stated claim", async (t) => {
+  // The same rule the include-less body gets: "name this file differently" is
+  // advice, and on a row the gates suppressed it is advice the map itself
+  // refuses to print. A name spelling a *different* class is the count
+  // speaking and is reported either way, which is what it always did.
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/user-profile.ts", `export const a = 1;\n`);
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/TMP_FILE.ts", `export const b = 2;\n`);
+    write("src/orderList.ts", `export const c = 3;\n`);
+    commit("add");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    dimensions: [
+      dim({ key: "file_naming_case", learned: "kebab-case", directive: false, states: null, gate: "evidence" }),
+    ],
+  });
+
+  const r = await check(dir);
+
+  assert.deepEqual(forKey(r, "file_naming_case").map((f) => f.path), ["src/orderList.ts"]);
+});
+
+/* --- the shallow arm, which #51 was measured on --- */
+
+/** A depth-1 clone of a repository with history, which is what CI checks out. */
+function shallowClone(t, build) {
+  const outer = mkdtempSync(join(tmpdir(), "anatomiya-shallow-"));
+  t.after(() => rmSync(outer, { recursive: true, force: true }));
+  const origin = join(outer, "origin");
+  mkdirSync(origin, { recursive: true });
+
+  const git = (...a) => execFileSync("git", a, { cwd: origin, stdio: "pipe" });
+  git("init", "-q");
+  git("config", "user.email", "t@t.test");
+  git("config", "user.name", "T");
+  git("checkout", "-q", "-b", "main");
+  build({
+    write: (rel, body) => {
+      const abs = join(origin, rel);
+      mkdirSync(dirname(abs), { recursive: true });
+      writeFileSync(abs, body);
+    },
+    commit: (m) => {
+      git("add", "-A");
+      git("commit", "-qm", m);
+    },
+  });
+
+  const clone = join(outer, "clone");
+  execFileSync("git", ["clone", "-q", "--depth=1", `file://${origin}`, clone], { stdio: "pipe" });
+  return clone;
+}
+
+test("a shallow clone refuses a base it cannot reach rather than reviewing the whole branch", async (t) => {
+  // The measurement behind this was taken on a genuinely shallow clone, where
+  // the fetch fallback exists for a reason: 685 added-lines findings over 2,150
+  // files at exit 0, on a branch that changed nothing.
+  const dir = shallowClone(t, ({ write, commit }) => {
+    write("src/a.ts", clean(2));
+    commit("init");
+    write("src/a.ts", clean(3));
+    commit("more");
+  });
+  assert.equal(
+    execFileSync("git", ["rev-parse", "--is-shallow-repository"], { cwd: dir, encoding: "utf8" }).trim(),
+    "true",
+    "the fixture really is shallow"
+  );
+
+  await assert.rejects(
+    () => check(dir, { baseRef: "no/such/ref" }),
+    /--base no\/such\/ref resolves to no commit in this repository, and this shallow clone could not fetch it/
+  );
+});
+
+test("a shallow clone with no base named still degrades rather than refusing", async (t) => {
+  // The candidate list is this tool's own guess, and a clone that holds none of
+  // them is an ordinary repository rather than a typo.
+  const dir = shallowClone(t, ({ write, commit }) => {
+    write("src/a.ts", clean(2));
+    commit("init");
+    write("src/a.ts", clean(2) + swallow(1));
+    commit("swallow");
+  });
+  execFileSync("git", ["remote", "remove", "origin"], { cwd: dir, stdio: "pipe" });
+  execFileSync("git", ["branch", "-m", "topic"], { cwd: dir, stdio: "pipe" });
+
+  const r = await check(dir);
+
+  assert.ok(codesOf(r).includes(CAVEATS.SHALLOW_UNFETCHED), JSON.stringify(codesOf(r)));
 });

@@ -8,15 +8,15 @@ import { capabilitiesIn } from "../lib/corpus.mjs";
 
 const dim = (key) => CAPABILITY_DIMENSIONS.find((d) => d.key === key);
 
-function hits(key, src) {
+function hits(key, src, extra) {
   const { program } = parseSync("f.tsx", src, { sourceType: "module" });
   const out = [];
-  dim(key).run(program, (h) => out.push(h));
+  dim(key).run(program, (h) => out.push(h), extra);
   return out;
 }
 
-const counts = (key, src) => {
-  const h = hits(key, src);
+const counts = (key, src, extra) => {
+  const h = hits(key, src, extra);
   return { candidates: h.length, conforming: h.filter((x) => x.conforming).length };
 };
 
@@ -139,4 +139,66 @@ test("adoption needs no filename vocabulary: Rails.logger carries none", async (
 test("a destructuring read off process.env is a direct site per name", () => {
   const r = counts("route_env", `const { PORT, HOST } = process.env;`);
   assert.deepEqual(r, { candidates: 2, conforming: 0 });
+});
+
+/* --- the module that implements the routing is not one of its own sites (#68) --- */
+
+test("the client that implements the routing is not one of its own sites", () => {
+  // Something has to reach the platform. The always-loaded map read "network
+  // calls go through the repository's own client, not fetch directly ... except
+  // src/queries/request.ts", which is the client: the map told an agent that
+  // the client breaks the client rule.
+  assert.deepEqual(counts("route_network", `const r = await fetch("/x");`, { rel: "src/queries/request.ts" }), {
+    candidates: 0,
+    conforming: 0,
+  });
+});
+
+test("the logger and the config module are excused the same way", () => {
+  assert.deepEqual(counts("route_logging", `console.log("x")`, { rel: "src/lib/logger.ts" }), {
+    candidates: 0,
+    conforming: 0,
+  });
+  assert.deepEqual(counts("route_env", `const p = process.env.PORT`, { rel: "src/config.ts" }), {
+    candidates: 0,
+    conforming: 0,
+  });
+});
+
+test("a file that merely mentions the vocabulary is still a site", () => {
+  // Every word of the stem, where an import needs one. Measured on two
+  // repositories, the strict rule keeps all 22 Ruby clients and the one
+  // JavaScript client 301 files import, and drops the 92 that merely mention
+  // the vocabulary. One word would have excused a real fetch in an ordinary
+  // feature module and 20 log-named files.
+  assert.deepEqual(counts("route_network", `const r = await fetch("/x");`, { rel: "src/queries/userApi.ts" }), {
+    candidates: 1,
+    conforming: 0,
+  });
+  assert.deepEqual(counts("route_env", `const p = process.env.PORT`, { rel: "src/app-config.ts" }), {
+    candidates: 1,
+    conforming: 0,
+  });
+});
+
+test("a row handed no path answers exactly as it always did", () => {
+  // Every test in this file and three others run a row with no third argument.
+  assert.deepEqual(counts("route_network", `const r = await fetch("/x");`), { candidates: 1, conforming: 0 });
+  assert.deepEqual(counts("route_logging", `console.log("x")`), { candidates: 1, conforming: 0 });
+  assert.deepEqual(counts("route_env", `const p = process.env.PORT`), { candidates: 1, conforming: 0 });
+});
+
+test("implementsCapability asks every word of the stem, and only the stem", async () => {
+  const { implementsCapability } = await import("../lib/dimensions-capability.mjs");
+
+  for (const rel of ["src/queries/request.ts", "app/clients/client.rb", "src/lib/api-client.ts", "src/lib/httpClient.ts"]) {
+    assert.equal(implementsCapability(rel, "network"), true, rel);
+  }
+  for (const rel of ["src/queries/userApi.ts", "app/services/payment_api.rb", "src/queries/index.ts"]) {
+    assert.equal(implementsCapability(rel, "network"), false, rel);
+  }
+  assert.equal(implementsCapability("src/queries/request.ts", "logging"), false, "one vocabulary at a time");
+  assert.equal(implementsCapability("src/config.ts", "env"), true);
+  assert.equal(implementsCapability(null, "env"), false, "a row handed no path answers as before");
+  assert.equal(implementsCapability("src/config.ts", "nosuch"), false, "and an unknown capability lends nothing");
 });
