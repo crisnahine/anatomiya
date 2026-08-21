@@ -310,3 +310,15 @@ test("an answer larger than the cache reads back is not written at all", (t) => 
   assert.equal(runs, 2, "it is computed again rather than half-read back");
   assert.deepEqual(readdirSync(dir), [], "and nothing is left behind that cannot be read");
 });
+
+test("a counter reached through a symlink is not read through it either", needsSymlinks, (t) => {
+  // The write already refused a link standing where a counter should be. The
+  // read followed one, so a counter pointed at a file full of digits counted
+  // that file's turns.
+  const dir = stateDir(t);
+  writeFileSync(join(dir, "elsewhere"), "40");
+  symlinkSync(join(dir, "elsewhere"), join(dir, "linked-session"));
+
+  assert.equal(nextTurn(dir, "linked-session"), 1, "the link is not the counter it points at");
+  assert.equal(readFileSync(join(dir, "elsewhere"), "utf8"), "40");
+});

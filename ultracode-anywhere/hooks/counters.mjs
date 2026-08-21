@@ -11,7 +11,7 @@
  */
 import { closeSync, constants, lstatSync, mkdirSync, openSync, readdirSync, rmSync, writeSync } from "node:fs";
 
-import { readIfFile } from "./hook-io.mjs";
+import { readOwnFile } from "./hook-io.mjs";
 import { tmpdir, userInfo } from "node:os";
 import { join } from "node:path";
 
@@ -85,7 +85,7 @@ export function nextTurn(dir, session) {
   // a count, belongs to whoever put it there. The state path is a switch, so
   // that is a file a user pointed this at, and writing over it cost a 3 GB file
   // its contents in one reproduction.
-  const held = readIfFile(path, 64).trim();
+  const held = readOwnFile(path, 64).trim();
   if (held !== "" && !/^\d{1,15}$/.test(held)) return 1;
   if (held === "" && standsThere(path) && !isEmptyFile(path)) return 1;
 
@@ -120,7 +120,7 @@ function isEmptyFile(path) {
 
 /** The turns a counter has recorded, and zero for anything that is not a count. */
 function countIn(path) {
-  const seen = readIfFile(path, 64).trim();
+  const seen = readOwnFile(path, 64).trim();
   return /^\d{1,15}$/.test(seen) ? Number(seen) : 0;
 }
 
@@ -166,7 +166,7 @@ export function cached(dir, name, key, compute) {
   const usable = MARK_NAME.test(name) && ownState(dir);
 
   if (usable) {
-    const [stored, ...rest] = readIfFile(path, MOST_KEPT * 2).split("\n");
+    const [stored, ...rest] = readOwnFile(path, MOST_KEPT * 2).split("\n");
     if (stored && stored === key) return rest.join("\n") || null;
   }
 
