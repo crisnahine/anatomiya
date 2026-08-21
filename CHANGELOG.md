@@ -7,6 +7,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- A file whose tests sit in a tree that mirrors nothing on its side is no longer counted as untested.
+  The namesake question now reads the import edge where the path cannot carry it: a test that imports
+  the producer has named what it covers. This repository's own second plugin read `0 of 5` over five
+  files that each have a test; `got` read a false `0 of 20` over `source/core`, and reads a true
+  `3 of 20`. Measured old build against new over 12 repositories including every counter-example
+  behind H18: 11 are byte-identical and no producer is credited falsely.
+- A specifier written the way TypeScript requires under NodeNext, `../src/parser.js` for
+  `src/parser.ts`, names that file. A build-tool suffix (`?worker`, `?raw`) is cut. A directory
+  import and a bare package name name nothing, so neither can answer for a module beside them.
+
 ## [0.2.9] - 2026-08-21
 
 A second plugin in this marketplace, and the manifest check that now reads every plugin the
