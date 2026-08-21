@@ -412,6 +412,55 @@ test("the branch's own changes are not map drift", async (t) => {
   assert.equal(overHead.changed.size, 11);
 });
 
+test("a pin taken on this branch is not drift against the base it sits ahead of", async (t) => {
+  // `anatomiya pin` puts the pin at HEAD, and the range between two commits is
+  // symmetric: pinning on a branch read the branch's own commits as a map that
+  // had moved, so a branch touching a quarter of the mapped files crossed the
+  // cliff and capped every one of its own findings at FIX.
+  const files = Array.from({ length: 6 }, (_, i) => `src/app/a${i}.ts`);
+  let sha;
+
+  const dir = repo(t, (d, { write, commit, git }) => {
+    for (const rel of files) write(rel, CONFORMING);
+    commit("init");
+
+    git("checkout", "-q", "-b", "feature");
+    for (let i = 0; i < 4; i++) write(`src/app/a${i}.ts`, CONFORMING + "// branch\n");
+    sha = commit("branch work");
+  });
+
+  const pin = buildPin([area("src/app", files)], { sha });
+  const state = await resolve(dir, { pin, baseRef: "main" });
+
+  assert.equal(state.drift.total, 0, "the pin already holds everything the base does");
+});
+
+test("a squash merge is not drift: the base holds the same bytes the pin does", async (t) => {
+  // Measuring from the commit the two share moved the range start back past
+  // work the pin already holds, so a base whose tree is byte-identical to the
+  // pin reported four changed files and capped every finding at FIX.
+  const files = Array.from({ length: 6 }, (_, i) => `src/app/a${i}.ts`);
+  let sha;
+
+  const dir = repo(t, (d, { write, commit, git }) => {
+    for (const rel of files) write(rel, CONFORMING);
+    commit("init");
+
+    git("checkout", "-q", "-b", "feature");
+    for (let i = 0; i < 4; i++) write(`src/app/a${i}.ts`, CONFORMING + "// branch\n");
+    sha = commit("branch work");
+
+    git("checkout", "-q", "main");
+    git("merge", "--squash", "feature");
+    commit("squashed feature");
+  });
+
+  const pin = buildPin([area("src/app", files)], { sha });
+  const state = await resolve(dir, { pin, baseRef: "main" });
+
+  assert.equal(state.drift.total, 0, "the base's bytes are the pin's bytes");
+});
+
 test("HEAD is refused as a base ref", async (t) => {
   const dir = repo(t, (d, { write, commit }) => {
     write("src/a/x.ts", CONFORMING);
@@ -862,4 +911,39 @@ test("the pin delta agrees with its own counts, at one and at many", () => {
 
   assert.match(one, /^1 file enters the baseline population, 1 leaves it$/m);
   assert.match(many, /^3 files enter the baseline population, 2 leave it$/m);
+});
+
+test("a first pin says how many areas entered, not one line per area", () => {
+  // On a first pin every area is new by arithmetic, so a line per directory
+  // says the same thing once per directory: 128 of the 133 lines on a measured
+  // 127-area repository. A re-pin is where the per-area delta is the point,
+  // because there the numbers differ from each other.
+  const areas = Array.from({ length: 4 }, (_, i) => ({
+    path: `src/a${i}`,
+    added: [`src/a${i}/x.ts`, `src/a${i}/y.ts`],
+    removed: [],
+    isNew: true,
+  }));
+
+  const first = formatDelta({ from: null, to: "a".repeat(40), addedFiles: 8, removedFiles: 0, areas });
+
+  assert.match(first, /^baseline pinned at aaaaaaaa$/m);
+  assert.match(first, /^8 files enter the baseline population, 0 leave it$/m);
+  assert.match(first, /^4 areas enter it$/m, first);
+  assert.doesNotMatch(first, /\(new area\)/, "no line per area on a first pin");
+  assert.doesNotMatch(first, /src\/a0/, "and no path repeated once per directory");
+});
+
+test("a re-pin keeps the per-area delta, which is the whole point of one", () => {
+  const areas = [
+    { path: "src/a", added: ["src/a/w.ts"], removed: ["src/a/y.ts"], isNew: false },
+    { path: "src/b", added: ["src/b/n.ts"], removed: [], isNew: true },
+  ];
+
+  const again = formatDelta({ from: "b".repeat(40), to: "a".repeat(40), addedFiles: 2, removedFiles: 1, areas });
+
+  assert.match(again, /^"src\/a"  \+1 -1$/m, again);
+  assert.match(again, /^"src\/b" \(new area\)  \+1 -0$/m, again);
+  assert.match(again, /^ {2}- "src\/a\/y\.ts"$/m, "and the files that left it");
+  assert.doesNotMatch(again, /areas enter it/, "the count line is the first pin's");
 });

@@ -214,3 +214,21 @@ test("a documented code the report can never emit fails too", (t) => {
   assert.equal(status, 1);
   assert.match(output, /documents no-map-at-all, which is not a caveat code/);
 });
+
+test("a decision row whose cells outnumber the header is named, with the escape as its remedy", (t) => {
+  // GitHub drops every cell past the header count, silently, so an unescaped
+  // `|` inside a code span takes the Status column off the end of the row. It
+  // happened to three rows at once, one of them losing its whole `done` list.
+  const dir = repoCopy(t);
+  const path = join(dir, "DECISIONS.md");
+  const body = readFileSync(path, "utf8");
+  const broken = body.replace("| C1 |", "| C1 | an `a || b` chain |");
+  assert.notEqual(broken, body, "the fixture edited something");
+  writeFileSync(path, broken);
+
+  const { status, output } = check(dir);
+
+  assert.equal(status, 1);
+  assert.match(output, /row C1 on line \d+ has \d+ cells, not 4/);
+  assert.match(output, /escape a `\|` inside a code span/);
+});

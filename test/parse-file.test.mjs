@@ -98,3 +98,43 @@ test("tree mode returns the program and its comment side channel", async () => {
   assert.ok(r.program);
   assert.ok(Array.isArray(r.comments));
 });
+
+test("a plain JavaScript file is not asked for a return type it cannot carry", async () => {
+  // `export function total(rows): number` is a SyntaxError under Node, so the
+  // row's own blind field already said a plain JavaScript file has no
+  // annotation to find, and it counted the sites anyway.
+  const src = "export function total(rows) { return rows.length }\nexport const pick = (rows) => rows[0]\n";
+
+  for (const [rel, lang] of [["src/a.js", "js"], ["src/a.mjs", "js"], ["src/a.cjs", "js"], ["src/a.jsx", "jsx"]]) {
+    const r = await parseFile(src, rel, lang);
+    assert.equal(r.ok, true, rel);
+    assert.equal(r.hits.explicit_return_type, undefined, rel);
+  }
+});
+
+test("a TypeScript file still answers it", async () => {
+  const src = "export function total(rows: string[]) { return rows.length }\n";
+
+  for (const [rel, lang] of [["src/a.ts", "js"], ["src/a.mts", "js"], ["src/a.tsx", "jsx"]]) {
+    const r = await parseFile(src, rel, lang);
+    assert.equal(r.hits.explicit_return_type.length, 1, rel);
+  }
+});
+
+test("a Flow file carries the annotation its extension says it cannot", async () => {
+  // The extension is a proxy and it is wrong here: `// @flow` declares return
+  // types the way a `.ts` file does, and it is read under the same grammar.
+  // Measured, the extension rule alone took `explicit_return_type` from 73 area
+  // slots to 18 on react, and lost a 68-of-69 claim in a directory that is 100%
+  // Flow.
+  const flow = "// @flow\nexport function g(a: number): string { return String(a) }\n";
+  const plain = "export function g(a) { return String(a) }\n";
+
+  const typed = await parseFile(flow, "src/a.js", "js");
+  assert.equal(typed.facets.typed, true);
+  assert.equal(typed.hits.explicit_return_type.length, 1);
+
+  const untyped = await parseFile(plain, "src/b.js", "js");
+  assert.equal(untyped.facets.typed, false);
+  assert.equal(untyped.hits.explicit_return_type, undefined);
+});

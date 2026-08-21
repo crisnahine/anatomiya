@@ -278,7 +278,7 @@ test("the applicability floor is the stricter of a root and a quarter share", ()
   // its own it asked 11 files of 120, and a measured 120-file area where 11
   // files used `?.` while 109 read absent values without it stated "optional
   // values are read with ?." over the whole directory.
-  const floor = (n) => Math.max(Math.ceil(Math.sqrt(n)), Math.ceil(0.25 * n));
+  const floor = reduce.applicabilityFloor;
   assert.equal(floor(10), 4, "a root is stricter than a quarter on a small area");
   assert.equal(floor(16), 4, "the two meet at sixteen files");
   assert.equal(floor(120), 30, "the share holds where the root would ask for 11");
@@ -318,7 +318,7 @@ test("the applicability floor never loosens as the area grows", () => {
   assert.equal(r.directive, false);
   assert.equal(r.gate, "applicability");
 
-  const floor = (n) => Math.max(Math.ceil(Math.sqrt(n)), Math.ceil(0.25 * n));
+  const floor = reduce.applicabilityFloor;
   for (let n = 2; n < 4000; n++) {
     assert.ok(floor(n) >= floor(n - 1), `floor fell between ${n - 1} and ${n}`);
   }
@@ -986,7 +986,7 @@ test("a file whose types were stripped leaves the denominator of the dimensions 
       rel,
       ok: true,
       hits: {
-        explicit_return_type: [{ conforming: true }],
+        doc_comment_style: [{ conforming: true }],
         function_style: [{ conforming: true }],
       },
     })),
@@ -999,10 +999,10 @@ test("a file whose types were stripped leaves the denominator of the dimensions 
   ];
 
   const dims = reduce.reduceArea(area, parsed);
-  const typed = dims.find((d) => d.key === "explicit_return_type");
+  const blinded = dims.find((d) => d.key === "doc_comment_style");
   const untyped = dims.find((d) => d.key === "function_style");
 
-  assert.equal(typed.langFileCount, 10, "a stripped file is not a file this dimension declined");
+  assert.equal(blinded.langFileCount, 10, "a stripped file is not a file this dimension declined");
   assert.equal(untyped.langFileCount, 20, "every other dimension did run on it");
 });
 test("a semantic dimension states nothing when the tier ran degraded", () => {
@@ -1181,4 +1181,248 @@ test("a blocked slot is never flagged as matching the default", () => {
 test("with no override the shipped table decides, and unmeasured reads as no default", () => {
   const r = verdictFor(dim({ applicability: 10 }), { current: { fileCount: 12, dirCount: 2 }, authors: 3 });
   assert.equal(r.matchesDefault, false, "the fixture key is absent from the table, which fails open");
+});
+
+/* --- the share stops growing where the risk it guards does not (#65) --- */
+
+test("a construct rarer than a quarter of a large flat area may still be stated", () => {
+  // The measured slot: `table_primary_key_declared` on a single 1,531-file
+  // db/migrate, applicability 138, 152 of 154 sites, bound 0.954. The quarter
+  // share asked for 383 files, so the strongest untold claim in the map was the
+  // only `applicability` failure in it.
+  const { applicabilityFloor } = reduce;
+  const wide = dim({
+    ...spread([...Array(136).fill(1), 9, 9], [...Array(136).fill(1), 8, 8]),
+    applicability: 138,
+    langFileCount: 1531,
+    files: paths(138),
+  });
+
+  const r = applyGates(wide, ctx({ authors: 6, areaFileCount: 1531, areaDirCount: 1 }));
+
+  assert.equal(applicabilityFloor(1531), 120, "three roots, not a quarter of 1,531");
+  assert.equal(r.gate, null, JSON.stringify(r));
+  assert.equal(r.directive, true);
+});
+
+test("the share stops growing at three roots, and the first area it changes is 157 files", () => {
+  const { applicabilityFloor } = reduce;
+
+  assert.equal(applicabilityFloor(156), 39, "at 156 the quarter share still binds");
+  assert.equal(Math.ceil(0.25 * 157), 40, "and a quarter of 157 would be 40");
+  assert.equal(applicabilityFloor(157), 39, "so 157 is the first area the cap changes");
+  assert.equal(applicabilityFloor(1531), 120);
+});
+
+test("the band the share was measured on is untouched by the cap", () => {
+  // Three roots is the smallest whole factor that leaves it alone. At two the
+  // first area the cap changes is 73, and `floor(120)` falls from 30 to 22:
+  // the 120-file area C4 was written from would answer differently.
+  const { applicabilityFloor } = reduce;
+
+  assert.equal(applicabilityFloor(10), 4, "a root is stricter than a quarter on a small area");
+  assert.equal(applicabilityFloor(16), 4, "the two meet at sixteen files");
+  assert.equal(applicabilityFloor(120), 30, "the share still holds where the root would ask for 11");
+  assert.equal(applicabilityFloor(147), 37);
+});
+
+/* --- a small sample of a claim the repository holds (#56) --- */
+
+// A perfect nine-site area, spread one site per file, which clears every gate
+// but `evidence`: nine sites reach a Wilson bound of 0.7008.
+const nine = () =>
+  dim({ ...spread(Array(9).fill(1)), applicability: 9, langFileCount: 12, files: paths(9) });
+
+test("a perfect sample of a claim the repository holds may borrow its confidence", () => {
+  // `interface_prefix` holds at 2,125 of 2,152 sites repo-wide and 116 of its
+  // 118 areas clear the ratio gate. Six state it. A reviewer left "we typically
+  // prefix our interfaces with an I" on a file whose area map read "no
+  // convention. 9 of 9 sites (evidence)". A nine-of-nine directory is not weak
+  // evidence of a weak claim, it is a consistent sample of a strong one.
+  const r = applyGates(nine(), ctx({ pooled: { candidates: 2152, conforming: 2125 } }));
+
+  assert.equal(Number(r.bound.toFixed(4)), 0.7008, "its own sample still cannot carry it");
+  assert.ok(r.priorBound > 0.98, `the rest of the repository can: ${r.priorBound}`);
+  assert.equal(r.gate, null);
+  assert.equal(r.directive, true);
+  assert.equal(r.borrowed, true, "and the record says the confidence was borrowed");
+});
+
+test("a perfect small sample of a claim the repository does not hold stays silent", () => {
+  // `record_lookup` is a perfect 26 of 26 in one directory while repo-wide it is
+  // 512 of 950 = 0.539. A perfect small sample only speaks when the repository
+  // behind it holds the claim.
+  const perfect = dim({
+    ...spread(Array(26).fill(1)),
+    applicability: 26,
+    langFileCount: 40,
+    files: paths(26),
+  });
+
+  const r = applyGates(perfect, ctx({ pooled: { candidates: 950, conforming: 512 } }));
+
+  assert.equal(r.gate, "evidence");
+  assert.equal(r.directive, false);
+  assert.ok(r.priorBound < 0.5, `${r.priorBound}`);
+});
+
+test("a learned side with no repository behind it states neither sentence", () => {
+  // `handler_is_named` is 0.757 repo-wide, so a repository-wide prior lends
+  // neither side anything and a 3-of-7 area must stay silent on both.
+  const split = dim({
+    ...spread(Array(7).fill(1), [1, 1, 1, 0, 0, 0, 0]),
+    applicability: 7,
+    langFileCount: 10,
+    files: paths(7),
+    counterClaim: "the other way",
+  });
+
+  const r = applyGates(split, ctx({ pooled: { candidates: 1055, conforming: 799 } }));
+
+  assert.equal(r.states, null);
+  assert.equal(r.gate, "ratio");
+  assert.equal(r.counterGate, "ratio");
+});
+
+test("an area may not lend itself its own prior", () => {
+  // Leave-one-out, so nothing is its own evidence. A pool holding only this
+  // area leaves nothing behind it once its own counts come out.
+  const r = applyGates(nine(), ctx({ pooled: { candidates: 9, conforming: 9 } }));
+
+  assert.equal(r.priorBound, 0);
+  assert.equal(r.gate, "evidence");
+});
+
+test("an area well below the rate it would borrow may not borrow it", () => {
+  // 900 of 1000 is exactly at the ratio bar and its own upper bound is 0.917,
+  // which is nowhere near the 0.988 it would be borrowing. Without this clause
+  // a large mediocre area inherits a strong repository's confidence, which is
+  // the direction that manufactures conventions.
+  const mediocre = dim({
+    ...spread(Array(100).fill(10), Array(100).fill(9)),
+    applicability: 100,
+    langFileCount: 200,
+    files: paths(100),
+  });
+
+  const r = applyGates(mediocre, ctx({ authors: 6, areaFileCount: 200, pooled: { candidates: 100000, conforming: 98750 } }));
+
+  assert.equal(r.ratio, 0.9, "it clears the ratio bar exactly");
+  assert.ok(r.priorBound > 0.98, "and the repository behind it is strong");
+  assert.equal(r.gate, "evidence", "but its own sample is not a sample of that claim");
+});
+
+test("a slot with no pooled totals gates exactly as it did before", () => {
+  const without = applyGates(nine(), ctx());
+  const nulled = applyGates(nine(), ctx({ pooled: null }));
+
+  assert.equal(without.gate, "evidence");
+  assert.equal(nulled.gate, "evidence");
+  assert.equal(without.priorBound, 0);
+  assert.equal(without.borrowed, false);
+});
+
+test("a repository that is 0.90 everywhere never lends anything, at any size", () => {
+  // The bar is a lower bound, so a repository sitting exactly on it never
+  // clears it however much of it there is.
+  for (const n of [100, 1e3, 1e4, 1e5]) {
+    const r = applyGates(nine(), ctx({ pooled: { candidates: n, conforming: Math.round(0.9 * n) } }));
+    assert.equal(r.gate, "evidence", `a 0.90 repository lent at n=${n}`);
+  }
+});
+
+test("a file that cannot carry a type annotation leaves that row's denominator", async () => {
+  // Counting it would divide one population by another: the applicability gate
+  // would read the predicate as narrow on a mixed directory, which is the
+  // failure C3 and C4 exist to stop.
+  const { reduceArea } = reduce;
+  const rels = ["src/a.ts", "src/b.ts", "src/c.js", "src/d.jsx"];
+  const area = { langs: ["js", "jsx"], files: rels.map((rel) => ({ rel, lang: rel.endsWith("x") ? "jsx" : "js" })) };
+  const parsed = rels.map((rel) => ({
+    rel,
+    ok: true,
+    hits: rel.endsWith(".ts") ? { explicit_return_type: [{ conforming: true }] } : {},
+  }));
+
+  const slot = reduceArea(area, parsed).find((d) => d.key === "explicit_return_type");
+
+  assert.equal(slot.candidates, 2);
+  assert.equal(slot.langFileCount, 2, "the two plain files were never asked");
+});
+
+test("wilsonUpper is the mirror of wilsonLower on the same counts", () => {
+  // The interval is symmetric, which is what makes "this area's upper bound
+  // reaches the rate it borrows" the same question as "the counter's lower
+  // bound beats the claim's upper bound".
+  const { wilsonUpper, wilsonLower } = reduce;
+
+  for (const [k, n] of [[3, 3], [9, 9], [900, 1000], [2, 61], [0, 5]]) {
+    assert.equal(
+      Number(wilsonUpper(k, n).toFixed(10)),
+      Number((1 - wilsonLower(n - k, n)).toFixed(10)),
+      `${k} of ${n}`
+    );
+  }
+  assert.equal(wilsonUpper(0, 0), 1, "no sample bounds nothing from above");
+});
+
+test("blockOf answers what closes a slot before any gate is asked", () => {
+  const { blockOf } = reduce;
+  const d = dim({ tier: "syntactic" });
+  const measured = { gate: null, pinned: { fileCount: 8, dirCount: 2 }, dims: [] };
+
+  assert.equal(blockOf(d, {}), null, "nothing to say without a population");
+  assert.equal(blockOf(d, { truncated: true }), "corpus-truncated", "a part-read corpus outranks everything");
+  assert.equal(
+    blockOf(dim({ tier: "semantic" }), { semantic: { status: "degraded" } }),
+    "degraded-semantic"
+  );
+  assert.equal(
+    blockOf(d, { measured, baselineDim: null }),
+    "postdates-baseline",
+    "a population nobody accepted"
+  );
+  assert.equal(
+    blockOf(dim({ learned: "b" }), { baselineDim: dim({ learned: "a", candidates: 4 }), measured }),
+    "learned-moved"
+  );
+  assert.equal(blockOf(d, { baselineDim: dim({ candidates: 4 }), measured }), null);
+});
+
+test("a narrowed row divides by the population it narrowed to, not by the whole area", () => {
+  // `applicability` is what the predicate emitted and `langFileCount` is what
+  // the applicability gate divides it by, so narrowing one and not the other
+  // divides one population by another: the gate reads the predicate as narrow
+  // on every mixed directory, which is exactly the failure C3 and C4 exist to
+  // stop. Same rule a stripped file already gets one line up.
+  const { reduceArea } = reduce;
+  const components = Array.from({ length: 8 }, (_, i) => `src/C${i}.tsx`);
+  const helpers = Array.from({ length: 3 }, (_, i) => `src/h${i}.ts`);
+  const rels = [...components, ...helpers];
+  const area = { langs: ["jsx", "js"], files: rels.map((rel) => ({ rel, lang: rel.endsWith("x") ? "jsx" : "js" })) };
+  const parsed = rels.map((rel) => ({ rel, ok: true, hits: {}, facets: { jsx: rel.endsWith(".tsx") } }));
+
+  const slot = reduceArea(area, parsed).find((d) => d.key === "file_naming_case");
+
+  assert.equal(slot.applicability, 8);
+  assert.equal(slot.langFileCount, 8, "the three helpers left both halves of the share, not one");
+});
+
+test("a population that changed kind since the pin closes the slot the way a changed class does", () => {
+  // The pinned counts answer a different sentence than today's when the class
+  // moves, and equally when the class was learned over a different half of the
+  // directory. Gating on one and not the other reads a baseline measured over
+  // components against a population of helpers.
+  const { blockOf } = reduce;
+  const measured = { gate: null, pinned: { fileCount: 8, dirCount: 2 }, dims: [] };
+  const base = (o) => dim({ candidates: 4, learned: "PascalCase", ...o });
+
+  assert.equal(
+    blockOf(dim({ learned: "PascalCase", learnedKind: "module" }), { baselineDim: base({ learnedKind: "jsx" }), measured }),
+    "learned-moved"
+  );
+  assert.equal(
+    blockOf(dim({ learned: "PascalCase", learnedKind: "jsx" }), { baselineDim: base({ learnedKind: "jsx" }), measured }),
+    null
+  );
 });
