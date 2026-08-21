@@ -3,9 +3,20 @@ import assert from "node:assert/strict";
 import { chmodSync, existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { spawnSync } from "node:child_process";
 
 import { needsUnreadableDirs } from "./platform.mjs";
-import { echoContext, planHook, commitHook, HOOK_COMMAND, SETTINGS_PATH } from "../lib/hook.mjs";
+import { echoContext, planRemoval, commitRemoval, HOOK_COMMAND, SETTINGS_PATH } from "../lib/hook.mjs";
+
+/** The three entries 0.2.4 through 0.2.6 wrote into a scanned repository. */
+const OLD_SETTINGS = {
+  hooks: {
+    UserPromptSubmit: [{ hooks: [{ type: "command", command: 'node "${CLAUDE_PLUGIN_ROOT}/bin/anatomiya.mjs" echo' }] }],
+    PostToolUse: [{ matcher: "*", hooks: [{ type: "command", command: 'node "${CLAUDE_PLUGIN_ROOT}/bin/anatomiya.mjs" echo' }] }],
+    PostToolUseFailure: [{ matcher: "*", hooks: [{ type: "command", command: 'node "${CLAUDE_PLUGIN_ROOT}/bin/anatomiya.mjs" echo' }] }],
+  },
+};
 
 /** A repository with a map already written, the state a scan leaves behind. */
 function mapped(t, body = "---\ngenerator: anatomiya\n---\n\n# Repository map\n\n- lib: 3 .mjs\n") {
@@ -216,20 +227,98 @@ test("the echo says the code outranks it, because a stale map is the failure it 
 
 // --- what it writes ----------------------------------------------------------
 
-test("a repository with no settings of its own is given only what the hook needs", (t) => {
+// --- where the hook is declared ---------------------------------------------
+
+test("the plugin declares the hook itself, in the one file the variable works in", () => {
+  // `${CLAUDE_PLUGIN_ROOT}` is substituted only for hooks a plugin declares in
+  // its own `hooks/hooks.json`. Written into a repository's settings it is not
+  // substituted at all: Claude Code refuses the hook by name on every prompt
+  // and every tool call, which is worse than no hook, and it shipped that way
+  // in 0.2.4 through 0.2.6.
+  const declared = JSON.parse(readFileSync(new URL("../hooks/hooks.json", import.meta.url), "utf8"));
+
+  // The top-level key is not decoration: without it the file loads nothing and
+  // says nothing about it.
+  assert.deepEqual(Object.keys(declared), ["hooks"]);
+  assert.deepEqual(Object.keys(declared.hooks).sort(), ["PostToolUse", "PostToolUseFailure", "UserPromptSubmit"]);
+
+  for (const [event, groups] of Object.entries(declared.hooks)) {
+    assert.ok(Array.isArray(groups) && groups.length === 1, event);
+    assert.deepEqual(groups[0].hooks.map((h) => h.type), ["command"], event);
+    assert.equal(groups[0].hooks[0].command, HOOK_COMMAND, event);
+  }
+});
+
+test("the declared command runs a file this plugin actually ships", () => {
+  // The whole defect was a command nothing resolved. The path inside it is
+  // checked here rather than trusted, against the tree this test runs in.
+  const declared = JSON.parse(readFileSync(new URL("../hooks/hooks.json", import.meta.url), "utf8"));
+  const command = declared.hooks.UserPromptSubmit[0].hooks[0].command;
+  const target = /\$\{CLAUDE_PLUGIN_ROOT\}\/([^"']+)/.exec(command);
+
+  assert.ok(target, command);
+  assert.ok(existsSync(new URL(`../${target[1]}`, import.meta.url)), target[1]);
+});
+
+test("the declared command, run the way the loader runs it, echoes the map", (t) => {
+  // The one end-to-end this can do without a session: substitute the variable
+  // the loader substitutes, run the command it declares, and read what comes
+  // back. Every other test here calls the function directly, which is exactly
+  // why the broken declaration shipped three times.
   const dir = mapped(t);
+  const declared = JSON.parse(readFileSync(new URL("../hooks/hooks.json", import.meta.url), "utf8"));
+  const root = fileURLToPath(new URL("..", import.meta.url)).replace(/\/$/, "");
+  const command = declared.hooks.UserPromptSubmit[0].hooks[0].command.replace("${CLAUDE_PLUGIN_ROOT}", root);
 
-  const plan = planHook(dir);
-  commitHook(dir, plan);
+  const run = spawnSync(command, {
+    cwd: dir,
+    shell: true,
+    input: JSON.stringify({ hook_event_name: "UserPromptSubmit" }),
+    encoding: "utf8",
+  });
 
-  const s = settings(dir);
-  assert.deepEqual(Object.keys(s), ["hooks"], "nothing else is invented");
-  assert.equal(s.hooks.UserPromptSubmit[0].hooks[0].command, HOOK_COMMAND);
-  assert.equal(s.hooks.PostToolUse[0].matcher, "*", "every tool, which is what every move means");
-  // A tool call that failed is still a move, and `PostToolUse` fires only when
-  // one succeeds: the failure is its own event, so a run of denied edits or
-  // failing commands would otherwise be the run that hears the map least.
-  assert.equal(s.hooks.PostToolUseFailure[0].matcher, "*");
+  assert.equal(run.status, 0, run.stderr);
+  const answer = JSON.parse(run.stdout);
+  assert.equal(answer.hookSpecificOutput.hookEventName, "UserPromptSubmit");
+  assert.match(answer.hookSpecificOutput.additionalContext, /<repository-map delivered="/);
+  assert.match(answer.hookSpecificOutput.additionalContext, /# Repository map/);
+});
+
+test("the same command in a repository with no map answers an empty object", (t) => {
+  // A plugin hook runs in every session, so this is the answer most of the time
+  // and it has to cost nothing and disturb nothing.
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-nomap-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const declared = JSON.parse(readFileSync(new URL("../hooks/hooks.json", import.meta.url), "utf8"));
+  const root = fileURLToPath(new URL("..", import.meta.url)).replace(/\/$/, "");
+  const command = declared.hooks.PostToolUse[0].hooks[0].command.replace("${CLAUDE_PLUGIN_ROOT}", root);
+
+  const run = spawnSync(command, {
+    cwd: dir,
+    shell: true,
+    input: JSON.stringify({ hook_event_name: "PostToolUse" }),
+    encoding: "utf8",
+  });
+
+  assert.equal(run.status, 0, run.stderr);
+  assert.deepEqual(JSON.parse(run.stdout), {});
+});
+
+// --- what a scan does to a repository that carries the old one ---------------
+
+test("the hook an older version wrote is taken out, and the file with it when nothing is left", (t) => {
+  // 0.2.4 through 0.2.6 wrote this, and Claude Code refuses it by name on every
+  // prompt and every tool call. An upgrade has to unbreak the repositories the
+  // older version broke, or the fix reaches only repositories nobody scanned.
+  const dir = mapped(t);
+  mkdirSync(join(dir, ".claude"), { recursive: true });
+  writeFileSync(join(dir, SETTINGS_PATH), JSON.stringify(OLD_SETTINGS, null, 2));
+
+  const plan = planRemoval(dir);
+  commitRemoval(dir, plan);
+
+  assert.equal(plan.changed, true);
+  assert.equal(existsSync(join(dir, SETTINGS_PATH)), false, "the file held nothing else");
 });
 
 test("settings this did not write are left exactly as they were", (t) => {
@@ -238,97 +327,136 @@ test("settings this did not write are left exactly as they were", (t) => {
     permissions: { allow: ["Bash(bundle exec rspec:*)"], deny: [], ask: [] },
     hooks: {
       PreToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command: "bash ./block-heroku.sh" }] }],
-      PostToolUse: [{ matcher: "Edit", hooks: [{ type: "command", command: "bash ./fmt.sh" }] }],
+      PostToolUse: [
+        { matcher: "Edit", hooks: [{ type: "command", command: "bash ./fmt.sh" }] },
+        { matcher: "*", hooks: [{ type: "command", command: HOOK_COMMAND }] },
+      ],
+      UserPromptSubmit: [{ hooks: [{ type: "command", command: HOOK_COMMAND }] }],
     },
   };
   mkdirSync(join(dir, ".claude"), { recursive: true });
   writeFileSync(join(dir, SETTINGS_PATH), JSON.stringify(mine, null, 2));
 
-  commitHook(dir, planHook(dir));
+  commitRemoval(dir, planRemoval(dir));
 
   const s = settings(dir);
   assert.deepEqual(s.permissions, mine.permissions, "the permission lists are untouched");
   assert.deepEqual(s.hooks.PreToolUse, mine.hooks.PreToolUse, "another event's hook is untouched");
-  assert.equal(s.hooks.PostToolUse[0].hooks[0].command, "bash ./fmt.sh", "and so is a sibling on the same event");
-  assert.equal(s.hooks.PostToolUse.length, 2, "ours is added beside it, not over it");
+  assert.equal(s.hooks.PostToolUse.length, 1, "ours goes and the sibling stays");
+  assert.equal(s.hooks.PostToolUse[0].hooks[0].command, "bash ./fmt.sh");
+  assert.equal("UserPromptSubmit" in s.hooks, false, "an event holding only ours goes with it");
 });
 
-test("installing twice adds one hook, not two", (t) => {
+test("a repository with no settings of its own is left without one", (t) => {
   const dir = mapped(t);
-  commitHook(dir, planHook(dir));
-  commitHook(dir, planHook(dir));
 
-  const s = settings(dir);
-  assert.equal(s.hooks.UserPromptSubmit.length, 1);
-  assert.equal(s.hooks.PostToolUse.length, 1);
+  const plan = planRemoval(dir);
+  commitRemoval(dir, plan);
+
+  assert.equal(plan.changed, false);
+  assert.equal(existsSync(join(dir, SETTINGS_PATH)), false, "nothing is created to then be emptied");
+});
+
+test("taking it out twice is the same as taking it out once", (t) => {
+  const dir = mapped(t);
+  mkdirSync(join(dir, ".claude"), { recursive: true });
+  writeFileSync(join(dir, SETTINGS_PATH), JSON.stringify({ permissions: { allow: [] }, ...OLD_SETTINGS }, null, 2));
+
+  commitRemoval(dir, planRemoval(dir));
+  const after = readFileSync(join(dir, SETTINGS_PATH), "utf8");
+  const again = planRemoval(dir);
+
+  assert.equal(again.changed, false);
+  commitRemoval(dir, again);
+  assert.equal(readFileSync(join(dir, SETTINGS_PATH), "utf8"), after, "byte-identical");
+});
+
+test("a command that names this tool is ours however it was spelled", (t) => {
+  // The removal has to reach what an older version wrote, not only what this
+  // one would write, and the quoting around the path has changed once already.
+  const dir = mapped(t);
+  const spellings = [
+    'node "${CLAUDE_PLUGIN_ROOT}/bin/anatomiya.mjs" echo',
+    "node ${CLAUDE_PLUGIN_ROOT}/bin/anatomiya.mjs echo",
+    'node "/Users/somebody/.claude/plugins/cache/crisnahine/anatomiya/0.2.5/bin/anatomiya.mjs" echo',
+  ];
+  mkdirSync(join(dir, ".claude"), { recursive: true });
+  writeFileSync(
+    join(dir, SETTINGS_PATH),
+    JSON.stringify({ hooks: { UserPromptSubmit: spellings.map((command) => ({ hooks: [{ type: "command", command }] })) } })
+  );
+
+  commitRemoval(dir, planRemoval(dir));
+
+  assert.equal(existsSync(join(dir, SETTINGS_PATH)), false, "every spelling of ours went");
 });
 
 test("a settings path that leaves the repository is refused, and the file it pointed at is untouched", (t) => {
-  // F2, applied to the one write outside `.claude/rules/`. A tracked
-  // `.claude/settings.local.json -> ../../victim.json` survives a clone, and
-  // `join` normalises `..` while resolving no link, so the install landed in a
-  // file the repository does not own. Verified against a real scan before this
-  // test existed: a JSON file two directories up came back with our hooks in it.
+  // F2, applied to the file this no longer writes but still has to clean. A
+  // tracked `.claude/settings.local.json -> ../../victim.json` survives a
+  // clone, and `join` normalises `..` while resolving no link, so a rewrite
+  // here would land in a file the repository does not own.
   const dir = mapped(t);
   const outside = mkdtempSync(join(tmpdir(), "anatomiya-victim-"));
   t.after(() => rmSync(outside, { recursive: true, force: true }));
   const victim = join(outside, "important.json");
-  const body = '{ "belongs": "to somebody else" }';
+  const body = JSON.stringify(OLD_SETTINGS);
   writeFileSync(victim, body);
 
   mkdirSync(join(dir, ".claude"), { recursive: true });
   symlinkSync(victim, join(dir, SETTINGS_PATH));
 
-  assert.throws(() => planHook(dir), /outside|escape|left alone/i);
+  assert.throws(() => planRemoval(dir), /outside|escape|left alone/i);
   assert.equal(readFileSync(victim, "utf8"), body, "the file it pointed at is untouched");
 });
 
 test("a .claude directory that is a link out of the repository is refused too", (t) => {
-  // The link one level up, which is the shape the rules writer was fixed for:
-  // one link at `.claude` takes the settings file with it.
   const dir = mapped(t);
   const outside = mkdtempSync(join(tmpdir(), "anatomiya-victim-"));
   t.after(() => rmSync(outside, { recursive: true, force: true }));
+  writeFileSync(join(outside, "settings.local.json"), JSON.stringify(OLD_SETTINGS));
 
   rmSync(join(dir, ".claude"), { recursive: true, force: true });
   symlinkSync(outside, join(dir, ".claude"));
 
-  assert.throws(() => planHook(dir), /outside|escape|left alone/i);
-  assert.equal(existsSync(join(outside, "settings.local.json")), false, "nothing was created there");
+  assert.throws(() => planRemoval(dir), /outside|escape|left alone/i);
+  assert.ok(existsSync(join(outside, "settings.local.json")), "nothing there was removed");
 });
 
-test("settings that do not parse are refused, never overwritten", (t) => {
+test("settings that do not parse are refused, never rewritten", (t) => {
   const dir = mapped(t);
   mkdirSync(join(dir, ".claude"), { recursive: true });
   writeFileSync(join(dir, SETTINGS_PATH), "{ this is not json");
 
-  assert.throws(() => planHook(dir), /could not be read/);
+  assert.throws(() => planRemoval(dir), /could not be read/);
   assert.equal(readFileSync(join(dir, SETTINGS_PATH), "utf8"), "{ this is not json", "left alone");
 });
 
 test("a hooks block that is not an object is refused, not spread into one", (t) => {
-  // The top-level object was checked and nothing below it was, so a spread
-  // turned whatever it found into indexed keys: `"hooks": "PreToolUse"` became
-  // `{"0":"P","1":"r","2":"e",...}` beside the real entries, and the file was
-  // written back that way. Refusing is the same rule A25 already states one
-  // level up: a writer that reads a shape it does not understand as the shape
-  // it expected is a writer that mangles what it could not read.
-  for (const hooks of ['"PreToolUse"', "[{\"matcher\":\"Bash\"}]", "42", "null"]) {
+  // A25's rule, on the reading side: a writer that reads a shape it does not
+  // understand as the shape it expected is a writer that mangles it.
+  for (const hooks of ['"PreToolUse"', '[{"matcher":"Bash"}]', "42"]) {
     const dir = mapped(t);
     const body = `{"permissions":{"allow":["Bash(x)"]},"hooks":${hooks}}`;
     mkdirSync(join(dir, ".claude"), { recursive: true });
     writeFileSync(join(dir, SETTINGS_PATH), body);
 
-    if (hooks === "null") {
-      // Absent and null are the same statement: no hooks yet.
-      commitHook(dir, planHook(dir));
-      assert.ok(settings(dir).hooks.PostToolUse, hooks);
-      assert.deepEqual(settings(dir).permissions.allow, ["Bash(x)"], hooks);
-      continue;
-    }
-    assert.throws(() => planHook(dir), /hooks/, hooks);
+    assert.throws(() => planRemoval(dir), /hooks/, hooks);
     assert.equal(readFileSync(join(dir, SETTINGS_PATH), "utf8"), body, `${hooks} left alone`);
   }
+});
+
+test("a file that holds no hooks at all is nothing to change", (t) => {
+  const dir = mapped(t);
+  const body = '{"permissions":{"allow":["Bash(x)"]},"hooks":null}';
+  mkdirSync(join(dir, ".claude"), { recursive: true });
+  writeFileSync(join(dir, SETTINGS_PATH), body);
+
+  const plan = planRemoval(dir);
+
+  assert.equal(plan.changed, false);
+  commitRemoval(dir, plan);
+  assert.equal(readFileSync(join(dir, SETTINGS_PATH), "utf8"), body, "left alone");
 });
 
 test("an event whose value is not a list is refused, not spread into characters", (t) => {
@@ -337,24 +465,12 @@ test("an event whose value is not a list is refused, not spread into characters"
   mkdirSync(join(dir, ".claude"), { recursive: true });
   writeFileSync(join(dir, SETTINGS_PATH), body);
 
-  assert.throws(() => planHook(dir), /PostToolUse/);
+  assert.throws(() => planRemoval(dir), /PostToolUse/);
   assert.equal(readFileSync(join(dir, SETTINGS_PATH), "utf8"), body, "left alone");
-});
-
-test("a plan already satisfied says so and writes nothing", (t) => {
-  const dir = mapped(t);
-  commitHook(dir, planHook(dir));
-  const before = readFileSync(join(dir, SETTINGS_PATH), "utf8");
-
-  const plan = planHook(dir);
-
-  assert.equal(plan.changed, false);
-  commitHook(dir, plan);
-  assert.equal(readFileSync(join(dir, SETTINGS_PATH), "utf8"), before, "byte-identical");
 });
 
 test("the plan is committed to the root it was planned for and no other", (t) => {
   const a = mapped(t);
   const b = mapped(t);
-  assert.throws(() => commitHook(b, planHook(a)), /planned for/);
+  assert.throws(() => commitRemoval(b, planRemoval(a)), /planned for/);
 });
