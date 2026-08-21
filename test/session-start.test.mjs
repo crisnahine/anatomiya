@@ -98,7 +98,7 @@ test("a build whose minor differs from the calibrated one is named at the start 
   const said = notice({ cli, state: join(dir, "state"), env: { CLAUDE_CONFIG_DIR: join(dir, "config"), ULTRACODE_ANYWHERE_CAP_NOTICE: "0" } });
 
   assert.match(said, /99\.9\.9/);
-  assert.match(said, new RegExp(CALIBRATED_AGAINST.replace(/\./g, "\\.")));
+  assert.equal(said.includes(CALIBRATED_AGAINST), true, "and the version it was checked against");
 });
 
 test("the subagent cap this mode does not lift is named once, with the setting that lifts it", (t) => {

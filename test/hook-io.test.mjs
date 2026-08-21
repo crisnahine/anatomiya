@@ -1,13 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { closeSync, mkdtempSync, openSync, rmSync, writeFileSync } from "node:fs";
+import { closeSync, mkdtempSync, openSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 
-import { needsPosixSpecialFiles } from "./platform.mjs";
-import { parsePayload, readIfFile, readStdin, respond } from "../ultracode-anywhere/hooks/hook-io.mjs";
+import { needsPosixSpecialFiles, needsSymlinks } from "./platform.mjs";
+import { parsePayload, readIfFile, readOwnFile, readStdin, respond } from "../ultracode-anywhere/hooks/hook-io.mjs";
 
 /** What `respond` wrote, with stdout captured for the length of one call. */
 function said(event, context) {
@@ -95,4 +95,17 @@ test("a path swapped for something that blocks between the check and the read is
   const started = Date.now();
   assert.equal(readIfFile(join(dir, "pipe")), "");
   assert.equal(Date.now() - started < 3000, true);
+});
+
+test("a settings file a user symlinked into place is still read", needsSymlinks, (t) => {
+  // Dotfiles repositories put `~/.claude/settings.json` behind a link, so the
+  // read this plugin does of somebody else's file follows one. The read of its
+  // own state does not.
+  const dir = mkdtempSync(join(tmpdir(), "ultracode-io-link-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  writeFileSync(join(dir, "real.json"), '{"ultracode":true}');
+  symlinkSync(join(dir, "real.json"), join(dir, "settings.json"));
+
+  assert.equal(readIfFile(join(dir, "settings.json")), '{"ultracode":true}');
+  assert.equal(readOwnFile(join(dir, "settings.json")), "", "a file this plugin owns may not be a link");
 });

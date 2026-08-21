@@ -149,15 +149,41 @@ function* candidates(env) {
   yield real(join(home, ".claude", "local", "node_modules", "@anthropic-ai", "claude-code", "cli.js"));
 }
 
-/** Version directory entries, newest name last written first. */
+/**
+ * Version directory entries, highest version first.
+ *
+ * Ordered by the version in the name rather than by timestamp: two files
+ * written in the same millisecond are a tie a fast runner produces and a laptop
+ * does not, and a rollback writes an old version with a new timestamp. Names
+ * that are not versions fall to the end, newest of those first.
+ */
 function newestFirst(dir) {
   try {
     return readdirSync(dir)
-      .map((name) => ({ name, at: statSync(join(dir, name)).mtimeMs }))
-      .sort((a, b) => b.at - a.at)
+      .map((name) => ({ name, version: versionOf(name), at: mtimeOf(join(dir, name)) }))
+      .sort((a, b) => compareVersions(a, b) || b.at - a.at || a.name.localeCompare(b.name))
       .map((e) => e.name);
   } catch {
     return [];
+  }
+}
+
+/** A version before one below it, and any version before a name that is not one. */
+function compareVersions(a, b) {
+  if (!a.version || !b.version) return Number(Boolean(b.version)) - Number(Boolean(a.version));
+  const left = a.version.split(".").map(Number);
+  const right = b.version.split(".").map(Number);
+  for (let at = 0; at < 3; at++) {
+    if (left[at] !== right[at]) return right[at] - left[at];
+  }
+  return 0;
+}
+
+function mtimeOf(path) {
+  try {
+    return statSync(path).mtimeMs;
+  } catch {
+    return 0;
   }
 }
 

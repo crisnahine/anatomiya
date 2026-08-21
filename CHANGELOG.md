@@ -59,6 +59,11 @@ restore.
 - `scripts/validate.mjs` refuses a manifest that parses to `null`, an absolute source, a plugin
   directory symlinked out of the repository, and the same plugin listed twice; it reads every file
   a hook command names, and no longer reads a quoted flag as part of a filename.
+- CI found two more that a laptop could not. Two version files written in the same millisecond are
+  a tie, so the build a version-managed install keeps is chosen by version rather than by
+  timestamp, which a rollback also gets right. And the read of this plugin's own state refuses a
+  link the way its write already did, while the read of a user's `settings.json` still follows one,
+  since a dotfiles repository keeps that file behind a link on purpose.
 
 ## [0.2.8] - 2026-08-21
 

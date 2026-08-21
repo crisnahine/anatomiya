@@ -35,10 +35,10 @@ export function readStdin(fd = 0) {
  * the path: a fifo blocks and a device never ends, and a path checked and then
  * opened is a path something else can swap in between.
  */
-export function readIfFile(path, most = MOST) {
+export function readIfFile(path, most = MOST, flags = 0) {
   let fd;
   try {
-    fd = openSync(path, constants.O_RDONLY | (constants.O_NONBLOCK ?? 0));
+    fd = openSync(path, constants.O_RDONLY | (constants.O_NONBLOCK ?? 0) | flags);
     const seen = fstatSync(fd);
     if (!seen.isFile() || seen.size > most) return "";
     return upTo(fd, most);
@@ -47,6 +47,18 @@ export function readIfFile(path, most = MOST) {
   } finally {
     if (fd !== undefined) closeSync(fd);
   }
+}
+
+/**
+ * The same read for a file this plugin wrote itself, which may not be a link.
+ *
+ * A user's own file is allowed to be one, since a dotfiles repository keeps
+ * `settings.json` behind a link and following it is the point. A counter this
+ * plugin keeps under a predictable path is not that: followed, a link there
+ * reads somebody else's file as a turn count.
+ */
+export function readOwnFile(path, most = MOST) {
+  return readIfFile(path, most, constants.O_NOFOLLOW ?? 0);
 }
 
 /** At most `most` bytes off a handle, however much the far end wants to send. */

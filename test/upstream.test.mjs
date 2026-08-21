@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, truncateSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, truncateSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -131,6 +131,9 @@ test("a launcher script on PATH is not read as the build", (t) => {
 });
 
 test("the build a version-managed install keeps is found when only a shim is on PATH", (t) => {
+  // Ordered by version rather than by timestamp: two files written in the same
+  // millisecond are a tie, which a fast runner produces and a laptop does not,
+  // and a rollback writes an old version with a new timestamp.
   const dir = mkdtempSync(join(tmpdir(), "ultracode-versions-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const bin = join(dir, "bin");
@@ -138,13 +141,25 @@ test("the build a version-managed install keeps is found when only a shim is on 
   writeFileSync(join(bin, "claude"), "#!/bin/sh\nexec claude\n");
   const versions = join(dir, ".local", "share", "claude", "versions");
   mkdirSync(versions, { recursive: true });
-  bundle(join(versions, "2.0.0"), `${whole()}`.replace(MARKERS[0], ""));
   bundle(join(versions, "2.1.238"), whole());
+  bundle(join(versions, "2.0.0"), `${whole()}`.replace(MARKERS[0], ""));
+  const later = Date.now() / 1000 + 3600;
+  utimesSync(join(versions, "2.0.0"), later, later);
 
   const found = cliPath({ PATH: bin, HOME: dir });
 
-  assert.equal(found, realpathSync(join(versions, "2.1.238")), "the newest build is the one running");
+  assert.equal(found, realpathSync(join(versions, "2.1.238")), "the highest version is the one read");
   assert.deepEqual(drift({ cli: found }).missing, []);
+});
+
+test("a version directory holding names that are not versions still answers, oldest last", (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "ultracode-names-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const versions = join(dir, ".local", "share", "claude", "versions");
+  mkdirSync(versions, { recursive: true });
+  bundle(join(versions, "nightly"), whole());
+
+  assert.equal(cliPath({ PATH: "", HOME: dir }), realpathSync(join(versions, "nightly")));
 });
 
 test("a build too small to be one is treated as no build, never as a drifted one", (t) => {
