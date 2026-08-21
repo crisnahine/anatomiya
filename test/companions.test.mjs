@@ -346,3 +346,44 @@ test("a build-tool suffix on a specifier still names the file", () => {
 
   assert.equal(namesakeCompanions(source, tests, "pkg", namesakeIndex(tests)).with, 1);
 });
+
+test("a root that reduces to the repository itself is not a place, and does not outvote one", () => {
+  // `wholeRoot` answers the empty string when the candidate's own directory is
+  // the whole tail. The renderer already refuses to print that, so counting it
+  // as a vote only let it beat a directory that is a real place.
+  const source = ["a", "b", "c", "d"].map((n) => file(`app/models/${n}.mjs`));
+  const tests = [
+    file("models/a.test.mjs"),
+    file("models/b.test.mjs"),
+    imports("zz/spec/c.test.mjs", ["../../app/models/c.mjs"]),
+    imports("zz/spec/d.test.mjs", ["../../app/models/d.mjs"]),
+  ];
+
+  assert.deepEqual(namesakeCompanions(source, tests, "app", namesakeIndex(tests)), {
+    with: 4,
+    of: 4,
+    root: "zz/spec",
+  });
+});
+
+test("a compiled specifier answers the TypeScript file and nothing else of that name", () => {
+  // `../lib/foo.js` is how NodeNext spells `lib/foo.ts`. It is not how anything
+  // spells `lib/foo.json` or `lib/foo.css`, and stripping the extension outright
+  // credited every file in the directory that shared the stem.
+  const source = [file("pkg/lib/foo.ts"), file("pkg/lib/foo.json"), file("pkg/lib/foo.css")];
+  const tests = [imports("test/foo.test.js", ["../pkg/lib/foo.js"])];
+
+  assert.equal(namesakeCompanions(source, tests, "pkg", namesakeIndex(tests)).with, 1);
+});
+
+test("a dot segment is a directory like any other and answers nothing", () => {
+  // `../pkg/src/x/.` and `../pkg/src/x/..` name directories, the same shape the
+  // trailing slash names, and resolving them left a directory standing for the
+  // module beside it.
+  const source = [file("pkg/src/x.mjs")];
+  const here = [imports("test/x.test.mjs", ["../pkg/src/x/."])];
+  const up = [imports("test/x.test.mjs", ["../pkg/src/x/.."])];
+
+  assert.equal(namesakeCompanions(source, here, "pkg", namesakeIndex(here)).with, 0);
+  assert.equal(namesakeCompanions(source, up, "pkg", namesakeIndex(up)).with, 0);
+});
