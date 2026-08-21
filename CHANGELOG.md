@@ -14,7 +14,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   system-reminder rather than the Workflow tool, whose availability carries no effort term. A
   `UserPromptSubmit` hook restates the reminder each prompt so the mode holds wherever
   `effortLevel` is set. It shares the repository and nothing else: no code here imports it, and
-  `anatomiya` installs exactly as before.
+  `anatomiya` installs exactly as before. The hook runs through `node`, so it fires on a machine
+  with no shell, and its tests cover the turn it speaks on and the turns it does not.
+
+### Changed
+
+- `npm run validate` reads every plugin the marketplace lists, not only the one at the root. A
+  second entry was checked for its directory being there, and a directory with no manifest in it
+  installs as nothing. It now reads each listed plugin's own manifest and the files its hooks
+  name, it is covered by its own tests, and CI runs it.
 
 ## [0.2.8] - 2026-08-21
 

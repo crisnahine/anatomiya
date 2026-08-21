@@ -30,13 +30,19 @@ instead, and keep `"enableWorkflows": true`.
 ## Behavior
 
 Full text on turn 1 and every 10th, a one-line refresher in between, mirroring the built-in
-cadence. About 125 tokens on a full turn, appended after the user message so the cache prefix is
-untouched. Skips loop, schedule and system wakeups.
+cadence. 731 characters on a full turn, 73 on the others, appended after the user message so the
+cache prefix is untouched. Skips loop, schedule and system wakeups.
+
+The hook runs through `node`, which Claude Code brings with it, so it fires the same on a machine
+with no shell. It counts a session's turns in a file named for that session under the temporary
+directory, its own per user, and forgets counters a week after their last turn. A counter it
+cannot read or write costs the session its cadence, not its reminder.
 
 ## Switches
 
 - `ULTRACODE_ANYWHERE=0 claude` turns it off for one session.
 - `ULTRACODE_ANYWHERE_DEBUG=/tmp/uc.log claude` logs every fire with its stdin payload.
+- `ULTRACODE_ANYWHERE_STATE=/some/dir claude` keeps the turn counters somewhere else.
 
 ## Not restored
 

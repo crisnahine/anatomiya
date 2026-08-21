@@ -3,104 +3,186 @@
  * Manifest check. The plugin loader reads .claude-plugin/ before anything else
  * runs, so a manifest that does not parse fails at install time with no test to
  * catch it, and a stray file in that directory is loader-visible surface.
+ *
+ * Every plugin the marketplace lists is read as a plugin, not as a path that
+ * exists. A second entry used to be checked only for its directory being there,
+ * and a directory with no manifest in it installs as nothing.
  */
 import { readFileSync, readdirSync, existsSync } from "node:fs";
-import { join, dirname, resolve } from "node:path";
+import { join, dirname, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const dir = join(root, ".claude-plugin");
 const MANIFESTS = ["plugin.json", "marketplace.json"];
-
-const problems = [];
 
 const isObject = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
 
-function readJson(path) {
-  try {
-    return JSON.parse(readFileSync(path, "utf8"));
-  } catch (err) {
-    problems.push(`${path}: ${err.message}`);
-    return null;
+/** A path as a manifest spells it, so a message reads the same on either platform. */
+const label = (root, path) => relative(root, path).split(sep).join("/");
+
+/**
+ * Everything wrong with the manifests under `root`, as sentences.
+ *
+ * Returned rather than printed: the failure cases are what a test needs, and
+ * they only exist as trees on disk.
+ */
+export function validate(root) {
+  const problems = [];
+  const dir = join(root, ".claude-plugin");
+
+  const readJson = (path) => {
+    try {
+      return JSON.parse(readFileSync(path, "utf8"));
+    } catch (err) {
+      problems.push(`${label(root, path)}: ${err.message}`);
+      return null;
+    }
+  };
+
+  if (!existsSync(dir)) {
+    problems.push(".claude-plugin/ is missing");
+    return problems;
   }
-}
 
-if (!existsSync(dir)) {
-  problems.push(".claude-plugin/ is missing");
-}
-
-const entries = existsSync(dir) ? readdirSync(dir) : [];
-for (const name of entries) {
-  if (!MANIFESTS.includes(name)) {
-    problems.push(`.claude-plugin/${name} is not a manifest; manifests only in that directory`);
-  }
-}
-
-const pkg = readJson(join(root, "package.json"));
-const plugin = entries.includes("plugin.json") ? readJson(join(dir, "plugin.json")) : null;
-const marketplace = entries.includes("marketplace.json")
-  ? readJson(join(dir, "marketplace.json"))
-  : null;
-
-for (const m of MANIFESTS) {
-  if (!entries.includes(m)) problems.push(`.claude-plugin/${m} is missing`);
-}
-
-if (plugin) {
-  if (!plugin.name) problems.push("plugin.json has no name");
-  if (!plugin.version) problems.push("plugin.json has no version");
-  if (pkg && plugin.version !== pkg.version) {
-    problems.push(`version drift: package.json ${pkg.version}, plugin.json ${plugin.version}`);
-  }
-  if (pkg && plugin.name !== pkg.name) {
-    problems.push(`name drift: package.json ${pkg.name}, plugin.json ${plugin.name}`);
-  }
-}
-
-if (marketplace) {
-  const plugins = Array.isArray(marketplace.plugins) ? marketplace.plugins : [];
-  if (plugins.length === 0) problems.push("marketplace.json lists no plugins");
-  for (const entry of plugins) {
-    if (!entry.name) problems.push("marketplace.json has a plugin entry with no name");
-    if (!entry.source) {
-      problems.push(`marketplace.json entry ${entry.name} has no source`);
-    } else if (entry.source.startsWith(".") && !existsSync(resolve(root, entry.source))) {
-      problems.push(`marketplace.json entry ${entry.name} points at a missing path ${entry.source}`);
+  const entries = readdirSync(dir);
+  for (const name of entries) {
+    if (!MANIFESTS.includes(name)) {
+      problems.push(`.claude-plugin/${name} is not a manifest; manifests only in that directory`);
     }
   }
-}
+  for (const m of MANIFESTS) {
+    if (!entries.includes(m)) problems.push(`.claude-plugin/${m} is missing`);
+  }
 
-// The loader reads this before anything runs too, and a hook it will not load
-// fails silently: the map simply stops being re-delivered and nothing says so.
-// The opposite failure already shipped, a hook Claude Code refuses by name on
-// every prompt, so both directions are checked here rather than trusted.
-const hooksPath = join(root, "hooks", "hooks.json");
-if (!existsSync(hooksPath)) {
-  problems.push("hooks/hooks.json is missing, so the map is never re-delivered");
-} else {
-  const declared = readJson(hooksPath);
-  if (declared && !isObject(declared.hooks)) {
-    problems.push("hooks/hooks.json has no top-level hooks block, so it loads nothing");
-  } else if (declared) {
-    for (const [event, groups] of Object.entries(declared.hooks)) {
-      if (!Array.isArray(groups)) {
-        problems.push(`hooks/hooks.json event ${event} is not a list`);
+  const pkg = existsSync(join(root, "package.json")) ? readJson(join(root, "package.json")) : null;
+  const plugin = entries.includes("plugin.json") ? readJson(join(dir, "plugin.json")) : null;
+  const marketplace = entries.includes("marketplace.json") ? readJson(join(dir, "marketplace.json")) : null;
+
+  if (plugin) {
+    problems.push(...manifestProblems(plugin, ".claude-plugin/plugin.json"));
+    if (pkg && plugin.version !== pkg.version) {
+      problems.push(`version drift: package.json ${pkg.version}, plugin.json ${plugin.version}`);
+    }
+    if (pkg && plugin.name !== pkg.name) {
+      problems.push(`name drift: package.json ${pkg.name}, plugin.json ${plugin.name}`);
+    }
+  }
+
+  // The root plugin's hook is what re-delivers the map, so its absence is a
+  // problem here rather than something a session discovers by the map quietly
+  // going stale. A plugin that declares no hooks at all is a plugin that asked
+  // for none.
+  problems.push(...hookProblems(root, root, readJson, { required: true }));
+
+  if (marketplace) {
+    const listed = Array.isArray(marketplace.plugins) ? marketplace.plugins : [];
+    if (listed.length === 0) problems.push("marketplace.json lists no plugins");
+    for (const entry of listed) {
+      if (!entry.name) {
+        problems.push("marketplace.json has a plugin entry with no name");
         continue;
       }
-      for (const command of groups.flatMap((g) => (Array.isArray(g.hooks) ? g.hooks : [])).map((h) => h.command)) {
-        const target = /\$\{CLAUDE_PLUGIN_ROOT\}\/([^"']+)/.exec(String(command ?? ""));
-        if (!target) problems.push(`hooks/hooks.json ${event} runs ${command}, which names no file in this plugin`);
-        else if (!existsSync(join(root, target[1]))) {
-          problems.push(`hooks/hooks.json ${event} runs ${target[1]}, which this plugin does not ship`);
-        }
+      if (!entry.source) {
+        problems.push(`marketplace.json entry ${entry.name} has no source`);
+        continue;
+      }
+      if (typeof entry.source !== "string" || !entry.source.startsWith(".")) continue;
+
+      const pluginRoot = resolve(root, entry.source);
+      const inside = relative(root, pluginRoot);
+      if (inside.startsWith("..")) {
+        problems.push(`marketplace.json entry ${entry.name} points outside the repository: ${entry.source}`);
+        continue;
+      }
+      if (!existsSync(pluginRoot)) {
+        problems.push(`marketplace.json entry ${entry.name} points at a missing path ${entry.source}`);
+        continue;
+      }
+
+      const manifest = join(pluginRoot, ".claude-plugin", "plugin.json");
+      if (!existsSync(manifest)) {
+        problems.push(`${label(root, manifest)} is missing`);
+        continue;
+      }
+      const own = pluginRoot === resolve(root) ? plugin : readJson(manifest);
+      if (!own) continue;
+      if (own.name !== entry.name) {
+        problems.push(`marketplace.json entry ${entry.name} points at a plugin named "${own.name}"`);
+      }
+      if (pluginRoot === resolve(root)) continue;
+
+      problems.push(...manifestProblems(own, label(root, manifest)));
+      problems.push(...hookProblems(root, pluginRoot, readJson, { required: false }));
+    }
+  }
+
+  return problems;
+}
+
+/** What every plugin manifest has to say, wherever in the repository it lives. */
+function manifestProblems(manifest, at) {
+  const problems = [];
+  for (const key of ["name", "version", "description"]) {
+    if (!manifest[key]) problems.push(`${at} has no ${key}`);
+  }
+  if (manifest.version && !/^\d+\.\d+\.\d+/.test(String(manifest.version))) {
+    problems.push(`${at} version is not semver: ${manifest.version}`);
+  }
+  return problems;
+}
+
+/**
+ * The hooks a plugin declares, and whether it ships what they run.
+ *
+ * The loader reads this before anything runs too, and a hook it will not load
+ * fails silently. The opposite failure already shipped, a hook Claude Code
+ * refuses by name on every prompt, so both directions are checked here rather
+ * than trusted.
+ */
+function hookProblems(root, pluginRoot, readJson, { required }) {
+  const problems = [];
+  const path = join(pluginRoot, "hooks", "hooks.json");
+  const at = label(root, path);
+
+  if (!existsSync(path)) {
+    if (required) problems.push(`${at} is missing, so the map is never re-delivered`);
+    return problems;
+  }
+
+  const declared = readJson(path);
+  if (!declared) return problems;
+  if (!isObject(declared.hooks)) {
+    problems.push(`${at} has no top-level hooks block, so it loads nothing`);
+    return problems;
+  }
+
+  for (const [event, groups] of Object.entries(declared.hooks)) {
+    if (!Array.isArray(groups)) {
+      problems.push(`${at} event ${event} is not a list`);
+      continue;
+    }
+    const commands = groups
+      .flatMap((g) => (Array.isArray(g?.hooks) ? g.hooks : []))
+      .map((h) => h?.command);
+    for (const command of commands) {
+      const target = /\$\{CLAUDE_PLUGIN_ROOT\}\/([^"']+)/.exec(String(command ?? ""));
+      if (!target) {
+        problems.push(`${at} ${event} runs ${command}, which names no file in this plugin`);
+      } else if (!existsSync(join(pluginRoot, target[1]))) {
+        problems.push(`${at} ${event} runs ${target[1]}, which that plugin does not ship`);
       }
     }
   }
+  return problems;
 }
 
-if (problems.length) {
-  for (const p of problems) console.error(p);
-  process.exit(1);
+function main() {
+  const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+  const problems = validate(root);
+  if (problems.length) {
+    for (const p of problems) console.error(p);
+    process.exit(1);
+  }
+  console.log(`manifests ok (${MANIFESTS.join(", ")}), hooks ok`);
 }
 
-console.log(`manifests ok (${MANIFESTS.join(", ")}), hooks ok`);
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) main();
