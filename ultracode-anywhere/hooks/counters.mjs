@@ -12,7 +12,7 @@
 import { closeSync, constants, lstatSync, mkdirSync, openSync, readdirSync, rmSync, writeSync } from "node:fs";
 
 import { readOwnFile } from "./hook-io.mjs";
-import { homedir, tmpdir, userInfo } from "node:os";
+import { homedir, userInfo } from "node:os";
 import { join } from "node:path";
 
 /** A counter older than this has outlived the session that wrote it. */
@@ -42,25 +42,22 @@ const MOST_KEPT = 4096;
 /**
  * Where the counters live: beside the rest of this account's Claude Code state.
  *
- * Not the temporary directory. Every guard below exists because a predictable
+ * Never the temporary directory. Every guard below exists because a predictable
  * path under a directory every account can write to is one another account can
  * create first, and keeping state out of it removes that class rather than
  * defending against it. The guards stay for the switch, which a user can point
- * anywhere, and for the last resort below on a machine with no home.
+ * anywhere.
+ *
+ * A machine with no home to write into gets no state, and the session loses its
+ * cadence rather than its reminder: the one place a plugin can always write is
+ * the one place this should not.
  */
 export function stateDirFor(env = process.env) {
   if (env.ULTRACODE_ANYWHERE_STATE) return env.ULTRACODE_ANYWHERE_STATE;
 
-  const config = env.CLAUDE_CONFIG_DIR || (homeOf(env) && join(homeOf(env), ".claude"));
-  if (config) return join(config, "ultracode-anywhere");
-
-  let who = "";
-  try {
-    who = String(userInfo().uid ?? "");
-  } catch {
-    who = "";
-  }
-  return join(tmpdir(), `ultracode-anywhere${who === "" ? "" : `-${who}`}`);
+  const home = homeOf(env);
+  const config = env.CLAUDE_CONFIG_DIR || (home && join(home, ".claude"));
+  return config ? join(config, "ultracode-anywhere") : "";
 }
 
 /** The home this account keeps its configuration in, and nothing when it has none. */
@@ -77,6 +74,7 @@ function homeOf(env) {
 
 /** Whether the state directory is one this account owns and no other account can write to. */
 export function ownState(dir) {
+  if (!dir) return false;
   try {
     mkdirSync(dir, { recursive: true, mode: 0o700 });
   } catch {
