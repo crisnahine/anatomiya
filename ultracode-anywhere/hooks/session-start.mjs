@@ -6,16 +6,36 @@
  * nothing are upstream moving and the settings already doing its job. Both are
  * silent otherwise: the reminder keeps arriving and the model keeps reading it,
  * whether or not the Workflow tool it names is still gated the way it was.
- * Reported once, at the start of a session, since neither answer changes inside
- * one.
+ * Reported at the start of a session and again after a compaction or a clear,
+ * which empty the context; a resume brings the transcript back with the lines
+ * in it and is told nothing.
  */
-import { cached, firstTime, stateDirFor } from "./counters.mjs";
+import { cached, firstTime, startOver, stateDirFor } from "./counters.mjs";
 import { invokedAs, parsePayload, readStdin, respond } from "./hook-io.mjs";
 import { CALIBRATED_AGAINST, behind, cliPath, conflictIn, driftCached, settingsFor, versionOf } from "./upstream.mjs";
 
+/** The starts that empty the context under a session that goes on. */
+const EMPTIES_CONTEXT = new Set(["compact", "clear"]);
+
 /** The sentence this session is owed, or null when it is owed none. */
-export function notice({ env = process.env, cli = cliPath(env), cwd = process.cwd(), state = stateDirFor(env) } = {}) {
+export function notice({
+  env = process.env,
+  cli = cliPath(env),
+  cwd = process.cwd(),
+  state = stateDirFor(env),
+  source = "startup",
+  session = null,
+} = {}) {
   if (env.ULTRACODE_ANYWHERE === "0") return null;
+
+  // A compaction takes the opening text out of the context, and the built-in
+  // answers that by sending it whole again on the next turn; the cadence here
+  // starts over the same way (A30).
+  if (EMPTIES_CONTEXT.has(source) && session) startOver(state, session);
+
+  // A resume brings the transcript back with the lines below already in it.
+  // A compaction or a clear empties the context, so those are told again.
+  if (source === "resume") return null;
 
   const said = [];
   const settings = settingsFor(env, cwd);
@@ -34,7 +54,7 @@ export function notice({ env = process.env, cli = cliPath(env), cwd = process.cw
     if (unchecked) said.push(`ultracode-anywhere: ${unchecked}. See its README for how to re-check it.`);
   }
 
-  const conflict = conflictIn(settings);
+  const conflict = conflictIn(settings, env);
   if (conflict) said.push(`ultracode-anywhere is quiet this session: ${conflict}.`);
 
   // The one thing native ultracode does that no reminder can: it lifts the
@@ -59,7 +79,14 @@ function capRaised(settings, env) {
 if (invokedAs(import.meta.url)) {
   try {
     const payload = parsePayload(readStdin());
-    respond("SessionStart", notice({ cwd: typeof payload.cwd === "string" ? payload.cwd : here() }));
+    respond(
+      "SessionStart",
+      notice({
+        cwd: typeof payload.cwd === "string" ? payload.cwd : here(),
+        source: typeof payload.source === "string" ? payload.source : "startup",
+        session: typeof payload.session_id === "string" && payload.session_id ? payload.session_id : null,
+      }),
+    );
   } catch {
     // Nothing to say, and nothing worth failing a session's first turn over.
   }

@@ -24,7 +24,15 @@ import { cliPath, conflictIn, driftCached, settingsFor } from "./upstream.mjs";
  */
 export const FULL_EVERY = 10;
 
-/** Turns the user did not type. A wakeup carries its own instructions. */
+/**
+ * Turns the user did not type. A wakeup carries its own instructions.
+ *
+ * Read off the `source` the build's own payload schema declares, with exactly
+ * these values. 2.1.238 declares the field and does not yet send it outside
+ * Anthropic, so on that build a wakeup counts as a turn and gets whatever its
+ * place in the cadence earns; the day the field arrives, the skip starts
+ * working with no change here (A30).
+ */
 const WAKEUP_SOURCES = new Set(["loop_wakeup", "schedule_wakeup", "poll_event", "system"]);
 
 const FULL = [
@@ -95,8 +103,8 @@ export function run({ stdin = "", env = process.env, state = stateDirFor(env) } 
   // with no Workflow tool has nothing to be pointed at. Either way this hook has
   // nothing to add, and saying it anyway is tokens for nothing.
   const cwd = typeof payload.cwd === "string" ? payload.cwd : here();
-  const conflict = conflictIn(settingsFor(env, cwd));
-  const moved = env.ULTRACODE_ANYWHERE_STRICT === "1" ? movedBuild(env, state) : null;
+  const conflict = conflictIn(settingsFor(env, cwd), env);
+  const moved = !conflict && env.ULTRACODE_ANYWHERE_STRICT === "1" ? movedBuild(env, state) : null;
 
   if (debug) log(debug, stdin, conflict ?? moved);
   if (conflict || moved) return null;
@@ -123,8 +131,8 @@ function here() {
  * Strict is for whoever would rather have the mode off than have it pretend, so
  * it reads the build rather than trusting it. Read once and remembered beside
  * the counters: the answer cannot change inside a session, and the scan streams
- * most of a 321 MB file, which is 180 ms rather than the 30 ms a turn costs
- * otherwise, against a hook timeout of 5 seconds.
+ * most of a 321 MB file, a few hundred milliseconds rather than the 30 ms a
+ * turn costs otherwise, against a hook timeout of 5 seconds.
  */
 function movedBuild(env, state) {
   return driftCached(cliPath(env), state, cached);

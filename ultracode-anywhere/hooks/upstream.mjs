@@ -3,11 +3,12 @@
  *
  * The premise is read off one installed build: the standing orchestration
  * reminder is gated on the resolved effort being xhigh, the Workflow tool is
- * gated on `enableWorkflows` alone, and the reminder repeats on a fixed turn
- * cadence. A build that stops carrying those strings is a build this plugin can
+ * gated on `enableWorkflows` and the plan and policy around it with no effort
+ * term anywhere, and the reminder repeats on a fixed turn cadence. A build
+ * that stops carrying those strings, or the gate, is a build this plugin can
  * no longer claim to mirror, and a plugin that cannot tell is one that rots
- * quietly. Names, not behaviour: a string check cannot prove the gate still
- * reads the way it read, only that the thing it named still exists.
+ * quietly. Four names and one shape are what a read can check; what it cannot
+ * see is the list in VERIFYING.md.
  */
 import { closeSync, existsSync, openSync, readSync, readdirSync, realpathSync, statSync } from "node:fs";
 
@@ -24,6 +25,29 @@ import { homedir } from "node:os";
 export const CALIBRATED_AGAINST = "2.1.238";
 
 /**
+ * The gate itself, as a shape rather than a name.
+ *
+ * The build ships as a compiled binary but its JavaScript is readable inside:
+ * the predicate is one minified function whose names change between builds and
+ * whose shape does not. What the premise needs is that the xhigh term is a
+ * conjunct, so this matches a function returning a flag, a call and an effort
+ * comparison against "xhigh". A build that stops requiring xhigh there is a
+ * build this plugin no longer describes, whatever names survive (A31).
+ *
+ * Spellings a minifier chooses between are all accepted: `!0` or `true`,
+ * either quote, a helper called with an argument or through `?.`. Read as a
+ * drift, a respelling nags every session, or under strict switches the plugin
+ * off on a build whose gate still holds.
+ */
+export const GATE = /function [A-Za-z_$][\w$]*\([^)]{0,24}\)\{return [\w$]+===(?:!0|true)&&[\w$]+(?:\?\.)?\([^)]{0,24}\)&&[\w$]+\([^)]{0,24}\)===["']xhigh["']\}/;
+
+/** What a missing gate is called when the check reports it. */
+export const GATE_SHAPE = "the xhigh gate the reminder is emitted under";
+
+/** Characters kept across a read boundary so a gate lying on one is still whole. */
+const GATE_REACH = 200;
+
+/**
  * What the premise rests on, each one read out of an installed build.
  *
  * The last is the load-bearing one and it is a sentence rather than a name: the
@@ -38,22 +62,6 @@ export const CALIBRATED_AGAINST = "2.1.238";
  * in the build this was read off, so it would have failed on the build it was
  * calibrated against (A29).
  */
-/**
- * The gate itself, as a shape rather than a name.
- *
- * The build ships as a compiled binary but its JavaScript is readable inside:
- * the predicate is one minified function whose names change between builds and
- * whose shape does not. What the premise needs is that the xhigh term is a
- * conjunct, so this matches a function of three arguments returning a flag, a
- * call and an effort comparison against "xhigh". A build that stops requiring
- * xhigh there is a build this plugin no longer describes, whatever names
- * survive (A31).
- */
-export const GATE = /function [A-Za-z_$][\w$]*\([^)]{0,24}\)\{return [\w$]+===!0&&[\w$]+\(\)&&[\w$]+\([^)]{0,24}\)==="xhigh"\}/;
-
-/** What a missing gate is called when the check reports it. */
-export const GATE_SHAPE = "the xhigh gate the reminder is emitted under";
-
 export const MARKERS = [
   "ultra_effort_enter",
   "enableWorkflows",
@@ -61,11 +69,28 @@ export const MARKERS = [
   "Ultracode is on for the session (a system-reminder confirms it)",
 ];
 
-/** Settings keys that decide whether this hook has anything to add. */
+/**
+ * The settings and variables that decide whether this hook has anything to
+ * add, in the order the build reads them: the two disable switches first, then
+ * the variable that withdraws the feature, then `enableWorkflows`, then the
+ * standing mode itself.
+ */
 export const CONFLICTS = {
-  ultracode: "settings.json sets \"ultracode\": true, so the built-in reminder already fires and effort is xhigh whatever effortLevel says",
+  CLAUDE_CODE_DISABLE_WORKFLOWS: "CLAUDE_CODE_DISABLE_WORKFLOWS is set, so there is no Workflow tool for the reminder to point at",
+  disableWorkflows: "settings.json sets \"disableWorkflows\": true, so there is no Workflow tool for the reminder to point at",
+  CLAUDE_CODE_WORKFLOWS: "CLAUDE_CODE_WORKFLOWS is set to false, so there is no Workflow tool for the reminder to point at",
   enableWorkflows: "settings.json sets \"enableWorkflows\": false, so there is no Workflow tool for the reminder to point at",
+  ultracode: "settings.json sets \"ultracode\": true, so the built-in reminder already fires and effort is xhigh whatever effortLevel says",
 };
+
+/** A boolean variable as the build reads one: 1, true, yes or on, in any case. */
+function isOn(value) {
+  return ["1", "true", "yes", "on"].includes(String(value ?? "").toLowerCase().trim());
+}
+
+function isOff(value) {
+  return ["0", "false", "no", "off"].includes(String(value ?? "").toLowerCase().trim());
+}
 
 const CHUNK = 1 << 20;
 
@@ -80,8 +105,9 @@ export const MIN_BUNDLE = 5_000_000;
 
 /** The settings Claude Code would read here: the user's, with a project's own on top. */
 export function settingsFor(env = process.env, cwd = "") {
-  const config = env.CLAUDE_CONFIG_DIR || join(homeOf(env), ".claude");
-  const paths = [join(config, "settings.json")];
+  const home = homeOf(env);
+  const config = env.CLAUDE_CONFIG_DIR || (home && join(home, ".claude"));
+  const paths = config ? [join(config, "settings.json")] : [];
   if (cwd) paths.push(join(cwd, ".claude", "settings.json"), join(cwd, ".claude", "settings.local.json"));
 
   const merged = {};
@@ -89,10 +115,17 @@ export function settingsFor(env = process.env, cwd = "") {
   return merged;
 }
 
-/** The home Claude Code would read, which a test may point somewhere of its own. */
+/**
+ * The home Claude Code would read, which a test may point somewhere of its
+ * own, and nothing when the account has none. The same rule as the counters
+ * keep: a home named and empty is no home, not the process's own.
+ */
 function homeOf(env) {
+  const named = env.HOME || env.USERPROFILE;
+  if (named) return named;
+  if ("HOME" in env || "USERPROFILE" in env) return "";
   try {
-    return env.CLAUDE_CONFIG_DIR ? "" : env.HOME || env.USERPROFILE || homedir();
+    return homedir();
   } catch {
     return "";
   }
@@ -108,9 +141,12 @@ function readSettings(path) {
 }
 
 /** Why this hook should stay quiet in this session, or null when it should speak. */
-export function conflictIn(settings) {
-  if (settings?.ultracode === true) return CONFLICTS.ultracode;
+export function conflictIn(settings, env = process.env) {
+  if (isOn(env.CLAUDE_CODE_DISABLE_WORKFLOWS)) return CONFLICTS.CLAUDE_CODE_DISABLE_WORKFLOWS;
+  if (settings?.disableWorkflows === true) return CONFLICTS.disableWorkflows;
+  if (isOff(env.CLAUDE_CODE_WORKFLOWS)) return CONFLICTS.CLAUDE_CODE_WORKFLOWS;
   if (settings?.enableWorkflows === false) return CONFLICTS.enableWorkflows;
+  if (settings?.ultracode === true) return CONFLICTS.ultracode;
   return null;
 }
 
@@ -143,7 +179,8 @@ function* candidates(env) {
     for (const name of names) yield real(join(dir, name));
   }
 
-  const home = homeOf(env) || homedir();
+  const home = homeOf(env);
+  if (!home) return;
   const versions = join(home, ".local", "share", "claude", "versions");
   for (const name of newestFirst(versions)) yield real(join(versions, name));
   yield real(join(home, ".claude", "local", "node_modules", "@anthropic-ai", "claude-code", "cli.js"));
@@ -226,8 +263,8 @@ export function behind(installed, calibrated = CALIBRATED_AGAINST) {
 
 /**
  * The same answer as `drift`, computed once per build rather than once per
- * session: reading a 321 MB bundle is 180 ms, and the answer cannot change
- * while the file it was read from has not.
+ * session: reading a 321 MB bundle is a few hundred milliseconds, and the
+ * answer cannot change while the file it was read from has not.
  */
 export function driftCached(cli, state, remember) {
   try {
@@ -259,35 +296,36 @@ function buildKey(cli) {
 }
 
 /**
- * Which markers the installed build no longer carries.
+ * Which markers the installed build no longer carries, and whether the gate is
+ * still spelled the way the premise needs it spelled.
  *
  * `checked: false` is the answer when there is nothing to read: no build found,
  * or one this account cannot open. Not finding a build is not evidence of
  * drift, and reporting it as drift would cry wolf on every machine that keeps
  * its install somewhere this does not look.
  */
-export function drift({ cli = cliPath(), markers = MARKERS } = {}) {
+export function drift({ cli = cliPath() } = {}) {
   const absent = { checked: false, missing: [], reason: null };
   if (!cli || !existsSync(cli)) return absent;
-  // A file too small to be the build is a launcher or a stub, and reading
-  // markers out of one reports a drift that has not happened.
-  if (!isBundle(cli)) return { checked: true, missing: [], reason: null };
+  // A file too small to be the build is a launcher or a stub: no evidence
+  // either way, the way a build this cannot find is none. Reading markers out
+  // of one reports a drift that has not happened, and answering "checked" for
+  // one kept a launcher on record as a build that is fine.
+  if (!isBundle(cli)) return absent;
 
   let found;
   try {
-    found = markersIn(cli, markers);
+    found = carries(cli);
   } catch {
     return absent;
   }
 
-  const gate = markers === MARKERS ? gateIn(cli) : true;
-
   // A file carrying none of them is not a build that dropped them, it is some
   // other program of the same name, and a 5 MB file called `claude` earlier on
   // PATH is all it takes. Drift is some of the four missing, not all.
-  const missing = markers.filter((m) => !found.has(m));
-  if (missing.length === markers.length) return absent;
-  if (!gate) missing.push(GATE_SHAPE);
+  const missing = MARKERS.filter((m) => !found.markers.has(m));
+  if (missing.length === MARKERS.length) return absent;
+  if (!found.gate) missing.push(GATE_SHAPE);
   return {
     checked: true,
     missing,
@@ -295,36 +333,24 @@ export function drift({ cli = cliPath(), markers = MARKERS } = {}) {
   };
 }
 
-/** Whether the gate is still spelled the way the premise needs it spelled. */
-function gateIn(path) {
-  let found = false;
-  try {
-    scan(path, 200, (text) => {
-      found = GATE.test(text);
-      return found;
-    });
-  } catch {
-    return true;
-  }
-  return found;
-}
-
 /**
- * The markers present in a file, read a megabyte at a time.
+ * The markers and the gate present in a file, found in one read.
  *
- * The bundle is hundreds of megabytes, so it is streamed rather than read whole,
- * and each read keeps the tail of the last one so a marker lying across a
- * boundary is still found.
+ * The bundle is hundreds of megabytes, so it is streamed rather than read
+ * whole, and a second pass for the gate read most of it twice: the last marker
+ * and the gate both sit past the 280 MB mark of a 321 MB build.
  */
-function markersIn(path, markers) {
-  const found = new Set();
-  scan(path, Math.max(...markers.map((m) => m.length)), (text) => {
-    for (const marker of markers) {
-      if (!found.has(marker) && text.includes(marker)) found.add(marker);
+function carries(path) {
+  const markers = new Set();
+  let gate = false;
+  scan(path, Math.max(GATE_REACH, ...MARKERS.map((m) => m.length)), (text) => {
+    for (const marker of MARKERS) {
+      if (!markers.has(marker) && text.includes(marker)) markers.add(marker);
     }
-    return found.size === markers.length;
+    if (!gate) gate = GATE.test(text);
+    return gate && markers.size === MARKERS.length;
   });
-  return found;
+  return { markers, gate };
 }
 
 /**

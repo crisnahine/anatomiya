@@ -12,8 +12,9 @@ function Mae(model, effort, flag) { return flag === true && ZL() && zZ(model, ef
 
 The `xhigh` term is a conjunct, not a side effect, so dropping to `medium` turns the mode off.
 What it gates is exactly one thing that reaches the model: the `ultra_effort_enter`
-system-reminder. The Workflow tool itself is gated only on `enableWorkflows` and carries no
-effort term, so the tool stays available at every level.
+system-reminder. The Workflow tool itself is gated on `enableWorkflows`, on the plan and policy
+around it, and on no effort term at all, so wherever the tool is available it stays available at
+every level.
 
 A wire-level diff of `ultracode:true` at xhigh against `effortLevel:medium` plus this plugin
 shows two differing lines in the whole request: the session id, and `output_config.effort`.
@@ -60,10 +61,11 @@ payload that names no session, or a state directory this cannot use, reads every
 one, and a 30-turn session then costs 30 opening texts instead. The reminder is the cheap half
 either way.
 
-The session check reads the installed build once per build, not once per session: 180 ms the first
-time, 30 ms after that, since the answer is kept beside the turn counters under the build's path,
-size and timestamp. All of these are one machine's numbers with a warm page cache; the shape to
-rely on is one process per prompt and one bundle read per install, not the milliseconds.
+The session check reads the installed build once per build, not once per session: about 170 ms
+the first time, 30 ms after that, since the answer is kept beside the turn counters under the
+build's path, size and timestamp. All of these are one machine's numbers with a warm page cache;
+the shape to rely on is one process per prompt and one bundle read per install, not the
+milliseconds.
 
 Turns are counted per session in a file, and the count is read and written without a lock. Two
 prompts of one session arriving at once can lose a turn, which moves where a refresher lands and
@@ -78,7 +80,7 @@ Four deliberate differences, each with a reason:
 | what the text asks for | the Workflow tool on every substantive task | the Workflow tool where the scale or risk earns it, with a floor under it |
 | effort | resolves to xhigh | unchanged, whatever `effortLevel` says |
 | subagent cap | lifted, by the same predicate | left at 20, since no reminder reaches it |
-| upstream contract | a supported mode | four strings read off one build, re-checked by hand |
+| upstream contract | a supported mode | four strings and the gate's shape, read off one build and re-checked by hand |
 
 The wording is the one worth arguing about. Native says every substantive task; this says the work
 has to earn it and asks for the reason in a clause. That is a deviation, and it is on purpose: a
@@ -92,19 +94,31 @@ and scale the harness to the work rather than running the largest one every time
 
 ## When it stays quiet
 
-It reads the settings Claude Code reads, the user's with a project's own on top, and says nothing
-at all in a session where it would be noise:
+It reads the settings files Claude Code reads, the user's with a project's own on top, and the
+environment variables the build reads alongside them, and says nothing at all in a session where it
+would be noise:
 
 - `"ultracode": true` forces xhigh whatever `effortLevel` says, and the built-in reminder already
   fires. A second copy is tokens for nothing.
-- `"enableWorkflows": false` means there is no Workflow tool for the reminder to point at.
+- `"enableWorkflows": false`, `"disableWorkflows": true`, `CLAUDE_CODE_DISABLE_WORKFLOWS=1` or
+  `CLAUDE_CODE_WORKFLOWS=false` all mean there is no Workflow tool for the reminder to point at.
+  The build reads the disable switches first, and so does this.
 
-`/effort ultracode` inside a running session writes nothing to `settings.json`, so a session
-switched that way mid-flight gets both reminders until it ends. Setting it in `settings.json` is
-what this reads.
+The build also turns the tool off where this hook cannot see: `enableWorkflows` left unset defaults
+to off on a Pro plan, an organisation policy can refuse it, and a remote flag can withdraw it. On
+Pro, set `"enableWorkflows": true`, or the reminder points at a tool the session does not have.
+
+What it does not read: managed settings, the plan, and the `--effort` flag or `/effort` command,
+which write nothing to `settings.json`. A session raised to `/effort ultracode` mid-flight gets both reminders
+until it ends. A session dropped from there to `/effort medium` gets the built-in's exit line
+saying ultracode is off and the Workflow tool's standard opt-in rule applies again, and then this
+plugin's refresher saying it is still on, which is the plugin doing what it is for: keeping the mode
+on at the level you dropped to. To stop it, start the next session with `ULTRACODE_ANYWHERE=0`.
 
 Either way a line at the start of the session says which setting silenced it, so a plugin that is
-doing nothing does not look like one that is working.
+doing nothing does not look like one that is working. That line, the version line and the drift
+line are said when a session starts and again after a compaction or a `/clear`, which empty the
+context; a resumed session is told nothing, since its transcript already holds them.
 
 ## When upstream moves
 
@@ -129,17 +143,20 @@ function Mae(e,t,r){return r===!0&&ZL()&&zZ(e,t)==="xhigh"}
 ```
 
 What the premise needs is that `"xhigh"` is a conjunct there rather than something the reminder
-sets, so the check matches a three-argument function returning a flag, a call and an effort
-comparison against `"xhigh"`. A build that stops requiring it is a build this plugin no longer
-describes, whatever names survive.
+sets, so the check matches a function returning a flag, a call and an effort comparison against
+`"xhigh"`, in any of the spellings a minifier chooses between. A build that stops requiring it is a
+build this plugin no longer describes, whatever names survive.
 
 A proximity test was tried first and dropped on evidence: `xhigh` appears nowhere within 20,000
 characters of any of the 14 `ultra_effort_enter` sites, so it would have failed on the build it was
 calibrated against. Reading the predicate is what replaced it.
 
-Claude Code updates itself, so expect the version line often. A version nobody has checked is not a
-broken one; it is a prompt to work `VERIFYING.md`, which takes a few minutes and is the only thing
-that can answer the half a string check cannot.
+Claude Code updates itself, so expect the version line whenever the minor moves. A version nobody
+has checked is not a broken one; it is a prompt to work `VERIFYING.md`, which takes a few minutes
+and is the only thing that can answer the half a string check cannot. The version is read off the
+build's own path, which the native installer names for it under
+`~/.local/share/claude/versions/`; an npm install's `cli.js` names none, and such a build gets the
+drift check and no version line.
 
 The rest is a person's job, and `VERIFYING.md` is the list: the version this was last checked
 against, the four things to re-read, and what to change when one of them has moved. A build whose
@@ -147,10 +164,10 @@ minor or major differs from that version gets a line at the start of the session
 checked it, which is not a failure, only a fact.
 
 `ULTRACODE_ANYWHERE_STRICT=1` turns the check into a switch: on a build that dropped one of the
-four, the hook stays quiet for the session. It is off by default, since going silent costs the mode
-to everyone whose build is fine. The answer is kept beside the turn counters under the build's own
-path, size and timestamp, so it costs one bundle read after an install rather than one per prompt:
-180 ms on the first turn, then 30, against a hook timeout of 5 seconds.
+four, or the gate, the hook stays quiet for the session. It is off by default, since going silent
+costs the mode to everyone whose build is fine. The answer is kept beside the turn counters under
+the build's own path, size and timestamp, so it costs one bundle read after an install rather than
+one per prompt: about 170 ms on the first turn, then 30, against a hook timeout of 5 seconds.
 
 `test/upstream.test.mjs` runs the same check against whatever is installed on the machine running
 the suite, and skips where there is none.
@@ -158,8 +175,16 @@ the suite, and skips where there is none.
 ## Behaviour
 
 The whole text opens the session, a one-line refresher comes back every tenth turn after that, and
-every turn in between says nothing, which is the shape of the thing being mirrored. Skips loop,
-schedule, poll and system wakeups, which are turns the user did not type.
+every turn in between says nothing, which is the shape of the thing being mirrored. A compaction or
+a `/clear` empties the context, and the cadence starts over on the next prompt, which is what the
+built-in does: its walk back through the messages finds no reminder to count from and sends the
+whole text again. A resumed session keeps its count; a fork is a new session and opens with the
+whole text.
+
+It skips loop, schedule, poll and system wakeups, which are turns the user did not type, when the
+payload says which it is. 2.1.238 declares that `source` field in its hook schema and does not yet
+send it outside Anthropic, so on that build a wakeup counts as a turn and gets whatever its place in
+the cadence earns; the skip starts working the day the field arrives, with no change here.
 
 The hook runs through `node`, which Claude Code brings with it, so it fires the same on a machine
 with no shell. It counts a session's turns in a file named for that session under
@@ -189,12 +214,15 @@ and the cap line then comes back every session rather than once.
 - `ULTRACODE_ANYWHERE_FULL=repeat claude` brings the whole text back on the cadence instead of the
   one-line refresher, for a session long enough to lose it.
 - `ULTRACODE_ANYWHERE_DEBUG=/tmp/uc.log claude` logs every prompt the hook fires on, its stdin
-  payload, and what silenced it when something did. The session hook writes nothing there.
+  payload, and what silenced it when something did. The session hook writes nothing there. A fifo
+  nobody is reading, standing at that path, is refused without waiting.
 - `ULTRACODE_ANYWHERE_STRICT=1 claude` stays quiet for the session on a build that no longer
   carries what this plugin mirrors.
 - `ULTRACODE_ANYWHERE_CAP_NOTICE=0 claude` stops the one-time line about the concurrent-subagent
   cap.
 - `ULTRACODE_ANYWHERE_STATE=/some/dir claude` keeps the turn counters somewhere other than
   `~/.claude/ultracode-anywhere/`. The directory is the hook's alone, and it has to be one this
-  account owns with mode `0700`, which is what the hook creates for itself. A directory made by hand under the usual umask is `0755` and is
-  refused, which costs the cadence: every turn then carries the full text.
+  account owns with mode `0700`, which is what the hook creates for itself. A directory made by hand
+  under the usual umask is `0755` and is refused, which costs the cadence: every turn then carries
+  the full text. Spell it absolute: `~` is not expanded here, and a relative path follows each
+  process's own directory.

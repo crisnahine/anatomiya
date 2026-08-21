@@ -19,10 +19,11 @@ import { join } from "node:path";
 const KEEP_DAYS = 7;
 
 /**
- * Entries one sweep will look at, whether or not it removes them. A sweep runs
- * on a turn, and a directory holding fifty thousand counters too fresh to
- * remove read two seconds of a five second budget looking at all of them; what
- * this does not reach on one turn it reaches on the next.
+ * Counters one sweep will stat and read, whether or not it removes them. A
+ * sweep runs on a turn, and a directory holding fifty thousand counters too
+ * fresh to remove read two seconds of a five second budget looking at all of
+ * them; what this does not reach on one turn it reaches on the next. Names
+ * that are not a counter's cost a listing entry each and nothing more.
  */
 export const SWEEP_MOST = 500;
 
@@ -35,6 +36,9 @@ const COUNTER_NAME = /^[A-Za-z0-9_-]{1,128}$/;
 
 /** A mark and a cache share the dotfile namespace, and neither may leave it. */
 const MARK_NAME = /^[A-Za-z0-9_-]{1,64}$/;
+
+/** What a counter holds and nothing else holds: a count, and no sign or exponent. */
+const COUNT = /^\d{1,15}$/;
 
 /** An answer this long is not one worth keeping: it is read back with the same bound. */
 const MOST_KEPT = 4096;
@@ -108,7 +112,7 @@ export function nextTurn(dir, session) {
   // that is a file a user pointed this at, and writing over it cost a 3 GB file
   // its contents in one reproduction.
   const held = readOwnFile(path, 64).trim();
-  if (held !== "" && !/^\d{1,15}$/.test(held)) return 1;
+  if (held !== "" && !COUNT.test(held)) return 1;
   if (held === "" && standsThere(path) && !isEmptyFile(path)) return 1;
 
   const turn = (held === "" ? 0 : Number(held)) + 1;
@@ -118,6 +122,31 @@ export function nextTurn(dir, session) {
     // The turn is still this turn; only the next one loses its place.
   }
   return turn;
+}
+
+/**
+ * Forgets a session's count, so its next turn is the first again.
+ *
+ * For a context that has been emptied under a session that goes on: the
+ * native reminder walks the messages back to its last attachment and sends
+ * the whole text again when a compaction has taken it, and a counter that
+ * kept climbing left such a session with the one-line refresher alone (A30).
+ * Only a counter is forgotten; anything else standing under the name belongs
+ * to whoever put it there.
+ */
+export function startOver(dir, session) {
+  const name = COUNTER_NAME.test(String(session ?? "")) ? String(session) : null;
+  if (!name || !ownState(dir)) return false;
+  const path = join(dir, name);
+  try {
+    if (!lstatSync(path).isFile()) return false;
+    const held = readOwnFile(path, 64).trim();
+    if (held === "" ? !isEmptyFile(path) : !COUNT.test(held)) return false;
+    rmSync(path);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** Whether anything at all stands at a path, symlinks and fifos included. */
@@ -143,7 +172,7 @@ function isEmptyFile(path) {
 /** The turns a counter has recorded, and zero for anything that is not a count. */
 function countIn(path) {
   const seen = readOwnFile(path, 64).trim();
-  return /^\d{1,15}$/.test(seen) ? Number(seen) : 0;
+  return COUNT.test(seen) ? Number(seen) : 0;
 }
 
 /**
@@ -162,15 +191,13 @@ export function firstTime(dir, mark) {
   // crash between the create and the write leaves a file of no bytes, and read
   // as "never said" the line it guards comes back every session for ever.
   if (standsThere(path)) return false;
-  {
-    try {
-      write(path, "said\n", constants.O_EXCL);
-    } catch {
-      // Racing another session for the same mark, or a directory that turned
-      // unwritable between the two calls.
-    }
-    return true;
+  try {
+    write(path, "said\n", constants.O_EXCL);
+  } catch {
+    // Racing another session for the same mark, or a directory that turned
+    // unwritable between the two calls.
   }
+  return true;
 }
 
 /**
@@ -178,7 +205,8 @@ export function firstTime(dir, mark) {
  * computed for.
  *
  * For a question whose answer costs more than a turn should: reading a 321 MB
- * build is 180 ms against a hook timeout of 5 seconds. The key is what the
+ * build is a few hundred milliseconds against a hook timeout of 5 seconds,
+ * and on a cold disk more. The key is what the
  * answer depends on, so an upgrade in place is a new key rather than a stale
  * yes, and one file holds the current answer rather than one per build ever
  * installed. A directory this may not write costs the cache, not the answer.
@@ -224,9 +252,13 @@ export class Unkept extends Error {
  * A file written without following a symlink standing where it should be. The
  * directory is this account's own, but a write to a path someone else can
  * replace is not a write worth making.
+ *
+ * Opened non-blocking, the way every read here is: a fifo with no reader held
+ * the open until the hook timed out, and at the debug path it did so on every
+ * prompt of the session. Non-blocking, it answers ENXIO and the turn goes on.
  */
 function write(path, body, mode) {
-  const flags = constants.O_WRONLY | constants.O_CREAT | mode | (constants.O_NOFOLLOW ?? 0);
+  const flags = constants.O_WRONLY | constants.O_CREAT | mode | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0);
   let fd;
   try {
     fd = openSync(path, flags, 0o600);

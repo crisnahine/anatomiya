@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 
 import { needsPosixPermissions, needsPosixSpecialFiles, needsSymlinks } from "./platform.mjs";
-import { SWEEP_MOST, cached, firstTime, nextTurn, ownState, stateDirFor, sweep } from "../ultracode-anywhere/hooks/counters.mjs";
+import { SWEEP_MOST, appendLine, cached, firstTime, nextTurn, ownState, startOver, stateDirFor, sweep } from "../ultracode-anywhere/hooks/counters.mjs";
 
 /** A state directory of its own, so one test's turn count cannot reach another's. */
 function stateDir(t) {
@@ -56,8 +56,11 @@ test("the sweep removes counters, not whatever else is in the directory", (t) =>
   assert.deepEqual(readdirSync(dir).sort(), ["important.conf", "notes.md"]);
 });
 
-test("sweeping a directory that is not there is not an error", () => {
-  assert.equal(sweep(join(tmpdir(), "ultracode-anywhere-absent-directory")), 0);
+test("sweeping a directory that is not there is not an error", (t) => {
+  // Under a test's own scratch path: `ownState` creates what it is asked about,
+  // and a fixed name under the shared temporary directory is the class the
+  // plugin itself moved out of.
+  assert.equal(sweep(join(stateDir(t), "absent")), 0);
 });
 
 test("a state directory that is a symlink is refused, so nothing is written or deleted through it", needsSymlinks, (t) => {
@@ -69,13 +72,15 @@ test("a state directory that is a symlink is refused, so nothing is written or d
   const link = join(dir, "link");
   mkdirSync(real, { recursive: true, mode: 0o700 });
   chmodSync(real, 0o700);
-  writeFileSync(join(real, "a-session"), "victim content");
+  // The victim holds a count: text is refused by the corrupt-counter guard
+  // whatever the directory is, so only a number proves the link arm.
+  writeFileSync(join(real, "a-session"), "5");
   symlinkSync(real, link);
 
   assert.equal(nextTurn(link, "a-session"), 1);
   assert.equal(nextTurn(link, "a-session"), 1, "and it never starts counting");
   assert.equal(sweep(link), 0);
-  assert.equal(readFileSync(join(real, "a-session"), "utf8"), "victim content");
+  assert.equal(readFileSync(join(real, "a-session"), "utf8"), "5", "and the count behind the link is not advanced");
 });
 
 test("a state directory other accounts can write to is refused", needsPosixPermissions, (t) => {
@@ -130,6 +135,31 @@ test("a counter standing as a symlink is not written through", needsSymlinks, (t
 
   assert.equal(nextTurn(dir, "a-session"), 1);
   assert.equal(readFileSync(victim, "utf8"), "not a counter");
+});
+
+// --- a session that starts over -----------------------------------------------
+
+test("a session told to start over counts from one again", (t) => {
+  const dir = stateDir(t);
+  nextTurn(dir, "compacted");
+  nextTurn(dir, "compacted");
+
+  assert.equal(startOver(dir, "compacted"), true);
+  assert.equal(nextTurn(dir, "compacted"), 1);
+  assert.equal(startOver(dir, "never-counted"), false, "a session with no count has nothing to forget");
+});
+
+test("starting over forgets a counter and nothing else standing in its place", needsSymlinks, (t) => {
+  const dir = stateDir(t);
+  writeFileSync(join(dir, "notes"), "not a count");
+  writeFileSync(join(dir, "elsewhere"), "40");
+  symlinkSync(join(dir, "elsewhere"), join(dir, "linked"));
+
+  assert.equal(startOver(dir, "notes"), false);
+  assert.equal(startOver(dir, "linked"), false);
+  assert.equal(readFileSync(join(dir, "notes"), "utf8"), "not a count");
+  assert.equal(existsSync(join(dir, "linked")), true, "the link stands where it stood");
+  assert.equal(readFileSync(join(dir, "elsewhere"), "utf8"), "40");
 });
 
 // --- marks that are said once -------------------------------------------------
@@ -335,4 +365,19 @@ test("a counter reached through a symlink is not read through it either", needsS
 
   assert.equal(nextTurn(dir, "linked-session"), 1, "the link is not the counter it points at");
   assert.equal(readFileSync(join(dir, "elsewhere"), "utf8"), "40");
+});
+
+test("a debug log or a cache that is a fifo with no reader is not waited on", needsPosixSpecialFiles, (t) => {
+  // The read side opens non-blocking so a fifo cannot hold a turn. The write
+  // side did not, and `ULTRACODE_ANYWHERE_DEBUG` at a fifo held every prompt
+  // of the session to the hook timeout.
+  const dir = stateDir(t);
+  execFileSync("mkfifo", [join(dir, "debug.log")]);
+  execFileSync("mkfifo", [join(dir, ".drift")]);
+
+  const started = Date.now();
+  appendLine(join(dir, "debug.log"), "a line\n");
+  assert.equal(cached(dir, "drift", "k", () => "answer"), "answer");
+
+  assert.equal(Date.now() - started < 3000, true, "and the turn goes on without either");
 });
