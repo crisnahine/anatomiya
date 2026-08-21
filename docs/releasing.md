@@ -25,6 +25,9 @@ does not ship, but it also does not tell you which half.
 - [ ] `package.json`
 - [ ] `.claude-plugin/plugin.json` (the workflow compares it against the tag and refuses a mismatch)
 - [ ] `package-lock.json` (`npm install --package-lock-only`), which carries it twice
+- [ ] `ultracode-anywhere/.claude-plugin/plugin.json` moves on its own version, not this one. Move
+      it only when that plugin changed. `npm run validate` is what holds it to semver and holds its
+      hook to a file it ships; nothing ties it to the tag
 - [ ] `CHANGELOG.md`: rename `## [Unreleased]` to `## [x.y.z] - YYYY-MM-DD`, **and put an empty
       `## [Unreleased]` back above it**. `check-docs` reads that section and fails without the
       heading.

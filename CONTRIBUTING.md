@@ -1,6 +1,6 @@
 # Contributing
 
-Read `DECISIONS.md` first. It is 154 numbered rows, each one a measurement or a review finding reduced
+Read `DECISIONS.md` first. It is 157 numbered rows, each one a measurement or a review finding reduced
 to the decision it forces on the code. It is the build contract, and most questions you will have
 about why something is shaped the way it is are answered there in one line.
 

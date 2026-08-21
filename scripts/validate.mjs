@@ -5,8 +5,8 @@
  * catch it, and a stray file in that directory is loader-visible surface.
  *
  * Every plugin the marketplace lists is read as a plugin, not as a path that
- * exists. A second entry used to be checked only for its directory being there,
- * and a directory with no manifest in it installs as nothing.
+ * exists: a directory with no manifest in it installs as nothing, and a hook
+ * naming a file its plugin does not ship loads nothing.
  */
 import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { join, dirname, relative, resolve, sep } from "node:path";
@@ -38,12 +38,9 @@ export function validate(root) {
     }
   };
 
-  if (!existsSync(dir)) {
-    problems.push(".claude-plugin/ is missing");
-    return problems;
-  }
+  if (!existsSync(dir)) problems.push(".claude-plugin/ is missing");
 
-  const entries = readdirSync(dir);
+  const entries = existsSync(dir) ? readdirSync(dir) : [];
   for (const name of entries) {
     if (!MANIFESTS.includes(name)) {
       problems.push(`.claude-plugin/${name} is not a manifest; manifests only in that directory`);
@@ -53,12 +50,15 @@ export function validate(root) {
     if (!entries.includes(m)) problems.push(`.claude-plugin/${m} is missing`);
   }
 
-  const pkg = existsSync(join(root, "package.json")) ? readJson(join(root, "package.json")) : null;
+  let pkg = null;
+  if (existsSync(join(root, "package.json"))) pkg = readJson(join(root, "package.json"));
+  else problems.push("package.json is missing, so no version can be compared against it");
   const plugin = entries.includes("plugin.json") ? readJson(join(dir, "plugin.json")) : null;
   const marketplace = entries.includes("marketplace.json") ? readJson(join(dir, "marketplace.json")) : null;
 
   if (plugin) {
     problems.push(...manifestProblems(plugin, ".claude-plugin/plugin.json"));
+    problems.push(...declaredPathProblems(plugin, root, ".claude-plugin/plugin.json"));
     if (pkg && plugin.version !== pkg.version) {
       problems.push(`version drift: package.json ${pkg.version}, plugin.json ${plugin.version}`);
     }
@@ -74,17 +74,20 @@ export function validate(root) {
   problems.push(...hookProblems(root, root, readJson, { required: true }));
 
   if (marketplace) {
+    for (const key of ["name", "owner"]) {
+      if (!marketplace[key]) problems.push(`marketplace.json has no "${key}"`);
+    }
     const listed = Array.isArray(marketplace.plugins) ? marketplace.plugins : [];
-    if (listed.length === 0) problems.push("marketplace.json lists no plugins");
-    for (const entry of listed) {
-      if (!entry.name) {
-        problems.push("marketplace.json has a plugin entry with no name");
+    if (!Array.isArray(marketplace.plugins)) problems.push('marketplace.json "plugins" is not an array');
+    if (Array.isArray(marketplace.plugins) && listed.length === 0) problems.push("marketplace.json lists no plugins");
+    for (const [i, entry] of listed.entries()) {
+      const at = entry?.name ? `entry ${entry.name}` : `plugins[${i}]`;
+      if (!entry?.name) problems.push("marketplace.json has a plugin entry with no name");
+      if (!entry?.source) {
+        problems.push(`marketplace.json ${at} has no source`);
         continue;
       }
-      if (!entry.source) {
-        problems.push(`marketplace.json entry ${entry.name} has no source`);
-        continue;
-      }
+      if (!entry.name) continue;
       if (typeof entry.source !== "string" || !entry.source.startsWith(".")) continue;
 
       const pluginRoot = resolve(root, entry.source);
@@ -111,10 +114,34 @@ export function validate(root) {
       if (pluginRoot === resolve(root)) continue;
 
       problems.push(...manifestProblems(own, label(root, manifest)));
+      problems.push(...declaredPathProblems(own, pluginRoot, label(root, manifest)));
       problems.push(...hookProblems(root, pluginRoot, readJson, { required: false }));
     }
   }
 
+  return problems;
+}
+
+/**
+ * Every path a manifest names by hand, which is where the typo lands: it has to
+ * exist, and it has to stay inside the plugin that names it.
+ */
+function declaredPathProblems(manifest, pluginRoot, at) {
+  const problems = [];
+  for (const key of ["commands", "agents", "skills", "hooks", "mcpServers"]) {
+    const value = manifest[key];
+    const listed = typeof value === "string" ? [value] : Array.isArray(value) ? value : [];
+    for (const [i, declared] of listed.entries()) {
+      if (typeof declared !== "string" || !declared.startsWith(".")) continue;
+      const where = Array.isArray(value) ? `${key}[${i}]` : key;
+      const abs = resolve(pluginRoot, declared);
+      if (relative(pluginRoot, abs).startsWith("..")) {
+        problems.push(`${at} ${where} points outside the plugin: ${declared}`);
+      } else if (!existsSync(abs)) {
+        problems.push(`${at} ${where} points at a missing path: ${declared}`);
+      }
+    }
+  }
   return problems;
 }
 
@@ -167,6 +194,8 @@ function hookProblems(root, pluginRoot, readJson, { required }) {
       const target = /\$\{CLAUDE_PLUGIN_ROOT\}\/([^"']+)/.exec(String(command ?? ""));
       if (!target) {
         problems.push(`${at} ${event} runs ${command}, which names no file in this plugin`);
+      } else if (relative(pluginRoot, resolve(pluginRoot, target[1])).startsWith("..")) {
+        problems.push(`${at} ${event} runs ${target[1]}, which is outside that plugin`);
       } else if (!existsSync(join(pluginRoot, target[1]))) {
         problems.push(`${at} ${event} runs ${target[1]}, which that plugin does not ship`);
       }
