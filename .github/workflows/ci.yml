@@ -165,6 +165,12 @@ jobs:
       - name: The documentation matches the code
         run: node scripts/check-docs.mjs
 
+      # Every plugin the marketplace lists, not only the one at the root. The
+      # inline check below reads the root manifests; this one reads each
+      # listed plugin's own manifest and the files its hooks name.
+      - name: Every listed plugin's own manifest
+        run: node scripts/validate.mjs
+
       - name: Validate the plugin structure
         shell: bash
         run: |
