@@ -49,8 +49,13 @@ function nowhere(t) {
 
 /** The hook as Claude Code runs it: a process, a payload on stdin, JSON on stdout. */
 function fire(t, { stdin = payload(), env = {}, dir = stateDir(t) } = {}) {
+  // Run from the state directory rather than from wherever the suite was
+  // started: a payload naming no cwd falls back to the process's own, and a
+  // checkout carrying `.claude/settings.json` with `"ultracode": true` then
+  // silenced two tests that are about something else.
   const result = spawnSync(process.execPath, [HOOK], {
     input: stdin,
+    cwd: dir,
     encoding: "utf8",
     env: { ...process.env, ...nowhere(t), ULTRACODE_ANYWHERE_STATE: dir, ...env },
   });
@@ -331,6 +336,13 @@ test("a session that only sets an effort level is the ordinary case and still ge
   assert.match(run({ stdin: payload(), env: { ...nowhere(t), CLAUDE_CONFIG_DIR: config }, state: stateDir(t) }), /Workflow tool/);
 });
 
+test("a session with workflows disabled by the switch Claude Code reads first says nothing either", (t) => {
+  const config = configWith(t, { disableWorkflows: true });
+
+  assert.equal(run({ stdin: payload(), env: { ...nowhere(t), CLAUDE_CONFIG_DIR: config }, state: stateDir(t) }), null);
+  assert.equal(run({ stdin: payload(), env: { ...nowhere(t), CLAUDE_CODE_DISABLE_WORKFLOWS: "1" }, state: stateDir(t) }), null);
+});
+
 // --- the model still decides, so the reminder says how to decide --------------
 
 test("the reminder asks for the reason before the fan-out, in the same breath as the tool", () => {
@@ -364,6 +376,19 @@ test("strict mode still speaks where the build is the one this was calibrated ag
   });
 
   assert.match(said, /Workflow tool/);
+});
+
+test("a session already quiet reads no build and keeps no state, strict or not", (t) => {
+  // Strict read the build and kept the answer on a turn it was never going to
+  // speak on, which is a bundle read and a file for nothing.
+  const dir = stateDir(t);
+  const cli = join(stateDir(t), "current-build");
+  writeFileSync(cli, `function Mae(e,t,r){return r===!0&&ZL()&&zZ(e,t)==="xhigh"}\n${MARKERS.join("\n")}`);
+  truncateSync(cli, MIN_BUNDLE + 1);
+  const env = { ...nowhere(t), CLAUDE_CODE_EXECPATH: cli, CLAUDE_CONFIG_DIR: configWith(t, { ultracode: true }), ULTRACODE_ANYWHERE_STRICT: "1" };
+
+  assert.equal(run({ stdin: payload(), env, state: dir }), null);
+  assert.deepEqual(existsSync(dir) ? readdirSync(dir) : [], [], "nothing is kept for a turn it did not speak on");
 });
 
 // --- the path the hook is invoked by ------------------------------------------

@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { cached } from "../ultracode-anywhere/hooks/counters.mjs";
-import { CALIBRATED_AGAINST, GATE_SHAPE, MARKERS, MIN_BUNDLE, behind, cliPath, drift, driftCached, settingsFor } from "../ultracode-anywhere/hooks/upstream.mjs";
+import { CALIBRATED_AGAINST, GATE_SHAPE, MARKERS, MIN_BUNDLE, behind, cliPath, conflictIn, drift, driftCached, settingsFor } from "../ultracode-anywhere/hooks/upstream.mjs";
 
 /** What a build carries: the four names, and the gate the reminder is emitted under. */
 const whole = () => `function Mae(e,t,r){return r===!0&&ZL()&&zZ(e,t)==="xhigh"}\n${MARKERS.join("\n")}`;
@@ -58,6 +58,32 @@ test("settings that are missing or unreadable are an empty answer, not a throw",
   assert.deepEqual(settingsFor({ CLAUDE_CONFIG_DIR: join(tree.dir, "nowhere") }), {});
   writeFileSync(join(tree.config, "settings.json"), "{not json");
   assert.deepEqual(settingsFor({ CLAUDE_CONFIG_DIR: tree.config }), {});
+});
+
+test("workflows switched off by disableWorkflows, or by the environment, leave no tool to point at", () => {
+  // The build's own availability check answers false on
+  // `CLAUDE_CODE_DISABLE_WORKFLOWS` or `"disableWorkflows": true` before it
+  // reads `enableWorkflows` at all.
+  assert.match(conflictIn({ disableWorkflows: true }, {}), /disableWorkflows/);
+  assert.match(conflictIn({}, { CLAUDE_CODE_DISABLE_WORKFLOWS: "1" }), /CLAUDE_CODE_DISABLE_WORKFLOWS/);
+  assert.match(conflictIn({}, { CLAUDE_CODE_DISABLE_WORKFLOWS: "true" }), /CLAUDE_CODE_DISABLE_WORKFLOWS/);
+  assert.equal(conflictIn({ disableWorkflows: false }, { CLAUDE_CODE_DISABLE_WORKFLOWS: "" }), null);
+});
+
+test("CLAUDE_CODE_WORKFLOWS set to false is the same session with no tool", () => {
+  assert.match(conflictIn({}, { CLAUDE_CODE_WORKFLOWS: "false" }), /CLAUDE_CODE_WORKFLOWS/);
+  assert.equal(conflictIn({}, { CLAUDE_CODE_WORKFLOWS: "true" }), null);
+});
+
+test("the disable switches are named before CLAUDE_CODE_WORKFLOWS, the order the build reads them in", () => {
+  assert.match(conflictIn({ disableWorkflows: true }, { CLAUDE_CODE_WORKFLOWS: "false" }), /disableWorkflows/);
+});
+
+test("a home that is named and empty is no home, for the settings and for the build alike", (t) => {
+  // The counters module already reads `HOME=""` as no home. Read as one here,
+  // it fell to the process's own home and read the real settings file.
+  assert.deepEqual(settingsFor({ HOME: "", USERPROFILE: "" }), {});
+  assert.equal(cliPath({ HOME: "", USERPROFILE: "", PATH: "" }), null);
 });
 
 // --- whether the thing this plugin mirrors is still there ---------------------
@@ -127,7 +153,7 @@ test("a launcher script on PATH is not read as the build", (t) => {
 
   assert.equal(cliPath({ PATH: bin, HOME: dir }), null, "a shim is not evidence of anything");
   assert.deepEqual(drift({ cli: cliPath({ PATH: bin, HOME: dir }) }), { checked: false, missing: [], reason: null });
-  assert.deepEqual(drift({ cli: join(bin, "claude") }), { checked: true, missing: [], reason: null }, "and read directly it is still not a drift");
+  assert.deepEqual(drift({ cli: join(bin, "claude") }), { checked: false, missing: [], reason: null }, "and read directly it is no evidence either way");
 });
 
 test("the build a version-managed install keeps is found when only a shim is on PATH", (t) => {
@@ -163,9 +189,11 @@ test("a version directory holding names that are not versions still answers, old
 });
 
 test("a build too small to be one is treated as no build, never as a drifted one", (t) => {
+  // Kept as "checked", the memoiser would remember a launcher as a build that
+  // is fine, under a key the launcher does not move.
   const tree = installed(t, { bundle: "" });
 
-  assert.deepEqual(drift({ cli: tree.cli }), { checked: true, missing: [], reason: null });
+  assert.deepEqual(drift({ cli: tree.cli }), { checked: false, missing: [], reason: null });
 });
 
 // --- the build this was calibrated against ------------------------------------
@@ -242,6 +270,20 @@ test("a build whose gate stopped requiring xhigh is a build this no longer descr
   const tree = installed(t, { bundle: `function Mae(e,t,r){return r===!0&&ZL()}\n${MARKERS.join("\n")}` });
 
   assert.deepEqual(drift({ cli: tree.cli }).missing, [GATE_SHAPE]);
+});
+
+test("the gate is found however a build spells true, quotes the string, or calls its helper", (t) => {
+  // `r===!0`, `"xhigh"` and `ZL()` are one minifier's spelling. A spelling is
+  // not a drift, and a drift reported on one nags every session or, under
+  // strict, switches the plugin off on a build whose gate still holds.
+  for (const gate of [
+    `function Mae(e,t,r){return r===true&&ZL()&&zZ(e,t)==='xhigh'}`,
+    `function Mae(e,t,r){return r===!0&&ZL(e)&&zZ(e,t)==="xhigh"}`,
+    `function Mae(e,t,r){return r===!0&&ZL?.()&&zZ(e,t)==="xhigh"}`,
+  ]) {
+    const tree = installed(t, { bundle: `${gate}\n${MARKERS.join("\n")}` });
+    assert.deepEqual(drift({ cli: tree.cli }).missing, [], gate);
+  }
 });
 
 test("the installed build still carries that shape", (t) => {

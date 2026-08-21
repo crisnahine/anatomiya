@@ -68,6 +68,35 @@ restore.
   timestamp, which a rollback also gets right. And the read of this plugin's own state refuses a
   link the way its write already did, while the read of a user's `settings.json` still follows one,
   since a dotfiles repository keeps that file behind a link on purpose.
+- A fourth review round, five reviewers against the build itself. The wakeup skip reads a `source`
+  field 2.1.238 declares and does not send outside Anthropic, so the README now says a wakeup is a
+  turn like any other until it arrives. The cadence starts over after a compaction or a `/clear`,
+  as the built-in's does, rather than leaving a compacted session with the refresher alone. The
+  hook goes quiet on `"disableWorkflows": true`, `CLAUDE_CODE_DISABLE_WORKFLOWS` and
+  `CLAUDE_CODE_WORKFLOWS=false`, which the build reads before `enableWorkflows`. The session
+  lines are not repeated on a resume. A fifo at the debug path no longer holds every prompt to the
+  timeout, since writes open non-blocking the way reads did. The gate pattern accepts the spellings
+  a minifier chooses between, the bundle is read once rather than twice, and a file too small to be
+  a build is no evidence either way.
+- `scripts/validate.mjs` was refusing what the loader installs: an object source naming a remote,
+  a prompt-type hook, a bare `.`, and a path that wanders and resolves inside. And it was passing
+  what the loader drops: a hook with no `type` or one it does not know, an object source of a kind
+  it does not know, a `../` spelling that re-enters the repository, a duplicate name behind a
+  remote source, and a link out of the repository under a manifest directory, a declared path or a
+  hook file. It reads the loader's own rules now, checks the exec form's `args`, asks for a file
+  where a hook names one, holds versions to semver, names a manifest with no name as such, and
+  reports a manifest directory that is a file instead of throwing over it. The module that reads
+  the build reads a home named and empty the way the counters do, and a session already quiet
+  reads no build under strict.
+- Tests no longer read the checkout's own `.claude/settings.json` through the process's working
+  directory, no longer leave a fixed-name directory under the shared temporary one, no longer patch
+  `process.stdout`, and the symlinked-state test holds a count behind the link, so it fails without
+  the arm it pins.
+
+### Security
+
+- CodeQL scans what ships: `test/**` is outside the scan, since the remaining alerts traced the
+  suite's own `mkdtempSync` fixtures into the plugin's reader (A32).
 
 ## [0.2.8] - 2026-08-21
 

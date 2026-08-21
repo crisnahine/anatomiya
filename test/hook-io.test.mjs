@@ -4,25 +4,17 @@ import assert from "node:assert/strict";
 import { closeSync, mkdtempSync, openSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 
 import { needsPosixSpecialFiles, needsSymlinks } from "./platform.mjs";
-import { parsePayload, readIfFile, readOwnFile, readStdin, respond } from "../ultracode-anywhere/hooks/hook-io.mjs";
+import { parsePayload, readIfFile, readOwnFile, readStdin } from "../ultracode-anywhere/hooks/hook-io.mjs";
 
-/** What `respond` wrote, with stdout captured for the length of one call. */
+const HOOK_IO = new URL("../ultracode-anywhere/hooks/hook-io.mjs", import.meta.url).href;
+
+/** What `respond` writes, read off a process of its own, since it writes to stdout. */
 function said(event, context) {
-  const written = [];
-  const write = process.stdout.write;
-  process.stdout.write = (chunk) => {
-    written.push(String(chunk));
-    return true;
-  };
-  try {
-    respond(event, context);
-  } finally {
-    process.stdout.write = write;
-  }
-  return written.join("");
+  const script = `import { respond } from ${JSON.stringify(HOOK_IO)}; respond(${JSON.stringify(event)}, ${JSON.stringify(context)});`;
+  return spawnSync(process.execPath, ["--input-type=module", "-e", script], { encoding: "utf8" }).stdout;
 }
 
 test("a payload that will not parse reads as an empty one rather than throwing", () => {

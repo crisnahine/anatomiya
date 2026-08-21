@@ -8,21 +8,42 @@
  * exists: a directory with no manifest in it installs as nothing, and a hook
  * naming a file its plugin does not ship loads nothing.
  */
-import { readFileSync, readdirSync, existsSync, realpathSync } from "node:fs";
-import { join, dirname, relative, resolve, sep } from "node:path";
+import { readFileSync, readdirSync, existsSync, realpathSync, statSync } from "node:fs";
+import { join, dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const MANIFESTS = ["plugin.json", "marketplace.json"];
 
+/** The kinds of remote an object source may name, read out of the loader's own schema. */
+const REMOTE_KINDS = new Set(["npm", "github", "url", "git-subdir", "archive"]);
+
+/** The hook kinds the loader accepts, each a literal `type` it reads before anything else. */
+const HOOK_KINDS = new Set(["command", "prompt", "agent", "http", "mcp_tool"]);
+
+/** Semver as semver.org spells it: no leading zeros, pre-release and build as dotted words. */
+const SEMVER =
+  /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$/;
+
 const isObject = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
+
+/** A value as a sentence can carry it: a string as it is, anything else as JSON. */
+const shown = (v) => (typeof v === "string" ? v.replace(/\r?\n/g, "\\n") : JSON.stringify(v));
+
+/**
+ * Whether a path relative to its root steps out of it. `..cmds` is a name and
+ * `../x` is a step, and a prefix test read both as the step; on Windows a
+ * path on another drive comes back absolute rather than dotted.
+ */
+const escapes = (rel) => rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel);
 
 /**
  * Whether a path inside the repository is a link to somewhere outside it. The
- * containment check above normalises `..` and knows nothing about links.
+ * containment check on the spelled path normalises `..` and knows nothing
+ * about links.
  */
 function outsideByLink(root, path) {
   try {
-    return relative(realpathSync(root), realpathSync(path)).startsWith("..");
+    return escapes(relative(realpathSync(root), realpathSync(path)));
   } catch {
     return false;
   }
@@ -58,9 +79,21 @@ export function validate(root) {
     return value;
   };
 
-  if (!existsSync(dir)) problems.push(".claude-plugin/ is missing");
+  // A manifest directory that is a file installs as nothing, and reading it
+  // threw past every sentence collected so far.
+  const readDir = (path, at) => {
+    try {
+      return readdirSync(path);
+    } catch (err) {
+      problems.push(err?.code === "ENOTDIR" ? `${at} is not a directory` : `${at}: ${err?.code ?? err?.message}`);
+      return null;
+    }
+  };
 
-  const entries = existsSync(dir) ? readdirSync(dir) : [];
+  if (!existsSync(dir)) problems.push(".claude-plugin/ is missing");
+  else if (outsideByLink(root, dir)) problems.push(".claude-plugin is a link out of the repository");
+
+  const entries = existsSync(dir) ? (readDir(dir, ".claude-plugin") ?? []) : [];
   for (const name of entries) {
     if (!MANIFESTS.includes(name)) {
       problems.push(`.claude-plugin/${name} is not a manifest; manifests only in that directory`);
@@ -109,31 +142,44 @@ export function validate(root) {
         continue;
       }
       if (!entry.name) continue;
-      if (typeof entry.source !== "string" || !entry.source.startsWith(".")) {
-        // A remote source is somebody else's repository to validate. An absolute
-        // path is neither that nor a path in this one: it resolves on the
-        // machine it was written on and nowhere else.
-        // A remote source is somebody else's repository to validate. A drive
-        // letter is not a scheme, whatever it looks like, and a bare relative
-        // path is a path this reads differently from the loader.
-        const source = typeof entry.source === "string" ? entry.source : "";
-        if (/^[a-z][a-z0-9+.-]+:/i.test(source) && !/^[a-z]:[\\/]/i.test(source)) continue;
-        if (/^(\.\.?[\\/]|[\\/]|[a-z]:[\\/])/i.test(source) || source === "") {
-          problems.push(`marketplace.json ${at} names a source that is not a path in this repository: ${entry.source}`);
-        } else {
-          problems.push(`marketplace.json ${at} has a source that does not start with "./": ${entry.source}`);
-        }
-        continue;
-      }
       if (seen.has(entry.name)) {
         problems.push(`marketplace.json lists ${entry.name} twice`);
         continue;
       }
       seen.add(entry.name);
 
-      const pluginRoot = resolve(root, entry.source);
+      // An object source names a remote by kind, which is somebody else's
+      // repository to validate, as long as the kind is one the loader knows.
+      if (isObject(entry.source)) {
+        const kind = entry.source.source;
+        if (typeof kind !== "string") problems.push(`marketplace.json ${at} names a source with no kind`);
+        else if (!REMOTE_KINDS.has(kind)) problems.push(`marketplace.json ${at} names a source of kind ${JSON.stringify(kind)}, which the loader does not know`);
+        continue;
+      }
+
+      // The loader reads a bare "." as "./" before anything else does, and
+      // refuses any other source that does not start with "./", a "../"
+      // spelling included, even one that re-enters the repository. What starts
+      // with "./" may wander as long as it resolves inside: the install path
+      // is a traversal guard, not a ban on "..".
+      const spelled = entry.source === "." ? "./" : entry.source;
+      if (typeof spelled !== "string" || !spelled.startsWith("./")) {
+        // A remote source is somebody else's repository to validate. A drive
+        // letter is not a scheme, whatever it looks like, and an absolute path
+        // resolves on the machine it was written on and nowhere else.
+        const source = typeof spelled === "string" ? spelled : "";
+        if (/^[a-z][a-z0-9+.-]+:/i.test(source) && !/^[a-z]:[\\/]/i.test(source)) continue;
+        if (/^([\\/]|[a-z]:[\\/])/i.test(source) || source === "") {
+          problems.push(`marketplace.json ${at} names a source that is not a path in this repository: ${shown(entry.source)}`);
+        } else {
+          problems.push(`marketplace.json ${at} has a source that does not start with "./": ${entry.source}`);
+        }
+        continue;
+      }
+
+      const pluginRoot = resolve(root, spelled);
       const inside = relative(root, pluginRoot);
-      if (inside.startsWith("..") || outsideByLink(root, pluginRoot)) {
+      if (escapes(inside) || outsideByLink(root, pluginRoot)) {
         problems.push(`marketplace.json entry ${entry.name} points outside the repository: ${entry.source}`);
         continue;
       }
@@ -144,7 +190,13 @@ export function validate(root) {
 
       const ownDir = join(pluginRoot, ".claude-plugin");
       const alreadyRead = pluginRoot === resolve(root);
-      for (const name of !alreadyRead && existsSync(ownDir) ? readdirSync(ownDir) : []) {
+      if (!alreadyRead && existsSync(ownDir) && outsideByLink(root, ownDir)) {
+        problems.push(`${label(root, ownDir)} is a link out of the repository`);
+        continue;
+      }
+      const ownEntries = !alreadyRead && existsSync(ownDir) ? readDir(ownDir, label(root, ownDir)) : [];
+      if (ownEntries === null) continue;
+      for (const name of ownEntries) {
         if (!MANIFESTS.includes(name)) {
           problems.push(`${label(root, join(ownDir, name))} is not a manifest; manifests only in that directory`);
         }
@@ -157,7 +209,7 @@ export function validate(root) {
       }
       const own = pluginRoot === resolve(root) ? plugin : readJson(manifest);
       if (!own) continue;
-      if (own.name !== entry.name) {
+      if (own.name && own.name !== entry.name) {
         problems.push(`marketplace.json entry ${entry.name} points at a plugin named "${own.name}"`);
       }
       if (pluginRoot === resolve(root)) continue;
@@ -184,7 +236,7 @@ function declaredPathProblems(manifest, pluginRoot, at) {
       if (typeof declared !== "string" || !declared.startsWith(".")) continue;
       const where = Array.isArray(value) ? `${key}[${i}]` : key;
       const abs = resolve(pluginRoot, declared);
-      if (relative(pluginRoot, abs).startsWith("..")) {
+      if (escapes(relative(pluginRoot, abs)) || outsideByLink(pluginRoot, abs)) {
         problems.push(`${at} ${where} points outside the plugin: ${declared}`);
       } else if (!existsSync(abs)) {
         problems.push(`${at} ${where} points at a missing path: ${declared}`);
@@ -200,8 +252,8 @@ function manifestProblems(manifest, at) {
   for (const key of ["name", "version", "description"]) {
     if (!manifest[key]) problems.push(`${at} has no ${key}`);
   }
-  if (manifest.version && !/^\d+\.\d+\.\d+/.test(String(manifest.version))) {
-    problems.push(`${at} version is not semver: ${manifest.version}`);
+  if (manifest.version && !SEMVER.test(String(manifest.version))) {
+    problems.push(`${at} version is not semver: ${shown(String(manifest.version))}`);
   }
   return problems;
 }
@@ -236,14 +288,28 @@ function hookProblems(root, pluginRoot, readJson, { required }) {
       problems.push(`${at} event ${event} is not a list`);
       continue;
     }
-    const commands = groups
-      .flatMap((g) => (Array.isArray(g?.hooks) ? g.hooks : []))
-      .map((h) => h?.command);
-    for (const command of commands) {
-      if (typeof command !== "string" || command.trim() === "") {
+    const hooks = groups.flatMap((g) => (Array.isArray(g?.hooks) ? g.hooks : []));
+    for (const hook of hooks) {
+      // Every kind the loader accepts is a literal `type`, and an entry without
+      // one, or with one it does not know, fails the whole event's load in
+      // silence. Only a command hook runs a file of the plugin's.
+      if (!isObject(hook) || typeof hook.type !== "string" || hook.type === "") {
+        problems.push(`${at} ${event} has a hook with no type, so the loader drops the event`);
+        continue;
+      }
+      if (!HOOK_KINDS.has(hook.type)) {
+        problems.push(`${at} ${event} has a hook of type ${JSON.stringify(hook.type)}, which the loader does not know`);
+        continue;
+      }
+      if (hook.type !== "command") continue;
+      if (typeof hook.command !== "string" || hook.command.trim() === "") {
         problems.push(`${at} ${event} has a hook with no command`);
         continue;
       }
+      // The exec form names its files in `args`, one per element, and the
+      // shell form in `command`; both read as one line here.
+      const args = Array.isArray(hook.args) ? hook.args.filter((a) => typeof a === "string") : [];
+      const command = [hook.command, ...args.map((a) => (a.includes(" ") ? `"${a}"` : a))].join(" ");
       if (!command.includes("${CLAUDE_PLUGIN_ROOT}")) {
         problems.push(`${at} ${event} runs ${command}, which names nothing in this plugin`);
         continue;
@@ -254,15 +320,25 @@ function hookProblems(root, pluginRoot, readJson, { required }) {
       // plugin root on its own, which names no file to check.
       for (const [, , quoted, bare] of command.matchAll(/(["'])\$\{CLAUDE_PLUGIN_ROOT\}\/([^"']+)\1|\$\{CLAUDE_PLUGIN_ROOT\}\/([^"'\s]+)/g)) {
         const named = quoted ?? bare;
-        if (relative(pluginRoot, resolve(pluginRoot, named)).startsWith("..")) {
+        const file = join(pluginRoot, named);
+        if (escapes(relative(pluginRoot, resolve(pluginRoot, named))) || outsideByLink(pluginRoot, file)) {
           problems.push(`${at} ${event} runs ${named}, which is outside that plugin`);
-        } else if (!existsSync(join(pluginRoot, named))) {
+        } else if (!isFile(file)) {
           problems.push(`${at} ${event} runs ${named}, which that plugin does not ship`);
         }
       }
     }
   }
   return problems;
+}
+
+/** A directory exists and runs nothing, so existence is not the question. */
+function isFile(path) {
+  try {
+    return statSync(path).isFile();
+  } catch {
+    return false;
+  }
 }
 
 function main() {
