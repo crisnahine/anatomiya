@@ -162,15 +162,17 @@ every turn in between says nothing, which is the shape of the thing being mirror
 schedule, poll and system wakeups, which are turns the user did not type.
 
 The hook runs through `node`, which Claude Code brings with it, so it fires the same on a machine
-with no shell. It counts a session's turns in a file named for that session under the temporary
-directory, its own per user, and forgets counters a week after their last turn. Anything it cannot
+with no shell. It counts a session's turns in a file named for that session under
+`~/.claude/ultracode-anywhere/` (or whatever `CLAUDE_CONFIG_DIR` names), beside the rest of this
+account's own Claude Code state, and forgets counters a week after their last turn. Anything it cannot
 read or write costs the session its cadence, not its reminder: the turn still gets the full text,
 which is the safe direction to fail in. A payload naming no session reads as a first turn every
 time, for the same reason.
 
 The state directory is the hook's alone. It is refused unless it is a real directory this account
-owns with no access for anyone else, since a predictable path under `/tmp` is one another account
-can create first. Inside it, a file is only removed when its name is a plain word and its contents
+owns with no access for anyone else. That check was written when this state lived under `/tmp`,
+where a predictable path is one another account can create first; the state moved out of there, and
+the check stayed for the switch below and for a machine with no home directory to write into. Inside it, a file is only removed when its name is a plain word and its contents
 are a count, and a file standing where a counter would go, holding anything else, is left alone
 rather than written over. Two dotfiles live there too and are never swept: what the build check
 last answered, and whether the cap line has been said. A directory it refuses costs the cadence,
@@ -191,7 +193,7 @@ and the cap line then comes back every session rather than once.
   carries what this plugin mirrors.
 - `ULTRACODE_ANYWHERE_CAP_NOTICE=0 claude` stops the one-time line about the concurrent-subagent
   cap.
-- `ULTRACODE_ANYWHERE_STATE=/some/dir claude` keeps the turn counters somewhere else. The
-  directory is the hook's alone, and it has to be one this account owns with mode `0700`, which is
-  what the hook creates for itself. A directory made by hand under the usual umask is `0755` and is
+- `ULTRACODE_ANYWHERE_STATE=/some/dir claude` keeps the turn counters somewhere other than
+  `~/.claude/ultracode-anywhere/`. The directory is the hook's alone, and it has to be one this
+  account owns with mode `0700`, which is what the hook creates for itself. A directory made by hand under the usual umask is `0755` and is
   refused, which costs the cadence: every turn then carries the full text.

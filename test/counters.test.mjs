@@ -60,15 +60,6 @@ test("sweeping a directory that is not there is not an error", () => {
   assert.equal(sweep(join(tmpdir(), "ultracode-anywhere-absent-directory")), 0);
 });
 
-test("the state directory belongs to one user, not to everyone on the machine", () => {
-  const shared = stateDirFor({});
-  const mine = stateDirFor({ ULTRACODE_ANYWHERE_STATE: "/somewhere/else" });
-
-  assert.equal(mine, "/somewhere/else");
-  assert.match(shared, /ultracode-anywhere/);
-  if (process.platform !== "win32") assert.match(shared, /ultracode-anywhere-\d+$/);
-});
-
 test("a state directory that is a symlink is refused, so nothing is written or deleted through it", needsSymlinks, (t) => {
   // A predictable path under the temporary directory is a path another account
   // can create first. Followed, the counter write truncates whatever the link
@@ -171,6 +162,24 @@ test("the state directory a mark or a counter refuses is one whose own mode lets
 
   assert.equal(ownState(dir), false);
   assert.equal(stateDirFor({ ULTRACODE_ANYWHERE_STATE: dir }), dir);
+});
+
+test("state lives in this account's own configuration directory, not in the shared temporary one", () => {
+  // Every guard here exists because the old path sat under a directory every
+  // account on the machine can write to. Keeping state out of it removes the
+  // class rather than defending against it, and the guards stay for the switch
+  // below, which a user can still point anywhere.
+  assert.equal(stateDirFor({ CLAUDE_CONFIG_DIR: "/somewhere/config" }), join("/somewhere/config", "ultracode-anywhere"));
+  assert.equal(stateDirFor({ HOME: "/home/someone" }), join("/home/someone", ".claude", "ultracode-anywhere"));
+  assert.equal(stateDirFor({ ULTRACODE_ANYWHERE_STATE: "/chosen" }), "/chosen");
+  assert.doesNotMatch(stateDirFor({ HOME: "/home/someone" }), /tmp/i);
+});
+
+test("a machine with no home to write into still has somewhere of its own", () => {
+  const nowhere = stateDirFor({ HOME: "", USERPROFILE: "" });
+
+  assert.match(nowhere, /ultracode-anywhere/);
+  if (process.platform !== "win32") assert.match(nowhere, /ultracode-anywhere-\d+$/, "and it is this user's own");
 });
 
 // --- an answer worth keeping between turns ------------------------------------
