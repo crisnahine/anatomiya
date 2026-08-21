@@ -311,7 +311,7 @@ test("the summary carries every fact the scan prints", () => {
     // is said once, when the settings actually moved. The refusal beside it is
     // the other outcome, and a scan that neither installed nor refused says
     // nothing about either.
-    hookInstalled: false,
+    hookRemoved: false,
     hookRefused: null,
     truncated: false,
     orphaned: 0,
