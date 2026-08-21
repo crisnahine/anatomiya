@@ -12,7 +12,7 @@
 import { closeSync, constants, lstatSync, mkdirSync, openSync, readdirSync, rmSync, writeSync } from "node:fs";
 
 import { readOwnFile } from "./hook-io.mjs";
-import { tmpdir, userInfo } from "node:os";
+import { homedir, tmpdir, userInfo } from "node:os";
 import { join } from "node:path";
 
 /** A counter older than this has outlived the session that wrote it. */
@@ -39,9 +39,21 @@ const MARK_NAME = /^[A-Za-z0-9_-]{1,64}$/;
 /** An answer this long is not one worth keeping: it is read back with the same bound. */
 const MOST_KEPT = 4096;
 
-/** Where the counters live: this user's own directory, not one shared with every account on the box. */
+/**
+ * Where the counters live: beside the rest of this account's Claude Code state.
+ *
+ * Not the temporary directory. Every guard below exists because a predictable
+ * path under a directory every account can write to is one another account can
+ * create first, and keeping state out of it removes that class rather than
+ * defending against it. The guards stay for the switch, which a user can point
+ * anywhere, and for the last resort below on a machine with no home.
+ */
 export function stateDirFor(env = process.env) {
   if (env.ULTRACODE_ANYWHERE_STATE) return env.ULTRACODE_ANYWHERE_STATE;
+
+  const config = env.CLAUDE_CONFIG_DIR || (homeOf(env) && join(homeOf(env), ".claude"));
+  if (config) return join(config, "ultracode-anywhere");
+
   let who = "";
   try {
     who = String(userInfo().uid ?? "");
@@ -49,6 +61,18 @@ export function stateDirFor(env = process.env) {
     who = "";
   }
   return join(tmpdir(), `ultracode-anywhere${who === "" ? "" : `-${who}`}`);
+}
+
+/** The home this account keeps its configuration in, and nothing when it has none. */
+function homeOf(env) {
+  const named = env.HOME || env.USERPROFILE;
+  if (named) return named;
+  if ("HOME" in env || "USERPROFILE" in env) return "";
+  try {
+    return homedir();
+  } catch {
+    return "";
+  }
 }
 
 /** Whether the state directory is one this account owns and no other account can write to. */
