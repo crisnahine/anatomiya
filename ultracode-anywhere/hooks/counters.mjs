@@ -19,9 +19,10 @@ import { join } from "node:path";
 const KEEP_DAYS = 7;
 
 /**
- * Counters one sweep will look at. A sweep runs on a turn, and a directory
- * holding fifty thousand of them read two seconds of a five second budget;
- * what it does not reach this turn it reaches on the next.
+ * Entries one sweep will look at, whether or not it removes them. A sweep runs
+ * on a turn, and a directory holding fifty thousand counters too fresh to
+ * remove read two seconds of a five second budget looking at all of them; what
+ * this does not reach on one turn it reaches on the next.
  */
 export const SWEEP_MOST = 500;
 
@@ -34,6 +35,9 @@ const COUNTER_NAME = /^[A-Za-z0-9_-]{1,128}$/;
 
 /** A mark and a cache share the dotfile namespace, and neither may leave it. */
 const MARK_NAME = /^[A-Za-z0-9_-]{1,64}$/;
+
+/** An answer this long is not one worth keeping: it is read back with the same bound. */
+const MOST_KEPT = 4096;
 
 /** Where the counters live: this user's own directory, not one shared with every account on the box. */
 export function stateDirFor(env = process.env) {
@@ -132,7 +136,10 @@ export function firstTime(dir, mark) {
   if (!MARK_NAME.test(mark)) return true;
   const path = join(dir, `.${mark}`);
   if (!ownState(dir)) return true;
-  if (readIfFile(path, 64) !== "") return false;
+  // Anything standing there is a mark already made: written with O_EXCL, a
+  // crash between the create and the write leaves a file of no bytes, and read
+  // as "never said" the line it guards comes back every session for ever.
+  if (standsThere(path)) return false;
   {
     try {
       write(path, "said\n", constants.O_EXCL);
@@ -159,13 +166,14 @@ export function cached(dir, name, key, compute) {
   const usable = MARK_NAME.test(name) && ownState(dir);
 
   if (usable) {
-    const [stored, ...rest] = readIfFile(path, 4096).split("\n");
+    const [stored, ...rest] = readIfFile(path, MOST_KEPT * 2).split("\n");
     if (stored && stored === key) return rest.join("\n") || null;
   }
 
   let answer;
   try {
     answer = compute();
+    if (String(answer ?? "").length > MOST_KEPT) return answer;
   } catch (err) {
     // A compute that refuses to answer is one whose answer is not worth
     // keeping, and the caller asked for the refusal rather than a value.
@@ -236,9 +244,11 @@ export function sweep(dir, now = Date.now()) {
   } catch {
     return 0;
   }
+  let looked = 0;
   for (const entry of entries) {
-    if (removed >= SWEEP_MOST) break;
+    if (looked >= SWEEP_MOST) break;
     if (!COUNTER_NAME.test(entry)) continue;
+    looked++;
     const path = join(dir, entry);
     try {
       if (!lstatSync(path).isFile()) continue;

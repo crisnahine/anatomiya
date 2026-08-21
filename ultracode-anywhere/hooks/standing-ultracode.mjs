@@ -9,7 +9,6 @@
  * machine the plugin is installed on, Windows included, where a bare `.sh` has
  * no interpreter to run it.
  */
-import { fileURLToPath } from "node:url";
 
 import { appendLine, cached, nextTurn, stateDirFor, sweep } from "./counters.mjs";
 import { invokedAs, parsePayload, readStdin, respond } from "./hook-io.mjs";
@@ -95,7 +94,7 @@ export function run({ stdin = "", env = process.env, state = stateDirFor(env) } 
   // A session that already resolves to xhigh gets the built-in reminder, and one
   // with no Workflow tool has nothing to be pointed at. Either way this hook has
   // nothing to add, and saying it anyway is tokens for nothing.
-  const cwd = typeof payload.cwd === "string" ? payload.cwd : process.cwd();
+  const cwd = typeof payload.cwd === "string" ? payload.cwd : here();
   const conflict = conflictIn(settingsFor(env, cwd));
   const moved = env.ULTRACODE_ANYWHERE_STRICT === "1" ? movedBuild(env, state) : null;
 
@@ -107,6 +106,15 @@ export function run({ stdin = "", env = process.env, state = stateDirFor(env) } 
   const turn = session ? nextTurn(state, session) : 1;
   if (session && onCadence(turn, cadence.every)) sweep(state);
   return contextFor(turn, cadence);
+}
+
+/** This process's own directory, and nothing when it has been removed under it. */
+function here() {
+  try {
+    return process.cwd();
+  } catch {
+    return "";
+  }
 }
 
 /**
@@ -126,6 +134,14 @@ function log(path, stdin, quiet) {
   appendLine(path, `=== ${new Date().toISOString()}${quiet ? ` quiet: ${quiet}` : ""}\n${stdin}\n`);
 }
 
+// The hook answers for itself, whatever went wrong and wherever it came from. A
+// non-zero exit interrupts the run it exists to help, and it would do it on
+// every prompt for the life of that session, so the guarantee belongs at the
+// boundary rather than at each site that might throw (A24).
 if (invokedAs(import.meta.url)) {
-  respond("UserPromptSubmit", run({ stdin: readStdin() }));
+  try {
+    respond("UserPromptSubmit", run({ stdin: readStdin() }));
+  } catch {
+    // A turn that says nothing costs the mode; a turn that fails costs the run.
+  }
 }

@@ -274,3 +274,39 @@ test("a sweep of a directory holding more than it should stops rather than readi
 
   assert.equal(sweep(dir), SWEEP_MOST, "one turn's worth, and the rest on the turns after");
 });
+
+test("a sweep reads a bounded number of entries, not every file in the directory", (t) => {
+  // The cap is on what it looks at, not on what it removes: a directory full of
+  // counters that are all too fresh to remove read two seconds of a five second
+  // budget while removing nothing.
+  const dir = stateDir(t);
+  for (let i = 0; i < 700; i++) writeFileSync(join(dir, `fresh-${i}`), "3");
+  const longAgo = (Date.now() - 30 * 86_400_000) / 1000;
+  writeFileSync(join(dir, "zz-old"), "3");
+  utimesSync(join(dir, "zz-old"), longAgo, longAgo);
+
+  assert.equal(SWEEP_MOST, 500);
+  assert.equal(sweep(dir), 0, "the old one sits past the bound, and the next turn reaches it");
+  assert.equal(readdirSync(dir).length, 701);
+});
+
+test("a mark file of no bytes is one already made, not one to make again forever", (t) => {
+  // Written with O_EXCL, so a crash between the create and the write leaves an
+  // empty file: read as "never said", the line it guards came back every
+  // session and the write that would stop it always failed.
+  const dir = stateDir(t);
+  writeFileSync(join(dir, ".cap-said"), "");
+
+  assert.equal(firstTime(dir, "cap-said"), false);
+});
+
+test("an answer larger than the cache reads back is not written at all", (t) => {
+  const dir = stateDir(t);
+  let runs = 0;
+  const long = "x".repeat(8000);
+
+  assert.equal(cached(dir, "big", "k", () => { runs++; return long; }), long);
+  assert.equal(cached(dir, "big", "k", () => { runs++; return long; }), long);
+  assert.equal(runs, 2, "it is computed again rather than half-read back");
+  assert.deepEqual(readdirSync(dir), [], "and nothing is left behind that cannot be read");
+});

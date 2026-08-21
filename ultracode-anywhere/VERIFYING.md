@@ -19,17 +19,22 @@ check runs. It proves the names survived, not that the gate around them still re
 
 ## 2. The gate is still a conjunct
 
-Find the predicate in the build and read it:
+Step 1 checks the shape mechanically. Read it yourself too, since a regex knows nothing about
+meaning:
 
 ```sh
-strings "$(node -e 'import("./hooks/upstream.mjs").then(m=>console.log(m.cliPath()))')" \
-  | grep -n 'ultra_effort_enter' | head
+grep -a -o 'function [A-Za-z_$]*([^)]*){return [^}]*"xhigh"[^}]*}' \
+  "$(node -e 'import("./hooks/upstream.mjs").then(m=>console.log(m.cliPath()))')" | head
 ```
 
 What has to be true: the reminder is emitted only when the resolved effort is `xhigh`, and that
 `xhigh` is one conjunct of the condition rather than something the reminder text itself sets. If
 the reminder has become the thing that raises effort, this plugin is doing more than it claims and
 the README has to change.
+
+While you are there, the cap: `grep -a -o '.\{240\}Concurrent subagent limit reached'` shows
+whether the same predicate still returns before the refusal, which is what the README says lifts
+the cap for native ultracode and not here.
 
 ## 3. The Workflow tool still carries no effort term
 

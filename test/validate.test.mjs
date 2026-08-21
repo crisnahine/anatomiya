@@ -442,3 +442,69 @@ test("a quoted path with a space in it is the path, not its first word", (t) => 
 
   assert.deepEqual(validate(dir), []);
 });
+
+test("an unquoted path followed by a quoted argument is still just the path", (t) => {
+  // The lazy quoted alternative won whenever a quote appeared anywhere later in
+  // the command, so a flag with a quoted value read as part of the filename and
+  // failed the build on a manifest that was fine.
+  const dir = marketplace(t);
+  const commands = [
+    'node ${CLAUDE_PLUGIN_ROOT}/hooks/run.mjs --say "hello"',
+    'node ${CLAUDE_PLUGIN_ROOT}/hooks/run.mjs --json {"a":1}',
+    "node ${CLAUDE_PLUGIN_ROOT}/hooks/run.mjs # don't",
+  ];
+
+  for (const command of commands) {
+    writeFileSync(
+      join(dir, "second", "hooks", "hooks.json"),
+      JSON.stringify({ hooks: { UserPromptSubmit: [{ hooks: [{ command }] }] } }),
+    );
+    assert.deepEqual(validate(dir), [], command);
+  }
+});
+
+test("a Windows absolute path is not read as a remote source", (t) => {
+  const dir = marketplace(t);
+  const path = join(dir, ".claude-plugin", "marketplace.json");
+  const manifest = JSON.parse(readFileSync(path, "utf8"));
+  manifest.plugins[1].source = "C:\\plugins\\second";
+  writeFileSync(path, JSON.stringify(manifest));
+
+  assert.deepEqual(validate(dir), [
+    "marketplace.json entry second names a source that is not a path in this repository: C:\\plugins\\second",
+  ]);
+});
+
+test("a source that names a directory without saying it is one is told what is missing", (t) => {
+  const dir = marketplace(t);
+  const path = join(dir, ".claude-plugin", "marketplace.json");
+  const manifest = JSON.parse(readFileSync(path, "utf8"));
+  manifest.plugins[1].source = "second";
+  writeFileSync(path, JSON.stringify(manifest));
+
+  assert.deepEqual(validate(dir), [
+    'marketplace.json entry second has a source that does not start with "./": second',
+  ]);
+});
+
+test("a listed plugin's manifest directory holds manifests and nothing else, like the root's", (t) => {
+  const dir = marketplace(t);
+  writeFileSync(join(dir, "second", ".claude-plugin", "notes.md"), "");
+
+  assert.deepEqual(validate(dir), [
+    "second/.claude-plugin/notes.md is not a manifest; manifests only in that directory",
+  ]);
+});
+
+test("the check runs when it is reached through a symlinked path", needsSymlinks, (t) => {
+  // A validator that silently passes is worse than one that fails: this is CI's
+  // only manifest gate, and the same equality made both plugin hooks no-ops.
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-linked-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  symlinkSync(ROOT, join(dir, "repo"));
+
+  const run = spawnSync(process.execPath, [join(dir, "repo", "scripts", "validate.mjs")], { encoding: "utf8" });
+
+  assert.equal(run.status, 0, run.stderr);
+  assert.match(run.stdout, /ok/);
+});

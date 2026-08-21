@@ -30,13 +30,21 @@ reading it does not report itself as running at xhigh. If depth is what you are 
 `effortLevel`; this plugin is orthogonal to it, and stacking the two is the combination it exists
 for.
 
-It does not change the concurrent-subagent cap, and no reminder can: the cap is read where the
-subagent is spawned, not where the model is instructed. It defaults to 20. Whether native ultracode
-lifts it is not something this plugin can show you, and it does not claim it: the shipped build is
-a compiled binary, so the check below can read strings out of it and nothing around them. What is
-true either way is that a workflow refused at 20 is fixed by `settings.json` with
-`"env": { "CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS": "40" }`, and the first session on a machine that
-has not set it says so once.
+It does not lift the concurrent-subagent cap, and no reminder can. Native ultracode does lift it,
+which the build says in as many words:
+
+```js
+let vt = kbp(); if (l.taskRegistry.getConcurrentSubagents() < vt) return;
+...
+if (Mae(l.rootToolSurface.mainLoopModel, NR(Zt), Zt.ultracode)) return;
+... "Concurrent subagent limit reached"
+function kbp() { return V.CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS ?? ZmS }   // ZmS = 20
+```
+
+The refusal returns early when that predicate holds, and the predicate reads the session's own
+`ultracode` flag, which nothing a hook writes can set. So the cap stays at 20 here. Raise it
+yourself in `settings.json` with `"env": { "CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS": "40" }`; the
+first session on a machine that has not says so once.
 
 Workflow subagents inherit the session effort, so a medium session is medium all the way down.
 The reminder tells the model to pass `opts.effort` on the stages that need the depth, which is the
@@ -69,7 +77,7 @@ Four deliberate differences, each with a reason:
 |---|---|---|
 | what the text asks for | the Workflow tool on every substantive task | the Workflow tool where the scale or risk earns it, with a floor under it |
 | effort | resolves to xhigh | unchanged, whatever `effortLevel` says |
-| subagent cap | not something this can read | not changed by this plugin |
+| subagent cap | lifted, by the same predicate | left at 20, since no reminder reaches it |
 | upstream contract | a supported mode | four strings read off one build, re-checked by hand |
 
 The wording is the one worth arguing about. Native says every substantive task; this says the work
@@ -111,12 +119,23 @@ otherwise refuses to act without. That last one is the contract this plugin sati
 the reminder; reworded upstream, the reminder still arrives and means nothing. If a build stops
 carrying one, the session opens with a line naming what went missing.
 
-Three of the four are names, one is a sentence, and none of them is the gate itself. The shipped
-build is a compiled binary: the strings sit in its table with no readable logic around them, which
-is the reason this is a string check and not a gate check. A proximity test was tried and dropped
-on the same evidence, because `xhigh` appears nowhere within 20,000 characters of any of the 14
-`ultra_effort_enter` sites in the build this was read off, so it would have failed on the build it
-was calibrated against.
+Three of those four are names and one is a sentence. The fifth thing it checks is the gate itself,
+as a shape rather than a name: the build ships as a compiled binary but its JavaScript is readable
+inside, and the predicate is one minified function whose names change between builds and whose
+shape does not.
+
+```js
+function Mae(e,t,r){return r===!0&&ZL()&&zZ(e,t)==="xhigh"}
+```
+
+What the premise needs is that `"xhigh"` is a conjunct there rather than something the reminder
+sets, so the check matches a three-argument function returning a flag, a call and an effort
+comparison against `"xhigh"`. A build that stops requiring it is a build this plugin no longer
+describes, whatever names survive.
+
+A proximity test was tried first and dropped on evidence: `xhigh` appears nowhere within 20,000
+characters of any of the 14 `ultra_effort_enter` sites, so it would have failed on the build it was
+calibrated against. Reading the predicate is what replaced it.
 
 Claude Code updates itself, so expect the version line often. A version nobody has checked is not a
 broken one; it is a prompt to work `VERIFYING.md`, which takes a few minutes and is the only thing
@@ -155,7 +174,7 @@ can create first. Inside it, a file is only removed when its name is a plain wor
 are a count, and a file standing where a counter would go, holding anything else, is left alone
 rather than written over. Two dotfiles live there too and are never swept: what the build check
 last answered, and whether the cap line has been said. A directory it refuses costs the cadence,
-and the cap line then comes backevery session rather than once.
+and the cap line then comes back every session rather than once.
 
 ## Switches
 
@@ -166,8 +185,8 @@ and the cap line then comes backevery session rather than once.
   silence.
 - `ULTRACODE_ANYWHERE_FULL=repeat claude` brings the whole text back on the cadence instead of the
   one-line refresher, for a session long enough to lose it.
-- `ULTRACODE_ANYWHERE_DEBUG=/tmp/uc.log claude` logs every fire with its stdin payload, and says
-  when a setting silenced it.
+- `ULTRACODE_ANYWHERE_DEBUG=/tmp/uc.log claude` logs every prompt the hook fires on, its stdin
+  payload, and what silenced it when something did. The session hook writes nothing there.
 - `ULTRACODE_ANYWHERE_STRICT=1 claude` stays quiet for the session on a build that no longer
   carries what this plugin mirrors.
 - `ULTRACODE_ANYWHERE_CAP_NOTICE=0 claude` stops the one-time line about the concurrent-subagent
