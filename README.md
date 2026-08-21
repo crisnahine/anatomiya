@@ -235,7 +235,7 @@ files, so the same row states a different sentence in a different repository.
 
 ## What it measures
 
-57 dimensions ship: 27 for JavaScript, 32 reachable in JSX, 25 for Ruby. Each is one claim about
+58 dimensions ship: 28 for JavaScript, 33 reachable in JSX, 25 for Ruby. Each is one claim about
 one area, with a precision marker where the predicate cannot see every site. Among them:
 
 - **Syntax habits**: error handling, `??` vs `||`, `?.` vs `!`, `import type`, hooks, handlers,
@@ -341,7 +341,7 @@ gate's second opinion. The full numbers and their caveats are in [docs/why.md](d
 
 ## Learn more
 
-- [DECISIONS.md](DECISIONS.md) is the build contract: 139 numbered decisions, each with the
+- [DECISIONS.md](DECISIONS.md) is the build contract: 154 numbered decisions, each with the
   measurement or the review finding that forced it. Why a threshold is where it is, why the parser
   runs in child processes, why there is no hook: that is the file.
 - [docs/why.md](docs/why.md) is the longer argument and the full numbers.

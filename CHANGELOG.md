@@ -7,6 +7,104 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.2.6] - 2026-08-21
+
+Twenty-eight reported defects, worked from the issue tracker. The largest single class, and the one
+worth reading first: a predicate that counts a construct whose conforming form does not exist. Eleven
+JavaScript and TypeScript rows and five Ruby ones were asking for code that does not compile or does
+not run, several at MUST-FIX. An overload set has no arrow form. `const x: T` with no initialiser is
+a SyntaxError. An interface inside `declare global` cannot carry a prefix without silently ending the
+merge. `o?.r = 3` is TS2779, `a || b ?? {}` is TS5076, and `x?` is TS1109. A React effect may not
+return null and React says so in its own words. Ruby refuses to raise a class that is not an
+`Exception`, refuses a keyword argument in an index assignment, and refuses a foreign key on a
+polymorphic relation. Sidekiq reaches `perform` through a splat of a JSON array, where a splatted
+Hash is never keywords, and a job that returns instead of raising is acked as successful. Each of
+those is now not a site.
+
+Two gates moved, both measured. The evidence gate may borrow the rest of the repository's record for
+the same dimension when this area's own sample is consistent with it, which is what lets a perfect
+nine-file directory speak about a claim the repository holds at 0.987 across 2,152 sites; a perfect
+small sample of a claim the repository does not hold still stays silent. And the applicability
+share stops growing at three roots, so a construct rarer than a quarter of a 1,531-file directory is
+no longer unstateable however perfect it is.
+
+Three things the check could not see, it now sees: a filename spelling none of the four naming
+classes, a class naming no superclass at all, and a claim whose area holds no slot for it, which is
+answered by the nearest enclosing area that states one. Two it should not have said, it stops
+saying: an omission on a row the gates suppressed, and a directive the forty-line budget had no room
+to print.
+
+The map stops contradicting itself in three places. The module that implements a routing claim is no
+longer listed as an exception to its own rule. An abstract base is no longer asked for the spec it
+can never have, which was the difference between a claim stating and staying silent. And a
+suppressed slot needs a majority the sample can support before it prints the inverse sentence, so
+one repository no longer hands two areas two directly opposed sentences about the same dimension.
+
+A learned naming row now learns over one kind of file, and says which kind in the sentence it
+delivers. A directory of components beside a directory of helpers was learning PascalCase off the
+components and calling every correctly camelCase helper a violation, which was 29 of 55 false
+findings in a 982-commit replay.
+
+One new dimension ships, `hook_per_module`, measured across seven repositories at a 0.2022 spread
+with two of them under the gate. Seven more were proposed and are recorded in the intake table with
+the measurement that refused them.
+
+### Fixed
+
+- Sixteen predicates that counted a construct whose conforming form does not exist, in both engines.
+- `class_base` asked an exception subclass to inherit the area's base, and asked the class the area
+  learned to inherit itself. 37 of that row's 75 violations on a measured repository.
+- A filename spelling none of the four naming classes, and a class naming no superclass at all, were
+  not sites, so the omission every stated claim is really about was the one the check could not see.
+- A dimension whose area holds no slot for it could never be flagged, however clearly the claim was
+  stated one directory up.
+- A directive the 40-line budget had no room to print was still enforced at the top severity, and so
+  was a counts line for a claim the model states by default.
+- The module implementing a routing claim was counted as an exception to its own rule, and the map
+  said so on a line the agent reads every turn.
+- An abstract base was asked for the spec it can never have, which cost the whole claim its evidence.
+- An omission was reported on a row the gates had suppressed, which is a directive out of a count.
+- A learned naming row pooled components with helpers, so a correctly camelCase helper in a component
+  directory was a violation of a convention nobody holds.
+- A suppressed slot printed the inverse sentence off a plurality, so one repository handed two areas
+  two directly opposed sentences about the same dimension.
+- A component that renders through a ternary or an `&&` was not recognised as one, so it stayed in
+  the naming vote and could flip a components directory to camelCase, where the remedy the check
+  asked for was a lowercase component name and a host element.
+- A claim the owning area's own globs never deliver to a path was still reported at MUST-FIX, on
+  every new subdirectory of an area that lists only its own files.
+- A suppressed slot printed a sentence no site in the directory follows, whenever every site took
+  the other side and the sample was small, and the check then reported conforming code as a
+  violation.
+- The truncation notice counted only the directive partition, so an area whose dropped lines were
+  all model-default claims read "all of them counts" while the check enforced them.
+- A file the parser could not read was sorted into a kind by the facts it did not carry, so an
+  unread component drew a MUST-FIX rename one line under the caveat saying it went unchecked.
+- Drift was measured between the pin and the base ref in either direction, so pinning on a branch
+  read the branch's own commits as a map that had moved and capped its own findings. A squash merge
+  is not drift either: the base holds the same bytes the pin does.
+- The check quoted its own sentence rather than the map's, so a narrowed row was reported under the
+  unqualified claim, the one that pools the excluded files back in.
+- A file that gained JSX on the branch had its whole base side skipped, so every pre-existing
+  violation in it was reported as newly introduced, on lines the diff never touched.
+- Only one of the two naming rows excluded components, so the same declaration was still asked for
+  a lowercase name by the other sentence.
+- A mistyped `--base` was answered with a whole-branch review at exit 0, and `--base HEAD` was
+  reported as a base a shallow clone could not fetch.
+- The bare command name defaulted to `scan`, which writes.
+
+### Changed
+
+- The evidence gate may clear on the rest of the repository's record for the same dimension, when
+  this area's own sample is consistent with it. Measured: stated slots on a 2,486-file front end go
+  from 72 to 735, none of them borrowing against a repository rate under 0.90, and the always-loaded
+  bytes fall rather than rise.
+- The applicability share stops growing at three roots, so a construct rarer than a quarter of a
+  1,531-file directory can be stated.
+- The summary says when the type-checked tier ran badly, the check says how far the map has drifted
+  below the cliff that caps severity, the always-loaded overview no longer carries a count that
+  measures the machine, and a first pin counts its areas instead of naming all 127 of them.
+
 ## [0.2.5] - 2026-08-20
 
 0.2.5 is one bug, reported from the field: the plugin does nothing useful in a worktree. It did
@@ -1257,6 +1355,7 @@ which are partial; several listed there are not implemented yet.
 - No claim that this catches defects. Measured across ten repositories, 1 of 317 defect review
   comments was preventable by a conventions map.
 
+[0.2.6]: https://github.com/crisnahine/anatomiya/compare/v0.2.5...v0.2.6
 [0.2.5]: https://github.com/crisnahine/anatomiya/compare/v0.2.4...v0.2.5
 [0.2.4]: https://github.com/crisnahine/anatomiya/compare/v0.2.3...v0.2.4
 [0.2.3]: https://github.com/crisnahine/anatomiya/compare/v0.2.2...v0.2.3

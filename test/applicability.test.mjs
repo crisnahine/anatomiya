@@ -52,9 +52,17 @@ const WITNESSES = {
   module_state_const: {
     lang: "js",
     applicable: [`let a = 1`, `const b = 2`],
-    // A binding in a loop head sits at module level by position and is not
-    // module state.
-    inapplicable: `for (let i = 0; i < 3; i++) { g(i) }`,
+    inapplicable: [
+      // A binding in a loop head sits at module level by position and is not
+      // module state.
+      `for (let i = 0; i < 3; i++) { g(i) }`,
+      // A `let` the file reassigns and one with no initialiser are both
+      // bindings `const` cannot hold, so nobody chose the `let`.
+      `let cache = null
+export function warm() { cache = load() }`,
+      `let container: HTMLDivElement
+container = document.createElement("div")`,
+    ],
   },
   async_error_handling: {
     lang: "js",
@@ -80,9 +88,13 @@ const WITNESSES = {
       `export const a = config.value`,
       `export const a = input.value`,
     ],
-    // The declared blind spot, written as a test rather than as a comment: a
-    // destructured optional carries none of the receiver names.
-    inapplicable: `export function f({ value }) { return value }`,
+    inapplicable: [
+      // The declared blind spot, written as a test rather than as a comment: a
+      // destructured optional carries none of the receiver names.
+      `export function f({ value }) { return value }`,
+      // `options?.retries = 3` is TS2779, so the conforming form does not exist.
+      `function f(options) { options.retries = 3 }`,
+    ],
   },
 
   // --- dimensions-extra.mjs ---
@@ -93,7 +105,12 @@ const WITNESSES = {
     // methods has made no module-level choice. Not a function nested in another
     // function: that file's outer function is itself a site, so it counts one
     // and the nesting is invisible in the total.
-    inapplicable: `export class C { m() { return 1 } }`,
+    inapplicable: [
+      `export class C { m() { return 1 } }`,
+      // An overload set has no arrow form: the signatures attach only to a
+      // declaration, so the implementation carrying them made no choice.
+      `export function f(x: string): string;\nexport function f(x: any): any { return x }`,
+    ],
   },
   explicit_return_type: {
     lang: "js",
@@ -107,14 +124,31 @@ const WITNESSES = {
       `import A from "./a.ts"\nlet x: A`,
       `import * as A from "./a.ts"\nlet x: A.T`,
     ],
-    // Read as a value as well as a type, so which it is cannot be decided here.
-    inapplicable: `import { A } from "./a.ts"\nlet x: A\nexport const y = A`,
+    inapplicable: [
+      // Read as a value as well as a type, so which it is cannot be decided here.
+      `import { A } from "./a.ts"\nlet x: A\nexport const y = A`,
+    ],
   },
   import_extension: {
     lang: "js",
     applicable: [`import { a } from "./a.ts"`, `export { a } from "./a.ts"`],
     // A bare package specifier is not relative and names no file of ours.
     inapplicable: `import { a } from "node:fs"`,
+  },
+  hook_per_module: {
+    lang: "js",
+    // Each shape a hook is declared in, and the count the sentence promises:
+    // the module is one site whether it exports one hook or four.
+    applicable: [
+      { source: `export const useOne = () => 1`, sites: 1 },
+      { source: `export function useTwo() { return 2 }`, sites: 1 },
+      { source: `export const useA = () => 1\nexport const useB = () => 2`, sites: 1 },
+    ],
+    inapplicable: [
+      // Not a hook, and not exported.
+      `export const listings = () => 1`,
+      `const useLocal = () => 1`,
+    ],
   },
   nullish_default: {
     lang: "js",
@@ -124,14 +158,23 @@ const WITNESSES = {
       `export const a = b ?? []`,
       `export const a = b ?? {}`,
     ],
-    // A call on the right is a fallback branch, where the two operators are not
-    // interchangeable.
-    inapplicable: `export const a = b || c()`,
+    inapplicable: [
+      // A call on the right is a fallback branch, where the two operators are
+      // not interchangeable.
+      `export const a = b || c()`,
+      // Nor are they in a mixed chain: `b || c ?? {}` is TS5076.
+      `export const a = b || c || {}`,
+    ],
   },
   non_null_assertion: {
     lang: "js",
     applicable: [`export const a = b!.c`, `export const a = b?.c`, `export const a = b?.()`],
-    inapplicable: `export const a = b.c`,
+    inapplicable: [
+      `export const a = b.c`,
+      // No `?.` form exists in a write position or for a bare assertion.
+      `function g(o) { o!.r = 3 }`,
+      `function f(x) { return x! }`,
+    ],
   },
   absent_is_null: {
     lang: "js",
@@ -142,8 +185,13 @@ const WITNESSES = {
       `export const h = () => undefined`,
     ],
     // A bare return is a guard clause saying "stop here", not a spelling of an
-    // absent value.
-    inapplicable: `export function f() { if (a) return\n  g() }`,
+    // absent value, and React refuses either spelling from an effect callback.
+    inapplicable: [
+      `export function f() { if (a) return\n  g() }`,
+      `const C = () => { useEffect(() => { return null }, []) }`,
+      `const D = () => { useLayoutEffect(() => { return undefined }, []) }`,
+      `const E = () => { React.useInsertionEffect(() => null, []) }`,
+    ],
   },
   iterate_with_for_of: {
     lang: "js",
@@ -213,7 +261,9 @@ const WITNESSES = {
 
   // --- dimensions-naming.mjs ---
   function_naming_case: {
-    lang: "js",
+    // Read as JSX, because two of the exclusions the sentence names are about
+    // elements and the `.ts` grammar reads `<div />` as a type assertion.
+    lang: "jsx",
     // Every form the walker treats apart: a declaration, an arrow bound to a
     // const, a function expression bound to a const, in each spellable class.
     applicable: [
@@ -223,11 +273,16 @@ const WITNESSES = {
       `const fetchAll = function () {}`,
     ],
     // A single lowercase word matches every class and votes for none, and a
-    // nested function is not module level.
-    inapplicable: `function outer() { function innerName() {} }`,
+    // nested function is not module level. The last two are components, whose
+    // names JSX decides: one hands out an element, one this file renders.
+    inapplicable: [
+      `function outer() { function innerName() {} }`,
+      `function CardBox() { return on ? <div /> : null }`,
+      `function SideBar() { return null }\nconst page = <SideBar />`,
+    ],
   },
   exported_symbol_case: {
-    lang: "js",
+    lang: "jsx",
     applicable: [
       `export function fooBar() {}`,
       `export const my_thing = 1`,
@@ -235,12 +290,15 @@ const WITNESSES = {
       `export default function fooBar() {}`,
     ],
     // A class and a type declaration are the other two rows' sites; an
-    // anonymous default export and a renaming specifier are nobody's.
+    // anonymous default export and a renaming specifier are nobody's; and a
+    // component's name is JSX's to decide, the same exclusion its sibling row
+    // reads.
     inapplicable: [
       `export class OrderList {}`,
       `export type UserShape = { id: string }`,
       `export default function () {}`,
       `const plain = 1; export { plain as renamedThing }`,
+      `export const UserCard = ({ n }) => (n ? <div>{n}</div> : null)`,
     ],
   },
   exported_class_case: {
@@ -300,7 +358,12 @@ const WITNESSES = {
     // "once per spread attribute rather than once per element" is a count, and
     // a non-zero assertion proves nothing about it.
     applicable: [{ source: `export function C(p) { return <Child {...p} {...q} /> }`, sites: 2 }],
-    inapplicable: `export function C(p) { return <Child a={p.a} /> }`,
+    inapplicable: [
+      `export function C(p) { return <Child a={p.a} /> }`,
+      // Something has to reach the DOM, and a rest element is by definition the
+      // props nobody named, so there is no list to write out instead.
+      `export function C({ children, ...rest }) { return <button {...rest}>{children}</button> }`,
+    ],
   },
   text_translated: {
     lang: "jsx",
@@ -328,9 +391,13 @@ const WITNESSES = {
   },
   record_lookup: {
     lang: "ruby",
-    applicable: [`User.find_by(id: 1)`, `User.find(1)`, `User.find!(1)`, `User.find_by!(id: 1)`],
-    // Enumerable#find takes a block and is a different method despite the name.
-    inapplicable: `xs.find { |x| x.ok? }`,
+    applicable: [`User.find_by(id: 1)`, `User.find(1)`, `User.find_by!(id: 1)`],
+    inapplicable: [
+      // Enumerable#find takes a block and is a different method despite the name.
+      `xs.find { |x| x.ok? }`,
+      // `find!` is not an ActiveRecord method at all.
+      `User.find!(1)`,
+    ],
   },
   model_callbacks: {
     lang: "ruby",
@@ -355,6 +422,8 @@ const WITNESSES = {
       // Widening the guard rather than narrowing it leaves every applicable
       // witness passing, so the other direction needs its own source.
       `class S\n  def other.call\n    1\n  end\nend`,
+      // A Sidekiq job that returns instead of raising is acked as successful.
+      `class W\n  include Sidekiq::Worker\n  def perform(id)\n    raise Retryable\n  end\nend`,
     ],
   },
   keyword_params: {
@@ -366,15 +435,23 @@ const WITNESSES = {
       `def f(a = 1, b = 2, c = 3)\nend`,
       `def f(a, *rest, b, c)\nend`,
     ],
-    // Two arguments read fine positionally; the convention starts at three.
-    inapplicable: `def f(a, b)\nend`,
+    inapplicable: [
+      // Two arguments read fine positionally; the convention starts at three.
+      `def f(a, b)\nend`,
+      // Three methods their own callers reach positionally.
+      `class W\n  include Sidekiq::Worker\n  def perform(a, b, c)\n  end\nend`,
+      `class V < ActiveModel::EachValidator\n  def validate_each(record, attribute, value)\n  end\nend`,
+      `class S\n  def []=(a, b, c)\n  end\nend`,
+    ],
   },
   zone_aware_time: {
     lang: "ruby",
     applicable: [
       `Time.now`, `DateTime.now`, `Date.today`,
+      `Time.new(2026, 8, 20, 9, 0, 0, '-08:00')`, `DateTime.new(2026, 8, 20, 9, 0, 0, 'PST')`,
       `Time.current`, `Date.current`, `DateTime.current`,
       `Time.zone.now`, `Time.zone.today`,
+      `Time.zone.local(2026, 8, 20)`, `Time.zone.parse("2026-08-20")`, `Time.zone.at(0)`,
     ],
     inapplicable: `def f\n  1\nend`,
   },
@@ -404,8 +481,21 @@ const WITNESSES = {
   },
   class_base: {
     lang: "ruby",
-    applicable: [`class A < ApplicationController\nend`, `class B < ActionController::Base\nend`],
-    inapplicable: `class C\nend`,
+    applicable: [
+      `class A < ApplicationController\nend`,
+      `class B < ActionController::Base\nend`,
+      // The omission: a top-level class naming no superclass at all.
+      `class C\nend`,
+    ],
+    inapplicable: [
+      // A superclass naming no constant is still a superclass somebody chose,
+      // and `ActiveRecord::Migration[7.2]` is the commonest of them.
+      `class M < ActiveRecord::Migration[7.2]\nend`,
+      // Ruby refuses to raise a class that is not an Exception, so an error
+      // class cannot inherit whatever the area learned.
+      `class E < StandardError\nend`,
+      `class F < Errno::ENOENT\nend`,
+    ],
   },
   module_include: {
     lang: "ruby",
@@ -451,8 +541,13 @@ const WITNESSES = {
       `class M < ActiveRecord::Migration[7.0]\n  def up\n  end\n  def down\n  end\nend`,
       `class M < ActiveRecord::Migration[7.0]\n  def down\n  end\nend`,
     ],
-    // A helper-only migration class has made no choice about reversibility.
-    inapplicable: `class M < ActiveRecord::Migration[7.0]\n  def helper\n  end\nend`,
+    inapplicable: [
+      // A helper-only migration class has made no choice about reversibility.
+      `class M < ActiveRecord::Migration[7.0]\n  def helper\n  end\nend`,
+      // A migration that rewrites rows cannot answer this claim however it is
+      // written: `change` auto-inverts only a closed set of schema commands.
+      `class M < ActiveRecord::Migration[7.0]\n  def up\n    Prompt.find_by(key: 'x').update!(body: 'y')\n  end\nend`,
+    ],
   },
   migration_schema_only: {
     lang: "ruby",
@@ -462,13 +557,15 @@ const WITNESSES = {
   column_null_declared: {
     lang: "ruby",
     applicable: [
-      `class M < ActiveRecord::Migration[7.0]\n  def change\n    add_column :users, :name, :string, null: false\n  end\nend`,
       `class M < ActiveRecord::Migration[7.0]\n  def change\n    create_table :users do |t|\n      t.string :name, null: false\n    end\n  end\nend`,
-      `class M < ActiveRecord::Migration[7.0]\n  def change\n    change_table :users do |t|\n      t.string :name, null: false\n    end\n  end\nend`,
     ],
     // Each exclusion the sentence names: two that alter a column which already
-    // exists, and two whose nullability the writer did not choose.
+    // exists, two whose nullability the writer did not choose, and two that add
+    // a column to a table the migration did not create, where `null: false`
+    // without a default raises PG::NotNullViolation on a populated table.
     inapplicable: [
+      `class M < ActiveRecord::Migration[7.0]\n  def change\n    add_column :users, :name, :string, null: false\n  end\nend`,
+      `class M < ActiveRecord::Migration[7.0]\n  def change\n    change_table :users do |t|\n      t.string :name, null: false\n    end\n  end\nend`,
       `class M < ActiveRecord::Migration[7.0]\n  def change\n    change_column :users, :name, :text\n  end\nend`,
       `class M < ActiveRecord::Migration[7.0]\n  def change\n    change_column_null :users, :name, false\n  end\nend`,
       `class M < ActiveRecord::Migration[7.0]\n  def change\n    create_table :users do |t|\n      t.timestamps\n    end\n  end\nend`,
@@ -488,7 +585,11 @@ const WITNESSES = {
       `class M < ActiveRecord::Migration[7.0]\n  def change\n    add_belongs_to :posts, :user, foreign_key: true\n  end\nend`,
       `class M < ActiveRecord::Migration[7.0]\n  def change\n    create_table :posts do |t|\n      t.belongs_to :user, foreign_key: true\n    end\n  end\nend`,
     ],
-    inapplicable: `class M < ActiveRecord::Migration[7.0]\n  def change\n    add_column :posts, :title, :string\n  end\nend`,
+    inapplicable: [
+      `class M < ActiveRecord::Migration[7.0]\n  def change\n    add_column :posts, :title, :string\n  end\nend`,
+      // ActiveRecord refuses a foreign key on a polymorphic relation.
+      `class M < ActiveRecord::Migration[7.0]\n  def change\n    add_reference :comments, :owner, polymorphic: true\n  end\nend`,
+    ],
   },
 };
 

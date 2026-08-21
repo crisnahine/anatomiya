@@ -199,6 +199,11 @@ function extFor(area, key) {
  * The two base rows get a filename that votes for no naming class at all, or
  * the finding this probe reads back would be the naming row's rather than the
  * one it set out to break.
+ *
+ * A row that narrowed its population needs a probe inside it. A naming row
+ * learned over the files that hold JSX says nothing about one that does not, so
+ * a bare comment planted in a components directory breaks nothing and the probe
+ * reads back as the check going quiet. The body carries an element there.
  */
 export function probePlan(facts) {
   for (const area of facts.areas) {
@@ -212,9 +217,12 @@ export function probePlan(facts) {
 
       const ruby = language(`f${ext}`) === "ruby";
       const stem = key === "file_naming_case" ? STEM[OTHER_CLASS[d.learned]] : "zzprobe";
+      const jsxKind = d.learnedKind === "jsx" && !ruby;
       const body =
         key === "file_naming_case"
-          ? `${ruby ? "#" : "//"} e2e probe\n`
+          ? jsxKind
+            ? "// e2e probe\nexport const ZzProbeElement = () => <div />\n"
+            : `${ruby ? "#" : "//"} e2e probe\n`
           : ruby
             ? "class ZzProbe < NotTheBase\nend\n"
             : "class ZzProbe extends NotTheBase {}\n";

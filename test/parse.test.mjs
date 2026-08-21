@@ -467,3 +467,36 @@ test("the per-file cap sits under the parse timeout on any load, at one megabyte
   // parsed with machine load. Each flip moves the always-loaded overview (A5).
   assert.equal(MAX_FILE_BYTES, 1024 * 1024);
 });
+
+test("optionalChain finds the chain's outermost node and whether it may carry ?.", async () => {
+  const { optionalChain, walk } = await import("../lib/walk.mjs");
+  const { parseSync } = await import("oxc-parser");
+
+  // The receiver identifier, and every node above it, exactly as a dimension sees them.
+  const at = (src) => {
+    const { program } = parseSync("f.tsx", src, { sourceType: "module" });
+    let answer = null;
+    walk(program, (n, ctx) => {
+      if (n.type !== "Identifier" || n.name !== "o" || answer) return;
+      answer = optionalChain(n, [...ctx.ancestors]);
+    });
+    return answer;
+  };
+
+  assert.equal(at(`const x = o.r`).allowed, true, "a read");
+  assert.equal(at(`const x = o.r()`).allowed, true, "a call");
+  assert.equal(at(`delete o.r`).allowed, true, "delete o?.r is legal");
+  assert.equal(at(`o.r = 1`).allowed, false, "an assignment target");
+  assert.equal(at(`o.a.b = 1`).allowed, false, "further up the same chain");
+  assert.equal(at(`o.r += 1`).allowed, false);
+  assert.equal(at(`o.r++`).allowed, false);
+  assert.equal(at(`new o.C()`).allowed, false, "a new callee");
+  assert.equal(at("o.tag`s`").allowed, false, "a tagged template's tag");
+  assert.equal(at(`for (o.a of xs) {}`).allowed, false);
+  assert.equal(at(`[o.y] = [2]`).allowed, false, "an array pattern target");
+  assert.equal(at(`({ a: o.x } = q)`).allowed, false, "an object pattern target");
+  assert.equal(at(`const q = { a: o.x }`).allowed, true, "an object literal is a read");
+
+  const chain = at(`const x = o.a.b()`);
+  assert.equal(chain.outer.type, "CallExpression", "the outermost node of the chain, not the receiver");
+});

@@ -2,6 +2,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  degradedSemanticSentence,
+  droppedDirectives,
   renderArea,
   renderOverview,
   unexaminedLines,
@@ -433,14 +435,14 @@ test("the overview reports what the parser could not read", () => {
   // Three different ways a file goes unexamined, and the agent reading this map
   // has to be able to tell them apart. `failed` reached the CLI summary and
   // never reached here, so a repository whose whole Ruby half was unreadable
-  // showed an empty map with nothing in it saying why.
+  // showed an empty map with nothing in it saying why. The fourth, a crash,
+  // measures the machine and stays on the summary alone.
   const out = renderOverview(
     result({ parse: { parsed: 80, crashed: 7, skipped: 3, failed: 5, syntaxErrors: 9 } }),
     { uncovered: 12 }
   );
 
   assert.match(out, /^- 12 source files sit in no area \(too few per directory\)$/m);
-  assert.match(out, /^- 7 files crashed the parser$/m);
   assert.match(out, /^- 5 files could not be parsed$/m);
   // The parser answering "not valid syntax" is the repository's own code, and
   // the reader's next move is to go and look at those files.
@@ -944,6 +946,26 @@ test("the truncation notice says which kind of line was dropped", () => {
     area({ dimensions: [...Array.from({ length: 12 }, (_, i) => dim({ key: `s${i}`, claim: `stated ${i}` })), ...silent] })
   );
   assert.match(bothKinds, /^and \d+ more not shown here, \d+ of them stated$/m);
+});
+
+test("a stated slot the model writes by default counts as stated when it is dropped", () => {
+  // The notice counted the directive partition only, so an area whose dropped
+  // tail was all model-default claims read "all of them counts" while the check
+  // FIXed two of them off the same record. On one measured repository 48 of the
+  // 72 areas carrying the notice disagreed with what the check enforces.
+  const dims = [
+    dim({ key: "s0", claim: "stated 0" }),
+    ...Array.from({ length: 30 }, (_, i) =>
+      dim({ key: `m${i}`, claim: `default ${i}`, states: "claim", directive: false, matchesDefault: true })
+    ),
+  ];
+
+  const out = renderArea(area({ dimensions: dims }));
+  const dropped = droppedDirectives(area({ dimensions: dims }));
+
+  assert.ok(dropped.size > 0, "the check enforces these");
+  assert.doesNotMatch(out, /not shown here, all of them counts$/m, JSON.stringify([...dropped]));
+  assert.match(out, /^and \d+ more not shown here, (all|\d+) of them stated$/m);
 });
 
 test("the overview holds the bound when every area states something", () => {
@@ -2049,4 +2071,138 @@ test("a dropped description is named as one rather than counted as a count", () 
   );
 
   assert.match(out, /^and \d+ more not shown here, \d+ of them stated, 3 of them descriptions$/m);
+});
+
+test("the overview does not carry the crash count, which measures the machine", () => {
+  // A crash is a SIGKILL off the pool's wall clock or its memory poll, so it
+  // moves with load rather than with the tree. Three consecutive scans of an
+  // unchanged 2,486-file repository produced two different overviews, and they
+  // differed by two lines: the crash line, and the area listing entry it cost.
+  const busy = renderOverview(result({ parse: { parsed: 89, crashed: 1, skipped: 0 } }), { uncovered: 30 });
+  const quiet = renderOverview(result({ parse: { parsed: 90, crashed: 0, skipped: 0 } }), { uncovered: 30 });
+
+  assert.equal(Buffer.compare(Buffer.from(busy), Buffer.from(quiet)), 0, busy);
+  assert.doesNotMatch(busy, /crashed the parser/);
+});
+
+test("the overview keeps the three causes that are facts about the tree", () => {
+  // A file this tool could not read stays: it is what stops a repository whose
+  // whole Ruby half is unreadable from showing an empty map with nothing saying
+  // why. Rejected syntax and the size cap are the branch's own code.
+  const out = renderOverview(
+    result({ parse: { parsed: 60, crashed: 4, failed: 3, syntaxErrors: 2, skipped: 1 } }),
+    { uncovered: 30 }
+  );
+
+  assert.match(out, /^- 3 files could not be parsed$/m, out);
+  assert.match(out, /^- 2 files hold syntax the parser rejected$/m);
+  assert.match(out, /^- 1 file exceeded the size cap$/m);
+  assert.doesNotMatch(out, /crashed the parser/);
+});
+
+test("the summary still names every cause, including the crash", () => {
+  // The summary is printed once to a terminal and is not cached, so a count
+  // that measures the machine belongs there and nowhere else.
+  assert.deepEqual(unexaminedLines({ crashed: 4, failed: 3, syntaxErrors: 2, skipped: 1 }), [
+    "4 files crashed the parser",
+    "3 files could not be parsed",
+    "2 files hold syntax the parser rejected",
+    "1 file exceeded the size cap",
+  ]);
+});
+
+test("the summary and the overview word a degraded tier with one sentence", () => {
+  // The drift shape again: two surfaces printing the same fact, copied rather
+  // than shared. `untrackedSentence` exists because that pair had already
+  // drifted once on a count they both print.
+  assert.equal(
+    degradedSemanticSentence({ ran: true, status: "degraded", reason: "low-resolution", typedResolutionRate: 0.1495 }),
+    "type-checked claims are counts only: 15% of type lookups resolved (low-resolution)"
+  );
+  assert.equal(
+    degradedSemanticSentence({ ran: true, status: "degraded", reason: "no-checker", typedResolutionRate: null }),
+    "type-checked claims are counts only: no type lookups resolved (no-checker)"
+  );
+
+  assert.equal(degradedSemanticSentence({ ran: true, status: "ok", typedResolutionRate: 0.9 }), null, "a clean tier says nothing");
+  assert.equal(degradedSemanticSentence(null), null, "and a tier nobody asked for says nothing");
+});
+
+test("the overview says a degraded tier through the shared sentence", () => {
+  const out = renderOverview(
+    result({ semantic: { ran: true, status: "degraded", reason: "low-resolution", typedResolutionRate: 0.1495 } }),
+    { uncovered: 0 }
+  );
+
+  assert.match(out, /^- type-checked claims are counts only: 15% of type lookups resolved \(low-resolution\)$/m, out);
+});
+
+/* --- which directives a file had no room to state (#70) --- */
+
+test("the directives an area file had no room for are recoverable from the record", () => {
+  // `check` reads facts.json, not the rendered file, so a claim the map never
+  // printed was still enforced at the severity that means "the map told you and
+  // you are the first to break it". Recomputed rather than stored: a second
+  // derivation of the same layout is a drift waiting for a field to move.
+  const many = area({
+    dimensions: Array.from({ length: 30 }, (_, i) => dim({ key: `k${i}`, claim: `claim number ${i}` })),
+  });
+
+  const out = renderArea(many);
+  const dropped = droppedDirectives(many);
+
+  assert.match(out, /^and \d+ more not shown here, all of them stated$/m);
+  assert.ok(dropped.size > 0, "something was dropped");
+  for (const key of dropped) {
+    const claim = `claim number ${key.slice(1)}`;
+    assert.ok(!out.includes(claim), `${key} was reported dropped and is in the file`);
+  }
+  for (let i = 0; i < 30; i++) {
+    if (dropped.has(`k${i}`)) continue;
+    assert.ok(out.includes(`claim number ${i}`), `k${i} was not reported dropped and is not in the file`);
+  }
+});
+
+test("an area whose directives all fit drops none", () => {
+  const small = area({ dimensions: [dim({ key: "k0" }), dim({ key: "k1" })] });
+
+  assert.equal(droppedDirectives(small).size, 0);
+});
+
+test("a suppressed slot is never reported as a dropped directive", () => {
+  // Only a stated directive is a sentence the agent was owed. A count that lost
+  // its line is a threshold nobody can audit from the file, which is a
+  // different fact with a different fix.
+  const many = area({
+    dimensions: Array.from({ length: 30 }, (_, i) =>
+      dim({ key: `k${i}`, claim: `claim number ${i}`, directive: false, states: null, gate: "ratio" })
+    ),
+  });
+
+  assert.equal(droppedDirectives(many).size, 0);
+});
+
+test("a stated slot the model writes by default is reported dropped when its counts line goes too", () => {
+  // A15 renders such a slot as a counts line and lets the check enforce it
+  // unchanged, on the premise that the counts line is there. When the budget
+  // drops it the agent sees nothing at all for that slot and the check can
+  // still reach MUST-FIX, which is the same hole one partition over and, on a
+  // measured repository, twice the size: 15 slots against 7.
+  const many = area({
+    dimensions: Array.from({ length: 45 }, (_, i) =>
+      dim({ key: `k${i}`, claim: `claim number ${i}`, matchesDefault: true })
+    ),
+  });
+
+  const out = renderArea(many);
+  const dropped = droppedDirectives(many);
+
+  assert.ok(dropped.size > 0, "something was dropped");
+  for (const key of dropped) {
+    assert.ok(!out.includes(`claim number ${key.slice(1)}:`), `${key} was reported dropped and is in the file`);
+  }
+  for (let i = 0; i < 45; i++) {
+    if (dropped.has(`k${i}`)) continue;
+    assert.ok(out.includes(`claim number ${i}:`), `k${i} was not reported dropped and is not in the file`);
+  }
 });

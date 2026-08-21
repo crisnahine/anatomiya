@@ -573,7 +573,9 @@ async function rubyHits(key, src) {
   return hits;
 }
 
-test("class_base votes with the superclass a Ruby class names", needsRuby, async () => {
+test("class_base votes with the superclass a Ruby class names, and a bare class votes for none", needsRuby, async () => {
+  // The bare class is a site conforming to no base: the omission is what an
+  // agent actually commits, a PORO dropped into a directory of models.
   const h = await rubyHits("class_base", `
 class A < ApplicationController
 end
@@ -584,8 +586,9 @@ end
 class C
 end
 `);
-  assert.deepEqual(h.map((x) => x.class), ["ApplicationController", "ActionController::Base"]);
+  assert.deepEqual(h.map((x) => x.class ?? null), ["ApplicationController", "ActionController::Base", null]);
   assert.equal(h[0].where, "A");
+  assert.equal(h[2].where, "C");
 });
 
 test("module_include votes with each constant a class or module body includes", needsRuby, async () => {
@@ -879,4 +882,286 @@ test("a class read off the source has no model default, so the row keeps stating
   for (const key of ["extends_base", "class_base", "module_include"]) {
     assert.equal(defaultClassFor(key), null, `${key} cannot have a default the model writes`);
   }
+});
+
+test("namesASite separates a name that matches every class from one that matches none", async () => {
+  // `classifyBasename` answers null for both, and only the first is not a site.
+  // A name matching every class cannot disagree with any; a name matching none
+  // disagrees with all of them, and it was the violation the check could not see.
+  const { namesASite } = await import("../lib/dimensions-naming.mjs");
+
+  assert.equal(namesASite("src/index.ts"), false, "a single lowercase word matches every class");
+  assert.equal(namesASite("Rakefile"), false, "a bare filename has no stem to read");
+  assert.equal(namesASite("src/404.ts"), false, "digits alone name nothing to disagree with");
+  assert.equal(namesASite("db/migrate/20260816120000.rb"), false, "and a timestamp is a digit run");
+
+  assert.equal(namesASite("app/models/TMP_PROBE_UPPER.rb"), true, "SCREAMING_SNAKE spells no class");
+  assert.equal(namesASite("app/models/_tmp_probe.rb"), true, "and neither does a leading underscore");
+  assert.equal(namesASite("src/user-profile.ts"), true, "a name that spells one is a site too");
+  assert.equal(namesASite("src/index.stories.tsx"), false, "only the stem is read, and it is one word");
+});
+
+test("a name that spells no class does not vote for one", async () => {
+  // The scan side is unchanged: a stem that classifies to null was never
+  // counted into the area's own totals, and counting it now would move every
+  // learned class in the corpus.
+  const { classifyBasename } = await import("../lib/dimensions-naming.mjs");
+
+  assert.equal(classifyBasename("app/models/TMP_PROBE_UPPER.rb"), null);
+  assert.equal(classifyBasename("app/models/_tmp_probe.rb"), null);
+});
+
+test("an interface inside an ambient module or a namespace does not vote on the prefix", async () => {
+  // The name is the identity of the thing being augmented, so the prefix is not
+  // available: `IWindow` compiles and the merge silently stops happening, and
+  // `tsc --strict` then reports the property missing at the use site rather
+  // than anything at the declaration. 24 of one repository's 40 non-conforming
+  // interface names were augmentations. Same ancestor test C12 already applies
+  // to module_state_const.
+  const hits = await astHits("interface_prefix", `
+    declare global {
+      interface Window { dataLayer: unknown[] }
+    }
+    declare module "axios" {
+      interface AxiosRequestConfig { retries?: number }
+    }
+    interface IThing { a: string }
+  `);
+
+  assert.deepEqual(hits.map((h) => h.where), ["IThing"]);
+});
+
+test("a type alias inside a module augmentation still votes, because it cannot merge", async () => {
+  // `tsc` accepts `export type TTheme` inside a module augmentation, so the
+  // prefix really is available there.
+  const hits = await astHits("type_alias_prefix", `
+    declare module "styled-components" {
+      export type TTheme = { a: string }
+    }
+  `);
+
+  assert.deepEqual(hits.map((h) => [h.where, h.class]), [["TTheme", "T"]]);
+});
+
+/* --- the class an area learned is not a site of its own row (#58) --- */
+
+test("collectHits keeps a hit's own qualified name and omits the key otherwise", async () => {
+  const { collectHits } = await import("../lib/walk.mjs");
+  const named = collectHits({ type: "Program", body: [] }, [
+    { key: "k", run: (_p, add) => add({ node: null, conforming: false, class: "B", self: "A::B" }) },
+  ]);
+  const bare = collectHits({ type: "Program", body: [] }, [
+    { key: "k", run: (_p, add) => add({ node: null, conforming: false, class: "B" }) },
+  ]);
+
+  assert.equal(named.k[0].self, "A::B");
+  assert.equal("self" in bare.k[0], false, "a hit with nothing to say costs no bytes over IPC");
+});
+
+test("isLearnedItself matches the class an area learned, by either spelling", async () => {
+  const { isLearnedItself } = await import("../lib/reduce.mjs");
+
+  assert.equal(isLearnedItself({ self: "ApplicationRecord" }, "ApplicationRecord"), true);
+  assert.equal(isLearnedItself({ self: "Api::V1::BaseController" }, "BaseController"), false, "a name that merely ends in the learned one is a different class");
+  assert.equal(isLearnedItself({ self: "Interactions::Base" }, "ActiveInteraction::Base"), false);
+  assert.equal(isLearnedItself({ self: "Base" }, "ActiveInteraction::Base"), false, "the last segment alone is too loose");
+  assert.equal(isLearnedItself({}, "ApplicationRecord"), false);
+  assert.equal(isLearnedItself({ self: "X" }, undefined), false);
+});
+
+test("the class an area learned does not count against its own row", async () => {
+  // `class ApplicationRecord < ApplicationRecord` is a NameError, and the map
+  // printed the absurdity: app/models states "classes here inherit
+  // ApplicationRecord" and listed application_record.rb as one of its
+  // exceptions.
+  const { reduceArea } = await import("../lib/reduce.mjs");
+  const rels = ["app/models/application_record.rb", ...Array.from({ length: 8 }, (_, i) => `app/models/m${i}.rb`)];
+  const area = { langs: ["ruby"], files: rels.map((rel) => ({ rel, lang: "ruby" })) };
+  const parsed = rels.map((rel) => ({
+    rel,
+    ok: true,
+    hits: {
+      class_base: rel.endsWith("application_record.rb")
+        ? [{ conforming: false, class: "ActiveRecord::Base", self: "ApplicationRecord", where: "ApplicationRecord" }]
+        : [{ conforming: false, class: "ApplicationRecord", self: rel, where: "M" }],
+    },
+  }));
+
+  const slot = reduceArea(area, parsed).find((d) => d.key === "class_base");
+
+  assert.equal(slot.learned, "ApplicationRecord");
+  assert.equal(slot.candidates, 8, "the base itself is not one of its own sites");
+  assert.equal(slot.conforming, 8);
+  assert.deepEqual(slot.exceptions, []);
+});
+
+/* --- a component's name is JSX's to decide, not the area's (#77 row 8) --- */
+
+test("a function that renders JSX is not judged by the area's naming class", async () => {
+  // Lowercase a component and the element becomes a host tag: TS2339, Property
+  // 'auditBadge' does not exist on type 'JSX.IntrinsicElements'. The tool's own
+  // `isHostElement` reads the same rule from the other side. The row is
+  // `precise`, so it reaches MUST-FIX the day one appears.
+  const h = await astHits("function_naming_case", `
+    export function AuditBadge() { return <span /> }
+    export const Panel = () => <div />
+    export function useThing() { return 1 }
+    export function formatName(x) { return x }
+  `);
+
+  assert.deepEqual(h.map((x) => x.where), ["useThing", "formatName"]);
+});
+
+test("a component this file only renders is excluded too", async () => {
+  // A component exported and rendered elsewhere is the ordinary shape in a
+  // components directory, and one rendered here is the same thing.
+  const h = await astHits("function_naming_case", `
+    function Wrapper() { if (a) return null; return <div /> }
+    const Local = () => 1
+    export const Page = () => <Local />
+  `);
+
+  assert.deepEqual(h.map((x) => x.where), []);
+});
+
+test("an ordinary function in a JSX file is still judged", async () => {
+  const h = await astHits("function_naming_case", `
+    export const Page = () => <div />
+    export function fetchAll() { return [] }
+  `);
+
+  assert.deepEqual(h.map((x) => x.where), ["fetchAll"]);
+});
+
+/* --- a directory of components and a directory of helpers hold different conventions (#64) --- */
+
+test("a naming row learns over one kind of file, and leaves the other kind unjudged", async () => {
+  // A React directory holds `UserCard.tsx` beside `formatDate.ts`. The area
+  // learns PascalCase off the components and every correctly camelCase helper
+  // in it becomes a violation of a convention nobody holds: on one measured
+  // pull request a single `.ts` helper collected 5 of the 9 findings, and in a
+  // 982-commit replay 29 of 55 false findings were this pooling.
+  const { reduceArea } = await import("../lib/reduce.mjs");
+  const components = ["UserCard", "OrderList", "DataTable", "FormInput", "NavBar", "ErrorPage", "BigTable", "SidePanel"];
+  const helpers = ["formatDate", "parseAmount", "buildQuery"];
+  const rels = [
+    ...components.map((n) => `src/${n}.tsx`),
+    ...helpers.map((n) => `src/${n}.ts`),
+  ];
+  const area = { langs: ["jsx", "js"], files: rels.map((rel) => ({ rel, lang: rel.endsWith("x") ? "jsx" : "js" })) };
+  const parsed = rels.map((rel) => ({ rel, ok: true, hits: {}, facets: { jsx: rel.endsWith(".tsx") } }));
+
+  const slot = reduceArea(area, parsed).find((d) => d.key === "file_naming_case");
+
+  assert.equal(slot.learned, "PascalCase");
+  assert.equal(slot.learnedKind, "jsx");
+  assert.equal(slot.candidates, 8, "the three helpers left the population");
+  assert.equal(slot.conforming, 8);
+  assert.deepEqual(slot.exceptions, []);
+  assert.ok(!slot.files.some((f) => f.endsWith("formatDate.ts")), JSON.stringify(slot.files));
+});
+
+test("the mirror: an area of mostly helpers leaves its two components unjudged", async () => {
+  const { reduceArea } = await import("../lib/reduce.mjs");
+  const helpers = ["formatDate", "parseAmount", "buildQuery", "readCache", "writeCache", "toSlug", "fromSlug", "sumRows", "pickOne"];
+  const rels = [...helpers.map((n) => `src/${n}.ts`), "src/UserCard.tsx", "src/OrderList.tsx"];
+  const area = { langs: ["jsx", "js"], files: rels.map((rel) => ({ rel, lang: rel.endsWith("x") ? "jsx" : "js" })) };
+  const parsed = rels.map((rel) => ({ rel, ok: true, hits: {}, facets: { jsx: rel.endsWith(".tsx") } }));
+
+  const slot = reduceArea(area, parsed).find((d) => d.key === "file_naming_case");
+
+  assert.equal(slot.learned, "camelCase");
+  assert.equal(slot.learnedKind, "module");
+  assert.equal(slot.candidates, 9);
+  assert.deepEqual(slot.exceptions, []);
+});
+
+test("an area holding one kind of file is not narrowed at all", async () => {
+  const { reduceArea } = await import("../lib/reduce.mjs");
+  const rels = ["src/user-profile.ts", "src/order-list.ts", "src/data-store.ts", "src/oneOff.ts"];
+  const area = { langs: ["js"], files: rels.map((rel) => ({ rel, lang: "js" })) };
+  const parsed = rels.map((rel) => ({ rel, ok: true, hits: {}, facets: { jsx: false } }));
+
+  const slot = reduceArea(area, parsed).find((d) => d.key === "file_naming_case");
+
+  assert.equal(slot.candidates, 4);
+  assert.equal(slot.conforming, 3);
+  assert.equal(slot.learnedKind, "module");
+});
+
+test("a narrowed naming claim names the population it was learned over", async () => {
+  // The narrowing is invisible in the sentence the agent reads, and the area
+  // file loads on the files the population excluded: a directory of 45 helpers
+  // beside 12 components delivered "files here are named camelCase" to the
+  // components, and naming one of those camelCase turns the element into a host
+  // tag. The check does not catch it, because the row does not judge that kind.
+  const { reduceArea } = await import("../lib/reduce.mjs");
+  const components = ["UserCard", "OrderList", "DataTable", "FormInput", "NavBar", "ErrorPage", "BigTable", "SidePanel"];
+  const helpers = ["formatDate", "parseAmount", "buildQuery"];
+  const rels = [...components.map((n) => `src/${n}.tsx`), ...helpers.map((n) => `src/${n}.ts`)];
+  const area = { langs: ["jsx", "js"], files: rels.map((rel) => ({ rel, lang: rel.endsWith("x") ? "jsx" : "js" })) };
+  const parsed = rels.map((rel) => ({ rel, ok: true, hits: {}, facets: { jsx: rel.endsWith(".tsx") } }));
+
+  const slot = reduceArea(area, parsed).find((d) => d.key === "file_naming_case");
+
+  assert.equal(slot.claim, "files here that hold JSX are named PascalCase");
+});
+
+test("the mirror: the module side names the population too", async () => {
+  const { reduceArea } = await import("../lib/reduce.mjs");
+  const helpers = ["formatDate", "parseAmount", "buildQuery", "readCache", "writeCache", "toSlug", "fromSlug", "sumRows", "pickOne"];
+  const rels = [...helpers.map((n) => `src/${n}.ts`), "src/UserCard.tsx", "src/OrderList.tsx"];
+  const area = { langs: ["jsx", "js"], files: rels.map((rel) => ({ rel, lang: rel.endsWith("x") ? "jsx" : "js" })) };
+  const parsed = rels.map((rel) => ({ rel, ok: true, hits: {}, facets: { jsx: rel.endsWith(".tsx") } }));
+
+  const slot = reduceArea(area, parsed).find((d) => d.key === "file_naming_case");
+
+  assert.equal(slot.claim, "files here that hold no JSX are named camelCase");
+});
+
+test("an area that holds one kind of file keeps the plain sentence", async () => {
+  // The exclusion is worth naming only where it excluded something: a
+  // repository with no JSX in it reads the qualifier as a distinction its code
+  // does not draw.
+  const { reduceArea } = await import("../lib/reduce.mjs");
+  const rels = ["src/user-profile.ts", "src/order-list.ts", "src/data-store.ts", "src/type-check.ts"];
+  const area = { langs: ["js"], files: rels.map((rel) => ({ rel, lang: "js" })) };
+  const parsed = rels.map((rel) => ({ rel, ok: true, hits: {}, facets: { jsx: false } }));
+
+  const slot = reduceArea(area, parsed).find((d) => d.key === "file_naming_case");
+
+  assert.equal(slot.learnedKind, "module", "still narrowed, so a component added later is not judged");
+  assert.equal(slot.claim, "files here are named kebab-case");
+});
+
+test("a class that merely shares its last segment with the learned base is still a site", async () => {
+  // A suffix match exempted `Api::V1::Admin::BaseController` under a learned
+  // `BaseController`, and it fired even where that class named an explicit and
+  // different superclass, which the "a base cannot inherit itself" argument
+  // cannot justify. Telling the two apart needs Ruby's own constant lookup.
+  const { reduceArea } = await import("../lib/reduce.mjs");
+  const rels = [
+    "app/controllers/api/v1/base_controller.rb",
+    "app/controllers/api/v1/admin/base_controller.rb",
+    ...Array.from({ length: 8 }, (_, i) => `app/controllers/api/v1/c${i}_controller.rb`),
+  ];
+  const area = { langs: ["ruby"], files: rels.map((rel) => ({ rel, lang: "ruby" })) };
+  const parsed = rels.map((rel) => ({
+    rel,
+    ok: true,
+    hits: {
+      class_base: rel.endsWith("api/v1/base_controller.rb")
+        ? [{ conforming: false, class: "ApplicationController", self: "BaseController", where: "BaseController" }]
+        : rel.endsWith("admin/base_controller.rb")
+          ? [{ conforming: false, class: "ActionController::Metal", self: "Api::V1::Admin::BaseController", where: "BaseController" }]
+          : [{ conforming: false, class: "BaseController", self: rel, where: "C" }],
+    },
+  }));
+
+  const slot = reduceArea(area, parsed).find((d) => d.key === "class_base");
+
+  assert.equal(slot.learned, "BaseController");
+  assert.equal(slot.candidates, 9, "the area's own base leaves, the namesake does not");
+  assert.equal(slot.conforming, 8);
+  assert.deepEqual(slot.exceptions.map((e) => e.path), ["app/controllers/api/v1/admin/base_controller.rb"]);
 });
