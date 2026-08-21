@@ -387,3 +387,31 @@ test("a dot segment is a directory like any other and answers nothing", () => {
   assert.equal(namesakeCompanions(source, here, "pkg", namesakeIndex(here)).with, 0);
   assert.equal(namesakeCompanions(source, up, "pkg", namesakeIndex(up)).with, 0);
 });
+
+test("a colocated test answers for itself, and a second suite does not take the place", () => {
+  // The tests sit beside the files. `wholeRoot` reduces that to the repository
+  // itself, which is not a name worth printing, and the answer is to print no
+  // place rather than to hand it to a cypress tree that merely imports them.
+  const names = ["Button", "Card", "Modal", "Tabs"];
+  const source = names.map((n) => file(`src/${n}.jsx`));
+  const tests = [
+    ...names.map((n) => file(`src/${n}.test.jsx`)),
+    ...names.map((n) => imports(`cypress/${n}.test.jsx`, [`../src/${n}.jsx`])),
+  ];
+
+  assert.deepEqual(namesakeCompanions(source, tests, "", namesakeIndex(tests)), {
+    with: 4,
+    of: 4,
+    root: null,
+  });
+});
+
+test("a specifier with no extension reaches only what a resolver would reach", () => {
+  // `../src/parser` resolves to the module, never to the stylesheet, the table
+  // or the declaration file that share its name. Only the population filter one
+  // caller applies was keeping those out.
+  const source = ["ts", "d.ts", "py", "css", "json"].map((e) => file(`pkg/src/parser.${e}`));
+  const tests = [imports("test/parser.test.ts", ["../pkg/src/parser"])];
+
+  assert.equal(namesakeCompanions(source, tests, "pkg", namesakeIndex(tests)).with, 1);
+});
