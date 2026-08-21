@@ -164,3 +164,34 @@ test("capabilities are the closed pair, declared per language", () => {
   assert.equal(langHas("ruby", "semantic"), false);
   assert.equal(langHas("ruby", "importGraph"), false);
 });
+
+test("carriesTypeSyntax answers off the path alone, and only for the half that can", async () => {
+  // `export function f(): number` is a SyntaxError under Node, so a row whose
+  // whole question is the annotation has nothing to ask a plain file.
+  const { carriesTypeSyntax } = await import("../lib/langs.mjs");
+
+  for (const p of ["src/a.ts", "src/a.mts", "src/a.cts", "src/a.tsx", "src/a.d.ts"]) {
+    assert.equal(carriesTypeSyntax(p), true, p);
+  }
+  for (const p of ["src/a.js", "src/a.mjs", "src/a.cjs", "src/a.jsx", "app/a.rb", "Rakefile", "src/ats", ""]) {
+    assert.equal(carriesTypeSyntax(p), false, p);
+  }
+});
+
+test("a language may not declare type syntax for an extension it does not own", async () => {
+  const { assertRegistry, LANGUAGES } = await import("../lib/langs.mjs");
+  const decl = { ...LANGUAGES[0], typed: { exts: ["rb"] } };
+
+  assert.throws(() => assertRegistry([decl]), /declares type syntax for \.rb/);
+});
+
+test("holdsTypeSyntax takes either answer, the path's or the tree's", async () => {
+  const { holdsTypeSyntax } = await import("../lib/langs.mjs");
+
+  assert.equal(holdsTypeSyntax("src/a.ts"), true, "the extension alone");
+  assert.equal(holdsTypeSyntax("src/a.ts", { typed: false }), true, "a .ts file with no annotation can still carry one");
+  assert.equal(holdsTypeSyntax("src/a.js", { typed: true }), true, "Flow");
+  assert.equal(holdsTypeSyntax("src/a.js", { typed: false }), false);
+  assert.equal(holdsTypeSyntax("src/a.js"), false, "no facets is the path's answer");
+  assert.equal(holdsTypeSyntax("src/a.js", null), false);
+});

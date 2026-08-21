@@ -10,6 +10,9 @@ const USAGE = [
   "       anatomiya doctor",
   "       anatomiya setup  [--dry-run]",
   "",
+  "A command word is required. Given none, this usage is what prints, and",
+  "nothing is written; an unknown one is refused by name.",
+  "",
   "--deep adds the typescript checker to a scan: about 26x slower, and it needs",
   "the optional typescript dependency. It is a scan option only, because the",
   "checker is whole-program and a check would have to build the corpus twice.",
@@ -61,7 +64,16 @@ function fail(message, code = 2) {
  * argument would hand it straight to a subprocess.
  */
 function parseArgs(argv) {
-  const cmd = Object.hasOwn(COMMANDS, argv[0]) ? argv.shift() : "scan";
+  // The command word is required. It used to default to `scan`, which writes,
+  // so typing the bare name to see what the tool does replaced the map, and a
+  // mistyped command was read as a path and refused as a bad repository, which
+  // names the wrong fix. A mistyped option was already refused by name.
+  if (argv.length === 0 || argv[0] === "-h" || argv[0] === "--help") return { cmd: null, help: true };
+  if (!Object.hasOwn(COMMANDS, argv[0])) {
+    if (argv[0].startsWith("-")) fail(`no command given, and an option cannot stand in for one: ${argv[0]}\n${USAGE}`);
+    fail(`unknown command: ${argv[0]}\n${USAGE}`);
+  }
+  const cmd = argv.shift();
   const spec = COMMANDS[cmd];
   const opts = { cmd, path: null, dryRun: false, baseRef: null, deep: false, format: "text" };
 

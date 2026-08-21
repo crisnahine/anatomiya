@@ -235,7 +235,7 @@ an idle window and a wall clock.
 
 ## 4. Dimensions and the three numbers
 
-A dimension is one claim about one area. 48 ship, the filename row included: 27 for JavaScript, 32 reachable in JSX, and 16 that speak Ruby, plus the one type-checked row, which sits in the total and reaches a scan only with --deep. Each
+A dimension is one claim about one area. 49 ship, the filename row included: 28 for JavaScript, 33 reachable in JSX, and 16 that speak Ruby, plus the one type-checked row, which sits in the total and reaches a scan only with --deep. Each
 is defined by three quantities, not one.
 
 | Quantity | Meaning |
@@ -265,6 +265,7 @@ in `check`.
 | `function_style` | precise | js, jsx | module-level functions are declared with function, not assigned as arrows |
 | `import_extension` | precise | js, jsx | relative imports carry the file extension |
 | `nullish_default` | precise | js, jsx | defaults are taken with `??`, not `\|\|` |
+| `hook_per_module` | partial | js, jsx | a module that exports a hook exports one |
 | `test_call_style` | precise | js, jsx | test cases are declared with `test()`, not `it()` |
 | `error_shape` | partial | js, jsx | failure is returned, not thrown |
 | `async_error_handling` | partial | js, jsx | async functions handle their own failures |
@@ -283,12 +284,12 @@ in `check`.
 | `rescue_uses_error` | precise | ruby | rescue blocks use the error they caught |
 | `keyword_params` | precise | ruby | methods taking three or more arguments name them with keywords |
 | `zone_aware_time` | precise | ruby | the current time is read through the application time zone |
-| `record_lookup` | partial | ruby | records are fetched with `find_by` and checked, not `find` |
+| `record_lookup` | partial | ruby | a record that may be missing is fetched with `find_by` and checked, not fetched with one that raises |
 | `model_callbacks` | partial | ruby | models keep behaviour out of lifecycle callbacks |
 | `service_result_shape` | partial | ruby | service entry points return their failure instead of raising |
 | `migration_reversible` | partial | ruby | migrations declare `change`, not `up` and `down` |
 | `migration_schema_only` | partial | ruby | migrations change the schema and leave the data alone |
-| `column_null_declared` | partial | ruby | new columns are declared `null: false` |
+| `column_null_declared` | partial | ruby | a column on a table the migration creates is declared `null: false` |
 | `table_primary_key_declared` | partial | ruby | new tables declare their primary key type |
 | `reference_foreign_key` | partial | ruby | reference columns declare their foreign key |
 | `function_naming_case` | precise | js, jsx | functions are named `<style>`, learned |
@@ -324,10 +325,19 @@ naming class they spell, the plurality class becomes the sentence, and a tie lea
 produces no slot. One more such row, `file_naming_case`, asks about filenames: it needs no parser,
 so the reducer composes it the way it composes the obligations. A learned class that has moved
 since the pin closes the slot (`learned-moved`) until a human re-pins, because the pinned counts
-answer a different sentence than today's. The filename row has one candidate per file, so under
-the evidence gate an area needs 35 classifiable filenames to state it; in smaller areas the row
-feeds the check's learned enforcement and prints as counts, which is the gate working rather than
-a bug.
+answer a different sentence than today's. The filename row has one candidate per file, so on its own
+sample an area needs 35 classifiable filenames to state it; in smaller areas it may still state on
+the rest of the repository's record for the same class, and where the repository does not hold the
+claim either it feeds the check's learned enforcement and prints as counts, which is the gate
+working rather than a bug.
+
+Three of the learned naming rows narrow their population to one kind of file before they learn:
+whichever of "holds JSX" or "does not" holds more of the row's sites. A React directory holds
+`UserCard.tsx` beside `formatDate.ts`, and pooled, the area learns PascalCase off the components and
+calls every correctly camelCase helper a violation of a convention nobody holds. The other kind is
+left unjudged rather than split into a second slot: measured across three repositories and three
+rows, splitting produced two stating halves in none of nine cases, because halving the sample kills
+both sides of the evidence gate.
 
 Five learned rows vote with a name rather than with one of the four naming classes. `extends_base`
 and `class_base` take the plurality superclass a directory's classes name, `module_include` the
@@ -375,9 +385,9 @@ name of the gate that stopped it.
 | Gate | Threshold | Why here |
 |---|---|---|
 | `ratio` | `conforming / candidates >= 0.90` | the gate that survived measurement elsewhere; an earlier spec loosened it to 0.80 with no argument |
-| `evidence` | the Wilson 95% lower bound on the same counts also reaches `0.90` | the ratio asks what this sample did; the bound asks whether the true rate can be trusted there. A perfect record needs 35 sites to hold 0.90, which is why there is no separate minimum on `candidates` |
+| `evidence` | the Wilson 95% lower bound on the same counts reaches `0.90`, **or** the rest of the repository's bound for this dimension and learned class does and this area's own upper bound reaches the rate it borrows | the ratio asks what this sample did; the bound asks whether the true rate can be trusted there. A perfect record needs 35 sites to hold 0.90, which is why there is no separate minimum on `candidates`, and why a perfectly consistent nine-file directory could never speak about a claim the repository holds at 0.987 across 2,152 sites. The prior is leave-one-out, so nothing is its own evidence, and it is built only from slots no other condition has closed. The second clause is what stops a large mediocre area inheriting a strong repository's confidence: 900 of 1000 tops out at 0.917 and cannot borrow 0.988 |
 | `concentration` | the sites are worth `>= 3` files by inverse-Simpson count, **and** the ratio still reaches 0.90 with the largest file dropped | 200 sites in one file plus one each in 13 others gives 14 files at ratio 1.0 and clears any file-count floor. A share of the candidates cannot answer this either: at two files the largest share is at least 0.5 by arithmetic, and at fifty files no share ever fires however lopsided the spread is |
-| `applicability` | `applicability >= max(ceil(sqrt(F)), ceil(0.25 * F))`, where `F` is the files the dimension can speak about | the stricter of two floors, because each is wrong alone. The root asks for more than a quarter below sixteen files, where a quarter of a small directory is one or two files. The share holds above it: on its own the root asked 11 files of 120, and a measured 120-file area where 11 files used `?.` and 109 read absent values without it stated the claim over all 120 |
+| `applicability` | `applicability >= max(R, min(ceil(0.25 * F), 3R))`, where `R = ceil(sqrt(F))` and `F` is the files the dimension can speak about | the stricter of two floors, because each is wrong alone. The root asks for more than a quarter below sixteen files, where a quarter of a small directory is one or two files. The share holds above it: on its own the root asked 11 files of 120, and a measured 120-file area where 11 files used `?.` and 109 read absent values without it stated the claim over all 120. The share is capped at three roots because it grows with the area while the risk it guards does not: on a single 1,531-file `db/migrate` it asked for 383 files, which made any construct rarer than a quarter of the directory unstateable however perfect. The first area size where the cap changes the answer is 157, above every area the share was measured on |
 | `authors` | `>= min(2, distinct authors in the repository)` distinct authors over the files carrying the counted matches | one person's habit is not a convention, but one author is not a thin team either: it is the whole team, and there is no second opinion being withheld |
 | `directories` | `>= 2` distinct directories, **only when the area spans more than one directory** | applied unconditionally this blocked 124 of 170 measured slots, because area discovery finds leaf directories and a leaf directory holds one |
 

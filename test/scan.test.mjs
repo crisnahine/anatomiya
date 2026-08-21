@@ -810,3 +810,58 @@ test("an area with no static import surface is asked neither question", needsRub
   assert.equal(models.imports, null, "Ruby has no import to count, and zero would read as a measured none");
   assert.equal(models.reused, null);
 });
+
+/* --- the pooled prior is built from the whole repository (#56) --- */
+
+/** A file with one interface, prefixed or not, which is what interface_prefix counts. */
+const iface = (i, prefix = "I") => `export interface ${prefix}Thing${i} { a: number }\n`;
+
+test("a small perfect directory borrows the confidence of the rest of the repository", async (t) => {
+  // The Wilson bound needs about 35 perfect sites to reach 0.90, and a measured
+  // front end's median area holds 11 files, so a directory could be perfectly
+  // consistent and never speak. `interface_prefix` held at 2,125 of 2,152 sites
+  // repo-wide, cleared the ratio gate in 116 of its 118 areas, and stated in six.
+  const dir = repo(t, (d, { git, write, author }) => {
+    for (let i = 0; i < 60; i++) write(`src/big/f${i}.ts`, iface(i));
+    for (let i = 0; i < 9; i++) write(`src/small/g${i}.ts`, iface(100 + i));
+    git("add", "-A");
+    git("commit", "-qm", "init");
+    author("second@t.test");
+    write("src/small/g0.ts", iface(100) + "export const touched = 1\n");
+    git("add", "-A");
+    git("commit", "-qm", "second hand");
+  });
+
+  const r = await scan(dir);
+  const small = dimension(r, "src/small", "interface_prefix");
+
+  assert.equal(small.candidates, 9, "nine sites is all it has");
+  assert.ok(small.bound < 0.9, `its own bound cannot carry it: ${small.bound}`);
+  assert.equal(small.gate, null, JSON.stringify({ gate: small.gate, priorBound: small.priorBound }));
+  assert.equal(small.borrowed, true);
+});
+
+test("a directory whose population nobody accepted lends nothing", async (t) => {
+  // The pool is built from slots no other condition has closed. A greenfield
+  // area's population is the agent's own output (E4), so counting it into the
+  // prior would let the agent lend itself the confidence to state a claim.
+  const dir = repo(t, (d, { git, write, author, pin }) => {
+    for (let i = 0; i < 9; i++) write(`src/small/g${i}.ts`, iface(100 + i));
+    git("add", "-A");
+    git("commit", "-qm", "init");
+    author("second@t.test");
+    // The big directory arrives after the pin, so its counts postdate the
+    // baseline and it may not vote.
+    for (let i = 0; i < 60; i++) write(`src/big/f${i}.ts`, iface(i));
+    git("add", "-A");
+    const sha = git("rev-parse", "HEAD").trim();
+    git("commit", "-qm", "greenfield");
+    pin([{ id: "s", path: "src/small", files: Array.from({ length: 9 }, (_, i) => `src/small/g${i}.ts`) }], sha);
+  });
+
+  const r = await scan(dir);
+  const small = dimension(r, "src/small", "interface_prefix");
+
+  assert.equal(small.gate, "evidence", JSON.stringify({ gate: small.gate, priorBound: small.priorBound }));
+  assert.equal(small.borrowed, false);
+});

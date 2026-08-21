@@ -707,3 +707,116 @@ test("echo answers an object and exits 0 when the directory it fired in is gone"
 
   assert.equal(out, "{}", "an empty object, and the exit code execFileSync would have thrown on");
 });
+
+/* --- the command word is required (#67) --- */
+
+test("the bare name prints the usage and writes nothing", (t) => {
+  // The command word used to be optional and to default to `scan`, which
+  // writes. Typing the name to see what the tool does rewrote the map: 14
+  // seconds and a replaced `.claude/rules/` for somebody who only wanted to
+  // look.
+  const repo = repoWithSource(t);
+
+  const out = execFileSync(process.execPath, [join(ROOT, "bin", "anatomiya.mjs")], {
+    cwd: repo,
+    stdio: "pipe",
+    encoding: "utf8",
+  });
+
+  assert.match(out, /^usage: anatomiya scan/, out);
+  assert.equal(existsSync(join(repo, ".claude", "rules")), false, "nothing was written");
+});
+
+test("a mistyped command is refused by name, not reported as a bad repository", () => {
+  // The asymmetry was the tell: a mistyped option was already refused by name
+  // with the usage, while a mistyped command was read as a path and reported as
+  // `not a git repository: frobnicate`, which names the wrong fix.
+  let status = 0;
+  let stderr = "";
+  try {
+    execFileSync(process.execPath, [join(ROOT, "bin", "anatomiya.mjs"), "frobnicate"], {
+      stdio: "pipe",
+      encoding: "utf8",
+    });
+  } catch (err) {
+    status = err.status;
+    stderr = String(err.stderr ?? "");
+  }
+
+  assert.equal(status, 2, "refused the way an unknown option is refused");
+  assert.match(stderr, /unknown command: frobnicate/);
+  assert.match(stderr, /usage: anatomiya scan/, "and it prints the usage");
+  assert.doesNotMatch(stderr, /not a git repository/, "the fix named is the command word");
+});
+
+test("a path with no command word is refused rather than scanned", (t) => {
+  // `anatomiya <path>` used to scan and write. A path is not a command.
+  const repo = repoWithSource(t);
+
+  let status = 0;
+  let stderr = "";
+  try {
+    execFileSync(process.execPath, [join(ROOT, "bin", "anatomiya.mjs"), repo], {
+      stdio: "pipe",
+      encoding: "utf8",
+    });
+  } catch (err) {
+    status = err.status;
+    stderr = String(err.stderr ?? "");
+  }
+
+  assert.equal(status, 2);
+  assert.match(stderr, /unknown command/);
+  assert.equal(existsSync(join(repo, ".claude", "rules")), false, "nothing was written");
+});
+
+test("--help and -h still print the usage with no command word", () => {
+  for (const flag of ["--help", "-h"]) {
+    const out = execFileSync(process.execPath, [join(ROOT, "bin", "anatomiya.mjs"), flag], {
+      stdio: "pipe",
+      encoding: "utf8",
+    });
+    assert.match(out, /^usage: anatomiya scan/, `${flag} prints the usage`);
+  }
+});
+
+test("a mistyped --base exits non-zero and names the argument, not the repository", (t) => {
+  // The command file's contract: a non-zero exit means the check could not run,
+  // show its output and stop. The old answer was a whole-branch review at exit
+  // 0, which the agent is told to trust as a finished check.
+  const repo = repoWithBranch(t);
+  anatomiya(repo, "scan");
+
+  let status = 0;
+  let stderr = "";
+  try {
+    execFileSync(process.execPath, [join(ROOT, "bin", "anatomiya.mjs"), "check", repo, "--base", "no/such/ref"], {
+      stdio: "pipe",
+      encoding: "utf8",
+    });
+  } catch (err) {
+    status = err.status;
+    stderr = String(err.stderr ?? "");
+  }
+
+  assert.equal(status, 1, "a check that could not run must not exit 0");
+  assert.match(stderr, /^anatomiya: --base no\/such\/ref resolves to no commit/, stderr);
+  assert.doesNotMatch(stderr, /\n\s+at /, "no stack trace");
+});
+
+test("an option cannot stand in for the command word", () => {
+  let status = 0;
+  let stderr = "";
+  try {
+    execFileSync(process.execPath, [join(ROOT, "bin", "anatomiya.mjs"), "--format", "json"], {
+      stdio: "pipe",
+      encoding: "utf8",
+    });
+  } catch (err) {
+    status = err.status;
+    stderr = String(err.stderr ?? "");
+  }
+
+  assert.equal(status, 2);
+  assert.match(stderr, /no command given, and an option cannot stand in for one: --format/, stderr);
+});

@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseRuby } from "../lib/ruby.mjs";
 import { ALL_DIMENSIONS } from "../lib/dimensions.mjs";
-import { applyGates } from "../lib/reduce.mjs";
+import { applicabilityFloor, applyGates } from "../lib/reduce.mjs";
 import { RAILS_DIMENSIONS } from "../lib/dimensions-rails.mjs";
 
 const dir = mkdtempSync(join(tmpdir(), "anatomiya-rails-"));
@@ -74,9 +74,11 @@ end
   opts_hash_splat: `
 class Opts < ActiveRecord::Migration[7.2]
   def change
-    add_column :t, :a, :string, { null: false }
-    add_column :t, :b, :string, **shared_opts
-    add_column :t, :c, :string, null: true
+    create_table :t do |t|
+      t.string :a, { null: false }
+      t.string :b, **shared_opts
+      t.string :c, null: true
+    end
   end
 end
 `,
@@ -142,6 +144,72 @@ end
 class Ddl < ActiveRecord::Migration[7.2]
   def up
     execute 'CREATE INDEX CONCURRENTLY x ON y (z)'
+  end
+end
+`,
+
+  polymorphic_reference: `
+class AddOwner < ActiveRecord::Migration[7.2]
+  def change
+    add_reference :comments, :owner, polymorphic: true
+    create_table :notes do |t|
+      t.references :subject, polymorphic: true
+    end
+    add_reference :posts, :author, foreign_key: true
+  end
+end
+`,
+
+  sidekiq_entry: `
+class SendDigestWorker
+  include Sidekiq::Worker
+
+  def perform(id)
+    raise Retryable if bad?(id)
+  end
+end
+`,
+
+  data_up_down: `
+class UpdatePrompt < ActiveRecord::Migration[7.2]
+  def up
+    Prompt.find_by(key: 'past_seller').update!(body: 'new')
+  end
+
+  def down
+    Prompt.find_by(key: 'past_seller').update!(body: 'old')
+  end
+end
+`,
+
+  three_step_null: `
+class Backfill < ActiveRecord::Migration[7.2]
+  def up
+    add_column :users, :tier, :string
+    User.in_batches.update_all(tier: 'free')
+    change_column_null :users, :tier, false
+  end
+
+  def down
+    remove_column :users, :tier
+  end
+end
+`,
+
+  change_table_column: `
+class Alter < ActiveRecord::Migration[7.2]
+  def change
+    change_table :users do |t|
+      t.string :nickname
+    end
+  end
+end
+`,
+
+  bare_add_column: `
+class Bare < ActiveRecord::Migration[7.2]
+  def change
+    add_column :users, :nickname, :string
   end
 end
 `,
@@ -388,7 +456,7 @@ test("schema.rb contributes nothing to any of the six", needsRuby, () => {
 
 /* --- the gates these counts have to pass through --- */
 
-test("the real Empire Flippers reversible counts state a directive and the real primary-key counts do not", needsRuby, () => {
+test("the real Empire Flippers reversible and primary-key counts both state a directive", needsRuby, () => {
   // db/migrate is one directory, so the directory gate is skipped. The claim
   // survives down to 1,393 conforming before the bound falls under 0.90, which
   // is 9 more violations than it carries.
@@ -409,8 +477,10 @@ test("the real Empire Flippers reversible counts state a directive and the real 
   assert.equal(reversible.gate, null);
   assert.equal(Number(reversible.bound.toFixed(4)), 0.9065);
 
-  // A 0.9869 convention on a real repository, stopped by the 25% applicability
-  // share and by nothing else. Anyone who moves that floor sees this move.
+  // A 0.9869 convention on a real repository, and the strongest untold claim in
+  // that map: the quarter share asked 381 of a single 1,522-file directory, so
+  // any construct rarer than a quarter of a big flat area was unstateable
+  // however perfect. Capped at three roots the floor asks 120 and this states.
   const primaryKey = applyGates(
     {
       key: "table_primary_key_declared",
@@ -424,10 +494,13 @@ test("the real Empire Flippers reversible counts state a directive and the real 
     },
     { authors: 5, repoAuthors: 13, areaFileCount: 1522, areaDirCount: 1 }
   );
-  assert.equal(primaryKey.directive, false);
-  assert.equal(primaryKey.gate, "applicability");
+  assert.equal(primaryKey.gate, null);
+  assert.equal(primaryKey.directive, true);
   assert.equal(Number(primaryKey.ratio.toFixed(4)), 0.9869);
   assert.equal(Number(primaryKey.bound.toFixed(4)), 0.9536);
+  // It is `partial`, so whatever it states is capped at FIX and can never
+  // reach the severity that means "the first violation in this area's history".
+  assert.equal(applicabilityFloor(1522), 120);
 });
 
 test("a two-migration repository states nothing from a perfect record", needsRuby, () => {
@@ -511,4 +584,48 @@ test("SQL through a connection receiver is data work, not schema work", needsRub
   const ddl = hits("migration_schema_only", "connection_ddl");
   assert.equal(ddl.length, 1);
   assert.equal(ddl[0].conforming, true, "DDL through the same receiver is still schema work");
+});
+
+/* --- a row does not ask a question another row already answered no to (#62) --- */
+
+test("a data migration is not a candidate for the reversibility row", needsRuby, () => {
+  // Rails' `change` auto-inverts only a closed set of schema commands, and
+  // `row.update!(...)` is not one of them: collapsing up/down into change
+  // either lies, because rollback re-runs the update forward and reports
+  // success, or raises ActiveRecord::IrreversibleMigration. 88 of that
+  // repository's 121 reversibility violations sat on a migration the
+  // schema-only row also flags.
+  assert.deepEqual(hits("migration_reversible", "data_up_down"), []);
+  assert.deepEqual(counts("migration_schema_only", "data_up_down"), { candidates: 1, conforming: 0 });
+});
+
+test("raw SQL nobody could read is where up and down is the correct form", needsRuby, () => {
+  // An `execute` whose string the cap truncated is raw SQL, and raw SQL is
+  // exactly where `change` cannot invert. The schema-only row already declines
+  // to judge it; the reversibility row now declines with it.
+  assert.deepEqual(hits("migration_reversible", "sql_update"), []);
+  assert.deepEqual(counts("migration_reversible", "sql_ddl"), { candidates: 1, conforming: 0 });
+});
+
+test("the only form that runs on a populated table is not judged by three rows at once", needsRuby, () => {
+  // add nullable, backfill, then change_column_null, in up/down. It was a
+  // violation of all three rows and the only one of the three forms that runs.
+  assert.deepEqual(hits("migration_reversible", "three_step_null"), []);
+  assert.deepEqual(hits("column_null_declared", "three_step_null"), []);
+  assert.deepEqual(counts("migration_schema_only", "three_step_null"), { candidates: 1, conforming: 0 });
+});
+
+test("column_null_declared asks only about columns on a table the migration creates", needsRuby, () => {
+  // On a populated table `add_column ... null: false` raises
+  // PG::NotNullViolation without a default, so asking for it is asking for a
+  // migration that does not run.
+  assert.deepEqual(counts("column_null_declared", "named_block_param"), { candidates: 1, conforming: 1 });
+  assert.deepEqual(hits("column_null_declared", "change_table_column"), []);
+  assert.deepEqual(hits("column_null_declared", "bare_add_column"), []);
+});
+
+test("a polymorphic reference cannot declare a foreign key, so it is not a site", needsRuby, () => {
+  // ActiveRecord itself raises `ArgumentError: Cannot add a foreign key to a
+  // polymorphic relation`, so the conforming form does not run.
+  assert.deepEqual(counts("reference_foreign_key", "polymorphic_reference"), { candidates: 1, conforming: 1 });
 });

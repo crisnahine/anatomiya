@@ -23,6 +23,7 @@ const summary = (o = {}) => ({
   orphaned: 0,
   barren: 0,
   unexamined: [],
+  semantic: null,
   historyError: null,
   rules: { foreign: [], unknown: [], unreadable: [], listed: true, replaced: [] },
   removed: 0,
@@ -316,6 +317,9 @@ test("the summary carries every fact the scan prints", () => {
     orphaned: 0,
     barren: 0,
     unexamined: [],
+    // Null on a scan that never asked for the tier and on one where it ran
+    // clean. Only a tier that ran badly has anything to say.
+    semantic: null,
     historyError: null,
     rules: { foreign: [], unknown: [], unreadable: [], listed: true, replaced: [] },
     removed: 0,
@@ -393,8 +397,9 @@ test("a pin prints the delta it accepted, then what it wrote", () => {
   assert.deepEqual(pinLines(s), [
     "baseline pinned at abcdef12",
     "2 files enter the baseline population, 0 leave it",
-    "",
-    '"lib" (new area)  +2 -0',
+    // A first pin counts the areas rather than listing them: every one of them
+    // is new by arithmetic, so the list said the same thing once per directory.
+    "1 area enters it",
     "",
     "wrote .claude/anatomiya/baseline.json",
     "run `anatomiya scan` to measure the map against it",
@@ -521,4 +526,33 @@ test("the pin record neutralises the paths only it prints", () => {
   for (const a of s.delta.areas) {
     for (const value of [a.path, ...a.added, ...a.removed]) assert.doesNotMatch(value, CF, value);
   }
+});
+
+/* --- a tier that ran badly reaches the terminal too (#72) --- */
+
+test("a degraded semantic tier is on the summary, not only in the map", () => {
+  // `--deep` costs about 26x the parse. On a measured 2,486-file React
+  // repository it added 110 slots, every one of them read zero, and the summary
+  // said nothing: the reader paid 24 seconds instead of 12 and had no way to
+  // know the tier answered nothing. The map, `facts.json` and every area file
+  // all said so; the terminal the caller was watching was the one surface that
+  // did not.
+  const lines = scanLines(
+    summary({ semantic: "type-checked claims are counts only: 15% of type lookups resolved (low-resolution)" })
+  );
+
+  assert.ok(
+    lines.includes("type-checked claims are counts only: 15% of type lookups resolved (low-resolution)"),
+    lines.join("\n")
+  );
+});
+
+test("a tier that ran cleanly, and one that never ran, say nothing", () => {
+  // A clean tier is the tier working, and a scan without --deep never asked.
+  // `null` is the only value a run produces for either, so the comparison is
+  // against the sentence rather than against another falsy spelling of it.
+  const lines = scanLines(summary({ semantic: null }));
+
+  assert.ok(!lines.some((l) => l.startsWith("type-checked claims")), lines.join("\n"));
+  assert.deepEqual(lines, scanLines(summary()));
 });

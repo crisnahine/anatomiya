@@ -252,6 +252,127 @@ const SRC = {
       "añejo — ✅"
     end
   `,
+
+  ruby_error_subclasses: `
+    class QuotaExceededError < StandardError
+    end
+    class MissingFile < Errno::ENOENT
+    end
+    class ClassifyTransaction < ActiveInteraction::Base
+    end
+  `,
+  local_error_base: `
+    class AppError < StandardError
+    end
+    class QuotaError < AppError
+    end
+  `,
+  namespaced_base: `
+    module Api
+      module V1
+        class BaseController < ActionController::Base
+        end
+      end
+    end
+  `,
+  pathed_base: `
+    class Api::V1::OtherController < ActionController::Base
+    end
+  `,
+
+  sidekiq_worker: `
+    class SendDigestWorker
+      include Sidekiq::Worker
+
+      def perform(user_id, digest_id, force)
+      end
+    end
+  `,
+  sidekiq_include_below: `
+    class LateWorker
+      def perform(a, b, c)
+      end
+
+      include Sidekiq::Job
+    end
+  `,
+  each_validator: `
+    class EmailValidator < ActiveModel::EachValidator
+      def validate_each(record, attribute, value)
+      end
+    end
+  `,
+  index_assign: `
+    class Store
+      def []=(a, b, c)
+      end
+    end
+  `,
+  bare_class: `
+    class TmpPlain
+      def name; end
+    end
+  `,
+  struct_super: `
+    class TmpOdd < Struct.new(:a)
+    end
+  `,
+  migration_indexed_super: `
+    class AddThing < ActiveRecord::Migration[7.2]
+      def change; end
+    end
+  `,
+  nested_and_reopened: `
+    class Outer < ApplicationRecord
+      class Helper
+      end
+    end
+    class Outer
+      def extra; end
+    end
+    module Namespacing
+    end
+  `,
+
+  time_fixed_offset: `
+    def go
+      DateTime.new(2026, 8, 20, 9, 0, 0, 'PST')
+      Time.new(2026, 8, 20, 9, 0, 0, '-08:00')
+    end
+  `,
+  time_zone_built: `
+    def go
+      Time.zone.local(2026, 8, 20)
+      Time.zone.parse("2026-08-20")
+    end
+  `,
+  service_rollback: `
+    class Charge
+      def call
+        ActiveRecord::Base.transaction do
+          raise ActiveRecord::Rollback if bad?
+        end
+        success
+      end
+    end
+  `,
+  service_rollback_and_raise: `
+    class Charge
+      def call
+        ActiveRecord::Base.transaction do
+          raise ActiveRecord::Rollback if bad?
+        end
+        raise ChargeFailed
+      end
+    end
+  `,
+
+  active_job_perform: `
+    class SendMailJob < ApplicationJob
+      def perform(a, b, c)
+      end
+    end
+  `,
 };
 
 const parsed = await parseRuby(Object.entries(SRC).map(([name, src]) => write(name, src)));
@@ -823,4 +944,187 @@ test("an ActiveRecord-shaped call on a client-named constant is not an HTTP site
 test("a raw Net::HTTP block handle named http is not a conforming client", needsRuby, () => {
   assert.deepEqual(counts("http_through_client", "http_raw_block"), { candidates: 1, conforming: 0 },
     "only the Net::HTTP.start site counts, and it counts against");
+});
+
+/* --- class_base: Ruby refuses to raise a class that is not an Exception (#58) --- */
+
+test("an exception subclass is not a class_base site", needsRuby, () => {
+  // `ruby -e 'class FakeBase; end; class E < FakeBase; end; raise E'` answers
+  // `TypeError: exception class/object expected`, so conforming makes the class
+  // unraisable. Every Rails service directory grows error classes, so a perfect
+  // baseline made the next one a MUST-FIX.
+  const h = hits("class_base", "ruby_error_subclasses");
+
+  assert.deepEqual(h.map((x) => x.where), ["ClassifyTransaction"], JSON.stringify(h.map((x) => x.class)));
+});
+
+test("a repository's own error base keeps its subclasses as sites", needsRuby, () => {
+  // Only the language's own, so a repository that gives its errors a base of
+  // their own keeps every subclass and the row still states there.
+  const h = hits("class_base", "local_error_base");
+
+  assert.deepEqual(h.map((x) => [x.where, x.class]), [["QuotaError", "AppError"]]);
+});
+
+test("a class carries its own qualified name, whichever way its namespace is spelled", needsRuby, () => {
+  // The self-base exclusion needs the learned class, so it lives in the fold;
+  // what the predicate owes it is the site's own name.
+  assert.deepEqual(hits("class_base", "namespaced_base").map((x) => x.self), ["Api::V1::BaseController"]);
+  assert.deepEqual(hits("class_base", "pathed_base").map((x) => x.self), ["Api::V1::OtherController"]);
+});
+
+/* --- keyword_params counts only what its caller could reach with keywords (#61) --- */
+
+test("a Sidekiq perform is not a keyword_params site, whichever side of it the include sits", needsRuby, () => {
+  // Sidekiq reaches it through `instance.perform(*cloned_args)`, a splat of a
+  // JSON array, and in Ruby 3 a splatted Hash is never keywords: enqueueing
+  // raises "Job arguments must be native JSON types" and executing raises
+  // "wrong number of arguments (given 1, expected 0; required keywords: ...)".
+  assert.deepEqual(hits("keyword_params", "sidekiq_worker"), []);
+  assert.deepEqual(hits("keyword_params", "sidekiq_include_below"), []);
+});
+
+test("an ActiveJob perform is still a site, because ActiveJob carries keywords through", needsRuby, () => {
+  // Gated on the mixin rather than on the name: `perform` is an ordinary
+  // method name and ActiveJob does pass keywords.
+  assert.deepEqual(hits("keyword_params", "active_job_perform").map((h) => h.where), ["perform"]);
+});
+
+test("validate_each and []= are never keyword_params sites", needsRuby, () => {
+  // `EachValidator#validate` calls `validate_each(record, attribute, value)`
+  // positionally, and `s[a: 1] = 2` does not parse at all: "unexpected keyword
+  // arg given in index assignment".
+  assert.deepEqual(hits("keyword_params", "each_validator"), []);
+  assert.deepEqual(hits("keyword_params", "index_assign"), []);
+});
+
+/* --- zone_aware_time sees fixed-offset construction (#74b) --- */
+
+test("a fixed-offset construction is a zone_aware_time violation", needsRuby, () => {
+  // `DateTime.new(2026, 8, 20, 9, 0, 0, 'PST')` always resolves to UTC-08:00
+  // and `Time.new(..., '-08:00')` reports utc_offset -28800, so the app's zone
+  // never reaches the value. A bare `Time.new` is `Time.now` under another name.
+  assert.deepEqual(counts("zone_aware_time", "time_fixed_offset"), { candidates: 2, conforming: 0 });
+});
+
+test("a time built through the app zone conforms, however it is built", needsRuby, () => {
+  // Without this a repository that builds its times the right way reads as
+  // having no conforming construction at all.
+  assert.deepEqual(counts("zone_aware_time", "time_zone_built"), { candidates: 2, conforming: 2 });
+});
+
+/* --- service_result_shape does not read a rollback as a raised failure (#74c) --- */
+
+test("raise ActiveRecord::Rollback is control flow inside a transaction, not a raised failure", needsRuby, () => {
+  // The block swallows it and the method still returns, so reading it as a
+  // service raising its failure is a wrong finding.
+  assert.deepEqual(counts("service_result_shape", "service_rollback"), { candidates: 1, conforming: 1 });
+});
+
+test("a method that also raises an ordinary error is still a violation", needsRuby, () => {
+  assert.deepEqual(counts("service_result_shape", "service_rollback_and_raise"), { candidates: 1, conforming: 0 });
+});
+
+/* --- a class that names no superclass is the omission class_base could not see (#54) --- */
+
+test("a bare top-level class is a class_base site conforming to no base", needsRuby, () => {
+  // The strongest reading of "things in app/models are ActiveRecord models" was
+  // the one the check could not enforce, and the realistic violation is the
+  // omission: an agent drops a PORO into app/models rather than inheriting the
+  // wrong base. The same one-sided shape H16 fixed for module_include.
+  const h = hits("class_base", "bare_class");
+
+  assert.equal(h.length, 1);
+  assert.equal(h[0].class, undefined, "it votes for no base and conforms to none");
+  assert.equal(h[0].self, "TmpPlain");
+});
+
+test("a class that names any superclass at all is not an omission", needsRuby, () => {
+  // Measured: `ActiveRecord::Migration[7.2]` is an index call, so it names no
+  // constant. Counting a non-constant superclass as an omission took mastodon's
+  // db/migrate from 41 of 41 to 41 of 576 and lost the claim in two directories
+  // that hold nothing but migrations.
+  assert.deepEqual(hits("class_base", "struct_super"), []);
+  assert.deepEqual(hits("class_base", "migration_indexed_super"), []);
+});
+
+test("a nested class, a reopening and a namespacing module are not omissions", needsRuby, () => {
+  // Each has somewhere else to have got its base: a nested class is the outer
+  // class's helper, a reopening declares its superclass in the part that
+  // carries it, and a module is not a class at all.
+  const h = hits("class_base", "nested_and_reopened");
+
+  assert.deepEqual(h.map((x) => [x.where, x.class ?? null]), [["Outer", "ApplicationRecord"]]);
+});
+
+/* --- the Ruby wrapper is not one of its own sites either (#68) --- */
+
+test("the repository's own client is not an http_through_client site", needsRuby, () => {
+  // Its own client is the one file that has to reach Net::HTTP directly. The
+  // map named it as an exception to routing through itself.
+  const file = programs.get("http_mixed");
+  assert.ok(file && file.ok, "the fixture parsed");
+  const at = (rel) => {
+    const out = [];
+    dim("http_through_client").run(file.program, (h) => out.push(h), { rel });
+    return out;
+  };
+
+  assert.deepEqual(at("app/clients/client.rb"), []);
+  assert.deepEqual(at("app/services/assembly/request.rb"), []);
+  assert.ok(at("app/services/payment_service.rb").length > 0, "an ordinary service still counts");
+  assert.ok(at("app/models/payment_api.rb").length > 0, "and so does a file that merely mentions the vocabulary");
+});
+
+test("a Sidekiq perform is not a service entry point, because returning is how a job says it succeeded", needsRuby, () => {
+  // A job that returns instead of raising is acked as successful: never
+  // retried, never in the dead set, never in Sentry. The claim's remedy is the
+  // one thing a worker must not do.
+  const file = programs.get("sidekiq_worker");
+  assert.ok(file && file.ok, "the fixture parsed");
+  const out = [];
+  dim("service_result_shape").run(file.program, (h) => out.push(h));
+
+  assert.deepEqual(out, []);
+});
+
+test("an ordinary call entry point in the same shape is still a site", needsRuby, () => {
+  const file = programs.get("service_raises");
+  assert.ok(file && file.ok, "the fixture parsed");
+  const out = [];
+  dim("service_result_shape").run(file.program, (h) => out.push(h));
+
+  assert.equal(out.length, 1);
+});
+
+test("isRubyError names the language's own exception classes and nothing else", needsRuby, async () => {
+  const { isRubyError } = await import("../lib/dimensions-ruby.mjs");
+
+  for (const b of ["StandardError", "Exception", "ArgumentError", "SystemCallError", "Errno::ENOENT", "Errno::EACCES", "Encoding::CompatibilityError"]) {
+    assert.equal(isRubyError(b), true, b);
+  }
+  for (const b of ["AppError", "QuotaExceededError", "ActiveRecord::RecordNotFound", "ActiveInteraction::Base", "ApplicationRecord", "MyErrno::Thing"]) {
+    assert.equal(isRubyError(b), false, b);
+  }
+});
+
+test("the Ruby bridge hands a row the path it read, not just the tree", needsRuby, async () => {
+  // The JavaScript bridge and this one both have the path and only one passed
+  // it, so the capability rows saw it on one engine and not the other: the
+  // repository's own client would have been excused in TypeScript and charged
+  // in Ruby.
+  const wrapper = write("zz_client", "class Client\n  def go\n    Net::HTTP.get(uri)\n  end\nend\n");
+  const service = write("zz_payment_service", "class PaymentService\n  def go\n    Net::HTTP.get(uri)\n  end\nend\n");
+  const { RUBY_DIMENSIONS } = await import("../lib/dimensions-ruby.mjs");
+  const { results } = await parseRuby(
+    [
+      { rel: "app/clients/client.rb", abs: wrapper.abs, lang: "ruby" },
+      { rel: "app/services/payment_service.rb", abs: service.abs, lang: "ruby" },
+    ],
+    { dimensions: RUBY_DIMENSIONS.filter((d) => d.key === "http_through_client") }
+  );
+  const at = (rel) => results.find((r) => r.rel === rel);
+
+  assert.equal(at("app/clients/client.rb").hits.http_through_client, undefined, "the client implements the routing");
+  assert.equal(at("app/services/payment_service.rb").hits.http_through_client.length, 1);
 });

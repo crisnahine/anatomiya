@@ -360,3 +360,32 @@ test("the write line's count has to be the number of files in the rules director
   assert.deepEqual(wroteProblems(2, ["anatomiya-overview.md", "anatomiya-lib.md"]), []);
   assert.match(wroteProblems(2, ["anatomiya-overview.md"])[0], /wrote 2 .* holds 1 generated files/);
 });
+
+test("the probe lands inside the population a narrowed row learned over", () => {
+  // A naming row learned over the files that hold JSX says nothing about one
+  // that does not, so a bare comment planted in a components directory breaks
+  // nothing and the probe reads back as the check going quiet. Three
+  // repositories failed the run that way before the body carried an element.
+  const jsxArea = (over) => ({
+    id: "a2",
+    path: "src/components",
+    kinds: { exts: [[".tsx", 40]] },
+    imports: null,
+    reused: null,
+    dimensions: [dim("file_naming_case", { learned: "PascalCase", ...over })],
+  });
+
+  const narrowed = probePlan({ areas: [jsxArea({ learnedKind: "jsx" })] });
+  assert.equal(narrowed.path, "src/components/zz_probe_file.tsx");
+  assert.match(narrowed.body, /<div \/>/, narrowed.body);
+
+  // A row that narrowed nothing keeps the bare comment: nothing about the file
+  // has to hold JSX for it to answer.
+  const whole = probePlan({ areas: [jsxArea({})] });
+  assert.equal(whole.path, "src/components/zz_probe_file.tsx");
+  assert.doesNotMatch(whole.body, /<div \/>/);
+
+  // Ruby cannot carry an element whatever the record says.
+  const ruby = probePlan({ areas: [rubyArea([dim("file_naming_case", { learnedKind: "jsx" })])] });
+  assert.match(ruby.body, /^#/);
+});

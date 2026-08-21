@@ -208,6 +208,20 @@ for (const rel of ["README.md", "docs/why.md", "CONTRIBUTING.md"]) {
   }
 }
 
+// A row whose cells outnumber the header's is a row whose tail GitHub drops,
+// silently: an unescaped `|` inside a code span splits the cell it sits in, and
+// the Status column falls off the end. Three rows had it at once, one of them a
+// whole `**done**` list. The escape is `\|`, which the file already uses.
+for (const [i, line] of read("DECISIONS.md").split(/\r?\n/).entries()) {
+  if (!/^\| [A-H]\d+ \|/.test(line)) continue;
+  const cells = (line.match(/(?<!\\)\|/g) ?? []).length;
+  claim(
+    "DECISIONS.md",
+    cells === 5,
+    `row ${/^\| ([A-H]\d+) \|/.exec(line)[1]} on line ${i + 1} has ${cells - 1} cells, not 4: escape a \`|\` inside a code span as \`\\|\``
+  );
+}
+
 // A row number appearing twice is a row nobody can cite.
 const ids = [...read("DECISIONS.md").matchAll(/^\| ([A-H]\d+) \|/gm)].map((m) => m[1]);
 claim("DECISIONS.md", new Set(ids).size === ids.length, "two rows share a number");

@@ -534,3 +534,46 @@ test("applying pairings on a monorepo credits each package's own producers, not 
   assert.equal(parsed.get("decidim-core/app/models/decidim/component.rb").hits.model_spec[0].conforming, true);
   assert.equal(parsed.get("decidim-admin/app/models/decidim/admin/dashboard.rb").hits.model_spec[0].conforming, false);
 });
+
+/* --- an abstract base is never routed to and can never own a spec (#66) --- */
+
+const CONTROLLER_SPEC = { from: "app/controllers", to: "spec/controllers", ext: ".rb", companionSuffix: "_spec.rb" };
+
+test("an abstract base names no companion", () => {
+  // Three unroutable files took a 62-of-62 claim to 62 of 65, the evidence gate
+  // then read 0.8729 against the 0.90 bar, and the whole claim went unstated
+  // over files nobody could ever satisfy. A reviewer left "No spec for this
+  // controller. All 56 siblings have one" on a live pull request; the map had
+  // the data and could not say it.
+  assert.equal(companionOf("app/controllers/api/v1/base_controller.rb", CONTROLLER_SPEC), null);
+  assert.equal(companionOf("app/controllers/api/v1/chrome_extension/base_controller.rb", CONTROLLER_SPEC), null);
+  assert.equal(companionOf("app/controllers/base.rb", CONTROLLER_SPEC), null);
+});
+
+test("the noun has to match the directory, so a base of another kind is still a site", () => {
+  assert.equal(companionOf("app/models/base_controller.rb", MODEL_SPEC), "spec/models/base_controller_spec.rb");
+  assert.equal(companionOf("app/models/base_model.rb", MODEL_SPEC), null);
+});
+
+test("a concrete controller whose name merely starts with base is still a site", () => {
+  assert.equal(
+    companionOf("app/controllers/base_price_controller.rb", CONTROLLER_SPEC),
+    "spec/controllers/base_price_controller_spec.rb"
+  );
+});
+
+test("the base is not a site on either side, so the scan and the check agree about it", () => {
+  // The load-bearing one. A rule placed in `pairingHits` alone leaves `check`
+  // firing a MUST-FIX against a file the map never counted, which is the H12
+  // asymmetry in reverse.
+  const corpus = new Set([
+    "app/controllers/api/v1/base_controller.rb",
+    "app/controllers/api/v1/listings_controller.rb",
+    "spec/controllers/api/v1/listings_controller_spec.rb",
+  ]);
+
+  const hits = pairingHits(corpus, CONTROLLER_SPEC);
+
+  assert.deepEqual([...hits.keys()], ["app/controllers/api/v1/listings_controller.rb"]);
+  assert.deepEqual(pairingViolations(["app/controllers/api/v1/base_controller.rb"], corpus, CONTROLLER_SPEC), []);
+});

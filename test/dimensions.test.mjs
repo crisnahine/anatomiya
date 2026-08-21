@@ -623,3 +623,179 @@ test("a pairing row with a mistyped tier refuses to load now", () => {
   // silently drop.
   assert.throws(() => assertRegistryRows([{ ...PAIRINGS[0], tier: "Syntactic" }]), /Syntactic/);
 });
+
+/* --- module_state_const counts only where const was a real choice (#57) --- */
+
+test("a binding const cannot hold is not a site", () => {
+  // `const container: HTMLDivElement` with no initialiser is a SyntaxError and
+  // assigning to a const is a TypeError, so the finding asked for code that
+  // does not compile, at the severity meaning "the first violation in the
+  // area's history". This is the ordinary React Testing Library setup.
+  const r = counts("module_state_const", `
+    let container: HTMLDivElement
+    let reactRoot: Root
+    const render = () => { container = document.createElement("div"); reactRoot = createRoot(container) }
+  `);
+  assert.deepEqual(r, { candidates: 1, conforming: 1 }, "only the const is a site");
+});
+
+test("a let const could have held is still a violation", () => {
+  assert.deepEqual(counts("module_state_const", `let a = 1`), { candidates: 1, conforming: 0 });
+  assert.deepEqual(counts("module_state_const", `var a = 1`), { candidates: 1, conforming: 0 });
+});
+
+test("a member assignment does not excuse the binding that shares its name", () => {
+  // `obj.x = 1` writes a property, not the binding, which is the distinction
+  // `usesParam` already draws for a catch parameter.
+  assert.deepEqual(counts("module_state_const", `let x = 1\nobj.x = 1`), { candidates: 1, conforming: 0 });
+});
+
+test("a destructuring let is judged on every name the pattern binds", () => {
+  assert.deepEqual(counts("module_state_const", `let { a, b } = f()`), { candidates: 1, conforming: 0 });
+  assert.deepEqual(counts("module_state_const", `let { a, b } = f()\na = 2`), { candidates: 0, conforming: 0 });
+});
+
+test("an increment and a for-of head are assignments, and a redeclared var is not a const", () => {
+  assert.equal(hits("module_state_const", `let i = 0\ni++`).length, 0);
+  assert.equal(hits("module_state_const", `let x = 1\nfor (x of xs) { g(x) }`).length, 0);
+  assert.equal(hits("module_state_const", `var x = 1\nvar x = 2`).length, 0);
+});
+
+test("a const stays a site whatever else the file assigns", () => {
+  // The conforming count cannot move, so the ratio can only rise by losing
+  // violations nobody could act on.
+  assert.deepEqual(counts("module_state_const", `const a = 1\nlet b\nb = 2`), { candidates: 1, conforming: 1 });
+});
+
+test("one uninitialised declarator takes the whole declaration out", () => {
+  assert.equal(hits("module_state_const", `let a = 1, b`).length, 0);
+});
+
+test("a pairing row may not declare a counter-claim, because only one direction is enforceable", () => {
+  // `pairingViolations` computes one direction, the companion that is not
+  // there, and the check skips an obligation whose claim side did not state. A
+  // pairing row with a counter would print a sentence in the map and enforce
+  // nothing, which is the H12 asymmetry the corpus rows are already closed
+  // against. Refused at load rather than guarded in the check, so the hole
+  // cannot be opened by an edit to `pairing.mjs` alone.
+  assert.throws(
+    () =>
+      assertRegistryRows([
+        {
+          key: "probe_spec",
+          kind: "pairing",
+          tier: "syntactic",
+          claim: "a probe ships with a spec",
+          counterClaim: "a probe ships without a spec",
+          precision: "precise",
+          applicabilityPredicate: { sites: "a .rb file anywhere under app/probes whose own name does not end in _spec.rb", blind: null },
+          langs: ["ruby"],
+          from: "app/probes",
+          to: "spec/probes",
+          ext: ".rb",
+          companionSuffix: "_spec.rb",
+        },
+      ]),
+    /probe_spec is a pairing row with a counterClaim/
+  );
+});
+
+/* --- a read in a write position has no ?. form (#77 row 2) --- */
+
+test("a write position has no ?. form, so it is not a site", () => {
+  // `o?.r = 3` is TS2779 and `new params?.Client()` is "Invalid optional chain
+  // from new expression": replacing the counted operator does not compile.
+  for (const src of [
+    `function f(options) { options.retries = 3 }`,
+    `function f(props) { props.count += 1 }`,
+    `function f(input) { input.z++ }`,
+    `function f(params) { return new params.Client() }`,
+    `function f(config, xs) { for (config.k of xs) {} }`,
+  ]) {
+    assert.equal(hits("optional_chaining", src).length, 0, src);
+  }
+});
+
+test("the positions ?. is legal in stay sites", () => {
+  assert.equal(hits("optional_chaining", `function f(config) { delete config.cache }`).length, 1);
+  assert.equal(hits("optional_chaining", `function f(options) { for (const k in options.map) {} }`).length, 1);
+  assert.deepEqual(counts("optional_chaining", `function f(opts) { return opts.value }`), { candidates: 1, conforming: 0 });
+});
+
+test("splitBy is refused off a row that learns no class", () => {
+  // Every other declared field is held at load. Without this one a mistyped
+  // `splitBy` throws mid-scan, on whichever repository reached it first.
+  const probe = (o) => ({
+    key: "probe",
+    tier: "syntactic",
+    claim: "probes here are named <style>",
+    counterClaim: null,
+    precision: "precise",
+    applicabilityPredicate: { sites: "a file holding a probe declaration", blind: null },
+    langs: ["js"],
+    run() {},
+    ...o,
+  });
+
+  assert.throws(() => assertRegistryRows([probe({ splitBy: () => "module" })]), /splitBy without learning a class/);
+  assert.throws(() => assertRegistryRows([probe({ learnedClasses: true, splitBy: "jsx" })]), /splitBy without learning a class/);
+  const split = { learnedClasses: true, splitBy: () => "module" };
+  const both = { a: "probes here of a are named <style>", b: "probes here of b are named <style>" };
+  assert.doesNotThrow(() => assertRegistryRows([probe({ ...split, splitClaim: both })]));
+});
+
+test("a row that splits its population says so in both sentences", () => {
+  // Without the second sentence the narrowing is invisible: the area file loads
+  // on the files the population excluded and instructs them in a convention
+  // measured over the other kind, which the check then does not judge.
+  const probe = (o) => ({
+    key: "probe",
+    tier: "syntactic",
+    claim: "probes here are named <style>",
+    counterClaim: null,
+    learnedClasses: true,
+    splitBy: () => "module",
+    precision: "precise",
+    applicabilityPredicate: { sites: "a file holding a probe declaration", blind: null },
+    langs: ["js"],
+    run() {},
+    ...o,
+  });
+
+  assert.throws(() => assertRegistryRows([probe({})]), /splitBy without a sentence per kind/);
+  assert.throws(
+    () => assertRegistryRows([probe({ splitClaim: { module: "probes here are named <style>" } })]),
+    /splitBy without a sentence per kind/,
+    "one side is not a split"
+  );
+  assert.throws(
+    () => assertRegistryRows([probe({ splitClaim: { a: "probes of a are named PascalCase", b: "b <style>" } })]),
+    /sentence for a states a class the learning cannot fill/
+  );
+});
+
+test("every splitting row spells both of the kinds its own splitter answers", () => {
+  // The guard holds the shape; only the row itself knows which kinds it yields.
+  for (const d of ALL_DIMENSIONS.filter((x) => x.splitBy)) {
+    for (const facets of [{ jsx: true }, { jsx: false }, {}]) {
+      const kind = d.splitBy({ facets });
+      assert.equal(typeof d.splitClaim[kind], "string", `${d.key} has no sentence for ${kind}`);
+    }
+  }
+});
+
+test("a mid-chain assertion does not carry a write position past the grammar test", () => {
+  // The same leak on the row whose remedy is the same `?.`: one `!` between the
+  // receiver and the assignment flipped every refused position back to a site.
+  for (const src of [
+    `function f(options) { options.a!.retries = 3 }`,
+    `function f(props) { props.a!.count += 1 }`,
+    `function f(input) { input.a!.z++ }`,
+    `function f(params) { return new (params.a!.Client)() }`,
+    `function f(config, xs) { for (config.a!.k of xs) {} }`,
+    `function f(opts, q) { ({ a: opts.a!.x } = q) }`,
+    `function f(opts) { [opts.a!.y] = [2] }`,
+  ]) {
+    assert.equal(hits("optional_chaining", src).length, 0, src);
+  }
+});

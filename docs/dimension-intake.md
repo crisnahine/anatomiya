@@ -29,7 +29,7 @@ legitimate origin and the table says so rather than inventing an entry to point 
 | error_shape | Errors as values | - | shipped | |
 | module_state_const | Immutable bindings | - | shipped | |
 | async_error_handling | Unhandled promise rejection | - | shipped | |
-| optional_chaining | Null safety | - | shipped | |
+| optional_chaining | Null safety | - | shipped | Counts a member read off six receiver names, which is the only optionality signal this tier has and a poor one: a measured 2,485-file repository writes `?.` 2,627 times across 672 files while the row sees 538 sites in 202. Answering it properly needs the checker, which knows whether a receiver's type includes null. |
 | function_style | - | - | shipped | |
 | explicit_return_type | Explicit public API types | - | shipped | |
 | type_only_import | - | - | shipped | |
@@ -41,8 +41,9 @@ legitimate origin and the table says so rather than inventing an entry to point 
 | test_call_style | - | - | shipped | |
 | assertion_style | - | - | shipped | |
 | rescue_uses_error | Error swallowing (Ruby) | - | shipped | |
-| record_lookup | Exception-driven control flow | - | shipped | |
-| model_callbacks | Fat model / callback soup | - | shipped | |
+| hook_per_module | - | - | shipped | Measured across seven repositories before it shipped, counting a hook by name so an overload set is one: 0.9800 empire-flippers/client, 0.9429 backstage, 0.9367 cal.diy, 0.9259 next.js, 0.9224 supabase, 0.8235 storybook, 0.7778 react. Spread 0.2022 and two repositories under the gate, so it is a habit rather than a language default. |
+| record_lookup | Exception-driven control flow | - | shipped | The axis is what a miss does, not which name was typed: `find_by` answers nil and the caller decides, while `find` and `find_by!` both raise. `find_by!` is `where(...).take!` in ActiveRecord's own source, so counting it as conforming would put it in the numerator of both sides at once. |
+| model_callbacks | Fat model / callback soup | - | shipped | Moving a `before_save` verbatim into a concern flips the site to conforming with the behaviour unchanged, so the row rewards a relocation. Closing it needs cross-file resolution: which module a class includes, then that module's `included do` block. The row is partial and its blind field already says a concern can register callbacks from a file this one never names. |
 | service_result_shape | Result objects | - | shipped | |
 | keyword_params | Boolean trap; positional argument overload | - | shipped | Two entries over one signature walk: both are answered by whether the arguments are named |
 | zone_aware_time | Time zone correctness | - | shipped | |
@@ -60,7 +61,7 @@ legitimate origin and the table says so rather than inventing an entry to point 
 | model_spec | - | - | shipped | |
 | service_spec | - | - | shipped | |
 | job_spec | - | - | shipped | |
-| worker_spec | - | - | shipped | |
+| worker_spec | - | - | shipped | Reads 0 of 125 at `app/workers/workers` and 0 in all 22 worker areas: a convention the repository holds at 100% that the map cannot state, because `ratio` suppresses the forward side and a pairing row may not carry a counter. The inverse would read "a worker ships without a spec", which as a directive tells an agent to write one test fewer. Each area carries the fact twice instead, on the kinds line and on the suppressed count line. |
 | controller_spec | - | - | shipped | |
 | serializer_spec | - | - | shipped | |
 | model_test | - | - | shipped | |
@@ -108,3 +109,12 @@ legitimate origin and the table says so rather than inventing an entry to point 
 | - | Documentation freshness | - | dropped | Requires knowing what the documentation describes. There is no site to count |
 | - | Dependency currency | - | dropped | A lockfile against a registry over the network. The scan reads no network (F-tier) |
 | - | Secret scanning findings | - | dropped | A findings list, and one whose denominator is every string in the repository. The same objection as OWASP Top 10 |
+| route_query | Data-fetch routing | - | planned | Proposed as a row that would clear the gates today; measured, it does not. 92 of 96 sites repo-wide is a Wilson lower bound of 0.8977, three conforming sites short of the 0.90 bar, and the gates run per area rather than repo-wide, so eight directories of about twelve sites each each need their own bound. Re-measure per area before building. |
+| expectation_named | - | - | dropped | Ranked first in the proposal and refused by the spread bar. Measured over seven Ruby repositories: 0.9883 discourse, 0.9834 diaspora, 0.9754 openfoodnetwork, 0.9533 rubocop, 0.9446 empire-flippers/api, 0.9316 mastodon, 0.9003 forem. Spread 0.088 and nothing under the gate, so naming the argument is what everybody already does and the row would state a directive nobody could break. |
+| comment_ticket_free | - | - | dropped | 8 violations in about 8,000 comments on the one repository measured, ratio 0.999, and no second repository below the gate. That is the `module_state_const` shape the acceptance bar was written for: a claim that scores 1.0 everywhere teaches nothing and spends an always-loaded line saying so. |
+| eslint_disable_live | - | - | dropped | Would have to read the repository's eslint config, which no row can reach: a tree row is handed comments and source, a corpus row a basename, and there is no repository-fact channel for a config file. It is also `eslint --report-unused-disable-directives`, which the map does not restate. |
+| mutation_error_quiet | - | - | dropped | 92 of 97 is a bound of 0.8850, under the gate. The conforming side would also need a notify vocabulary read off one repository's own helper names, with no learning behind it, which is a closed table that is wrong on the next repository. |
+| date_through_wrapper | - | - | dropped | 243 of 269 is a ratio of 0.9033 and a bound of 0.8621. At that ratio the bound needs about 31,000 sites to clear 0.90, so it cannot state at any realistic area size. |
+| schema_matches_migrations | Schema drift | - | planned | The highest-value row in the proposal and the one that does not fit: `db/schema.rb` changes only what this branch's migrations produce is a branch invariant rather than a ratio over sites, so it needs a fourth kind beside tree, corpus and pairing, and a reader in the check. Three of its four measured hits are on one pull request whose head would have shipped a schema dropping two columns that exist in production. |
+| svg_in_asset | - | - | dropped | The proposal measured it and recorded it as not clearing: an inline `<svg>` belonging in an asset reads 45 of 51 = 0.882, under the gate before the Wilson bound is even asked. Kept here so nobody rebuilds it. |
+| cypress_waits_on_alias | - | - | dropped | Measured at 40 of 89 = 0.449, a genuinely split repository. A ratio there is a description of a disagreement rather than of a habit. |
