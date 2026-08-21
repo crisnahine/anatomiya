@@ -75,21 +75,17 @@ To keep the map out of git:
 exclude="$(git rev-parse --git-common-dir)/info/exclude"
 echo '.claude/rules/anatomiya-*.md' >> "$exclude"
 echo '.claude/anatomiya/' >> "$exclude"
-echo '.claude/settings.local.json' >> "$exclude"
 ```
 
 `--git-common-dir` rather than `.git`, because inside a linked worktree `.git` is a file holding a
 pointer. The common dir is shared, so one set of lines covers every worktree.
 
-The third line is there because a scan also installs the hook that re-delivers the map after every
-turn and every tool call, and a hook lives in a settings file. It goes in the local scope, which is
-Claude Code's own per-developer file: your `settings.json`, with your permissions and anyone else's
-hooks in it, is never opened. Whatever is already in the local file is merged around, not replaced,
-and a file that does not parse is refused rather than overwritten.
-
-An exclude only covers a file git is not already tracking. If you have committed
-`.claude/settings.local.json`, the install shows up as a modification to it instead, and committing
-that would hand your teammates a hook pointing at a plugin path they may not have.
+Those two lines are everything a scan leaves behind. The hook that re-delivers the map after every
+turn and every tool call is declared by the plugin, in its own `hooks/hooks.json`, so nothing is
+written into your settings. Versions 0.2.4 through 0.2.6 did write one into
+`.claude/settings.local.json`, where the plugin path it names is never substituted and Claude Code
+refuses the hook by name on every prompt; a scan takes that entry out when it finds one, and leaves
+everything else in the file alone.
 
 > [!NOTE]
 > A session that is already running still holds the old map. Restart to pick up the new one.

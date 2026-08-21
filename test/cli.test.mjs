@@ -9,6 +9,7 @@ import { execFileSync } from "node:child_process";
 import { needsPathControl, needsRemovableCwd, needsShebang, needsUnreadableDirs, needsWindows } from "./platform.mjs";
 import { installWithoutDependencies } from "./plugin-install.mjs";
 import { EXCLUDE_LINES } from "../lib/rules.mjs";
+import { SUMMARY_SCHEMA } from "../lib/summary.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -480,7 +481,7 @@ test("a scan answers as a record for a reader that is not a terminal", (t) => {
 
   const s = JSON.parse(anatomiya(repo, "scan", "--format=json", "--dry-run"));
 
-  assert.equal(s.schema, 1);
+  assert.equal(s.schema, SUMMARY_SCHEMA);
   assert.equal(s.files, 8);
   assert.equal(s.dryRun, true);
   assert.equal(typeof s.wrote, "number");
