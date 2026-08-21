@@ -7,6 +7,99 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.2.9] - 2026-08-21
+
+A second plugin in this marketplace, and the manifest check that now reads every plugin the
+marketplace lists. Claude Code gates its standing Workflow orchestration on `effort === "xhigh"`,
+and what that gate controls is one system-reminder rather than the Workflow tool, whose
+availability carries no effort term. `ultracode-anywhere` restates that reminder on the built-in's
+own cadence, so the mode holds wherever `effortLevel` is set, and says out loud what it does not
+restore.
+
+### Added
+
+- `ultracode-anywhere`, a second plugin. A `UserPromptSubmit` hook opens the session with the
+  standing opt-in and comes back as one line every tenth turn, 1412 characters over a 30-turn
+  session. It runs through `node`, so it fires where there is no shell.
+- The reminder carries its own floor: name what a fan-out buys, or stay solo. A dozen agents on a
+  one-file edit costs more than the tokens the text saves.
+- What it restores is the instruction, not the effort level, and the text says so rather than
+  leaving a model to report itself as running at xhigh.
+- A `SessionStart` check reads the installed build for the four things the premise rests on and
+  for the gate itself, and names anything missing. `ULTRACODE_ANYWHERE_STRICT=1` turns that into a
+  switch; `ultracode-anywhere/VERIFYING.md` is the list a person works when the version moves.
+- It stays quiet where it would be noise: `"ultracode": true` already fires the built-in reminder,
+  and `"enableWorkflows": false` leaves no tool to point at. A line says which setting silenced it.
+- The concurrent-subagent cap it does not lift is named once per machine, with the setting that
+  lifts it and the evidence that native ultracode does.
+- It shares the repository and nothing else: no shipped `anatomiya` code imports it and the npm
+  package still excludes it. Its tests and coverage run with the suite.
+
+### Changed
+
+- `npm run validate` reads every plugin the marketplace lists, not only the one at the root: each
+  plugin's own manifest, the paths that manifest names, and the files its hooks run. The workflow's
+  inline copy of those checks is gone, the script is the copy that has tests, and CI runs it.
+- Everything the plugin keeps between turns goes through one module, which refuses a state
+  directory that is a symlink, is not a directory, or lets other accounts in, and writes without
+  following a link standing where a file should be.
+
+### Fixed
+
+- Three review rounds, each against the round before it. A hook reached through a symlinked
+  directory did nothing at all and said nothing about it, because the guard compared a resolved
+  path against the one the loader spelled; the same equality still sat in `scripts/validate.mjs`,
+  which is CI's only manifest gate.
+- A repository carrying `.claude/settings.json` as a link to a device could hold a prompt until the
+  hook timed out. Every read here is bounded and asks an open handle what it is rather than asking
+  the path.
+- A file called `claude` earlier on the path that is not a build counted as drift. It counts as no
+  evidence now, the build is found through the variable Claude Code sets, and an answer nobody
+  could read is not kept.
+- A counter slot holding something other than a count is left alone rather than written over, and
+  the sweep looks at a bounded number of entries.
+- `scripts/validate.mjs` refuses a manifest that parses to `null`, an absolute source, a plugin
+  directory symlinked out of the repository, and the same plugin listed twice; it reads every file
+  a hook command names, and no longer reads a quoted flag as part of a filename.
+- The turn counters live in `~/.claude/ultracode-anywhere/` rather than in the temporary
+  directory. The ownership and link checks around them were written to survive a shared `/tmp`;
+  keeping state out of it removes that class instead, and the checks stay for the state switch. A
+  machine with no home to write into keeps no state, which costs the cadence and not the reminder.
+- CI found two more that a laptop could not. Two version files written in the same millisecond are
+  a tie, so the build a version-managed install keeps is chosen by version rather than by
+  timestamp, which a rollback also gets right. And the read of this plugin's own state refuses a
+  link the way its write already did, while the read of a user's `settings.json` still follows one,
+  since a dotfiles repository keeps that file behind a link on purpose.
+- A fourth review round, five reviewers against the build itself. The wakeup skip reads a `source`
+  field 2.1.238 declares and does not send outside Anthropic, so the README now says a wakeup is a
+  turn like any other until it arrives. The cadence starts over after a compaction or a `/clear`,
+  as the built-in's does, rather than leaving a compacted session with the refresher alone. The
+  hook goes quiet on `"disableWorkflows": true`, `CLAUDE_CODE_DISABLE_WORKFLOWS` and
+  `CLAUDE_CODE_WORKFLOWS=false`, which the build reads before `enableWorkflows`. The session
+  lines are not repeated on a resume. A fifo at the debug path no longer holds every prompt to the
+  timeout, since writes open non-blocking the way reads did. The gate pattern accepts the spellings
+  a minifier chooses between, the bundle is read once rather than twice, and a file too small to be
+  a build is no evidence either way.
+- `scripts/validate.mjs` was refusing what the loader installs: an object source naming a remote,
+  a prompt-type hook, a bare `.`, and a path that wanders and resolves inside. And it was passing
+  what the loader drops: a hook with no `type` or one it does not know, an object source of a kind
+  it does not know, a `../` spelling that re-enters the repository, a duplicate name behind a
+  remote source, and a link out of the repository under a manifest directory, a declared path or a
+  hook file. It reads the loader's own rules now, checks the exec form's `args`, asks for a file
+  where a hook names one, holds versions to semver, names a manifest with no name as such, and
+  reports a manifest directory that is a file instead of throwing over it. The module that reads
+  the build reads a home named and empty the way the counters do, and a session already quiet
+  reads no build under strict.
+- Tests no longer read the checkout's own `.claude/settings.json` through the process's working
+  directory, no longer leave a fixed-name directory under the shared temporary one, no longer patch
+  `process.stdout`, and the symlinked-state test holds a count behind the link, so it fails without
+  the arm it pins.
+
+### Security
+
+- CodeQL scans what ships: `test/**` is outside the scan, since the remaining alerts traced the
+  suite's own `mkdtempSync` fixtures into the plugin's reader (A32).
+
 ## [0.2.8] - 2026-08-21
 
 Four defects on the read side of the hook, all found by probing the release that had just shipped, and
@@ -1416,6 +1509,7 @@ which are partial; several listed there are not implemented yet.
 - No claim that this catches defects. Measured across ten repositories, 1 of 317 defect review
   comments was preventable by a conventions map.
 
+[0.2.9]: https://github.com/crisnahine/anatomiya/compare/v0.2.8...v0.2.9
 [0.2.8]: https://github.com/crisnahine/anatomiya/compare/v0.2.7...v0.2.8
 [0.2.7]: https://github.com/crisnahine/anatomiya/compare/v0.2.6...v0.2.7
 [0.2.6]: https://github.com/crisnahine/anatomiya/compare/v0.2.5...v0.2.6

@@ -63,3 +63,9 @@ export const needsUnreadableDirs = WINDOWS
 export const needsRemovableCwd = WINDOWS
   ? { skip: "Windows locks a process's own directory, so it cannot be removed under it" }
   : {};
+
+// Windows creates a symlink only for an administrator or with developer mode
+// on, so a test whose fixture is a symlink cannot build its own input there.
+export const needsSymlinks = WINDOWS
+  ? { skip: "Windows needs a privilege this run may not have to create a symlink" }
+  : {};

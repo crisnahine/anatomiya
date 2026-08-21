@@ -37,6 +37,15 @@ jobs:
           # path traversal out of the repository, command construction, and
           # anything that reaches an argument position.
           queries: security-extended
+          # The suite builds its fixtures with `mkdtempSync`, which is the safe
+          # way to make a temporary directory, and then hands those paths to the
+          # code under test. Traced from the test into the reader, that reads as
+          # a temporary-file finding against shipped code that no longer names
+          # the temporary directory at all. Tests are not shipped and this scan
+          # is for what is.
+          config: |
+            paths-ignore:
+              - test/**
 
       - uses: github/codeql-action/analyze@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd # v3.31.0
         with:
