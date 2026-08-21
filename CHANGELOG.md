@@ -7,6 +7,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.2.10] - 2026-08-22
+
+A file is counted as tested when a test says so. H18 closed a false-match class by requiring the
+path tail to line up and left a false negative it could not close from path shape: a source tree
+whose tests sit somewhere that mirrors nothing on its side read zero over files that each have a
+test. Where the tail cannot answer, the import edge does, because a test that imports the producer
+has named what it covers.
+
 ### Fixed
 
 - A file whose tests sit in a tree that mirrors nothing on its side is no longer counted as untested.
@@ -1521,6 +1529,7 @@ which are partial; several listed there are not implemented yet.
 - No claim that this catches defects. Measured across ten repositories, 1 of 317 defect review
   comments was preventable by a conventions map.
 
+[0.2.10]: https://github.com/crisnahine/anatomiya/compare/v0.2.9...v0.2.10
 [0.2.9]: https://github.com/crisnahine/anatomiya/compare/v0.2.8...v0.2.9
 [0.2.8]: https://github.com/crisnahine/anatomiya/compare/v0.2.7...v0.2.8
 [0.2.7]: https://github.com/crisnahine/anatomiya/compare/v0.2.6...v0.2.7
