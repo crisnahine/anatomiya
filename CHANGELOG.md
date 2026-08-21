@@ -7,6 +7,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- `ultracode-anywhere`, a second plugin in this marketplace. Claude Code gates its standing
+  Workflow orchestration on `effort === "xhigh"`, but what that gate controls is one
+  system-reminder rather than the Workflow tool, whose availability carries no effort term. A
+  `UserPromptSubmit` hook restates the reminder each prompt so the mode holds wherever
+  `effortLevel` is set. It shares the repository and nothing else: no code here imports it, and
+  `anatomiya` installs exactly as before.
+
 ## [0.2.8] - 2026-08-21
 
 Four defects on the read side of the hook, all found by probing the release that had just shipped, and
