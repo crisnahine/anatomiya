@@ -1,6 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+
+import { needsSymlinks } from "./platform.mjs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -237,7 +239,7 @@ test("a hook command that names no file in its plugin is refused", (t) => {
   );
 
   assert.deepEqual(validate(dir), [
-    "second/hooks/hooks.json UserPromptSubmit runs curl example.test, which names no file in this plugin",
+    "second/hooks/hooks.json UserPromptSubmit runs curl example.test, which names nothing in this plugin",
   ]);
 });
 
@@ -329,4 +331,114 @@ test("problems come back as annotations where a workflow is reading them", (t) =
 
   assert.equal(run.status, 1);
   assert.match(run.stderr, /^::error::/m);
+});
+
+// --- manifests that parse to something that is not a manifest -----------------
+
+test("a manifest that parses to null is refused, not read as an absent one", (t) => {
+  // `JSON.parse("null")` succeeds, so a truthiness check read a document that
+  // is not a manifest as one that failed to parse, and reported nothing.
+  const dir = marketplace(t);
+  writeFileSync(join(dir, ".claude-plugin", "marketplace.json"), "null");
+
+  assert.deepEqual(validate(dir), ['.claude-plugin/marketplace.json is not an object']);
+});
+
+test("a plugin manifest that is an array, and a hooks file that is null, are both refused", (t) => {
+  const dir = marketplace(t);
+  writeFileSync(join(dir, "second", ".claude-plugin", "plugin.json"), "[]");
+  assert.deepEqual(validate(dir), ["second/.claude-plugin/plugin.json is not an object"]);
+
+  writeFileSync(join(dir, "second", ".claude-plugin", "plugin.json"), JSON.stringify({ name: "second", version: "0.1.0", description: "d" }));
+  writeFileSync(join(dir, "second", "hooks", "hooks.json"), "null");
+  assert.deepEqual(validate(dir), ["second/hooks/hooks.json is not an object"]);
+});
+
+test("a package.json that parses to nothing is a problem, not a skipped comparison", (t) => {
+  const dir = marketplace(t);
+  writeFileSync(join(dir, "package.json"), "null");
+
+  assert.deepEqual(validate(dir), ["package.json is not an object"]);
+});
+
+// --- sources that are not a path inside the repository ------------------------
+
+test("a source that is an absolute path is refused, since it resolves on one machine", (t) => {
+  const dir = marketplace(t);
+  const path = join(dir, ".claude-plugin", "marketplace.json");
+  const manifest = JSON.parse(readFileSync(path, "utf8"));
+  manifest.plugins[1].source = "/etc";
+  writeFileSync(path, JSON.stringify(manifest));
+
+  assert.deepEqual(validate(dir), [
+    "marketplace.json entry second names a source that is not a path in this repository: /etc",
+  ]);
+});
+
+test("a plugin directory that is a symlink out of the repository is refused", needsSymlinks, (t) => {
+  const dir = marketplace(t);
+  const outside = mkdtempSync(join(tmpdir(), "anatomiya-outside-"));
+  t.after(() => rmSync(outside, { recursive: true, force: true }));
+  mkdirSync(join(outside, ".claude-plugin"), { recursive: true });
+  writeFileSync(join(outside, ".claude-plugin", "plugin.json"), JSON.stringify({ name: "second", version: "0.1.0", description: "d" }));
+  rmSync(join(dir, "second"), { recursive: true, force: true });
+  symlinkSync(outside, join(dir, "second"));
+
+  assert.deepEqual(validate(dir), [
+    "marketplace.json entry second points outside the repository: ./second",
+  ]);
+});
+
+test("the same plugin listed twice is caught, since only one of them installs", (t) => {
+  const dir = marketplace(t);
+  const path = join(dir, ".claude-plugin", "marketplace.json");
+  const manifest = JSON.parse(readFileSync(path, "utf8"));
+  manifest.plugins.push({ name: "second", source: "./second", description: "d" });
+  writeFileSync(path, JSON.stringify(manifest));
+
+  assert.deepEqual(validate(dir), ["marketplace.json lists second twice"]);
+});
+
+// --- hook commands, read whole --------------------------------------------------
+
+test("every file a hook command names is checked, not only the first", (t) => {
+  const dir = marketplace(t);
+  writeFileSync(
+    join(dir, "second", "hooks", "hooks.json"),
+    JSON.stringify({
+      hooks: {
+        UserPromptSubmit: [{ hooks: [{ command: 'node "${CLAUDE_PLUGIN_ROOT}/hooks/run.mjs" | node "${CLAUDE_PLUGIN_ROOT}/hooks/gone.mjs"' }] }],
+      },
+    }),
+  );
+
+  assert.deepEqual(validate(dir), [
+    "second/hooks/hooks.json UserPromptSubmit runs hooks/gone.mjs, which that plugin does not ship",
+  ]);
+});
+
+test("a command that names the plugin root itself, or ships no command at all, is read as what it is", (t) => {
+  const dir = marketplace(t);
+  writeFileSync(
+    join(dir, "second", "hooks", "hooks.json"),
+    JSON.stringify({
+      hooks: {
+        UserPromptSubmit: [{ hooks: [{ command: 'cd "${CLAUDE_PLUGIN_ROOT}" && node hooks/run.mjs' }, { type: "command" }] }],
+      },
+    }),
+  );
+
+  assert.deepEqual(validate(dir), ["second/hooks/hooks.json UserPromptSubmit has a hook with no command"]);
+});
+
+test("a quoted path with a space in it is the path, not its first word", (t) => {
+  const dir = marketplace(t);
+  mkdirSync(join(dir, "second", "my hooks"), { recursive: true });
+  writeFileSync(join(dir, "second", "my hooks", "run.mjs"), "");
+  writeFileSync(
+    join(dir, "second", "hooks", "hooks.json"),
+    JSON.stringify({ hooks: { UserPromptSubmit: [{ hooks: [{ command: 'node "${CLAUDE_PLUGIN_ROOT}/my hooks/run.mjs"' }] }] } }),
+  );
+
+  assert.deepEqual(validate(dir), []);
 });

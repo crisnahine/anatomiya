@@ -1,10 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, statSync, truncateSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, truncateSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { CALIBRATED_AGAINST, MARKERS, MIN_BUNDLE, behind, cliPath, drift, settingsFor } from "../ultracode-anywhere/hooks/upstream.mjs";
+import { cached } from "../ultracode-anywhere/hooks/counters.mjs";
+import { CALIBRATED_AGAINST, MARKERS, MIN_BUNDLE, behind, cliPath, drift, driftCached, settingsFor } from "../ultracode-anywhere/hooks/upstream.mjs";
 
 /** A tree standing in for an installed Claude Code and a user's config directory. */
 function installed(t, { bundle = MARKERS.join("\n"), settings = null, project = null } = {}) {
@@ -84,8 +85,8 @@ test("a build this check cannot find is reported as unchecked, not as drifted", 
 test("the bundle is found from the command on PATH, and answers null when there is none", (t) => {
   const tree = installed(t);
 
-  assert.equal(cliPath({ CLAUDE_CODE_ENTRYPOINT_PATH: tree.cli }), realpathSync(tree.cli));
-  assert.equal(cliPath({ CLAUDE_CODE_ENTRYPOINT_PATH: join(tree.dir, "gone.js"), PATH: join(tree.dir, "empty"), HOME: tree.dir }), null);
+  assert.equal(cliPath({ CLAUDE_CODE_EXECPATH: tree.cli }), realpathSync(tree.cli));
+  assert.equal(cliPath({ CLAUDE_CODE_EXECPATH: join(tree.dir, "gone.js"), PATH: join(tree.dir, "empty"), HOME: tree.dir }), null);
 });
 
 // --- the canary, against whatever is installed here ---------------------------
@@ -149,7 +150,6 @@ test("a build too small to be one is treated as no build, never as a drifted one
   assert.deepEqual(drift({ cli: tree.cli }), { checked: true, missing: [], reason: null });
 });
 
-
 // --- the build this was calibrated against ------------------------------------
 
 test("the version this plugin was checked against is stated, and a newer one is said out loud", (t) => {
@@ -160,4 +160,42 @@ test("the version this plugin was checked against is stated, and a newer one is 
   assert.match(behind("2.2.0", "2.1.238"), /2\.2\.0/);
   assert.match(behind("3.0.0", "2.1.238"), /3\.0\.0/);
   assert.equal(behind(null, "2.1.238"), null, "a version this cannot read is not a warning");
+});
+
+// --- what counts as evidence about the build ----------------------------------
+
+test("the build is taken from the variable Claude Code actually sets", (t) => {
+  // `CLAUDE_CODE_EXECPATH` appears nowhere in the shipped build and is
+  // never set; `CLAUDE_CODE_EXECPATH` is set to the running build's own path.
+  const tree = installed(t);
+
+  assert.equal(cliPath({ CLAUDE_CODE_EXECPATH: tree.cli, PATH: "", HOME: tree.dir }), realpathSync(tree.cli));
+});
+
+test("a file called claude that is not a Claude Code build is no evidence, not a drift", (t) => {
+  // Any 5 MB file earlier on PATH under that name was read as the build, and a
+  // build carrying none of the four names is not a build that dropped them.
+  const tree = installed(t, { bundle: "nothing this plugin depends on" });
+
+  assert.deepEqual(drift({ cli: tree.cli }), { checked: false, missing: [], reason: null });
+});
+
+test("a build carrying some of the four and not others is the drift this looks for", (t) => {
+  const tree = installed(t, { bundle: MARKERS.slice(1).join("\n") });
+
+  assert.deepEqual(drift({ cli: tree.cli }).missing, [MARKERS[0]]);
+});
+
+test("an answer nobody could read is not kept, so the next session asks again", (t) => {
+  // Keeping only the reason collapsed "the build is fine" and "I could not read
+  // the build" into the same null, and cached that under a key an unreadable
+  // build does not move.
+  const tree = installed(t, { bundle: MARKERS.slice(1).join("\n") });
+  const state = join(tree.dir, "state");
+
+  assert.match(driftCached(tree.cli, state, cached), new RegExp(MARKERS[0]));
+  assert.equal(driftCached(null, state, cached), null, "and no build to read is no answer to keep");
+
+  assert.deepEqual(readdirSync(state), [".drift"]);
+  assert.match(readFileSync(join(state, ".drift"), "utf8"), new RegExp(MARKERS[0]), "the answer kept is the one that was read");
 });
