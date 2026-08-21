@@ -209,6 +209,25 @@ test("a hand-written file that only quotes the banner is not owned", () => {
   const rule = ["# House rules", "", "---", `generator: ${GENERATOR}`, "---", ""].join("\n");
   assert.equal(isOwned(rule), false);
 
+  // Somebody else's frontmatter, with our key in a block further down. The
+  // lines between the fences were any lines at all, so the match ran straight
+  // through the closing one and read two blocks as a single long one: a file
+  // opening with a `description:` block came back as ours, which is a file this
+  // tool would then remove.
+  const later = [
+    "---",
+    "description: theirs",
+    "---",
+    "",
+    "# Their notes",
+    "",
+    "---",
+    `generator: ${GENERATOR}`,
+    "---",
+    "",
+  ].join("\n");
+  assert.equal(isOwned(later), false);
+
   assert.equal(isOwned(""), false);
   assert.equal(isOwned(null), false);
   assert.equal(isOwned(undefined), false);
