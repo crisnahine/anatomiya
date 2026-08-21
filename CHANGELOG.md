@@ -12,8 +12,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - `ultracode-anywhere`, a second plugin in this marketplace. Claude Code gates its standing
   Workflow orchestration on `effort === "xhigh"`, but what that gate controls is one
   system-reminder rather than the Workflow tool, whose availability carries no effort term. A
-  `UserPromptSubmit` hook restates the reminder each prompt so the mode holds wherever
-  `effortLevel` is set. It shares the repository and nothing else: no shipped `anatomiya` code
+  `UserPromptSubmit` hook restates that reminder on the cadence the built-in uses, so the mode
+  holds wherever `effortLevel` is set. It shares the repository and nothing else: no shipped `anatomiya` code
   imports it, the npm package still excludes it, and `anatomiya` installs exactly as before. Its
   tests and coverage do run with the suite. The hook runs through `node`, so it fires on a machine
   with no shell, and its tests cover the turn it speaks on and the turns it does not.
@@ -42,6 +42,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   rather than asserted: the shipped build is a compiled binary, so a claim about the
   concurrent-subagent cap that nothing here can show was cut from the README, and the README now
   carries a table of the four ways this deliberately differs from the native mode.
+
+  Review round two: the hook did nothing at all when the plugin was reached through a symlinked
+  directory, which is what a relocated home looks like, because the guard compared a resolved path
+  against the one the loader spelled. A repository carrying `.claude/settings.json` as a link to a
+  device could hold a prompt until the hook timed out; every read here is bounded and refuses
+  anything that is not a plain file. A file called `claude` earlier on the path that is not a build
+  counts as no evidence rather than as drift, the build is found through the variable Claude Code
+  actually sets, and an answer nobody could read is not kept. A counter slot holding something
+  other than a count is left alone rather than written over. `scripts/validate.mjs` refuses a
+  manifest that parses to `null`, an absolute source, a plugin directory symlinked out of the
+  repository, and the same plugin listed twice, and it reads every file a hook command names.
 
 ### Changed
 

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, truncateSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, truncateSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -56,7 +56,7 @@ test("the hook prints one SessionStart object and nothing when there is nothing 
     spawnSync(process.execPath, [HOOK], {
       input: JSON.stringify({ session_id: "s", hook_event_name: "SessionStart", source: "startup", cwd: t1.dir }),
       encoding: "utf8",
-      env: { ...process.env, CLAUDE_CONFIG_DIR: t1.config, CLAUDE_CODE_ENTRYPOINT_PATH: env, ULTRACODE_ANYWHERE_STATE: t1.state, ULTRACODE_ANYWHERE_CAP_NOTICE: "0" },
+      env: { ...process.env, CLAUDE_CONFIG_DIR: t1.config, CLAUDE_CODE_EXECPATH: env, ULTRACODE_ANYWHERE_STATE: t1.state, ULTRACODE_ANYWHERE_CAP_NOTICE: "0" },
     });
 
   const drifted = fire(t1.cli);
@@ -135,4 +135,11 @@ test("a build that changed under the same path is read again", (t) => {
   truncateSync(t1.cli, MIN_BUNDLE + 2);
 
   assert.match(notice({ cli: t1.cli, state: t1.state, env }), new RegExp(MARKERS[0]));
+});
+
+test("the switch that turns the plugin off for a session turns off both its hooks", (t) => {
+  const t1 = tree(t, { bundle: MARKERS.slice(1).join("\n"), settings: { ultracode: true } });
+
+  assert.equal(notice({ cli: t1.cli, state: t1.state, env: { CLAUDE_CONFIG_DIR: t1.config, ULTRACODE_ANYWHERE: "0" } }), null);
+  assert.equal(existsSync(t1.state), false, "and it writes nothing on the way");
 });

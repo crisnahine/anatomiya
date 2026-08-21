@@ -2,18 +2,17 @@
 /**
  * Claude Code emits its standing orchestration reminder only when the resolved
  * effort is xhigh. The Workflow tool itself carries no effort term, so
- * restating the reminder on every prompt keeps the mode on at whatever level is
- * selected.
+ * restating that reminder keeps the mode on at whatever level is selected, on
+ * the cadence the built-in itself uses (A30).
  *
  * Node rather than a shell script: this runs on every prompt on whatever
  * machine the plugin is installed on, Windows included, where a bare `.sh` has
  * no interpreter to run it.
  */
 import { fileURLToPath } from "node:url";
-import { writeFileSync } from "node:fs";
 
-import { cached, nextTurn, stateDirFor, sweep } from "./counters.mjs";
-import { parsePayload, readStdin, respond } from "./hook-io.mjs";
+import { appendLine, cached, nextTurn, stateDirFor, sweep } from "./counters.mjs";
+import { invokedAs, parsePayload, readStdin, respond } from "./hook-io.mjs";
 import { cliPath, conflictIn, driftCached, settingsFor } from "./upstream.mjs";
 
 /**
@@ -79,10 +78,19 @@ export function contextFor(turn, cadence = { every: FULL_EVERY, refresher: true,
 
 /** The text this turn should carry, or null when the turn is owed nothing. */
 export function run({ stdin = "", env = process.env, state = stateDirFor(env) } = {}) {
-  if (env.ULTRACODE_ANYWHERE === "0") return null;
-
   const payload = parsePayload(stdin);
-  if (isWakeup(payload)) return null;
+  const debug = env.ULTRACODE_ANYWHERE_DEBUG;
+
+  // Logged before the answers that are silence, since a fire that said nothing
+  // is the one somebody turns the switch on to understand.
+  if (env.ULTRACODE_ANYWHERE === "0") {
+    if (debug) log(debug, stdin, "ULTRACODE_ANYWHERE=0");
+    return null;
+  }
+  if (isWakeup(payload)) {
+    if (debug) log(debug, stdin, `a wakeup, source ${payload.source}`);
+    return null;
+  }
 
   // A session that already resolves to xhigh gets the built-in reminder, and one
   // with no Workflow tool has nothing to be pointed at. Either way this hook has
@@ -91,7 +99,7 @@ export function run({ stdin = "", env = process.env, state = stateDirFor(env) } 
   const conflict = conflictIn(settingsFor(env, cwd));
   const moved = env.ULTRACODE_ANYWHERE_STRICT === "1" ? movedBuild(env, state) : null;
 
-  if (env.ULTRACODE_ANYWHERE_DEBUG) log(env.ULTRACODE_ANYWHERE_DEBUG, stdin, conflict ?? moved);
+  if (debug) log(debug, stdin, conflict ?? moved);
   if (conflict || moved) return null;
 
   const cadence = cadenceFrom(env);
@@ -107,7 +115,7 @@ export function run({ stdin = "", env = process.env, state = stateDirFor(env) } 
  * Strict is for whoever would rather have the mode off than have it pretend, so
  * it reads the build rather than trusting it. Read once and remembered beside
  * the counters: the answer cannot change inside a session, and the scan streams
- * most of a 321 MB file, which is 215 ms rather than the 26 ms a turn costs
+ * most of a 321 MB file, which is 180 ms rather than the 30 ms a turn costs
  * otherwise, against a hook timeout of 5 seconds.
  */
 function movedBuild(env, state) {
@@ -115,13 +123,9 @@ function movedBuild(env, state) {
 }
 
 function log(path, stdin, quiet) {
-  try {
-    writeFileSync(path, `=== ${new Date().toISOString()}${quiet ? ` quiet: ${quiet}` : ""}\n${stdin}\n`, { flag: "a" });
-  } catch {
-    // A debug switch that cannot write is not worth failing a turn over.
-  }
+  appendLine(path, `=== ${new Date().toISOString()}${quiet ? ` quiet: ${quiet}` : ""}\n${stdin}\n`);
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+if (invokedAs(import.meta.url)) {
   respond("UserPromptSubmit", run({ stdin: readStdin() }));
 }

@@ -9,7 +9,10 @@
  * quietly. Names, not behaviour: a string check cannot prove the gate still
  * reads the way it read, only that the thing it named still exists.
  */
-import { closeSync, existsSync, openSync, readFileSync, readSync, readdirSync, realpathSync, statSync } from "node:fs";
+import { closeSync, existsSync, openSync, readSync, readdirSync, realpathSync, statSync } from "node:fs";
+
+import { readIfFile } from "./hook-io.mjs";
+import { Unkept } from "./counters.mjs";
 import { delimiter, join } from "node:path";
 import { homedir } from "node:os";
 
@@ -75,7 +78,7 @@ export function settingsFor(env = process.env, cwd = process.cwd()) {
 
 function readSettings(path) {
   try {
-    const value = JSON.parse(readFileSync(path, "utf8"));
+    const value = JSON.parse(readIfFile(path));
     return value && typeof value === "object" && !Array.isArray(value) ? value : {};
   } catch {
     return {};
@@ -104,7 +107,10 @@ export function cliPath(env = process.env) {
 
 /** Every place a build could be, most specific first. */
 function* candidates(env) {
-  if (env.CLAUDE_CODE_ENTRYPOINT_PATH) yield real(env.CLAUDE_CODE_ENTRYPOINT_PATH);
+  // The running build says where it is. Read off the environment Claude Code
+  // sets rather than guessed at, which is the only candidate here that cannot
+  // be some other program of the same name.
+  if (env.CLAUDE_CODE_EXECPATH) yield real(env.CLAUDE_CODE_EXECPATH);
 
   // Windows installs put a launcher rather than the build on PATH, under any of
   // three names, and this yields all of them: the size floor below decides
@@ -176,8 +182,14 @@ export function behind(installed, calibrated = CALIBRATED_AGAINST) {
  * while the file it was read from has not.
  */
 export function driftCached(cli, state, remember) {
-  const reason = remember(state, "drift", buildKey(cli), () => drift({ cli }).reason);
-  return reason ?? null;
+  return remember(state, "drift", buildKey(cli), () => {
+    const read = drift({ cli });
+    // An answer nobody could read is not an answer: kept, it would say "fine"
+    // for as long as the build's size and timestamp hold still, which an
+    // unreadable build does not move.
+    if (!read.checked) throw new Unkept(null);
+    return read.reason;
+  });
 }
 
 /** What the answer depends on: this build, at this size, written at this moment. */
@@ -213,7 +225,11 @@ export function drift({ cli = cliPath(), markers = MARKERS } = {}) {
     return absent;
   }
 
+  // A file carrying none of them is not a build that dropped them, it is some
+  // other program of the same name, and a 5 MB file called `claude` earlier on
+  // PATH is all it takes. Drift is some of the four missing, not all.
   const missing = markers.filter((m) => !found.has(m));
+  if (missing.length === markers.length) return absent;
   return {
     checked: true,
     missing,
@@ -251,9 +267,13 @@ function scan(path, overlap, look) {
   try {
     fd = openSync(path, "r");
     const size = statSync(path).size;
-    for (let at = 0; at < size; at += CHUNK) {
+    // Advanced by what was read, not by what was asked for: a short read on a
+    // network or fuse filesystem would otherwise skip the difference, and a
+    // marker in the gap reads as a build that dropped it.
+    for (let at = 0; at < size; ) {
       const read = readSync(fd, buffer, 0, CHUNK, at);
       if (read <= 0) break;
+      at += read;
       const text = carry + buffer.toString("latin1", 0, read);
       if (look(text)) break;
       carry = text.slice(-overlap);

@@ -4,8 +4,10 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSyn
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { needsPosixPermissions, needsSymlinks } from "./platform.mjs";
-import { cached, firstTime, nextTurn, ownState, stateDirFor, sweep } from "../ultracode-anywhere/hooks/counters.mjs";
+import { execFileSync } from "node:child_process";
+
+import { needsPosixPermissions, needsPosixSpecialFiles, needsSymlinks } from "./platform.mjs";
+import { SWEEP_MOST, cached, firstTime, nextTurn, ownState, stateDirFor, sweep } from "../ultracode-anywhere/hooks/counters.mjs";
 
 /** A state directory of its own, so one test's turn count cannot reach another's. */
 function stateDir(t) {
@@ -103,16 +105,25 @@ test("a state path that is a file costs the session its cadence, not its reminde
   assert.equal(readFileSync(file, "utf8"), "", "and it does not write over the file either");
 });
 
-test("a counter file holding anything but a number starts the session over rather than going silent", (t) => {
-  // Under `set -u` the shell version aborted on this line and printed nothing,
-  // so one corrupt file switched the plugin off for that session with no error
-  // anyone would see. A count that cannot be read is a count of zero.
+test("a counter holding anything but a number starts the session over rather than going silent", (t) => {
+  // A count that cannot be read is a count of zero, and the turn still gets its
+  // reminder. What it does not do is write over the file: the state path is a
+  // switch, so a file with anything else in it is one somebody else put there.
   const dir = stateDir(t);
-  const session = "corrupt-1";
-  writeFileSync(join(dir, session), "not a number");
+  writeFileSync(join(dir, "corrupt-1"), "not a number");
 
-  assert.equal(nextTurn(dir, session), 1);
-  assert.match(readFileSync(join(dir, session), "utf8"), /^1$/);
+  assert.equal(nextTurn(dir, "corrupt-1"), 1);
+  assert.equal(readFileSync(join(dir, "corrupt-1"), "utf8"), "not a number");
+});
+
+test("a counter this plugin started and did not finish is its own to write again", (t) => {
+  // An interrupted write leaves a file of no bytes, which is the one empty
+  // shape here that belongs to this plugin rather than to a user.
+  const dir = stateDir(t);
+  writeFileSync(join(dir, "half-written"), "");
+
+  assert.equal(nextTurn(dir, "half-written"), 1);
+  assert.equal(nextTurn(dir, "half-written"), 2, "and it counts on from there");
 });
 
 // --- a counter that is not the file it should be ------------------------------
@@ -214,4 +225,52 @@ test("a state directory that is not ours costs the cache, not the answer", needs
   assert.equal(cached(dir, "strict", "k", compute), "answer");
   assert.equal(cached(dir, "strict", "k", compute), "answer");
   assert.equal(runs, 2, "it is computed every time rather than written where it should not be");
+});
+
+test("a file in the state directory that is not a counter is left as it is", (t) => {
+  // The state path is a switch, and the session id decides a file name inside
+  // it. A turn wrote over whatever stood there, which cost a 3 GB file its
+  // contents in one reproduction.
+  const dir = stateDir(t);
+  writeFileSync(join(dir, "notes"), "notes the hook did not write");
+
+  assert.equal(nextTurn(dir, "notes"), 1);
+  assert.equal(readFileSync(join(dir, "notes"), "utf8"), "notes the hook did not write");
+});
+
+test("a counter that is not a plain file costs the cadence and not the turn", needsPosixSpecialFiles, (t) => {
+  const dir = stateDir(t);
+  execFileSync("mkfifo", [join(dir, "fifo-session")]);
+
+  assert.equal(nextTurn(dir, "fifo-session"), 1);
+  assert.equal(nextTurn(dir, "fifo-session"), 1, "and it does not wait on it either");
+});
+
+test("a state directory that is a plain file is refused by its own arm, whatever its mode", needsPosixPermissions, (t) => {
+  const dir = stateDir(t);
+  const file = join(dir, "state-file");
+  writeFileSync(file, "");
+  chmodSync(file, 0o600);
+
+  assert.equal(ownState(file), false);
+});
+
+test("a mark or an answer may only be kept under a plain name", (t) => {
+  const dir = stateDir(t);
+
+  assert.equal(firstTime(dir, "../escape"), true);
+  assert.equal(cached(dir, "../escape", "k", () => "answer"), "answer");
+  assert.deepEqual(readdirSync(dir), [], "a name that is not a file name is not made into one");
+});
+
+test("a sweep of a directory holding more than it should stops rather than reading all of it", (t) => {
+  const dir = stateDir(t);
+  const longAgo = (Date.now() - 30 * 86_400_000) / 1000;
+  for (let i = 0; i < SWEEP_MOST + 20; i++) {
+    const path = join(dir, `session-${i}`);
+    writeFileSync(path, "3");
+    utimesSync(path, longAgo, longAgo);
+  }
+
+  assert.equal(sweep(dir), SWEEP_MOST, "one turn's worth, and the rest on the turns after");
 });

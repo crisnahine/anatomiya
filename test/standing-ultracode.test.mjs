@@ -1,11 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, truncateSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, truncateSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
+import { once } from "node:events";
 
+import { needsSymlinks } from "./platform.mjs";
 import { MARKERS, MIN_BUNDLE } from "../ultracode-anywhere/hooks/upstream.mjs";
 
 import { FULL_EVERY, contextFor, isWakeup, run } from "../ultracode-anywhere/hooks/standing-ultracode.mjs";
@@ -117,6 +119,7 @@ test("a payload with no session id still answers, and writes no state", (t) => {
 
   assert.equal(status, 0);
   assert.match(contextOf(stdout), /Workflow tool/);
+  assert.equal(existsSync(dir) ? readdirSync(dir).length : 0, 0, "there is no session to count turns for");
 });
 
 test("stdin that is not JSON answers rather than failing the turn", (t) => {
@@ -328,7 +331,7 @@ test("strict mode goes quiet on a build that no longer carries what the plugin m
   const cli = join(dir, "moved-build");
   writeFileSync(cli, "a build carrying none of the names this plugin mirrors");
   truncateSync(cli, MIN_BUNDLE + 1);
-  const env = { CLAUDE_CODE_ENTRYPOINT_PATH: cli, CLAUDE_CONFIG_DIR: configWith(t, {}) };
+  const env = { CLAUDE_CODE_EXECPATH: cli, CLAUDE_CONFIG_DIR: configWith(t, {}) };
 
   assert.match(run({ stdin: payload(), env, state: dir }), /Workflow tool/, "loud by default");
   assert.equal(run({ stdin: payload(), env: { ...env, ULTRACODE_ANYWHERE_STRICT: "1" }, state: dir }), null);
@@ -342,9 +345,97 @@ test("strict mode still speaks where the build is the one this was calibrated ag
 
   const said = run({
     stdin: payload(),
-    env: { CLAUDE_CODE_ENTRYPOINT_PATH: cli, CLAUDE_CONFIG_DIR: configWith(t, {}), ULTRACODE_ANYWHERE_STRICT: "1" },
+    env: { CLAUDE_CODE_EXECPATH: cli, CLAUDE_CONFIG_DIR: configWith(t, {}), ULTRACODE_ANYWHERE_STRICT: "1" },
     state: dir,
   });
 
   assert.match(said, /Workflow tool/);
+});
+
+// --- the path the hook is invoked by ------------------------------------------
+
+test("the hook runs when it is reached through a symlinked directory", needsSymlinks, (t) => {
+  // `${CLAUDE_PLUGIN_ROOT}` is whatever the loader spells, and a home directory
+  // symlinked into place is a common layout. Compared against `import.meta.url`,
+  // which is always the real path, the guard was false and the hook exited 0
+  // having done nothing: installed, healthy-looking, silent forever.
+  const dir = mkdtempSync(join(tmpdir(), "ultracode-linked-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const real = join(dir, "real");
+  mkdirSync(real, { recursive: true });
+  cpSync(fileURLToPath(new URL("../ultracode-anywhere", import.meta.url)), join(real, "ultracode-anywhere"), { recursive: true });
+  symlinkSync(real, join(dir, "link"));
+
+  const through = spawnSync(process.execPath, [join(dir, "link", "ultracode-anywhere", "hooks", "standing-ultracode.mjs")], {
+    input: payload(),
+    encoding: "utf8",
+    env: { ...process.env, ULTRACODE_ANYWHERE_STATE: join(dir, "state") },
+  });
+
+  assert.equal(through.status, 0);
+  assert.match(contextOf(through.stdout), /Workflow tool/);
+});
+
+test("a reader that goes away mid-write does not turn the hook into a failed one", async (t) => {
+  // The one path in this plugin that could reach stderr and a non-zero exit,
+  // which is the outcome a hook must not have.
+  const dir = stateDir(t);
+  const child = spawn(process.execPath, [HOOK], { env: { ...process.env, ULTRACODE_ANYWHERE_STATE: dir } });
+  let stderr = "";
+  child.stderr.on("data", (chunk) => {
+    stderr += chunk;
+  });
+  child.stdout.destroy();
+  child.stdin.end(payload());
+
+  const [code] = await once(child, "exit");
+
+  assert.equal(code, 0);
+  assert.equal(stderr, "");
+});
+
+test("a settings file that is not a regular file is read as no settings, not waited on", (t) => {
+  // A repository can carry `.claude/settings.json` as a symlink to a device or
+  // a fifo, and a clone of it made the hook read for as long as the timeout
+  // allowed, allocating as it went.
+  const dir = stateDir(t);
+  const repo = join(dir, "repo");
+  mkdirSync(join(repo, ".claude"), { recursive: true });
+  symlinkSync("/dev/zero", join(repo, ".claude", "settings.json"));
+
+  const started = Date.now();
+  const said = fire(t, { dir, stdin: payload({ cwd: repo }) });
+
+  assert.equal(said.status, 0);
+  assert.match(contextOf(said.stdout), /Workflow tool/);
+  assert.equal(Date.now() - started < 4000, true, "and it answers rather than running to the hook timeout");
+});
+
+test("a cadence of zero turns between refreshers falls back to the default", (t) => {
+  // `(turn - 1) % 0` is NaN, which reads as a session that opens and then never
+  // speaks again. The guard that stops it is one character wide.
+  const dir = stateDir(t);
+  const shapes = [];
+  for (let i = 0; i < 12; i++) {
+    const said = run({ stdin: payload({ session_id: "zero" }), env: { ULTRACODE_ANYWHERE_EVERY: "0" }, state: dir });
+    shapes.push(said === null ? "-" : said.length > 200 ? "F" : "s");
+  }
+
+  assert.equal(shapes.join(""), "F---------s-");
+});
+
+test("the debug log records the fires it stayed quiet on, which are the ones being debugged", (t) => {
+  const dir = stateDir(t);
+  const log = join(dir, "debug.log");
+  const env = { ULTRACODE_ANYWHERE_DEBUG: log };
+
+  fire(t, { dir, env, stdin: payload({ source: "loop_wakeup" }) });
+  fire(t, { dir, env: { ...env, ULTRACODE_ANYWHERE: "0" }, stdin: payload() });
+  fire(t, { dir, env, stdin: payload() });
+
+  const lines = readFileSync(log, "utf8").split("\n").filter((l) => l.startsWith("==="));
+  assert.equal(lines.length, 3);
+  assert.match(lines[0], /quiet: a wakeup/);
+  assert.match(lines[1], /quiet: ULTRACODE_ANYWHERE=0/);
+  assert.equal(/quiet:/.test(lines[2]), false, "and the turn it spoke on says nothing about being quiet");
 });

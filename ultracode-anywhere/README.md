@@ -17,9 +17,9 @@ effort term, so the tool stays available at every level.
 
 A wire-level diff of `ultracode:true` at xhigh against `effortLevel:medium` plus this plugin
 shows two differing lines in the whole request: the session id, and `output_config.effort`.
-Same system prompt, same 91 tool definitions, same Workflow tool description.
+Same system prompt, the same tool definitions, the same Workflow tool description.
 
-This plugin restates the reminder on every prompt, so the mode holds at whatever level is set.
+This plugin restates that reminder, so the mode holds at whatever level is set.
 
 ## What it does not do
 
@@ -47,7 +47,10 @@ one depth lever a prompt does control.
 One short-lived `node` process per prompt, 29 to 34 ms of it over ten runs on the machine this was
 measured on. What reaches the model is 1224 characters on the first turn, 94 on every tenth after
 that, and nothing on the rest, appended after the user message so the cache prefix is untouched.
-Over a 30-turn session that is 1412 characters in total, the opening text plus two refreshers.
+Over a 30-turn session that is 1412 characters in total, the opening text plus two refreshers. A
+payload that names no session, or a state directory this cannot use, reads every turn as the first
+one, and a 30-turn session then costs 30 opening texts instead. The reminder is the cheap half
+either way.
 
 The session check reads the installed build once per build, not once per session: 180 ms the first
 time, 30 ms after that, since the answer is kept beside the turn counters under the build's path,
@@ -88,6 +91,10 @@ at all in a session where it would be noise:
   fires. A second copy is tokens for nothing.
 - `"enableWorkflows": false` means there is no Workflow tool for the reminder to point at.
 
+`/effort ultracode` inside a running session writes nothing to `settings.json`, so a session
+switched that way mid-flight gets both reminders until it ends. Setting it in `settings.json` is
+what this reads.
+
 Either way a line at the start of the session says which setting silenced it, so a plugin that is
 doing nothing does not look like one that is working.
 
@@ -124,12 +131,12 @@ checked it, which is not a failure, only a fact.
 four, the hook stays quiet for the session. It is off by default, since going silent costs the mode
 to everyone whose build is fine. The answer is kept beside the turn counters under the build's own
 path, size and timestamp, so it costs one bundle read after an install rather than one per prompt:
-177 ms on the first turn, then 30, against a hook timeout of 5 seconds.
+180 ms on the first turn, then 30, against a hook timeout of 5 seconds.
 
 `test/upstream.test.mjs` runs the same check against whatever is installed on the machine running
 the suite, and skips where there is none.
 
-## Behavior
+## Behaviour
 
 The whole text opens the session, a one-line refresher comes back every tenth turn after that, and
 every turn in between says nothing, which is the shape of the thing being mirrored. Skips loop,
@@ -144,8 +151,11 @@ time, for the same reason.
 
 The state directory is the hook's alone. It is refused unless it is a real directory this account
 owns with no access for anyone else, since a predictable path under `/tmp` is one another account
-can create first, and only files named like a session and holding a count are ever removed from
-it.
+can create first. Inside it, a file is only removed when its name is a plain word and its contents
+are a count, and a file standing where a counter would go, holding anything else, is left alone
+rather than written over. Two dotfiles live there too and are never swept: what the build check
+last answered, and whether the cap line has been said. A directory it refuses costs the cadence,
+and the cap line then comes backevery session rather than once.
 
 ## Switches
 

@@ -9,14 +9,14 @@
  * Reported once, at the start of a session, since neither answer changes inside
  * one.
  */
-import { fileURLToPath } from "node:url";
-
 import { cached, firstTime, stateDirFor } from "./counters.mjs";
-import { parsePayload, readStdin, respond } from "./hook-io.mjs";
+import { invokedAs, parsePayload, readStdin, respond } from "./hook-io.mjs";
 import { CALIBRATED_AGAINST, behind, cliPath, conflictIn, driftCached, settingsFor, versionOf } from "./upstream.mjs";
 
 /** The sentence this session is owed, or null when it is owed none. */
 export function notice({ env = process.env, cli = cliPath(env), cwd = process.cwd(), state = stateDirFor(env) } = {}) {
+  if (env.ULTRACODE_ANYWHERE === "0") return null;
+
   const said = [];
   const settings = settingsFor(env, cwd);
 
@@ -54,7 +54,7 @@ function capRaised(settings, env) {
   return Boolean(settings?.env?.CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS || env.CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS);
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+if (invokedAs(import.meta.url)) {
   const payload = parsePayload(readStdin());
   respond("SessionStart", notice({ cwd: typeof payload.cwd === "string" ? payload.cwd : process.cwd() }));
 }

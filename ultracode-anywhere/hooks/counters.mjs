@@ -9,7 +9,9 @@
  * reproduced on a temporary directory here (A28). Every refusal here answers as
  * though this were the first turn, which is a full reminder rather than silence.
  */
-import { closeSync, constants, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, rmSync, writeSync } from "node:fs";
+import { closeSync, constants, lstatSync, mkdirSync, openSync, readdirSync, rmSync, writeSync } from "node:fs";
+
+import { readIfFile } from "./hook-io.mjs";
 import { tmpdir, userInfo } from "node:os";
 import { join } from "node:path";
 
@@ -17,11 +19,21 @@ import { join } from "node:path";
 const KEEP_DAYS = 7;
 
 /**
+ * Counters one sweep will look at. A sweep runs on a turn, and a directory
+ * holding fifty thousand of them read two seconds of a five second budget;
+ * what it does not reach this turn it reaches on the next.
+ */
+export const SWEEP_MOST = 500;
+
+/**
  * A session id is a file name here, so it may hold only what a file name may
  * hold. Refused rather than stripped: two ids differing only in what a strip
  * removes would share one counter, and `../x` would quietly become `x`.
  */
 const COUNTER_NAME = /^[A-Za-z0-9_-]{1,128}$/;
+
+/** A mark and a cache share the dotfile namespace, and neither may leave it. */
+const MARK_NAME = /^[A-Za-z0-9_-]{1,64}$/;
 
 /** Where the counters live: this user's own directory, not one shared with every account on the box. */
 export function stateDirFor(env = process.env) {
@@ -65,7 +77,15 @@ export function nextTurn(dir, session) {
   if (!name || !ownState(dir)) return 1;
   const path = join(dir, name);
 
-  const turn = countIn(path) + 1;
+  // A file standing where this session's counter would go, holding anything but
+  // a count, belongs to whoever put it there. The state path is a switch, so
+  // that is a file a user pointed this at, and writing over it cost a 3 GB file
+  // its contents in one reproduction.
+  const held = readIfFile(path, 64).trim();
+  if (held !== "" && !/^\d{1,15}$/.test(held)) return 1;
+  if (held === "" && standsThere(path) && !isEmptyFile(path)) return 1;
+
+  const turn = (held === "" ? 0 : Number(held)) + 1;
   try {
     write(path, String(turn), constants.O_TRUNC);
   } catch {
@@ -74,14 +94,29 @@ export function nextTurn(dir, session) {
   return turn;
 }
 
+/** Whether anything at all stands at a path, symlinks and fifos included. */
+function standsThere(path) {
+  try {
+    lstatSync(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** A counter this plugin started writing and did not finish is still its own. */
+function isEmptyFile(path) {
+  try {
+    const seen = lstatSync(path);
+    return seen.isFile() && seen.size === 0;
+  } catch {
+    return false;
+  }
+}
+
 /** The turns a counter has recorded, and zero for anything that is not a count. */
 function countIn(path) {
-  let seen = "";
-  try {
-    seen = readFileSync(path, "utf8").trim();
-  } catch {
-    return 0;
-  }
+  const seen = readIfFile(path, 64).trim();
   return /^\d{1,15}$/.test(seen) ? Number(seen) : 0;
 }
 
@@ -94,12 +129,11 @@ function countIn(path) {
  * than never saying it.
  */
 export function firstTime(dir, mark) {
+  if (!MARK_NAME.test(mark)) return true;
   const path = join(dir, `.${mark}`);
   if (!ownState(dir)) return true;
-  try {
-    readFileSync(path, "utf8");
-    return false;
-  } catch {
+  if (readIfFile(path, 64) !== "") return false;
+  {
     try {
       write(path, "said\n", constants.O_EXCL);
     } catch {
@@ -115,25 +149,29 @@ export function firstTime(dir, mark) {
  * computed for.
  *
  * For a question whose answer costs more than a turn should: reading a 321 MB
- * build is 190 ms against a hook timeout of 5 seconds. The key is what the
+ * build is 180 ms against a hook timeout of 5 seconds. The key is what the
  * answer depends on, so an upgrade in place is a new key rather than a stale
  * yes, and one file holds the current answer rather than one per build ever
  * installed. A directory this may not write costs the cache, not the answer.
  */
 export function cached(dir, name, key, compute) {
   const path = join(dir, `.${name}`);
-  const usable = ownState(dir);
+  const usable = MARK_NAME.test(name) && ownState(dir);
 
   if (usable) {
-    try {
-      const [stored, ...rest] = readFileSync(path, "utf8").split("\n");
-      if (stored === key) return rest.join("\n") || null;
-    } catch {
-      // Nothing kept for this key yet, which is what computing is for.
-    }
+    const [stored, ...rest] = readIfFile(path, 4096).split("\n");
+    if (stored && stored === key) return rest.join("\n") || null;
   }
 
-  const answer = compute();
+  let answer;
+  try {
+    answer = compute();
+  } catch (err) {
+    // A compute that refuses to answer is one whose answer is not worth
+    // keeping, and the caller asked for the refusal rather than a value.
+    if (err instanceof Unkept) return err.answer;
+    throw err;
+  }
   if (usable) {
     try {
       write(path, `${key}\n${answer ?? ""}`, constants.O_TRUNC);
@@ -142,6 +180,14 @@ export function cached(dir, name, key, compute) {
     }
   }
   return answer;
+}
+
+/** Thrown by a compute whose answer must not be kept, carrying what to answer now. */
+export class Unkept extends Error {
+  constructor(answer = null) {
+    super("not worth keeping");
+    this.answer = answer;
+  }
 }
 
 /**
@@ -157,6 +203,19 @@ function write(path, body, mode) {
     writeSync(fd, body);
   } finally {
     if (fd !== undefined) closeSync(fd);
+  }
+}
+
+/**
+ * A line onto the end of a file the caller named, without following a link
+ * standing where it should be. The debug switch points at a path a user chose,
+ * often a predictable one under the temporary directory.
+ */
+export function appendLine(path, body) {
+  try {
+    write(path, body, constants.O_APPEND);
+  } catch {
+    // A debug switch that cannot write is not worth failing a turn over.
   }
 }
 
@@ -178,6 +237,7 @@ export function sweep(dir, now = Date.now()) {
     return 0;
   }
   for (const entry of entries) {
+    if (removed >= SWEEP_MOST) break;
     if (!COUNTER_NAME.test(entry)) continue;
     const path = join(dir, entry);
     try {
