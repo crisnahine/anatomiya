@@ -7,6 +7,32 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.2.8] - 2026-08-21
+
+Four defects on the read side of the hook, all found by probing the release that had just shipped, and
+none of them reachable before 0.2.7 put that hook in every session rather than only in a scanned
+repository. The map it echoes has to be one this tool wrote, read the way the audit already reads a
+rule file: bounded, non-blocking, and typed before a byte comes off it.
+
+### Fixed
+
+- The hook echoed whatever sat at the map's path, so a file this tool never wrote reached the model on
+  every prompt and every tool call. It asks the frontmatter now, which is the one of A3's three
+  ownership facts a session can check.
+- A named pipe at that path never returned, which is a session that never returns. A file carrying our
+  frontmatter and five megabytes of anything else was read whole and echoed whole. Both go through the
+  bounded reader the audit already used.
+- A hand-written file at that path in a subdirectory silenced the repository's own map for every
+  session under it. The walk goes past it now.
+- `isOwned` read across the closing fence, so somebody else's frontmatter block with `generator:
+  anatomiya` further down came back as ours. That is the direction that deletes: the scan may remove
+  what it owns.
+
+### Changed
+
+- A24's cost is stated as a range rather than a figure. Three runs on one laptop gave medians of
+  73ms, 104ms and 237ms, and which `node` is on `PATH` moved it more than anything the tool does.
+
 ## [0.2.7] - 2026-08-21
 
 One bug, reported from the field, and it is the worst kind this tool can have: the hook a scan
@@ -1390,6 +1416,7 @@ which are partial; several listed there are not implemented yet.
 - No claim that this catches defects. Measured across ten repositories, 1 of 317 defect review
   comments was preventable by a conventions map.
 
+[0.2.8]: https://github.com/crisnahine/anatomiya/compare/v0.2.7...v0.2.8
 [0.2.7]: https://github.com/crisnahine/anatomiya/compare/v0.2.6...v0.2.7
 [0.2.6]: https://github.com/crisnahine/anatomiya/compare/v0.2.5...v0.2.6
 [0.2.5]: https://github.com/crisnahine/anatomiya/compare/v0.2.4...v0.2.5
