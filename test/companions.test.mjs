@@ -297,3 +297,52 @@ test("a data file of the same name is not the module beside it", () => {
 
   assert.equal(namesakeCompanions(source, tests, "pkg", namesakeIndex(tests)).with, 0);
 });
+
+test("a structural root outvotes an import edge that sorted earlier", () => {
+  // An integration test in another package imports these models and sorts
+  // before the package's own spec tree. The import edge is evidence that the
+  // file is tested; it is not evidence about where this package keeps tests,
+  // and claiming the vote left the line naming a directory in a different
+  // package.
+  const names = ["queue", "worker", "mailer", "cache"];
+  const source = names.map((n) => file(`packages/core/src/models/${n}.ts`));
+  const tests = [
+    ...names.map((n) => imports(`apps/admin/test/${n}.test.ts`, [`../../../packages/core/src/models/${n}`])),
+    ...names.map((n) => file(`packages/core/spec/models/${n}.test.ts`)),
+  ];
+
+  assert.deepEqual(namesakeCompanions(source, tests, "packages/core", namesakeIndex(tests)), {
+    with: 4,
+    of: 4,
+    root: "packages/core/spec",
+  });
+});
+
+test("a directory import is not the file of the same name beside it", () => {
+  // `../pkg/src/foo/` means `foo/index.js`. Nothing is resolved against the
+  // filesystem here, so the directory answers nothing rather than answering the
+  // unrelated sibling that shares its name.
+  const source = [file("pkg/src/foo.js")];
+  const tests = [imports("test/foo.test.js", ["../pkg/src/foo/"])];
+
+  assert.equal(namesakeCompanions(source, tests, "pkg", namesakeIndex(tests)).with, 0);
+});
+
+test("a .js specifier answers the .ts file it is written for", () => {
+  // TypeScript under NodeNext requires the compiled extension in the specifier,
+  // so `../src/parser.js` is how a spec names `src/parser.ts`. It is the
+  // dominant modern spelling and it is not a different file.
+  const source = [file("pkg/src/parser.ts")];
+  const tests = [imports("test/parser.test.ts", ["../pkg/src/parser.js"])];
+
+  assert.equal(namesakeCompanions(source, tests, "pkg", namesakeIndex(tests)).with, 1);
+});
+
+test("a build-tool suffix on a specifier still names the file", () => {
+  // Vite and webpack spell a loader with a query, and the file it names is the
+  // file before the question mark.
+  const source = [file("pkg/src/worker.ts")];
+  const tests = [imports("test/worker.test.ts", ["../pkg/src/worker.ts?worker"])];
+
+  assert.equal(namesakeCompanions(source, tests, "pkg", namesakeIndex(tests)).with, 1);
+});
