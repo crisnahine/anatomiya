@@ -428,9 +428,10 @@ test("a case tie in the roster orders by code unit, not by the host's locale", (
   );
 });
 
-test("the namesake index carries the two fields a pair would recompute", () => {
+test("the namesake index carries the fields a pair would recompute", () => {
   // `withoutTree` splits and filters the whole path, and it ran once per source
-  // file asking rather than once per test file.
+  // file asking rather than once per test file. `covers` is the same trade for
+  // the import edge: resolved once here, read once per source file asking.
   const index = namesakeIndex([file("modules/budgets/spec/models/budget_spec.rb", "ruby")]);
 
   assert.deepEqual(index.get("budget"), [
@@ -438,6 +439,7 @@ test("the namesake index carries the two fields a pair would recompute", () => {
       rel: "modules/budgets/spec/models/budget_spec.rb",
       dir: "modules/budgets/spec/models",
       bare: "modules/budgets/models",
+      covers: new Set(),
     },
   ]);
 });
