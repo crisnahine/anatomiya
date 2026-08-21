@@ -31,9 +31,9 @@ export const CALIBRATED_AGAINST = "2.1.238";
  * reminder still arrives and means nothing.
  *
  * A proximity test on the gate itself was tried and dropped: `xhigh` appears
- * nowhere within 20,000 characters of any of the 15 `ultra_effort_enter` sites
+ * nowhere within 20,000 characters of any of the 14 `ultra_effort_enter` sites
  * in the build this was read off, so it would have failed on the build it was
- * calibrated against.
+ * calibrated against (A29).
  */
 export const MARKERS = [
   "ultra_effort_enter",
@@ -106,9 +106,13 @@ export function cliPath(env = process.env) {
 function* candidates(env) {
   if (env.CLAUDE_CODE_ENTRYPOINT_PATH) yield real(env.CLAUDE_CODE_ENTRYPOINT_PATH);
 
-  const command = process.platform === "win32" ? "claude.exe" : "claude";
+  // Windows installs put a launcher rather than the build on PATH, under any of
+  // three names, and this yields all of them: the size floor below decides
+  // which, if any, is the build itself.
+  const names = process.platform === "win32" ? ["claude.exe", "claude.cmd", "claude.ps1", "claude"] : ["claude"];
   for (const dir of String(env.PATH ?? "").split(delimiter)) {
-    if (dir) yield real(join(dir, command));
+    if (!dir) continue;
+    for (const name of names) yield real(join(dir, name));
   }
 
   const home = env.HOME || env.USERPROFILE || homedir();
@@ -164,6 +168,27 @@ export function behind(installed, calibrated = CALIBRATED_AGAINST) {
   const [wasMajor, wasMinor] = calibrated.split(".").map(Number);
   if (major === wasMajor && minor === wasMinor) return null;
   return `this plugin was read off Claude Code ${calibrated} and the build here is ${installed}, which nobody has checked it against`;
+}
+
+/**
+ * The same answer as `drift`, computed once per build rather than once per
+ * session: reading a 321 MB bundle is 180 ms, and the answer cannot change
+ * while the file it was read from has not.
+ */
+export function driftCached(cli, state, remember) {
+  const reason = remember(state, "drift", buildKey(cli), () => drift({ cli }).reason);
+  return reason ?? null;
+}
+
+/** What the answer depends on: this build, at this size, written at this moment. */
+function buildKey(cli) {
+  if (!cli) return "none";
+  try {
+    const seen = statSync(cli);
+    return `${cli} ${seen.size} ${seen.mtimeMs}`;
+  } catch {
+    return cli;
+  }
 }
 
 /**

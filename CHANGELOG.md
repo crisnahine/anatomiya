@@ -31,6 +31,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   works to re-check it. The concurrent-subagent cap it cannot lift is named once per machine, with
   the setting that lifts it.
 
+  Everything the plugin keeps between turns goes through one module, which refuses a state
+  directory that is a symlink, is not a directory, or lets other accounts in, and writes without
+  following a link standing where a file should be.
+
+  The cadence matches the built-in rather than beating it: the whole text opens the session, a
+  one-line refresher comes back every tenth turn, and the turns in between say nothing, which is
+  1412 characters over a 30-turn session where a line on every turn would be 3950. The build is
+  read once per build rather than once per session. What the check cannot prove is written down
+  rather than asserted: the shipped build is a compiled binary, so a claim about the
+  concurrent-subagent cap that nothing here can show was cut from the README, and the README now
+  carries a table of the four ways this deliberately differs from the native mode.
+
 ### Changed
 
 - `npm run validate` reads every plugin the marketplace lists, not only the one at the root. A

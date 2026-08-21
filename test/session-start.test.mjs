@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, truncateSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, truncateSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -25,13 +25,13 @@ function tree(t, { bundle = MARKERS.join("\n"), settings = null } = {}) {
 test("a session where everything lines up is told nothing", (t) => {
   const t1 = tree(t, { settings: { effortLevel: "medium" } });
 
-  assert.equal(notice({ cli: t1.cli, env: { CLAUDE_CONFIG_DIR: t1.config }, state: t1.state, capAdvice: false }), null);
+  assert.equal(notice({ cli: t1.cli, state: t1.state, env: { CLAUDE_CONFIG_DIR: t1.config, ULTRACODE_ANYWHERE_CAP_NOTICE: "0" } }), null);
 });
 
 test("a build that dropped a marker is reported at the start of the session, once", (t) => {
   const t1 = tree(t, { bundle: MARKERS.slice(1).join("\n") });
 
-  const said = notice({ cli: t1.cli, env: { CLAUDE_CONFIG_DIR: t1.config }, state: t1.state, capAdvice: false });
+  const said = notice({ cli: t1.cli, state: t1.state, env: { CLAUDE_CONFIG_DIR: t1.config, ULTRACODE_ANYWHERE_CAP_NOTICE: "0" } });
 
   assert.match(said, new RegExp(MARKERS[0]));
   assert.match(said, /ultracode-anywhere/);
@@ -47,7 +47,7 @@ test("settings that make the plugin redundant are reported too, and named", (t) 
 test("a machine with no build to read is not warned about", (t) => {
   const t1 = tree(t);
 
-  assert.equal(notice({ cli: null, env: { CLAUDE_CONFIG_DIR: t1.config }, state: t1.state, capAdvice: false }), null);
+  assert.equal(notice({ cli: null, state: t1.state, env: { CLAUDE_CONFIG_DIR: t1.config, ULTRACODE_ANYWHERE_CAP_NOTICE: "0" } }), null);
 });
 
 test("the hook prints one SessionStart object and nothing when there is nothing to say", (t) => {
@@ -91,7 +91,7 @@ test("a build whose minor differs from the calibrated one is named at the start 
   truncateSync(cli, MIN_BUNDLE + 1);
   mkdirSync(join(dir, "config"), { recursive: true });
 
-  const said = notice({ cli, env: { CLAUDE_CONFIG_DIR: join(dir, "config") }, state: join(dir, "state"), capAdvice: false });
+  const said = notice({ cli, state: join(dir, "state"), env: { CLAUDE_CONFIG_DIR: join(dir, "config"), ULTRACODE_ANYWHERE_CAP_NOTICE: "0" } });
 
   assert.match(said, /99\.9\.9/);
   assert.match(said, new RegExp(CALIBRATED_AGAINST.replace(/\./g, "\\.")));
@@ -110,4 +110,29 @@ test("a cap already raised is not mentioned", (t) => {
   const t1 = tree(t, { settings: { env: { CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS: "40" } } });
 
   assert.equal(notice({ cli: t1.cli, env: { CLAUDE_CONFIG_DIR: t1.config }, state: t1.state }), null);
+});
+
+test("the build is read once per build, not once per session", (t) => {
+  // Reading a 321 MB binary is 180 ms, and a session pays it for nothing when
+  // the answer is the one the last session already computed.
+  const t1 = tree(t);
+  const env = { CLAUDE_CONFIG_DIR: t1.config, ULTRACODE_ANYWHERE_CAP_NOTICE: "0" };
+
+  notice({ cli: t1.cli, state: t1.state, env });
+  const before = statSync(t1.cli).atimeMs;
+  notice({ cli: t1.cli, state: t1.state, env });
+
+  assert.equal(existsSync(join(t1.state, ".drift")), true, "the answer is kept beside the counters");
+  assert.equal(statSync(t1.cli).atimeMs, before, "and the build is not opened again");
+});
+
+test("a build that changed under the same path is read again", (t) => {
+  const t1 = tree(t);
+  const env = { CLAUDE_CONFIG_DIR: t1.config, ULTRACODE_ANYWHERE_CAP_NOTICE: "0" };
+  assert.equal(notice({ cli: t1.cli, state: t1.state, env }), null);
+
+  writeFileSync(t1.cli, MARKERS.slice(1).join("\n"));
+  truncateSync(t1.cli, MIN_BUNDLE + 2);
+
+  assert.match(notice({ cli: t1.cli, state: t1.state, env }), new RegExp(MARKERS[0]));
 });
