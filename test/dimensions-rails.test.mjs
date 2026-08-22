@@ -93,6 +93,15 @@ class FkEvidenceUnreadable < ActiveRecord::Migration[7.2]
 end
 `,
 
+  fk_evidence_covering_another_column: `
+class FkEvidenceAnotherColumn < ActiveRecord::Migration[7.2]
+  def change
+    add_reference :comments, :user
+    add_foreign_key :comments, :users, column: :author_id, key => 1
+  end
+end
+`,
+
   fk_evidence_on_a_table_it_cannot_read: `
 class FkEvidenceOnUnknownTable < ActiveRecord::Migration[7.2]
   def change
@@ -568,6 +577,14 @@ test("a reference is not charged against evidence this tool could not read", nee
   // an unreadable options list already refuses to invent.
   assert.deepEqual(counts("reference_foreign_key", "fk_evidence_unreadable"), { candidates: 0, conforming: 0 });
   assert.deepEqual(counts("reference_foreign_key", "fk_evidence_on_a_table_it_cannot_read"), {
+    candidates: 0,
+    conforming: 0,
+  });
+  // The column that key covers is readable and is not this reference's, so
+  // reading the list as absent would credit the reference instead of charging
+  // it: the same misread in the direction that states a convention nobody
+  // wrote.
+  assert.deepEqual(counts("reference_foreign_key", "fk_evidence_covering_another_column"), {
     candidates: 0,
     conforming: 0,
   });

@@ -22,7 +22,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   matched on the table and the column that statement names; a statement naming either through
   something with no literal to read was dropped, and the reference it covers then read as a column
   with no key at all. `add_foreign_key table, :type_variants, column: :type_variant_id` inside a
-  helper method is that shape, and openproject writes one. Evidence on the reference itself is still read,
+  helper method is that shape, and openproject writes one. Such a statement answers for nothing
+  either: read as a key naming no column, it matched the plural of the reference name and credited a
+  reference whose column it may never have covered. Evidence on the reference itself is still read,
   so an inline `foreign_key:` counts whatever else the class holds.
 - Measured over the 35-repository corpus, 7,902 migration files: 8,268 column sites, 1,732
   `create_table` sites and 1,655 reference sites read identically before and after, and 0 of the 517
