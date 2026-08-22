@@ -111,6 +111,106 @@ class FkColumnValueUnreadable < ActiveRecord::Migration[7.2]
 end
 `,
 
+  fk_up_ref_down: `
+class FkUpRefDown < ActiveRecord::Migration[7.2]
+  def up
+    add_foreign_key :comments, :users
+  end
+
+  def down
+    add_reference :comments, :user
+  end
+end
+`,
+
+  fk_and_ref_both_down: `
+class FkAndRefBothDown < ActiveRecord::Migration[7.2]
+  def up
+    remove_reference :comments, :user
+  end
+
+  def down
+    add_reference :comments, :user
+    add_foreign_key :comments, :users
+  end
+end
+`,
+
+  string_option_keys: `
+class StringOptionKeys < ActiveRecord::Migration[7.2]
+  def change
+    create_table :tags, "id" => false do |t|
+      t.string :a, "null" => false
+      t.string :b, null: false
+    end
+    add_reference :comments, :user, "foreign_key" => true
+  end
+end
+`,
+
+  fk_nil: `
+class FkNil < ActiveRecord::Migration[7.2]
+  def change
+    add_reference :comments, :user, foreign_key: nil
+  end
+end
+`,
+
+  poly_true_with_a_key_written_anyway: `
+class PolyTrueWithKey < ActiveRecord::Migration[7.2]
+  def change
+    add_reference :comments, :subject, polymorphic: true, foreign_key: true
+  end
+end
+`,
+
+  interpolated_string_key: `
+class InterpolatedStringKey < ActiveRecord::Migration[7.2]
+  def change
+    create_table :tags do |t|
+      t.string :name, "nu#{part}l" => false
+    end
+  end
+end
+`,
+
+  poly_with_the_key_written_anyway: `
+class PolyWithKeyWritten < ActiveRecord::Migration[7.2]
+  def change
+    create_table :links do |t|
+      t.references :context, polymorphic: %i[account course], foreign_key: true, null: false
+    end
+  end
+end
+`,
+
+  option_values_this_tool_cannot_read: `
+class OptionValuesUnread < ActiveRecord::Migration[7.2]
+  def change
+    create_table :tags do |t|
+      t.string :a, null: nullable
+      t.string :b, null: false
+    end
+    add_reference :comments, :user, foreign_key: fk_options
+    add_reference :posts, :author, polymorphic: flag
+    add_reference :notes, :owner, foreign_key: { on_delete: :cascade }
+  end
+end
+`,
+
+  poly_written_without_the_literal: `
+class PolyWithoutLiteral < ActiveRecord::Migration[7.2]
+  def change
+    create_table :attachments do |t|
+      t.references :context, polymorphic: { limit: 255 }, index: false
+      t.references :asset, polymorphic: %i[topic quiz]
+      t.references :owner, polymorphic: false
+      t.references :user
+    end
+  end
+end
+`,
+
   fk_statement_table_unreadable_other_column: `
 class FkStatementTableUnreadableOther < ActiveRecord::Migration[7.2]
   def change
@@ -655,6 +755,91 @@ test("a brace hash is read and a double-splat drops the site", needsRuby, () => 
   assert.deepEqual(counts("column_null_declared", "opts_hash_splat"), {
     candidates: 2,
     conforming: 1,
+  });
+});
+
+test("a reference is judged against the keys its own direction declares", needsRuby, () => {
+  // The key exists going forward and the column going back, so forward the
+  // column is not there and back the key is not. Reading one direction's keys
+  // against the other's references credits a column nothing constrains.
+  assert.deepEqual(counts("reference_foreign_key", "fk_up_ref_down"), { candidates: 1, conforming: 0 });
+  // Both in the rollback direction, where they do meet.
+  assert.deepEqual(counts("reference_foreign_key", "fk_and_ref_both_down"), { candidates: 1, conforming: 1 });
+});
+
+test("a string key is not the option Rails reads", needsRuby, () => {
+  // Rails looks up `options[:null]`, so `"null" => false` sets nothing and the
+  // column is nullable. Read as the symbol option it credits a column that
+  // declared nothing, which states a convention the repository does not hold.
+  assert.deepEqual(counts("column_null_declared", "string_option_keys"), { candidates: 2, conforming: 1 });
+  assert.deepEqual(counts("table_primary_key_declared", "string_option_keys"), { candidates: 1, conforming: 0 });
+  assert.deepEqual(counts("reference_foreign_key", "string_option_keys"), { candidates: 1, conforming: 0 });
+});
+
+test("an option value this tool cannot read decides nothing about its site", needsRuby, () => {
+  // `null: nullable` may well be declaring `null: false`; read as a value that
+  // is not `false` it charges the column for the option it may be setting.
+  assert.deepEqual(counts("column_null_declared", "option_values_this_tool_cannot_read"), {
+    candidates: 1,
+    conforming: 1,
+  });
+  // The mirror credits: `foreign_key: fk_options` is not the literal false, so
+  // it read as a key declared inline, and whitehall writes one. Whether the
+  // reference is polymorphic is the same question one step earlier: unread, it
+  // decides whether there is a site at all. The readable hash still counts.
+  assert.deepEqual(counts("reference_foreign_key", "option_values_this_tool_cannot_read"), {
+    candidates: 1,
+    conforming: 1,
+  });
+});
+
+test("a foreign_key: Rails reads as no key is no key", needsRuby, () => {
+  // `nil` is falsy, and ReferenceDefinition adds nothing for a falsy
+  // foreign_key, so the column has none. Only `null:` asks for the literal
+  // false, because Rails compares that one against false itself.
+  assert.deepEqual(counts("reference_foreign_key", "fk_nil"), { candidates: 1, conforming: 0 });
+});
+
+test("only the list form of a polymorphic reference can carry a key", needsRuby, () => {
+  // The lift is the array, and only the array: canvas-lms patches
+  // `TableDefinition#references` to expand `polymorphic: %i[...]` into one real
+  // reference per type, and its own guard is `unless polymorphic.is_a?(Array)`,
+  // so a hash or a bare true falls through to stock ActiveRecord and raises.
+  assert.deepEqual(counts("reference_foreign_key", "poly_true_with_a_key_written_anyway"), {
+    candidates: 0,
+    conforming: 0,
+  });
+});
+
+test("an interpolated string key is a string key, not an option this tool lost", needsRuby, () => {
+  // Whatever it interpolates to it is a String, and Rails looks the option up
+  // by symbol, so it cannot be the option however it reads.
+  assert.deepEqual(counts("column_null_declared", "interpolated_string_key"), {
+    candidates: 1,
+    conforming: 0,
+  });
+});
+
+test("a polymorphic reference that declares its key anyway is counted", needsRuby, () => {
+  // The exclusion exists because ActiveRecord refuses the conforming form. A
+  // migration that writes it anyway is the repository saying it runs there:
+  // canvas-lms patches `references` and writes 10 of these, and excluding them
+  // denies a fact its own source demonstrates.
+  assert.deepEqual(counts("reference_foreign_key", "poly_with_the_key_written_anyway"), {
+    candidates: 1,
+    conforming: 1,
+  });
+});
+
+test("a polymorphic reference is one whatever truthy value says so", needsRuby, () => {
+  // ActiveRecord refuses a foreign key on a polymorphic relation, so the
+  // conforming form does not run and the reference is not a site. Rails reads
+  // the option, not the literal: a hash is the type column's own options and an
+  // array is the list of types, and both are polymorphic. Only `false` is not,
+  // and canvas-lms writes 26 references this reads as sites without this.
+  assert.deepEqual(counts("reference_foreign_key", "poly_written_without_the_literal"), {
+    candidates: 2,
+    conforming: 0,
   });
 });
 
