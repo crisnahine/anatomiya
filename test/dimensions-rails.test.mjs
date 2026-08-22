@@ -283,6 +283,122 @@ class AddThing < ActiveRecord::Migration[7.0]
   end
 end
 `,
+
+  // empire-flippers/api writes the constraint as its own statement beside the
+  // reference, which is the form `add_reference ... foreign_key: true` spells
+  // inline. Both declare the same foreign key.
+  fk_separate_statement: `
+class CreateTicketComments < ActiveRecord::Migration[6.1]
+  def change
+    add_reference :ticket_comments, :user, type: :uuid, index: true
+    add_foreign_key :ticket_comments, :users, on_update: :cascade
+
+    add_reference :ticket_comments, :ticket, type: :uuid, index: true
+    add_foreign_key :ticket_comments, :tickets, on_update: :cascade
+  end
+end
+`,
+  // The constraint names a different table from the one the reference points
+  // at, so it is not this reference's foreign key.
+  fk_other_table: `
+class AddOwner < ActiveRecord::Migration[6.1]
+  def change
+    add_reference :listings, :owner, type: :uuid
+    add_foreign_key :listings, :categories
+  end
+end
+`,
+  // The constraint sits on another table entirely.
+  fk_other_from: `
+class AddOwnerElsewhere < ActiveRecord::Migration[6.1]
+  def change
+    add_reference :listings, :user, type: :uuid
+    add_foreign_key :tasks, :users
+  end
+end
+`,
+  // `column:` names the reference outright, so no pluralisation is needed.
+  fk_named_column: `
+class AddSeller < ActiveRecord::Migration[6.1]
+  def change
+    add_reference :listings, :seller, type: :uuid
+    add_foreign_key :listings, :users, column: :seller_id
+  end
+end
+`,
+  // A `t.references` inside the block the migration creates, answered by an
+  // `add_foreign_key` on the same table below it.
+  fk_inside_create_table: `
+class CreateTasks < ActiveRecord::Migration[6.1]
+  def change
+    create_table :tasks, id: :uuid do |t|
+      t.references :listing, type: :uuid
+    end
+    add_foreign_key :tasks, :listings
+  end
+end
+`,
+
+  // A key added only on the way down does not exist going forward, which is the
+  // direction the column is added in.
+  fk_only_on_rollback: `
+class R1 < ActiveRecord::Migration[6.1]
+  def change
+    add_reference :listings, :user, type: :uuid
+    reversible do |dir|
+      dir.down { add_foreign_key :listings, :users }
+    end
+  end
+end
+`,
+  fk_only_in_down: `
+class R2 < ActiveRecord::Migration[6.1]
+  def up
+    add_reference :listings, :user, type: :uuid
+  end
+
+  def down
+    add_foreign_key :listings, :users
+  end
+end
+`,
+  // `t.foreign_key` inside the block is the same declaration with a receiver.
+  fk_inside_change_table: `
+class R3 < ActiveRecord::Migration[6.1]
+  def change
+    change_table :tasks do |t|
+      t.references :listing, type: :uuid
+      t.foreign_key :listings, column: :listing_id
+    end
+  end
+end
+`,
+
+  // The two pluralisations that are not a bare `s`: a consonant before `y`, and
+  // a sibilant ending.
+  fk_irregular_plurals: `
+class R4 < ActiveRecord::Migration[6.1]
+  def change
+    add_reference :listings, :company, type: :uuid
+    add_foreign_key :listings, :companies
+
+    add_reference :listings, :address, type: :uuid
+    add_foreign_key :listings, :addresses
+  end
+end
+`,
+  // `down` on some other receiver is somebody's method, not the rollback half
+  // of a reversible block.
+  fk_unrelated_down_block: `
+class R5 < ActiveRecord::Migration[6.1]
+  def change
+    add_reference :listings, :user, type: :uuid
+    Rollout.down do
+      add_foreign_key :listings, :users
+    end
+  end
+end
+`,
 };
 
 const parsed = await parseRuby(Object.entries(SRC).map(([name, src]) => write(name, src)));
@@ -628,4 +744,42 @@ test("a polymorphic reference cannot declare a foreign key, so it is not a site"
   // ActiveRecord itself raises `ArgumentError: Cannot add a foreign key to a
   // polymorphic relation`, so the conforming form does not run.
   assert.deepEqual(counts("reference_foreign_key", "polymorphic_reference"), { candidates: 1, conforming: 1 });
+});
+
+test("a foreign key declared as its own statement is this reference's foreign key", needsRuby, () => {
+  // empire-flippers/api: 167 `add_foreign_key` statements against 12 inline
+  // options. Read as the inline option only, a reference the migration does
+  // constrain read as a violation.
+  assert.deepEqual(counts("reference_foreign_key", "fk_separate_statement"), {
+    candidates: 2,
+    conforming: 2,
+  });
+  assert.deepEqual(counts("reference_foreign_key", "fk_named_column"), { candidates: 1, conforming: 1 });
+  assert.deepEqual(counts("reference_foreign_key", "fk_inside_create_table"), { candidates: 1, conforming: 1 });
+});
+
+test("a foreign key on another table or another column is not this reference's", needsRuby, () => {
+  assert.deepEqual(counts("reference_foreign_key", "fk_other_table"), { candidates: 1, conforming: 0 });
+  assert.deepEqual(counts("reference_foreign_key", "fk_other_from"), { candidates: 1, conforming: 0 });
+});
+
+test("a foreign key that only exists on the way down is not this reference's", needsRuby, () => {
+  // The column is added going forward and the constraint is not, so forward the
+  // reference has no key at all.
+  assert.deepEqual(counts("reference_foreign_key", "fk_only_on_rollback"), { candidates: 1, conforming: 0 });
+  assert.deepEqual(counts("reference_foreign_key", "fk_only_in_down"), { candidates: 1, conforming: 0 });
+});
+
+test("a foreign key declared on the table block counts like the standalone call", needsRuby, () => {
+  assert.deepEqual(counts("reference_foreign_key", "fk_inside_change_table"), { candidates: 1, conforming: 1 });
+});
+
+test("a reference pluralises to the table its key names", needsRuby, () => {
+  // `company` owes `companies` and `address` owes `addresses`; read as a bare
+  // `s` neither key would be matched to the column it covers.
+  assert.deepEqual(counts("reference_foreign_key", "fk_irregular_plurals"), { candidates: 2, conforming: 2 });
+});
+
+test("a block named down on another receiver is not the rollback half", needsRuby, () => {
+  assert.deepEqual(counts("reference_foreign_key", "fk_unrelated_down_block"), { candidates: 1, conforming: 1 });
 });

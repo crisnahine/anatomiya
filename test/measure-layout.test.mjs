@@ -119,6 +119,29 @@ test("the namesake clause the recount reads back is the renderer's own", () => {
   );
 });
 
+test("the clause names the directory the denominator was counted over, and both sides read it alike", () => {
+  // The renderer and the recount each pick which field of the root record to
+  // name. Reading different ones is invisible to every unit test and fails all
+  // 35 repositories at once, which is how it was found: the renderer moved from
+  // the printed label to the directory and the recount kept the label, which it
+  // does not carry. Both take `dir`, and a shell's own files carry a label that
+  // is not a path.
+  assert.equal(
+    namesakeClause({ with: 41, of: 53, root: null }, ".mjs file", "lib"),
+    "41 of 53 .mjs files under lib have a namesake test"
+  );
+  assert.equal(
+    namesakeClause({ with: 41, of: 53, root: null }, ".mjs file", "lib (files at this level)"),
+    "41 of 53 .mjs files under lib (files at this level) have a namesake test",
+    "the label would read as a directory name, which is why the record carries dir beside path"
+  );
+  assert.equal(
+    namesakeClause({ with: 8, of: 651, root: null }, ".ts file", null),
+    "8 of 651 .ts files have a namesake test",
+    "a root with no directory of its own names none"
+  );
+});
+
 test("the corpus directory is an argument, never a path off this machine", () => {
   // It read a home directory of the author's when nothing was passed, which
   // runs the acceptance over whatever happens to be there or over nothing at

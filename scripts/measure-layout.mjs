@@ -22,7 +22,7 @@ import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { namesakeCompanions } from "../lib/companions.mjs";
+import { namesakeCompanions, namesakeIndex } from "../lib/companions.mjs";
 import { collect, frameworksIn } from "../lib/corpus.mjs";
 import {
   isStoryFile,
@@ -97,8 +97,15 @@ function testGroupsOf(own, dir) {
     .sort((a, b) => b.files - a.files || byCode(a.runner, b.runner));
 }
 
-/** One root, recounted from the corpus under the path the section printed. */
-function recountRoot(path, corpus, testFiles) {
+/**
+ * One root, recounted from the corpus under the path the section printed.
+ *
+ * `byStem` is the whole corpus's index, built the way `layoutIndexes` builds
+ * it. Rebuilding it from the test files alone would ask a narrower question
+ * than the scan asks, with no learned spelling and no ownership, and the
+ * recount would then measure the disagreement rather than the counts.
+ */
+function recountRoot(path, corpus, testFiles, byStem) {
   const own = filesUnder(path, corpus);
   const dir = path.endsWith(LEVEL_SUFFIX) ? path.slice(0, -LEVEL_SUFFIX.length) : path === "." ? "" : path;
   const tests = own.filter(isTest);
@@ -109,11 +116,14 @@ function recountRoot(path, corpus, testFiles) {
   // second one, and reading only exts[0] counts every one of them as zero.
   const producerExt = exts.find(([ext]) => own.some((f) => f.lang && extOf(f.rel) === ext))?.[0];
   const producers = own.filter(
-    (f) => f.lang && extOf(f.rel) === producerExt && !isTest(f) && !isStoryFile(f.rel));
+    (f) => f.lang && extOf(f.rel) === producerExt && !f.facets?.empty && !isTest(f) && !isStoryFile(f.rel));
   const stories = own.filter((f) => isStoryFile(f.rel));
 
   const jsxByExt = new Map(tally(jsxFiles.map((f) => extOf(f.rel))));
   const out = {
+    // Beside the printed label, since a shell's own files are labelled
+    // `lib (files at this level)`, which names no directory.
+    dir,
     files: own.length,
     source: own.filter((f) => f.lang).length,
     exts,
@@ -123,7 +133,7 @@ function recountRoot(path, corpus, testFiles) {
     testRoot: tests.length * 2 > own.length,
     companions:
       producers.length > 0 && testFiles.length > 0 && !underTestTree(dir)
-        ? namesakeCompanions(producers, testFiles, dir)
+        ? namesakeCompanions(producers, testFiles, dir, byStem)
         : null,
     helpers: null,
   };
@@ -151,7 +161,11 @@ function recountTests(corpus) {
     dirs.get(name).push(dirOf(f.rel));
   }
   return [...dirs]
-    .map(([runner, group]) => ({ runner, root: majorityDir(group), files: group.length }))
+    .map(([runner, group]) => {
+      const root = majorityDir(group);
+      const under = root === null ? group.length : group.filter((d) => d === root || d.startsWith(`${root}/`)).length;
+      return { runner, root, files: group.length, under };
+    })
     .sort((a, b) => b.files - a.files || byCode(a.root ?? "", b.root ?? "") || byCode(a.runner, b.runner));
 }
 
@@ -238,6 +252,11 @@ function checkSection(section, corpus, root, recordRoots) {
   if (rootLines.length === 0) fail(`${HEADING} printed no root line`);
 
   const testFiles = corpus.filter(isTest);
+  // The same index the scan hands its roots, over the same corpus: the sources
+  // are what decide ownership and what a second spelling is learned from, and
+  // an index built from the test files alone answers a narrower question.
+  const sources = corpus.filter((f) => f.lang && !f.facets?.empty && !isTest(f) && !isStoryFile(f.rel));
+  const byStem = namesakeIndex(testFiles, sources);
   let printedFiles = 0;
 
   for (const line of rootLines) {
@@ -245,7 +264,7 @@ function checkSection(section, corpus, root, recordRoots) {
     if (parsed === null) fail(`root line has no path label: ${line}`);
     const path = pathOf(parsed.label);
     checkPathOnDisk(path, root);
-    const counted = recountRoot(path, corpus, testFiles);
+    const counted = recountRoot(path, corpus, testFiles, byStem);
     printedFiles += counted.files;
 
     const clauses = [...parsed.clauses];
@@ -326,14 +345,14 @@ function checkSection(section, corpus, root, recordRoots) {
     );
   }
 
-  checkTestsLine(bullets.find((l) => l.startsWith("- tests: ")), corpus, recordRoots, testFiles);
+  checkTestsLine(bullets.find((l) => l.startsWith("- tests: ")), corpus, recordRoots, testFiles, byStem);
 
   const principles = section.filter((l) => l !== "" && !l.startsWith("- ") && l !== HEADING).length;
   return { roots: rootLines.length, folded, principles, truncated: false };
 }
 
 /** The tests line's groups, against a recount over the whole corpus. */
-function checkTestsLine(line, corpus, recordRoots, testFiles) {
+function checkTestsLine(line, corpus, recordRoots, testFiles, byStem) {
   const recount = recountTests(corpus);
   if (!line) {
     if (recount.length > 0) fail(`the tests line is missing and ${recount.length} runner group(s) were counted`);
@@ -343,7 +362,8 @@ function checkTestsLine(line, corpus, recordRoots, testFiles) {
   const shown = recount.slice(0, TESTS_GROUPS);
   for (const [i, g] of shown.entries()) {
     const noun = i === 0 ? specNoun(g.files, g.runner) : g.runner === UNNAMED_RUNNER ? `test file${g.files === 1 ? "" : "s"}` : runnerLabel(g.runner);
-    const expected = `${g.files} ${noun}` + (g.root ? ` under ${pathLabel(g.root)}` : "");
+    const named = g.under !== g.files ? `${g.under} of ` : "";
+    const expected = `${named}${g.files} ${noun}` + (g.root ? ` under ${pathLabel(g.root)}` : "");
     const clause = clauses.shift();
     if (clause !== expected) fail(`tests line group ${i + 1}: printed "${clause}", recount "${expected}"`);
   }
@@ -356,20 +376,20 @@ function checkTestsLine(line, corpus, recordRoots, testFiles) {
   // is the first one holding a namesake count, and that root may have lost its
   // own line to the budget, so the path comes from the record and the numbers
   // are recounted here like every other.
-  const top = topNamesakeRoot(recordRoots, corpus, testFiles);
+  const top = topNamesakeRoot(recordRoots, corpus, testFiles, byStem);
   if (top) {
     const clause = clauses.shift();
-    const expected = namesakeClause({ ...top.companions, root: null }, `${top.exts[0][0]} file`);
+    const expected = namesakeClause({ ...top.companions, root: null }, `${top.exts[0][0]} file`, top.dir);
     if (clause !== expected) fail(`tests line namesake clause: printed "${clause}", recount "${expected}"`);
   }
   if (clauses.length) fail(`tests line carries a clause the recount has no ground for: ${clauses[0]}`);
 }
 
 /** The first root with a namesake count, recounted under the record's paths. */
-function topNamesakeRoot(recordRoots, corpus, testFiles) {
+function topNamesakeRoot(recordRoots, corpus, testFiles, byStem) {
   for (const path of recordRoots) {
-    const counted = recountRoot(path, corpus, testFiles);
-    if (!counted.testRoot && counted.companions && counted.exts.length > 0) return counted;
+    const counted = recountRoot(path, corpus, testFiles, byStem);
+    if (!counted.testRoot && counted.companions && counted.exts.length > 0) return { ...counted, path };
   }
   return null;
 }

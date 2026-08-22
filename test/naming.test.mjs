@@ -958,6 +958,23 @@ test("collectHits keeps a hit's own qualified name and omits the key otherwise",
   assert.equal("self" in bare.k[0], false, "a hit with nothing to say costs no bytes over IPC");
 });
 
+test("collectHits keeps the scope a bare constant resolves in", async () => {
+  // The hits cross a process boundary through this shape, and a key it does not
+  // name is dropped. `nesting` was emitted, asserted in unit tests that call the
+  // dimension directly, and silently thrown away on every real scan: the base
+  // class row went back to counting two spellings as two classes.
+  const { collectHits } = await import("../lib/walk.mjs");
+  const scoped = collectHits({ type: "Program", body: [] }, [
+    { key: "k", run: (_p, add) => add({ node: null, conforming: false, class: "B", nesting: ["A::V1", "A"] }) },
+  ]);
+  const top = collectHits({ type: "Program", body: [] }, [
+    { key: "k", run: (_p, add) => add({ node: null, conforming: false, class: "B", nesting: [] }) },
+  ]);
+
+  assert.deepEqual(scoped.k[0].nesting, ["A::V1", "A"]);
+  assert.deepEqual(top.k[0].nesting, [], "the top level is no scope, and not the same as never having said");
+});
+
 test("isLearnedItself matches the class an area learned, by either spelling", async () => {
   const { isLearnedItself } = await import("../lib/reduce.mjs");
 
@@ -1164,4 +1181,107 @@ test("a class that merely shares its last segment with the learned base is still
   assert.equal(slot.candidates, 9, "the area's own base leaves, the namesake does not");
   assert.equal(slot.conforming, 8);
   assert.deepEqual(slot.exceptions.map((e) => e.path), ["app/controllers/api/v1/admin/base_controller.rb"]);
+});
+
+test("a superclass written relative to its enclosing namespace is the class it resolves to", async () => {
+  // empire-flippers/api: 55 controllers under app/controllers/api/v1 write
+  // `< Api::V1::BaseController` and four write `< BaseController` from inside
+  // `module Api::V1`, where Ruby resolves the bare name to the same class.
+  // Counted as two classes the row read 55 of 64 and fell under the 0.90 gate,
+  // so the strongest fact in the largest controller area went unstated.
+  const { sameConstant } = await import("../lib/reduce.mjs");
+
+  assert.equal(sameConstant("BaseController", "Api::V1::BaseController", ["Api::V1", "Api"]), true);
+  assert.equal(sameConstant("Api::V1::BaseController", "Api::V1::BaseController", ["Api::V1", "Api"]), true);
+  assert.equal(
+    sameConstant("BaseController", "Api::V1::BaseController", ["Api::V2", "Api"]),
+    false,
+    "a nesting that does not hold the learned class resolves somewhere else"
+  );
+  assert.equal(
+    sameConstant("ApplicationController", "Api::V1::BaseController", ["Api::V1"]),
+    false,
+    "a different name is a different class however it is nested"
+  );
+  assert.equal(
+    sameConstant("Api::V1::ChromeExtension::BaseController", "Api::V1::BaseController", ["Api::V1"]),
+    false,
+    "a scoped name already says which class it means"
+  );
+});
+
+test("a controller area counts the relative and the scoped spelling as one base", async () => {
+  // The 59-of-64 shape from empire-flippers/api, reduced to its smallest form:
+  // above the 0.90 gate together, under it counted apart.
+  const { reduceArea } = await import("../lib/reduce.mjs");
+  const scoped = Array.from({ length: 8 }, (_, i) => `app/controllers/api/v1/s${i}.rb`);
+  const relative = ["app/controllers/api/v1/qbo_controller.rb", "app/controllers/api/v1/notes_controller.rb"];
+  const rels = [...scoped, ...relative];
+  // `module Api::V1; class QboController`, which is how the four relative ones
+  // are written: the nesting is what the bare superclass resolves against.
+  const className = (rel) => `Api::V1::${rel.slice(rel.lastIndexOf("/") + 1, -3)}`;
+  const area = { langs: ["ruby"], files: rels.map((rel) => ({ rel, lang: "ruby" })) };
+  const parsed = rels.map((rel) => ({
+    rel,
+    ok: true,
+    hits: {
+      class_base: [
+        relative.includes(rel)
+          ? { conforming: false, class: "BaseController", self: className(rel), nesting: ["Api::V1", "Api"], where: "X" }
+          : { conforming: false, class: "Api::V1::BaseController", self: className(rel), nesting: ["Api::V1", "Api"], where: "X" },
+      ],
+    },
+  }));
+
+  const slot = reduceArea(area, parsed).find((d) => d.key === "class_base");
+
+  assert.equal(slot.learned, "Api::V1::BaseController");
+  assert.equal(slot.candidates, 10);
+  assert.equal(slot.conforming, 10, "all ten name the same base, in two spellings");
+});
+
+test("a compact class name resolves its superclass at the top level, not inside itself", async () => {
+  // Ruby evaluates the superclass expression in the scope the class is written
+  // in. `class Api::V1::Qbo < BaseController` is written at the top level, so
+  // the bare name is `::BaseController`; only bodies actually nested in
+  // `module Api::V1` resolve it to `Api::V1::BaseController`. The site's own
+  // qualified name cannot tell the two apart, because both read back alike.
+  const { sameConstant } = await import("../lib/reduce.mjs");
+
+  assert.equal(sameConstant("BaseController", "Api::V1::BaseController", ["Api::V1", "Api"]), true);
+  assert.equal(
+    sameConstant("BaseController", "Api::V1::BaseController", []),
+    false,
+    "written at the top level, the bare name is the top-level class"
+  );
+  assert.equal(sameConstant("BaseController", "Api::V1::BaseController", ["Api"]), false);
+});
+
+test("a grouped row resolves a relative mixin the way the superclass row does", async () => {
+  // `module_include` counts one site per body, so it folds through `groupSites`
+  // rather than the per-hit path, and the resolution has to reach both.
+  const { reduceArea } = await import("../lib/reduce.mjs");
+  const rels = Array.from({ length: 10 }, (_, i) => `app/models/concerns/m${i}.rb`);
+  const area = { langs: ["ruby"], files: rels.map((rel) => ({ rel, lang: "ruby" })) };
+  const relative = new Set([rels[0], rels[1]]);
+  const parsed = rels.map((rel) => ({
+    rel,
+    ok: true,
+    hits: {
+      module_include: [
+        {
+          conforming: false,
+          class: relative.has(rel) ? "Trackable" : "Api::V1::Trackable",
+          nesting: ["Api::V1", "Api"],
+          group: 1,
+          where: "X",
+        },
+      ],
+    },
+  }));
+
+  const slot = reduceArea(area, parsed).find((d) => d.key === "module_include");
+
+  assert.equal(slot.learned, "Api::V1::Trackable");
+  assert.equal(slot.conforming, 10, "both spellings name the module the nesting resolves to");
 });
