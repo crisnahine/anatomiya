@@ -577,3 +577,55 @@ test("the base is not a site on either side, so the scan and the check agree abo
   assert.deepEqual([...hits.keys()], ["app/controllers/api/v1/listings_controller.rb"]);
   assert.deepEqual(pairingViolations(["app/controllers/api/v1/base_controller.rb"], corpus, CONTROLLER_SPEC), []);
 });
+
+test("a repository writing its specs with a longer suffix is counted on the suffix it writes", () => {
+  // empire-flippers/api spells the majority of spec/models as
+  // `<name>_model_spec.rb`: 52 of 166 models against 46 on the bare suffix.
+  // Read on the bare one alone the row said 44 of 129 and the map told an
+  // agent this repository does not spec its models, at half the real rate.
+  const models = Array.from({ length: 20 }, (_, i) => `app/models/m${i}.rb`);
+  const corpus = new Set([
+    ...models,
+    // Six on the declared spelling, eight on the longer one, and six with none.
+    ...models.slice(0, 6).map((r) => `spec/models/${r.slice("app/models/".length, -3)}_spec.rb`),
+    ...models.slice(6, 14).map((r) => `spec/models/${r.slice("app/models/".length, -3)}_model_spec.rb`),
+  ]);
+
+  const hits = pairingHits(corpus, MODEL_SPEC);
+
+  assert.deepEqual(hits.get("app/models/m0.rb"), [{ conforming: true, elsewhere: false }]);
+  assert.deepEqual(hits.get("app/models/m6.rb"), [{ conforming: true, elsewhere: false }], "the learned spelling");
+  assert.deepEqual(hits.get("app/models/m14.rb"), [{ conforming: false, elsewhere: false }]);
+  assert.equal([...hits.values()].filter(([h]) => h.conforming).length, 14);
+});
+
+test("a suffix only a handful of files carry is another model's spec, not a spelling", () => {
+  // `user.rb` beside `user_membership_spec.rb` is UserMembership's spec.
+  // Measured across the corpus, every repository's second suffix but one sits
+  // at or under a sixteenth of the producers and is exactly this; the one that
+  // is a real spelling carries a third of them.
+  const models = Array.from({ length: 40 }, (_, i) => `app/models/m${i}.rb`);
+  const corpus = new Set([
+    ...models,
+    ...models.slice(0, 30).map((r) => `spec/models/${r.slice("app/models/".length, -3)}_spec.rb`),
+    "spec/models/m30_membership_spec.rb",
+    "spec/models/m31_membership_spec.rb",
+  ]);
+
+  const hits = pairingHits(corpus, MODEL_SPEC);
+
+  assert.deepEqual(hits.get("app/models/m30.rb"), [{ conforming: false, elsewhere: false }]);
+  assert.equal([...hits.values()].filter(([h]) => h.conforming).length, 30);
+});
+
+test("a learned spelling begins at a separator, not inside the producer's name", () => {
+  // `m0.rb` beside `m0book_spec.rb` is `m0book`'s spec. On a small root three
+  // of them clear both the floor and the share, so the noise gate alone cannot
+  // tell a spelling from a longer name.
+  const models = Array.from({ length: 10 }, (_, i) => `app/models/m${i}.rb`);
+  const corpus = new Set([...models, ...[0, 1, 2].map((i) => `spec/models/m${i}book_spec.rb`)]);
+
+  const hits = pairingHits(corpus, MODEL_SPEC);
+
+  assert.equal([...hits.values()].filter(([h]) => h.conforming).length, 0);
+});

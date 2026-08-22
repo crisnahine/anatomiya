@@ -76,7 +76,7 @@ test("the roster counts against the mirror index it is handed, and builds none o
 
   assert.deepEqual(layoutFacts(corpus).tests, [], "nothing here mirrors anything");
   assert.deepEqual(layoutFacts(corpus, { indexes: layoutIndexes(corpus, new Set(["src/a.ts"])) }).tests, [
-    { runner: "test files", root: "src", files: 1 },
+    { runner: "test files", root: "src", files: 1, under: 1 },
   ]);
 });
 
@@ -109,7 +109,7 @@ test("the tests line counts specs and not what sits beside them", () => {
     ...files(20, (i) => file(`cypress/screenshots/x${i}.png`)),
   ];
 
-  assert.deepEqual(testsLine(corpus), [{ runner: "cypress", root: "cypress/integration", files: 4 }]);
+  assert.deepEqual(testsLine(corpus), [{ runner: "cypress", root: "cypress/integration", files: 4, under: 4 }]);
 });
 
 test("a file that imports a runner is a test file wherever it sits", () => {
@@ -193,7 +193,7 @@ test("a monorepo descends past packages and past each package's own shell", () =
   assert.equal(roots.length, 7);
   assert.deepEqual(paths(roots).slice(0, 2), ["packages/p1/src", "packages/p2/src"]);
   assert.deepEqual(more, { roots: 5, files: 15 });
-  assert.deepEqual(testsLine(corpus), [{ runner: "vitest", root: "packages", files: 2 }]);
+  assert.deepEqual(testsLine(corpus), [{ runner: "vitest", root: "packages", files: 2, under: 2 }]);
 });
 
 test("apps is a shell name too, so a monorepo's apps/* sites are not one bullet", () => {
@@ -440,6 +440,7 @@ test("the namesake index carries the fields a pair would recompute", () => {
       dir: "modules/budgets/spec/models",
       bare: "modules/budgets/models",
       covers: new Set(),
+      owner: null,
     },
   ]);
 });
@@ -459,8 +460,8 @@ test("the tests line groups by runner and names the prefix each shares", () => {
   ];
 
   assert.deepEqual(testsLine(corpus), [
-    { runner: "cypress", root: "cypress/integration", files: 102 },
-    { runner: "vitest", root: "src", files: 4 },
+    { runner: "cypress", root: "cypress/integration", files: 102, under: 102 },
+    { runner: "vitest", root: "src", files: 4, under: 4 },
   ]);
 });
 
@@ -473,7 +474,7 @@ test("the tests line names where most of a runner's files are, not what one stra
     ...files(4, (i) => file(`src/legacy/y${i}.cy.ts`, "js", { testRunner: "cypress" })),
   ];
 
-  assert.deepEqual(testsLine(corpus), [{ runner: "cypress", root: "cypress/integration", files: 106 }]);
+  assert.deepEqual(testsLine(corpus), [{ runner: "cypress", root: "cypress/integration", files: 106, under: 102 }]);
 });
 
 test("a runner spread across the repository is named without a directory", () => {
@@ -482,7 +483,7 @@ test("a runner spread across the repository is named without a directory", () =>
     ...files(30, (i) => file(`libs/b/test/y${i}.test.ts`, "js", { testRunner: "vitest" })),
   ];
 
-  assert.deepEqual(testsLine(corpus), [{ runner: "vitest", root: null, files: 60 }]);
+  assert.deepEqual(testsLine(corpus), [{ runner: "vitest", root: null, files: 60, under: 60 }]);
 });
 
 test("a shell whose children all sit under the floor keeps its own line", () => {
@@ -507,8 +508,8 @@ test("two runners at one count order by name, whichever file arrived first", () 
     ...files(3, (i) => file(`src/j${i}.test.js`, "js", { testRunner: "jest" })),
   ];
   const expected = [
-    { runner: "jest", root: "src", files: 3 },
-    { runner: "mocha", root: "src", files: 3 },
+    { runner: "jest", root: "src", files: 3, under: 3 },
+    { runner: "mocha", root: "src", files: 3, under: 3 },
   ];
 
   assert.deepEqual(testsLine(corpus), expected);
@@ -540,12 +541,13 @@ test("the layout record counts each root's extensions, tests, namesakes and help
   assert.deepEqual(paths(facts.roots), ["src/pages", "src/components", "cypress/integration"]);
   assert.deepEqual(facts.more, { roots: 0, files: 0 });
   assert.deepEqual(facts.tests, [
-    { runner: "cypress", root: "cypress/integration", files: 102 },
-    { runner: "vitest", root: "src/components", files: 4 },
+    { runner: "cypress", root: "cypress/integration", files: 102, under: 102 },
+    { runner: "vitest", root: "src/components", files: 4, under: 4 },
   ]);
 
   assert.deepEqual(facts.roots[1], {
     path: "src/components",
+    dir: "src/components",
     files: 616,
     source: 573,
     exts: [[".tsx", 508], [".ts", 65]],
@@ -902,4 +904,59 @@ test("a namesake root tie breaks by code units, not locale", () => {
   ];
   const got = namesakeCompanions(src, tests, "app/models");
   assert.equal(got.root, "Foo/models");
+});
+
+test("a spec the parse read and found no case in is not a test file", () => {
+  // empire-flippers/api:
+  // spec/services/.../one_off/multiple_changes_spec.rb is commented out top to
+  // bottom, so the runner collects nothing from it, and it still made
+  // app/services/.../multiple_changes.rb read as covered.
+  const empty = { testRunner: null, testCalls: false, empty: true };
+  assert.equal(isTestFile(file("spec/models/user_spec.rb", "ruby", empty)), false);
+  assert.equal(isTestFile(file("src/a.test.ts", "js", empty)), false);
+
+  // A spec holding code stays a test even where the walk sees no case at the
+  // top level: vscode nests `test` inside `suite`, and Cypress specs declare
+  // their cases in a vocabulary this table does not carry.
+  const quiet = { testRunner: null, testCalls: false };
+  assert.equal(isTestFile(file("src/vs/base/common/uri.test.ts", "js", quiet)), true);
+  // The name still answers where the parse never reached the file.
+  assert.equal(isTestFile(file("spec/models/user_spec.rb", "ruby", null)), true);
+  // And a file that declares a case is a test whatever it is named.
+  assert.equal(
+    isTestFile(file("spec/models/user_spec.rb", "ruby", { testRunner: "rspec", testCalls: true })),
+    true
+  );
+});
+
+test("a spec the parse found empty is neither a test nor a file owing one", () => {
+  // Counted twice against the repository otherwise: the source it was written
+  // for loses its test, and the dead file joins the denominator as a producer.
+  const empty = { testRunner: null, testCalls: false, empty: true };
+  const corpus = [
+    ...files(6, (i) => file(`src/mod${i}.js`, "js", { testRunner: null, testCalls: false })),
+    ...files(6, (i) =>
+      file(`src/mod${i}.test.js`, "js", i === 1 ? empty : { testRunner: "vitest", testCalls: true })),
+  ];
+  const indexes = layoutIndexes(corpus);
+  const record = rootFacts({ path: "src", dir: "src", files: corpus }, indexes);
+
+  assert.deepEqual(record.companions, { with: 5, of: 6, root: "src" });
+});
+
+test("a commented-out source does not hold a spec no root will count", () => {
+  // The empty file is not a producer, so no root ever counts it, and letting it
+  // win ownership retires the spec: the real file two directories away reads
+  // untested and the roster loses the place as well as the count.
+  const corpus = [
+    file("app/services/foo.rb", "ruby", { testRunner: null, testCalls: false, empty: true }),
+    file("lib/foo.rb", "ruby", { testRunner: null, testCalls: false }),
+    file("lib/bar.rb", "ruby", { testRunner: null, testCalls: false }),
+    file("spec/services/foo_spec.rb", "ruby", { testRunner: "rspec", testCalls: true }),
+    file("spec/bar_spec.rb", "ruby", { testRunner: "rspec", testCalls: true }),
+  ];
+  const indexes = layoutIndexes(corpus);
+  const record = rootFacts({ path: "lib", dir: "lib", files: corpus.filter((f) => f.rel.startsWith("lib/")) }, indexes);
+
+  assert.deepEqual(record.companions, { with: 2, of: 2, root: "spec" });
 });

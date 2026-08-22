@@ -486,3 +486,26 @@ test("minitestByPath only trusts a top-level test tree", needsRuby, async (t) =>
   assert.equal(shallow.testRunner, "minitest", "a def test_* directly under the tree's own top is still minitest");
   assert.equal(shallow.testCalls, true);
 });
+
+test("a file the parse read and found no statement in says so", needsRuby, async (t) => {
+  // empire-flippers/api commented one spec out top to bottom, header and all.
+  // The runner collects nothing from it, and without this facet the roster
+  // counted it as the spec for the service beside it.
+  const dir = repo({
+    "spec/commented_spec.rb": `# frozen_string_literal: true\n\n# RSpec.describe Foo do\n#   it "x" do\n#   end\n# end\n`,
+    "spec/real_spec.rb": `RSpec.describe Foo do\n  it "x" do\n  end\nend\n`,
+    "src/commented.test.ts": `// describe("a", () => { it("x", () => {}) })\n`,
+    "src/real.test.ts": `describe("a", () => { it("x", () => {}) })\n`,
+  });
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+  const rels = ["spec/commented_spec.rb", "spec/real_spec.rb", "src/commented.test.ts", "src/real.test.ts"];
+  const { records } = await parseAll(list(dir, rels));
+
+  assert.equal(records.get("spec/commented_spec.rb").facets.empty, true);
+  assert.equal(records.get("src/commented.test.ts").facets.empty, true);
+  // Absent rather than false on a file that holds anything: the facet crosses
+  // the process boundary once per file, and most files have nothing to say here.
+  assert.equal("empty" in records.get("spec/real_spec.rb").facets, false);
+  assert.equal("empty" in records.get("src/real.test.ts").facets, false);
+});

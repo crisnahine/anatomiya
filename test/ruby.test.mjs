@@ -373,6 +373,37 @@ const SRC = {
       end
     end
   `,
+  nested_include: `
+module Api
+  module V1
+    class Widget
+      include Trackable
+    end
+  end
+end
+`,
+  compact_bodies: `
+module A2::B2
+  class D
+    include Concern
+  end
+end
+
+class A3::B3::E
+  include Concern
+end
+`,
+  compact_superclass: `
+module Api
+  module V1
+    class BaseController
+    end
+  end
+end
+
+class Api::V1::QboController < BaseController
+end
+`,
 };
 
 const parsed = await parseRuby(Object.entries(SRC).map(([name, src]) => write(name, src)));
@@ -1127,4 +1158,26 @@ test("the Ruby bridge hands a row the path it read, not just the tree", needsRub
 
   assert.equal(at("app/clients/client.rb").hits.http_through_client, undefined, "the client implements the routing");
   assert.equal(at("app/services/payment_service.rb").hits.http_through_client.length, 1);
+});
+
+test("a learned-class hit carries the scope its bare names resolve in", needsRuby, () => {
+  // `Module.nesting` for an `include` inside `class Widget` is the class body
+  // itself, then each module above it. Read off a helper that appended the
+  // class to a stack it was already on, the scope came back with the class
+  // name twice and no bare mixin could ever resolve.
+  const [include] = hits("module_include", "nested_include");
+  assert.deepEqual(include.nesting, ["Api::V1::Widget", "Api::V1", "Api"]);
+
+  // The compact spellings read the same way, or a repository writing
+  // `module Api::V1` loses the prefix and no bare mixin resolves.
+  // A compact path opens one scope, not one per segment: `class A3::B3::E`
+  // nests as itself alone, and a bare name it does not hold is a top-level one.
+  const compact = hits("module_include", "compact_bodies").map((h) => h.nesting);
+  assert.deepEqual(compact, [["A2::B2::D", "A2::B2"], ["A3::B3::E"]]);
+
+  // A superclass is evaluated where the declaration is written, so the compact
+  // form is written at the top level and its scope is empty.
+  const [base] = hits("class_base", "compact_superclass").filter((h) => h.class);
+  assert.equal(base.self, "Api::V1::QboController");
+  assert.deepEqual(base.nesting, [], "the compact form resolves its superclass at the top level");
 });

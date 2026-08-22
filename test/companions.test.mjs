@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { namesakeCompanions, namesakeIndex } from "../lib/companions.mjs";
+import { dirOf } from "../lib/paths.mjs";
 
 const file = (rel) => ({ rel });
 // A test file that names what it covers. The specifiers are what the parser
@@ -158,7 +159,7 @@ test("namesakeIndex builds the stem map namesakeCompanions is handed", () => {
   const index = namesakeIndex([file("spec/models/foo_spec.rb")]);
 
   assert.deepEqual(index.get("foo"), [
-    { rel: "spec/models/foo_spec.rb", dir: "spec/models", bare: "models", covers: new Set() },
+    { rel: "spec/models/foo_spec.rb", dir: "spec/models", bare: "models", covers: new Set(), owner: null },
   ]);
 });
 
@@ -414,4 +415,258 @@ test("a specifier with no extension reaches only what a resolver would reach", (
   const tests = [imports("test/parser.test.ts", ["../pkg/src/parser"])];
 
   assert.equal(namesakeCompanions(source, tests, "pkg", namesakeIndex(tests)).with, 1);
+});
+
+test("a package answers the same whichever root above it is evaluated", () => {
+  // The overview counts a root and an area file counts a directory inside it,
+  // and both ask this. `packages/foo` read 0 of 2 where `packages` and
+  // `packages/foo/src` both read 2 of 2: the tail there is `src`, which is a
+  // tree word, and nothing was left to match a candidate against.
+  const src = [file("packages/foo/src/parser.ts"), file("packages/foo/src/lexer.ts")];
+  const tst = [file("packages/foo/test/parser.test.ts"), file("packages/foo/test/lexer.test.ts")];
+  const byStem = namesakeIndex(tst);
+
+  for (const root of ["packages", "packages/foo", "packages/foo/src"]) {
+    assert.deepEqual(
+      namesakeCompanions(src, tst, root, byStem),
+      { with: 2, of: 2, root: "packages/foo/test" },
+      root
+    );
+  }
+});
+
+test("a spec in a sibling namespace does not answer this one's file", () => {
+  // empire-flippers/api: app/services/stripe/reports/generate.rb has no spec.
+  // Counted against the area's own tail, `reports`, every spec directory
+  // ending in `/reports` answered it, and Shopify's spec was credited to
+  // Stripe. The kinds line then said 15 where the pairing claim said 13.
+  const stripe = [
+    file("app/services/stripe/reports/generate.rb"),
+    file("app/services/stripe/reports/start.rb"),
+    file("app/services/stripe/charge.rb"),
+  ];
+  const shopify = [
+    file("app/services/shopify/reports/generate.rb"),
+    file("app/services/shopify/reports/start.rb"),
+  ];
+  const specs = [
+    file("spec/services/shopify/reports/generate_spec.rb"),
+    file("spec/services/shopify/reports/start_spec.rb"),
+    file("spec/services/stripe/charge_spec.rb"),
+  ];
+  // The whole corpus's sources, which is what decides contention: the index is
+  // built once per scan over every file, and a root only ever holds one side.
+  const byStem = namesakeIndex(specs, [...stripe, ...shopify]);
+
+  assert.deepEqual(namesakeCompanions(stripe, specs, "app/services/stripe", byStem), {
+    with: 1,
+    of: 3,
+    root: null,
+  });
+  // Shopify keeps both: they are its specs, and refusing Stripe must not cost
+  // the directory that actually owns them.
+  assert.deepEqual(namesakeCompanions(shopify, specs, "app/services/shopify", byStem), {
+    with: 2,
+    of: 2,
+    root: "spec/services/shopify",
+  });
+});
+
+test("a directory that spells its specs with a longer suffix is counted on that spelling", () => {
+  // empire-flippers/api writes 52 of its 166 models as `<name>_model_spec.rb`
+  // and 46 on the bare suffix. Read on the bare one alone the overview said
+  // `46 of 166 have a namesake test`, which is a repository that specs its
+  // models at 57% reading as one that does it at 28%.
+  const models = Array.from({ length: 20 }, (_, i) => `app/models/m${i}.rb`).map(file);
+  const specs = [
+    ...models.slice(0, 6).map((f) => file(`spec/models/${f.rel.slice(11, -3)}_spec.rb`)),
+    ...models.slice(6, 14).map((f) => file(`spec/models/${f.rel.slice(11, -3)}_model_spec.rb`)),
+  ];
+
+  assert.deepEqual(namesakeCompanions(models, specs, "app/models", namesakeIndex(specs, models)), {
+    with: 14,
+    of: 20,
+    root: "spec/models",
+  });
+});
+
+test("a suffix a handful of files carry names another file, and is not learned", () => {
+  // `m30_membership_spec.rb` is M30Membership's spec. Learning it would credit
+  // `m30.rb` with a test written for something else.
+  const models = Array.from({ length: 40 }, (_, i) => `app/models/m${i}.rb`).map(file);
+  const specs = [
+    ...models.slice(0, 30).map((f) => file(`spec/models/${f.rel.slice(11, -3)}_spec.rb`)),
+    file("spec/models/m30_membership_spec.rb"),
+    file("spec/models/m31_membership_spec.rb"),
+  ];
+
+  assert.deepEqual(namesakeCompanions(models, specs, "app/models", namesakeIndex(specs, models)), {
+    with: 30,
+    of: 40,
+    root: "spec/models",
+  });
+});
+
+test("where only the import edge answers, a suite beside the code beats a distant one", () => {
+  // Both directories hold a namesake test that imports the file, so the count
+  // is right either way and only the place is in question. `e2e` won it by
+  // sorting before `pkg`, and the repository keeps its unit specs beside the
+  // code. Measured over the corpus: of 38 roots with two covering directories,
+  // 34 had one beside the code and the printed root was that one in all 34, so
+  // preferring it costs nothing measured and settles the rest.
+  const names = ["a", "b", "c", "d", "e"];
+  const src = names.map((x) => file(`pkg/hooks/${x}.ts`));
+  const tests = [
+    ...names.map((x) => imports(`e2e/${x}.test.ts`, [`../pkg/hooks/${x}.js`])),
+    ...names.map((x) => imports(`pkg/hooks/__spec__/${x}.test.ts`, [`../${x}.js`])),
+  ];
+
+  assert.deepEqual(namesakeCompanions(src, tests, "pkg", namesakeIndex(tests)), {
+    with: 5,
+    of: 5,
+    root: "pkg/hooks/__spec__",
+  });
+});
+
+test("ownership is decided within one language, so a Ruby spec cannot be owned by a JS module", () => {
+  // `learnStemExtras` already refuses to read `index_spec.rb` as `index.js`'s
+  // test. Ownership asked the same question keyed on the stem alone, so a
+  // module that merely shares a name and sits deeper could take a spec off the
+  // Ruby file the spec is structurally written for, and the model then read as
+  // untested.
+  const models = [file("app/models/user.rb")];
+  const sources = [...models, file("app/javascript/admin/models/user.mjs")];
+  const specs = [file("spec/admin/models/user_spec.rb")];
+
+  assert.deepEqual(namesakeCompanions(models, specs, "app/models", namesakeIndex(specs, sources)), {
+    with: 1,
+    of: 1,
+    root: null,
+  });
+});
+
+test("a test file answering two stems is owned once per stem, not once overall", () => {
+  // `spec/models/address_model_spec.rb` is the literal namesake of
+  // `address_model.rb` and the learned-spelling namesake of `address.rb`.
+  // Carried as one owner on one shared object, whichever stem was decided last
+  // won, and the file whose own name the spec spells read untested.
+  const models = [
+    file("app/models/address.rb"),
+    file("app/models/address_model.rb"),
+    file("app/models/company.rb"),
+    file("app/models/device.rb"),
+    file("app/models/order.rb"),
+  ];
+  const sources = [...models, file("app/legacy/address.rb")];
+  const specs = ["address", "company", "device", "order"].map((n) => file(`spec/models/${n}_model_spec.rb`));
+  const byStem = namesakeIndex(specs, sources);
+
+  assert.deepEqual(namesakeCompanions([file("app/models/address_model.rb")], specs, "app/models", byStem), {
+    with: 1,
+    of: 1,
+    root: null,
+  });
+});
+
+test("a learned spelling begins where the covered name ends, at a separator", () => {
+  // `m0.rb` beside `m0book_spec.rb` is not `m0`'s spec with a `book_spec`
+  // spelling; it is `m0book`'s. Every real second spelling measured starts at
+  // a separator, `_model_spec`, `.unittest`, `-test`, and on a small root the
+  // floor and the share coincide, so the noise gate alone does not separate it.
+  const models = Array.from({ length: 10 }, (_, i) => file(`app/models/m${i}.rb`));
+  const specs = [0, 1, 2].map((i) => file(`spec/models/m${i}book_spec.rb`));
+
+  assert.deepEqual(namesakeCompanions(models, specs, "app/models", namesakeIndex(specs, models)), {
+    with: 0,
+    of: 10,
+    root: null,
+  });
+});
+
+test("an incidental import does not take a test off the file it sits beside", () => {
+  // A spec reaching its own subject through an index file, and naming a
+  // same-stem module elsewhere as a stub, said outright that it covers the
+  // stub. Taken as proof, it moved the test off the file in its own directory,
+  // which already had it, onto one two directories away that has its own.
+  const sources = [file("src/api/client.js"), file("src/db/client.js")];
+  const tests = [
+    imports("src/api/client.test.js", ["./index.js", "../db/client.js"]),
+    imports("src/db/client.test.js", ["./client.js"]),
+  ];
+  const byStem = namesakeIndex(tests, sources);
+
+  assert.deepEqual(namesakeCompanions([file("src/api/client.js")], tests, "src/api", byStem), {
+    with: 1,
+    of: 1,
+    root: null,
+  });
+});
+
+test("the share decides a spelling, not the floor alone", () => {
+  // Four files carry `_helper`, which clears the floor of three and sits at a
+  // twentieth of the directory, well under the measured fifth. Pinning the two
+  // gates apart: with only the floor to answer to, this would be learned.
+  const models = Array.from({ length: 80 }, (_, i) => file(`app/models/m${i}.rb`));
+  const specs = [
+    ...Array.from({ length: 76 }, (_, i) => file(`spec/models/m${i}_spec.rb`)),
+    ...[76, 77, 78, 79].map((i) => file(`spec/models/m${i}_helper_spec.rb`)),
+  ];
+
+  assert.deepEqual(namesakeCompanions(models, specs, "app/models", namesakeIndex(specs, models)), {
+    with: 76,
+    of: 80,
+    root: "spec/models",
+  });
+});
+
+test("a test that imports one file and mirrors another decides neither", () => {
+  // Two readings of the edge, each with a counter-example the other gets right,
+  // and no repository in the corpus holds the shape to settle them. Where the
+  // import and the structure disagree the candidate is left unowned, so it goes
+  // on answering both: at worst a false positive, never a retired real test.
+  const across = [file("src/foo/parse.js"), file("src/bar/parse.js")];
+  const tests = [imports("test/foo/parse.test.js", ["../../src/bar/parse.js"])];
+  const byStem = namesakeIndex(tests, across);
+
+  assert.equal(byStem.get("parse")[0].owner, null, "neither signal wins");
+  for (const rel of ["src/foo/parse.js", "src/bar/parse.js"]) {
+    assert.deepEqual(namesakeCompanions([file(rel)], tests, dirOf(rel), byStem), {
+      with: 1,
+      of: 1,
+      root: null,
+    }, rel);
+  }
+});
+
+test("an import agreeing with the structure settles a tie between two spellings", () => {
+  // `src/a/parse.js` and `src/a/parse.mjs` sit in one directory, so structure
+  // cannot separate them and the import names which one the spec covers.
+  const both = [file("src/a/parse.js"), file("src/a/parse.mjs")];
+  const tests = [imports("src/a/parse.test.js", ["./parse.js"])];
+  const byStem = namesakeIndex(tests, both);
+
+  assert.equal(byStem.get("parse")[0].owner, "src/a/parse.js");
+  assert.deepEqual(namesakeCompanions([file("src/a/parse.mjs")], tests, "src/a", byStem), {
+    with: 0,
+    of: 1,
+    root: null,
+  });
+});
+
+test("one stem holding two languages decides each against its own sources", () => {
+  // `foo_spec.rb` and `foo.test.js` share the stem `foo`, so they sit in one
+  // bucket. Read against whichever language happened to sort first, the other
+  // language's candidate was matched to the wrong source list.
+  const sources = [
+    file("app/models/foo.rb"),
+    file("app/models/nested/foo.rb"),
+    file("src/foo.js"),
+    file("src/nested/foo.js"),
+  ];
+  const tests = [file("spec/models/nested/foo_spec.rb"), file("test/nested/foo.test.js")];
+  const byStem = namesakeIndex(tests, sources);
+  const owners = Object.fromEntries(byStem.get("foo").map((t) => [t.rel, t.owner]));
+
+  assert.equal(owners["spec/models/nested/foo_spec.rb"], "app/models/nested/foo.rb");
+  assert.equal(owners["test/nested/foo.test.js"], "src/nested/foo.js");
 });

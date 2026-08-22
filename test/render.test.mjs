@@ -1258,6 +1258,7 @@ test("an area whose only stated claim matches the model default is counted, not 
 
 const root = (path, o = {}) => ({
   path,
+  dir: path,
   files: 0,
   source: 0,
   exts: [],
@@ -1336,7 +1337,7 @@ test("the tests line is the denominator the roster exists for", () => {
   assert.equal(
     lines[10],
     "- tests: 102 Cypress specs under cypress/integration; 4 vitest under src; " +
-      "0 of 504 .tsx files have a namesake test"
+      "0 of 504 .tsx files under src/components have a namesake test"
   );
 });
 
@@ -1350,11 +1351,11 @@ test("one file with a namesake takes the singular verb, on every line that print
 
   const one = renderLayout(withCount(1));
   assert.match(one[3], /; 1 of 504 has a namesake test;/, one[3]);
-  assert.match(one[10], /; 1 of 504 \.tsx files has a namesake test$/, one[10]);
+  assert.match(one[10], /; 1 of 504 \.tsx files under src\/components has a namesake test$/, one[10]);
 
   const two = renderLayout(withCount(2));
   assert.match(two[3], /; 2 of 504 have a namesake test;/, two[3]);
-  assert.match(two[10], /; 2 of 504 \.tsx files have a namesake test$/, two[10]);
+  assert.match(two[10], /; 2 of 504 \.tsx files under src\/components have a namesake test$/, two[10]);
 });
 
 test("the kinds line agrees with its own namesake count", () => {
@@ -1445,7 +1446,10 @@ test("the three lines that print a namesake clause spell it in one place", () =>
 
   assert.equal(namesakeClause(companions), "1 of 504 has a namesake test under src/components/__tests__");
   assert.ok(lines[3].includes(`; ${namesakeClause(companions)};`), lines[3]);
-  assert.ok(lines[10].endsWith(`; ${namesakeClause({ ...companions, root: null }, ".tsx file")}`), lines[10]);
+  assert.ok(
+    lines[10].endsWith(`; ${namesakeClause({ ...companions, root: null }, ".tsx file", "src/components")}`),
+    lines[10]
+  );
   assert.equal(
     kindsLine(root("src/components", { exts: [[".tsx", 504]], companions })),
     `kinds: 504 .tsx; 0 test files; ${namesakeClause({ ...companions, root: null })}`
@@ -1844,7 +1848,10 @@ test("a namesake root is named when the tests share one", () => {
   assert.equal(lines[2], "- app/services: 1575 .rb; 1230 of 1575 have a namesake test under spec/services");
   assert.equal(lines[3], "- spec: 1333 RSpec specs");
   assert.equal(lines[4], "- and 5 more directories holding 3243 files");
-  assert.equal(lines[5], "- tests: 1333 RSpec specs under spec; 1230 of 1575 .rb files have a namesake test");
+  assert.equal(
+    lines[5],
+    "- tests: 1333 RSpec specs under spec; 1230 of 1575 .rb files under app/services have a namesake test"
+  );
 });
 
 test("a count of one reads as one on every clause of a root line", () => {
@@ -2224,4 +2231,34 @@ test("a stated slot the model writes by default is reported dropped when its cou
     if (dropped.has(`k${i}`)) continue;
     assert.ok(out.includes(`claim number ${i}:`), `k${i} was not reported dropped and is not in the file`);
   }
+});
+
+test("the tests line says how many of the specs are under the directory it names", () => {
+  // empire-flippers/api: the roster's own `- spec:` line said 1332 RSpec specs
+  // and the tests line under it said 1333 under spec, in one generated file.
+  // Both were right about their own population and a reader could only read
+  // them as one claim. `majorityDir` names the directory four fifths of them
+  // sit in, so the count beside it has to say which count it is.
+  const lines = renderLayout(
+    clientLayout({
+      tests: [
+        { runner: "cypress", root: "cypress/integration", files: 102, under: 101 },
+        { runner: "vitest", root: "src", files: 4, under: 4 },
+      ],
+    })
+  );
+
+  assert.equal(
+    lines[10],
+    "- tests: 101 of 102 Cypress specs under cypress/integration; 4 vitest under src; " +
+      "0 of 504 .tsx files under src/components have a namesake test"
+  );
+});
+
+test("the tests line names the directory its namesake denominator is counted over", () => {
+  // `1060 of 1589 .rb files have a namesake test` reads repository-wide, and
+  // 1589 was app/services alone.
+  const lines = renderLayout(clientLayout());
+
+  assert.match(lines[10], /0 of 504 \.tsx files under src\/components have a namesake test$/, lines[10]);
 });

@@ -7,6 +7,46 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.2.11] - 2026-08-22
+
+The map counts what a repository actually writes. Eight reports against the counting, taken
+together: a name resolved the way its language resolves it, a spelling learned instead of listed, a
+question that answered differently depending on which directory above the file happened to ask it,
+and a line that contradicted the line two above it. Each figure below is measured on the repository
+the report was filed against and re-measured over the 35-repository corpus.
+
+### Fixed
+
+- A superclass written bare inside its namespace is the class it resolves to. `module Api::V1; class
+  Qbo < BaseController` names `Api::V1::BaseController`, and counted as a second class it took a
+  59-of-64 convention to 55 of 64: the strongest fact in the largest controller area, inverted. Only
+  a bare name resolves, and only against the scopes the declaration is written in, so the compact
+  `class Api::V1::Qbo < BaseController` still names the top-level class as Ruby does.
+- An obligation learns what its companions are called, not only where they live. A repository
+  spelling the majority of `spec/models` as `<name>_model_spec.rb` read 46 of 166 and reads 95: a
+  repository that specs 57% of its models was described as one that specs 28%. The roster learns the
+  same way per test directory, which puts webpack's `lib/util` at 48 of 75 where it read 0 of 75.
+  A spelling has to begin at a separator and be carried by a fifth of its directory, a bar measured
+  over the corpus rather than chosen.
+- A reference column's foreign key is counted wherever the migration declares it. Read as the inline
+  option alone the row said 43 of 76; the block form the repository actually uses, `t.foreign_key`
+  beside the `t.references` in one `create_table`, brings it to 72 of 76. A key declared only on the
+  way down adds nothing going forward and is not counted.
+- One test file answers one source file. `app/services/stripe/reports/generate.rb`, which has no spec
+  at all, was credited with Shopify's, because the tail below the area root is `reports` on both
+  sides. The kinds line said 15 where the claim under it said 13, in one generated file about the
+  same seventeen files; both read 13 now.
+- The namesake question answers the same whichever directory above the file asks it. A package whose
+  tail is only tree words read 0 of 2 where the directory above it and the directory below it both
+  read 2 of 2.
+- A spec the parser read and found empty is not a test file and not a file owing one. A spec
+  commented out top to bottom made the service beside it read as covered.
+- The tests line says how many of a runner's files are under the directory it names, and the namesake
+  clause names the directory its denominator was counted over. One overview read `1333 RSpec specs
+  under spec` two lines under its own `- spec: 1332 RSpec specs`.
+- Where only an import edge answers, a suite inside the root being counted is preferred over one
+  outside it, rather than whichever directory sorts first.
+
 ## [0.2.10] - 2026-08-22
 
 A file is counted as tested when a test says so. H18 closed a false-match class by requiring the
