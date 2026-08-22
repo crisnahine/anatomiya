@@ -119,6 +119,10 @@ export const RUBY_DECLINED = {
         "def change\n    add_reference :comments, ref_name\n    add_foreign_key :comments, :users\n  end",
       rf_undecided_foreign_key: "def change\n    add_reference :comments, :user, foreign_key: fk_options\n  end",
       rf_polymorphic_written_as_a_list: "def change\n    add_reference :comments, :subject, polymorphic: %i[post note]\n  end",
+      rf_polymorphic_written_as_a_hash:
+        "def change\n    add_reference :comments, :subject, polymorphic: { limit: 255 }\n  end",
+      rf_key_in_the_other_direction:
+        "def up\n    add_foreign_key :comments, :users\n  end\n\n  def down\n    add_reference :comments, :user, foreign_key: fk\n  end",
     },
     counted: {
       rf_declared: "def change\n    add_reference :comments, :user, foreign_key: true\n  end",
