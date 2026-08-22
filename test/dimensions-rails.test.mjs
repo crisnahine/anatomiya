@@ -84,6 +84,33 @@ class Opts < ActiveRecord::Migration[7.2]
 end
 `,
 
+  fk_evidence_unreadable: `
+class FkEvidenceUnreadable < ActiveRecord::Migration[7.2]
+  def change
+    add_reference :comments, :user
+    add_foreign_key :comments, :people, key => 1, column: "user_id"
+  end
+end
+`,
+
+  fk_evidence_on_a_table_it_cannot_read: `
+class FkEvidenceOnUnknownTable < ActiveRecord::Migration[7.2]
+  def change
+    add_reference :comments, :user
+    add_foreign_key table, :users, column: "user_id"
+  end
+end
+`,
+
+  fk_evidence_unreadable_beside_inline: `
+class FkEvidenceBesideInline < ActiveRecord::Migration[7.2]
+  def change
+    add_reference :comments, :user, foreign_key: true
+    add_foreign_key table, :users, column: "user_id"
+  end
+end
+`,
+
   opts_unreadable_key: `
 class Unreadable < ActiveRecord::Migration[7.2]
   def change
@@ -530,6 +557,24 @@ test("a brace hash is read and a double-splat drops the site", needsRuby, () => 
   // set and charges an unknowable column as a violation.
   assert.deepEqual(counts("column_null_declared", "opts_hash_splat"), {
     candidates: 2,
+    conforming: 1,
+  });
+});
+
+test("a reference is not charged against evidence this tool could not read", needsRuby, () => {
+  // The foreign key is declared apart, and the statement declaring it cannot be
+  // read: its options hide a key, or it names its table through a variable. The
+  // reference is unjudgeable either way, and charging it invents the violation
+  // an unreadable options list already refuses to invent.
+  assert.deepEqual(counts("reference_foreign_key", "fk_evidence_unreadable"), { candidates: 0, conforming: 0 });
+  assert.deepEqual(counts("reference_foreign_key", "fk_evidence_on_a_table_it_cannot_read"), {
+    candidates: 0,
+    conforming: 0,
+  });
+  // Evidence on the site itself is readable, so an unreadable statement
+  // elsewhere in the class takes nothing away from it.
+  assert.deepEqual(counts("reference_foreign_key", "fk_evidence_unreadable_beside_inline"), {
+    candidates: 1,
     conforming: 1,
   });
 });
