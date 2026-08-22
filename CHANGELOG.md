@@ -7,10 +7,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
-Two reports against the same misread, in a Rails migration: a fact this tool could not read, judged
-as if it had been read. Each figure below is measured over the 35-repository corpus, whose 7,902
-migration files hold 8,268 column sites, 1,732 `create_table` sites, 1,655 reference sites and 499
-foreign-key statements. None of those counts moves.
+Issue #100 and the two misreads found beside it, all one shape: a fact this tool could not read,
+judged as if it had been read. Each figure below is measured over the 35-repository corpus, whose
+7,902 migration files hold 8,268 column sites, 1,732 `create_table` sites, 1,655 reference sites
+and 499 foreign-key statements. None of those counts moves.
 
 ### Fixed
 
@@ -27,9 +27,12 @@ foreign-key statements. None of those counts moves.
   through something with no literal to read was dropped, so the reference it may cover read as a
   column with no key at all; one whose `column:` could not be read was worse, matching by the plural
   of the reference name and crediting a reference it may never have covered. Such a statement answers
-  for nothing now, and blocks the reference it might be the key for. 2 of the 499 statements in the
-  corpus are unreadable, both in one openproject migration, and the references in that class declare
-  their keys inline, which is evidence on the site itself and still counts.
+  for nothing now, and blocks the reference it might be the key for, but only that one: a key on
+  `editor_id` is not a reference on `author_id` whatever table it was added to, and a key added to
+  another table it could read is nobody's here, so only the unread fact blocks anything. 2 of the 499
+  statements in the corpus hide one of those facts, both in one openproject migration, and the
+  references in that class declare their keys inline, which is evidence on the site itself and still
+  counts.
 - A reference on a table this tool cannot read is declined rather than charged, but only where a key
   in the class covers the column it names. canvas-lms holds the shape that decides it: a
   `create_table :"aua_logs_#{index}"` whose `t.references :asset_user_access` the file says in its
