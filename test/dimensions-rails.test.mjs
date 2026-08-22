@@ -84,6 +84,20 @@ class Opts < ActiveRecord::Migration[7.2]
 end
 `,
 
+  opts_unreadable_key: `
+class Unreadable < ActiveRecord::Migration[7.2]
+  def change
+    create_table :tags, key => false do |t|
+      t.string :a, null: false
+      t.string :b, key => false
+      t.string :c, CONST => 1
+      t.string :d, :"#{name}" => 1
+    end
+    add_reference :comments, :user, key => true
+  end
+end
+`,
+
   named_block_param: `
 class Named < ActiveRecord::Migration[7.2]
   def change
@@ -517,6 +531,25 @@ test("a brace hash is read and a double-splat drops the site", needsRuby, () => 
   assert.deepEqual(counts("column_null_declared", "opts_hash_splat"), {
     candidates: 2,
     conforming: 1,
+  });
+});
+
+test("a key this tool cannot read makes the whole options list unreadable", needsRuby, () => {
+  // A dynamic key, a constant and an interpolated symbol all say the same thing
+  // a ** splat says: the option set cannot be read. Skipping the entry and
+  // keeping the rest reads a column that may well declare `null: false` as one
+  // that declared nothing, and `check` grades against that invented violation.
+  assert.deepEqual(counts("column_null_declared", "opts_unreadable_key"), {
+    candidates: 1,
+    conforming: 1,
+  });
+  assert.deepEqual(counts("table_primary_key_declared", "opts_unreadable_key"), {
+    candidates: 0,
+    conforming: 0,
+  });
+  assert.deepEqual(counts("reference_foreign_key", "opts_unreadable_key"), {
+    candidates: 0,
+    conforming: 0,
   });
 });
 

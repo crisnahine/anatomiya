@@ -96,6 +96,7 @@ export const RUBY_DECLINED = {
     declined: {
       cn_splat: "def change\n    create_table :tags do |t|\n      t.string :name, **opts\n    end\n  end",
       cn_brace_splat: "def change\n    create_table :tags do |t|\n      t.string :name, { **defaults }\n    end\n  end",
+      cn_dynamic_key: "def change\n    create_table :tags do |t|\n      t.string :name, key => false\n    end\n  end",
     },
     counted: {
       cn_declared: "def change\n    create_table :tags do |t|\n      t.string :name, null: false\n    end\n  end",
@@ -105,6 +106,7 @@ export const RUBY_DECLINED = {
     declined: {
       rf_polymorphic: "def change\n    add_reference :comments, :subject, polymorphic: true\n  end",
       rf_splat: "def change\n    add_reference :comments, :user, **opts\n  end",
+      rf_dynamic_key: "def change\n    add_reference :comments, :user, key => true\n  end",
     },
     counted: {
       rf_declared: "def change\n    add_reference :comments, :user, foreign_key: true\n  end",
