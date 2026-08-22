@@ -16,10 +16,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   interpolated symbol read the same way, and `create_table` and `add_reference` carried it too, so a
   `null: false`, an `id:` or a `foreign_key: true` behind such a key was charged as absent. The three
   Rails rows that read an options list decline it now, which under-counts the population instead, and
-  `N of N sites across X of Y files` already reports that. Measured over the 35-repository corpus:
-  8,268 column sites, 1,732 `create_table` sites and 1,655 reference sites read identically before
-  and after, on 7,902 migration files. No repository in the corpus writes such a key, so this was a
-  conviction waiting for one rather than a live miscount.
+  `N of N sites across X of Y files` already reports that.
+- A reference is declined rather than charged where the foreign key that would answer for it cannot
+  be read. `reference_foreign_key` credits a key the migration declares in a statement of its own,
+  matched on the table and the column that statement names; a statement naming either through
+  something with no literal to read was dropped, and the reference it covers then read as a column
+  with no key at all. `add_foreign_key table, :type_variants, column: :type_variant_id` inside a
+  helper method is that shape, and openproject writes one. Evidence on the reference itself is still read,
+  so an inline `foreign_key:` counts whatever else the class holds.
+- Measured over the 35-repository corpus, 7,902 migration files: 8,268 column sites, 1,732
+  `create_table` sites and 1,655 reference sites read identically before and after, and 0 of the 517
+  foreign-key statements hid their options. Both reports were convictions waiting for a shape no
+  corpus repository writes today rather than live miscounts.
 
 ## [0.2.12] - 2026-08-22
 
