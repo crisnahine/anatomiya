@@ -7,10 +7,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
-Issue #100 and the two misreads found beside it, all one shape: a fact this tool could not read,
-judged as if it had been read. Each figure below is measured over the 35-repository corpus, whose
-7,902 migration files hold 8,268 column sites, 1,732 `create_table` sites, 1,655 reference sites
-and 499 foreign-key statements. None of those counts moves.
+## [0.2.13] - 2026-08-22
+
+Five reports and the three misreads found beside them, all one sentence: an option is the value
+Rails reads for it, and a fact this tool could not read is evidence for nothing. Every figure below is counted by the row's own walk over the
+35-repository corpus, whose 7,902 migration files hold 8,268 column sites, 1,732 `create_table`
+sites, 1,758 reference calls and 511 foreign-key statements. Reference sites go from 1,655 to 1,638
+and conforming from 1,186 to 1,185; the column and `create_table` rows do not move at all.
 
 ### Fixed
 
@@ -29,7 +32,7 @@ and 499 foreign-key statements. None of those counts moves.
   of the reference name and crediting a reference it may never have covered. Such a statement answers
   for nothing now, and blocks the reference it might be the key for, but only that one: a key on
   `editor_id` is not a reference on `author_id` whatever table it was added to, and a key added to
-  another table it could read is nobody's here, so only the unread fact blocks anything. 2 of the 499
+  another table it could read is nobody's here, so only the unread fact blocks anything. 2 of the 511
   statements in the corpus hide one of those facts, both in one openproject migration, and the
   references in that class declare their keys inline, which is evidence on the site itself and still
   counts.
@@ -38,6 +41,33 @@ and 499 foreign-key statements. None of those counts moves.
   `create_table :"aua_logs_#{index}"` whose `t.references :asset_user_access` the file says in its
   own comment is deliberately left unconstrained, and no statement in that migration covers that
   column, so the violation stands where a blanket decline would have lost it.
+- A string key is not the option Rails reads. It looks `options[:null]` up by symbol, so
+  `t.string :name, "null" => false` sets nothing and the column is nullable; read as the symbol
+  option it credited a column that declared nothing, which states a convention the repository does
+  not hold. A string key is skipped now rather than voiding the list, because it is readable and what
+  it reads as is not the option.
+- A polymorphic reference is one whatever truthy value says so. The exclusion asked for the literal
+  `true`, and Rails asks the option: `polymorphic: { limit: 255 }` is the type column's own options
+  and `polymorphic: %i[account course]` is the list of types. 26 of the corpus's 129 polymorphic
+  references are written one of those two ways, every one in canvas-lms, and each was charged for the
+  foreign key ActiveRecord refuses on a polymorphic relation.
+- The list form carries a key where its own options declare one. canvas patches
+  `TableDefinition#references` to expand `polymorphic: %i[account course]` into one real reference
+  per type with `foreign_key:` passed to each, and its own guard is `unless polymorphic.is_a?(Array)`,
+  so the hash and the bare `true` fall through to stock ActiveRecord and raise. 10 of the 26 are the
+  list form with a key, and excluding them denies a fact that repository's source demonstrates.
+- A `foreign_key:` Rails reads as no key is no key. `nil` is falsy and `ReferenceDefinition` adds
+  nothing for a falsy value, so `foreign_key: nil` declared none and read as one. `null:` is the one
+  option still compared against the literal `false`, because that is what Rails compares it to.
+- An option value the source does not decide decides nothing about its site. `null: nullable` may be
+  declaring `null: false` and was charged for the option it may be setting; `foreign_key: fk_options`
+  may be declaring nothing and was credited, which whitehall writes once. A local, a call, a constant
+  or a conditional is now a decline, the way an unreadable key already is.
+- A reference is judged against the keys its own direction declares. A column added only on the way
+  down does not exist going forward and neither does a key, which the collector already said of the
+  key alone, so one direction's evidence was answering for the other's columns. A rollback reference
+  is still a site, judged against the rollback's own keys: 8 of the corpus's 1,758 reference calls
+  are written in one, and no verdict of theirs moves.
 
 ## [0.2.12] - 2026-08-22
 
@@ -1635,6 +1665,7 @@ which are partial; several listed there are not implemented yet.
 - No claim that this catches defects. Measured across ten repositories, 1 of 317 defect review
   comments was preventable by a conventions map.
 
+[0.2.13]: https://github.com/crisnahine/anatomiya/compare/v0.2.12...v0.2.13
 [0.2.12]: https://github.com/crisnahine/anatomiya/compare/v0.2.11...v0.2.12
 [0.2.11]: https://github.com/crisnahine/anatomiya/compare/v0.2.10...v0.2.11
 [0.2.10]: https://github.com/crisnahine/anatomiya/compare/v0.2.9...v0.2.10
