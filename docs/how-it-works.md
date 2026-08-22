@@ -253,6 +253,20 @@ only thing a human can audit a predicate with. A wrongly narrow predicate produc
 over a small candidate set and reads as a strong convention; `12 of 12 sites across 3 of 20 files`
 reads as what it is.
 
+Where a predicate declines a construct the claim's own sentence names, the stated line says so in
+one clause:
+
+```
+a prop spread lands on a component, not on a host element
+  46 of 46 sites across 5 of 6 files, 5 authors
+  not counted: a spread onto a host element of a rest binding or a call's return, which has no prop names to write instead
+```
+
+Only under a claim that is perfect and lists no exception, named or counted. The `except` list is what teaches a reader
+that a miss gets named, so a bare `N of N` reads as "there is no counter-example in these files",
+which is stronger than anything the tool measured, and a credited file holding what looks like one
+is what makes a reader stop trusting the map.
+
 Each dimension also carries a precision. A `precise` predicate sees every site it claims to see. A
 `partial` one under-counts applicability in cases the parser cannot see, which is the dangerous
 direction, so a partial dimension prints a warning on its line and can never reach the top severity
@@ -601,8 +615,12 @@ Three constraints shape the rendering:
   pick the new file up on its own, and no session can be told to compact. It is a bound the
   renderer holds rather than a hope about how many dimensions an area has: an area file drops its
   suppressed counts before its stated directives and says how many did not fit, and the overview's
-  area listing gets whatever the rest of that file leaves. The `paths` list is exempt, because a
-  glob dropped to save a line mis-delivers the whole file.
+  area listing gets whatever the rest of that file leaves. A stated directive the budget cannot
+  print in full is still named, as its sentence alone with no counts, because a footer saying how
+  many conventions you are missing without saying which is the worst of both. The `paths` list is
+  exempt, because a glob dropped to save a line mis-delivers the whole file, and so is the `kinds`
+  line, which is taken off the bound before the body divides what is left: entered into the body it
+  gave way in exactly the largest directories, which are the ones an agent touches most.
 - **The plugin never opens its own output with the Read tool.** Reading a context file permanently
   suppresses its automatic injection for that path for the rest of the process, which would turn the
   map off for the session that just built it. The commands use `cat`.

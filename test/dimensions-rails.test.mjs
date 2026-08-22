@@ -8,6 +8,7 @@ import { parseRuby } from "../lib/ruby.mjs";
 import { ALL_DIMENSIONS } from "../lib/dimensions.mjs";
 import { applicabilityFloor, applyGates } from "../lib/reduce.mjs";
 import { RAILS_DIMENSIONS } from "../lib/dimensions-rails.mjs";
+import { RUBY_DECLINED } from "./declined-fixtures.mjs";
 
 const dir = mkdtempSync(join(tmpdir(), "anatomiya-rails-"));
 process.on("exit", () => rmSync(dir, { recursive: true, force: true }));
@@ -783,3 +784,41 @@ test("a reference pluralises to the table its key names", needsRuby, () => {
 test("a block named down on another receiver is not the rollback half", needsRuby, () => {
   assert.deepEqual(counts("reference_foreign_key", "fk_unrelated_down_block"), { candidates: 1, conforming: 1 });
 });
+
+/* --- the two Rails clauses, run rather than read (#97) --- */
+
+// Their exclusion lands per call inside a class that keeps contributing other
+// sites, so a `create_table` block can hold four counted columns and one that
+// was dropped, all under a perfect claim in a file the claim credits. That is
+// what earns them a line where the two migration-wide rows get none: a class
+// declined whole never enters the count, and `N of N sites across X of Y files`
+// already says a file went uncounted.
+const declinedFiles = Object.entries(RUBY_DECLINED).flatMap(([key, { declined, counted }]) =>
+  [...Object.entries(declined), ...Object.entries(counted)].map(([name, body]) => ({
+    key,
+    name,
+    src: `class ${name.replace(/(^|_)(\w)/g, (_, __, c) => c.toUpperCase())} < ActiveRecord::Migration[7.2]\n  ${body}\nend\n`,
+  }))
+);
+
+const declinedParsed = await parseRuby(declinedFiles.map(({ name, src }) => write(name, src)));
+const declinedPrograms = new Map(declinedParsed.results.map((r) => [r.rel.replace(/\.rb$/, ""), r]));
+
+function declinedSites(key, name) {
+  const file = declinedPrograms.get(name);
+  assert.ok(file && file.ok, `${name} did not parse: ${file && file.error}`);
+  let n = 0;
+  dim(key).run(file.program, () => n++);
+  return n;
+}
+
+for (const [key, { declined, counted }] of Object.entries(RUBY_DECLINED)) {
+  test(`${key} counts none of what its clause says it declines`, needsRuby, () => {
+    for (const name of Object.keys(declined)) {
+      assert.equal(declinedSites(key, name), 0, `${key} counted a site in ${name}`);
+    }
+    for (const name of Object.keys(counted)) {
+      assert.ok(declinedSites(key, name) > 0, `${key} counted nothing in ${name}`);
+    }
+  });
+}

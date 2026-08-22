@@ -18,6 +18,7 @@ import { areaFilename, isOwned, GENERATOR } from "../lib/rules.mjs";
 import { layoutFacts } from "../lib/layout.mjs";
 import { principleKeys } from "../lib/principles.mjs";
 import { globEntry, globText } from "../lib/areas.mjs";
+import { REGISTRY } from "../lib/registry.mjs";
 
 const dim = (o = {}) => ({
   key: "swallowed_error",
@@ -820,7 +821,7 @@ test("an area file with more dimensions than fit stops at the bound", () => {
   const out = renderArea(many);
 
   assert.ok(lineCount(out) <= MAX_LINES, `${lineCount(out)} lines is past the bound`);
-  assert.match(out, /^and \d+ more not shown here, all of them stated$/m);
+  assert.match(out, /^and \d+ more not shown here, all of them stated(\.|$)/m);
   assert.match(out, /^claim number 0$/m, "the first claim survives");
 });
 
@@ -964,7 +965,7 @@ test("the truncation notice says which kind of line was dropped", () => {
   const bothKinds = renderArea(
     area({ dimensions: [...Array.from({ length: 12 }, (_, i) => dim({ key: `s${i}`, claim: `stated ${i}` })), ...silent] })
   );
-  assert.match(bothKinds, /^and \d+ more not shown here, \d+ of them stated$/m);
+  assert.match(bothKinds, /^and \d+ more not shown here, \d+ of them stated(\.|$)/m);
 });
 
 test("a stated slot the model writes by default counts as stated when it is dropped", () => {
@@ -984,7 +985,7 @@ test("a stated slot the model writes by default counts as stated when it is drop
 
   assert.ok(dropped.size > 0, "the check enforces these");
   assert.doesNotMatch(out, /not shown here, all of them counts$/m, JSON.stringify([...dropped]));
-  assert.match(out, /^and \d+ more not shown here, (all|\d+) of them stated$/m);
+  assert.match(out, /^and \d+ more not shown here, (all|\d+) of them stated(\.|$)/m);
 });
 
 test("the overview holds the bound when every area states something", () => {
@@ -1969,9 +1970,11 @@ test("an area with no directive and a heavy paths list still says what it holds"
   assert.match(out, /^kinds: 7 \.tsx \(JSX\), 1 \.ts; 0 test files; 0 of 7 have a namesake test$/m);
 });
 
-test("the kinds line shares the floor with directives rather than sitting above it", () => {
-  // The same floor, not a bigger one: enough stated directives to fill it on
-  // their own still push the kinds line out, the way a fourth directive would.
+test("the kinds line comes off the floor rather than competing for it (#95)", () => {
+  // It used to give way exactly where a fourth directive would, which meant the
+  // directories holding the most directives were the ones told least about
+  // themselves. It is taken off the bound now, and the directives divide what is
+  // left: a claim row gives way one row sooner and the line survives.
   const out = renderArea(
     area({
       globs: Array.from({ length: 35 }, (_, i) => glob(i)),
@@ -1984,10 +1987,9 @@ test("the kinds line shares the floor with directives rather than sitting above 
     })
   );
 
+  assert.match(out, /^kinds:/m, "the line a reader needs before anything else this file says");
   assert.match(out, /^stated 0$/m);
-  assert.match(out, /^stated 1$/m);
-  assert.doesNotMatch(out, /^stated 2$/m, "the third directive is what the floor ran out on");
-  assert.doesNotMatch(out, /^kinds:/m, "the kinds line gives way exactly where a fourth directive would");
+  assert.doesNotMatch(out, /^stated 2$/m, "and the floor still runs out, one directive sooner");
 });
 
 test("an area whose paths list ate the budget still delivers its directive and its kinds line", () => {
@@ -2027,9 +2029,9 @@ test("a directory name the encoder empties is still a subject", () => {
   assert.equal(lines[2], "- (unnamed): 30 .ts");
 });
 
-test("the kinds line is budgeted where it gives way and printed where it is read", () => {
-  // Last in `blocks`, so a short budget spends the roster on it and it outlives
-  // nothing but the directives; first in the body, which is where it is read.
+test("the kinds line is printed where it is read, above every block it does not compete with", () => {
+  // Off the budget rather than in it, so the roster is spent on the directives
+  // and never on this line; first in the body, which is where it is read.
   const stated = (n) => Array.from({ length: n }, (_, i) => dim({ key: `s${i}`, claim: `stated ${i}` }));
   const counted = (n) =>
     Array.from({ length: n }, (_, i) =>
@@ -2048,9 +2050,9 @@ test("the kinds line is budgeted where it gives way and printed where it is read
   assert.equal(lines[29], "# src/services  40 files");
   assert.equal(lines[31], "kinds: 7 .tsx (JSX), 1 .ts; 0 test files; 0 of 7 have a namesake test");
   assert.equal(lines[32], "");
-  assert.equal(lines[33], "stated 0", "the directives follow it and outlive it");
+  assert.equal(lines[33], "stated 0", "the directives follow it");
   assert.match(out, /^stated 1$/m);
-  assert.doesNotMatch(out, /^most files here import/m, "the roster gave way before the kinds line did");
+  assert.doesNotMatch(out, /^most files here import/m, "the roster gave way, and the kinds line never could");
   assert.doesNotMatch(out, /^counted 0: no convention/m);
 });
 
@@ -2096,7 +2098,9 @@ test("a dropped description is named as one rather than counted as a count", () 
     })
   );
 
-  assert.match(out, /^and \d+ more not shown here, \d+ of them stated, 3 of them descriptions$/m);
+  // Two, not three: the kinds line is no longer one of the descriptions the
+  // notice counts, because it no longer reaches the notice.
+  assert.match(out, /^and \d+ more not shown here, \d+ of them stated, 2 of them descriptions(\.|$)/m);
 });
 
 test("the overview does not carry the crash count, which measures the machine", () => {
@@ -2177,15 +2181,17 @@ test("the directives an area file had no room for are recoverable from the recor
   const out = renderArea(many);
   const dropped = droppedDirectives(many);
 
-  assert.match(out, /^and \d+ more not shown here, all of them stated$/m);
+  assert.match(out, /^and \d+ more not shown here, all of them stated(\.|$)/m);
   assert.ok(dropped.size > 0, "something was dropped");
   for (const key of dropped) {
-    const claim = `claim number ${key.slice(1)}`;
-    assert.ok(!out.includes(claim), `${key} was reported dropped and is in the file`);
+    // Its block, not its sentence: a dropped directive may still be named
+    // without counts under the notice (#96), and a named one starts indented.
+    const block = new RegExp(`^claim number ${key.slice(1)}$`, "m");
+    assert.doesNotMatch(out, block, `${key} was reported dropped and its block is in the file`);
   }
   for (let i = 0; i < 30; i++) {
     if (dropped.has(`k${i}`)) continue;
-    assert.ok(out.includes(`claim number ${i}`), `k${i} was not reported dropped and is not in the file`);
+    assert.match(out, new RegExp(`^claim number ${i}$`, "m"), `k${i} was not reported dropped and is not in the file`);
   }
 });
 
@@ -2261,4 +2267,305 @@ test("the tests line names the directory its namesake denominator is counted ove
   const lines = renderLayout(clientLayout());
 
   assert.match(lines[10], /0 of 504 \.tsx files under src\/components have a namesake test$/, lines[10]);
+});
+
+/* --- the kinds line is not a claim row and does not compete with them (#95) --- */
+
+// An area with more stated directives than its budget can hold, which is what
+// puts the kinds line in reach of the drop.
+const crowded = (o = {}) =>
+  area({
+    kinds: root("src/components", {
+      files: 149,
+      exts: [[".tsx", 134], [".ts", 12]],
+      other: 3,
+      jsxExt: ".tsx",
+      companions: { with: 1, of: 506, root: null },
+    }),
+    dimensions: Array.from({ length: 30 }, (_, i) => dim({ key: `k${i}`, claim: `claim number ${i}` })),
+    ...o,
+  });
+
+test("an area whose directives outrun the budget still says what kinds of file it holds", () => {
+  // Measured on a front end's five largest directories: `src/components` at 149
+  // files, `src/queries` at 141, and three more, every one of them missing the
+  // line while all 122 smaller areas kept it. The overview's own directive is
+  // "match sibling test shape", and this is the only line that says what the
+  // siblings do.
+  const out = renderArea(crowded());
+  const lines = out.split("\n");
+
+  assert.match(out, /^kinds: /m, "the line the drop took");
+  assert.equal(lines[8], "kinds: 134 .tsx (JSX), 12 .ts and 3 other; 0 test files; 1 of 506 has a namesake test");
+  assert.equal(lines[9], "");
+  assert.match(out, /^and \d+ more not shown here/m, "and the budget still bites, one row sooner");
+});
+
+test("the kinds line costs claim rows rather than riding free over the bound", () => {
+  const withKinds = lineCount(renderArea(crowded()));
+  const without = lineCount(renderArea(crowded({ kinds: null })));
+
+  assert.ok(withKinds <= MAX_LINES, `${withKinds} lines is past the bound`);
+  assert.ok(without <= MAX_LINES, `${without} lines is past the bound`);
+});
+
+test("a dropped kinds line is never counted among the descriptions that went", () => {
+  // The notice divides what it hid into stated, descriptions and counts. The
+  // kinds line is now none of those, because it does not reach the notice.
+  const out = renderArea(crowded());
+  const notice = out.split("\n").find((l) => l.startsWith("and "));
+
+  assert.ok(notice, "there is a notice");
+  assert.match(notice, /^and \d+ more not shown here, all of them stated(\.|$)/, notice);
+});
+
+/* --- a stated convention the budget hid is named, not just counted (#96) --- */
+
+test("a stated convention the budget could not print is named in the notice", () => {
+  // Measured on a front end: 36 of 127 areas hid 68 stated conventions between
+  // them, and `src/queries/users` hid 3 of its 12 in a directory of 15 files.
+  // A footer saying how many facts you are missing without saying which is the
+  // worst of both, because there is nothing to go and look up.
+  const many = area({
+    dimensions: Array.from({ length: 20 }, (_, i) => dim({ key: `k${i}`, claim: `claim number ${i}` })),
+  });
+
+  const out = renderArea(many);
+  const dropped = droppedDirectives(many);
+
+  assert.ok(dropped.size > 0, "something was dropped");
+  assert.match(out, /^and \d+ more not shown here.*\. Also stated here, without counts:$/m);
+  for (const key of dropped) {
+    assert.match(out, new RegExp(`^ {2}claim number ${key.slice(1)}$`, "m"), `${key} was hidden and not named`);
+  }
+});
+
+test("naming what it hid never takes an area file past the bound", () => {
+  for (const n of [3, 8, 12, 20, 40, 80]) {
+    const out = renderArea(
+      area({ dimensions: Array.from({ length: n }, (_, i) => dim({ key: `k${i}`, claim: `claim number ${i}` })) })
+    );
+    assert.ok(lineCount(out) <= MAX_LINES, `${n} directives came to ${lineCount(out)} lines`);
+  }
+});
+
+test("an area that hid nothing stated gains no naming block", () => {
+  // The counts rows are what the notice is for, and they are informational: a
+  // reader who lost one lost a threshold, not a directive.
+  const many = area({
+    dimensions: Array.from({ length: 40 }, (_, i) =>
+      dim({ key: `c${i}`, claim: `counted ${i}`, states: null, directive: false, gate: "ratio" })
+    ),
+  });
+
+  const out = renderArea(many);
+
+  assert.match(out, /^and \d+ more not shown here, all of them counts$/m);
+  assert.doesNotMatch(out, /Also stated here/);
+});
+
+test("the naming block and the check agree on exactly which slots went unstated", () => {
+  // `check` grades off the record and the file names off the layout. Two
+  // derivations of one fact is a drift waiting for a field to move, so they are
+  // pinned against each other here.
+  const many = area({
+    dimensions: Array.from({ length: 12 }, (_, i) => dim({ key: `k${i}`, claim: `claim number ${i}` })),
+  });
+
+  const named = renderArea(many)
+    .split("\n")
+    .filter((l) => /^ {2}claim number \d+$/.test(l))
+    .map((l) => `k${l.trim().slice("claim number ".length)}`);
+
+  assert.deepEqual(new Set(named), droppedDirectives(many));
+});
+
+test("an area with more directives than lines keeps counts as well as sentences", () => {
+  // Naming is denser than printing, so unbounded it spent the whole budget on
+  // sentences and a 30-slot area printed no counts at all. A directive with no
+  // counts under it is one nobody can audit from the file, which is the trade
+  // the suppressed rows exist to avoid, so the naming block takes half and no
+  // more, and the notice leads with how many of them it could name.
+  const out = renderArea(
+    area({ dimensions: Array.from({ length: 30 }, (_, i) => dim({ key: `k${i}`, claim: `claim number ${i}` })) })
+  );
+
+  assert.ok(lineCount(out) <= MAX_LINES, `${lineCount(out)} lines is past the bound`);
+  assert.match(out, /^and \d+ more not shown here, all of them stated\. \d+ of them named below, without counts:$/m);
+  assert.match(out, /^ {2}21 of 22 sites across 8 of 40 files, 4 authors$/m, "some slot still carries its counts");
+  assert.doesNotMatch(out, /Also stated here/, "it did not name them all, and does not say it did");
+});
+
+test("the layout is the same one whether or not the record carries the sentences", () => {
+  // `check` recomputes the drop from `facts.json`, which stores every slot's key
+  // and no slot's prose. Reserving lines off the sentences rather than off the
+  // keys would have the writer keep nine blocks where the check counted ten, and
+  // the two would disagree about what the agent was handed.
+  const dims = Array.from({ length: 14 }, (_, i) => dim({ key: `k${i}`, claim: `claim number ${i}` }));
+  const stored = area({ dimensions: dims.map(({ claim, ...rest }) => rest) });
+
+  assert.deepEqual(droppedDirectives(stored), droppedDirectives(area({ dimensions: dims })));
+});
+
+/* --- what the predicate declines to count is written down (#97) --- */
+
+test("a perfect stated claim says which form its predicate declined to count", () => {
+  // `src/components/Calendar` reads "46 of 46 sites across 5 of 6 files", and a
+  // credited file holds `<div {...rest} />` three lines from `<ClickableArea
+  // {...rest} />`. The count is right and the line reads as false. Six reviewers
+  // filed it as an undercount before the source settled it; an agent holding
+  // only the rule file has nothing to settle it with.
+  const out = renderArea(
+    area({ dimensions: [dim({ key: "spread_on_component", claim: "a prop spread lands on a component, not on a host element", candidates: 46, conforming: 46 })] })
+  );
+
+  assert.match(out, /^a prop spread lands on a component, not on a host element$/m);
+  assert.match(out, /^ {2}46 of 46 sites across 8 of 40 files, 4 authors$/m);
+  assert.match(out, /^ {2}not counted: .+$/m);
+});
+
+test("a claim that already names an exception does not also explain itself", () => {
+  // The `except` list is what teaches a reader that a miss gets named, so a
+  // claim carrying one is not the claim that reads as absolute. The line is for
+  // the bare `N of N`, which is the shape every measured instance had.
+  const out = renderArea(
+    area({
+      dimensions: [
+        dim({
+          key: "spread_on_component",
+          claim: "a prop spread lands on a component, not on a host element",
+          candidates: 46,
+          conforming: 45,
+          exceptions: [{ path: "src/components/Calendar/Views/Header/index.tsx", count: 1 }],
+        }),
+      ],
+    })
+  );
+
+  assert.match(out, /^ {2}except "src\/components\/Calendar\/Views\/Header\/index\.tsx"$/m);
+  assert.doesNotMatch(out, /^ {2}not counted:/m);
+});
+
+test("a claim whose predicate declines nothing its sentence names says nothing extra", () => {
+  // The test for the line is whether the claim's own sentence names a construct
+  // the predicate then declines. "files here are named kebab-case" does not.
+  const out = renderArea(
+    area({ dimensions: [dim({ key: "file_naming_case", claim: "files here are named kebab-case", candidates: 16, conforming: 16 })] })
+  );
+
+  assert.match(out, /^ {2}16 of 16 sites across 8 of 40 files, 4 authors$/m);
+  assert.doesNotMatch(out, /^ {2}not counted:/m);
+});
+
+test("the check reads the same block height as the writer, explanation and all", () => {
+  // The clause is looked up from the registry by key, not stored on the record,
+  // so both readers of the layout get the same one.
+  const dims = Array.from({ length: 12 }, (_, i) =>
+    dim({ key: "spread_on_component", claim: `claim number ${i}`, candidates: 46, conforming: 46 })
+  ).map((d, i) => ({ ...d, key: i === 0 ? "spread_on_component" : `k${i}` }));
+  const stored = area({ dimensions: dims.map(({ claim, ...rest }) => rest) });
+
+  assert.deepEqual(droppedDirectives(stored), droppedDirectives(area({ dimensions: dims })));
+});
+
+/* --- the two invariants the budget rewrite has to hold, over the shape space --- */
+
+// Every area shape the renderer can be handed: how many globs route it, how many
+// directives and counts it holds, how many exceptions each names, and whether a
+// kinds line is on it. Built here rather than in each test because both
+// invariants below want the same population.
+function* shapes() {
+  for (const globs of [1, 2, 5, 10, 20, 25, 30, 35, 40, 60]) {
+    for (const stated of [0, 1, 2, 3, 5, 8, 12, 16, 20, 25, 30, 45]) {
+      for (const counts of [0, 1, 3, 8, 20]) {
+        for (const exceptions of [0, 1, 3]) {
+          for (const kinds of [false, true]) {
+            if (stated + counts > 0) yield { globs, stated, counts, exceptions, kinds };
+          }
+        }
+      }
+    }
+  }
+}
+
+// The keys that carry a `not counted:` clause, cycled through so the sweep
+// actually renders one. Built from synthetic keys the shapes never printed a
+// clause at all, so the guard missed the behaviour it was added beside.
+const CLAUSED = REGISTRY.filter((d) => d.applicabilityPredicate?.notCounted).map((d) => d.key);
+
+const shaped = ({ globs, stated, counts, exceptions, kinds }, matchesDefault = false) =>
+  area({
+    globs: Array.from({ length: globs }, (_, i) => glob(i)),
+    kinds: kinds ? kindsOf() : null,
+    dimensions: [
+      ...Array.from({ length: stated }, (_, i) =>
+        dim({
+          key: CLAUSED[i % CLAUSED.length],
+          claim: `stated number ${i}`,
+          // Perfect and unexcepted, which is the only shape that prints a clause.
+          candidates: exceptions ? 22 : 21,
+          conforming: 21,
+          exceptions: Array.from({ length: exceptions }, (_, j) => ({ path: `a/${j}.ts`, count: 1 })),
+        })
+      ),
+      ...Array.from({ length: counts }, (_, i) =>
+        dim({
+          key: `c${i}`,
+          claim: `counted ${i}`,
+          states: matchesDefault ? "claim" : null,
+          directive: matchesDefault,
+          matchesDefault,
+          gate: matchesDefault ? null : "ratio",
+        })
+      ),
+    ],
+  });
+
+test("no area shape renders past the bound, or past the floor its cover forced", () => {
+  // A6 lets the `paths` list push a file past forty, and nothing else may. The
+  // naming block (A34) and the kinds line (A33) both take lines the body used to
+  // have, so this is the guard that neither of them grew a file.
+  for (const shape of shapes()) {
+    const out = renderArea(shaped(shape));
+    // The cover, plus the body floor it is allowed to force past the bound. Seven
+    // and not eight: the head is the three fence-and-key lines, the globs, the
+    // closing fence, a blank, the heading and a blank, and counting one too many
+    // would let a file exactly one line over the bound through.
+    const cover = 7 + shape.globs;
+    const allowed = Math.max(MAX_LINES, cover + 8);
+    assert.ok(lineCount(out) <= allowed, `${JSON.stringify(shape)} came to ${lineCount(out)} of ${allowed}`);
+  }
+});
+
+test("the writer and the check agree on every area shape, on a record carrying no sentences", () => {
+  // The check recomputes the drop from `facts.json`, which stores no slot's
+  // prose. One derivation reading the sentences and the other reading the keys
+  // would disagree about what the agent was handed, silently and per area.
+  for (const shape of shapes()) {
+    for (const matchesDefault of [false, true]) {
+      const full = shaped(shape, matchesDefault);
+      const stored = { ...full, dimensions: full.dimensions.map(({ claim, ...rest }) => rest) };
+      assert.deepEqual(
+        droppedDirectives(stored),
+        droppedDirectives(full),
+        `${JSON.stringify({ ...shape, matchesDefault })}`
+      );
+    }
+  }
+});
+
+test("a clause several rows share costs one line, not one line per row", () => {
+  // Nine companion rows carry one sentence between them, and two of them reach
+  // the same area whenever a repository writes both `_spec.rb` and `_test.rb`.
+  // An `app` area printed it three times and spent three of its forty lines
+  // saying one thing. The Ruby and JS routing rows collide the same way in a
+  // mixed-language area.
+  const perfect = (key) => dim({ key, claim: `claim ${key}`, candidates: 12, conforming: 12, exceptions: [] });
+  const out = renderArea(
+    area({ dimensions: [perfect("model_spec"), perfect("job_spec"), perfect("controller_spec")] })
+  );
+
+  assert.equal((out.match(/^ {2}not counted:/gm) || []).length, 1, out);
+  assert.match(out, /^claim model_spec$/m, "and every claim still prints");
+  assert.match(out, /^claim controller_spec$/m);
 });

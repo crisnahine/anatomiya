@@ -1426,3 +1426,56 @@ test("a population that changed kind since the pin closes the slot the way a cha
     null
   );
 });
+
+/* --- the borrow decides on evidence, not on float rounding (#98) --- */
+
+// A perfect sample of `n` sites, one per file, against a repository that holds
+// the same claim without exception. Every gate but `evidence` is satisfied by
+// construction, so the gate this returns is the borrow's answer alone.
+//
+// Read from three rather than from one: `concentration` wants three effective
+// files and one site per file makes n of them, so n = 1 and n = 2 answer
+// "concentration" whatever the borrow would have said. Three is also the
+// thinnest slot D8 lets borrow at all, so nothing below it is reachable.
+const perfectSample = (n) =>
+  applyGates(
+    dim({ ...spread(Array(n).fill(1)), applicability: n, langFileCount: n, files: paths(n) }),
+    ctx({ areaFileCount: n, pooled: { candidates: n + 5000, conforming: n + 5000 } })
+  );
+
+test("a perfect sample of a claim held without exception borrows it at every size", () => {
+  // `wilsonUpper(n, n)` is compared against a `restRatio` of exactly 1, and the
+  // unclamped ratio lands on 0.9999999999999998 at 118 of the first 500 sizes.
+  // On a measured front end that denied 37 rows at n = 12, 20, 21 and 31 while
+  // n = 16, 17, 19 and 23 through 26 denied none, so the gate was reading the
+  // rounding rather than the sample.
+  const denied = [];
+  for (let n = 3; n <= 500; n++) if (perfectSample(n).gate !== null) denied.push(n);
+
+  assert.deepEqual(denied, [], "sizes where a perfect sample was refused a perfect prior");
+});
+
+test("the borrow is monotone in sample size at a fixed perfect ratio", () => {
+  // The clearest statement of the defect: more of the same evidence never made
+  // a claim less sure, and under the raw comparison it did.
+  let borrowed = false;
+  for (let n = 3; n <= 500; n++) {
+    const speaks = perfectSample(n).gate === null;
+    if (borrowed) assert.ok(speaks, `n=${n} lost a borrow that a smaller sample won`);
+    borrowed = borrowed || speaks;
+  }
+  assert.ok(borrowed, "no size borrowed at all");
+});
+
+test("the upper bound of a perfect sample is exactly one", () => {
+  // It is a probability, so it is never above one, and it is an upper bound on
+  // the sample's own rate, so it is never below it.
+  for (let n = 1; n <= 500; n++) {
+    assert.equal(reduce.wilsonUpper(n, n), 1, `wilsonUpper(${n}, ${n})`);
+    for (const k of [0, Math.floor(n / 2), n]) {
+      const upper = reduce.wilsonUpper(k, n);
+      assert.ok(upper <= 1, `wilsonUpper(${k}, ${n}) = ${upper} is above one`);
+      assert.ok(upper >= k / n, `wilsonUpper(${k}, ${n}) = ${upper} is below its own rate`);
+    }
+  }
+});

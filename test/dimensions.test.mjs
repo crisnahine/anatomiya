@@ -15,7 +15,9 @@ import {
   PRECISIONS,
 } from "../lib/dimensions.mjs";
 import { NAMING_CORPUS } from "../lib/dimensions-naming.mjs";
-import { PAIRINGS } from "../lib/pairing.mjs";
+import { REGISTRY } from "../lib/registry.mjs";
+import { PAIRINGS, companionOf } from "../lib/pairing.mjs";
+import { JS_DECLINED, PATH_DECLINED, RUBY_DECLINED } from "./declined-fixtures.mjs";
 // The battery that stamps these rows runs where the registry is assembled.
 import "../lib/registry.mjs";
 import { SEMANTIC_DIMENSIONS } from "../lib/dimensions-semantic.mjs";
@@ -798,4 +800,124 @@ test("a mid-chain assertion does not carry a write position past the grammar tes
   ]) {
     assert.equal(hits("optional_chaining", src).length, 0, src);
   }
+});
+
+/* --- the form a predicate declines is written down where it misreads (#97) --- */
+
+test("the rows that name a declined form are the rows one true clause can name", () => {
+  // Three bars, and the middle one is what a first pass got wrong. A row
+  // qualifies when its claim's own sentence names a construct the predicate then
+  // declines; when a reader would MEET that construct in a file the claim
+  // credits; and when one line names the whole exclusion truthfully.
+  //
+  // The middle bar is what separates a per-site decline from a per-file one. A
+  // `create_table` block can hold four counted columns and one `t.string :name,
+  // **opts` that was dropped, all under a perfect `4 of 4` in a file the claim
+  // credits, and nothing on the line reveals it. A migration declined whole
+  // never enters the count at all, and `N of N sites across X of Y files`
+  // already says a file went uncounted, so a line there restates the count
+  // above it.
+  //
+  // The third bar is why the Ruby rows carry none: `module_include` declines
+  // five separate shapes, and a list belongs in `sites`, which nothing prints.
+  // A clause written off that prose and never run against the predicate was
+  // wrong or partial far more often than not, which is what the fixtures below
+  // exist to stop.
+  const declared = REGISTRY.filter((d) => d.applicabilityPredicate?.notCounted).map((d) => d.key);
+
+  assert.deepEqual(declared.slice().sort(), [
+    "column_null_declared", "controller_spec", "extends_base", "import_extension", "job_spec",
+    "job_test", "model_spec", "model_test", "non_null_assertion", "nullish_default",
+    "optional_chaining", "rake_task_spec", "reference_foreign_key", "route_env", "route_logging",
+    "route_network", "serializer_spec", "service_spec", "spread_on_component", "worker_spec",
+  ]);
+});
+
+test("a declined-form clause is one short line, because it costs one of forty", () => {
+  // The renderer prints this into a file bounded at forty lines, so the shape is
+  // a bound rather than a preference. `assertApplicability` is where it is
+  // enforced; this asks the shipped registry the same question.
+  for (const d of REGISTRY) {
+    const clause = d.applicabilityPredicate?.notCounted;
+    if (clause === undefined) continue;
+    assert.equal(typeof clause, "string", d.key);
+    assert.doesNotMatch(clause, /\s{2,}|[\r\n]/, `${d.key} spans more than one line`);
+    assert.ok(clause.length > 0 && clause.length <= 120, `${d.key} runs to ${clause.length} characters`);
+    // Register, over the eighteen strings that actually ship. A capital is only
+    // wrong here because none of these opens on a constant; the validator does
+    // not police it, because a rule cannot tell the two apart.
+    assert.doesNotMatch(clause, /^[A-Z]/, `${d.key} reads as a sentence rather than a clause`);
+  }
+});
+
+test("the clause contract is refused at the registry gate, not only in this file", () => {
+  const row = (notCounted) => [{
+    key: "k", kind: "syntactic", tier: "syntactic", claim: "c", precision: "precise", langs: ["js"],
+    applicabilityPredicate: { sites: "a file holding the construct", notCounted, blind: null },
+    run() {},
+  }];
+
+  assert.throws(() => assertApplicability(row("one\ntwo")), /not one line/);
+  assert.throws(() => assertApplicability(row("x".repeat(121))), /not one line/);
+  assert.doesNotThrow(() => assertApplicability(row("a spread onto a host element, which has no prop names to write")));
+  // The gate is the shape, not the register: a clause may open on a constant a
+  // language spells with a capital, and no rule there could tell `Net::HTTP`
+  // from a sentence.
+  assert.doesNotThrow(() => assertApplicability(row("Net::HTTP called through a constant receiver, which is the client itself")));
+});
+
+/* --- every clause is pinned to what its own predicate actually declines (#97) --- */
+
+// One row, one source, one optional path: enough to run any of the rows oxc
+// answers for. `rel` is what the three routing rows read, and nothing else on
+// the list looks at it.
+function siteCount(key, src, rel = undefined) {
+  const row = REGISTRY.find((d) => d.key === key);
+  assert.ok(row, `no registry row named ${key}`);
+  // Always .tsx: the one extension oxc reads both the TypeScript and the JSX on
+  // this list with, and no row here branches on the filename.
+  const { program } = parseSync("f.tsx", src, { sourceType: "module" });
+  let n = 0;
+  row.run(program, () => n++, { rel });
+  return n;
+}
+
+const source = (f) => (typeof f === "string" ? { src: f, rel: undefined } : f);
+
+for (const [key, { declined, counted }] of Object.entries(JS_DECLINED)) {
+  test(`${key} counts none of what its clause says it declines`, () => {
+    for (const f of declined) {
+      const { src, rel } = source(f);
+      assert.equal(siteCount(key, src, rel), 0, `${key} counted a site in ${JSON.stringify(src)} at ${rel}`);
+    }
+    const { src, rel } = source(counted);
+    assert.ok(siteCount(key, src, rel) > 0, `${key} counted nothing in ${JSON.stringify(src)} at ${rel}`);
+  });
+}
+
+test("a companion row declines the base it names and the file already named like a companion", () => {
+  // One test for nine rows: they share a mechanism and a clause, and the noun
+  // the clause speaks of follows each row's own root rather than the package.
+  for (const row of PAIRINGS) {
+    for (const rel of PATH_DECLINED.declined(row)) {
+      assert.equal(companionOf(rel, row), null, `${row.key} owed a companion for ${rel}`);
+    }
+    const producer = PATH_DECLINED.counted(row);
+    assert.ok(companionOf(producer, row), `${row.key} asked nothing of ${producer}`);
+  }
+});
+
+test("no row carries a clause that nothing runs", () => {
+  // The hole that let a first pass ship clauses that were wrong: the shape is
+  // checked by `assertApplicability` and the truth by nothing. A clause is prose
+  // and prose cannot be asserted, so a row that grows one has to grow a fixture
+  // that runs its predicate, and this is what refuses the row that does not.
+  const claused = REGISTRY.filter((d) => d.applicabilityPredicate?.notCounted).map((d) => d.key);
+  const pinned = new Set([
+    ...Object.keys(JS_DECLINED),
+    ...Object.keys(RUBY_DECLINED),
+    ...PAIRINGS.map((p) => p.key),
+  ]);
+
+  assert.deepEqual(claused.filter((k) => !pinned.has(k)), [], "these rows state a clause nothing runs");
 });
