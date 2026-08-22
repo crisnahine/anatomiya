@@ -7,6 +7,20 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- An option key this tool cannot read makes the whole options list unreadable, the way a `**` splat
+  already does. `t.string :name, key => false` was read as a column that declared nothing and counted
+  as a violation, while the same fact written `t.string :name, **opts` declines the site: one shape
+  convicted and the other declined, and `check` grades against the conviction. A constant key and an
+  interpolated symbol read the same way, and `create_table` and `add_reference` carried it too, so a
+  `null: false`, an `id:` or a `foreign_key: true` behind such a key was charged as absent. The three
+  Rails rows that read an options list decline it now, which under-counts the population instead, and
+  `N of N sites across X of Y files` already reports that. Measured over the 35-repository corpus:
+  8,268 column sites, 1,732 `create_table` sites and 1,655 reference sites read identically before
+  and after, on 7,902 migration files. No repository in the corpus writes such a key, so this was a
+  conviction waiting for one rather than a live miscount.
+
 ## [0.2.12] - 2026-08-22
 
 Four reports against what an area file says and against what lets it say anything. Three are about
