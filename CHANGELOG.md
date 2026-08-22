@@ -7,6 +7,40 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.2.12] - 2026-08-22
+
+Four reports against what an area file says and against what lets it say anything. Three are about
+the always-loaded budget: a line that lost to the rows competing beside it, conventions that vanished
+behind a bare count, and a reasoning the tool had written down and never printed. The fourth is a
+float. Each figure below is measured on the repository the report was filed against and re-measured
+over the 35-repository corpus.
+
+### Fixed
+
+- The `kinds:` line comes off an area file's line bound rather than competing inside it. Entered as a
+  block it lost to claim rows in exactly the directories holding the most of them: on a measured
+  front end the five largest areas were the five missing it, `src/components` at 149 files down to
+  `src/pages/admin` at 41, while all 122 smaller areas kept theirs. The line hiding there is the one
+  the overview's own directive depends on, since "match sibling test shape" cannot be followed by a
+  reader who was never told what the siblings do. It comes out of the body floor as well as the
+  bound, so no file grew a line.
+- A stated convention the budget cannot print in full is now named, as its sentence alone with no
+  counts. On that same map 58 of 127 areas truncated and 36 of them hid 68 stated conventions
+  between them, `src/queries/users` hiding 3 of its 12 in a directory of 15 files. A footer that
+  says how many directives you are missing without saying which leaves nothing to look up. The
+  naming block takes half the body and no more, so an area never spends its whole budget on
+  sentences and prints no counts at all.
+- A stated claim that is perfect and names no exception says which form its own predicate declined
+  to count. `src/components/Calendar` read "46 of 46 sites across 5 of 6 files" while a credited
+  file held `<div {...rest} />` three lines above `<ClickableArea {...rest} />`; nothing was
+  miscounted, and the line read as false to every reader who checked.
+- `wilsonUpper` is held to the two bounds its arithmetic owes: never above one, never below the rate
+  it was handed. Unclamped it returned 0.9999999999999998 at 118 of the first 500 sample sizes, and
+  the pooled-prior borrow compares it against a rate that is exactly 1 wherever the rest of the
+  repository holds a claim without exception. On a measured front end that denied 37 perfect rows at
+  n = 12, 20, 21 and 31 while n = 16, 17, 19 and 23 through 26 denied none: the sample size decided,
+  not the evidence. The gate is monotone in n now.
+
 ## [0.2.11] - 2026-08-22
 
 The map counts what a repository actually writes. Eight reports against the counting, taken
@@ -1569,6 +1603,8 @@ which are partial; several listed there are not implemented yet.
 - No claim that this catches defects. Measured across ten repositories, 1 of 317 defect review
   comments was preventable by a conventions map.
 
+[0.2.12]: https://github.com/crisnahine/anatomiya/compare/v0.2.11...v0.2.12
+[0.2.11]: https://github.com/crisnahine/anatomiya/compare/v0.2.10...v0.2.11
 [0.2.10]: https://github.com/crisnahine/anatomiya/compare/v0.2.9...v0.2.10
 [0.2.9]: https://github.com/crisnahine/anatomiya/compare/v0.2.8...v0.2.9
 [0.2.8]: https://github.com/crisnahine/anatomiya/compare/v0.2.7...v0.2.8
