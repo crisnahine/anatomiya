@@ -93,6 +93,46 @@ class FkEvidenceUnreadable < ActiveRecord::Migration[7.2]
 end
 `,
 
+  fk_target_unreadable_column_named: `
+class FkTargetUnreadable < ActiveRecord::Migration[7.2]
+  def change
+    add_reference :comments, :user
+    add_foreign_key :comments, target_table, column: :user_id
+  end
+end
+`,
+
+  fk_column_value_unreadable: `
+class FkColumnValueUnreadable < ActiveRecord::Migration[7.2]
+  def change
+    add_reference :variants, :variant
+    add_foreign_key :variants, :variants, column: :"#{aspect}_source_id"
+  end
+end
+`,
+
+  fk_reference_table_unreadable_other_column: `
+class FkReferenceTableUnreadableOther < ActiveRecord::Migration[7.2]
+  def change
+    create_table table_name do |t|
+      t.references :user
+    end
+    add_foreign_key :comments, :editors, column: :editor_id
+  end
+end
+`,
+
+  fk_reference_table_unreadable: `
+class FkReferenceTableUnreadable < ActiveRecord::Migration[7.2]
+  def change
+    create_table table_name do |t|
+      t.references :user
+    end
+    add_foreign_key :comments, :users, column: :user_id
+  end
+end
+`,
+
   fk_evidence_covering_another_column: `
 class FkEvidenceAnotherColumn < ActiveRecord::Migration[7.2]
   def change
@@ -567,6 +607,43 @@ test("a brace hash is read and a double-splat drops the site", needsRuby, () => 
   assert.deepEqual(counts("column_null_declared", "opts_hash_splat"), {
     candidates: 2,
     conforming: 1,
+  });
+});
+
+test("a key names the column it covers, whatever its target table is written as", needsRuby, () => {
+  // The column is read outright, so the statement is matched to the reference
+  // without the target table being read at all. Declining here would drop a
+  // site the tool can grade.
+  assert.deepEqual(counts("reference_foreign_key", "fk_target_unreadable_column_named"), {
+    candidates: 1,
+    conforming: 1,
+  });
+});
+
+test("a column named through something with no literal is a key that matches nothing", needsRuby, () => {
+  // The options list reads, and the one entry that decides which column the key
+  // covers does not. Read as a key naming no column it falls back to the plural
+  // of the reference name and credits a reference it may never have covered.
+  assert.deepEqual(counts("reference_foreign_key", "fk_column_value_unreadable"), {
+    candidates: 0,
+    conforming: 0,
+  });
+});
+
+test("a reference on a table this tool cannot read is declined, not charged", needsRuby, () => {
+  // The table cannot be read, so the key cannot be matched to it on the table.
+  // One covering the column it names might still be this reference's.
+  assert.deepEqual(counts("reference_foreign_key", "fk_reference_table_unreadable"), {
+    candidates: 0,
+    conforming: 0,
+  });
+  // No key covers this column under any table, so no key the migration declares
+  // can be this reference's, and the violation stands. canvas-lms writes it:
+  // `create_table :"aua_logs_#{index}"` holding a reference the file says in its
+  // own comment it deliberately leaves unconstrained.
+  assert.deepEqual(counts("reference_foreign_key", "fk_reference_table_unreadable_other_column"), {
+    candidates: 1,
+    conforming: 0,
   });
 });
 

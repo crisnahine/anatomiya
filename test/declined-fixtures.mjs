@@ -107,6 +107,8 @@ export const RUBY_DECLINED = {
       rf_polymorphic: "def change\n    add_reference :comments, :subject, polymorphic: true\n  end",
       rf_splat: "def change\n    add_reference :comments, :user, **opts\n  end",
       rf_dynamic_key: "def change\n    add_reference :comments, :user, key => true\n  end",
+      rf_key_apart_unreadable:
+        "def change\n    add_reference :comments, :user\n    add_foreign_key :comments, :users, key => 1\n  end",
     },
     counted: {
       rf_declared: "def change\n    add_reference :comments, :user, foreign_key: true\n  end",
