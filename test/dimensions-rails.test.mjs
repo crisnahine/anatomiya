@@ -84,6 +84,144 @@ class Opts < ActiveRecord::Migration[7.2]
 end
 `,
 
+  fk_evidence_unreadable: `
+class FkEvidenceUnreadable < ActiveRecord::Migration[7.2]
+  def change
+    add_reference :comments, :user
+    add_foreign_key :comments, :people, key => 1, column: "user_id"
+  end
+end
+`,
+
+  fk_target_unreadable_column_named: `
+class FkTargetUnreadable < ActiveRecord::Migration[7.2]
+  def change
+    add_reference :comments, :user
+    add_foreign_key :comments, target_table, column: :user_id
+  end
+end
+`,
+
+  fk_column_value_unreadable: `
+class FkColumnValueUnreadable < ActiveRecord::Migration[7.2]
+  def change
+    add_reference :variants, :variant
+    add_foreign_key :variants, :variants, column: :"#{aspect}_source_id"
+  end
+end
+`,
+
+  fk_statement_table_unreadable_other_column: `
+class FkStatementTableUnreadableOther < ActiveRecord::Migration[7.2]
+  def change
+    add_reference :posts, :author
+    add_foreign_key table_name, :editors, column: :editor_id
+  end
+end
+`,
+
+  fk_reference_name_unreadable_other_table: `
+class FkReferenceNameUnreadableOther < ActiveRecord::Migration[7.2]
+  def change
+    add_reference :comments, ref_name
+    add_foreign_key :posts, :users, column: :author_id
+  end
+end
+`,
+
+  fk_target_and_column_both_unread: `
+class FkTargetAndColumnUnread < ActiveRecord::Migration[7.2]
+  def change
+    add_reference :comments, :user
+    add_foreign_key :comments, target_table
+  end
+end
+`,
+
+  fk_unreadable_statement_on_another_table: `
+class FkUnreadableOnAnotherTable < ActiveRecord::Migration[7.2]
+  def change
+    create_table tbl do |t|
+      t.references :user
+    end
+    add_foreign_key :other, :users, key => 1
+  end
+end
+`,
+
+  fk_readable_key_beside_an_unreadable_one: `
+class FkReadableBesideUnreadable < ActiveRecord::Migration[7.2]
+  def change
+    add_reference :comments, :user
+    add_foreign_key :comments, :users
+    add_foreign_key :comments, :editors, key => 1
+  end
+end
+`,
+
+  fk_reference_table_unreadable_other_column: `
+class FkReferenceTableUnreadableOther < ActiveRecord::Migration[7.2]
+  def change
+    create_table table_name do |t|
+      t.references :user
+    end
+    add_foreign_key :comments, :editors, column: :editor_id
+  end
+end
+`,
+
+  fk_reference_table_unreadable: `
+class FkReferenceTableUnreadable < ActiveRecord::Migration[7.2]
+  def change
+    create_table table_name do |t|
+      t.references :user
+    end
+    add_foreign_key :comments, :users, column: :user_id
+  end
+end
+`,
+
+  fk_evidence_covering_another_column: `
+class FkEvidenceAnotherColumn < ActiveRecord::Migration[7.2]
+  def change
+    add_reference :comments, :user
+    add_foreign_key :comments, :users, column: :author_id, key => 1
+  end
+end
+`,
+
+  fk_evidence_on_a_table_it_cannot_read: `
+class FkEvidenceOnUnknownTable < ActiveRecord::Migration[7.2]
+  def change
+    add_reference :comments, :user
+    add_foreign_key table, :users, column: "user_id"
+  end
+end
+`,
+
+  fk_evidence_unreadable_beside_inline: `
+class FkEvidenceBesideInline < ActiveRecord::Migration[7.2]
+  def change
+    add_reference :comments, :user, foreign_key: true
+    add_foreign_key table, :users, column: "user_id"
+  end
+end
+`,
+
+  opts_unreadable_key: `
+class Unreadable < ActiveRecord::Migration[7.2]
+  def change
+    create_table :tags, key => false do |t|
+      t.string :a, null: false
+      t.string :b, key => false
+      t.string :c, CONST => 1
+      t.string :d, :"#{name}" => 1
+    end
+    add_reference :comments, :user, key => true
+  end
+end
+`,
+
   named_block_param: `
 class Named < ActiveRecord::Migration[7.2]
   def change
@@ -517,6 +655,129 @@ test("a brace hash is read and a double-splat drops the site", needsRuby, () => 
   assert.deepEqual(counts("column_null_declared", "opts_hash_splat"), {
     candidates: 2,
     conforming: 1,
+  });
+});
+
+test("a key is ruled out by whichever of its two facts this tool can read", needsRuby, () => {
+  // The statement names a column and the reference owes another one, so it is
+  // not this reference's key whatever table it was added to. Blocking on the
+  // unreadable half alone drains a class of sites nothing hid.
+  assert.deepEqual(counts("reference_foreign_key", "fk_statement_table_unreadable_other_column"), {
+    candidates: 1,
+    conforming: 0,
+  });
+  // The reference names no column this tool can read, so only the table rules a
+  // statement out, and this one is added to another table.
+  assert.deepEqual(counts("reference_foreign_key", "fk_reference_name_unreadable_other_table"), {
+    candidates: 1,
+    conforming: 0,
+  });
+});
+
+test("a key that names neither its column nor its table settles nothing", needsRuby, () => {
+  // Without `column:` the column is the table the key points at, so a target
+  // written as a local leaves the key covering an unknown column. Reading it as
+  // a key on no column charges the reference below it.
+  assert.deepEqual(counts("reference_foreign_key", "fk_target_and_column_both_unread"), {
+    candidates: 0,
+    conforming: 0,
+  });
+  // The reference's own table cannot be read, so a statement on any table might
+  // be its key.
+  assert.deepEqual(counts("reference_foreign_key", "fk_unreadable_statement_on_another_table"), {
+    candidates: 0,
+    conforming: 0,
+  });
+});
+
+test("a key that matches is read, whatever else the class holds", needsRuby, () => {
+  // The unreadable statement beside it decides nothing: the reference already
+  // has a key this tool read and matched to its column.
+  assert.deepEqual(counts("reference_foreign_key", "fk_readable_key_beside_an_unreadable_one"), {
+    candidates: 1,
+    conforming: 1,
+  });
+});
+
+test("a key names the column it covers, whatever its target table is written as", needsRuby, () => {
+  // The column is read outright, so the statement is matched to the reference
+  // without the target table being read at all. Declining here would drop a
+  // site the tool can grade.
+  assert.deepEqual(counts("reference_foreign_key", "fk_target_unreadable_column_named"), {
+    candidates: 1,
+    conforming: 1,
+  });
+});
+
+test("a column named through something with no literal is a key that matches nothing", needsRuby, () => {
+  // The options list reads, and the one entry that decides which column the key
+  // covers does not. Read as a key naming no column it falls back to the plural
+  // of the reference name and credits a reference it may never have covered.
+  assert.deepEqual(counts("reference_foreign_key", "fk_column_value_unreadable"), {
+    candidates: 0,
+    conforming: 0,
+  });
+});
+
+test("a reference on a table this tool cannot read is declined, not charged", needsRuby, () => {
+  // The table cannot be read, so the key cannot be matched to it on the table.
+  // One covering the column it names might still be this reference's.
+  assert.deepEqual(counts("reference_foreign_key", "fk_reference_table_unreadable"), {
+    candidates: 0,
+    conforming: 0,
+  });
+  // No key covers this column under any table, so no key the migration declares
+  // can be this reference's, and the violation stands. canvas-lms writes it:
+  // `create_table :"aua_logs_#{index}"` holding a reference the file says in its
+  // own comment it deliberately leaves unconstrained.
+  assert.deepEqual(counts("reference_foreign_key", "fk_reference_table_unreadable_other_column"), {
+    candidates: 1,
+    conforming: 0,
+  });
+});
+
+test("a reference is not charged against evidence this tool could not read", needsRuby, () => {
+  // The foreign key is declared apart, and the statement declaring it cannot be
+  // read: its options hide a key, or it names its table through a variable. The
+  // reference is unjudgeable either way, and charging it invents the violation
+  // an unreadable options list already refuses to invent.
+  assert.deepEqual(counts("reference_foreign_key", "fk_evidence_unreadable"), { candidates: 0, conforming: 0 });
+  assert.deepEqual(counts("reference_foreign_key", "fk_evidence_on_a_table_it_cannot_read"), {
+    candidates: 0,
+    conforming: 0,
+  });
+  // The column that key covers is readable and is not this reference's, so
+  // reading the list as absent would credit the reference instead of charging
+  // it: the same misread in the direction that states a convention nobody
+  // wrote.
+  assert.deepEqual(counts("reference_foreign_key", "fk_evidence_covering_another_column"), {
+    candidates: 0,
+    conforming: 0,
+  });
+  // Evidence on the site itself is readable, so an unreadable statement
+  // elsewhere in the class takes nothing away from it.
+  assert.deepEqual(counts("reference_foreign_key", "fk_evidence_unreadable_beside_inline"), {
+    candidates: 1,
+    conforming: 1,
+  });
+});
+
+test("a key this tool cannot read makes the whole options list unreadable", needsRuby, () => {
+  // A dynamic key, a constant and an interpolated symbol all say the same thing
+  // a ** splat says: the option set cannot be read. Skipping the entry and
+  // keeping the rest reads a column that may well declare `null: false` as one
+  // that declared nothing, and `check` grades against that invented violation.
+  assert.deepEqual(counts("column_null_declared", "opts_unreadable_key"), {
+    candidates: 1,
+    conforming: 1,
+  });
+  assert.deepEqual(counts("table_primary_key_declared", "opts_unreadable_key"), {
+    candidates: 0,
+    conforming: 0,
+  });
+  assert.deepEqual(counts("reference_foreign_key", "opts_unreadable_key"), {
+    candidates: 0,
+    conforming: 0,
   });
 });
 

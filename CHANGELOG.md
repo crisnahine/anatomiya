@@ -7,6 +7,38 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+Issue #100 and the two misreads found beside it, all one shape: a fact this tool could not read,
+judged as if it had been read. Each figure below is measured over the 35-repository corpus, whose
+7,902 migration files hold 8,268 column sites, 1,732 `create_table` sites, 1,655 reference sites
+and 499 foreign-key statements. None of those counts moves.
+
+### Fixed
+
+- An option key this tool cannot read makes the whole options list unreadable, the way a `**` splat
+  already does. `t.string :name, key => false` was read as a column that declared nothing and counted
+  as a violation, while the same fact written `t.string :name, **opts` declines the site: one shape
+  convicted and the other declined, and `check` grades against the conviction. A constant key and an
+  interpolated symbol read the same way, and `create_table` and `add_reference` carried it too, so a
+  `null: false`, an `id:` or a `foreign_key: true` behind such a key was charged as absent. The three
+  rows that read an options list decline it now, which under-counts the population instead, and
+  `N of N sites across X of Y files` already reports that.
+- A reference is judged against a foreign key the migration declares apart only where that key can be
+  matched to it, on the table it is added to and on the column it covers. A statement naming either
+  through something with no literal to read was dropped, so the reference it may cover read as a
+  column with no key at all; one whose `column:` could not be read was worse, matching by the plural
+  of the reference name and crediting a reference it may never have covered. Such a statement answers
+  for nothing now, and blocks the reference it might be the key for, but only that one: a key on
+  `editor_id` is not a reference on `author_id` whatever table it was added to, and a key added to
+  another table it could read is nobody's here, so only the unread fact blocks anything. 2 of the 499
+  statements in the corpus hide one of those facts, both in one openproject migration, and the
+  references in that class declare their keys inline, which is evidence on the site itself and still
+  counts.
+- A reference on a table this tool cannot read is declined rather than charged, but only where a key
+  in the class covers the column it names. canvas-lms holds the shape that decides it: a
+  `create_table :"aua_logs_#{index}"` whose `t.references :asset_user_access` the file says in its
+  own comment is deliberately left unconstrained, and no statement in that migration covers that
+  column, so the violation stands where a blanket decline would have lost it.
+
 ## [0.2.12] - 2026-08-22
 
 Four reports against what an area file says and against what lets it say anything. Three are about
