@@ -96,6 +96,7 @@ export const RUBY_DECLINED = {
     declined: {
       cn_splat: "def change\n    create_table :tags do |t|\n      t.string :name, **opts\n    end\n  end",
       cn_brace_splat: "def change\n    create_table :tags do |t|\n      t.string :name, { **defaults }\n    end\n  end",
+      cn_dynamic_key: "def change\n    create_table :tags do |t|\n      t.string :name, key => false\n    end\n  end",
     },
     counted: {
       cn_declared: "def change\n    create_table :tags do |t|\n      t.string :name, null: false\n    end\n  end",
@@ -105,6 +106,15 @@ export const RUBY_DECLINED = {
     declined: {
       rf_polymorphic: "def change\n    add_reference :comments, :subject, polymorphic: true\n  end",
       rf_splat: "def change\n    add_reference :comments, :user, **opts\n  end",
+      rf_dynamic_key: "def change\n    add_reference :comments, :user, key => true\n  end",
+      rf_key_apart_unreadable:
+        "def change\n    add_reference :comments, :user\n    add_foreign_key :comments, :users, key => 1\n  end",
+      rf_key_on_a_table_it_cannot_read:
+        "def change\n    add_reference :comments, :user\n    add_foreign_key table, :users, column: \"user_id\"\n  end",
+      rf_reference_table_unreadable:
+        "def change\n    create_table table_name do |t|\n      t.references :user\n    end\n    add_foreign_key :comments, :users, column: \"user_id\"\n  end",
+      rf_reference_name_unreadable:
+        "def change\n    add_reference :comments, ref_name\n    add_foreign_key :comments, :users\n  end",
     },
     counted: {
       rf_declared: "def change\n    add_reference :comments, :user, foreign_key: true\n  end",
