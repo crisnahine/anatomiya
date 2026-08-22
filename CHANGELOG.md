@@ -7,10 +7,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
-Issue #100 and the two misreads found beside it, all one shape: a fact this tool could not read,
-judged as if it had been read. Each figure below is measured over the 35-repository corpus, whose
-7,902 migration files hold 8,268 column sites, 1,732 `create_table` sites, 1,655 reference sites
-and 499 foreign-key statements. None of those counts moves.
+## [0.2.13] - 2026-08-22
+
+Eight reports against one sentence: an option is the value Rails reads for it, and a fact this tool
+could not read is evidence for nothing. Each figure below is measured over the 35-repository corpus,
+whose 7,902 migration files hold 8,268 column sites, 1,732 `create_table` sites, 1,655 reference
+sites and 499 foreign-key statements. Reference sites end at 1,638 and conforming at 1,185; the
+column and `create_table` rows do not move at all.
 
 ### Fixed
 
@@ -38,6 +41,28 @@ and 499 foreign-key statements. None of those counts moves.
   `create_table :"aua_logs_#{index}"` whose `t.references :asset_user_access` the file says in its
   own comment is deliberately left unconstrained, and no statement in that migration covers that
   column, so the violation stands where a blanket decline would have lost it.
+- A string key is not the option Rails reads. It looks `options[:null]` up by symbol, so
+  `t.string :name, "null" => false` sets nothing and the column is nullable; read as the symbol
+  option it credited a column that declared nothing, which states a convention the repository does
+  not hold. A string key is skipped now rather than voiding the list, because it is readable and what
+  it reads as is not the option.
+- A polymorphic reference is one whatever truthy value says so. The exclusion asked for the literal
+  `true`, and Rails asks the option: `polymorphic: { limit: 255 }` is the type column's own options
+  and `polymorphic: %i[account course]` is the list of types. 26 of the corpus's 163 polymorphic
+  references are written one of those two ways, every one in canvas-lms, and each was charged for the
+  foreign key ActiveRecord refuses on a polymorphic relation.
+- The same exclusion is lifted where the migration declares the key anyway. Its whole reason is that
+  the conforming form does not run, so a repository that writes it is saying it runs there: canvas
+  patches `references` and writes 10 such references, and excluding them denies a fact its own source
+  demonstrates.
+- An option value the source does not decide decides nothing about its site. `null: nullable` may be
+  declaring `null: false` and was charged for the option it may be setting; `foreign_key: fk_options`
+  may be declaring nothing and was credited, which whitehall writes once. A local, a call, a constant
+  or a conditional is now a decline, the way an unreadable key already is.
+- A reference is judged against the keys its own direction declares. A column added only on the way
+  down does not exist going forward and neither does a key, which the collector already said of the
+  key alone, so one direction's evidence was answering for the other's columns. 8 of the corpus's
+  1,999 references are written in a rollback and no verdict of theirs moves.
 
 ## [0.2.12] - 2026-08-22
 
@@ -1635,6 +1660,7 @@ which are partial; several listed there are not implemented yet.
 - No claim that this catches defects. Measured across ten repositories, 1 of 317 defect review
   comments was preventable by a conventions map.
 
+[0.2.13]: https://github.com/crisnahine/anatomiya/compare/v0.2.12...v0.2.13
 [0.2.12]: https://github.com/crisnahine/anatomiya/compare/v0.2.11...v0.2.12
 [0.2.11]: https://github.com/crisnahine/anatomiya/compare/v0.2.10...v0.2.11
 [0.2.10]: https://github.com/crisnahine/anatomiya/compare/v0.2.9...v0.2.10

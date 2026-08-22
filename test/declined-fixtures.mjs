@@ -97,6 +97,8 @@ export const RUBY_DECLINED = {
       cn_splat: "def change\n    create_table :tags do |t|\n      t.string :name, **opts\n    end\n  end",
       cn_brace_splat: "def change\n    create_table :tags do |t|\n      t.string :name, { **defaults }\n    end\n  end",
       cn_dynamic_key: "def change\n    create_table :tags do |t|\n      t.string :name, key => false\n    end\n  end",
+      cn_undecided_null:
+        "def change\n    create_table :tags do |t|\n      t.string :name, null: nullable\n    end\n  end",
     },
     counted: {
       cn_declared: "def change\n    create_table :tags do |t|\n      t.string :name, null: false\n    end\n  end",
@@ -115,6 +117,8 @@ export const RUBY_DECLINED = {
         "def change\n    create_table table_name do |t|\n      t.references :user\n    end\n    add_foreign_key :comments, :users, column: \"user_id\"\n  end",
       rf_reference_name_unreadable:
         "def change\n    add_reference :comments, ref_name\n    add_foreign_key :comments, :users\n  end",
+      rf_undecided_foreign_key: "def change\n    add_reference :comments, :user, foreign_key: fk_options\n  end",
+      rf_polymorphic_written_as_a_list: "def change\n    add_reference :comments, :subject, polymorphic: %i[post note]\n  end",
     },
     counted: {
       rf_declared: "def change\n    add_reference :comments, :user, foreign_key: true\n  end",
