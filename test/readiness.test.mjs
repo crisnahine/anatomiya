@@ -10,8 +10,8 @@ import { needsRuby } from "./ruby-available.mjs";
 import { needsShebang } from "./platform.mjs";
 import { installWithoutStripper } from "./no-stripper.mjs";
 import { installWithoutDependencies } from "./plugin-install.mjs";
-import { ENGINES } from "../lib/langs.mjs";
-import { olderThan, pluginRoot, readiness, readinessLines, remedyFor } from "../lib/readiness.mjs";
+import { ENGINES } from "../plugins/anatomiya/lib/langs.mjs";
+import { olderThan, pluginRoot, readiness, readinessLines, remedyFor } from "../plugins/anatomiya/lib/readiness.mjs";
 
 /** A directory on PATH holding one stub interpreter, so a probe meets a Ruby that is not this one. */
 function stubInterpreter(t, body) {

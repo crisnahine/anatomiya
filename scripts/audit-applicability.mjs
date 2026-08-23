@@ -16,10 +16,10 @@
  * four repositories, every flagged row named a construct that is simply rare.
  */
 import { readFileSync } from "node:fs";
-import { pathToFileURL } from "node:url";
 
-import { REGISTRY } from "../lib/registry.mjs";
-import { schemaProblem } from "../lib/facts.mjs";
+import { invokedAs } from "./entry.mjs";
+import { REGISTRY } from "../plugins/anatomiya/lib/registry.mjs";
+import { schemaProblem } from "../plugins/anatomiya/lib/facts.mjs";
 
 export const NARROW_AND_PRECISE = "narrow and precise: check the predicate";
 
@@ -154,6 +154,6 @@ function main(paths) {
 
 // Guarded, because the tests import `shareTable` from here and an unguarded
 // `process.exit` would end the test run instead of the script.
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (invokedAs(import.meta.url)) {
   main(process.argv.slice(2));
 }

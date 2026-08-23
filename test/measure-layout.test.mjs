@@ -13,9 +13,9 @@ import {
   parseArgs,
   selectRepos,
 } from "../scripts/measure-layout.mjs";
-import { namesakeClause } from "../lib/render-layout.mjs";
-import { OVERVIEW_FILE, RULES_DIR } from "../lib/rules.mjs";
-import { planMap, writeMap } from "../lib/write.mjs";
+import { namesakeClause } from "../plugins/anatomiya/lib/render-layout.mjs";
+import { OVERVIEW_FILE, RULES_DIR } from "../plugins/anatomiya/lib/rules.mjs";
+import { planMap, writeMap } from "../plugins/anatomiya/lib/write.mjs";
 
 /**
  * The per-repository numbers the dimension bar asks for, off a scan result.

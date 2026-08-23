@@ -12,13 +12,13 @@ import {
   untrackedSentence,
   OVERVIEW_AREAS,
   MAX_LINES,
-} from "../lib/render.mjs";
-import { kindsLine, layoutSummary, namesakeClause, plural, renderLayout } from "../lib/render-layout.mjs";
-import { areaFilename, isOwned, GENERATOR } from "../lib/rules.mjs";
-import { layoutFacts } from "../lib/layout.mjs";
-import { principleKeys } from "../lib/principles.mjs";
-import { globEntry, globText } from "../lib/areas.mjs";
-import { REGISTRY } from "../lib/registry.mjs";
+} from "../plugins/anatomiya/lib/render.mjs";
+import { kindsLine, layoutSummary, namesakeClause, plural, renderLayout } from "../plugins/anatomiya/lib/render-layout.mjs";
+import { areaFilename, isOwned, GENERATOR } from "../plugins/anatomiya/lib/rules.mjs";
+import { layoutFacts } from "../plugins/anatomiya/lib/layout.mjs";
+import { principleKeys } from "../plugins/anatomiya/lib/principles.mjs";
+import { globEntry, globText } from "../plugins/anatomiya/lib/areas.mjs";
+import { REGISTRY } from "../plugins/anatomiya/lib/registry.mjs";
 
 const dim = (o = {}) => ({
   key: "swallowed_error",

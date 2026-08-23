@@ -6,6 +6,42 @@ on that line.
 
 ## Language
 
+### What ships
+
+The words above the tool: this repository is a marketplace holding two plugins, and every sentence
+about that was written ad hoc until these entries existed.
+
+**Marketplace**:
+The listing at `.claude-plugin/marketplace.json`, and the repository it is the root of. It installs
+nothing itself; it says where each plugin is.
+_Avoid_: registry, catalogue, repo
+
+**Plugin**:
+One thing a person installs, with its own manifest, its own version, its own changelog and its own
+tag. Two of them live here, and they share the repository and nothing else: nothing either one
+ships imports the other, though this repository's own tests read both, and neither is released by
+the other's tag.
+_Avoid_: package, module, extension
+
+**Plugin root**:
+The directory a plugin's own paths are relative to, and the only place its hooks may name a file.
+Each plugin's is its own directory under `plugins/`, and what installs is that directory whole, which
+is why the shipped set has to be stated rather than seen.
+_Avoid_: base, install directory
+
+**Shipped set**:
+The files that belong to a plugin rather than to how it is built, named by `package.json` `files`
+and read back through `npm pack`. Every file the loader starts from, and everything those reach,
+has to be in it.
+_Avoid_: bundle, artifact, distribution
+
+**Payload**:
+The JSON object Claude Code writes to a hook's stdin. A hook answers one object on stdout, or
+nothing, and exits 0 whatever happened: a hook that fails interrupts the run it exists to help. The
+**event** is the field inside it naming why the hook fired, which is a different thing and keeps its
+own name.
+_Avoid_: input, message, calling the whole payload an event
+
 ### The corpus and its shape
 
 **Corpus**:

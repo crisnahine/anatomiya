@@ -6,12 +6,12 @@
  * nothing are upstream moving and the settings already doing its job. Both are
  * silent otherwise: the reminder keeps arriving and the model keeps reading it,
  * whether or not the Workflow tool it names is still gated the way it was.
- * Reported at the start of a session and again after a compaction or a clear,
+ * Reported at the start of a session and again after a compaction or a clear, except the cap line, which is marked once per state directory and said once,
  * which empty the context; a resume brings the transcript back with the lines
  * in it and is told nothing.
  */
 import { cached, firstTime, startOver, stateDirFor } from "./counters.mjs";
-import { invokedAs, parsePayload, readStdin, respond } from "./hook-io.mjs";
+import { here, invokedAs, parsePayload, readStdin, respond } from "./hook-io.mjs";
 import { CALIBRATED_AGAINST, behind, cliPath, conflictIn, driftCached, settingsFor, versionOf } from "./upstream.mjs";
 
 /** The starts that empty the context under a session that goes on. */
@@ -78,7 +78,7 @@ function capRaised(settings, env) {
 // a hook that fails is worse than a hook that said nothing (A24).
 if (invokedAs(import.meta.url)) {
   try {
-    const payload = parsePayload(readStdin());
+    const payload = parsePayload(await readStdin());
     respond(
       "SessionStart",
       notice({
@@ -89,13 +89,5 @@ if (invokedAs(import.meta.url)) {
     );
   } catch {
     // Nothing to say, and nothing worth failing a session's first turn over.
-  }
-}
-
-function here() {
-  try {
-    return process.cwd();
-  } catch {
-    return "";
   }
 }

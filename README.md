@@ -39,7 +39,9 @@ scan, pin and check on every commit.
 ```
 
 The marketplace lists a second plugin, `ultracode-anywhere`, which shares this repository and
-nothing else: no code here imports it and the npm package excludes it. It keeps Claude Code's
+nothing else: nothing anatomiya ships imports it (only its own tests do), the shipped set excludes
+it, and it releases on its own tag
+(`ultracode-anywhere-vx.y.z`) with its own version and its own changelog. It keeps Claude Code's
 standing Workflow orchestration on at any effort level, and its own README says what it does and
 does not restore. Installing `anatomiya` does not install it.
 
@@ -52,7 +54,7 @@ dependencies, `oxc-parser` and `flow-remove-types`. Install them once:
 
 That runs `npm install` in the plugin's own directory. It is the only command that installs
 anything and the only one that reaches a package registry: `/anatomiya:scan`, `/anatomiya:check`
-and `/anatomiya:pin` never call it. Outside Claude Code it is `node bin/anatomiya.mjs setup`. On
+and `/anatomiya:pin` never call it. Outside Claude Code it is `node plugins/anatomiya/bin/anatomiya.mjs setup`. On
 Windows it prints the npm command for you to run by hand, because npm ships there as a batch file
 and nothing here spawns a shell. `/anatomiya:doctor` says which engines answered and what to do
 about one that did not.
@@ -62,7 +64,7 @@ Or skip the plugin and run it from a clone:
 ```
 git clone https://github.com/crisnahine/anatomiya
 cd anatomiya && npm install
-node bin/anatomiya.mjs scan /path/to/your/repo
+node plugins/anatomiya/bin/anatomiya.mjs scan /path/to/your/repo
 ```
 
 Then, in the repository you want mapped:
@@ -284,7 +286,8 @@ independently on all 35, and `npm run e2e:corpus` drives the shipped CLI from a 
 repository through scan, a byte-identical rescan, pin, check, and a synthetic violation the check
 must catch. The unit suite runs under `node --test` with enforced coverage floors, and CI runs it on
 Linux, macOS and Windows. The number of tests is not written down here: `node --test` prints it on
-every run.
+every run, and a case that skipped for a reason the run could have avoided, such as a temp directory
+too long for the unix socket one fixture binds, fails the run rather than quietly lowering it.
 
 ## Limits
 
@@ -342,7 +345,10 @@ gate's second opinion. The full numbers and their caveats are in [docs/why.md](d
 
 ## Learn more
 
-- [DECISIONS.md](DECISIONS.md) is the build contract: 176 numbered decisions, each with the
+- [docs/plugin-contract.md](docs/plugin-contract.md) is what Claude Code requires of a plugin and a
+  marketplace, read against the documentation and the CLI itself, with a source per claim and the
+  version it was true of.
+- [DECISIONS.md](DECISIONS.md) is the build contract: 181 numbered decisions, each with the
   measurement or the review finding that forced it. Why a threshold is where it is, why the parser
   runs in child processes, why there is no hook: that is the file.
 - [docs/why.md](docs/why.md) is the longer argument and the full numbers.

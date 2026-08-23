@@ -1,13 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { ALL_DIMENSIONS } from "../lib/dimensions.mjs";
-import { PAIRINGS, applyPairings } from "../lib/pairing.mjs";
-import { parseAll } from "../lib/parse.mjs";
-import { declOf } from "../lib/langs.mjs";
+import { ALL_DIMENSIONS } from "../plugins/anatomiya/lib/dimensions.mjs";
+import { PAIRINGS, applyPairings } from "../plugins/anatomiya/lib/pairing.mjs";
+import { parseAll } from "../plugins/anatomiya/lib/parse.mjs";
+import { declOf } from "../plugins/anatomiya/lib/langs.mjs";
 import { needsRuby } from "./ruby-available.mjs";
-import { REACT_HOOKS } from "../lib/dimensions-jsx.mjs";
-import { COLUMN_TYPE } from "../lib/dimensions-rails.mjs";
+import { REACT_HOOKS } from "../plugins/anatomiya/lib/dimensions-jsx.mjs";
+import { COLUMN_TYPE } from "../plugins/anatomiya/lib/dimensions-rails.mjs";
 
 /**
  * One witness pair per dimension: the sources the declared predicate says are

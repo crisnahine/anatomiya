@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { parseFile } from "../lib/parse-file.mjs";
+import { parseFile } from "../plugins/anatomiya/lib/parse-file.mjs";
 
 test("the grammar follows the real extension: a ts assertion parses in .ts and not in .tsx", async () => {
   const cast = "const x = <string>window.name;\nexport const y = x;\n";

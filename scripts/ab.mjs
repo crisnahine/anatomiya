@@ -23,8 +23,9 @@ import { runTrial, CLAUDE_DEFAULTS } from "./ab/run.mjs";
 import { scoreFile } from "./ab/score.mjs";
 import { readingFor } from "./ab/read.mjs";
 import { repoLabel } from "./ab/label.mjs";
-import { language } from "../lib/langs.mjs";
-import { FACTS_PATH } from "../lib/facts.mjs";
+import { BINARY } from "./plugins.mjs";
+import { language } from "../plugins/anatomiya/lib/langs.mjs";
+import { FACTS_PATH } from "../plugins/anatomiya/lib/facts.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -71,10 +72,9 @@ const args = parseArgs(process.argv.slice(2));
 if (args.error) die(`${args.error}\n\n${USAGE}`);
 
 // 1. A map measured against an accepted baseline, which is what arm A is for.
-const bin = join(root, "bin", "anatomiya.mjs");
-execFileSync(process.execPath, [bin, "scan", args.repo], { stdio: "inherit" });
-execFileSync(process.execPath, [bin, "pin", args.repo], { stdio: "inherit" });
-execFileSync(process.execPath, [bin, "scan", args.repo], { stdio: "inherit" });
+execFileSync(process.execPath, [BINARY, "scan", args.repo], { stdio: "inherit" });
+execFileSync(process.execPath, [BINARY, "pin", args.repo], { stdio: "inherit" });
+execFileSync(process.execPath, [BINARY, "scan", args.repo], { stdio: "inherit" });
 
 // 2. Where the arms could differ at all.
 const facts = JSON.parse(readFileSync(join(args.repo, FACTS_PATH), "utf8"));

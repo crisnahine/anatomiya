@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { namesakeCompanions, namesakeIndex } from "../lib/companions.mjs";
+import { namesakeCompanions, namesakeIndex } from "../plugins/anatomiya/lib/companions.mjs";
 import {
   isStoryFile,
   isTestFile,
@@ -15,8 +15,8 @@ import {
   tally,
   testsLine,
   underTestTree,
-} from "../lib/layout.mjs";
-import { roster } from "../lib/layout-scan.mjs";
+} from "../plugins/anatomiya/lib/layout.mjs";
+import { roster } from "../plugins/anatomiya/lib/layout-scan.mjs";
 
 const file = (rel, lang = null, facets = null) => ({ rel, lang, facets });
 const files = (n, make) => Array.from({ length: n }, (_, i) => make(i));

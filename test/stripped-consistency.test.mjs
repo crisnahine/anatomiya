@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import { parseSync } from "oxc-parser";
 import stripFlow from "flow-remove-types";
 
-import { dimensionsFor } from "../lib/dimensions.mjs";
-import { collectHits } from "../lib/walk.mjs";
+import { dimensionsFor } from "../plugins/anatomiya/lib/dimensions.mjs";
+import { collectHits } from "../plugins/anatomiya/lib/walk.mjs";
 
 /**
  * A file the parser accepts as written, holding the shapes the stripper

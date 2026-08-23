@@ -8,10 +8,10 @@ import { join } from "node:path";
 import { needsRuby } from "./ruby-available.mjs";
 import { installWithoutStripper, FLOW_SOURCE } from "./no-stripper.mjs";
 
-import { parseAll, poolSizeFor } from "../lib/parse.mjs";
-import { GUARDS } from "../lib/pool.mjs";
-import { RUBY_GUARDS } from "../lib/ruby.mjs";
-import { MAX_FILE_BYTES, rawTransferAllowed } from "../lib/limits.mjs";
+import { parseAll, poolSizeFor } from "../plugins/anatomiya/lib/parse.mjs";
+import { GUARDS } from "../plugins/anatomiya/lib/pool.mjs";
+import { RUBY_GUARDS } from "../plugins/anatomiya/lib/ruby.mjs";
+import { MAX_FILE_BYTES, rawTransferAllowed } from "../plugins/anatomiya/lib/limits.mjs";
 
 // One reading of "this file went unexamined", for both callers: the scan
 // computed the four causes and the check computed none of them, so every fix to
@@ -469,7 +469,7 @@ test("the per-file cap sits under the parse timeout on any load, at one megabyte
 });
 
 test("optionalChain finds the chain's outermost node and whether it may carry ?.", async () => {
-  const { optionalChain, walk } = await import("../lib/walk.mjs");
+  const { optionalChain, walk } = await import("../plugins/anatomiya/lib/walk.mjs");
   const { parseSync } = await import("oxc-parser");
 
   // The receiver identifier, and every node above it, exactly as a dimension sees them.

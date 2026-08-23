@@ -2,9 +2,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { parseSync } from "oxc-parser";
 
-import { CAPABILITY_DIMENSIONS, stemWords } from "../lib/dimensions-capability.mjs";
-import { dimensionsFor } from "../lib/dimensions.mjs";
-import { capabilitiesIn } from "../lib/corpus.mjs";
+import { CAPABILITY_DIMENSIONS, stemWords } from "../plugins/anatomiya/lib/dimensions-capability.mjs";
+import { dimensionsFor } from "../plugins/anatomiya/lib/dimensions.mjs";
+import { capabilitiesIn } from "../plugins/anatomiya/lib/corpus.mjs";
 
 const dim = (key) => CAPABILITY_DIMENSIONS.find((d) => d.key === key);
 
@@ -116,7 +116,7 @@ test("dimensionsFor offers a capability row only where the corpus shows the wrap
 });
 
 test("a capability is offered only where files already route through a wrapper", async () => {
-  const { adoptedCapabilities } = await import("../lib/dimensions.mjs");
+  const { adoptedCapabilities } = await import("../plugins/anatomiya/lib/dimensions.mjs");
   const rec = (key, conforming) => ({ ok: true, hits: { [key]: [{ conforming }] } });
   const records = new Map([
     ["a.ts", rec("route_logging", true)],
@@ -130,7 +130,7 @@ test("a capability is offered only where files already route through a wrapper",
 });
 
 test("adoption needs no filename vocabulary: Rails.logger carries none", async () => {
-  const { adoptedCapabilities } = await import("../lib/dimensions.mjs");
+  const { adoptedCapabilities } = await import("../plugins/anatomiya/lib/dimensions.mjs");
   const rec = () => ({ ok: true, hits: { logger_over_puts: [{ conforming: true }] } });
   const records = new Map([["a.rb", rec()], ["b.rb", rec()], ["c.rb", rec()]]);
   assert.deepEqual([...adoptedCapabilities(records)], ["logging"]);
@@ -189,7 +189,7 @@ test("a row handed no path answers exactly as it always did", () => {
 });
 
 test("implementsCapability asks every word of the stem, and only the stem", async () => {
-  const { implementsCapability } = await import("../lib/dimensions-capability.mjs");
+  const { implementsCapability } = await import("../plugins/anatomiya/lib/dimensions-capability.mjs");
 
   for (const rel of ["src/queries/request.ts", "app/clients/client.rb", "src/lib/api-client.ts", "src/lib/httpClient.ts"]) {
     assert.equal(implementsCapability(rel, "network"), true, rel);

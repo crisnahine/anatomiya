@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { PRINCIPLES, principleKeys } from "../lib/principles.mjs";
+import { PRINCIPLES, principleKeys } from "../plugins/anatomiya/lib/principles.mjs";
 
 test("no tests and no helper root ground nothing", () => {
   assert.deepEqual(principleKeys({ tests: [], roots: [{ helpers: null }] }), []);

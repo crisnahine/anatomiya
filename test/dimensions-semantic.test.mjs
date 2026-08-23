@@ -3,9 +3,9 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { loadTypeScript } from "../lib/semantic.mjs";
-import { runSemantic } from "../lib/semantic.mjs";
-import { SEMANTIC_DIMENSIONS } from "../lib/dimensions-semantic.mjs";
+import { loadTypeScript } from "../plugins/anatomiya/lib/semantic.mjs";
+import { runSemantic } from "../plugins/anatomiya/lib/semantic.mjs";
+import { SEMANTIC_DIMENSIONS } from "../plugins/anatomiya/lib/dimensions-semantic.mjs";
 
 const loaded = await loadTypeScript();
 const needsTs = { skip: loaded ? false : "typescript is not installed" };

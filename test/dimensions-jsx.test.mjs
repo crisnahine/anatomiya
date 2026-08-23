@@ -1,9 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { parseSync } from "oxc-parser";
-import { JSX_DIMENSIONS, jsxName, attrName } from "../lib/dimensions-jsx.mjs";
-import { ALL_DIMENSIONS, dimensionsFor } from "../lib/dimensions.mjs";
-import { applyGates } from "../lib/reduce.mjs";
+import { JSX_DIMENSIONS, jsxName, attrName } from "../plugins/anatomiya/lib/dimensions-jsx.mjs";
+import { ALL_DIMENSIONS, dimensionsFor } from "../plugins/anatomiya/lib/dimensions.mjs";
+import { applyGates } from "../plugins/anatomiya/lib/reduce.mjs";
 
 const dim = (key) => JSX_DIMENSIONS.find((d) => d.key === key);
 
@@ -492,7 +492,7 @@ test("a spread that already landed on a component stays a site whatever it sprea
 /* --- the two questions a row outside this file asks about JSX --- */
 
 test("jsxElementNames names the binding an element resolves through, and nothing else", async () => {
-  const { jsxElementNames } = await import("../lib/dimensions-jsx.mjs");
+  const { jsxElementNames } = await import("../plugins/anatomiya/lib/dimensions-jsx.mjs");
   const { program } = parseSync("f.tsx", `
     const A = () => <Button className="x" />
     const B = () => <Menu.Item />
@@ -504,7 +504,7 @@ test("jsxElementNames names the binding an element resolves through, and nothing
 });
 
 test("yieldsJsx asks whether this function's own body yields an element", async () => {
-  const { yieldsJsx } = await import("../lib/dimensions-jsx.mjs");
+  const { yieldsJsx } = await import("../plugins/anatomiya/lib/dimensions-jsx.mjs");
   const fnOf = (src) => {
     const { program } = parseSync("f.tsx", src, { sourceType: "module" });
     const d = program.body[0];
@@ -530,7 +530,7 @@ test("a component that renders conditionally is still a component", async () => 
   // asked for `<auditBadge/>`, a host element: the impossible ask this
   // exclusion exists to prevent. Counted on the corpus: 62, 35, 33 and 33
   // module-level PascalCase functions on four repositories read this way.
-  const { yieldsJsx } = await import("../lib/dimensions-jsx.mjs");
+  const { yieldsJsx } = await import("../plugins/anatomiya/lib/dimensions-jsx.mjs");
   const fnOf = (src) => {
     const { program } = parseSync("f.tsx", src, { sourceType: "module" });
     const d = program.body[0];
@@ -549,7 +549,7 @@ test("a component that renders conditionally is still a component", async () => 
 });
 
 test("a function that builds an element and hands out something else is still a site", async () => {
-  const { yieldsJsx } = await import("../lib/dimensions-jsx.mjs");
+  const { yieldsJsx } = await import("../plugins/anatomiya/lib/dimensions-jsx.mjs");
   // The under-count direction, which the applicability contract calls the
   // dangerous one: the sentence says a function whose body yields JSX, and
   // these three do not. Ten such functions across two measured repositories.
@@ -571,7 +571,7 @@ test("both naming rows leave a component out of their vote, not just one", async
   // `function_naming_case` excluded components and `exported_symbol_case` did
   // not, so the same declaration still drew "exported names are camelCase" and
   // the remedy it named was a lowercase component, a host tag.
-  const { NAMING_AST } = await import("../lib/dimensions-naming.mjs");
+  const { NAMING_AST } = await import("../plugins/anatomiya/lib/dimensions-naming.mjs");
   const classesOf = (key, src) => {
     const row = NAMING_AST.find((d) => d.key === key);
     const { program } = parseSync("f.tsx", src, { sourceType: "module" });
@@ -595,7 +595,7 @@ test("both naming rows leave a component out of their vote, not just one", async
 });
 
 test("the naming row leaves a conditional component out of its vote", async () => {
-  const { NAMING_AST } = await import("../lib/dimensions-naming.mjs");
+  const { NAMING_AST } = await import("../plugins/anatomiya/lib/dimensions-naming.mjs");
   const row = NAMING_AST.find((d) => d.key === "function_naming_case");
   const classesOf = (src) => {
     const { program } = parseSync("f.tsx", src, { sourceType: "module" });

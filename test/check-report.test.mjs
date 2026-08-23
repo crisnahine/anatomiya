@@ -6,15 +6,16 @@ import { join, dirname } from "node:path";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
-import { check, CHECK_SCHEMA } from "../lib/check.mjs";
+import { check, CHECK_SCHEMA } from "../plugins/anatomiya/lib/check.mjs";
 import {
   encodeReport,
   formatReport,
   formatReportGithub,
   formatReportJson,
   CAVEATS,
-} from "../lib/check-report.mjs";
-import { writeFacts } from "../lib/facts.mjs";
+} from "../plugins/anatomiya/lib/check-report.mjs";
+import { writeFacts } from "../plugins/anatomiya/lib/facts.mjs";
+import { ANATOMIYA } from "../scripts/plugins.mjs";
 
 /**
  * The report as something other than a rendering: a machine reader gets a
@@ -152,7 +153,7 @@ test("the report says which shape it is, and the rules audit reaches it whole", 
 test("no caveat reaches the report without a code", () => {
   // The codes are the record's, so one site left pushing a bare string is a
   // caveat a machine reader can only tell apart by matching its sentence.
-  const src = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "lib", "check.mjs"), "utf8");
+  const src = readFileSync(join(ANATOMIYA, "lib", "check.mjs"), "utf8");
 
   // One `push`, inside the helper that takes a code. Everywhere else calls it.
   assert.equal((src.match(/caveats\.push\(/g) ?? []).length, 1, "a caveat is still pushed without a code");
