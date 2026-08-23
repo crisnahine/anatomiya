@@ -1,9 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { parseAll } from "../lib/parse.mjs";
-import { LANGUAGES } from "../lib/langs.mjs";
-import { walkRuby } from "../lib/ruby-walk.mjs";
+import { parseAll } from "../plugins/anatomiya/lib/parse.mjs";
+import { LANGUAGES } from "../plugins/anatomiya/lib/langs.mjs";
+import { walkRuby } from "../plugins/anatomiya/lib/ruby-walk.mjs";
 import { needsRuby } from "./ruby-available.mjs";
 
 /**

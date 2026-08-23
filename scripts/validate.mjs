@@ -12,6 +12,8 @@ import { readFileSync, readdirSync, existsSync, realpathSync, statSync } from "n
 import { join, dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { invokedAs } from "./entry.mjs";
+
 const MANIFESTS = ["plugin.json", "marketplace.json"];
 
 /** The kinds of remote an object source may name, read out of the loader's own schema. */
@@ -20,8 +22,15 @@ const REMOTE_KINDS = new Set(["npm", "github", "url", "git-subdir", "archive"]);
 /** The hook kinds the loader accepts, each a literal `type` it reads before anything else. */
 const HOOK_KINDS = new Set(["command", "prompt", "agent", "http", "mcp_tool"]);
 
-/** Semver as semver.org spells it: no leading zeros, pre-release and build as dotted words. */
-const SEMVER =
+/**
+ * Semver as semver.org spells it: no leading zeros, pre-release and build as
+ * dotted words.
+ *
+ * Exported because `check-docs.mjs` holds every plugin's version to the same
+ * rule before it builds a tag out of one, and a second copy of this pattern is
+ * a second answer to one question.
+ */
+export const SEMVER =
   /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$/;
 
 const isObject = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
@@ -99,32 +108,20 @@ export function validate(root) {
       problems.push(`.claude-plugin/${name} is not a manifest; manifests only in that directory`);
     }
   }
-  for (const m of MANIFESTS) {
-    if (!entries.includes(m)) problems.push(`.claude-plugin/${m} is missing`);
-  }
+  // Only the marketplace manifest is required here. The repository root is the
+  // marketplace and nothing else: each plugin has its own root and its own
+  // manifest, which the loop below reads where the marketplace says it is.
+  if (!entries.includes("marketplace.json")) problems.push(".claude-plugin/marketplace.json is missing");
 
-  let pkg = null;
-  if (existsSync(join(root, "package.json"))) pkg = readJson(join(root, "package.json"));
-  else problems.push("package.json is missing, so no version can be compared against it");
-  const plugin = entries.includes("plugin.json") ? readJson(join(dir, "plugin.json")) : null;
+  // Read once, and only for its own sake: `readJson` reports what is wrong with
+  // it, a value that is not an object included. Nothing compares a version
+  // against it any more, since no plugin sits here.
+  if (!existsSync(join(root, "package.json"))) {
+    problems.push("package.json is missing, and it is what declares the plugins as workspaces");
+  } else {
+    readJson(join(root, "package.json"));
+  }
   const marketplace = entries.includes("marketplace.json") ? readJson(join(dir, "marketplace.json")) : null;
-
-  if (plugin) {
-    problems.push(...manifestProblems(plugin, ".claude-plugin/plugin.json"));
-    problems.push(...declaredPathProblems(plugin, root, ".claude-plugin/plugin.json"));
-    if (pkg && plugin.version !== pkg.version) {
-      problems.push(`version drift: package.json ${pkg.version}, plugin.json ${plugin.version}`);
-    }
-    if (pkg && plugin.name !== pkg.name) {
-      problems.push(`name drift: package.json ${pkg.name}, plugin.json ${plugin.name}`);
-    }
-  }
-
-  // The root plugin's hook is what re-delivers the map, so its absence is a
-  // problem here rather than something a session discovers by the map quietly
-  // going stale. A plugin that declares no hooks at all is a plugin that asked
-  // for none.
-  problems.push(...hookProblems(root, root, readJson, { required: true }));
 
   if (marketplace) {
     for (const key of ["name", "owner"]) {
@@ -134,6 +131,12 @@ export function validate(root) {
     const listed = Array.isArray(marketplace.plugins) ? marketplace.plugins : [];
     if (!Array.isArray(marketplace.plugins)) problems.push('marketplace.json "plugins" is not an array');
     if (Array.isArray(marketplace.plugins) && listed.length === 0) problems.push("marketplace.json lists no plugins");
+    // Which of the plugins whose hooks are required actually had them read.
+    // Asked as "is the name listed", this passed for four shapes that give up
+    // on the entry before the hook check runs, so the missing declaration went
+    // unmentioned and was still there once the sentence that did print was
+    // fixed. Asked as "were they read", every one of them is caught.
+    const read = new Set();
     for (const [i, entry] of listed.entries()) {
       const at = entry?.name ? `entry ${entry.name}` : `plugins[${i}]`;
       if (!entry?.name) problems.push("marketplace.json has a plugin entry with no name");
@@ -189,12 +192,11 @@ export function validate(root) {
       }
 
       const ownDir = join(pluginRoot, ".claude-plugin");
-      const alreadyRead = pluginRoot === resolve(root);
-      if (!alreadyRead && existsSync(ownDir) && outsideByLink(root, ownDir)) {
+      if (existsSync(ownDir) && outsideByLink(root, ownDir)) {
         problems.push(`${label(root, ownDir)} is a link out of the repository`);
         continue;
       }
-      const ownEntries = !alreadyRead && existsSync(ownDir) ? readDir(ownDir, label(root, ownDir)) : [];
+      const ownEntries = existsSync(ownDir) ? readDir(ownDir, label(root, ownDir)) : [];
       if (ownEntries === null) continue;
       for (const name of ownEntries) {
         if (!MANIFESTS.includes(name)) {
@@ -207,20 +209,207 @@ export function validate(root) {
         problems.push(`${label(root, manifest)} is missing`);
         continue;
       }
-      const own = pluginRoot === resolve(root) ? plugin : readJson(manifest);
+      const own = readJson(manifest);
       if (!own) continue;
       if (own.name && own.name !== entry.name) {
         problems.push(`marketplace.json entry ${entry.name} points at a plugin named "${own.name}"`);
       }
-      if (pluginRoot === resolve(root)) continue;
 
       problems.push(...manifestProblems(own, label(root, manifest)));
       problems.push(...declaredPathProblems(own, pluginRoot, label(root, manifest)));
-      problems.push(...hookProblems(root, pluginRoot, readJson, { required: false }));
+      // A plugin whose own package manifest sits beside its plugin manifest has
+      // to agree with it: they are the same release, and a tag reads both.
+      problems.push(...packageDrift(pluginRoot, own, label(root, manifest), readJson));
+      // The hook that re-delivers the map is required of the plugin that owns
+      // it, and of no other: a commands-only plugin asked for no hooks. Which
+      // one that is comes off the marketplace rather than off a position in the
+      // tree, since no plugin sits at the root any more.
+      if (HOOKS_REQUIRED.has(entry.name)) read.add(entry.name);
+      const hooks = hookProblems(root, pluginRoot, readJson, { required: HOOKS_REQUIRED.has(entry.name), at: hooksPathsIn(own, pluginRoot) });
+      problems.push(...hooks);
+      // Hooks are one of the five, so what can be asked of every plugin is that
+      // something is there to load. Not asked of a plugin whose declaration was
+      // just reported missing: that is the same absence said a second way.
+      if (hooks.length === 0 && installsNothing(pluginRoot, own)) {
+        problems.push(`marketplace.json entry ${entry.name} installs as nothing: no hooks, commands, agents, skills or mcpServers`);
+      }
+    }
+
+    for (const wanted of HOOKS_REQUIRED) {
+      if (!read.has(wanted)) {
+        problems.push(`marketplace.json lists no usable plugin called ${wanted}, whose hooks were never read as a result`);
+      }
     }
   }
 
   return problems;
+}
+
+/**
+ * The plugins whose hooks are the reason they exist.
+ *
+ * anatomiya's hook is what re-delivers the map, so its absence is a problem
+ * here rather than something a session discovers by the map going stale. Named
+ * rather than inferred from where the plugin sits, because nothing sits at the
+ * repository root now and a position was never the reason anyway.
+ */
+const HOOKS_REQUIRED = new Set(["anatomiya"]);
+
+/**
+ * A plugin's `package.json` against its `plugin.json`, where it has both.
+ *
+ * One release moves both and a tag reads both, so the version and the name
+ * drift in silence otherwise. This is what was checked at the repository root
+ * before the plugins moved out of it.
+ */
+function packageDrift(pluginRoot, manifest, at, readJson) {
+  const path = join(pluginRoot, "package.json");
+  if (!existsSync(path)) return [];
+  const pkg = readJson(path);
+  if (!pkg) return [];
+  const problems = [];
+  if (manifest.version && pkg.version !== manifest.version) {
+    problems.push(`version drift: package.json ${pkg.version}, ${at} ${manifest.version}`);
+  }
+  if (manifest.name && pkg.name !== manifest.name) {
+    problems.push(`name drift: package.json ${pkg.name}, ${at} ${manifest.name}`);
+  }
+  return problems;
+}
+
+/**
+ * The five kinds of thing a plugin can install: the manifest key that names
+ * one, and where the loader looks when the manifest does not.
+ *
+ * One list, because `declaredPathProblems` walked its own copy of the same five
+ * keys and `scripts/shipped.mjs` reads this one for the same reason: three
+ * hand-kept copies of one fact is the shape this repository keeps writing tests
+ * against.
+ */
+export const LOADABLE = [
+  ["hooks", "hooks/hooks.json"],
+  ["commands", "commands"],
+  ["agents", "agents"],
+  ["skills", "skills"],
+  ["mcpServers", ".mcp.json"],
+];
+
+/** The manifest keys alone, in the order the kinds are declared. */
+const LOADABLE_KEYS = LOADABLE.map(([key]) => key);
+
+/**
+ * Whether a plugin would install with a name, a version and no behaviour.
+ *
+ * Hooks cannot be required of every plugin, since a commands-only one is a
+ * perfectly good plugin, so the question is whether any of the five is there at
+ * all. It is asked because the hook check answers nothing when the declaration
+ * is simply absent: the second plugin here is its two hooks, and deleting the
+ * file that declares them left every gate green.
+ */
+function installsNothing(pluginRoot, manifest) {
+  for (const [key, conventional] of LOADABLE) {
+    // A manifest that names one has already had that path checked for real by
+    // `declaredPathProblems`, so naming it is enough here: what that one
+    // passes over is a path carrying the loader's variable, which is a
+    // declaration either way. Naming it as an empty list or an empty object is
+    // not naming it.
+    if (declares(manifest[key])) return false;
+    const at = join(pluginRoot, conventional);
+    // A hook declaration is asked what it declares rather than whether it has
+    // bytes: `{"hooks":{}}` is a file, and it loads nothing.
+    if (key === "hooks" ? declaresAHook(at) : holdsSomething(at)) return false;
+  }
+  return true;
+}
+
+/**
+ * Whether a hook declaration names at least one hook the loader would run.
+ *
+ * A file that is there and will not parse counts as one: `hookProblems` reports
+ * what is wrong with it in its own words, and saying "installs as nothing"
+ * beside that adds a second sentence about one broken file. What this is asked
+ * for is the file that parses and declares none, which reads as behaviour to
+ * every other check.
+ */
+function declaresAHook(path) {
+  let declared;
+  try {
+    declared = JSON.parse(readFileSync(path, "utf8"));
+  } catch (err) {
+    return err?.code !== "ENOENT";
+  }
+  if (!isObject(declared?.hooks)) return true;
+  return holdsAHook(declared);
+}
+
+/**
+ * Whether a parsed declaration puts a hook entry anywhere under its events.
+ *
+ * Three spellings of the same nothing: no event, an event with no group, and a
+ * group whose own list is empty. A shape `hookProblems` refuses is one it will
+ * name, so this answers yes there rather than adding a second message about the
+ * same file.
+ */
+function holdsAHook(declared) {
+  const events = Object.values(declared.hooks);
+  if (events.some((groups) => !Array.isArray(groups))) return true;
+  return events.some((groups) => groups.some((group) => (Array.isArray(group?.hooks) ? group.hooks : []).length > 0));
+}
+
+/**
+ * The hook declarations a manifest names, or none for the convention.
+ *
+ * Every one it names, because the loader merges them: reading only the first
+ * left a second file's hooks unchecked. A path that leaves the plugin is not
+ * among them, since `declaredPathProblems` has already said so and reading it
+ * would be reporting on a file that is not this plugin's; nor is one carrying
+ * the plugin-root variable, which is the loader's to substitute.
+ */
+function hooksPathsIn(manifest, pluginRoot) {
+  const named = manifest?.hooks;
+  const paths = [];
+  for (const one of Array.isArray(named) ? named : [named]) {
+    if (typeof one !== "string" || one.trim() === "" || one.includes("${")) continue;
+    const rel = one.replace(/^\.\//, "");
+    const abs = resolve(pluginRoot, rel);
+    if (escapes(relative(pluginRoot, abs)) || outsideByLink(pluginRoot, abs)) continue;
+    paths.push(rel);
+  }
+  return paths;
+}
+
+/** Whether a manifest value names anything, rather than being present and empty. */
+function declares(value) {
+  if (typeof value === "string") return value !== "";
+  if (Array.isArray(value)) return value.length > 0;
+  if (isObject(value)) return Object.keys(value).length > 0;
+  return Boolean(value);
+}
+
+/**
+ * A file with bytes in it, or a directory with a file somewhere under it.
+ *
+ * Somewhere under it rather than directly in it, because commands nest:
+ * `commands/ops/deploy.md` is a command, and a directory holding one empty
+ * subdirectory installs nothing.
+ */
+function holdsSomething(path) {
+  let seen;
+  try {
+    seen = statSync(path);
+  } catch {
+    return false;
+  }
+  if (seen.isFile()) return seen.size > 0;
+  if (!seen.isDirectory()) return false;
+  try {
+    for (const entry of readdirSync(path, { withFileTypes: true })) {
+      if (holdsSomething(join(path, entry.name))) return true;
+    }
+  } catch {
+    return false;
+  }
+  return false;
 }
 
 /**
@@ -229,11 +418,15 @@ export function validate(root) {
  */
 function declaredPathProblems(manifest, pluginRoot, at) {
   const problems = [];
-  for (const key of ["commands", "agents", "skills", "hooks", "mcpServers"]) {
+  for (const key of LOADABLE_KEYS) {
     const value = manifest[key];
     const listed = typeof value === "string" ? [value] : Array.isArray(value) ? value : [];
     for (const [i, declared] of listed.entries()) {
-      if (typeof declared !== "string" || !declared.startsWith(".")) continue;
+      // `./hooks/hooks.json` and `hooks/hooks.json` are one path to the
+      // loader, and only the first was ever checked. A path carrying the
+      // plugin-root variable is the loader's to substitute, so resolving it
+      // here would report on a path nothing opens.
+      if (typeof declared !== "string" || declared.trim() === "" || declared.includes("${")) continue;
       const where = Array.isArray(value) ? `${key}[${i}]` : key;
       const abs = resolve(pluginRoot, declared);
       if (escapes(relative(pluginRoot, abs)) || outsideByLink(pluginRoot, abs)) {
@@ -266,24 +459,60 @@ function manifestProblems(manifest, at) {
  * refuses by name on every prompt, so both directions are checked here rather
  * than trusted.
  */
-function hookProblems(root, pluginRoot, readJson, { required }) {
+function hookProblems(root, pluginRoot, readJson, { required, at: named = [] }) {
   const problems = [];
-  const path = join(pluginRoot, "hooks", "hooks.json");
-  const at = label(root, path);
+  // Where the manifest puts them, and the convention only when it names
+  // nothing. `LOADABLE`'s own docstring says that is the rule and
+  // `installsNothing` follows it; this read the convention whatever the
+  // manifest said, so a plugin that moved its declaration was refused for a
+  // file it does not need and the hooks it does declare went unchecked.
+  const paths = (named.length ? named : [join("hooks", "hooks.json")]).map((rel) => join(pluginRoot, rel));
 
-  if (!existsSync(path)) {
-    if (required) problems.push(`${at} is missing, so the map is never re-delivered`);
+  // What each declaration turned out to be, so the question below is answered
+  // over the set rather than per file: the loader merges them, and one of them
+  // carrying the hook is enough for the map to be re-delivered.
+  const present = [];
+  for (const path of paths) {
+    if (!existsSync(path)) continue;
+    const at = label(root, path);
+    const declared = readJson(path);
+    // A file that will not parse has been reported by `readJson` in its own
+    // words, and it is not evidence either way about what is declared.
+    if (!declared) {
+      present.push({ path, at, declared: null, loads: true });
+      continue;
+    }
+    if (!isObject(declared.hooks)) {
+      problems.push(`${at} has no top-level hooks block, so it loads nothing`);
+      present.push({ path, at, declared, loads: false, said: true });
+      continue;
+    }
+    present.push({ path, at, declared, loads: holdsAHook(declared) });
+  }
+
+  // A file was what this checked for, and a file is not a hook. The one plugin
+  // whose hooks are required is also the one skipped by the check that asks
+  // whether a plugin installs anything at all, so an emptied declaration here
+  // passed every gate.
+  if (required && !present.some((one) => one.loads)) {
+    if (present.length === 0) problems.push(`${label(root, paths[0])} is missing, so the map is never re-delivered`);
+    // Where every declaration has already been called one that loads nothing,
+    // saying it a second way adds a sentence and no fact.
+    else if (!present.every((one) => one.said)) problems.push(`${present[0].at} declares no hook, so the map is never re-delivered`);
     return problems;
   }
 
-  const declared = readJson(path);
-  if (!declared) return problems;
-  if (!isObject(declared.hooks)) {
-    problems.push(`${at} has no top-level hooks block, so it loads nothing`);
-    return problems;
+  for (const { at, declared } of present) {
+    if (!declared || !isObject(declared.hooks)) continue;
+    problems.push(...eventProblems(pluginRoot, at, declared.hooks));
   }
+  return problems;
+}
 
-  for (const [event, groups] of Object.entries(declared.hooks)) {
+/** What one declaration's events run, and whether this plugin ships it. */
+function eventProblems(pluginRoot, at, block) {
+  const problems = [];
+  for (const [event, groups] of Object.entries(block)) {
     if (!Array.isArray(groups)) {
       problems.push(`${at} event ${event} is not a list`);
       continue;
@@ -354,16 +583,4 @@ function main() {
   console.log(`manifests ok (${MANIFESTS.join(", ")}), hooks ok`);
 }
 
-// Compared through the real path on both sides: `import.meta.url` is always
-// resolved and `process.argv[1]` is whatever the caller spelled, so a checkout
-// reached through a symlink ran nothing and exited 0, which for CI's only
-// manifest gate is a pass nobody asked for.
-if (process.argv[1] && realOf(fileURLToPath(import.meta.url)) === realOf(resolve(process.argv[1]))) main();
-
-function realOf(path) {
-  try {
-    return realpathSync(path);
-  } catch {
-    return path;
-  }
-}
+if (invokedAs(import.meta.url)) main();

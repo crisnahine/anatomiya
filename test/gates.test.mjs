@@ -1,8 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import * as reduce from "../lib/reduce.mjs";
-import { assertRegistryRows } from "../lib/dimensions.mjs";
-import { REGISTRY } from "../lib/registry.mjs";
+import * as reduce from "../plugins/anatomiya/lib/reduce.mjs";
+import { assertRegistryRows } from "../plugins/anatomiya/lib/dimensions.mjs";
+import { REGISTRY } from "../plugins/anatomiya/lib/registry.mjs";
 import { ELIGIBLE, REFUSED } from "./fixtures/counter-pins.mjs";
 
 const { applyGates, verdictFor, blockedFor, GATES } = reduce;

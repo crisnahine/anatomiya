@@ -1,6 +1,7 @@
 /**
- * The map put back in front of the model after every step, and the settings
- * entry that arranges it.
+ * This tool's whole side of the hook contract: the payload read off stdin, the
+ * map put back in front of the model after every step, the one object written
+ * back, and the settings entry an older version arranged.
  *
  * The always-loaded channel already carries the overview once per turn (H1),
  * and this does not replace it: "What is deliberately not built" refuses a hook
@@ -141,6 +142,111 @@ export function echoContext(root, { now = new Date() } = {}) {
   ].join("\n");
 }
 
+/** A payload longer than this is not one of ours, and reading on costs the turn. */
+const PAYLOAD_MOST = 1024 * 1024;
+
+/** How long to wait for a payload before answering without one. */
+/**
+ * How long the payload read waits before answering with nothing.
+ *
+ * Exported because it is half of a contract with two halves: this is what the
+ * hook gives itself, and `hooks.json` declares what Claude Code will wait for.
+ * A test that can read only the declaration cannot tell the two apart, and the
+ * one that tried measured the answer against the outer bound, which the race it
+ * was inside had already capped.
+ */
+export const PAYLOAD_WAIT_MS = 2000;
+
+/**
+ * The first `most` units of a string, without splitting a character in half.
+ *
+ * A cap counts UTF-16 units and a surrogate pair is two of them, so a cut at
+ * the boundary halves one. The second plugin holds the same function for the
+ * same reason, since a plugin may not run a file outside its own root.
+ */
+function cutAt(text, most) {
+  if (text.length <= most) return text;
+  const cut = text.slice(0, most);
+  const last = cut.charCodeAt(most - 1);
+  return last >= 0xd800 && last <= 0xdbff ? cut.slice(0, -1) : cut;
+}
+
+/** A payload as an object, and an empty one for anything that will not parse. */
+function asPayload(text) {
+  try {
+    const value = JSON.parse(text || "{}");
+    return value !== null && typeof value === "object" ? value : {};
+  } catch {
+    // Unparseable is the same answer as absent: the caller has nothing to say
+    // either way, and throwing would exit non-zero, which is the one outcome a
+    // hook must not have.
+    return {};
+  }
+}
+
+/**
+ * The hook event on stdin, or an empty object where there is none to read.
+ *
+ * Bounded and timed out, because this runs on every tool call and a hook that
+ * waits on a pipe nobody writes to holds the whole session there for the
+ * timeout the declaration asks for.
+ *
+ * What has arrived by the bound is read rather than thrown away. Discarding it
+ * costs the turn its map for a payload that was already complete and whose
+ * writer had simply not closed the handle, and the second plugin's copy of the
+ * same bound keeps what it has.
+ */
+export function readPayload() {
+  return new Promise((resolve) => {
+    let data = "";
+    let settled = false;
+    // Resolving the promise is not enough to end the process: an open stdin is
+    // a live handle, so a harness that opens the pipe and writes nothing kept
+    // this alive for as long as it held it, measured at 8 seconds against the
+    // 2 this claims. The bound has to release the handle, not just answer.
+    const done = (value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      process.stdin.pause();
+      process.stdin.destroy();
+      resolve(value);
+    };
+    const timer = setTimeout(() => done(asPayload(data)), PAYLOAD_WAIT_MS);
+    process.stdin.setEncoding("utf8");
+    process.stdin.on("data", (chunk) => {
+      data += chunk;
+      // At the cap, the first megabyte is kept and read. Thrown away instead, a
+      // whole payload followed by padding cost that turn its map, and the
+      // second plugin's copy of this bound kept it: two spellings of one
+      // contract answering different things for one payload.
+      if (data.length >= PAYLOAD_MOST) done(asPayload(cutAt(data, PAYLOAD_MOST)));
+    });
+    process.stdin.on("error", () => done(asPayload(data)));
+    process.stdin.on("end", () => done(asPayload(data)));
+  });
+}
+
+/**
+ * One JSON object on stdout, whatever the reader does with it.
+ *
+ * A reader that goes away mid-write raises EPIPE on the stream rather than from
+ * the call, so a try/catch around this never saw it and node turned it into an
+ * uncaught exception and exit 1: the one outcome a hook must not have, on every
+ * turn and every tool call for the life of that session. The listener is what
+ * makes the error ordinary, and it is added once however often this is called.
+ */
+export function respond(value) {
+  if (process.stdout.listenerCount("error") === 0) process.stdout.on("error", () => {});
+  try {
+    process.stdout.write(JSON.stringify(value));
+  } catch {
+    // A stream already destroyed raises from the call rather than on itself,
+    // which the listener above cannot make ordinary. Whichever way it arrives,
+    // a hook that cannot be read is not a hook that failed.
+  }
+}
+
 /** Whether a hook group is one of ours, by the command it runs. */
 const isOurs = (group) => (Array.isArray(group?.hooks) ? group.hooks : []).some((h) => isOurCommand(h?.command));
 
@@ -178,8 +284,20 @@ export function planRemoval(root) {
   }
   if (!existsSync(path)) return { root, path, changed: false, settings: null, empty: false };
 
+  // Through the same reader as everything else this module opens, rather than a
+  // bare `readFileSync`: that types nothing and bounds nothing, so a fifo left
+  // at this path held every scan for ever with nothing printed, and a large
+  // file at it was the cost of every scan. `readHead` opens with O_NONBLOCK,
+  // stats the handle it opened rather than the path, and stops at the cap.
+  const entry = readHead(path, HEAD_BYTES + 1);
+  if (entry.kind !== "file") {
+    throw new Error(`${SETTINGS_PATH} could not be read as a file, so it was left alone`);
+  }
+  if (Buffer.byteLength(entry.head) > HEAD_BYTES) {
+    throw new Error(`${SETTINGS_PATH} could not be read: it is larger than the ${HEAD_BYTES} bytes this reads`);
+  }
   // A byte-order mark is not a malformed file, it is a file an editor wrote.
-  const raw = readFileSync(path, "utf8").replace(/^\ufeff/, "");
+  const raw = entry.head.replace(/^\ufeff/, "");
   let settings;
   try {
     settings = raw.trim() === "" ? {} : JSON.parse(raw);

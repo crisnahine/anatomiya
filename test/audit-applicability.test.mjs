@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 const SCRIPT = join(dirname(fileURLToPath(import.meta.url)), "..", "scripts", "audit-applicability.mjs");
 
 import { shareTable, readRecords, NARROW_AND_PRECISE } from "../scripts/audit-applicability.mjs";
-import { FACTS_SCHEMA } from "../lib/facts.mjs";
+import { FACTS_SCHEMA } from "../plugins/anatomiya/lib/facts.mjs";
 
 function withFiles(byName) {
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-audit-"));

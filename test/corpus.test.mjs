@@ -6,9 +6,9 @@ import { tmpdir } from "node:os";
 import { join, isAbsolute, sep } from "node:path";
 import { execFileSync } from "node:child_process";
 
-import { collect, countUntrackedSource, isDenied, isExcludedDir, isGeneratedFile, isSource, safeResolve, gitRoot, frameworksIn } from "../lib/corpus.mjs";
-import { language } from "../lib/langs.mjs";
-import * as areaLib from "../lib/areas.mjs";
+import { collect, countUntrackedSource, isDenied, isExcludedDir, isGeneratedFile, isSource, safeResolve, gitRoot, frameworksIn } from "../plugins/anatomiya/lib/corpus.mjs";
+import { language } from "../plugins/anatomiya/lib/langs.mjs";
+import * as areaLib from "../plugins/anatomiya/lib/areas.mjs";
 
 const { discover, globEntry, globText, assertGlobSafe, areaId, AREA } = areaLib;
 

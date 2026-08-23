@@ -1,8 +1,12 @@
 name: release
 
+# One namespace per plugin. The bare `v` tag has always meant anatomiya and
+# still does, so nothing already pushed changes meaning; anything else carries
+# the name of the plugin it releases. `scripts/release.mjs` holds the same table
+# and a test holds the two in step.
 on:
   push:
-    tags: ["v*.*.*"]
+    tags: ["v*.*.*", "ultracode-anywhere-v*.*.*"]
 
 permissions:
   contents: read
@@ -10,6 +14,10 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
+    # A test that hangs (a blocking open on a fifo, say) fails here instead of
+    # holding the runner for the six-hour default. This job runs the same suite
+    # as ci, and it is the one whose result cannot be taken back.
+    timeout-minutes: 30
     # Write is needed for one thing: creating the release. Nothing else in this
     # workflow writes, so nothing else gets the permission.
     permissions:
@@ -22,22 +30,19 @@ jobs:
           node-version: "22"
           cache: npm
 
-      # A tag that disagrees with either manifest ships a version number that is
-      # a lie, and the plugin loader reads plugin.json, not the tag. Stop before
-      # anything is published.
-      - name: Check the tag against both manifests
-        id: version
+      # Which plugin this tag releases, whether every manifest that plugin owns
+      # carries that version, and the changelog section that becomes the release
+      # body. One module rather than shell, because a release cannot be taken
+      # back and nothing could run the shell until a tag was already pushed.
+      - name: Resolve the tag
+        id: release
         shell: bash
         run: |
-          tag="${GITHUB_REF_NAME#v}"
-          pkg=$(node --input-type=module -e 'import { readFileSync } from "node:fs"; process.stdout.write(JSON.parse(readFileSync("package.json", "utf8")).version ?? "")')
-          plug=$(node --input-type=module -e 'import { readFileSync } from "node:fs"; process.stdout.write(JSON.parse(readFileSync(".claude-plugin/plugin.json", "utf8")).version ?? "")')
-          echo "tag $tag, package.json $pkg, plugin.json $plug"
-          if [ "$tag" != "$pkg" ] || [ "$tag" != "$plug" ]; then
-            echo "::error::version mismatch. Tag says $tag, package.json says $pkg, .claude-plugin/plugin.json says $plug. Nothing was released."
-            exit 1
-          fi
-          echo "version=$tag" >> "$GITHUB_OUTPUT"
+          node scripts/release.mjs "$GITHUB_REF_NAME" \
+            --notes "$RUNNER_TEMP/notes.md" \
+            --github-output "$GITHUB_OUTPUT"
+          echo "release notes:"
+          cat "$RUNNER_TEMP/notes.md"
 
       - run: npm ci
 
@@ -51,7 +56,6 @@ jobs:
       # real one, and a release that skipped the Ruby tier would ship eleven
       # dimensions and a prism child that nothing verified.
       - name: Check the Ruby parser
-        id: ruby
         shell: bash
         run: |
           version=$(ruby --disable-gems -rprism -e 'print Prism::VERSION') || {
@@ -59,56 +63,48 @@ jobs:
             exit 1
           }
           echo "prism $version"
-          echo "available=true" >> "$GITHUB_OUTPUT"
 
+      # Every test, with no Ruby branch: the step above exits 1 when prism is
+      # missing, so by here it is there. ci has the branch because six of its
+      # legs may legitimately lack Ruby; a release may not.
       - name: Run the suite
         shell: bash
-        env:
-          RUBY_AVAILABLE: ${{ steps.ruby.outputs.available }}
         run: |
           files=$(find test -name '*.test.mjs' | sort)
-          if [ "$RUBY_AVAILABLE" != "true" ]; then
-            files=$(printf '%s\n' "$files" | grep -v 'ruby\.test\.mjs$' || true)
-            echo "::warning::ruby -rprism failed on this runner. Skipping the Ruby parser tests. Every other test still runs."
+          # An empty list makes this `node --test`, which falls back to
+          # discovery of its own and exits 0 having run nothing. ci refuses that
+          # and this is the workflow where a green run nobody can take back.
+          if [ -z "$files" ]; then
+            echo "::error::found no test files under test/"
+            exit 1
           fi
           # shellcheck disable=SC2086
           node --test $files
 
-      # The release body is the CHANGELOG section for this version, unedited. A
-      # tag with no section is a release with no notes, so it fails instead.
-      - name: Pull the changelog section
-        shell: bash
-        env:
-          VERSION: ${{ steps.version.outputs.version }}
-        run: |
-          if [ ! -f CHANGELOG.md ]; then
-            echo "::error::no CHANGELOG.md, so there is nothing to release $VERSION with."
-            exit 1
-          fi
-          # The version is matched as a whole token, not a substring, or 0.1.0
-          # would find the 10.1.0 heading first and release the wrong notes.
-          awk -v ver="$VERSION" '
-            BEGIN { re = ver; gsub(/\./, "\\.", re); re = "(^|[^0-9.])" re "([^0-9.]|$)" }
-            /^## / { if (found) exit; if ($0 ~ re) { found = 1; next } }
-            found { print }
-          ' CHANGELOG.md | sed -e '/./,$!d' > "$RUNNER_TEMP/section.md"
-          # sed dropped the leading blank lines, the subshell drops the trailing ones.
-          notes=$(cat "$RUNNER_TEMP/section.md")
-          if [ -z "$notes" ]; then
-            echo "::error::CHANGELOG.md has no section for $VERSION. Add one and re-tag."
-            exit 1
-          fi
-          printf '%s\n' "$notes" > "$RUNNER_TEMP/notes.md"
-          echo "release notes:"
-          cat "$RUNNER_TEMP/notes.md"
-
+      # The release body is the changelog section the resolve step already read
+      # and wrote, unedited. A tag with no section of its own never reached this
+      # far: the resolve step refuses it rather than releasing another plugin's
+      # notes under this plugin's name.
       - name: Create the release
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VERSION: ${{ steps.version.outputs.version }}
+          PLUGIN: ${{ steps.release.outputs.plugin }}
+          VERSION: ${{ steps.release.outputs.version }}
         run: |
+          # Latest is one badge for a repository that now releases two plugins,
+          # and GitHub hands it to whichever release was made last. It belongs
+          # to the plugin the repository is named for, and to no pre-release:
+          # a version carrying a hyphen is one by semver, and the tag pattern
+          # accepts it.
+          latest=false
+          prerelease=""
+          case "$VERSION" in
+            *-*) prerelease="--prerelease" ;;
+            *) [ "$PLUGIN" = "anatomiya" ] && latest=true ;;
+          esac
           gh release create "$GITHUB_REF_NAME" \
-            --title "$VERSION" \
+            --title "$PLUGIN $VERSION" \
             --notes-file "$RUNNER_TEMP/notes.md" \
+            --latest="$latest" $prerelease \
             --verify-tag

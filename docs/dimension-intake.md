@@ -12,7 +12,7 @@ this table is where each of them is recorded rather than decided again later:
 - **Rename.** A glossary name is a name for a principle. Rendered beside a ratio it reads as a verdict:
   `1.0` next to "Postel's Law" reads as a philosophical endorsement rather than a measurement. The
   `renamed from` column carries the glossary name, and the `key` carries what the map actually says.
-  The rule is a load-time throw in `lib/dimensions.mjs`, not a convention. (G3)
+  The rule is a load-time throw in `plugins/anatomiya/lib/dimensions.mjs`, not a convention. (G3)
 - **Drop.** An entry with no writable denominator is not a counted claim, however visible it is. OWASP
   Top 10 is a findings list and a taxonomy over other rows; there is no set of sites to count it over.
   Dropped rows stay in this table with their reason, so nobody proposes them again. (G4)

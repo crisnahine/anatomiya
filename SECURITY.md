@@ -67,7 +67,7 @@ filename was the whole exploit.
 The rules that came out of that:
 
 - Arguments after `--`, so a path can never be read as an option.
-- Reject a path that starts with `-` rather than trying to escape it. `lib/ruby.mjs` drops such
+- Reject a path that starts with `-` rather than trying to escape it. `plugins/anatomiya/lib/ruby.mjs` drops such
   files with `suspicious path` before they are queued.
 - Keep repository-controlled strings out of argv when there is any other channel. Paths reach the
   Ruby parser on stdin, not the command line, which closes the whole class instead of filtering it.
@@ -82,7 +82,7 @@ input like any other, and a ref is rejected if it starts with `-`.
 
 ### Everything rendered goes through one allowlist encoder
 
-`lib/encode.mjs` is the only way a repository-controlled value reaches a generated file, or a record
+`plugins/anatomiya/lib/encode.mjs` is the only way a repository-controlled value reaches a generated file, or a record
 this tool prints. It is an allowlist, not a denylist, and that distinction is the finding.
 
 A denylist over control characters misses bidi overrides and zero-width joiners. Those are Unicode
@@ -196,7 +196,7 @@ Say the quiet part plainly.
   from the plugin's own `typescript`, never the repository's, because a repository can ship its own
   and reading it runs its code in this process. Decisions B7 to B9 in `DECISIONS.md` carry the
   measurements. Without `--deep`, nothing here reads `tsconfig.json`.
-- **No guarantee the map is correct.** The gates in `lib/reduce.mjs` are thresholds, not proofs. A
+- **No guarantee the map is correct.** The gates in `plugins/anatomiya/lib/reduce.mjs` are thresholds, not proofs. A
   wrong directive is a correctness problem, not a security one, but it is worth knowing that a
   repository can shape its own numbers if it wants to.
 
@@ -204,15 +204,15 @@ Say the quiet part plainly.
 
 These are real and they are tracked in `DECISIONS.md`.
 
-- **F5 is partial.** The buffered git reads in `lib/baseline.mjs` and `lib/check.mjs` now go through
-  one runner in `lib/git.mjs`, which carries the timeout and the byte cap; `lib/corpus.mjs` still
+- **F5 is partial.** The buffered git reads in `plugins/anatomiya/lib/baseline.mjs` and `plugins/anatomiya/lib/check.mjs` now go through
+  one runner in `plugins/anatomiya/lib/git.mjs`, which carries the timeout and the byte cap; `plugins/anatomiya/lib/corpus.mjs` still
   runs `git rev-parse` through its own. The `--`
   separator is still not applied at every call site. Paths do not currently appear as bare
   positional arguments anywhere, which is what makes today's code hold, but that is a property of
   the current call sites rather than an enforced invariant.
 - **F6 is partial.** The three reads that grow with the repository now stream: `git ls-files`, `git
   log`, and the Ruby parser's output. What still buffers is bounded by what it asks for, one blob or
-  one ref at a time, through `gitBuffered` in `lib/git.mjs`.
+  one ref at a time, through `gitBuffered` in `plugins/anatomiya/lib/git.mjs`.
   A buffered read large enough makes `execFile` throw `RangeError: Invalid string length` from inside
   Node's own exit handler, where `maxBuffer` does not protect and V8 caps any string at 0x1fffffe8
   bytes. The failure is a lost run, not a leak.

@@ -1,8 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { FRAMEWORKS, FRAMEWORK_NAMES, couldSignal } from "../lib/frameworks.mjs";
-import { frameworksIn } from "../lib/corpus.mjs";
+import { FRAMEWORKS, FRAMEWORK_NAMES, couldSignal } from "../plugins/anatomiya/lib/frameworks.mjs";
+import { frameworksIn } from "../plugins/anatomiya/lib/corpus.mjs";
 
 const files = (rels, lang) => rels.map((rel) => ({ rel, lang }));
 

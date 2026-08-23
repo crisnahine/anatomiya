@@ -1,17 +1,17 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { needsPosixPermissions, needsPosixSpecialFiles } from "./platform.mjs";
+import { needsBindableSocketPath, needsPosixPermissions, needsPosixSpecialFiles } from "./platform.mjs";
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, realpathSync, statSync, symlinkSync, chmodSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
 
-import { commitMap, planMap, writeMap } from "../lib/write.mjs";
-import { areaFilename, isOwned, realpathOf, realpathOrNull, EXCLUDE_LINES, HEAD_BYTES, PREFIX, SETTINGS_PATH } from "../lib/rules.mjs";
-import { areaId } from "../lib/areas.mjs";
-import { writeFacts, readFacts as readFactsFrom } from "../lib/facts.mjs";
-import { severityFor } from "../lib/check.mjs";
+import { commitMap, planMap, writeMap } from "../plugins/anatomiya/lib/write.mjs";
+import { areaFilename, isOwned, realpathOf, realpathOrNull, EXCLUDE_LINES, HEAD_BYTES, PREFIX, SETTINGS_PATH } from "../plugins/anatomiya/lib/rules.mjs";
+import { areaId } from "../plugins/anatomiya/lib/areas.mjs";
+import { writeFacts, readFacts as readFactsFrom } from "../plugins/anatomiya/lib/facts.mjs";
+import { severityFor } from "../plugins/anatomiya/lib/check.mjs";
 
 const RULES = ".claude/rules";
 const STORE = ".claude/anatomiya";
@@ -920,7 +920,7 @@ test("a fifo in the rules directory is a shape, and the open does not hang on it
   rmSync(dir, { recursive: true, force: true });
 });
 
-test("a socket in the rules directory is a shape on every platform, not an unreadable file", needsPosixSpecialFiles, async () => {
+test("a socket in the rules directory is a shape on every platform, not an unreadable file", { ...needsPosixSpecialFiles, ...needsBindableSocketPath }, async () => {
   // A unix socket refuses to open, and the errno differs: ENXIO on Linux,
   // EOPNOTSUPP on macOS. Whichever it is, the entry is a shape and occupies
   // its name; only a regular file that will not open is "unreadable".

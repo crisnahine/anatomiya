@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Measure which side of each dimension the model writes unprompted, and write
- * the answer into lib/model-defaults.json with its provenance.
+ * the answer into plugins/anatomiya/lib/model-defaults.json with its provenance.
  *
  * Run by hand, never in CI: it spends model calls. The tasks are neutral
  * generation prompts that never name a convention, the outputs are parsed by
@@ -17,17 +17,17 @@
  */
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { join } from "node:path";
 
-import { ALL_DIMENSIONS } from "../lib/dimensions.mjs";
-import { parseAll } from "../lib/parse.mjs";
-import { language } from "../lib/langs.mjs";
-import { classifyBasename } from "../lib/dimensions-naming.mjs";
+import { invokedAs } from "./entry.mjs";
+import { ANATOMIYA } from "./plugins.mjs";
+import { ALL_DIMENSIONS } from "../plugins/anatomiya/lib/dimensions.mjs";
+import { parseAll } from "../plugins/anatomiya/lib/parse.mjs";
+import { language } from "../plugins/anatomiya/lib/langs.mjs";
+import { classifyBasename } from "../plugins/anatomiya/lib/dimensions-naming.mjs";
 import { runTrial, CLAUDE_DEFAULTS } from "./ab/run.mjs";
 
-const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const TABLE_PATH = join(root, "lib", "model-defaults.json");
+const TABLE_PATH = join(ANATOMIYA, "lib", "model-defaults.json");
 
 /**
  * Neutral generation tasks. A handful of prompts whose outputs, parsed once,
@@ -289,6 +289,6 @@ async function main() {
   }
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (invokedAs(import.meta.url)) {
   await main();
 }

@@ -1,12 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { cpSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { cpSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
 
-import { sitesOwed } from "../scripts/check-docs.mjs";
+import { READS, pathsThatMoved, sitesOwed } from "../scripts/check-docs.mjs";
+import { REL } from "../scripts/plugins.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -32,7 +33,7 @@ test("every site the row missed is reported, not the first one", () => {
   const owed = sitesOwed(row(), sites({ defaults: new Set(), intake: new Map(), refused: new Set() }));
 
   assert.deepEqual(owed.map((o) => o.site), [
-    "lib/model-defaults.json",
+    `${REL.anatomiya}/lib/model-defaults.json`,
     "docs/dimension-intake.md",
     "test/fixtures/counter-pins.mjs",
   ]);
@@ -42,7 +43,7 @@ test("a missing model-defaults entry names the seeder as its remedy", () => {
   const owed = sitesOwed(row(), sites({ defaults: new Set() }));
 
   assert.equal(owed.length, 1);
-  assert.equal(owed[0].site, "lib/model-defaults.json");
+  assert.equal(owed[0].site, `${REL.anatomiya}/lib/model-defaults.json`);
   assert.match(owed[0].remedy, /npm run defaults:seed/);
 });
 
@@ -82,21 +83,63 @@ test("a row carrying a counter owes ELIGIBLE, and one refusing it owes REFUSED",
 /**
  * The checker run against a copy of this repository, so a test can break one
  * file and read what the checker says about it.
- *
- * `realpathSync` because the script only runs when `argv[1]` resolves to its
- * own module URL, and macOS hands out temp directories under a symlink: the
- * child would exit 0 having read nothing.
  */
+/**
+ * What git sees here, as absolute paths.
+ *
+ * A copy taken with `cp -r` carries whatever else is sitting in the tree, and
+ * the gate under test reads the repository's own files. Filtering the copy
+ * through this keeps the fixture a copy of the repository rather than of the
+ * machine it was made on.
+ */
+function repositoryFiles() {
+  try {
+    return new Set(
+      execFileSync("git", ["-C", ROOT, "ls-files", "--cached", "--others", "--exclude-standard"], { encoding: "utf8" })
+        .split("\n")
+        .filter(Boolean)
+        .map((rel) => join(ROOT, rel))
+    );
+  } catch {
+    return null;
+  }
+}
+
+// The module under test answers `[]` where git cannot say, on purpose, and a
+// suite that dies at import over the same question is a file whose other 30
+// cases stop running with nothing said. A tree that is not a checkout is a real
+// place to run this from: this repository is copied to one for review.
+const REPOSITORY_FILES = repositoryFiles();
+const needsCheckout = REPOSITORY_FILES
+  ? {}
+  : { skip: "git cannot list this tree, so there is no repository for the fixture to be a copy of" };
+const isRepositoryFile = (src) => statSync(src).isDirectory() || REPOSITORY_FILES.has(src);
+
 function repoCopy(t) {
-  const dir = realpathSync(mkdtempSync(join(tmpdir(), "anatomiya-check-docs-")));
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-check-docs-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
 
-  for (const part of ["lib", "bin", "commands", "docs", "scripts", ".claude-plugin"]) {
-    cpSync(join(ROOT, part), join(dir, part), { recursive: true });
+  const filter = REPOSITORY_FILES ? isRepositoryFile : undefined;
+  for (const part of ["plugins", "docs", "scripts", ".claude-plugin"]) {
+    cpSync(join(ROOT, part), join(dir, part), { recursive: true, filter });
   }
-  cpSync(join(ROOT, "test", "fixtures"), join(dir, "test", "fixtures"), { recursive: true });
+  cpSync(join(ROOT, "test", "fixtures"), join(dir, "test", "fixtures"), { recursive: true, filter });
   for (const f of readdirSync(ROOT).filter((f) => f.endsWith(".md"))) cpSync(join(ROOT, f), join(dir, f));
-  cpSync(join(ROOT, "package.json"), join(dir, "package.json"));
+  // The lockfile carries the version twice, and the checker reads both.
+  for (const f of ["package.json", "package-lock.json"]) cpSync(join(ROOT, f), join(dir, f));
+  return dir;
+}
+
+/**
+ * The same copy, made a repository, so the path sweep has a file list to read.
+ *
+ * Nothing is staged or committed: the sweep asks git for the working tree, and
+ * a commit would need an identity this suite has no business setting on the
+ * machine it runs on.
+ */
+function repoCopyTracked(t) {
+  const dir = repoCopy(t);
+  execFileSync("git", ["init", "-q"], { cwd: dir });
   return dir;
 }
 
@@ -130,7 +173,7 @@ test("an untouched copy of this repository passes", (t) => {
 
 test("a registry key with no model-defaults entry is named, with the seeder as its remedy", (t) => {
   const dir = repoCopy(t);
-  const path = join(dir, "lib", "model-defaults.json");
+  const path = join(dir, REL.anatomiya, "lib", "model-defaults.json");
   const table = JSON.parse(readFileSync(path, "utf8"));
   delete table.swallowed_error;
   writeFileSync(path, JSON.stringify(table, null, 2) + "\n");
@@ -231,4 +274,283 @@ test("a decision row whose cells outnumber the header is named, with the escape 
   assert.equal(status, 1);
   assert.match(output, /row C1 on line \d+ has \d+ cells, not 4/);
   assert.match(output, /escape a `\|` inside a code span/);
+});
+
+test("a plugin whose manifest moved without its changelog is named", (t) => {
+  // Every plugin the marketplace lists, not just the one at the root. The
+  // second plugin's version was checked for semver and against nothing else,
+  // so it could move to a version no changelog described and the only thing
+  // that would have noticed was the tag, after it was pushed.
+  const dir = repoCopy(t);
+  const path = join(dir, REL.ultracode, ".claude-plugin", "plugin.json");
+  const manifest = JSON.parse(readFileSync(path, "utf8"));
+  manifest.version = "9.9.9";
+  writeFileSync(path, JSON.stringify(manifest, null, 2));
+
+  const { status, output } = check(dir);
+
+  assert.equal(status, 1);
+  assert.match(output, /ultracode-anywhere\/CHANGELOG\.md/);
+  assert.match(output, /9\.9\.9/);
+});
+
+test("a changelog with no Unreleased heading is named, whichever plugin it belongs to", (t) => {
+  // The release checklist puts an empty one back, and a release that forgets
+  // leaves the next change with nowhere to be written down.
+  for (const rel of ["CHANGELOG.md", join(REL.ultracode, "CHANGELOG.md")]) {
+    const dir = repoCopy(t);
+    const path = join(dir, rel);
+    writeFileSync(path, readFileSync(path, "utf8").replace("## [Unreleased]", "## [Coming up]"));
+
+    const { status, output } = check(dir);
+
+    assert.equal(status, 1, rel);
+    assert.match(output, new RegExp(`${rel.replace(/[\\/.]/g, "\\$&")}.*Unreleased`), output);
+  }
+});
+
+test("a changelog that is gone is one sentence about one file, said once", (t) => {
+  // Two readers answer the same absence: the guard here, and `notesFor`, which
+  // is asked afterwards whatever the guard found. The author has one thing to
+  // do, and was told twice, in two wordings, one of which named the file inside
+  // its own message and so printed the path twice on one line.
+  const dir = repoCopy(t);
+  rmSync(join(dir, REL.ultracode, "CHANGELOG.md"));
+
+  const { status, output } = check(dir);
+  const said = output.split("\n").filter((line) => line.includes(`${REL.ultracode}/CHANGELOG.md`));
+
+  assert.equal(status, 1);
+  assert.equal(said.length, 1, `said it ${said.length} times:\n${said.join("\n")}`);
+  assert.equal(
+    said[0].match(/ultracode-anywhere\/CHANGELOG\.md/g).length,
+    1,
+    `named the file twice in one sentence: ${said[0]}`,
+  );
+});
+
+test("a changelog with no section for the version names the file once, not twice", (t) => {
+  const dir = repoCopy(t);
+  const path = join(dir, REL.ultracode, ".claude-plugin", "plugin.json");
+  const manifest = JSON.parse(readFileSync(path, "utf8"));
+  manifest.version = "9.9.9";
+  writeFileSync(path, JSON.stringify(manifest, null, 2));
+
+  const { output } = check(dir);
+  const said = output.split("\n").filter((line) => line.includes("has no section for"));
+
+  assert.equal(said.length, 1);
+  assert.equal(said[0].match(/ultracode-anywhere\/CHANGELOG\.md/g).length, 1, `named the file twice: ${said[0]}`);
+});
+
+test("the marketplace's own changelog going missing is a sentence, not a stack trace", (t) => {
+  // The guard the release loop reads through was added for the second plugin's
+  // changelog, and anatomiya's, which sits at the marketplace root, was read
+  // earlier by the count checks with no guard at all: half the table covered,
+  // and the half that was not is the one every other read here already
+  // touches. Both are on the list the gate checks first now.
+  const dir = repoCopy(t);
+  rmSync(join(dir, "CHANGELOG.md"));
+
+  const { status, output } = check(dir);
+  const said = output.split("\n").filter((line) => line.includes("CHANGELOG.md") && !line.includes("ultracode-anywhere"));
+
+  assert.equal(status, 1);
+  assert.doesNotMatch(output, /ENOENT|at readFileSync/, "the gate threw rather than reporting");
+  assert.equal(said.length, 1, `said it ${said.length} times:\n${said.join("\n")}`);
+});
+
+test("a plugin with two things wrong is told both, not one release at a time", (t) => {
+  // The skip that stopped the changelog being reported twice took the version
+  // check with it, which is the failure the block's own comment says it avoids.
+  const dir = repoCopy(t);
+  const path = join(dir, REL.ultracode, ".claude-plugin", "plugin.json");
+  const manifest = JSON.parse(readFileSync(path, "utf8"));
+  delete manifest.version;
+  writeFileSync(path, JSON.stringify(manifest, null, 2));
+  rmSync(join(dir, REL.ultracode, "CHANGELOG.md"));
+
+  const { status, output } = check(dir);
+
+  assert.equal(status, 1);
+  assert.match(output, /CHANGELOG\.md: is missing/);
+  assert.match(output, /plugin\.json: has no version/);
+});
+
+test("a released heading that lost its brackets is named, and its link left dangling with it", (t) => {
+  // A bracketed heading is the shape the link definitions at the bottom point at, and
+  // the version loop matches the number as a token on any `##` line, so it
+  // reads an unbracketed heading as a section and says nothing.
+  const dir = repoCopy(t);
+  const path = join(dir, "CHANGELOG.md");
+  // The plugin's, not the marketplace's: the root publishes nothing and carries
+  // no version, and the headings in this changelog are the plugin's.
+  const version = JSON.parse(readFileSync(join(dir, REL.anatomiya, "package.json"), "utf8")).version;
+  writeFileSync(path, readFileSync(path, "utf8").replace(`## [${version}]`, `## ${version}`));
+
+  const { status, output } = check(dir);
+
+  assert.equal(status, 1);
+  // The sentence, not just the filename and the number: any message carrying
+  // those two would have passed, including one about something else entirely.
+  assert.match(
+    output,
+    new RegExp(`CHANGELOG\\.md: has no "## \\[${version.replace(/\./g, "\\.")}\\]" heading`),
+    output,
+  );
+  // And what makes it worth catching: the link definition at the bottom is
+  // still there, pointing at a heading that is not, which is what a reader
+  // following it lands on.
+  const after = readFileSync(path, "utf8");
+  const escaped = version.replace(/\./g, "\\.");
+  assert.match(after, new RegExp(`^\\[${escaped}\\]:`, "m"), "the link definition should still be there to dangle");
+  assert.doesNotMatch(after, new RegExp(`^## \\[${escaped}\\]`, "m"), "and the heading it points at should be gone");
+});
+
+test("a version that is not semver is named as that, not as a tag namespace nobody claims", (t) => {
+  // The guard asks only whether the field is a string, so `0.1` reaches the tag
+  // resolver and the reader is told the namespace is unclaimed while the fault
+  // is a field two files away.
+  const dir = repoCopy(t);
+  const path = join(dir, REL.ultracode, ".claude-plugin", "plugin.json");
+  const manifest = JSON.parse(readFileSync(path, "utf8"));
+  manifest.version = "0.1";
+  writeFileSync(path, JSON.stringify(manifest, null, 2));
+
+  const { status, output } = check(dir);
+
+  assert.equal(status, 1);
+  assert.match(output, /version is not semver: 0\.1/);
+  assert.doesNotMatch(output, /no plugin in this marketplace is released by the tag/);
+});
+
+
+test("a document this gate is about going missing is a sentence, whichever one it is", (t) => {
+  // Every read here is unguarded on purpose, and a guard at each site is a
+  // guard somebody forgets: two had one and four did not, so a missing README
+  // died on a stack 44 lines past the check that would have named it. This
+  // module is imported by this file, so that stack failed the whole suite at
+  // load rather than the gate at runtime.
+  //
+  // Driven off the list rather than a copy of four of its entries, which is
+  // what "whichever one it is" says: a path added to the list and never removed
+  // by a case is a guard nobody has watched fail.
+  assert.ok(READS.length > 4, `the gate names ${READS.length} paths`);
+  for (const rel of READS) {
+    const dir = repoCopy(t);
+    rmSync(join(dir, rel), { recursive: true, force: true });
+
+    const { status, output } = check(dir);
+
+    assert.equal(status, 1, rel);
+    assert.doesNotMatch(output, /ENOENT|at readFileSync/, `${rel} threw rather than reporting`);
+    assert.match(output, new RegExp(`${rel.replace(/\./g, "\\.")}.*is missing`), rel);
+  }
+});
+
+test("a manifest that parses to something that is not one is said, not stepped over", (t) => {
+  // `null` parses. Read as "did not parse" it said nothing here and then threw
+  // on the summary line, which names no file at all.
+  const dir = repoCopy(t);
+  writeFileSync(join(dir, REL.ultracode, ".claude-plugin", "plugin.json"), "null");
+
+  const { status, output } = check(dir);
+
+  assert.equal(status, 1);
+  assert.doesNotMatch(output, /Cannot read properties of null/);
+  assert.match(output, /plugin\.json: parses to something that is not a manifest/);
+});
+
+// ----------------------------------------------------------------------------
+
+const TRACKED = new Set([
+  `${REL.anatomiya}/lib/hook.mjs`,
+  `${REL.anatomiya}/hooks/hooks.json`,
+  `${REL.ultracode}/hooks/hooks.json`,
+  `${REL.ultracode}/hooks/upstream.mjs`,
+  "docs/why.md",
+]);
+
+test("a path this repository still holds somewhere else is named with where it is now", () => {
+  assert.deepEqual(pathsThatMoved("the read is in `lib/hook.mjs` today", "docs/why.md", TRACKED), [
+    { spelled: "lib/hook.mjs", now: `${REL.anatomiya}/lib/hook.mjs`, several: false },
+  ]);
+});
+
+test("a path in some other repository is left alone, because nothing here says where it went", () => {
+  assert.deepEqual(pathsThatMoved("a Rails app spells it `app/models/user.rb`", "docs/why.md", TRACKED), []);
+});
+
+test("a path is read from the document's own directory before the repository root", () => {
+  const text = "run `hooks/upstream.mjs` from here";
+  assert.deepEqual(pathsThatMoved(text, `${REL.ultracode}/VERIFYING.md`, TRACKED), []);
+  assert.deepEqual(pathsThatMoved(text, "README.md", TRACKED), [
+    { spelled: "hooks/upstream.mjs", now: `${REL.ultracode}/hooks/upstream.mjs`, several: false },
+  ]);
+});
+
+// Both plugins declare hooks under that name, so the prose spelling it is
+// naming the file each plugin has rather than one that moved. Rewritten to
+// either one it stops being true of the other.
+test("a path both plugins hold is the spelling their manifests use, not a move", () => {
+  assert.deepEqual(pathsThatMoved("declared in its own `hooks/hooks.json`", "README.md", TRACKED), []);
+});
+
+// A tail matching two files switched the whole check off, and the shape that
+// does it is a copy of the repository sitting inside it: a worktree taken out
+// of git's hands, an unpacked archive. That is the same silence the rule exists
+// to end, so it is said, and only the one both plugins genuinely hold is not.
+test("a tail matching two files that are not the plugins' own spelling is said, not passed over", () => {
+  const withCopy = new Set([...TRACKED, `copy/${REL.anatomiya}/lib/hook.mjs`]);
+
+  assert.deepEqual(pathsThatMoved("the read is in `lib/hook.mjs` today", "docs/why.md", withCopy), [
+    { spelled: "lib/hook.mjs", now: `copy/${REL.anatomiya}/lib/hook.mjs, ${REL.anatomiya}/lib/hook.mjs`, several: true },
+  ]);
+});
+
+test("a path that is still where the prose says it is passes", () => {
+  assert.deepEqual(pathsThatMoved("see `docs/why.md`", "README.md", TRACKED), []);
+});
+
+test("a document naming a file that lives somewhere else now is failed, with where it went", needsCheckout, (t) => {
+  const dir = repoCopyTracked(t);
+  const path = join(dir, "CONTRIBUTING.md");
+  writeFileSync(path, `${readFileSync(path, "utf8")}\n\nThe registry is \`lib/registry.mjs\`.\n`);
+
+  const { status, output } = check(dir);
+
+  assert.equal(status, 1, output);
+  assert.match(output, new RegExp(`CONTRIBUTING\\.md: names .lib/registry\\.mjs., which is .${REL.anatomiya}/lib/registry\\.mjs. now`));
+});
+
+test("a tracked copy with nothing wrong still passes, so the sweep is not failing on its own reading", needsCheckout, (t) => {
+  const { status, output } = check(repoCopyTracked(t));
+
+  assert.equal(status, 0, output);
+});
+
+test("a document carrying the path of the machine it was written on is failed", needsCheckout, (t) => {
+  const dir = repoCopyTracked(t);
+  const path = join(dir, "docs", "why.md");
+  writeFileSync(path, `${readFileSync(path, "utf8")}\n\nRead from ${join(homedir(), "notes.md")}\n`);
+
+  const { status, output } = check(dir);
+
+  assert.equal(status, 1, output);
+  assert.match(output, /docs\/why\.md: carries the path of the machine it was written on/);
+});
+
+// Each plugin has a changelog of its own, and a note about a past release is
+// what one holds: the entry naming a file at the path it had then is true of
+// that release and would be false rewritten to today's.
+test("a changelog names the paths its releases had, at the root and inside a plugin", (t) => {
+  const dir = repoCopyTracked(t);
+  for (const rel of ["CHANGELOG.md", join(REL.ultracode, "CHANGELOG.md")]) {
+    const path = join(dir, rel);
+    writeFileSync(path, `${readFileSync(path, "utf8")}\n\nThe read was in \`lib/hook.mjs\` then.\n`);
+  }
+
+  const { status, output } = check(dir);
+
+  assert.equal(status, 0, output);
 });
