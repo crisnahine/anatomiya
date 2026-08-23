@@ -1,8 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { PAIRINGS, applyPairings, companionOf, companionRoot, pairingHits, pairingViolations, pairingsFor } from "../lib/pairing.mjs";
-import { reduceArea } from "../lib/reduce.mjs";
+import { PAIRINGS, applyPairings, companionOf, companionRoot, pairingHits, pairingViolations, pairingsFor } from "../plugins/anatomiya/lib/pairing.mjs";
+import { reduceArea } from "../plugins/anatomiya/lib/reduce.mjs";
 
 const RAKE_SPEC = {
   from: "lib/tasks",

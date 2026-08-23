@@ -1,10 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { REGISTRY, REGISTRY_KEYS, rowsOfKind, rowsForLangs, rowByKey, assertUniqueKeys } from "../lib/registry.mjs";
-import { ALL_DIMENSIONS, dimensionsFor } from "../lib/dimensions.mjs";
-import { PAIRINGS, pairingsFor } from "../lib/pairing.mjs";
-import { NAMING_CORPUS } from "../lib/dimensions-naming.mjs";
+import { REGISTRY, REGISTRY_KEYS, rowsOfKind, rowsForLangs, rowByKey, assertUniqueKeys } from "../plugins/anatomiya/lib/registry.mjs";
+import { ALL_DIMENSIONS, dimensionsFor } from "../plugins/anatomiya/lib/dimensions.mjs";
+import { PAIRINGS, pairingsFor } from "../plugins/anatomiya/lib/pairing.mjs";
+import { NAMING_CORPUS } from "../plugins/anatomiya/lib/dimensions-naming.mjs";
 
 test("the registry is the union of the three lists, once each", () => {
   assert.equal(REGISTRY.length, ALL_DIMENSIONS.length + PAIRINGS.length + NAMING_CORPUS.length);

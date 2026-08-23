@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { RUNTIME_MODULES, commonImports, mostImported, specifierToFile } from "../lib/siblings.mjs";
+import { RUNTIME_MODULES, commonImports, mostImported, specifierToFile } from "../plugins/anatomiya/lib/siblings.mjs";
 
 const isRelative = (m) => m.startsWith("./") || m.startsWith("../") || m === "." || m === "..";
 

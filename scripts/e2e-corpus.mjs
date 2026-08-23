@@ -8,7 +8,7 @@
  * file built to break a row the map actually stated. The clone is removed
  * afterwards, always, so the scratch directory ends empty.
  *
- * It runs the shipped `bin/anatomiya.mjs` in its own process rather than
+ * It runs the plugin's own binary in its own process rather than
  * importing `scan`, which is what separates this from `measure-layout.mjs`: the
  * argument parsing, the exit codes, the records the commands print and the files
  * that land on disk are the surface a user meets, and none of them are exercised
@@ -20,18 +20,20 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve, sep } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 
-import { isSource } from "../lib/corpus.mjs";
-import { language } from "../lib/langs.mjs";
-import { CLASSES } from "../lib/dimensions-naming.mjs";
-import { rowByKey } from "../lib/registry.mjs";
-import { FACTS_PATH, FACTS_SCHEMA, statedSide } from "../lib/facts.mjs";
-import { PIN_PATH } from "../lib/baseline.mjs";
-import { MAX_LINES } from "../lib/render.mjs";
-import { isGeneratedName, OVERVIEW_FILE, RULES_DIR } from "../lib/rules.mjs";
-import { scanLines } from "../lib/summary.mjs";
-import { formatReport } from "../lib/check-report.mjs";
+import { invokedAs } from "./entry.mjs";
+import { BINARY, REL } from "./plugins.mjs";
+import { isSource } from "../plugins/anatomiya/lib/corpus.mjs";
+import { language } from "../plugins/anatomiya/lib/langs.mjs";
+import { CLASSES } from "../plugins/anatomiya/lib/dimensions-naming.mjs";
+import { rowByKey } from "../plugins/anatomiya/lib/registry.mjs";
+import { FACTS_PATH, FACTS_SCHEMA, statedSide } from "../plugins/anatomiya/lib/facts.mjs";
+import { PIN_PATH } from "../plugins/anatomiya/lib/baseline.mjs";
+import { MAX_LINES } from "../plugins/anatomiya/lib/render.mjs";
+import { isGeneratedName, OVERVIEW_FILE, RULES_DIR } from "../plugins/anatomiya/lib/rules.mjs";
+import { scanLines } from "../plugins/anatomiya/lib/summary.mjs";
+import { formatReport } from "../plugins/anatomiya/lib/check-report.mjs";
 
 const LAYOUT_HEADING = "## What lives where";
 const TRUNCATED = "layout: not counted, the scan was truncated";
@@ -384,7 +386,8 @@ export function checkDirs(corpus, scratch, entries) {
 // --- the driver -------------------------------------------------------------
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const BIN = join(HERE, "..", "bin", "anatomiya.mjs");
+// The plugin the marketplace lists, spelled where `scripts/plugins.mjs` says.
+const BIN = BINARY;
 const MAX_BUFFER = 256 * 1024 * 1024;
 
 const git = (args, cwd) => run("git", args, cwd);
@@ -636,6 +639,6 @@ async function main() {
 
 // Guarded, because the tests import the helpers from here and an unguarded run
 // would clone a corpus instead of asserting.
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (invokedAs(import.meta.url)) {
   await main();
 }

@@ -1,19 +1,21 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
+import { ANATOMIYA, BINARY, REL } from "../scripts/plugins.mjs";
 
-const LIB = join(dirname(fileURLToPath(import.meta.url)), "..", "lib");
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
+const LIB = join(ANATOMIYA, "lib");
 
 /**
- * Who imports whom, inside `lib/` only. Node's own modules and the one npm
+ * Who imports whom, inside one directory. Node's own modules and the one npm
  * dependency are not part of this repository's shape.
  */
-function graph() {
+function graph(dir = LIB) {
   const edges = new Map();
-  for (const file of readdirSync(LIB).filter((f) => f.endsWith(".mjs"))) {
-    const src = readFileSync(join(LIB, file), "utf8");
+  for (const file of readdirSync(dir).filter((f) => f.endsWith(".mjs"))) {
+    const src = readFileSync(join(dir, file), "utf8");
     // Every spelling that closes a cycle, not just the one this repo writes
     // most: a bare `import "./x.mjs"` runs the module for its side effects and
     // a dynamic `import("./x.mjs")` is the form `parse-worker.mjs` already uses.
@@ -24,15 +26,9 @@ function graph() {
   return edges;
 }
 
-test("no module in lib imports its way back to itself", () => {
-  // A cycle loads under ESM hoisting, so nothing fails at run time and the
-  // first symptom is a module reading a half-initialised binding from a
-  // partner that is still evaluating. `ruby.mjs` carried a comment refusing an
-  // import for exactly this reason, and the comment was deleted in the same
-  // change that took the import.
-  const edges = graph();
+/** Every cycle the edges hold, as a path each. */
+function cyclesIn(edges) {
   const cycles = [];
-
   // Reset per root, so the report names every cycle rather than the first one
   // reached. A shared set stops the walk at a module some earlier root already
   // passed through, which is enough to fail the gate but not to fix it.
@@ -48,8 +44,28 @@ test("no module in lib imports its way back to itself", () => {
     seen = new Set();
     walk(file, []);
   }
+  return [...new Set(cycles)];
+}
 
-  assert.deepEqual([...new Set(cycles)], []);
+test("no module in lib imports its way back to itself", () => {
+  // A cycle loads under ESM hoisting, so nothing fails at run time and the
+  // first symptom is a module reading a half-initialised binding from a
+  // partner that is still evaluating. `ruby.mjs` carried a comment refusing an
+  // import for exactly this reason, and the comment was deleted in the same
+  // change that took the import.
+  assert.deepEqual(cyclesIn(graph()), []);
+});
+
+test("no script in scripts imports its way back to itself either", () => {
+  // `scripts/` had no import graph of its own until the gates started sharing:
+  // eleven files reach `entry.mjs`, `shipped.mjs` reads `validate.mjs`'s list
+  // of loadable kinds, and `check-docs.mjs` runs `release.mjs`'s resolver. The
+  // same hoisting applies, and one of these files runs in CI as the only thing
+  // standing between a broken manifest and a release.
+  const edges = graph(join(ROOT, "scripts"));
+
+  assert.ok(edges.size > 0, "no scripts were read");
+  assert.deepEqual(cyclesIn(edges), []);
 });
 
 /** Every module in `lib/` this one can reach, itself included. */
@@ -182,17 +198,122 @@ test("the bounded git reads stay on the buffered runner", () => {
 const ROSTER_NAMES = ["kindsLine", "layoutSummary", "namesakeClause", "plural", "renderLayout", "ROOT_LABEL"];
 
 function sourceFiles() {
-  return ["bin", "lib", "scripts", "test"].flatMap((dir) =>
-    readdirSync(join(LIB, "..", dir), { recursive: true })
+  // The marketplace's own directories, and each plugin's: a file that reaches
+  // across the seam lives in one of them. The second plugin is here too, since
+  // a rule that reads one plugin and not the other is a rule that covers the
+  // repository by half.
+  return ["scripts", "test", `${REL.anatomiya}/bin`, `${REL.anatomiya}/commands`, `${REL.anatomiya}/hooks`, `${REL.anatomiya}/lib`, REL.ultracode].flatMap((dir) =>
+    readdirSync(join(ROOT, dir), { recursive: true })
       .filter((name) => typeof name === "string" && name.endsWith(".mjs"))
       .map((name) => join(dir, name))
   );
 }
 
+/**
+ * The source with its comments blanked, and its string bodies too when asked.
+ *
+ * Blanked rather than cut, so every offset still lines up with the file a
+ * reader opens. The `/` is the whole difficulty: it opens a regular expression
+ * only where a value cannot already be sitting to its left, and a stripper that
+ * skips that test reads `/(["'])/` as the start of a string and blanks the rest
+ * of the file, which is a rule that passes because it saw nothing. A template's
+ * `${...}` is code and stays whatever is asked for, since the path a rule looks
+ * for can be spelled in either half.
+ */
+function scan(src, { strings = false } = {}) {
+  const blank = (text) => text.replace(/[^\n]/g, " ");
+  let out = "";
+  let prev = "";
+  let i = 0;
+  while (i < src.length) {
+    const c = src[i];
+    const two = src.slice(i, i + 2);
+    if (two === "//") {
+      const stop = src.indexOf("\n", i);
+      const end = stop === -1 ? src.length : stop;
+      out += blank(src.slice(i, end));
+      i = end;
+      continue;
+    }
+    if (two === "/*") {
+      const stop = src.indexOf("*/", i + 2);
+      const end = stop === -1 ? src.length : stop + 2;
+      out += blank(src.slice(i, end));
+      i = end;
+      continue;
+    }
+    if (c === '"' || c === "'") {
+      let j = i + 1;
+      while (j < src.length && src[j] !== c) j += src[j] === "\\" ? 2 : 1;
+      const body = src.slice(i + 1, Math.min(j, src.length));
+      out += c + (strings ? blank(body) : body) + (j < src.length ? c : "");
+      prev = c;
+      i = Math.min(j + 1, src.length);
+      continue;
+    }
+    if (c === "`") {
+      out += c;
+      let j = i + 1;
+      while (j < src.length && src[j] !== "`") {
+        if (src[j] === "\\") {
+          out += "  ";
+          j += 2;
+          continue;
+        }
+        if (src.slice(j, j + 2) === "${") {
+          // The expression is code: copied through, with its own braces
+          // counted so a nested object literal does not end it early. Counting
+          // starts at the brace and not at the `$`, or the first pass sees no
+          // brace, leaves the depth at zero and ends the expression on the
+          // character that opened it.
+          let depth = 0;
+          const from = j;
+          j += 1;
+          do {
+            if (src[j] === "{") depth++;
+            else if (src[j] === "}") depth--;
+            j++;
+          } while (j < src.length && depth > 0);
+          out += scan(src.slice(from, j), { strings });
+          continue;
+        }
+        out += strings ? (src[j] === "\n" ? "\n" : " ") : src[j];
+        j++;
+      }
+      out += j < src.length ? "`" : "";
+      prev = "`";
+      i = Math.min(j + 1, src.length);
+      continue;
+    }
+    // A value to the left means division; anything else means a literal.
+    if (c === "/" && !/[\w$)\]]/.test(prev)) {
+      let j = i + 1;
+      let inClass = false;
+      while (j < src.length && (inClass || src[j] !== "/")) {
+        if (src[j] === "\\") j += 2;
+        else {
+          if (src[j] === "[") inClass = true;
+          else if (src[j] === "]") inClass = false;
+          else if (src[j] === "\n") break;
+          j++;
+        }
+      }
+      out += blank(src.slice(i, Math.min(j + 1, src.length)));
+      prev = "/";
+      i = Math.min(j + 1, src.length);
+      continue;
+    }
+    out += c;
+    if (!/\s/.test(c)) prev = c;
+    i++;
+  }
+  return out;
+}
+
 test("a roster name is taken from the module that defines it and from no other", () => {
   const wrong = [];
   for (const rel of sourceFiles()) {
-    const src = readFileSync(join(LIB, "..", rel), "utf8");
+    const src = readFileSync(join(ROOT, rel), "utf8");
     for (const m of src.matchAll(/import\s*\{([^}]*)\}\s*from\s*["']([^"']+)["']/g)) {
       const names = m[1].split(",").map((n) => n.trim().split(/\s+as\s+/)[0]).filter(Boolean);
       const taken = names.filter((n) => ROSTER_NAMES.includes(n));
@@ -212,8 +333,185 @@ test("no file under scripts/ hardcodes the rules or store directory instead of i
     // The listing carries the host's separator and this set is written in the
     // one every other path here uses, so the exemption is looked up in posix.
     if (EXEMPT.has(rel.split(/[\\/]/).join("/"))) continue;
-    const src = readFileSync(join(LIB, "..", rel), "utf8");
+    const src = readFileSync(join(ROOT, rel), "utf8");
     if (src.includes(".claude/rules") || src.includes(".claude/anatomiya")) offenders.push(rel);
   }
   assert.deepEqual(offenders, []);
+});
+
+test("nothing anatomiya ships imports the plugin beside it", () => {
+  // A plugin's hook may only run a file inside its own root, which is why the
+  // second plugin keeps its own copy of the payload read and the entry guard.
+  // An import across the seam would load under the suite and be missing from
+  // both installs, so the README's claim about the two is pinned here rather
+  // than left as a sentence.
+  // The plugin's own list, not the marketplace's: the root declares the
+  // workspaces and ships nothing itself. Spelled without the trailing slash,
+  // because npm reads `lib` and `lib/` as the same entry and a lookup that knew
+  // one of them skipped every file.
+  const SHIPPED = new Set(
+    JSON.parse(readFileSync(join(ANATOMIYA, "package.json"), "utf8")).files.map((entry) => entry.replace(/\/$/, "")),
+  );
+  const read = [];
+  const offenders = [];
+  for (const rel of sourceFiles()) {
+    if (!rel.startsWith(`${REL.anatomiya}/`)) continue;
+    const dir = rel.slice(REL.anatomiya.length + 1).split(/[\\/]/)[0];
+    if (!SHIPPED.has(dir)) continue;
+    read.push(rel);
+    // The three spellings `graph()` above matches, for the reason it gives:
+    // a bare import and a dynamic one cross the seam as surely as `from` does,
+    // and the one this repository writes least is the one a leak would use.
+    if (/(?:from\s*|import\s*\(\s*|import\s+)["'][^"']*ultracode-anywhere/.test(readFileSync(join(ROOT, rel), "utf8"))) {
+      offenders.push(rel);
+    }
+  }
+
+  // The loop having a body, not the list having entries: `files` can be full
+  // and every one of its spellings miss, which is how this checked nothing.
+  assert.ok(read.length > 20, `read only ${read.length} shipped files`);
+  assert.deepEqual(offenders, []);
+});
+
+
+test("no repository-relative plugin path is spelled outside the one module that holds it", () => {
+  // The move that put the plugins under `plugins/` had to find every file that
+  // spelled the path by hand. What this covers is the repository-relative
+  // spelling, the one a constant can carry: a relative import cannot go through
+  // one, so `../plugins/anatomiya/lib/x.mjs` in a test is a specifier rather
+  // than a second copy of the fact.
+  //
+  // What it cannot see is the other direction. Routing a string through `REL`
+  // satisfies this rule whether or not the string was ever this repository's
+  // path, and a sweep did exactly that to four fixtures: a module specifier in
+  // a synthetic corpus, a `bin` on a fixture PATH, a scanned repository's own
+  // source directory. Each still passed, and each had stopped testing what its
+  // name says. A path inside a fixture tree is that tree's, not ours.
+  const offenders = [];
+  for (const rel of sourceFiles()) {
+    if (rel === "scripts/plugins.mjs") continue;
+    // Code, not prose: a comment naming the directory is documentation, and
+    // saying `${REL.anatomiya}` in a sentence would make it worse. What this is
+    // about is a second place the program itself reads the path from.
+    const src = scan(readFileSync(join(ROOT, rel), "utf8"));
+    // `"./plugins/anatomiya"` is the idiomatic spelling and the first pattern
+    // here missed it, and a path handed to `join` a segment at a time is the
+    // same fact spelled without a slash in it.
+    if (/["'`](?:\.\/)?plugins\/(?:anatomiya|ultracode-anywhere)\b/.test(src)) offenders.push(rel);
+    else if (/["'`]plugins["'`]\s*,\s*["'`](?:anatomiya|ultracode-anywhere)["'`]/.test(src)) offenders.push(rel);
+  }
+
+  assert.ok(sourceFiles().length > 50, "no source files were read");
+  assert.deepEqual(offenders, []);
+});
+
+/**
+ * Every name one module offers the rest of the repository.
+ *
+ * Read off the module rather than listed here, so a name added to it is
+ * covered by the rule the moment it exists.
+ */
+function exportedBy(rel) {
+  const src = readFileSync(join(ROOT, rel), "utf8");
+  const names = new Set();
+  for (const [, name] of src.matchAll(/^export\s+(?:async\s+)?(?:const|let|function|class)\s+([A-Za-z_$][\w$]*)/gm)) names.add(name);
+  return names;
+}
+
+// A name imported nowhere and declared nowhere is a `ReferenceError` waiting
+// for the one run that gets that far. `scripts/ab.mjs` carried one for a whole
+// review round: its old path constant was replaced by this module's `BINARY`
+// and the import was never added, and the arg gate three lines above it made
+// the script look healthy to everything that ran it.
+test("a name this repository's own module offers is imported where it is used, not assumed", () => {
+  const offered = exportedBy("scripts/plugins.mjs");
+  assert.ok(offered.size > 0, "read no exported names");
+  const assumed = [];
+  for (const rel of sourceFiles()) {
+    if (rel === "scripts/plugins.mjs") continue;
+    // Strings blanked as well: `installed` is a word an assertion sentence
+    // uses far more often than this repository's function of that name.
+    const src = scan(readFileSync(join(ROOT, rel), "utf8"), { strings: true });
+    for (const name of offered) {
+      if (!new RegExp(`\\b${name}\\b`).test(src)) continue;
+      const imported = new RegExp(`import[^;]*\\b${name}\\b[^;]*from`).test(src);
+      const declared = new RegExp(`(?:const|let|var|function|class)\\s+${name}\\b|\\b${name}\\s*[,}][^=]*=\\s`).test(src);
+      if (!imported && !declared) assumed.push(`${rel}: ${name}`);
+    }
+  }
+
+  assert.deepEqual(assumed, []);
+});
+
+// A workflow step and a package script cannot import a constant, so the rule
+// for them is agreement rather than absence: every one of these spelled the
+// binary by hand, and the move that put it under `plugins/` had to find all
+// eight without anything to list them.
+test("every spelling of the binary outside the modules that can import it agrees with the one that holds it", () => {
+  const rel = relative(ROOT, BINARY).split(/[\\/]/).join("/");
+  const wrong = [];
+  const files = ["package.json", ...readdirSync(join(ROOT, ".github", "workflows")).map((f) => join(".github", "workflows", f))];
+  let spelled = 0;
+  for (const file of files) {
+    const text = readFileSync(join(ROOT, file), "utf8");
+    for (const [, named] of text.matchAll(/([\w$./-]*bin\/anatomiya\.mjs)/g)) {
+      spelled++;
+      // A workflow spells it under the checkout it is running, so what has to
+      // agree is the tail rather than the whole path.
+      if (!named.endsWith(rel)) wrong.push(`${file}: ${named}`);
+    }
+  }
+
+  assert.ok(spelled >= 8, `found only ${spelled} spellings to check`);
+  assert.deepEqual(wrong, []);
+});
+
+// The rules above see whatever this leaves them, so it is driven directly: the
+// stripper it replaced passed every one of these by deleting too much, and a
+// rule that reads an empty file states that nothing is wrong with it.
+test("the scanner tells a regular expression from a comment, and a template's code from its text", () => {
+  // Stated as what survives and what does not, with every offset still where
+  // it was: a hand-counted run of blanks is a number to keep in step and says
+  // nothing about the rule that reads the answer.
+  const holds = (src, kept, gone, opts) => {
+    const out = scan(src, opts);
+    assert.equal(out.length, src.length, `offsets moved in ${src}`);
+    for (const one of kept) assert.ok(out.includes(one), `${one} should have survived ${src}`);
+    for (const one of gone) assert.ok(!out.includes(one), `${one} should have gone from ${src}`);
+  };
+
+  const P = '"plugins/x"';
+  holds('const EMPTY = /\\//; const P = "plugins/x";', [P], ["/\\//"]);
+  holds('const R = /(["\'])a\\1/; const P = "plugins/x";', [P], ["a\\1"]);
+  holds("const A = `a/*b`; const P = \"plugins/x\"; const C = `c*/d`;", [P, "`a/*b`", "`c*/d`"], []);
+  holds('const U = "//example.com"; const P = "plugins/x";', [P, '"//example.com"'], []);
+  holds('const P = "plugins/x"; // plugins/y\nconst Q = 2;', [P, "const Q = 2;"], ["plugins/y"]);
+  holds('const P = "plugins/x"; /* plugins/y */ const Q = 2;', [P, "const Q = 2;"], ["plugins/y"]);
+  holds('const A = 6 / 2 / 3; const P = "plugins/x";', [P, "6 / 2 / 3"], []);
+  // The escape is the point: read as the end of the string, `b'; const P = 1;`
+  // becomes text and the tail of the line disappears with it.
+  holds("const s = 'a\\\\'b'; const P = \"plugins/x\";", ['"plugins/x"'], [], { strings: false });
+
+  // Asked for with the string bodies gone, the quotes stay where they were and
+  // a template's `${...}` is still code.
+  holds('const P = "installed";', ['const P = "', '";'], ["installed"], { strings: true });
+  holds("const P = `a${installed}b`;", ["${installed}"], ["`a$"], { strings: true });
+});
+
+// The release that moved anatomiya to its next version failed here first: eight
+// cases spawned the real command with the previous version spelled into them,
+// seven refused at the argument gate and passed anyway, and the eighth read the
+// manifests and went red. A fixture that happens to carry the real version is
+// the same trap from the other side, since it passes for a reason that is about
+// to change.
+test("no test spells this repository's own version, which moves", () => {
+  const version = JSON.parse(readFileSync(join(ANATOMIYA, "package.json"), "utf8")).version;
+  assert.match(version, /^\d+\.\d+\.\d+$/);
+  const offenders = [];
+  for (const rel of sourceFiles()) {
+    if (rel.split(/[\\/]/)[0] !== "test") continue;
+    if (scan(readFileSync(join(ROOT, rel), "utf8")).includes(version)) offenders.push(rel);
+  }
+
+  assert.deepEqual(offenders, [], `read it from the manifest instead: ${version}`);
 });

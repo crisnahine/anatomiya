@@ -1,14 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 
 import { seedEntry, seedTable } from "../scripts/seed-defaults.mjs";
-import { assertModelDefaults } from "../lib/model-defaults.mjs";
-import { REGISTRY_KEYS } from "../lib/registry.mjs";
-
-const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
+import { assertModelDefaults } from "../plugins/anatomiya/lib/model-defaults.mjs";
+import { REGISTRY_KEYS } from "../plugins/anatomiya/lib/registry.mjs";
+import { ANATOMIYA } from "../scripts/plugins.mjs";
 
 test("a key with no entry is seeded and a key that has one is left as it stands", () => {
   const measured = { default: "claim", provenance: { method: "measured", model: "m", date: "2026-08-16", samples: 30, sideCounts: { claim: 24, counter: 0 } } };
@@ -48,9 +46,9 @@ test("the seeded table is one the loader accepts, and every seeded row reads non
 });
 
 test("the shipped table is already whole, so the seeder is a no-op on it", () => {
-  // `git diff --quiet lib/model-defaults.json` after a run is the same claim
-  // with a working tree to read it from.
-  const table = JSON.parse(readFileSync(join(ROOT, "lib", "model-defaults.json"), "utf8"));
+  // `git diff --quiet` on the table after a run is the same claim, with a
+  // working tree to read it from.
+  const table = JSON.parse(readFileSync(join(ANATOMIYA, "lib", "model-defaults.json"), "utf8"));
 
   assert.deepEqual(seedTable(table, [...REGISTRY_KEYS]).added, []);
 });

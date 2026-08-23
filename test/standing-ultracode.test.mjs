@@ -8,11 +8,12 @@ import { spawn, spawnSync } from "node:child_process";
 import { once } from "node:events";
 
 import { needsRemovableCwd, needsSymlinks } from "./platform.mjs";
-import { MARKERS, MIN_BUNDLE } from "../ultracode-anywhere/hooks/upstream.mjs";
+import { MARKERS, MIN_BUNDLE } from "../plugins/ultracode-anywhere/hooks/upstream.mjs";
 
-import { FULL_EVERY, contextFor, isWakeup, run } from "../ultracode-anywhere/hooks/standing-ultracode.mjs";
+import { FULL_EVERY, contextFor, isWakeup, run } from "../plugins/ultracode-anywhere/hooks/standing-ultracode.mjs";
+import { ULTRACODE } from "../scripts/plugins.mjs";
 
-const HOOK = fileURLToPath(new URL("../ultracode-anywhere/hooks/standing-ultracode.mjs", import.meta.url));
+const HOOK = fileURLToPath(new URL("../plugins/ultracode-anywhere/hooks/standing-ultracode.mjs", import.meta.url));
 
 /** A state directory of its own, so one test's turn count cannot reach another's. */
 function stateDir(t) {
@@ -184,7 +185,7 @@ test("run answers with the text a turn is owed, and null when it is owed nothing
 // --- what the plugin ships ---------------------------------------------------
 
 test("the declared hook runs this file through node, so a machine without a shell still fires it", () => {
-  const declared = JSON.parse(readFileSync(fileURLToPath(new URL("../ultracode-anywhere/hooks/hooks.json", import.meta.url)), "utf8"));
+  const declared = JSON.parse(readFileSync(fileURLToPath(new URL("../plugins/ultracode-anywhere/hooks/hooks.json", import.meta.url)), "utf8"));
   const commands = declared.hooks.UserPromptSubmit.flatMap((g) => g.hooks).map((h) => h.command);
 
   assert.equal(commands.length, 1);
@@ -192,7 +193,7 @@ test("the declared hook runs this file through node, so a machine without a shel
 });
 
 test("the plugin ships no shell script for a hook it runs through node", () => {
-  const hooks = fileURLToPath(new URL("../ultracode-anywhere/hooks/", import.meta.url));
+  const hooks = fileURLToPath(new URL("../plugins/ultracode-anywhere/hooks/", import.meta.url));
 
   assert.deepEqual(
     readdirSync(hooks).filter((f) => f.endsWith(".sh")),
@@ -223,7 +224,7 @@ test("a debug path that cannot be written does not cost the turn its reminder", 
 
 test("the README states the size of what the hook adds, and states it correctly", () => {
   // A number in the file that explains the plugin is the one nobody re-measures.
-  const readme = readFileSync(fileURLToPath(new URL("../ultracode-anywhere/README.md", import.meta.url)), "utf8");
+  const readme = readFileSync(fileURLToPath(new URL("../plugins/ultracode-anywhere/README.md", import.meta.url)), "utf8");
   const stated = readme.match(/(\d+) characters on the first turn, (\d+) on every tenth/);
   const session = readme.match(/Over a (\d+)-turn session that is (\d+) characters in total/);
 
@@ -402,7 +403,7 @@ test("the hook runs when it is reached through a symlinked directory", needsSyml
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const real = join(dir, "real");
   mkdirSync(real, { recursive: true });
-  cpSync(fileURLToPath(new URL("../ultracode-anywhere", import.meta.url)), join(real, "ultracode-anywhere"), { recursive: true });
+  cpSync(ULTRACODE, join(real, "ultracode-anywhere"), { recursive: true });
   symlinkSync(real, join(dir, "link"));
 
   const through = spawnSync(process.execPath, [join(dir, "link", "ultracode-anywhere", "hooks", "standing-ultracode.mjs")], {

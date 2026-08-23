@@ -7,6 +7,309 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-08-23
+
+The marketplace holds two plugins, and this is the release that says so in the places that decide
+what ships and what is released. Each plugin now has its own tag, its own changelog and its own
+coverage floor; the shipped set is stated and checked rather than inferred from the tree; and the
+one contract the two plugins share is held by a test that runs both of them as processes rather
+than by a copy of the code.
+
+### Fixed
+
+
+- A hook whose reader went away mid-write exited 1. The write raises EPIPE on the stream rather than
+  from the call, so the guard at the boundary never saw it and node turned it into an uncaught
+  exception: five runs out of five, on every turn and every tool call for the life of that session.
+- A gate reached through an absolute path holding a symlink ran everything and said nothing. The
+  guard compared `import.meta.url`, which is always resolved, against `process.argv[1]`, which is
+  whatever the caller typed. It was found and fixed twice before and left standing in seven scripts,
+  one of which writes to `plugins/anatomiya/lib/model-defaults.json` when it is imported unguarded.
+- The manifest check let a plugin's whole hook declaration vanish without a word: the hook check
+  returns without a problem when the file it was going to read is not there. A listed plugin now has
+  to install something, whether that is hooks, commands, agents, skills or an MCP server.
+- `package.json` `files` omitted `hooks/`, which is where the loader looks for the hooks this plugin
+  installs, and its `.claude-plugin/` entry shipped `marketplace.json` along with the manifest, which
+  belongs to the marketplace rather than to the plugin. Nothing read the list, so neither error could
+  surface.
+- The shipped-set gate exempted every one of its own starting points from the check it exists for.
+  The exemption had been written for the two files that have a check of their own, and widening the
+  starting points from those two to all five loadable kinds carried it along: `files` could drop
+  `commands/` whole and the gate still printed success. It also read each kind only where the
+  convention puts it, so a manifest pointing one somewhere else left those files unread.
+- anatomiya could declare `{"hooks": {}}` and pass. What was required was the file, and a file
+  is not a hook; the root is also the one plugin skipped by the check that asks whether a plugin
+  installs anything, so nothing else was left to notice.
+- The coverage job's summary was empty on exactly the runs it exists for: the scope lines printed on
+  the way out of a clean run only, and the job picked them out of the run's own output by a pattern,
+  which any line a test printed could forge and which left every per-file shortfall out. The script
+  writes the summary to a file the job asks for and prints.
+- `scripts/coverage.mjs` runs a suite of its own, and node marks its runner's children in the
+  environment, so a run started from inside a suite had its reporters overridden and wrote no
+  record at all.
+- `check-docs` said the same missing changelog twice, in two wordings, one of which printed the
+  file's path twice on one line.
+- A mistyped option was taken as the value of the one before it, so `--notes --notes-file x.md`
+  wrote the notes to a file named `--notes-file` and the release step read the empty one it meant.
+- A path written into a command file's prose ran to the full stop, and the stop was read as part of
+  the filename, so the gate reported a file the plugin has as one it does not.
+- A fifo at `.claude/settings.local.json` held `anatomiya scan` for ever with nothing printed. The
+  read typed nothing and bounded nothing, in the module whose own docstring states the opposite rule
+  and whose `readHead` implements it. That path is also what every scan reads, so a large file at it
+  was the cost of every scan.
+- The release workflow's copy of the suite step could go green having run no test at all: `ci` refuses
+  an empty file list and this one, the workflow whose result cannot be taken back, did not. It also
+  had no `timeout-minutes`, so a hanging test would have held the runner for six hours.
+- The two plugins answered differently for one payload: past the megabyte cap, anatomiya threw the
+  whole thing away and the second plugin kept the capped prefix. A whole payload followed by padding
+  cost that turn its map on one side and not the other. Both keep the prefix now, and the contract
+  test holds them to one answer. The second plugin's own half of that is in its own changelog, which
+  is what its tag ships.
+- A command file that is a symlink was walked by neither branch of the directory walk, and npm drops
+  one from the tarball too, so it went unshipped and unreported at once.
+- A `.DS_Store` in a command directory was read as a thing the plugin loads, which turned every macOS
+  checkout red.
+- The shipped-set gate took a typed option as the directory to scan, and reported the resulting spawn
+  failure as npm not being installed.
+- `--summary -x` was taken as a path and wrote a dash-named file; the guard knew two dashes.
+- `--notes` given twice silently dropped the first path, and a notes path that could not be written
+  printed a stack trace.
+- The manifest gate refused a plugin that moves its hook declaration for a file it does not need, and
+  left the hooks it does declare unchecked.
+- `check-docs` read four documents unguarded, so a missing README died on a stack 44 lines before the
+  check that would have named it, and took this module's own test file down with it at load.
+
+- The release resolver read the marketplace root's version whenever the lockfile carried no entry
+  for the plugin being released. Both directions were wrong: a tag went out against a lockfile that
+  says nothing about that plugin, and a correct release was refused as soon as the root's version
+  and the plugin's had drifted apart. Only the member's entry is read now, and a lockfile with no
+  entry for the plugin says nothing rather than lending it a version, which includes an entry that
+  is present and is not an object, where the read threw a stack after the tag was pushed.
+- A path a manifest names was checked only where it was spelled with a leading `./`. The loader
+  resolves `hooks/hooks.json` and `./hooks/hooks.json` alike, so the same missing file passed under
+  one spelling and failed under the other, and a plugin whose only declaration was the bare spelling
+  installed as nothing with every gate green.
+- Only the first hook declaration a manifest lists was read. The loader merges them, so a second
+  file's hooks were never checked at all, and a declaration pointing out of the plugin was read and
+  reported on as though it were that plugin's, naming a path outside the plugin root.
+- A plugin with no `package.json` could carry `.claude-plugin/marketplace.json`. That check read the
+  `files` list, and the plugin that has no list is the one that ships its directory whole, so the
+  file that belongs to the marketplace went with it and nothing said so.
+- The shipped-set gate walked whatever a marketplace source pointed at, including a directory
+  outside the marketplace. `validate.mjs` reports the source itself, so what this added was a second
+  report about a tree that is nobody's plugin.
+- `scripts/ab.mjs` could not run past its argument gate: the move replaced its path constant with
+  `BINARY` and never imported it. Nothing caught it, because the usage line three statements earlier
+  is what every run of it reached.
+- A note written while reading an installed build carried this machine's home directory into the
+  repository nine times. The net under the generated measurements has caught that since the first
+  A/B result, and it looks only there, so a hand-written document walked straight past it. Every
+  committed document is now checked, for this machine's own home rather than for the shape of a home
+  directory, since a hand-written one may spell a placeholder and the README's `/Users/me/code/app`
+  is how the output is shown to a reader.
+- `--notes -x` wrote the release notes to a file named `-x` and exited 0, so the workflow step that
+  reads them found nothing after the tag was already pushed. The guard knew two dashes; the sibling
+  gate in `coverage.mjs` refuses one and its comment states this as the reason it does.
+- The two plugins' readers answered differently for a payload of exactly the cap: the second cut a
+  character off a string nothing had split. No pipe can deliver the input that separates them, since
+  a lone surrogate is not UTF-8, so this is the copies agreeing rather than a payload that behaved
+  differently.
+- `docs/plugin-contract.md` closed with a section describing the repository as it was before the move
+  it argued for, including a claim with teeth: that a lockfile sits at the plugin root, so Claude
+  Code installs the parser automatically. It does not, and four other documents said so correctly.
+  The measured facts are kept and put in the tense they belong to.
+- The two plugins' changelogs each hold their own plugin's entries. Three fixes inside
+  `plugins/ultracode-anywhere/` were written into anatomiya's, where no `ultracode-anywhere-v` tag
+  will ever read them.
+- The build contract said the plugin root is the repository root in one row and that neither plugin
+  sits there in another, both in the same release; the glossary entry added with them said the first.
+  The rule in that row outlived its premise and now says so.
+- The release checklist told a releaser to move two lockfile versions "and both are read". Neither is:
+  the entry that decides a release is the plugin's own, under its workspace path.
+### Fixed in the tests themselves
+
+
+The tests are the thing that says any of the above is true, so a defect in one is a defect. A round
+aimed only at them found these.
+
+- Two cases could hang their whole file with nothing printed: `node --test` has no per-case timeout,
+  and a blocking synchronous read stops the event loop before the reporter flushes, so the passing
+  cases go with it. Every spawn that could wait now carries a bound, at both levels of the nested
+  runner `scripts/coverage.mjs` drives.
+- A case asserting that path steps are resolved handed the function under test the same string twice:
+  `join` collapses `sub/../..` before the call. Spelled as text, the steps reach the function.
+- A case checking that a path reaches TypeScript without backslashes used the function under test as
+  its own oracle, and on POSIX that function is the identity.
+- A fixture wrote a sibling of its plugin into the shared temp root under a fixed name, where it
+  survived every run and two concurrent runs collided on it.
+- A case picked which message to expect by reading the constant it was checking.
+- The seam check between the two plugins looked up `lib/` in a list that spells it `lib`, so it read
+  no file at all, and its own guard measured the list being non-empty rather than the loop having a
+  body.
+- Nine release cases spawned the command with no working directory of their own. A regression in that
+  module writes a file, and one already had: a file literally named `--notes-file` in the repository
+  root, from the case whose purpose is to prove that cannot happen.
+- The tag resolver's ordering had no test and none was possible: the table it read was fixed and no
+  two of its patterns overlap. It takes the table as an argument now, so a case can build the overlap,
+  and what is pinned is the property that makes resolution safe rather than the line written to
+  enforce it.
+- A kind the manifest named as an empty list dropped the conventional path with it, and the whole
+  kind went unwalked. `validate.mjs` reads the same value as naming nothing, so two gates gave one
+  manifest key opposite answers.
+- The shipped-set walk read files outside the plugin. Everything it reached was held to the root and
+  the starting points were not, so a manifest naming `../` had it reading whatever sits beside the
+  plugin; naming `.` made every file in the repository a starting point, `.git` included.
+- A manifest that would not parse turned the gate back to the conventional paths in silence, which
+  is silence about every kind it moved.
+- A manifest that moves the hook declaration left the gate naming a leftover file as the one the
+  loader reads.
+- anatomiya's own changelog going missing threw a stack trace 200 lines before the sentence
+  that names it, because the guard added for the plugin beside it covered half the table.
+- A plugin with a missing changelog and a missing version was told about the changelog only.
+- A released heading that lost its brackets passed, leaving the link definition under it dangling.
+- A version that is a string but not a version reached the tag resolver, and the reader was told a
+  tag namespace was unclaimed while the fault was a field in another file.
+- The coverage summary reported a scope holding no files as 100% of everything, at the top of the
+  report for a run whose own shortfall two lines down said nothing had been measured.
+
+- The rule that keeps a plugin path spelled in one module missed the two spellings anyone would
+  write: `"./plugins/anatomiya"`, and the path handed to `join` a segment at a time. Its comment
+  stripper was the other half, deleting from a regular expression holding `//` to the end of the
+  file, so the rule read an empty file and stated that nothing was wrong with it. Both now go
+  through one scanner that tells a regular expression from a comment and a template's code from its
+  text, and that scanner is driven directly by a case of its own.
+- The release fixtures built a lockfile with no member entry, which is not the shape the repository
+  has, and a case asserted the fallback that shape needed. The fixture carries the member now, and
+  the fallback is gone with it.
+- A case that skipped for a reason the run could have chosen otherwise reported nothing: under a
+  temp directory too long for the socket one fixture binds, the suite was green with that case
+  never run. A guard the platform refuses still skips, since the case can never run there, but one
+  this run's own configuration refuses now fails and says what to set.
+- `test/check-docs.test.mjs` asked git for the repository's own files at module scope with no guard,
+  so in a tree that is not a checkout the file died at import and 25 of its 33 cases stopped running
+  with nothing said. The module it tests answers that same question with `[]` on purpose. The three
+  cases that need a checkout now skip and say why, and the other 31 run.
+- The gate's list of the documents it reads unguarded was four short of the reads below it, while
+  its own docstring said it was every one. A missing `SECURITY.md` or `docs/measurements/` answered
+  with a stack rather than the sentence naming the file.
+- The rule that lets a changelog keep the paths its releases had was anchored at the repository
+  root, so the second plugin's changelog was held to today's tree instead.
+- The document sweep went quiet on the tree that most needs it. A tail matching two files was passed
+  over so the spelling both plugins share would not be rewritten to one of them, and a copy of the
+  repository sitting inside it, a worktree git has stopped tracking or an unpacked archive, gives
+  every moved path a second match: the whole check switched itself off with nothing said. Only the
+  two the plugins genuinely share are quiet now, and any other tail matching twice is named with the
+  files it matched.
+- Four fixtures were rewritten by a path sweep into paths this repository has, and each stopped
+  testing what its name says while staying green: a module specifier in a synthetic corpus that made
+  one importer two, a `bin` on a fixture PATH, a scanned repository's own source directory, and a
+  comment about NodeNext resolution. The rule that invited it now says what it cannot see, which is a
+  string routed through the constant that was never a path of ours.
+- The case for the gate reaching no registry asserted on the list the module exports and not on what
+  npm was handed, so a call site spelling its own argv passed it. A stub npm records what it gets.
+- A case measured the hook's answer against the timeout the race it was inside had already capped,
+  so nothing could fail it: the read could be raised to 4.8 of the 5 seconds declared and stay green.
+  The two numbers are held to each other now, each read from where it lives.
+- The one case named for Windows ran the success path everywhere else and asserted that, so the whole
+  refusal branch could go with it green. It is guarded to the platform the refusal happens on.
+- A case asserting a dangling link definition carried the inverse of its own message.
+- Three documents in this change disagreed about the timeout a hook with no declaration gets: ten
+  minutes for a command hook, thirty seconds where `UserPromptSubmit` lowers it, and neither of the
+  two that said a minute. That is read off the binary in `docs/plugin-contract.md`.
+- The `[Unreleased]` section carried two `### Changed` headings, which the release body would have
+  shipped twice, and three disagreeing counts of how many files the move touched. A count nothing
+  checks is a count that drifts; the fact that one module holds the path is what is said instead.
+- Eight cases spawned the real release command with the previous version spelled into them. Seven
+  refuse at the argument gate and passed whatever the manifests said; the eighth reads them, and it
+  went red on the release this list is meant to be worked before. The tag is read off the plugin's
+  own manifest now, and a rule refuses any test that spells the version this repository carries: a
+  fixture that happens to match it passes for a reason that is about to change.
+### Changed
+
+
+- Neither plugin sits at the repository root any more. The root is the marketplace and the tooling;
+  each plugin is a directory under `plugins/` with its own manifest and its own package, and the
+  marketplace names it there. A `source` of `"./"` copies the whole repository into the plugin
+  cache: on one machine that install held `test/`, `docs/`, `node_modules/`, 370 KB of markdown and
+  a complete copy of the other plugin, so installing both left the second one there twice.
+- The gates lost their special case with it. `scripts/validate.mjs` had three tests for "is this the
+  plugin at the root" and a root-only requirement; all of them are gone, both plugins are read by
+  one path, and the plugin whose hooks are required is named on the marketplace rather than inferred
+  from where it sits. `scripts/shipped.mjs` answers for every plugin the marketplace lists.
+- Where a plugin lives is written once, in `scripts/plugins.mjs`, which the suite and the gates both
+  read. It was spelled by hand in file after file, and the move had to find every one; the rule in
+  `test/modules.test.mjs` is what keeps it to one place now.
+- The plugins are npm workspaces, so one install at the marketplace root serves both the suite and
+  the plugin's own code. `/anatomiya:setup` is still what installs a plugin somebody has installed,
+  which is what the README has always said.
+- The shipped-set gate answers about every plugin the marketplace lists. It used to take the one
+  directory it sat in; then, briefly, only the ones with a `package.json` of their own, which is one
+  of the two here. A plugin without one has no list to hold against what it loads, and its files
+  still name paths, so the walk runs either way and only the comparison is skipped.
+- A workspace lockfile carries the marketplace root's version and each member's under its own path.
+  The release gate read the root's, which no plugin release moves: it refused a correct tree, and it
+  let the member's own entry drift to a version nothing else in the repository held.
+- Four scripts kept a path table the move did not touch, so `npm run scan`, the defaults seeder, the
+  defaults measurement and the A/B harness could not start. The seeder is the remedy another gate
+  prints to whoever tripped it.
+- The plugin's `files` named a `LICENSE` and a `README.md` it did not have. Under the old layout the
+  marketplace root's copies travelled into the cache with everything else; under this one nothing
+  does, and npm passes over an entry naming a path that is not there without a word.
+- The release tag namespace is per plugin: `vx.y.z` still releases anatomiya, and
+  `ultracode-anywhere-vx.y.z` releases the second plugin. No tag already pushed changes meaning.
+- `scripts/coverage.mjs` reads the floors off an lcov record instead of the total node prints, and
+  holds each of the second plugin's five files to one of its own. A floor over a whole scope cannot
+  see one file inside it: `hook-io.mjs` sat under the branch floor both when the aggregate spanned
+  the whole suite and when it was scoped to that plugin alone.
+- Every anatomiya hook declares a five second timeout. They declared none, so the harness default
+  applied to a hook whose own read gives up after two seconds: thirty seconds on `UserPromptSubmit`
+  and ten minutes on the other two.
+- `plugins/anatomiya/lib/hook.mjs` is anatomiya's whole side of the hook contract now: the payload read moved there
+  from `plugins/anatomiya/bin/anatomiya.mjs`, and both writes go through one guarded `respond`.
+- `docs/releasing.md` is a two-plugin checklist, and the incident it cites is the right one:
+  `v0.1.9` was released by hand four seconds before its own workflow run started.
+### Added
+
+
+- `docs/plugin-contract.md`, which reads what Claude Code requires of a plugin and a marketplace
+  against the documentation and the CLI itself, one source per claim, and closes with what this
+  repository does that the contract does not require and what could not be verified. The finding that
+  changes anything is A40: a marketplace entry whose source is the repository root is copied whole
+  into the plugin cache, sibling plugin included.
+- Eleven cases in `test/tsconfig.test.mjs` that need no TypeScript installed. Every case that file
+  already held is behind `needsTs`, so on a runner without it the whole file skipped and the module
+  measured 71.4% of functions, which the new per-file floor caught. The new cases hand the two host
+  builders the module they already take as an argument, and cover the parse host, the compiler
+  host's five reads, the write lock, the type library that lives outside the tree on purpose, and
+  the Windows drive case that `relative` answers with an absolute path.
+- A per-file coverage floor over `lib/`, with `dimensions-semantic.mjs` named as an exception rather
+  than the floor lowered to admit it. It caught `tsconfig.mjs` on its first run.
+- `--summary <path>` on `scripts/coverage.mjs`, which the CI job now reads instead of grepping.
+- `scripts/shipped.mjs`, which reads what the package would ship through `npm pack --dry-run --json
+  --offline` and holds it against every file the hook declaration and the command files reach.
+  Wired into `npm run validate` and into the `plugin manifests` job.
+- `scripts/release.mjs`, which decides which plugin a tag releases, checks every manifest that
+  plugin owns against it, and pulls the notes from that plugin's own changelog. The release workflow
+  runs it instead of the shell it grew out of, and `check:docs` runs the same call on every branch,
+  so a version that passes there is a version that will tag.
+- `scripts/entry.mjs`, one guard for every script, with a test that walks the tree and refuses the
+  spelling it replaces.
+- `test/hook-contract.test.mjs`, which runs every command both plugins declare as a real process and
+  holds them to one answer: exit 0, nothing on stderr, and either nothing or a single JSON object on
+  stdout, whatever the payload and whether or not anybody is still reading.
+
+- A gate over every document this repository commits: a path spelled in prose that is gone from
+  where it is spelled, and is one file here now, is named with where it went. The move left 45 of
+  them across the contributor guide, the security notes, the build contract and the walkthrough, and
+  nothing read a path the way the number checks already read a count. A path that matches nothing
+  here belongs to the repositories this tool scans and is left alone, and one both plugins hold is
+  the relative spelling their own manifests use.
+- A rule that a name this repository's own module offers is imported where it is used. `BINARY` was
+  used in a script that never imported it, and the sentence that would have caught it did not exist.
+- A rule that every spelling of the binary outside the modules that can import a constant, the
+  package scripts and the workflow steps, agrees with the module that holds it. There are eight, and
+  the move had to find them all with nothing to list them.
+
 ## [0.2.13] - 2026-08-22
 
 Five reports and the three misreads found beside them, all one sentence: an option is the value
@@ -183,7 +486,7 @@ restore.
   leaving a model to report itself as running at xhigh.
 - A `SessionStart` check reads the installed build for the four things the premise rests on and
   for the gate itself, and names anything missing. `ULTRACODE_ANYWHERE_STRICT=1` turns that into a
-  switch; `ultracode-anywhere/VERIFYING.md` is the list a person works when the version moves.
+  switch; `plugins/ultracode-anywhere/VERIFYING.md` is the list a person works when the version moves.
 - It stays quiet where it would be noise: `"ultracode": true` already fires the built-in reminder,
   and `"enableWorkflows": false` leaves no tool to point at. A line says which setting silenced it.
 - The concurrent-subagent cap it does not lift is named once per machine, with the setting that
@@ -609,7 +912,7 @@ whole language present and never mentioned. Every fix carries the repository tha
   JavaScript. `adoptedCapabilities` is the one reader that selects through nothing, so a row may not
   carry `framework` and `capability` at once: otherwise off-framework hits vote for the capability
   rows the whole repository is then offered. Decisions C8 and C16.
-- Each command is one in-process entry answering with a record, and `bin/anatomiya.mjs` is argv,
+- Each command is one in-process entry answering with a record, and `plugins/anatomiya/bin/anatomiya.mjs` is argv,
   calls, printing and exit codes. Deciding the map and putting it on disk are two calls, so the
   caller that wanted the plan without creating anything no longer derives every rendered body a
   second time, and every refusal fires while the plan is built rather than after it. The wording of
@@ -1665,6 +1968,8 @@ which are partial; several listed there are not implemented yet.
 - No claim that this catches defects. Measured across ten repositories, 1 of 317 defect review
   comments was preventable by a conventions map.
 
+[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/crisnahine/anatomiya/compare/v0.2.13...v0.3.0
 [0.2.13]: https://github.com/crisnahine/anatomiya/compare/v0.2.12...v0.2.13
 [0.2.12]: https://github.com/crisnahine/anatomiya/compare/v0.2.11...v0.2.12
 [0.2.11]: https://github.com/crisnahine/anatomiya/compare/v0.2.10...v0.2.11

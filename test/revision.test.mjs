@@ -5,8 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 
-import { readAtRevision } from "../lib/revision.mjs";
-import { MAX_FILE_BYTES } from "../lib/limits.mjs";
+import { readAtRevision } from "../plugins/anatomiya/lib/revision.mjs";
+import { MAX_FILE_BYTES } from "../plugins/anatomiya/lib/limits.mjs";
 
 // Torn down through `t.after` rather than a call at the end of the body: a
 // failing assertion throws, and a cleanup line below it never runs.

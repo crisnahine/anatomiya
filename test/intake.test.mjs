@@ -4,8 +4,8 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
-import { PRINCIPLE_NAMES } from "../lib/dimensions.mjs";
-import { REGISTRY } from "../lib/registry.mjs";
+import { PRINCIPLE_NAMES } from "../plugins/anatomiya/lib/dimensions.mjs";
+import { REGISTRY } from "../plugins/anatomiya/lib/registry.mjs";
 import { readIntake } from "../scripts/check-docs.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");

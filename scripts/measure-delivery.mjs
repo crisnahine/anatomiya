@@ -19,7 +19,8 @@
 import { createReadStream, existsSync, readdirSync, writeFileSync } from "node:fs";
 import { createInterface } from "node:readline";
 import { join, resolve } from "node:path";
-import { pathToFileURL } from "node:url";
+
+import { invokedAs } from "./entry.mjs";
 
 // What Claude Code calls the channel. A rule file and a nested CLAUDE.md arrive
 // through the same one, which is why this counts both and splits them by whether
@@ -253,6 +254,6 @@ async function main() {
 
 // Guarded, because the tests import the counters from here and an unguarded run
 // would walk a transcript store instead of asserting.
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (invokedAs(import.meta.url)) {
   await main();
 }

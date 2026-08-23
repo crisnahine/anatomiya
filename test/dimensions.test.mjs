@@ -13,15 +13,15 @@ import {
   KINDS,
   PRINCIPLE_NAMES,
   PRECISIONS,
-} from "../lib/dimensions.mjs";
-import { NAMING_CORPUS } from "../lib/dimensions-naming.mjs";
-import { REGISTRY } from "../lib/registry.mjs";
-import { PAIRINGS, companionOf } from "../lib/pairing.mjs";
+} from "../plugins/anatomiya/lib/dimensions.mjs";
+import { NAMING_CORPUS } from "../plugins/anatomiya/lib/dimensions-naming.mjs";
+import { REGISTRY } from "../plugins/anatomiya/lib/registry.mjs";
+import { PAIRINGS, companionOf } from "../plugins/anatomiya/lib/pairing.mjs";
 import { JS_DECLINED, PATH_DECLINED, RUBY_DECLINED } from "./declined-fixtures.mjs";
 // The battery that stamps these rows runs where the registry is assembled.
-import "../lib/registry.mjs";
-import { SEMANTIC_DIMENSIONS } from "../lib/dimensions-semantic.mjs";
-import { walk, collectHits } from "../lib/walk.mjs";
+import "../plugins/anatomiya/lib/registry.mjs";
+import { SEMANTIC_DIMENSIONS } from "../plugins/anatomiya/lib/dimensions-semantic.mjs";
+import { walk, collectHits } from "../plugins/anatomiya/lib/walk.mjs";
 
 const dim = (key) => DIMENSIONS.find((d) => d.key === key);
 

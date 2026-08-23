@@ -6,9 +6,9 @@ import { mkdtempSync, writeFileSync, readFileSync, rmSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { parseRuby, RUBY_GUARDS } from "../lib/ruby.mjs";
-import { walkRuby, constName, bodyOf } from "../lib/ruby-walk.mjs";
-import { RUBY_DIMENSIONS } from "../lib/dimensions-ruby.mjs";
+import { parseRuby, RUBY_GUARDS } from "../plugins/anatomiya/lib/ruby.mjs";
+import { walkRuby, constName, bodyOf } from "../plugins/anatomiya/lib/ruby-walk.mjs";
+import { RUBY_DIMENSIONS } from "../plugins/anatomiya/lib/dimensions-ruby.mjs";
 
 const dir = mkdtempSync(join(tmpdir(), "anatomiya-ruby-"));
 process.on("exit", () => rmSync(dir, { recursive: true, force: true }));
@@ -1129,7 +1129,7 @@ test("an ordinary call entry point in the same shape is still a site", needsRuby
 });
 
 test("isRubyError names the language's own exception classes and nothing else", needsRuby, async () => {
-  const { isRubyError } = await import("../lib/dimensions-ruby.mjs");
+  const { isRubyError } = await import("../plugins/anatomiya/lib/dimensions-ruby.mjs");
 
   for (const b of ["StandardError", "Exception", "ArgumentError", "SystemCallError", "Errno::ENOENT", "Errno::EACCES", "Encoding::CompatibilityError"]) {
     assert.equal(isRubyError(b), true, b);
@@ -1146,7 +1146,7 @@ test("the Ruby bridge hands a row the path it read, not just the tree", needsRub
   // in Ruby.
   const wrapper = write("zz_client", "class Client\n  def go\n    Net::HTTP.get(uri)\n  end\nend\n");
   const service = write("zz_payment_service", "class PaymentService\n  def go\n    Net::HTTP.get(uri)\n  end\nend\n");
-  const { RUBY_DIMENSIONS } = await import("../lib/dimensions-ruby.mjs");
+  const { RUBY_DIMENSIONS } = await import("../plugins/anatomiya/lib/dimensions-ruby.mjs");
   const { results } = await parseRuby(
     [
       { rel: "app/clients/client.rb", abs: wrapper.abs, lang: "ruby" },

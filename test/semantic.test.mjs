@@ -13,8 +13,8 @@ import {
   RESOLUTION_FLOOR,
   SEMANTIC_GUARDS,
   runSemantic,
-} from "../lib/semantic.mjs";
-import { remedyFor } from "../lib/readiness.mjs";
+} from "../plugins/anatomiya/lib/semantic.mjs";
+import { remedyFor } from "../plugins/anatomiya/lib/readiness.mjs";
 
 // The tier is optional, so every test that needs the checker says so rather
 // than failing on a machine that never installed it.

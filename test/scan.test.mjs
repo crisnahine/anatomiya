@@ -6,10 +6,10 @@ import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { execFileSync } from "node:child_process";
 
-import { scan } from "../lib/scan.mjs";
-import { renderOverview } from "../lib/render.mjs";
-import { PIN_PATH, PIN_SCHEMA } from "../lib/baseline.mjs";
-import { RUBY_GUARDS } from "../lib/ruby.mjs";
+import { scan } from "../plugins/anatomiya/lib/scan.mjs";
+import { renderOverview } from "../plugins/anatomiya/lib/render.mjs";
+import { PIN_PATH, PIN_SCHEMA } from "../plugins/anatomiya/lib/baseline.mjs";
+import { RUBY_GUARDS } from "../plugins/anatomiya/lib/ruby.mjs";
 import { needsRuby } from "./ruby-available.mjs";
 
 // The directory is removed through the test context, so a failing assertion

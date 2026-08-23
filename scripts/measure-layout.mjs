@@ -20,10 +20,10 @@
  */
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { pathToFileURL } from "node:url";
 
-import { namesakeCompanions, namesakeIndex } from "../lib/companions.mjs";
-import { collect, frameworksIn } from "../lib/corpus.mjs";
+import { invokedAs } from "./entry.mjs";
+import { namesakeCompanions, namesakeIndex } from "../plugins/anatomiya/lib/companions.mjs";
+import { collect, frameworksIn } from "../plugins/anatomiya/lib/corpus.mjs";
 import {
   isStoryFile,
   isTestFile,
@@ -33,17 +33,17 @@ import {
   runnerOf,
   tally,
   underTestTree,
-} from "../lib/layout.mjs";
-import { parseAll } from "../lib/parse.mjs";
-import { baseOf, dirOf, extOf, stemOf } from "../lib/paths.mjs";
-import { scan } from "../lib/scan.mjs";
-import { MAX_LINES } from "../lib/render.mjs";
-import { namesakeClause, ROOT_LABEL } from "../lib/render-layout.mjs";
-import { RUNNER_LABELS, UNNAMED_RUNNER } from "../lib/test-shape.mjs";
-import { statedSide, writeFacts } from "../lib/facts.mjs";
-import { OVERVIEW_FILE } from "../lib/rules.mjs";
-import { planMap } from "../lib/write.mjs";
-import { encodePath } from "../lib/encode.mjs";
+} from "../plugins/anatomiya/lib/layout.mjs";
+import { parseAll } from "../plugins/anatomiya/lib/parse.mjs";
+import { baseOf, dirOf, extOf, stemOf } from "../plugins/anatomiya/lib/paths.mjs";
+import { scan } from "../plugins/anatomiya/lib/scan.mjs";
+import { MAX_LINES } from "../plugins/anatomiya/lib/render.mjs";
+import { namesakeClause, ROOT_LABEL } from "../plugins/anatomiya/lib/render-layout.mjs";
+import { RUNNER_LABELS, UNNAMED_RUNNER } from "../plugins/anatomiya/lib/test-shape.mjs";
+import { statedSide, writeFacts } from "../plugins/anatomiya/lib/facts.mjs";
+import { OVERVIEW_FILE } from "../plugins/anatomiya/lib/rules.mjs";
+import { planMap } from "../plugins/anatomiya/lib/write.mjs";
+import { encodePath } from "../plugins/anatomiya/lib/encode.mjs";
 
 const HEADING = "## What lives where";
 const TRUNCATED = "layout: not counted, the scan was truncated";
@@ -723,6 +723,6 @@ async function main() {
 
 // Guarded, because the tests import the bar's table builders from here and an
 // unguarded run would scan a corpus instead of asserting.
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (invokedAs(import.meta.url)) {
   await main();
 }

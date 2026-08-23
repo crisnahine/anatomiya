@@ -13,8 +13,8 @@
  * so an arm holding the map and an arm holding none were handed the same
  * information about it.
  */
-import { fillClass } from "../../lib/dimensions-naming.mjs";
-import { REGISTRY } from "../../lib/registry.mjs";
+import { fillClass } from "../../plugins/anatomiya/lib/dimensions-naming.mjs";
+import { REGISTRY } from "../../plugins/anatomiya/lib/registry.mjs";
 
 // The record stores counts, not sentences. Reading `claim` off it put the word
 // "undefined" in the result file where the claim belongs, so the sentence comes

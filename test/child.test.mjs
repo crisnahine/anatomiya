@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { guardedChild, absentInterpreter, retryOnce } from "../lib/child.mjs";
+import { guardedChild, absentInterpreter, retryOnce } from "../plugins/anatomiya/lib/child.mjs";
 
 const dir = mkdtempSync(join(tmpdir(), "anatomiya-child-"));
 process.on("exit", () => rmSync(dir, { recursive: true, force: true }));

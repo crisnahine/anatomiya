@@ -17,19 +17,19 @@ import { join } from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
-import { RULES_DIR, STORE_DIR } from "../../lib/rules.mjs";
+import { RULES_DIR, STORE_DIR } from "../../plugins/anatomiya/lib/rules.mjs";
 
 const run = promisify(execFile);
 
 /**
  * git for the harness, not for the scan.
  *
- * `lib/git.mjs` refuses any argument that reads as an option unless it is on a
- * closed list, which is the F5 battery the scan runs behind. A worktree needs
- * `--detach` and `--force`, and widening that list would weaken every call the
- * scan makes to serve a harness that is not even shipped: `package.json` does
- * not list `scripts/`. So the harness carries the same battery over its own
- * shorter list instead.
+ * The scan's own `git.mjs` refuses any argument that reads as an option unless
+ * it is on a closed list, which is the F5 battery the scan runs behind. A
+ * worktree needs `--detach` and `--force`, and widening that list would weaken
+ * every call the scan makes to serve a harness that is not even shipped:
+ * `scripts/` is outside both plugin roots. So the harness carries the same
+ * battery over its own shorter list instead.
  */
 const WORKTREE_FLAGS = new Set(["--detach", "--force"]);
 

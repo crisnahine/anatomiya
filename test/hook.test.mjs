@@ -4,11 +4,12 @@ import { chmodSync, existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, sy
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { spawnSync, execFileSync } from "node:child_process";
+import { spawn, spawnSync, execFileSync } from "node:child_process";
 
-import { needsUnreadableDirs } from "./platform.mjs";
-import { echoContext, planRemoval, commitRemoval, HOOK_COMMAND, SETTINGS_PATH } from "../lib/hook.mjs";
-import { HEAD_BYTES } from "../lib/rules.mjs";
+import { needsPosixSpecialFiles, needsUnreadableDirs } from "./platform.mjs";
+import { echoContext, planRemoval, commitRemoval, HOOK_COMMAND, PAYLOAD_WAIT_MS, SETTINGS_PATH } from "../plugins/anatomiya/lib/hook.mjs";
+import { HEAD_BYTES } from "../plugins/anatomiya/lib/rules.mjs";
+import { ANATOMIYA } from "../scripts/plugins.mjs";
 
 /** The three entries 0.2.4 through 0.2.6 wrote into a scanned repository. */
 const OLD_SETTINGS = {
@@ -263,7 +264,7 @@ test("a named pipe at the map's path answers nothing rather than blocking", (t) 
   rmSync(path);
   execFileSync("mkfifo", [path]);
 
-  const run = spawnSync(process.execPath, [fileURLToPath(new URL("../bin/anatomiya.mjs", import.meta.url)), "echo"], {
+  const run = spawnSync(process.execPath, [fileURLToPath(new URL("../plugins/anatomiya/bin/anatomiya.mjs", import.meta.url)), "echo"], {
     cwd: dir,
     input: JSON.stringify({ hook_event_name: "UserPromptSubmit" }),
     encoding: "utf8",
@@ -311,7 +312,7 @@ test("the plugin declares the hook itself, in the one file the variable works in
   // substituted at all: Claude Code refuses the hook by name on every prompt
   // and every tool call, which is worse than no hook, and it shipped that way
   // in 0.2.4 through 0.2.6.
-  const declared = JSON.parse(readFileSync(new URL("../hooks/hooks.json", import.meta.url), "utf8"));
+  const declared = JSON.parse(readFileSync(new URL("../plugins/anatomiya/hooks/hooks.json", import.meta.url), "utf8"));
 
   // The top-level key is not decoration: without it the file loads nothing and
   // says nothing about it.
@@ -328,12 +329,14 @@ test("the plugin declares the hook itself, in the one file the variable works in
 test("the declared command runs a file this plugin actually ships", () => {
   // The whole defect was a command nothing resolved. The path inside it is
   // checked here rather than trusted, against the tree this test runs in.
-  const declared = JSON.parse(readFileSync(new URL("../hooks/hooks.json", import.meta.url), "utf8"));
+  const declared = JSON.parse(readFileSync(new URL("../plugins/anatomiya/hooks/hooks.json", import.meta.url), "utf8"));
   const command = declared.hooks.UserPromptSubmit[0].hooks[0].command;
   const target = /\$\{CLAUDE_PLUGIN_ROOT\}\/([^"']+)/.exec(command);
 
   assert.ok(target, command);
-  assert.ok(existsSync(new URL(`../${target[1]}`, import.meta.url)), target[1]);
+  // Resolved against the plugin's own root, which is what the loader
+  // substitutes the variable for.
+  assert.ok(existsSync(join(ANATOMIYA, target[1])), target[1]);
 });
 
 test("the declared command, run the way the loader runs it, echoes the map", (t) => {
@@ -342,18 +345,21 @@ test("the declared command, run the way the loader runs it, echoes the map", (t)
   // back. Every other test here calls the function directly, which is exactly
   // why the broken declaration shipped three times.
   const dir = mapped(t);
-  const declared = JSON.parse(readFileSync(new URL("../hooks/hooks.json", import.meta.url), "utf8"));
-  const root = fileURLToPath(new URL("..", import.meta.url)).replace(/\/$/, "");
+  const declared = JSON.parse(readFileSync(new URL("../plugins/anatomiya/hooks/hooks.json", import.meta.url), "utf8"));
+  const root = ANATOMIYA.replace(/\/$/, "");
   const command = declared.hooks.UserPromptSubmit[0].hooks[0].command.replace("${CLAUDE_PLUGIN_ROOT}", root);
 
   const run = spawnSync(command, {
     cwd: dir,
     shell: true,
+    // `node --test` has no per-case timeout of its own, so a hook that never
+    // answers holds this file open with nothing said about which case.
+    timeout: 10_000,
     input: JSON.stringify({ hook_event_name: "UserPromptSubmit" }),
     encoding: "utf8",
   });
 
-  assert.equal(run.status, 0, run.stderr);
+  assert.equal(run.status, 0, run.signal === null ? run.stderr : `killed by ${run.signal}: the hook did not answer`);
   const answer = JSON.parse(run.stdout);
   assert.equal(answer.hookSpecificOutput.hookEventName, "UserPromptSubmit");
   assert.match(answer.hookSpecificOutput.additionalContext, /<repository-map delivered="/);
@@ -365,18 +371,21 @@ test("the same command in a repository with no map answers an empty object", (t)
   // and it has to cost nothing and disturb nothing.
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-nomap-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
-  const declared = JSON.parse(readFileSync(new URL("../hooks/hooks.json", import.meta.url), "utf8"));
-  const root = fileURLToPath(new URL("..", import.meta.url)).replace(/\/$/, "");
+  const declared = JSON.parse(readFileSync(new URL("../plugins/anatomiya/hooks/hooks.json", import.meta.url), "utf8"));
+  const root = ANATOMIYA.replace(/\/$/, "");
   const command = declared.hooks.PostToolUse[0].hooks[0].command.replace("${CLAUDE_PLUGIN_ROOT}", root);
 
   const run = spawnSync(command, {
     cwd: dir,
     shell: true,
+    // `node --test` has no per-case timeout of its own, so a hook that never
+    // answers holds this file open with nothing said about which case.
+    timeout: 10_000,
     input: JSON.stringify({ hook_event_name: "PostToolUse" }),
     encoding: "utf8",
   });
 
-  assert.equal(run.status, 0, run.stderr);
+  assert.equal(run.status, 0, run.signal === null ? run.stderr : `killed by ${run.signal}: the hook did not answer`);
   assert.deepEqual(JSON.parse(run.stdout), {});
 });
 
@@ -549,4 +558,194 @@ test("the plan is committed to the root it was planned for and no other", (t) =>
   const a = mapped(t);
   const b = mapped(t);
   assert.throws(() => commitRemoval(b, planRemoval(a)), /planned for/);
+});
+
+// --- what the hook survives --------------------------------------------------
+
+const ECHO = fileURLToPath(new URL("../plugins/anatomiya/bin/anatomiya.mjs", import.meta.url));
+
+/** The timeout the declaration asks Claude Code for, in milliseconds. */
+const DECLARED =
+  JSON.parse(readFileSync(new URL("../plugins/anatomiya/hooks/hooks.json", import.meta.url), "utf8")).hooks.UserPromptSubmit[0].hooks[0].timeout * 1000;
+
+/**
+ * A close, or a failure that names the wait rather than hanging the file.
+ *
+ * `node --test` has no per-case timeout of its own, so a hook that never
+ * answers takes the whole run with it and says nothing about which case. The
+ * child is killed on the way out: left running, it holds its pipes open and the
+ * run hangs after the case has already been reported, which is the failure this
+ * is here to avoid, one step later.
+ */
+async function within({ child, closed }, ms) {
+  let timer;
+  const raced = await Promise.race([
+    closed,
+    new Promise((r) => { timer = setTimeout(() => r("hung"), ms); }),
+  ]);
+  clearTimeout(timer);
+  if (raced === "hung") child.kill("SIGKILL");
+  assert.notEqual(raced, "hung", `the hook had not answered after ${ms}ms`);
+  return raced;
+}
+
+/** The hook as a process, with its two pipes under the test's control. */
+function hookProcess(dir) {
+  const child = spawn(process.execPath, [ECHO, "echo"], { cwd: dir, stdio: ["pipe", "pipe", "pipe"] });
+  let stderr = "";
+  child.stderr.setEncoding("utf8");
+  child.stderr.on("data", (chunk) => { stderr += chunk; });
+  child.stdin.on("error", () => {});
+  return { child, closed: new Promise((r) => child.on("close", (code) => r({ code, stderr }))) };
+}
+
+test("the hook exits 0 when its reader goes away before it answers", async (t) => {
+  // A hook that fails is worse than a hook nobody read: a non-zero exit
+  // interrupts the run it exists to help, on every turn and every tool call for
+  // the life of that session. The ordering is forced rather than timed, since
+  // the hook cannot write before it has read the payload.
+  const dir = mapped(t);
+
+  // Three times, because the forcing is an argument and not a measurement: if
+  // the read ever did finish before the destroy landed, once would be a pass
+  // and the defect would come back as a flake nobody could place.
+  for (let i = 0; i < 3; i++) {
+    const hook = hookProcess(dir);
+    const { child } = hook;
+    child.stdout.on("error", () => {});
+    child.stdout.destroy();
+    child.stdin.end(JSON.stringify({ hook_event_name: "UserPromptSubmit" }));
+
+    const { code, stderr } = await within(hook, 8000);
+    assert.equal(code, 0, stderr);
+  }
+});
+
+test("the hook gives up on a payload that never arrives", async (t) => {
+  // A caller that opens the pipe and writes nothing held an unbounded read for
+  // as long as it kept the handle. The bound is the hook's own and well under
+  // the five seconds the declaration asks Claude Code for.
+  const dir = mapped(t);
+  const hook = hookProcess(dir);
+  const { child } = hook;
+  child.stdout.resume();
+
+  const started = Date.now();
+  let timer;
+  const raced = await Promise.race([
+    hook.closed,
+    new Promise((r) => { timer = setTimeout(() => r("hung"), DECLARED); }),
+  ]);
+  clearTimeout(timer);
+  if (raced === "hung") child.kill("SIGKILL");
+
+  assert.notEqual(raced, "hung", `the hook was still waiting on an empty pipe after the ${DECLARED}ms it declares`);
+  assert.equal(raced.code, 0, raced.stderr);
+  // Against the hook's own bound, not the declaration: the race above already
+  // caps at the declaration, so measuring against it was an assertion nothing
+  // could fail. The slack is process start and module load, which a cold run
+  // pays. The bound itself is held to the declaration by the case below, since
+  // read from the module this alone would move with whatever it was set to.
+  const elapsed = Date.now() - started;
+  assert.ok(elapsed < PAYLOAD_WAIT_MS + 1500, `the hook's own bound is ${PAYLOAD_WAIT_MS}ms and it answered after ${elapsed}ms`);
+});
+
+// Two numbers, each read from where it lives: what the hook gives itself and
+// what the declaration asks Claude Code for. The one has to leave room for the
+// other, or a read that ends in time is a hook that answers too late anyway,
+// and the elapsed check above cannot see it because it reads the same constant.
+test("the payload read gives itself less than half the timeout the declaration asks for", () => {
+  assert.ok(
+    PAYLOAD_WAIT_MS * 2 <= DECLARED,
+    `the read waits ${PAYLOAD_WAIT_MS}ms of the ${DECLARED}ms declared, leaving ${DECLARED - PAYLOAD_WAIT_MS}ms for everything else`
+  );
+});
+
+test("a payload that arrived whole is answered even when the pipe stays open", async (t) => {
+  // The bound exists for a caller that says nothing, not for one that said
+  // everything and did not close the handle. Throwing away what arrived costs
+  // that turn its map for no reason, and the second plugin's copy of the same
+  // bound keeps what it has.
+  const dir = mapped(t);
+  const hook = hookProcess(dir);
+  const { child } = hook;
+  let stdout = "";
+  child.stdout.setEncoding("utf8");
+  child.stdout.on("data", (chunk) => { stdout += chunk; });
+  child.stdin.write(JSON.stringify({ hook_event_name: "UserPromptSubmit" }));
+
+  const { code, stderr } = await within(hook, 8000);
+  child.stdin.destroy();
+
+  assert.equal(code, 0, stderr);
+  assert.match(JSON.parse(stdout).hookSpecificOutput.additionalContext, /# Repository map/);
+});
+
+test("half a payload is still not a payload, however long the pipe stays open", async (t) => {
+  const dir = mapped(t);
+  const hook = hookProcess(dir);
+  const { child } = hook;
+  let stdout = "";
+  child.stdout.setEncoding("utf8");
+  child.stdout.on("data", (chunk) => { stdout += chunk; });
+  child.stdin.write('{"hook_event_name":"UserProm');
+
+  const { code, stderr } = await within(hook, 8000);
+  child.stdin.destroy();
+
+  assert.equal(code, 0, stderr);
+  assert.deepEqual(JSON.parse(stdout), {});
+});
+
+test("a payload past the cap is answered rather than read whole", async (t) => {
+  // Whatever the far end sends, the hook pays for a megabyte of it at most: it
+  // runs on every tool call, and the writer decides the size.
+  const dir = mapped(t);
+  const hook = hookProcess(dir);
+  const { child } = hook;
+  let stdout = "";
+  child.stdout.setEncoding("utf8");
+  child.stdout.on("data", (chunk) => { stdout += chunk; });
+  child.stdin.end(`{"hook_event_name":"UserPromptSubmit","pad":"${"x".repeat(3 * 1024 * 1024)}"}`);
+
+  const { code, stderr } = await within(hook, 8000);
+  assert.equal(code, 0, stderr);
+  assert.deepEqual(JSON.parse(stdout), {}, "an oversize payload is not the event it claims to be");
+});
+
+
+test("a settings path that is not a file is refused rather than opened and waited on", needsPosixSpecialFiles, (t) => {
+  // `readFileSync` types nothing and waits for a writer, and this runs on every
+  // scan, so a fifo left at that path holds the command for ever with nothing
+  // printed. The module's own `readHead` opens with O_NONBLOCK and stats the
+  // handle before a byte is read, which is the rule the docstring above states
+  // and this one read did not follow.
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-settings-fifo-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  mkdirSync(join(dir, ".claude"), { recursive: true });
+  execFileSync("mkfifo", [join(dir, SETTINGS_PATH)]);
+
+  // Driven in a child with a bound, because the read is synchronous: an
+  // unbounded open stops this process's event loop, so a case that waits in
+  // place takes the whole file down before it can assert anything, and the
+  // reporter never flushes the cases that already passed.
+  const script = `import { planRemoval } from ${JSON.stringify(new URL("../plugins/anatomiya/lib/hook.mjs", import.meta.url).href)};
+    try { planRemoval(${JSON.stringify(dir)}); process.stdout.write("no refusal"); }
+    catch (err) { process.stdout.write(err.message); }`;
+
+  const run = spawnSync(process.execPath, ["--input-type=module", "-e", script], { encoding: "utf8", timeout: 8000 });
+
+  assert.equal(run.signal, null, `still waiting on the fifo after 8 seconds: killed by ${run.signal}`);
+  assert.match(run.stdout, /could not be read/, run.stdout || run.stderr);
+});
+
+test("a settings file larger than the cap is refused, not read whole", (t) => {
+  // The read had no bound at all, so whatever sits at that path is the cost of
+  // every scan. Everything else this module reads goes through one cap.
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-settings-big-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  mkdirSync(join(dir, ".claude"), { recursive: true });
+  writeFileSync(join(dir, SETTINGS_PATH), `{"pad":"${"x".repeat(2 * 1024 * 1024)}"}`);
+
+  assert.throws(() => planRemoval(dir), /could not be read/);
 });

@@ -104,7 +104,7 @@ One module drives both parsers and reads what comes back. The scan and the check
 that themselves, which meant each decided separately what an unread file means, and only one of them
 ever decided it.
 
-Which parser reads a file is declared, not spelled. `lib/langs.mjs` holds one declaration per
+Which parser reads a file is declared, not spelled. `plugins/anatomiya/lib/langs.mjs` holds one declaration per
 language: its extensions, its extensionless filenames, the scratch extension a path-less blob is
 written under, the grammar route per real extension, the dialect the retry may strip, the
 capabilities its callers ask about, how its tree nodes are addressed (`positions`: UTF-16 offsets
@@ -116,7 +116,7 @@ never mid-scan.
 
 JavaScript and TypeScript are parsed by `oxc-parser`. It runs in a pool of warm child processes,
 one parse per message. Never in-process, never in a worker thread. The worker itself is a thin
-shell over `lib/parse-file.mjs`: the body that picks the grammar, runs the retry and answers the
+shell over `plugins/anatomiya/lib/parse-file.mjs`: the body that picks the grammar, runs the retry and answers the
 counts is an in-process module tests cross without a fork, and the shell keeps only the read, the
 reply and the BigInt fallback.
 
@@ -436,7 +436,7 @@ already writes unprompted prints as a counts line, `matches model default`, neve
 context files measurably pay only for what a model would not do anyway, so the directive lines are
 for what this repository does differently. The claim is still stated in `facts.json` and the check
 enforces it at full severity, because a model drifts off its own defaults as a session grows.
-Which side a model writes comes from `lib/model-defaults.json`, a committed table with provenance
+Which side a model writes comes from `plugins/anatomiya/lib/model-defaults.json`, a committed table with provenance
 per entry, written by `scripts/measure-defaults.mjs` from the model's own output parsed through
 the same predicates the scan uses. A learned row's default is a class rather than a side:
 "functions are named camelCase" in JavaScript is exactly what the model writes anyway, so a

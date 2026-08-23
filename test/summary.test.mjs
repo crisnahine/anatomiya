@@ -1,8 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { pinJson, pinLines, pinSummary, scanJson, scanLines, scanSummary, SUMMARY_SCHEMA } from "../lib/summary.mjs";
-import { buildPin, pinDelta, PIN_PATH } from "../lib/baseline.mjs";
+import { pinJson, pinLines, pinSummary, scanJson, scanLines, scanSummary, SUMMARY_SCHEMA } from "../plugins/anatomiya/lib/summary.mjs";
+import { buildPin, pinDelta, PIN_PATH } from "../plugins/anatomiya/lib/baseline.mjs";
 
 const RESTART = "a session already running still holds the old map; restart to pick it up";
 const UNPINNED =

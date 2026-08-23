@@ -6,7 +6,7 @@ import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
-import { writeFacts, readFacts, statedSide, FACTS_SCHEMA, FACTS_PATH } from "../lib/facts.mjs";
+import { writeFacts, readFacts, statedSide, FACTS_SCHEMA, FACTS_PATH } from "../plugins/anatomiya/lib/facts.mjs";
 
 /**
  * One owner for the machine record, so one round trip through it.
@@ -285,7 +285,7 @@ test("a stored dimension carries the tier the check filters on", async (t) => {
   git("config", "user.name", "T");
   git("add", "-A");
   git("commit", "-qm", "init");
-  const bin = fileURLToPath(new URL("../bin/anatomiya.mjs", import.meta.url));
+  const bin = fileURLToPath(new URL("../plugins/anatomiya/bin/anatomiya.mjs", import.meta.url));
   execFileSync(process.execPath, [bin, "scan", dir], { stdio: "pipe" });
 
   const stored = JSON.parse(readFileSync(join(dir, ".claude/anatomiya/facts.json"), "utf8"));

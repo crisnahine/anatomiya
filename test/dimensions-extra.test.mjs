@@ -1,8 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { parseSync } from "oxc-parser";
-import { EXTRA_DIMENSIONS } from "../lib/dimensions-extra.mjs";
-import { dimensionsFor, ALL_DIMENSIONS } from "../lib/dimensions.mjs";
+import { EXTRA_DIMENSIONS } from "../plugins/anatomiya/lib/dimensions-extra.mjs";
+import { dimensionsFor, ALL_DIMENSIONS } from "../plugins/anatomiya/lib/dimensions.mjs";
 
 const dim = (key) => EXTRA_DIMENSIONS.find((d) => d.key === key);
 
@@ -493,7 +493,7 @@ test("a trailing comment on the previous statement does not attach to the next",
 });
 
 test("collectHits hands the extras through to the dimension", async () => {
-  const { collectHits } = await import("../lib/walk.mjs");
+  const { collectHits } = await import("../plugins/anatomiya/lib/walk.mjs");
   const probe = {
     key: "probe",
     run(_program, add, extra) {

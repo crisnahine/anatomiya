@@ -42,16 +42,12 @@ jobs:
 
       - run: npm ci
 
-      # The Ruby tier needs prism 1.x. Ruby 3.3 ships 0.19, which spells the
-      # fields the dimensions read differently, so 3.4 is the real floor.
-      # A runner without it is a missing tool, not a broken build, so it says so
-      # and the Ruby tests come out of the list. Failing here would make every
-      # unrelated change red on a runner image bump.
-      # The runner image ships no prism, so the Ruby tier would skip everywhere
-      # and half the tool would go untested behind a green tick. 3.4, not 3.3:
-      # 3.3 ships prism 0.19, which the parser child rejects by version because
-      # a rescue chain and a constant path are spelled differently there and
-      # every count would silently come back zero.
+      # 3.4, not 3.3: 3.3 ships prism 0.19, which the parser child rejects by
+      # version because a rescue chain and a constant path are spelled
+      # differently there, and every count would silently come back zero. The
+      # runner image ships no prism of its own, so without this the Ruby tier
+      # would skip on every leg and half the tool would go untested behind a
+      # green tick.
       - uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1.321.0
         with:
           ruby-version: "3.4"
@@ -95,10 +91,12 @@ jobs:
           node --test $files
 
   # A number that only ever gets quoted is worse than none, so the floors are
-  # enforced rather than reported. They sit a little under the measured 97.2
-  # line / 94.2 branch / 97.0 function, which is room for one refactor rather
-  # than room to stop writing tests. The line share carries the corpus harness,
-  # which a test imports for its table builders and which CI never runs.
+  # enforced rather than reported. `scripts/coverage.mjs` holds them and states
+  # what each was measured at; the numbers are not repeated here, because two
+  # prose copies of one measurement is two things to keep in step and they had
+  # already drifted apart. What is worth saying twice is why the line share is
+  # the lowest of the three: it carries the corpus harness, which a test imports
+  # for its table builders and which CI never runs.
   coverage:
     name: coverage
     runs-on: ubuntu-latest
@@ -119,15 +117,25 @@ jobs:
 
       - run: npm ci
 
+      # One run, and every floor read off its record rather than off the total
+      # node prints. A floor over a whole scope says nothing about one file
+      # inside it: the second plugin's `hook-io.mjs` sat under the branch floor
+      # both when the aggregate spanned the whole suite and when it was scoped
+      # to that plugin alone, because what an aggregate hides is proportional to
+      # how much larger the rest of the scope is. Measured on the whole tree, 13
+      # of 151 files sit under their own floor with the total clearing, and the
+      # largest module in the plugin's `lib/` could have lost every covered line
+      # unnoticed. The second plugin's five files and that `lib/`'s 51 are each
+      # now, and the run states which file missed.
       - name: Measure and enforce
         shell: bash
         run: |
-          node --test --experimental-test-coverage \
-            --test-coverage-lines=95 \
-            --test-coverage-branches=87 \
-            --test-coverage-functions=95 \
-            $(find test -name '*.test.mjs' | sort) | tee "$RUNNER_TEMP/cov.txt"
+          node scripts/coverage.mjs --summary "$RUNNER_TEMP/cov.txt" $(find test -name '*.test.mjs' | sort)
 
+      # Read from the file the script was asked to write rather than picked out
+      # of its output: a pattern here is a second copy of one fact, it went
+      # quietly empty when a scope was renamed, and it matched any line a test
+      # happened to print at column zero.
       - name: Summarise
         if: always()
         shell: bash
@@ -136,7 +144,11 @@ jobs:
             echo "### Coverage"
             echo
             echo '```'
-            grep -E "^# (file|-|all files)" "$RUNNER_TEMP/cov.txt" | tail -5 | sed 's/^# //'
+            if [ -s "$RUNNER_TEMP/cov.txt" ]; then
+              cat "$RUNNER_TEMP/cov.txt"
+            else
+              echo "(not measured: the run did not reach its own summary)"
+            fi
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -173,6 +185,16 @@ jobs:
       - name: The manifests are valid
         run: node scripts/validate.mjs
 
+      # The plugin root is the repository root, so nothing about the tree says
+      # which files belong to the plugin. `package.json` files is the one list
+      # that does, and unread it was wrong in both directions: no `hooks/`,
+      # which the loader reads first, and a marketplace manifest shipped inside
+      # the plugin. npm answers what the list covers; this reads that answer
+      # against what the hooks and command files reach. Linux only, because npm
+      # on Windows is a batch file and nothing here spawns a shell.
+      - name: The shipped set holds what the plugin loads
+        run: node scripts/shipped.mjs
+
   # A unit suite that passes while the binary is broken is a familiar failure,
   # so the binary runs against a real repository with real git history. Both
   # platforms, because this is the step that spawns the parser pool and shells
@@ -208,7 +230,7 @@ jobs:
         run: |
           git clone --quiet --depth 50 --branch "$SMOKE_REF" "$SMOKE_REPO" "$RUNNER_TEMP/smoke"
           cd "$RUNNER_TEMP/smoke"
-          node "$GITHUB_WORKSPACE/bin/anatomiya.mjs" scan . | tee "$RUNNER_TEMP/scan.out"
+          node "$GITHUB_WORKSPACE/plugins/anatomiya/bin/anatomiya.mjs" scan . | tee "$RUNNER_TEMP/scan.out"
 
       - name: Check it wrote what it said it wrote
         shell: bash
@@ -281,7 +303,7 @@ jobs:
         run: |
           cd "$RUNNER_TEMP/smoke"
           cp .claude/rules/anatomiya-overview.md "$RUNNER_TEMP/overview-1.md"
-          node "$GITHUB_WORKSPACE/bin/anatomiya.mjs" scan . >/dev/null
+          node "$GITHUB_WORKSPACE/plugins/anatomiya/bin/anatomiya.mjs" scan . >/dev/null
           if ! cmp -s "$RUNNER_TEMP/overview-1.md" .claude/rules/anatomiya-overview.md; then
             echo "::error::the overview changed between two scans of unchanged source"
             diff -u "$RUNNER_TEMP/overview-1.md" .claude/rules/anatomiya-overview.md | head -40
@@ -296,7 +318,7 @@ jobs:
         shell: bash
         run: |
           cd "$RUNNER_TEMP/smoke"
-          BIN="$GITHUB_WORKSPACE/bin/anatomiya.mjs"
+          BIN="$GITHUB_WORKSPACE/plugins/anatomiya/bin/anatomiya.mjs"
 
           node "$BIN" pin . | tee "$RUNNER_TEMP/pin.out"
           grep -qE "files? enters? the baseline population" "$RUNNER_TEMP/pin.out"
@@ -329,7 +351,7 @@ jobs:
         shell: bash
         run: |
           cd "$RUNNER_TEMP/smoke"
-          node "$GITHUB_WORKSPACE/bin/anatomiya.mjs" check . --base "$SMOKE_REF" --format json \
+          node "$GITHUB_WORKSPACE/plugins/anatomiya/bin/anatomiya.mjs" check . --base "$SMOKE_REF" --format json \
             > "$RUNNER_TEMP/check.json"
           node -e '
             const r = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
@@ -346,7 +368,7 @@ jobs:
         shell: bash
         run: |
           cd "$RUNNER_TEMP/smoke"
-          node "$GITHUB_WORKSPACE/bin/anatomiya.mjs" check . --base "$SMOKE_REF" --format github \
+          node "$GITHUB_WORKSPACE/plugins/anatomiya/bin/anatomiya.mjs" check . --base "$SMOKE_REF" --format github \
             > "$RUNNER_TEMP/check.github"
           grep -qE "^::notice::[0-9]+ MUST-FIX, [0-9]+ FIX, [0-9]+ NIT$" "$RUNNER_TEMP/check.github" \
             || { echo "::error::the annotations carry no counts line"; exit 1; }
@@ -373,7 +395,7 @@ jobs:
           # nothing else here does (B8).
           npm ci --ignore-scripts --no-audit --no-fund >/dev/null 2>&1 \
             || echo "::warning::deep smoke ran without the repository's dependencies"
-          node "$GITHUB_WORKSPACE/bin/anatomiya.mjs" scan . --deep | tee "$RUNNER_TEMP/deep.out"
+          node "$GITHUB_WORKSPACE/plugins/anatomiya/bin/anatomiya.mjs" scan . --deep | tee "$RUNNER_TEMP/deep.out"
           grep -qE "^[0-9]+ files?, [0-9]+ areas?" "$RUNNER_TEMP/deep.out" \
             || { echo "::error::--deep printed no summary line"; exit 1; }
           test -f .claude/rules/anatomiya-overview.md
@@ -408,7 +430,7 @@ jobs:
           git clone --quiet --depth 50 --branch "$RUBY_REF" "$RUBY_REPO" "$RUNNER_TEMP/ruby-smoke" \
             || { echo "::warning::could not clone the Ruby smoke repository"; exit 0; }
           cd "$RUNNER_TEMP/ruby-smoke"
-          node "$GITHUB_WORKSPACE/bin/anatomiya.mjs" scan . | tee "$RUNNER_TEMP/ruby-scan.out"
+          node "$GITHUB_WORKSPACE/plugins/anatomiya/bin/anatomiya.mjs" scan . | tee "$RUNNER_TEMP/ruby-scan.out"
           grep -qE "^[0-9]+ files?, [0-9]+ areas?" "$RUNNER_TEMP/ruby-scan.out"
           grep -q "could not be parsed" "$RUNNER_TEMP/ruby-scan.out" \
             && { echo "::error::prism failed on files in a real Ruby repository"; exit 1; }
