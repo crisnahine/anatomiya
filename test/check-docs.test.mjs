@@ -297,15 +297,17 @@ test("a plugin whose manifest moved without its changelog is named", (t) => {
 test("a changelog with no Unreleased heading is named, whichever plugin it belongs to", (t) => {
   // The release checklist puts an empty one back, and a release that forgets
   // leaves the next change with nowhere to be written down.
-  for (const rel of ["CHANGELOG.md", join(REL.ultracode, "CHANGELOG.md")]) {
+  // Spelled with slashes rather than joined: this is matched against what the
+  // gate printed, and the gate answers in slashes on every platform.
+  for (const rel of ["CHANGELOG.md", `${REL.ultracode}/CHANGELOG.md`]) {
     const dir = repoCopy(t);
-    const path = join(dir, rel);
+    const path = join(dir, ...rel.split("/"));
     writeFileSync(path, readFileSync(path, "utf8").replace("## [Unreleased]", "## [Coming up]"));
 
     const { status, output } = check(dir);
 
     assert.equal(status, 1, rel);
-    assert.match(output, new RegExp(`${rel.replace(/[\\/.]/g, "\\$&")}.*Unreleased`), output);
+    assert.match(output, new RegExp(`${rel.replace(/[/.]/g, "\\$&")}.*Unreleased`), output);
   }
 });
 

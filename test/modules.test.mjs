@@ -202,10 +202,15 @@ function sourceFiles() {
   // across the seam lives in one of them. The second plugin is here too, since
   // a rule that reads one plugin and not the other is a rule that covers the
   // repository by half.
+  // Answered with slashes on every platform: `readdirSync` gives the host's
+  // separator, and every rule below compares what comes back against a path
+  // this repository spells one way. On Windows the module allowed to hold the
+  // plugin path was reported as breaking its own rule, and the filter for what
+  // the plugin ships matched none of it.
   return ["scripts", "test", `${REL.anatomiya}/bin`, `${REL.anatomiya}/commands`, `${REL.anatomiya}/hooks`, `${REL.anatomiya}/lib`, REL.ultracode].flatMap((dir) =>
     readdirSync(join(ROOT, dir), { recursive: true })
       .filter((name) => typeof name === "string" && name.endsWith(".mjs"))
-      .map((name) => join(dir, name))
+      .map((name) => `${dir}/${name.split(/[\\/]/).join("/")}`)
   );
 }
 

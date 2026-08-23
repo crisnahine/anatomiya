@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 
-import { RELEASES, TAG_GLOBS, notesFor, releaseFor, sectionFor } from "../scripts/release.mjs";
+import { RELEASES, TAG_GLOBS, notesFor, prefixOf, releaseFor, sectionFor, tagFor } from "../scripts/release.mjs";
 import { REL } from "../scripts/plugins.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
@@ -505,4 +505,21 @@ test("the marketplace root's own version is not what a plugin's tag is checked a
   writeFileSync(path, JSON.stringify(lock));
 
   assert.equal(notesFor(dir, "v1.2.4").problem, null);
+});
+
+// The shape three readers rely on: the resolver takes the remainder after the
+// prefix as the version, the glob puts `*.*.*` there, and the docs gate fills
+// it in. Substituting with `replace` takes the first star of however many there
+// are, so a pattern carrying two would be filled in one place and matched from
+// another, and CodeQL is right that the two would disagree.
+test("a tag pattern is a prefix and one trailing star, and anything else is refused", () => {
+  for (const release of RELEASES) {
+    assert.equal(prefixOf(release.tag) + "*", release.tag, release.plugin);
+    assert.equal(tagFor(release, "1.2.3"), `${prefixOf(release.tag)}1.2.3`, release.plugin);
+    assert.equal(releaseFor(tagFor(release, "1.2.3"))?.plugin, release.plugin);
+  }
+
+  for (const wrong of ["v", "v*.*.*", "*v*", "", "v*x"]) {
+    assert.throws(() => prefixOf(wrong), TypeError, JSON.stringify(wrong));
+  }
 });

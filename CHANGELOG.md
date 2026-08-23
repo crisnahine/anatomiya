@@ -126,6 +126,13 @@ than by a copy of the code.
   The rule in that row outlived its premise and now says so.
 - The release checklist told a releaser to move two lockfile versions "and both are read". Neither is:
   the entry that decides a release is the plugin's own, under its workspace path.
+- Windows took a typed option as a plugin root and exited 0. The refusal that says npm cannot be
+  spawned there ran before the argument check, so `--help` was refused on every platform but the one
+  that answered it silently. A typo is a typo everywhere, and it is read first now.
+- A tag pattern's placeholder was substituted with a replace that takes the first star of however
+  many there are, while the resolver reads the last one as the boundary. With one star per pattern
+  the two agreed by luck; a pattern carrying two would have been filled in one place and matched
+  from another. The shape is a rule now, refused where it is read, and pinned.
 ### Fixed in the tests themselves
 
 
@@ -224,6 +231,12 @@ aimed only at them found these.
   went red on the release this list is meant to be worked before. The tag is read off the plugin's
   own manifest now, and a rule refuses any test that spells the version this repository carries: a
   fixture that happens to match it passes for a reason that is about to change.
+- Three rules compared a path built with the host's separator against one spelled with slashes, so on
+  Windows the module allowed to hold the plugin path was reported as breaking its own rule, the
+  filter for what the plugin ships matched nothing, and a changelog case matched no message. The
+  listing answers in slashes on every platform now.
+- A case matching the workflow file anchored on a bare newline, and a checkout that converts them
+  made the whole match fail, which the case reported as the job no longer running the script.
 ### Changed
 
 

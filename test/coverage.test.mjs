@@ -183,7 +183,7 @@ test("every scope is stated on a run that misses a floor, not only on one that c
   );
 
   assert.notEqual(status, 0, "a run that loads two files and calls neither cannot be clearing the floors");
-  assert.equal(lines.length, FLOORS.length, `stated ${lines.length} of ${FLOORS.length} scopes`);
+  assert.equal(lines.length, FLOORS.length, `stated ${lines.length} of ${FLOORS.length} scopes\n${stderr}`);
   for (const floor of FLOORS) {
     assert.ok(lines.some((line) => line.includes(floor.scope)), `${floor.scope} went unstated`);
   }
@@ -209,7 +209,10 @@ test("the job asks for its summary by the flag this module takes", () => {
   // pattern there went quietly empty the moment a scope was renamed here, and
   // matched any line a test printed at column zero; a file the script is asked
   // to write is one thing, named once on each side.
-  const workflow = readFileSync(fileURLToPath(new URL("../.github/workflows/ci.yml", import.meta.url)), "utf8");
+  // Line endings normalised first: a Windows checkout may convert them, and
+  // every pattern below anchors on a bare newline, so the whole match failed
+  // there and the case said the job no longer runs this script.
+  const workflow = readFileSync(fileURLToPath(new URL("../.github/workflows/ci.yml", import.meta.url)), "utf8").replace(/\r\n/g, "\n");
   const measure = workflow.match(/- name: Measure and enforce\n(?:.*\n)*?          (node scripts\/coverage\.mjs[^\n]*)/);
   const summarise = workflow.match(/- name: Summarise\n(?:.*\n)*?              (cat "\$RUNNER_TEMP\/[^"]+")/);
 
