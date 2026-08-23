@@ -175,6 +175,13 @@ export function reduceArea(area, parsed, { frameworks, tier = "syntactic", capab
 
   for (const dim of dims) {
     const perFile = new Map();
+    // Sites the classifier would not vote on. `classify` answers null for two
+    // different files and only one of them is a non-site: a stem matching every
+    // class cannot disagree with any, and a stem matching none disagrees with
+    // all of them. The second is a site the scan drops and the check still
+    // enforces over, so the count of them is what lets an area say the printed
+    // population is narrower than the files it sits in (A41).
+    const declined = new Set();
     // A mixed area holds files of both engines. A Ruby dimension counted
     // against the area's JS files reads as a narrow predicate and is suppressed
     // by the applicability gate, so the denominator is the files the dimension
@@ -199,6 +206,7 @@ export function reduceArea(area, parsed, { frameworks, tier = "syntactic", capab
         if (!dim.langs.includes(lang)) continue;
         const cls = dim.classify(file.rel);
         if (cls !== null) perFile.set(file.rel, [{ conforming: false, class: cls }]);
+        else if (dim.isSite(file.rel)) declined.add(file.rel);
         continue;
       }
       if (!file.hits) continue;
@@ -235,6 +243,11 @@ export function reduceArea(area, parsed, { frameworks, tier = "syntactic", capab
       // directory: exactly the failure C3 and C4 exist to stop.
       langFileCount = examined.filter((e) => eligible(e) && dim.splitBy(byRel.get(e.rel)) === learnedKind).length;
       narrowed = examined.some((e) => eligible(e) && dim.splitBy(byRel.get(e.rel)) !== learnedKind);
+      // The same narrowing, or the count would name files the sentence above it
+      // no longer speaks about.
+      for (const rel of [...declined]) {
+        if (dim.splitBy(byRel.get(rel)) !== learnedKind) declined.delete(rel);
+      }
     }
 
     // A learned-class dimension settles its side here: the plurality class is
@@ -296,6 +309,10 @@ export function reduceArea(area, parsed, { frameworks, tier = "syntactic", capab
       langFileCount,
       candidates,
       conforming,
+      // Absent rather than zero, the way the companion side is: a key on every
+      // record of every area is bytes on disk for a fact nobody prints, and the
+      // renderer prints this one only where there is something to disclose.
+      ...(declined.size ? { declined: declined.size } : {}),
       files: [...perFile.keys()],
       ...spread(perFile, candidates),
       // The path breaks ties, so the three that print do not depend on

@@ -5,20 +5,31 @@ opt-in contract were read out of one build, so the only thing that keeps it hone
 reading. The `SessionStart` check does the cheap half on every session; this is the half a person
 does, and it takes a few minutes.
 
-It was last done against **2.1.238**, which is the version `CALIBRATED_AGAINST` in
-`hooks/upstream.mjs` names. Move that string when you have worked this list on a newer build.
+It was last worked whole against **2.1.241**, on 2026-08-24, which is the version
+`CALIBRATED_AGAINST` in `hooks/upstream.mjs` names. Move that string when you have worked this list
+on a newer build, and nothing else in this file or the README may name a build that is not it:
+`test/upstream.test.mjs` fails on one that does.
 
-Sections 1, 2, 5 and 6 were re-read against **2.1.240** on 2026-08-23 and hold: the four markers and
-the gate shape are there, the `UserPromptSubmit` payload still spells `...!1` where `source:` would
-go, and the reminder still walks back to the last attachment. Sections 3 and 4 were not: they need a
-live session and a recorded request, which no command here can stand in for. `CALIBRATED_AGAINST`
-stays at 2.1.238 because it names a list worked whole, and `behind` reads major and minor only, so a
-patch bump raises nothing either way.
+A patch bump is not cosmetic, and the plugin says nothing about a single one. `behind` used to
+compare major and minor only, so three patch releases went by with the constant naming the first of
+them and no session ever saying so, and the last two of those builds were the same size to the byte
+and differed in 176,881,324 of them. It waits for a run of ten now, which is late on purpose and is
+not sized to that drift: three patches would still pass in silence. The build updates itself, a line
+on every update is a line nobody reads, and what the wait buys is a bound on how far the gap can
+grow. Silence at startup means nobody has been nagged yet, not that nothing moved. Work this list on
+any bump you care about.
+
+No older build is named anywhere in this file or the README, on purpose: a version that sits in the
+prose is one nobody re-reads, and every one of them was wrong by the time anyone looked. State the
+fact without the number, the way the paragraph above does.
 
 Run every command below from this file's own directory, `plugins/ultracode-anywhere/`: the
-`./hooks/...` specifiers are the plugin's own and resolve to nothing from the repository root.
+`./hooks/...` specifiers are the plugin's own and resolve to nothing from the repository root. Work
+the list in order. Step 2 sets `$BUILD`, which is absolute and survives; step 4 defines `$d` and
+`capture` and moves the shell out of this directory for good, so step 5 runs on what step 4 left and
+a return to step 1 or step 2 needs a `cd` back.
 
-The build is 321 MB, so the reads below find a fixed string with `grep -a -b -o` and cut around
+The build is 325 MB, so the reads below find a fixed string with `grep -a -b -o` and cut around
 its offset. A pattern with a wide `.{n}` context is refused by the stock macOS `grep` above 255 and
 takes minutes on any `grep`.
 
@@ -48,15 +59,23 @@ What has to be true: the reminder is emitted only when the resolved effort is `x
 the reminder has become the thing that raises effort, this plugin is doing more than it claims and
 the README has to change.
 
+On 2.1.241 it reads `function Ale(e,t,r){return r===!0&&gH()&&kQ(e,t)==="xhigh"}`. Every name in it
+moved from the build this was first read off, which is why the check reads a shape.
+
 While you are there, the cap:
 
 ```sh
-at=$(grep -a -b -o 'Concurrent subagent limit reached' "$BUILD" | head -1 | cut -d: -f1)
-tail -c +$((at - 300)) "$BUILD" | head -c 340; echo
+for at in $(grep -a -b -o 'Concurrent subagent limit reached' "$BUILD" | cut -d: -f1); do
+  tail -c +$((at - 400)) "$BUILD" | head -c 440; echo; echo ---
+done
 ```
 
-It shows whether the same predicate still returns before the refusal, which is what the README says
-lifts the cap for native ultracode and not here.
+Every hit, since more than one carries that sentence and only one of them is the code: the others
+sit in a data section that holds the message text with nothing around it. The one you want shows
+whether the same predicate still returns before the refusal, which is what the README says lifts the
+cap for native ultracode and not here. On 2.1.241 a second early return sits above it,
+`if(nt("tengu_amber_kestrel",!1))return`, a flag Anthropic sets: turned on it lifts the cap for
+every session on that build, and the README says so.
 
 ## 3. The Workflow tool still carries no effort term
 
@@ -70,20 +89,139 @@ What has to be true: the tool is present at `effortLevel: medium`, and its descr
 standing ultracode mode counts as the explicit opt-in it otherwise refuses to act without. That
 sentence is the fourth marker, and it is the one the whole plugin leans on.
 
+Step 4 answers the same question without a person reading a panel, and answers it about the request
+that actually went out, so run that one if you are doing only one of the two.
+
 ## 4. The wire-level diff
 
-The strongest check, and the one that produced the claim in the README. Record one request at
-`ultracode: true` with the effort resolving to xhigh, and one at `effortLevel: medium` with this
-plugin installed. Diff them.
+The strongest check, and the one the claim in the README rests on. Two requests, captured off the
+socket, at everything-else-equal.
 
-What has to be true: the two differ only in the session id and `output_config.effort`. Same system
-prompt, same tool definitions, same Workflow tool description. If a third line differs, say which
-one in the README rather than leaving the claim standing.
+Nothing leaves the machine: the stand-in below logs the request and answers it itself, so no tokens
+are spent and no traffic reaches Anthropic. It is a POSIX shell recipe; on Windows, Git Bash runs it.
+Everything it writes goes in one directory `mktemp` made, for the reason A28 moved this plugin's own
+state out of the temporary directory: a predictable path there is one another account can create
+first, and what lands here is the whole system prompt.
+
+```sh
+d=$(mktemp -d)
+cat > "$d/capture.mjs" <<'EOF'
+import { createServer } from "node:http";
+import { appendFileSync, writeFileSync } from "node:fs";
+const [out, portFile] = process.argv.slice(2);
+const SSE = [
+  ["message_start", { type: "message_start", message: { id: "m", type: "message", role: "assistant", model: "capture", content: [], stop_reason: null, stop_sequence: null, usage: { input_tokens: 1, output_tokens: 1 } } }],
+  ["content_block_start", { type: "content_block_start", index: 0, content_block: { type: "text", text: "" } }],
+  ["content_block_delta", { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "ok" } }],
+  ["content_block_stop", { type: "content_block_stop", index: 0 }],
+  ["message_delta", { type: "message_delta", delta: { stop_reason: "end_turn", stop_sequence: null }, usage: { output_tokens: 1 } }],
+  ["message_stop", { type: "message_stop" }],
+];
+const server = createServer((req, res) => {
+  const chunks = [];
+  req.on("data", (c) => chunks.push(c));
+  req.on("end", () => {
+    appendFileSync(out, JSON.stringify({ url: req.url, body: Buffer.concat(chunks).toString("utf8") }) + "\n");
+    if (req.url.includes("count_tokens")) { res.writeHead(200, { "content-type": "application/json" }); return res.end('{"input_tokens":100}'); }
+    if (req.url.includes("/v1/messages")) {
+      res.writeHead(200, { "content-type": "text/event-stream" });
+      for (const [event, data] of SSE) res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+      return res.end();
+    }
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end("{}");
+  });
+});
+// Port 0, so the kernel picks one nothing else holds and the run cannot send a
+// request carrying its own auth header to whatever owns a number written here.
+server.listen(0, "127.0.0.1", () => writeFileSync(portFile, String(server.address().port)));
+EOF
+
+capture() {                       # capture <file>: start the stand-in, export its address
+  rm -f "$d/port"
+  node "$d/capture.mjs" "$1" "$d/port" & echo $! > "$d/pid"
+  until [ -s "$d/port" ]; do sleep 0.1; done
+  export ANTHROPIC_BASE_URL="http://127.0.0.1:$(cat "$d/port")"
+}
+
+mkdir -p "$d/wire" && cd "$d/wire"
+capture "$d/A.jsonl"
+ULTRACODE_ANYWHERE_STATE="$d/state-a" ULTRACODE_ANYWHERE_CAP_NOTICE=0 \
+  claude -p ping --strict-mcp-config --effort medium \
+  --session-id 11111111-1111-4111-8111-111111111111 --no-session-persistence < /dev/null
+kill "$(cat "$d/pid")"
+```
+
+Then the other side:
+
+```sh
+capture "$d/B.jsonl"
+ULTRACODE_ANYWHERE=0 claude -p ping --strict-mcp-config \
+  --effort xhigh --settings '{"ultracode":true}' \
+  --session-id 11111111-1111-4111-8111-111111111111 --no-session-persistence < /dev/null
+kill "$(cat "$d/pid")"
+```
+
+Every switch there earns its place. `--strict-mcp-config` and the fixed session id are what make the
+two comparable: MCP servers finish connecting at different moments and change the tool count, and the
+session id reaches the request in `metadata.user_id`. The state directory keeps the probe out of the
+counters a real session is keeping, and it is fresh on the side that keeps any, since a second turn of a fixed
+session id is owed nothing at all and a rerun over a used one captures no reminder to compare.
+`ULTRACODE_ANYWHERE_CAP_NOTICE=0` drops the one-time cap line, which a state directory with no
+`.cap-said` in it would otherwise put on the plugin's side and nowhere else. `ULTRACODE_ANYWHERE=0`
+on the second run is what keeps the plugin from saying which setting silenced it, which would be a
+third difference. Two more it cannot switch off. Move `CALIBRATED_AGAINST` to the installed build
+before running this step, or the version line lands on the plugin's side alone and reads as a third
+leaf, deterministically, on exactly the builds anybody runs this for. And check your own settings
+first: `"ultracode": true`, `"enableWorkflows": false`, `"disableWorkflows": true` or
+`CLAUDE_CODE_WORKFLOWS=false` in the user or project file silences the prompt hook, and the two
+requests then differ in `output_config.effort` alone, which reads as a confirmation of the claim
+this replaced. `--settings '{"ultracode":true}'` is the load-bearing one and the least documented:
+it is what produces the native side, and if a build renames that key this step stops working with no
+error that says why.
+
+If `claude` refuses to start against `ANTHROPIC_BASE_URL`, give it `ANTHROPIC_API_KEY=stand-in` as
+well. The stand-in never looks at the header.
+
+Take the `/v1/messages` body whose model is the main-loop one and whose session id is that one, since
+a background agent may hit the same socket, and walk the two objects leaf by leaf rather than
+diffing the text: a request is one enormous line per string, so a line diff says two lines differ and
+not which fields.
+
+What has to be true: they differ in the reminder text and in `output_config.effort`, and nowhere
+else. On 2.1.241 that is what they do: same system prompt, same 25 tool definitions, the Workflow
+tool's description included, with the reminder in the trailing context block either way, this
+plugin's 1224 characters or the built-in's 288. Where it lands inside that block depends on what else
+answers `UserPromptSubmit`, so run both sides from the same directory or another plugin's hook moves
+with you.
+
+A third leaf is not a finding until it repeats. Some tool definitions sit behind remote flags whose
+value differs between two launches minutes apart, and one pair here came back with `ScheduleWakeup`
+carrying a `noop` parameter on the second side and not the first, description and schema both, on a
+pair otherwise identical. Nothing this plugin does can reach a tool definition. Run each side twice
+and count only a leaf that differs both times. Then say which in the README rather than leaving the
+claim standing.
 
 ## 5. The prompt payload carries `source`, or does not yet
 
-The wakeup skip reads `source` off the `UserPromptSubmit` payload. The schema declares it and 2.1.238
-does not send it outside Anthropic:
+The wakeup skip reads `source` off the `UserPromptSubmit` payload. The schema declares the field and
+2.1.241 does not send it outside Anthropic. Ask the hook itself what it was handed, which beats
+reading the builder:
+
+```sh
+capture "$d/probe.jsonl"
+ULTRACODE_ANYWHERE_DEBUG="$d/hook.log" ULTRACODE_ANYWHERE_STATE="$d/hook-state" \
+  claude -p ping --strict-mcp-config --no-session-persistence < /dev/null
+kill "$(cat "$d/pid")"
+cat "$d/hook.log"
+```
+
+On 2.1.241 the payload holds `session_id`, `transcript_path`, `cwd`, `prompt_id`, `permission_mode`,
+`hook_event_name` and `prompt`, and no `source`. The stand-in from step 4 is what keeps this probe
+from spending a real turn on the real API, and the state directory keeps it out of the counters a
+real session is keeping.
+
+The builder says the same thing, if you would rather read it than run it:
 
 ```sh
 for at in $(grep -a -b -o 'hook_event_name:"UserPromptSubmit",prompt' "$BUILD" | cut -d: -f1); do
@@ -91,7 +229,7 @@ for at in $(grep -a -b -o 'hook_event_name:"UserPromptSubmit",prompt' "$BUILD" |
 done
 ```
 
-What has to be true for the skip to work: the object literal carries `source:` where 2.1.238 spells
+What has to be true for the skip to work: the object literal carries `source:` where 2.1.241 spells
 `...!1`. Until it does, the README says a wakeup is a turn like any other; the day it does, move
 that sentence.
 
@@ -99,7 +237,7 @@ that sentence.
 
 ```sh
 at=$(grep -a -b -o 'ultra_effort_enter"){n="enter"' "$BUILD" | head -1 | cut -d: -f1)
-tail -c +$((at - 130)) "$BUILD" | head -c 760; echo
+tail -c +$((at - 400)) "$BUILD" | head -c 1000; echo
 ```
 
 What has to be true: the function walks the messages back to the last `ultra_effort_enter` or
@@ -107,15 +245,23 @@ What has to be true: the function walks the messages back to the last `ultra_eff
 `TURNS_BETWEEN_MAINTENANCE` user turns have passed. A compaction leaves no attachment to find, which
 is why the `SessionStart` hook starts the counter over on `compact` and `clear`.
 
+On 2.1.241 the turns it counts are user messages that are neither meta nor a tool result, which is
+the same set of turns a prompt hook fires on: a tool result never fires one. The constant is still
+10, through `CLAUDE_CODE_JUNIPER_SUNDIAL`, then the `tengu_juniper_sundial` flag, then
+`TURNS_BETWEEN_MAINTENANCE`.
+
 ## 7. What a re-check changes
 
-- `CALIBRATED_AGAINST` in `hooks/upstream.mjs`, and the version in this file.
+- `CALIBRATED_AGAINST` in `hooks/upstream.mjs`, and every build named in this file and the README.
+  Move it before step 4 rather than after, since the session line it silences would otherwise show up
+  in the capture as a difference this plugin did not make.
 - `MARKERS` there, if a string moved and the premise still holds under a new spelling.
 - `GATE` there, if the predicate is spelled in a way the pattern does not accept and still reads as
-  flag, call, effort against `"xhigh"`.
+  flag, call, effort against `"xhigh"`. Add the build's own spelling to the case in
+  `test/upstream.test.mjs` that lists them, so the next respelling has something to be compared to.
 - `WAKEUP_SOURCES` in `hooks/standing-ultracode.mjs`, if the `source` enum moved.
 - The README, if any claim in it is no longer what the diff shows: the site count, the character
-  counts, and the timing figures are all measurements of one build on one machine.
+  counts, the bundle size and the timing figures are all measurements of one build on one machine.
 - The cadence in `FULL_EVERY`, if `TURNS_BETWEEN_MAINTENANCE` moved.
 
 If the premise no longer holds at all, the honest change is to remove the plugin from the

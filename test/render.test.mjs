@@ -2446,15 +2446,91 @@ test("a claim that already names an exception does not also explain itself", () 
   assert.doesNotMatch(out, /^ {2}not counted:/m);
 });
 
-test("a claim whose predicate declines nothing its sentence names says nothing extra", () => {
-  // The test for the line is whether the claim's own sentence names a construct
-  // the predicate then declines. "files here are named kebab-case" does not.
+test("a claim whose predicate declined nothing here says nothing extra", () => {
+  // A clause carrying a count is a disclosure, so an area with nothing to
+  // disclose says nothing. The row states one and this record carries no
+  // declined count, which is the 135 areas of 136 that skipped no name.
   const out = renderArea(
     area({ dimensions: [dim({ key: "file_naming_case", claim: "files here are named kebab-case", candidates: 16, conforming: 16 })] })
   );
 
   assert.match(out, /^ {2}16 of 16 sites across 8 of 40 files, 4 authors$/m);
   assert.doesNotMatch(out, /^ {2}not counted:/m);
+});
+
+/* --- what a stated claim skipped, on the line that carries its counts (A41) --- */
+
+test("an area holding sites the classifier declined says how many, on the counts line", () => {
+  // The bare `N of N` reads as "there is no counter-example in these files"
+  // over a population that never held three of them. Measured on a Rails map:
+  // `db/migrate` printed 1525 of 1525 while three double-underscore migrations
+  // were sites the scan never classified and the check still enforces over.
+  const out = renderArea(
+    area({
+      dimensions: [
+        dim({ key: "file_naming_case", claim: "files here are named snake_case", candidates: 1525, conforming: 1525, declined: 3 }),
+      ],
+    })
+  );
+
+  assert.match(out, /^ {2}1525 of 1525 sites across 8 of 40 files, 3 names spelling no class, 4 authors$/m);
+});
+
+test("the disclosure costs no line, so no area trades a directive for it", () => {
+  // Measured on vscode: of 500 areas, six sit at the forty-line bound and three
+  // of those state this row. On its own line the disclosure pushed a stated
+  // directive out of one of them, and `check` then capped that slot at FIX.
+  const withDeclined = area({
+    dimensions: [dim({ key: "file_naming_case", claim: "files here are named snake_case", candidates: 60, conforming: 60, declined: 3 })],
+  });
+  const without = area({
+    dimensions: [dim({ key: "file_naming_case", claim: "files here are named snake_case", candidates: 60, conforming: 60 })],
+  });
+
+  assert.equal(renderArea(withDeclined).split("\n").length, renderArea(without).split("\n").length);
+  assert.deepEqual(droppedDirectives(withDeclined), droppedDirectives(without));
+});
+
+test("a claim that names an exception still says what it skipped", () => {
+  // A declined site never reaches the `except` list, so that list teaches a
+  // reader nothing about it, and the count belongs beside the population.
+  const out = renderArea(
+    area({
+      dimensions: [
+        dim({
+          key: "file_naming_case",
+          claim: "files here are named snake_case",
+          candidates: 60,
+          conforming: 59,
+          declined: 2,
+          exceptions: [{ path: "db/migrate/20240905054508_AddPascal.rb", count: 1 }],
+        }),
+      ],
+    })
+  );
+
+  assert.match(out, /^ {2}59 of 60 sites across 8 of 40 files, 2 names spelling no class, 4 authors$/m);
+  assert.match(out, /^ {2}except "db\/migrate\/20240905054508_AddPascal\.rb"$/m);
+});
+
+test("one declined name reads as one, not as a plural over a count of one", () => {
+  const out = renderArea(
+    area({ dimensions: [dim({ key: "file_naming_case", claim: "files here are named snake_case", candidates: 60, conforming: 60, declined: 1 })] })
+  );
+
+  assert.match(out, /1 name spelling no class,/);
+});
+
+test("a count that is not a number is no disclosure at all", () => {
+  // The record is a file on disk and a hand-edited one reaches the renderer.
+  // A count it cannot read is silence rather than `NaN names not counted` in a
+  // file every turn loads.
+  for (const declined of [0, -1, "3", NaN, 1.5, null, {}]) {
+    const out = renderArea(
+      area({ dimensions: [dim({ key: "file_naming_case", claim: "files here are named snake_case", candidates: 60, conforming: 60, declined })] })
+    );
+    assert.doesNotMatch(out, /spelling no class/, `declined ${JSON.stringify(declined)}`);
+  }
 });
 
 test("the check reads the same block height as the writer, explanation and all", () => {

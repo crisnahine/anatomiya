@@ -176,6 +176,37 @@ function notCountedLine(d, side, said) {
 }
 
 /**
+ * The sites this area holds that the row's classifier held no vote for, as a
+ * clause on the counts line rather than a line of its own.
+ *
+ * A stated `N of N` reads as a population with no counter-example in it, and
+ * for the filename row that population is short by every stem spelling none of
+ * the classes: the scan votes with a class and the check enforces over the
+ * site, so those names leave the count while a new one is still measured
+ * against the sentence. `across X of Y files` cannot say it, since it mixes
+ * them with the files that are no site at all.
+ *
+ * It does not say "not counted", though that is what happened to them. Four
+ * lines up, `notCountedLine` spends that phrase on forms the predicate declines
+ * and the check therefore never enforces, and these names are the opposite: the
+ * one population still measured against the sentence at the top severity. Two
+ * meanings for one phrase in one file is worse than a longer clause.
+ *
+ * On the counts line because a line of its own is one of forty. Measured on
+ * vscode: six of 500 areas sit at the bound, three of those state this row, and
+ * the disclosure pushed a stated directive out of one of them, which also
+ * capped that slot at FIX in the check. A disclosure that costs a convention is
+ * a bad trade, and this one costs nothing (A41).
+ */
+function declinedClause(d) {
+  const n = d.declined;
+  // A record is a file on disk. A count it cannot read is silence rather than
+  // `NaN names not counted` in a file every turn loads.
+  if (!Number.isInteger(n) || n <= 0) return "";
+  return `, ${n} ${n === 1 ? "name" : "names"} spelling no class`;
+}
+
+/**
  * How the uncovered count divides, in one place because two surfaces print it.
  *
  * The CLI and the overview drifting apart on the same number is the failure
@@ -374,12 +405,13 @@ function areaBlocks(area) {
       // the area holds more than one language or a file nothing was read from,
       // and dividing by it retires the audit C3 exists to provide.
       `  ${s.conforming} of ${d.candidates} sites across ${d.applicability} of ${d.langFileCount} files` +
+        declinedClause(d) +
         `, ${hands(d)}` +
         companionAudit(d) +
         (d.precision === "partial" ? "  (partial: some sites are not visible statically)" : ""),
     ];
-    const declined = notCountedLine(d, s, said);
-    if (declined) block.push(declined);
+    const notCounted = notCountedLine(d, s, said);
+    if (notCounted) block.push(notCounted);
     for (const e of s.exceptions) {
       block.push(`  except ${encodePath(e.path)}${e.count > 1 ? ` (${e.count} sites)` : ""}`);
     }

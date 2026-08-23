@@ -19,10 +19,11 @@ import { homedir } from "node:os";
 
 /**
  * The build this plugin's premise was read off, and the shape it was read as.
- * A version whose minor or major differs is one nobody has checked, which is
- * worth saying out loud even when every name is still there.
+ * A version whose minor or major differs, or that sits a run of patches on, is
+ * one nobody has checked, which is worth saying out loud even when every name
+ * is still there.
  */
-export const CALIBRATED_AGAINST = "2.1.238";
+export const CALIBRATED_AGAINST = "2.1.241";
 
 /**
  * The gate itself, as a shape rather than a name.
@@ -57,10 +58,10 @@ const GATE_REACH = 200;
  * this plugin satisfies by restating the reminder. Reworded upstream, the
  * reminder still arrives and means nothing.
  *
- * A proximity test on the gate itself was tried and dropped: `xhigh` appears
- * nowhere within 20,000 characters of any of the 14 `ultra_effort_enter` sites
- * in the build this was read off, so it would have failed on the build it was
- * calibrated against (A29).
+ * A proximity test on the gate itself was tried and dropped: the closest
+ * `xhigh` to any of the 14 `ultra_effort_enter` sites in the build this was
+ * read off is 185,312 bytes away, so any window narrow enough to mean anything
+ * would have failed on the build it was calibrated against (A29).
  */
 export const MARKERS = [
   "ultra_effort_enter",
@@ -252,18 +253,32 @@ export function versionOf(cli) {
   return /^\d+\.\d+\.\d+$/.test(name) ? name : null;
 }
 
+/**
+ * Patch releases between the calibrated build and the installed one before the
+ * gap is worth a line.
+ *
+ * One patch is noise: Claude Code updates itself, and a line on every update is
+ * a line nobody reads. A run of them is a fact, and ten is chosen for that noise
+ * rather than fitted to any drift: the one that put this here went three patches
+ * and would still be silent here. What the line buys is that the gap cannot grow
+ * without bound, not that it catches the next one early. A patch bump is not
+ * cosmetic either way, since two of the builds in that drift were the same size
+ * to the byte with 176,881,324 of them different.
+ */
+export const PATCHES_BEFORE_STALE = 10;
+
 /** A sentence when the installed build is one nobody calibrated against, or null. */
 export function behind(installed, calibrated = CALIBRATED_AGAINST) {
   if (!installed || !/^\d+\.\d+\.\d+$/.test(installed)) return null;
-  const [major, minor] = installed.split(".").map(Number);
-  const [wasMajor, wasMinor] = calibrated.split(".").map(Number);
-  if (major === wasMajor && minor === wasMinor) return null;
+  const [major, minor, patch] = installed.split(".").map(Number);
+  const [wasMajor, wasMinor, wasPatch] = calibrated.split(".").map(Number);
+  if (major === wasMajor && minor === wasMinor && patch - wasPatch < PATCHES_BEFORE_STALE) return null;
   return `this plugin was read off Claude Code ${calibrated} and the build here is ${installed}, which nobody has checked it against`;
 }
 
 /**
  * The same answer as `drift`, computed once per build rather than once per
- * session: reading a 321 MB bundle is a few hundred milliseconds, and the
+ * session: reading a 325 MB bundle is a few hundred milliseconds, and the
  * answer cannot change while the file it was read from has not.
  */
 export function driftCached(cli, state, remember) {
@@ -338,7 +353,7 @@ export function drift({ cli = cliPath() } = {}) {
  *
  * The bundle is hundreds of megabytes, so it is streamed rather than read
  * whole, and a second pass for the gate read most of it twice: the last marker
- * and the gate both sit past the 280 MB mark of a 321 MB build.
+ * and the gate both sit past the 288 MB mark of a 325 MB build.
  */
 function carries(path) {
   const markers = new Set();

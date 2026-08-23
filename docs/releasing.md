@@ -60,8 +60,15 @@ upstreams and are not meant to move together.
 - [ ] `SECURITY.md` names the current dependency set and says nothing about a tier that now ships.
 - [ ] `DECISIONS.md` has no `todo` row that this release actually closed, and every `**done**` note
       names the symbols that exist today.
-- [ ] For `ultracode-anywhere`: `VERIFYING.md` names the build the premise was last re-checked
-      against, and its `README.md` states what it does and does not restore.
+- [ ] For `ultracode-anywhere`: somebody worked `VERIFYING.md` against the installed build, and the
+      build it names is that one. `test/upstream.test.mjs` reads whatever build is installed for the
+      four markers and the gate, and holds the code and those docs to one version, but nothing there
+      can tell whether anyone re-read a build, and `behind` waits for a run of ten patch releases
+      before it says anything about one. Its `README.md` states what it does and does not restore.
+      Three places name a build with no case reading them, and they need a person: `DECISIONS.md`,
+      whose A29 and A30 carry live measurements rather than history, the `[Unreleased]` section of
+      the plugin's changelog, which is not history yet, and `docs/plugin-contract.md`, which dates
+      itself.
 
 ## Tag and confirm
 

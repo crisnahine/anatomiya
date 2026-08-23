@@ -88,7 +88,11 @@ export const FACTS_PATH = ".claude/anatomiya/facts.json";
 // on an older record means the row narrowed nothing, which is what its scan did.
 // 16 adds `narrowed`, which says whether the sentence names that kind, so the
 // check quotes the sentence the map printed rather than the plain template.
-export const FACTS_SCHEMA = 16;
+// 17 adds `declined`, the sites a corpus row's classifier held no vote for.
+// The counts line prints it and the check reads no such field, so a record
+// without it renders a line that discloses nothing. Absent means none, which is
+// what every scan before this measured and printed.
+export const FACTS_SCHEMA = 17;
 
 /**
  * Which of a dimension's two sentences an area is about, with the counts and
@@ -364,6 +368,13 @@ function dimensionRecord(d) {
     // obligations and nothing else, and it does not copy `kind` onto a slot, so
     // asking for the kind here asks a question no scan answers.
     ...(d.companionsElsewhere === undefined ? {} : { companionsElsewhere: d.companionsElsewhere }),
+    // How many sites the classifier held no vote for, which is the number the
+    // counts line prints. Stored whenever there were any, the
+    // way the companion count is, including on a slot this area only counts:
+    // the record is what the map is derivable from, and a slot the next scan
+    // states is one this number belongs to. Absent means none, so an older
+    // record reads as an area that skipped nothing, which is what it printed.
+    ...(d.declined === undefined ? {} : { declined: d.declined }),
     // Polarity is the one thing the rendered file deliberately does not say, so
     // this record is the only place the check can learn which of the two
     // sentences an area was handed (C6).
