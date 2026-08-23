@@ -165,7 +165,15 @@ function measured(t, body, options = []) {
   // no per-case timeout, so a child that never finishes takes the whole file
   // with nothing printed, the passing cases included.
   const run = spawnSync(process.execPath, [SCRIPT, ...options, spec], { encoding: "utf8", timeout: 120_000 });
-  return { ...run, lines: run.stdout.split("\n").filter((line) => line.startsWith(SUMMARY)) };
+  return {
+    ...run,
+    lines: run.stdout.split("\n").filter((line) => line.startsWith(SUMMARY)),
+    // The suite this spawns writes through the same handles, and the spec
+    // reporter writes to stdout, so a run that says nothing about its scopes
+    // has said why on one of the two and a case that quotes neither is a case
+    // nobody can act on.
+    said: `${run.stdout}${run.stderr}`,
+  };
 }
 
 test("every scope is stated on a run that misses a floor, not only on one that clears it", (t) => {
@@ -175,15 +183,18 @@ test("every scope is stated on a run that misses a floor, not only on one that c
   // one file of two of the scopes and exercises none of it, so those two are
   // missed on a percentage rather than on an empty report; the third says it
   // measured nothing, which is the other half of the same summary.
-  const loads = [fileURLToPath(new URL("../scripts/entry.mjs", import.meta.url)),
-                 fileURLToPath(new URL("../plugins/ultracode-anywhere/hooks/hook-io.mjs", import.meta.url))];
-  const { status, lines, stderr } = measured(
+  // As `file://` URLs, not as paths: a path is a specifier only where it starts
+  // with a slash, and on Windows `D:\a\...` is read as a package name, so the
+  // throwaway suite failed to load and the run said nothing about any scope.
+  const loads = [new URL("../scripts/entry.mjs", import.meta.url).href,
+                 new URL("../plugins/ultracode-anywhere/hooks/hook-io.mjs", import.meta.url).href];
+  const { status, lines, stderr, said } = measured(
     t,
     `import { test } from "node:test";\n${loads.map((at) => `import ${JSON.stringify(at)};`).join("\n")}\ntest("t", () => {});\n`,
   );
 
   assert.notEqual(status, 0, "a run that loads two files and calls neither cannot be clearing the floors");
-  assert.equal(lines.length, FLOORS.length, `stated ${lines.length} of ${FLOORS.length} scopes\n${stderr}`);
+  assert.equal(lines.length, FLOORS.length, `stated ${lines.length} of ${FLOORS.length} scopes\n${said}`);
   for (const floor of FLOORS) {
     assert.ok(lines.some((line) => line.includes(floor.scope)), `${floor.scope} went unstated`);
   }
@@ -228,7 +239,7 @@ test("a run writes the summary where it was asked to, shortfalls and all", (t) =
   // reached stderr was invisible to the reader it was written for.
   const at = join(mkdtempSync(join(tmpdir(), "anatomiya-coverage-said-")), "cov.txt");
   t.after(() => rmSync(join(at, ".."), { recursive: true, force: true }));
-  const loads = fileURLToPath(new URL("../scripts/entry.mjs", import.meta.url));
+  const loads = new URL("../scripts/entry.mjs", import.meta.url).href;
   const { status } = measured(t, `import { test } from "node:test";\nimport ${JSON.stringify(loads)};\ntest("t", () => {});\n`, [
     SUMMARY_FLAG,
     at,

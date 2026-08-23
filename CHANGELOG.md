@@ -237,6 +237,10 @@ aimed only at them found these.
   listing answers in slashes on every platform now.
 - A case matching the workflow file anchored on a bare newline, and a checkout that converts them
   made the whole match fail, which the case reported as the job no longer running the script.
+- Two coverage cases built a module specifier out of a filesystem path. A path is a specifier only
+  where it starts with a slash, so on Windows `D:\a\...` was read as a package name, the throwaway
+  suite failed to load, and the run reported nothing about any scope. They import a `file://` URL
+  now, and a run that says nothing about its scopes quotes whichever handle it said why on.
 ### Changed
 
 
