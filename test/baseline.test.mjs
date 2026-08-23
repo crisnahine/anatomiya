@@ -9,10 +9,10 @@ import { execFileSync } from "node:child_process";
 import {
   buildPin, loadPin, writePin, pinDelta, formatDelta,
   baselinePopulation, measure, resolve, PIN_PATH,
-} from "../lib/baseline.mjs";
+} from "../plugins/anatomiya/lib/baseline.mjs";
 import {
   showBlob, mergeBase, diffRange, shaReachable, resolveBaseRef, isSha,
-} from "../lib/git.mjs";
+} from "../plugins/anatomiya/lib/git.mjs";
 
 // The temporary repository is torn down through `t.after` rather than a call at
 // the end of the body: a failing assertion throws, and a cleanup line below it

@@ -9,55 +9,65 @@ import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 
 import { validate } from "../scripts/validate.mjs";
+import { REL } from "../scripts/plugins.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 
 /**
- * A repository with both manifests, one plugin at the root and one beside it,
- * which is the shape this marketplace has had since the second plugin landed.
+ * A marketplace with two plugins under `plugins/`, which is the shape this
+ * repository has had since neither of them sat at its root.
  */
-function marketplace(t, { second = {}, hooks = true } = {}) {
+function marketplace(t, { second = {}, hooks = true, commands = false } = {}) {
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-validate-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
 
-  writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "anatomiya", version: "1.2.3" }));
+  // The shape this marketplace has: no plugin at the root, one directory per
+  // plugin under `plugins/`, and the root carrying the marketplace manifest and
+  // the package that declares them as workspaces.
+  writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "crisnahine", version: "1.2.3", workspaces: ["plugins/*"] }));
   mkdirSync(join(dir, ".claude-plugin"), { recursive: true });
-  writeFileSync(
-    join(dir, ".claude-plugin", "plugin.json"),
-    JSON.stringify({ name: "anatomiya", version: "1.2.3", description: "d" }),
-  );
   writeFileSync(
     join(dir, ".claude-plugin", "marketplace.json"),
     JSON.stringify({
       name: "anatomiya",
       owner: { name: "crisnahine" },
       plugins: [
-        { name: "anatomiya", source: "./", description: "d" },
-        { name: "second", source: "./second", description: "d" },
+        { name: "anatomiya", source: `./${REL.anatomiya}`, description: "d" },
+        { name: "second", source: "./plugins/second", description: "d" },
       ],
     }),
   );
-  mkdirSync(join(dir, "hooks"), { recursive: true });
-  writeFileSync(join(dir, "bin"), "");
+
+  mkdirSync(join(dir, REL.anatomiya, ".claude-plugin"), { recursive: true });
   writeFileSync(
-    join(dir, "hooks", "hooks.json"),
+    join(dir, REL.anatomiya, ".claude-plugin", "plugin.json"),
+    JSON.stringify({ name: "anatomiya", version: "1.2.3", description: "d" }),
+  );
+  mkdirSync(join(dir, REL.anatomiya, "hooks"), { recursive: true });
+  writeFileSync(join(dir, REL.anatomiya, "bin"), "");
+  writeFileSync(
+    join(dir, REL.anatomiya, "hooks", "hooks.json"),
     JSON.stringify({ hooks: { UserPromptSubmit: [{ hooks: [{ type: "command", command: 'node "${CLAUDE_PLUGIN_ROOT}/bin"' }] }] } }),
   );
 
-  mkdirSync(join(dir, "second", ".claude-plugin"), { recursive: true });
+  mkdirSync(join(dir, "plugins", "second", ".claude-plugin"), { recursive: true });
   writeFileSync(
-    join(dir, "second", ".claude-plugin", "plugin.json"),
+    join(dir, "plugins", "second", ".claude-plugin", "plugin.json"),
     JSON.stringify({ name: "second", version: "0.1.0", description: "d", ...second }),
   );
   if (hooks) {
-    mkdirSync(join(dir, "second", "hooks"), { recursive: true });
-    writeFileSync(join(dir, "second", "hooks", "run.mjs"), "");
+    mkdirSync(join(dir, "plugins", "second", "hooks"), { recursive: true });
+    writeFileSync(join(dir, "plugins", "second", "hooks", "run.mjs"), "");
     writeFileSync(
-      join(dir, "second", "hooks", "hooks.json"),
+      join(dir, "plugins", "second", "hooks", "hooks.json"),
       JSON.stringify({
         hooks: { UserPromptSubmit: [{ hooks: [{ type: "command", command: 'node "${CLAUDE_PLUGIN_ROOT}/hooks/run.mjs"' }] }] },
       }),
     );
+  }
+  if (commands) {
+    mkdirSync(join(dir, "plugins", "second", "commands"), { recursive: true });
+    writeFileSync(join(dir, "plugins", "second", "commands", "do.md"), "# do\n");
   }
   return dir;
 }
@@ -73,15 +83,15 @@ test("the manifest check runs as a command and says so", () => {
   assert.match(run.stdout, /ok/);
 });
 
-// --- the plugins beside the root one -----------------------------------------
+// --- the plugins the marketplace lists ----------------------------------------
 
-test("a marketplace entry beside the root plugin is read as a plugin, not as a path that exists", (t) => {
+test("a marketplace entry is read as a plugin, not as a path that exists", (t) => {
   // The only thing checked about a second entry was that its directory was
   // there. A directory with no manifest in it installs as nothing.
   const dir = marketplace(t);
-  rmSync(join(dir, "second", ".claude-plugin"), { recursive: true, force: true });
+  rmSync(join(dir, "plugins", "second", ".claude-plugin"), { recursive: true, force: true });
 
-  assert.deepEqual(validate(dir), ["second/.claude-plugin/plugin.json is missing"]);
+  assert.deepEqual(validate(dir), ["plugins/second/.claude-plugin/plugin.json is missing"]);
 });
 
 test("a plugin's own manifest has to name that plugin", (t) => {
@@ -96,36 +106,126 @@ test("a plugin's own manifest needs a version and a description", (t) => {
   const dir = marketplace(t, { second: { version: undefined, description: undefined } });
 
   assert.deepEqual(validate(dir).sort(), [
-    "second/.claude-plugin/plugin.json has no description",
-    "second/.claude-plugin/plugin.json has no version",
+    "plugins/second/.claude-plugin/plugin.json has no description",
+    "plugins/second/.claude-plugin/plugin.json has no version",
   ]);
 });
 
 test("a version that is not semver is caught wherever the plugin lives", (t) => {
   const dir = marketplace(t, { second: { version: "0.1" } });
 
-  assert.deepEqual(validate(dir), ["second/.claude-plugin/plugin.json version is not semver: 0.1"]);
+  assert.deepEqual(validate(dir), ["plugins/second/.claude-plugin/plugin.json version is not semver: 0.1"]);
 });
 
 test("a second plugin's hook has to name a file that plugin ships", (t) => {
   const dir = marketplace(t);
-  rmSync(join(dir, "second", "hooks", "run.mjs"));
+  rmSync(join(dir, "plugins", "second", "hooks", "run.mjs"));
 
   assert.deepEqual(validate(dir), [
-    "second/hooks/hooks.json UserPromptSubmit runs hooks/run.mjs, which that plugin does not ship",
+    "plugins/second/hooks/hooks.json UserPromptSubmit runs hooks/run.mjs, which that plugin does not ship",
   ]);
 });
 
 test("a second plugin's hooks.json has to parse", (t) => {
   const dir = marketplace(t);
-  writeFileSync(join(dir, "second", "hooks", "hooks.json"), "{not json");
+  writeFileSync(join(dir, "plugins", "second", "hooks", "hooks.json"), "{not json");
 
   assert.equal(validate(dir).length, 1);
   assert.match(validate(dir)[0], /second\/hooks\/hooks\.json/);
 });
 
-test("a plugin that declares no hooks is fine", (t) => {
+test("a plugin that declares no hooks but ships commands is fine", (t) => {
+  // Hooks are one of five things a plugin can be. Requiring them of every
+  // plugin would refuse a perfectly good commands-only one.
+  const dir = marketplace(t, { hooks: false, commands: true });
+
+  assert.deepEqual(validate(dir), []);
+});
+
+test("a listed plugin that would install as nothing is a problem", (t) => {
+  // The second plugin is its hooks. Delete the declaration and it installs
+  // with a name, a version and no behaviour, which nothing else here notices:
+  // the hook check runs on it, and then returns without a word because the
+  // file it was going to read is not there.
   const dir = marketplace(t, { hooks: false });
+
+  assert.deepEqual(validate(dir), [
+    "marketplace.json entry second installs as nothing: no hooks, commands, agents, skills or mcpServers",
+  ]);
+});
+
+test("a declaration that parses and declares no hook installs nothing", (t) => {
+  // A file with bytes in it is not a file that declares a hook, and this is the
+  // shape the loader reads as an empty one rather than as a broken one.
+  const dir = marketplace(t);
+  writeFileSync(join(dir, "plugins", "second", "hooks", "hooks.json"), JSON.stringify({ hooks: {} }));
+
+  assert.deepEqual(validate(dir), [
+    "marketplace.json entry second installs as nothing: no hooks, commands, agents, skills or mcpServers",
+  ]);
+});
+
+test("an event declared with an empty group installs nothing either", (t) => {
+  const dir = marketplace(t);
+  writeFileSync(join(dir, "plugins", "second", "hooks", "hooks.json"), JSON.stringify({ hooks: { UserPromptSubmit: [{ hooks: [] }] } }));
+
+  assert.deepEqual(validate(dir), [
+    "marketplace.json entry second installs as nothing: no hooks, commands, agents, skills or mcpServers",
+  ]);
+});
+
+test("a manifest key that is present and empty names nothing", (t) => {
+  // `commands: []` and `commands: ""` are a key with no value behind it, and a
+  // truthiness test read the empty array as behaviour the plugin installs.
+  for (const empty of [[], "", {}]) {
+    const dir = marketplace(t, { hooks: false, second: { commands: empty } });
+
+    assert.deepEqual(validate(dir), [
+      "marketplace.json entry second installs as nothing: no hooks, commands, agents, skills or mcpServers",
+    ], JSON.stringify(empty));
+  }
+});
+
+test("a commands directory holding only an empty directory installs nothing", (t) => {
+  // Commands nest, so the walk has to reach a file rather than count entries.
+  const dir = marketplace(t, { hooks: false });
+  mkdirSync(join(dir, "plugins", "second", "commands", "ops"), { recursive: true });
+
+  assert.deepEqual(validate(dir), [
+    "marketplace.json entry second installs as nothing: no hooks, commands, agents, skills or mcpServers",
+  ]);
+});
+
+test("a commands file with no bytes in it installs nothing, and one with bytes does", (t) => {
+  // A directory holding a file is not a directory holding a command: a name
+  // that was touched and never written is what a half-finished change leaves
+  // behind, and the loader reads no command out of it.
+  const dir = marketplace(t, { hooks: false });
+  const path = join(dir, "plugins", "second", "commands", "go.md");
+  mkdirSync(join(dir, "plugins", "second", "commands"), { recursive: true });
+  writeFileSync(path, "");
+
+  assert.deepEqual(validate(dir), [
+    "marketplace.json entry second installs as nothing: no hooks, commands, agents, skills or mcpServers",
+  ]);
+
+  writeFileSync(path, "# go\n");
+  assert.deepEqual(validate(dir), []);
+});
+
+test("a skill is one of the five, and one is enough", (t) => {
+  const dir = marketplace(t, { hooks: false });
+  mkdirSync(join(dir, "plugins", "second", "skills", "demo"), { recursive: true });
+  writeFileSync(join(dir, "plugins", "second", "skills", "demo", "SKILL.md"), "# demo\n");
+
+  assert.deepEqual(validate(dir), []);
+});
+
+test("a plugin that names its commands directory in the manifest is fine", (t) => {
+  // The loader takes either spelling, so the check has to as well.
+  const dir = marketplace(t, { hooks: false, second: { commands: "./elsewhere" } });
+  mkdirSync(join(dir, "plugins", "second", "elsewhere"), { recursive: true });
+  writeFileSync(join(dir, "plugins", "second", "elsewhere", "do.md"), "# do\n");
 
   assert.deepEqual(validate(dir), []);
 });
@@ -141,11 +241,15 @@ test("a stray file in the manifest directory is still a problem", (t) => {
   ]);
 });
 
-test("the root plugin's version still has to match package.json", (t) => {
+test("a plugin's package manifest has to agree with its plugin manifest", (t) => {
+  // One release moves both and a tag reads both. Checked where the two files
+  // are, which is inside the plugin: the repository root holds neither now.
   const dir = marketplace(t);
-  writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "anatomiya", version: "9.9.9" }));
+  writeFileSync(join(dir, REL.anatomiya, "package.json"), JSON.stringify({ name: "anatomiya", version: "9.9.9" }));
 
-  assert.deepEqual(validate(dir), ["version drift: package.json 9.9.9, plugin.json 1.2.3"]);
+  assert.deepEqual(validate(dir), [
+    `version drift: package.json 9.9.9, ${REL.anatomiya}/.claude-plugin/plugin.json 1.2.3`,
+  ]);
 });
 
 test("a marketplace entry pointing outside the repository is refused, whichever way it is spelled", (t) => {
@@ -183,18 +287,21 @@ test("a repository with no manifest directory names the directory and both manif
   const dir = marketplace(t);
   rmSync(join(dir, ".claude-plugin"), { recursive: true, force: true });
 
+  // Only the marketplace manifest belongs at the root now: each plugin carries
+  // its own, in its own directory, and the loop reads them there.
   assert.deepEqual(validate(dir), [
     ".claude-plugin/ is missing",
-    ".claude-plugin/plugin.json is missing",
     ".claude-plugin/marketplace.json is missing",
   ]);
 });
 
-test("the root plugin's name still has to match package.json", (t) => {
+test("a plugin's package manifest has to carry its name too", (t) => {
   const dir = marketplace(t);
-  writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "renamed", version: "1.2.3" }));
+  writeFileSync(join(dir, REL.anatomiya, "package.json"), JSON.stringify({ name: "renamed", version: "1.2.3" }));
 
-  assert.deepEqual(validate(dir), ["name drift: package.json renamed, plugin.json anatomiya"]);
+  assert.deepEqual(validate(dir), [
+    `name drift: package.json renamed, ${REL.anatomiya}/.claude-plugin/plugin.json anatomiya`,
+  ]);
 });
 
 test("an entry with no name and an entry with no source are both caught", (t) => {
@@ -204,17 +311,20 @@ test("an entry with no name and an entry with no source are both caught", (t) =>
   manifest.plugins = [{ source: "./" }, { name: "sourceless" }];
   writeFileSync(path, JSON.stringify(manifest));
 
+  // The list is replaced whole, so the plugin whose hooks are required is no
+  // longer on it, which this says too.
   assert.deepEqual(validate(dir), [
     "marketplace.json has a plugin entry with no name",
     "marketplace.json entry sourceless has no source",
+    "marketplace.json lists no usable plugin called anatomiya, whose hooks were never read as a result",
   ]);
 });
 
 test("an entry naming a directory that is not there is caught before its manifest is read", (t) => {
   const dir = marketplace(t);
-  rmSync(join(dir, "second"), { recursive: true, force: true });
+  rmSync(join(dir, "plugins", "second"), { recursive: true, force: true });
 
-  assert.deepEqual(validate(dir), ["marketplace.json entry second points at a missing path ./second"]);
+  assert.deepEqual(validate(dir), ["marketplace.json entry second points at a missing path ./plugins/second"]);
 });
 
 test("a marketplace listing no plugins at all is a marketplace that installs nothing", (t) => {
@@ -224,35 +334,63 @@ test("a marketplace listing no plugins at all is a marketplace that installs not
   manifest.plugins = [];
   writeFileSync(path, JSON.stringify(manifest));
 
-  assert.deepEqual(validate(dir), ["marketplace.json lists no plugins"]);
+  assert.deepEqual(validate(dir), [
+    "marketplace.json lists no plugins",
+    "marketplace.json lists no usable plugin called anatomiya, whose hooks were never read as a result",
+  ]);
 });
 
 test("a hooks file with no hooks block, and an event that is not a list, are both refused", (t) => {
   const dir = marketplace(t);
-  writeFileSync(join(dir, "second", "hooks", "hooks.json"), JSON.stringify({ UserPromptSubmit: [] }));
-  assert.deepEqual(validate(dir), ["second/hooks/hooks.json has no top-level hooks block, so it loads nothing"]);
+  writeFileSync(join(dir, "plugins", "second", "hooks", "hooks.json"), JSON.stringify({ UserPromptSubmit: [] }));
+  assert.deepEqual(validate(dir), ["plugins/second/hooks/hooks.json has no top-level hooks block, so it loads nothing"]);
 
-  writeFileSync(join(dir, "second", "hooks", "hooks.json"), JSON.stringify({ hooks: { UserPromptSubmit: {} } }));
-  assert.deepEqual(validate(dir), ["second/hooks/hooks.json event UserPromptSubmit is not a list"]);
+  writeFileSync(join(dir, "plugins", "second", "hooks", "hooks.json"), JSON.stringify({ hooks: { UserPromptSubmit: {} } }));
+  assert.deepEqual(validate(dir), ["plugins/second/hooks/hooks.json event UserPromptSubmit is not a list"]);
 });
 
 test("a hook command that names no file in its plugin is refused", (t) => {
   const dir = marketplace(t);
   writeFileSync(
-    join(dir, "second", "hooks", "hooks.json"),
+    join(dir, "plugins", "second", "hooks", "hooks.json"),
     JSON.stringify({ hooks: { UserPromptSubmit: [{ hooks: [{ type: "command", command: "curl example.test" }] }] } }),
   );
 
   assert.deepEqual(validate(dir), [
-    "second/hooks/hooks.json UserPromptSubmit runs curl example.test, which names nothing in this plugin",
+    "plugins/second/hooks/hooks.json UserPromptSubmit runs curl example.test, which names nothing in this plugin",
   ]);
 });
 
-test("the root plugin's own hook file is required, since it is what re-delivers the map", (t) => {
+test("anatomiya's own hook file is required, since it is what re-delivers the map", (t) => {
+  // Required of the plugin that owns it and of no other, named on the
+  // marketplace rather than inferred from a position in the tree.
   const dir = marketplace(t);
-  rmSync(join(dir, "hooks", "hooks.json"));
+  rmSync(join(dir, REL.anatomiya, "hooks", "hooks.json"));
 
-  assert.deepEqual(validate(dir), ["hooks/hooks.json is missing, so the map is never re-delivered"]);
+  assert.deepEqual(validate(dir), [
+    `${REL.anatomiya}/hooks/hooks.json is missing, so the map is never re-delivered`,
+  ]);
+});
+
+test("a declaration that declares no hook is the same silence as no file", (t) => {
+  // The file is what was checked for, and a file is not a hook: emptied to a
+  // top-level block with nothing in it, the map is never re-delivered and both
+  // gates said the manifests and the hooks were fine. The check that asks
+  // whether a plugin installs anything is not asked of a plugin whose
+  // declaration was just reported missing, so nothing else catches this.
+  const dir = marketplace(t);
+  const path = join(dir, REL.anatomiya, "hooks", "hooks.json");
+
+  writeFileSync(path, JSON.stringify({ hooks: {} }));
+  assert.deepEqual(validate(dir), [`${REL.anatomiya}/hooks/hooks.json declares no hook, so the map is never re-delivered`]);
+
+  // An event with no group under it is the same nothing spelled longer.
+  writeFileSync(path, JSON.stringify({ hooks: { UserPromptSubmit: [] } }));
+  assert.deepEqual(validate(dir), [`${REL.anatomiya}/hooks/hooks.json declares no hook, so the map is never re-delivered`]);
+
+  // And a group whose own list is empty is the last way to spell it.
+  writeFileSync(path, JSON.stringify({ hooks: { UserPromptSubmit: [{ hooks: [] }] } }));
+  assert.deepEqual(validate(dir), [`${REL.anatomiya}/hooks/hooks.json declares no hook, so the map is never re-delivered`]);
 });
 
 // --- what the workflow used to check inline -----------------------------------
@@ -273,26 +411,26 @@ test("a marketplace with no name and no owner is caught here, not by the loader"
 
 test("a path a plugin manifest names has to exist and stay inside that plugin", (t) => {
   const dir = marketplace(t);
-  const path = join(dir, ".claude-plugin", "plugin.json");
+  const path = join(dir, REL.anatomiya, ".claude-plugin", "plugin.json");
   const manifest = JSON.parse(readFileSync(path, "utf8"));
   manifest.commands = ["./commands", "../outside"];
   writeFileSync(path, JSON.stringify(manifest));
 
   assert.deepEqual(validate(dir).sort(), [
-    ".claude-plugin/plugin.json commands[0] points at a missing path: ./commands",
-    ".claude-plugin/plugin.json commands[1] points outside the plugin: ../outside",
+    `${REL.anatomiya}/.claude-plugin/plugin.json commands[0] points at a missing path: ./commands`,
+    `${REL.anatomiya}/.claude-plugin/plugin.json commands[1] points outside the plugin: ../outside`,
   ]);
 });
 
 test("a hook may not run a file outside its own plugin", (t) => {
   const dir = marketplace(t);
   writeFileSync(
-    join(dir, "second", "hooks", "hooks.json"),
+    join(dir, "plugins", "second", "hooks", "hooks.json"),
     JSON.stringify({ hooks: { UserPromptSubmit: [{ hooks: [{ type: "command", command: 'node "${CLAUDE_PLUGIN_ROOT}/../hooks/hooks.json"' }] }] } }),
   );
 
   assert.deepEqual(validate(dir), [
-    "second/hooks/hooks.json UserPromptSubmit runs ../hooks/hooks.json, which is outside that plugin",
+    "plugins/second/hooks/hooks.json UserPromptSubmit runs ../hooks/hooks.json, which is outside that plugin",
   ]);
 });
 
@@ -300,14 +438,14 @@ test("a package.json that is not there is a problem, not a check that quietly st
   const dir = marketplace(t);
   rmSync(join(dir, "package.json"));
 
-  assert.deepEqual(validate(dir), ["package.json is missing, so no version can be compared against it"]);
+  assert.deepEqual(validate(dir), ["package.json is missing, and it is what declares the plugins as workspaces"]);
 });
 
 test("an entry with neither a name nor a source reports both", (t) => {
   const dir = marketplace(t);
   const path = join(dir, ".claude-plugin", "marketplace.json");
   const manifest = JSON.parse(readFileSync(path, "utf8"));
-  manifest.plugins = [{ name: "anatomiya", source: "./" }, {}];
+  manifest.plugins = [{ name: "anatomiya", source: `./${REL.anatomiya}` }, {}];
   writeFileSync(path, JSON.stringify(manifest));
 
   assert.deepEqual(validate(dir), [
@@ -319,7 +457,7 @@ test("an entry with neither a name nor a source reports both", (t) => {
 test("a hook command that carries arguments names the file, not the flags", (t) => {
   const dir = marketplace(t);
   writeFileSync(
-    join(dir, "second", "hooks", "hooks.json"),
+    join(dir, "plugins", "second", "hooks", "hooks.json"),
     JSON.stringify({ hooks: { UserPromptSubmit: [{ hooks: [{ type: "command", command: "node ${CLAUDE_PLUGIN_ROOT}/hooks/run.mjs --flag" }] }] } }),
   );
 
@@ -328,7 +466,7 @@ test("a hook command that carries arguments names the file, not the flags", (t) 
 
 test("problems come back as annotations where a workflow is reading them", (t) => {
   const dir = marketplace(t);
-  rmSync(join(dir, ".claude-plugin", "plugin.json"));
+  rmSync(join(dir, REL.anatomiya, ".claude-plugin", "plugin.json"));
   const run = spawnSync(process.execPath, [join(ROOT, "scripts", "validate.mjs"), dir], {
     encoding: "utf8",
     env: { ...process.env, GITHUB_ACTIONS: "true" },
@@ -351,12 +489,12 @@ test("a manifest that parses to null is refused, not read as an absent one", (t)
 
 test("a plugin manifest that is an array, and a hooks file that is null, are both refused", (t) => {
   const dir = marketplace(t);
-  writeFileSync(join(dir, "second", ".claude-plugin", "plugin.json"), "[]");
-  assert.deepEqual(validate(dir), ["second/.claude-plugin/plugin.json is not an object"]);
+  writeFileSync(join(dir, "plugins", "second", ".claude-plugin", "plugin.json"), "[]");
+  assert.deepEqual(validate(dir), ["plugins/second/.claude-plugin/plugin.json is not an object"]);
 
-  writeFileSync(join(dir, "second", ".claude-plugin", "plugin.json"), JSON.stringify({ name: "second", version: "0.1.0", description: "d" }));
-  writeFileSync(join(dir, "second", "hooks", "hooks.json"), "null");
-  assert.deepEqual(validate(dir), ["second/hooks/hooks.json is not an object"]);
+  writeFileSync(join(dir, "plugins", "second", ".claude-plugin", "plugin.json"), JSON.stringify({ name: "second", version: "0.1.0", description: "d" }));
+  writeFileSync(join(dir, "plugins", "second", "hooks", "hooks.json"), "null");
+  assert.deepEqual(validate(dir), ["plugins/second/hooks/hooks.json is not an object"]);
 });
 
 test("a package.json that parses to nothing is a problem, not a skipped comparison", (t) => {
@@ -386,11 +524,11 @@ test("a plugin directory that is a symlink out of the repository is refused", ne
   t.after(() => rmSync(outside, { recursive: true, force: true }));
   mkdirSync(join(outside, ".claude-plugin"), { recursive: true });
   writeFileSync(join(outside, ".claude-plugin", "plugin.json"), JSON.stringify({ name: "second", version: "0.1.0", description: "d" }));
-  rmSync(join(dir, "second"), { recursive: true, force: true });
-  symlinkSync(outside, join(dir, "second"));
+  rmSync(join(dir, "plugins", "second"), { recursive: true, force: true });
+  symlinkSync(outside, join(dir, "plugins", "second"));
 
   assert.deepEqual(validate(dir), [
-    "marketplace.json entry second points outside the repository: ./second",
+    "marketplace.json entry second points outside the repository: ./plugins/second",
   ]);
 });
 
@@ -398,7 +536,7 @@ test("the same plugin listed twice is caught, since only one of them installs", 
   const dir = marketplace(t);
   const path = join(dir, ".claude-plugin", "marketplace.json");
   const manifest = JSON.parse(readFileSync(path, "utf8"));
-  manifest.plugins.push({ name: "second", source: "./second", description: "d" });
+  manifest.plugins.push({ name: "second", source: "./plugins/second", description: "d" });
   writeFileSync(path, JSON.stringify(manifest));
 
   assert.deepEqual(validate(dir), ["marketplace.json lists second twice"]);
@@ -409,7 +547,7 @@ test("the same plugin listed twice is caught, since only one of them installs", 
 test("every file a hook command names is checked, not only the first", (t) => {
   const dir = marketplace(t);
   writeFileSync(
-    join(dir, "second", "hooks", "hooks.json"),
+    join(dir, "plugins", "second", "hooks", "hooks.json"),
     JSON.stringify({
       hooks: {
         UserPromptSubmit: [{ hooks: [{ type: "command", command: 'node "${CLAUDE_PLUGIN_ROOT}/hooks/run.mjs" | node "${CLAUDE_PLUGIN_ROOT}/hooks/gone.mjs"' }] }],
@@ -418,14 +556,14 @@ test("every file a hook command names is checked, not only the first", (t) => {
   );
 
   assert.deepEqual(validate(dir), [
-    "second/hooks/hooks.json UserPromptSubmit runs hooks/gone.mjs, which that plugin does not ship",
+    "plugins/second/hooks/hooks.json UserPromptSubmit runs hooks/gone.mjs, which that plugin does not ship",
   ]);
 });
 
 test("a command that names the plugin root itself, or ships no command at all, is read as what it is", (t) => {
   const dir = marketplace(t);
   writeFileSync(
-    join(dir, "second", "hooks", "hooks.json"),
+    join(dir, "plugins", "second", "hooks", "hooks.json"),
     JSON.stringify({
       hooks: {
         UserPromptSubmit: [{ hooks: [{ type: "command", command: 'cd "${CLAUDE_PLUGIN_ROOT}" && node hooks/run.mjs' }, { type: "command" }] }],
@@ -433,15 +571,15 @@ test("a command that names the plugin root itself, or ships no command at all, i
     }),
   );
 
-  assert.deepEqual(validate(dir), ["second/hooks/hooks.json UserPromptSubmit has a hook with no command"]);
+  assert.deepEqual(validate(dir), ["plugins/second/hooks/hooks.json UserPromptSubmit has a hook with no command"]);
 });
 
 test("a quoted path with a space in it is the path, not its first word", (t) => {
   const dir = marketplace(t);
-  mkdirSync(join(dir, "second", "my hooks"), { recursive: true });
-  writeFileSync(join(dir, "second", "my hooks", "run.mjs"), "");
+  mkdirSync(join(dir, "plugins", "second", "my hooks"), { recursive: true });
+  writeFileSync(join(dir, "plugins", "second", "my hooks", "run.mjs"), "");
   writeFileSync(
-    join(dir, "second", "hooks", "hooks.json"),
+    join(dir, "plugins", "second", "hooks", "hooks.json"),
     JSON.stringify({ hooks: { UserPromptSubmit: [{ hooks: [{ type: "command", command: 'node "${CLAUDE_PLUGIN_ROOT}/my hooks/run.mjs"' }] }] } }),
   );
 
@@ -461,7 +599,7 @@ test("an unquoted path followed by a quoted argument is still just the path", (t
 
   for (const command of commands) {
     writeFileSync(
-      join(dir, "second", "hooks", "hooks.json"),
+      join(dir, "plugins", "second", "hooks", "hooks.json"),
       JSON.stringify({ hooks: { UserPromptSubmit: [{ hooks: [{ type: "command", command }] }] } }),
     );
     assert.deepEqual(validate(dir), [], command);
@@ -492,12 +630,12 @@ test("a source that names a directory without saying it is one is told what is m
   ]);
 });
 
-test("a listed plugin's manifest directory holds manifests and nothing else, like the root's", (t) => {
+test("a listed plugin's manifest directory holds manifests and nothing else", (t) => {
   const dir = marketplace(t);
-  writeFileSync(join(dir, "second", ".claude-plugin", "notes.md"), "");
+  writeFileSync(join(dir, "plugins", "second", ".claude-plugin", "notes.md"), "");
 
   assert.deepEqual(validate(dir), [
-    "second/.claude-plugin/notes.md is not a manifest; manifests only in that directory",
+    "plugins/second/.claude-plugin/notes.md is not a manifest; manifests only in that directory",
   ]);
 });
 
@@ -531,7 +669,7 @@ test("a source that is an object naming a remote is somebody else's repository, 
 test("a hook that is a prompt rather than a command names no file, and is not refused for it", (t) => {
   const dir = marketplace(t);
   writeFileSync(
-    join(dir, "second", "hooks", "hooks.json"),
+    join(dir, "plugins", "second", "hooks", "hooks.json"),
     JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: "prompt", prompt: "Say what is left undone." }] }] } }),
   );
 
@@ -540,10 +678,10 @@ test("a hook that is a prompt rather than a command names no file, and is not re
 
 test("a manifest directory that is a file is reported, not thrown over", (t) => {
   const dir = marketplace(t);
-  rmSync(join(dir, "second", ".claude-plugin"), { recursive: true, force: true });
-  writeFileSync(join(dir, "second", ".claude-plugin"), "");
+  rmSync(join(dir, "plugins", "second", ".claude-plugin"), { recursive: true, force: true });
+  writeFileSync(join(dir, "plugins", "second", ".claude-plugin"), "");
 
-  assert.deepEqual(validate(dir), ["second/.claude-plugin is not a directory"]);
+  assert.deepEqual(validate(dir), ["plugins/second/.claude-plugin is not a directory"]);
 
   rmSync(join(dir, ".claude-plugin"), { recursive: true, force: true });
   writeFileSync(join(dir, ".claude-plugin"), "");
@@ -556,34 +694,41 @@ test("a source that wanders and still resolves inside the repository installs, a
   // marketplace validator skips such entries from its own checks, which read
   // as the loader refusing them; it does not.
   const dir = marketplace(t);
-  cpSync(join(dir, "second"), join(dir, "..dotty"), { recursive: true });
+  cpSync(join(dir, "plugins", "second"), join(dir, "..dotty"), { recursive: true });
   const path = join(dir, ".claude-plugin", "marketplace.json");
   const listed = JSON.parse(readFileSync(path, "utf8"));
-  for (const source of ["./..dotty", "./second/../second", "./second/."]) {
+  for (const source of ["./..dotty", "./plugins/second/../second", "./plugins/second/."]) {
     listed.plugins[1].source = source;
     writeFileSync(path, JSON.stringify(listed));
     assert.deepEqual(validate(dir), [], source);
   }
 });
 
-test("a source of a bare dot is the root, which is how the loader reads it before anything else does", (t) => {
+test("a source of a bare dot is the marketplace itself, which holds no plugin", (t) => {
+  // The loader takes it and installs the whole repository. Nothing here is a
+  // plugin any more, so what it would install is a directory with no manifest,
+  // and that is what this says rather than passing it as the plugin it once
+  // was.
   const dir = marketplace(t);
   const path = join(dir, ".claude-plugin", "marketplace.json");
   const listed = JSON.parse(readFileSync(path, "utf8"));
   listed.plugins[0].source = ".";
   writeFileSync(path, JSON.stringify(listed));
 
-  assert.deepEqual(validate(dir), []);
+  assert.deepEqual(validate(dir), [
+    ".claude-plugin/plugin.json is missing",
+    "marketplace.json lists no usable plugin called anatomiya, whose hooks were never read as a result",
+  ]);
 });
 
 test("a declared path or a hook file whose name starts with two dots is inside its plugin", (t) => {
   // `relative()` answers `..cmds` for such a name, and a prefix test on ".."
   // read it as a step out of the plugin.
   const dir = marketplace(t, { second: { commands: "./..cmds" } });
-  mkdirSync(join(dir, "second", "..cmds"));
-  writeFileSync(join(dir, "second", "hooks", "..run.mjs"), "");
+  mkdirSync(join(dir, "plugins", "second", "..cmds"));
+  writeFileSync(join(dir, "plugins", "second", "hooks", "..run.mjs"), "");
   writeFileSync(
-    join(dir, "second", "hooks", "hooks.json"),
+    join(dir, "plugins", "second", "hooks", "hooks.json"),
     JSON.stringify({ hooks: { UserPromptSubmit: [{ hooks: [{ type: "command", command: 'node "${CLAUDE_PLUGIN_ROOT}/hooks/..run.mjs"' }] }] } }),
   );
 
@@ -592,7 +737,7 @@ test("a declared path or a hook file whose name starts with two dots is inside i
 
 test("a version with noise after the third number is not semver, wherever it starts", (t) => {
   assert.deepEqual(validate(marketplace(t, { second: { version: "1.0.0garbage" } })), [
-    "second/.claude-plugin/plugin.json version is not semver: 1.0.0garbage",
+    "plugins/second/.claude-plugin/plugin.json version is not semver: 1.0.0garbage",
   ]);
   assert.deepEqual(validate(marketplace(t, { second: { version: "1.0.0-beta.1" } })), [], "a pre-release is semver");
 });
@@ -600,17 +745,17 @@ test("a version with noise after the third number is not semver, wherever it sta
 test("a plugin manifest with no name is told it has none, not that it names somebody else", (t) => {
   const dir = marketplace(t, { second: { name: undefined } });
 
-  assert.deepEqual(validate(dir), ["second/.claude-plugin/plugin.json has no name"]);
+  assert.deepEqual(validate(dir), ["plugins/second/.claude-plugin/plugin.json has no name"]);
 });
 
 test("a hook command that names a directory names nothing the loader can run", (t) => {
   const dir = marketplace(t);
   writeFileSync(
-    join(dir, "second", "hooks", "hooks.json"),
+    join(dir, "plugins", "second", "hooks", "hooks.json"),
     JSON.stringify({ hooks: { UserPromptSubmit: [{ hooks: [{ type: "command", command: 'node "${CLAUDE_PLUGIN_ROOT}/hooks"' }] }] } }),
   );
 
-  assert.deepEqual(validate(dir), ["second/hooks/hooks.json UserPromptSubmit runs hooks, which that plugin does not ship"]);
+  assert.deepEqual(validate(dir), ["plugins/second/hooks/hooks.json UserPromptSubmit runs hooks, which that plugin does not ship"]);
 });
 
 test("the same name listed twice is caught whatever the second entry's source is", (t) => {
@@ -644,25 +789,25 @@ test("a hook with no type, or a type the loader does not know, drops its event a
   // one, or with one it does not know, fails the whole event's load in silence.
   const dir = marketplace(t);
   const hooks = (hook) =>
-    writeFileSync(join(dir, "second", "hooks", "hooks.json"), JSON.stringify({ hooks: { UserPromptSubmit: [{ hooks: [hook] }] } }));
+    writeFileSync(join(dir, "plugins", "second", "hooks", "hooks.json"), JSON.stringify({ hooks: { UserPromptSubmit: [{ hooks: [hook] }] } }));
 
   hooks({ command: 'node "${CLAUDE_PLUGIN_ROOT}/hooks/run.mjs"' });
-  assert.deepEqual(validate(dir), ["second/hooks/hooks.json UserPromptSubmit has a hook with no type, so the loader drops the event"]);
+  assert.deepEqual(validate(dir), ["plugins/second/hooks/hooks.json UserPromptSubmit has a hook with no type, so the loader drops the event"]);
   hooks({ type: "Command", command: 'node "${CLAUDE_PLUGIN_ROOT}/hooks/run.mjs"' });
-  assert.deepEqual(validate(dir), ['second/hooks/hooks.json UserPromptSubmit has a hook of type "Command", which the loader does not know']);
+  assert.deepEqual(validate(dir), ['plugins/second/hooks/hooks.json UserPromptSubmit has a hook of type "Command", which the loader does not know']);
   hooks("not even an object");
-  assert.deepEqual(validate(dir), ["second/hooks/hooks.json UserPromptSubmit has a hook with no type, so the loader drops the event"]);
+  assert.deepEqual(validate(dir), ["plugins/second/hooks/hooks.json UserPromptSubmit has a hook with no type, so the loader drops the event"]);
 });
 
 test("the exec form names its files in args, and those are the files checked", (t) => {
   const dir = marketplace(t);
   const hooks = (hook) =>
-    writeFileSync(join(dir, "second", "hooks", "hooks.json"), JSON.stringify({ hooks: { UserPromptSubmit: [{ hooks: [hook] }] } }));
+    writeFileSync(join(dir, "plugins", "second", "hooks", "hooks.json"), JSON.stringify({ hooks: { UserPromptSubmit: [{ hooks: [hook] }] } }));
 
   hooks({ type: "command", command: "node", args: ["${CLAUDE_PLUGIN_ROOT}/hooks/run.mjs", "--quiet"] });
   assert.deepEqual(validate(dir), []);
   hooks({ type: "command", command: "node", args: ["${CLAUDE_PLUGIN_ROOT}/hooks/gone.mjs"] });
-  assert.deepEqual(validate(dir), ["second/hooks/hooks.json UserPromptSubmit runs hooks/gone.mjs, which that plugin does not ship"]);
+  assert.deepEqual(validate(dir), ["plugins/second/hooks/hooks.json UserPromptSubmit runs hooks/gone.mjs, which that plugin does not ship"]);
 });
 
 test("a link out of the repository is refused wherever a manifest or a hook reaches through one", needsSymlinks, (t) => {
@@ -677,30 +822,167 @@ test("a link out of the repository is refused wherever a manifest or a hook reac
   writeFileSync(join(outside, "manifests", "plugin.json"), JSON.stringify({ name: "second", version: "0.1.0", description: "d" }));
 
   const dir = marketplace(t, { second: { commands: "./cmds" } });
-  rmSync(join(dir, "second", "hooks", "run.mjs"));
-  symlinkSync(join(outside, "run.mjs"), join(dir, "second", "hooks", "run.mjs"));
-  symlinkSync(join(outside, "cmds"), join(dir, "second", "cmds"));
+  rmSync(join(dir, "plugins", "second", "hooks", "run.mjs"));
+  symlinkSync(join(outside, "run.mjs"), join(dir, "plugins", "second", "hooks", "run.mjs"));
+  symlinkSync(join(outside, "cmds"), join(dir, "plugins", "second", "cmds"));
 
   assert.deepEqual(validate(dir).sort(), [
-    "second/.claude-plugin/plugin.json commands points outside the plugin: ./cmds",
-    "second/hooks/hooks.json UserPromptSubmit runs hooks/run.mjs, which is outside that plugin",
+    "plugins/second/.claude-plugin/plugin.json commands points outside the plugin: ./cmds",
+    "plugins/second/hooks/hooks.json UserPromptSubmit runs hooks/run.mjs, which is outside that plugin",
   ]);
 
-  rmSync(join(dir, "second", ".claude-plugin"), { recursive: true, force: true });
-  symlinkSync(join(outside, "manifests"), join(dir, "second", ".claude-plugin"));
-  assert.deepEqual(validate(dir), ["second/.claude-plugin is a link out of the repository"]);
+  rmSync(join(dir, "plugins", "second", ".claude-plugin"), { recursive: true, force: true });
+  symlinkSync(join(outside, "manifests"), join(dir, "plugins", "second", ".claude-plugin"));
+  assert.deepEqual(validate(dir), ["plugins/second/.claude-plugin is a link out of the repository"]);
 });
 
 test("a leading zero is not semver, in the version or in a pre-release number", (t) => {
-  assert.deepEqual(validate(marketplace(t, { second: { version: "01.0.0" } })), ["second/.claude-plugin/plugin.json version is not semver: 01.0.0"]);
-  assert.deepEqual(validate(marketplace(t, { second: { version: "1.0.0-01" } })), ["second/.claude-plugin/plugin.json version is not semver: 1.0.0-01"]);
+  assert.deepEqual(validate(marketplace(t, { second: { version: "01.0.0" } })), ["plugins/second/.claude-plugin/plugin.json version is not semver: 01.0.0"]);
+  assert.deepEqual(validate(marketplace(t, { second: { version: "1.0.0-01" } })), ["plugins/second/.claude-plugin/plugin.json version is not semver: 1.0.0-01"]);
 });
 
 test("a manifest directory that cannot be listed is named with the reason, not with a stack", needsPosixPermissions, (t) => {
   const dir = marketplace(t);
-  chmodSync(join(dir, "second", ".claude-plugin"), 0o000);
+  chmodSync(join(dir, "plugins", "second", ".claude-plugin"), 0o000);
   const said = validate(dir);
-  chmodSync(join(dir, "second", ".claude-plugin"), 0o700);
+  chmodSync(join(dir, "plugins", "second", ".claude-plugin"), 0o700);
 
-  assert.deepEqual(said, ["second/.claude-plugin: EACCES"]);
+  assert.deepEqual(said, ["plugins/second/.claude-plugin: EACCES"]);
+});
+
+
+test("a plugin that moves its hook declaration is checked where it moved it", (t) => {
+  // `LOADABLE`'s own docstring calls the conventional path "where the loader
+  // looks when the manifest does not", and `installsNothing` honours the
+  // manifest key. Only the hook check read the convention whatever the manifest
+  // said, so it refused a plugin for a file it does not need and left the hooks
+  // it does declare unchecked.
+  const dir = marketplace(t);
+  const moved = join(dir, "plugins", "second", "hooks", "other.json");
+  writeFileSync(moved, JSON.stringify({ hooks: { UserPromptSubmit: [{ hooks: [{ type: "command", command: 'node "${CLAUDE_PLUGIN_ROOT}/hooks/gone.mjs"' }] }] } }));
+  rmSync(join(dir, "plugins", "second", "hooks", "hooks.json"));
+  const path = join(dir, "plugins", "second", ".claude-plugin", "plugin.json");
+  writeFileSync(path, JSON.stringify({ ...JSON.parse(readFileSync(path, "utf8")), hooks: "./hooks/other.json" }));
+
+  assert.deepEqual(validate(dir), [
+    "plugins/second/hooks/other.json UserPromptSubmit runs hooks/gone.mjs, which that plugin does not ship",
+  ]);
+});
+
+
+test("the required declaration is read where that plugin's manifest says it is", (t) => {
+  // The other half of the same defect, and no fixture could reach it: only the
+  // plugin whose hooks are required is held to `required`, and the case above
+  // uses the other one, where a missing declaration is allowed. Read at the
+  // convention whatever the manifest says, this refused that plugin for a file
+  // it does not need while the declaration it does name went unchecked.
+  const dir = marketplace(t);
+  const moved = join(dir, REL.anatomiya, "hooks", "other.json");
+  writeFileSync(moved, readFileSync(join(dir, REL.anatomiya, "hooks", "hooks.json"), "utf8"));
+  rmSync(join(dir, REL.anatomiya, "hooks", "hooks.json"));
+  const path = join(dir, REL.anatomiya, ".claude-plugin", "plugin.json");
+  writeFileSync(path, JSON.stringify({ ...JSON.parse(readFileSync(path, "utf8")), hooks: "./hooks/other.json" }));
+
+  assert.deepEqual(validate(dir), [], "the plugin was refused for a file its manifest does not name");
+
+  // And what it does name is what is checked: emptied, the map is never
+  // re-delivered and this is the one plugin that must say so.
+  writeFileSync(moved, JSON.stringify({ hooks: {} }));
+  assert.deepEqual(validate(dir), [`${REL.anatomiya}/hooks/other.json declares no hook, so the map is never re-delivered`]);
+});
+
+
+test("every plugin whose hooks are required is one the marketplace lists", (t) => {
+  // The requirement is keyed on the entry name, and nothing held the two in
+  // step: renamed on the marketplace, the plugin whose hook re-delivers the map
+  // stopped being asked for one and the gate said the hooks were fine.
+  const dir = marketplace(t);
+  const path = join(dir, ".claude-plugin", "marketplace.json");
+  const listed = JSON.parse(readFileSync(path, "utf8"));
+  listed.plugins[0].name = "anatomiya-scanner";
+  writeFileSync(path, JSON.stringify(listed));
+  writeFileSync(
+    join(dir, REL.anatomiya, ".claude-plugin", "plugin.json"),
+    JSON.stringify({ name: "anatomiya-scanner", version: "1.2.3", description: "d" }),
+  );
+  rmSync(join(dir, REL.anatomiya, "hooks", "hooks.json"));
+
+  // Two sentences and two causes: the marketplace no longer names the plugin
+  // whose hooks are required, and the one it renamed to installs nothing.
+  assert.deepEqual(validate(dir), [
+    "marketplace.json entry anatomiya-scanner installs as nothing: no hooks, commands, agents, skills or mcpServers",
+    "marketplace.json lists no usable plugin called anatomiya, whose hooks were never read as a result",
+  ]);
+});
+
+
+test("a required declaration that was never reached is said, not left to the next round trip", (t) => {
+  // The check asked whether the marketplace named the plugin, and every one of
+  // these names it. What none of them does is get as far as reading its hooks:
+  // the loop gives up on the entry first, so the missing declaration goes
+  // unmentioned and is still there once the sentence that did print is fixed.
+  const shapes = {
+    "a source that points nowhere": (dir, listed) => {
+      listed[0].source = "./plugins/gone";
+    },
+    "a manifest of its own that is missing": (dir) => {
+      rmSync(join(dir, REL.anatomiya, ".claude-plugin", "plugin.json"));
+    },
+    "no source at all": (dir, listed) => {
+      delete listed[0].source;
+    },
+    "a source that is not a path": (dir, listed) => {
+      listed[0].source = 42;
+    },
+  };
+
+  for (const [what, break_] of Object.entries(shapes)) {
+    const dir = marketplace(t);
+    const path = join(dir, ".claude-plugin", "marketplace.json");
+    const listed = JSON.parse(readFileSync(path, "utf8"));
+    rmSync(join(dir, REL.anatomiya, "hooks", "hooks.json"));
+    break_(dir, listed.plugins);
+    writeFileSync(path, JSON.stringify(listed));
+
+    const said = validate(dir);
+
+    assert.ok(
+      said.some((problem) => problem.includes("whose hooks were never read")),
+      `${what}: ${said.join(" | ")}`,
+    );
+  }
+});
+
+// --- the paths a manifest names by hand ---------------------------------------
+
+test("a declared path without a leading ./ is checked, because the loader resolves it the same way", (t) => {
+  const dir = marketplace(t, { second: { hooks: "hooks/gone.json" } });
+
+  assert.deepEqual(validate(dir), ["plugins/second/.claude-plugin/plugin.json hooks points at a missing path: hooks/gone.json"]);
+});
+
+// The loader substitutes it and this cannot, so resolving it here would report
+// a path nothing ever opens.
+test("a declared path carrying the plugin-root variable is left to the loader", (t) => {
+  const dir = marketplace(t, { second: { hooks: "${CLAUDE_PLUGIN_ROOT}/hooks/hooks.json" } });
+
+  assert.deepEqual(validate(dir), []);
+});
+
+test("a hooks path that leaves the plugin is said once, and the foreign file is not then read as a declaration", (t) => {
+  const dir = marketplace(t, { second: { hooks: "../../outside/foreign.json" } });
+  mkdirSync(join(dir, "outside"), { recursive: true });
+  writeFileSync(join(dir, "outside", "foreign.json"), JSON.stringify({ hooks: { UserPromptSubmit: [{ hooks: [{ type: "command", command: "node nope.mjs" }] }] } }));
+
+  assert.deepEqual(validate(dir), ["plugins/second/.claude-plugin/plugin.json hooks points outside the plugin: ../../outside/foreign.json"]);
+});
+
+test("every hooks file a manifest lists is read, not the first one", (t) => {
+  const dir = marketplace(t, { second: { hooks: ["./hooks/hooks.json", "./hooks/more.json"] } });
+  writeFileSync(
+    join(dir, "plugins", "second", "hooks", "more.json"),
+    JSON.stringify({ hooks: { UserPromptSubmit: [{ hooks: [{ type: "command", command: 'node "${CLAUDE_PLUGIN_ROOT}/hooks/gone.mjs"' }] }] } }),
+  );
+
+  assert.deepEqual(validate(dir), ["plugins/second/hooks/more.json UserPromptSubmit runs hooks/gone.mjs, which that plugin does not ship"]);
 });

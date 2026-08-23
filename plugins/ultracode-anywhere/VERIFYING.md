@@ -8,6 +8,16 @@ does, and it takes a few minutes.
 It was last done against **2.1.238**, which is the version `CALIBRATED_AGAINST` in
 `hooks/upstream.mjs` names. Move that string when you have worked this list on a newer build.
 
+Sections 1, 2, 5 and 6 were re-read against **2.1.240** on 2026-08-23 and hold: the four markers and
+the gate shape are there, the `UserPromptSubmit` payload still spells `...!1` where `source:` would
+go, and the reminder still walks back to the last attachment. Sections 3 and 4 were not: they need a
+live session and a recorded request, which no command here can stand in for. `CALIBRATED_AGAINST`
+stays at 2.1.238 because it names a list worked whole, and `behind` reads major and minor only, so a
+patch bump raises nothing either way.
+
+Run every command below from this file's own directory, `plugins/ultracode-anywhere/`: the
+`./hooks/...` specifiers are the plugin's own and resolve to nothing from the repository root.
+
 The build is 321 MB, so the reads below find a fixed string with `grep -a -b -o` and cut around
 its offset. A pattern with a wide `.{n}` context is refused by the stock macOS `grep` above 255 and
 takes minutes on any `grep`.

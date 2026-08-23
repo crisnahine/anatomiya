@@ -5,8 +5,8 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { collectHits } from "../lib/walk.mjs";
-import { learnClass, verdictFor } from "../lib/reduce.mjs";
+import { collectHits } from "../plugins/anatomiya/lib/walk.mjs";
+import { learnClass, verdictFor } from "../plugins/anatomiya/lib/reduce.mjs";
 import { needsRuby } from "./ruby-available.mjs";
 
 /* --- hits carry a class only when the dimension gives one --- */
@@ -91,7 +91,7 @@ const includeArea = (bodies, key = "module_include") => {
 };
 
 const includeSlot = async (bodies) => {
-  const { reduceArea } = await import("../lib/reduce.mjs");
+  const { reduceArea } = await import("../plugins/anatomiya/lib/reduce.mjs");
   const { area, parsed } = includeArea(bodies);
   return reduceArea(area, parsed).find((d) => d.key === "module_include");
 };
@@ -105,7 +105,7 @@ test("a class including two modules is one candidate, not one per constant", asy
 });
 
 test("a row that is not grouped still counts one site per constant", async () => {
-  const { reduceArea } = await import("../lib/reduce.mjs");
+  const { reduceArea } = await import("../plugins/anatomiya/lib/reduce.mjs");
   const bodies = [...Array(10).fill(["A", "B"]), ["A"]];
   const rels = bodies.map((_, i) => `src/m${i}.ts`);
   const area = { langs: ["js"], files: rels.map((rel) => ({ rel, lang: "js" })) };
@@ -130,7 +130,7 @@ test("a body including nothing the area learned is one exception, not one per co
 test("a hit carrying no group is its own site", async () => {
   // The fold reads the group off the hit, so a row that grouped nothing counts
   // the way it did before: one site per constant, and every constant votes.
-  const { reduceArea } = await import("../lib/reduce.mjs");
+  const { reduceArea } = await import("../plugins/anatomiya/lib/reduce.mjs");
   const bodies = [...Array(10).fill(["A", "B"]), ["A"]];
   const rels = bodies.map((_, i) => `app/workers/w${i}.rb`);
   const area = { langs: ["ruby"], files: rels.map((rel) => ({ rel, lang: "ruby" })) };
@@ -187,7 +187,7 @@ test("a learned class that held since the pin states as usual", () => {
 /* --- file naming, classified from the basename --- */
 
 test("classifyBasename tells the four classes apart and refuses the ambiguous", async () => {
-  const { classifyBasename } = await import("../lib/dimensions-naming.mjs");
+  const { classifyBasename } = await import("../plugins/anatomiya/lib/dimensions-naming.mjs");
   assert.equal(classifyBasename("src/user-profile.ts"), "kebab-case");
   assert.equal(classifyBasename("src/userProfile.ts"), "camelCase");
   assert.equal(classifyBasename("src/UserProfile.tsx"), "PascalCase");
@@ -198,7 +198,7 @@ test("classifyBasename tells the four classes apart and refuses the ambiguous", 
 });
 
 test("an area of mostly kebab files states the learned class over every classifiable file", async () => {
-  const { reduceArea } = await import("../lib/reduce.mjs");
+  const { reduceArea } = await import("../plugins/anatomiya/lib/reduce.mjs");
   const rels = [
     "src/user-profile.ts", "src/order-list.ts", "src/data-store.ts", "src/api-client.ts",
     "src/form-input.ts", "src/nav-bar.ts", "src/date-utils.ts", "src/error-page.ts",
@@ -218,7 +218,7 @@ test("an area of mostly kebab files states the learned class over every classifi
 });
 
 test("a naming tie produces no slot at all", async () => {
-  const { reduceArea } = await import("../lib/reduce.mjs");
+  const { reduceArea } = await import("../plugins/anatomiya/lib/reduce.mjs");
   const rels = ["src/user-profile.ts", "src/orderList.ts"];
   const area = { langs: ["js"], files: rels.map((rel) => ({ rel, lang: "js" })) };
   const parsed = rels.map((rel) => ({ rel, ok: true, hits: {} }));
@@ -229,7 +229,7 @@ test("a naming tie produces no slot at all", async () => {
 
 const astHits = async (key, src) => {
   const { parseSync } = await import("oxc-parser");
-  const { NAMING_AST } = await import("../lib/dimensions-naming.mjs");
+  const { NAMING_AST } = await import("../plugins/anatomiya/lib/dimensions-naming.mjs");
   const { program } = parseSync("f.tsx", src, { sourceType: "module" });
   const out = [];
   NAMING_AST.find((d) => d.key === key).run(program, (h) => out.push(h));
@@ -334,7 +334,7 @@ test("an export declared inside an ambient module is not a top-level site", asyn
 });
 
 test("the naming AST rows are reachable from the registry", async () => {
-  const { dimensionsFor } = await import("../lib/dimensions.mjs");
+  const { dimensionsFor } = await import("../plugins/anatomiya/lib/dimensions.mjs");
   const keys = dimensionsFor(["js"]).map((d) => d.key);
   for (const key of ["function_naming_case", "exported_symbol_case", "exported_class_case", "exported_type_case"]) {
     assert.ok(keys.includes(key), key);
@@ -346,7 +346,7 @@ test("the naming AST rows are reachable from the registry", async () => {
    running the real CLI (percheck-fixes task 8) --- */
 
 test("a class-only area's class row ignores a planted function, whichever way the function is cased (typeorm shape)", async () => {
-  const { reduceArea } = await import("../lib/reduce.mjs");
+  const { reduceArea } = await import("../plugins/anatomiya/lib/reduce.mjs");
   const classFiles = Array.from({ length: 9 }, (_, i) => ({
     rel: `entity/Model${i}.ts`,
     ok: true,
@@ -376,7 +376,7 @@ test("a class-only area's class row ignores a planted function, whichever way th
 });
 
 test("a value-dominated area's type row learns its own PascalCase and calls no idiomatic type export a violation (mastodon shape)", async () => {
-  const { reduceArea } = await import("../lib/reduce.mjs");
+  const { reduceArea } = await import("../plugins/anatomiya/lib/reduce.mjs");
   const valueFiles = Array.from({ length: 20 }, (_, i) => ({
     rel: `app/mod${i}.ts`,
     ok: true,
@@ -398,7 +398,7 @@ test("a value-dominated area's type row learns its own PascalCase and calls no i
 });
 
 test("a mixed area lets the class claim and the function claim disagree on casing", async () => {
-  const { reduceArea } = await import("../lib/reduce.mjs");
+  const { reduceArea } = await import("../plugins/anatomiya/lib/reduce.mjs");
   const files = [
     ...Array.from({ length: 5 }, (_, i) => ({
       rel: `src/Model${i}.ts`,
@@ -442,7 +442,7 @@ test("a learned class the model does not write keeps stating", () => {
 /* --- the filter must fire through the real pipeline, not a hand-built record --- */
 
 test("a learned class equal to the model default is flagged through reduceArea itself", async () => {
-  const { reduceArea, verdictFor } = await import("../lib/reduce.mjs");
+  const { reduceArea, verdictFor } = await import("../plugins/anatomiya/lib/reduce.mjs");
   const rels = Array.from({ length: 40 }, (_, i) => `src/mod${i}.ts`);
   const area = { langs: ["js"], files: rels.map((rel) => ({ rel, lang: "js" })) };
   const parsed = rels.map((rel) => ({
@@ -462,7 +462,7 @@ test("a learned class equal to the model default is flagged through reduceArea i
 });
 
 test("a learned row may never carry a counter, by load-time throw", async () => {
-  const { assertLearnedRows } = await import("../lib/dimensions.mjs");
+  const { assertLearnedRows } = await import("../plugins/anatomiya/lib/dimensions.mjs");
   assert.throws(
     () => assertLearnedRows([{ key: "x", learnedClasses: true, claim: "y are <style>", counterClaim: "no" }]),
     /counter/
@@ -476,7 +476,7 @@ test("a learned row may never carry a counter, by load-time throw", async () => 
 /* --- a timestamp prefix is not part of the name (#33) --- */
 
 test("a leading digit run and its separator are cut before the stem is classified", async () => {
-  const { classifyBasename } = await import("../lib/dimensions-naming.mjs");
+  const { classifyBasename } = await import("../plugins/anatomiya/lib/dimensions-naming.mjs");
   assert.equal(classifyBasename("db/migrate/20260816120000_add_bad_column.rb"), "snake_case");
   assert.equal(classifyBasename("db/migrate/20260816120000_AddBadColumn.rb"), "PascalCase", "the violating shape must classify, or the check cannot see it");
   assert.equal(classifyBasename("db/migrate/20260816120000_addBadColumn.rb"), "camelCase");
@@ -488,7 +488,7 @@ test("a leading digit run and its separator are cut before the stem is classifie
 /* --- the classifier is linear on hostile identifiers --- */
 
 test("classifyWord answers a long uppercase run followed by a non-word in linear time", async () => {
-  const { classifyWord } = await import("../lib/dimensions-naming.mjs");
+  const { classifyWord } = await import("../plugins/anatomiya/lib/dimensions-naming.mjs");
   // The camelCase pattern used to carry `(?:[A-Z][a-zA-Z0-9]*)+`, whose
   // uppercase runs split ambiguously; 28 characters measured six seconds.
   const hostile = "a" + "A".repeat(40) + "!";
@@ -507,7 +507,7 @@ test("classifyWord answers a long uppercase run followed by a non-word in linear
 /* --- the class a declared type name's prefix votes for --- */
 
 test("prefixClass reads a leading capital only where a second capital and a lowercase follow", async () => {
-  const { prefixClass } = await import("../lib/dimensions-naming.mjs");
+  const { prefixClass } = await import("../plugins/anatomiya/lib/dimensions-naming.mjs");
   assert.equal(prefixClass("IFoo"), "I");
   assert.equal(prefixClass("TCommentAuthor"), "T");
   assert.equal(prefixClass("Comment"), "none");
@@ -562,8 +562,8 @@ const dir = mkdtempSync(join(tmpdir(), "anatomiya-naming-"));
 process.on("exit", () => rmSync(dir, { recursive: true, force: true }));
 
 async function rubyHits(key, src) {
-  const { parseRuby } = await import("../lib/ruby.mjs");
-  const { RUBY_DIMENSIONS } = await import("../lib/dimensions-ruby.mjs");
+  const { parseRuby } = await import("../plugins/anatomiya/lib/ruby.mjs");
+  const { RUBY_DIMENSIONS } = await import("../plugins/anatomiya/lib/dimensions-ruby.mjs");
   const abs = join(dir, `${key}.rb`);
   writeFileSync(abs, src);
   const file = (await parseRuby([{ rel: `${key}.rb`, abs }])).results[0];
@@ -811,7 +811,7 @@ end
 /* --- the five rows ship --- */
 
 test("the five learned rows are reachable from the registry", async () => {
-  const { dimensionsFor } = await import("../lib/dimensions.mjs");
+  const { dimensionsFor } = await import("../plugins/anatomiya/lib/dimensions.mjs");
   const js = dimensionsFor(["js"]).map((d) => d.key);
   for (const key of ["extends_base", "interface_prefix", "type_alias_prefix"]) {
     assert.ok(js.includes(key), `${key} is not offered to JavaScript`);
@@ -825,7 +825,7 @@ test("the five learned rows are reachable from the registry", async () => {
 /* --- a learned class that is repository text, and one that is an absence --- */
 
 const learnedSlot = async (key, cls, lang = "js") => {
-  const { reduceArea } = await import("../lib/reduce.mjs");
+  const { reduceArea } = await import("../plugins/anatomiya/lib/reduce.mjs");
   const rels = Array.from({ length: 6 }, (_, i) => `src/mod${i}.${lang === "ruby" ? "rb" : "ts"}`);
   const area = { langs: [lang], files: rels.map((rel) => ({ rel, lang })) };
   const parsed = rels.map((rel) => ({
@@ -858,7 +858,7 @@ test("a prefix row that learned none states the absence instead of filling the t
 /* --- an area that prefixes nothing has said what the model already writes --- */
 
 test("none is the model's own prefix class, so an unprefixed area prints as counts", async () => {
-  const { defaultClassFor } = await import("../lib/model-defaults.mjs");
+  const { defaultClassFor } = await import("../plugins/anatomiya/lib/model-defaults.mjs");
   assert.equal(defaultClassFor("interface_prefix"), "none");
   assert.equal(defaultClassFor("type_alias_prefix"), "none");
   const r = verdictFor(gatedDim({ key: "interface_prefix", learned: "none", learnedClasses: true }), {
@@ -878,7 +878,7 @@ test("an area that does prefix its interfaces states the prefix", () => {
 });
 
 test("a class read off the source has no model default, so the row keeps stating", async () => {
-  const { defaultClassFor } = await import("../lib/model-defaults.mjs");
+  const { defaultClassFor } = await import("../plugins/anatomiya/lib/model-defaults.mjs");
   for (const key of ["extends_base", "class_base", "module_include"]) {
     assert.equal(defaultClassFor(key), null, `${key} cannot have a default the model writes`);
   }
@@ -888,7 +888,7 @@ test("namesASite separates a name that matches every class from one that matches
   // `classifyBasename` answers null for both, and only the first is not a site.
   // A name matching every class cannot disagree with any; a name matching none
   // disagrees with all of them, and it was the violation the check could not see.
-  const { namesASite } = await import("../lib/dimensions-naming.mjs");
+  const { namesASite } = await import("../plugins/anatomiya/lib/dimensions-naming.mjs");
 
   assert.equal(namesASite("src/index.ts"), false, "a single lowercase word matches every class");
   assert.equal(namesASite("Rakefile"), false, "a bare filename has no stem to read");
@@ -905,7 +905,7 @@ test("a name that spells no class does not vote for one", async () => {
   // The scan side is unchanged: a stem that classifies to null was never
   // counted into the area's own totals, and counting it now would move every
   // learned class in the corpus.
-  const { classifyBasename } = await import("../lib/dimensions-naming.mjs");
+  const { classifyBasename } = await import("../plugins/anatomiya/lib/dimensions-naming.mjs");
 
   assert.equal(classifyBasename("app/models/TMP_PROBE_UPPER.rb"), null);
   assert.equal(classifyBasename("app/models/_tmp_probe.rb"), null);
@@ -946,7 +946,7 @@ test("a type alias inside a module augmentation still votes, because it cannot m
 /* --- the class an area learned is not a site of its own row (#58) --- */
 
 test("collectHits keeps a hit's own qualified name and omits the key otherwise", async () => {
-  const { collectHits } = await import("../lib/walk.mjs");
+  const { collectHits } = await import("../plugins/anatomiya/lib/walk.mjs");
   const named = collectHits({ type: "Program", body: [] }, [
     { key: "k", run: (_p, add) => add({ node: null, conforming: false, class: "B", self: "A::B" }) },
   ]);
@@ -963,7 +963,7 @@ test("collectHits keeps the scope a bare constant resolves in", async () => {
   // name is dropped. `nesting` was emitted, asserted in unit tests that call the
   // dimension directly, and silently thrown away on every real scan: the base
   // class row went back to counting two spellings as two classes.
-  const { collectHits } = await import("../lib/walk.mjs");
+  const { collectHits } = await import("../plugins/anatomiya/lib/walk.mjs");
   const scoped = collectHits({ type: "Program", body: [] }, [
     { key: "k", run: (_p, add) => add({ node: null, conforming: false, class: "B", nesting: ["A::V1", "A"] }) },
   ]);
@@ -976,7 +976,7 @@ test("collectHits keeps the scope a bare constant resolves in", async () => {
 });
 
 test("isLearnedItself matches the class an area learned, by either spelling", async () => {
-  const { isLearnedItself } = await import("../lib/reduce.mjs");
+  const { isLearnedItself } = await import("../plugins/anatomiya/lib/reduce.mjs");
 
   assert.equal(isLearnedItself({ self: "ApplicationRecord" }, "ApplicationRecord"), true);
   assert.equal(isLearnedItself({ self: "Api::V1::BaseController" }, "BaseController"), false, "a name that merely ends in the learned one is a different class");
@@ -991,7 +991,7 @@ test("the class an area learned does not count against its own row", async () =>
   // printed the absurdity: app/models states "classes here inherit
   // ApplicationRecord" and listed application_record.rb as one of its
   // exceptions.
-  const { reduceArea } = await import("../lib/reduce.mjs");
+  const { reduceArea } = await import("../plugins/anatomiya/lib/reduce.mjs");
   const rels = ["app/models/application_record.rb", ...Array.from({ length: 8 }, (_, i) => `app/models/m${i}.rb`)];
   const area = { langs: ["ruby"], files: rels.map((rel) => ({ rel, lang: "ruby" })) };
   const parsed = rels.map((rel) => ({
@@ -1058,7 +1058,7 @@ test("a naming row learns over one kind of file, and leaves the other kind unjud
   // in it becomes a violation of a convention nobody holds: on one measured
   // pull request a single `.ts` helper collected 5 of the 9 findings, and in a
   // 982-commit replay 29 of 55 false findings were this pooling.
-  const { reduceArea } = await import("../lib/reduce.mjs");
+  const { reduceArea } = await import("../plugins/anatomiya/lib/reduce.mjs");
   const components = ["UserCard", "OrderList", "DataTable", "FormInput", "NavBar", "ErrorPage", "BigTable", "SidePanel"];
   const helpers = ["formatDate", "parseAmount", "buildQuery"];
   const rels = [
@@ -1079,7 +1079,7 @@ test("a naming row learns over one kind of file, and leaves the other kind unjud
 });
 
 test("the mirror: an area of mostly helpers leaves its two components unjudged", async () => {
-  const { reduceArea } = await import("../lib/reduce.mjs");
+  const { reduceArea } = await import("../plugins/anatomiya/lib/reduce.mjs");
   const helpers = ["formatDate", "parseAmount", "buildQuery", "readCache", "writeCache", "toSlug", "fromSlug", "sumRows", "pickOne"];
   const rels = [...helpers.map((n) => `src/${n}.ts`), "src/UserCard.tsx", "src/OrderList.tsx"];
   const area = { langs: ["jsx", "js"], files: rels.map((rel) => ({ rel, lang: rel.endsWith("x") ? "jsx" : "js" })) };
@@ -1094,7 +1094,7 @@ test("the mirror: an area of mostly helpers leaves its two components unjudged",
 });
 
 test("an area holding one kind of file is not narrowed at all", async () => {
-  const { reduceArea } = await import("../lib/reduce.mjs");
+  const { reduceArea } = await import("../plugins/anatomiya/lib/reduce.mjs");
   const rels = ["src/user-profile.ts", "src/order-list.ts", "src/data-store.ts", "src/oneOff.ts"];
   const area = { langs: ["js"], files: rels.map((rel) => ({ rel, lang: "js" })) };
   const parsed = rels.map((rel) => ({ rel, ok: true, hits: {}, facets: { jsx: false } }));
@@ -1112,7 +1112,7 @@ test("a narrowed naming claim names the population it was learned over", async (
   // beside 12 components delivered "files here are named camelCase" to the
   // components, and naming one of those camelCase turns the element into a host
   // tag. The check does not catch it, because the row does not judge that kind.
-  const { reduceArea } = await import("../lib/reduce.mjs");
+  const { reduceArea } = await import("../plugins/anatomiya/lib/reduce.mjs");
   const components = ["UserCard", "OrderList", "DataTable", "FormInput", "NavBar", "ErrorPage", "BigTable", "SidePanel"];
   const helpers = ["formatDate", "parseAmount", "buildQuery"];
   const rels = [...components.map((n) => `src/${n}.tsx`), ...helpers.map((n) => `src/${n}.ts`)];
@@ -1125,7 +1125,7 @@ test("a narrowed naming claim names the population it was learned over", async (
 });
 
 test("the mirror: the module side names the population too", async () => {
-  const { reduceArea } = await import("../lib/reduce.mjs");
+  const { reduceArea } = await import("../plugins/anatomiya/lib/reduce.mjs");
   const helpers = ["formatDate", "parseAmount", "buildQuery", "readCache", "writeCache", "toSlug", "fromSlug", "sumRows", "pickOne"];
   const rels = [...helpers.map((n) => `src/${n}.ts`), "src/UserCard.tsx", "src/OrderList.tsx"];
   const area = { langs: ["jsx", "js"], files: rels.map((rel) => ({ rel, lang: rel.endsWith("x") ? "jsx" : "js" })) };
@@ -1140,7 +1140,7 @@ test("an area that holds one kind of file keeps the plain sentence", async () =>
   // The exclusion is worth naming only where it excluded something: a
   // repository with no JSX in it reads the qualifier as a distinction its code
   // does not draw.
-  const { reduceArea } = await import("../lib/reduce.mjs");
+  const { reduceArea } = await import("../plugins/anatomiya/lib/reduce.mjs");
   const rels = ["src/user-profile.ts", "src/order-list.ts", "src/data-store.ts", "src/type-check.ts"];
   const area = { langs: ["js"], files: rels.map((rel) => ({ rel, lang: "js" })) };
   const parsed = rels.map((rel) => ({ rel, ok: true, hits: {}, facets: { jsx: false } }));
@@ -1156,7 +1156,7 @@ test("a class that merely shares its last segment with the learned base is still
   // `BaseController`, and it fired even where that class named an explicit and
   // different superclass, which the "a base cannot inherit itself" argument
   // cannot justify. Telling the two apart needs Ruby's own constant lookup.
-  const { reduceArea } = await import("../lib/reduce.mjs");
+  const { reduceArea } = await import("../plugins/anatomiya/lib/reduce.mjs");
   const rels = [
     "app/controllers/api/v1/base_controller.rb",
     "app/controllers/api/v1/admin/base_controller.rb",
@@ -1189,7 +1189,7 @@ test("a superclass written relative to its enclosing namespace is the class it r
   // `module Api::V1`, where Ruby resolves the bare name to the same class.
   // Counted as two classes the row read 55 of 64 and fell under the 0.90 gate,
   // so the strongest fact in the largest controller area went unstated.
-  const { sameConstant } = await import("../lib/reduce.mjs");
+  const { sameConstant } = await import("../plugins/anatomiya/lib/reduce.mjs");
 
   assert.equal(sameConstant("BaseController", "Api::V1::BaseController", ["Api::V1", "Api"]), true);
   assert.equal(sameConstant("Api::V1::BaseController", "Api::V1::BaseController", ["Api::V1", "Api"]), true);
@@ -1213,7 +1213,7 @@ test("a superclass written relative to its enclosing namespace is the class it r
 test("a controller area counts the relative and the scoped spelling as one base", async () => {
   // The 59-of-64 shape from empire-flippers/api, reduced to its smallest form:
   // above the 0.90 gate together, under it counted apart.
-  const { reduceArea } = await import("../lib/reduce.mjs");
+  const { reduceArea } = await import("../plugins/anatomiya/lib/reduce.mjs");
   const scoped = Array.from({ length: 8 }, (_, i) => `app/controllers/api/v1/s${i}.rb`);
   const relative = ["app/controllers/api/v1/qbo_controller.rb", "app/controllers/api/v1/notes_controller.rb"];
   const rels = [...scoped, ...relative];
@@ -1246,7 +1246,7 @@ test("a compact class name resolves its superclass at the top level, not inside 
   // the bare name is `::BaseController`; only bodies actually nested in
   // `module Api::V1` resolve it to `Api::V1::BaseController`. The site's own
   // qualified name cannot tell the two apart, because both read back alike.
-  const { sameConstant } = await import("../lib/reduce.mjs");
+  const { sameConstant } = await import("../plugins/anatomiya/lib/reduce.mjs");
 
   assert.equal(sameConstant("BaseController", "Api::V1::BaseController", ["Api::V1", "Api"]), true);
   assert.equal(
@@ -1260,7 +1260,7 @@ test("a compact class name resolves its superclass at the top level, not inside 
 test("a grouped row resolves a relative mixin the way the superclass row does", async () => {
   // `module_include` counts one site per body, so it folds through `groupSites`
   // rather than the per-hit path, and the resolution has to reach both.
-  const { reduceArea } = await import("../lib/reduce.mjs");
+  const { reduceArea } = await import("../plugins/anatomiya/lib/reduce.mjs");
   const rels = Array.from({ length: 10 }, (_, i) => `app/models/concerns/m${i}.rb`);
   const area = { langs: ["ruby"], files: rels.map((rel) => ({ rel, lang: "ruby" })) };
   const relative = new Set([rels[0], rels[1]]);

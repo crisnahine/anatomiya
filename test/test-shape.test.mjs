@@ -12,8 +12,8 @@ import {
   TREE,
   RUNNER_LABELS,
   UNNAMED_RUNNER,
-} from "../lib/test-shape.mjs";
-import { PAIRINGS } from "../lib/pairing.mjs";
+} from "../plugins/anatomiya/lib/test-shape.mjs";
+import { PAIRINGS } from "../plugins/anatomiya/lib/pairing.mjs";
 
 test("the dotted namesake suffixes are the ones the name regexes count", () => {
   for (const stem of ["a.test", "a.spec", "a.cy"]) {

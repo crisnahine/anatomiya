@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { baseOf, dirOf, extOf, stemOf, withoutExtension } from "../lib/paths.mjs";
+import { baseOf, dirOf, extOf, stemOf, withoutExtension } from "../plugins/anatomiya/lib/paths.mjs";
 
 test("the basename is everything after the last slash", () => {
   assert.equal(baseOf("src/components/Foo.tsx"), "Foo.tsx");

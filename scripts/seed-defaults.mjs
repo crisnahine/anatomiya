@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Give every registry key an entry in `lib/model-defaults.json`, unmeasured.
+ * Give every registry key an entry in `plugins/anatomiya/lib/model-defaults.json`, unmeasured.
  *
  * The table is one entry per key, and a key with none fails a test far from the
  * row that added it. Writing the entry by hand means writing a provenance
@@ -13,13 +13,13 @@
  * nothing.
  */
 import { readFileSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { join } from "node:path";
 
-import { REGISTRY } from "../lib/registry.mjs";
+import { invokedAs } from "./entry.mjs";
+import { ANATOMIYA } from "./plugins.mjs";
+import { REGISTRY } from "../plugins/anatomiya/lib/registry.mjs";
 
-const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const TABLE_PATH = join(root, "lib", "model-defaults.json");
+const TABLE_PATH = join(ANATOMIYA, "lib", "model-defaults.json");
 
 /** The entry a key nobody has measured carries. */
 export const seedEntry = () => ({
@@ -44,13 +44,13 @@ export function seedTable(table, keys) {
 function main() {
   const { table, added } = seedTable(JSON.parse(readFileSync(TABLE_PATH, "utf8")), REGISTRY.map((row) => row.key));
   if (!added.length) {
-    console.error("every registry key already has an entry in lib/model-defaults.json");
+    console.error("every registry key already has an entry in plugins/anatomiya/lib/model-defaults.json");
     return;
   }
   writeFileSync(TABLE_PATH, JSON.stringify(table, null, 2) + "\n");
-  console.error(`seeded ${added.length} unmeasured entr${added.length === 1 ? "y" : "ies"} in lib/model-defaults.json: ${added.join(", ")}`);
+  console.error(`seeded ${added.length} unmeasured entr${added.length === 1 ? "y" : "ies"} in plugins/anatomiya/lib/model-defaults.json: ${added.join(", ")}`);
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (invokedAs(import.meta.url)) {
   main();
 }

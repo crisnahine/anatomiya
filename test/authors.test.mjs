@@ -6,9 +6,9 @@ import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { execFileSync } from "node:child_process";
 
-import { authorsByFile } from "../lib/authors.mjs";
-import { applyGates } from "../lib/reduce.mjs";
-import * as scan from "../lib/scan.mjs";
+import { authorsByFile } from "../plugins/anatomiya/lib/authors.mjs";
+import { applyGates } from "../plugins/anatomiya/lib/reduce.mjs";
+import * as scan from "../plugins/anatomiya/lib/scan.mjs";
 
 /** A dimension every gate but the author one passes, over `files` of ten sites each. */
 const evenly = (files) => ({
@@ -22,8 +22,12 @@ const evenly = (files) => ({
   exceptions: [], moreExceptions: 0,
 });
 
-function repo(build) {
+function repo(t, build) {
+  // The context is taken rather than left to the caller: a `rmSync` per call
+  // site is one somebody forgets, and two here did, which is where the 915
+  // directories one machine had piled up came from.
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-authors-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
   const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" }).toString();
   git("init", "-q", "-b", "main");
   git("config", "user.email", "first@t.test");
@@ -57,10 +61,10 @@ function perFileAuthors(dir, path) {
 
 const sorted = (set) => [...(set || [])].sort();
 
-test("distinct authors per file come from one pass and match per-file git log", async () => {
+test("distinct authors per file come from one pass and match per-file git log", async (t) => {
   // D5: one pass is 271x faster than per-file calls on an eight-year repository
   // and the two were measured agreeing 99.6% to 100%.
-  const dir = repo((d, { write, author, commit }) => {
+  const dir = repo(t, (d, { write, author, commit }) => {
     write("src/a.ts", "export const a = 1\n");
     write("src/b.ts", "export const b = 1\n");
     commit("init");
@@ -87,11 +91,11 @@ test("distinct authors per file come from one pass and match per-file git log", 
   rmSync(dir, { recursive: true, force: true });
 });
 
-test("a renamed file keeps the authors of its earlier name", async () => {
+test("a renamed file keeps the authors of its earlier name", async (t) => {
   // D5 unions rename chains. Without it a file that changed name looks
   // single-author, and the author gate wrongly refuses a real convention. That
   // was measured on 6.3% of files.
-  const dir = repo((d, { git, write, author, commit }) => {
+  const dir = repo(t, (d, { git, write, author, commit }) => {
     write("src/old.ts", "export const a = 1\nexport const b = 2\nexport const c = 3\n");
     commit("init");
 
@@ -110,8 +114,8 @@ test("a renamed file keeps the authors of its earlier name", async () => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-test("a file renamed twice keeps the authors of every earlier name", async () => {
-  const dir = repo((d, { git, write, author, commit }) => {
+test("a file renamed twice keeps the authors of every earlier name", async (t) => {
+  const dir = repo(t, (d, { git, write, author, commit }) => {
     write("src/old.ts", "export const a = 1\nexport const b = 2\nexport const c = 3\n");
     commit("init");
 
@@ -136,11 +140,11 @@ test("a file renamed twice keeps the authors of every earlier name", async () =>
   rmSync(dir, { recursive: true, force: true });
 });
 
-test("a path holding a newline keys the map by the path on disk", needsPosixPaths, async () => {
+test("a path holding a newline keys the map by the path on disk", needsPosixPaths, async (t) => {
   // The `-z` in D5's one pass. Without it git C-quotes the path and the key no
   // longer matches the corpus, so the file silently loses every author.
   const rel = "src/we\nird.ts";
-  const dir = repo((d, { write, author, commit }) => {
+  const dir = repo(t, (d, { write, author, commit }) => {
     write(rel, "export const w = 1\n");
     commit("init");
 
@@ -167,7 +171,7 @@ test("a blobless clone answers without reaching for the network", async (t) => {
   //
   // The promisor is deleted here rather than made slow, because the failure to
   // pin is "this needs the network at all", not "this is slow".
-  const origin = repo((d, { git, write, author, commit }) => {
+  const origin = repo(t, (d, { git, write, author, commit }) => {
     git("config", "uploadpack.allowFilter", "true");
     write("src/a.ts", "export const a = 1\nexport const b = 2\n");
     commit("one");
@@ -192,8 +196,8 @@ test("a blobless clone answers without reaching for the network", async (t) => {
   assert.deepEqual(sorted(map.get("src/b.ts")), ["second@t.test"]);
 });
 
-test("a repository with no commits yields an empty map instead of losing the scan", async () => {
-  const dir = repo(() => {});
+test("a repository with no commits yields an empty map instead of losing the scan", async (t) => {
+  const dir = repo(t, () => {});
 
   const map = await authorsByFile(dir);
 
@@ -211,12 +215,12 @@ test("a directory that is not a repository yields an empty map", async () => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-test("one commit is one author, and that author's practice is the repository's convention", async () => {
+test("one commit is one author, and that author's practice is the repository's convention", async (t) => {
   // A fixed 2 asks a one-author repository for something it cannot supply, so
   // it states nothing on every dimension of every area and its only fix is to
   // hire someone. With one person in the repository there is nobody to
   // disagree, and the other gates are what stand in for the second opinion.
-  const dir = repo((d, { write, commit }) => {
+  const dir = repo(t, (d, { write, commit }) => {
     for (let i = 0; i < 6; i++) write(`src/m${i}.ts`, `export const m${i} = ${i}\n`);
     commit("init");
   });
@@ -242,11 +246,11 @@ test("one commit is one author, and that author's practice is the repository's c
   rmSync(dir, { recursive: true, force: true });
 });
 
-test("a second person in the repository restores the two-author requirement", async () => {
+test("a second person in the repository restores the two-author requirement", async (t) => {
   // The bar is lowered only where the repository cannot supply two. Reading the
   // area's own author count instead would pass every single-author area inside
   // a large team, which is the one case the gate was written for.
-  const dir = repo((d, { write, author, commit }) => {
+  const dir = repo(t, (d, { write, author, commit }) => {
     for (let i = 0; i < 6; i++) write(`src/mine/m${i}.ts`, `export const m${i} = ${i}\n`);
     commit("init");
 
@@ -323,10 +327,10 @@ test("someone who only ever touched documentation does not raise the bar", async
   assert.equal(gated.directive, true);
 });
 
-test("a merge commit does not add an author", async () => {
+test("a merge commit does not add an author", async (t) => {
   // A merge's author touched no line. Counting them inflates every file the
   // merge carried and lets a release manager satisfy the gate on their own.
-  const dir = repo((d, { git, write, author, commit }) => {
+  const dir = repo(t, (d, { git, write, author, commit }) => {
     write("src/a.ts", "export const a = 1\n");
     commit("base");
 
@@ -364,20 +368,20 @@ test("history git could not read is distinguished from history that is empty", a
   assert.equal(unread.size, 0);
   assert.match(unread.error, /not a git repository/);
 
-  const empty = repo(() => {});
+  const empty = repo(t, () => {});
   const none = await authorsByFile(empty);
   assert.equal(none.size, 0);
   assert.equal(none.error, undefined, "an empty history is an answer, not a failure");
 });
 
-test("the log is read off the stream, so history size sets no ceiling", async () => {
+test("the log is read off the stream, so history size sets no ceiling", async (t) => {
   // Buffering capped history at maxBuffer and dropped every author on overflow.
   // What proves the stream parser is that a record spans a stdout chunk, so the
   // output has to clear 64 KB: 40 commits over 200 files is roughly 300 KB,
   // where 400 commits over one file is 12 KB and crosses nothing.
   const FILES = 200;
   const COMMITS = 40;
-  const dir = repo((d, { git, write, author }) => {
+  const dir = repo(t, (d, { git, write, author }) => {
     for (let i = 0; i < FILES; i++) write(`src/f${i}.ts`, "export const x = 0\n");
     git("add", "-A");
     git("commit", "-qm", "init");

@@ -11,7 +11,7 @@
  */
 
 import { appendLine, cached, nextTurn, stateDirFor, sweep } from "./counters.mjs";
-import { invokedAs, parsePayload, readStdin, respond } from "./hook-io.mjs";
+import { here, invokedAs, parsePayload, readStdin, respond } from "./hook-io.mjs";
 import { cliPath, conflictIn, driftCached, settingsFor } from "./upstream.mjs";
 
 /**
@@ -116,15 +116,6 @@ export function run({ stdin = "", env = process.env, state = stateDirFor(env) } 
   return contextFor(turn, cadence);
 }
 
-/** This process's own directory, and nothing when it has been removed under it. */
-function here() {
-  try {
-    return process.cwd();
-  } catch {
-    return "";
-  }
-}
-
 /**
  * Why strict mode should stay quiet, or null when it should not.
  *
@@ -148,7 +139,7 @@ function log(path, stdin, quiet) {
 // boundary rather than at each site that might throw (A24).
 if (invokedAs(import.meta.url)) {
   try {
-    respond("UserPromptSubmit", run({ stdin: readStdin() }));
+    respond("UserPromptSubmit", run({ stdin: await readStdin() }));
   } catch {
     // A turn that says nothing costs the mode; a turn that fails costs the run.
   }

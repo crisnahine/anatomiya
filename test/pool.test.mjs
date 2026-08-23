@@ -4,7 +4,7 @@ import { needsPosixPaths, needsShebang } from "./platform.mjs";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createPool, rssOf, GUARDS } from "../lib/pool.mjs";
+import { createPool, rssOf, GUARDS } from "../plugins/anatomiya/lib/pool.mjs";
 
 function file(dir, name, body) {
   const abs = join(dir, name);

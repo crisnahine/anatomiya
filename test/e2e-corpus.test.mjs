@@ -5,8 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { needsPosixSeparators } from "./platform.mjs";
-import { FACTS_PATH, FACTS_SCHEMA } from "../lib/facts.mjs";
-import { scanJson, scanSummary } from "../lib/summary.mjs";
+import { FACTS_PATH, FACTS_SCHEMA } from "../plugins/anatomiya/lib/facts.mjs";
+import { scanJson, scanSummary } from "../plugins/anatomiya/lib/summary.mjs";
 import {
   COLUMNS,
   areaProblems,

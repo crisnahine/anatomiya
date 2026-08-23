@@ -1,6 +1,6 @@
 # Contributing
 
-Read `DECISIONS.md` first. It is 176 numbered rows, each one a measurement or a review finding reduced
+Read `DECISIONS.md` first. It is 181 numbered rows, each one a measurement or a review finding reduced
 to the decision it forces on the code. It is the build contract, and most questions you will have
 about why something is shaped the way it is are answered there in one line.
 
@@ -29,7 +29,7 @@ because half the behaviour under test is git behaviour.
 Run the tool against a real repository before you send anything:
 
 ```sh
-node bin/anatomiya.mjs scan /path/to/some/repo --dry-run
+node plugins/anatomiya/bin/anatomiya.mjs scan /path/to/some/repo --dry-run
 ```
 
 `--dry-run` prints the plan and writes nothing.
@@ -38,10 +38,10 @@ node bin/anatomiya.mjs scan /path/to/some/repo --dry-run
 
 Comments say why. Never what.
 
-The code in `lib/` is dense with reasoning and thin on narration, and that is the target. A comment
+The code the plugin ships is dense with reasoning and thin on narration, and that is the target. A comment
 earns its place when it carries a measurement, a gotcha that bit someone, an invariant a future
 editor would otherwise break, or the reason an obvious approach was rejected. Look at
-`lib/corpus.mjs` and `lib/pool.mjs` for the density to aim for.
+`plugins/anatomiya/lib/corpus.mjs` and `plugins/anatomiya/lib/pool.mjs` for the density to aim for.
 
 Match the surrounding density. Some files here carry a long block at the top and almost nothing
 after it. Do not sprinkle line comments through a file whose siblings have none.
@@ -67,7 +67,8 @@ This is the rule that keeps the repository from drifting back into guesses.
 
 If you write code whose shape is not obvious from reading it, there must be a row in `DECISIONS.md`
 that says why, and the code comment should be a short version of that row rather than a pointer to
-it. A comment may end with the row's id in parentheses, `(F17)`, and `lib/` is full of them: an id
+it. A comment may end with the row's id in parentheses, `(F17)`, and the shipped code is full of
+them: an id
 here names this repository's own register rather than a ticket, and the row it points at is one file
 away. A ticket number, a PR number or a link to a conversation is none of that, and stays out.
 
@@ -92,7 +93,7 @@ and they do not get edited because a new implementation would be tidier.
 Start at `docs/dimension-intake.md`, not at the registry. A row goes in the table before it goes in
 the code: which glossary entries the key answers, what it is renamed from if its own name would read
 as a verdict beside a ratio, and whether it has a denominator at all. `npm run check:docs` fails if a
-shipped key has no row there, and `lib/dimensions.mjs` refuses to load a claim that names a
+shipped key has no row there, and `plugins/anatomiya/lib/dimensions.mjs` refuses to load a claim that names a
 principle. (G2, G3, G4)
 
 A dimension is one counted claim about one area. It carries three numbers, never one:
@@ -114,20 +115,20 @@ superclass and need nothing, while `zone_aware_time` cannot tell Rails from plai
 
 Where the code goes:
 
-- `lib/registry.mjs` the registry: `REGISTRY`, `REGISTRY_KEYS`, `rowsOfKind`, `rowsForLangs`,
+- `plugins/anatomiya/lib/registry.mjs` the registry: `REGISTRY`, `REGISTRY_KEYS`, `rowsOfKind`, `rowsForLangs`,
   `rowByKey`. Three lists are declared elsewhere and assembled here, and the load battery runs here
   once over the union. A row not reachable from here does not ship, whichever file declares it. Ask
   this module rather than spelling the union of the three lists yourself (C17)
-- `lib/dimensions.mjs` core JS and TS dimensions, the `ALL_DIMENSIONS` list, and `dimensionsFor()`,
+- `plugins/anatomiya/lib/dimensions.mjs` core JS and TS dimensions, the `ALL_DIMENSIONS` list, and `dimensionsFor()`,
   which is the tree rows alone and the one view the parse worker reads
-- `lib/dimensions-extra.mjs` the rest of the JS and TS set
-- `lib/dimensions-jsx.mjs` the React surface, `langs: ["jsx"]` only
-- `lib/dimensions-ruby.mjs` Ruby, walking prism nodes through `walkRuby`
-- `lib/dimensions-rails.mjs` Rails schema and migrations, also prism
-- `lib/pairing.mjs` file-to-file obligations and the `PAIRINGS` list. These are the one class the
+- `plugins/anatomiya/lib/dimensions-extra.mjs` the rest of the JS and TS set
+- `plugins/anatomiya/lib/dimensions-jsx.mjs` the React surface, `langs: ["jsx"]` only
+- `plugins/anatomiya/lib/dimensions-ruby.mjs` Ruby, walking prism nodes through `walkRuby`
+- `plugins/anatomiya/lib/dimensions-rails.mjs` Rails schema and migrations, also prism
+- `plugins/anatomiya/lib/pairing.mjs` file-to-file obligations and the `PAIRINGS` list. These are the one class the
   parse worker never runs, because it runs a program and an obligation has no program to run
   against. `reduceArea` composes both
-- `lib/dimensions-naming.mjs` the learned rows, and `NAMING_CORPUS`, the filename row the reducer
+- `plugins/anatomiya/lib/dimensions-naming.mjs` the learned rows, and `NAMING_CORPUS`, the filename row the reducer
   composes off the corpus rather than off a tree
 
 The shape:
@@ -277,14 +278,14 @@ order:
    writes it for you. It starts as `planned` and has to read `shipped` by the time the code does: the
    checker reports a missing row and an unshipped row as two different things, and a key shipping
    under a `planned` row is a decision nobody recorded
-2. `lib/dimensions.mjs`, or the file for the row's language, and the list that file exports. The
+2. `plugins/anatomiya/lib/dimensions.mjs`, or the file for the row's language, and the list that file exports. The
    key, the claim, the counter-claim or an explicit `null`, the precision, the applicability
    predicate
 3. `test/applicability.test.mjs` the witness pair: the sources your `sites` sentence says are
    applicable, and the neighbouring construct that must not count
 4. the test file beside the one that declares the row: a conforming case, a violating case, and one
    case that must not be counted at all
-5. `npm run defaults:seed` writes the key's entry in `lib/model-defaults.json`, seeded unmeasured.
+5. `npm run defaults:seed` writes the key's entry in `plugins/anatomiya/lib/model-defaults.json`, seeded unmeasured.
    It reads `none` and fails open, so the row keeps stating until somebody measures it
 6. `test/fixtures/counter-pins.mjs` the counter pin: `ELIGIBLE` where the row carries a
    counter-claim, `REFUSED` where it refuses one, with the reason beside it. A review gate too (C6)
@@ -301,9 +302,9 @@ nothing at all: the test beside the row's own file, and the changelog line. Thos
 whoever reviews it.
 
 Dropping a row runs the same list backwards, and one site fails harder than the rest. Delete the
-`lib/model-defaults.json` entry in the same change: the table is validated at load against the
+`plugins/anatomiya/lib/model-defaults.json` entry in the same change: the table is validated at load against the
 registry's keys, so an entry naming a key that no longer exists throws on every import of
-`lib/model-defaults.mjs`, which is every command. The intake row is the one site that stays: mark it
+`plugins/anatomiya/lib/model-defaults.mjs`, which is every command. The intake row is the one site that stays: mark it
 `dropped` with the reason rather than deleting it, or the entry is proposed again next quarter (G4).
 Take the counter pin out of `ELIGIBLE` or `REFUSED`, take the witness pair out of
 `test/applicability.test.mjs`, and bring the counts in `README.md` and section 4 of
@@ -355,6 +356,7 @@ generated-by banners, no co-author trailers.
 
 ## Releases
 
-`docs/releasing.md` is the list. Work it top to bottom rather than from memory: the version lives in
-four places, the changelog has to keep a heading the checker reads, and the tag is what actually
-releases. `0.1.10` shipped with no tag because none of that was written down.
+`docs/releasing.md` is the list. Work it top to bottom rather than from memory: the marketplace holds
+two plugins that ship apart, each with its own tag shape, its own manifests and its own changelog,
+and the tag is what actually releases. `v0.1.9` was released by hand four seconds before its own
+workflow run started, and the run went red on a release that already existed.

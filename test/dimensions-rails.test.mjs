@@ -4,10 +4,10 @@ import { needsRuby } from "./ruby-available.mjs";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { parseRuby } from "../lib/ruby.mjs";
-import { ALL_DIMENSIONS } from "../lib/dimensions.mjs";
-import { applicabilityFloor, applyGates } from "../lib/reduce.mjs";
-import { RAILS_DIMENSIONS } from "../lib/dimensions-rails.mjs";
+import { parseRuby } from "../plugins/anatomiya/lib/ruby.mjs";
+import { ALL_DIMENSIONS } from "../plugins/anatomiya/lib/dimensions.mjs";
+import { applicabilityFloor, applyGates } from "../plugins/anatomiya/lib/reduce.mjs";
+import { RAILS_DIMENSIONS } from "../plugins/anatomiya/lib/dimensions-rails.mjs";
 import { RUBY_DECLINED } from "./declined-fixtures.mjs";
 
 const dir = mkdtempSync(join(tmpdir(), "anatomiya-rails-"));

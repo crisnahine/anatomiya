@@ -5,9 +5,9 @@ import { join } from "node:path";
 
 import { repo } from "./ts-repo.mjs";
 import { needsRuby } from "./ruby-available.mjs";
-import { parseAll } from "../lib/parse.mjs";
-import { MINITEST_SUPERCLASSES, TEST_RUNNER_MODULES } from "../lib/facets.mjs";
-import { language } from "../lib/langs.mjs";
+import { parseAll } from "../plugins/anatomiya/lib/parse.mjs";
+import { MINITEST_SUPERCLASSES, TEST_RUNNER_MODULES } from "../plugins/anatomiya/lib/facets.mjs";
+import { language } from "../plugins/anatomiya/lib/langs.mjs";
 
 /**
  * What a file says about itself, beside what the dimensions counted in it.

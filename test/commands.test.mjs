@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -8,12 +8,12 @@ import { execFileSync } from "node:child_process";
 
 import { needsShebang } from "./platform.mjs";
 import { installWithoutDependencies } from "./plugin-install.mjs";
-import { runCheck, runDoctor, runPin, runScan, runSetup } from "../lib/commands.mjs";
-import { scanLines } from "../lib/summary.mjs";
-import { PIN_PATH } from "../lib/baseline.mjs";
-import { PROBE_IDS, pluginRoot } from "../lib/readiness.mjs";
-import { OVERVIEW_FILE } from "../lib/rules.mjs";
-import { loadTypeScript } from "../lib/semantic.mjs";
+import { runCheck, runDoctor, runPin, runScan, runSetup } from "../plugins/anatomiya/lib/commands.mjs";
+import { scanLines } from "../plugins/anatomiya/lib/summary.mjs";
+import { PIN_PATH } from "../plugins/anatomiya/lib/baseline.mjs";
+import { PROBE_IDS, pluginRoot } from "../plugins/anatomiya/lib/readiness.mjs";
+import { OVERVIEW_FILE } from "../plugins/anatomiya/lib/rules.mjs";
+import { loadTypeScript } from "../plugins/anatomiya/lib/semantic.mjs";
 
 const RULES = join(".claude", "rules");
 
@@ -393,7 +393,11 @@ test("a setup on Windows refuses rather than spawning an npm it cannot start", a
   assert.equal(ran, false);
   assert.deepEqual(needed, ["oxc", "flow-remove-types", "typescript"], "the copy has no node_modules, so there is something to install");
   assert.match(output, /npm install --omit=dev --ignore-scripts --no-audit --no-fund/, output);
-  assert.ok(output.includes(home), `it names the directory to run it in: ${output}`);
+  // Compared as the same directory rather than as the same string: node
+  // resolves a module's own path, so `pluginRoot()` answers the realpath while
+  // the fixture holds what `mkdtemp` returned. They share a suffix on macOS
+  // only because `/private` is a pure prefix.
+  assert.ok(output.includes(realpathSync(home)), `it names the directory to run it in: ${output}`);
 });
 
 test("a Windows machine with everything installed is told that, not the refusal", needsEverything, async () => {
@@ -418,7 +422,7 @@ test("a Windows machine with everything installed is told that, not the refusal"
  * one's slice and prose about an install is not a call to one.
  */
 function declarations() {
-  const src = readFileSync(new URL("../lib/commands.mjs", import.meta.url), "utf8");
+  const src = readFileSync(new URL("../plugins/anatomiya/lib/commands.mjs", import.meta.url), "utf8");
   // `var` and a destructured binding count too: a helper declared either way
   // would otherwise be invisible to the guarantee below.
   const starts = [...src.matchAll(/^(?:export )?(?:async )?(?:function|const|let|var|class)\s+([\w$]+|\{[^}]*\})/gm)];

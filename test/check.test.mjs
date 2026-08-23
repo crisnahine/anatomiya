@@ -10,11 +10,11 @@ import { fileURLToPath } from "node:url";
 import { installWithoutStripper, FLOW_SOURCE } from "./no-stripper.mjs";
 
 import { needsRuby } from "./ruby-available.mjs";
-import { check, severityFor, unreadReason, unreadCode } from "../lib/check.mjs";
-import { formatReport, CAVEATS } from "../lib/check-report.mjs";
-import { scan } from "../lib/scan.mjs";
-import { writeMap } from "../lib/write.mjs";
-import { writeFacts } from "../lib/facts.mjs";
+import { check, severityFor, unreadReason, unreadCode } from "../plugins/anatomiya/lib/check.mjs";
+import { formatReport, CAVEATS } from "../plugins/anatomiya/lib/check-report.mjs";
+import { scan } from "../plugins/anatomiya/lib/scan.mjs";
+import { writeMap } from "../plugins/anatomiya/lib/write.mjs";
+import { writeFacts } from "../plugins/anatomiya/lib/facts.mjs";
 
 // The area record carries a glob in the two halves it is composed from.
 const glob = (dir) => ({ negated: false, dir, tail: "**/*.ts" });
@@ -1710,7 +1710,7 @@ async function flowRepo(t) {
   git("config", "user.name", "T");
   git("add", "-A");
   git("commit", "-qm", "init");
-  const bin = fileURLToPath(new URL("../bin/anatomiya.mjs", import.meta.url));
+  const bin = fileURLToPath(new URL("../plugins/anatomiya/bin/anatomiya.mjs", import.meta.url));
   execFileSync(process.execPath, [bin, "scan", dir], { stdio: "pipe" });
   git("checkout", "-q", "-b", "probe");
   writeFileSync(
@@ -1806,7 +1806,7 @@ test("a claim is not silenced by a finding invented off the base's stripped tree
   git("config", "user.name", "T");
   git("add", "-A");
   git("commit", "-qm", "init");
-  const bin = fileURLToPath(new URL("../bin/anatomiya.mjs", import.meta.url));
+  const bin = fileURLToPath(new URL("../plugins/anatomiya/bin/anatomiya.mjs", import.meta.url));
   execFileSync(process.execPath, [bin, "scan", dir], { stdio: "pipe" });
 
   git("checkout", "-q", "-b", "migrate");
@@ -1857,7 +1857,7 @@ test("a map holding a type-checked claim says the check did not enforce it", asy
   git("config", "user.name", "T");
   git("add", "-A");
   git("commit", "-qm", "init");
-  const bin = fileURLToPath(new URL("../bin/anatomiya.mjs", import.meta.url));
+  const bin = fileURLToPath(new URL("../plugins/anatomiya/bin/anatomiya.mjs", import.meta.url));
   execFileSync(process.execPath, [bin, "scan", dir], { stdio: "pipe" });
 
   // Plant a stated semantic claim, which is what a --deep scan would have left.

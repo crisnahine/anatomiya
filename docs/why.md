@@ -99,15 +99,15 @@ not a claim that it is built: three rows below are marked where the two differ.
 | Reading a context file with the Read tool permanently suppressed its automatic injection for that path, for the rest of the process | The plugin never opens its own output with Read; the commands use `cat` | A7 |
 | A rewritten context file does not re-attach inside one context window, and the change notice truncates head and tail, so a mid-file edit reaches the model in neither copy | Generated files stay short, and the scan prints a restart notice | A6, A8 |
 | A delivery is deduped against the context window, not latched for the session: over 12,500 sessions, 84 paths arrived twice, 46 of them with a compaction between. Of the twelve sessions that compacted after a delivery, nine took a path back | Nothing is built to re-deliver after a compaction, because the platform already does it; the gap that stands is the stretch between two rebuilds | A17 |
-| A fixed table of area roots put 41% of one real repository's source in no area, and split `scripts/lib` from its larger sibling `scripts/hooks` for no stateable reason | Any directory holding enough source is an area candidate | see `lib/areas.mjs` |
-| Scanning per area cost 3 to 4.4x for nothing | One whole-corpus pass, attributed to areas in the reducer | see `lib/scan.mjs` |
-| An 85-area index costs about 1.2k tokens, a 977-area index about 15.8k | An area ceiling, smallest folded upward into a real parent directory; the overview summarises its listing past 200 | see `lib/areas.mjs` |
-| Raising the area ceiling to 1,000 split a 2,468-file repository into 209 areas and dropped stated claims from 194 to 143, because a smaller area holds fewer candidates | The ceiling is `clamp(ceil(N / 16), 120, 500)`, a budget backstop reading "the average area holds at least sixteen files" rather than a size rule. Coverage on a large tree comes from folding into parent directories, which took a 100,000-file repository from 76,000 uncovered files to none | see `lib/areas.mjs` |
+| A fixed table of area roots put 41% of one real repository's source in no area, and split `scripts/lib` from its larger sibling `scripts/hooks` for no stateable reason | Any directory holding enough source is an area candidate | see `plugins/anatomiya/lib/areas.mjs` |
+| Scanning per area cost 3 to 4.4x for nothing | One whole-corpus pass, attributed to areas in the reducer | see `plugins/anatomiya/lib/scan.mjs` |
+| An 85-area index costs about 1.2k tokens, a 977-area index about 15.8k | An area ceiling, smallest folded upward into a real parent directory; the overview summarises its listing past 200 | see `plugins/anatomiya/lib/areas.mjs` |
+| Raising the area ceiling to 1,000 split a 2,468-file repository into 209 areas and dropped stated claims from 194 to 143, because a smaller area holds fewer candidates | The ceiling is `clamp(ceil(N / 16), 120, 500)`, a budget backstop reading "the average area holds at least sixteen files" rather than a size rule. Coverage on a large tree comes from folding into parent directories, which took a 100,000-file repository from 76,000 uncovered files to none | see `plugins/anatomiya/lib/areas.mjs` |
 | A 50,000-file corpus cap did not trim a tail: it suppressed every directive in the map, so a repository one file over the line stated nothing | No cap on repository size. The same 100,000-file repository went from 0 of 720 claims to 480 of 720 | B11 |
 | The `typescript@5` checker ran 26x slower, is whole-program (narrowing the file set drove unresolved types from 3.1% to 36.2%), and bought 5 additional entries | A semantic tier would be opt-in and never the default. **Not built:** `typescript` is not a dependency and no flag reaches it | B7 |
 | A tracked file named `--instruction-file-path=.git/config` exfiltrated a secret through a subprocess argv | Every subprocess: `execFile`, arguments after `--`, reject paths starting with `-`. **Partial:** no path reaches a positional argument today, but the rule is not applied at every call site | F5 |
 | `execFile` threw `RangeError: Invalid string length` from inside Node's own exit handler, with `maxBuffer` set far above the output size | Subprocess output is streamed, never buffered. **Partial:** every read that grows with the repository streams; the ones that ask for a single blob or ref still buffer | F6 |
-| 18 of 85 areas in one measured repository were fixture directories | Fixture, vendor, dist and build directories are excluded from the corpus | see `lib/corpus.mjs` |
+| 18 of 85 areas in one measured repository were fixture directories | Fixture, vendor, dist and build directories are excluded from the corpus | see `plugins/anatomiya/lib/corpus.mjs` |
 | Bidi controls and zero-width joiners are Unicode category Cf, so they pass an ASCII control filter, and `JSON.stringify` does not escape them either | One encoder, allowlist not denylist, applied to every repository-controlled value | F3, F4 |
 | A hook was measured being flagged as prompt injection | No hooks, at all | see `DECISIONS.md` |
 
@@ -165,5 +165,5 @@ producing nothing.
 
 ## Further reading
 
-[`DECISIONS.md`](../DECISIONS.md) is the build contract: 176 numbered decisions with the finding
+[`DECISIONS.md`](../DECISIONS.md) is the build contract: 181 numbered decisions with the finding
 behind each. [`how-it-works.md`](how-it-works.md) is the mechanical walkthrough.

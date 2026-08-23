@@ -7,9 +7,10 @@ import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
 
 import { needsPathControl, needsRemovableCwd, needsShebang, needsUnreadableDirs, needsWindows } from "./platform.mjs";
+import { ANATOMIYA } from "../scripts/plugins.mjs";
 import { installWithoutDependencies } from "./plugin-install.mjs";
-import { EXCLUDE_LINES } from "../lib/rules.mjs";
-import { SUMMARY_SCHEMA } from "../lib/summary.mjs";
+import { EXCLUDE_LINES } from "../plugins/anatomiya/lib/rules.mjs";
+import { SUMMARY_SCHEMA } from "../plugins/anatomiya/lib/summary.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -124,7 +125,7 @@ test("the CLI summary and the overview word an unexamined file the same way", (t
   git("commit", "-qm", "big");
 
   const out = String(
-    execFileSync(process.execPath, [join(ROOT, "bin", "anatomiya.mjs"), "scan", repo], { stdio: "pipe" })
+    execFileSync(process.execPath, [join(ANATOMIYA, "bin", "anatomiya.mjs"), "scan", repo], { stdio: "pipe" })
   );
   const overview = readFileSync(join(repo, ".claude", "rules", "anatomiya-overview.md"), "utf8");
 
@@ -138,8 +139,8 @@ function repoWithNothingCommitted(t) {
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-cli-fresh-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
 
-  mkdirSync(join(dir, "lib", "core"), { recursive: true });
-  for (let i = 0; i < 5; i++) writeFileSync(join(dir, "lib", "core", `c${i}.js`), `export const a${i} = 1\n`);
+  mkdirSync(join(dir, "src", "lib", "core"), { recursive: true });
+  for (let i = 0; i < 5; i++) writeFileSync(join(dir, "src", "lib", "core", `c${i}.js`), `export const a${i} = 1\n`);
   execFileSync("git", ["init", "-q"], { cwd: dir, stdio: "pipe" });
   return dir;
 }
@@ -164,7 +165,7 @@ test("a scan that read no file of a language says so instead of reporting an emp
   git("commit", "-qm", "break");
 
   const out = String(
-    execFileSync(process.execPath, [join(ROOT, "bin", "anatomiya.mjs"), "scan", repo], { stdio: "pipe" })
+    execFileSync(process.execPath, [join(ANATOMIYA, "bin", "anatomiya.mjs"), "scan", repo], { stdio: "pipe" })
   );
 
   assert.match(out, /read no js file/, out);
@@ -177,7 +178,7 @@ test("a scan names the root it resolved to, because a path argument does not sco
   // what areas, the pin and the baseline need; the output has to say so.
   const repo = repoWithSource(t);
   const out = String(
-    execFileSync(process.execPath, [join(ROOT, "bin", "anatomiya.mjs"), "scan", join(repo, "src")], {
+    execFileSync(process.execPath, [join(ANATOMIYA, "bin", "anatomiya.mjs"), "scan", join(repo, "src")], {
       stdio: "pipe",
     })
   );
@@ -214,7 +215,7 @@ function repoWithTwoRoots(t) {
 
 test("the scan summary says how much of the layout it printed", (t) => {
   const repo = repoWithTwoRoots(t);
-  const out = String(execFileSync(process.execPath, [join(ROOT, "bin", "anatomiya.mjs"), "scan", repo], { stdio: "pipe" }));
+  const out = String(execFileSync(process.execPath, [join(ANATOMIYA, "bin", "anatomiya.mjs"), "scan", repo], { stdio: "pipe" }));
 
   assert.match(out, /^layout: 2 roots, 0 folded, tests: none; roster lines: 0 areas with imports, 0 with reuse$/m, out);
 });
@@ -225,7 +226,7 @@ test("untracked source is reported rather than counted as a repository with noth
   // saying 0 files are uncovered, which states the opposite of what happened.
   const repo = repoWithNothingCommitted(t);
   const out = String(
-    execFileSync(process.execPath, [join(ROOT, "bin", "anatomiya.mjs"), "scan", repo], { stdio: "pipe" })
+    execFileSync(process.execPath, [join(ANATOMIYA, "bin", "anatomiya.mjs"), "scan", repo], { stdio: "pipe" })
   );
 
   assert.match(out, /5 source files in the working tree are untracked\. The corpus is tracked files only, so nothing there was counted/);
@@ -245,7 +246,7 @@ test("the documented exclude line works from inside a linked worktree", (t) => {
 
   assert.ok(statSync(join(wt, ".git")).isFile(), "a worktree's .git is a file, so .git/info/ is not a path");
 
-  execFileSync(process.execPath, [join(ROOT, "bin", "anatomiya.mjs"), "scan", wt], { stdio: "pipe" });
+  execFileSync(process.execPath, [join(ANATOMIYA, "bin", "anatomiya.mjs"), "scan", wt], { stdio: "pipe" });
   const common = String(execFileSync("git", ["rev-parse", "--git-common-dir"], { cwd: wt, stdio: "pipe" })).trim();
   appendFileSync(resolve(wt, common, "info", "exclude"), `${EXCLUDE_LINES.join("\n")}\n`);
 
@@ -261,7 +262,7 @@ test("the documented exclude line works from inside a linked worktree", (t) => {
 /* --- the map on disk holds its own invariants (A5, A6) --- */
 
 const anatomiya = (repo, ...args) =>
-  execFileSync(process.execPath, [join(ROOT, "bin", "anatomiya.mjs"), ...args, repo], {
+  execFileSync(process.execPath, [join(ANATOMIYA, "bin", "anatomiya.mjs"), ...args, repo], {
     stdio: "pipe",
     encoding: "utf8",
   });
@@ -303,7 +304,7 @@ test("a command that cannot run exits non-zero and says why without a stack trac
   let status = 0;
   let stderr = "";
   try {
-    execFileSync(process.execPath, [join(ROOT, "bin", "anatomiya.mjs"), "scan", dir], { stdio: "pipe" });
+    execFileSync(process.execPath, [join(ANATOMIYA, "bin", "anatomiya.mjs"), "scan", dir], { stdio: "pipe" });
   } catch (err) {
     status = err.status;
     stderr = String(err.stderr);
@@ -391,7 +392,7 @@ test("every command that rebuilds the map forbids the Read tool on it (A7)", () 
   // injection for that path for the rest of the process, so the one session
   // that just built the map is the one that loses it.
   for (const name of ["scan.md", "pin.md"]) {
-    const body = readFileSync(join(ROOT, "commands", name), "utf8");
+    const body = readFileSync(join(ANATOMIYA, "commands", name), "utf8");
     assert.match(body, /Do not open the generated files with the Read tool/, name);
     assert.match(body, /`cat`/, `${name} says what to use instead`);
   }
@@ -400,7 +401,7 @@ test("every command that rebuilds the map forbids the Read tool on it (A7)", () 
 test("every command that reads the map forbids the Read tool on it (A7)", () => {
   // The check does not write the map, but it does show it, and showing it with
   // the Read tool turns the map off for the session that is using it.
-  const body = readFileSync(join(ROOT, "commands", "check.md"), "utf8");
+  const body = readFileSync(join(ANATOMIYA, "commands", "check.md"), "utf8");
 
   assert.match(body, /Do not open the generated files with the Read tool/);
   assert.match(body, /`cat`/);
@@ -408,7 +409,7 @@ test("every command that reads the map forbids the Read tool on it (A7)", () => 
 
 test("every command that rebuilds the map says a running session keeps the old one (A8)", () => {
   for (const name of ["scan.md", "pin.md"]) {
-    const body = readFileSync(join(ROOT, "commands", name), "utf8");
+    const body = readFileSync(join(ANATOMIYA, "commands", name), "utf8");
     assert.match(body, /does not re-attach mid-session/, name);
   }
 });
@@ -460,7 +461,7 @@ test("--deep is refused on check, because the check cannot run a whole-program c
   let code = 0;
   let stderr = "";
   try {
-    execFileSync(process.execPath, [join(ROOT, "bin", "anatomiya.mjs"), "check", ".", "--deep"], {
+    execFileSync(process.execPath, [join(ANATOMIYA, "bin", "anatomiya.mjs"), "check", ".", "--deep"], {
       stdio: "pipe",
       encoding: "utf8",
     });
@@ -470,7 +471,7 @@ test("--deep is refused on check, because the check cannot run a whole-program c
   }
 
   assert.equal(code, 2);
-  assert.match(stderr, /--deep is not a check option/);
+  assert.match(stderr, /check takes no --deep option/);
   assert.match(stderr, /anatomiya scan --deep/, "and it says where the tier does run");
 });
 
@@ -506,7 +507,7 @@ test("a format nothing writes is refused, and the annotations are a check's", ()
   // accepted and quietly answered in the format the caller did not ask for.
   const refused = (...args) => {
     try {
-      execFileSync(process.execPath, [join(ROOT, "bin", "anatomiya.mjs"), ...args, "."], {
+      execFileSync(process.execPath, [join(ANATOMIYA, "bin", "anatomiya.mjs"), ...args, "."], {
         stdio: "pipe",
         encoding: "utf8",
       });
@@ -523,14 +524,14 @@ test("a format nothing writes is refused, and the annotations are a check's", ()
 
   const wrongCommand = refused("scan", "--format", "github");
   assert.equal(wrongCommand.code, 2);
-  assert.match(wrongCommand.stderr, /--format github is not a scan option/);
+  assert.match(wrongCommand.stderr, /scan does not answer in github/);
 });
 
 /* --- the two commands about this installation --- */
 
 /** The binary with no path argument, which is what doctor and setup take. */
 const cli = (...args) =>
-  execFileSync(process.execPath, [join(ROOT, "bin", "anatomiya.mjs"), ...args], {
+  execFileSync(process.execPath, [join(ANATOMIYA, "bin", "anatomiya.mjs"), ...args], {
     stdio: "pipe",
     encoding: "utf8",
   });
@@ -649,9 +650,9 @@ test("doctor and setup refuse the arguments they have no use for", () => {
   };
 
   for (const [args, message] of [
-    [["doctor", "--dry-run"], /--dry-run is not a doctor option/],
-    [["doctor", "--format", "json"], /--format json is not a doctor option/],
-    [["setup", "--format", "json"], /--format json is not a setup option/],
+    [["doctor", "--dry-run"], /doctor takes no --dry-run option/],
+    [["doctor", "--format", "json"], /doctor does not answer in json/],
+    [["setup", "--format", "json"], /setup does not answer in json/],
     [["doctor", "."], /doctor takes no path/],
     [["setup", "."], /setup takes no path/],
   ]) {
@@ -677,7 +678,7 @@ test("echo answers an object and exits 0 whatever the filesystem does to it", ne
   // nobody may read cannot be removed.
   let out;
   try {
-    out = execFileSync(process.execPath, [join(ROOT, "bin", "anatomiya.mjs"), "echo", join(locked, "inner")], {
+    out = execFileSync(process.execPath, [join(ANATOMIYA, "bin", "anatomiya.mjs"), "echo", join(locked, "inner")], {
       input: '{"hook_event_name":"PostToolUse"}',
       encoding: "utf8",
     });
@@ -702,7 +703,7 @@ test("echo answers an object and exits 0 when the directory it fired in is gone"
 
   const out = execFileSync(
     "sh",
-    ["-c", `cd "${work}" && rm -rf "${work}" && exec "${process.execPath}" "${join(ROOT, "bin", "anatomiya.mjs")}" echo`],
+    ["-c", `cd "${work}" && rm -rf "${work}" && exec "${process.execPath}" "${join(ANATOMIYA, "bin", "anatomiya.mjs")}" echo`],
     { input: '{"hook_event_name":"PostToolUse"}', encoding: "utf8" }
   );
 
@@ -718,7 +719,7 @@ test("the bare name prints the usage and writes nothing", (t) => {
   // look.
   const repo = repoWithSource(t);
 
-  const out = execFileSync(process.execPath, [join(ROOT, "bin", "anatomiya.mjs")], {
+  const out = execFileSync(process.execPath, [join(ANATOMIYA, "bin", "anatomiya.mjs")], {
     cwd: repo,
     stdio: "pipe",
     encoding: "utf8",
@@ -735,7 +736,7 @@ test("a mistyped command is refused by name, not reported as a bad repository", 
   let status = 0;
   let stderr = "";
   try {
-    execFileSync(process.execPath, [join(ROOT, "bin", "anatomiya.mjs"), "frobnicate"], {
+    execFileSync(process.execPath, [join(ANATOMIYA, "bin", "anatomiya.mjs"), "frobnicate"], {
       stdio: "pipe",
       encoding: "utf8",
     });
@@ -757,7 +758,7 @@ test("a path with no command word is refused rather than scanned", (t) => {
   let status = 0;
   let stderr = "";
   try {
-    execFileSync(process.execPath, [join(ROOT, "bin", "anatomiya.mjs"), repo], {
+    execFileSync(process.execPath, [join(ANATOMIYA, "bin", "anatomiya.mjs"), repo], {
       stdio: "pipe",
       encoding: "utf8",
     });
@@ -773,7 +774,7 @@ test("a path with no command word is refused rather than scanned", (t) => {
 
 test("--help and -h still print the usage with no command word", () => {
   for (const flag of ["--help", "-h"]) {
-    const out = execFileSync(process.execPath, [join(ROOT, "bin", "anatomiya.mjs"), flag], {
+    const out = execFileSync(process.execPath, [join(ANATOMIYA, "bin", "anatomiya.mjs"), flag], {
       stdio: "pipe",
       encoding: "utf8",
     });
@@ -791,7 +792,7 @@ test("a mistyped --base exits non-zero and names the argument, not the repositor
   let status = 0;
   let stderr = "";
   try {
-    execFileSync(process.execPath, [join(ROOT, "bin", "anatomiya.mjs"), "check", repo, "--base", "no/such/ref"], {
+    execFileSync(process.execPath, [join(ANATOMIYA, "bin", "anatomiya.mjs"), "check", repo, "--base", "no/such/ref"], {
       stdio: "pipe",
       encoding: "utf8",
     });
@@ -809,7 +810,7 @@ test("an option cannot stand in for the command word", () => {
   let status = 0;
   let stderr = "";
   try {
-    execFileSync(process.execPath, [join(ROOT, "bin", "anatomiya.mjs"), "--format", "json"], {
+    execFileSync(process.execPath, [join(ANATOMIYA, "bin", "anatomiya.mjs"), "--format", "json"], {
       stdio: "pipe",
       encoding: "utf8",
     });

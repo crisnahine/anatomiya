@@ -5,7 +5,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/bin/anatomiya.mjs\" echo"
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/bin/anatomiya.mjs\" echo",
+            "timeout": 5
           }
         ]
       }
@@ -16,7 +17,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/bin/anatomiya.mjs\" echo"
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/bin/anatomiya.mjs\" echo",
+            "timeout": 5
           }
         ]
       }
@@ -27,7 +29,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/bin/anatomiya.mjs\" echo"
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/bin/anatomiya.mjs\" echo",
+            "timeout": 5
           }
         ]
       }

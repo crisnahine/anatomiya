@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 
 import { needsPosixPermissions, needsPosixSpecialFiles, needsSymlinks } from "./platform.mjs";
-import { SWEEP_MOST, appendLine, cached, firstTime, nextTurn, ownState, startOver, stateDirFor, sweep } from "../ultracode-anywhere/hooks/counters.mjs";
+import { SWEEP_MOST, appendLine, cached, firstTime, nextTurn, ownState, startOver, stateDirFor, sweep } from "../plugins/ultracode-anywhere/hooks/counters.mjs";
 
 /** A state directory of its own, so one test's turn count cannot reach another's. */
 function stateDir(t) {

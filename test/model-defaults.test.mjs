@@ -1,8 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { MODEL_DEFAULTS, defaultSideFor, assertModelDefaults } from "../lib/model-defaults.mjs";
-import { REGISTRY_KEYS } from "../lib/registry.mjs";
+import { MODEL_DEFAULTS, defaultSideFor, assertModelDefaults } from "../plugins/anatomiya/lib/model-defaults.mjs";
+import { REGISTRY_KEYS } from "../plugins/anatomiya/lib/registry.mjs";
 import { seedEntry } from "../scripts/seed-defaults.mjs";
 
 const entry = (over = {}) => ({
@@ -66,7 +66,7 @@ test("a literature entry with no source refuses to load", () => {
 });
 
 test("a class entry answers defaultClassFor and never a side", async () => {
-  const { defaultClassFor } = await import("../lib/model-defaults.mjs");
+  const { defaultClassFor } = await import("../plugins/anatomiya/lib/model-defaults.mjs");
   const cls = defaultClassFor("function_naming_case");
   assert.ok(cls === null || typeof cls === "string");
   assert.equal(defaultClassFor("nullish_default"), null, "a side dimension has no class");

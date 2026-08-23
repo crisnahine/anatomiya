@@ -12,9 +12,9 @@
  * `parseAll` takes a source with no path on disk, which is what this needs: the
  * file being scored lives in a worktree that is about to be deleted.
  */
-import { parseAll } from "../../lib/parse.mjs";
-import { reduceArea } from "../../lib/reduce.mjs";
-import { classifyBasename } from "../../lib/dimensions-naming.mjs";
+import { parseAll } from "../../plugins/anatomiya/lib/parse.mjs";
+import { reduceArea } from "../../plugins/anatomiya/lib/reduce.mjs";
+import { classifyBasename } from "../../plugins/anatomiya/lib/dimensions-naming.mjs";
 
 export async function scoreFile({ rel, source, lang }, { key, frameworks = [], learned = null } = {}) {
   const { records } = await parseAll([{ rel, source, lang }], { frameworks });

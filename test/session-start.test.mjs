@@ -7,15 +7,15 @@ import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 
 import { needsRemovableCwd } from "./platform.mjs";
-import { CALIBRATED_AGAINST, MARKERS, MIN_BUNDLE } from "../ultracode-anywhere/hooks/upstream.mjs";
-import { notice } from "../ultracode-anywhere/hooks/session-start.mjs";
-import { run } from "../ultracode-anywhere/hooks/standing-ultracode.mjs";
-import { nextTurn } from "../ultracode-anywhere/hooks/counters.mjs";
+import { CALIBRATED_AGAINST, MARKERS, MIN_BUNDLE } from "../plugins/ultracode-anywhere/hooks/upstream.mjs";
+import { notice } from "../plugins/ultracode-anywhere/hooks/session-start.mjs";
+import { run } from "../plugins/ultracode-anywhere/hooks/standing-ultracode.mjs";
+import { nextTurn } from "../plugins/ultracode-anywhere/hooks/counters.mjs";
 
 /** What a build carries: the four names, and the gate the reminder is emitted under. */
 const whole = () => `function Mae(e,t,r){return r===!0&&ZL()&&zZ(e,t)==="xhigh"}\n${MARKERS.join("\n")}`;
 
-const HOOK = fileURLToPath(new URL("../ultracode-anywhere/hooks/session-start.mjs", import.meta.url));
+const HOOK = fileURLToPath(new URL("../plugins/ultracode-anywhere/hooks/session-start.mjs", import.meta.url));
 
 function tree(t, { bundle = whole(), settings = null } = {}) {
   const dir = mkdtempSync(join(tmpdir(), "ultracode-session-"));
@@ -79,7 +79,7 @@ test("the hook prints one SessionStart object and nothing when there is nothing 
 });
 
 test("the plugin declares the session hook it ships", () => {
-  const declared = JSON.parse(readFileSync(fileURLToPath(new URL("../ultracode-anywhere/hooks/hooks.json", import.meta.url)), "utf8"));
+  const declared = JSON.parse(readFileSync(fileURLToPath(new URL("../plugins/ultracode-anywhere/hooks/hooks.json", import.meta.url)), "utf8"));
   const commands = declared.hooks.SessionStart.flatMap((g) => g.hooks).map((h) => h.command);
 
   assert.deepEqual(commands, ['node "${CLAUDE_PLUGIN_ROOT}/hooks/session-start.mjs"']);

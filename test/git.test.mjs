@@ -7,7 +7,7 @@ import { execFileSync } from "node:child_process";
 
 import { needsShebang } from "./platform.mjs";
 
-import { gitBuffered, gitStreamed, nameStatusReader, parsePorcelainRows, showBlob } from "../lib/git.mjs";
+import { gitBuffered, gitStreamed, nameStatusReader, parsePorcelainRows, showBlob } from "../plugins/anatomiya/lib/git.mjs";
 
 /** Every row a NUL-delimited name-status listing yields, read as a stream. */
 function nameStatusRows(out) {
@@ -443,7 +443,7 @@ test("the grammar does not care how the fields were cut up", () => {
 test("a listing arriving in chunks that split a path is still one record", async () => {
   // What streaming is for: a record does not arrive whole, and a reader that
   // assumes it does names half a file.
-  const { nameStatusReader } = await import("../lib/git.mjs");
+  const { nameStatusReader } = await import("../plugins/anatomiya/lib/git.mjs");
   const rows = [];
   const onField = nameStatusReader((row) => rows.push(row));
   for (const field of ["R100", "src/old.ts", "src/new.ts", ""]) onField(field);
@@ -452,7 +452,7 @@ test("a listing arriving in chunks that split a path is still one record", async
 });
 
 test("the tree listing and the range diff answer over a real repository", async (t) => {
-  const { filesAt, diffRange, changedSinceWorktree } = await import("../lib/git.mjs");
+  const { filesAt, diffRange, changedSinceWorktree } = await import("../plugins/anatomiya/lib/git.mjs");
   const { dir, git } = repo(t);
   const first = execFileSync("git", ["rev-parse", "HEAD"], { cwd: dir, encoding: "utf8" }).trim();
   writeFileSync(join(dir, "b.ts"), "export const b = 2\n");
@@ -476,7 +476,7 @@ test("no read git refused answers as a repository where there was nothing", asyn
   // reads that as "no companion exists anywhere". A diff that failed must never
   // read as a branch that changed nothing, and a file list that failed must
   // never read as a commit holding none.
-  const { filesAt, diffRange, changedSinceWorktree } = await import("../lib/git.mjs");
+  const { filesAt, diffRange, changedSinceWorktree } = await import("../plugins/anatomiya/lib/git.mjs");
   const { dir } = repo(t);
   const absent = "0".repeat(40);
 
@@ -488,7 +488,7 @@ test("no read git refused answers as a repository where there was nothing", asyn
 test("a rename survives the streamed range diff with both of its paths", async (t) => {
   // E7: at the pinned commit only the old path exists, so both names count as
   // changed and the map is what lets a renamed file find its own baseline.
-  const { diffRange } = await import("../lib/git.mjs");
+  const { diffRange } = await import("../plugins/anatomiya/lib/git.mjs");
   const { dir, git } = repo(t);
   const first = execFileSync("git", ["rev-parse", "HEAD"], { cwd: dir, encoding: "utf8" }).trim();
   git("mv", "a.ts", "moved.ts");
@@ -505,7 +505,7 @@ test("a tree listing git would not produce is unknown, not empty", async (t) => 
   // empty answer. An empty tree is a real answer meaning "no files", and the
   // obligation check reads it as "no companion exists anywhere", so every
   // changed producer on the branch becomes a violation that can reach MUST-FIX.
-  const { filesAt } = await import("../lib/git.mjs");
+  const { filesAt } = await import("../plugins/anatomiya/lib/git.mjs");
   const { dir } = repo(t);
 
   assert.equal(await filesAt(dir, "0".repeat(40)), null, "an unreadable commit answers nothing");

@@ -4,8 +4,8 @@ import { mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { cached } from "../ultracode-anywhere/hooks/counters.mjs";
-import { CALIBRATED_AGAINST, GATE_SHAPE, MARKERS, MIN_BUNDLE, behind, cliPath, conflictIn, drift, driftCached, settingsFor } from "../ultracode-anywhere/hooks/upstream.mjs";
+import { cached } from "../plugins/ultracode-anywhere/hooks/counters.mjs";
+import { CALIBRATED_AGAINST, GATE_SHAPE, MARKERS, MIN_BUNDLE, behind, cliPath, conflictIn, drift, driftCached, settingsFor } from "../plugins/ultracode-anywhere/hooks/upstream.mjs";
 
 /** What a build carries: the four names, and the gate the reminder is emitted under. */
 const whole = () => `function Mae(e,t,r){return r===!0&&ZL()&&zZ(e,t)==="xhigh"}\n${MARKERS.join("\n")}`;

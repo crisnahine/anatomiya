@@ -1,8 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { namesakeCompanions, namesakeIndex } from "../lib/companions.mjs";
-import { dirOf } from "../lib/paths.mjs";
+import { namesakeCompanions, namesakeIndex } from "../plugins/anatomiya/lib/companions.mjs";
+import { dirOf } from "../plugins/anatomiya/lib/paths.mjs";
 
 const file = (rel) => ({ rel });
 // A test file that names what it covers. The specifiers are what the parser
@@ -215,8 +215,8 @@ test("a test tree nested inside a package does not answer a top-level file", () 
 });
 
 test("a nested producer is credited by the test of its own name that imports it", () => {
-  // This repository's second plugin: the sources sit at
-  // ultracode-anywhere/hooks and every test sits flat under test/. The tail
+  // The shape this repository's second plugin has: its sources sit together in
+  // a `hooks` directory and every test sits flat under `test/`. The tail
   // `hooks` mirrors nothing on the other side, so path shape alone reads 0 of 5
   // over five files that are each genuinely tested. The import edge is what
   // separates this from the decoys above, which name nothing they cover.
@@ -368,7 +368,7 @@ test("a root that reduces to the repository itself is not a place, and does not 
 });
 
 test("a compiled specifier answers the TypeScript file and nothing else of that name", () => {
-  // `../lib/foo.js` is how NodeNext spells `lib/foo.ts`. It is not how anything
+  // `./foo.js` is how NodeNext spells `foo.ts`. It is not how anything
   // spells `lib/foo.json` or `lib/foo.css`, and stripping the extension outright
   // credited every file in the directory that shared the stem.
   const source = [file("pkg/lib/foo.ts"), file("pkg/lib/foo.json"), file("pkg/lib/foo.css")];

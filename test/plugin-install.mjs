@@ -1,7 +1,8 @@
 import { mkdtempSync, rmSync, cpSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
+
+import { ANATOMIYA } from "../scripts/plugins.mjs";
 
 /**
  * The plugin's own code with no `node_modules` beside it, which is what a
@@ -18,8 +19,9 @@ export function installWithoutDependencies(t) {
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-install-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
 
-  const root = fileURLToPath(new URL("..", import.meta.url));
-  for (const part of ["lib", "bin"]) cpSync(join(root, part), join(dir, part), { recursive: true });
-  cpSync(join(root, "package.json"), join(dir, "package.json"));
+  // The plugin's own directory is what the marketplace copies, so the fixture
+  // copies out of there rather than out of the repository around it.
+  for (const part of ["lib", "bin"]) cpSync(join(ANATOMIYA, part), join(dir, part), { recursive: true });
+  cpSync(join(ANATOMIYA, "package.json"), join(dir, "package.json"));
   return dir;
 }
