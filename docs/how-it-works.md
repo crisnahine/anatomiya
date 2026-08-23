@@ -267,6 +267,26 @@ that a miss gets named, so a bare `N of N` reads as "there is no counter-example
 which is stronger than anything the tool measured, and a credited file holding what looks like one
 is what makes a reader stop trusting the map.
 
+One row carries no such clause and owes a count instead, on the line that already carries its counts:
+
+```
+files here are named snake_case
+  1525 of 1525 sites across 1525 of 1532 files, 3 names spelling no class, 6 authors
+```
+
+The filename row votes with a stem's class and the check enforces over the site, so a stem spelling none of
+the four is a site with no vote: it leaves the printed population while the check still measures a
+new file against the sentence. `across 1525 of 1532 files` cannot say that, because it mixes those
+sites with the files that are no site at all.
+
+It does not borrow the words `not counted`: those belong to the clause above, which names forms the
+predicate declines and the check therefore never enforces. These names are the opposite, still
+measured against the sentence. It goes on the counts line because a line of its own is one of forty. Measured on vscode, six of 500
+areas sit at the bound and three of those state the row, and on its own line the disclosure pushed a
+stated directive out of one of them, which also capped that slot at FIX in the check. A disclosure
+that costs a convention is a bad trade. It also needs no perfect claim to earn its place: a declined
+site never reaches the `except` list, so that list teaches a reader nothing about it.
+
 Each dimension also carries a precision. A `precise` predicate sees every site it claims to see. A
 `partial` one under-counts applicability in cases the parser cannot see, which is the dangerous
 direction, so a partial dimension prints a warning on its line and can never reach the top severity

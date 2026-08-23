@@ -225,8 +225,10 @@ test("a debug path that cannot be written does not cost the turn its reminder", 
 test("the README states the size of what the hook adds, and states it correctly", () => {
   // A number in the file that explains the plugin is the one nobody re-measures.
   const readme = readFileSync(fileURLToPath(new URL("../plugins/ultracode-anywhere/README.md", import.meta.url)), "utf8");
-  const stated = readme.match(/(\d+) characters on the first turn, (\d+) on every tenth/);
-  const session = readme.match(/Over a (\d+)-turn session that is (\d+) characters in total/);
+  // Whitespace-tolerant, since a paragraph gets rewrapped and a sentence that
+  // moved across a line break is not a number that changed.
+  const stated = readme.match(/(\d+)\s+characters\s+on\s+the\s+first\s+turn,\s+(\d+)\s+on\s+every\s+tenth/);
+  const session = readme.match(/Over\s+a\s+(\d+)-turn\s+session\s+that\s+is\s+(\d+)\s+characters\s+in\s+total/);
 
   assert.ok(stated, "the README says how much a turn costs");
   assert.equal(Number(stated[1]), contextFor(1).length);
@@ -236,6 +238,16 @@ test("the README states the size of what the hook adds, and states it correctly"
   let total = 0;
   for (let turn = 1; turn <= Number(session[1]); turn++) total += (contextFor(turn) ?? "").length;
   assert.equal(Number(session[2]), total);
+});
+
+test("the size VERIFYING.md tells a person to expect on the wire is the size that goes out", () => {
+  // The wire diff is worked against a number, so a number that drifted there
+  // sends the person reading it after a difference the plugin did not make.
+  const verifying = readFileSync(fileURLToPath(new URL("../plugins/ultracode-anywhere/VERIFYING.md", import.meta.url)), "utf8");
+  const stated = verifying.match(/this\s+plugin's\s+(\d+)\s+characters/);
+
+  assert.ok(stated, "VERIFYING.md says how long the text in the capture should be");
+  assert.equal(Number(stated[1]), contextFor(1).length);
 });
 
 // --- the cadence the README describes ----------------------------------------
