@@ -22,7 +22,7 @@ import { dirname, join } from "node:path";
 
 import { invokedAs } from "./entry.mjs";
 import { REL } from "./plugins.mjs";
-import { RELEASES, notesFor } from "./release.mjs";
+import { RELEASES, notesFor, tagFor } from "./release.mjs";
 import { SEMVER } from "./validate.mjs";
 import { CAVEATS } from "../plugins/anatomiya/lib/check-report.mjs";
 import { pairingsFor } from "../plugins/anatomiya/lib/pairing.mjs";
@@ -618,7 +618,7 @@ for (const release of RELEASES) {
   // has one file to put back either way.
   if (changelog === null) continue;
 
-  const answered = notesFor(root, release.tag.replace("*", version));
+  const answered = notesFor(root, tagFor(release, version));
   // Reported against the file the author has to edit: the changelog problems
   // `notesFor` returns are about the changelog, whatever read them. Its
   // sentences name that file, and `claim` names it again, so the leading path

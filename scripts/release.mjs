@@ -57,7 +57,26 @@ export const RELEASES = [
  * knows and the workflow ignores is a release that quietly never happens, and
  * that is only visible after the tag is pushed.
  */
-export const TAG_GLOBS = RELEASES.map((release) => release.tag.replace("*", "*.*.*"));
+export const TAG_GLOBS = RELEASES.map((release) => `${prefixOf(release.tag)}*.*.*`);
+
+/**
+ * The part of a tag pattern before its placeholder.
+ *
+ * A pattern is a prefix and one trailing `*`, which is what `releaseFor` reads
+ * when it takes the remainder as the version. Said here rather than assumed:
+ * substituting with `replace` takes the first star of however many there are,
+ * so a pattern carrying two would be filled in one place and matched from
+ * another, and the two would disagree about which tag releases what.
+ */
+export function prefixOf(tag) {
+  if (typeof tag !== "string" || !tag.endsWith("*") || tag.slice(0, -1).includes("*")) {
+    throw new TypeError(`a tag pattern is a prefix and one trailing *, not ${JSON.stringify(tag)}`);
+  }
+  return tag.slice(0, -1);
+}
+
+/** The tag a plugin's release carries at this version. */
+export const tagFor = (release, version) => `${prefixOf(release.tag)}${version}`;
 
 /**
  * The versions one file has to carry for one plugin.
@@ -94,7 +113,7 @@ export function releaseFor(tag, releases = RELEASES) {
   // and the table is a parameter so a case can build the overlap it needs.
   const ordered = [...releases].sort((a, b) => b.tag.length - a.tag.length);
   for (const release of ordered) {
-    const prefix = release.tag.slice(0, -1);
+    const prefix = prefixOf(release.tag);
     if (!tag.startsWith(prefix)) continue;
     const version = tag.slice(prefix.length);
     if (!SEMVER.test(version)) continue;

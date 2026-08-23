@@ -435,13 +435,11 @@ export function shipped(root) {
 }
 
 function main(argv) {
-  if (!PACKABLE) {
-    console.log("not checked here: npm on Windows is a batch file, and running one needs a shell no command here may spawn");
-    return;
-  }
   // An option this does not know is a typo, and taking one as the directory to
   // scan made the npm spawn fail for a missing cwd with a message about npm not
-  // being installed.
+  // being installed. Asked before the platform refusal below, because a typo is
+  // a typo on every platform: refusing second, this took `--help` for a plugin
+  // root on Windows and answered 0.
   const typo = argv.find((arg) => arg.startsWith("-"));
   if (typo !== undefined) {
     console.error(`unknown option: ${typo}\nusage: node scripts/shipped.mjs [pluginRoot]`);
@@ -450,6 +448,10 @@ function main(argv) {
   if (argv.length > 1) {
     console.error(`only one plugin root may be given, and ${argv[1]} was the second`);
     process.exit(2);
+  }
+  if (!PACKABLE) {
+    console.log("not checked here: npm on Windows is a batch file, and running one needs a shell no command here may spawn");
+    return;
   }
   // Every plugin the marketplace lists, unless the caller names one: each has
   // its own root, its own `files` and its own set to check, and checking one of
