@@ -237,7 +237,16 @@ export function readFacts(root) {
 function withOlderFields(parsed) {
   return {
     ...parsed,
-    layout: parsed.layout ?? null,
+    // What history said, absent before 18, which is a scan that never asked.
+    authors: parsed.authors ?? null,
+    layout: parsed.layout
+      ? {
+          ...parsed.layout,
+          // The three populations were one summed count before 18, and the
+          // renderer reads a null floor as that record's own spelling.
+          more: parsed.layout.more ? { ...parsed.layout.more, floor: parsed.layout.more.floor ?? null } : undefined,
+        }
+      : null,
     // Left alone where a hand-edited record carries no parse section at all,
     // which is a record to report rather than one to fill in.
     ...(parsed.parse ? { parse: { ...parsed.parse, engines: parsed.parse.engines ?? null } } : {}),

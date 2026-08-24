@@ -14,7 +14,8 @@ import {
   parseArgs,
   selectRepos,
 } from "../scripts/measure-layout.mjs";
-import { namesakeClause } from "../plugins/anatomiya/lib/render-layout.mjs";
+import { namesakeClause, renderLayout } from "../plugins/anatomiya/lib/render-layout.mjs";
+import { layoutFacts } from "../plugins/anatomiya/lib/layout.mjs";
 import { OVERVIEW_FILE, RULES_DIR } from "../plugins/anatomiya/lib/rules.mjs";
 import { planMap, writeMap } from "../plugins/anatomiya/lib/write.mjs";
 
@@ -242,4 +243,44 @@ test("the recount reads every clause the fold line can carry", () => {
     "a map written before the three were counted apart still reconciles"
   );
   assert.equal(foldCounts("- and something else entirely"), null);
+});
+
+test("every fold line the roster can print reconciles through the recount", () => {
+  // The seam that broke: the renderer learned a third clause and the recount
+  // kept two anchored regexes, which fails 35 repositories at once and only
+  // when somebody runs the corpus. Asked over every shape rather than over the
+  // three somebody thought of.
+  const corpus = Array.from({ length: 3 }, (_, n) => n).flatMap((n) =>
+    Array.from({ length: 8 }, (_, i) => ({ rel: `d${n}/f${i}.ts`, lang: "js", facets: null })));
+  const facts = layoutFacts(corpus, { minFiles: 3 });
+  let shapes = 0;
+
+  for (const roots of [0, 1, 2]) {
+    for (const files of [0, 1, 5]) {
+      for (const dirs of [0, 1, 3]) {
+        for (const strays of [0, 1, 7]) {
+          for (const root of [0, 1, 9]) {
+            // A folded root holds at least one file, and a directory under the
+            // floor holds at least one too, so the other combinations are
+            // records no scan can produce.
+            if ((roots === 0) !== (files === 0)) continue;
+            if ((dirs === 0) !== (strays === 0)) continue;
+            const more = { roots, files, floor: { dirs, files: strays, root } };
+            const line = renderLayout({ ...facts, principles: [], truncated: false, more })
+              .find((l) => l.startsWith("- and "));
+            const total = files + strays + root;
+            if (total === 0) {
+              assert.equal(line, undefined, `nothing to say: ${JSON.stringify(more)}`);
+              continue;
+            }
+            shapes++;
+            assert.ok(line !== undefined, `no line for ${JSON.stringify(more)}`);
+            assert.deepEqual(foldCounts(line), { folded: roots, files: total }, line);
+          }
+        }
+      }
+    }
+  }
+
+  assert.ok(shapes >= 40, `${shapes} shapes is too few to have covered the series`);
 });

@@ -102,7 +102,7 @@ export function wilsonUpper(conforming, candidates, z = GATES.z) {
  */
 export function authorsRequired(repoAuthors, { shallow = null } = {}) {
   // A truncated history counts the authors of a window nobody chose, so the bar
-  // cannot be derived from it. A `--depth=1` checkout holds one author, which
+  // cannot be derived from it (D11). A `--depth=1` checkout holds one author, which
   // would drop the bar to one and let every claim state on the evidence this
   // gate exists to refuse: measured at 484 stated claims against the whole
   // clone's 465, on a repository with fifteen authors.
@@ -756,7 +756,7 @@ export function verdictFor(
     authors,
     repoAuthors,
     historyRead = true,
-    // What of the history was read, where it was not all of it (D4).
+    // What of the history was read, where it was not all of it (D11).
     shallow = null,
     semantic = null,
     // This dimension's counts over the whole repository, on the same
