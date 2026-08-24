@@ -227,7 +227,7 @@ test("the recount reads every clause the fold line can carry", () => {
   assert.deepEqual(foldCounts("- and 2 more directories holding 3400 files"), { folded: 2, files: 3400 });
   assert.deepEqual(foldCounts("- and 1 more directory holding 1 file"), { folded: 1, files: 1 });
   assert.deepEqual(
-    foldCounts("- and 2 more directories holding 3400 files, and 147 files in 26 directories under the floor"),
+    foldCounts("- and 2 more directories holding 3400 files and 147 files in 26 directories under the floor"),
     { folded: 2, files: 3547 }
   );
   assert.deepEqual(

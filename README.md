@@ -149,7 +149,7 @@ The overview's first section says where things already live: which kinds of file
 holds, how they are tested, and what the directory extracts versus inlines. This is the
 `empire-flippers/client` section from the 35-repository acceptance run in
 [docs/measurements/2026-08-17-what-lives-where.md](docs/measurements/2026-08-17-what-lives-where.md),
-with the three clauses 0.4.0 re-renders brought forward from that run:
+with the three clauses 0.3.3 re-renders brought forward from that run:
 
 ```markdown
 ## What lives where
