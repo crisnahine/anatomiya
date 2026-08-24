@@ -204,7 +204,7 @@ export function firstTime(dir, mark) {
  * An answer worth computing once, kept beside the counters under the key it was
  * computed for.
  *
- * For a question whose answer costs more than a turn should: reading a 321 MB
+ * For a question whose answer costs more than a turn should: reading a 325 MB
  * build is a few hundred milliseconds against a hook timeout of 5 seconds,
  * and on a cold disk more. The key is what the
  * answer depends on, so an upgrade in place is a new key rather than a stale
