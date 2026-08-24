@@ -53,6 +53,14 @@ the next scan, so counts from before this release and after it are not comparabl
 - The scan summary spells a runner, its unit and its count the way every other surface does. It read
   `1 test files under lib/rubocop/custom_cops` beside `1 test file` in the file it summarises, and
   `1369 rspec` where the map said `1368 of 1369 RSpec specs`. Decision H36.
+- A test file is evidence about a source file only where the two run on one engine. The rule was
+  written on one branch, the bare-basename pair at the top of two trees, and every other path to a
+  match went without it. mastodon keeps a `spec/models` of Ruby specs beside a `spec/javascript` of
+  TypeScript tests and a model of each name in both, so the mirror credited each with the other's
+  files. Six areas across the corpus were carrying such a credit and none is left: discourse charged
+  four directories of `.gjs` components to Ruby system specs, one of them naming
+  `plugins/chat/spec/system` as the place its JavaScript is tested. Found by the corpus, not by a
+  test: the suite was green on both directions of it. Decision H37.
 
 ### Changed
 
