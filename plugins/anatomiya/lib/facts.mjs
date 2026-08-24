@@ -92,7 +92,17 @@ export const FACTS_PATH = ".claude/anatomiya/facts.json";
 // The counts line prints it and the check reads no such field, so a record
 // without it renders a line that discloses nothing. Absent means none, which is
 // what every scan before this measured and printed.
-export const FACTS_SCHEMA = 17;
+// 18 does two things the roster and the gates each needed a field for. The
+// fold line's `more` keeps the folded directories' files apart from the files
+// under no directory at all and from the files at the repository root, because
+// one sentence carried all three and the noun in it named the first: a folded
+// root holding 3 files was printed as holding 21. And `authors` reaches the
+// record at all, carrying `shallow`: `git log` answers on a truncated clone and
+// its answer is true about a window nobody chose, so a `--depth=1` checkout
+// read as a one-author repository. A record written before it carries the
+// summed count, which is what it printed, and says nothing about its clone,
+// which is what its scan knew.
+export const FACTS_SCHEMA = 18;
 
 /**
  * Which of a dimension's two sentences an area is about, with the counts and
@@ -292,6 +302,10 @@ function factsRecord(result) {
     // which is the default. Read back as "did not run" rather than as missing.
     semantic: result.semantic ?? { ran: false, status: null, reason: null, typedResolutionRate: null },
     suppressAll: result.suppressAll,
+    // What history said, and how much of it there was. The gates read it and
+    // nothing on disk held it, so no reader could ask why a claim printed as a
+    // count. Absent on an older record, which is a scan that never asked.
+    authors: result.authors ?? null,
     // Which kinds of file live where, whole-repository and then per area. The
     // scan writes it and the check never does: it is counts, not a directive.
     layout: result.layout ?? null,

@@ -123,6 +123,73 @@ test("an empty tail still finds its companion when the whole directory mirrors t
   });
 });
 
+test("a source root whose tree-less form outruns the spec tree still credits its own files", () => {
+  // `app/mcp` is a Rails autoload root, so `app/mcp/mcp/context.rb` is
+  // `Mcp::Context` and its spec is `spec/mcp/context_spec.rb`. Stripping the
+  // tree words leaves `mcp/mcp` against `mcp`, and the mirror was asked in one
+  // direction only, so every file sitting directly in that root read untested.
+  const src = ["context", "rack_app", "server_instructions"].map((n) => file(`app/mcp/mcp/${n}.rb`));
+  const tst = ["context", "rack_app", "server_instructions"].map((n) => file(`spec/mcp/${n}_spec.rb`));
+
+  assert.deepEqual(namesakeCompanions(src, tst, "app/mcp/mcp", namesakeIndex(tst, src)), {
+    with: 3,
+    of: 3,
+    root: "spec/mcp",
+  });
+});
+
+test("one file answers the same at that root and at the area inside it", () => {
+  // The same invariant the package case pins, on the other trigger:
+  // `app/mcp/mcp/engineering/context.rb` read 1 of 1 at `app/mcp/mcp` and 0 of
+  // 1 at the directory it actually sits in.
+  const src = [file("app/mcp/mcp/engineering/context.rb")];
+  const tst = [file("spec/mcp/engineering/context_spec.rb")];
+  const byStem = namesakeIndex(tst, src);
+
+  assert.equal(
+    namesakeCompanions(src, tst, "app/mcp/mcp/engineering", byStem).with,
+    namesakeCompanions(src, tst, "app/mcp/mcp", byStem).with
+  );
+});
+
+test("the reversed mirror is asked of a test tree and of nothing else", () => {
+  // H18 measured the unguarded match at 668 false matches on openproject, 43.5%
+  // of everything it found, so the reversed direction is held to a directory
+  // whose top segment is a tree the repository keeps tests in. Without that,
+  // any deeper directory sharing a tail answers.
+  const src = [file("app/vendor/stripe/client.rb")];
+
+  assert.equal(
+    namesakeCompanions(src, [file("spec/stripe/client_spec.rb")], "app/vendor/stripe").with,
+    1,
+    "a spec tree answers"
+  );
+  assert.equal(
+    namesakeCompanions(src, [file("qa/stripe/client_spec.rb")], "app/vendor/stripe").with,
+    0,
+    "and a directory that is nobody's test tree does not"
+  );
+});
+
+test("a candidate whose directory is nothing but tree words is not asked in reverse", () => {
+  // `withoutTree("spec")` is the empty string, and an empty candidate matched
+  // against the root would answer whatever sits under it.
+  const src = [file("app/vendor/stripe/client.rb")];
+  const tst = [file("spec/client_spec.rb")];
+
+  assert.deepEqual(namesakeCompanions(src, tst, "app/vendor/stripe"), { with: 0, of: 1, root: null });
+});
+
+test("the nested path is never asked the reversed question, which has nothing to ask it of", () => {
+  // `rootBare` is null wherever the tail is not empty, and the reversed call
+  // puts it in the receiver position, so an unguarded version throws on every
+  // repository rather than counting one wrong.
+  const src = [file("packages/foo/src/parser.ts")];
+  const tst = [file("packages/foo/test/parser.test.ts")];
+
+  assert.doesNotThrow(() => namesakeCompanions(src, tst, "packages", namesakeIndex(tst, src)));
+});
+
 test("a colocated namesake at an evaluated root is still credited", () => {
   const source = [file("src/components/Foo.tsx"), file("src/components/Bar.tsx")];
   const tests = [file("src/components/Foo.test.tsx"), file("src/components/Bar.test.tsx")];

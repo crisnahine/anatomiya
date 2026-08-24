@@ -1,4 +1,4 @@
-import { degradedSemanticSentence, unexaminedLines, untrackedSentence } from "./render.mjs";
+import { degradedSemanticSentence, truncatedHistorySentence, unexaminedLines, untrackedSentence } from "./render.mjs";
 import { layoutSummary, plural } from "./render-layout.mjs";
 import { statedSide } from "./facts.mjs";
 import { encode, encodePath, sanitisePath } from "./encode.mjs";
@@ -74,6 +74,12 @@ export function scanSummary(result, plan, { dryRun = false, hook = null } = {}) 
     // carried it, and the one surface the caller was watching did not.
     semantic: degradedSemanticSentence(result.semantic),
     historyError: result.authors.error,
+    // What was read, where it was not the whole history, in the overview's own
+    // words, and how many claims the author gate then held to counts. The
+    // sentence is shared; the count is the terminal's, since the overview does
+    // not hold it.
+    historyTruncated: truncatedHistorySentence(result.authors.shallow),
+    authorGated: slots.filter((d) => d.gate === "authors").length,
     rules: {
       foreign: plan.foreign,
       unknown: plan.unknown,
@@ -121,6 +127,13 @@ export function scanLines(s) {
   lines.push(...s.unexamined);
   if (s.historyError)
     lines.push(`history could not be read, so every claim fails the author gate: ${s.historyError}`);
+  if (s.historyTruncated) {
+    lines.push(
+      s.authorGated > 0
+        ? `${s.historyTruncated} and ${plural(s.authorGated, "claim")} print as counts on the author gate`
+        : s.historyTruncated
+    );
+  }
   // Named, not counted. The count was a number the reader then had to go and
   // resolve with `ls`, and the whole point of the line is that these files
   // reach the agent on every turn.

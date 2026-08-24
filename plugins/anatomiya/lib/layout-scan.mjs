@@ -52,7 +52,7 @@ const notCounted = (corpus) => ({
   size: corpus.length,
   minFiles: minRootFiles(corpus.length),
   roots: [],
-  more: { roots: 0, files: 0 },
+  more: { roots: 0, files: 0, floor: { dirs: 0, files: 0, root: 0 } },
   tests: [],
   principles: [],
   truncated: true,

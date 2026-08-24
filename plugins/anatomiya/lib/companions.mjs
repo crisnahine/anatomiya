@@ -29,6 +29,7 @@ import {
   LEARNED_SUFFIX_SHARE,
   NAMESAKE_SUFFIXES,
   startsAtSeparator,
+  TEST_TREES,
   TREE,
 } from "./test-shape.mjs";
 
@@ -440,10 +441,26 @@ export function namesakeCompanions(sourceFiles, testFiles, rootPath = "", byStem
       // directories part first there, and here they do not. A JS script is not
       // answered by a Ruby spec of the same name.
       const topLevel = flatPair && TREE.has(t.dir.split("/")[0]) && language(t.rel) === language(f.rel);
+      // The same mirror, asked the other way round. `mirrors` is one-directional
+      // and the empty-tail arm only ever asked whether the candidate ends in the
+      // root, so a root whose tree-less form is longer than the test tree's
+      // never matched: `app/mcp` is a Rails autoload root, `withoutTree` leaves
+      // `mcp/mcp` against `mcp`, and every file sitting directly there read
+      // untested while the same files read tested one segment up.
+      //
+      // Held two ways, because H18 measured the unguarded match at 668 false
+      // matches on openproject, 43.5% of everything it found. `tail === ""` is
+      // load-bearing rather than tidy: `rootBare` is null on the nested path and
+      // the reversed call puts it in the receiver position, so without it this
+      // throws on every repository. And the candidate's own top segment has to
+      // be a tree the repository keeps tests in, or any deeper directory that
+      // happens to share a tail answers.
+      const rootMirror =
+        tail === "" &&
+        (mirrors(t.bare, rootBare) ||
+          (t.bare !== "" && TEST_TREES.has(t.dir.split("/")[0]) && mirrors(rootBare, t.bare)));
       const whole =
-        tail === ""
-          ? mirrors(t.bare, rootBare) || topLevel
-          : t.dir === tail || t.dir.endsWith(`/${tail}`);
+        tail === "" ? rootMirror || topLevel : t.dir === tail || t.dir.endsWith(`/${tail}`);
       // A test that imports this very file has named what it covers, so it
       // answers where the tail cannot: the two sides of a split tree agree on a
       // path here rather than on a shape. Asked only where the tail said no, so
