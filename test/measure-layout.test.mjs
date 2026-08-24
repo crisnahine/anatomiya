@@ -7,6 +7,7 @@ import { join } from "node:path";
 import {
   LEARNED_ROWS,
   checkOutput,
+  foldCounts,
   learnedRows,
   learnedTables,
   overviewFor,
@@ -216,4 +217,29 @@ test("a --md target that is already there is refused, and --force is how a rerun
   assert.equal(checkOutput(null, false, true), null);
   assert.match(checkOutput("/out/run.md", false, true), /\/out\/run\.md/);
   assert.match(checkOutput("/out/run.md", false, true), /--force/);
+});
+
+test("the recount reads every clause the fold line can carry", () => {
+  // Nothing runs this parser until a corpus run does, and a spelling it cannot
+  // read fails 35 repositories at once, eighteen minutes in. The reconciliation
+  // it feeds counts files, so every clause has to add to the same number.
+  assert.deepEqual(foldCounts("- and 2 more directories holding 3400 files"), { folded: 2, files: 3400 });
+  assert.deepEqual(foldCounts("- and 1 more directory holding 1 file"), { folded: 1, files: 1 });
+  assert.deepEqual(
+    foldCounts("- and 2 more directories holding 3400 files, and 147 files in 26 directories under the floor"),
+    { folded: 2, files: 3547 }
+  );
+  assert.deepEqual(
+    foldCounts(
+      "- and 1 more directory holding 3 files, 4 files in 4 directories under the floor, and 14 at the repository root"
+    ),
+    { folded: 1, files: 21 }
+  );
+  assert.deepEqual(foldCounts("- and 14 files at the repository root"), { folded: 0, files: 14 });
+  assert.deepEqual(
+    foldCounts("- and 12 more files in directories under the floor"),
+    { folded: 0, files: 12 },
+    "a map written before the three were counted apart still reconciles"
+  );
+  assert.equal(foldCounts("- and something else entirely"), null);
 });

@@ -62,6 +62,7 @@ const FLAGS = new Set([
   // `status` defaults to collapsing an untracked directory to one entry ending
   // in `/`, which names no file and is dropped by every path predicate here.
   "-uall",
+  "--count",
   "--depth=1",
   "--exclude-standard",
   "--find-renames",

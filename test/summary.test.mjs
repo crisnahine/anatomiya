@@ -321,6 +321,11 @@ test("the summary carries every fact the scan prints", () => {
     // clean. Only a tier that ran badly has anything to say.
     semantic: null,
     historyError: null,
+    // Null on a whole clone, and on one this tool could not ask. A window is
+    // the only thing that fills it, and the count beside it is what the author
+    // gate then held to counts.
+    historyTruncated: null,
+    authorGated: 0,
     rules: { foreign: [], unknown: [], unreadable: [], listed: true, replaced: [] },
     removed: 0,
     wrote: 2,

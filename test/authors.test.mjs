@@ -278,6 +278,47 @@ test("a second person in the repository restores the two-author requirement", as
   rmSync(dir, { recursive: true, force: true });
 });
 
+test("a clone that holds only a window of history says so, and a whole one says nothing", async (t) => {
+  // `actions/checkout` clones at depth 1 by default. Nothing in the map, the
+  // record or the terminal said the history it counted was a window, and the
+  // author gate moved both ways on it.
+  const dir = repo(t, (d, { write, author, commit }) => {
+    for (let i = 0; i < 3; i++) {
+      author(`p${i}@t.test`);
+      write(`src/m${i}.ts`, `export const m${i} = ${i}\n`);
+      commit(`m${i}`);
+    }
+  });
+
+  assert.equal((await authorsByFile(dir)).shallow, null, "a whole history is not a window");
+
+  const shallow = mkdtempSync(join(tmpdir(), "anatomiya-shallow-"));
+  t.after(() => rmSync(shallow, { recursive: true, force: true }));
+  execFileSync("git", ["clone", "-q", "--depth=1", `file://${dir}`, shallow], { stdio: "pipe" });
+
+  const window = (await authorsByFile(shallow)).shallow;
+  assert.equal(window.commits, 1, "one commit is what a depth-1 checkout holds");
+  assert.match(window.oldest, /^\d{4}-\d{2}-\d{2}T/, "and the moment its history begins");
+});
+
+test("a window of history cannot lower the author bar, however few authors it holds", async () => {
+  // The bar is derived from the repository's own author count, so a depth-1
+  // checkout holds one author, drops the bar to one and states more claims than
+  // the whole clone does: 484 against 465 on a measured 15-author repository,
+  // every one of them on single-author evidence, which is what D4 refuses.
+  const files = Array.from({ length: 6 }, (_, i) => `src/m${i}.ts`);
+  const gate = (shallow) =>
+    applyGates(evenly(files), { authors: 1, repoAuthors: 1, shallow, areaFileCount: 6, areaDirCount: 1 });
+
+  assert.equal(gate(null).authorsRequired, 1, "a repository that really has one author keeps its bar");
+  assert.equal(gate(null).directive, true);
+
+  const truncated = gate({ commits: 1, oldest: "2026-01-22T00:43:30Z" });
+  assert.equal(truncated.authorsRequired, 2);
+  assert.equal(truncated.directive, false);
+  assert.equal(truncated.gate, "authors");
+});
+
 test("a bot is not the second author", async () => {
   // A solo public repository with a dependency bot would otherwise read as a
   // two-person team and be blocked forever, which is the same misfire the

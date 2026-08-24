@@ -49,8 +49,17 @@ const runnerCount = (n, runner) =>
 
 // One clause per runner group, named the way `specCount` names a root line's:
 // a root line and an area's kinds line read the same `tests` field.
+//
+// The count under the named directory, then the whole group, where the two
+// differ, the way the tests line already spells it: the vote that picks the
+// name needs only a strict majority, so `8 RSpec specs under admin` named 5.
+// A record written before the field carries none and reads as the whole group
+// being under the name, which is what it used to print.
 const testsParts = (tests) =>
-  tests.map((t) => `${specCount(t.files, t.runner)}${t.sub ? ` under ${pathText(t.sub)}` : ""}`);
+  tests.map((t) => {
+    const named = t.under !== undefined && t.under !== t.files ? `${t.under} of ` : "";
+    return `${named}${specCount(t.files, t.runner)}${t.sub ? ` under ${pathText(t.sub)}` : ""}`;
+  });
 
 // The count with a test is the subject of the clause, not the denominator
 // beside it, so "1 of 504" takes the singular and "2 of 504" does not.
@@ -194,17 +203,46 @@ function testsLineText(layout) {
   return `- tests: ${parts.join("; ")}`;
 }
 
-/** The directories that did not print, counted where they would have. */
-function foldLine(roots, files) {
-  if (roots > 0) {
-    return `- and ${roots} more ${roots === 1 ? "directory" : "directories"} holding ${plural(files, "file")}`;
+const directories = (n) => `${n} ${n === 1 ? "directory" : "directories"}`;
+
+/**
+ * The three populations that did not get a line of their own, each counted
+ * where it is.
+ *
+ * A clause each, because one sentence carrying all three bound every number to
+ * the first noun: this repository's own map billed one folded root holding 3
+ * files for 21, and the api map charged 164 files in `config`, `lib/tasks` and
+ * 25 other directories to `public` and `app/views`.
+ *
+ * The repository root is its own clause and not one of the directories under
+ * the floor. It never took the floor test, so failing it is not why it has no
+ * line, and 14 of this repository's 18 sit there.
+ *
+ * `floor` is null on a record written before the three were counted apart, and
+ * there `files` is still all of them summed, which is what that record printed.
+ */
+function foldLine(roots, files, floor) {
+  const folded =
+    roots > 0 ? `${roots} more ${roots === 1 ? "directory" : "directories"} holding ${plural(files, "file")}` : null;
+  if (floor === null) {
+    if (folded) return `- and ${folded}`;
+    // No directory was folded, so the count is files the floor left behind and
+    // "and 0 more directories" would be a number nobody can act on.
+    if (files > 0) {
+      return `- and ${files} more ${files === 1 ? "file" : "files"} in directories under the floor`;
+    }
+    return null;
   }
-  // No directory was folded, so the count is files the floor left behind and
-  // "and 0 more directories" would be a number nobody can act on.
-  if (files > 0) {
-    return `- and ${files} more ${files === 1 ? "file" : "files"} in directories under the floor`;
+  const parts = [folded];
+  if (floor.files > 0) parts.push(`${plural(floor.files, "file")} in ${directories(floor.dirs)} under the floor`);
+  // The noun rides on the first clause that needs it, so a line that is only
+  // this one still says what it counts.
+  if (floor.root > 0) {
+    parts.push(`${parts.some(Boolean) ? floor.root : plural(floor.root, "file")} at the repository root`);
   }
-  return null;
+  const said = parts.filter(Boolean);
+  if (said.length === 0) return null;
+  return `- and ${said.slice(0, -1).join(", ")}${said.length > 1 ? ", and " : ""}${said.at(-1)}`;
 }
 
 // The heading, the blank under it, and the blank that closes the block. Under
@@ -248,16 +286,20 @@ export function renderLayout(layout, budget = Infinity) {
 
   // A root line each, and the line that counts what did not get one.
   const room = budget - owed();
-  const already = layout.more.roots > 0 || layout.more.files > 0;
+  const floor = layout.more.floor ?? null;
+  const already = layout.more.roots > 0 || layout.more.files > 0 || (floor?.files ?? 0) > 0;
   const whole = layout.roots.length + (already ? 1 : 0);
   const shown = layout.roots.slice(0, whole <= room ? layout.roots.length : Math.max(0, room - 1));
   const gaveWay = layout.roots.slice(shown.length);
 
   const lines = [LAYOUT_HEADING, ""];
   for (const r of shown) lines.push(rootLine(r));
+  // A root the budget squeezed out is a real directory holding its own files,
+  // so it joins the folded half and never the count of what sits under none.
   const fold = foldLine(
     layout.more.roots + gaveWay.length,
-    layout.more.files + gaveWay.reduce((n, r) => n + r.files, 0)
+    layout.more.files + gaveWay.reduce((n, r) => n + r.files, 0),
+    floor
   );
   if (fold && shown.length < room) lines.push(fold);
 
@@ -282,7 +324,14 @@ export function layoutSummary(layout, areas = []) {
     layout.tests.length === 0
       ? "none"
       : layout.tests
-          .map((g) => `${g.files} ${g.runner}${g.root ? ` under ${pathText(g.root)}` : ""}`)
+          // Through the same pair the map's own lines print, rather than the
+          // raw key and a hardcoded noun: this line read `1369 rspec` and
+          // `1 test files` where the file it summarises read `1368 of 1369
+          // RSpec specs` and `1 test file`.
+          .map(
+            (g, i) =>
+              `${(i === 0 ? specCount : runnerCount)(g.files, g.runner)}` +
+              `${g.root ? ` under ${pathText(g.root)}` : ""}`)
           .join(", ");
   const withImports = areas.filter((a) => a.imports?.length > 0).length;
   const withReuse = areas.filter((a) => a.reused?.length > 0).length;
