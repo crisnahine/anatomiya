@@ -201,7 +201,7 @@ test("a component and the test file beside it are one engine, whatever the exten
   assert.equal(namesakeCompanions(src, [file("spec/components/Button.spec.rb")], "packages/ui/src/components").with, 0);
 });
 
-test("the reversed mirror does not cross a language", () => {
+test("the reversed mirror is refused across an engine, whichever way it is asked", () => {
   // mastodon keeps `app/javascript/mastodon/models/account.ts` beside
   // `app/models/account.rb`, and `spec/models/account_spec.rb` covers the Ruby
   // one. Asked in reverse with no language test, the TypeScript model was

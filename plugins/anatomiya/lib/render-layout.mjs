@@ -210,8 +210,9 @@ const directories = (n) => `${n} ${n === 1 ? "directory" : "directories"}`;
  *
  * A clause each, because one sentence carrying all three bound every number to
  * the first noun: this repository's own map billed one folded root holding 3
- * files for 21, and the api map charged 164 files in `config`, `lib/tasks` and
- * 25 other directories to `public` and `app/views`.
+ * files for 21, and the api map charged 164 files to `public` and `app/views`:
+ * 147 in 26 directories, `config` at 39 of them, `config/initializers` at 33
+ * and `lib/tasks/archived` at 27, and 17 at the repository root.
  *
  * The repository root is its own clause and not one of the directories under
  * the floor. It never took the floor test, so failing it is not why it has no

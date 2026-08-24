@@ -80,7 +80,11 @@ export function scanSummary(result, plan, { dryRun = false, hook = null } = {}) 
     // window and what the gate cost are this surface's alone, because the
     // overview owes byte-stability and both of them move on a repository whose
     // source did not.
-    historyTruncated: truncatedHistoryLine(result.authors.shallow, authorGated),
+    // Not beside `historyError`: the probe is a `rev-parse` and answers even
+    // where the log itself failed, and a history that could not be read at all
+    // is the larger fact. Both lines together said the gate held claims to
+    // counts and then named a gate no slot was on.
+    historyTruncated: result.authors.error ? null : truncatedHistoryLine(result.authors.shallow, authorGated),
     authorGated,
     rules: {
       foreign: plan.foreign,

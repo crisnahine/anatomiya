@@ -44,8 +44,9 @@ the next scan, so counts from before this release and after it are not comparabl
   boundary slides forward with every commit that lands upstream. Decision D11.
 - The empty-tail mirror is asked in both directions. `app/mcp` is a Rails autoload root, so stripping
   the tree words left `mcp/mcp` against `mcp` and every file sitting directly there read untested:
-  `0 of 13`, `0 of 11`, `0 of 8` where the specs exist and describe the right constants. Nine areas
-  across the corpus gain, none drops. Decision H34.
+  `0 of 13`, `0 of 11`, `0 of 8` where the specs exist and describe the right constants. Measured
+  over the whole corpus, 6,849 areas of which 4,886 carry a companion count: 24 gain on this row's
+  own account, every one hand-verified, and none drops. Decision H34.
 - A Ruby file named `_spec.rb` or `_test.rb` is a test only where a test tree above it agrees. A
   RuboCop cop named for the `Rails.env.test?` guard it enforces printed a test group of its own in
   the file that loads every turn, telling a reader to mirror a shape the repository does not have.

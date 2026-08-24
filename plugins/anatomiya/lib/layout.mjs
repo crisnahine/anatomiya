@@ -252,7 +252,9 @@ export function layoutRoots(files, { minFiles, budget = ROOT_BUDGET }) {
     // Three populations, because one sentence used to carry all three and the
     // noun in it was the folded directories. Summed, this repository's own map
     // billed one folded root holding 3 files for 21, and the api map charged
-    // `config/initializers` and 26 other directories to `public`.
+    // 164 files to `public` and `app/views`: 147 in 26 directories, `config` at
+    // 39 of them, `config/initializers` at 33 and `lib/tasks/archived` at 27,
+    // and 17 at the repository root.
     //
     // The repository root is counted apart from the directories under the
     // floor rather than as one of them: `visit` guards the floor test with
