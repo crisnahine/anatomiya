@@ -134,6 +134,23 @@ test("the installed Claude Code still carries what this plugin mirrors", (t) => 
   assert.deepEqual(answer.missing, [], `${answer.reason ?? ""} (read ${cli}, ${statSync(cli).size} bytes)`);
 });
 
+test("the installed Claude Code still carries the sentence A42's convention half defers to", (t) => {
+  // A42 argues the convention half adds delivery and not wording, because the
+  // harness already asks for the wording. A build that stops asking, or one
+  // that starts asking for this line's own job, moves that argument. A skip
+  // where no build is installed: a missing build is not evidence either way.
+  const cli = cliPath();
+  if (!cli) return t.skip("no Claude Code build on this machine to read");
+
+  const body = readFileSync(cli, "latin1");
+  if (body.length < MIN_BUNDLE) return t.skip("the installed build could not be read");
+
+  assert.ok(
+    body.includes("reads like the surrounding code"),
+    `no surrounding-code sentence in ${cli}; re-read DECISIONS A42, whose convention half defers to it`
+  );
+});
+
 // --- the file on PATH is often not the build ---------------------------------
 
 /** A file the size of a real bundle, which is the only thing worth reading markers out of. */
