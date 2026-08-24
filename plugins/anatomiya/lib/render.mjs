@@ -825,32 +825,12 @@ export const untrackedSentence = (n) =>
   `${plural(n, "source file")} in the working tree ${n === 1 ? "is" : "are"} untracked`;
 
 /**
- * What the history read was, where it was not all of it, or null.
- *
- * `git log` answers on a shallow clone and its answer is true about a window
- * nobody chose, so every author count taken from it is a floor. One sentence
- * for the same reason `untrackedSentence` is one: the overview and the terminal
- * both say it, and a second spelling is a second answer.
- *
- * How much history the window holds is deliberately not in it. This line goes
- * in the overview, which owes byte-stability between scans of unchanged source,
- * and both numbers move on their own: on a fixed-depth checkout the boundary
- * slides forward with every commit that lands upstream. `historyWindow` carries
- * them, and only the terminal asks for it.
- */
-export function truncatedHistorySentence(shallow) {
-  return shallow ? "history truncated: shallow clone, so author counts are a floor" : null;
-}
-
-/**
- * How much of the history the clone holds, for the surface that is allowed to
- * print a number that moves, or null where it could not say.
+ * How much of the history the clone holds, or null where it could not say.
  *
  * The date is git's, so it is read only where it is spelled as one: a committer
  * date is a value the repository sets.
  */
-export function historyWindow(shallow) {
-  if (!shallow) return null;
+function historyWindow(shallow) {
   const day = /^\d{4}-\d{2}-\d{2}/.exec(shallow.oldest ?? "")?.[0] ?? null;
   const held = [
     shallow.commits === null || shallow.commits === undefined ? null : plural(shallow.commits, "commit"),
@@ -860,6 +840,37 @@ export function historyWindow(shallow) {
     .join(" ");
   return held || null;
 }
+
+/**
+ * What the history read was, where it was not all of it, in one spelling for
+ * both the surfaces that say it.
+ *
+ * `git log` answers on a shallow clone and its answer is true about a window
+ * nobody chose, so every author count taken from it is a floor. One sentence
+ * for the same reason `untrackedSentence` is one: a second spelling is a second
+ * answer (A20).
+ *
+ * The two surfaces differ in what they may put numbers in, not in what they
+ * claim, which is why this takes the numbers rather than handing the sentence
+ * out to be edited.
+ */
+const historyClaim = (held, gated) =>
+  `history truncated: shallow clone${held ? `, ${held}` : ""}, so author counts are a floor` +
+  (gated > 0 ? ` and ${plural(gated, "claim")} print as counts on the author gate` : "");
+
+/**
+ * The claim alone, for the overview.
+ *
+ * How much history the window holds is deliberately not in it: this file owes
+ * byte-stability between scans of unchanged source (A5), and both numbers move
+ * on their own, since on a fixed-depth checkout the boundary slides forward
+ * with every commit that lands upstream.
+ */
+export const truncatedHistorySentence = (shallow) => (shallow ? historyClaim(null, 0) : null);
+
+/** The claim, the size of the window and what the gate cost, for the terminal. */
+export const truncatedHistoryLine = (shallow, gated = 0) =>
+  shallow ? historyClaim(historyWindow(shallow), gated) : null;
 
 /**
  * What a tier that ran badly cost, or null where it ran clean or never ran.

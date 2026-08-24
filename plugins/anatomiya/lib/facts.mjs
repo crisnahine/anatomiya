@@ -243,8 +243,10 @@ function withOlderFields(parsed) {
       ? {
           ...parsed.layout,
           // The three populations were one summed count before 18, and the
-          // renderer reads a null floor as that record's own spelling.
-          more: parsed.layout.more ? { ...parsed.layout.more, floor: parsed.layout.more.floor ?? null } : undefined,
+          // renderer reads a null floor as that record's own spelling. Filled
+          // rather than left absent, so a hand-edited record with no `more` at
+          // all reads as nothing folded instead of taking the renderer down.
+          more: { roots: 0, files: 0, ...parsed.layout.more, floor: parsed.layout.more?.floor ?? null },
         }
       : null,
     // Left alone where a hand-edited record carries no parse section at all,

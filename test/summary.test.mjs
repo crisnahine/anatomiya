@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import { pinJson, pinLines, pinSummary, scanJson, scanLines, scanSummary, SUMMARY_SCHEMA } from "../plugins/anatomiya/lib/summary.mjs";
 import { buildPin, pinDelta, PIN_PATH } from "../plugins/anatomiya/lib/baseline.mjs";
+import { truncatedHistoryLine } from "../plugins/anatomiya/lib/render.mjs";
 
 const RESTART = "a session already running still holds the old map; restart to pick it up";
 const UNPINNED =
@@ -136,13 +137,10 @@ test("unread history is reported with the reason it could not be read", () => {
 test("the terminal says the history was a window, how big it was, and what it cost", () => {
   // The overview carries the claim alone, because it owes byte-stability and
   // both numbers move. This is the surface that may print them.
-  const lines = scanLines(
-    summary({
-      historyTruncated: "history truncated: shallow clone, so author counts are a floor",
-      historyWindow: "503 commits since 2026-01-22",
-      authorGated: 105,
-    })
-  );
+  // Built by the module that owns the sentence, and asked for here through it,
+  // so a reworded claim moves both surfaces or fails this.
+  const shallow = { commits: 503, oldest: "2026-01-22T00:43:30Z" };
+  const lines = scanLines(summary({ historyTruncated: truncatedHistoryLine(shallow, 105), authorGated: 105 }));
 
   assert.ok(
     lines.includes(
@@ -152,13 +150,7 @@ test("the terminal says the history was a window, how big it was, and what it co
     lines.join("\n")
   );
 
-  const bare = scanLines(
-    summary({
-      historyTruncated: "history truncated: shallow clone, so author counts are a floor",
-      historyWindow: null,
-      authorGated: 0,
-    })
-  );
+  const bare = scanLines(summary({ historyTruncated: truncatedHistoryLine({ commits: null, oldest: null }, 0) }));
 
   assert.ok(
     bare.includes("history truncated: shallow clone, so author counts are a floor"),
@@ -358,7 +350,6 @@ test("the summary carries every fact the scan prints", () => {
     // the only thing that fills it, and the count beside it is what the author
     // gate then held to counts.
     historyTruncated: null,
-    historyWindow: null,
     authorGated: 0,
     rules: { foreign: [], unknown: [], unreadable: [], listed: true, replaced: [] },
     removed: 0,

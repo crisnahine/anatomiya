@@ -386,7 +386,8 @@ elsewhere in the file: both declared one by another route.
 before a second capital, where
 `IComment` votes `I` and `Comment` votes for no prefix at all. A name opening on three or more
 capitals reads both ways, `IOStream` being an acronym and `IEFLogon` being `I` on the `EFLogon` in
-the directory of the same name, so it votes for neither and is not a site. The first three learn a
+the directory of the same name, so it votes for neither and is not a site; nor does a name that is
+nothing but two capitals, `IO` being the same two readings with nothing to separate them. The first three learn a
 name out of the repository's own source, so it goes through the encoder where the sentence is
 filled rather than at each place the sentence is rendered. The last two can learn an absence, which
 renders as `interfaces carry no prefix` rather than being filled into the template, and which is

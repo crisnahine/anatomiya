@@ -57,11 +57,15 @@ export function claimFor(dim, cls, kind) {
  * cannot say.
  *
  * The second capital is what separates a prefix from a word: `IComment` votes
- * `I`. Three or more leading capitals is the one shape that reads both ways -
+ * `I`. Three or more leading capitals is the shape that reads both ways -
  * `IOStream` is an acronym carrying no prefix, and `IEFLogon` is `I` on the
  * `EFLogon` of the directory it sits in - so it votes for neither rather than
  * being charged with the prefix it may already carry. Charged, the only way to
  * comply with a stated `I` claim was to write `IIEFLogon`.
+ *
+ * A name that is nothing but two capitals cannot say either: `IO` is the type
+ * of that name, and reading it as `I` on an `O` or as a word are the same two
+ * readings with nothing to separate them.
  */
 export function prefixClass(name) {
   const s = name || "";
@@ -425,7 +429,7 @@ export const NAMING_AST = [
     precision: "precise",
     applicabilityPredicate: {
       sites:
-        "a TypeScript interface declaration outside any ambient module or namespace, whose name votes for its prefix letter or for carrying none. A name opening on three or more capitals votes for neither, since it reads as a prefix and as an acronym alike",
+        "a TypeScript interface declaration outside any ambient module or namespace, whose name votes for its prefix letter or for carrying none. A name of two capitals, or one opening on three or more, votes for neither, since it reads as a prefix and as an acronym alike",
       blind: null,
     },
     langs: ["js", "jsx"],
@@ -456,7 +460,7 @@ export const NAMING_AST = [
     precision: "precise",
     applicabilityPredicate: {
       sites:
-        "a TypeScript type alias declaration, whose name votes for its prefix letter or for carrying none. A name opening on three or more capitals votes for neither, since it reads as a prefix and as an acronym alike",
+        "a TypeScript type alias declaration, whose name votes for its prefix letter or for carrying none. A name of two capitals, or one opening on three or more, votes for neither, since it reads as a prefix and as an acronym alike",
       blind: null,
     },
     langs: ["js", "jsx"],

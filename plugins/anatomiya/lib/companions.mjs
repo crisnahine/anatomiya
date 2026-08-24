@@ -22,7 +22,7 @@
  * evidence has to come from the file rather than from where it sits.
  */
 
-import { language } from "./langs.mjs";
+import { engineOf, language } from "./langs.mjs";
 import { dirOf, extOf, stemOf, withoutExtension } from "./paths.mjs";
 import {
   LEARNED_SUFFIX_FLOOR,
@@ -440,6 +440,22 @@ export function namesakeCompanions(sourceFiles, testFiles, rootPath = "", byStem
       // branch asks the one question the nested path never had to: the
       // directories part first there, and here they do not. A JS script is not
       // answered by a Ruby spec of the same name.
+      //
+      // Which is the rule for every candidate, not only this branch: a path
+      // shape is evidence about where a repository keeps things, and a shape
+      // two languages share is a repository that keeps both there. mastodon
+      // holds a `spec/models` of Ruby specs and a `spec/javascript` of
+      // TypeScript tests, and the mirror credited each with the other's files:
+      // `app/javascript/mastodon/models` read 8 of 17 off the Ruby specs, and
+      // `app/models` read the TypeScript tests.
+      //
+      // The engine and not the language, which is finer than the question:
+      // `language` separates `.tsx` from `.ts` because that is the grammar the
+      // parser is asked for, and a component tested by a plain `.ts` file is
+      // the ordinary shape in every React repository there is. This branch
+      // keeps asking `language`, because a bare basename at the top of two
+      // trees is the one match with no structure behind it at all.
+      if (engineOf(language(t.rel)) !== engineOf(language(f.rel))) continue;
       const topLevel = flatPair && TREE.has(t.dir.split("/")[0]) && language(t.rel) === language(f.rel);
       // The same mirror, asked the other way round. `mirrors` is one-directional
       // and the empty-tail arm only ever asked whether the candidate ends in the
@@ -448,25 +464,18 @@ export function namesakeCompanions(sourceFiles, testFiles, rootPath = "", byStem
       // `mcp/mcp` against `mcp`, and every file sitting directly there read
       // untested while the same files read tested one segment up.
       //
-      // Held three ways, because H18 measured the unguarded match at 668 false
-      // matches on openproject, 43.5% of everything it found. `tail === ""` is
-      // load-bearing rather than tidy: `rootBare` is null on the nested path and
-      // the reversed call puts it in the receiver position, so without it this
-      // throws on every repository. The candidate's own top segment has to be a
-      // tree the repository keeps tests in, or any deeper directory that happens
-      // to share a tail answers. And it has to be the same language, the way the
-      // flat pair below already is: the forward direction matched a shape and
-      // this one matches a name, so mastodon's `app/javascript/mastodon/models`
-      // took `spec/models`, the Ruby specs covering `app/models`, for 8 of its
-      // 17 files. Measured over the corpus, that guard is the whole difference
-      // between 27 gains and 24.
+      // The reversed direction is held twice, because H18 measured the
+      // unguarded match at 668 false matches on openproject, 43.5% of
+      // everything it found. `tail === ""` is load-bearing rather than tidy:
+      // `rootBare` is null on the nested path and the reversed call puts it in
+      // the receiver position, so without it this throws on every repository.
+      // And the candidate's own top segment has to be a tree the repository
+      // keeps tests in, or any deeper directory that happens to share a tail
+      // answers.
       const rootMirror =
         tail === "" &&
         (mirrors(t.bare, rootBare) ||
-          (t.bare !== "" &&
-            TEST_TREES.has(t.dir.split("/")[0]) &&
-            language(t.rel) === language(f.rel) &&
-            mirrors(rootBare, t.bare)));
+          (t.bare !== "" && TEST_TREES.has(t.dir.split("/")[0]) && mirrors(rootBare, t.bare)));
       const whole =
         tail === "" ? rootMirror || topLevel : t.dir === tail || t.dir.endsWith(`/${tail}`);
       // A test that imports this very file has named what it covers, so it
