@@ -658,10 +658,14 @@ export function renderOverview(result, files) {
     "A claim states how many sites conform out of how many were eligible.",
     "",
     "Read a file before editing it: these notes load when you read, not when you grep.",
-    // The one sentence here that is not a count: it names the tools the agent
-    // already has and permits saying "unverified", which is the half that keeps
-    // a guess from being written down as a fact (docs/research/one-line-that-stops-guessing.md).
+    // Names the tools the agent already has, and permits saying
+    // "unverified", which is the half that keeps a guess from being written down
+    // as a fact (docs/research/one-line-that-stops-guessing.md).
     "When unsure what this code does, read it, grep it, or run it instead of guessing, and say what you could not verify.",
+    // Conditional on a change being asked for, because removing the equivalent
+    // scope guard is measured to move the out-of-scope rate by double digits
+    // (docs/research/one-line-that-finishes-in-house-style.md).
+    "When a change is asked for, follow what this repository already does and carry it through instead of stopping at a suggestion.",
     "",
   ];
 

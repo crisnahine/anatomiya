@@ -574,8 +574,9 @@ people's hooks, and an event that still holds one. The file goes only when it ho
 That read is contained by F2 like every write, so a settings file symlinked out of the repository is
 refused rather than followed, and a refusal is a printed line rather than a failed scan.
 
-The cost is roughly 480 tokens per turn and per tool call, so a session making 300 calls spends about
-144,000 on it. There is no flag to turn it down; this tool ships no options.
+The cost is roughly 500 tokens per turn and per tool call, so a session making 300 calls spends about
+150,000 on it. The count was taken on the 2,468-file repository above and moved by arithmetic when the
+head grew, not taken again. There is no flag to turn it down; this tool ships no options.
 
 That last row is the ceiling on the whole design. A `paths` rule attaches when the agent uses the
 Read tool on a matching file or when an `@file` mention names it. It does not attach on grep, on
@@ -609,13 +610,19 @@ until a file under it is touched. A subagent that only greps and `cat`s never to
 the exploration phase issue #34 measured going dark, and it is the whole of the gap: a subagent that
 Reads is served like the main thread, overview included.
 
-The overview head carries two fixed sentences beside the counts. "Read a file before editing it:
+The overview head carries three fixed sentences beside the counts. "Read a file before editing it:
 these notes load when you read, not when you grep" is that ceiling said to the agent. "When unsure
 what this code does, read it, grep it, or run it instead of guessing, and say what you could not
-verify" is the one line here that is not a count: it names the tools the agent already has and
-permits the abstention, which is what keeps a guess from being written down as a fact. Its
-sources and the alternatives it was chosen over are in
-`docs/research/one-line-that-stops-guessing.md` (A16). Both are constant, so A5 holds.
+verify" names the tools the agent already has and permits the abstention, which is what keeps a
+guess from being written down as a fact. Its sources and the alternatives it was chosen over are in
+`docs/research/one-line-that-stops-guessing.md` (A16). "When a change is asked for, follow what
+this repository already does and carry it through instead of stopping at a suggestion" is the only
+one about what to do with a change instead of what to read first: the counts below it, and the area
+files they point at, say what the practice is, and this says to follow it and finish. It opens on a
+trigger clause because removing the equivalent scope guard is measured to move the out-of-scope rate
+by double digits;
+`docs/research/one-line-that-finishes-in-house-style.md` carries the sources (A42). All three are
+constant, so A5 holds.
 
 Writes are atomic: temp file in the same directory, then rename, so a crash never leaves half a
 context file. `.claude/anatomiya/facts.json` is written first and holds every count, gated or not,
