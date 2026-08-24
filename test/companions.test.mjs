@@ -164,8 +164,11 @@ test("the reversed mirror is asked of a test tree and of nothing else", () => {
     1,
     "a spec tree answers"
   );
+  // The tree-less form of this one is `stripe`, which the root's own
+  // `vendor/stripe` ends with, so the mirror answers and only the tree test
+  // refuses it. A candidate the mirror would have refused anyway pins nothing.
   assert.equal(
-    namesakeCompanions(src, [file("qa/stripe/client_spec.rb")], "app/vendor/stripe").with,
+    namesakeCompanions(src, [file("stripe/client_spec.rb")], "app/vendor/stripe").with,
     0,
     "and a directory that is nobody's test tree does not"
   );

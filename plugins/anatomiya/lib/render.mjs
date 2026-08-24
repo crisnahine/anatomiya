@@ -699,7 +699,12 @@ export function renderOverview(result, files) {
   // What was read, where it was not the whole history. Said here as well as on
   // the terminal, from one function, because a count printed by two surfaces
   // drifts (A20).
-  const truncated = truncatedHistorySentence(result.authors?.shallow);
+  //
+  // Not where the history could not be read at all: the shallow probe is a
+  // `rev-parse` and answers even where the log failed, so both were true at
+  // once and every slot below would carry `history could not be read` under a
+  // head saying the window was the reason.
+  const truncated = truncatedHistorySentence(result.authors?.error ? null : result.authors?.shallow);
   if (truncated) head.push(truncated, "");
 
   // What the scan could not cover, and how many files this tool generated.

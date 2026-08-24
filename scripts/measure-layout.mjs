@@ -209,11 +209,12 @@ const FOLD_ROOT = /^(\d+)(?: files?)? at the repository root$/;
  * spelling it cannot read fails 35 repositories at once, eighteen minutes in.
  */
 export function foldCounts(line) {
-  const said = line.replace(/^- and /, "").split(", ");
+  // The line joins two clauses on a bare "and" and three on a comma series, so
+  // the separator is either, and no clause of its own holds either spelling.
+  const said = line.replace(/^- and /, "").split(/,\s+and\s+|,\s+|\s+and\s+/);
   let folded = 0;
   let files = 0;
-  for (const [i, clause] of said.entries()) {
-    const one = i === said.length - 1 && i > 0 ? clause.replace(/^and /, "") : clause;
+  for (const one of said) {
     const dirs = one.match(FOLD_DIRS);
     const under = one.match(FOLD_FILES) ?? one.match(FOLD_OLD_FILES);
     const root = one.match(FOLD_ROOT);

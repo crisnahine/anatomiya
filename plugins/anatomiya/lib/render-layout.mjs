@@ -242,7 +242,10 @@ function foldLine(roots, files, floor) {
   }
   const said = parts.filter(Boolean);
   if (said.length === 0) return null;
-  return `- and ${said.slice(0, -1).join(", ")}${said.length > 1 ? ", and " : ""}${said.at(-1)}`;
+  // Two clauses join on a bare "and", three on a comma series, which is how
+  // the extension clause one line above already reads.
+  const join = said.length > 2 ? ", and " : said.length > 1 ? " and " : "";
+  return `- and ${said.slice(0, -1).join(", ")}${join}${said.at(-1)}`;
 }
 
 // The heading, the blank under it, and the blank that closes the block. Under

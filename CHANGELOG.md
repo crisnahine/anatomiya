@@ -7,13 +7,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
-## [0.4.0] - 2026-08-24
+## [0.3.3] - 2026-08-24
 
-Six defects, all found by reading maps this tool had already written and counting what they claimed
-against what the repositories hold. Four of them are a sentence saying more than it counted; one is a
-name charged with violating the convention it already carries; and one is the tool trusting a git
-history that was only a window. The facts record moves to schema 18, and every map is regenerated on
-the next scan, so counts from before this release and after it are not comparable line for line.
+Eight defects: the six on the tracker, all found by reading maps this tool had already written and
+counting what they claimed against what the repositories hold, and two more the review rounds found
+in the fixes for them. Three are a sentence saying more than it counted; three are a test file
+credited to a file it does not cover; one is a name charged with violating the convention it already
+carries; and one is the tool trusting a git history that was only a window. The facts record moves to
+schema 18, and every map is regenerated on the next scan, so counts from before this release and
+after it are not comparable line for line.
 
 ### Fixed
 
@@ -2110,8 +2112,8 @@ which are partial; several listed there are not implemented yet.
 - No claim that this catches defects. Measured across ten repositories, 1 of 317 defect review
   comments was preventable by a conventions map.
 
-[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.4.0...HEAD
-[0.4.0]: https://github.com/crisnahine/anatomiya/compare/v0.3.2...v0.4.0
+[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.3.3...HEAD
+[0.3.3]: https://github.com/crisnahine/anatomiya/compare/v0.3.2...v0.3.3
 [0.3.2]: https://github.com/crisnahine/anatomiya/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/crisnahine/anatomiya/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/crisnahine/anatomiya/compare/v0.2.13...v0.3.0

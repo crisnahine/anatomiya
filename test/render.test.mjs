@@ -353,6 +353,16 @@ test("a window of history says so, and does not say whose repository it is", () 
   assert.equal(out, overview({ commits: 604, oldest: "2026-07-19T11:02:00Z" }));
 });
 
+test("a history that could not be read at all is not described as a window", () => {
+  // The shallow probe is a `rev-parse` and answers even where the log failed,
+  // so both are true at once. Every slot below then carries `history could not
+  // be read` under a head saying the window was the reason.
+  const both = { files: 0, error: "git log failed", repo: null, shallow: { commits: 1, oldest: null } };
+  const out = renderOverview(result({ authors: both }), { uncovered: 30 });
+
+  assert.doesNotMatch(out, /history truncated/);
+});
+
 test("the terminal is the surface that says how much of the history there is", () => {
   const line = (shallow, gated) => truncatedHistoryLine(shallow, gated);
 
@@ -1633,7 +1643,8 @@ test("a folded directory is not billed for the files under no directory at all",
   );
   assert.equal(
     fold({ roots: 2, files: 3400, floor: { dirs: 26, files: 147, root: 0 } }),
-    "- and 2 more directories holding 3400 files, and 147 files in 26 directories under the floor"
+    "- and 2 more directories holding 3400 files and 147 files in 26 directories under the floor",
+    "two clauses join on a bare and; the comma series is for three"
   );
   assert.equal(
     fold({ roots: 0, files: 0, floor: { dirs: 0, files: 0, root: 14 } }),
