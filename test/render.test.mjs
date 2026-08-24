@@ -5,8 +5,8 @@ import {
   degradedSemanticSentence,
   droppedDirectives,
   renderArea,
-  historyWindow,
   renderOverview,
+  truncatedHistoryLine,
   truncatedHistorySentence,
   unexaminedLines,
   unexaminedPhrase,
@@ -343,7 +343,7 @@ test("a window of history says so, and does not say whose repository it is", () 
   const out = overview({ commits: 1, oldest: "2026-01-22T00:43:30Z" });
 
   assert.match(out, /^history truncated: shallow clone, so author counts are a floor$/m);
-  assert.ok(!/one author/.test(out), out);
+  assert.doesNotMatch(out, /one author/);
   assert.equal(truncatedHistorySentence(null), null, "a whole clone says nothing");
 
   // How much of the history the window holds is not in it. Both numbers move
@@ -354,15 +354,28 @@ test("a window of history says so, and does not say whose repository it is", () 
 });
 
 test("the terminal is the surface that says how much of the history there is", () => {
-  assert.equal(historyWindow(null), null);
-  assert.equal(historyWindow({ commits: 503, oldest: "2026-01-22T00:43:30Z" }), "503 commits since 2026-01-22");
-  assert.equal(historyWindow({ commits: 1, oldest: null }), "1 commit");
+  const line = (shallow, gated) => truncatedHistoryLine(shallow, gated);
+
+  assert.equal(line(null, 0), null);
   assert.equal(
-    historyWindow({ commits: 503, oldest: "not a date" }),
-    "503 commits",
+    line({ commits: 503, oldest: "2026-01-22T00:43:30Z" }, 105),
+    "history truncated: shallow clone, 503 commits since 2026-01-22, so author counts are a floor" +
+      " and 105 claims print as counts on the author gate"
+  );
+  assert.equal(
+    line({ commits: 1, oldest: null }, 0),
+    "history truncated: shallow clone, 1 commit, so author counts are a floor"
+  );
+  assert.equal(
+    line({ commits: 503, oldest: "not a date" }, 0),
+    "history truncated: shallow clone, 503 commits, so author counts are a floor",
     "a committer date is a value the repository sets, so it prints only where it is one"
   );
-  assert.equal(historyWindow({ commits: null, oldest: null }), null, "and a clone that could not say says nothing");
+  assert.equal(
+    line({ commits: null, oldest: null }, 0),
+    truncatedHistorySentence({ commits: null, oldest: null }),
+    "a clone that could not say how much it holds says what the overview says"
+  );
 });
 
 test("the overview is byte-stable across scans of unchanged source", () => {

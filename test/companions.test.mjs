@@ -171,6 +171,36 @@ test("the reversed mirror is asked of a test tree and of nothing else", () => {
   );
 });
 
+test("neither direction of the empty-tail mirror crosses an engine", () => {
+  // mastodon keeps `app/javascript/mastodon/models/account.ts` beside
+  // `app/models/account.rb`, and holds both a `spec/models` and a
+  // `spec/javascript`. Each direction credited the other language's file: the
+  // TypeScript model took the Ruby spec, and the Ruby model took the
+  // TypeScript test. The forward direction matched a shape and the reversed one
+  // matches a name, and neither is evidence across an engine.
+  const ts = [file("app/javascript/mastodon/models/account.ts")];
+  const rb = [file("app/models/account.rb")];
+
+  assert.equal(namesakeCompanions(ts, [file("spec/models/account_spec.rb")], "app/javascript/mastodon/models").with, 0);
+  assert.equal(namesakeCompanions(rb, [file("spec/javascript/models/account.test.ts")], "app/models").with, 0);
+
+  assert.equal(
+    namesakeCompanions(rb, [file("spec/models/account_spec.rb")], "app/models").with,
+    1,
+    "and the same shape within one engine still answers"
+  );
+});
+
+test("a component and the test file beside it are one engine, whatever the extension spells", () => {
+  // `language` tells `.tsx` from `.ts`, which is the grammar the parser is
+  // asked for and not what a test may cover: a component tested by a plain
+  // `.ts` file is the ordinary shape in every React repository there is.
+  const src = [file("packages/ui/src/components/Button.tsx")];
+
+  assert.equal(namesakeCompanions(src, [file("spec/components/Button.test.ts")], "packages/ui/src/components").with, 1);
+  assert.equal(namesakeCompanions(src, [file("spec/components/Button.spec.rb")], "packages/ui/src/components").with, 0);
+});
+
 test("the reversed mirror does not cross a language", () => {
   // mastodon keeps `app/javascript/mastodon/models/account.ts` beside
   // `app/models/account.rb`, and `spec/models/account_spec.rb` covers the Ruby

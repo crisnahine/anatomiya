@@ -161,7 +161,10 @@ async function shallowHistory(root) {
   const counted = await gitBuffered(root, ["rev-list", "--count", "HEAD"]);
   const commits = counted.ok ? Number.parseInt(counted.stdout.trim(), 10) : Number.NaN;
   const roots = await gitBuffered(root, ["log", "--format=%cI", "--max-parents=0", "--"]);
-  const grafted = roots.ok ? roots.stdout.trim().split("\n").filter(Boolean) : [];
+  // A value that does not read as a moment is dropped rather than compared:
+  // every comparison against NaN is false, so an unparseable first entry would
+  // win and shadow a real date.
+  const grafted = roots.ok ? roots.stdout.trim().split("\n").filter((line) => !Number.isNaN(Date.parse(line))) : [];
   const oldest = grafted.reduce((a, b) => (a === null || Date.parse(b) < Date.parse(a) ? b : a), null);
   return { commits: Number.isFinite(commits) ? commits : null, oldest };
 }

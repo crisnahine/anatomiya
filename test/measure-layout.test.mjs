@@ -282,5 +282,5 @@ test("every fold line the roster can print reconciles through the recount", () =
     }
   }
 
-  assert.ok(shapes >= 40, `${shapes} shapes is too few to have covered the series`);
+  assert.equal(shapes, 74, "and the loop above is the whole series, not a sample of it");
 });
