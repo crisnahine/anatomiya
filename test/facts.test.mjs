@@ -149,6 +149,26 @@ test("every number the rendered map prints comes back off the record", (t) => {
   assert.equal(written.companionsElsewhere, 17, "the namesake count an obligation renders (C7)");
 });
 
+test("the count behind a declined-name line survives the trip to disk", (t) => {
+  // Same failure as the two above, one stage later: the reducer counted it, the
+  // renderer printed it, and the record's own field list dropped it. The record
+  // is what the map is derivable from, so a number the counts line carries and
+  // the field list drops is a store the map cannot be rebuilt from.
+  const dir = root(t);
+
+  writeFacts(dir, result([dim({ key: "file_naming_case", declined: 3 })]));
+
+  assert.equal(readFacts(dir).facts.areas[0].dimensions[0].declined, 3);
+});
+
+test("a row that declined nothing carries no such count", (t) => {
+  const dir = root(t);
+
+  writeFacts(dir, result([dim({ key: "file_naming_case" })]));
+
+  assert.equal("declined" in readFacts(dir).facts.areas[0].dimensions[0], false);
+});
+
 test("a syntax dimension carries no companion count, because it has no companion", (t) => {
   const dir = root(t);
 

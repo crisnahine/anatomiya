@@ -7,6 +7,49 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-08-24
+
+A stated claim now says how many of its own sites it could not vote on, where there are any. The
+filename row is the one place the two halves of the tool disagree by construction: the scan votes
+with a stem's class and the check enforces over the site, so a stem spelling none of the four
+classes left the printed population while a new file there was still measured against the sentence.
+Found on a Rails map of 159 areas, where it was the only disagreement to survive a re-count of every
+stated claim. Nothing was miscounted, which is why the fix carries a number rather than correcting
+one, and the number sits on the counts line so no area trades a convention for it.
+
+### Added
+
+- A stated filename claim now says how many names its own classifier held no vote for, where there
+  are any: `1525 of 1525 sites across 1525 of 1532 files, 3 names spelling no class, 6 authors`. The
+  row votes with a stem's
+  class and the check enforces over the site, so a stem spelling none of the four leaves the printed
+  population while a new file is still measured against the sentence. Found on a Rails map of 159
+  areas, where `db/migrate` printed `1525 of 1525 sites across 1525 of 1532 files` over three
+  double-underscore migrations, and the seven-file gap could not say which of those were sites at
+  all. It was the only disagreement to survive a re-count of every stated claim in that map. The
+  count sits on the counts line rather than on one of its own, so the 135 areas with nothing to
+  disclose say nothing and no area trades a directive for it: on vscode the separate line pushed a
+  stated convention out of an area at the forty-line bound, which also capped that slot at FIX in
+  the check. It needs no perfect claim either, since a declined site never reaches the `except`
+  list (#109, A41). One area the count cannot reach:
+  a directory where every naming site is declined states no claim at all, so there is no block to
+  hang it on, while the check still measures a new file there against an ancestor's sentence.
+
+  The record moves to schema 17 to carry the count. An older record still reads; a build before this
+  one reading a schema-17 record says so and enforces nothing from it, so scan again after upgrading.
+
+### Fixed
+
+- Measurements of the installed Claude Code build had gone stale in the contract while
+  `ultracode-anywhere` was re-calibrated: the bundle is 325 MB rather than 321, the scan of it takes
+  about 200 ms rather than 170, and the gate's shape has now held across a fourth build.
+- The release checklist asked whether `VERIFYING.md` names a build, which a test now answers. What
+  it cannot answer, and the checklist now says, is whether anybody re-read one, and it names the
+  three places that carry a build with no case reading them.
+- A case that reads a number back out of a README failed on a rewrapped paragraph, since it matched
+  the spaces rather than the words. Prose gets rewrapped; a sentence that moved across a line break
+  is not a number that changed.
+
 ## [0.3.0] - 2026-08-23
 
 The marketplace holds two plugins, and this is the release that says so in the places that decide
@@ -1985,7 +2028,8 @@ which are partial; several listed there are not implemented yet.
 - No claim that this catches defects. Measured across ten repositories, 1 of 317 defect review
   comments was preventable by a conventions map.
 
-[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/crisnahine/anatomiya/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/crisnahine/anatomiya/compare/v0.2.13...v0.3.0
 [0.2.13]: https://github.com/crisnahine/anatomiya/compare/v0.2.12...v0.2.13
 [0.2.12]: https://github.com/crisnahine/anatomiya/compare/v0.2.11...v0.2.12

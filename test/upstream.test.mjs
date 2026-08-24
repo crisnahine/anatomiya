@@ -2,8 +2,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, truncateSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 
+import { REL, ROOT } from "../scripts/plugins.mjs";
 import { cached } from "../plugins/ultracode-anywhere/hooks/counters.mjs";
 import { CALIBRATED_AGAINST, GATE_SHAPE, MARKERS, MIN_BUNDLE, behind, cliPath, conflictIn, drift, driftCached, settingsFor } from "../plugins/ultracode-anywhere/hooks/upstream.mjs";
 
@@ -198,6 +199,72 @@ test("a build too small to be one is treated as no build, never as a drifted one
 
 // --- the build this was calibrated against ------------------------------------
 
+/**
+ * The files that describe the premise as it stands: what ships, and what a user
+ * reads. Not the ones that record what it once was, since a changelog entry or
+ * a contract row naming an older build is a fact about that moment. Not this
+ * suite either: a case that orders two version directories needs two version
+ * names, and neither is a claim about the installed build.
+ *
+ * A changelog's `[Unreleased]` section is the one part of a record that is not
+ * history yet, so a second re-calibration before a release can leave a build
+ * standing there with nothing to catch it. The release checklist is what covers
+ * that, since a case here cannot tell one section of a file from another.
+ */
+function describesThePremise() {
+  const hooks = join(ROOT, REL.ultracode, "hooks");
+  // Every file under `hooks/`, rather than the `.mjs` ones: a hook added under
+  // another extension or a directory down is still shipped, and a set that
+  // names extensions leaves it uncovered without saying so.
+  return [
+    ...readdirSync(hooks, { recursive: true, withFileTypes: true })
+      .filter((entry) => entry.isFile())
+      .map((entry) => join("hooks", relative(hooks, join(entry.parentPath, entry.name)))),
+    "README.md",
+    "VERIFYING.md",
+  ];
+}
+
+/** The plugin's own version, which is not a claim about any Claude Code build. */
+function ownVersion() {
+  return JSON.parse(readFileSync(join(ROOT, REL.ultracode, ".claude-plugin", "plugin.json"), "utf8")).version;
+}
+
+/**
+ * Every Claude Code build a file names.
+ *
+ * Three numbers, outside a link, with a non-zero major, no digit, dot, `^` or
+ * `~` in front, and neither a digit nor a dotted digit behind. So a
+ * version that ends a sentence still counts, which is how prose writes one and
+ * how the rot that prompted this case would have been written next time, while
+ * `127.0.0.1`, `^0.90.1`, the `v2.0.0` in a specification's URL and this
+ * plugin's own `0.x` are not read as builds.
+ *
+ * Anything else shaped like a version still counts, a Node floor written
+ * `22.12.0` included. That is the trade: the case fails loudly and names the
+ * string, and whoever meets it either writes the number some other way or
+ * widens this. Narrowing it to the calibrated major and minor was tried and
+ * dropped: it would stop catching a build left behind by a minor bump, which is
+ * the release where most of this prose gets rewritten.
+ */
+function buildsNamed(text) {
+  return [...text.replace(/https?:\/\/\S+/g, " ").matchAll(/(?<![\d.^~])[1-9]\d*\.\d+\.\d+(?!\.?\d)/g)].map((found) => found[0]);
+}
+
+test("every build the code and the current docs name is the one the constant names", () => {
+  // The premise is one build's behaviour and the prose says which build, so the
+  // two rot apart the moment a person moves one and not the other. Left to a
+  // person it happened: `VERIFYING.md` named a build nobody had worked the list
+  // against, and no case here could tell.
+  const mine = ownVersion();
+  const named = describesThePremise().flatMap((rel) =>
+    buildsNamed(readFileSync(join(ROOT, REL.ultracode, rel), "utf8"))
+      .filter((version) => version !== CALIBRATED_AGAINST && version !== mine)
+      .map((version) => `${rel} names ${version}`));
+
+  assert.deepEqual(named, [], `every one of these should be ${CALIBRATED_AGAINST}, the build the list was worked against`);
+});
+
 test("the version this plugin was checked against is stated, and a newer one is said out loud", (t) => {
   assert.match(CALIBRATED_AGAINST, /^\d+\.\d+\.\d+$/);
 
@@ -206,6 +273,20 @@ test("the version this plugin was checked against is stated, and a newer one is 
   assert.match(behind("2.2.0", "2.1.238"), /2\.2\.0/);
   assert.match(behind("3.0.0", "2.1.238"), /3\.0\.0/);
   assert.equal(behind(null, "2.1.238"), null, "a version this cannot read is not a warning");
+});
+
+test("a run of patch releases eventually says so, since nothing else here can", () => {
+  // The rot this exists for happened inside patch bumps: the constant said one
+  // build, the machine ran another three patches on, and no session was told.
+  // One patch is noise and a run of them is a fact, so the line waits for the
+  // run. CI never sees it either, since a runner has no Claude Code to read.
+  assert.equal(behind("2.1.247", "2.1.238"), null, "nine patches on is still inside the quiet band");
+
+  const far = behind("2.1.248", "2.1.238");
+  assert.match(far, /2\.1\.248/, "and the tenth says which build is running");
+  assert.match(far, /2\.1\.238/, "and which one was checked");
+
+  assert.equal(behind("2.1.238", "2.1.248"), null, "a build older than the calibrated one is not a drift");
 });
 
 // --- what counts as evidence about the build ----------------------------------
@@ -280,6 +361,10 @@ test("the gate is found however a build spells true, quotes the string, or calls
     `function Mae(e,t,r){return r===true&&ZL()&&zZ(e,t)==='xhigh'}`,
     `function Mae(e,t,r){return r===!0&&ZL(e)&&zZ(e,t)==="xhigh"}`,
     `function Mae(e,t,r){return r===!0&&ZL?.()&&zZ(e,t)==="xhigh"}`,
+    // Every name in it moved between the build this was first read off and the
+    // one it is calibrated against now. The shape did not, which is the whole
+    // reason the check reads a shape.
+    `function Ale(e,t,r){return r===!0&&gH()&&kQ(e,t)==="xhigh"}`,
   ]) {
     const tree = installed(t, { bundle: `${gate}\n${MARKERS.join("\n")}` });
     assert.deepEqual(drift({ cli: tree.cli }).missing, [], gate);

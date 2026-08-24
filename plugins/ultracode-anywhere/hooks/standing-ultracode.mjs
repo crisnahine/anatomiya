@@ -28,10 +28,12 @@ export const FULL_EVERY = 10;
  * Turns the user did not type. A wakeup carries its own instructions.
  *
  * Read off the `source` the build's own payload schema declares, with exactly
- * these values. 2.1.238 declares the field and does not yet send it outside
- * Anthropic, so on that build a wakeup counts as a turn and gets whatever its
- * place in the cadence earns; the day the field arrives, the skip starts
- * working with no change here (A30).
+ * these values. 2.1.241 declares the field and does not send it: a payload
+ * caught off that build carries `session_id`, `transcript_path`, `cwd`,
+ * `prompt_id`, `permission_mode`, `hook_event_name` and `prompt`, and no
+ * `source`. So a wakeup counts as a turn there and gets whatever its place in
+ * the cadence earns; the day the field arrives, the skip starts working with no
+ * change here (A30).
  */
 const WAKEUP_SOURCES = new Set(["loop_wakeup", "schedule_wakeup", "poll_event", "system"]);
 
@@ -122,7 +124,7 @@ export function run({ stdin = "", env = process.env, state = stateDirFor(env) } 
  * Strict is for whoever would rather have the mode off than have it pretend, so
  * it reads the build rather than trusting it. Read once and remembered beside
  * the counters: the answer cannot change inside a session, and the scan streams
- * most of a 321 MB file, a few hundred milliseconds rather than the 30 ms a
+ * most of a 325 MB file, a few hundred milliseconds rather than the 30 ms a
  * turn costs otherwise, against a hook timeout of 5 seconds.
  */
 function movedBuild(env, state) {

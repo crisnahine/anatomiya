@@ -217,6 +217,81 @@ test("an area of mostly kebab files states the learned class over every classifi
   assert.equal(slot.exceptions[0].path, "src/oneOff.ts");
 });
 
+/* --- the sites the classifier declines to vote on (A41) --- */
+
+test("a site whose stem spells no class is counted as declined, not silently dropped", async () => {
+  // `classify` answers null for two different files and only one of them is a
+  // non-site. A stem spelling none of the four is a site with no vote, so it
+  // leaves the printed population while `check` still enforces over it, and a
+  // bare `N of N` then reads as a population it never held.
+  const { reduceArea } = await import("../plugins/anatomiya/lib/reduce.mjs");
+  const rels = [
+    "src/user-profile.ts", "src/order-list.ts", "src/data-store.ts", "src/api-client.ts",
+    "src/form-input.ts", "src/nav-bar.ts", "src/date-utils.ts", "src/error-page.ts",
+    "src/big-table.ts",
+    "src/add__price_updates.ts", "src/TMP_PROBE.ts",
+  ];
+  const area = { langs: ["js"], files: rels.map((rel) => ({ rel, lang: "js" })) };
+  const parsed = rels.map((rel) => ({ rel, ok: true, hits: {} }));
+
+  const slot = reduceArea(area, parsed).find((d) => d.key === "file_naming_case");
+
+  assert.equal(slot.candidates, 9, "the nine that voted");
+  assert.equal(slot.conforming, 9, "and every one of them agreed");
+  assert.equal(slot.declined, 2, "and the two that are sites with no vote are counted, not dropped");
+});
+
+test("an area where every site voted carries no declined count at all", async () => {
+  // Absent rather than zero, the way a syntax row carries no companion side: a
+  // key on every record of every area is bytes on disk for a fact nobody prints.
+  const { reduceArea } = await import("../plugins/anatomiya/lib/reduce.mjs");
+  const rels = ["src/user-profile.ts", "src/order-list.ts", "src/data-store.ts", "src/api-client.ts"];
+  const area = { langs: ["js"], files: rels.map((rel) => ({ rel, lang: "js" })) };
+  const parsed = rels.map((rel) => ({ rel, ok: true, hits: {} }));
+
+  const slot = reduceArea(area, parsed).find((d) => d.key === "file_naming_case");
+
+  assert.equal("declined" in slot, false);
+});
+
+test("a declined name on the side the row narrowed away is not counted either", async () => {
+  // The row learns over one kind of file and the other kind leaves the
+  // population. A count that did not leave with it would name a file the
+  // sentence above it does not speak about: "files here that hold no JSX are
+  // named kebab-case" disclosing a name from the JSX side.
+  const { reduceArea } = await import("../plugins/anatomiya/lib/reduce.mjs");
+  const rels = [
+    "src/user-profile.ts", "src/order-list.ts", "src/data-store.ts", "src/api-client.ts",
+    "src/form-input.ts", "src/nav-bar.ts", "src/date-utils.ts", "src/error-page.ts",
+    "src/TMP_PROBE.tsx",
+  ];
+  const area = { langs: ["js"], files: rels.map((rel) => ({ rel, lang: "js" })) };
+  const parsed = rels.map((rel) => ({ rel, ok: true, hits: {}, facets: { jsx: rel.endsWith(".tsx") } }));
+
+  const slot = reduceArea(area, parsed).find((d) => d.key === "file_naming_case");
+
+  assert.equal(slot.learnedKind, "module", "the eight module files are the side it learned over");
+  assert.equal("declined" in slot, false, "and the one declined name sits on the side that left");
+});
+
+test("a file that is no site at all is not counted as declined", async () => {
+  // `index.ts` matches every class at once and `Rakefile` has no stem to read.
+  // Neither disagrees with anything, so neither is a site and neither is a fact
+  // the reader is owed.
+  const { reduceArea } = await import("../plugins/anatomiya/lib/reduce.mjs");
+  const rels = [
+    "src/user-profile.ts", "src/order-list.ts", "src/data-store.ts", "src/api-client.ts",
+    "src/index.ts",
+  ];
+  const area = { langs: ["js"], files: rels.map((rel) => ({ rel, lang: "js" })) };
+  const parsed = rels.map((rel) => ({ rel, ok: true, hits: {} }));
+
+  const slot = reduceArea(area, parsed).find((d) => d.key === "file_naming_case");
+
+  assert.equal(slot.candidates, 4);
+  assert.equal("declined" in slot, false);
+});
+
 test("a naming tie produces no slot at all", async () => {
   const { reduceArea } = await import("../plugins/anatomiya/lib/reduce.mjs");
   const rels = ["src/user-profile.ts", "src/orderList.ts"];
