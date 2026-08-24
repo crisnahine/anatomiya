@@ -136,7 +136,7 @@ test("a shell name is descended into, and so is a directory one child fills", ()
   const { roots, more } = layoutRoots(corpus, { minFiles: 3 });
 
   assert.deepEqual(paths(roots), ["cypress/integration", "src/components", "src/pages"]);
-  assert.deepEqual(more, { roots: 0, files: 1 });
+  assert.deepEqual(more, { roots: 0, files: 0, floor: { dirs: 1, files: 1, root: 0 } });
 });
 
 test("the files a shell holds itself are their own line", () => {
@@ -159,7 +159,25 @@ test("what does not fit the budget folds into one count, source-poor first", () 
   const { roots, more } = layoutRoots(corpus, { minFiles: 3, budget: 7 });
 
   assert.deepEqual(paths(roots), ["d01", "d02", "d03", "d04", "d05", "d06", "d07"]);
-  assert.deepEqual(more, { roots: 5, files: 50 });
+  assert.deepEqual(more, { roots: 5, files: 50, floor: { dirs: 0, files: 0, root: 0 } });
+});
+
+test("a folded directory and the files under no directory at all are counted apart", () => {
+  // The two populations in one sentence. This repository's own map read "and 1
+  // more directory holding 21 files" over a folded root holding 3, so 18 of the
+  // 21 named a directory that does not hold them.
+  const dir = (i) => `d${String(i).padStart(2, "0")}`;
+  const corpus = [
+    ...files(9, (i) => i + 1).flatMap((i) => files(10, (j) => file(`${dir(i)}/n${j}.js`, "js"))),
+    ...files(2, (i) => file(`root${i}.js`, "js")),
+    ...files(2, (i) => file(`tiny/a${i}.js`, "js")),
+    ...files(2, (i) => file(`other/b${i}.js`, "js")),
+  ];
+
+  const { roots, more } = layoutRoots(corpus, { minFiles: 3, budget: 7 });
+
+  assert.deepEqual(paths(roots), ["d01", "d02", "d03", "d04", "d05", "d06", "d07"]);
+  assert.deepEqual(more, { roots: 2, files: 20, floor: { dirs: 2, files: 4, root: 2 } });
 });
 
 test("a directory holding no source prints after the code, however large", () => {
@@ -179,7 +197,7 @@ test("a repository that is one flat directory prints that directory", () => {
   const { roots, more } = layoutRoots(corpus, { minFiles: 3 });
 
   assert.deepEqual(paths(roots), ["."]);
-  assert.deepEqual(more, { roots: 0, files: 0 });
+  assert.deepEqual(more, { roots: 0, files: 0, floor: { dirs: 0, files: 0, root: 0 } });
 });
 
 test("a monorepo descends past packages and past each package's own shell", () => {
@@ -192,7 +210,7 @@ test("a monorepo descends past packages and past each package's own shell", () =
 
   assert.equal(roots.length, 7);
   assert.deepEqual(paths(roots).slice(0, 2), ["packages/p1/src", "packages/p2/src"]);
-  assert.deepEqual(more, { roots: 5, files: 15 });
+  assert.deepEqual(more, { roots: 5, files: 15, floor: { dirs: 0, files: 0, root: 0 } });
   assert.deepEqual(testsLine(corpus), [{ runner: "vitest", root: "packages", files: 2, under: 2 }]);
 });
 
@@ -539,7 +557,7 @@ test("the layout record counts each root's extensions, tests, namesakes and help
   assert.equal(facts.size, 1941);
   assert.equal(facts.minFiles, 20);
   assert.deepEqual(paths(facts.roots), ["src/pages", "src/components", "cypress/integration"]);
-  assert.deepEqual(facts.more, { roots: 0, files: 0 });
+  assert.deepEqual(facts.more, { roots: 0, files: 0, floor: { dirs: 0, files: 0, root: 0 } });
   assert.deepEqual(facts.tests, [
     { runner: "cypress", root: "cypress/integration", files: 102, under: 102 },
     { runner: "vitest", root: "src/components", files: 4, under: 4 },
@@ -554,7 +572,7 @@ test("the layout record counts each root's extensions, tests, namesakes and help
     other: 43,
     jsx: 504,
     jsxExt: ".tsx",
-    tests: [{ runner: "vitest", files: 4, sub: "__tests__" }],
+    tests: [{ runner: "vitest", files: 4, sub: "__tests__", under: 4 }],
     testRoot: false,
     // The denominator is the extension the line printed, so `0 of 504` sits
     // beside `504 .tsx` and counts the files the reader can see.
@@ -563,12 +581,26 @@ test("the layout record counts each root's extensions, tests, namesakes and help
   });
 });
 
+test("the name a directory vote picks carries how many of the group it holds", () => {
+  // `8 RSpec specs under admin` named 5. The vote is a strict majority, so the
+  // name can speak for as few as half the group plus one, and the count welded
+  // to it was the whole group.
+  const corpus = [
+    file("src/utils/__tests__/humps.test.js", "js", { testRunner: "vitest" }),
+    file("src/utils/__tests__/yup.test.js", "js", { testRunner: "vitest" }),
+    file("src/utils/deepmerge.test.ts", "js", { testRunner: "vitest" }),
+  ];
+  const record = rootFacts({ path: "src/utils", dir: "src/utils", files: corpus }, layoutIndexes(corpus));
+
+  assert.deepEqual(record.tests, [{ runner: "vitest", files: 3, sub: "__tests__", under: 2 }]);
+});
+
 test("a root that is mostly tests carries no namesake or helper count", () => {
   const facts = layoutFacts(client(), {});
   const cypress = facts.roots[2];
 
   assert.equal(cypress.testRoot, true);
-  assert.deepEqual(cypress.tests, [{ runner: "cypress", files: 102, sub: null }]);
+  assert.deepEqual(cypress.tests, [{ runner: "cypress", files: 102, sub: null, under: 102 }]);
   assert.equal("companions" in cypress, false);
   assert.equal("helpers" in cypress, false);
 });
@@ -618,7 +650,7 @@ test("a root inside a test tree is not asked whether its fixtures have tests", (
 
   assert.equal("companions" in record, false);
   assert.deepEqual(record.exts, [[".js", 6]], "and the extension clause stays");
-  assert.deepEqual(record.tests, [{ runner: "jest", files: 2, sub: null }], "and the tests clause");
+  assert.deepEqual(record.tests, [{ runner: "jest", files: 2, sub: null, under: 2 }], "and the tests clause");
 
   const outside = rootFacts({ path: "lib", dir: "lib", files: corpus.slice(6) }, indexes);
   assert.deepEqual(outside.companions, { with: 2, of: 2, root: "test" }, "and a root outside is asked");
@@ -720,7 +752,7 @@ test("an empty corpus has no root to print", () => {
     size: 0,
     minFiles: 3,
     roots: [],
-    more: { roots: 0, files: 0 },
+    more: { roots: 0, files: 0, floor: { dirs: 0, files: 0, root: 0 } },
     tests: [],
   });
 });
@@ -750,7 +782,7 @@ test("a truncated scan keeps the size and counts nothing else", () => {
   assert.equal(layout.roots.length, 0);
   assert.equal(layout.tests.length, 0);
   assert.equal(layout.principles.length, 0);
-  assert.deepEqual(layout.more, { roots: 0, files: 0 });
+  assert.deepEqual(layout.more, { roots: 0, files: 0, floor: { dirs: 0, files: 0, root: 0 } });
   assert.ok(roster({ ...args, truncated: false }).layout.roots.length > 0, "and the flag is what does it");
 });
 
@@ -876,6 +908,32 @@ test("one root reads the three indexes the corpus was walked for, and rebuilds n
   const root = { path: "app/models", dir: "app/models", files: corpus.slice(0, 3) };
 
   assert.deepEqual(rootFacts(root, indexes).companions, { with: 2, of: 3, root: "spec/models" });
+});
+
+test("a Ruby file named for a test is one only where a test tree also says so", () => {
+  // The Ruby form is the one a non-test file wears in earnest. A RuboCop cop
+  // named for the `Rails.env.test?` guard it enforces printed a test group of
+  // its own in the overview, and Homebrew's `software_spec.rb` is the
+  // `SoftwareSpec` class, which has its own `software_spec_spec.rb` under
+  // `test/`. Neither declares a case and neither sits in a test tree.
+  const read = { testRunner: null, testCalls: false, empty: false };
+
+  assert.equal(isTestFile(file("lib/rubocop/custom_cops/sleep_without_unless_test.rb", "ruby", read)), false);
+  assert.equal(isTestFile(file("Library/Homebrew/software_spec.rb", "ruby", read)), false);
+
+  // The address is the corroboration, and every segment of it counts.
+  assert.equal(isTestFile(file("spec/models/user_spec.rb", "ruby", read)), true);
+  assert.equal(isTestFile(file("test/units/foo_test.rb", "ruby", read)), true);
+  assert.equal(isTestFile(file("gems/mygem/spec/foo_spec.rb", "ruby", read)), true);
+
+  // And what the file itself says still answers before its name is read, which
+  // is what keeps this from becoming "a test must declare a case" (H29).
+  assert.equal(isTestFile(file("shopify/request/rest/shop/get_spec.rb", "ruby", { testCalls: true })), true);
+
+  // The dotted and hyphen forms keep answering on the name alone: discourse
+  // writes 4,000 tests as `login-test.js` and nothing else in them says so.
+  assert.equal(isTestFile(file("src/checkout-test.js", "js", read)), true);
+  assert.equal(isTestFile(file("src/checkout.cy.ts", "js", read)), true);
 });
 
 test("the namesake index is built once and read by every root", () => {

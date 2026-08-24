@@ -7,13 +7,15 @@ import { join } from "node:path";
 import {
   LEARNED_ROWS,
   checkOutput,
+  foldCounts,
   learnedRows,
   learnedTables,
   overviewFor,
   parseArgs,
   selectRepos,
 } from "../scripts/measure-layout.mjs";
-import { namesakeClause } from "../plugins/anatomiya/lib/render-layout.mjs";
+import { namesakeClause, renderLayout } from "../plugins/anatomiya/lib/render-layout.mjs";
+import { layoutFacts } from "../plugins/anatomiya/lib/layout.mjs";
 import { OVERVIEW_FILE, RULES_DIR } from "../plugins/anatomiya/lib/rules.mjs";
 import { planMap, writeMap } from "../plugins/anatomiya/lib/write.mjs";
 
@@ -216,4 +218,69 @@ test("a --md target that is already there is refused, and --force is how a rerun
   assert.equal(checkOutput(null, false, true), null);
   assert.match(checkOutput("/out/run.md", false, true), /\/out\/run\.md/);
   assert.match(checkOutput("/out/run.md", false, true), /--force/);
+});
+
+test("the recount reads every clause the fold line can carry", () => {
+  // Nothing runs this parser until a corpus run does, and a spelling it cannot
+  // read fails 35 repositories at once, eighteen minutes in. The reconciliation
+  // it feeds counts files, so every clause has to add to the same number.
+  assert.deepEqual(foldCounts("- and 2 more directories holding 3400 files"), { folded: 2, files: 3400 });
+  assert.deepEqual(foldCounts("- and 1 more directory holding 1 file"), { folded: 1, files: 1 });
+  assert.deepEqual(
+    foldCounts("- and 2 more directories holding 3400 files and 147 files in 26 directories under the floor"),
+    { folded: 2, files: 3547 }
+  );
+  assert.deepEqual(
+    foldCounts(
+      "- and 1 more directory holding 3 files, 4 files in 4 directories under the floor, and 14 at the repository root"
+    ),
+    { folded: 1, files: 21 }
+  );
+  assert.deepEqual(foldCounts("- and 14 files at the repository root"), { folded: 0, files: 14 });
+  assert.deepEqual(
+    foldCounts("- and 12 more files in directories under the floor"),
+    { folded: 0, files: 12 },
+    "a map written before the three were counted apart still reconciles"
+  );
+  assert.equal(foldCounts("- and something else entirely"), null);
+});
+
+test("every fold line the roster can print reconciles through the recount", () => {
+  // The seam that broke: the renderer learned a third clause and the recount
+  // kept two anchored regexes, which fails 35 repositories at once and only
+  // when somebody runs the corpus. Asked over every shape rather than over the
+  // three somebody thought of.
+  const corpus = Array.from({ length: 3 }, (_, n) => n).flatMap((n) =>
+    Array.from({ length: 8 }, (_, i) => ({ rel: `d${n}/f${i}.ts`, lang: "js", facets: null })));
+  const facts = layoutFacts(corpus, { minFiles: 3 });
+  let shapes = 0;
+
+  for (const roots of [0, 1, 2]) {
+    for (const files of [0, 1, 5]) {
+      for (const dirs of [0, 1, 3]) {
+        for (const strays of [0, 1, 7]) {
+          for (const root of [0, 1, 9]) {
+            // A folded root holds at least one file, and a directory under the
+            // floor holds at least one too, so the other combinations are
+            // records no scan can produce.
+            if ((roots === 0) !== (files === 0)) continue;
+            if ((dirs === 0) !== (strays === 0)) continue;
+            const more = { roots, files, floor: { dirs, files: strays, root } };
+            const line = renderLayout({ ...facts, principles: [], truncated: false, more })
+              .find((l) => l.startsWith("- and "));
+            const total = files + strays + root;
+            if (total === 0) {
+              assert.equal(line, undefined, `nothing to say: ${JSON.stringify(more)}`);
+              continue;
+            }
+            shapes++;
+            assert.ok(line !== undefined, `no line for ${JSON.stringify(more)}`);
+            assert.deepEqual(foldCounts(line), { folded: roots, files: total }, line);
+          }
+        }
+      }
+    }
+  }
+
+  assert.equal(shapes, 74, "and the loop above is the whole series, not a sample of it");
 });

@@ -384,7 +384,10 @@ Nor is a body that prepends or extends a constant, or a reopening of a class tha
 elsewhere in the file: both declared one by another route.
 `interface_prefix` and `type_alias_prefix` take the leading capital a declared type name carries
 before a second capital, where
-`IComment` votes `I` while `Comment` and `IO` vote for no prefix at all. The first three learn a
+`IComment` votes `I` and `Comment` votes for no prefix at all. A name opening on three or more
+capitals reads both ways, `IOStream` being an acronym and `IEFLogon` being `I` on the `EFLogon` in
+the directory of the same name, so it votes for neither and is not a site; nor does a name that is
+nothing but two capitals, `IO` being the same two readings with nothing to separate them. The first three learn a
 name out of the repository's own source, so it goes through the encoder where the sentence is
 filled rather than at each place the sentence is rendered. The last two can learn an absence, which
 renders as `interfaces carry no prefix` rather than being filled into the template, and which is
@@ -422,13 +425,16 @@ name of the gate that stopped it.
 | `evidence` | the Wilson 95% lower bound on the same counts reaches `0.90`, **or** the rest of the repository's bound for this dimension and learned class does and this area's own upper bound reaches the rate it borrows | the ratio asks what this sample did; the bound asks whether the true rate can be trusted there. A perfect record needs 35 sites to hold 0.90, which is why there is no separate minimum on `candidates`, and why a perfectly consistent nine-file directory could never speak about a claim the repository holds at 0.987 across 2,152 sites. The prior is leave-one-out, so nothing is its own evidence, and it is built only from slots no other condition has closed. The second clause is what stops a large mediocre area inheriting a strong repository's confidence: 900 of 1000 tops out at 0.917 and cannot borrow 0.988 |
 | `concentration` | the sites are worth `>= 3` files by inverse-Simpson count, **and** the ratio still reaches 0.90 with the largest file dropped | 200 sites in one file plus one each in 13 others gives 14 files at ratio 1.0 and clears any file-count floor. A share of the candidates cannot answer this either: at two files the largest share is at least 0.5 by arithmetic, and at fifty files no share ever fires however lopsided the spread is |
 | `applicability` | `applicability >= max(R, min(ceil(0.25 * F), 3R))`, where `R = ceil(sqrt(F))` and `F` is the files the dimension can speak about | the stricter of two floors, because each is wrong alone. The root asks for more than a quarter below sixteen files, where a quarter of a small directory is one or two files. The share holds above it: on its own the root asked 11 files of 120, and a measured 120-file area where 11 files used `?.` and 109 read absent values without it stated the claim over all 120. The share is capped at three roots because it grows with the area while the risk it guards does not: on a single 1,531-file `db/migrate` it asked for 383 files, which made any construct rarer than a quarter of the directory unstateable however perfect. The first area size where the cap changes the answer is 157, above every area the share was measured on |
-| `authors` | `>= min(2, distinct authors in the repository)` distinct authors over the files carrying the counted matches | one person's habit is not a convention, but one author is not a thin team either: it is the whole team, and there is no second opinion being withheld |
+| `authors` | `>= min(2, distinct authors in the repository)` distinct authors over the files carrying the counted matches, and `>= 2` where the clone holds only a window of history | one person's habit is not a convention, but one author is not a thin team either: it is the whole team, and there is no second opinion being withheld. That reasoning needs the whole history to stand on: a `--depth=1` checkout, which is what `actions/checkout` does by default, holds one author whatever the team is, so the bar derived from it collapses and the map states more than a full clone does |
 | `directories` | `>= 2` distinct directories, **only when the area spans more than one directory** | applied unconditionally this blocked 124 of 170 measured slots, because area discovery finds leaf directories and a leaf directory holds one |
 
 Gates are evaluated in that order and the **first** failure is the one recorded and printed. So
 `no convention. 0 of 133 sites (ratio)` means ratio failed first, not that ratio was the only
 failure. Where git could not be read at all, the author gate is recorded as `history-unread` rather
-than as a team of zero.
+than as a team of zero. Where git answered but held only part of the history, the counts stand as a
+floor rather than as the team, and the overview and the terminal both say so. How much of the
+history there is goes on the terminal alone, since the overview owes byte-stability and a
+fixed-depth boundary moves under it.
 
 The whole battery runs once per side. Only the three numerators move between the claim and its
 inverse: how many files the sites are spread over, how much of the area the construct reaches, and
@@ -760,7 +766,10 @@ is why a descended directory's own files are a candidate of their own. webpack's
 with 117 of them at that level and no child clearing its 144-file floor, so the descent named
 nothing, and the map listed `test` and `examples` and never webpack's source at all: that is why a
 descent producing no root keeps the directory. A directory under the floor folds into the nearest
-root above it, or into `and N more directories holding M files`. Sorting by source files first is
+root above it, or into the line that says what did not print. That line carries a clause per
+population rather than one number: `and N more directories holding M files`, then the files in
+directories that cleared no floor, then the files sitting at the repository root, which never took
+the floor test and is not a place either. Sorting by source files first is
 what keeps an asset or documentation directory from displacing code.
 
 The three numbers scale with the corpus and are tuned by measurement. That is the decision; the
@@ -797,7 +806,10 @@ minitest whatever its bodies are written in.
 
 A file is a test by its facets, its name or its position, and by nothing else. The facets first: a
 known runner import, or a top-level `describe`, `it`, `test` or `cy` call. Then the basename, which
-counts when it carries `.test.`, `.spec.`, `.cy.`, `-test.`, `-spec.`, `_spec.rb` or `_test.rb`.
+counts when it carries `.test.`, `.spec.`, `.cy.` or `-test.`, `-spec.` on the name alone, and when
+it carries `_spec.rb` or `_test.rb` and a test tree above it agrees. The Ruby form is the one a
+non-test file wears in earnest: `software_spec.rb` is Homebrew's `SoftwareSpec` class and has its
+own `software_spec_spec.rb` under `test/`.
 Then a `__tests__` path segment, because nothing but a test is ever put in one. Last, for a source
 file under a top-level `test`, `tests` or `spec` directory, a source file outside that tree whose
 path the file's own tail mirrors: eslint's `tests/lib/rules/no-var.js` covers `lib/rules/no-var.js`
@@ -1063,7 +1075,9 @@ Roughly, in order of how much they move the number of stated claims:
   small repository and 8 from about 2,000 files up, folds into its nearest ancestor that clears it,
   and folds into nothing at all if no ancestor does.
 - **Git history.** The author gate needs 2 distinct authors on the files carrying the conforming
-  matches. A young repository, a solo repository, or a squashed import will state very little.
+  matches. A young repository, a solo repository, or a squashed import will state very little, and
+  so will a shallow clone: the bar cannot be lowered on a window, so a `--depth=1` CI checkout
+  states nothing and prints every claim as a count.
 - **Actual consistency.** The ratio gate is 0.90. Anything your team is 80% consistent about will
   print as counts, not as a claim. On the example repository, 671 of the 834 suppressed slots failed
   on ratio.

@@ -53,14 +53,26 @@ export function claimFor(dim, cls, kind) {
 }
 
 /**
- * The class a declared type name's prefix votes for.
+ * The class a declared type name's prefix votes for, or null where the name
+ * cannot say.
  *
  * The second capital is what separates a prefix from a word: `IComment` votes
- * `I`, and `IO` and `IOStream` are acronyms that vote for no prefix at all.
+ * `I`. Three or more leading capitals is the shape that reads both ways -
+ * `IOStream` is an acronym carrying no prefix, and `IEFLogon` is `I` on the
+ * `EFLogon` of the directory it sits in - so it votes for neither rather than
+ * being charged with the prefix it may already carry. Charged, the only way to
+ * comply with a stated `I` claim was to write `IIEFLogon`.
+ *
+ * A name that is nothing but two capitals cannot say either: `IO` is the type
+ * of that name, and reading it as `I` on an `O` or as a word are the same two
+ * readings with nothing to separate them.
  */
 export function prefixClass(name) {
-  const m = /^([A-Z])[A-Z][a-z]/.exec(name || "");
-  return m ? m[1] : "none";
+  const s = name || "";
+  const m = /^([A-Z])[A-Z][a-z]/.exec(s);
+  if (m) return m[1];
+  if (/^[A-Z]{3,}/.test(s) || /^[A-Z]{2}$/.test(s)) return null;
+  return "none";
 }
 
 /** A superclass's written name: `B`, or the dotted `React.Component`. */
@@ -416,7 +428,8 @@ export const NAMING_AST = [
     blindWhenStripped: true,
     precision: "precise",
     applicabilityPredicate: {
-      sites: "a TypeScript interface declaration outside any ambient module or namespace, whose name votes for its prefix letter or for carrying none",
+      sites:
+        "a TypeScript interface declaration outside any ambient module or namespace, whose name votes for its prefix letter or for carrying none. A name of two capitals, or one opening on three or more, votes for neither, since it reads as a prefix and as an acronym alike",
       blind: null,
     },
     langs: ["js", "jsx"],
@@ -429,7 +442,10 @@ export const NAMING_AST = [
         // no error at the declaration and `TS2339` at every use. The same
         // ancestor test C12 applies to `module_state_const`.
         if (ctx.ancestors.some((a) => a.type === "TSModuleDeclaration")) return;
-        add({ node: n.id, conforming: false, where: n.id.name, class: prefixClass(n.id.name) });
+        // A name that votes for neither is not a site, which is the idiom every
+        // other row in this file already uses for a name it cannot classify.
+        const cls = prefixClass(n.id.name);
+        if (cls !== null) add({ node: n.id, conforming: false, where: n.id.name, class: cls });
       });
     },
   },
@@ -443,14 +459,16 @@ export const NAMING_AST = [
     blindWhenStripped: true,
     precision: "precise",
     applicabilityPredicate: {
-      sites: "a TypeScript type alias declaration, whose name votes for its prefix letter or for carrying none",
+      sites:
+        "a TypeScript type alias declaration, whose name votes for its prefix letter or for carrying none. A name of two capitals, or one opening on three or more, votes for neither, since it reads as a prefix and as an acronym alike",
       blind: null,
     },
     langs: ["js", "jsx"],
     run(program, add) {
       walk(program, (n) => {
         if (n.type !== "TSTypeAliasDeclaration" || !n.id) return;
-        add({ node: n.id, conforming: false, where: n.id.name, class: prefixClass(n.id.name) });
+        const cls = prefixClass(n.id.name);
+        if (cls !== null) add({ node: n.id, conforming: false, where: n.id.name, class: cls });
       });
     },
   },

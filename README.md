@@ -149,7 +149,7 @@ The overview's first section says where things already live: which kinds of file
 holds, how they are tested, and what the directory extracts versus inlines. This is the
 `empire-flippers/client` section from the 35-repository acceptance run in
 [docs/measurements/2026-08-17-what-lives-where.md](docs/measurements/2026-08-17-what-lives-where.md),
-verbatim:
+with the three clauses 0.3.3 re-renders brought forward from that run:
 
 ```markdown
 ## What lives where
@@ -159,10 +159,10 @@ verbatim:
 - src/queries: 314 .ts, 1 .tsx; 0 of 314 have a namesake test
 - cypress/integration: 102 Cypress specs
 - src/hooks: 47 .tsx (JSX), 23 .ts; 0 of 47 have a namesake test; 23 sibling modules named mapper/payoutContext/schema; 6 files inline a helper
-- src/utils: 53 .ts, 10 .js and 4 other; 3 vitest specs under __tests__; 4 of 52 have a namesake test under src/utils/__tests__; 60 sibling modules named assert/balanceTransaction/buyerProfileValidation; 0 files inline a helper
+- src/utils: 53 .ts, 10 .js and 4 other; 2 of 3 vitest specs under __tests__; 4 of 52 have a namesake test under src/utils/__tests__; 60 sibling modules named assert/balanceTransaction/buyerProfileValidation; 0 files inline a helper
 - src/layouts: 42 .tsx (JSX), 11 .jpg and 21 other; 0 of 42 have a namesake test; 6 sibling modules named constants/utils/hooks; 4 files inline a helper
-- and 3 more directories holding 434 files
-- tests: 103 Cypress specs under cypress/integration; 7 vitest under src; 0 of 1003 .tsx files have a namesake test
+- and 3 more directories holding 323 files, 91 files in 19 directories under the floor, and 20 at the repository root
+- tests: 102 of 103 Cypress specs under cypress/integration; 7 vitest under src; 0 of 1003 .tsx files have a namesake test
 
 Match sibling test shape; skip tests where siblings have none.
 Match directory granularity; don't extract into a sibling module what the directory's files inline.
@@ -349,7 +349,7 @@ gate's second opinion. The full numbers and their caveats are in [docs/why.md](d
 - [docs/plugin-contract.md](docs/plugin-contract.md) is what Claude Code requires of a plugin and a
   marketplace, read against the documentation and the CLI itself, with a source per claim and the
   version it was true of.
-- [DECISIONS.md](DECISIONS.md) is the build contract: 183 numbered decisions, each with the
+- [DECISIONS.md](DECISIONS.md) is the build contract: 191 numbered decisions, each with the
   measurement or the review finding that forced it. Why a threshold is where it is, why the parser
   runs in child processes, why there is no hook: that is the file.
 - [docs/why.md](docs/why.md) is the longer argument and the full numbers.

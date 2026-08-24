@@ -47,10 +47,23 @@ const specCount = (n, runner) =>
 const runnerCount = (n, runner) =>
   runner === UNNAMED_RUNNER ? plural(n, "test file") : `${n} ${runnerLabel(runner)}`;
 
+/**
+ * The count under the named directory, ahead of the whole group, where the two
+ * differ.
+ *
+ * The vote that picks a name needs only a strict majority, so `8 RSpec specs
+ * under admin` named 5 of the 8. One spelling for the three lines that print
+ * the pair: an area's kinds line, a root line and the tests line.
+ *
+ * A record written before the field carries none and reads as the whole group
+ * being under the name, which is what it used to print.
+ */
+const underPart = (g) => (g.under !== undefined && g.under !== g.files ? `${g.under} of ` : "");
+
 // One clause per runner group, named the way `specCount` names a root line's:
 // a root line and an area's kinds line read the same `tests` field.
 const testsParts = (tests) =>
-  tests.map((t) => `${specCount(t.files, t.runner)}${t.sub ? ` under ${pathText(t.sub)}` : ""}`);
+  tests.map((t) => `${underPart(t)}${specCount(t.files, t.runner)}${t.sub ? ` under ${pathText(t.sub)}` : ""}`);
 
 // The count with a test is the subject of the clause, not the denominator
 // beside it, so "1 of 504" takes the singular and "2 of 504" does not.
@@ -173,16 +186,11 @@ function testsLineText(layout) {
   // A runner with no directory of its own is spread across the repository, and
   // `under .` was the clause on 28 of the 35 measured repositories.
   const parts = shown.map((g, i) => {
-    // The count under the directory, then the whole group, where the two
-    // differ: "1332 of 1333 RSpec specs under spec" is what the roster's own
-    // `- spec:` line above it counted, and printing 1333 beside the name made
-    // one generated file contradict itself.
-    //
-    // A record written before the field existed carries none, and reads as the
-    // whole group being under the name, which is what it used to print.
-    const named = g.under !== undefined && g.under !== g.files ? `${g.under} of ` : "";
+    // "1332 of 1333 RSpec specs under spec" is what the roster's own `- spec:`
+    // line above it counted, and printing 1333 beside the name made one
+    // generated file contradict itself.
     const count = i === 0 ? specCount(g.files, g.runner) : runnerCount(g.files, g.runner);
-    return `${named}${count}${g.root ? ` under ${pathText(g.root)}` : ""}`;
+    return `${underPart(g)}${count}${g.root ? ` under ${pathText(g.root)}` : ""}`;
   });
   const rest = layout.tests.length - shown.length;
   if (rest > 0) parts.push(`and ${rest} more`);
@@ -194,17 +202,50 @@ function testsLineText(layout) {
   return `- tests: ${parts.join("; ")}`;
 }
 
-/** The directories that did not print, counted where they would have. */
-function foldLine(roots, files) {
-  if (roots > 0) {
-    return `- and ${roots} more ${roots === 1 ? "directory" : "directories"} holding ${plural(files, "file")}`;
+const directories = (n) => `${n} ${n === 1 ? "directory" : "directories"}`;
+
+/**
+ * The three populations that did not get a line of their own, each counted
+ * where it is.
+ *
+ * A clause each, because one sentence carrying all three bound every number to
+ * the first noun: this repository's own map billed one folded root holding 3
+ * files for 21, and the api map charged 164 files to `public` and `app/views`:
+ * 147 in 26 directories, `config` at 39 of them, `config/initializers` at 33
+ * and `lib/tasks/archived` at 27, and 17 at the repository root.
+ *
+ * The repository root is its own clause and not one of the directories under
+ * the floor. It never took the floor test, so failing it is not why it has no
+ * line, and 14 of this repository's 18 sit there.
+ *
+ * `floor` is null on a record written before the three were counted apart, and
+ * there `files` is still all of them summed, which is what that record printed.
+ */
+function foldLine(roots, files, floor) {
+  const folded =
+    roots > 0 ? `${roots} more ${roots === 1 ? "directory" : "directories"} holding ${plural(files, "file")}` : null;
+  if (floor === null) {
+    if (folded) return `- and ${folded}`;
+    // No directory was folded, so the count is files the floor left behind and
+    // "and 0 more directories" would be a number nobody can act on.
+    if (files > 0) {
+      return `- and ${files} more ${files === 1 ? "file" : "files"} in directories under the floor`;
+    }
+    return null;
   }
-  // No directory was folded, so the count is files the floor left behind and
-  // "and 0 more directories" would be a number nobody can act on.
-  if (files > 0) {
-    return `- and ${files} more ${files === 1 ? "file" : "files"} in directories under the floor`;
+  const parts = [folded];
+  if (floor.files > 0) parts.push(`${plural(floor.files, "file")} in ${directories(floor.dirs)} under the floor`);
+  // The noun rides on the first clause that needs it, so a line that is only
+  // this one still says what it counts.
+  if (floor.root > 0) {
+    parts.push(`${parts.some(Boolean) ? floor.root : plural(floor.root, "file")} at the repository root`);
   }
-  return null;
+  const said = parts.filter(Boolean);
+  if (said.length === 0) return null;
+  // Two clauses join on a bare "and", three on a comma series, which is how
+  // the extension clause one line above already reads.
+  const join = said.length > 2 ? ", and " : said.length > 1 ? " and " : "";
+  return `- and ${said.slice(0, -1).join(", ")}${join}${said.at(-1)}`;
 }
 
 // The heading, the blank under it, and the blank that closes the block. Under
@@ -248,16 +289,25 @@ export function renderLayout(layout, budget = Infinity) {
 
   // A root line each, and the line that counts what did not get one.
   const room = budget - owed();
-  const already = layout.more.roots > 0 || layout.more.files > 0;
+  const floor = layout.more.floor ?? null;
+  // Every population the fold line can carry, because the line is reserved on
+  // this and a term left out is invisible while any other term is non-zero: a
+  // repository whose whole remainder sits at its root lost the sentence
+  // outright at the budget that leaves room for exactly its roots.
+  const already =
+    layout.more.roots > 0 || layout.more.files > 0 || (floor?.files ?? 0) > 0 || (floor?.root ?? 0) > 0;
   const whole = layout.roots.length + (already ? 1 : 0);
   const shown = layout.roots.slice(0, whole <= room ? layout.roots.length : Math.max(0, room - 1));
   const gaveWay = layout.roots.slice(shown.length);
 
   const lines = [LAYOUT_HEADING, ""];
   for (const r of shown) lines.push(rootLine(r));
+  // A root the budget squeezed out is a real directory holding its own files,
+  // so it joins the folded half and never the count of what sits under none.
   const fold = foldLine(
     layout.more.roots + gaveWay.length,
-    layout.more.files + gaveWay.reduce((n, r) => n + r.files, 0)
+    layout.more.files + gaveWay.reduce((n, r) => n + r.files, 0),
+    floor
   );
   if (fold && shown.length < room) lines.push(fold);
 
@@ -282,7 +332,15 @@ export function layoutSummary(layout, areas = []) {
     layout.tests.length === 0
       ? "none"
       : layout.tests
-          .map((g) => `${g.files} ${g.runner}${g.root ? ` under ${pathText(g.root)}` : ""}`)
+          // Through the same clause the map's own lines print, rather than the
+          // raw key and a hardcoded noun: this line read `1369 rspec` and
+          // `1 test files` where the file it summarises read `1368 of 1369
+          // RSpec specs` and `1 test file`. All three parts of it, count
+          // included, or the two surfaces still disagree by a number (A20).
+          .map(
+            (g, i) =>
+              `${underPart(g)}${(i === 0 ? specCount : runnerCount)(g.files, g.runner)}` +
+              `${g.root ? ` under ${pathText(g.root)}` : ""}`)
           .join(", ");
   const withImports = areas.filter((a) => a.imports?.length > 0).length;
   const withReuse = areas.filter((a) => a.reused?.length > 0).length;

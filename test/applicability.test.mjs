@@ -325,12 +325,14 @@ container = document.createElement("div")`,
   interface_prefix: {
     lang: "js",
     applicable: [`export interface IFoo { a: string }`, `export interface Comment { a: string }`],
-    inapplicable: `export type TBar = 1`,
+    // A type alias is the other row's construct, and a name opening on three
+    // capitals votes for neither a prefix letter nor for carrying none.
+    inapplicable: [`export type TBar = 1`, `export interface IOStream { a: string }`],
   },
   type_alias_prefix: {
     lang: "js",
     applicable: [`export type TBar = 1`, `export type Plain = 2`],
-    inapplicable: `export interface IFoo { a: string }`,
+    inapplicable: [`export interface IFoo { a: string }`, `export type TEFLogonStep = 1`],
   },
 
   // --- dimensions-jsx.mjs ---

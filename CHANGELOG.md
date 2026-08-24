@@ -7,6 +7,70 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.3.3] - 2026-08-24
+
+Eight defects: the six on the tracker, all found by reading maps this tool had already written and
+counting what they claimed against what the repositories hold, and two more the review rounds found
+in the fixes for them. Three are a sentence saying more than it counted; three are a test file
+credited to a file it does not cover; one is a name charged with violating the convention it already
+carries; and one is the tool trusting a git history that was only a window. The facts record moves to
+schema 18, and every map is regenerated on the next scan, so counts from before this release and
+after it are not comparable line for line.
+
+### Fixed
+
+- The line that says what did not print carries a clause per population instead of one number. It
+  counted the folded directories and then printed their files plus every file under no directory at
+  all, so this repository's own map read `and 1 more directory holding 21 files` over a folded root
+  holding 3, and a Rails map charged 164 files in `config`, `lib/tasks/archived` and 25 other
+  directories to `public` and `app/views`. The repository root is named apart from the directories
+  under the floor, because it never took the floor test and holds 17 of that map's 164. Decision H32.
+- A runner group says how many of itself sit under the directory the vote named. The vote needs only
+  a strict majority, so `8 RSpec specs under admin` named 5 of the 8; five of the ten such clauses
+  across two maps were wrong this way, the worst at 6 of 11. The tests line has printed the honest
+  pair since 0.2.x and the sibling clause never did. Decision H33.
+- A declared type name opening on three or more capitals votes for neither a prefix nor none, and is
+  a site of neither prefix row. `IEFLogon` is `I` on the `EFLogon` in the directory of the same name
+  and was charged with violating the `I` prefix it carries, so the only way to comply was to write
+  `IIEFLogon`; in an area stating the row at N of N, `IAPIResponse` reached MUST-FIX while
+  `IApiResponse` beside it conformed. The same miscount named two files with no violations in them as
+  the area's exceptions, which waved through anything added to either. Decision C35.
+- A shallow clone can no longer move the author gate. `git log` answers on one and its answer is true
+  about a window nobody chose: at `--depth=1`, which is what `actions/checkout` does by default, every
+  slot read one author, the bar collapsed to one and the map stated 484 claims where the full clone
+  states 465, then told the reader a fifteen-author repository has one author. At `--depth=503` the
+  same repository lost 82 conventions and gained none. Nothing on any surface said the clone was
+  shallow. The bar now holds at two, both surfaces say the history was truncated, and a depth-1
+  checkout prints every claim as a count. How much of the window there is goes to the terminal
+  alone: the overview owes byte-stability between scans of unchanged source, and a fixed-depth
+  boundary slides forward with every commit that lands upstream. Decision D11.
+- The empty-tail mirror is asked in both directions. `app/mcp` is a Rails autoload root, so stripping
+  the tree words left `mcp/mcp` against `mcp` and every file sitting directly there read untested:
+  `0 of 13`, `0 of 11`, `0 of 8` where the specs exist and describe the right constants. Measured
+  over the whole corpus, 6,849 areas of which 4,886 carry a companion count: 24 gain on this row's
+  own account, every one hand-verified, and none drops. Decision H34.
+- A Ruby file named `_spec.rb` or `_test.rb` is a test only where a test tree above it agrees. A
+  RuboCop cop named for the `Rails.env.test?` guard it enforces printed a test group of its own in
+  the file that loads every turn, telling a reader to mirror a shape the repository does not have.
+  The dotted and hyphen forms still answer on the name alone. Decision H35.
+- The scan summary spells a runner, its unit and its count the way every other surface does. It read
+  `1 test files under lib/rubocop/custom_cops` beside `1 test file` in the file it summarises, and
+  `1369 rspec` where the map said `1368 of 1369 RSpec specs`. Decision H36.
+- A test file is evidence about a source file only where the two run on one engine. The rule was
+  written on one branch, the bare-basename pair at the top of two trees, and every other path to a
+  match went without it. mastodon keeps a `spec/models` of Ruby specs beside a `spec/javascript` of
+  TypeScript tests and a model of each name in both, so the mirror credited each with the other's
+  files. Six areas across the corpus were carrying such a credit and none is left: discourse charged
+  four directories of `.gjs` components to Ruby system specs, one of them naming
+  `plugins/chat/spec/system` as the place its JavaScript is tested. Found by the corpus, not by a
+  test: the suite was green on both directions of it. Decision H37.
+
+### Changed
+
+- The facts record is schema 18. `layout.more` keeps its three populations apart, and the record
+  carries `authors` at all for the first time, with what the clone holds: the gates have always read
+  it and nothing on disk held it, so no reader could ask why a claim printed as a count.
+
 ## [0.3.2] - 2026-08-24
 
 The map already said what a repository does and told the agent to go and look. It never told the
@@ -2048,7 +2112,8 @@ which are partial; several listed there are not implemented yet.
 - No claim that this catches defects. Measured across ten repositories, 1 of 317 defect review
   comments was preventable by a conventions map.
 
-[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.3.2...HEAD
+[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.3.3...HEAD
+[0.3.3]: https://github.com/crisnahine/anatomiya/compare/v0.3.2...v0.3.3
 [0.3.2]: https://github.com/crisnahine/anatomiya/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/crisnahine/anatomiya/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/crisnahine/anatomiya/compare/v0.2.13...v0.3.0

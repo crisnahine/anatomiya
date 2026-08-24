@@ -107,8 +107,9 @@ function encodeGlob(g) {
  * re-attach inside a live session, and the change notice truncates head and
  * tail, so a long file loses its middle in both copies.
  */
-// A stated directive needs authors at or above min(2, repository authors), so
-// one author on a stated line can only be a one-author repository.
+// A stated directive needs authors at or above min(2, repository authors), and
+// at or above 2 where the history read was a window, so one author on a stated
+// line can only be a one-author repository read from a whole clone.
 const hands = (d) => (d.authors === 1 ? "1 author (the repository's only)" : `${d.authors} authors`);
 
 // The author bar is a function of the repository now, so the name alone no
@@ -688,9 +689,23 @@ export function renderOverview(result, files) {
 
   // A one-author repository states its only author's practice, so the map says
   // whose practice it is. Stable across scans while the count holds (A5).
-  if (result.authors && result.authors.repo === 1) {
+  //
+  // Not from a window: a `--depth=1` checkout holds one author whatever the
+  // team is, and this sentence printed over a repository with fifteen.
+  if (result.authors && result.authors.repo === 1 && !result.authors.shallow) {
     head.push("This repository has one author, so every claim below is that author's practice.", "");
   }
+
+  // What was read, where it was not the whole history. Said here as well as on
+  // the terminal, from one function, because a count printed by two surfaces
+  // drifts (A20).
+  //
+  // Not where the history could not be read at all: the shallow probe is a
+  // `rev-parse` and answers even where the log failed, so both were true at
+  // once and every slot below would carry `history could not be read` under a
+  // head saying the window was the reason.
+  const truncated = truncatedHistorySentence(result.authors?.error ? null : result.authors?.shallow);
+  if (truncated) head.push(truncated, "");
 
   // What the scan could not cover, and how many files this tool generated.
   // Neither grows with the repository, so both are paid before anything else.
@@ -813,6 +828,54 @@ function overviewTail(result, files) {
  */
 export const untrackedSentence = (n) =>
   `${plural(n, "source file")} in the working tree ${n === 1 ? "is" : "are"} untracked`;
+
+/**
+ * How much of the history the clone holds, or null where it could not say.
+ *
+ * The date is git's, so it is read only where it is spelled as one: a committer
+ * date is a value the repository sets.
+ */
+function historyWindow(shallow) {
+  const day = /^\d{4}-\d{2}-\d{2}/.exec(shallow.oldest ?? "")?.[0] ?? null;
+  const held = [
+    shallow.commits === null || shallow.commits === undefined ? null : plural(shallow.commits, "commit"),
+    day === null ? null : `since ${day}`,
+  ]
+    .filter(Boolean)
+    .join(" ");
+  return held || null;
+}
+
+/**
+ * What the history read was, where it was not all of it, in one spelling for
+ * both the surfaces that say it.
+ *
+ * `git log` answers on a shallow clone and its answer is true about a window
+ * nobody chose, so every author count taken from it is a floor. One sentence
+ * for the same reason `untrackedSentence` is one: a second spelling is a second
+ * answer (A20).
+ *
+ * The two surfaces differ in what they may put numbers in, not in what they
+ * claim, which is why this takes the numbers rather than handing the sentence
+ * out to be edited.
+ */
+const historyClaim = (held, gated) =>
+  `history truncated: shallow clone${held ? `, ${held}` : ""}, so author counts are a floor` +
+  (gated > 0 ? ` and ${plural(gated, "claim")} print as counts on the author gate` : "");
+
+/**
+ * The claim alone, for the overview.
+ *
+ * How much history the window holds is deliberately not in it: this file owes
+ * byte-stability between scans of unchanged source (A5), and both numbers move
+ * on their own, since on a fixed-depth checkout the boundary slides forward
+ * with every commit that lands upstream.
+ */
+export const truncatedHistorySentence = (shallow) => (shallow ? historyClaim(null, 0) : null);
+
+/** The claim, the size of the window and what the gate cost, for the terminal. */
+export const truncatedHistoryLine = (shallow, gated = 0) =>
+  shallow ? historyClaim(historyWindow(shallow), gated) : null;
 
 /**
  * What a tier that ran badly cost, or null where it ran clean or never ran.

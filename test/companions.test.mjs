@@ -123,6 +123,125 @@ test("an empty tail still finds its companion when the whole directory mirrors t
   });
 });
 
+test("a source root whose tree-less form outruns the spec tree still credits its own files", () => {
+  // `app/mcp` is a Rails autoload root, so `app/mcp/mcp/context.rb` is
+  // `Mcp::Context` and its spec is `spec/mcp/context_spec.rb`. Stripping the
+  // tree words leaves `mcp/mcp` against `mcp`, and the mirror was asked in one
+  // direction only, so every file sitting directly in that root read untested.
+  const src = ["context", "rack_app", "server_instructions"].map((n) => file(`app/mcp/mcp/${n}.rb`));
+  const tst = ["context", "rack_app", "server_instructions"].map((n) => file(`spec/mcp/${n}_spec.rb`));
+
+  assert.deepEqual(namesakeCompanions(src, tst, "app/mcp/mcp", namesakeIndex(tst, src)), {
+    with: 3,
+    of: 3,
+    root: "spec/mcp",
+  });
+});
+
+test("one file answers the same at that root and at the area inside it", () => {
+  // The same invariant the package case pins, on the other trigger:
+  // `app/mcp/mcp/engineering/context.rb` read 1 of 1 at `app/mcp/mcp` and 0 of
+  // 1 at the directory it actually sits in.
+  const src = [file("app/mcp/mcp/engineering/context.rb")];
+  const tst = [file("spec/mcp/engineering/context_spec.rb")];
+  const byStem = namesakeIndex(tst, src);
+
+  assert.equal(
+    namesakeCompanions(src, tst, "app/mcp/mcp/engineering", byStem).with,
+    namesakeCompanions(src, tst, "app/mcp/mcp", byStem).with
+  );
+});
+
+test("the reversed mirror is asked of a test tree and of nothing else", () => {
+  // H18 measured the unguarded match at 668 false matches on openproject, 43.5%
+  // of everything it found, so the reversed direction is held to a directory
+  // whose top segment is a tree the repository keeps tests in. Without that,
+  // any deeper directory sharing a tail answers.
+  const src = [file("app/vendor/stripe/client.rb")];
+
+  assert.equal(
+    namesakeCompanions(src, [file("spec/stripe/client_spec.rb")], "app/vendor/stripe").with,
+    1,
+    "a spec tree answers"
+  );
+  // The tree-less form of this one is `stripe`, which the root's own
+  // `vendor/stripe` ends with, so the mirror answers and only the tree test
+  // refuses it. A candidate the mirror would have refused anyway pins nothing.
+  assert.equal(
+    namesakeCompanions(src, [file("stripe/client_spec.rb")], "app/vendor/stripe").with,
+    0,
+    "and a directory that is nobody's test tree does not"
+  );
+});
+
+test("neither direction of the empty-tail mirror crosses an engine", () => {
+  // mastodon keeps `app/javascript/mastodon/models/account.ts` beside
+  // `app/models/account.rb`, and holds both a `spec/models` and a
+  // `spec/javascript`. Each direction credited the other language's file: the
+  // TypeScript model took the Ruby spec, and the Ruby model took the
+  // TypeScript test. The forward direction matched a shape and the reversed one
+  // matches a name, and neither is evidence across an engine.
+  const ts = [file("app/javascript/mastodon/models/account.ts")];
+  const rb = [file("app/models/account.rb")];
+
+  assert.equal(namesakeCompanions(ts, [file("spec/models/account_spec.rb")], "app/javascript/mastodon/models").with, 0);
+  assert.equal(namesakeCompanions(rb, [file("spec/javascript/models/account.test.ts")], "app/models").with, 0);
+
+  assert.equal(
+    namesakeCompanions(rb, [file("spec/models/account_spec.rb")], "app/models").with,
+    1,
+    "and the same shape within one engine still answers"
+  );
+});
+
+test("a component and the test file beside it are one engine, whatever the extension spells", () => {
+  // `language` tells `.tsx` from `.ts`, which is the grammar the parser is
+  // asked for and not what a test may cover: a component tested by a plain
+  // `.ts` file is the ordinary shape in every React repository there is.
+  const src = [file("packages/ui/src/components/Button.tsx")];
+
+  assert.equal(namesakeCompanions(src, [file("spec/components/Button.test.ts")], "packages/ui/src/components").with, 1);
+  assert.equal(namesakeCompanions(src, [file("spec/components/Button.spec.rb")], "packages/ui/src/components").with, 0);
+});
+
+test("the reversed mirror is refused across an engine, whichever way it is asked", () => {
+  // mastodon keeps `app/javascript/mastodon/models/account.ts` beside
+  // `app/models/account.rb`, and `spec/models/account_spec.rb` covers the Ruby
+  // one. Asked in reverse with no language test, the TypeScript model was
+  // credited with the Ruby spec: 8 of its 17 files, on a corpus measurement.
+  // The forward direction already matched a shape; this one matches a name.
+  const src = [file("app/javascript/mastodon/models/account.ts")];
+  const tst = [file("spec/models/account_spec.rb")];
+
+  assert.deepEqual(namesakeCompanions(src, tst, "app/javascript/mastodon/models"), { with: 0, of: 1, root: null });
+
+  const ruby = [file("app/mcp/mcp/context.rb")];
+  assert.equal(
+    namesakeCompanions(ruby, [file("spec/mcp/context_spec.rb")], "app/mcp/mcp").with,
+    1,
+    "and the same shape within one language still answers"
+  );
+});
+
+test("a candidate whose directory is nothing but tree words is not asked in reverse", () => {
+  // `withoutTree("spec")` is the empty string, and an empty candidate matched
+  // against the root would answer whatever sits under it.
+  const src = [file("app/vendor/stripe/client.rb")];
+  const tst = [file("spec/client_spec.rb")];
+
+  assert.deepEqual(namesakeCompanions(src, tst, "app/vendor/stripe"), { with: 0, of: 1, root: null });
+});
+
+test("the nested path is never asked the reversed question, which has nothing to ask it of", () => {
+  // `rootBare` is null wherever the tail is not empty, and the reversed call
+  // puts it in the receiver position, so an unguarded version throws on every
+  // repository rather than counting one wrong.
+  const src = [file("packages/foo/src/parser.ts")];
+  const tst = [file("packages/foo/test/parser.test.ts")];
+
+  assert.doesNotThrow(() => namesakeCompanions(src, tst, "packages", namesakeIndex(tst, src)));
+});
+
 test("a colocated namesake at an evaluated root is still credited", () => {
   const source = [file("src/components/Foo.tsx"), file("src/components/Bar.tsx")];
   const tests = [file("src/components/Foo.test.tsx"), file("src/components/Bar.test.tsx")];

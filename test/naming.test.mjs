@@ -581,14 +581,20 @@ test("classifyWord answers a long uppercase run followed by a non-word in linear
 
 /* --- the class a declared type name's prefix votes for --- */
 
-test("prefixClass reads a leading capital only where a second capital and a lowercase follow", async () => {
+test("prefixClass answers for a name that can say, and says nothing for one that cannot", async () => {
   const { prefixClass } = await import("../plugins/anatomiya/lib/dimensions-naming.mjs");
   assert.equal(prefixClass("IFoo"), "I");
   assert.equal(prefixClass("TCommentAuthor"), "T");
   assert.equal(prefixClass("Comment"), "none");
-  assert.equal(prefixClass("IO"), "none", "a two-letter acronym is a word, not a prefix");
-  assert.equal(prefixClass("IOStream"), "none", "and neither is a three-letter one");
   assert.equal(prefixClass("iFoo"), "none");
+  // Three leading capitals reads both ways and the classifier cannot tell
+  // which: `IEFLogon` is `I` on the `EFLogon` of the directory it sits in, and
+  // `IOStream` is an acronym carrying no prefix. Charged as a violation, the
+  // only way to comply was to write `IIEFLogon`.
+  assert.equal(prefixClass("IO"), null, "a two-letter acronym cannot say");
+  assert.equal(prefixClass("IOStream"), null, "and neither can a three-letter one");
+  assert.equal(prefixClass("IEFLogon"), null);
+  assert.equal(prefixClass("TEFLogonStep"), null);
 });
 
 /* --- the base a class names --- */
@@ -617,11 +623,16 @@ test("interface_prefix and type_alias_prefix vote per declared name", async () =
     interface Comment { a: string }
     interface IO { a: string }
   `);
-  assert.deepEqual(i.map((x) => x.class), ["I", "none", "none"]);
+  // Two hits, not three: a name the classifier cannot read is not a site, the
+  // way every other row here already skips a name that classifies to null.
+  assert.equal(i.length, 2);
+  assert.deepEqual(i.map((x) => x.class), ["I", "none"]);
   const t = await astHits("type_alias_prefix", `
     type TBar = 1
     type Plain = 2
+    type TEFLogonStep = 3
   `);
+  assert.equal(t.length, 2);
   assert.deepEqual(t.map((x) => x.class), ["T", "none"]);
   assert.equal(t[0].where, "TBar");
 });

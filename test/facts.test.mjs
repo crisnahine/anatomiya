@@ -344,7 +344,7 @@ test("the roster survives the round trip, at the top and under each area", (t) =
     size: 10,
     minFiles: 3,
     roots: [kindsOf("src/components", ".tsx", 5)],
-    more: { roots: 0, files: 0 },
+    more: { roots: 1, files: 3, floor: { dirs: 4, files: 4, root: 14 } },
     tests: [{ runner: "cypress", root: "cypress/integration", files: 5 }],
     principles: ["test_shape"],
     truncated: false,
@@ -358,6 +358,37 @@ test("the roster survives the round trip, at the top and under each area", (t) =
   assert.equal(facts.schema, FACTS_SCHEMA, "and the record stamps the shape it was written in");
   assert.deepEqual(facts.layout, layout);
   assert.deepEqual(facts.areas[0].kinds, kinds);
+});
+
+test("what history said survives the round trip, including how much of it there was", (t) => {
+  // Half of what schema 18 is for. The gates have always read this and nothing
+  // on disk held it, so no reader could ask why a claim printed as a count.
+  const dir = root(t);
+  const authors = { files: 213, error: null, repo: 1, shallow: { commits: 1, oldest: "2026-01-22T00:43:30Z" } };
+
+  writeFacts(dir, { ...result([dim()]), authors });
+
+  assert.deepEqual(readFacts(dir).facts.authors, authors);
+});
+
+test("a record written before the two fields of schema 18 reads as a scan that never asked", (t) => {
+  const dir = root(t);
+  mkdirSync(dirname(join(dir, FACTS_PATH)), { recursive: true });
+  writeFileSync(
+    join(dir, FACTS_PATH),
+    JSON.stringify({
+      schema: 17,
+      areas: [],
+      // The summed count is what that record printed, and a null floor is what
+      // tells the renderer to print it that way again.
+      layout: { size: 9, minFiles: 3, roots: [], more: { roots: 2, files: 3564 }, tests: [] },
+    })
+  );
+
+  const { facts } = readFacts(dir);
+
+  assert.equal(facts.authors, null, "nothing said whether that clone was whole");
+  assert.deepEqual(facts.layout.more, { roots: 2, files: 3564, floor: null });
 });
 
 test("a record written before the roster existed reads as not counted, not as empty", (t) => {

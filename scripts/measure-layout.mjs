@@ -88,10 +88,14 @@ function testGroupsOf(own, dir) {
   return [...groups]
     .map(([runner, group]) => {
       const ranked = tally(group.map((f) => dirOf(f.rel)).filter((d) => d !== dir).map(baseOf));
+      // The vote count travels with the name here too: a strict majority is as
+      // few as half the group plus one, so the name can hold 5 of 8.
+      const won = ranked.length > 0 && ranked[0][1] * 2 > group.length ? ranked[0] : null;
       return {
         runner,
         files: group.length,
-        sub: ranked.length > 0 && ranked[0][1] * 2 > group.length ? ranked[0][0] : null,
+        sub: won === null ? null : won[0],
+        under: won === null ? group.length : won[1],
       };
     })
     .sort((a, b) => b.files - a.files || byCode(a.runner, b.runner));
@@ -184,10 +188,49 @@ function sectionOf(overview) {
 
 const pathLabel = (p) => JSON.parse(encodePath(p)) || "(unnamed)";
 
-// `- and 3 more directories holding 91 files`, and the form for a fold that
-// dropped no whole directory.
-const FOLD_DIRS = /^- and (\d+) more (?:directory|directories) holding (\d+) files?$/;
-const FOLD_FILES = /^- and (\d+) more files? in directories under the floor$/;
+// The clauses the fold line can carry: `3 more directories holding 91 files`,
+// the files in directories that cleared no floor, and the files sitting at the
+// repository root. One line prints whichever of the three it has, so they are
+// read as a series rather than as one anchored sentence.
+//
+// The middle one keeps an older spelling too, from before the three were
+// counted apart, which a map on disk still carries until it is rescanned.
+const FOLD_DIRS = /^(\d+) more (?:directory|directories) holding (\d+) files?$/;
+const FOLD_FILES = /^(\d+) files? in \d+ (?:directory|directories) under the floor$/;
+const FOLD_OLD_FILES = /^(\d+) more files? in directories under the floor$/;
+const FOLD_ROOT = /^(\d+)(?: files?)? at the repository root$/;
+
+/**
+ * The fold line's two numbers: how many whole directories folded, and how many
+ * files the line accounts for across every clause it carries. Null where a
+ * clause does not read as any of the forms above.
+ *
+ * Exported because nothing runs this parser until a corpus run does, and a
+ * spelling it cannot read fails 35 repositories at once, eighteen minutes in.
+ */
+export function foldCounts(line) {
+  // The line joins two clauses on a bare "and" and three on a comma series, so
+  // the separator is either, and no clause of its own holds either spelling.
+  const said = line.replace(/^- and /, "").split(/,\s+and\s+|,\s+|\s+and\s+/);
+  let folded = 0;
+  let files = 0;
+  for (const one of said) {
+    const dirs = one.match(FOLD_DIRS);
+    const under = one.match(FOLD_FILES) ?? one.match(FOLD_OLD_FILES);
+    const root = one.match(FOLD_ROOT);
+    if (dirs) {
+      folded = Number(dirs[1]);
+      files += Number(dirs[2]);
+    } else if (under) {
+      files += Number(under[1]);
+    } else if (root) {
+      files += Number(root[1]);
+    } else {
+      return null;
+    }
+  }
+  return { folded, files };
+}
 
 const otherText = (n) => (n ? ` and ${n} other` : "");
 
@@ -298,7 +341,10 @@ function checkSection(section, corpus, root, recordRoots) {
     for (const group of counted.tests) {
       const want = specNoun(group.files, group.runner);
       const clause = clauses.shift();
-      const expected = group.sub ? `${group.files} ${want} under ${pathLabel(group.sub)}` : `${group.files} ${want}`;
+      const named = group.under !== group.files ? `${group.under} of ` : "";
+      const expected = group.sub
+        ? `${named}${group.files} ${want} under ${pathLabel(group.sub)}`
+        : `${named}${group.files} ${want}`;
       if (clause !== expected) fail(`${parsed.label} tests clause: printed "${clause}", recount "${expected}"`);
     }
 
@@ -328,15 +374,12 @@ function checkSection(section, corpus, root, recordRoots) {
   let folded = 0;
   let foldedFiles = 0;
   if (foldLine) {
-    const dirs = foldLine.match(FOLD_DIRS);
-    const only = foldLine.match(FOLD_FILES);
-    if (dirs) {
-      folded = Number(dirs[1]);
-      foldedFiles = Number(dirs[2]);
-    } else if (only) {
-      foldedFiles = Number(only[1]);
-    } else {
+    const counts = foldCounts(foldLine);
+    if (counts === null) {
       fail(`fold line does not parse: ${foldLine}`);
+    } else {
+      folded = counts.folded;
+      foldedFiles = counts.files;
     }
   }
   if (printedFiles + foldedFiles !== corpus.length) {
