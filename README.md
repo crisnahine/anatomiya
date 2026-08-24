@@ -126,6 +126,7 @@ A claim states how many sites conform out of how many were eligible.
 
 Read a file before editing it: these notes load when you read, not when you grep.
 When unsure what this code does, read it, grep it, or run it instead of guessing, and say what you could not verify.
+When a change is asked for, follow what this repository already does and carry it through instead of stopping at a suggestion.
 
 ## Areas (127)
 
@@ -348,7 +349,7 @@ gate's second opinion. The full numbers and their caveats are in [docs/why.md](d
 - [docs/plugin-contract.md](docs/plugin-contract.md) is what Claude Code requires of a plugin and a
   marketplace, read against the documentation and the CLI itself, with a source per claim and the
   version it was true of.
-- [DECISIONS.md](DECISIONS.md) is the build contract: 182 numbered decisions, each with the
+- [DECISIONS.md](DECISIONS.md) is the build contract: 183 numbered decisions, each with the
   measurement or the review finding that forced it. Why a threshold is where it is, why the parser
   runs in child processes, why there is no hook: that is the file.
 - [docs/why.md](docs/why.md) is the longer argument and the full numbers.

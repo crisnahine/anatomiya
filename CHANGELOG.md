@@ -7,6 +7,26 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-08-24
+
+The map already said what a repository does and told the agent to go and look. It never told the
+agent to follow what it found. A third fixed sentence on the overview head says so, and says to
+finish the change instead of handing back a suggestion. It costs one line: on a repository already at
+the bound, one area name moves out of the listing and into the trailer.
+
+### Added
+
+- A third fixed sentence on the overview head: when a change is asked for, follow what this
+  repository already does and carry it through instead of stopping at a suggestion. The counts
+  state the practice, and nothing until now told the agent to follow it and finish. Sources in
+  `docs/research/one-line-that-finishes-in-house-style.md`; decision A42.
+
+### Changed
+
+- The documented cost of the echoed map reads roughly 500 tokens per turn and per tool call, and
+  about 150,000 over a 300-call session. The head grew by a sentence; the figure moved by arithmetic
+  off that, not by a second count.
+
 ## [0.3.1] - 2026-08-24
 
 A stated claim now says how many of its own sites it could not vote on, where there are any. The
@@ -2028,7 +2048,8 @@ which are partial; several listed there are not implemented yet.
 - No claim that this catches defects. Measured across ten repositories, 1 of 317 defect review
   comments was preventable by a conventions map.
 
-[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.3.2...HEAD
+[0.3.2]: https://github.com/crisnahine/anatomiya/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/crisnahine/anatomiya/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/crisnahine/anatomiya/compare/v0.2.13...v0.3.0
 [0.2.13]: https://github.com/crisnahine/anatomiya/compare/v0.2.12...v0.2.13

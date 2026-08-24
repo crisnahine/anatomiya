@@ -87,6 +87,42 @@ function stable(result) {
   };
 }
 
+test("a scan that counted tracked source never also counts untracked source", async (t) => {
+  // The overview's head lines for the two states say opposite things: one says
+  // nothing was counted, the other says the counts were cut short. The bound
+  // has room for one of them, and `render.test.mjs` holds the roster over the
+  // reachable half on the strength of this.
+  const dir = repo(t, (d, { git, write }) => {
+    write("src/a.js", "export const a = 1;\n");
+    write("src/b.js", "export const b = 2;\n");
+    git("add", "-A");
+    git("commit", "-qm", "init");
+    write("src/loose.js", "export const c = 3;\n");
+  });
+
+  const result = await scan(dir);
+
+  assert.ok(result.corpus.files > 0, "the corpus holds the tracked files");
+  assert.equal(result.corpus.untracked, 0, "so the untracked count is not asked for");
+});
+
+test("a scan that found no tracked source is never also a truncated scan", async (t) => {
+  // The other half of the same pair. Both head lines together is the shape the
+  // roster has no room for, so each direction is held rather than assumed.
+  const dir = repo(t, (d, { git, write }) => {
+    write("README.md", "# hi\n");
+    git("add", "-A");
+    git("commit", "-qm", "init");
+    write("src/loose.js", "export const c = 3;\n");
+  });
+
+  const result = await scan(dir);
+
+  assert.ok(result.corpus.untracked > 0, "the untracked source is counted");
+  assert.equal(result.corpus.truncated, false);
+  assert.equal(result.suppressAll, false, "so no truncation line joins the untracked one");
+});
+
 test("a repository with no source files produces no areas", async (t) => {
   const dir = repo(t, (d, { git, write }) => {
     write("README.md", "# hi\n");

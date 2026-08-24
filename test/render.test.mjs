@@ -358,6 +358,35 @@ test("the overview tells the agent to read, grep or run the code when unsure, an
   assert.equal(lines[at - 1], "Read a file before editing it: these notes load when you read, not when you grep.");
 });
 
+test("the overview tells the agent to follow this repository's own practice and carry a change through", () => {
+  // The third constant sentence, and the only one about what to do with a
+  // change instead of what to read first. Scoped by a trigger clause, because
+  // removing the equivalent scope guard is measured to move the rate (A42).
+  const lines = renderOverview(result(), { uncovered: 30 }).split("\n");
+  const at = lines.indexOf(
+    "When a change is asked for, follow what this repository already does and carry it through instead of stopping at a suggestion."
+  );
+
+  assert.ok(at > 0, "the sentence is in the overview");
+  assert.equal(
+    lines[at - 1],
+    "When unsure what this code does, read it, grep it, or run it instead of guessing, and say what you could not verify."
+  );
+  assert.equal(lines[at + 1], "", "it closes the block of behavioural lines");
+});
+
+test("a truncated scan still tells the agent how to work, because the head is not a count", () => {
+  // The three head sentences are the half of the file that holds when the
+  // counts do not. A truncated scan states no directive, and that is a
+  // different thing from saying nothing about how to work.
+  const out = renderOverview(result({ suppressAll: true }), { uncovered: 30 });
+
+  assert.match(out, /^Read a file before editing it: /m);
+  assert.match(out, /^When unsure what this code does, /m);
+  assert.match(out, /^When a change is asked for, /m);
+  assert.match(out, /^The scan was truncated, so no directive is stated\. Counts only\.$/m);
+});
+
 test("a repository with more areas than the overview lists summarises the tail", () => {
   // The overview loads on every turn, so it stays bounded while the number of
   // areas does not: a 100,000-file repository discovers 500 areas, and one line
@@ -1067,6 +1096,7 @@ test("the overview holds its bound over every section that can grow, not just th
           { parsed: 8, crashed: 3, skipped: 2, failed: 4, syntaxErrors: 5 },
           { parsed: 8, crashed: 3, skipped: 2, failed: 4, syntaxErrors: 5, missingStripper: true },
         ]) {
+        for (const untracked of [0, 4]) {
         for (const layout of [null, clientLayout(), clientLayout({ principles: [] }), truncatedLayout()]) {
           const out = renderOverview(
             {
@@ -1074,8 +1104,9 @@ test("the overview holds its bound over every section that can grow, not just th
               root: "/repo",
               scannedAt: "2026-01-01T00:00:00.000Z",
               durationMs: 1,
-              // Every optional head line at once: truncated, untracked, one author.
-              corpus: { files: 900, truncated: true, untracked: 4, dropped: {} },
+              // The optional head lines, together and apart: truncated and
+              // one author always, untracked on half the sweep.
+              corpus: { files: 900, truncated: true, untracked, dropped: {} },
               parse,
               suppressAll: true,
               semantic: { ran: true, status: "degraded", reason: "no tsconfig", typedResolutionRate: null },
@@ -1099,6 +1130,17 @@ test("the overview holds its bound over every section that can grow, not just th
           // Whatever the budget does, the file still has to say these.
           assert.match(out, new RegExp(`^## Areas \\(${areas}\\)$`, "m"));
           assert.match(out, /^Generated files: \d+ under/m);
+          // Whatever else the budget takes, the head is not on the table.
+          assert.match(out, /^Read a file before editing it: /m);
+          assert.match(out, /^When unsure what this code does, /m);
+          assert.match(out, /^When a change is asked for, /m);
+          // The roster is paid before the areas, so a head line reaches its
+          // budget first, and it drops whole once it cannot shrink further. The
+          // untracked half of this sweep is a shape no scan reaches: a scan
+          // counts untracked files only when it found no tracked ones, so that
+          // head line and the truncation line never both fire on a real run.
+          if (layout && !untracked) assert.match(out, /^## What lives where$/m);
+        }
         }
         }
       }
