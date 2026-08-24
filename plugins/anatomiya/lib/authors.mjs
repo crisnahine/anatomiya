@@ -105,6 +105,10 @@ export async function authorsByFile(root) {
     }
   };
 
+  // Asked before the log rather than after it: every return below carries the
+  // answer, including the one for a repository with nothing committed.
+  map.shallow = await shallowHistory(root);
+
   try {
     await logStream(root, onField);
   } catch (err) {
@@ -131,6 +135,38 @@ async function headState(root) {
   const r = await gitBuffered(root, ["rev-parse", "--verify", "--quiet", "HEAD^{commit}"]);
   if (r.ok) return "ok";
   return r.code === 1 ? "no-commits" : "unusable";
+}
+
+/**
+ * How much history this clone holds, where it does not hold all of it, or null.
+ *
+ * `git log` succeeds on a shallow clone and returns a truthful answer about a
+ * window nobody chose. Nothing above it asked whether the window was the whole
+ * history, so the author count read as the team: a `--depth=1` checkout, which
+ * is what `actions/checkout` does by default, held one author, dropped the
+ * author bar to one and stated 484 claims where the full clone states 465.
+ *
+ * Null where the clone is whole, and null where the question cannot be
+ * answered: a call that fails reads as not shallow, which costs a caveat rather
+ * than a wrong answer (F15).
+ *
+ * The boundary is the grafted root, which is the oldest commit the clone holds.
+ * A shallow cut across a merge can graft more than one, and `log` orders by
+ * commit date rather than topologically, so the oldest is taken rather than
+ * whichever line git printed last.
+ */
+async function shallowHistory(root) {
+  const asked = await gitBuffered(root, ["rev-parse", "--is-shallow-repository"]);
+  if (!asked.ok || asked.stdout.trim() !== "true") return null;
+  const counted = await gitBuffered(root, ["rev-list", "--count", "HEAD"]);
+  const commits = counted.ok ? Number.parseInt(counted.stdout.trim(), 10) : Number.NaN;
+  const roots = await gitBuffered(root, ["log", "--format=%cI", "--max-parents=0", "--"]);
+  // A value that does not read as a moment is dropped rather than compared:
+  // every comparison against NaN is false, so an unparseable first entry would
+  // win and shadow a real date.
+  const grafted = roots.ok ? roots.stdout.trim().split("\n").filter((line) => !Number.isNaN(Date.parse(line))) : [];
+  const oldest = grafted.reduce((a, b) => (a === null || Date.parse(b) < Date.parse(a) ? b : a), null);
+  return { commits: Number.isFinite(commits) ? commits : null, oldest };
 }
 
 /**

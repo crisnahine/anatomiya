@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import { pinJson, pinLines, pinSummary, scanJson, scanLines, scanSummary, SUMMARY_SCHEMA } from "../plugins/anatomiya/lib/summary.mjs";
 import { buildPin, pinDelta, PIN_PATH } from "../plugins/anatomiya/lib/baseline.mjs";
+import { truncatedHistoryLine } from "../plugins/anatomiya/lib/render.mjs";
 
 const RESTART = "a session already running still holds the old map; restart to pick it up";
 const UNPINNED =
@@ -131,6 +132,60 @@ test("unread history is reported with the reason it could not be read", () => {
       "history could not be read, so every claim fails the author gate: git log failed"
     )
   );
+});
+
+test("the terminal says the history was a window, how big it was, and what it cost", () => {
+  // The overview carries the claim alone, because it owes byte-stability and
+  // both numbers move. This is the surface that may print them.
+  // Built by the module that owns the sentence, and asked for here through it,
+  // so a reworded claim moves both surfaces or fails this.
+  const shallow = { commits: 503, oldest: "2026-01-22T00:43:30Z" };
+  const lines = scanLines(summary({ historyTruncated: truncatedHistoryLine(shallow, 105), authorGated: 105 }));
+
+  assert.ok(
+    lines.includes(
+      "history truncated: shallow clone, 503 commits since 2026-01-22, so author counts are a floor" +
+        " and 105 claims print as counts on the author gate"
+    ),
+    lines.join("\n")
+  );
+
+  const bare = scanLines(summary({ historyTruncated: truncatedHistoryLine({ commits: null, oldest: null }, 0) }));
+
+  assert.ok(
+    bare.includes("history truncated: shallow clone, so author counts are a floor"),
+    "a clone that could not say how much it holds, whose gate cost nothing, still says it is one"
+  );
+});
+
+test("the terminal builds its own truncation line from what the scan read", () => {
+  // Handed in ready-made, this passes with the scan never asking: the wire from
+  // `result.authors.shallow` through `scanSummary` is the half that carries it.
+  const s = scanSummary(
+    result({ authors: { files: 9, error: null, repo: 1, shallow: { commits: 1, oldest: "2026-01-22T00:00:00Z" } } }),
+    plan()
+  );
+
+  assert.equal(
+    s.historyTruncated,
+    "history truncated: shallow clone, 1 commit since 2026-01-22, so author counts are a floor"
+  );
+  assert.equal(scanSummary(result(), plan()).historyTruncated, null, "and a whole clone says nothing");
+});
+
+test("a history that could not be read at all says that, and not that it was a window", () => {
+  // The shallow probe is a `rev-parse` and answers even where the log failed,
+  // so both were true at once: the terminal said the gate held claims to counts
+  // and then named a gate no slot was on, because they had all failed the
+  // earlier one.
+  const s = scanSummary(
+    result({ authors: { files: 0, error: "git log failed", repo: null, shallow: { commits: 1, oldest: null } } }),
+    plan()
+  );
+
+  assert.equal(s.historyTruncated, null);
+  assert.ok(scanLines(s).some((l) => l.startsWith("history could not be read")));
+  assert.ok(!scanLines(s).some((l) => l.startsWith("history truncated")));
 });
 
 test("a rule file this tool did not write is named, not counted", () => {
@@ -321,6 +376,11 @@ test("the summary carries every fact the scan prints", () => {
     // clean. Only a tier that ran badly has anything to say.
     semantic: null,
     historyError: null,
+    // Null on a whole clone, and on one this tool could not ask. A window is
+    // the only thing that fills it, and the count beside it is what the author
+    // gate then held to counts.
+    historyTruncated: null,
+    authorGated: 0,
     rules: { foreign: [], unknown: [], unreadable: [], listed: true, replaced: [] },
     removed: 0,
     wrote: 2,

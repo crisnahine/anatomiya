@@ -1,4 +1,4 @@
-import { degradedSemanticSentence, unexaminedLines, untrackedSentence } from "./render.mjs";
+import { degradedSemanticSentence, truncatedHistoryLine, unexaminedLines, untrackedSentence } from "./render.mjs";
 import { layoutSummary, plural } from "./render-layout.mjs";
 import { statedSide } from "./facts.mjs";
 import { encode, encodePath, sanitisePath } from "./encode.mjs";
@@ -36,6 +36,7 @@ export function scanSummary(result, plan, { dryRun = false, hook = null } = {}) 
   const slots = result.areas.flatMap((a) => a.dimensions);
   // Through the renderer's own partition, or the summary disagrees with the
   // map: a stated slot the model writes by default renders as a counts line.
+  const authorGated = slots.filter((d) => d.gate === "authors").length;
   const stated = slots.filter((d) => statedSide(d).states !== null && d.matchesDefault !== true);
   const matching = slots.filter((d) => statedSide(d).states !== null && d.matchesDefault === true);
 
@@ -74,6 +75,17 @@ export function scanSummary(result, plan, { dryRun = false, hook = null } = {}) 
     // carried it, and the one surface the caller was watching did not.
     semantic: degradedSemanticSentence(result.semantic),
     historyError: result.authors.error,
+    // What was read, where it was not the whole history, from the module that
+    // owns the sentence. The claim is the overview's too; the size of the
+    // window and what the gate cost are this surface's alone, because the
+    // overview owes byte-stability and both of them move on a repository whose
+    // source did not.
+    // Not beside `historyError`: the probe is a `rev-parse` and answers even
+    // where the log itself failed, and a history that could not be read at all
+    // is the larger fact. Both lines together said the gate held claims to
+    // counts and then named a gate no slot was on.
+    historyTruncated: result.authors.error ? null : truncatedHistoryLine(result.authors.shallow, authorGated),
+    authorGated,
     rules: {
       foreign: plan.foreign,
       unknown: plan.unknown,
@@ -121,6 +133,7 @@ export function scanLines(s) {
   lines.push(...s.unexamined);
   if (s.historyError)
     lines.push(`history could not be read, so every claim fails the author gate: ${s.historyError}`);
+  if (s.historyTruncated) lines.push(s.historyTruncated);
   // Named, not counted. The count was a number the reader then had to go and
   // resolve with `ls`, and the whole point of the line is that these files
   // reach the agent on every turn.

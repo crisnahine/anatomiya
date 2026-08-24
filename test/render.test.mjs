@@ -6,6 +6,8 @@ import {
   droppedDirectives,
   renderArea,
   renderOverview,
+  truncatedHistoryLine,
+  truncatedHistorySentence,
   unexaminedLines,
   unexaminedPhrase,
   unreadLanguageFiles,
@@ -330,6 +332,60 @@ test("a one-author repository says so once in the overview", () => {
   assert.ok(!/one author/.test(team));
 
   assert.doesNotThrow(() => renderOverview(result(), { uncovered: 30 }));
+});
+
+test("a window of history says so, and does not say whose repository it is", () => {
+  // `actions/checkout` clones at depth 1, which holds one author whatever the
+  // team is. The sentence above printed 644 times over a repository with
+  // fifteen, and nothing anywhere said the history was a window.
+  const overview = (shallow) =>
+    renderOverview(result({ authors: { files: 9, error: null, repo: 1, shallow } }), { uncovered: 30 });
+  const out = overview({ commits: 1, oldest: "2026-01-22T00:43:30Z" });
+
+  assert.match(out, /^history truncated: shallow clone, so author counts are a floor$/m);
+  assert.doesNotMatch(out, /one author/);
+  assert.equal(truncatedHistorySentence(null), null, "a whole clone says nothing");
+
+  // How much of the history the window holds is not in it. Both numbers move
+  // on their own: on a fixed-depth checkout the boundary slides forward with
+  // every commit that lands upstream, and A5 owes this file byte-stability
+  // between scans of unchanged source.
+  assert.equal(out, overview({ commits: 604, oldest: "2026-07-19T11:02:00Z" }));
+});
+
+test("a history that could not be read at all is not described as a window", () => {
+  // The shallow probe is a `rev-parse` and answers even where the log failed,
+  // so both are true at once. Every slot below then carries `history could not
+  // be read` under a head saying the window was the reason.
+  const both = { files: 0, error: "git log failed", repo: null, shallow: { commits: 1, oldest: null } };
+  const out = renderOverview(result({ authors: both }), { uncovered: 30 });
+
+  assert.doesNotMatch(out, /history truncated/);
+});
+
+test("the terminal is the surface that says how much of the history there is", () => {
+  const line = (shallow, gated) => truncatedHistoryLine(shallow, gated);
+
+  assert.equal(line(null, 0), null);
+  assert.equal(
+    line({ commits: 503, oldest: "2026-01-22T00:43:30Z" }, 105),
+    "history truncated: shallow clone, 503 commits since 2026-01-22, so author counts are a floor" +
+      " and 105 claims print as counts on the author gate"
+  );
+  assert.equal(
+    line({ commits: 1, oldest: null }, 0),
+    "history truncated: shallow clone, 1 commit, so author counts are a floor"
+  );
+  assert.equal(
+    line({ commits: 503, oldest: "not a date" }, 0),
+    "history truncated: shallow clone, 503 commits, so author counts are a floor",
+    "a committer date is a value the repository sets, so it prints only where it is one"
+  );
+  assert.equal(
+    line({ commits: null, oldest: null }, 0),
+    truncatedHistorySentence({ commits: null, oldest: null }),
+    "a clone that could not say how much it holds says what the overview says"
+  );
 });
 
 test("the overview is byte-stable across scans of unchanged source", () => {
@@ -1418,6 +1474,28 @@ test("the kinds line agrees with its own namesake count", () => {
   assert.equal(kindsOf(2), "kinds: 7 .tsx (JSX); 0 test files; 2 of 7 have a namesake test");
 });
 
+test("a runner group names how many of itself the directory it names holds", () => {
+  // `8 RSpec specs under admin` named 5, and `admin` is a basename the vote
+  // picked, so the clause was wrong about the count as well as the place. The
+  // sibling tests line already prints the pair where the two differ.
+  const line = (tests) => kindsLine(root("src/utils", { exts: [[".ts", 20]], tests }));
+
+  assert.equal(
+    line([{ runner: "vitest", files: 3, sub: "__tests__", under: 2 }]),
+    "kinds: 20 .ts; 2 of 3 vitest specs under __tests__"
+  );
+  assert.equal(
+    line([{ runner: "vitest", files: 4, sub: "__tests__", under: 4 }]),
+    "kinds: 20 .ts; 4 vitest specs under __tests__",
+    "and says nothing where the name holds the whole group"
+  );
+  assert.equal(
+    line([{ runner: "vitest", files: 4, sub: "__tests__" }]),
+    "kinds: 20 .ts; 4 vitest specs under __tests__",
+    "a record written before the count travelled reads as it printed"
+  );
+});
+
 test("the kinds line names a runner the way the root line does", () => {
   // plots2's `test/unit/helpers` stated "11 test files" two lines above
   // "classes here inherit ActionView::TestCase: 11 of 11 sites", never once
@@ -1553,6 +1631,61 @@ test("leftovers below the floor are counted as files, not as directories", () =>
   assert.doesNotMatch(lines.join("\n"), /0 more directories/);
 });
 
+test("a folded directory is not billed for the files under no directory at all", () => {
+  // One sentence, three populations. This repository's own shape: one folded
+  // root holding 3 files, printed as holding 21, where 14 of the other 18 sit
+  // at the repository root, which no floor excluded.
+  const fold = (more) => renderLayout(clientLayout({ more })).find((l) => l.startsWith("- and "));
+
+  assert.equal(
+    fold({ roots: 1, files: 3, floor: { dirs: 4, files: 4, root: 14 } }),
+    "- and 1 more directory holding 3 files, 4 files in 4 directories under the floor, and 14 at the repository root"
+  );
+  assert.equal(
+    fold({ roots: 2, files: 3400, floor: { dirs: 26, files: 147, root: 0 } }),
+    "- and 2 more directories holding 3400 files and 147 files in 26 directories under the floor",
+    "two clauses join on a bare and; the comma series is for three"
+  );
+  assert.equal(
+    fold({ roots: 0, files: 0, floor: { dirs: 0, files: 0, root: 14 } }),
+    "- and 14 files at the repository root",
+    "the noun rides on whichever clause comes first"
+  );
+  assert.equal(
+    fold({ roots: 6, files: 76 }),
+    "- and 6 more directories holding 76 files",
+    "a record written before the three were counted apart prints what it printed"
+  );
+});
+
+test("the line that says what did not print is reserved even when only the floor holds anything", () => {
+  // `already` decides whether the roster keeps room for this line. It read
+  // `more.files`, which used to carry the floor count, so splitting them out
+  // silently dropped the completeness statement on a squeezed repository.
+  // The budget that tells the two apart is the one leaving room for exactly as
+  // many lines as there are roots: a roster that has not reserved one for this
+  // sentence prints every root and says nothing about the remainder at all.
+  // Asked of each population on its own, because the guard is a disjunction and
+  // a missing term is invisible while any other term is non-zero.
+  const corpus = Array.from({ length: 6 }, (_, n) => n).flatMap((n) =>
+    Array.from({ length: 8 }, (_, i) => ({ rel: `d${n}/f${i}.ts`, lang: "js", facets: null })));
+  const facts = layoutFacts(corpus, { minFiles: 3 });
+  const squeezed = (more) =>
+    // Three is the block's own frame: the heading, the blank under it, and the
+    // blank that closes it.
+    renderLayout({ ...facts, principles: [], truncated: false, more }, 3 + facts.roots.length).join("\n");
+
+  assert.match(
+    squeezed({ roots: 0, files: 0, floor: { dirs: 3, files: 12, root: 0 } }),
+    /^- and .*12 files in 3 directories under the floor$/m
+  );
+  assert.match(
+    squeezed({ roots: 0, files: 0, floor: { dirs: 0, files: 0, root: 3 } }),
+    /^- and .*3 at the repository root$/m
+  );
+  assert.match(squeezed({ roots: 1, files: 4, floor: { dirs: 0, files: 0, root: 0 } }), /^- and .*holding/m);
+});
+
 test("nothing folded away costs the roster a line", () => {
   const lines = renderLayout(clientLayout({ more: { roots: 0, files: 0 } }));
 
@@ -1653,9 +1786,28 @@ test("the summary line says how many roots and test groups the layout counted", 
 
   assert.equal(
     layoutSummary(clientLayout(), areas),
-    "layout: 7 roots, 6 folded, tests: 102 cypress under cypress/integration, 4 vitest under src; " +
+    "layout: 7 roots, 6 folded, tests: 102 Cypress specs under cypress/integration, 4 vitest under src; " +
       "roster lines: 1 area with imports, 1 with reuse"
   );
+});
+
+test("the terminal spells a runner and its unit the way every other surface does", () => {
+  // `1 test files under lib/rubocop/custom_cops` on the one surface the caller
+  // is watching, beside `1 test file` in the map. The raw key printed too, so
+  // the same run said `1369 rspec` where the map said `1368 of 1369 RSpec
+  // specs`.
+  const one = clientLayout({ tests: [{ runner: "test files", root: "lib/rubocop/custom_cops", files: 1, under: 1 }] });
+
+  assert.equal(
+    layoutSummary(one, []),
+    "layout: 7 roots, 6 folded, tests: 1 test file under lib/rubocop/custom_cops; " +
+      "roster lines: 0 areas with imports, 0 with reuse"
+  );
+
+  // The count too, or the two surfaces still disagree by a number: the map
+  // says `1368 of 1369 RSpec specs under spec` on the line above.
+  const rspec = clientLayout({ tests: [{ runner: "rspec", root: "spec", files: 1369, under: 1368 }] });
+  assert.match(layoutSummary(rspec, []), /tests: 1368 of 1369 RSpec specs under spec;/);
 });
 
 test("the summary line says tests: none rather than an empty list", () => {
@@ -2106,7 +2258,7 @@ test("a runner spread across the repository is summarised without a place", () =
 
   assert.equal(
     layoutSummary(spread, []),
-    "layout: 7 roots, 6 folded, tests: 60 vitest; roster lines: 0 areas with imports, 0 with reuse"
+    "layout: 7 roots, 6 folded, tests: 60 vitest specs; roster lines: 0 areas with imports, 0 with reuse"
   );
 });
 

@@ -100,7 +100,13 @@ export function wilsonUpper(conforming, candidates, z = GATES.z) {
  * a measured 13-author repository blocks 16 of the 114 directories that clear
  * two, and every one of them has two or three authors.
  */
-export function authorsRequired(repoAuthors) {
+export function authorsRequired(repoAuthors, { shallow = null } = {}) {
+  // A truncated history counts the authors of a window nobody chose, so the bar
+  // cannot be derived from it (D11). A `--depth=1` checkout holds one author, which
+  // would drop the bar to one and let every claim state on the evidence this
+  // gate exists to refuse: measured at 484 stated claims against the whole
+  // clone's 465, on a repository with fifteen authors.
+  if (shallow) return GATES.authorEvidence;
   if (!Number.isFinite(repoAuthors)) return GATES.authorEvidence;
   return Math.max(1, Math.min(GATES.authorEvidence, Math.floor(repoAuthors)));
 }
@@ -530,6 +536,9 @@ export function applyGates(dim, {
   authors,
   repoAuthors,
   historyRead = true,
+  // What of the history was read, where it was not all of it. Absent means the
+  // clone is whole, which is what every caller meant before this existed.
+  shallow = null,
   areaFileCount,
   areaDirCount,
   // This dimension's counts over the whole repository, on the same population
@@ -561,7 +570,7 @@ export function applyGates(dim, {
   const restCandidates = pooled ? Math.max(0, pooled.candidates - candidates) : 0;
   const restConforming = pooled ? Math.max(0, pooled.conforming - conforming) : 0;
   const dimDirs = distinctDirs(files);
-  const required = historyRead ? authorsRequired(repoAuthors) : null;
+  const required = historyRead ? authorsRequired(repoAuthors, { shallow }) : null;
 
   // The same battery, run once per side. Only the numerator moves: how many
   // files the sites are spread over, how much of the area the construct
@@ -747,6 +756,8 @@ export function verdictFor(
     authors,
     repoAuthors,
     historyRead = true,
+    // What of the history was read, where it was not all of it (D11).
+    shallow = null,
     semantic = null,
     // This dimension's counts over the whole repository, on the same
     // population the gates read. Built by the caller, because only a caller
@@ -774,6 +785,7 @@ export function verdictFor(
     authors,
     repoAuthors,
     historyRead,
+    shallow,
     areaFileCount: shape.fileCount,
     areaDirCount: shape.dirCount,
     pooled,

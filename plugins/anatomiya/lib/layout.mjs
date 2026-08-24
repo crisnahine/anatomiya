@@ -115,9 +115,19 @@ export function isTestFile({ rel, lang, facets }, mirrored = null) {
   // (`test` nested inside `suite`) and this client's whole Cypress suite.
   if (facets?.empty) return false;
   const base = baseOf(rel);
-  if (TEST_NAME.test(base) || RUBY_TEST_NAME.test(base)) return true;
-  if (mirrored?.has(rel)) return true;
+  if (TEST_NAME.test(base)) return true;
   const dir = dirOf(rel);
+  // The Ruby form is the one a non-test file wears in earnest, so it is the one
+  // that has to be corroborated by where the file sits. `software_spec.rb` is
+  // Homebrew's `SoftwareSpec` class and has its own `software_spec_spec.rb`
+  // under `test/`, and a RuboCop cop named for the `Rails.env.test?` guard it
+  // enforces printed a test group of its own in the overview.
+  //
+  // The dotted and hyphen forms keep answering on the name alone, for the
+  // reason `test-shape.mjs` records: discourse writes 4,000 tests as
+  // `login-test.js` and no other signal in them says so.
+  if (RUBY_TEST_NAME.test(base) && underTestTree(dir)) return true;
+  if (mirrored?.has(rel)) return true;
   return dir !== "" && dir.split("/").some((seg) => TEST_DIRS.has(seg));
 }
 
@@ -232,13 +242,35 @@ export function layoutRoots(files, { minFiles, budget = ROOT_BUDGET }) {
   visit("", true);
 
   const covered = new Set(out.flatMap((r) => r.files.map((f) => f.rel)));
-  const leftover = files.filter((f) => !covered.has(f.rel)).length;
+  const stray = files.filter((f) => !covered.has(f.rel));
   const source = new Map(out.map((r) => [r, r.files.filter((f) => f.lang).length]));
   out.sort((a, b) => source.get(b) - source.get(a) || b.files.length - a.files.length || byCode(a.path, b.path));
   const folded = out.slice(budget);
+  const strayDirs = stray.map((f) => dirOf(f.rel));
   return {
     roots: out.slice(0, budget),
-    more: { roots: folded.length, files: folded.reduce((n, r) => n + r.files.length, 0) + leftover },
+    // Three populations, because one sentence used to carry all three and the
+    // noun in it was the folded directories. Summed, this repository's own map
+    // billed one folded root holding 3 files for 21, and the api map charged
+    // 164 files to `public` and `app/views`: 147 in 26 directories, `config` at
+    // 39 of them, `config/initializers` at 33 and `lib/tasks/archived` at 27,
+    // and 17 at the repository root.
+    //
+    // The repository root is counted apart from the directories under the
+    // floor rather than as one of them: `visit` guards the floor test with
+    // `!isRoot`, so the root never took that test and failing it is not why it
+    // has no line. It is also not a place, which is the same answer
+    // `majorityDir` gives. 17 of the api's 164, and 14 of this repository's
+    // 18, sit there.
+    more: {
+      roots: folded.length,
+      files: folded.reduce((n, r) => n + r.files.length, 0),
+      floor: {
+        dirs: new Set(strayDirs.filter((d) => d !== "")).size,
+        files: strayDirs.filter((d) => d !== "").length,
+        root: strayDirs.filter((d) => d === "").length,
+      },
+    },
   };
 }
 
@@ -308,9 +340,13 @@ export const tally = (values) => {
 // The directory name most of the root's tests sit in, which is the difference
 // between a `__tests__` directory and a spec beside the file it covers. Null
 // unless it is where most of them are, or the name would speak for a minority.
+//
+// The vote count travels with the name, because a strict majority is as few as
+// half the group plus one: `8 RSpec specs under admin` named 5 of the 8, and
+// the line had no field to say so.
 const sharedSub = (group, dir) => {
   const ranked = tally(group.map((f) => dirOf(f.rel)).filter((d) => d !== dir).map(baseOf));
-  return ranked.length > 0 && ranked[0][1] * 2 > group.length ? ranked[0][0] : null;
+  return ranked.length > 0 && ranked[0][1] * 2 > group.length ? { name: ranked[0][0], under: ranked[0][1] } : null;
 };
 
 const testGroups = (tests, dir) => {
@@ -321,7 +357,10 @@ const testGroups = (tests, dir) => {
     groups.get(runner).push(f);
   }
   return [...groups]
-    .map(([runner, group]) => ({ runner, files: group.length, sub: sharedSub(group, dir) }))
+    .map(([runner, group]) => {
+      const sub = sharedSub(group, dir);
+      return { runner, files: group.length, sub: sub?.name ?? null, under: sub?.under ?? group.length };
+    })
     .sort((a, b) => b.files - a.files || byCode(a.runner, b.runner));
 };
 

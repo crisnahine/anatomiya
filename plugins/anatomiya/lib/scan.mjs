@@ -84,6 +84,11 @@ export async function scan(cwd, { guards = null, deep = false } = {}) {
   // fails the author gate on every dimension. Only one of them is a real answer.
   const authorsError = authors.error ?? null;
   const historyRead = !authorsError;
+  // A shallow clone's history *was* read; what it holds is a window nobody
+  // chose. Kept apart from `historyRead` for that reason: conflating the two
+  // would route every dimension to the history-unread gate and print the wrong
+  // reason for it.
+  const shallow = authors.shallow ?? null;
   // Read at HEAD and never at the pin: it answers whether this repository has
   // more than one person in it now, not how many it had when it was pinned.
   const repoAuthors = historyRead ? repoAuthorCount(files, authors) : null;
@@ -169,6 +174,7 @@ export async function scan(cwd, { guards = null, deep = false } = {}) {
         authors: authorCount((baselineDim || d).files, authors, baselineDim ? measuredArea.pinned.toCurrent : null),
         repoAuthors,
         historyRead,
+        shallow,
         measured: measuredArea,
         truncated,
         // A tier that answered badly closes its own dimensions and nothing
@@ -231,7 +237,7 @@ export async function scan(cwd, { guards = null, deep = false } = {}) {
       // naming an unread language cannot be counted back off it.
       otherExts: tally(others.map((o) => extOf(o.rel))),
     },
-    authors: { files: authors.size, error: authorsError, repo: repoAuthors },
+    authors: { files: authors.size, error: authorsError, repo: repoAuthors, shallow },
     parse: {
       parsed: head.records.size,
       crashed: head.tallies.crashed,

@@ -278,6 +278,113 @@ test("a second person in the repository restores the two-author requirement", as
   rmSync(dir, { recursive: true, force: true });
 });
 
+test("a clone that holds only a window of history says so, and a whole one says nothing", async (t) => {
+  // `actions/checkout` clones at depth 1 by default. Nothing in the map, the
+  // record or the terminal said the history it counted was a window, and the
+  // author gate moved both ways on it.
+  const dir = repo(t, (d, { write, author, commit }) => {
+    for (let i = 0; i < 3; i++) {
+      author(`p${i}@t.test`);
+      write(`src/m${i}.ts`, `export const m${i} = ${i}\n`);
+      commit(`m${i}`);
+    }
+  });
+
+  assert.equal((await authorsByFile(dir)).shallow, null, "a whole history is not a window");
+
+  const shallow = mkdtempSync(join(tmpdir(), "anatomiya-shallow-"));
+  t.after(() => rmSync(shallow, { recursive: true, force: true }));
+  execFileSync("git", ["clone", "-q", "--depth=1", `file://${dir}`, shallow], { stdio: "pipe" });
+
+  const window = (await authorsByFile(shallow)).shallow;
+  assert.equal(window.commits, 1, "one commit is what a depth-1 checkout holds");
+  assert.match(window.oldest, /^\d{4}-\d{2}-\d{2}T/, "and the moment its history begins");
+});
+
+test("the boundary of a window is its oldest root, whatever order git prints them", async (t) => {
+  // A shallow cut across a merge grafts more than one root. What this pins is
+  // the answer rather than the arithmetic: the boundary is the earliest moment
+  // the clone holds, and it reads as one. Taking the minimum by date is
+  // defensive against an ordering `log` does not promise, and costs nothing:
+  // reverse-chronological already puts the oldest last, so no repository this
+  // can build tells the two apart.
+  const dir = repo(t, (d, { git, write, commit }) => {
+    write("src/first.ts", "export const first = 1\n");
+    commit("first");
+    git("checkout", "-q", "--orphan", "other");
+    write("src/second.ts", "export const second = 2\n");
+    // Dated after the first root, so the newest root sorts first and a reader
+    // that takes the last line still happens to be right; dated before it, the
+    // two orders disagree and only the oldest is the boundary.
+    git("-c", "user.email=second@t.test", "commit", "-qm", "second", "--date=2001-02-03T04:05:06Z");
+    git("checkout", "-q", "main");
+    git("merge", "-q", "--no-edit", "--allow-unrelated-histories", "other");
+  });
+
+  const window = mkdtempSync(join(tmpdir(), "anatomiya-roots-"));
+  t.after(() => rmSync(window, { recursive: true, force: true }));
+  execFileSync("git", ["clone", "-q", "--depth=1", `file://${dir}`, window], { stdio: "pipe" });
+
+  const { shallow } = await authorsByFile(window);
+
+  const roots = execFileSync("git", ["log", "--format=%cI", "--max-parents=0"], { cwd: window, encoding: "utf8" })
+    .trim()
+    .split("\n")
+    .filter(Boolean);
+
+  assert.ok(shallow, "a depth-1 clone is a window");
+  assert.ok(!Number.isNaN(Date.parse(shallow.oldest)), `oldest reads as a moment: ${shallow.oldest}`);
+  assert.equal(
+    Date.parse(shallow.oldest),
+    Math.min(...roots.map((r) => Date.parse(r))),
+    "and it is the earliest of the roots the clone was grafted at"
+  );
+});
+
+test("the scan hands the gate the window it read, not just the author count", async (t) => {
+  // `applyGates` is pinned directly and `scan` passing `shallow` into it was
+  // not, so the wire between them could be cut with the whole suite green.
+  const dir = repo(t, (d, { write, author, commit }) => {
+    for (let i = 0; i < 8; i++) write(`src/m${i}.ts`, `export const m${i} = ${i}\n`);
+    commit("one hand, one commit");
+    author("second@t.test");
+    write("src/other.ts", "export const other = 1\n");
+    commit("two");
+  });
+
+  assert.equal((await scan.scan(dir)).authors.shallow, null, "a whole clone read the whole history");
+
+  const window = mkdtempSync(join(tmpdir(), "anatomiya-window-"));
+  t.after(() => rmSync(window, { recursive: true, force: true }));
+  execFileSync("git", ["clone", "-q", "--depth=1", `file://${dir}`, window], { stdio: "pipe" });
+
+  const truncated = await scan.scan(window);
+  const slots = truncated.areas.flatMap((a) => a.dimensions);
+
+  assert.ok(truncated.authors.shallow, "the record carries what the clone holds");
+  assert.ok(slots.length > 0, "and there are slots for the gate to have reached");
+  assert.deepEqual([...new Set(slots.map((d) => d.authorsRequired))], [2], "every one of them held at two");
+  assert.equal(slots.filter((d) => d.states !== null).length, 0, "so one commit states nothing");
+});
+
+test("a window of history cannot lower the author bar, however few authors it holds", async () => {
+  // The bar is derived from the repository's own author count, so a depth-1
+  // checkout holds one author, drops the bar to one and states more claims than
+  // the whole clone does: 484 against 465 on a measured 15-author repository,
+  // every one of them on single-author evidence, which is what D4 refuses.
+  const files = Array.from({ length: 6 }, (_, i) => `src/m${i}.ts`);
+  const gate = (shallow) =>
+    applyGates(evenly(files), { authors: 1, repoAuthors: 1, shallow, areaFileCount: 6, areaDirCount: 1 });
+
+  assert.equal(gate(null).authorsRequired, 1, "a repository that really has one author keeps its bar");
+  assert.equal(gate(null).directive, true);
+
+  const truncated = gate({ commits: 1, oldest: "2026-01-22T00:43:30Z" });
+  assert.equal(truncated.authorsRequired, 2);
+  assert.equal(truncated.directive, false);
+  assert.equal(truncated.gate, "authors");
+});
+
 test("a bot is not the second author", async () => {
   // A solo public repository with a dependency bot would otherwise read as a
   // two-person team and be blocked forever, which is the same misfire the
