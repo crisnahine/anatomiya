@@ -158,6 +158,21 @@ test("the terminal says the history was a window, how big it was, and what it co
   );
 });
 
+test("a history that could not be read at all says that, and not that it was a window", () => {
+  // The shallow probe is a `rev-parse` and answers even where the log failed,
+  // so both were true at once: the terminal said the gate held claims to counts
+  // and then named a gate no slot was on, because they had all failed the
+  // earlier one.
+  const s = scanSummary(
+    result({ authors: { files: 0, error: "git log failed", repo: null, shallow: { commits: 1, oldest: null } } }),
+    plan()
+  );
+
+  assert.equal(s.historyTruncated, null);
+  assert.ok(scanLines(s).some((l) => l.startsWith("history could not be read")));
+  assert.ok(!scanLines(s).some((l) => l.startsWith("history truncated")));
+});
+
 test("a rule file this tool did not write is named, not counted", () => {
   const lines = scanLines(summary({ rules: { ...summary().rules, foreign: ["house-style.md"] } }));
 
