@@ -38,8 +38,10 @@ the next scan, so counts from before this release and after it are not comparabl
   slot read one author, the bar collapsed to one and the map stated 484 claims where the full clone
   states 465, then told the reader a fifteen-author repository has one author. At `--depth=503` the
   same repository lost 82 conventions and gained none. Nothing on any surface said the clone was
-  shallow. The bar now holds at two, the overview and the terminal both say the history was truncated
-  and how much of it there was, and a depth-1 checkout prints every claim as a count. Decision D11.
+  shallow. The bar now holds at two, both surfaces say the history was truncated, and a depth-1
+  checkout prints every claim as a count. How much of the window there is goes to the terminal
+  alone: the overview owes byte-stability between scans of unchanged source, and a fixed-depth
+  boundary slides forward with every commit that lands upstream. Decision D11.
 - The empty-tail mirror is asked in both directions. `app/mcp` is a Rails autoload root, so stripping
   the tree words left `mcp/mcp` against `mcp` and every file sitting directly there read untested:
   `0 of 13`, `0 of 11`, `0 of 8` where the specs exist and describe the right constants. Nine areas
@@ -48,7 +50,7 @@ the next scan, so counts from before this release and after it are not comparabl
   RuboCop cop named for the `Rails.env.test?` guard it enforces printed a test group of its own in
   the file that loads every turn, telling a reader to mirror a shape the repository does not have.
   The dotted and hyphen forms still answer on the name alone. Decision H35.
-- The scan summary spells a runner and its unit the way every other surface does. It read
+- The scan summary spells a runner, its unit and its count the way every other surface does. It read
   `1 test files under lib/rubocop/custom_cops` beside `1 test file` in the file it summarises, and
   `1369 rspec` where the map said `1368 of 1369 RSpec specs`. Decision H36.
 

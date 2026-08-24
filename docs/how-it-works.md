@@ -431,7 +431,9 @@ Gates are evaluated in that order and the **first** failure is the one recorded 
 `no convention. 0 of 133 sites (ratio)` means ratio failed first, not that ratio was the only
 failure. Where git could not be read at all, the author gate is recorded as `history-unread` rather
 than as a team of zero. Where git answered but held only part of the history, the counts stand as a
-floor rather than as the team, and the overview and the terminal both say so.
+floor rather than as the team, and the overview and the terminal both say so. How much of the
+history there is goes on the terminal alone, since the overview owes byte-stability and a
+fixed-depth boundary moves under it.
 
 The whole battery runs once per side. Only the three numerators move between the claim and its
 inverse: how many files the sites are spread over, how much of the area the construct reaches, and

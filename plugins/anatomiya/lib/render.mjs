@@ -832,10 +832,24 @@ export const untrackedSentence = (n) =>
  * for the same reason `untrackedSentence` is one: the overview and the terminal
  * both say it, and a second spelling is a second answer.
  *
- * The date is git's, so it is read only where it is spelled as a date: a
- * committer date is a value the repository sets.
+ * How much history the window holds is deliberately not in it. This line goes
+ * in the overview, which owes byte-stability between scans of unchanged source,
+ * and both numbers move on their own: on a fixed-depth checkout the boundary
+ * slides forward with every commit that lands upstream. `historyWindow` carries
+ * them, and only the terminal asks for it.
  */
 export function truncatedHistorySentence(shallow) {
+  return shallow ? "history truncated: shallow clone, so author counts are a floor" : null;
+}
+
+/**
+ * How much of the history the clone holds, for the surface that is allowed to
+ * print a number that moves, or null where it could not say.
+ *
+ * The date is git's, so it is read only where it is spelled as one: a committer
+ * date is a value the repository sets.
+ */
+export function historyWindow(shallow) {
   if (!shallow) return null;
   const day = /^\d{4}-\d{2}-\d{2}/.exec(shallow.oldest ?? "")?.[0] ?? null;
   const held = [
@@ -844,7 +858,7 @@ export function truncatedHistorySentence(shallow) {
   ]
     .filter(Boolean)
     .join(" ");
-  return `history truncated: shallow clone${held ? `, ${held}` : ""}, so author counts are a floor`;
+  return held || null;
 }
 
 /**

@@ -133,6 +133,39 @@ test("unread history is reported with the reason it could not be read", () => {
   );
 });
 
+test("the terminal says the history was a window, how big it was, and what it cost", () => {
+  // The overview carries the claim alone, because it owes byte-stability and
+  // both numbers move. This is the surface that may print them.
+  const lines = scanLines(
+    summary({
+      historyTruncated: "history truncated: shallow clone, so author counts are a floor",
+      historyWindow: "503 commits since 2026-01-22",
+      authorGated: 105,
+    })
+  );
+
+  assert.ok(
+    lines.includes(
+      "history truncated: shallow clone, 503 commits since 2026-01-22, so author counts are a floor" +
+        " and 105 claims print as counts on the author gate"
+    ),
+    lines.join("\n")
+  );
+
+  const bare = scanLines(
+    summary({
+      historyTruncated: "history truncated: shallow clone, so author counts are a floor",
+      historyWindow: null,
+      authorGated: 0,
+    })
+  );
+
+  assert.ok(
+    bare.includes("history truncated: shallow clone, so author counts are a floor"),
+    "a clone that could not say how much it holds, whose gate cost nothing, still says it is one"
+  );
+});
+
 test("a rule file this tool did not write is named, not counted", () => {
   const lines = scanLines(summary({ rules: { ...summary().rules, foreign: ["house-style.md"] } }));
 
@@ -325,6 +358,7 @@ test("the summary carries every fact the scan prints", () => {
     // the only thing that fills it, and the count beside it is what the author
     // gate then held to counts.
     historyTruncated: null,
+    historyWindow: null,
     authorGated: 0,
     rules: { foreign: [], unknown: [], unreadable: [], listed: true, replaced: [] },
     removed: 0,

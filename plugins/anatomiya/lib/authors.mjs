@@ -151,7 +151,9 @@ async function headState(root) {
  * than a wrong answer (F15).
  *
  * The boundary is the grafted root, which is the oldest commit the clone holds.
- * `log --max-parents=0` runs newest first, so the last line is that root.
+ * A shallow cut across a merge can graft more than one, and `log` orders by
+ * commit date rather than topologically, so the oldest is taken rather than
+ * whichever line git printed last.
  */
 async function shallowHistory(root) {
   const asked = await gitBuffered(root, ["rev-parse", "--is-shallow-repository"]);
@@ -159,8 +161,9 @@ async function shallowHistory(root) {
   const counted = await gitBuffered(root, ["rev-list", "--count", "HEAD"]);
   const commits = counted.ok ? Number.parseInt(counted.stdout.trim(), 10) : Number.NaN;
   const roots = await gitBuffered(root, ["log", "--format=%cI", "--max-parents=0", "--"]);
-  const oldest = roots.ok ? roots.stdout.trim().split("\n").filter(Boolean).pop() : undefined;
-  return { commits: Number.isFinite(commits) ? commits : null, oldest: oldest ?? null };
+  const grafted = roots.ok ? roots.stdout.trim().split("\n").filter(Boolean) : [];
+  const oldest = grafted.reduce((a, b) => (a === null || Date.parse(b) < Date.parse(a) ? b : a), null);
+  return { commits: Number.isFinite(commits) ? commits : null, oldest };
 }
 
 /**

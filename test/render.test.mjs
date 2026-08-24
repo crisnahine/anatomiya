@@ -5,6 +5,7 @@ import {
   degradedSemanticSentence,
   droppedDirectives,
   renderArea,
+  historyWindow,
   renderOverview,
   truncatedHistorySentence,
   unexaminedLines,
@@ -337,23 +338,31 @@ test("a window of history says so, and does not say whose repository it is", () 
   // `actions/checkout` clones at depth 1, which holds one author whatever the
   // team is. The sentence above printed 644 times over a repository with
   // fifteen, and nothing anywhere said the history was a window.
-  const shallow = { commits: 1, oldest: "2026-01-22T00:43:30Z" };
-  const out = renderOverview(result({ authors: { files: 9, error: null, repo: 1, shallow } }), { uncovered: 30 });
+  const overview = (shallow) =>
+    renderOverview(result({ authors: { files: 9, error: null, repo: 1, shallow } }), { uncovered: 30 });
+  const out = overview({ commits: 1, oldest: "2026-01-22T00:43:30Z" });
 
-  assert.match(out, /^history truncated: shallow clone, 1 commit since 2026-01-22, so author counts are a floor$/m);
+  assert.match(out, /^history truncated: shallow clone, so author counts are a floor$/m);
   assert.ok(!/one author/.test(out), out);
-
   assert.equal(truncatedHistorySentence(null), null, "a whole clone says nothing");
+
+  // How much of the history the window holds is not in it. Both numbers move
+  // on their own: on a fixed-depth checkout the boundary slides forward with
+  // every commit that lands upstream, and A5 owes this file byte-stability
+  // between scans of unchanged source.
+  assert.equal(out, overview({ commits: 604, oldest: "2026-07-19T11:02:00Z" }));
+});
+
+test("the terminal is the surface that says how much of the history there is", () => {
+  assert.equal(historyWindow(null), null);
+  assert.equal(historyWindow({ commits: 503, oldest: "2026-01-22T00:43:30Z" }), "503 commits since 2026-01-22");
+  assert.equal(historyWindow({ commits: 1, oldest: null }), "1 commit");
   assert.equal(
-    truncatedHistorySentence({ commits: null, oldest: null }),
-    "history truncated: shallow clone, so author counts are a floor",
-    "and a clone that could not say how much it holds still says it is one"
-  );
-  assert.equal(
-    truncatedHistorySentence({ commits: 503, oldest: "not a date" }),
-    "history truncated: shallow clone, 503 commits, so author counts are a floor",
+    historyWindow({ commits: 503, oldest: "not a date" }),
+    "503 commits",
     "a committer date is a value the repository sets, so it prints only where it is one"
   );
+  assert.equal(historyWindow({ commits: null, oldest: null }), null, "and a clone that could not say says nothing");
 });
 
 test("the overview is byte-stable across scans of unchanged source", () => {
@@ -1632,21 +1641,25 @@ test("the line that says what did not print is reserved even when only the floor
   // The budget that tells the two apart is the one leaving room for exactly as
   // many lines as there are roots: a roster that has not reserved one for this
   // sentence prints every root and says nothing about the remainder at all.
+  // Asked of each population on its own, because the guard is a disjunction and
+  // a missing term is invisible while any other term is non-zero.
   const corpus = Array.from({ length: 6 }, (_, n) => n).flatMap((n) =>
     Array.from({ length: 8 }, (_, i) => ({ rel: `d${n}/f${i}.ts`, lang: "js", facets: null })));
   const facts = layoutFacts(corpus, { minFiles: 3 });
-  const layout = {
-    ...facts,
-    principles: [],
-    truncated: false,
-    more: { roots: 0, files: 0, floor: { dirs: 3, files: 12, root: 0 } },
-  };
+  const squeezed = (more) =>
+    // Three is the block's own frame: the heading, the blank under it, and the
+    // blank that closes it.
+    renderLayout({ ...facts, principles: [], truncated: false, more }, 3 + facts.roots.length).join("\n");
 
-  // Three is the block's own frame: the heading, the blank under it, and the
-  // blank that closes it.
-  const lines = renderLayout(layout, 3 + facts.roots.length);
-
-  assert.match(lines.join("\n"), /^- and .*12 files in 3 directories under the floor$/m, lines.join("\n"));
+  assert.match(
+    squeezed({ roots: 0, files: 0, floor: { dirs: 3, files: 12, root: 0 } }),
+    /^- and .*12 files in 3 directories under the floor$/m
+  );
+  assert.match(
+    squeezed({ roots: 0, files: 0, floor: { dirs: 0, files: 0, root: 3 } }),
+    /^- and .*3 at the repository root$/m
+  );
+  assert.match(squeezed({ roots: 1, files: 4, floor: { dirs: 0, files: 0, root: 0 } }), /^- and .*holding/m);
 });
 
 test("nothing folded away costs the roster a line", () => {
@@ -1767,8 +1780,10 @@ test("the terminal spells a runner and its unit the way every other surface does
       "roster lines: 0 areas with imports, 0 with reuse"
   );
 
+  // The count too, or the two surfaces still disagree by a number: the map
+  // says `1368 of 1369 RSpec specs under spec` on the line above.
   const rspec = clientLayout({ tests: [{ runner: "rspec", root: "spec", files: 1369, under: 1368 }] });
-  assert.match(layoutSummary(rspec, []), /tests: 1369 RSpec specs under spec;/);
+  assert.match(layoutSummary(rspec, []), /tests: 1368 of 1369 RSpec specs under spec;/);
 });
 
 test("the summary line says tests: none rather than an empty list", () => {

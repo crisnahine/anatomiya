@@ -1,4 +1,10 @@
-import { degradedSemanticSentence, truncatedHistorySentence, unexaminedLines, untrackedSentence } from "./render.mjs";
+import {
+  degradedSemanticSentence,
+  historyWindow,
+  truncatedHistorySentence,
+  unexaminedLines,
+  untrackedSentence,
+} from "./render.mjs";
 import { layoutSummary, plural } from "./render-layout.mjs";
 import { statedSide } from "./facts.mjs";
 import { encode, encodePath, sanitisePath } from "./encode.mjs";
@@ -75,10 +81,11 @@ export function scanSummary(result, plan, { dryRun = false, hook = null } = {}) 
     semantic: degradedSemanticSentence(result.semantic),
     historyError: result.authors.error,
     // What was read, where it was not the whole history, in the overview's own
-    // words, and how many claims the author gate then held to counts. The
-    // sentence is shared; the count is the terminal's, since the overview does
-    // not hold it.
+    // words. The claim is shared with the overview; the two numbers beside it
+    // are the terminal's alone, because the overview owes byte-stability and
+    // both of them move on a repository whose source did not.
     historyTruncated: truncatedHistorySentence(result.authors.shallow),
+    historyWindow: historyWindow(result.authors.shallow),
     authorGated: slots.filter((d) => d.gate === "authors").length,
     rules: {
       foreign: plan.foreign,
@@ -128,11 +135,9 @@ export function scanLines(s) {
   if (s.historyError)
     lines.push(`history could not be read, so every claim fails the author gate: ${s.historyError}`);
   if (s.historyTruncated) {
-    lines.push(
-      s.authorGated > 0
-        ? `${s.historyTruncated} and ${plural(s.authorGated, "claim")} print as counts on the author gate`
-        : s.historyTruncated
-    );
+    const held = s.historyWindow ? `, ${s.historyWindow}` : "";
+    const gated = s.authorGated > 0 ? ` and ${plural(s.authorGated, "claim")} print as counts on the author gate` : "";
+    lines.push(s.historyTruncated.replace(", so author counts are a floor", `${held}, so author counts are a floor`) + gated);
   }
   // Named, not counted. The count was a number the reader then had to go and
   // resolve with `ls`, and the whole point of the line is that these files

@@ -37,7 +37,7 @@ function scratch(t) {
 }
 
 /** A marketplace with both plugins, each carrying its own version and changelog. */
-function repository(t, { anatomiya = "1.2.3", second = "0.4.0", changelogs = {} } = {}) {
+function repository(t, { anatomiya = "1.2.3", second = "7.8.9", changelogs = {} } = {}) {
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-release-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
 
@@ -74,8 +74,8 @@ test("a bare version tag names anatomiya, which has always carried it", () => {
 });
 
 test("a prefixed tag names the plugin it is prefixed with", () => {
-  assert.equal(releaseFor("ultracode-anywhere-v0.4.0")?.plugin, "ultracode-anywhere");
-  assert.equal(releaseFor("ultracode-anywhere-v0.4.0")?.version, "0.4.0");
+  assert.equal(releaseFor("ultracode-anywhere-v7.8.9")?.plugin, "ultracode-anywhere");
+  assert.equal(releaseFor("ultracode-anywhere-v7.8.9")?.version, "7.8.9");
 });
 
 test("a tag no plugin claims is nobody's release", () => {
@@ -161,9 +161,9 @@ test("a lockfile whose entry for the plugin is not an object says nothing rather
 });
 
 test("a version with no section of its own is refused rather than released bare", (t) => {
-  const dir = repository(t, { second: "0.4.0", changelogs: { second: "# Changelog\n\n## [Unreleased]\n" } });
+  const dir = repository(t, { second: "7.8.9", changelogs: { second: "# Changelog\n\n## [Unreleased]\n" } });
 
-  const refused = notesFor(dir, "ultracode-anywhere-v0.4.0");
+  const refused = notesFor(dir, "ultracode-anywhere-v7.8.9");
 
   assert.equal(refused.notes, null);
   assert.match(refused.problem, /ultracode-anywhere\/CHANGELOG\.md/);
@@ -342,12 +342,12 @@ test("the command writes the plugin and version where a workflow reads them", (t
 
   const run = spawnSync(
     process.execPath,
-    [join(ROOT, "scripts", "release.mjs"), "ultracode-anywhere-v0.4.0", "--github-output", out, "--root", dir],
+    [join(ROOT, "scripts", "release.mjs"), "ultracode-anywhere-v7.8.9", "--github-output", out, "--root", dir],
     { cwd: scratch(t), encoding: "utf8" },
   );
 
   assert.equal(run.status, 0, run.stderr);
-  assert.equal(readFileSync(out, "utf8"), "earlier=kept\nplugin=ultracode-anywhere\nversion=0.4.0\n");
+  assert.equal(readFileSync(out, "utf8"), "earlier=kept\nplugin=ultracode-anywhere\nversion=7.8.9\n");
 });
 
 test("the command with no tag prints what it takes", (t) => {
@@ -377,7 +377,7 @@ test("a changelog that is not there is named rather than read as empty", (t) => 
   const dir = repository(t);
   rmSync(join(dir, REL.ultracode, "CHANGELOG.md"));
 
-  assert.match(notesFor(dir, "ultracode-anywhere-v0.4.0").problem, /is missing/);
+  assert.match(notesFor(dir, "ultracode-anywhere-v7.8.9").problem, /is missing/);
 });
 
 
