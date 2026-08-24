@@ -448,17 +448,25 @@ export function namesakeCompanions(sourceFiles, testFiles, rootPath = "", byStem
       // `mcp/mcp` against `mcp`, and every file sitting directly there read
       // untested while the same files read tested one segment up.
       //
-      // Held two ways, because H18 measured the unguarded match at 668 false
+      // Held three ways, because H18 measured the unguarded match at 668 false
       // matches on openproject, 43.5% of everything it found. `tail === ""` is
       // load-bearing rather than tidy: `rootBare` is null on the nested path and
       // the reversed call puts it in the receiver position, so without it this
-      // throws on every repository. And the candidate's own top segment has to
-      // be a tree the repository keeps tests in, or any deeper directory that
-      // happens to share a tail answers.
+      // throws on every repository. The candidate's own top segment has to be a
+      // tree the repository keeps tests in, or any deeper directory that happens
+      // to share a tail answers. And it has to be the same language, the way the
+      // flat pair below already is: the forward direction matched a shape and
+      // this one matches a name, so mastodon's `app/javascript/mastodon/models`
+      // took `spec/models`, the Ruby specs covering `app/models`, for 8 of its
+      // 17 files. Measured over the corpus, that guard is the whole difference
+      // between 27 gains and 24.
       const rootMirror =
         tail === "" &&
         (mirrors(t.bare, rootBare) ||
-          (t.bare !== "" && TEST_TREES.has(t.dir.split("/")[0]) && mirrors(rootBare, t.bare)));
+          (t.bare !== "" &&
+            TEST_TREES.has(t.dir.split("/")[0]) &&
+            language(t.rel) === language(f.rel) &&
+            mirrors(rootBare, t.bare)));
       const whole =
         tail === "" ? rootMirror || topLevel : t.dir === tail || t.dir.endsWith(`/${tail}`);
       // A test that imports this very file has named what it covers, so it

@@ -171,6 +171,25 @@ test("the reversed mirror is asked of a test tree and of nothing else", () => {
   );
 });
 
+test("the reversed mirror does not cross a language", () => {
+  // mastodon keeps `app/javascript/mastodon/models/account.ts` beside
+  // `app/models/account.rb`, and `spec/models/account_spec.rb` covers the Ruby
+  // one. Asked in reverse with no language test, the TypeScript model was
+  // credited with the Ruby spec: 8 of its 17 files, on a corpus measurement.
+  // The forward direction already matched a shape; this one matches a name.
+  const src = [file("app/javascript/mastodon/models/account.ts")];
+  const tst = [file("spec/models/account_spec.rb")];
+
+  assert.deepEqual(namesakeCompanions(src, tst, "app/javascript/mastodon/models"), { with: 0, of: 1, root: null });
+
+  const ruby = [file("app/mcp/mcp/context.rb")];
+  assert.equal(
+    namesakeCompanions(ruby, [file("spec/mcp/context_spec.rb")], "app/mcp/mcp").with,
+    1,
+    "and the same shape within one language still answers"
+  );
+});
+
 test("a candidate whose directory is nothing but tree words is not asked in reverse", () => {
   // `withoutTree("spec")` is the empty string, and an empty candidate matched
   // against the root would answer whatever sits under it.
