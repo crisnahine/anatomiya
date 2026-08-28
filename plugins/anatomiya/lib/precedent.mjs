@@ -8,7 +8,7 @@
  * instead, and answers it from counts the scan already took (H38).
  */
 import { RUBY_TEST_NAME, TEST_DIRS, TEST_NAME, TEST_ROOTS } from "./test-shape.mjs";
-import { isSource } from "./corpus.mjs";
+import { isDenied, isExcludedDir, isSource } from "./corpus.mjs";
 import { LEVEL_ONLY_LABEL } from "./layout.mjs";
 import { testsParts } from "./render-layout.mjs";
 
@@ -30,9 +30,14 @@ export const PRECEDENT_FLOOR = 3;
  * `tsconfig.test.json`, all measured in the corpus. A snapshot is written by a
  * test rather than being one, and none of them is a file whose placement this
  * has anything to say about.
+ *
+ * Held to the same population every other reader counts, too. This is asked of
+ * names off the disk as well as of paths out of a diff, and a directory holding
+ * one ignored `scratch_spec.rb` was reading as a directory with a test habit:
+ * four findings became none.
  */
 export function isTestPath(rel) {
-  return isSource(rel) && (TEST_NAME.test(rel) || RUBY_TEST_NAME.test(rel));
+  return isSource(rel) && !isDenied(rel) && !isExcludedDir(rel) && (TEST_NAME.test(rel) || RUBY_TEST_NAME.test(rel));
 }
 
 /**

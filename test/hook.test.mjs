@@ -570,6 +570,30 @@ test("a path something is already at is not a path being chosen", (t) => {
   assert.deepEqual(JSON.parse(fireNotice(dir, spec).stdout), {});
 });
 
+test("a directory nobody can list is not a directory with nothing in it", needsUnreadableDirs, (t) => {
+  // C33 again, at a new reader. What decides whether the finding prints is
+  // whether the directory holds another test, and a directory that could not be
+  // read answers neither yes nor no. Reported as holding none, it stated a fact
+  // it had not read: the sibling spec was in git the whole time.
+  const dir = railsish(t);
+  mkdirSync(join(dir, "spec/mailers"), { recursive: true });
+  writeFileSync(join(dir, "spec/mailers/admin_mailer_spec.rb"), "RSpec.describe Admin do; end\n");
+  chmodSync(join(dir, "spec/mailers"), 0o111);
+
+  let out;
+  try {
+    out = fireNotice(dir, join(dir, "spec/mailers/user_mailer_spec.rb")).stdout;
+  } finally {
+    // Put it back here rather than in an `after`, which runs too late for the
+    // cleanup that removes the directory.
+    chmodSync(join(dir, "spec/mailers"), 0o755);
+  }
+
+  assert.deepEqual(JSON.parse(out), {});
+});
+
+
+
 test("the notice answers an object and exits 0 for anything it cannot decide", (t) => {
   const dir = railsish(t);
   const cases = [

@@ -415,7 +415,7 @@ function classify(root, rel, generatedRules) {
  * left in the buffer at exit is half a path and not a name that happens to lack
  * a delimiter.
  */
-function lsFiles(root, onEntry, extra = []) {
+export function lsFiles(root, onEntry, extra = []) {
   // An empty field is a delimiter run rather than a listed path, and the caller
   // classifies paths.
   return gitStreamed(root, ["ls-files", "-z", ...extra, "--"], (rel) => (rel ? onEntry(rel) : true));
