@@ -15,6 +15,9 @@ import { formatReport, CAVEATS } from "../plugins/anatomiya/lib/check-report.mjs
 import { scan } from "../plugins/anatomiya/lib/scan.mjs";
 import { writeMap } from "../plugins/anatomiya/lib/write.mjs";
 import { writeFacts } from "../plugins/anatomiya/lib/facts.mjs";
+import { buildPin, writePin } from "../plugins/anatomiya/lib/baseline.mjs";
+import { collect } from "../plugins/anatomiya/lib/corpus.mjs";
+import { discover } from "../plugins/anatomiya/lib/areas.mjs";
 
 // The area record carries a glob in the two halves it is composed from.
 const glob = (dir) => ({ negated: false, dir, tail: "**/*.ts" });
@@ -129,6 +132,155 @@ function assertExamined(report, path) {
   const skipped = notes(report).filter((m) => m.includes(path));
   assert.deepEqual(skipped, [], `${path} was skipped: ${skipped.join("; ")}`);
 }
+
+/**
+ * A Rails-shaped repository, scanned and pinned for real.
+ *
+ * The precedent rule reads `layout.roots`, which the hand-built `facts` helper
+ * above never writes, so a fixture there proves nothing about the wiring: the
+ * counts have to come off a scan of a real tree.
+ */
+async function railsish(t, { pin = true } = {}) {
+  const dir = repo(t, ({ write, commit }) => {
+    for (const n of ["admin", "user", "hubspot", "cim_share"]) {
+      write(`app/mailers/${n}_mailer.rb`, `class ${n}Mailer < ApplicationMailer\nend\n`);
+    }
+    for (const n of ["alpha", "beta", "gamma", "delta", "epsilon", "zeta"]) {
+      write(`app/services/${n}.rb`, `class ${n}\nend\n`);
+      write(`spec/services/${n}_spec.rb`, `RSpec.describe ${n} do\nend\n`);
+    }
+    commit("init");
+  });
+  writeMap(await scan(dir), {});
+  // Pinned as well as scanned: with no pin the map reads stale and every
+  // finding caps at NIT, so an unpinned fixture proves nothing about severity.
+  if (!pin) return dir;
+  const { files } = await collect(dir);
+  writePin(dir, buildPin(discover(files), { sha: sha(dir), corpus: files.length }));
+  return dir;
+}
+
+test("a test added where its own siblings have none is a finding, and one added beside theirs is not", async (t) => {
+  // The whole of H38, read off a scan rather than a fixture: `spec/mailers/`
+  // did not exist before the change, so every content rule finds the file
+  // conforming with itself and only this one asks whether it belongs there.
+  const dir = await railsish(t);
+  const base = sha(dir);
+  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
+
+  writeFileSync(join(dir, "spec/services/eta_spec.rb"), "RSpec.describe Eta do\nend\n");
+  mkdirSync(join(dir, "spec/mailers"), { recursive: true });
+  writeFileSync(join(dir, "spec/mailers/cim_share_mailer_spec.rb"), "RSpec.describe CimShareMailer do\nend\n");
+  git("add", "-A");
+  git("commit", "-qm", "specs");
+
+  const report = await check(dir, { baseRef: base });
+  const found = forKey(report, "test_precedent");
+
+  assert.equal(found.length, 1, JSON.stringify(found));
+  assert.equal(found[0].path, "spec/mailers/cim_share_mailer_spec.rb");
+  assert.equal(found[0].severity, "FIX");
+  assert.match(found[0].reason, /app\/mailers: 4 files, 0 with a namesake test/);
+});
+
+test("a test still sitting in the working tree is asked the same question as a committed one", async (t) => {
+  // The whole reason this reads the tree: the answer is wanted before the
+  // commit, not after. An addition arrives from `git status` rather than from
+  // the diff, and a relocation arrives from it spelled `M` with an `orig`,
+  // never `R`, so a rule reading the status letters let the staged move past.
+  const dir = await railsish(t);
+  const base = sha(dir);
+  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
+
+  mkdirSync(join(dir, "spec/mailers"), { recursive: true });
+  writeFileSync(join(dir, "spec/mailers/cim_share_mailer_spec.rb"), "RSpec.describe CimShareMailer do\nend\n");
+  git("mv", "spec/services/zeta_spec.rb", "spec/mailers/zeta_mailer_spec.rb");
+
+  const found = forKey(await check(dir, { baseRef: base }), "test_precedent");
+  const byPath = new Map(found.map((f) => [f.path, f]));
+
+  assert.equal(found.length, 2, JSON.stringify(found));
+  assert.equal(byPath.get("spec/mailers/cim_share_mailer_spec.rb").oldPath, null);
+  assert.equal(byPath.get("spec/mailers/zeta_mailer_spec.rb").oldPath, "spec/services/zeta_spec.rb");
+});
+
+test("an unpinned repository still gets the finding at the ceiling its own header names", async (t) => {
+  // What makes this rule cap is the comparison, since that is what says a file
+  // arrived; a map with no pin caps at FIX like every other rule and does not
+  // stop the diff saying `A`. Reading the two together printed a NIT saying the
+  // run could not establish what the change added, on a run that had.
+  const dir = await railsish(t, { pin: false });
+  const base = sha(dir);
+  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
+
+  mkdirSync(join(dir, "spec/mailers"), { recursive: true });
+  writeFileSync(join(dir, "spec/mailers/cim_share_mailer_spec.rb"), "RSpec.describe CimShareMailer do\nend\n");
+  git("add", "-A");
+  git("commit", "-qm", "spec");
+
+  const [found] = forKey(await check(dir, { baseRef: base }), "test_precedent");
+
+  assert.equal(found.severity, "FIX");
+  assert.doesNotMatch(found.reason, /could not establish/);
+});
+
+test("a change that invents a directory and fills it is not excused by its own first file", async (t) => {
+  // What "already holds a test" means differs between the two callers. The
+  // hook asks the disk, where nothing yet comes from the write it is about; a
+  // check has to leave out everything the same change brought, or three of
+  // four specs are excused by the first one landing.
+  const dir = await railsish(t);
+  const base = sha(dir);
+  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
+
+  mkdirSync(join(dir, "spec/mailers"), { recursive: true });
+  for (const n of ["admin", "user", "hubspot"]) {
+    writeFileSync(join(dir, `spec/mailers/${n}_mailer_spec.rb`), `RSpec.describe ${n} do\nend\n`);
+  }
+  git("add", "-A");
+  git("commit", "-qm", "specs");
+
+  const found = forKey(await check(dir, { baseRef: base }), "test_precedent");
+
+  assert.equal(found.length, 3, JSON.stringify(found.map((f) => f.path)));
+  for (const f of found) assert.match(f.reason, /^spec\/mailers holds no other test;/);
+});
+
+test("a test landing beside one that was already there is following it", async (t) => {
+  // Issue 120 asked for both halves: "a test file in a directory holding no
+  // other test file, in a repository whose sibling ratio for that kind is 0 of
+  // N". The root's ratio alone flagged a spec that had a sibling right there.
+  const dir = await railsish(t);
+  mkdirSync(join(dir, "spec/mailers"), { recursive: true });
+  writeFileSync(join(dir, "spec/mailers/admin_mailer_spec.rb"), "RSpec.describe Admin do\nend\n");
+  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
+  git("add", "-A");
+  git("commit", "-qm", "first spec");
+  const base = sha(dir);
+
+  writeFileSync(join(dir, "spec/mailers/user_mailer_spec.rb"), "RSpec.describe User do\nend\n");
+  git("add", "-A");
+  git("commit", "-qm", "second spec");
+
+  assert.deepEqual(forKey(await check(dir, { baseRef: base }), "test_precedent"), []);
+});
+
+test("a test moved into a directory with no precedent is the same deviation as one written there", async (t) => {
+  // git reports a relocation as `R`, so a rule reading only `A` let the move
+  // past while refusing the identical file written fresh.
+  const dir = await railsish(t);
+  const base = sha(dir);
+  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
+
+  mkdirSync(join(dir, "spec/mailers"), { recursive: true });
+  git("mv", "spec/services/zeta_spec.rb", "spec/mailers/zeta_mailer_spec.rb");
+  git("commit", "-qm", "move");
+
+  const [found] = forKey(await check(dir, { baseRef: base }), "test_precedent");
+
+  assert.equal(found.path, "spec/mailers/zeta_mailer_spec.rb");
+  assert.equal(found.oldPath, "spec/services/zeta_spec.rb");
+});
 
 test("a rename with no content change reports nothing", async (t) => {
   // Keying on path plus line would forge every site in the file: a pure git mv

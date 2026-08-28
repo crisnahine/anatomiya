@@ -87,9 +87,12 @@ echo '.claude/anatomiya/' >> "$exclude"
 `--git-common-dir` rather than `.git`, because inside a linked worktree `.git` is a file holding a
 pointer. The common dir is shared, so one set of lines covers every worktree.
 
-Those two lines are everything a scan leaves behind. The hook that re-delivers the map after every
-turn and every tool call is declared by the plugin, in its own `hooks/hooks.json`, so nothing is
-written into your settings. Versions 0.2.4 through 0.2.6 did write one into
+Those two lines are everything a scan leaves behind. Two hooks are declared by the plugin, in its own
+`hooks/hooks.json`, so nothing is written into your settings. One re-delivers the map after every
+turn and every tool call. The other runs before a `Write`, an `Edit` or a `NotebookEdit`, and speaks
+only for a path where a test is going into a directory whose kind of file has no test of its own
+anywhere: silent on every other write, which is nearly all of them. It informs and never refuses.
+`check` asks the same question of a whole branch, as `test_precedent`. Versions 0.2.4 through 0.2.6 did write one into
 `.claude/settings.local.json`, where the plugin path it names is never substituted and Claude Code
 refuses the hook by name on every prompt; a scan takes that entry out when it finds one, and leaves
 everything else in the file alone.
@@ -349,7 +352,7 @@ gate's second opinion. The full numbers and their caveats are in [docs/why.md](d
 - [docs/plugin-contract.md](docs/plugin-contract.md) is what Claude Code requires of a plugin and a
   marketplace, read against the documentation and the CLI itself, with a source per claim and the
   version it was true of.
-- [DECISIONS.md](DECISIONS.md) is the build contract: 191 numbered decisions, each with the
+- [DECISIONS.md](DECISIONS.md) is the build contract: 196 numbered decisions, each with the
   measurement or the review finding that forced it. Why a threshold is where it is, why the parser
   runs in child processes, why there is no hook: that is the file.
 - [docs/why.md](docs/why.md) is the longer argument and the full numbers.

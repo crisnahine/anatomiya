@@ -7,6 +7,130 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-08-29
+
+Every rule until now asked whether a file's contents matched its directory's claims, which a file that
+creates its own directory answers with itself: it is the only member, it conforms, every time. So the
+one case guaranteed to pass was the one where a convention was most likely broken. `check` now asks
+the prior question, whether a test the change added belongs where it was put, and a second hook asks
+it before the file is written rather than after. The map says which way that goes when a testing rule
+says otherwise. Asked of every test file that already exists in 35 repositories, on the reasoning that
+a mature repository put them where it meant to, the rule finds two.
+
+The measurement harness ran at one model and whatever effort the machine happened to be set to, and
+recorded the model alone. It now runs at one named engine, `claude-opus-5[1m]` at `medium`, states
+both on the command line, takes the variables and the one settings rung that outrank those
+flags out of the way, and reads the answer back so the record is the engine that served the batch
+rather than the one it asked for. The `ultracode-anywhere` reminder stops asking for a second effort
+on some workflow stages. Measurements taken before this release name no effort and no window, so they
+do not merge with ones taken after it.
+
+### Fixed
+
+- `test/session-start.test.mjs` no longer reads the machine's installed Claude Code. Its second half
+  rewrote the fixture build without truncating it back to a bundle's size, so the file stopped being a
+  candidate, the walk fell through to the real `claude`, and the case passed only while that build sat
+  inside the calibrated run of patches. It went red on 2.1.251 having never tested what it claimed.
+- Every measurement trial now names its effort as well as its model, and both are recorded. The
+  harness said each setting was fixed rather than inherited and named only the model, so the effort
+  came from whatever the machine was set to. Claude Code 2.1.250 reads `CLAUDE_CODE_EFFORT_LEVEL`
+  ahead of the session's own effort and says so in its own words, "CLAUDE_CODE_EFFORT_LEVEL overrides
+  effort for this session", and more variables move the model, the thinking budget or the
+  context window the same way. Decision G11.
+- A held measurement no longer accumulates with a batch run at another effort. The guard read the
+  model alone, so a medium batch and an xhigh batch summed into one tally claiming 60 samples of a
+  run that never happened. An entry from before the effort was recorded carries none, and that
+  absence matches no batch that names one; `--force` replaces it with one that says. A refusal prints
+  which half of the engine it disagreed on, since the trials are paid for by the time it fires,
+  grouped by the engine in the way rather than one line per key. The model string moved as well,
+  from `claude-opus-5` to `claude-opus-5[1m]`, so all 24 measured rows in the shipped table refuse on
+  both halves and keep the older engine's answer until somebody re-measures them with `--force`.
+  Decision G11.
+- `scripts/measure-defaults.mjs` reads the table it is about to write before it spends a trial. An
+  `--out` naming a file it could not read spent every call in the batch and then died on the open.
+- A run served by a model it did not ask for records both: the substitute under `model`, and what was
+  asked for under `asked`, so the table and the result file carry it rather than the console alone.
+- `--tasks` naming no task it knows is refused by name. It ran zero trials and then reported "no
+  parseable output was produced", which names a cause that never happened.
+- A refusal between building the arms and removing them no longer leaves two worktrees registered in
+  the repository under measurement. `die` exits the process, and an exit skips the `finally` that
+  removes them, so those refusals throw instead.
+- `scripts/measure-defaults.mjs` refuses a flag left without its value. `--effort` standing last in
+  argv read as no value at all, the pinned level filled in for it, and the batch ran at a level
+  nobody asked for; `--tasks` in the same place threw on `undefined.split`.
+
+### Added
+
+- `check` asks whether a file the change added belongs where it was put, not only whether its contents
+  match. Every other rule asks the second question, so a file that creates its own directory is the
+  only member of it and conforms with itself: `spec/mailers/cim_share_mailer_spec.rb`, in a repository
+  whose four mailers have no specs, was examined and produced nothing. A test added where the source
+  root it covers has three or more producers and none of them with a namesake test, and whose own
+  directory holds no other test, is a FIX, dropping to NIT only where no comparison against a base
+  could be made. That last condition is the nearest evidence there is, and what "already" means
+  differs between the two callers: nothing the write-time notice can see came from the write it is
+  about, so it excludes only the target, while a check excludes everything the same change brought,
+  or three of four specs landing in one invented directory are excused by the first. A test relocated into such a directory
+  counts as one arriving there, read off the path its base version comes from rather than off the
+  status letter, which spells one move two ways: `R` from the diff and `M` with an `orig` from a
+  working tree where the move is staged and not yet committed, which is the state a run before the
+  commit is asked in. Four guards keep it quiet where the counts cannot carry a verdict: a repository
+  that pairs no tests anywhere, a source root holding three or more tests of its own, a root recorded
+  for the files at one level whose record says nothing about its subtree, and a path tail more than one
+  root answers to where any of them is already paired. A test file is held to a source extension as
+  well as to its name, so a `.snap`, a `.sql` and a `tsconfig.test.json` are not tests. Asked of every
+  existing test file in all 35 corpus repositories, on the reasoning that a mature repository put them
+  where it meant to, the rule finds 2, both in the repository it was written for. The finding names
+  the tests a directory does hold rather than the ratio alone, and says what was counted, "Nothing here
+  was matched to a test by name", rather than a conclusion the count cannot carry. Decision H38,
+  issue #120.
+- A second hook, on `PreToolUse` for `Write`, `Edit` and `NotebookEdit`, answering for the one path that
+  call is about: whether a test is going where its kind of file has no test precedent. Silent on every
+  other write, which is nearly all of them. The claims used to arrive only after the file existed, and an
+  area's own file loads only when something in that area is read, so the directory nobody read said
+  nothing at the moment its path was chosen. It informs and never refuses: `deny` and `ask` are the only
+  answers that stop a path being chosen, and the rule behind the notice rests on a namesake match that
+  can read a tested directory as untested. It answers only for a path nothing is at yet, since an
+  `Edit` names a file that exists every time and repeating the block on each edit of the same spec is
+  the unchanged banner it exists instead of. Decision A44, issue #119.
+- The map states which way the conflict goes, where a directory has producers and no tests: "An
+  instruction to always write a test does not override a directory with no test precedent." A count and
+  an imperative read in the same voice, and the imperative wins unless the map says otherwise.
+  Decision H39.
+- The precedent finding names the tests a directory does hold, not only the ratio. `0 of 1003 have a
+  namesake test` never spoke about `__tests__/helper.test.ts`, because that is not a namesake, so it
+  forbade nothing; it now reads `0 with a namesake test; 2 vitest specs under __tests__, none of them
+  a namesake`. A directory holding three or more such tests has a habit and is left alone. Decision
+  H38.
+- Every trial asks for `--output-format json` and reads `modelUsage` back, so provenance and the A/B
+  result file carry the model that served the batch and the context window it got, rather than the
+  flags that asked for them. Nothing else can confirm the 1M half: the `[1m]` suffix never reaches the
+  wire, it becomes the `context-1m-2025-08-07` beta header. Trials reporting two engines are refused
+  rather than written up as one, and a batch that reported none records the request and says so.
+- `CLAUDE_CODE_NO_MODEL_FALLBACK` is set for every trial. The build substitutes another model when the
+  chosen one is refused, in its own words "model substitution is disabled" when this is set, so
+  without it a trial could answer from a substitute and be recorded under the pinned name.
+- A run refuses to start when a settings `env` entry names one of them. No environment scrub
+  reaches a settings file, since the child reads its own after it starts, and `settings.env` is the
+  one rung above the flags a trial passes: measured on 2.1.250, `--effort` beats `ultracode: true`,
+  `modelSettings` and `effortLevel`. The machine this was written on carries `effortLevel: "medium"`
+  beside `modelSettings["claude-opus-5"].effortLevel: "xhigh"`, which is what the old harness ran at,
+  since it passed no effort at all.
+- Both settings files are taken out of each arm. `settings.env` sits above the CLI flag, and an arm is
+  a worktree of the repository under measurement, so a checked-in settings file naming
+  `CLAUDE_CODE_EFFORT_LEVEL` chose the engine that measured it. `--setting-sources ''` is not the
+  answer: measured on 2.1.250, it removes the map as well.
+- `--effort` on `scripts/ab.mjs` and `scripts/measure-defaults.mjs`, refused at the door for a level
+  the CLI does not take rather than 30 trials in. The A/B result file gains an effort row, rendered
+  from the engine that ran rather than from the argument that asked for it.
+- A test that reads the installed Claude Code for every environment variable shaped like a model, an
+  effort or a thinking budget, and fails on one the scrub list has not ruled on. The list is written
+  against one build and the build gains variables every release; left alone it becomes a guess while
+  every row still says medium. Names deliberately kept are listed with their reason.
+- A test that reads the installed Claude Code for the model id and the effort vocabulary the harness
+  pins, and skips where no build is installed. A pinned model id outlives no release on its own; the
+  CLI refuses an unknown one at the first trial, and this says it at `npm test` instead.
+
 ## [0.3.3] - 2026-08-24
 
 Eight defects: the six on the tracker, all found by reading maps this tool had already written and
@@ -2112,7 +2236,8 @@ which are partial; several listed there are not implemented yet.
 - No claim that this catches defects. Measured across ten repositories, 1 of 317 defect review
   comments was preventable by a conventions map.
 
-[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.3.3...HEAD
+[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/crisnahine/anatomiya/compare/v0.3.3...v0.4.0
 [0.3.3]: https://github.com/crisnahine/anatomiya/compare/v0.3.2...v0.3.3
 [0.3.2]: https://github.com/crisnahine/anatomiya/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/crisnahine/anatomiya/compare/v0.3.0...v0.3.1

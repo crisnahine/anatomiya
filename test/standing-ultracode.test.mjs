@@ -86,6 +86,17 @@ test("the first turn carries the whole standing opt-in", (t) => {
   assert.match(out.hookSpecificOutput.additionalContext, /opts\.effort/);
 });
 
+test("the reminder holds one effort all the way down rather than naming a higher one", () => {
+  // The text used to name 'high' and 'xhigh' for the stages that wanted depth,
+  // which is the one place in this repository that asked for a second effort.
+  // A session set to one level is that level everywhere, subagents included.
+  const text = contextFor(1);
+
+  assert.doesNotMatch(text, /\b(xhigh|max)\b/, "no stage is told to run above the session's level");
+  assert.match(text, /leave opts\.effort alone/);
+  assert.match(text, /Every subagent and every workflow stage runs at that same level/);
+});
+
 test("the whole text lands once, then a one-line refresher every tenth turn and silence between", (t) => {
   // The built-in says it once and keeps a short line every tenth turn after.
   // Repeating the full text on a cadence, or a refresher on every turn, is
