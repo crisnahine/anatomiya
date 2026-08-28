@@ -226,17 +226,22 @@ function resolveLinks(path) {
  * Whether a directory under this repository already holds a file the caller
  * calls a test.
  *
- * For the hook only, where the write has not happened: everything in that
- * directory was there before, so nothing has to be subtracted. A directory that
- * cannot be listed answers no, which leaves the rule where it was.
+ * A directory that is not there holds nothing, which is the ordinary answer for
+ * a path a change is inventing. Anything else that goes wrong answers that it
+ * does hold one, because this decides whether a finding is printed and a
+ * directory nobody could list is not evidence that it is empty (C33): a
+ * `spec/mailers` at mode 111, with a sibling spec in it the whole time, was
+ * reported as holding no other test.
  */
 export function holdsTestIn(root, isTest) {
   return (dir) => {
+    let names;
     try {
-      return readdirSync(join(root, dir)).some((name) => isTest(dir ? `${dir}/${name}` : name));
-    } catch {
-      return false;
+      names = readdirSync(join(root, dir));
+    } catch (err) {
+      return err.code !== "ENOENT";
     }
+    return names.some((name) => isTest(dir ? `${dir}/${name}` : name));
   };
 }
 

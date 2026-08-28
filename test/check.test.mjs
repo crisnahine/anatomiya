@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { needsPosixPaths } from "./platform.mjs";
+import { needsPosixPaths, needsUnreadableDirs } from "./platform.mjs";
 import fs, { mkdtempSync, mkdirSync, writeFileSync, readFileSync, symlinkSync, rmSync, existsSync } from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
@@ -244,6 +244,51 @@ test("a change that invents a directory and fills it is not excused by its own f
 
   assert.equal(found.length, 3, JSON.stringify(found.map((f) => f.path)));
   for (const f of found) assert.match(f.reason, /^spec\/mailers holds no other test;/);
+});
+
+test("an index this cannot read is not a repository with no tests in it", async (t) => {
+  // C33 at this reader. What decides whether the finding prints is whether the
+  // directory already holds a test, and a listing that failed answers neither
+  // yes nor no: printed as no, the run states a fact it never read.
+  const dir = await railsish(t);
+  mkdirSync(join(dir, "spec/mailers"), { recursive: true });
+  writeFileSync(join(dir, "spec/mailers/admin_mailer_spec.rb"), "RSpec.describe Admin do\nend\n");
+  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
+  git("add", "-A");
+  git("commit", "-qm", "first spec");
+  const base = sha(dir);
+
+  writeFileSync(join(dir, "spec/mailers/user_mailer_spec.rb"), "RSpec.describe User do\nend\n");
+  git("add", "-A");
+  git("commit", "-qm", "second spec");
+  writeFileSync(join(dir, ".git/index"), "not an index");
+
+  assert.deepEqual(forKey(await check(dir, { baseRef: base }), "test_precedent"), []);
+});
+
+test("a file git does not track is not this repository's habit", async (t) => {
+  // The only read here that does not come through `git ls-files`, so it was the
+  // only one counting build output and scratch files. One ignored
+  // `scratch_spec.rb` in the directory silenced the rule for every file in it.
+  const dir = await railsish(t);
+  const base = sha(dir);
+  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
+
+  mkdirSync(join(dir, "spec/mailers"), { recursive: true });
+  writeFileSync(join(dir, ".gitignore"), "spec/mailers/scratch_spec.rb\n");
+  writeFileSync(join(dir, "spec/mailers/scratch_spec.rb"), "RSpec.describe Scratch do\nend\n");
+  for (const n of ["admin", "user"]) {
+    writeFileSync(join(dir, `spec/mailers/${n}_mailer_spec.rb`), `RSpec.describe ${n} do\nend\n`);
+  }
+  git("add", "-A");
+  git("commit", "-qm", "specs");
+
+  const found = forKey(await check(dir, { baseRef: base }), "test_precedent");
+
+  assert.deepEqual(found.map((f) => f.path).sort(), [
+    "spec/mailers/admin_mailer_spec.rb",
+    "spec/mailers/user_mailer_spec.rb",
+  ]);
 });
 
 test("a test landing beside one that was already there is following it", async (t) => {

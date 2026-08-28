@@ -7,6 +7,27 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-08-29
+
+Two reads that decided whether a finding printed, both answering a question they
+had not been able to ask.
+
+### Fixed
+
+- A directory nobody can list is no longer read as a directory holding no test.
+  `readdir` failing answered no, so a `spec/mailers` at mode 111 was reported as
+  holding no other test with a sibling spec in it the whole time. Only a
+  directory that is not there answers no now; anything else answers that it does
+  hold one, which is the direction C33 settled.
+- The same question is answered from what git tracks rather than off the disk,
+  which is the population every other reader here counts. One ignored
+  `scratch_spec.rb` in a directory read as a test habit and silenced the rule
+  for every file in it: four findings became none. A listing that fails answers
+  the same way an unreadable directory does. The write-time notice still reads
+  the directory, since a `git ls-files` per write is a subprocess per write, so
+  it is the quieter of the two where a stray file sits there and the check
+  catches what it let past.
+
 ## [0.4.0] - 2026-08-29
 
 Every rule until now asked whether a file's contents matched its directory's claims, which a file that
@@ -2236,7 +2257,8 @@ which are partial; several listed there are not implemented yet.
 - No claim that this catches defects. Measured across ten repositories, 1 of 317 defect review
   comments was preventable by a conventions map.
 
-[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/crisnahine/anatomiya/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/crisnahine/anatomiya/compare/v0.3.3...v0.4.0
 [0.3.3]: https://github.com/crisnahine/anatomiya/compare/v0.3.2...v0.3.3
 [0.3.2]: https://github.com/crisnahine/anatomiya/compare/v0.3.1...v0.3.2

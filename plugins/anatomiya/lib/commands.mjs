@@ -80,10 +80,10 @@ export function runNotice(cwd, payload) {
   // turns ago, and an `Edit` names one every time: saying it again on each edit
   // of the same spec is the block on every result this exists instead of.
   if (isPathTaken(join(found.root, rel))) return {};
-  // Excluding the path itself, the way `check` excludes everything its change
-  // brought: "holds no other test" is the question, and counting the target
-  // would answer it with the target.
-  const holdsTest = holdsTestIn(found.root, (path) => isTestPath(path) && path !== rel);
+  // No exclusion to make, unlike `check`, which subtracts everything its change
+  // brought: the guard above has already answered for a path something is at,
+  // so anything this finds in that directory is another file.
+  const holdsTest = holdsTestIn(found.root, isTestPath);
   const additionalContext = noticeFor(rel, found.layout, { holdsTest });
   if (additionalContext === null) return {};
   return { hookSpecificOutput: { hookEventName: event, additionalContext } };
