@@ -469,6 +469,13 @@ the same predicates the scan uses. A learned row's default is a class rather tha
 learned class equal to the model's own renders as counts too. An unmeasured entry reads `none`
 and fails open: the dimension keeps stating.
 
+Each entry names the engine it was measured at, and two engines never merge into one tally. The 24
+measured entries shipped so far say `claude-opus-5` and name no effort, which is the engine the
+harness ran before it pinned one; it now runs `claude-opus-5[1m]` at `medium`. So a fresh run
+refuses all 24, says so in one line, and leaves them standing. They stay the older engine's answer
+until someone re-measures them with `--force`, which replaces rather than adds. Reading their silence
+about effort as `medium` would date them to a setting nobody can check they ran at.
+
 ## 6. The baseline and `pin`
 
 Every gate reads the **baseline** population, not today's files. The counts from today print beside
@@ -517,8 +524,10 @@ Output goes to `.claude/rules/`, which is a context directory the agent loads fr
 | `anatomiya-overview.md` | none | every turn, and again from disk after a compaction |
 | `anatomiya-area-<id>.md` | the area glob | when a file under that glob is read, once per context window |
 
-There is a second delivery beside that one, and a scan installs it: a hook that echoes the overview back
-after every turn and every tool call, stamped with the moment it was read. The table above is what the
+There is a second delivery beside that one, declared by the plugin rather than installed by a scan: a
+hook that echoes the overview back after every turn and every tool call, stamped with the moment it was
+read. A scan writes nothing outside `.claude/rules/` and `.claude/anatomiya/`; what it does to a
+repository's own settings is take out the entry an older version put there. The table above is what the
 platform loads; the hook is what keeps it recent. A run three hundred tool calls deep was working from a
 copy handed to it at the start, and nothing said when that copy was read, so a map that had drifted from
 the code looked exactly like one that had not.
@@ -529,18 +538,46 @@ that refusal cites was measured on a hook standing in for the always-loaded file
 is untouched and nothing depends on the weaker one. The echoed text is descriptive rather than
 imperative for the same reason, and it says outright that the code outranks it.
 
-The hook runs `anatomiya echo`, which is absent from the usage block and from `commands/` on purpose: no
-person runs it and no agent should. It reads the event on stdin, answers with one JSON object, and every
-failure path answers `{}` and exits 0, because a hook that exits non-zero interrupts the session it
-exists to help. It finds the map by walking up from wherever it fired, since a hook carries the session's
-own working directory and the map is written once at the root. The walk ends at a repository
-boundary: anything named `.git` is where one checkout's counts stop being about the code under it,
-so a level carrying that marker and no map of its own answers nothing rather than reaching past
-it. The map is asked for before the boundary at each level, so a checkout that was
-scanned still answers from anywhere below its own root, whichever shape its marker takes. Measured:
-a worktree under `.claude/worktrees/`, which is where a session that branches off puts one, was
-handed the main checkout's map, stamped as read just now, on a branch it had never been counted
-over.
+Two hooks run, on different events and answering different questions. `anatomiya echo` fires on
+`UserPromptSubmit`, `PostToolUse` and `PostToolUseFailure` and re-delivers the map. `anatomiya notice`
+fires on `PreToolUse` for `Write`, `Edit` and `NotebookEdit`, and answers for the one path that call is
+about: whether a test is being put where its kind of file has no test precedent. It is silent otherwise,
+which is most writes. That silence is the point rather than a saving. A session was handed the same
+overview more than a hundred times and still put a spec in a directory whose siblings had none, because
+the clause that mattered had scrolled past a hundred times with everything else; an unchanged block on
+every result is what teaches a reader to skip it.
+
+The notice informs and never refuses. Measured on 2.1.250: a `PreToolUse` hook can return
+`permissionDecision: "deny"` or `"ask"`, and only those stop a path being chosen, but the rule behind
+this notice rests on a namesake match that reads a tested directory as untested where the names differ
+in case. Refusing on a count that can be wrong stalls real work, so it says its piece and lets the write
+through. The text reaches the model on its next turn, after that write and before the next one, which is
+what makes it worth saying at all when a session is creating twelve files rather than one.
+
+Both are absent from the usage block and from `commands/` on purpose: no person runs them and no
+agent should. Each reads the event on stdin, answers with one JSON object, and answers `{}` and exits
+0 on every failure path, because a hook that exits non-zero interrupts the session it exists to help.
+Both walk up from wherever they fired to find what they answer from, the rendered map for one and the
+recorded counts for the other, since a hook carries the session's own working directory and both are
+written once at the root. The walk ends at a repository boundary: anything named `.git` is where one
+checkout's counts stop being about the code under it, so a level carrying that marker and nothing of
+its own answers nothing rather than reaching past it. What it is looking for is asked for before the
+boundary at each level, so a checkout that was scanned still answers from anywhere below its own
+root, whichever shape its marker takes. Measured: a worktree under `.claude/worktrees/`, which is
+where a session that branches off puts one, was handed the main checkout's map, stamped as read just
+now, on a branch it had never been counted over.
+
+Both reads are bounded and typed rather than plain, for the reason the map's is: a named pipe at
+either path never returns, and the record is the whole count of a repository, measured at 9,957,450
+bytes on microsoft/vscode, so the bound the rendered map is held to would have silenced the notice on
+exactly the repositories where a directory nobody read is easiest to miss.
+
+The notice answers only for a path nothing is at yet. An `Edit` names a file that exists every time
+and a `Write` over one is a rewrite, so the path was chosen turns ago; repeating the same block on
+each edit of the same spec is the unchanged banner the notice exists instead of. The payload's path
+and the repository root are both resolved through their links before they are compared: the root
+arrives resolved and `resolve` follows none, so a payload carrying `/tmp/x` against a root reading
+`/private/tmp/x` read as another repository's file and the hook said nothing at all.
 
 The working directory is resolved through its links before any of that, since one reached through a
 link walks the link's own parents and steps around every boundary beneath it, and the marker is
@@ -981,6 +1018,14 @@ tracks itself, and the merge base with itself is HEAD. On a shallow clone the ba
 with `--depth=1`, which costs about 3.65s and 12 MB; `--unshallow` measured 56s and 305 MB and
 `--deepen=500` measured the same, so bounded deepening is not offered. When there is still no merge
 base, the check degrades to lines added since the oldest commit the clone holds and says so.
+
+One rule here is not a dimension and does not come from the registry. `test_precedent` asks whether a
+test the change added has any precedent in the source root it covers, rather than whether its contents
+match a claim, because a file that creates its own directory is the only member of it and conforms with
+itself every time. It carries the same finding shape as any other, `dimension: "test_precedent"` in the
+json, so a reader that filters by dimension sees it beside the counted rows; it is not in the dimension
+count the documentation checks, since nothing about it is measured per area. What it does and refuses to
+do is H38, and the sentence the map states beside it is H39.
 
 Severity, in the order the checks are made:
 

@@ -72,7 +72,13 @@ test("the hook prints one SessionStart object and nothing when there is nothing 
   assert.equal(out.hookSpecificOutput.hookEventName, "SessionStart");
   assert.match(out.hookSpecificOutput.additionalContext, new RegExp(MARKERS[0]));
 
+  // Truncated back to a bundle's size, the way `tree` writes one. Left short,
+  // the file stops being a candidate, the walk falls through to the machine's
+  // real `claude`, and this read the installed build instead of the fixture:
+  // silent only while that build sat inside the calibrated run of patches, and
+  // a version notice the moment it did not.
   writeFileSync(t1.cli, whole());
+  truncateSync(t1.cli, MIN_BUNDLE + 1);
   const clean = fire(t1.cli);
   assert.equal(clean.stdout, "");
   assert.equal(clean.status, 0);

@@ -8,7 +8,7 @@ import { execFileSync } from "node:child_process";
 
 import { needsShebang } from "./platform.mjs";
 import { installWithoutDependencies } from "./plugin-install.mjs";
-import { runCheck, runDoctor, runPin, runScan, runSetup } from "../plugins/anatomiya/lib/commands.mjs";
+import { runCheck, runDoctor, runEcho, runNotice, runPin, runScan, runSetup } from "../plugins/anatomiya/lib/commands.mjs";
 import { scanLines } from "../plugins/anatomiya/lib/summary.mjs";
 import { PIN_PATH } from "../plugins/anatomiya/lib/baseline.mjs";
 import { PROBE_IDS, pluginRoot } from "../plugins/anatomiya/lib/readiness.mjs";
@@ -446,4 +446,82 @@ test("setup is the only command that runs npm, so a scan, a check and a pin inst
     d.body.includes("npm") || npmish.some((n) => !d.names.includes(n) && new RegExp(`\\b${n}\\b`).test(d.body));
 
   assert.deepEqual(decls.filter((d) => d.exported && reaches(d)).flatMap((d) => d.names), ["runSetup"]);
+});
+
+// --- what a hook is answered with ---------------------------------------------
+
+/** A scanned repository with mailers nobody tests and services everybody does. */
+async function railsish(t) {
+  const dir = mkdtempSync(join(realpathSync(tmpdir()), "anatomiya-hookcmd-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  execFileSync("git", ["init", "-q"], { cwd: dir });
+  for (const n of ["admin", "user", "hubspot", "cim_share"]) {
+    mkdirSync(join(dir, "app/mailers"), { recursive: true });
+    writeFileSync(join(dir, `app/mailers/${n}_mailer.rb`), `class ${n}Mailer\nend\n`);
+  }
+  for (const n of ["a", "b", "c", "d", "e", "f"]) {
+    mkdirSync(join(dir, "app/services"), { recursive: true });
+    mkdirSync(join(dir, "spec/services"), { recursive: true });
+    writeFileSync(join(dir, `app/services/${n}.rb`), `class ${n}\nend\n`);
+    writeFileSync(join(dir, `spec/services/${n}_spec.rb`), `RSpec.describe ${n} do\nend\n`);
+  }
+  // Committed, because the scan reads `git ls-files`: an uncommitted tree
+  // counts nothing and the layout comes back empty.
+  execFileSync("git", ["add", "-A"], { cwd: dir });
+  execFileSync("git", ["-c", "user.email=t@t.test", "-c", "user.name=T", "commit", "-qm", "init"], { cwd: dir });
+  await runScan(dir, {});
+  return dir;
+}
+
+const write = (dir, rel) => ({
+  hook_event_name: "PreToolUse",
+  tool_name: "Write",
+  tool_input: { file_path: join(dir, rel) },
+});
+
+test("the notice answers for a test going where its kind of file has none", async (t) => {
+  const dir = await railsish(t);
+
+  const out = runNotice(dir, write(dir, "spec/mailers/cim_share_mailer_spec.rb"));
+
+  assert.equal(out.hookSpecificOutput.hookEventName, "PreToolUse");
+  assert.match(out.hookSpecificOutput.additionalContext, /spec\/mailers holds no other test/);
+  assert.match(out.hookSpecificOutput.additionalContext, /app\/mailers: 4 files, 0 with a namesake test/);
+  assert.equal(out.hookSpecificOutput.permissionDecision, undefined, "it informs and never refuses");
+});
+
+test("the notice answers with an empty object for everything it cannot decide", async (t) => {
+  const dir = await railsish(t);
+  const spec = join(dir, "spec/mailers/cim_share_mailer_spec.rb");
+
+  assert.deepEqual(runNotice(dir, {}), {}, "no event name");
+  assert.deepEqual(runNotice(dir, { hook_event_name: "PreToolUse" }), {}, "no tool input");
+  assert.deepEqual(runNotice(dir, write(dir, "spec/services/g_spec.rb")), {}, "siblings have theirs");
+  assert.deepEqual(runNotice(dir, write(dir, "app/mailers/report_mailer.rb")), {}, "not a test");
+  assert.deepEqual(
+    runNotice(dir, { ...write(dir, "x"), tool_input: { file_path: "/elsewhere/spec/mailers/x_spec.rb" } }),
+    {},
+    "another repository's file"
+  );
+
+  mkdirSync(join(dir, "spec/mailers"), { recursive: true });
+  writeFileSync(spec, "RSpec.describe CimShareMailer do\nend\n");
+  assert.deepEqual(runNotice(dir, write(dir, "spec/mailers/cim_share_mailer_spec.rb")), {}, "the file is already there");
+});
+
+test("a repository nobody has scanned is answered with an empty object by both hooks", (t) => {
+  const dir = mkdtempSync(join(realpathSync(tmpdir()), "anatomiya-nomap-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+  assert.deepEqual(runNotice(dir, write(dir, "spec/mailers/x_spec.rb")), {});
+  assert.deepEqual(runEcho(dir, { hook_event_name: "UserPromptSubmit" }), {});
+});
+
+test("the echo hands back the map it was asked for, and nothing without an event", async (t) => {
+  const dir = await railsish(t);
+
+  assert.deepEqual(runEcho(dir, {}), {}, "no event name");
+  const out = runEcho(dir, { hook_event_name: "PostToolUse" });
+  assert.equal(out.hookSpecificOutput.hookEventName, "PostToolUse");
+  assert.match(out.hookSpecificOutput.additionalContext, /<repository-map delivered="/);
 });

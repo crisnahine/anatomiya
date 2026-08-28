@@ -23,6 +23,8 @@ import { readFacts, statedSide } from "./facts.mjs";
 import { MAX_FILE_BYTES } from "./limits.mjs";
 import { resolve as resolveBaseline } from "./baseline.mjs";
 import { pairingsFor, pairingViolations } from "./pairing.mjs";
+import { isTestPath, precedentFindings } from "./precedent.mjs";
+import { holdsTestIn } from "./hook.mjs";
 import { fillClass, claimFor, CLASSES } from "./dimensions-naming.mjs";
 import { rowsOfKind } from "./registry.mjs";
 import { couldSignal } from "./frameworks.mjs";
@@ -191,6 +193,36 @@ export async function check(cwd, { baseRef = null } = {}) {
     fresh: !stale.reason && mode === "compare",
     caveats,
   });
+
+  // Last, and outside the dimension collection above: this one asks about the
+  // path rather than the contents, so it reads the diff instead of a parse
+  // (H38).
+  // What "already" means here is not what it means for the hook: a change that
+  // invents a directory and fills it with four specs must not have three of
+  // them excused by the first, so everything it brought is subtracted.
+  const arrived = examined
+    .filter((c) => c.status === "A" || (c.from && c.from !== c.path))
+    .map((c) => ({ path: c.path, oldPath: c.from === c.path ? null : c.from }));
+  const brought = new Set(arrived.map((c) => c.path));
+
+  findings.push(
+    ...precedentFindings(
+      // A relocation too: moving a test into a directory whose siblings have
+      // none is the same deviation as writing it there. Read off `from` rather
+      // than the status letter, which spells the same move two ways: `R` from
+      // the diff, and `M` with an `orig` from a working tree where it is staged
+      // and not yet committed.
+      arrived,
+      facts?.layout?.roots ?? [],
+      {
+        // The comparison alone is what says a file arrived; a stale map does
+        // not bear on that, and it caps at FIX anyway, which is this rule's
+        // ceiling.
+        fresh: mode === "compare",
+        holdsTest: holdsTestIn(root, (rel) => isTestPath(rel) && !brought.has(rel)),
+      }
+    )
+  );
 
   findings.sort(
     (a, b) =>

@@ -7,7 +7,8 @@ import { fileURLToPath } from "node:url";
 import { spawn, spawnSync, execFileSync } from "node:child_process";
 
 import { needsPosixSpecialFiles, needsUnreadableDirs } from "./platform.mjs";
-import { echoContext, planRemoval, commitRemoval, HOOK_COMMAND, PAYLOAD_WAIT_MS, SETTINGS_PATH } from "../plugins/anatomiya/lib/hook.mjs";
+import { echoContext, ownLayout, planRemoval, commitRemoval, targetIn, HOOK_COMMAND, NOTICE_COMMAND, PAYLOAD_WAIT_MS, SETTINGS_PATH } from "../plugins/anatomiya/lib/hook.mjs";
+import { FACTS_PATH, FACTS_SCHEMA } from "../plugins/anatomiya/lib/facts.mjs";
 import { HEAD_BYTES } from "../plugins/anatomiya/lib/rules.mjs";
 import { ANATOMIYA } from "../scripts/plugins.mjs";
 
@@ -32,6 +33,146 @@ function mapped(t, body = "---\ngenerator: anatomiya\n---\n\n# Repository map\n\
 const settings = (dir) => JSON.parse(readFileSync(join(dir, SETTINGS_PATH), "utf8"));
 
 // --- what the hook says ------------------------------------------------------
+
+/** A repository with a record of its counts, the other half of what a scan leaves. */
+function recorded(t, layout = { tests: [], roots: [] }, record = {}) {
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-layout-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  mkdirSync(join(dir, ".claude", "anatomiya"), { recursive: true });
+  writeFileSync(join(dir, FACTS_PATH), JSON.stringify({ schema: FACTS_SCHEMA, areas: [], layout, ...record }));
+  return dir;
+}
+
+test("a record from a build ahead of this one is refused rather than read", (t) => {
+  // The rule `readFacts` states and this walk did not: fields move between
+  // versions, and a record read against a shape this build does not know
+  // enforces a convention nobody stated. `check` named the schema and enforced
+  // nothing while the notice, one command over, spoke off the same file.
+  const ahead = recorded(t, { tests: [], roots: [{ dir: "app", path: "app" }] }, { schema: FACTS_SCHEMA + 1 });
+  const nonsense = recorded(t, { tests: [], roots: [] }, { areas: "not a list" });
+
+  assert.equal(ownLayout(ahead), null);
+  assert.equal(ownLayout(nonsense), null);
+});
+
+test("the write target is read from the key each tool spells it with", (t) => {
+  // Measured on 2.1.250: Write and Edit carry `tool_input.file_path`,
+  // NotebookEdit carries `tool_input.notebook_path`. A hook reading one key
+  // sees nothing on the other tool and says nothing, silently.
+  const dir = recorded(t);
+
+  assert.equal(targetIn({ tool_name: "Write", tool_input: { file_path: join(dir, "a/b.ts") } }, dir), "a/b.ts");
+  assert.equal(targetIn({ tool_name: "Edit", tool_input: { file_path: join(dir, "a/b.ts") } }, dir), "a/b.ts");
+  assert.equal(targetIn({ tool_name: "NotebookEdit", tool_input: { notebook_path: join(dir, "a/n.ipynb") } }, dir), "a/n.ipynb");
+});
+
+test("a target outside the repository, or absent, is not this repository's business", (t) => {
+  const dir = recorded(t);
+
+  assert.equal(targetIn({ tool_name: "Write", tool_input: {} }, dir), null);
+  assert.equal(targetIn({ tool_name: "Write" }, dir), null);
+  assert.equal(targetIn({}, dir), null);
+  assert.equal(targetIn({ tool_name: "Write", tool_input: { file_path: "/elsewhere/x.ts" } }, dir), null);
+  assert.equal(targetIn({ tool_name: "Write", tool_input: { file_path: join(dir, "../escape.ts") } }, dir), null);
+  // Measured on 2.1.250, the payload carries an absolute path. One that is not
+  // would be resolved against this process's own directory, which is wherever
+  // the hook happened to be spawned rather than where the write is going. Asked
+  // against that very directory, since against any other one it comes back null
+  // whether the guard is there or not.
+  assert.equal(targetIn({ tool_name: "Write", tool_input: { file_path: "spec/x_spec.rb" } }, process.cwd()), null);
+});
+
+test("a file the payload spells through a link is the same file the root was resolved to", (t) => {
+  // The root arrives already resolved, and `resolve` follows no link, so the
+  // two never met: a payload carrying `/tmp/x` against a root reading
+  // `/private/tmp/x` read as another repository's file and the hook, which
+  // exists to say something before a write, said nothing at all.
+  const real = recorded(t);
+  const link = join(mkdtempSync(join(tmpdir(), "anatomiya-link-")), "repo");
+  t.after(() => rmSync(link, { recursive: true, force: true }));
+  symlinkSync(real, link, "dir");
+
+  assert.equal(targetIn({ tool_name: "Write", tool_input: { file_path: join(link, "spec/x_spec.rb") } }, real), "spec/x_spec.rb");
+  assert.equal(targetIn({ tool_name: "Write", tool_input: { file_path: join(real, "spec/x_spec.rb") } }, link), "spec/x_spec.rb");
+});
+
+test("a name that merely starts with two dots is inside the repository", (t) => {
+  const dir = recorded(t);
+
+  assert.equal(targetIn({ tool_name: "Write", tool_input: { file_path: join(dir, "..keep") } }, dir), "..keep");
+});
+
+// --- the counts a write is answered from -------------------------------------
+
+test("the record is found from anywhere inside the repository, and only inside it", (t) => {
+  const dir = recorded(t, { tests: [], roots: [{ dir: "app", path: "app" }] });
+  mkdirSync(join(dir, "src", "deep"), { recursive: true });
+
+  assert.deepEqual(ownLayout(join(dir, "src", "deep")).layout.roots, [{ dir: "app", path: "app" }]);
+  assert.equal(ownLayout(tmpdir()), null);
+});
+
+test("a record for a checkout that is not this one is not read across the boundary", (t) => {
+  // The same rule the map's own walk holds: a worktree below a scanned
+  // repository was handed counts taken over a branch it never had.
+  const dir = recorded(t, { tests: [], roots: [] });
+  const nested = join(dir, "worktree");
+  mkdirSync(nested, { recursive: true });
+  writeFileSync(join(nested, ".git"), "gitdir: /elsewhere\n");
+
+  assert.equal(ownLayout(nested), null);
+});
+
+test("a record reached through a link out of the repository is not this repository's record", (t) => {
+  // F2, the same reason `readFacts` asks it: `join` resolves no link, so a
+  // tracked `.claude/anatomiya -> /tmp/x` put a directory outside the checkout
+  // in charge of what a write inside it was judged against.
+  const dir = recorded(t, { tests: [], roots: [{ dir: "app", path: "app" }] });
+  const outside = recorded(t, { tests: [], roots: [{ dir: "elsewhere", path: "elsewhere" }] });
+  rmSync(join(dir, ".claude", "anatomiya"), { recursive: true });
+  symlinkSync(join(outside, ".claude", "anatomiya"), join(dir, ".claude", "anatomiya"), "dir");
+
+  assert.equal(ownLayout(dir), null);
+});
+
+test("a record this cannot read leaves the walk to keep going rather than throwing", (t) => {
+  const dir = recorded(t);
+  writeFileSync(join(dir, FACTS_PATH), "{ not json");
+
+  assert.equal(ownLayout(dir), null);
+});
+
+test("a record with no layout in it is not a record", (t) => {
+  // `areas` and the schema are both here, so this reaches the layout branch
+  // rather than stopping at the gate above it. Without them the case passed on
+  // the gate and said nothing about the branch its name is about.
+  const dir = recorded(t);
+  writeFileSync(join(dir, FACTS_PATH), JSON.stringify({ schema: FACTS_SCHEMA, areas: [] }));
+
+  assert.equal(ownLayout(dir), null);
+});
+
+test("a named pipe at the record's path answers nothing rather than blocking", needsPosixSpecialFiles, (t) => {
+  // The reason the read goes through `readHead`: this runs before every write,
+  // and a plain read of a fifo never returns at all. Run as a process with a
+  // budget, because a synchronous call that hangs cannot be failed from inside
+  // this one; measured, the plain read held the whole file open.
+  const dir = recorded(t);
+  rmSync(join(dir, FACTS_PATH));
+  execFileSync("mkfifo", [join(dir, FACTS_PATH)]);
+
+  const run = spawnSync(process.execPath, [fileURLToPath(new URL("../plugins/anatomiya/bin/anatomiya.mjs", import.meta.url)), "notice"], {
+    cwd: dir,
+    input: JSON.stringify({ hook_event_name: "PreToolUse", tool_name: "Write", tool_input: { file_path: join(dir, "spec/x_spec.rb") } }),
+    encoding: "utf8",
+    timeout: 10_000,
+  });
+
+  assert.equal(run.signal, null, "it came back on its own");
+  assert.equal(run.status, 0);
+  assert.deepEqual(JSON.parse(run.stdout), {});
+});
+
 
 test("the echoed map is stamped with the moment it was read", (t) => {
   const dir = mapped(t);
@@ -317,12 +458,15 @@ test("the plugin declares the hook itself, in the one file the variable works in
   // The top-level key is not decoration: without it the file loads nothing and
   // says nothing about it.
   assert.deepEqual(Object.keys(declared), ["hooks"]);
-  assert.deepEqual(Object.keys(declared.hooks).sort(), ["PostToolUse", "PostToolUseFailure", "UserPromptSubmit"]);
+  assert.deepEqual(Object.keys(declared.hooks).sort(), ["PostToolUse", "PostToolUseFailure", "PreToolUse", "UserPromptSubmit"]);
 
   for (const [event, groups] of Object.entries(declared.hooks)) {
     assert.ok(Array.isArray(groups) && groups.length === 1, event);
     assert.deepEqual(groups[0].hooks.map((h) => h.type), ["command"], event);
-    assert.equal(groups[0].hooks[0].command, HOOK_COMMAND, event);
+    // The write-time hook runs the other verb; every other event re-delivers
+    // the map. Both are held to the same `${CLAUDE_PLUGIN_ROOT}` spelling,
+    // which is the half that shipped broken in 0.2.4 through 0.2.6.
+    assert.equal(groups[0].hooks[0].command, event === "PreToolUse" ? NOTICE_COMMAND : HOOK_COMMAND, event);
   }
 });
 
@@ -366,6 +510,105 @@ test("the declared command, run the way the loader runs it, echoes the map", (t)
   assert.match(answer.hookSpecificOutput.additionalContext, /# Repository map/);
 });
 
+/** The `notice` verb, run exactly as the loader would run its declaration. */
+function fireNotice(dir, filePath, event = "PreToolUse") {
+  const declared = JSON.parse(readFileSync(new URL("../plugins/anatomiya/hooks/hooks.json", import.meta.url), "utf8"));
+  const root = ANATOMIYA.replace(/\/$/, "");
+  const command = declared.hooks.PreToolUse[0].hooks[0].command.replace("${CLAUDE_PLUGIN_ROOT}", root);
+  return spawnSync(command, {
+    cwd: dir,
+    shell: true,
+    timeout: 10_000,
+    input: JSON.stringify({
+      ...(event === null ? {} : { hook_event_name: event }),
+      tool_name: "Write",
+      tool_input: { file_path: filePath },
+    }),
+    encoding: "utf8",
+  });
+}
+
+/** A Rails-shaped repository: mailers nobody tests, services everybody does. */
+function railsish(t) {
+  const dir = recorded(t, {
+    tests: [{ runner: "RSpec", files: 6, sub: null, under: 6 }],
+    roots: [
+      { path: "app/mailers", dir: "app/mailers", files: 4, tests: [], testRoot: false, companions: { with: 0, of: 4, root: null } },
+      { path: "app/services", dir: "app/services", files: 6, tests: [], testRoot: false, companions: { with: 6, of: 6, root: "spec/services" } },
+    ],
+  });
+  mkdirSync(join(dir, "spec", "mailers"), { recursive: true });
+  return dir;
+}
+
+test("the declared notice, run the way the loader runs it, answers for the path about to be written", (t) => {
+  const dir = railsish(t);
+
+  const run = fireNotice(dir, join(dir, "spec/mailers/cim_share_mailer_spec.rb"));
+
+  assert.equal(run.status, 0, run.signal === null ? run.stderr : `killed by ${run.signal}: the hook did not answer`);
+  const answer = JSON.parse(run.stdout);
+  assert.equal(answer.hookSpecificOutput.hookEventName, "PreToolUse");
+  assert.match(answer.hookSpecificOutput.additionalContext, /app\/mailers: 4 files, 0 with a namesake test/);
+  assert.equal(answer.hookSpecificOutput.permissionDecision, undefined, "it informs and never refuses");
+});
+
+test("a path something is already at is not a path being chosen", (t) => {
+  // Every `Edit` names a file that exists, and a `Write` over one is a rewrite.
+  // Answering there repeats the same block on each edit of the same spec, which
+  // is the unchanged banner this hook exists instead of (A44).
+  //
+  // The same path, before and after, so only the file's own existence differs.
+  // The directory holds no other test either way, which is what keeps this case
+  // on the guard it is named for rather than on the one a level below it.
+  const dir = railsish(t);
+  const spec = join(dir, "spec/mailers/cim_share_mailer_spec.rb");
+
+  assert.match(JSON.parse(fireNotice(dir, spec).stdout).hookSpecificOutput.additionalContext, /holds no other test/);
+
+  writeFileSync(spec, "RSpec.describe CimShareMailer do; end\n");
+  assert.deepEqual(JSON.parse(fireNotice(dir, spec).stdout), {});
+});
+
+test("the notice answers an object and exits 0 for anything it cannot decide", (t) => {
+  const dir = railsish(t);
+  const cases = [
+    ["a path in another repository", "/elsewhere/spec/mailers/x_spec.rb"],
+    ["a relative path, which the payload never carries", "spec/mailers/x_spec.rb"],
+    ["a spec whose siblings have theirs", join(dir, "spec/services/dispatcher_spec.rb")],
+    ["a file that is not a test at all", join(dir, "app/mailers/report_mailer.rb")],
+  ];
+
+  for (const [what, path] of cases) {
+    const run = fireNotice(dir, path);
+    assert.equal(run.status, 0, `${what}: ${run.stderr}`);
+    assert.deepEqual(JSON.parse(run.stdout), {}, what);
+  }
+});
+
+test("the notice answers an object and exits 0 with no event, no payload and a payload past the bound", (t) => {
+  const dir = railsish(t);
+  const spec = join(dir, "spec/mailers/cim_share_mailer_spec.rb");
+
+  assert.deepEqual(JSON.parse(fireNotice(dir, spec, null).stdout), {}, "no event name");
+
+  const declared = JSON.parse(readFileSync(new URL("../plugins/anatomiya/hooks/hooks.json", import.meta.url), "utf8"));
+  const command = declared.hooks.PreToolUse[0].hooks[0].command.replace("${CLAUDE_PLUGIN_ROOT}", ANATOMIYA.replace(/\/$/, ""));
+  // The oversized one has to be valid json, or it is refused for its syntax and
+  // says nothing about the bound: `"x".repeat(...)` is not json at three bytes
+  // either. This is a real payload with a megabyte of padding past the cap.
+  const past = JSON.stringify({
+    hook_event_name: "PreToolUse",
+    tool_name: "Write",
+    tool_input: { file_path: spec, padding: "x".repeat(2 * 1024 * 1024) },
+  });
+  for (const [what, input] of [["not json", "{ not json"], ["nothing at all", ""], ["past the bound", past]]) {
+    const run = spawnSync(command, { cwd: dir, shell: true, timeout: 10_000, input, encoding: "utf8" });
+    assert.equal(run.status, 0, `${what}: ${run.stderr}`);
+    assert.deepEqual(JSON.parse(run.stdout), {}, what);
+  }
+});
+
 test("the same command in a repository with no map answers an empty object", (t) => {
   // A plugin hook runs in every session, so this is the answer most of the time
   // and it has to cost nothing and disturb nothing.
@@ -404,6 +647,23 @@ test("the hook an older version wrote is taken out, and the file with it when no
 
   assert.equal(plan.changed, true);
   assert.equal(existsSync(join(dir, SETTINGS_PATH)), false, "the file held nothing else");
+});
+
+test("a hook a person installed by hand is not one an older version wrote", (t) => {
+  // The sweep may only take out what a version of this tool put there. No
+  // shipped version ever wrote a `notice` entry, so recognising that verb here
+  // would delete somebody's own hook while saying it removed a stale one.
+  const dir = mapped(t);
+  mkdirSync(join(dir, ".claude"), { recursive: true });
+  writeFileSync(
+    join(dir, SETTINGS_PATH),
+    JSON.stringify({ hooks: { PreToolUse: [{ matcher: "Write", hooks: [{ type: "command", command: NOTICE_COMMAND }] }] } })
+  );
+
+  const plan = planRemoval(dir);
+
+  assert.equal(plan.changed, false);
+  assert.deepEqual(settings(dir).hooks.PreToolUse[0].hooks[0].command, NOTICE_COMMAND);
 });
 
 test("settings this did not write are left exactly as they were", (t) => {

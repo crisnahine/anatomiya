@@ -48,6 +48,16 @@ const inTestRoot = (rel) => rel.includes("/") && TEST_ROOTS.has(rel.slice(0, rel
 export const underTestTree = (dir) => dir !== "" && dir.split("/").some((seg) => TEST_TREES.has(seg));
 
 /**
+ * What a root's label carries when its record covers one level and not the
+ * subtree below it.
+ *
+ * Exported because a reader has to be able to tell the two apart: such a root's
+ * `tests` counts nothing its children hold, so its zero says the level is
+ * untested and not the directory.
+ */
+export const LEVEL_ONLY_LABEL = " (files at this level)";
+
+/**
  * The files in a test tree that mirror a source file outside it.
  *
  * eslint's `tests/lib/rules/no-var.js` covers `lib/rules/no-var.js`. It carries
@@ -227,7 +237,7 @@ export function layoutRoots(files, { minFiles, budget = ROOT_BUDGET }) {
     // candidate.
     const before = out.length;
     if (!isRoot && n.direct.length >= minFiles) {
-      out.push({ path: `${dir} (files at this level)`, dir, files: n.direct });
+      out.push({ path: `${dir}${LEVEL_ONLY_LABEL}`, dir, files: n.direct });
     }
     for (const k of kids) visit(k, false);
     // Descending named nothing, so the directory is what the reader gets.
