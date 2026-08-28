@@ -61,8 +61,9 @@ const runnerCount = (n, runner) =>
 const underPart = (g) => (g.under !== undefined && g.under !== g.files ? `${g.under} of ` : "");
 
 // One clause per runner group, named the way `specCount` names a root line's:
-// a root line and an area's kinds line read the same `tests` field.
-const testsParts = (tests) =>
+// a root line, an area's kinds line and the precedent rule read the same
+// `tests` field, and a rule that phrased it itself would drift from all three.
+export const testsParts = (tests) =>
   tests.map((t) => `${underPart(t)}${specCount(t.files, t.runner)}${t.sub ? ` under ${pathText(t.sub)}` : ""}`);
 
 // The count with a test is the subject of the clause, not the denominator

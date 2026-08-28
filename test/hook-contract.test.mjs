@@ -61,6 +61,15 @@ function commandsOf({ plugin, root }) {
           // one is carried rather than inferred from the number: the fallback
           // and the number four of these hooks declare are both 5.
           declares: typeof hook.timeout === "number",
+          // Two kinds of hook, and the difference is the point rather than an
+          // accident. Most re-deliver on every turn, so they always have
+          // something to say. `notice` answers for one write target and is
+          // silent otherwise, because an unchanged block on every result is
+          // what trained the reader to skip the clause that mattered (A44).
+          // Listed rather than inferred, and speaking is the default: a fourth
+          // verb that is silent fails this suite until it says so, where one
+          // that speaks would have been exempted without anybody noticing.
+          speaksAlways: !SOMETIMES_SILENT.has(hook.command.trim().split(/\s+/).pop()),
           timeout: typeof hook.timeout === "number" ? hook.timeout : UNDECLARED,
           command: hook.command.replaceAll("${CLAUDE_PLUGIN_ROOT}", root.replace(/[\\/]$/, "")),
         });
@@ -69,6 +78,9 @@ function commandsOf({ plugin, root }) {
   }
   return found;
 }
+
+/** The verbs that answer only when the counts have something to say (A44). */
+const SOMETIMES_SILENT = new Set(["notice"]);
 
 const DECLARED = PLUGINS.flatMap(commandsOf);
 
@@ -306,7 +318,14 @@ for (const declared of DECLARED) {
   test(`${where} answers an ordinary payload with one object and nothing else`, async (t) => {
     const parsed = answered(await fire(t, declared), where);
 
-    assert.notEqual(parsed, null, `${where} said nothing about a directory it has something to say about`);
+    assert.notEqual(parsed, null, `${where} answered with something that is not one object`);
+    if (!declared.speaksAlways) {
+      // The ordinary payload names no write target, and a hook that speaks only
+      // about a target it was given has nothing to say about this one. An empty
+      // object is the whole answer, and it is the right one.
+      assert.deepEqual(parsed, {}, `${where} spoke about a payload that named no file`);
+      return;
+    }
     assert.equal(parsed.hookSpecificOutput.hookEventName, declared.event);
     assert.equal(typeof parsed.hookSpecificOutput.additionalContext, "string");
   });

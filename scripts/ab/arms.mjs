@@ -10,14 +10,14 @@
  * getting that wrong is the whole experiment: a stale copy of the rules
  * directory left in B measures nothing, twice.
  */
-import { mkdtempSync, rmSync, cpSync, existsSync } from "node:fs";
+import { mkdtempSync, rmSync, cpSync, existsSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
-import { RULES_DIR, STORE_DIR } from "../../plugins/anatomiya/lib/rules.mjs";
+import { RULES_DIR, SETTINGS_PATH, STORE_DIR } from "../../plugins/anatomiya/lib/rules.mjs";
 
 const run = promisify(execFile);
 
@@ -48,14 +48,73 @@ async function git(root, args, { timeout = 60_000, maxBytes = 1 << 20 } = {}) {
   }
 }
 
+/**
+ * Settings files a checkout carries that would decide its own measurement.
+ *
+ * `settings.env` lands above the CLI flag: a file naming
+ * CLAUDE_CODE_EFFORT_LEVEL sets the effort the build resolves, whatever
+ * `--effort` says. An arm is a worktree of the repository under measurement, so
+ * left in place the repository chooses the engine that measures it.
+ *
+ * Only these two go. Excluding the project settings source wholesale would take
+ * the map with them, since `RULES_DIR` is read as part of it: measured on
+ * 2.1.250, an arm holding a `paths` rule answered with the map's file count
+ * when the sources were loaded and NONE when they were not.
+ */
+const ARM_SETTINGS = [join(dirname(SETTINGS_PATH), "settings.json"), SETTINGS_PATH];
+
+/**
+ * The settings files taken out of an arm, and the ones that would not go.
+ *
+ * Returned rather than thrown: a throw here lands between creating the
+ * worktrees and returning the disposer for them, which leaves one registered in
+ * the repository being measured. The caller can fail after cleaning up.
+ */
+export function dropSettings(arm) {
+  const gone = [];
+  const kept = [];
+  for (const rel of ARM_SETTINGS) {
+    const at = join(arm, rel);
+    if (!existsSync(at)) continue;
+    try {
+      unlinkSync(at);
+      gone.push(rel);
+    } catch (err) {
+      kept.push(`${rel}: ${err.message}`);
+    }
+  }
+  return { gone, kept };
+}
+
+/**
+ * Two worktrees off one commit, neither able to decide its own measurement.
+ *
+ * A failure part way through removes what it made before it throws: the arms
+ * are registered in the repository under measurement, and one left behind
+ * outlives the run that made it.
+ */
 export async function buildArms(repo, sha, { workdir = tmpdir() } = {}) {
   const base = mkdtempSync(join(workdir, "anatomiya-ab-"));
   const a = join(base, "with-map");
   const b = join(base, "no-map");
 
+  const made = [];
+  const fail = async (message) => {
+    for (const path of made) await git(repo, ["worktree", "remove", "--force", path]);
+    rmSync(base, { recursive: true, force: true });
+    throw new Error(message);
+  };
+
   for (const [path, name] of [[a, "with-map"], [b, "no-map"]]) {
+    // Recorded before the check: an add that registered and then failed leaves
+    // a registration behind, and removing one that was never made costs nothing.
+    made.push(path);
     const r = await git(repo, ["worktree", "add", "--detach", path, sha]);
-    if (!r.ok) throw new Error(`could not create the ${name} worktree: ${r.error}`);
+    if (!r.ok) await fail(`could not create the ${name} worktree: ${r.error}`);
+    const settings = dropSettings(path);
+    // Left in place, the repository under measurement sets the effort that
+    // measures it, so a run that cannot remove them is not a run.
+    if (settings.kept.length) await fail(`could not clear the ${name} arm's own settings: ${settings.kept.join(", ")}`);
   }
 
   return {

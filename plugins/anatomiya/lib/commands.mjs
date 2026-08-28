@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { join } from "node:path";
 
 import { absentInterpreter } from "./child.mjs";
 import { scan } from "./scan.mjs";
@@ -11,7 +12,8 @@ import { buildPin, loadPin, writePin, pinDelta, PIN_PATH } from "./baseline.mjs"
 import { headSha } from "./git.mjs";
 import { NODE_PROBE_IDS, PROBE_IDS, pluginRoot, probeName, readiness, readinessLines, remedyFor } from "./readiness.mjs";
 import { pinSummary, scanSummary } from "./summary.mjs";
-import { echoContext, removeStaleHook } from "./hook.mjs";
+import { echoContext, holdsTestIn, isPathTaken, ownLayout, removeStaleHook, targetIn } from "./hook.mjs";
+import { isTestPath, noticeFor } from "./precedent.mjs";
 
 /**
  * One entry per command: the whole recipe, composed once.
@@ -54,6 +56,35 @@ export function runEcho(cwd, payload) {
   const event = payload?.hook_event_name;
   if (!event) return {};
   const additionalContext = echoContext(cwd);
+  if (additionalContext === null) return {};
+  return { hookSpecificOutput: { hookEventName: event, additionalContext } };
+}
+
+/**
+ * What a write is told about where it is going, or nothing at all (A44).
+ *
+ * It informs and never refuses. `deny` and `ask` are the only answers that stop
+ * a path being chosen, and this rule rests on a namesake match that can read a
+ * tested directory as untested, so refusing on it would stall real work over a
+ * count that was wrong. The same reason the rest of this file exits 0 whatever
+ * happens (A24).
+ */
+export function runNotice(cwd, payload) {
+  const event = payload?.hook_event_name;
+  if (!event) return {};
+  const found = ownLayout(cwd);
+  if (found === null) return {};
+  const rel = targetIn(payload, found.root);
+  if (rel === null) return {};
+  // Only a path nothing is at yet. Where a file exists the path was chosen some
+  // turns ago, and an `Edit` names one every time: saying it again on each edit
+  // of the same spec is the block on every result this exists instead of.
+  if (isPathTaken(join(found.root, rel))) return {};
+  // Excluding the path itself, the way `check` excludes everything its change
+  // brought: "holds no other test" is the question, and counting the target
+  // would answer it with the target.
+  const holdsTest = holdsTestIn(found.root, (path) => isTestPath(path) && path !== rel);
+  const additionalContext = noticeFor(rel, found.layout, { holdsTest });
   if (additionalContext === null) return {};
   return { hookSpecificOutput: { hookEventName: event, additionalContext } };
 }

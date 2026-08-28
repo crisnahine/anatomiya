@@ -737,13 +737,19 @@ mixed values are fine (section 6). Because they share one commit SHA, pinning is
 plugin from re-versioning the other.
 
 **Hooks use shell form with a quoted variable and a 5-second timeout.** `plugins/anatomiya/hooks/hooks.json`
-runs `node "${CLAUDE_PLUGIN_ROOT}/bin/anatomiya.mjs" echo` with `"timeout": 5`. The quoting is what shell
+runs `node "${CLAUDE_PLUGIN_ROOT}/bin/anatomiya.mjs" echo` on three events and the same binary's `notice`
+verb on `PreToolUse`, both with `"timeout": 5`. The quoting is what shell
 form requires (section 3), so this is correct as written. Two things are worth knowing rather than fixing:
 exec form with `args` is what the documentation prefers for any hook that references a path placeholder
 (hooks.md L458, L596), and 5 seconds is a deliberate reduction from the 600-second default.
 
 **`PostToolUse` and `PostToolUseFailure` use `"matcher": "*"`.** Not required; omitting `matcher` also matches
 everything, as the `UserPromptSubmit` entry in the same file does.
+
+**`PreToolUse` matches `"Write|Edit|NotebookEdit"`.** Read as a list of names rather than as a pattern:
+measured on 2.1.250, a matcher holding only names and pipes takes a fast path that splits on `|` or `,`
+and compares exact strings, and only a matcher carrying some other character is compiled as an unanchored
+regular expression. The comparison is case sensitive, so `"write"` matches nothing.
 
 **Components sit in `commands/`, not `skills/`.** The anatomiya plugin has `bin/`, `commands/` and `hooks/`
 and no `skills/` directory. Both load, but the documentation calls `commands/` "Skills as flat Markdown
