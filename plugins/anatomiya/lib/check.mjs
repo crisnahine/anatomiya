@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { open } from "node:fs/promises";
+import { dirname } from "node:path";
 
 import { parseAll } from "./parse.mjs";
 import { dimensionsFor } from "./dimensions.mjs";
@@ -13,6 +14,7 @@ import {
   isDenied,
   isExcludedDir,
   safeResolve,
+  lsFiles,
 } from "./corpus.mjs";
 import { holdsTypeSyntax, language, MISSING_STRIPPER } from "./langs.mjs";
 import { areaOwner, globsReach } from "./areas.mjs";
@@ -24,7 +26,6 @@ import { MAX_FILE_BYTES } from "./limits.mjs";
 import { resolve as resolveBaseline } from "./baseline.mjs";
 import { pairingsFor, pairingViolations } from "./pairing.mjs";
 import { isTestPath, precedentFindings } from "./precedent.mjs";
-import { holdsTestIn } from "./hook.mjs";
 import { fillClass, claimFor, CLASSES } from "./dimensions-naming.mjs";
 import { rowsOfKind } from "./registry.mjs";
 import { couldSignal } from "./frameworks.mjs";
@@ -204,6 +205,15 @@ export async function check(cwd, { baseRef = null } = {}) {
     .filter((c) => c.status === "A" || (c.from && c.from !== c.path))
     .map((c) => ({ path: c.path, oldPath: c.from === c.path ? null : c.from }));
   const brought = new Set(arrived.map((c) => c.path));
+  // Answered from what git tracks rather than off the disk, which is the
+  // population every other reader here counts: one ignored `scratch_spec.rb`
+  // sitting in a directory read as a test habit and silenced the rule for every
+  // file in it. The hook cannot ask this, since a `git ls-files` per write is a
+  // subprocess per write, so it reads the directory and is quieter where a
+  // stray file sits there; this run catches what that one let past.
+  const tracked = await trackedTests(root);
+  const holdsTest = (dir) =>
+    tracked === null || tracked.some((rel) => dirname(rel) === (dir || ".") && !brought.has(rel));
 
   findings.push(
     ...precedentFindings(
@@ -219,7 +229,7 @@ export async function check(cwd, { baseRef = null } = {}) {
         // not bear on that, and it caps at FIX anyway, which is this rule's
         // ceiling.
         fresh: mode === "compare",
-        holdsTest: holdsTestIn(root, (rel) => isTestPath(rel) && !brought.has(rel)),
+        holdsTest,
       }
     )
   );
@@ -535,6 +545,28 @@ async function addedRanges(root, from) {
 // the parent as well, because the report quotes them and resolves line numbers
 // against them.
 const REVISION_READ = { concurrency: 8, withSource: true, timeout: GIT.checkTimeoutMs };
+
+/**
+ * Every test file git tracks, or null where the listing failed.
+ *
+ * Null rather than an empty list, and the caller reads it as "there is one":
+  * an index this cannot read says nothing about what a directory holds, and
+ * every other reader in this file that meets an unlistable corpus drops the
+ * claims it cannot support rather than printing them anyway (C33). Nothing here
+ * may throw either, since a rule that does takes the whole run with it.
+ */
+async function trackedTests(root) {
+  const found = [];
+  try {
+    await lsFiles(root, (rel) => {
+      if (isTestPath(rel)) found.push(rel);
+      return true;
+    });
+  } catch {
+    return null;
+  }
+  return found;
+}
 
 async function collect(root, { examined, areas, base, mode, added, fresh, caveats, frameworks, capabilities, pending }) {
   const areaFor = areaIndex(areas);
