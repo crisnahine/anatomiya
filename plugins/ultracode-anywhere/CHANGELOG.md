@@ -9,6 +9,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-08-29
+
 `VERIFYING.md` was worked whole against Claude Code 2.1.241. The premise holds: the gate is still one
 conjunct, the four markers are still there, the Workflow tool still counts a standing ultracode mode
 as its explicit opt-in, and the cadence constant is still 10. Every name inside the gate moved,
@@ -28,6 +30,12 @@ which is what the shape check is for.
 
 ### Changed
 
+- The reminder holds one effort for the whole session, subagents and workflow stages included. It
+  used to say to pass `opts.effort` at 'high' or 'xhigh' on the verify, judge and critic stages,
+  which is a stage running deeper than the session it belongs to and a cost nobody set. Depth comes
+  from how the work is split and independently checked instead. A fifth deliberate deviation from the
+  native wording, listed beside the other four. The whole text moves from 1224 characters to 1236 and
+  a 30-turn session from 1412 to 1424. Decision A43.
 - Calibrated against 2.1.241, read whole rather than in part. The wire-level diff is a repeatable
   recipe now rather than a thing done once by hand, and `VERIFYING.md` carries it: two requests
   captured off a local socket at everything-else-equal, differing in the reminder text and in
@@ -104,6 +112,7 @@ wherever `effortLevel` is set, and says out loud what it does not restore.
 - Turn counters under `~/.claude/ultracode-anywhere/` rather than the temporary directory, in a
   directory this account owns with no access for anyone else.
 
-[Unreleased]: https://github.com/crisnahine/anatomiya/compare/ultracode-anywhere-v0.1.1...HEAD
+[Unreleased]: https://github.com/crisnahine/anatomiya/compare/ultracode-anywhere-v0.2.0...HEAD
+[0.2.0]: https://github.com/crisnahine/anatomiya/compare/ultracode-anywhere-v0.1.1...ultracode-anywhere-v0.2.0
 [0.1.1]: https://github.com/crisnahine/anatomiya/compare/v0.2.9...ultracode-anywhere-v0.1.1
 [0.1.0]: https://github.com/crisnahine/anatomiya/releases/tag/v0.2.9

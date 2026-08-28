@@ -52,16 +52,18 @@ first session on a machine that has not says so once. `tengu_amber_kestrel`, on 
 flag Anthropic sets and nobody here does: turned on, it lifts the cap for every session on that
 build, this plugin's included.
 
-Workflow subagents inherit the session effort, so a medium session is medium all the way down.
-The reminder tells the model to pass `opts.effort` on the stages that need the depth, which is the
-one depth lever a prompt does control.
+Workflow subagents inherit the session effort, so a medium session is medium all the way down, and
+the reminder says to leave it that way. `opts.effort` can raise a stage above the level the session
+was set to, and a stage that quietly runs deeper than the session is a second variable in whatever
+that session was measuring. Depth here is bought by how the work is split and independently checked,
+which is the lever a prompt controls without changing what the session costs.
 
 ## What it costs
 
 One short-lived `node` process per prompt, about 30 ms of it over ten runs on the machine this was
-measured on, most of which is node starting. What reaches the model is 1224 characters on the first
+measured on, most of which is node starting. What reaches the model is 1236 characters on the first
 turn, 94 on every tenth after that, and nothing on the rest, appended after the user message so the
-cache prefix is untouched. Over a 30-turn session that is 1412 characters in total,
+cache prefix is untouched. Over a 30-turn session that is 1424 characters in total,
 the opening text plus two refreshers. A payload that names no session, or a state directory this
 cannot use, reads every turn as the first one, and a 30-turn session then costs 30 opening texts
 instead. The reminder is the cheap half either way.
@@ -78,12 +80,13 @@ nothing else, so the cadence is close rather than exact.
 
 ## How this differs from native ultracode
 
-Four deliberate differences, each with a reason:
+Five deliberate differences, each with a reason:
 
 | | native | here |
 |---|---|---|
 | what the text asks for | the Workflow tool on every substantive task | the Workflow tool where the scale or risk earns it, with a floor under it |
 | effort | resolves to xhigh | unchanged, whatever `effortLevel` says |
+| what a stage may raise | `opts.effort` on the stages wanting depth | nothing: one level runs the session, subagents and stages included |
 | subagent cap | lifted, by the same predicate | left at 20, since no reminder reaches it, unless a remote flag lifts it for the whole build |
 | upstream contract | a supported mode | four strings and the gate's shape, read off one build and re-checked by hand |
 

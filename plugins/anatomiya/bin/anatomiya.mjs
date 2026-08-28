@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { runCheck, runDoctor, runEcho, runPin, runScan, runSetup } from "../lib/commands.mjs";
+import { runCheck, runDoctor, runEcho, runNotice, runPin, runScan, runSetup } from "../lib/commands.mjs";
 import { readPayload, respond } from "../lib/hook.mjs";
 import { pinJson, pinLines, scanJson, scanLines } from "../lib/summary.mjs";
 import { formatReport, formatReportGithub, formatReportJson } from "../lib/check-report.mjs";
@@ -46,8 +46,10 @@ const COMMANDS = {
   setup: { path: false, dryRun: true, formats: ["text"] },
   // Not for a person: a hook runs this, hands it the event on stdin and reads
   // one JSON object back. It takes a path because a hook's own cwd is the
-  // repository it fired in.
-  echo: { path: true, dryRun: false, formats: ["json"] },
+  // repository it fired in. `hook` is what the never-fail guarantee below is
+  // keyed on, so a third verb inherits it by declaring itself here.
+  echo: { path: true, dryRun: false, formats: ["json"], hook: true },
+  notice: { path: true, dryRun: false, formats: ["json"], hook: true },
 };
 
 // One writer per format, and the set of names the flag takes.
@@ -157,6 +159,10 @@ if (opts.help) {
       const { ok, output } = await runSetup({ dryRun: opts.dryRun });
       if (!ok) fail(output);
       console.log(output);
+    } else if (opts.cmd === "notice") {
+      // The same guarantee `echo` makes, on the event before the tool rather
+      // than the one after it.
+      respond(runNotice(cwd, await readPayload()));
     } else if (opts.cmd === "echo") {
       // A hook, so its own failure is the one thing it must never be: a non-zero
       // exit interrupts the run it exists to help. Every path here writes an
@@ -173,7 +179,7 @@ if (opts.help) {
     // A non-zero exit interrupts the run it exists to help, and it would do it on
     // every turn and every tool call for the life of that session, so the
     // guarantee belongs at the boundary rather than at each site that might throw.
-    if (opts.cmd === "echo") {
+    if (COMMANDS[opts.cmd]?.hook) {
       // Answered, and then nothing: the exit code is 0 because nothing set it,
       // and no `process.exit` runs, which would drop a write the pipe has not
       // flushed.

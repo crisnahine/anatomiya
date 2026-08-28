@@ -19,10 +19,11 @@
  * per-developer scope, it is git-ignored, and it matches where the map already
  * lives: yours, on this machine, not committed.
  */
-import { existsSync, lstatSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { existsSync, lstatSync, readdirSync, unlinkSync, writeFileSync } from "node:fs";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import { HEAD_BYTES, isOwned, OVERVIEW_FILE, RULES_DIR, SETTINGS_PATH, readHead, realpathOrNull, resolveInside } from "./rules.mjs";
+import { FACTS_PATH, schemaProblem } from "./facts.mjs";
 
 export { SETTINGS_PATH };
 
@@ -34,28 +35,41 @@ export { SETTINGS_PATH };
 // string is exported for the test that holds the two in step.
 export const HOOK_COMMAND = 'node "${CLAUDE_PLUGIN_ROOT}/bin/anatomiya.mjs" echo';
 
+/** The write-time half, declared on `PreToolUse` and answering for one path. */
+export const NOTICE_COMMAND = 'node "${CLAUDE_PLUGIN_ROOT}/bin/anatomiya.mjs" notice';
+
 // What an older version wrote, whichever way it spelled the path. The removal
 // has to reach every spelling that ever shipped rather than only the one this
 // build would write, and the quoting has already changed once.
+// `echo` and no other verb, because the sweep may only take out what a version
+// of this tool put there: 0.2.4 through 0.2.6 wrote that one and nothing has
+// written a settings hook since, so matching `notice` here would delete one a
+// person installed by hand. A whole group goes at a time, so one sharing a
+// group with the old entry still goes with it; what that installer wrote was a
+// group of its own, which is what keeps the path narrow rather than closed.
 const isOurCommand = (command) => /anatomiya\.mjs"?\s+echo\b/.test(String(command ?? ""));
 
 /**
- * Whether a level is where one checkout's counts stop being about the code
- * under it: it carries a `.git` of any shape, or it cannot be looked at.
+ * Whether anything is already at a path, a broken link and a path that cannot
+ * be looked at both counted as taken.
  *
- * Those two answer together because they fail the same way. `existsSync`
- * swallowed every error and said no, walking straight past a level it could
- * not see; `lstat` suppresses only ENOENT and throws the rest, and nothing
- * between here and the process catches it. A level that cannot be seen cannot
- * be shown to belong to the map above it, and silence costs one delivery where
- * the wrong map costs the session.
+ * Those answer together because they fail the same way. `existsSync` swallowed
+ * every error and said no, walking straight past a level it could not see;
+ * `lstat` suppresses only ENOENT and throws the rest, and nothing between here
+ * and the process catches it. Unreadable answering "taken" is the quiet
+ * direction on both readers: the walk stops rather than claiming a map above,
+ * and the notice says nothing rather than calling a file new.
  */
-function isBoundary(at) {
+export function isPathTaken(path) {
   try {
-    return lstatSync(join(at, ".git"), { throwIfNoEntry: false }) !== undefined;
+    return lstatSync(path, { throwIfNoEntry: false }) !== undefined;
   } catch {
     return true;
   }
+}
+
+function isBoundary(at) {
+  return isPathTaken(join(at, ".git"));
 }
 
 /**
@@ -112,6 +126,135 @@ function readOwned(path) {
   const entry = readHead(path, HEAD_BYTES + 1);
   if (entry.kind !== "file" || Buffer.byteLength(entry.head) > HEAD_BYTES) return null;
   return isOwned(entry.head) ? entry.head : null;
+}
+
+/**
+ * How much of a record this reads before deciding it is not one of ours.
+ *
+ * Not `HEAD_BYTES`, which sizes a rule file: the record is the whole count of a
+ * repository, and the largest this tool has written is 9,957,450 bytes, on
+ * microsoft/vscode. A megabyte would have gone silent on exactly the
+ * repositories where a directory nobody read is easiest to miss. The cap is
+ * there for the shape a rule file cap is there for, a path holding something
+ * nobody wrote, and only such a file ever pays it.
+ */
+const FACTS_MOST = 64 * 1024 * 1024;
+
+/**
+ * The layout this repository recorded, walked up from here, or null.
+ *
+ * The same walk `ownMap` makes and stopping at the same boundary, so a hook
+ * fired inside one checkout never answers out of another one's counts. Read
+ * rather than parsed loosely: a record this cannot read is one it says nothing
+ * about, which is the only safe answer on a path that runs per tool call.
+ *
+ * Through `readHead` for the reason `readOwned` is: a plain read blocks for
+ * ever on a fifo and takes whatever size it finds, and this runs before every
+ * write rather than once per scan.
+ */
+export function ownLayout(from) {
+  let at = realpathOrNull(resolve(from));
+  if (at === null) return null;
+  for (;;) {
+    // F2 again, and the reason `readFacts` already asks it: `join` resolves no
+    // link, so a tracked `.claude/anatomiya -> /tmp/x` had a directory outside
+    // the repository deciding what a write inside it was judged against.
+    const path = resolveInside(at, FACTS_PATH);
+    const layout = path === null ? null : readLayout(path);
+    if (layout !== null) return { root: at, layout };
+    if (isBoundary(at)) return null;
+    const up = dirname(at);
+    if (up === at) return null;
+    at = up;
+  }
+}
+
+/**
+ * The layout inside a record, or null for anything that is not one.
+ *
+ * Held to the same schema gate `readFacts` applies, and for its reason: fields
+ * move between versions, and a record read against a shape this build does not
+ * know enforces a convention nobody stated. Without it `check` named the schema
+ * and enforced nothing while the notice, one command over, spoke off the same
+ * file.
+ */
+function readLayout(path) {
+  const entry = readHead(path, FACTS_MOST + 1);
+  if (entry.kind !== "file" || Buffer.byteLength(entry.head) > FACTS_MOST) return null;
+  try {
+    const parsed = JSON.parse(entry.head);
+    return schemaProblem(parsed) === null ? (parsed.layout ?? null) : null;
+  } catch {
+    // No record here, or one nobody can read. Both mean keep walking.
+    return null;
+  }
+}
+
+/**
+ * Where each tool spells the path it is about to write.
+ *
+ * Measured on 2.1.250: `Write` and `Edit` carry `file_path`, `NotebookEdit`
+ * carries `notebook_path`. A hook reading one key sees nothing on the other
+ * tool and says nothing about it, which is the quietest way to be wrong.
+ *
+ * A notebook cannot produce a notice today, since `.ipynb` is not one of the
+ * extensions a test file is held to. It is read anyway: which key a tool spells
+ * its target with is a fact about the wire, not about what a rule does with it,
+ * and the day that extension is counted the hook already covers the tool.
+ */
+const TARGET_KEY = { Write: "file_path", Edit: "file_path", NotebookEdit: "notebook_path" };
+
+/**
+ * A path with the part of it that exists resolved through its links, and the
+ * rest left as it was spelled.
+ *
+ * `realpath` refuses a path that is not there, which is every path this is
+ * asked about: the write has not happened yet. So the nearest ancestor that
+ * does exist is resolved and the tail put back. Resolving one side only is what
+ * this is here to stop: the root arrives already resolved, and a payload
+ * carrying `/tmp/x` against a root reading `/private/tmp/x` looked like another
+ * repository's file, so the hook said nothing at all.
+ */
+function resolveLinks(path) {
+  const here = realpathOrNull(path);
+  if (here !== null) return here;
+  const up = dirname(path);
+  return up === path ? path : join(resolveLinks(up), basename(path));
+}
+
+/**
+ * Whether a directory under this repository already holds a file the caller
+ * calls a test.
+ *
+ * For the hook only, where the write has not happened: everything in that
+ * directory was there before, so nothing has to be subtracted. A directory that
+ * cannot be listed answers no, which leaves the rule where it was.
+ */
+export function holdsTestIn(root, isTest) {
+  return (dir) => {
+    try {
+      return readdirSync(join(root, dir)).some((name) => isTest(dir ? `${dir}/${name}` : name));
+    } catch {
+      return false;
+    }
+  };
+}
+
+/**
+ * The path this call is about, relative to the repository, or null.
+ *
+ * Null for anything that lands outside, which is the safe direction: this
+ * repository has nothing to say about another one's file. The containment test
+ * is a segment test rather than a prefix one, so a file named `..keep` beside
+ * the root is inside it.
+ */
+export function targetIn(payload, root) {
+  const key = TARGET_KEY[payload?.tool_name];
+  const raw = key ? payload?.tool_input?.[key] : null;
+  if (typeof raw !== "string" || !raw || !isAbsolute(raw)) return null;
+  const rel = relative(resolveLinks(resolve(root)), resolveLinks(resolve(raw)));
+  if (!rel || rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel)) return null;
+  return rel.split("\\").join("/");
 }
 
 /**
