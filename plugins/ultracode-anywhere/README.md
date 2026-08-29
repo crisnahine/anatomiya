@@ -52,11 +52,35 @@ first session on a machine that has not says so once. `tengu_amber_kestrel`, on 
 flag Anthropic sets and nobody here does: turned on, it lifts the cap for every session on that
 build, this plugin's included.
 
-Workflow subagents inherit the session effort, so a medium session is medium all the way down, and
-the reminder says to leave it that way. `opts.effort` can raise a stage above the level the session
-was set to, and a stage that quietly runs deeper than the session is a second variable in whatever
-that session was measuring. Depth here is bought by how the work is split and independently checked,
-which is the lever a prompt controls without changing what the session costs.
+It does not set a stage's effort, and no hook can. A workflow stage carries no definition file to
+hold one, and the Agent tool takes no effort argument at all, so a spawn falls through to the
+session's own level unless the script passes `opts.effort`. That is the only lever there is, and the
+model is the only one holding it. So `ULTRACODE_ANYWHERE_STAGE_EFFORT` asks the model to pass it,
+which is a request and not a setting: a session that ignores the text runs its fan-out at the
+session's level, which is where it was going to run anyway. Set nothing and the reminder says to
+leave `opts.effort` alone, which is the default this had before the switch existed and still has.
+
+The switch names a level rather than a direction, and both directions are yours to choose. Below the
+session is what it was built for, since fan-out is where the tokens go. Above it, a stage runs deeper
+than the session it belongs to, which is a second variable in whatever that session was measuring:
+that is a deliberate choice when you make it and an accident when a reminder makes it for you, which
+is why the default text names no level at all. Depth is otherwise bought by how the work is split and
+independently checked, which is the lever a prompt controls without changing what the session costs.
+
+The model half of the same question needs nothing from this plugin. `CLAUDE_CODE_SUBAGENT_MODEL` is
+a real subagent-only seam upstream: set it and every spawn resolves to that model while the main loop
+keeps its own, workflow stages included. It goes in the environment, or in `settings.json` under
+`"env"` beside the cap above. There is no matching variable for effort, which is the whole reason the
+switch above is a sentence of text rather than a setting.
+
+There is a settings route to a subagent's effort, and it is worth knowing about rather than using.
+`modelSettings` carries an `effortLevel` per model, and a spawn resolves its effort against its own
+model, so `CLAUDE_CODE_SUBAGENT_MODEL` plus a row for that model does split the fan-out from the
+session, workflow stages included. Three things make it a poor lever, each measured on the wire. The
+row is keyed by a model rather than by who is spawning, so without the model split it takes the main
+loop down with it. It stops at `xhigh`, since that path validates against four names where
+`opts.effort` takes five. And it is dead the moment `--effort` or `/effort` pins a level, which is
+the ordinary case for anyone reading this page.
 
 ## What it costs
 
@@ -67,6 +91,10 @@ cache prefix is untouched. Over a 30-turn session that is 1424 characters in tot
 the opening text plus two refreshers. A payload that names no session, or a state directory this
 cannot use, reads every turn as the first one, and a 30-turn session then costs 30 opening texts
 instead. The reminder is the cheap half either way.
+
+`ULTRACODE_ANYWHERE_STAGE_EFFORT` puts the level into both, which at its longest level name is 1407
+characters on the first turn and 169 on the tenth, or 1745 over 30 turns. That is 321 characters more
+than the default over such a session, against a fan-out it moves by a whole effort level.
 
 The session check reads the installed build once per build, not once per session: about 200 ms
 the first time, about 30 after, since the answer is kept beside the turn counters under the
@@ -86,7 +114,7 @@ Five deliberate differences, each with a reason:
 |---|---|---|
 | what the text asks for | the Workflow tool on every substantive task | the Workflow tool where the scale or risk earns it, with a floor under it |
 | effort | resolves to xhigh | unchanged, whatever `effortLevel` says |
-| what a stage may raise | `opts.effort` on the stages wanting depth | nothing: one level runs the session, subagents and stages included |
+| what a stage's own effort is | `opts.effort` raised on the stages wanting depth | the session's, or one level a switch names for the whole fan-out |
 | subagent cap | lifted, by the same predicate | left at 20, since no reminder reaches it, unless a remote flag lifts it for the whole build |
 | upstream contract | a supported mode | four strings and the gate's shape, read off one build and re-checked by hand |
 
@@ -232,6 +260,14 @@ and the cap line then comes back every session rather than once.
   silence.
 - `ULTRACODE_ANYWHERE_FULL=repeat claude` brings the whole text back on the cadence instead of the
   one-line refresher, for a session long enough to lose it.
+- `ULTRACODE_ANYWHERE_STAGE_EFFORT=medium claude` asks the text for a fan-out below the session:
+  `opts.effort` at that level on every workflow stage, except one checking or judging another
+  stage's work, which keeps the session's level. Unset, the text is the one above, which says to
+  leave `opts.effort` alone. The levels are `low`, `medium`, `high`, `xhigh`, `max`, read past case
+  and surrounding spaces; anything else is read as unset, and the session opens with a line saying
+  so rather than leaving it to be found on the bill. Those five and nothing else: `opts.effort`
+  itself also takes `med` and an integer, and this switch takes neither, since the text names a
+  level. `VERIFYING.md` step 7 says what the integer does upstream, which is another reason.
 - `ULTRACODE_ANYWHERE_DEBUG=/tmp/uc.log claude` logs every prompt the hook fires on, its stdin
   payload, and what silenced it when something did. The session hook writes nothing there. A fifo
   nobody is reading, standing at that path, is refused without waiting.

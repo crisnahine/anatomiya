@@ -205,6 +205,42 @@ test("a session with workflows disabled is told which switch did it", (t) => {
   );
 });
 
+// --- the level a session asked its stages to run at ----------------------------
+
+test("a stage level nobody can read is said at the start, since the cost of missing it is the bill", (t) => {
+  // An unreadable cadence costs a refresher its place and says nothing. This
+  // one costs a session the saving it was turned on for, and silently: the
+  // fan-out runs at the session's own level and nothing in the transcript says
+  // the switch did not take.
+  const t1 = tree(t, { settings: { effortLevel: "xhigh" } });
+  const env = { CLAUDE_CONFIG_DIR: t1.config, ULTRACODE_ANYWHERE_CAP_NOTICE: "0", ULTRACODE_ANYWHERE_STAGE_EFFORT: "cheap" };
+
+  const said = notice({ cwd: t1.dir, cli: t1.cli, state: t1.state, env });
+
+  assert.match(said, /ULTRACODE_ANYWHERE_STAGE_EFFORT/);
+  assert.match(said, /cheap/, "and what it was set to, since the typo is the thing to fix");
+  assert.match(said, /low, medium, high, xhigh, max/, "and what it could have been");
+});
+
+test("a stage level that reads is not remarked on", (t) => {
+  const t1 = tree(t, { settings: { effortLevel: "xhigh" } });
+  const env = { CLAUDE_CONFIG_DIR: t1.config, ULTRACODE_ANYWHERE_CAP_NOTICE: "0", ULTRACODE_ANYWHERE_STAGE_EFFORT: "Medium " };
+
+  assert.equal(notice({ cwd: t1.dir, cli: t1.cli, state: t1.state, env }), null);
+});
+
+test("a session already silenced says nothing about a stage level that reaches no reminder", (t) => {
+  // With the prompt hook quiet there is no text to carry the level, so the
+  // setting is not wrong, it is beside the point.
+  const t1 = tree(t, { settings: { ultracode: true } });
+  const env = { CLAUDE_CONFIG_DIR: t1.config, ULTRACODE_ANYWHERE_CAP_NOTICE: "0", ULTRACODE_ANYWHERE_STAGE_EFFORT: "cheap" };
+
+  const said = notice({ cwd: t1.dir, cli: t1.cli, state: t1.state, env });
+
+  assert.match(said, /"ultracode": true/);
+  assert.equal(said.includes("ULTRACODE_ANYWHERE_STAGE_EFFORT"), false);
+});
+
 // --- a compaction starts the cadence over -------------------------------------
 
 test("a compaction starts the cadence over, since the text it opened with is gone from the context", (t) => {

@@ -11,6 +11,7 @@
  * in it and is told nothing.
  */
 import { cached, firstTime, startOver, stateDirFor } from "./counters.mjs";
+import { askedFor } from "./effort.mjs";
 import { here, invokedAs, parsePayload, readStdin, respond } from "./hook-io.mjs";
 import { CALIBRATED_AGAINST, behind, cliPath, conflictIn, driftCached, settingsFor, versionOf } from "./upstream.mjs";
 
@@ -56,6 +57,13 @@ export function notice({
 
   const conflict = conflictIn(settings, env);
   if (conflict) said.push(`ultracode-anywhere is quiet this session: ${conflict}.`);
+
+  // Said every session rather than once per machine, since this is a variable
+  // one session carries and the next may not. Only where the reminder is going
+  // out at all: with the prompt hook quiet there is no text to carry a level,
+  // so the setting is not wrong, it is beside the point.
+  const asked = conflict ? null : askedFor(env);
+  if (asked) said.push(`ultracode-anywhere: ${asked}.`);
 
   // The one thing native ultracode does that no reminder can: it lifts the
   // concurrent-subagent cap. Named once here rather than left in a README

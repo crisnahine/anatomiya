@@ -9,6 +9,41 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- `ULTRACODE_ANYWHERE_STAGE_EFFORT=<level>` asks the reminder for a fan-out below the session:
+  `opts.effort` at that level on every workflow stage, except one checking or judging another
+  stage's work, which keeps the session's level. `opts.effort` is the only lever that reaches a
+  stage, since a stage carries no definition file to hold an effort and the Agent tool takes no
+  effort argument at all, so a session wanting its fan-out cheaper than its main loop has nothing
+  but the reminder text to say it with. Unset, the text is what it was: leave `opts.effort` alone.
+  The levels are `low`, `medium`, `high`, `xhigh` and `max`, read past case and surrounding spaces,
+  and the answer put into the text is the list's own spelling rather than what the variable held.
+  A31, A43 and now A47.
+- A session opens with a line naming a `ULTRACODE_ANYWHERE_STAGE_EFFORT` that is not a level, and
+  what the levels are. An unreadable cadence costs a refresher its place and says nothing; this one
+  costs a session the whole saving it was turned on for, and costs it silently. A setting holding
+  anything but a plain word is counted rather than quoted back, since a project's own
+  `settings.json` sets `env` and this text is on its way into a system-reminder.
+- `hooks/effort.mjs`, holding the level list and the reader, because both hooks need them and
+  neither may import the other's entry point.
+- A case that fails when a switch the hooks read is not in the README, or a switch the README names
+  is read by nothing. Read off the shipped files rather than listed in the case, so the next one is
+  covered by having been added.
+- `test/effort.test.mjs` reads the five level names out of whatever build is installed and skips
+  where there is none, since a level renamed upstream would cost a user their setting in silence.
+  `VERIFYING.md` gains a step for the other half a person has to read: that the spawn builder still
+  pushes an effort layer only where the agent definition carries one, that `workflow-subagent`
+  still carries neither effort nor model and cannot be shadowed, and that the Agent tool's schema
+  still has no `effort`.
+
+### Changed
+
+- The README says what `CLAUDE_CODE_SUBAGENT_MODEL` does, beside the concurrent-cap note it already
+  carried. It is the model half of the same question, it is a real subagent-only seam upstream that
+  reaches workflow stages, and it needs nothing from this plugin. There is no such variable for
+  effort, which is why the switch above is a sentence of text rather than a setting.
+
 ## [0.2.1] - 2026-08-29
 
 A payload one byte over the bound, or one long enough to run past it, answered as

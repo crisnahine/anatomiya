@@ -250,7 +250,58 @@ the same set of turns a prompt hook fires on: a tool result never fires one. The
 10, through `CLAUDE_CODE_JUNIPER_SUNDIAL`, then the `tengu_juniper_sundial` flag, then
 `TURNS_BETWEEN_MAINTENANCE`.
 
-## 7. What a re-check changes
+## 7. A workflow stage still has no effort but the one a script passes
+
+`ULTRACODE_ANYWHERE_STAGE_EFFORT` exists because `opts.effort` is the only lever that reaches a
+workflow stage, and the reminder says so in as many words. Three things have to hold, and a build
+where any one of them moves is a build where that sentence is wrong.
+
+```sh
+grep -a -o -b 'kind:"effort"' "$BUILD"
+grep -a -o -b 'agentType:"workflow-subagent"' "$BUILD" | head -1
+```
+
+Take the offset from each and read around it with `tail -c +$((at - 400)) "$BUILD" | head -c 900`.
+
+What has to be true:
+
+- The spawn builder pushes a `{kind:"effort"}` permission layer **only** where the agent definition
+  carries an `effort` of its own, and the resolver falls through to the parent's own state when
+  there is no such layer. One minifier's spelling of that is
+  `[{kind:"model",mainLoopModel:...},...e.effort!==void 0?[{kind:"effort",effort:e.effort}]:[]]`,
+  and what matters is the ternary rather than the names.
+- The `workflow-subagent` definition carries neither `effort` nor `model`, and nothing registers it,
+  so no `.claude/agents/*.md` can shadow it the way one can shadow `general-purpose`.
+- The Agent tool's own input schema still has no `effort` parameter. Read it in a live session with
+  `/context`, or off the wire in step 4's capture. This is the half the reminder asserts and the
+  other two explain.
+
+If the first moves, a session can set a stage's effort without the reminder and this switch is
+redundant. If the second moves, an agent file can carry it and the README should say so. If the
+third moves, drop the sentence about the Agent tool from `loweredTo` in
+`hooks/standing-ultracode.mjs`.
+
+Two things `opts.effort` takes that this switch does not, both worth re-reading when the level list
+moves. `med` is an alias for `medium` there, and an integer is accepted by the validator and then
+does not reach the wire at all: the request goes out with no `output_config`, so a stage handed one
+runs at whatever the session was on. That is the second reason the switch takes the five names only,
+and the day the integer starts working is the day to reopen the question. `--effort ultracode` is
+accepted by the flag and not by `opts.effort`, which take different vocabularies and are worth
+reading apart.
+
+`CLAUDE_CODE_SUBAGENT_MODEL` is the model half of the same question and needs no plugin: it is a
+real subagent-only seam that reaches workflow stages too, and the README names it. The README also
+names the settings route to a subagent's effort, `modelSettings` keyed by the model a spawn resolves
+to. Re-read its three conditions along with this step, since all three are what make it worth
+knowing about rather than using: the row is keyed by a model rather than by who is spawning, its
+validator takes four level names where `opts.effort` takes five, and a level pinned by `--effort` or
+`/effort` puts the session's own effort in front of it.
+
+The wire capture in step 4 is what settles any of this. Point the stand-in's reply at an `Agent` or a
+`Workflow` tool call so a subagent actually spawns, then read `output_config.effort` off the
+subagent's own request rather than the main loop's.
+
+## 8. What a re-check changes
 
 - `CALIBRATED_AGAINST` in `hooks/upstream.mjs`, and every build named in this file and the README.
   Move it before step 4 rather than after, since the session line it silences would otherwise show up
@@ -259,6 +310,12 @@ the same set of turns a prompt hook fires on: a tool result never fires one. The
 - `GATE` there, if the predicate is spelled in a way the pattern does not accept and still reads as
   flag, call, effort against `"xhigh"`. Add the build's own spelling to the case in
   `test/upstream.test.mjs` that lists them, so the next respelling has something to be compared to.
+- `EFFORT_LEVELS` in `hooks/effort.mjs`, if a level was renamed, added or dropped. A rename costs a
+  user their `ULTRACODE_ANYWHERE_STAGE_EFFORT` in silence, so `test/effort.test.mjs` reads the five
+  out of whatever build is installed and skips where there is none. Read them yourself with
+  `grep -a -o '\["low","medium","high","xhigh","max"\]' "$BUILD"`, and read `--effort`'s own
+  validator beside it: the tool takes an integer effort as well, and this switch deliberately does
+  not.
 - `WAKEUP_SOURCES` in `hooks/standing-ultracode.mjs`, if the `source` enum moved.
 - The README, if any claim in it is no longer what the diff shows: the site count, the character
   counts, the bundle size and the timing figures are all measurements of one build on one machine.
