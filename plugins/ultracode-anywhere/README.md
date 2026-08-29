@@ -52,13 +52,13 @@ first session on a machine that has not says so once. `tengu_amber_kestrel`, on 
 flag Anthropic sets and nobody here does: turned on, it lifts the cap for every session on that
 build, this plugin's included.
 
-This plugin does not set a stage's effort, and no hook can. A spawn's effort comes from its agent definition,
-and the built-in definition a workflow stage gets carries none, so a stage falls through to the
-session's own level unless the script passes `opts.effort`. That is the only lever a caller has, and
-the model is the only one holding it. So `ULTRACODE_ANYWHERE_STAGE_EFFORT` asks the model to pass it,
-which is a request and not a setting: a session that ignores the text runs its fan-out at the
-session's level, which is where it was going to run anyway. Set nothing and the reminder says to
-leave `opts.effort` alone.
+This plugin does not set a stage's effort, and no hook can. A spawn's effort comes from its agent
+definition, and the built-in definition a workflow stage gets carries none, so a stage falls through
+to the session's own level unless the script passes `opts.effort`. That is the only lever a caller
+has, and the model is the only one holding it. So `ULTRACODE_ANYWHERE_STAGE_EFFORT` asks the model
+to pass it, which is a request and not a setting: a session that ignores the text runs its fan-out
+at the session's level, which is where it was going to run anyway. Set nothing and the reminder says
+to leave `opts.effort` alone.
 
 A workflow script that names an `agentType` is the one case where a stage has a definition of its
 own, and a `.claude/agents/*.md` carrying `effort:` then sets that stage's level with no `opts.effort`
@@ -68,11 +68,12 @@ what it does not hold for is a stage the script never asks the model to configur
 The switch names a level rather than a direction, and the hook cannot read the session's own to tell
 which way it points: `--effort` and `/effort` write nothing to `settings.json`. Below the session is
 what it was built for, since fan-out is where the tokens go. Above it works and buys the opposite,
-and one thing changes shape with it: the reminder tells the checking stage to keep the session's
-level, which is the deeper setting below and the shallower one above. If you set a level above your
-session, the stage that checks the others is the one running cheapest, and that is the reading to
-avoid. Depth is otherwise bought by how the work is split and independently checked, which is the
-lever a prompt controls without changing what the session costs.
+and one thing changes shape with it: the reminder tells the checking stage to leave `opts.effort`
+out, so that stage runs at the session's level, which is the deeper setting below the session and
+the shallower one above. Set a level above your session and the stage that checks the others is the
+one running cheapest, which is the reading to avoid. Depth is otherwise bought by how the work is
+split and independently checked, which is the lever a prompt controls without changing what the
+session costs.
 
 The model half of the same question needs nothing from this plugin. `CLAUDE_CODE_SUBAGENT_MODEL` is
 a real subagent-only seam upstream: set it and every spawn resolves to that model while the main loop
@@ -92,15 +93,15 @@ the ordinary case for anyone reading this page.
 ## What it costs
 
 One short-lived `node` process per prompt, about 30 ms of it over ten runs on the machine this was
-measured on, most of which is node starting. What reaches the model is 1271 characters on the first
+measured on, most of which is node starting. What reaches the model is 1266 characters on the first
 turn, 94 on every tenth after that, and nothing on the rest, appended after the user message so the
-cache prefix is untouched. Over a 30-turn session that is 1459 characters in total,
+cache prefix is untouched. Over a 30-turn session that is 1454 characters in total,
 the opening text plus two refreshers. A payload that names no session, or a state directory this
 cannot use, reads every turn as the first one, and a 30-turn session then costs 30 opening texts
 instead. The reminder is the cheap half either way.
 
-`ULTRACODE_ANYWHERE_STAGE_EFFORT` puts the level into both, which at its longest level name is 1435
-characters on the first turn and 194 on every tenth after that, or 1823 over 30 turns. That is 364
+`ULTRACODE_ANYWHERE_STAGE_EFFORT` puts the level into both, which at its longest level name is 1456
+characters on the first turn and 194 on every tenth after that, or 1844 over 30 turns. That is 390
 characters more than the default over such a session, against a fan-out it moves by a whole effort
 level.
 
@@ -122,7 +123,7 @@ Five deliberate differences, each with a reason:
 |---|---|---|
 | what the text asks for | the Workflow tool on every substantive task | the Workflow tool where the scale or risk earns it, with a floor under it |
 | effort | resolves to xhigh | unchanged, whatever `effortLevel` says |
-| what a stage's own effort is | `opts.effort` raised on the stages wanting depth | the session's, or one level a switch names for the whole fan-out |
+| what names a stage's effort | nothing but the script, on the tool's own guidance | the same, or one level a switch names for the whole fan-out |
 | subagent cap | lifted, by the same predicate | left at 20, since no reminder reaches it, unless a remote flag lifts it for the whole build |
 | upstream contract | a supported mode | four strings and the gate's shape, read off one build and re-checked by hand |
 
@@ -270,12 +271,15 @@ and the cap line then comes back every session rather than once.
   one-line refresher, for a session long enough to lose it.
 - `ULTRACODE_ANYWHERE_STAGE_EFFORT=medium claude` names the level the fan-out should run at:
   `opts.effort` at that level on every workflow stage, and left out of one checking or judging
-  another stage's work, which then runs at the session's level. Unset, the text is the one above, which says to
-  leave `opts.effort` alone. The levels are `low`, `medium`, `high`, `xhigh`, `max`, read past case
-  and surrounding spaces; anything else is read as unset, and the session opens with a line saying
-  so rather than leaving it to be found on the bill. Those five and nothing else: `opts.effort`
-  itself also takes `med` and an integer, and this switch takes neither, since the text names a
-  level. `VERIFYING.md` step 7 says what the integer does upstream, which is another reason.
+  another stage's work, which then runs at the session's level unless its own definition sets one.
+  Unset, the text is the one above, which says to leave `opts.effort` alone. The levels are `low`,
+  `medium`, `high`, `xhigh`, `max`, read past case and surrounding spaces; anything else is read as
+  unset, and the session opens with a line saying so rather than leaving it to be found on the bill.
+  It reaches a workflow stage and nothing else: a fan-out done with the Agent tool runs at the
+  session's level whatever this says, since that tool takes no effort argument. Those five and
+  nothing else: `opts.effort` itself also takes `med` and an integer, and this switch takes neither,
+  since the text names a level. `VERIFYING.md` step 7 says what the integer does upstream, which is
+  another reason.
 - `ULTRACODE_ANYWHERE_DEBUG=/tmp/uc.log claude` logs every prompt the hook fires on, its stdin
   payload, and what silenced it when something did. The session hook writes nothing there. A fifo
   nobody is reading, standing at that path, is refused without waiting.

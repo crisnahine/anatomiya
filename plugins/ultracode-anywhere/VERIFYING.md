@@ -191,7 +191,7 @@ not which fields.
 What has to be true: they differ in the reminder text and in `output_config.effort`, and nowhere
 else. On 2.1.241 that is what they do: same system prompt, same 25 tool definitions, the Workflow
 tool's description included, with the reminder in the trailing context block either way, this
-plugin's 1271 characters or the built-in's 288. Where it lands inside that block depends on what else
+plugin's 1266 characters or the built-in's 288. Where it lands inside that block depends on what else
 answers `UserPromptSubmit`, so run both sides from the same directory or another plugin's hook moves
 with you.
 

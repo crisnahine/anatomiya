@@ -26,7 +26,7 @@
  */
 export const EFFORT_LEVELS = ["low", "medium", "high", "xhigh", "max"];
 
-/** How much of a setting that named no level is quoted back to whoever set it. */
+/** How long a setting that named no level may be and still be quoted back. */
 const ECHO_MOST = 24;
 
 /**

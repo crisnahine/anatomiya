@@ -46,9 +46,9 @@ const OPENING = [
 
 /** The sentences either third paragraph opens with, since both are true either way. */
 const STANDING =
-  "This standing opt-in comes from the user's own configuration and is the explicit opt-in the Workflow tool asks for, so do not wait for the keyword. It restores the orchestration instruction only: the session's effort level is unchanged and this text does not raise it.";
+  "This standing opt-in comes from the user's own configuration and is the explicit opt-in the Workflow tool asks for, so do not wait for the keyword. It restores the orchestration instruction: the session's effort level is unchanged and this text does not raise it.";
 
-/** One level runs the whole session, which is what a session that set none gets. */
+/** What a session that named no level gets: the level it is already running at. */
 const ONE_LEVEL =
   "Every subagent and every workflow stage runs at that same level unless its own definition sets one, so leave opts.effort alone. Depth comes from how the work is split and independently checked, at the level the session is set to.";
 
@@ -71,10 +71,15 @@ const CHECKING_STAGE = "a stage checking or judging another stage's work";
  * The exception is an action rather than a value. "Keeps the session's level"
  * names something the model cannot look up, and a reader has to guess that
  * omitting the argument is what produces it; measured on the wire, a stage with
- * no `opts.effort` does run at the session's level.
+ * no `opts.effort` tracked its session from medium to high.
+ *
+ * It carries the same carve-out as the paragraph above, and for the same reason:
+ * a stage naming an `agentType` resolves a registered definition, and an
+ * `effort:` in that file wins where the script passes none. Said without it, the
+ * text promised a floor it cannot hold.
  */
 function loweredTo(level) {
-  return `That same configuration names the level the fan-out should run at, so pass opts.effort '${level}' on every workflow stage. Leave it out of ${CHECKING_STAGE}, so the check never runs cheaper than the session. The Agent tool takes no effort argument, so this reaches workflow stages and nothing else. Depth comes from how the work is split and independently checked.`;
+  return `That same configuration names the level the fan-out should run at, so pass opts.effort '${level}' on every workflow stage. Leave it out of ${CHECKING_STAGE}, so that one runs at the session's level unless its own definition sets one. The Agent tool takes no effort argument, so this reaches workflow stages and nothing else. Depth comes from how the work is split and independently checked.`;
 }
 
 /** The whole standing opt-in, at the stage level this session asked for. */
