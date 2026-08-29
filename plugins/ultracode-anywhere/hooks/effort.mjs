@@ -11,7 +11,7 @@
  * an effort, and the Agent tool takes no effort argument at all, so a spawn
  * falls through to the session's own level unless the script passes
  * `opts.effort`. The only way to ask for a cheaper fan-out is to ask the model
- * for it, in the text this plugin already sends.
+ * for it, in the text this plugin already sends (A47).
  */
 
 /**

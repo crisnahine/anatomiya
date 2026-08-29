@@ -292,10 +292,23 @@ reading apart.
 `CLAUDE_CODE_SUBAGENT_MODEL` is the model half of the same question and needs no plugin: it is a
 real subagent-only seam that reaches workflow stages too, and the README names it. The README also
 names the settings route to a subagent's effort, `modelSettings` keyed by the model a spawn resolves
-to. Re-read its three conditions along with this step, since all three are what make it worth
-knowing about rather than using: the row is keyed by a model rather than by who is spawning, its
-validator takes four level names where `opts.effort` takes five, and a level pinned by `--effort` or
-`/effort` puts the session's own effort in front of it.
+to, and its three conditions. All three are why it is worth knowing about rather than using, and
+none of them is checked by any case here, so re-read them:
+
+```sh
+grep -a -o -b 'modelSettings' "$BUILD" | head -3
+grep -a -o 'effortLevel:[A-Za-z_$][\w$]*(\["low","medium","high","xhigh"\])' "$BUILD" | head
+grep -a -o -b 'sessionEffort' "$BUILD" | head -3
+```
+
+What has to be true for the README's three conditions to hold: the per-model row is keyed by the
+model a spawn resolves to rather than by who is spawning, so with no model split it reaches the main
+loop as well; its validator takes the four names above where `opts.effort` takes five; and a level
+pinned by `--effort` or `/effort` lands in `sessionEffort` and is read in front of the per-model row,
+so the route is dead in any session that pinned one. Step 4's capture settles all three: run one side
+with `--settings '{"effortLevel":"high","modelSettings":{"<model>":{"effortLevel":"low"}}}'` and
+`CLAUDE_CODE_SUBAGENT_MODEL` set, point the stand-in's reply at a tool call so a subagent spawns, and
+read `output_config.effort` off both requests.
 
 The wire capture in step 4 is what settles any of this. Point the stand-in's reply at an `Agent` or a
 `Workflow` tool call so a subagent actually spawns, then read `output_config.effort` off the

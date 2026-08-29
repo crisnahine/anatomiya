@@ -186,6 +186,17 @@ test("contextFor opens with the whole text and answers nothing between refresher
   assert.equal(contextFor(FULL_EVERY + 1), contextFor(FULL_EVERY * 2 + 1));
 });
 
+test("a caller handing over part of the switches gets the default for the rest", () => {
+  // The default used to be a literal at the signature, so a caller passing an
+  // object without a key it predates got `undefined` for it rather than the
+  // default, and nothing failed. The object is read through the defaults now.
+  assert.equal(contextFor(1, { stageEffort: null }), contextFor(1), "the cadence keys still default");
+  assert.equal(contextFor(11, {}), contextFor(11), "and so do all of them");
+  assert.match(contextFor(1, { stageEffort: "low" }), /opts\.effort 'low'/, "while the key it was handed is honoured");
+  assert.equal(contextFor(3, { every: 3 }), null, "a cadence alone still decides the quiet turns");
+  assert.match(contextFor(4, { every: 3 }), /worth it/, "and the loud ones");
+});
+
 test("run answers with the text a turn is owed, and null when it is owed nothing", (t) => {
   const dir = stateDir(t);
 
@@ -217,7 +228,11 @@ test("every switch the hooks read is one the README names", () => {
     for (const [, found] of source.matchAll(/\benv\.(ULTRACODE_ANYWHERE[A-Z0-9_]*)/g)) read.add(found);
   }
 
-  assert.equal(read.size >= 7, true, `found only ${read.size}: ${[...read].join(", ")}`);
+  // A floor, so the set going empty turns this into a case that passes by
+  // finding nothing. `env.NAME` is the one spelling either hook writes: a
+  // bracket read, a destructure, or a rename of that binding is invisible here,
+  // and the README is then the only record of it.
+  assert.equal(read.size >= 9, true, `found only ${read.size}: ${[...read].join(", ")}`);
   assert.deepEqual([...read].filter((name) => !readme.includes(name)).sort(), [], "these are read and never written down");
 
   const named = new Set([...readme.matchAll(/\b(ULTRACODE_ANYWHERE[A-Z0-9_]*)/g)].map((found) => found[1]));
@@ -420,7 +435,7 @@ test("a level is read past the case and the spaces a shell leaves on it", (t) =>
 test("the five levels the build takes are the five this switch takes, spelled out", (t) => {
   // Spelled here rather than read off `EFFORT_LEVELS`: a case that iterates the
   // list the code reads agrees with it by construction and can never catch a
-  // level dropped from both. `test/upstream.test.mjs` is what holds the list to
+  // level dropped from both. `test/effort.test.mjs` is what holds the list to
   // the installed build.
   const levels = ["low", "medium", "high", "xhigh", "max"];
   assert.deepEqual(EFFORT_LEVELS, levels, "and the list the code reads is those five, lowest first");
