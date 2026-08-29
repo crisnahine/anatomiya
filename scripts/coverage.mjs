@@ -46,18 +46,18 @@ export const FLOORS = [
     // two things inside it.
     scope: "the whole tree",
     include: "**",
-    // Measured at 97.9 line, 94.4 branch, 97.6 function over 151 files.
+    // Measured at 97.9 line, 94.2 branch, 97.7 function over 160 files.
     whole: { lines: 95, branches: 87, functions: 95 },
     file: {},
   },
   {
     scope: "ultracode-anywhere",
     include: `${REL.ultracode}/**`,
-    // Measured at 97.1 line, 89.2 branch, 98.5 function over the five files.
+    // Measured at 97.6 line, 89.2 branch, 98.8 function over the six files.
     whole: { lines: 95, branches: 87, functions: 97 },
     // The worst single file is `counters.mjs` at 95.9 of lines on the run where
-    // its sweep catch goes uncovered, and `hook-io.mjs` at 80.5 of branches and
-    // 94.1 of functions. These sit a few points under each.
+    // its sweep catch goes uncovered, and `hook-io.mjs` at 83.8 of branches and
+    // 96.0 of functions. These sit a few points under each.
     file: { lines: 92, branches: 75, functions: 90 },
   },
   {
@@ -71,7 +71,7 @@ export const FLOORS = [
     include: `${REL.anatomiya}/lib/**`,
     // The aggregate is the scope above; this row exists for the per-file floor.
     whole: {},
-    // Measured at 98.4 line, 93.1 branch, 98.4 function over 51 files. The
+    // Measured at 98.5 line, 93.4 branch, 98.5 function over 52 files. The
     // worst single one CI can reach is `commands.mjs` at 84.9 of lines, 71.0 of
     // branches and 83.3 of functions, and these sit a few points under each.
     // The floor caught `tsconfig.mjs` at 71.4 of functions on the first run it

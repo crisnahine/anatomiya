@@ -11,6 +11,7 @@
  */
 
 import { appendLine, cached, nextTurn, stateDirFor, sweep } from "./counters.mjs";
+import { stageEffortIn } from "./effort.mjs";
 import { here, invokedAs, parsePayload, readStdin, respond } from "./hook-io.mjs";
 import { cliPath, conflictIn, driftCached, settingsFor } from "./upstream.mjs";
 
@@ -37,21 +38,53 @@ export const FULL_EVERY = 10;
  */
 const WAKEUP_SOURCES = new Set(["loop_wakeup", "schedule_wakeup", "poll_event", "system"]);
 
-const FULL = [
+/** The two paragraphs that say the same thing at every level. */
+const OPENING = [
   "Ultracode is on: optimize for the most exhaustive, correct answer, not the fastest or cheapest. Use the Workflow tool on work whose scale or risk earns it; token cost is not a constraint there. See the Workflow tool's **Ultracode** section and quality patterns.",
   "Where it does not earn it, stay solo, and say so in one clause rather than orchestrating to look thorough: a question you can answer, a fact you can read back, one file's mechanical edit, anything already verified this turn. Before spawning one, name what the fan-out buys in one clause, the coverage or the independent check; if that clause will not come, the work did not need it. Scale the harness to the work: a few finders for a narrow question, a larger pool with adversarial verification for an audit.",
-  "This standing opt-in comes from the user's own configuration and is the explicit opt-in the Workflow tool asks for, so do not wait for the keyword. It restores the orchestration instruction only: the session's effort level is unchanged and this text does not raise it. Every subagent and every workflow stage runs at that same level, so leave opts.effort alone. Depth comes from how the work is split and independently checked, at the level the session is set to.",
-].join("\n\n");
+];
 
-const SHORT = "Ultracode is still on: use the Workflow tool where the work is worth it, solo where it is not.";
+/** The sentences either third paragraph opens with, since both are true either way. */
+const STANDING =
+  "This standing opt-in comes from the user's own configuration and is the explicit opt-in the Workflow tool asks for, so do not wait for the keyword. It restores the orchestration instruction only: the session's effort level is unchanged and this text does not raise it.";
 
-/** The cadence this session runs at, and the default for anything unreadable. */
-function cadenceFrom(env) {
+/** One level runs the whole session, which is what a session that set none gets. */
+const ONE_LEVEL =
+  "Every subagent and every workflow stage runs at that same level, so leave opts.effort alone. Depth comes from how the work is split and independently checked, at the level the session is set to.";
+
+/**
+ * The fan-out at a level the user named, which is the one thing a session
+ * cannot ask for any other way.
+ *
+ * A stage carries no definition file to hold an effort, so `opts.effort` is the
+ * only lever that reaches one, and the Agent tool takes no effort argument at
+ * all. The exception is named rather than left out: a stage checking another's
+ * work is the independent check the depth argument rests on, and running that
+ * one shallower is where the saving stops being free.
+ */
+function loweredTo(level) {
+  return `That same configuration asks the fan-out to run below the session, so pass opts.effort '${level}' on every workflow stage, except a stage checking or judging another's work, which keeps the session's level. The Agent tool carries no effort of its own, so this reaches workflow stages and nothing else. Depth comes from how the work is split and independently checked.`;
+}
+
+/** The whole standing opt-in, at the stage level this session asked for. */
+export function full(stageEffort = null) {
+  return [...OPENING, `${STANDING} ${stageEffort ? loweredTo(stageEffort) : ONE_LEVEL}`].join("\n\n");
+}
+
+/** The line that keeps the mode in view, carrying the level where one was asked for. */
+function short(stageEffort = null) {
+  const still = "Ultracode is still on: use the Workflow tool where the work is worth it, solo where it is not";
+  return stageEffort ? `${still}, and stages at opts.effort '${stageEffort}' unless they check another stage's work.` : `${still}.`;
+}
+
+/** What this session's switches ask the text to be, and the default for anything unreadable. */
+function switchesFrom(env) {
   const every = String(env.ULTRACODE_ANYWHERE_EVERY ?? "");
   return {
     every: /^\d{1,4}$/.test(every) && Number(every) > 0 ? Number(every) : FULL_EVERY,
     refresher: env.ULTRACODE_ANYWHERE_REFRESHER !== "0",
     repeatFull: env.ULTRACODE_ANYWHERE_FULL === "repeat",
+    stageEffort: stageEffortIn(env),
   };
 }
 
@@ -79,10 +112,10 @@ const onCadence = (turn, every = FULL_EVERY) => (turn - 1) % every === 0;
  * What this turn is owed: the whole opt-in on the first turn, the line that
  * keeps it in view on every tenth after that, and nothing on the rest.
  */
-export function contextFor(turn, cadence = { every: FULL_EVERY, refresher: true, repeatFull: false }) {
-  if (turn === 1) return FULL;
-  if (!cadence.refresher || !onCadence(turn, cadence.every)) return null;
-  return cadence.repeatFull ? FULL : SHORT;
+export function contextFor(turn, switches = { every: FULL_EVERY, refresher: true, repeatFull: false, stageEffort: null }) {
+  if (turn === 1) return full(switches.stageEffort);
+  if (!switches.refresher || !onCadence(turn, switches.every)) return null;
+  return switches.repeatFull ? full(switches.stageEffort) : short(switches.stageEffort);
 }
 
 /** The text this turn should carry, or null when the turn is owed nothing. */
@@ -111,11 +144,11 @@ export function run({ stdin = "", env = process.env, state = stateDirFor(env) } 
   if (debug) log(debug, stdin, conflict ?? moved);
   if (conflict || moved) return null;
 
-  const cadence = cadenceFrom(env);
+  const switches = switchesFrom(env);
   const session = sessionIn(payload);
   const turn = session ? nextTurn(state, session) : 1;
-  if (session && onCadence(turn, cadence.every)) sweep(state);
-  return contextFor(turn, cadence);
+  if (session && onCadence(turn, switches.every)) sweep(state);
+  return contextFor(turn, switches);
 }
 
 /**
