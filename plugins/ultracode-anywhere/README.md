@@ -7,7 +7,7 @@ Keeps ultracode's standing Workflow orchestration on at any effort level.
 In Claude Code the ultracode gate is one predicate:
 
 ```js
-function Ale(model, effort, flag) { return flag === true && gH() && kQ(model, effort) === "xhigh" }
+function Wv(model, effort, flag) { return flag === true && Zu() && yT(model, effort) === "xhigh" }
 ```
 
 The `xhigh` term is a conjunct, not a side effect, so dropping to `medium` turns the mode off.
@@ -17,10 +17,13 @@ around it, and on no effort term at all, so wherever the tool is available it st
 every level.
 
 A wire-level diff of `ultracode:true` at xhigh against `effortLevel:medium` plus this plugin, with
-the session id held fixed and the same prompt in the same directory, differs in exactly two places:
-the reminder text itself, and `output_config.effort`. The system prompt is identical, and so is
-every tool definition, the Workflow tool's included. The reminder is the difference the plugin
-exists to make; the effort is the one it deliberately leaves alone. `VERIFYING.md` has the recipe.
+the session id held fixed and the same prompt in the same directory, differs in three places: the
+reminder text itself, `output_config.effort`, and the `workflow-authoring` skill the native side
+loads into the user message. The system prompt is identical, and so is every one of the 24 tool
+definitions, the Workflow tool's included. The reminder is the difference the plugin exists to make,
+the effort is the one it deliberately leaves alone, and the skill is the one it cannot reach. Against
+a plain `--effort xhigh` with no `ultracode` key the diff is two leaves, so the flag is what loads the
+skill and not the level. `VERIFYING.md` has the recipe.
 
 This plugin restates that reminder, so the mode holds at whatever level is set.
 
@@ -37,12 +40,12 @@ It does not lift the concurrent-subagent cap, and no reminder can. Native ultrac
 which the build says in as many words:
 
 ```js
-let yt = PHp(); if (l.taskRegistry.getConcurrentSubagents() < yt) return;
-if (nt("tengu_amber_kestrel", false)) return;
-let lt = l.getAppState();
-if (Ale(l.rootToolSurface.mainLoopModel, fC(lt), lt.ultracode)) return;
+let Pr = AXn(); if (A.taskRegistry.getConcurrentSubagents() < Pr) return;
+if (I("tengu_amber_kestrel", false)) return;
+let ss = A.getAppState();
+if (Wv(A.rootToolSurface.mainLoopModel, il(ss), ss.ultracode)) return;
 ... "Concurrent subagent limit reached"
-function PHp() { return G.CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS ?? H4S }   // H4S = 20
+function AXn() { return a.CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS ?? J }   // J = 20
 ```
 
 The refusal returns early when the ultracode predicate holds, and that predicate reads the session's
@@ -75,6 +78,13 @@ one running cheapest, which is the reading to avoid. Depth is otherwise bought b
 split and independently checked, which is the lever a prompt controls without changing what the
 session costs.
 
+It does not load the `workflow-authoring` skill, and native ultracode does. That is the third leaf
+of the wire diff: `"ultracode": true` puts the whole reference into the user message, a command block
+and about sixteen thousand characters of body, so a native session starts holding the script API,
+the resume rules and the worked examples that the reminder's own text points at. Nothing a hook
+writes can load a skill. The reminder names the reference instead, and a session that wants it in
+context can ask for it.
+
 The model half of the same question needs nothing from this plugin. `CLAUDE_CODE_SUBAGENT_MODEL` is
 a real subagent-only seam upstream: set it and every spawn resolves to that model while the main loop
 keeps its own, workflow stages included. Measured in the environment, and `settings.json`'s `"env"`
@@ -92,7 +102,7 @@ the ordinary case for anyone reading this page.
 
 ## What it costs
 
-One short-lived `node` process per prompt, about 30 ms of it over ten runs on the machine this was
+One short-lived `node` process per prompt, about 20 ms of it over ten runs on the machine this was
 measured on, most of which is node starting. What reaches the model is 1266 characters on the first
 turn, 94 on every tenth after that, and nothing on the rest, appended after the user message so the
 cache prefix is untouched. Over a 30-turn session that is 1454 characters in total,
@@ -105,9 +115,9 @@ characters on the first turn and 194 on every tenth after that, or 1852 over 30 
 characters more than the default over such a session, against a fan-out it moves by a whole effort
 level.
 
-The session check reads the installed build once per build, not once per session: about 200 ms
-the first time, about 30 after, since the answer is kept beside the turn counters under the
-build's path, size and timestamp. All of these are one machine's numbers with a warm page cache;
+The session check reads the installed build once per build, not once per session: about 90 ms the
+first time on a warm page cache, about 30 after, since the answer is kept beside the turn counters
+under the build's path, size and timestamp. All of these are one machine's numbers with a warm page cache;
 the shape to rely on is one process per prompt and one bundle read per install, not the
 milliseconds.
 
@@ -143,8 +153,11 @@ It reads the settings files Claude Code reads, the user's with a project's own o
 environment variables the build reads alongside them, and says nothing at all in a session where it
 would be noise:
 
-- `"ultracode": true` forces xhigh whatever `effortLevel` says, and the built-in reminder already
-  fires. A second copy is tokens for nothing.
+- `"ultracode": true` resolves effort to xhigh over `effortLevel`, and the built-in reminder fires.
+  A second copy is tokens for nothing. One case gets neither: a `--effort` flag or `/effort` below
+  xhigh beats the key, so the gate does not hold, the built-in stays silent, and this hook has
+  already gone quiet on the key it can see. The line at the start of the session names both, since
+  nothing else can.
 - `"enableWorkflows": false`, `"disableWorkflows": true`, `CLAUDE_CODE_DISABLE_WORKFLOWS=1` or
   `CLAUDE_CODE_WORKFLOWS=false` all mean there is no Workflow tool for the reminder to point at.
   The build reads the disable switches first, and so does this.
@@ -184,7 +197,7 @@ inside, and the predicate is one minified function whose names change between bu
 shape does not.
 
 ```js
-function Ale(e,t,r){return r===!0&&gH()&&kQ(e,t)==="xhigh"}
+function Wv(e,o,t){return t===!0&&Zu()&&yT(e,o)==="xhigh"}
 ```
 
 What the premise needs is that `"xhigh"` is a conjunct there rather than something the reminder
@@ -192,10 +205,10 @@ sets, so the check matches a function returning a flag, a call and an effort com
 `"xhigh"`, in any of the spellings a minifier chooses between. A build that stops requiring it is a
 build this plugin no longer describes, whatever names survive.
 
-A proximity test was tried first and dropped on evidence: the build has 14 `ultra_effort_enter`
-sites and 235 occurrences of `xhigh`, and the closest pair is 185,312 bytes apart, so a window of
-20,000 would have failed on the build it was calibrated against. Reading the predicate is what
-replaced it.
+A proximity test was tried first and dropped on evidence: the build has 9 `ultra_effort_enter` sites
+and 115 occurrences of `xhigh`, and the closest pair is 168,197 bytes apart, so a window of 20,000
+would have failed on the build it was calibrated against by a factor of eight. Reading the predicate
+is what replaced it.
 
 Claude Code updates itself, so expect the version line whenever the minor moves, and again once a
 run of patch releases has gone by without one. A single patch bump gets no line, which is not the
@@ -218,7 +231,7 @@ notice, since a CI runner has no Claude Code to read.
 four, or the gate, the hook stays quiet for the session. It is off by default, since going silent
 costs the mode to everyone whose build is fine. The answer is kept beside the turn counters under
 the build's own path, size and timestamp, so it costs one bundle read after an install rather than
-one per prompt: about 200 ms on the first turn, then about 30, against a hook timeout of 5 seconds.
+one per prompt: about 90 ms on the first turn, then about 30, against a hook timeout of 5 seconds.
 
 `test/upstream.test.mjs` runs the same check against whatever is installed on the machine running
 the suite, and skips where there is none.
@@ -233,7 +246,7 @@ whole text again. A resumed session keeps its count; a fork is a new session and
 whole text.
 
 It skips loop, schedule, poll and system wakeups, which are turns the user did not type, when the
-payload says which it is. 2.1.241 declares that `source` field in its hook schema and does not send
+payload says which it is. 2.1.251 declares that `source` field in its hook schema and does not send
 it: a payload caught off that build carries the session, the transcript, the directory, the prompt
 and its id, the permission mode, and nothing naming who typed it. So a wakeup counts as a turn there
 and gets whatever its place in the cadence earns; the skip starts working the day the field arrives,
