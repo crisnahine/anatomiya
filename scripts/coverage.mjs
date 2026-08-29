@@ -12,9 +12,9 @@
  * is. Moving one down moves the problem rather than removing it.
  *
  * Measured on the whole tree when this floor was set, 13 of the 151 files then
- * counted sat under its own floor while the total cleared, and the largest
- * module the plugin ships could have lost every covered line unnoticed. So the
- * plugin's own `lib` is held to a floor per file too.
+ * counted sat under the whole-tree floor on their own while the total cleared,
+ * and the largest module the plugin ships could have lost every covered line
+ * unnoticed. So the plugin's own `lib` is held to a floor per file too.
  * The rest of the tree is not: the `--deep` tier runs only in the smoke job and
  * the harnesses under `scripts/` are run by hand, so `scripts/ab/run.mjs`
  * reports a third of its lines, and a floor low enough to admit that says
@@ -71,7 +71,7 @@ export const FLOORS = [
     include: `${REL.anatomiya}/lib/**`,
     // The aggregate is the scope above; this row exists for the per-file floor.
     whole: {},
-    // Measured at 98.5 line, 93.4 branch, 98.5 function over 52 files. The
+    // Measured at 98.5 line, 93.3 branch, 98.5 function over 52 files. The
     // worst single one CI can reach is `commands.mjs` at 84.9 of lines, 71.0 of
     // branches and 83.3 of functions, and these sit a few points under each.
     // The floor caught `tsconfig.mjs` at 71.4 of functions on the first run it

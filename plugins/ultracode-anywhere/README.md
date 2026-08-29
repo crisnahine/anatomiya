@@ -100,8 +100,8 @@ the opening text plus two refreshers. A payload that names no session, or a stat
 cannot use, reads every turn as the first one, and a 30-turn session then costs 30 opening texts
 instead. The reminder is the cheap half either way.
 
-`ULTRACODE_ANYWHERE_STAGE_EFFORT` puts the level into both, which at its longest level name is 1456
-characters on the first turn and 194 on every tenth after that, or 1844 over 30 turns. That is 390
+`ULTRACODE_ANYWHERE_STAGE_EFFORT` puts the level into both, which at its longest level name is 1464
+characters on the first turn and 194 on every tenth after that, or 1852 over 30 turns. That is 398
 characters more than the default over such a session, against a fan-out it moves by a whole effort
 level.
 

@@ -294,7 +294,7 @@ test("the README states what the stage level adds, at the level that adds the mo
   // name is the honest one to state, since it bounds the rest.
   const readme = readFileSync(fileURLToPath(new URL("../plugins/ultracode-anywhere/README.md", import.meta.url)), "utf8");
   const stated = readme.match(/longest\s+level\s+name\s+is\s+(\d+)\s+characters\s+on\s+the\s+first\s+turn\s+and\s+(\d+)\s+on\s+every\s+tenth\s+after\s+that,\s+or\s+(\d+)\s+over\s+30\s+turns/);
-  const more = readme.match(/That\s+is\s+(\d+)\s*\n?\s*characters\s+more\s+than\s+the\s+default/);
+  const more = readme.match(/That\s+is\s+(\d+)\s+characters\s+more\s+than\s+the\s+default/);
 
   assert.ok(stated, "the README says what the switch costs");
   const at = (level) => ({ stageEffort: level });
@@ -420,7 +420,7 @@ test("the exception says which stage it is and what to do about it, in both text
   // this cannot look up.
   const said = run({ stdin: payload(), env: { ...nowhere(t), ULTRACODE_ANYWHERE_STAGE_EFFORT: "low" }, state: stateDir(t) });
 
-  assert.match(said, /pass opts\.effort 'low' on every workflow stage\./);
+  assert.match(said, /pass opts\.effort 'low' on every workflow stage but one\./, "the absolute is scoped where it stands");
   assert.match(said, /Leave it out of a stage checking or judging another stage's work/);
   assert.match(said, /so that one runs at the session's level unless its own definition sets one/);
   assert.match(
