@@ -55,7 +55,10 @@ export async function runScan(cwd, { dryRun = false, deep = false } = {}) {
 export function runEcho(cwd, payload) {
   const event = payload?.hook_event_name;
   if (!event) return {};
-  const additionalContext = echoContext(aboutDir(payload, cwd) ?? cwd);
+  // The call's own repository first, then the session's. Reading something
+  // outside the repository is ordinary, a system file or another project's, and
+  // answering nothing there takes the map off a turn that had one before.
+  const additionalContext = echoContext(aboutDir(payload, cwd)) ?? echoContext(cwd);
   if (additionalContext === null) return {};
   return { hookSpecificOutput: { hookEventName: event, additionalContext } };
 }
@@ -72,6 +75,9 @@ export function runEcho(cwd, payload) {
 export function runNotice(cwd, payload) {
   const event = payload?.hook_event_name;
   if (!event) return {};
+  // No falling back to the session's layout, unlike the map above: a target
+  // outside the repository that answered is outside this one too, so `targetIn`
+  // refuses it a line later and both roads end in silence.
   const found = ownLayout(aboutDir(payload, cwd) ?? cwd);
   if (found === null) return {};
   const rel = targetIn(payload, found.root, cwd);

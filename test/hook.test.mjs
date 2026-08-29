@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { spawn, spawnSync, execFileSync } from "node:child_process";
 
 import { needsPosixSpecialFiles, needsUnreadableDirs } from "./platform.mjs";
-import { echoContext, ownLayout, planRemoval, commitRemoval, targetIn, HOOK_COMMAND, NOTICE_COMMAND, PAYLOAD_WAIT_MS, SETTINGS_PATH } from "../plugins/anatomiya/lib/hook.mjs";
+import { aboutDir, echoContext, ownLayout, planRemoval, commitRemoval, targetIn, HOOK_COMMAND, NOTICE_COMMAND, PAYLOAD_WAIT_MS, SETTINGS_PATH } from "../plugins/anatomiya/lib/hook.mjs";
 import { FACTS_PATH, FACTS_SCHEMA } from "../plugins/anatomiya/lib/facts.mjs";
 import { HEAD_BYTES } from "../plugins/anatomiya/lib/rules.mjs";
 import { ANATOMIYA } from "../scripts/plugins.mjs";
@@ -64,6 +64,20 @@ test("the write target is read from the key each tool spells it with", (t) => {
   assert.equal(targetIn({ tool_name: "Write", tool_input: { file_path: join(dir, "a/b.ts") } }, dir), "a/b.ts");
   assert.equal(targetIn({ tool_name: "Edit", tool_input: { file_path: join(dir, "a/b.ts") } }, dir), "a/b.ts");
   assert.equal(targetIn({ tool_name: "NotebookEdit", tool_input: { notebook_path: join(dir, "a/n.ipynb") } }, dir), "a/n.ipynb");
+});
+
+test("a path longer than one a filesystem can hold names no place, in constant time", () => {
+  // The walk costs a `stat` and a copy per segment and had no bound. A payload
+  // under the one megabyte this reads held 400,000 segments and took 7.8s,
+  // against the 5 the declaration asks for: the turn loses its map and a
+  // process burns the budget, before every tool call. No filesystem holds a
+  // path this long, so it names nothing and is refused before the walk.
+  const absurd = `/${"a/".repeat(200_000)}b`;
+  const started = Date.now();
+
+  assert.equal(aboutDir({ tool_name: "Read", tool_input: { file_path: absurd } }, "/tmp"), null);
+
+  assert.ok(Date.now() - started < 1000, `refusing it took ${Date.now() - started}ms`);
 });
 
 test("a target outside the repository, or absent, is not this repository's business", (t) => {

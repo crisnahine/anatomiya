@@ -246,6 +246,15 @@ export function holdsTestIn(root, isTest) {
 }
 
 /**
+ * How long a path may be before it names nothing.
+ *
+ * `PATH_MAX` is 4096 on Linux and 1024 on macOS, and a path past it cannot open
+ * anywhere. This is the larger of the two and generous with it: what it is for
+ * is the payload that is not a path at all.
+ */
+const PATH_MOST = 4096;
+
+/**
  * Where each tool spells the place it is about.
  *
  * Measured on 2.1.251, off captured payloads rather than off the tool
@@ -313,6 +322,12 @@ export function aboutDir(payload, fallback) {
   const here = typeof payload?.cwd === "string" && payload.cwd ? payload.cwd : fallback;
   const key = ABOUT_KEY[payload?.tool_name];
   const raw = key ? payload?.tool_input?.[key] : null;
+  // Refused before the walk, which costs a stat and a copy per segment. A
+  // payload under the megabyte this reads held 400,000 segments and took 7.8s
+  // against the 5 the declaration asks for, so the turn lost its map and a
+  // process burnt the budget, before every tool call. No filesystem holds a
+  // path this long, so it names no place and there is nothing to walk to.
+  if (typeof raw === "string" && raw.length > PATH_MOST) return null;
   // Read against the directory the payload names, because the tool read it
   // against that one: nothing normalises `tool_input` on the way here, and a
   // relative path was measured arriving raw. A reader that refuses one falls
