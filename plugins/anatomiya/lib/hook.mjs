@@ -312,6 +312,26 @@ function isDir(path) {
 }
 
 /**
+ * Whether a directory sits inside a checkout of its own.
+ *
+ * What separates "this call belongs to a repository that has nothing to say"
+ * from "this call belongs to no repository at all". Only the second may be
+ * answered from somewhere else: a nested checkout with no map, or one whose map
+ * is empty, is a repository, and handing it the enclosing one's counts is the
+ * thing the boundary walk above exists to refuse.
+ */
+export function inCheckout(from) {
+  let at = realpathOrNull(resolve(from));
+  if (at === null) return false;
+  for (;;) {
+    if (isBoundary(at)) return true;
+    const up = dirname(at);
+    if (up === at) return false;
+    at = up;
+  }
+}
+
+/**
  * The directory the tool call is about, or null where the payload names none.
  *
  * A hook fires with the session's working directory, which says where a shell
@@ -360,7 +380,13 @@ export function targetIn(payload, root, from) {
   // already located.
   const here = typeof payload?.cwd === "string" && payload.cwd ? payload.cwd : from;
   if (!isAbsolute(raw) && here === undefined) return null;
-  const rel = relative(resolveLinks(resolve(root)), resolveLinks(resolve(here ?? "/", raw)));
+  const target = resolve(here ?? "/", raw);
+  // The same bound the map's reader takes, and for the same reason one segment
+  // deeper: `resolveLinks` recurses per segment, so a path the other refuses in
+  // milliseconds was a stack overflow here. Both fields make the path, so the
+  // bound is on what they made.
+  if (target.length > PATH_MOST) return null;
+  const rel = relative(resolveLinks(resolve(root)), resolveLinks(target));
   if (!rel || rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel)) return null;
   return rel.split("\\").join("/");
 }

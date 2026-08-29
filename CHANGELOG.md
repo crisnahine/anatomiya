@@ -30,9 +30,11 @@ call was about, so two checkouts sitting side by side served each other's map.
   a path a write is inventing with the nearest ancestor that exists. Taking the
   parent of a directory would have been the same bug again, since a `Glob` at a
   repository root would then answer from the directory holding every checkout.
-- A call naming a file outside every map leaves the session's own map standing rather than blanking
-  it. Reading a system file, a dependency or another project's source is ordinary, and answering
-  nothing there takes the map off a turn that had one before.
+- A call naming a file in no checkout at all leaves the session's own map standing rather than
+  blanking it. Reading a system file, a dependency or another project's source is ordinary, and
+  answering nothing there takes the map off a turn that had one before. A call that does have a
+  checkout is answered by that checkout even when the answer is silence, so a nested repository with
+  no map, and one whose map is empty, are not handed the enclosing checkout's counts.
 - A path longer than any filesystem can hold names no place and is refused before the walk. The walk
   costs a stat and a copy per segment, and a payload inside the megabyte a hook reads held 400,000 of
   them and took 7.8 seconds against the 5 its declaration asks for, so the turn lost its map and a
