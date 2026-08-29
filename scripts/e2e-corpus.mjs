@@ -16,6 +16,13 @@
  *
  * Read-only over the corpus. A repository is cloned with `--local`, which
  * hardlinks the object store, and nothing is ever written back into it.
+ *
+ * The tree this runs from has to hold still. Each repository shells out to
+ * `bin/anatomiya.mjs` in the working tree, so a file edited while the run is in
+ * flight puts two builds in one report: measured here, editing during a 35
+ * repository run produced two stability failures on one repository that no
+ * isolated run of it could reproduce, on this tree or on the commit before it,
+ * and a frozen re-run passed all 36. Start it and leave the checkout alone.
  */
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";

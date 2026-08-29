@@ -1,6 +1,6 @@
 # Contributing
 
-Read `DECISIONS.md` first. It is 197 numbered rows, each one a measurement or a review finding reduced
+Read `DECISIONS.md` first. It is 200 numbered rows, each one a measurement or a review finding reduced
 to the decision it forces on the code. It is the build contract, and most questions you will have
 about why something is shaped the way it is are answered there in one line.
 
@@ -21,6 +21,19 @@ node --test 'test/**/*.test.mjs'
 ```sh
 node --test test/encode.test.mjs
 ```
+
+Changing what `plugins/anatomiya/package.json` depends on takes one more step:
+
+```sh
+npm install                 # the marketplace's own lockfile
+npm run lock:plugin         # the plugin's, seeded from it
+```
+
+The plugin ships a lockfile of its own because Claude Code installs a plugin's dependencies from the
+one beside its manifest, and the marketplace's is a directory up where the loader never looks. It is
+seeded from the marketplace's resolutions rather than resolved afresh, so the two cannot answer
+different versions for one range. `npm run validate` refuses a plugin whose lockfile is missing,
+stale, or disagreeing.
 
 No test framework, no mocks, no fixtures generated at runtime. `node:test` and `node:assert` only.
 Tests that need a repository build one in a temp directory with real `git init` and real commits,

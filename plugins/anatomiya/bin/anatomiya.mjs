@@ -62,6 +62,31 @@ function fail(message, code = 2) {
 }
 
 /**
+ * The directory this process is in, or nothing where it has been removed under it.
+ *
+ * `process.cwd()` refuses with ENOENT once the directory a session started in is
+ * unlinked, which `git worktree remove` does to a session sitting in one. Node
+ * caches the answer and clears it only on a `chdir`, so a process that read it
+ * once keeps the stale path for ever and one that never did refuses for ever:
+ * the failure is whole-process, which is why a session goes quiet for the rest
+ * of its life rather than for one call, and why a case that proves anything
+ * about it has to start a process with the directory already gone.
+ *
+ * A hook may not lose the turn over it: the payload carries its own `cwd`, and
+ * its readers already answer with no base at all, so the absent one is let
+ * through to them. A scan needs a real directory to walk, and says which one is
+ * missing rather than handing nothing to a git call to fail on later.
+ */
+function sessionDir(isHook) {
+  try {
+    return process.cwd();
+  } catch {
+    if (isHook) return null;
+    throw new Error("the directory this was run from has been removed, so there is no repository to answer about: give a path");
+  }
+}
+
+/**
  * Anything starting with `-` is a flag, never a path. A tracked file may be
  * named `--instruction-file-path=.git/config`, and taking it as the positional
  * argument would hand it straight to a subprocess.
@@ -135,10 +160,11 @@ if (opts.help) {
   console.log(USAGE);
 } else {
   try {
-    // Read inside the guard, because reading it is one of the things that fails:
-    // `process.cwd()` refuses with ENOENT once the directory a session was
-    // started in is unlinked, which a removed worktree does.
-    const cwd = opts.path === null ? process.cwd() : opts.path;
+    // Only the verbs that answer about a repository ask where this process is.
+    // `doctor` and `setup` answer about this installation and take no path, so
+    // a directory removed under them decides nothing they say.
+    const spec = COMMANDS[opts.cmd];
+    const cwd = spec.path ? opts.path ?? sessionDir(spec.hook === true) : null;
 
     if (opts.cmd === "check") {
       const { report } = await runCheck(cwd, { baseRef: opts.baseRef });

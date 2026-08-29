@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { spawn, spawnSync, execFileSync } from "node:child_process";
 
 import { needsPosixSpecialFiles, needsUnreadableDirs } from "./platform.mjs";
-import { aboutDir, echoContext, ownLayout, planRemoval, commitRemoval, targetIn, HOOK_COMMAND, NOTICE_COMMAND, PAYLOAD_WAIT_MS, SETTINGS_PATH } from "../plugins/anatomiya/lib/hook.mjs";
+import { aboutDir, echoContext, fieldsIn, ownLayout, planRemoval, commitRemoval, targetIn, HOOK_COMMAND, NOTICE_COMMAND, PAYLOAD_WAIT_MS, SETTINGS_PATH } from "../plugins/anatomiya/lib/hook.mjs";
 import { FACTS_PATH, FACTS_SCHEMA } from "../plugins/anatomiya/lib/facts.mjs";
 import { HEAD_BYTES } from "../plugins/anatomiya/lib/rules.mjs";
 import { ANATOMIYA } from "../scripts/plugins.mjs";
@@ -122,6 +122,70 @@ test("a target outside the repository, or absent, is not this repository's busin
     "spec/x_spec.rb",
     "and one that does carry a base is read against it"
   );
+});
+
+test("both readers answer a payload with no base to fall back to", (t) => {
+  // The entry point used to hand these `process.cwd()`, which refuses once the
+  // directory a session started in is unlinked. The base is now allowed to be
+  // absent, so both have to answer without one rather than throw: a throw here
+  // reaches the guard, which answers the empty object, and the turn loses its
+  // map over a payload that named a live file.
+  const dir = recorded(t);
+  mkdirSync(join(dir, "a"), { recursive: true });
+
+  assert.equal(
+    aboutDir({ tool_name: "Read", tool_input: { file_path: join(dir, "a/b.ts") } }, undefined),
+    join(dir, "a"),
+    "an absolute path needs no base"
+  );
+  assert.equal(
+    aboutDir({ tool_name: "Read", cwd: dir, tool_input: { file_path: "a/b.ts" } }, undefined),
+    join(dir, "a"),
+    "and a relative one is read against the payload's own directory"
+  );
+  // The node behaviour the reader is written around, pinned rather than
+  // relied on: `resolve` walks its arguments from the right and stops at the
+  // first one it can finish from, so it never looks at an absent base behind
+  // one, while a relative path leaves it looking and it throws. The reader
+  // passes `"/"` rather than the absent base either way, so it depends on
+  // neither, and this is what would have to change for that to stop being belt
+  // and braces.
+  //
+  // Built out from a path the platform already resolves to itself, the way the
+  // length case above is. `isAbsolute` and "resolve can finish here" are not
+  // the same test on Windows: `/abs` answers true to the first and still sends
+  // `resolve` looking for a drive, so it reaches the absent base and throws
+  // where POSIX had already returned.
+  const rooted = join(resolve(tmpdir()), "abs");
+  assert.equal(resolve(rooted), rooted, "the fixture is a path resolve is the identity on");
+  assert.equal(resolve(undefined, rooted), rooted, "an absolute path is reached before the base is read");
+  assert.throws(() => resolve(undefined, "rel"), { code: "ERR_INVALID_ARG_TYPE" });
+  assert.equal(
+    aboutDir({ tool_name: "Read", tool_input: { file_path: "a/b.ts" } }, undefined),
+    null,
+    "a relative path with no base names no place, rather than throwing"
+  );
+  assert.equal(aboutDir({ tool_name: "Bash", tool_input: { command: "ls" } }, undefined), null);
+  assert.equal(aboutDir({}, undefined), null);
+
+  assert.equal(targetIn({ tool_name: "Write", tool_input: { file_path: join(dir, "a/b.ts") } }, dir, undefined), "a/b.ts");
+  assert.equal(targetIn({ tool_name: "Write", tool_input: { file_path: "a/b.ts" } }, dir, undefined), null);
+});
+
+test("a base that is not absolute is no base, since reading it needs the directory this may not have", () => {
+  // `resolve` reaches `process.cwd()` for any argument list with nothing
+  // absolute in it, which is the one call A46 exists to keep off this path: a
+  // payload carrying a relative `cwd` would throw there in the removed-worktree
+  // case, and answer against the hook process's own directory in every other,
+  // which is what `aboutDir` says it refuses to do. Measured on 2.1.251 the
+  // field arrives resolved, so this is the shape a salvaged or hand-written
+  // payload could take rather than one the build sends.
+  assert.equal(aboutDir({ tool_name: "Read", cwd: "rel/dir", tool_input: { file_path: "a.ts" } }, undefined), null);
+  assert.equal(aboutDir({ tool_name: "Bash", cwd: "rel/dir", tool_input: { command: "ls" } }, undefined), null);
+  assert.equal(targetIn({ tool_name: "Write", cwd: "rel/dir", tool_input: { file_path: "a.ts" } }, "/r", undefined), null);
+  // An absolute path needs no base at all, so it is answered whatever the
+  // payload said about where it was.
+  assert.equal(targetIn({ tool_name: "Write", cwd: "rel/dir", tool_input: { file_path: "/r/a.ts" } }, "/r", undefined), "a.ts");
 });
 
 test("a file the payload spells through a link is the same file the root was resolved to", (t) => {
@@ -667,11 +731,23 @@ test("the notice answers an object and exits 0 with no event, no payload and a p
     tool_name: "Write",
     tool_input: { file_path: spec, padding: "x".repeat(2 * 1024 * 1024) },
   });
-  for (const [what, input] of [["not json", "{ not json"], ["nothing at all", ""], ["past the bound", past]]) {
+  for (const [what, input] of [["not json", "{ not json"], ["nothing at all", ""]]) {
     const run = spawnSync(command, { cwd: dir, shell: true, timeout: 10_000, input, encoding: "utf8" });
     assert.equal(run.status, 0, `${what}: ${run.stderr}`);
     assert.deepEqual(JSON.parse(run.stdout), {}, what);
   }
+
+  // Past the bound this used to answer the empty object, and the case asserted
+  // it. That was the reader's limit written down as though it were the rule: a
+  // `Write` whose content runs past the cap is the write this hook has most to
+  // say about, and the fields it needs are the short ones in front of it.
+  const run = spawnSync(command, { cwd: dir, shell: true, timeout: 10_000, input: past, encoding: "utf8" });
+  assert.equal(run.status, 0, run.stderr);
+  assert.match(
+    JSON.parse(run.stdout).hookSpecificOutput.additionalContext,
+    /spec\/mailers holds no other test/,
+    "a write bigger than the cap is still a write this repository has something to say about"
+  );
 });
 
 test("the same command in a repository with no map answers an empty object", (t) => {
@@ -1024,7 +1100,11 @@ test("half a payload is still not a payload, however long the pipe stays open", 
 
 test("a payload past the cap is answered rather than read whole", async (t) => {
   // Whatever the far end sends, the hook pays for a megabyte of it at most: it
-  // runs on every tool call, and the writer decides the size.
+  // runs on every tool call, and the writer decides the size. That bound is
+  // what this holds. It used to assert the empty object as well, which was the
+  // reader's limit standing in for the rule: the event is named in the first
+  // hundred bytes and the three megabytes after it are padding, so the turn was
+  // losing a map it had everything it needed to deliver.
   const dir = mapped(t);
   const hook = hookProcess(dir);
   const { child } = hook;
@@ -1035,7 +1115,33 @@ test("a payload past the cap is answered rather than read whole", async (t) => {
 
   const { code, stderr } = await within(hook, 8000);
   assert.equal(code, 0, stderr);
-  assert.deepEqual(JSON.parse(stdout), {}, "an oversize payload is not the event it claims to be");
+  const said = JSON.parse(stdout);
+  assert.equal(said.hookSpecificOutput.hookEventName, "UserPromptSubmit");
+  assert.match(said.hookSpecificOutput.additionalContext, /<repository-map delivered="/);
+  assert.equal(said.hookSpecificOutput.additionalContext.includes("xxxx"), false, "and none of the padding came back with it");
+});
+
+test("a member sitting past the cap is one the reader never reaches", async (t) => {
+  // The bound itself, asserted by what it costs rather than by a number: this
+  // payload names a repository, and it names it a megabyte in. A reader with no
+  // cap, or with a larger one, answers that map; this one has stopped reading
+  // by then and answers the empty object. Without a case like this the cap
+  // could be deleted outright and every case in this file would still pass.
+  const dir = mapped(t);
+  mkdirSync(join(dir, ".git"), { recursive: true });
+  const hook = hookProcess(dir);
+  const { child } = hook;
+  let stdout = "";
+  child.stdout.setEncoding("utf8");
+  child.stdout.on("data", (chunk) => { stdout += chunk; });
+  child.stdin.end(
+    `{"tool_name":"Read","pad":"${"x".repeat(2 * 1024 * 1024)}","hook_event_name":"PostToolUse","cwd":${JSON.stringify(dir)}}`,
+  );
+
+  const { code, stderr } = await within(hook, 8000);
+
+  assert.equal(code, 0, stderr);
+  assert.deepEqual(JSON.parse(stdout), {}, "a field a megabyte in was read, so the bound is not being kept");
 });
 
 
@@ -1073,4 +1179,188 @@ test("a settings file larger than the cap is refused, not read whole", (t) => {
   writeFileSync(join(dir, SETTINGS_PATH), `{"pad":"${"x".repeat(2 * 1024 * 1024)}"}`);
 
   assert.throws(() => planRemoval(dir), /could not be read/);
+});
+
+// --- what is left of a payload that will not parse whole ----------------------
+
+/** The envelope Claude Code sends, in the field order 2.1.251 builds it in. */
+const envelope = (extra = {}) => ({
+  session_id: "abc",
+  cwd: "/repo",
+  hook_event_name: "PostToolUse",
+  tool_name: "Read",
+  tool_input: { file_path: "/repo/src/a.ts" },
+  ...extra,
+});
+
+test("a whole payload followed by anything still answers the fields it carried", () => {
+  // `JSON.parse` refuses trailing bytes that are not whitespace, so the cap's
+  // own case, a complete document and then padding, threw and the turn lost its
+  // map. The document is there; the reader was the thing that could not use it.
+  const said = fieldsIn(`${JSON.stringify(envelope())}${"x".repeat(200)}`);
+
+  assert.equal(said.hook_event_name, "PostToolUse");
+  assert.equal(said.tool_name, "Read");
+  assert.equal(said.cwd, "/repo");
+  assert.equal(said.tool_input.file_path, "/repo/src/a.ts");
+});
+
+test("a payload cut in the middle of the bulk keeps what came before the cut", () => {
+  // A `Write` of a large file, or a `Read` whose response carries one: the
+  // fields these hooks read are short and come first, and the megabyte after
+  // them is what the cap refuses. Cut inside the long value, the short ones are
+  // still whole.
+  const whole = JSON.stringify(envelope({ tool_input: { file_path: "/repo/src/a.ts", content: "y".repeat(5000) } }));
+
+  const said = fieldsIn(whole.slice(0, whole.indexOf("yyy") + 40));
+
+  assert.equal(said.cwd, "/repo");
+  assert.equal(said.tool_input.file_path, "/repo/src/a.ts");
+  assert.equal(said.tool_input.content, undefined, "the value the cut fell inside is not one it read");
+});
+
+test("a key spelled inside a value is a value, not a key", () => {
+  // The whole reason this reads the grammar rather than matching a pattern: a
+  // file being written can contain anything, and a reader that found `"cwd"`
+  // inside it would answer another repository's path for a live write.
+  const said = fieldsIn(`${JSON.stringify(envelope({ tool_input: { file_path: "/repo/a.ts", content: '{"cwd":"/evil","tool_name":"Bash"}' } }))}x`);
+
+  assert.equal(said.cwd, "/repo");
+  assert.equal(said.tool_name, "Read");
+  assert.equal(said.tool_input.file_path, "/repo/a.ts");
+});
+
+test("a value the cut falls inside is not half a value", () => {
+  assert.deepEqual(fieldsIn('{"cwd":"/repo","tool_name":"Re'), { cwd: "/repo" });
+  assert.deepEqual(fieldsIn('{"cwd":"/repo","tool_na'), { cwd: "/repo" });
+  assert.deepEqual(fieldsIn('{"cwd":"/repo",'), { cwd: "/repo" });
+  assert.deepEqual(fieldsIn('{"cwd"'), {});
+});
+
+test("escapes are decoded by the parser rather than by this", () => {
+  // A Windows path is backslashes all the way down, and every one of them is an
+  // escape in JSON. Read by hand they come back halved or the string ends early.
+  const said = fieldsIn(`{"cwd":"C:\\\\Users\\\\a","tool_name":"Read","tool_input":{"file_path":"C:\\\\Users\\\\a\\\\say \\"hi\\".ts"}}x`);
+
+  assert.equal(said.cwd, "C:\\Users\\a");
+  assert.equal(said.tool_input.file_path, 'C:\\Users\\a\\say "hi".ts');
+});
+
+test("a brace inside a value the reader steps over does not end the object", () => {
+  // The decoy in the case above sits in `tool_input.content`, which is read as
+  // a string rather than stepped over, so it never reaches `skipValue`. This is
+  // the other half: the cargo is under a member the reader skips, and the
+  // structure characters are inside its own strings. Without `skipValue`
+  // reading a string as a string, the first `}` ends the payload and everything
+  // after it is lost.
+  const said = fieldsIn('{"cwd":"/repo","tool_response":{"content":"}]}\\" oh"},"tool_name":"Read"}x');
+
+  assert.equal(said.cwd, "/repo");
+  assert.equal(said.tool_name, "Read", "the walk carried on past the cargo");
+  assert.equal(said.tool_response, undefined);
+});
+
+test("what is skipped is skipped whole, whatever shape it is", () => {
+  const said = fieldsIn(
+    `${JSON.stringify({
+      effort: { level: "medium" },
+      permission_mode: "bypassPermissions",
+      cwd: "/repo",
+      tool_response: { file: { filePath: "/elsewhere/x.ts", content: "z" } },
+      duration_ms: 12,
+      is_interrupt: false,
+      nothing: null,
+      list: [1, "two", { three: 4 }],
+      tool_name: "Read",
+    })}x`,
+  );
+
+  assert.equal(said.cwd, "/repo");
+  assert.equal(said.tool_name, "Read");
+  assert.equal(said.permission_mode, "bypassPermissions");
+  assert.equal(said.effort, undefined, "an object at the top is not a field this reads");
+  assert.equal(said.tool_response, undefined);
+  assert.equal(said.duration_ms, undefined);
+});
+
+test("a value too long to be a path is bulk, and is passed over", () => {
+  // The bound `targetIn` already refuses a path on. Anything longer names no
+  // place and is the payload's cargo, so recovering it would copy the megabyte
+  // this stopped reading to avoid.
+  const long = "a".repeat(5000);
+  const said = fieldsIn(`{"cwd":"/repo","prompt":"${long}","tool_name":"Read"}x`);
+
+  assert.equal(said.cwd, "/repo");
+  assert.equal(said.tool_name, "Read", "and the reading goes on past it");
+  assert.equal(said.prompt, undefined);
+});
+
+test("nesting deep enough to end a recursive reader does not end this one", () => {
+  const deep = `{"cwd":"/repo","list":${"[".repeat(50_000)}${"]".repeat(50_000)},"tool_name":"Read"}x`;
+
+  const said = fieldsIn(deep);
+
+  assert.equal(said.cwd, "/repo");
+  assert.equal(said.tool_name, "Read");
+});
+
+test("a chain of the one member this reads into is not a chain of calls", () => {
+  // The case above is stepped over by `skipValue`, which counts depth in a loop
+  // of its own, so it says nothing about the one place that does call itself.
+  // `tool_input` is read one level in and no further, and without that bound a
+  // payload nesting it throws `RangeError` out of a hook that runs before every
+  // tool call. Nothing else in this file reaches that branch at depth.
+  const deep = `{"cwd":"/repo",${'"tool_input":{'.repeat(20_000)}"file_path":"/a"${"}".repeat(20_000)},"tool_name":"Read"}x`;
+
+  const said = fieldsIn(deep);
+
+  assert.equal(said.cwd, "/repo");
+  assert.equal(said.tool_name, "Read", "the walk carried on past it");
+  // One level in is where the read stops, so the chain below that is stepped
+  // over and the path at the bottom of it is not this call's target.
+  assert.equal(said.tool_input?.file_path, undefined);
+});
+
+test("a member named for something on the prototype is a member like any other", () => {
+  // `fields[name] = value` runs the setter for `__proto__` rather than making a
+  // property, so the member vanished while `JSON.parse` keeps it as its own. No
+  // payload is worse for it today, since nothing reads that name, but the two
+  // readers of one document disagreeing about what is in it is the thing this
+  // whole reader exists not to do.
+  const said = fieldsIn('{"__proto__":"x","constructor":"y","cwd":"/repo"}z');
+
+  assert.equal(Object.hasOwn(said, "__proto__"), true, "the member is the object's own");
+  assert.equal(said.__proto__, "x");
+  assert.equal(said.constructor, "y");
+  assert.equal(said.cwd, "/repo");
+  // The value is a string, so the setter could not have moved a prototype
+  // anywhere; this holds that it stays that way if the shape it reads widens.
+  assert.equal(Object.getPrototypeOf(said), Object.prototype, "and nothing was reparented");
+  assert.equal({}.x, undefined, "and nothing reached Object.prototype");
+});
+
+test("a member said twice answers what the last one said, as the parser would", () => {
+  // The docstring calls this a strict subset of what `JSON.parse` answers, and
+  // it was not: a repeated key whose second value is not a string left the
+  // first one standing, while the parser takes the last whatever its type. On
+  // a payload the parser refused, that is a reader reporting a `cwd` the
+  // document does not have.
+  assert.deepEqual(fieldsIn('{"cwd":"/a","cwd":"/b"}z'), { cwd: "/b" }, "two strings: the last one");
+  assert.deepEqual(fieldsIn('{"cwd":"/a","cwd":123}z'), {}, "a later number is not a string, so there is nothing to report");
+  assert.deepEqual(fieldsIn('{"cwd":"/a","cwd":null}z'), {});
+  assert.deepEqual(fieldsIn('{"cwd":"/a","cwd":{"x":"y"}}z'), {});
+  assert.deepEqual(fieldsIn('{"tool_input":{"file_path":"/a"},"tool_input":"x"}z'), { tool_input: "x" });
+  assert.deepEqual(fieldsIn('{"tool_input":{"file_path":"/a"},"tool_input":{}}z'), {}, "an object with nothing in it says nothing");
+  assert.deepEqual(
+    fieldsIn('{"tool_input":{"file_path":"/a"},"tool_input":{"file_path":"/b"}}z'),
+    { tool_input: { file_path: "/b" } },
+  );
+});
+
+test("anything that is not an object at all is nothing to read", () => {
+  assert.deepEqual(fieldsIn(""), {});
+  assert.deepEqual(fieldsIn("not json"), {});
+  assert.deepEqual(fieldsIn("[1,2]"), {});
+  assert.deepEqual(fieldsIn("null"), {});
+  assert.deepEqual(fieldsIn("  {  }  "), {});
 });

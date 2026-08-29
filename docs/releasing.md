@@ -1,10 +1,12 @@
 # Releasing
 
-This marketplace holds two plugins that ship apart. Work the list for the one you are releasing.
+This marketplace holds two plugins that ship apart. Work the list for the one you are releasing, and
+work it twice where a change touched both: they carry their own versions, their own changelogs and
+their own tags, and a change that puts a body under `## [Unreleased]` in both is two releases.
 
 | plugin | tag | manifests | changelog |
 | --- | --- | --- | --- |
-| `anatomiya` | `vx.y.z` | `plugins/anatomiya/package.json`, `plugins/anatomiya/.claude-plugin/plugin.json`, `package-lock.json` | `CHANGELOG.md` |
+| `anatomiya` | `vx.y.z` | `plugins/anatomiya/package.json`, `plugins/anatomiya/.claude-plugin/plugin.json`, `package-lock.json`, `plugins/anatomiya/package-lock.json` | `CHANGELOG.md` |
 | `ultracode-anywhere` | `ultracode-anywhere-vx.y.z` | `plugins/ultracode-anywhere/.claude-plugin/plugin.json` | `plugins/ultracode-anywhere/CHANGELOG.md` |
 
 The table lives in `scripts/release.mjs` and a test holds this copy of it to that one. The workflow
@@ -24,15 +26,23 @@ on a release that already existed. Push the tag and let the workflow make the re
       and decision-row counts in `README.md`, `docs/why.md` and `CONTRIBUTING.md`, the runtime
       dependency set in `README.md` and `SECURITY.md`, the gate table, the command list, and every
       shipped key having an intake row.
-- [ ] `npm run validate` passes. Two checks: the manifests, and the shipped set. The second reads
-      `package.json` `files` through `npm pack --dry-run` and holds it against every file the hooks
-      and command files actually reach.
+- [ ] `npm run validate` passes. Three checks: the manifests, the shipped set, and the plugin's own
+      lockfile. The second reads `package.json` `files` through `npm pack --dry-run` and holds it
+      against every file the hooks and command files actually reach. The third rebuilds
+      `plugins/anatomiya/package-lock.json` from the marketplace's resolutions and refuses one that
+      differs, since Claude Code installs a plugin's dependencies from the lockfile beside its
+      manifest and a plugin with none installs nothing at all. `npm run lock:plugin` writes it. On
+      Windows it says why it did not run and passes, the way the shipped-set check does and for the
+      same reason: both spawn npm, which is a batch file there. The Linux job is where either one
+      actually gates.
 - [ ] `npm run coverage` passes its floors. It reads them off an lcov record rather than off the
       total, so the second plugin's five files are each held to one: an aggregate over a scope says
       nothing about one file inside it, whichever scope it is drawn around.
 - [ ] CI is green on the branch. Check it, do not assume: a suite that passes here can fail there
       over `init.defaultBranch`, path separators, or 8.3 short names, and all three have.
-- [ ] The corpus run reports no findings, for a change that touches counting.
+- [ ] The corpus run reports no findings, for a change that touches counting. Leave the checkout
+      alone while it runs: it shells out to the binary in the working tree per repository, so a file
+      edited mid-run puts two builds in one report and the failures it invents cannot be reproduced.
 
 ## The version
 
@@ -42,6 +52,9 @@ upstreams and are not meant to move together.
 - [ ] The manifests in the table above. `package-lock.json` carries the plugin's version under its own
       workspace path (`npm install --package-lock-only` writes it), and that entry is the one read:
       the two at the top of the lockfile are the marketplace root's and decide nothing here.
+- [ ] For anatomiya, `npm run lock:plugin` after the version moves. The plugin's own lockfile carries
+      that version twice, and `npm run validate` refuses a stale one, so this is caught rather than
+      shipped; running it here saves the round trip.
 - [ ] That plugin's changelog: rename `## [Unreleased]` to `## [x.y.z] - YYYY-MM-DD`, **and put an
       empty `## [Unreleased]` back above it**. `check:docs` reads that heading and fails without it.
 - [ ] The link refs at the bottom of that changelog: replace the `[Unreleased]` compare link with

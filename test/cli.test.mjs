@@ -4,7 +4,7 @@ import { chmodSync, mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdir
 import { tmpdir } from "node:os";
 import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 
 import { needsPathControl, needsRemovableCwd, needsShebang, needsUnreadableDirs, needsWindows } from "./platform.mjs";
 import { ANATOMIYA } from "../scripts/plugins.mjs";
@@ -569,6 +569,34 @@ test("doctor answers a line per engine and exits 0 whatever it found", () => {
   assert.match(out, /^typescript /m, out);
 });
 
+test("doctor leads with the install where an installation has nothing in it", (t) => {
+  // Claude Code installs a plugin's dependencies itself, from the lockfile
+  // beside its manifest. Where that has not happened every node-hosted row is
+  // absent for that one reason, and three lines each naming their own remedy
+  // read as three faults. The rows still print: they are true, and the lead is
+  // what they have in common.
+  const bare = installWithoutDependencies(t);
+
+  const { code, stdout } = runFrom(bare, ["doctor"], process.env.PATH);
+
+  assert.equal(code, 0);
+  assert.match(stdout.split("\n")[0], /^nothing is installed here: /, stdout);
+  assert.ok(stdout.split("\n")[0].includes(bare), stdout);
+  assert.match(stdout, /^oxc absent: /m, "and the rows it explains are still there");
+  // One fault, one fix. The rows keep what was wrong with each engine, which
+  // differs, and drop the remedy, which does not: printed on every one of them
+  // as well as on the lead, the same sentence appeared three times and the
+  // report read as three faults again.
+  assert.equal(stdout.split("run node").length - 1, 1, stdout);
+  assert.match(stdout, /^oxc absent: oxc-parser did not load$/m, stdout);
+});
+
+test("doctor says nothing about the install where the packages are there", () => {
+  const out = cli("doctor");
+
+  assert.doesNotMatch(out, /nothing is installed/, out);
+});
+
 test("setup --dry-run prints the command and installs nothing", () => {
   const out = cli("setup", "--dry-run");
 
@@ -576,9 +604,9 @@ test("setup --dry-run prints the command and installs nothing", () => {
 });
 
 test("setup runs npm in the plugin's own directory, with the arguments it printed", needsShebang, (t) => {
-  // `/plugin install` copies the files and does not run `npm install`, so this
-  // is the shape a marketplace user starts from. The stub stands in for npm:
-  // a test that runs the real one is a test that reaches the network.
+  // An install that did not run leaves the plugin's own code with nothing
+  // beside it, which is the shape this command exists for. The stub stands in
+  // for npm: a test that runs the real one is a test that reaches the network.
   const install = installWithoutDependencies(t);
   const bin = stubNpm(t, "#!/bin/sh\nprintf '%s\\n' \"$@\" > npm-argv.txt\necho 'added 2 packages'\n");
 
@@ -701,13 +729,90 @@ test("echo answers an object and exits 0 when the directory it fired in is gone"
   const work = join(dir, "work");
   mkdirSync(work);
 
-  const out = execFileSync(
-    "sh",
-    ["-c", `cd "${work}" && rm -rf "${work}" && exec "${process.execPath}" "${join(ANATOMIYA, "bin", "anatomiya.mjs")}" echo`],
-    { input: '{"hook_event_name":"PostToolUse"}', encoding: "utf8" }
-  );
+  const out = fromRemovedCwd(work, ["echo"], '{"hook_event_name":"PostToolUse"}');
 
   assert.equal(out, "{}", "an empty object, and the exit code execFileSync would have thrown on");
+});
+
+/**
+ * A command run from a directory unlinked under it, the way a removed worktree
+ * leaves a session.
+ *
+ * Through a shell, because a spawn resolves the child's directory before the
+ * child starts: the removal has to happen inside the process that then execs
+ * the command, rather than in the one launching it.
+ */
+function fromRemovedCwd(work, args, input) {
+  const bin = join(ANATOMIYA, "bin", "anatomiya.mjs");
+  const spelled = args.map((a) => `"${a}"`).join(" ");
+  return execFileSync("sh", ["-c", `cd "${work}" && rm -rf "${work}" && exec "${process.execPath}" "${bin}" ${spelled}`], {
+    input,
+    encoding: "utf8",
+  });
+}
+
+test("a hook whose directory is gone still answers off the map the payload names", needsRemovableCwd, (t) => {
+  // The case above stops where it is safe: a payload naming no place is owed
+  // nothing, so `{}` is the right answer there and the defect lived under it.
+  // This is the payload that does name one, on a live repository with a map,
+  // and the answer was the same `{}` for the rest of that session.
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-gone-map-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const repo = join(dir, "repo");
+  mkdirSync(join(repo, ".claude", "rules"), { recursive: true });
+  mkdirSync(join(repo, ".git"), { recursive: true });
+  writeFileSync(join(repo, ".claude", "rules", "anatomiya-overview.md"), "---\ngenerator: anatomiya\n---\n\n# Repository map\n\n- src: 3 .ts\n");
+  const work = join(dir, "work");
+  mkdirSync(work);
+
+  const out = fromRemovedCwd(work, ["echo"], JSON.stringify({
+    hook_event_name: "PostToolUse",
+    tool_name: "Read",
+    cwd: repo,
+    tool_input: { file_path: join(repo, "src/a.ts") },
+  }));
+
+  assert.match(JSON.parse(out).hookSpecificOutput?.additionalContext ?? "", /<repository-map delivered="/, out);
+});
+
+test("a verb that walks a repository names the directory that is missing", needsRemovableCwd, (t) => {
+  // The other half of the same read, and the half nothing covered: a hook is
+  // let through with no directory, and everything else needs a real one. It
+  // used to reach a git call and fail there on a value that was never a path.
+  // The script is named absolutely, because node resolves a relative one
+  // against the working directory and throws its own stack before this code
+  // runs at all.
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-gone-scan-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const work = join(dir, "work");
+  mkdirSync(work);
+  const bin = join(ANATOMIYA, "bin", "anatomiya.mjs");
+
+  for (const verb of ["scan", "check", "pin"]) {
+    const run = spawnSync("sh", ["-c", `cd "${work}" && rm -rf "${work}" && exec "${process.execPath}" "${bin}" ${verb}`], {
+      encoding: "utf8",
+      timeout: 20_000,
+    });
+    mkdirSync(work, { recursive: true });
+
+    assert.equal(run.status, 1, `${verb}: ${run.stdout}${run.stderr}`);
+    assert.match(run.stderr, /^anatomiya: the directory this was run from has been removed/m, `${verb}: ${run.stderr}`);
+    assert.doesNotMatch(run.stderr, /uv_cwd|at process\./, `${verb} answered with a stack trace`);
+  }
+});
+
+test("doctor answers about this installation from a directory that is gone", needsRemovableCwd, (t) => {
+  // It takes no path and reads no repository, so the directory the shell
+  // happens to be in decides nothing about its answer. Reading one anyway made
+  // an absent directory fail a question that was never about a directory.
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-gone-doctor-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const work = join(dir, "work");
+  mkdirSync(work);
+
+  const out = fromRemovedCwd(work, ["doctor"], "");
+
+  assert.match(out, /^prism /m, out);
 });
 
 /* --- the command word is required (#67) --- */

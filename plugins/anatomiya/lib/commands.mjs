@@ -10,7 +10,7 @@ import { collect, gitRoot } from "./corpus.mjs";
 import { discover } from "./areas.mjs";
 import { buildPin, loadPin, writePin, pinDelta, PIN_PATH } from "./baseline.mjs";
 import { headSha } from "./git.mjs";
-import { NODE_PROBE_IDS, PROBE_IDS, pluginRoot, probeName, readiness, readinessLines, remedyFor } from "./readiness.mjs";
+import { NODE_PROBE_IDS, PROBE_IDS, installProblem, pluginRoot, probeName, readiness, readinessLines, remedyFor } from "./readiness.mjs";
 import { pinSummary, scanSummary } from "./summary.mjs";
 import { aboutDir, echoContext, holdsTestIn, inCheckout, isPathTaken, ownLayout, removeStaleHook, targetIn } from "./hook.mjs";
 import { isTestPath, noticeFor } from "./precedent.mjs";
@@ -55,10 +55,16 @@ export async function runScan(cwd, { dryRun = false, deep = false } = {}) {
  * is empty, must not be handed the enclosing one's counts, which is what the
  * boundary walk exists to refuse. A payload naming a place this cannot read at
  * all falls to the session's too, since it has said nothing about any other.
+ *
+ * The session's own may be absent: `process.cwd()` refuses once the directory a
+ * session started in is unlinked, and the entry point lets that through rather
+ * than losing the turn over it. Null then, and both callers answer with
+ * silence, which is all a call this can place nowhere is owed.
  */
 function answersFor(payload, cwd) {
   const about = aboutDir(payload, cwd);
-  return about !== null && inCheckout(about) ? about : cwd;
+  if (about !== null && inCheckout(about)) return about;
+  return cwd ?? null;
 }
 
 /**
@@ -72,7 +78,9 @@ function answersFor(payload, cwd) {
 export function runEcho(cwd, payload) {
   const event = payload?.hook_event_name;
   if (!event) return {};
-  const additionalContext = echoContext(answersFor(payload, cwd));
+  const root = answersFor(payload, cwd);
+  if (root === null) return {};
+  const additionalContext = echoContext(root);
   if (additionalContext === null) return {};
   return { hookSpecificOutput: { hookEventName: event, additionalContext } };
 }
@@ -89,7 +97,9 @@ export function runEcho(cwd, payload) {
 export function runNotice(cwd, payload) {
   const event = payload?.hook_event_name;
   if (!event) return {};
-  const found = ownLayout(answersFor(payload, cwd));
+  const root = answersFor(payload, cwd);
+  if (root === null) return {};
+  const found = ownLayout(root);
   if (found === null) return {};
   const rel = targetIn(payload, found.root, cwd);
   if (rel === null) return {};
@@ -139,10 +149,22 @@ export async function runCheck(cwd, { baseRef = null } = {}) {
   return { report };
 }
 
-/** Whether every engine this parses with is installed, and what to do about each that is not. */
+/**
+ * Whether every engine this parses with is installed, and what to do about each
+ * that is not.
+ *
+ * Led by the one thing wrong with the installation itself where there is one,
+ * since every node-hosted row is then absent for that reason. Those rows are
+ * told the remedy has been said, so they keep what was wrong with each engine
+ * and drop what to do about it: printed on the lead and on every row it
+ * explains, one sentence appeared four times and the report read as four faults
+ * again, which is what the lead is there to stop.
+ */
 export async function runDoctor() {
   const rows = await readiness({ engines: PROBE_IDS });
-  return { rows, lines: readinessLines(rows) };
+  const problem = installProblem(rows);
+  const lines = readinessLines(rows, { installSaid: problem !== null });
+  return { rows, lines: problem === null ? lines : [problem, ...lines] };
 }
 
 /**
@@ -240,8 +262,9 @@ function npmInstall(cwd) {
 }
 
 /**
- * `/plugin install` does not run `npm install`, so this is the first thing a new
- * user hits. Both commands used to answer it as a repository with nothing in it:
+ * Claude Code installs a plugin's dependencies from the lockfile beside its
+ * manifest, so this is what an install that did not run or did not finish
+ * leaves. Both commands used to answer it as a repository with nothing in it:
  * the scan wrote an empty map and exited 0, the check reported no findings.
  *
  * The remedy is the missing engine's own. One sentence used to be appended to

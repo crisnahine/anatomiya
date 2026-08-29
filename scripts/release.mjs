@@ -38,7 +38,12 @@ export const RELEASES = [
     plugin: "anatomiya",
     root: REL.anatomiya,
     tag: "v*",
-    manifests: [`${REL.anatomiya}/package.json`, `${REL.anatomiya}/.claude-plugin/plugin.json`, "package-lock.json"],
+    manifests: [
+      `${REL.anatomiya}/package.json`,
+      `${REL.anatomiya}/.claude-plugin/plugin.json`,
+      "package-lock.json",
+      `${REL.anatomiya}/package-lock.json`,
+    ],
     changelog: "CHANGELOG.md",
   },
   {
@@ -87,10 +92,16 @@ export const tagFor = (release, version) => `${prefixOf(release.tag)}${version}`
  * released a tag against a lockfile saying nothing about that plugin, and
  * refused a correct tree whenever the two had drifted apart. A member that is
  * not there answers nothing, which the caller reports as the mismatch it is.
+ *
+ * A plugin's own lockfile, the one Claude Code installs it from, is a root
+ * rather than a member: it states that plugin's version at the top and at
+ * `packages[""]`, and npm writes both. Both are read, since a release that
+ * moved one and not the other is a tree two readers disagree about.
  */
 function versionsIn(rel, json, release) {
-  if (rel !== "package-lock.json") return [json?.version];
-  return [json?.packages?.[release.root]?.version];
+  if (rel === "package-lock.json") return [json?.packages?.[release.root]?.version];
+  if (rel.endsWith("/package-lock.json")) return [json?.version, json?.packages?.[""]?.version];
+  return [json?.version];
 }
 
 /**

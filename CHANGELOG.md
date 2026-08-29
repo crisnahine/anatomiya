@@ -7,6 +7,71 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-08-29
+
+Every version since 0.3.0 installed with no parser in it, and both hooks could be
+silenced for a whole session by a directory the payload never named.
+
+### Fixed
+
+- The plugin ships its own `package-lock.json`, so `/plugin install` installs its
+  dependencies again. Claude Code does that itself: it reads the plugin root and
+  runs `npm ci --ignore-scripts` there, at a 60 second cap, where a `package.json`
+  and a lockfile sit together, and passes over a root holding the manifest alone
+  with nothing logged. 0.3.0 moved the plugin out of the repository root and left
+  the marketplace's lockfile behind, one directory up and invisible to the loader,
+  so every version from then on needed `/anatomiya:setup` before it could read a
+  line of JavaScript. On a repository holding none, nothing ever said so.
+- A hook answers a payload larger than the megabyte it reads, and one with
+  anything after the closing brace. `JSON.parse` reads a document or nothing, so a
+  complete payload followed by one stray byte answered the same as no payload at
+  all. Where it refuses, the members that can still be read are taken from the
+  text: string members, at the top level and inside `tool_input`, whole, and short
+  enough to be a path rather than a file's contents. A `Write` of a generated file
+  and a `Read` of a minified bundle both used to cost the turn its map over four
+  short fields sitting in the first hundred bytes.
+- A hook whose own directory has been removed answers off the payload instead of
+  going quiet. `process.cwd()` refuses once that directory is unlinked, which
+  `git worktree remove` does to a session sitting in one, and it was read before
+  the payload, so the throw reached the guard that answers the empty object. Every
+  hook is a fresh process, so the map never came back for the rest of that session
+  while every payload was still naming live paths.
+- `doctor` leads with one line where nothing is installed anywhere above the
+  plugin, rather than naming the engines that are absent for that one reason. An
+  install that ran and stopped short is left to the rows, which say which engine
+  is missing, and so is a checkout whose packages are hoisted to a directory
+  above: asked only about the one beside the manifest, this told a contributor
+  nothing was installed and pointed at a place that will never hold it.
+- `doctor` and `setup` no longer ask where the process is. They answer about this
+  installation and take no path, so a directory removed under them decided
+  nothing they say, and they failed on it anyway. The verbs that do walk a tree
+  now say what happened and what to do about it instead of failing inside a git
+  call. They cannot name the directory: it is the one thing that can no longer
+  be read.
+- The A/B harness rules on `CLAUDE_CODE_MODEL_CATALOG`, which Claude Code 2.1.251
+  added. It is an off switch for a catalog that is compared against the model and
+  window the CLI already resolved and then logged, never applied, so it cannot
+  make two arms run different engines and it is left alone. The gate that reads
+  the build for engine-shaped names had been failing on it.
+
+### Added
+
+- `npm run lock:plugin` builds the plugin's lockfile from the marketplace's own
+  resolutions rather than resolving afresh, and `npm run validate` refuses one
+  that differs, one that is missing where dependencies are declared, one whose
+  lockfile is a kind the install will not read, and any package the two lockfiles
+  resolve differently. Two lockfiles for one dependency set drift the moment npm
+  resolves a range to something newer, and then the suite is green against a
+  parser nobody running the plugin has.
+- A CI leg copies the tracked plugin files, runs the loader's own install command
+  on them and asks `doctor` what answered. Nothing else here would notice: every
+  other job installs from the marketplace root's lockfile.
+- Both plugins' copies of the payload reader are held together character for
+  character, as well as by the answers they give. The behavioural case can only
+  catch a drift some payload in its list reaches, and three got past it while it
+  was the only one: a whitespace character added to one copy, a bound moved, and
+  a scan stepping by two.
+
 ## [0.4.2] - 2026-08-29
 
 Both hooks answered from where the shell happened to be rather than from what the
@@ -2296,7 +2361,8 @@ which are partial; several listed there are not implemented yet.
 - No claim that this catches defects. Measured across ten repositories, 1 of 317 defect review
   comments was preventable by a conventions map.
 
-[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.4.2...HEAD
+[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/crisnahine/anatomiya/compare/v0.4.2...v0.5.0
 [0.4.2]: https://github.com/crisnahine/anatomiya/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/crisnahine/anatomiya/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/crisnahine/anatomiya/compare/v0.3.3...v0.4.0
