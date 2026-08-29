@@ -401,7 +401,7 @@ test("the whole text can be brought back on the cadence, for a session that want
 
 // --- the level the fan-out is asked to run at ---------------------------------
 
-test("a session that asked for its fan-out below its own level asks the stages for that level", (t) => {
+test("a session that named a level for its fan-out asks the stages for that level", (t) => {
   // `opts.effort` is the only lever a caller has on a workflow stage: the
   // built-in definition a stage gets carries no effort, and the Agent tool takes
   // no effort argument. So a session wanting its fan-out cheaper than its main
@@ -422,7 +422,7 @@ test("the exception says which stage it is and what to do about it, in both text
 
   assert.match(said, /pass opts\.effort 'low' on every workflow stage\./);
   assert.match(said, /Leave it out of a stage checking or judging another stage's work/);
-  assert.match(said, /so the check never runs cheaper than the session/);
+  assert.match(said, /so that one runs at the session's level unless its own definition sets one/);
   assert.match(
     contextFor(FULL_EVERY + 1, { stageEffort: "low" }),
     /Stages take opts\.effort 'low'; leave it out of a stage checking or judging another stage's work\./,

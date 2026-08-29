@@ -10,7 +10,7 @@ function asked(value) {
   return { ULTRACODE_ANYWHERE_STAGE_EFFORT: value };
 }
 
-// --- the list ----------------------------------------------------------------
+// --- the list -----------------------------------------------------------------
 
 test("the levels are the five the build takes, lowest first", () => {
   // Spelled out rather than read off the constant: a case that derives its
@@ -177,7 +177,7 @@ test("a plain word past the echo bound is counted rather than quoted", () => {
   assert.match(askedFor(asked("a".repeat(25))), /25 characters this will not quote back/);
 });
 
-test("one character is one character", () => {
+test("a setting of one character is counted in the singular, since it reaches a person", () => {
   assert.match(askedFor(asked("!")), /1 character this will not quote back/);
 });
 
