@@ -154,10 +154,10 @@ environment variables the build reads alongside them, and says nothing at all in
 would be noise:
 
 - `"ultracode": true` resolves effort to xhigh over `effortLevel`, and the built-in reminder fires.
-  A second copy is tokens for nothing. One case gets neither: a `--effort` flag or `/effort` below
-  xhigh beats the key, so the gate does not hold, the built-in stays silent, and this hook has
-  already gone quiet on the key it can see. The line at the start of the session names both, since
-  nothing else can.
+  A second copy is tokens for nothing. One case gets neither reminder: the gate reads the effort the
+  session actually resolved to, so a `--effort`, an `/effort` or a model that cannot run xhigh takes
+  it below xhigh, the built-in stays silent, and this hook has already gone quiet on the key it can
+  see. The line at the start of the session names both, since nothing else can.
 - `"enableWorkflows": false`, `"disableWorkflows": true`, `CLAUDE_CODE_DISABLE_WORKFLOWS=1` or
   `CLAUDE_CODE_WORKFLOWS=false` all mean there is no Workflow tool for the reminder to point at.
   The build reads the disable switches first, and so does this.
