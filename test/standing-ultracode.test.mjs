@@ -187,9 +187,9 @@ test("contextFor opens with the whole text and answers nothing between refresher
 });
 
 test("a caller handing over part of the switches gets the default for the rest", () => {
-  // The default used to be a literal at the signature, so a caller passing an
-  // object without a key it predates got `undefined` for it rather than the
-  // default, and nothing failed. The object is read through the defaults now.
+  // A caller handing over an object without a key it predates gets the default
+  // for it rather than `undefined`, which is what a literal at the signature
+  // gave and nothing failed on.
   assert.equal(contextFor(11, {}), contextFor(11), "every key defaults on a turn that reads them all");
   assert.equal(contextFor(1, { stageEffort: null }), contextFor(1), "and on the turn that reads one");
   assert.match(contextFor(1, { stageEffort: "low" }), /opts\.effort 'low'/, "while the key it was handed is honoured");
@@ -293,8 +293,8 @@ test("the README states what the stage level adds, at the level that adds the mo
   // that explains the plugin is the one nobody re-measures. The longest level
   // name is the honest one to state, since it bounds the rest.
   const readme = readFileSync(fileURLToPath(new URL("../plugins/ultracode-anywhere/README.md", import.meta.url)), "utf8");
-  const stated = readme.match(/longest\s+level\s+name\s+is\s+(\d+)\s+characters\s+on\s+the\s+first\s+turn\s+and\s+(\d+)\s+on\s+the\s+tenth,\s+or\s+(\d+)\s+over\s+30\s+turns/);
-  const more = readme.match(/That\s+is\s+(\d+)\s+characters\s+more\s+than\s+the\s+default/);
+  const stated = readme.match(/longest\s+level\s+name\s+is\s+(\d+)\s+characters\s+on\s+the\s+first\s+turn\s+and\s+(\d+)\s+on\s+every\s+tenth\s+after\s+that,\s+or\s+(\d+)\s+over\s+30\s+turns/);
+  const more = readme.match(/That\s+is\s+(\d+)\s*\n?\s*characters\s+more\s+than\s+the\s+default/);
 
   assert.ok(stated, "the README says what the switch costs");
   const at = (level) => ({ stageEffort: level });
@@ -402,14 +402,40 @@ test("the whole text can be brought back on the cadence, for a session that want
 // --- the level the fan-out is asked to run at ---------------------------------
 
 test("a session that asked for its fan-out below its own level asks the stages for that level", (t) => {
-  // `opts.effort` is the only lever that reaches a workflow stage: a stage has
-  // no definition file to carry one, and the Agent tool takes no effort at all.
-  // So a session wanting its fan-out cheaper than its main loop has nothing but
-  // the reminder text to say it with.
+  // `opts.effort` is the only lever a caller has on a workflow stage: the
+  // built-in definition a stage gets carries no effort, and the Agent tool takes
+  // no effort argument. So a session wanting its fan-out cheaper than its main
+  // loop has nothing but the reminder text to say it with.
   const said = run({ stdin: payload(), env: { ...nowhere(t), ULTRACODE_ANYWHERE_STAGE_EFFORT: "medium" }, state: stateDir(t) });
 
   assert.match(said, /pass opts\.effort 'medium' on every workflow stage/);
   assert.doesNotMatch(said, /leave opts\.effort alone/);
+});
+
+test("the exception says which stage it is and what to do about it, in both texts", (t) => {
+  // The half that is not free, and nothing but its length was holding it: a
+  // same-length string of the opposite meaning left every case in this file
+  // green. It is stated twice, so both are held, and the action is held rather
+  // than the value, since "the session's level" names something a model reading
+  // this cannot look up.
+  const said = run({ stdin: payload(), env: { ...nowhere(t), ULTRACODE_ANYWHERE_STAGE_EFFORT: "low" }, state: stateDir(t) });
+
+  assert.match(said, /pass opts\.effort 'low' on every workflow stage\./);
+  assert.match(said, /Leave it out of a stage checking or judging another stage's work/);
+  assert.match(said, /so the check never runs cheaper than the session/);
+  assert.match(
+    contextFor(FULL_EVERY + 1, { stageEffort: "low" }),
+    /Stages take opts\.effort 'low'; leave it out of a stage checking or judging another stage's work\./,
+    "and the refresher says the same, since it is the only text left in view by then",
+  );
+});
+
+test("the default text names no stage as an exception, since every stage is the same", (t) => {
+  // The exception belongs to the level a session named. Left in the default
+  // text it would be an instruction about a level nobody set.
+  assert.doesNotMatch(contextFor(1), /checking or judging/);
+  assert.doesNotMatch(contextFor(1), /Leave it out/);
+  assert.match(contextFor(1), /unless its own definition sets one/, "and it says what the level does not reach");
 });
 
 test("a level this cannot read is a session that asked for nothing, not one asked to guess", (t) => {

@@ -50,27 +50,31 @@ const STANDING =
 
 /** One level runs the whole session, which is what a session that set none gets. */
 const ONE_LEVEL =
-  "Every subagent and every workflow stage runs at that same level, so leave opts.effort alone. Depth comes from how the work is split and independently checked, at the level the session is set to.";
+  "Every subagent and every workflow stage runs at that same level unless its own definition sets one, so leave opts.effort alone. Depth comes from how the work is split and independently checked, at the level the session is set to.";
 
 /**
  * The one stage the named level does not reach, spelled once because both texts
  * state it and a model reading them compares them.
  *
- * It is the exception rather than a detail: the stage that checks another's work
- * is the independent check the whole depth argument rests on.
+ * It is the exception rather than a detail: the stage that checks another
+ * stage's work is the independent check the whole depth argument rests on.
  */
 const CHECKING_STAGE = "a stage checking or judging another stage's work";
 
 /**
  * The fan-out at the level the user named.
  *
- * The level is named and not a direction, because the hook cannot read the
- * session's own: `--effort` and `/effort` write nothing to `settings.json`. Said
- * as "below the session" it was a claim the code could not support, and a false
- * one in any session that named a level above its own.
+ * A level and not a direction, since the hook cannot read the session's own:
+ * `--effort` and `/effort` write nothing to `settings.json`, so "below the
+ * session" would be false in any session that named a level above its own.
+ *
+ * The exception is an action rather than a value. "Keeps the session's level"
+ * names something the model cannot look up, and a reader has to guess that
+ * omitting the argument is what produces it; measured on the wire, a stage with
+ * no `opts.effort` does run at the session's level.
  */
 function loweredTo(level) {
-  return `That same configuration names the level the fan-out should run at, so pass opts.effort '${level}' on every workflow stage, except ${CHECKING_STAGE}, which keeps the session's level. The Agent tool takes no effort argument, so this reaches workflow stages and nothing else. Depth comes from how the work is split and independently checked.`;
+  return `That same configuration names the level the fan-out should run at, so pass opts.effort '${level}' on every workflow stage. Leave it out of ${CHECKING_STAGE}, so the check never runs cheaper than the session. The Agent tool takes no effort argument, so this reaches workflow stages and nothing else. Depth comes from how the work is split and independently checked.`;
 }
 
 /** The whole standing opt-in, at the stage level this session asked for. */
@@ -87,7 +91,7 @@ function full(stageEffort = null) {
  */
 function short(stageEffort = null) {
   const still = "Ultracode is still on: use the Workflow tool where the work is worth it, solo where it is not.";
-  return stageEffort ? `${still} Stages take opts.effort '${stageEffort}', except ${CHECKING_STAGE}.` : still;
+  return stageEffort ? `${still} Stages take opts.effort '${stageEffort}'; leave it out of ${CHECKING_STAGE}.` : still;
 }
 
 /** What this session's switches ask the text to be, and the default for anything unreadable. */

@@ -191,7 +191,7 @@ not which fields.
 What has to be true: they differ in the reminder text and in `output_config.effort`, and nowhere
 else. On 2.1.241 that is what they do: same system prompt, same 25 tool definitions, the Workflow
 tool's description included, with the reminder in the trailing context block either way, this
-plugin's 1236 characters or the built-in's 288. Where it lands inside that block depends on what else
+plugin's 1271 characters or the built-in's 288. Where it lands inside that block depends on what else
 answers `UserPromptSubmit`, so run both sides from the same directory or another plugin's hook moves
 with you.
 
@@ -291,7 +291,7 @@ moves. `med` is an alias for `medium` there, and an integer is accepted by the v
 does not reach the wire at all: the request goes out with no `output_config`, so a stage handed one
 runs at whatever the session was on. That is the second reason the switch takes the five names only,
 and the day the integer starts working is the day to reopen the question. `--effort ultracode` is
-accepted by the flag and not by `opts.effort`, which take different vocabularies and are worth
+accepted by the flag and not by `opts.effort`; the two take different vocabularies and are worth
 reading apart.
 
 `CLAUDE_CODE_SUBAGENT_MODEL` is the model half of the same question and needs no plugin: it is a

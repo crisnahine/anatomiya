@@ -52,7 +52,7 @@ first session on a machine that has not says so once. `tengu_amber_kestrel`, on 
 flag Anthropic sets and nobody here does: turned on, it lifts the cap for every session on that
 build, this plugin's included.
 
-It does not set a stage's effort, and no hook can. A spawn's effort comes from its agent definition,
+This plugin does not set a stage's effort, and no hook can. A spawn's effort comes from its agent definition,
 and the built-in definition a workflow stage gets carries none, so a stage falls through to the
 session's own level unless the script passes `opts.effort`. That is the only lever a caller has, and
 the model is the only one holding it. So `ULTRACODE_ANYWHERE_STAGE_EFFORT` asks the model to pass it,
@@ -92,16 +92,17 @@ the ordinary case for anyone reading this page.
 ## What it costs
 
 One short-lived `node` process per prompt, about 30 ms of it over ten runs on the machine this was
-measured on, most of which is node starting. What reaches the model is 1236 characters on the first
+measured on, most of which is node starting. What reaches the model is 1271 characters on the first
 turn, 94 on every tenth after that, and nothing on the rest, appended after the user message so the
-cache prefix is untouched. Over a 30-turn session that is 1424 characters in total,
+cache prefix is untouched. Over a 30-turn session that is 1459 characters in total,
 the opening text plus two refreshers. A payload that names no session, or a state directory this
 cannot use, reads every turn as the first one, and a 30-turn session then costs 30 opening texts
 instead. The reminder is the cheap half either way.
 
-`ULTRACODE_ANYWHERE_STAGE_EFFORT` puts the level into both, which at its longest level name is 1409
-characters on the first turn and 185 on the tenth, or 1779 over 30 turns. That is 355 characters more
-than the default over such a session, against a fan-out it moves by a whole effort level.
+`ULTRACODE_ANYWHERE_STAGE_EFFORT` puts the level into both, which at its longest level name is 1435
+characters on the first turn and 194 on every tenth after that, or 1823 over 30 turns. That is 364
+characters more than the default over such a session, against a fan-out it moves by a whole effort
+level.
 
 The session check reads the installed build once per build, not once per session: about 200 ms
 the first time, about 30 after, since the answer is kept beside the turn counters under the
@@ -267,9 +268,9 @@ and the cap line then comes back every session rather than once.
   silence.
 - `ULTRACODE_ANYWHERE_FULL=repeat claude` brings the whole text back on the cadence instead of the
   one-line refresher, for a session long enough to lose it.
-- `ULTRACODE_ANYWHERE_STAGE_EFFORT=medium claude` asks the text for a fan-out below the session:
-  `opts.effort` at that level on every workflow stage, except one checking or judging another
-  stage's work, which keeps the session's level. Unset, the text is the one above, which says to
+- `ULTRACODE_ANYWHERE_STAGE_EFFORT=medium claude` names the level the fan-out should run at:
+  `opts.effort` at that level on every workflow stage, and left out of one checking or judging
+  another stage's work, which then runs at the session's level. Unset, the text is the one above, which says to
   leave `opts.effort` alone. The levels are `low`, `medium`, `high`, `xhigh`, `max`, read past case
   and surrounding spaces; anything else is read as unset, and the session opens with a line saying
   so rather than leaving it to be found on the bill. Those five and nothing else: `opts.effort`

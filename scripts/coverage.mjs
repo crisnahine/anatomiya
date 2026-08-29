@@ -11,10 +11,10 @@
  * an aggregate hides is proportional to how much larger the rest of its scope
  * is. Moving one down moves the problem rather than removing it.
  *
- * Measured on the whole tree afterwards, 13 of its 151 files sit under its own
- * floor while the total cleared, and the largest module the plugin ships could
- * have lost every covered line unnoticed. So the plugin's own `lib` is held to
- * a floor per file too.
+ * Measured on the whole tree when this floor was set, 13 of the 151 files then
+ * counted sat under its own floor while the total cleared, and the largest
+ * module the plugin ships could have lost every covered line unnoticed. So the
+ * plugin's own `lib` is held to a floor per file too.
  * The rest of the tree is not: the `--deep` tier runs only in the smoke job and
  * the harnesses under `scripts/` are run by hand, so `scripts/ab/run.mjs`
  * reports a third of its lines, and a floor low enough to admit that says
@@ -53,7 +53,7 @@ export const FLOORS = [
   {
     scope: "ultracode-anywhere",
     include: `${REL.ultracode}/**`,
-    // Measured at 97.7 line, 89.5 branch, 98.8 function over the six files.
+    // Measured at 97.8 line, 89.5 branch, 98.8 function over the six files.
     whole: { lines: 95, branches: 87, functions: 97 },
     // The worst single file is `counters.mjs` at 95.9 of lines on the run where
     // its sweep catch goes uncovered, and `hook-io.mjs` at 83.8 of branches and
@@ -63,10 +63,10 @@ export const FLOORS = [
   {
     // The shipped code, held to a floor each. The aggregate above says nothing
     // about one file inside it, and the size of that silence was measured: 13
-    // of 151 files sit under the whole-tree floor on their own, and the largest
-    // module the plugin ships could lose every covered line with the total
-    // still clearing 95. This is the bound on how far any one of them may
-    // fall.
+    // of the 151 files counted then sat under the whole-tree floor on their
+    // own, and the largest module the plugin ships could lose every covered
+    // line with the total still clearing 95. This is the bound on how far any
+    // one of them may fall.
     scope: "anatomiya lib",
     include: `${REL.anatomiya}/lib/**`,
     // The aggregate is the scope above; this row exists for the per-file floor.
