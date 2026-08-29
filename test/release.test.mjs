@@ -54,6 +54,13 @@ function repository(t, { anatomiya = "1.2.3", second = "7.8.9", changelogs = {} 
     }),
   );
   writeFileSync(join(dir, REL.anatomiya, ".claude-plugin", "plugin.json"), JSON.stringify({ name: "anatomiya", version: anatomiya }));
+  // The plugin's own lockfile, which is what Claude Code installs it from. It
+  // is a root rather than a workspace member, so it carries that version at the
+  // top and at `packages[""]` and npm writes both.
+  writeFileSync(
+    join(dir, REL.anatomiya, "package-lock.json"),
+    JSON.stringify({ name: "anatomiya", version: anatomiya, lockfileVersion: 3, packages: { "": { name: "anatomiya", version: anatomiya } } }),
+  );
   mkdirSync(join(dir, REL.ultracode, ".claude-plugin"), { recursive: true });
   writeFileSync(
     join(dir, REL.ultracode, ".claude-plugin", "plugin.json"),
@@ -522,4 +529,17 @@ test("a tag pattern is a prefix and one trailing star, and anything else is refu
   for (const wrong of ["v", "v*.*.*", "*v*", "", "v*x"]) {
     assert.throws(() => prefixOf(wrong), TypeError, JSON.stringify(wrong));
   }
+});
+
+test("a plugin's own lockfile is read at both the places it states a version", (t) => {
+  // npm writes it at the top and at `packages[""]`, and a release that moved
+  // one and not the other is a tree the loader and this read differently.
+  const dir = repository(t);
+  const path = join(dir, REL.anatomiya, "package-lock.json");
+
+  const lock = JSON.parse(readFileSync(path, "utf8"));
+  lock.packages[""].version = "1.2.2";
+  writeFileSync(path, JSON.stringify(lock));
+
+  assert.match(notesFor(dir, "v1.2.3").problem, /package-lock\.json says 1\.2\.2/);
 });

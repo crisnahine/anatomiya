@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -10,8 +10,9 @@ import { needsRuby } from "./ruby-available.mjs";
 import { needsShebang } from "./platform.mjs";
 import { installWithoutStripper } from "./no-stripper.mjs";
 import { installWithoutDependencies } from "./plugin-install.mjs";
+import { REL } from "../scripts/plugins.mjs";
 import { ENGINES } from "../plugins/anatomiya/lib/langs.mjs";
-import { olderThan, pluginRoot, readiness, readinessLines, remedyFor } from "../plugins/anatomiya/lib/readiness.mjs";
+import { installProblem, olderThan, pluginRoot, readiness, readinessLines, remedyFor } from "../plugins/anatomiya/lib/readiness.mjs";
 
 /** A directory on PATH holding one stub interpreter, so a probe meets a Ruby that is not this one. */
 function stubInterpreter(t, body) {
@@ -96,8 +97,8 @@ test("an extra that is not installed is the row that says so, and the engine sti
 });
 
 test("the install this command exists for reports why, not a null", (t) => {
-  // `/plugin install` copies the files and does not run `npm install`, so a
-  // marketplace user's first doctor is this one, and it read `oxc absent: null`.
+  // An install that did not run leaves the plugin's own code with nothing
+  // beside it, and the first doctor a user runs there read `oxc absent: null`.
   // Probed out of process for the reason above: module resolution is the thing
   // under test, and an in-process fake resolves the same either way.
   const home = installWithoutDependencies(t);
@@ -230,4 +231,86 @@ test("a version is compared by its numbers, never as a string", () => {
   // reported that the engine answered nothing.
   assert.equal(olderThan(null, "1.0.0"), false);
   assert.equal(olderThan("1.0.0", null), false);
+});
+
+test("an installation with nothing in it is one problem, not one per engine", (t) => {
+  // Claude Code installs a plugin's dependencies itself, from the lockfile
+  // beside its manifest. When that has not happened every node-hosted row is
+  // absent for the same reason, and a report naming them one at a time reads as
+  // three faults with three fixes rather than one install that did not finish.
+  const bare = installWithoutDependencies(t);
+  const absent = [
+    { engine: "oxc", extra: null, present: false, ok: false, reason: "oxc-parser did not load" },
+    { engine: "oxc", extra: "flow-remove-types", present: false, ok: false, reason: "flow-remove-types did not load" },
+    { engine: "prism", extra: null, present: true, version: "1.5.2", ok: true, reason: null },
+  ];
+
+  const said = installProblem(absent, bare);
+
+  assert.match(said ?? "", /^nothing is installed here: /);
+  // The directory once, on the half that is a command to run. Said twice, the
+  // sentence ran to 174 characters and read as two places rather than one.
+  assert.equal(said.split(bare).length - 1, 1, said);
+  assert.equal(said.includes(pluginRoot()), false, "and never this checkout's own");
+});
+
+test("an installation with its engines loaded says nothing, and neither does an absent interpreter", () => {
+  const ready = [{ engine: "oxc", extra: null, present: true, version: "0.144.0", ok: true, reason: null }];
+
+  assert.equal(installProblem(ready, "/nowhere"), null, "nothing absent, so the directory is never looked at");
+  assert.equal(
+    installProblem([{ engine: "prism", extra: null, present: false, ok: false, reason: "ruby is not on PATH" }], "/nowhere"),
+    null,
+    "an interpreter is the machine's own and no install here puts one there"
+  );
+});
+
+test("an interpreter this cannot install is never what the install line is about", () => {
+  // No `npm install` anywhere puts a Ruby on a machine, so an absent prism is
+  // not an install that did not run, whatever the plugin's own directory holds.
+  // The row carries its own remedy and this says nothing.
+  const rows = [
+    { engine: "prism", extra: null, present: false, ok: false, reason: "ruby is not on PATH" },
+    { engine: "oxc", extra: null, present: true, version: "0.144.0", ok: true, reason: null },
+  ];
+
+  assert.equal(installProblem(rows, "/nowhere-at-all"), null);
+});
+
+test("packages installed above the plugin are still installed, which is this checkout's own shape", (t) => {
+  // The marketplace declares its plugins as workspaces, so npm hoists every
+  // package to the root and `plugins/anatomiya/node_modules` never exists here.
+  // Asked only about the directory beside the manifest, an engine that failed
+  // to load in a contributor's checkout was reported as an install that never
+  // ran, pointing at a directory that will never hold one. The question is
+  // whether anything on the way up serves this plugin, which is where node's
+  // own resolver would have looked.
+  const above = mkdtempSync(join(tmpdir(), "anatomiya-hoisted-"));
+  t.after(() => rmSync(above, { recursive: true, force: true }));
+  mkdirSync(join(above, "node_modules"), { recursive: true });
+  mkdirSync(join(above, REL.anatomiya), { recursive: true });
+  const absent = [{ engine: "oxc", extra: null, present: false, ok: false, reason: "oxc-parser did not load" }];
+
+  assert.equal(installProblem(absent, join(above, REL.anatomiya)), null);
+});
+
+test("an install that ran and stopped short is left to the rows that say which engine is missing", (t) => {
+  // The loader kills an install at sixty seconds, and what that leaves is a
+  // `node_modules` holding some of the packages. One sentence saying nothing is
+  // installed would be wrong about that directory, and the rows already name
+  // the engine that did not load. Driven with the directory there, since that
+  // is the branch: with it absent the first guard has already answered.
+  const half = mkdtempSync(join(tmpdir(), "anatomiya-halfinstall-"));
+  t.after(() => rmSync(half, { recursive: true, force: true }));
+  mkdirSync(join(half, "node_modules"), { recursive: true });
+  const absent = [{ engine: "oxc", extra: null, present: false, ok: false, reason: "oxc-parser did not load" }];
+
+  assert.equal(installProblem(absent, half), null);
+  // Not a directory under it: the walk goes up, so anything below `half` is
+  // served by the same `node_modules` and answers the same way. A tree with
+  // none anywhere above it is what the lead line is about.
+  const bare = mkdtempSync(join(tmpdir(), "anatomiya-nothing-"));
+  t.after(() => rmSync(bare, { recursive: true, force: true }));
+
+  assert.match(installProblem(absent, join(bare, "deep", "deeper")) ?? "", /nothing is installed/, "and a tree with none still answers");
 });

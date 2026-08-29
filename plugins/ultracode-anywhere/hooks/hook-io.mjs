@@ -68,6 +68,9 @@ export function readStdin() {
     process.stdin.setEncoding("utf8");
     process.stdin.on("data", (chunk) => {
       taken += chunk;
+      // Read rather than thrown away: `parsePayload` can take the members out
+      // of a document that stops in the middle, so a payload past the bound
+      // still answers the short fields these hooks read.
       if (taken.length >= MOST) done(cutAt(taken, MOST));
     });
     process.stdin.on("error", () => done(taken));
@@ -161,14 +164,228 @@ export function here() {
   }
 }
 
-/** The payload as an object, or an empty one. */
+/** The payload as an object, or what can still be read of one that will not parse. */
 export function parsePayload(stdin) {
   try {
     const value = JSON.parse(stdin);
-    return value && typeof value === "object" ? value : {};
+    if (value && typeof value === "object") return value;
   } catch {
-    return {};
+    // Not a document. What is here may still hold the short fields these hooks
+    // read, and the other plugin's reader answers the same for the same bytes.
   }
+  return fieldsIn(stdin);
+}
+
+/**
+ * How long a value may be before it is the payload's cargo rather than a field.
+ *
+ * 4096, which is the larger of the two `PATH_MAX` values this runs on: every
+ * field either reader takes off a payload is a path, a directory, a tool or
+ * event name, or a session id, and the first is the longest of them. Anything past it names no place a
+ * filesystem can hold, so it is the `content` of a write or the text of a read,
+ * and copying it back out would rebuild the megabyte the bound above stopped
+ * reading to avoid. The other plugin holds the same number, for the same
+ * reason, under the name its own path check already gave it.
+ *
+ * Measured on the raw token, quotes and escapes included, since that is what
+ * can be counted before anything is copied. An escape-heavy value is refused
+ * shorter than its decoded length, which is the safe direction: this is only
+ * ever reached on a payload that would otherwise answer nothing at all.
+ */
+const VALUE_MOST = 4096;
+
+/** The one member whose own members are read, and the only nesting this enters. */
+const NESTED_MEMBER = "tool_input";
+
+/** Space between tokens, as the JSON grammar spells it and no wider (ECMA-404 §4). */
+function isSpace(c) {
+  return c === " " || c === "\t" || c === "\n" || c === "\r";
+}
+
+function skipSpace(text, i) {
+  let at = i;
+  while (at < text.length && isSpace(text[at])) at++;
+  return at;
+}
+
+/**
+ * What can still be read out of a payload that will not parse whole.
+ *
+ * `JSON.parse` reads a document or nothing, so a complete payload followed by
+ * one stray byte answers the same as no payload at all, and a payload larger
+ * than the cap answers nothing whatever the cap keeps. Both are ordinary: a
+ * `Write` of a generated file carries it in `tool_input.content`, and a `Read`
+ * of a minified bundle carries it back in `tool_response`. The turn then lost
+ * its map over a payload naming a live file in a mapped repository.
+ *
+ * So this reads the members it can and stops where the text does. What it
+ * answers, it answers as `JSON.parse` would: the string members, only at the
+ * top and inside `tool_input`, only ones whose closing quote it actually
+ * reached, and a member said twice reading as the last one said it did. Everything else is stepped over, and every value it does answer is
+ * decoded by `JSON.parse` rather than by this, so escapes, surrogate pairs and
+ * a Windows path full of backslashes are the parser's business and not a second
+ * implementation of them.
+ *
+ * Reading the grammar rather than matching a pattern is the whole of it: the
+ * cargo being stepped over is a file's own text, and a reader that found
+ * `"cwd"` inside one would answer another repository's path for a live write.
+ * Nothing here looks inside a string.
+ *
+ * The other plugin holds this reader and its helpers too, for the reason
+ * `cutAt` above is held twice: a plugin may not run a file outside its own
+ * root, so a module both could import cannot exist. `test/hook-contract.test.mjs`
+ * drives both against one list of payloads, refuses any they answer
+ * differently, and compares the block itself character for character. Those two
+ * cases are the whole of what keeps the two in step.
+ */
+export function fieldsIn(text) {
+  const fields = {};
+  const at = skipSpace(text, 0);
+  if (text[at] !== "{") return fields;
+  readMembers(text, at + 1, fields, true);
+  return fields;
+}
+
+/**
+ * The members of one object into `fields`, answering where it ended or -1 where
+ * the text ran out first.
+ *
+ * Recurses once and no further: `tool_input` is the only member whose own
+ * members are read, and everything else is stepped over by a loop, so no
+ * payload's own nesting decides how deep this goes.
+ */
+function readMembers(text, from, fields, top) {
+  let i = from;
+  for (;;) {
+    i = skipSpace(text, i);
+    if (text[i] === "}") return i + 1;
+    if (text[i] !== '"') return -1;
+    const nameEnd = endOfString(text, i);
+    if (nameEnd < 0) return -1;
+    const name = decodeString(text, i, nameEnd);
+    i = skipSpace(text, nameEnd);
+    if (text[i] !== ":") return -1;
+    i = skipSpace(text, i + 1);
+    if (i >= text.length) return -1;
+
+    // A member said twice answers what the last one said, whatever its type,
+    // which is what `JSON.parse` would do with the same document. Left alone,
+    // an earlier string stood while the parser had taken a later number, so the
+    // answer held a value the document does not have.
+    if (typeof name === "string") delete fields[name];
+
+    if (text[i] === '"') {
+      const end = endOfString(text, i);
+      if (end < 0) return -1;
+      const value = decodeString(text, i, end);
+      if (typeof name === "string" && typeof value === "string") put(fields, name, value);
+      i = end;
+    } else if (top && name === NESTED_MEMBER && text[i] === "{") {
+      const inner = {};
+      const end = readMembers(text, i + 1, inner, false);
+      // Kept even where the object never closed, since the members before the
+      // cut are the ones this is here for.
+      if (Object.keys(inner).length > 0) put(fields, NESTED_MEMBER, inner);
+      if (end < 0) return -1;
+      i = end;
+    } else {
+      const end = skipValue(text, i);
+      if (end < 0) return -1;
+      i = end;
+    }
+
+    i = skipSpace(text, i);
+    if (text[i] === ",") {
+      i++;
+      continue;
+    }
+    return text[i] === "}" ? i + 1 : -1;
+  }
+}
+
+/**
+ * One member onto the answer, whatever it is called.
+ *
+ * Defined rather than assigned, because a plain assignment to `__proto__` runs
+ * the setter on `Object.prototype` instead of making a property: the member
+ * vanished, while `JSON.parse` keeps it as the object's own. A string cannot
+ * reparent anything through that setter, so nothing was ever at risk; what was
+ * wrong is that the two readers of one document disagreed about what was in it.
+ */
+function put(fields, name, value) {
+  Object.defineProperty(fields, name, { value, writable: true, enumerable: true, configurable: true });
+}
+
+/**
+ * Where the string starting at `from` ends, or -1 where it never does.
+ *
+ * A backslash takes the next unit with it whatever that unit is, which is all
+ * the escape grammar a reader needs to find the closing quote: `\"` is not it
+ * and `\\` leaves the next quote to close.
+ */
+function endOfString(text, from) {
+  for (let j = from + 1; j < text.length; j++) {
+    if (text[j] === "\\") {
+      j++;
+      continue;
+    }
+    if (text[j] === '"') return j + 1;
+  }
+  return -1;
+}
+
+/**
+ * The string between those two offsets, or null for one this will not carry.
+ *
+ * Measured before it is copied: a `content` of five megabytes is passed over as
+ * a span rather than sliced and parsed, so stepping over the cargo costs an
+ * index and not a second copy of it.
+ */
+function decodeString(text, from, end) {
+  if (end - from > VALUE_MOST) return null;
+  try {
+    return JSON.parse(text.slice(from, end));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Past one value of any shape, or -1 where the text ran out inside it.
+ *
+ * Depth is counted rather than recursed, because the payload decides it: a
+ * value nested fifty thousand deep is a stack overflow in a reader that calls
+ * itself, and this runs before every tool call.
+ */
+function skipValue(text, from) {
+  if (text[from] === '"') return endOfString(text, from);
+  if (text[from] === "{" || text[from] === "[") {
+    let depth = 0;
+    for (let j = from; j < text.length; j++) {
+      const c = text[j];
+      if (c === '"') {
+        const end = endOfString(text, j);
+        if (end < 0) return -1;
+        j = end - 1;
+        continue;
+      }
+      if (c === "{" || c === "[") depth++;
+      else if (c === "}" || c === "]") {
+        depth--;
+        if (depth === 0) return j + 1;
+      }
+    }
+    return -1;
+  }
+  // A number, `true`, `false` or `null`: read up to whatever ends it, and left
+  // unchecked, since nothing here reads one. A reader that validated it would
+  // stop at a malformed literal and lose the members after it; this one steps
+  // over and carries on, so it answers everything a strict reader would and
+  // sometimes more. Measured over 400,000 texts: no input where checking the
+  // literal recovered a member this does not.
+  let j = from;
+  while (j < text.length && !isSpace(text[j]) && text[j] !== "," && text[j] !== "}" && text[j] !== "]") j++;
+  return j === from ? -1 : j;
 }
 
 /**

@@ -9,6 +9,19 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- A hook answers a payload larger than the megabyte it reads, and one with
+  anything after the closing brace. `JSON.parse` reads a document or nothing, so
+  a prompt long enough to run past the cap, or a payload one byte over, answered
+  as though nothing had arrived: no `cwd`, no `source`, no session id, and the
+  turn counter started again from one. Where the parse refuses, the members that
+  can still be read are taken from the text: string members, at the top level and
+  inside `tool_input`, whole, and short enough to be a path rather than a file's
+  contents. anatomiya holds the same reader for the same reason neither plugin
+  can import the other's file, and `test/hook-contract.test.mjs` refuses any
+  payload the two answer differently.
+
 ## [0.2.0] - 2026-08-29
 
 `VERIFYING.md` was worked whole against Claude Code 2.1.241. The premise holds: the gate is still one

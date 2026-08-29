@@ -185,15 +185,64 @@ jobs:
       - name: The manifests are valid
         run: node scripts/validate.mjs
 
-      # The plugin root is the repository root, so nothing about the tree says
-      # which files belong to the plugin. `package.json` files is the one list
-      # that does, and unread it was wrong in both directions: no `hooks/`,
-      # which the loader reads first, and a marketplace manifest shipped inside
-      # the plugin. npm answers what the list covers; this reads that answer
-      # against what the hooks and command files reach. Linux only, because npm
-      # on Windows is a batch file and nothing here spawns a shell.
+      # `package.json` files is the one list that says which files belong to the
+      # plugin rather than to the marketplace around it, and unread it was wrong
+      # in both directions: no `hooks/`, which the loader reads first, and a
+      # marketplace manifest shipped inside the plugin. npm answers what the
+      # list covers; this reads that answer against what the hooks and command
+      # files reach. Linux only, because npm on Windows is a batch file and
+      # nothing here spawns a shell.
       - name: The shipped set holds what the plugin loads
         run: node scripts/shipped.mjs
+
+      - name: The plugin's own lockfile is the one the seed produces
+        run: node scripts/plugin-lock.mjs --check
+
+      # What a marketplace install actually does, on the files it actually
+      # copies. Claude Code reads the plugin root with a non-recursive `readdir`
+      # and runs this exact command where a manifest and a lockfile sit
+      # together; with no lockfile there it installs nothing and logs nothing,
+      # which is what every version from 0.3.0 shipped. Nothing else here would
+      # notice: every other job installs from the marketplace root's lockfile,
+      # one directory up and invisible to the loader.
+      - name: A marketplace install installs the engines
+        shell: bash
+        run: |
+          # `-u` is not set for this shell, so an unset RUNNER_TEMP would make
+          # the removal below `rm -rf /plugin`. The runner always sets it; this
+          # is here because the block is copied out and run by hand.
+          : "${RUNNER_TEMP:?RUNNER_TEMP is unset}"
+          install="$RUNNER_TEMP/plugin"
+          rm -rf "$install"
+          mkdir -p "$install"
+          # The tracked files and nothing else, which is what the marketplace
+          # copies. Not the directory as it sits here: npm may leave a
+          # `node_modules` inside a workspace, and copying that would install
+          # the very thing this is checking gets installed. Null-delimited, so a
+          # name with a space in it is one name.
+          while IFS= read -r -d "" f; do
+            to="$install/${f#plugins/anatomiya/}"
+            mkdir -p "$(dirname "$to")"
+            cp "$f" "$to"
+          done < <(git ls-files -z plugins/anatomiya)
+          # Checked on its own: a `git ls-files` that fails inside a process
+          # substitution is invisible to `pipefail`, and the loop then copies
+          # nothing and the next line blames the lockfile for it.
+          git ls-files --error-unmatch plugins/anatomiya/package.json > /dev/null
+          test -f "$install/package-lock.json" || { echo "::error::no lockfile shipped: the install would run nothing"; exit 1; }
+          # The loader's argv, and nothing beside it: two extra flags would make
+          # this a command like the one that runs rather than the one that does.
+          ( cd "$install" && timeout 60 npm ci --ignore-scripts )
+          node "$install/bin/anatomiya.mjs" doctor | tee "$RUNNER_TEMP/doctor.out"
+          # `if`, not `grep ... && ...`: a grep that finds nothing exits 1, and
+          # under this shell's `set -e` that fails the step on the run where the
+          # install worked.
+          if grep -q "nothing is installed" "$RUNNER_TEMP/doctor.out"; then
+            echo "::error::the install left the plugin with no packages"
+            exit 1
+          fi
+          grep -qE "^oxc [0-9]" "$RUNNER_TEMP/doctor.out" \
+            || { echo "::error::the parser did not load after a marketplace install"; exit 1; }
 
   # A unit suite that passes while the binary is broken is a familiar failure,
   # so the binary runs against a real repository with real git history. Both
