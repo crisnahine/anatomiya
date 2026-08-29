@@ -82,6 +82,17 @@ test("a path longer than one a filesystem can hold names no place, in constant t
   assert.equal(aboutDir({ tool_name: "Read", cwd: absurd, tool_input: { file_path: "a.js" } }, "/tmp"), null);
   assert.equal(aboutDir({ tool_name: "Bash", cwd: absurd, tool_input: { command: "ls" } }, "/tmp"), null);
 
+  // The notice's own reader takes the same bound one segment deeper, where
+  // `resolveLinks` recurses per segment and a path this long overflowed the
+  // stack rather than costing seconds.
+  assert.equal(targetIn({ tool_name: "Write", tool_input: { file_path: absurd } }, "/r"), null);
+  assert.equal(targetIn({ tool_name: "Write", cwd: absurd, tool_input: { file_path: "a.js" } }, "/r"), null);
+  // The bound itself, at the byte it refuses on.
+  const exactly = `/${"a".repeat(4094)}`;
+  assert.equal(exactly.length, 4095);
+  assert.notEqual(aboutDir({ tool_name: "Read", tool_input: { file_path: exactly } }, "/tmp"), null);
+  assert.equal(aboutDir({ tool_name: "Read", tool_input: { file_path: `${exactly}aa` } }, "/tmp"), null);
+
   assert.ok(Date.now() - started < 1000, `refusing them took ${Date.now() - started}ms`);
 });
 

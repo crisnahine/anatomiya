@@ -655,6 +655,48 @@ test("a search whose directory is reached through a link is still that directory
   assert.match(runEcho(join(parent, "beta"), globbed).hookSpecificOutput.additionalContext, /src\/core: 6 \.js/);
 });
 
+test("a checkout of its own is answered by itself, even when the answer is nothing", async (t) => {
+  // The boundary invariant, which the fallback to the session's map overrode:
+  // "a worktree, a submodule or a nested repository hears nothing rather than
+  // the enclosing checkout's map, against a branch those counts never
+  // described". A nested checkout with no map is in a repository, and that
+  // repository's answer is silence rather than the one above it.
+  const parent = await siblings(t);
+  const nested = join(parent, "alpha/vendor/sub/src");
+  mkdirSync(nested, { recursive: true });
+  writeFileSync(join(nested, "n.js"), "export const n = 1\n");
+  execFileSync("git", ["init", "-q"], { cwd: join(parent, "alpha/vendor/sub") });
+  const read = { hook_event_name: "PostToolUse", tool_name: "Read", tool_input: { file_path: join(nested, "n.js") } };
+
+  assert.deepEqual(runEcho(join(parent, "alpha"), read), {});
+});
+
+test("a mapped repository whose map says nothing is not handed another's", async (t) => {
+  // `echoContext` answers null for more than one reason: no map above, and a
+  // map whose body is empty. Reading either as "this call is in no repository"
+  // served a sibling's roster for a file that has a repository of its own.
+  const parent = await siblings(t);
+  writeFileSync(join(parent, "beta/.claude/rules/anatomiya-overview.md"), "---\ngenerator: anatomiya\n---\n\n");
+  const read = {
+    hook_event_name: "PostToolUse",
+    tool_name: "Read",
+    tool_input: { file_path: join(parent, "beta/lib/widgets/one.js") },
+  };
+
+  assert.deepEqual(runEcho(join(parent, "alpha"), read), {});
+});
+
+test("a path too long to name a place does not cost the turn its map", async (t) => {
+  // The bound answers null, and null reached `resolve` and threw. The bin turns
+  // that into `{}` and exit 0, so the turn loses the map it would have had:
+  // the very thing the fallback beside it exists to stop.
+  const parent = await siblings(t);
+  const absurd = `/${"a/".repeat(3000)}b.js`;
+  const read = { hook_event_name: "PostToolUse", tool_name: "Read", tool_input: { file_path: absurd } };
+
+  assert.match(runEcho(join(parent, "alpha"), read).hookSpecificOutput.additionalContext, /src\/core: 6 \.js/);
+});
+
 test("the notice answers for a test going where its kind of file has none", async (t) => {
   const dir = await railsish(t);
 
