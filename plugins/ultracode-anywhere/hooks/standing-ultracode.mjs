@@ -79,7 +79,7 @@ const CHECKING_STAGE = "a stage checking or judging another stage's work";
  * text promised a floor it cannot hold.
  */
 function loweredTo(level) {
-  return `That same configuration names the level the fan-out should run at, so pass opts.effort '${level}' on every workflow stage. Leave it out of ${CHECKING_STAGE}, so that one runs at the session's level unless its own definition sets one. The Agent tool takes no effort argument, so this reaches workflow stages and nothing else. Depth comes from how the work is split and independently checked.`;
+  return `That same configuration names the level the fan-out should run at, so pass opts.effort '${level}' on every workflow stage but one. Leave it out of ${CHECKING_STAGE}, so that one runs at the session's level unless its own definition sets one. The Agent tool takes no effort argument, so this reaches workflow stages and nothing else. Depth comes from how the work is split and independently checked.`;
 }
 
 /** The whole standing opt-in, at the stage level this session asked for. */
