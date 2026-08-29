@@ -252,7 +252,7 @@ the same set of turns a prompt hook fires on: a tool result never fires one. The
 
 ## 7. A workflow stage still has no effort but the one a script passes
 
-`ULTRACODE_ANYWHERE_STAGE_EFFORT` exists because `opts.effort` is the only lever that reaches a
+`ULTRACODE_ANYWHERE_STAGE_EFFORT` exists because `opts.effort` is the only lever a caller has on a
 workflow stage, and the reminder says so in as many words. Three things have to hold, and a build
 where any one of them moves is a build where that sentence is wrong.
 
@@ -271,10 +271,15 @@ What has to be true:
   `[{kind:"model",mainLoopModel:...},...e.effort!==void 0?[{kind:"effort",effort:e.effort}]:[]]`,
   and what matters is the ternary rather than the names.
 - The `workflow-subagent` definition carries neither `effort` nor `model`, and nothing registers it,
-  so no `.claude/agents/*.md` can shadow it the way one can shadow `general-purpose`.
+  so no `.claude/agents/*.md` can shadow it the way one can shadow `general-purpose`. It is the
+  definition a stage gets when the script names no `agentType`; a script that names one resolves a
+  registered definition instead, and an `effort:` in that file's frontmatter then sets the stage's
+  level. `opts.effort` still wins where both are present, which is why the reminder's instruction
+  holds either way and only its reason narrows.
 - The Agent tool's own input schema still has no `effort` parameter. Read it in a live session with
-  `/context`, or off the wire in step 4's capture. This is the half the reminder asserts and the
-  other two explain.
+  `/context`, or off the wire in step 4's capture. This is the half the reminder asserts, and it
+  asserts the argument and not the level: an agent definition file carries `effort:` and always
+  could.
 
 If the first moves, a session can set a stage's effort without the reminder and this switch is
 redundant. If the second moves, an agent file can carry it and the README should say so. If the
@@ -296,23 +301,28 @@ to, and its three conditions. All three are why it is worth knowing about rather
 none of them is checked by any case here, so re-read them:
 
 ```sh
+grep -a -o 'effortLevel:[A-Za-z_$][A-Za-z0-9_$]*(\["low","medium","high","xhigh"\])' "$BUILD" | head
 grep -a -o -b 'modelSettings' "$BUILD" | head -3
-grep -a -o 'effortLevel:[A-Za-z_$][\w$]*(\["low","medium","high","xhigh"\])' "$BUILD" | head
 grep -a -o -b 'sessionEffort' "$BUILD" | head -3
 ```
+
+Character classes here are POSIX, not PCRE: `[\w$]` inside brackets is the literal set backslash, w
+and dollar, so a pattern spelling it that way finds nothing and says so by printing nothing, which
+reads as a claim that no longer holds. Spell the class out. The first pattern is the only one of the
+three that checks a claim rather than an identifier's presence; take the offsets from the other two
+and read around them the way step 2 does.
 
 What has to be true for the README's three conditions to hold: the per-model row is keyed by the
 model a spawn resolves to rather than by who is spawning, so with no model split it reaches the main
 loop as well; its validator takes the four names above where `opts.effort` takes five; and a level
 pinned by `--effort` or `/effort` lands in `sessionEffort` and is read in front of the per-model row,
-so the route is dead in any session that pinned one. Step 4's capture settles all three: run one side
-with `--settings '{"effortLevel":"high","modelSettings":{"<model>":{"effortLevel":"low"}}}'` and
-`CLAUDE_CODE_SUBAGENT_MODEL` set, point the stand-in's reply at a tool call so a subagent spawns, and
-read `output_config.effort` off both requests.
+so the route is dead in any session that pinned one.
 
-The wire capture in step 4 is what settles any of this. Point the stand-in's reply at an `Agent` or a
-`Workflow` tool call so a subagent actually spawns, then read `output_config.effort` off the
-subagent's own request rather than the main loop's.
+Step 4's capture is what settles all three, and the integer claim above with them. Run one side with
+`--settings '{"effortLevel":"high","modelSettings":{"<model>":{"effortLevel":"low"}}}'` and
+`CLAUDE_CODE_SUBAGENT_MODEL` set, point the stand-in's reply at an `Agent` or a `Workflow` tool call
+so a subagent actually spawns, and read `output_config.effort` off the subagent's own request rather
+than the main loop's.
 
 ## 8. What a re-check changes
 

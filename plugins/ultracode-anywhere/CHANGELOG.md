@@ -11,15 +11,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
-- `ULTRACODE_ANYWHERE_STAGE_EFFORT=<level>` asks the reminder for a fan-out below the session:
-  `opts.effort` at that level on every workflow stage, except one checking or judging another
-  stage's work, which keeps the session's level. `opts.effort` is the only lever that reaches a
-  stage, since a stage carries no definition file to hold an effort and the Agent tool takes no
-  effort argument at all, so a session wanting its fan-out cheaper than its main loop has nothing
-  but the reminder text to say it with. Unset, the text is what it was: leave `opts.effort` alone.
-  The levels are `low`, `medium`, `high`, `xhigh` and `max`, read past case and surrounding spaces,
-  and the answer put into the text is the list's own spelling rather than what the variable held.
-  A31, A43 and now A47.
+- `ULTRACODE_ANYWHERE_STAGE_EFFORT=<level>` names the level the fan-out should run at: the reminder
+  then asks for `opts.effort` at that level on every workflow stage, except a stage checking or
+  judging another stage's work, which keeps the session's level. `opts.effort` is the only lever a
+  caller has on a stage, since the built-in definition a stage gets carries no effort and the Agent
+  tool takes no effort argument, so a session wanting its fan-out cheaper than its main loop has
+  nothing but the reminder text to say it with. Unset, the text is what it was, byte for byte: leave
+  `opts.effort` alone. The levels are `low`, `medium`, `high`, `xhigh` and `max`, read past case and
+  surrounding spaces, and the answer put into the text is the list's own spelling rather than what
+  the variable held. The text names a level and not a direction, because `--effort` and `/effort`
+  write nothing to `settings.json` and the hook cannot read the session's own level to say which way
+  it points. A31, A43 and now A47.
 - A session opens with a line naming a `ULTRACODE_ANYWHERE_STAGE_EFFORT` that is not a level, and
   what the levels are. An unreadable cadence costs a refresher its place and says nothing; this one
   costs a session the whole saving it was turned on for, and costs it silently. A setting holding
@@ -43,6 +45,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   carried. It is the model half of the same question, it is a real subagent-only seam upstream that
   reaches workflow stages, and it needs nothing from this plugin. There is no such variable for
   effort, which is why the switch above is a sentence of text rather than a setting.
+- The same section names the settings route to a subagent's effort, `modelSettings` keyed by the
+  model a spawn resolves to, and the three things that make it worth knowing about rather than
+  using: the row is keyed by a model rather than by who is spawning, so with no
+  `CLAUDE_CODE_SUBAGENT_MODEL` split it takes the main loop down with it; its validator takes four
+  level names where `opts.effort` takes five; and a level pinned by `--effort` or `/effort` is read
+  in front of it. `VERIFYING.md` step 7 carries the greps and the capture that check all three.
+- It also names the one case where a stage has a definition of its own: a script that passes
+  `agentType` resolves a registered agent, and an `effort:` in that file's frontmatter sets the
+  stage's level with no `opts.effort` in sight. `opts.effort` still wins where both are present, so
+  the reminder's instruction holds and only its reason narrows.
 
 ## [0.2.1] - 2026-08-29
 

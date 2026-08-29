@@ -1,31 +1,28 @@
 /**
  * The level a session asks its workflow stages to run at, and the list it has
- * to be one of.
+ * to be one of (A47).
  *
  * Its own file because both hooks need it and neither may import the other: the
  * prompt hook puts the level in the reminder, and the session hook says so when
  * the setting could not be read. A hook that imported the other's entry point
- * would be one `invokedAs` change away from running it.
+ * would be one `invokedAs` change away from running it. The list comes along
+ * rather than sitting in `upstream.mjs` with the other read-off-a-build facts,
+ * since a level name is only ever read through the reader below it.
  *
- * There is no other lever. A workflow stage carries no definition file to hold
- * an effort, and the Agent tool takes no effort argument at all, so a spawn
- * falls through to the session's own level unless the script passes
- * `opts.effort`. The only way to ask for a cheaper fan-out is to ask the model
- * for it, in the text this plugin already sends (A47).
+ * The reminder is the only way to ask. A spawn's effort comes from its agent
+ * definition, and neither the Agent tool nor a workflow stage takes one from
+ * the caller except through a script's own `opts.effort`, which is the model's
+ * to pass and nobody else's.
  */
 
 /**
  * The effort levels the build accepts, lowest first.
  *
- * These are the values a workflow script may hand `opts.effort`, and the ones
- * `--effort` and `/effort` take. The order is the one thing here that is not
- * just a set: it is what lets a reader say whether one level sits above
- * another.
- *
- * Read off a build like everything else this plugin stands on, so a name that
- * moved upstream would cost a user their setting in silence. `test/effort.test.mjs`
- * reads all five out of whatever build is installed, and `VERIFYING.md` names
- * this list among the things a re-check moves.
+ * The order is the one thing here that is not just a set: it is what lets a
+ * reader say whether one level sits above another. Read off a build like
+ * everything else this plugin stands on, so a name that moved upstream would
+ * cost a user their setting in silence. `test/effort.test.mjs` reads all five
+ * out of whatever build is installed, and `VERIFYING.md` says what it cannot.
  */
 export const EFFORT_LEVELS = ["low", "medium", "high", "xhigh", "max"];
 
@@ -39,10 +36,10 @@ const ECHO_MOST = 24;
  * A project's `settings.json` sets `env`, so this text can arrive with a cloned
  * repository, and it is on its way into a system-reminder the model reads as
  * instructions. A word, a number, a dot or a hyphen is a typo somebody wants
- * named; anything else is refused rather than trimmed, the way a session id
- * that is not a file name is refused rather than stripped.
+ * named; anything else is counted instead. No space: a level has none, and a
+ * short sentence would otherwise be quoted whole.
  */
-const QUOTABLE = new RegExp(`^[A-Za-z0-9 ._-]{1,${ECHO_MOST}}$`);
+const QUOTABLE = new RegExp(`^[A-Za-z0-9._-]{1,${ECHO_MOST}}$`);
 
 /**
  * How long a setting may be and still be read: five characters is a level, and
@@ -59,11 +56,10 @@ const READ_MOST = 256;
  * The level this session asked its workflow stages to run at, or null where it
  * asked for none.
  *
- * The answer is the list's own spelling rather than the text that was read, so
- * nothing a variable holds reaches the reminder. Case and the spaces a shell
- * leaves behind are forgiven, since `medium` and `Medium ` are the same ask.
- * Anything else is null, the way an unreadable cadence is the default cadence,
- * and `askedFor` below is what keeps that from being silent.
+ * The answer is one of the five and never the text that was read, so nothing a
+ * variable holds reaches the reminder. Case and the spaces a shell leaves
+ * behind are forgiven, since `medium` and `Medium ` are the same ask. Anything
+ * else is null, and `askedFor` below is what keeps that from being silent.
  */
 export function stageEffortIn(env = process.env) {
   const asked = normalise(env.ULTRACODE_ANYWHERE_STAGE_EFFORT);

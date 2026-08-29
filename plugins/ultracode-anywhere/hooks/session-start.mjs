@@ -61,8 +61,11 @@ export function notice({
   // Said every session rather than once per machine, since this is a variable
   // one session carries and the next may not. Only where the reminder is going
   // out at all: with the prompt hook quiet there is no text to carry a level,
-  // so the setting is not wrong, it is beside the point.
-  const asked = conflict ? null : askedFor(env);
+  // so the setting is not wrong, it is beside the point. Strict on a build that
+  // moved is the second way it goes quiet, and the prompt hook reads the same
+  // two answers in the same order.
+  const quiet = conflict || (env.ULTRACODE_ANYWHERE_STRICT === "1" && moved);
+  const asked = quiet ? null : askedFor(env);
   if (asked) said.push(`ultracode-anywhere: ${asked}.`);
 
   // The one thing native ultracode does that no reminder can: it lifts the
