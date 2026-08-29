@@ -448,6 +448,19 @@ test("a name this repository's own module offers is imported where it is used, n
   assert.deepEqual(assumed, []);
 });
 
+/**
+ * Spellings that are not under a checkout of this repository, each with why.
+ *
+ * A marketplace install puts the plugin's own directory at the root, so the
+ * binary sits at `bin/anatomiya.mjs` with nothing in front of it. A step that
+ * models one has to spell it that way, or it is running this checkout instead,
+ * which is the thing that step exists to stop trusting. Named one at a time, so
+ * a spelling nobody has ruled on is still refused.
+ */
+const NOT_UNDER_A_CHECKOUT = new Map([
+  ["$install/bin/anatomiya.mjs", "a marketplace install, where the plugin's own directory is the root"],
+]);
+
 // A workflow step and a package script cannot import a constant, so the rule
 // for them is agreement rather than absence: every one of these spelled the
 // binary by hand, and the move that put it under `plugins/` had to find all
@@ -463,7 +476,7 @@ test("every spelling of the binary outside the modules that can import it agrees
       spelled++;
       // A workflow spells it under the checkout it is running, so what has to
       // agree is the tail rather than the whole path.
-      if (!named.endsWith(rel)) wrong.push(`${file}: ${named}`);
+      if (!named.endsWith(rel) && !NOT_UNDER_A_CHECKOUT.has(named)) wrong.push(`${file}: ${named}`);
     }
   }
 

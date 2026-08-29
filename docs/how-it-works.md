@@ -579,6 +579,35 @@ either path never returns, and the record is the whole count of a repository, me
 bytes on microsoft/vscode, so the bound the rendered map is held to would have silenced the notice on
 exactly the repositories where a directory nobody read is easiest to miss.
 
+The payload itself is read to a megabyte and no further, because a hook runs on every tool call and
+the writer decides the size. What that megabyte holds is then read twice over. `JSON.parse` first,
+which is the whole document or nothing: a complete payload followed by one stray byte answers the
+same as no payload at all. Where that refuses, the members that can still be read are taken from the
+text directly, and only those: string members, only at the top level and inside `tool_input`, only
+ones whose closing quote the reader actually reached, only ones short enough to be a path rather
+than a file's contents, and a member said twice reading as the last one said it, which is what the
+parser would have answered for the same document. Every value it does answer is decoded by `JSON.parse` on that value's own
+token, so escapes and surrogate pairs stay the parser's business. The grammar is read rather than
+matched, because the bulk being stepped over is a file's own text: a reader that found `"cwd"`
+inside one would answer another repository's path for a live write, and nothing here looks inside a
+string. What this buys is the ordinary large call. A `Write` of a generated file carries it in
+`tool_input.content` and a `Read` of a minified bundle carries it back in `tool_response`, and both
+used to cost the turn its map over a payload whose four short fields were sitting in the first
+hundred bytes.
+
+The two plugins hold the same reader, since neither may run a file outside its own root, and
+`test/hook-contract.test.mjs` drives both against one list of payloads and refuses any that they
+answer differently.
+
+Neither hook needs to know where its own process is. `process.cwd()` refuses with ENOENT once the
+directory a session started in is unlinked, which `git worktree remove` does to a session sitting in
+one, and every hook after that is a fresh process, so a session would go quiet for the rest of its
+life while every payload still named live paths. The entry point reads it defensively for the hooks
+and lets the absent answer through; both readers already take a payload with no base at all. The
+other commands need a real directory to walk, and say what happened and to give
+a path. They cannot name the directory, which is the one thing that can no
+longer be read.
+
 The notice answers only for a path nothing is at yet. An `Edit` names a file that exists every time
 and a `Write` over one is a rewrite, so the path was chosen turns ago; repeating the same block on
 each edit of the same spec is the unchanged banner the notice exists instead of. The payload's path
@@ -1153,9 +1182,26 @@ recounts every number the `## What lives where` section prints, both recorded un
 
 ## 10. Readiness and setup
 
-`/plugin install` copies the files and runs no install, so a marketplace user's first run has no
-parser in it until something puts one there. Two commands do that, and a scan is neither of them: a
-scan that installed on finding a dependency missing would make every scan an outbound call.
+`/plugin install` installs a plugin's dependencies itself. Measured on Claude Code 2.1.251: the
+loader reads the plugin root with a non-recursive `readdir` and runs `npm ci --ignore-scripts`
+there, with a 60 second cap, where a `package.json` and one of `bun.lock`, `bun.lockb`,
+`npm-shrinkwrap.json` or `package-lock.json` sit together. `yarn.lock` and `pnpm-lock.yaml` are
+refused by name, because their resolution-time hooks run around `--ignore-scripts`. A root holding
+the manifest and no lockfile is passed over with nothing logged, and the plugin then installs with
+none of its dependencies.
+
+This plugin ships `plugins/anatomiya/package-lock.json` for that reason. It stopped shipping one at
+0.3.0, which moved the plugin out of the repository root and left the marketplace's lockfile behind:
+every version from then until this one installed with no parser, and the first command that needed
+one refused with a sentence about `setup` that nobody sees on a repository holding no JavaScript.
+`scripts/validate.mjs` refuses a plugin that declares dependencies and ships no lockfile, and
+refuses one whose lockfile resolves a package to a version the marketplace's own does not, since
+the suite runs against one of those and whoever installs the plugin gets the other.
+`scripts/plugin-lock.mjs` builds it from the marketplace's resolutions rather than resolving afresh.
+
+Where that install did not run or did not finish, `doctor` says which of the two it was and `setup`
+is what fixes either. A scan is neither of them: a scan that installed on finding a dependency
+missing would make every scan an outbound call.
 
 `anatomiya doctor` probes what the parsers need and prints one line each: the version where it
 answered, and otherwise what was wrong and what to do about it. The remedy is the engine's own,

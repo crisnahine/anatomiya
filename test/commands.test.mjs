@@ -209,10 +209,10 @@ test("a scan of a directory that is not a repository refuses rather than reporti
 });
 
 test("a deep scan with no checker refuses before it reads anything", (t) => {
-  // `/plugin install` copies the files and does not run `npm install`, so this
-  // is the shape a marketplace user's first `--deep` meets. Refused before the
-  // parse rather than after a minute of it, and out of process because that is
-  // where the whole deep path through this module can be exercised at all.
+  // An install that did not run leaves the plugin's own code with nothing
+  // beside it, which is the shape a `--deep` meets with no checker. Refused
+  // before the parse rather than after a minute of it, and out of process
+  // because that is where the whole deep path can be exercised at all.
   const install = installWithoutDependencies(t);
   const dir = repo(t);
 
@@ -733,6 +733,36 @@ test("a repository nobody has scanned is answered with an empty object by both h
 
   assert.deepEqual(runNotice(dir, write(dir, "spec/mailers/x_spec.rb")), {});
   assert.deepEqual(runEcho(dir, { hook_event_name: "UserPromptSubmit" }), {});
+});
+
+test("both hooks answer a payload when this process has no working directory", async (t) => {
+  // `process.cwd()` refuses with ENOENT once the directory a session started in
+  // is unlinked, which `git worktree remove` does under a session sitting in
+  // one. The entry point hands that value in, so the base has to be allowed to
+  // be absent: every hook after it is a fresh process, and a throw here answers
+  // the empty object for the rest of that session while every payload is still
+  // naming live paths.
+  const dir = await railsish(t);
+
+  const out = runEcho(undefined, {
+    hook_event_name: "PostToolUse",
+    tool_name: "Read",
+    cwd: dir,
+    tool_input: { file_path: join(dir, "app/mailers/admin_mailer.rb") },
+  });
+  assert.match(out.hookSpecificOutput.additionalContext, /<repository-map delivered="/);
+
+  const said = runNotice(undefined, write(dir, "spec/mailers/cim_share_mailer_spec.rb"));
+  assert.match(said.hookSpecificOutput.additionalContext, /spec\/mailers holds no other test/);
+});
+
+test("a payload that names no place, with no working directory either, is silence rather than a throw", () => {
+  // The fallback is the only base such a payload has, and there is none. Both
+  // hooks answer the empty object; the guard in the bin would turn a throw into
+  // the same object, so the difference this holds is that nothing threw.
+  assert.deepEqual(runEcho(undefined, { hook_event_name: "UserPromptSubmit" }), {});
+  assert.deepEqual(runEcho(undefined, { hook_event_name: "PostToolUse", tool_name: "Bash", tool_input: { command: "ls" } }), {});
+  assert.deepEqual(runNotice(undefined, { hook_event_name: "PreToolUse", tool_name: "Write", tool_input: { file_path: "spec/x_spec.rb" } }), {});
 });
 
 test("the echo hands back the map it was asked for, and nothing without an event", async (t) => {

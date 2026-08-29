@@ -13,13 +13,16 @@ that ships.
 ```
 /plugin marketplace add crisnahine/anatomiya
 /plugin install anatomiya@crisnahine
-/anatomiya:setup
 ```
 
-`/plugin install` copies these files and installs nothing. The scanner has two runtime dependencies,
-`oxc-parser` and `flow-remove-types`, and `/anatomiya:setup` is what installs them: it is the only
-command that reaches a package registry. Outside Claude Code it is `node bin/anatomiya.mjs setup`,
-run from this plugin's own directory.
+The scanner has two runtime dependencies, `oxc-parser` and `flow-remove-types`, and `/plugin
+install` installs them: Claude Code runs `npm ci --ignore-scripts` in a plugin's own directory when
+it finds a lockfile there, and this plugin ships one.
+
+Where nothing was installed, `/anatomiya:doctor` says so in its first line; where an install ran and
+stopped short, its engine lines say which one did not load. `/anatomiya:setup` answers both, and it
+is the only command that reaches a package registry. Outside Claude Code it is
+`node bin/anatomiya.mjs setup`, run from this plugin's own directory.
 
 ## What it does
 

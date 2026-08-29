@@ -665,6 +665,18 @@ const KEPT = new Map([
   ["ANTHROPIC_SMALL_FAST_MODEL_AWS_REGION", "a region, not a model, and a Bedrock run needs it"],
   ["CLAUDE_CODE_NO_MODEL_FALLBACK", "set rather than scrubbed, so a trial runs the pinned model or fails"],
   ["CLAUDE_CODE_THINKING_DISPLAY_UPDATES", "how thinking is shown, not how much of it there is"],
+  // Read out of 2.1.251 rather than reasoned from the name. It is an off
+  // switch, not an enabler: the build tests it with a helper that answers true
+  // for 0, false, no and off, and its only outcome is short-circuiting the
+  // served-catalog mode to "off". The catalog that mode gates fetches an
+  // organisation's model list, compares it against the model, window and output
+  // cap the CLI already resolved, and logs the comparison. Nothing writes the
+  // answer back, in either of the two live modes. So no value of this can make
+  // two arms run different engines, which is the only thing the scrub is for.
+  // A ruling about what a build does, not about a name: if a later build ever
+  // applies the catalog rather than logging it, this row goes stale with
+  // nothing here to notice, and the read to redo is the consumer of that mode.
+  ["CLAUDE_CODE_MODEL_CATALOG", "an off switch for a catalog that is compared and logged, never applied"],
 ]);
 
 test("the build carries no engine-shaped variable this run has not decided about", async (t) => {
