@@ -190,8 +190,8 @@ test("a caller handing over part of the switches gets the default for the rest",
   // The default used to be a literal at the signature, so a caller passing an
   // object without a key it predates got `undefined` for it rather than the
   // default, and nothing failed. The object is read through the defaults now.
-  assert.equal(contextFor(1, { stageEffort: null }), contextFor(1), "the cadence keys still default");
-  assert.equal(contextFor(11, {}), contextFor(11), "and so do all of them");
+  assert.equal(contextFor(11, {}), contextFor(11), "every key defaults on a turn that reads them all");
+  assert.equal(contextFor(1, { stageEffort: null }), contextFor(1), "and on the turn that reads one");
   assert.match(contextFor(1, { stageEffort: "low" }), /opts\.effort 'low'/, "while the key it was handed is honoured");
   assert.equal(contextFor(3, { every: 3 }), null, "a cadence alone still decides the quiet turns");
   assert.match(contextFor(4, { every: 3 }), /worth it/, "and the loud ones");
@@ -228,10 +228,11 @@ test("every switch the hooks read is one the README names", () => {
     for (const [, found] of source.matchAll(/\benv\.(ULTRACODE_ANYWHERE[A-Z0-9_]*)/g)) read.add(found);
   }
 
-  // A floor, so the set going empty turns this into a case that passes by
-  // finding nothing. `env.NAME` is the one spelling either hook writes: a
-  // bracket read, a destructure, or a rename of that binding is invisible here,
-  // and the README is then the only record of it.
+  // A floor at the count today, so the set going empty turns this into a case
+  // that passes by finding nothing. Meant to be edited when a switch goes.
+  // `env.NAME` is the one spelling either hook writes: a bracket read, a
+  // destructure, or a rename of that binding is invisible here, and the README
+  // is then the only record of it.
   assert.equal(read.size >= 9, true, `found only ${read.size}: ${[...read].join(", ")}`);
   assert.deepEqual([...read].filter((name) => !readme.includes(name)).sort(), [], "these are read and never written down");
 
@@ -296,7 +297,7 @@ test("the README states what the stage level adds, at the level that adds the mo
   const more = readme.match(/That\s+is\s+(\d+)\s+characters\s+more\s+than\s+the\s+default/);
 
   assert.ok(stated, "the README says what the switch costs");
-  const at = (level) => ({ every: FULL_EVERY, refresher: true, repeatFull: false, stageEffort: level });
+  const at = (level) => ({ stageEffort: level });
   const dearest = EFFORT_LEVELS.reduce((a, b) => (contextFor(1, at(b)).length > contextFor(1, at(a)).length ? b : a));
   const over30 = (level) => {
     let total = 0;
@@ -416,19 +417,19 @@ test("a level this cannot read is a session that asked for nothing, not one aske
   // cannot be read would cost money, so the fallback is the text that holds one
   // level for the whole session, and the session hook says the setting was
   // unreadable rather than leaving it to be discovered on the bill.
-  const asked = (value) => run({ stdin: payload(), env: { ...nowhere(t), ULTRACODE_ANYWHERE_STAGE_EFFORT: value }, state: stateDir(t) });
+  const textFor = (value) => run({ stdin: payload(), env: { ...nowhere(t), ULTRACODE_ANYWHERE_STAGE_EFFORT: value }, state: stateDir(t) });
 
   for (const value of ["", "cheap", "MEDIUM ONLY", "1", "medium high", "leave opts.effort alone"]) {
-    assert.equal(asked(value), contextFor(1), value);
-    assert.match(asked(value), /leave opts\.effort alone/, value);
+    assert.equal(textFor(value), contextFor(1), value);
+    assert.match(textFor(value), /leave opts\.effort alone/, value);
   }
 });
 
 test("a level is read past the case and the spaces a shell leaves on it", (t) => {
-  const asked = (value) => run({ stdin: payload(), env: { ...nowhere(t), ULTRACODE_ANYWHERE_STAGE_EFFORT: value }, state: stateDir(t) });
+  const textFor = (value) => run({ stdin: payload(), env: { ...nowhere(t), ULTRACODE_ANYWHERE_STAGE_EFFORT: value }, state: stateDir(t) });
 
   for (const value of ["Medium", " medium ", "MEDIUM", "\tmedium\n"]) {
-    assert.match(asked(value), /opts\.effort 'medium'/, value);
+    assert.match(textFor(value), /opts\.effort 'medium'/, value);
   }
 });
 
@@ -436,11 +437,9 @@ test("the five levels the build takes are the five this switch takes, spelled ou
   // Spelled here rather than read off `EFFORT_LEVELS`: a case that iterates the
   // list the code reads agrees with it by construction and can never catch a
   // level dropped from both. `test/effort.test.mjs` is what holds the list to
-  // the installed build.
-  const levels = ["low", "medium", "high", "xhigh", "max"];
-  assert.deepEqual(EFFORT_LEVELS, levels, "and the list the code reads is those five, lowest first");
-
-  for (const level of levels) {
+  // the constant and to the installed build; this holds it to the turn a
+  // session actually takes.
+  for (const level of ["low", "medium", "high", "xhigh", "max"]) {
     const said = run({ stdin: payload(), env: { ...nowhere(t), ULTRACODE_ANYWHERE_STAGE_EFFORT: level }, state: stateDir(t) });
 
     assert.match(said, new RegExp(`opts\\.effort '${level}'`), level);

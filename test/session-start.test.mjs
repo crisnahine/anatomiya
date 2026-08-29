@@ -241,6 +241,22 @@ test("a session already silenced says nothing about a stage level that reaches n
   assert.equal(said.includes("ULTRACODE_ANYWHERE_STAGE_EFFORT"), false);
 });
 
+test("a strict session on a build that moved says nothing about a level no text will carry", (t) => {
+  // Strict is what makes the prompt hook go quiet on a drifted build, so there
+  // the level reaches no reminder either. The comment above the guard said
+  // "only where the reminder is going out at all" while the code read the
+  // conflict alone.
+  const t1 = tree(t, { bundle: `${whole()}`.replace(MARKERS[0], "") });
+  const env = { CLAUDE_CONFIG_DIR: t1.config, ULTRACODE_ANYWHERE_CAP_NOTICE: "0", ULTRACODE_ANYWHERE_STAGE_EFFORT: "cheap" };
+
+  const loud = notice({ cwd: t1.dir, cli: t1.cli, state: t1.state, env });
+  const strict = notice({ cwd: t1.dir, cli: t1.cli, state: t1.state, env: { ...env, ULTRACODE_ANYWHERE_STRICT: "1" } });
+
+  assert.match(loud, /ULTRACODE_ANYWHERE_STAGE_EFFORT/, "the reminder still goes out, so the level still matters");
+  assert.match(strict, new RegExp(MARKERS[0]), "the build that moved is still named");
+  assert.equal(strict.includes("ULTRACODE_ANYWHERE_STAGE_EFFORT"), false);
+});
+
 // --- a compaction starts the cadence over -------------------------------------
 
 test("a compaction starts the cadence over, since the text it opened with is gone from the context", (t) => {

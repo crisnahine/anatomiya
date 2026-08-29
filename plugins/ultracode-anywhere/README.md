@@ -52,26 +52,33 @@ first session on a machine that has not says so once. `tengu_amber_kestrel`, on 
 flag Anthropic sets and nobody here does: turned on, it lifts the cap for every session on that
 build, this plugin's included.
 
-It does not set a stage's effort, and no hook can. A workflow stage carries no definition file to
-hold one, and the Agent tool takes no effort argument at all, so a spawn falls through to the
-session's own level unless the script passes `opts.effort`. That is the only lever there is, and the
-model is the only one holding it. So `ULTRACODE_ANYWHERE_STAGE_EFFORT` asks the model to pass it,
+It does not set a stage's effort, and no hook can. A spawn's effort comes from its agent definition,
+and the built-in definition a workflow stage gets carries none, so a stage falls through to the
+session's own level unless the script passes `opts.effort`. That is the only lever a caller has, and
+the model is the only one holding it. So `ULTRACODE_ANYWHERE_STAGE_EFFORT` asks the model to pass it,
 which is a request and not a setting: a session that ignores the text runs its fan-out at the
 session's level, which is where it was going to run anyway. Set nothing and the reminder says to
-leave `opts.effort` alone, which is the default this had before the switch existed and still has.
+leave `opts.effort` alone.
 
-The switch names a level rather than a direction, and both directions are yours to choose. Below the
-session is what it was built for, since fan-out is where the tokens go. Above it, a stage runs deeper
-than the session it belongs to, which is a second variable in whatever that session was measuring:
-that is a deliberate choice when you make it and an accident when a reminder makes it for you, which
-is why the default text names no level at all. Depth is otherwise bought by how the work is split and
-independently checked, which is the lever a prompt controls without changing what the session costs.
+A workflow script that names an `agentType` is the one case where a stage has a definition of its
+own, and a `.claude/agents/*.md` carrying `effort:` then sets that stage's level with no `opts.effort`
+in sight. `opts.effort` still wins where the script passes both, so the reminder's instruction holds;
+what it does not hold for is a stage the script never asks the model to configure.
+
+The switch names a level rather than a direction, and the hook cannot read the session's own to tell
+which way it points: `--effort` and `/effort` write nothing to `settings.json`. Below the session is
+what it was built for, since fan-out is where the tokens go. Above it works and buys the opposite,
+and one thing changes shape with it: the reminder tells the checking stage to keep the session's
+level, which is the deeper setting below and the shallower one above. If you set a level above your
+session, the stage that checks the others is the one running cheapest, and that is the reading to
+avoid. Depth is otherwise bought by how the work is split and independently checked, which is the
+lever a prompt controls without changing what the session costs.
 
 The model half of the same question needs nothing from this plugin. `CLAUDE_CODE_SUBAGENT_MODEL` is
 a real subagent-only seam upstream: set it and every spawn resolves to that model while the main loop
-keeps its own, workflow stages included. It goes in the environment, or in `settings.json` under
-`"env"` beside the cap above. There is no matching variable for effort, which is the whole reason the
-switch above is a sentence of text rather than a setting.
+keeps its own, workflow stages included. Measured in the environment, and `settings.json`'s `"env"`
+block populates that environment, which is how the cap above is set. There is no matching variable
+for effort, which is the whole reason the switch above is a sentence of text rather than a setting.
 
 There is a settings route to a subagent's effort, and it is worth knowing about rather than using.
 `modelSettings` carries an `effortLevel` per model, and a spawn resolves its effort against its own
@@ -92,8 +99,8 @@ the opening text plus two refreshers. A payload that names no session, or a stat
 cannot use, reads every turn as the first one, and a 30-turn session then costs 30 opening texts
 instead. The reminder is the cheap half either way.
 
-`ULTRACODE_ANYWHERE_STAGE_EFFORT` puts the level into both, which at its longest level name is 1413
-characters on the first turn and 186 on the tenth, or 1785 over 30 turns. That is 361 characters more
+`ULTRACODE_ANYWHERE_STAGE_EFFORT` puts the level into both, which at its longest level name is 1409
+characters on the first turn and 185 on the tenth, or 1779 over 30 turns. That is 355 characters more
 than the default over such a session, against a fan-out it moves by a whole effort level.
 
 The session check reads the installed build once per build, not once per session: about 200 ms

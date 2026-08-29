@@ -53,25 +53,24 @@ const ONE_LEVEL =
   "Every subagent and every workflow stage runs at that same level, so leave opts.effort alone. Depth comes from how the work is split and independently checked, at the level the session is set to.";
 
 /**
- * The one stage a cheaper fan-out does not reach, spelled once because both
- * texts state it and a model reading them compares them.
+ * The one stage the named level does not reach, spelled once because both texts
+ * state it and a model reading them compares them.
  *
- * It is the exception rather than a detail: a stage checking another's output is
- * the independent check the whole depth argument rests on, and running that one
- * shallower is where the saving stops being free.
+ * It is the exception rather than a detail: the stage that checks another's work
+ * is the independent check the whole depth argument rests on.
  */
 const CHECKING_STAGE = "a stage checking or judging another stage's work";
 
 /**
- * The fan-out at a level the user named, which is the one thing a session
- * cannot ask for any other way.
+ * The fan-out at the level the user named.
  *
- * A stage carries no definition file to hold an effort, so `opts.effort` is the
- * only lever that reaches one, and the Agent tool takes no effort argument at
- * all.
+ * The level is named and not a direction, because the hook cannot read the
+ * session's own: `--effort` and `/effort` write nothing to `settings.json`. Said
+ * as "below the session" it was a claim the code could not support, and a false
+ * one in any session that named a level above its own.
  */
 function loweredTo(level) {
-  return `That same configuration asks the fan-out to run below the session, so pass opts.effort '${level}' on every workflow stage, except ${CHECKING_STAGE}, which keeps the session's level. The Agent tool carries no effort of its own, so this reaches workflow stages and nothing else. Depth comes from how the work is split and independently checked.`;
+  return `That same configuration names the level the fan-out should run at, so pass opts.effort '${level}' on every workflow stage, except ${CHECKING_STAGE}, which keeps the session's level. The Agent tool takes no effort argument, so this reaches workflow stages and nothing else. Depth comes from how the work is split and independently checked.`;
 }
 
 /** The whole standing opt-in, at the stage level this session asked for. */
@@ -79,10 +78,16 @@ function full(stageEffort = null) {
   return [...OPENING, `${STANDING} ${stageEffort ? loweredTo(stageEffort) : ONE_LEVEL}`].join("\n\n");
 }
 
-/** The line that keeps the mode in view, carrying the level where one was asked for. */
+/**
+ * The line that keeps the mode in view, carrying the level where one was named.
+ *
+ * A sentence of its own rather than a third conjunct, since the level would
+ * otherwise hang off "use" with no verb of its own, on the line that goes out on
+ * every tenth turn for the life of the session.
+ */
 function short(stageEffort = null) {
-  const still = "Ultracode is still on: use the Workflow tool where the work is worth it, solo where it is not";
-  return stageEffort ? `${still}, and stages at opts.effort '${stageEffort}' except ${CHECKING_STAGE}.` : `${still}.`;
+  const still = "Ultracode is still on: use the Workflow tool where the work is worth it, solo where it is not.";
+  return stageEffort ? `${still} Stages take opts.effort '${stageEffort}', except ${CHECKING_STAGE}.` : still;
 }
 
 /** What this session's switches ask the text to be, and the default for anything unreadable. */
@@ -117,12 +122,11 @@ function sessionIn(payload) {
 const onCadence = (turn, every = FULL_EVERY) => (turn - 1) % every === 0;
 
 /**
- * What a session that set no switch gets, in one place.
+ * What a session that set no switch gets.
  *
- * Read through rather than compared against, so a caller handing over a partial
- * object gets these for the keys it left out. Spelled at the signature instead,
- * the default was a literal every caller had its own copy of, and the next key
- * added would have arrived as `undefined` at each of them with nothing failing.
+ * Read through rather than compared against, so a caller handing over part of
+ * the object gets these for the keys it left out, and a key added here reaches
+ * every caller rather than arriving as `undefined` at the partial ones.
  */
 const DEFAULTS = { every: FULL_EVERY, refresher: true, repeatFull: false, stageEffort: null };
 
