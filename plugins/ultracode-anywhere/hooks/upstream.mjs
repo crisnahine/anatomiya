@@ -81,7 +81,7 @@ export const CONFLICTS = {
   disableWorkflows: "settings.json sets \"disableWorkflows\": true, so there is no Workflow tool for the reminder to point at",
   CLAUDE_CODE_WORKFLOWS: "CLAUDE_CODE_WORKFLOWS is set to false, so there is no Workflow tool for the reminder to point at",
   enableWorkflows: "settings.json sets \"enableWorkflows\": false, so there is no Workflow tool for the reminder to point at",
-  ultracode: "settings.json sets \"ultracode\": true, so effort resolves to xhigh over effortLevel and the built-in reminder fires. A --effort flag or /effort below xhigh beats the key, and that session gets no reminder from either side",
+  ultracode: "settings.json sets \"ultracode\": true, so effort resolves to xhigh over effortLevel and the built-in reminder fires, unless a --effort or /effort below xhigh beats the key and leaves the session with neither",
 };
 
 /** A boolean variable as the build reads one: 1, true, yes or on, in any case. */
@@ -351,9 +351,9 @@ export function drift({ cli = cliPath() } = {}) {
 /**
  * The markers and the gate present in a file, found in one read.
  *
- * The bundle is hundreds of megabytes, so it is streamed rather than read
- * whole, and a second pass for the gate read most of it twice: the last marker
- * sits at the 172 MB mark of a 197 MB build and the gate at the 156 MB mark.
+ * The bundle is streamed rather than read whole, and a second pass for the gate
+ * read most of it twice: the last marker sits at the 172 MB mark of a 197 MB
+ * build and the gate at the 156 MB mark.
  */
 function carries(path) {
   const markers = new Set();

@@ -33,8 +33,7 @@ export const FULL_EVERY = 10;
  * a turn to skip. 2.1.251 declares the field and does not send it: a payload
  * caught off that build carries `session_id`, `transcript_path`, `cwd`,
  * `prompt_id`, `permission_mode`, `hook_event_name` and `prompt`, and no
- * `source`, though the literal now also carries `session_title` where a session
- * has a name. So a wakeup counts as a turn there and gets whatever its place in
+ * `source`. So a wakeup counts as a turn there and gets whatever its place in
  * the cadence earns; the day the field arrives, the skip starts working with no
  * change here (A30).
  */
@@ -191,7 +190,7 @@ export function run({ stdin = "", env = process.env, state = stateDirFor(env) } 
  * Strict is for whoever would rather have the mode off than have it pretend, so
  * it reads the build rather than trusting it. Read once and remembered beside
  * the counters: the answer cannot change inside a session, and the scan streams
- * most of a 197 MB file, about ninety milliseconds rather than the 20 ms a turn
+ * most of the build, about ninety milliseconds rather than the 20 ms a turn
  * costs otherwise, against a hook timeout of 5 seconds.
  */
 function movedBuild(env, state) {
