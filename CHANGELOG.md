@@ -7,6 +7,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-08-29
+
 Every version since 0.3.0 installed with no parser in it, and both hooks could be
 silenced for a whole session by a directory the payload never named.
 
@@ -2359,7 +2361,8 @@ which are partial; several listed there are not implemented yet.
 - No claim that this catches defects. Measured across ten repositories, 1 of 317 defect review
   comments was preventable by a conventions map.
 
-[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.4.2...HEAD
+[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/crisnahine/anatomiya/compare/v0.4.2...v0.5.0
 [0.4.2]: https://github.com/crisnahine/anatomiya/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/crisnahine/anatomiya/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/crisnahine/anatomiya/compare/v0.3.3...v0.4.0
