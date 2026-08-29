@@ -9,6 +9,25 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-08-29
+
+A payload one byte over the bound, or one long enough to run past it, answered as
+though nothing had arrived. The reader that closes it is held character for
+character against the other plugin's copy.
+
+### Fixed
+
+- A hook answers a payload larger than the megabyte it reads, and one with
+  anything after the closing brace. `JSON.parse` reads a document or nothing, so
+  a prompt long enough to run past the cap, or a payload one byte over, answered
+  as though nothing had arrived: no `cwd`, no `source`, no session id, and the
+  turn counter started again from one. Where the parse refuses, the members that
+  can still be read are taken from the text: string members, at the top level and
+  inside `tool_input`, whole, and short enough to be a path rather than a file's
+  contents. anatomiya holds the same reader for the same reason neither plugin
+  can import the other's file, and `test/hook-contract.test.mjs` refuses any
+  payload the two answer differently.
+
 ## [0.2.0] - 2026-08-29
 
 `VERIFYING.md` was worked whole against Claude Code 2.1.241. The premise holds: the gate is still one
@@ -112,7 +131,8 @@ wherever `effortLevel` is set, and says out loud what it does not restore.
 - Turn counters under `~/.claude/ultracode-anywhere/` rather than the temporary directory, in a
   directory this account owns with no access for anyone else.
 
-[Unreleased]: https://github.com/crisnahine/anatomiya/compare/ultracode-anywhere-v0.2.0...HEAD
+[Unreleased]: https://github.com/crisnahine/anatomiya/compare/ultracode-anywhere-v0.2.1...HEAD
+[0.2.1]: https://github.com/crisnahine/anatomiya/compare/ultracode-anywhere-v0.2.0...ultracode-anywhere-v0.2.1
 [0.2.0]: https://github.com/crisnahine/anatomiya/compare/ultracode-anywhere-v0.1.1...ultracode-anywhere-v0.2.0
 [0.1.1]: https://github.com/crisnahine/anatomiya/compare/v0.2.9...ultracode-anywhere-v0.1.1
 [0.1.0]: https://github.com/crisnahine/anatomiya/releases/tag/v0.2.9

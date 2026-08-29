@@ -4,6 +4,10 @@ description: Install what this plugin's own parser needs, in the plugin's own di
 
 Install the node-hosted engine's dependencies, and nothing else.
 
+Claude Code already does this on `/plugin install`, from the lockfile this plugin ships. Reach for
+this command where that install did not run or did not finish, which `/anatomiya:doctor` reports two
+ways: a first line where nothing was installed at all, and an engine line where one did not load.
+
 1. Say this to the user before running anything: setup runs `npm install` in the plugin's own
    directory, which is the only command here that installs anything or reaches a package
    registry. `scan`, `check` and `pin` never run it.

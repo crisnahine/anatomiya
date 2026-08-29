@@ -12,9 +12,10 @@
  * data the child can load.
  */
 import { execFile } from "node:child_process";
+import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { absentInterpreter } from "./child.mjs";
@@ -81,10 +82,18 @@ function probeFor(id) {
   return engine;
 }
 
-/** What a person does about an engine that is not ready. */
-export function remedyFor(engineId) {
+/**
+ * What a person does about an engine that is not ready.
+ *
+ * `root` is the directory the node remedy spells, and it defaults to this
+ * installation's. It is an argument because a report about one directory may
+ * not name another in the same sentence: a reader told nothing is installed in
+ * one place and to install it in a second has been handed two paths and no way
+ * to tell which is theirs.
+ */
+export function remedyFor(engineId, root = pluginRoot()) {
   const engine = probeFor(engineId);
-  return engine.host === "node" ? `run ${engine.remedy.replace(PLUGIN_DIRECTORY, pluginRoot())}` : engine.remedy;
+  return engine.host === "node" ? `run ${engine.remedy.replace(PLUGIN_DIRECTORY, root)}` : engine.remedy;
 }
 
 /**
@@ -131,17 +140,84 @@ export async function readiness({ engines = Object.keys(ENGINES), timeoutMs = 5_
 /** What a row is called wherever one is printed: an extra by its module, an engine by its own name. */
 export const probeName = (row) => row.extra ?? row.engine;
 
-/** One line per row for a person reading a doctor report. */
-export function readinessLines(rows) {
+/**
+ * The one thing wrong with an installation that has nothing in it at all, or null.
+ *
+ * Claude Code installs a plugin's dependencies itself, from the lockfile beside
+ * its manifest, so a plugin with no `node_modules` anywhere above it is an
+ * install that never ran rather than a step somebody forgot. Every node-hosted
+ * row is then absent for that one reason, and a report naming them one at a
+ * time reads as two faults with two fixes, since the optional checker's row is
+ * a note either way.
+ *
+ * Asked of the whole way up rather than of the directory beside the manifest,
+ * because that is where node looks: this marketplace declares its plugins as
+ * workspaces, so npm hoists every package to the root and the plugin's own
+ * directory never holds one. Asked only about that directory, a contributor
+ * whose engine failed to load was told nothing was installed and pointed at a
+ * place that will never hold it.
+ *
+ * Nothing at all, and deliberately not an install that ran and stopped short:
+ * the loader kills one at sixty seconds, and what that leaves is a
+ * `node_modules` with some of the packages in it. The rows are the better answer
+ * there, because they say which ones, and one sentence claiming nothing is
+ * installed would be wrong about a directory that holds most of it.
+ *
+ * Said as well as the rows rather than instead of them: the rows are still
+ * true, and this is what they have in common. An interpreter is the machine's
+ * own and no install here can put one there, so its absence is never this.
+ */
+export function installProblem(rows, root = pluginRoot()) {
+  // The remedy comes off the row that is absent rather than off a name spelled
+  // here: every node-hosted engine answers the same sentence, and naming one of
+  // them would go stale the day that stops being true.
+  const absent = rows.find((r) => PROBES[r.engine]?.host === "node" && !r.present && !r.ok);
+  if (absent === undefined) return null;
+  if (installedAbove(root)) return null;
+  // The directory once, on the half that is a command to run: said on both
+  // halves the sentence ran past 170 characters and read as two places.
+  return `nothing is installed here: ${remedyFor(absent.engine, root)}`;
+}
+
+/**
+ * Whether any `node_modules` on the way up could serve this directory.
+ *
+ * The walk node's own resolver makes, and it ends at the filesystem root, which
+ * is its own fixed point under `dirname`. One that holds nothing this plugin
+ * needs still answers yes, and the rows are then the report: each names the
+ * engine that did not load and what to do about it, which is more than one
+ * sentence about a directory could say.
+ */
+function installedAbove(root) {
+  let at = root;
+  for (;;) {
+    if (existsSync(join(at, "node_modules"))) return true;
+    const up = dirname(at);
+    if (up === at) return false;
+    at = up;
+  }
+}
+
+/**
+ * One line per row for a person reading a doctor report.
+ *
+ * `installSaid` is whether a line above these has already given the node
+ * remedy. Those rows then keep what was wrong with each engine, which differs,
+ * and drop what to do about it, which does not: said on the lead and on every
+ * row it explains, one sentence appeared three times and the report read as
+ * three faults again, which is what the lead is there to stop. An interpreter's
+ * remedy is its own and is never the one that was said.
+ */
+export function readinessLines(rows, { installSaid = false } = {}) {
   return rows.map((r) => {
     const name = probeName(r);
     const found = r.present ? r.version ?? "no version" : "absent";
     // A row that is not ready carries the two things the reader needs next:
     // what was wrong with it, and what to do. A ready one carries neither,
     // unless it is the optional checker, whose row is a note either way.
-    return r.ok
-      ? `${name} ${found} ok${r.reason ? ` (${r.reason})` : ""}`
-      : `${name} ${found}: ${r.reason}, ${r.remedy}`;
+    if (r.ok) return `${name} ${found} ok${r.reason ? ` (${r.reason})` : ""}`;
+    const said = installSaid && PROBES[r.engine]?.host === "node";
+    return said ? `${name} ${found}: ${r.reason}` : `${name} ${found}: ${r.reason}, ${r.remedy}`;
   });
 }
 

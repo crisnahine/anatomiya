@@ -295,6 +295,172 @@ test("a repository with no manifest directory names the directory and both manif
   ]);
 });
 
+test("a plugin that declares dependencies and ships no lockfile installs none of them", (t) => {
+  // Measured on Claude Code 2.1.251: the installer reads the plugin root with a
+  // non-recursive `readdir`, and runs `npm ci --ignore-scripts` only where a
+  // `package.json` and one of `bun.lock`, `bun.lockb`, `npm-shrinkwrap.json` or
+  // `package-lock.json` sit together. A root with the manifest and no lockfile
+  // is passed over and nothing is logged, so the plugin installs with none of
+  // its dependencies and the first command that needs one refuses.
+  const dir = marketplace(t);
+  writeFileSync(
+    join(dir, REL.anatomiya, "package.json"),
+    JSON.stringify({ name: "anatomiya", version: "1.2.3", dependencies: { "oxc-parser": "^0.144.0" } }),
+  );
+
+  const problems = validate(dir);
+
+  assert.deepEqual(problems, [
+    `${REL.anatomiya}: package.json declares dependencies and no lockfile sits beside it, so an install runs nothing`,
+  ]);
+});
+
+test("a plugin with a lockfile beside its manifest is installed by the loader", (t) => {
+  const dir = marketplace(t);
+  writeFileSync(
+    join(dir, REL.anatomiya, "package.json"),
+    JSON.stringify({ name: "anatomiya", version: "1.2.3", dependencies: { "oxc-parser": "^0.144.0" } }),
+  );
+  writeFileSync(join(dir, REL.anatomiya, "package-lock.json"), JSON.stringify({ lockfileVersion: 3 }));
+
+  assert.deepEqual(validate(dir), []);
+});
+
+test("a lockfile the loader does not support is named rather than counted", (t) => {
+  // The build refuses yarn and pnpm by name, because their resolution-time
+  // hooks run around the `--ignore-scripts` the install is given. A repository
+  // that put one there has a lockfile and still installs nothing, so the
+  // refusal has to say which file it looked at and would not take. Told only
+  // that no lockfile sits there, a maintainer looking straight at one has been
+  // sent to check the one thing that is not wrong.
+  const dir = marketplace(t);
+  writeFileSync(
+    join(dir, REL.anatomiya, "package.json"),
+    JSON.stringify({ name: "anatomiya", version: "1.2.3", dependencies: { "oxc-parser": "^0.144.0" } }),
+  );
+  writeFileSync(join(dir, REL.anatomiya, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n");
+
+  assert.deepEqual(validate(dir), [
+    `${REL.anatomiya}: pnpm-lock.yaml is not a lockfile an install reads, so it runs nothing; use npm or bun`,
+  ]);
+});
+
+test("a plugin's lockfile resolves what the marketplace's own lockfile resolves", (t) => {
+  // Two lockfiles for one dependency set: the marketplace root's, which is what
+  // CI installs and every test here runs against, and the plugin's, which is
+  // what Claude Code installs for whoever adds the plugin. Left to drift, the
+  // suite passes against one version of a parser and users get another, and
+  // nothing anywhere says so.
+  const dir = marketplace(t);
+  writeFileSync(
+    join(dir, REL.anatomiya, "package.json"),
+    JSON.stringify({ name: "anatomiya", version: "1.2.3", dependencies: { "oxc-parser": "^0.144.0" } }),
+  );
+  writeFileSync(
+    join(dir, "package-lock.json"),
+    JSON.stringify({ lockfileVersion: 3, packages: { "": {}, "node_modules/oxc-parser": { version: "0.144.2" } } }),
+  );
+  writeFileSync(
+    join(dir, REL.anatomiya, "package-lock.json"),
+    JSON.stringify({ lockfileVersion: 3, packages: { "": {}, "node_modules/oxc-parser": { version: "0.144.9" } } }),
+  );
+
+  assert.deepEqual(validate(dir), [
+    `${REL.anatomiya}/package-lock.json: node_modules/oxc-parser resolves to 0.144.9, and package-lock.json resolves it to 0.144.2`,
+  ]);
+});
+
+test("the resolution compared against is the one the plugin would get, hoisted or not", (t) => {
+  // npm writes a package it could not hoist under the workspace that needed it,
+  // and the copy at the top then belongs to the other consumer. Compared
+  // against that one, a plugin shipping the version it is actually meant to
+  // have is reported as drifted, and the fix would be to break it.
+  const dir = marketplace(t);
+  writeFileSync(
+    join(dir, REL.anatomiya, "package.json"),
+    JSON.stringify({ name: "anatomiya", version: "1.2.3", dependencies: { "oxc-parser": "^0.144.0" } }),
+  );
+  writeFileSync(
+    join(dir, "package-lock.json"),
+    JSON.stringify({
+      lockfileVersion: 3,
+      packages: {
+        "": {},
+        "node_modules/oxc-parser": { version: "0.144.0" },
+        [`${REL.anatomiya}/node_modules/oxc-parser`]: { version: "0.144.7" },
+      },
+    }),
+  );
+  writeFileSync(
+    join(dir, REL.anatomiya, "package-lock.json"),
+    JSON.stringify({ lockfileVersion: 3, packages: { "": {}, "node_modules/oxc-parser": { version: "0.144.7" } } }),
+  );
+
+  assert.deepEqual(validate(dir), []);
+});
+
+test("a package the marketplace's lockfile never names is the plugin's own to resolve", (t) => {
+  // The root holds two plugins and installs both, so anything only one of them
+  // needs is absent from the other's tree rather than in disagreement with it.
+  const dir = marketplace(t);
+  writeFileSync(
+    join(dir, REL.anatomiya, "package.json"),
+    JSON.stringify({ name: "anatomiya", version: "1.2.3", dependencies: { "oxc-parser": "^0.144.0" } }),
+  );
+  writeFileSync(join(dir, "package-lock.json"), JSON.stringify({ lockfileVersion: 3, packages: { "": {} } }));
+  writeFileSync(
+    join(dir, REL.anatomiya, "package-lock.json"),
+    JSON.stringify({ lockfileVersion: 3, packages: { "": {}, "node_modules/oxc-parser": { version: "0.144.9" } } }),
+  );
+
+  assert.deepEqual(validate(dir), []);
+});
+
+test("a peer dependency is a dependency the install would have to resolve", (t) => {
+  // `npm ci` installs peers, so a plugin declaring only those still needs a
+  // lockfile and still installs nothing without one. Read off the manifest
+  // rather than off the two keys anybody happened to use first.
+  const dir = marketplace(t);
+  writeFileSync(
+    join(dir, REL.anatomiya, "package.json"),
+    JSON.stringify({ name: "anatomiya", version: "1.2.3", peerDependencies: { "oxc-parser": "^0.144.0" } }),
+  );
+
+  assert.deepEqual(validate(dir), [
+    `${REL.anatomiya}: package.json declares dependencies and no lockfile sits beside it, so an install runs nothing`,
+  ]);
+});
+
+test("a dependency block that is not a block still declares a dependency", (t) => {
+  // `dependencies: "oops"` is a manifest npm refuses, and this read it as a
+  // plugin with nothing to install: the shape test filtered it out and an empty
+  // list answers that every block is empty. A gate that passes a manifest
+  // nobody can install is a gate gone quiet.
+  const dir = marketplace(t);
+  writeFileSync(
+    join(dir, REL.anatomiya, "package.json"),
+    JSON.stringify({ name: "anatomiya", version: "1.2.3", dependencies: "oops" }),
+  );
+
+  assert.deepEqual(validate(dir), [
+    `${REL.anatomiya}: package.json declares dependencies and no lockfile sits beside it, so an install runs nothing`,
+  ]);
+});
+
+test("a plugin that declares no dependencies needs no lockfile", (t) => {
+  // Two shapes, and the fixture used to have neither: with no `package.json` at
+  // all the reader stops one guard earlier, so the branch this names never ran
+  // and dropping it left the case green. A manifest declaring an empty block is
+  // the one that reaches it.
+  const dir = marketplace(t);
+  writeFileSync(
+    join(dir, REL.anatomiya, "package.json"),
+    JSON.stringify({ name: "anatomiya", version: "1.2.3", dependencies: {}, optionalDependencies: {} }),
+  );
+
+  assert.deepEqual(validate(dir), []);
+});
+
 test("a plugin's package manifest has to carry its name too", (t) => {
   const dir = marketplace(t);
   writeFileSync(join(dir, REL.anatomiya, "package.json"), JSON.stringify({ name: "renamed", version: "1.2.3" }));

@@ -220,6 +220,8 @@ export function validate(root) {
       // A plugin whose own package manifest sits beside its plugin manifest has
       // to agree with it: they are the same release, and a tag reads both.
       problems.push(...packageDrift(pluginRoot, own, label(root, manifest), readJson));
+      problems.push(...dependencyInstall(pluginRoot, label(root, pluginRoot), readJson));
+      problems.push(...lockfileDrift(root, pluginRoot, `${label(root, pluginRoot)}/package-lock.json`, readJson));
       // The hook that re-delivers the map is required of the plugin that owns
       // it, and of no other: a commands-only plugin asked for no hooks. Which
       // one that is comes off the marketplace rather than off a position in the
@@ -273,6 +275,106 @@ function packageDrift(pluginRoot, manifest, at, readJson) {
   }
   if (manifest.name && pkg.name !== manifest.name) {
     problems.push(`name drift: package.json ${pkg.name}, ${at} ${manifest.name}`);
+  }
+  return problems;
+}
+
+/**
+ * The lockfiles Claude Code will install a plugin's dependencies from.
+ *
+ * Read off the build rather than assumed: 2.1.251 lists these four, in this
+ * order, and runs the first one it finds beside a `package.json` in the plugin
+ * root. `yarn.lock` and `pnpm-lock.yaml` are refused there by name, because
+ * their resolution-time hooks run around the `--ignore-scripts` the install is
+ * given, so neither counts as covering a plugin.
+ */
+const INSTALLED_FROM = ["bun.lock", "bun.lockb", "npm-shrinkwrap.json", "package-lock.json"];
+
+/**
+ * The lockfiles the loader looks at and will not run, by name.
+ *
+ * A plugin root holding one of these has a lockfile and still installs nothing,
+ * so "no lockfile sits beside it" would send a maintainer looking straight at
+ * one to check the only thing that is not wrong.
+ */
+const REFUSED_LOCKFILES = ["yarn.lock", "pnpm-lock.yaml"];
+
+/**
+ * Whether a plugin's dependencies would actually be installed for whoever
+ * installs it.
+ *
+ * The loader reads the plugin root with a non-recursive `readdir` and installs
+ * only where a manifest and one of those lockfiles sit together; a root holding
+ * the manifest alone is passed over with nothing logged. anatomiya was that
+ * root from 0.3.0, when the plugin moved out of the repository root and left
+ * the lockfile behind: every version after it installed with no parser, and the
+ * first command needing one refused with a sentence about running `setup` that
+ * nobody sees on a repository holding no JavaScript.
+ *
+ * Asked of the declared dependencies rather than of the directory, since a
+ * plugin that runs on what node ships has nothing to install and needs no file
+ * kept in step with nothing.
+ */
+function dependencyInstall(pluginRoot, at, readJson) {
+  const path = join(pluginRoot, "package.json");
+  if (!existsSync(path)) return [];
+  const pkg = readJson(path);
+  // What the plugin needs at run time, which is not everything `npm ci` would
+  // fetch: dev dependencies are left out on purpose, since a plugin that has
+  // only those loads fine with none of them installed. Peers are in, because
+  // the loader would install them and a plugin can need one to run.
+  // `bundleDependencies` is not, because npm requires each of its entries to be
+  // a dependency as well, so it can add nothing.
+  //
+  // A block that is not a block counts as declaring. `dependencies: "oops"` is
+  // a manifest npm refuses, and filtering it out left an empty list, which
+  // reads as a plugin with nothing to install: the gate passed a manifest
+  // nobody can install at all.
+  const declared = [pkg?.dependencies, pkg?.optionalDependencies, pkg?.peerDependencies].filter((set) => set !== undefined);
+  if (declared.every((set) => isObject(set) && Object.keys(set).length === 0)) return [];
+  if (INSTALLED_FROM.some((name) => existsSync(join(pluginRoot, name)))) return [];
+  const refused = REFUSED_LOCKFILES.find((name) => existsSync(join(pluginRoot, name)));
+  if (refused) return [`${at}: ${refused} is not a lockfile an install reads, so it runs nothing; use npm or bun`];
+  return [`${at}: package.json declares dependencies and no lockfile sits beside it, so an install runs nothing`];
+}
+
+/**
+ * The plugin's lockfile against the marketplace's own, where both are npm's.
+ *
+ * One dependency set, resolved twice: the root's lockfile is what CI installs
+ * and every test here runs against, and the plugin's is what Claude Code
+ * installs for whoever adds the plugin. Left to drift they answer different
+ * versions for one range, so the suite is green against a parser nobody
+ * running the plugin has. Compared by resolved version rather than by file,
+ * since the two trees are shaped differently: the root hoists two plugins'
+ * packages into one, and a package only the root names belongs to the other
+ * plugin rather than being a disagreement about this one.
+ *
+ * The version compared against is the one this plugin would get rather than the
+ * one at the top. npm writes a package it could not hoist under the workspace
+ * that needed it, and the copy at the top then belongs to the other consumer:
+ * held to that one, a plugin shipping the version it is meant to have reads as
+ * drifted, and the fix would be to break it.
+ */
+function lockfileDrift(root, pluginRoot, at, readJson) {
+  const mine = join(pluginRoot, "package-lock.json");
+  const theirs = join(root, "package-lock.json");
+  if (!existsSync(mine) || !existsSync(theirs)) return [];
+  const ours = readJson(mine)?.packages;
+  const marketplace = readJson(theirs)?.packages;
+  if (!isObject(ours) || !isObject(marketplace)) return [];
+  // Where this plugin's own nested resolutions sit in the marketplace's tree.
+  // Empty where the two are the same directory, which `validate` never reaches
+  // but a caller could: the prefix is then the path itself, and every lookup
+  // falls to the hoisted entry, which is the right answer there.
+  const within = relative(root, pluginRoot).split(sep).join("/");
+  const nestedUnder = within === "" ? "" : `${within}/`;
+  const problems = [];
+  for (const [path, entry] of Object.entries(ours)) {
+    if (path === "" || !isObject(entry) || typeof entry.version !== "string") continue;
+    const other = marketplace[`${nestedUnder}${path}`] ?? marketplace[path];
+    if (!isObject(other) || typeof other.version !== "string" || other.version === entry.version) continue;
+    problems.push(`${at}: ${path} resolves to ${entry.version}, and package-lock.json resolves it to ${other.version}`);
   }
   return problems;
 }
