@@ -557,9 +557,16 @@ what makes it worth saying at all when a session is creating twelve files rather
 Both are absent from the usage block and from `commands/` on purpose: no person runs them and no
 agent should. Each reads the event on stdin, answers with one JSON object, and answers `{}` and exits
 0 on every failure path, because a hook that exits non-zero interrupts the session it exists to help.
-Both walk up from wherever they fired to find what they answer from, the rendered map for one and the
-recorded counts for the other, since a hook carries the session's own working directory and both are
-written once at the root. The walk ends at a repository boundary: anything named `.git` is where one
+Both walk up to find what they answer from, the rendered map for one and the recorded counts for the
+other, and both start from the place the tool call is about rather than from where the session's shell
+happens to be. Measured on 2.1.251, five tools name that place: `Read`, `Write` and `Edit` under
+`file_path`, `NotebookEdit` under `notebook_path`, and `Glob` and `Grep` under `path`, which is a
+directory rather than a file on those two. Where the payload names none, `Bash` and `Agent` among
+them, the payload's own working directory answers, and that field follows the agent: one `cd` in a
+shell call moves it for every payload after, and nothing tells the hook's process. A path spelled
+relative is read against that same directory, because the tool read it against that one and nothing
+normalises the input on the way here. Resolving from the shell instead served two checkouts sitting
+side by side each other's map, under the line saying it was counted from this repository's own code. The walk ends at a repository boundary: anything named `.git` is where one
 checkout's counts stop being about the code under it, so a level carrying that marker and nothing of
 its own answers nothing rather than reaching past it. What it is looking for is asked for before the
 boundary at each level, so a checkout that was scanned still answers from anywhere below its own

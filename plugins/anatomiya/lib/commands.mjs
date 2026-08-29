@@ -12,7 +12,7 @@ import { buildPin, loadPin, writePin, pinDelta, PIN_PATH } from "./baseline.mjs"
 import { headSha } from "./git.mjs";
 import { NODE_PROBE_IDS, PROBE_IDS, pluginRoot, probeName, readiness, readinessLines, remedyFor } from "./readiness.mjs";
 import { pinSummary, scanSummary } from "./summary.mjs";
-import { echoContext, holdsTestIn, isPathTaken, ownLayout, removeStaleHook, targetIn } from "./hook.mjs";
+import { aboutDir, echoContext, holdsTestIn, inCheckout, isPathTaken, ownLayout, removeStaleHook, targetIn } from "./hook.mjs";
 import { isTestPath, noticeFor } from "./precedent.mjs";
 
 /**
@@ -45,6 +45,23 @@ export async function runScan(cwd, { dryRun = false, deep = false } = {}) {
 }
 
 /**
+ * The directory whose repository answers this call.
+ *
+ * The call's own, where it has one. A file in no checkout at all falls to the
+ * session's, because reading a system file, a dependency or another project's
+ * source is ordinary and answering nothing there takes the map off a turn that
+ * had one. A file that does have a checkout is answered by that checkout even
+ * when the answer is silence: a nested repository with no map, or one whose map
+ * is empty, must not be handed the enclosing one's counts, which is what the
+ * boundary walk exists to refuse. A payload naming a place this cannot read at
+ * all falls to the session's too, since it has said nothing about any other.
+ */
+function answersFor(payload, cwd) {
+  const about = aboutDir(payload, cwd);
+  return about !== null && inCheckout(about) ? about : cwd;
+}
+
+/**
  * What a hook re-delivers: the map, stamped, as `additionalContext`.
  *
  * Every failure is silent and exits 0 by the caller's hand: a hook that errors
@@ -55,7 +72,7 @@ export async function runScan(cwd, { dryRun = false, deep = false } = {}) {
 export function runEcho(cwd, payload) {
   const event = payload?.hook_event_name;
   if (!event) return {};
-  const additionalContext = echoContext(cwd);
+  const additionalContext = echoContext(answersFor(payload, cwd));
   if (additionalContext === null) return {};
   return { hookSpecificOutput: { hookEventName: event, additionalContext } };
 }
@@ -72,9 +89,9 @@ export function runEcho(cwd, payload) {
 export function runNotice(cwd, payload) {
   const event = payload?.hook_event_name;
   if (!event) return {};
-  const found = ownLayout(cwd);
+  const found = ownLayout(answersFor(payload, cwd));
   if (found === null) return {};
-  const rel = targetIn(payload, found.root);
+  const rel = targetIn(payload, found.root, cwd);
   if (rel === null) return {};
   // Only a path nothing is at yet. Where a file exists the path was chosen some
   // turns ago, and an `Edit` names one every time: saying it again on each edit
