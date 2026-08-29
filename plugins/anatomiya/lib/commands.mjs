@@ -12,7 +12,7 @@ import { buildPin, loadPin, writePin, pinDelta, PIN_PATH } from "./baseline.mjs"
 import { headSha } from "./git.mjs";
 import { NODE_PROBE_IDS, PROBE_IDS, pluginRoot, probeName, readiness, readinessLines, remedyFor } from "./readiness.mjs";
 import { pinSummary, scanSummary } from "./summary.mjs";
-import { echoContext, holdsTestIn, isPathTaken, ownLayout, removeStaleHook, targetIn } from "./hook.mjs";
+import { aboutDir, echoContext, holdsTestIn, isPathTaken, ownLayout, removeStaleHook, targetIn } from "./hook.mjs";
 import { isTestPath, noticeFor } from "./precedent.mjs";
 
 /**
@@ -55,7 +55,7 @@ export async function runScan(cwd, { dryRun = false, deep = false } = {}) {
 export function runEcho(cwd, payload) {
   const event = payload?.hook_event_name;
   if (!event) return {};
-  const additionalContext = echoContext(cwd);
+  const additionalContext = echoContext(aboutDir(payload, cwd) ?? cwd);
   if (additionalContext === null) return {};
   return { hookSpecificOutput: { hookEventName: event, additionalContext } };
 }
@@ -72,9 +72,9 @@ export function runEcho(cwd, payload) {
 export function runNotice(cwd, payload) {
   const event = payload?.hook_event_name;
   if (!event) return {};
-  const found = ownLayout(cwd);
+  const found = ownLayout(aboutDir(payload, cwd) ?? cwd);
   if (found === null) return {};
-  const rel = targetIn(payload, found.root);
+  const rel = targetIn(payload, found.root, cwd);
   if (rel === null) return {};
   // Only a path nothing is at yet. Where a file exists the path was chosen some
   // turns ago, and an `Edit` names one every time: saying it again on each edit

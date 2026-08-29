@@ -7,6 +7,36 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-08-29
+
+Both hooks answered from where the shell happened to be rather than from what the
+call was about, so two checkouts sitting side by side served each other's map.
+
+### Fixed
+
+- A hook answers from the repository the tool call is about. Resolving by walking
+  up from the working directory is right going up and blind sideways: the walk
+  stops at the first map it finds, and the boundary that would have caught this
+  sits under the other checkout, which the walk never visits. Two checkouts under
+  one parent handed each other's roster and directives to the agent, under the
+  line saying they were counted from this repository's own code. The write-time
+  notice was the sharper half, since it was holding the full path already and
+  measured it as outside whichever root the shell had landed in, so it said
+  nothing at all about a write it had located. Decision H40, issue #123.
+- Five tools name a place and all five are read: `Read`, `Write` and `Edit` under
+  `file_path`, `NotebookEdit` under `notebook_path`, `Glob` and `Grep` under
+  `path`, which on those two is a directory rather than a file. One walk covers
+  the three shapes: a file answers with its parent, a directory with itself, and
+  a path a write is inventing with the nearest ancestor that exists. Taking the
+  parent of a directory would have been the same bug again, since a `Glob` at a
+  repository root would then answer from the directory holding every checkout.
+- The working directory a hook falls back to is the one the payload carries, not
+  the one its own process was started in. Measured on 2.1.251, that field follows
+  the agent: one `cd` in a shell call moves it for every payload after, and
+  nothing tells the hook. A path spelled relative is read against that same
+  directory, because the tool read it against that one and nothing normalises the
+  input on the way here.
+
 ## [0.4.1] - 2026-08-29
 
 Two reads that decided whether a finding printed, both answering a question they
@@ -2257,7 +2287,8 @@ which are partial; several listed there are not implemented yet.
 - No claim that this catches defects. Measured across ten repositories, 1 of 317 defect review
   comments was preventable by a conventions map.
 
-[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.4.2...HEAD
+[0.4.2]: https://github.com/crisnahine/anatomiya/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/crisnahine/anatomiya/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/crisnahine/anatomiya/compare/v0.3.3...v0.4.0
 [0.3.3]: https://github.com/crisnahine/anatomiya/compare/v0.3.2...v0.3.3

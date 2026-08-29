@@ -19,7 +19,7 @@
  * per-developer scope, it is git-ignored, and it matches where the map already
  * lives: yours, on this machine, not committed.
  */
-import { existsSync, lstatSync, readdirSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, readdirSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import { HEAD_BYTES, isOwned, OVERVIEW_FILE, RULES_DIR, SETTINGS_PATH, readHead, realpathOrNull, resolveInside } from "./rules.mjs";
@@ -246,18 +246,104 @@ export function holdsTestIn(root, isTest) {
 }
 
 /**
+ * Where each tool spells the place it is about.
+ *
+ * Measured on 2.1.251, off captured payloads rather than off the tool
+ * definitions: `Read`, `Write` and `Edit` carry `file_path`, `NotebookEdit`
+ * carries `notebook_path`, and `Glob` and `Grep` carry `path`, which is
+ * optional on both. `Bash`, `Agent`, `WebFetch` and `ToolSearch` name no place
+ * at all, and for `Bash` nothing in the payload says which file a redirect
+ * touched. Those have only the working directory, which for a shell is the
+ * right base anyway.
+ */
+const ABOUT_KEY = {
+  Read: "file_path",
+  Write: "file_path",
+  Edit: "file_path",
+  NotebookEdit: "notebook_path",
+  Glob: "path",
+  Grep: "path",
+};
+
+/**
+ * The deepest directory on the way to a path that is actually there.
+ *
+ * One walk for three shapes, rather than a branch per tool. A file answers with
+ * its parent. A directory answers with itself, which is what `Glob` and `Grep`
+ * name, and taking the parent of one at a repository root would answer from the
+ * directory holding every checkout. A path a write is about to invent answers
+ * with the nearest ancestor that exists, since it has no directory of its own
+ * yet and the walk needs somewhere real to start.
+ */
+function deepestDir(path) {
+  let at = path;
+  for (;;) {
+    if (isDir(at)) return at;
+    const up = dirname(at);
+    if (up === at) return null;
+    at = up;
+  }
+}
+
+/** Whether a path is a directory, following a link to one, never throwing. */
+function isDir(path) {
+  try {
+    return statSync(path, { throwIfNoEntry: false })?.isDirectory() === true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The directory the tool call is about, or null where the payload names none.
+ *
+ * A hook fires with the session's working directory, which says where a shell
+ * happens to be rather than what the call is about. Two checkouts side by side
+ * are the case that separates them: a walk up from the working directory finds
+ * a map, stops, and answers for the wrong one, under the line saying it was
+ * counted from this repository's own code.
+ *
+ * Where the payload names no place, its own `cwd` answers rather than this
+ * process's. Measured on 2.1.251, that field follows the agent: one `cd` in a
+ * Bash call moved it for every payload after, and nothing tells this process.
+ * For a shell it is the right base anyway, and for a `Glob` with no `path` it
+ * is what the tool itself used.
+ */
+export function aboutDir(payload, fallback) {
+  const here = typeof payload?.cwd === "string" && payload.cwd ? payload.cwd : fallback;
+  const key = ABOUT_KEY[payload?.tool_name];
+  const raw = key ? payload?.tool_input?.[key] : null;
+  // Read against the directory the payload names, because the tool read it
+  // against that one: nothing normalises `tool_input` on the way here, and a
+  // relative path was measured arriving raw. A reader that refuses one falls
+  // back to the shell without saying so.
+  if (typeof raw === "string" && raw) return deepestDir(resolve(here, raw));
+  return here === undefined ? null : deepestDir(resolve(here));
+}
+
+/**
  * The path this call is about, relative to the repository, or null.
  *
  * Null for anything that lands outside, which is the safe direction: this
  * repository has nothing to say about another one's file. The containment test
  * is a segment test rather than a prefix one, so a file named `..keep` beside
  * the root is inside it.
+ *
+ * The base a relative path is read against is the payload's own directory, the
+ * same one `aboutDir` uses, falling back to what the caller passes. A payload
+ * carrying neither leaves a relative path unreadable, and unreadable is silence.
  */
-export function targetIn(payload, root) {
+export function targetIn(payload, root, from) {
   const key = TARGET_KEY[payload?.tool_name];
   const raw = key ? payload?.tool_input?.[key] : null;
-  if (typeof raw !== "string" || !raw || !isAbsolute(raw)) return null;
-  const rel = relative(resolveLinks(resolve(root)), resolveLinks(resolve(raw)));
+  if (typeof raw !== "string" || !raw) return null;
+  // Against the same base `aboutDir` read it against, or the two disagree about
+  // one payload: the root was resolved from a relative target that this then
+  // measured as outside it, and the hook said nothing about a write it had
+  // already located.
+  const here = typeof payload?.cwd === "string" && payload.cwd ? payload.cwd : from;
+  if (!isAbsolute(raw) && here === undefined) return null;
+  const rel = relative(resolveLinks(resolve(root)), resolveLinks(resolve(here ?? "/", raw)));
   if (!rel || rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel)) return null;
   return rel.split("\\").join("/");
 }
