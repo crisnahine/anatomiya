@@ -1192,7 +1192,7 @@ none of its dependencies.
 
 This plugin ships `plugins/anatomiya/package-lock.json` for that reason. It stopped shipping one at
 0.3.0, which moved the plugin out of the repository root and left the marketplace's lockfile behind:
-every version from then until this one installed with no parser, and the first command that needed
+every version from then until 0.5.0 installed with no parser, and the first command that needed
 one refused with a sentence about `setup` that nobody sees on a repository holding no JavaScript.
 `scripts/validate.mjs` refuses a plugin that declares dependencies and ships no lockfile, and
 refuses one whose lockfile resolves a package to a version the marketplace's own does not, since

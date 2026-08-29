@@ -1,6 +1,6 @@
 {
   "name": "anatomiya",
-  "version": "0.4.2",
+  "version": "0.5.0",
   "private": true,
   "type": "module",
   "description": "Counts what your code already does, directory by directory, and writes those counts into .claude/rules/ where a coding agent picks them up when it reads a file there",
