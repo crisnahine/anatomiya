@@ -2,12 +2,12 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { chmodSync, existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn, spawnSync, execFileSync } from "node:child_process";
 
 import { needsPosixSpecialFiles, needsUnreadableDirs } from "./platform.mjs";
-import { echoContext, ownLayout, planRemoval, commitRemoval, targetIn, HOOK_COMMAND, NOTICE_COMMAND, PAYLOAD_WAIT_MS, SETTINGS_PATH } from "../plugins/anatomiya/lib/hook.mjs";
+import { aboutDir, echoContext, ownLayout, planRemoval, commitRemoval, targetIn, HOOK_COMMAND, NOTICE_COMMAND, PAYLOAD_WAIT_MS, SETTINGS_PATH } from "../plugins/anatomiya/lib/hook.mjs";
 import { FACTS_PATH, FACTS_SCHEMA } from "../plugins/anatomiya/lib/facts.mjs";
 import { HEAD_BYTES } from "../plugins/anatomiya/lib/rules.mjs";
 import { ANATOMIYA } from "../scripts/plugins.mjs";
@@ -66,6 +66,43 @@ test("the write target is read from the key each tool spells it with", (t) => {
   assert.equal(targetIn({ tool_name: "NotebookEdit", tool_input: { notebook_path: join(dir, "a/n.ipynb") } }, dir), "a/n.ipynb");
 });
 
+test("a path longer than one a filesystem can hold names no place, in constant time", () => {
+  // The walk costs a `stat` and a copy per segment and had no bound. A payload
+  // under the one megabyte this reads held 400,000 segments and took 7.8s,
+  // against the 5 the declaration asks for: the turn loses its map and a
+  // process burns the budget, before every tool call. No filesystem holds a
+  // path this long, so it names nothing and is refused before the walk.
+  const absurd = `/${"a/".repeat(200_000)}b`;
+  const started = Date.now();
+
+  assert.equal(aboutDir({ tool_name: "Read", tool_input: { file_path: absurd } }, "/tmp"), null);
+  // Both fields, because the walk runs on the two joined and the payload
+  // carries both: a gate on the target alone was got round with a short target
+  // and a long `cwd`, at 10.5s.
+  assert.equal(aboutDir({ tool_name: "Read", cwd: absurd, tool_input: { file_path: "a.js" } }, "/tmp"), null);
+  assert.equal(aboutDir({ tool_name: "Bash", cwd: absurd, tool_input: { command: "ls" } }, "/tmp"), null);
+
+  // The notice's own reader takes the same bound one segment deeper, where
+  // `resolveLinks` recurses per segment and a path this long overflowed the
+  // stack rather than costing seconds.
+  assert.equal(targetIn({ tool_name: "Write", tool_input: { file_path: absurd } }, "/r"), null);
+  assert.equal(targetIn({ tool_name: "Write", cwd: absurd, tool_input: { file_path: "a.js" } }, "/r"), null);
+  // The bound itself, at the byte it refuses on. Built out from a path the
+  // platform already calls absolute, so `resolve` is the identity on it: a
+  // POSIX-shaped `/aaa...` counted 4095 here and 4097 on Windows, where
+  // `resolve` puts a drive letter in front, and the case failed on the bound
+  // being right rather than wrong.
+  const root = resolve(tmpdir());
+  const ofLength = (n) => `${root}${sep}${"a".repeat(n - root.length - 1)}`;
+  assert.equal(ofLength(4096).length, 4096, "the fixture measures what it says");
+  assert.equal(resolve(ofLength(4096)), ofLength(4096), "and resolving it changes nothing");
+
+  assert.notEqual(aboutDir({ tool_name: "Read", tool_input: { file_path: ofLength(4096) } }, root), null);
+  assert.equal(aboutDir({ tool_name: "Read", tool_input: { file_path: ofLength(4097) } }, root), null);
+
+  assert.ok(Date.now() - started < 1000, `refusing them took ${Date.now() - started}ms`);
+});
+
 test("a target outside the repository, or absent, is not this repository's business", (t) => {
   const dir = recorded(t);
 
@@ -74,12 +111,17 @@ test("a target outside the repository, or absent, is not this repository's busin
   assert.equal(targetIn({}, dir), null);
   assert.equal(targetIn({ tool_name: "Write", tool_input: { file_path: "/elsewhere/x.ts" } }, dir), null);
   assert.equal(targetIn({ tool_name: "Write", tool_input: { file_path: join(dir, "../escape.ts") } }, dir), null);
-  // Measured on 2.1.250, the payload carries an absolute path. One that is not
-  // would be resolved against this process's own directory, which is wherever
-  // the hook happened to be spawned rather than where the write is going. Asked
-  // against that very directory, since against any other one it comes back null
-  // whether the guard is there or not.
-  assert.equal(targetIn({ tool_name: "Write", tool_input: { file_path: "spec/x_spec.rb" } }, process.cwd()), null);
+  // A relative path with nothing to read it against. Measured on 2.1.251 the
+  // payload carries its own `cwd`, and the tool resolved the path against that
+  // one, so a payload holding it is answered rather than refused; this is the
+  // payload that holds neither, where there is no base to pick and silence is
+  // the only honest answer.
+  assert.equal(targetIn({ tool_name: "Write", tool_input: { file_path: "spec/x_spec.rb" } }, "/r"), null);
+  assert.equal(
+    targetIn({ tool_name: "Write", cwd: "/r/app", tool_input: { file_path: "../spec/x_spec.rb" } }, "/r"),
+    "spec/x_spec.rb",
+    "and one that does carry a base is read against it"
+  );
 });
 
 test("a file the payload spells through a link is the same file the root was resolved to", (t) => {
@@ -598,7 +640,6 @@ test("the notice answers an object and exits 0 for anything it cannot decide", (
   const dir = railsish(t);
   const cases = [
     ["a path in another repository", "/elsewhere/spec/mailers/x_spec.rb"],
-    ["a relative path, which the payload never carries", "spec/mailers/x_spec.rb"],
     ["a spec whose siblings have theirs", join(dir, "spec/services/dispatcher_spec.rb")],
     ["a file that is not a test at all", join(dir, "app/mailers/report_mailer.rb")],
   ];
