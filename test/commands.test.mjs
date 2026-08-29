@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, realpathSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, realpathSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -628,6 +628,31 @@ test("the notice reads a relative target the same way the map does", async (t) =
   const said = runNotice(join(parent, "beta"), write).hookSpecificOutput.additionalContext;
 
   assert.match(said, /src\/core: 6 files, 0 with a namesake test/);
+});
+
+test("a file the call names outside any map leaves the session's own map standing", async (t) => {
+  // Reading something outside the repository is ordinary: a system file, a
+  // dependency, a file in another project. Answering nothing there takes the
+  // map off a turn that had one before, so the call's own repository is tried
+  // first and the session's is what stands when the call is in none.
+  const parent = await siblings(t);
+  const outside = { hook_event_name: "PostToolUse", tool_name: "Read", tool_input: { file_path: "/etc/hosts" } };
+
+  assert.match(runEcho(join(parent, "alpha"), outside).hookSpecificOutput.additionalContext, /src\/core: 6 \.js/);
+  assert.deepEqual(runEcho(parent, outside), {}, "and a session in no repository still has none to stand");
+});
+
+test("a search whose directory is reached through a link is still that directory", async (t) => {
+  // The walk asks whether a path is a directory, and a link to one is. Asking
+  // without following it reads the link as not a directory and takes the
+  // parent, which at a checkout's own root is the directory holding every
+  // checkout: a sibling answers again.
+  const parent = await siblings(t);
+  const link = join(parent, "alpha-link");
+  symlinkSync(join(parent, "alpha"), link, "dir");
+  const globbed = { hook_event_name: "PostToolUse", tool_name: "Glob", tool_input: { pattern: "**/*.js", path: link } };
+
+  assert.match(runEcho(join(parent, "beta"), globbed).hookSpecificOutput.additionalContext, /src\/core: 6 \.js/);
 });
 
 test("the notice answers for a test going where its kind of file has none", async (t) => {
