@@ -29,13 +29,14 @@ the list in order. Step 2 sets `$BUILD`, which is absolute and survives; step 4 
 `capture` and moves the shell out of this directory for good, so step 5 runs on what step 4 left and
 a return to step 1 or step 2 needs a `cd` back.
 
-The build is 197 MB, so the reads below find a fixed string with `grep -a -b -o` and cut around
-its offset. A pattern with a wide `.{n}` context is refused by the stock macOS `grep` above 255 and
+The build is 197 MB, so the reads below find a fixed string with `/usr/bin/grep -a -b -o` and cut
+around its offset. A pattern with a wide `.{n}` context is refused by the stock macOS `grep` above 255 and
 takes minutes on any `grep`.
 
-Spell it `/usr/bin/grep`. A `ugrep` or GNU shim on `PATH` reads PCRE classes the stock one does not,
-so a recipe written under a shim can find nothing under the real one and say so by printing nothing,
-which reads as a claim that no longer holds. Two recipes here were already broken that way.
+Spell it `/usr/bin/grep`, as every recipe below does. A `ugrep` or GNU shim on `PATH` reads PCRE
+classes the stock one does not, so a recipe written under a shim can find nothing under the real one
+and say so by printing nothing, which reads as a claim that no longer holds. Two recipes here were
+already broken that way.
 
 ## 1. The names are still in the build
 
@@ -55,7 +56,7 @@ meaning:
 
 ```sh
 BUILD="$(node -e 'import("./hooks/upstream.mjs").then(m=>console.log(m.cliPath()))')"
-grep -a -o 'function [A-Za-z_$]*([^)]*){return [^}]*"xhigh"[^}]*}' "$BUILD" | head
+/usr/bin/grep -a -o 'function [A-Za-z_$]*([^)]*){return [^}]*"xhigh"[^}]*}' "$BUILD" | head
 ```
 
 What has to be true: the reminder is emitted only when the resolved effort is `xhigh`, and that
@@ -70,7 +71,7 @@ shape and not a name.
 While you are there, the cap:
 
 ```sh
-for at in $(grep -a -b -o 'Concurrent subagent limit reached' "$BUILD" | cut -d: -f1); do
+for at in $(/usr/bin/grep -a -b -o 'Concurrent subagent limit reached' "$BUILD" | cut -d: -f1); do
   tail -c +$((at - 400)) "$BUILD" | head -c 440; echo; echo ---
 done
 ```
@@ -169,7 +170,8 @@ kill "$(cat "$d/pid")"
 
 Every switch there earns its place. `--strict-mcp-config` and the fixed session id are what make the
 two comparable: MCP servers finish connecting at different moments and change the tool count, and the
-session id reaches the request in `metadata.user_id`. The state directory keeps the probe out of the
+session id reaches the request inside `metadata.user_id`, which also carries a device id derived from
+the config directory. The state directory keeps the probe out of the
 counters a real session is keeping, and it is fresh on the side that keeps any, since a second turn of a fixed
 session id is owed nothing at all and a rerun over a used one captures no reminder to compare.
 `ULTRACODE_ANYWHERE_CAP_NOTICE=0` drops the one-time cap line, which a state directory with no
@@ -206,8 +208,8 @@ the whole `workflow-authoring` skill into the user message, a command block of 1
 body of 16,584, and appends a newline to the prompt. The effort level is not what does it, which two
 control runs settle: against a plain `--effort xhigh` with no `ultracode` key, the two sides differ
 in the reminder and the effort and nowhere else. It is not new to this build either, since an earlier
-one does the same. Nothing this plugin can write reaches a skill load, so this is a difference it cannot close,
-and the README says so rather than claiming a two-leaf diff it no longer has.
+one does the same. Nothing this plugin can write reaches a skill load, so this is a difference it
+cannot close, and the README says so rather than claiming a two-leaf diff it no longer has.
 
 A further leaf is not a finding until it repeats. Some tool definitions sit behind remote flags whose
 value differs between two launches minutes apart, and one pair here came back with `ScheduleWakeup`
@@ -216,8 +218,8 @@ pair otherwise identical. Nothing this plugin does can reach a tool definition. 
 and count only a leaf that differs both times. Then say which in the README rather than leaving the
 claim standing.
 
-Two of them are the harness rather than the build, and a fresh `CLAUDE_CONFIG_DIR` per side is what
-produces both: `metadata.user_id` carries a device id derived from that directory, and `system[2]`
+Two differences are the harness rather than the build, and a fresh `CLAUDE_CONFIG_DIR` per side is
+what produces both: `metadata.user_id` carries a device id derived from that directory, and `system[2]`
 carries the transcript path. Share one config directory between the two sides and they collapse.
 A same-side control run, twice through one side, is what tells a harness artifact from a real
 difference.
@@ -239,14 +241,15 @@ cat "$d/hook.log"
 On 2.1.251 the payload holds `session_id`, `transcript_path`, `cwd`, `prompt_id`, `permission_mode`,
 `hook_event_name` and `prompt`, and no `source`. The literal carries `session_title` as well, which a
 named session sends and an unnamed one does not, and the `source` enum has grown to `user`, `sdk`,
-`system`, `loop_wakeup`, `schedule_wakeup` and `poll_event`. Only the last four are turns to skip. The stand-in from step 4 is what keeps this probe
-from spending a real turn on the real API, and the state directory keeps it out of the counters a
-real session is keeping.
+`system`, `loop_wakeup`, `schedule_wakeup` and `poll_event`. Only the last four are turns to skip.
+
+The stand-in from step 4 is what keeps this probe from spending a real turn on the real API, and the
+state directory keeps it out of the counters a real session is keeping.
 
 The builder says the same thing, if you would rather read it than run it:
 
 ```sh
-for at in $(grep -a -b -o 'hook_event_name:"UserPromptSubmit",prompt' "$BUILD" | cut -d: -f1); do
+for at in $(/usr/bin/grep -a -b -o 'hook_event_name:"UserPromptSubmit",prompt' "$BUILD" | cut -d: -f1); do
   tail -c +$((at - 40)) "$BUILD" | head -c 200; echo
 done
 ```
@@ -284,8 +287,8 @@ workflow stage, and the reminder says so in as many words. Three things have to 
 where any one of them moves is a build where that sentence is wrong.
 
 ```sh
-grep -a -o -b 'kind:"effort"' "$BUILD"
-grep -a -o -b 'agentType:"workflow-subagent"' "$BUILD" | head -1
+/usr/bin/grep -a -o -b 'kind:"effort"' "$BUILD"
+/usr/bin/grep -a -o -b 'agentType:"workflow-subagent"' "$BUILD" | head -1
 ```
 
 Take the offset from each and read around it with `tail -c +$((at - 400)) "$BUILD" | head -c 900`.
@@ -328,9 +331,9 @@ to, and its three conditions. All three are why it is worth knowing about rather
 none of them is checked by any case here, so re-read them:
 
 ```sh
-grep -a -o 'effortLevel:[A-Za-z_$][A-Za-z0-9_$]*(\["low","medium","high","xhigh"\])' "$BUILD" | head
-grep -a -o -b 'modelSettings' "$BUILD" | head -3
-grep -a -o -b 'sessionEffort' "$BUILD" | head -3
+/usr/bin/grep -a -o 'effortLevel:[A-Za-z_$][A-Za-z0-9_$]*(\["low","medium","high","xhigh"\])' "$BUILD" | head
+/usr/bin/grep -a -o -b 'modelSettings' "$BUILD" | head -3
+/usr/bin/grep -a -o -b 'sessionEffort' "$BUILD" | head -3
 ```
 
 Character classes here are POSIX, not PCRE: `[\w$]` inside brackets is the literal set backslash, w
@@ -363,7 +366,7 @@ than the main loop's.
 - `EFFORT_LEVELS` in `hooks/effort.mjs`, if a level was renamed, added or dropped. A rename costs a
   user their `ULTRACODE_ANYWHERE_STAGE_EFFORT` in silence, so `test/effort.test.mjs` reads the five
   out of whatever build is installed and skips where there is none. Read them yourself with
-  `grep -a -o '\["low","medium","high","xhigh","max"\]' "$BUILD"`, and read `--effort`'s own
+  `/usr/bin/grep -a -o '\["low","medium","high","xhigh","max"\]' "$BUILD"`, and read `--effort`'s own
   validator beside it: the tool takes an integer effort as well, and this switch deliberately does
   not.
 - `WAKEUP_SOURCES` in `hooks/standing-ultracode.mjs`, if the `source` enum moved.

@@ -1,7 +1,8 @@
 # The plugin marketplace contract
 
 What Claude Code actually requires of `.claude-plugin/marketplace.json` and `plugins/<name>/.claude-plugin/plugin.json`,
-as of CLI 2.1.241, read on 2026-08-24 and not re-read since and the documentation served on 2026-08-23.
+as of CLI 2.1.241 and the documentation served on 2026-08-23. Read on 2026-08-24 and not re-read since:
+the plugin's own `VERIFYING.md` was worked against a newer build, and this page was not.
 
 Every claim below carries its source. Three kinds of source were used, and nothing else:
 

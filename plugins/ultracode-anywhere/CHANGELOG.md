@@ -15,7 +15,6 @@ A session can name one effort level for its whole fan-out, which is the one thin
 reaches and nothing else does. Re-calibrated against the build that ships today, with two recipes
 that had been finding nothing repaired and a wire claim corrected from two leaves to three.
 
-
 ### Added
 
 - `ULTRACODE_ANYWHERE_STAGE_EFFORT=<level>` names the level the fan-out should run at: the reminder
@@ -70,11 +69,6 @@ that had been finding nothing repaired and a wire claim corrected from two leave
   case: a `--effort` flag or `/effort` below xhigh beats the key, the gate does not hold, and the
   session gets no reminder from either side. It names both now, since nothing else can tell that
   session.
-- Measurements re-taken on this build: 197 MB rather than 325, 9 `ultra_effort_enter` sites rather
-  than 14 and 115 `xhigh` rather than 235 with the closest pair 168,197 bytes apart rather than
-  185,312, the built-in reminder at 308 characters rather than 288, 24 tool definitions rather than
-  25, about 20 ms per prompt and about 90 for the first bundle read. The proximity conclusion is
-  unchanged: a 20,000-byte window still fails by a factor of eight.
 
 - The reminder said "Every subagent and every workflow stage runs at that same level, so leave
   `opts.effort` alone", which is false for a spawn whose own agent definition carries an `effort:`.
@@ -83,6 +77,12 @@ that had been finding nothing repaired and a wire claim corrected from two leave
   1454.
 
 ### Changed
+
+- Measurements re-taken on this build: 197 MB rather than 325, 9 `ultra_effort_enter` sites rather
+  than 14 and 115 `xhigh` rather than 235 with the closest pair 168,197 bytes apart rather than
+  185,312, the built-in reminder at 308 characters rather than 288, 24 tool definitions rather than
+  25, about 20 ms per prompt and about 90 for the first bundle read. The proximity conclusion is
+  unchanged: a 20,000-byte window still fails by a factor of eight.
 
 - The README says what `CLAUDE_CODE_SUBAGENT_MODEL` does, beside the concurrent-cap note it already
   carried. It is the model half of the same question, it is a real subagent-only seam upstream that
