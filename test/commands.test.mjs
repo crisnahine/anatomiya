@@ -479,6 +479,157 @@ const write = (dir, rel) => ({
   tool_input: { file_path: join(dir, rel) },
 });
 
+/** Two checkouts side by side under a parent that is not itself a repository. */
+async function siblings(t) {
+  const parent = mkdtempSync(join(realpathSync(tmpdir()), "anatomiya-siblings-"));
+  t.after(() => rmSync(parent, { recursive: true, force: true }));
+  for (const [name, dir, files] of [
+    ["alpha", "src/core", ["a", "b", "c", "d", "e", "f"]],
+    ["beta", "lib/widgets", ["one", "two", "three", "four", "five", "six"]],
+  ]) {
+    const repo = join(parent, name);
+    mkdirSync(join(repo, dir), { recursive: true });
+    for (const f of files) writeFileSync(join(repo, dir, `${f}.js`), `export const ${f} = (x) => x\n`);
+    // A paired directory beside the bare one, because the precedent rule stays
+    // out of a repository that pairs no test with a source anywhere: without
+    // this the fixture measures that guard rather than what it is here for.
+    mkdirSync(join(repo, "src/util"), { recursive: true });
+    for (const f of ["w", "x", "y", "z"]) {
+      writeFileSync(join(repo, "src/util", `${f}.js`), `export const ${f} = (v) => v\n`);
+      writeFileSync(join(repo, "src/util", `${f}.test.js`), `test("${f}", () => {})\n`);
+    }
+    execFileSync("git", ["init", "-q"], { cwd: repo });
+    execFileSync("git", ["add", "-A"], { cwd: repo });
+    execFileSync("git", ["-c", "user.email=t@t.test", "-c", "user.name=T", "commit", "-qm", "init"], { cwd: repo });
+    await runScan(repo, {});
+  }
+  return parent;
+}
+
+const read = (path) => ({ hook_event_name: "PostToolUse", tool_name: "Read", tool_input: { file_path: path } });
+
+test("the map a call is answered with is the one for the repository the call is about", async (t) => {
+  // Two checkouts under one parent, and a working directory that is in neither
+  // the one being read nor nowhere. Resolving from the working directory finds
+  // a map, stops, and hands over another repository's roster and directives
+  // under the line saying it was counted from this repository's own code.
+  const parent = await siblings(t);
+
+  const answered = runEcho(join(parent, "beta"), read(join(parent, "alpha/src/core/a.js")));
+
+  assert.match(answered.hookSpecificOutput.additionalContext, /src\/core: 6 \.js/);
+  assert.doesNotMatch(answered.hookSpecificOutput.additionalContext, /lib\/widgets/);
+});
+
+test("a call that names no path is still answered from where the session is", async (t) => {
+  // `Bash` and `Task` carry no path, and there the working directory is the
+  // only thing there is to answer from. Losing that would take the map away
+  // from every turn that runs a command, which is most of them.
+  const parent = await siblings(t);
+  const ran = { hook_event_name: "PostToolUse", tool_name: "Bash", tool_input: { command: "ls" } };
+
+  assert.match(runEcho(join(parent, "beta"), ran).hookSpecificOutput.additionalContext, /lib\/widgets: 6 \.js/);
+  assert.match(runEcho(join(parent, "alpha"), ran).hookSpecificOutput.additionalContext, /src\/core: 6 \.js/);
+  assert.deepEqual(runEcho(parent, ran), {}, "and a parent that is no repository still answers nothing");
+});
+
+test("the notice answers for the repository the write is going into, not the one the shell is in", async (t) => {
+  // The sharper half: this one is holding the full path already. `ownLayout`
+  // ran on the working directory first, so the target measured as outside that
+  // root and the hook said nothing at all about a write whose path it had.
+  const parent = await siblings(t);
+  const spec = join(parent, "alpha/src/core/__tests__/a.test.js");
+  const write = { hook_event_name: "PreToolUse", tool_name: "Write", tool_input: { file_path: spec } };
+
+  const said = runNotice(join(parent, "beta"), write).hookSpecificOutput.additionalContext;
+
+  assert.match(said, /src\/core: 6 files, 0 with a namesake test/);
+});
+
+test("a notebook names its path under its own key, and is answered like any other", async (t) => {
+  // Measured on 2.1.251: `NotebookEdit` spells the target `notebook_path`, and
+  // a reader of `file_path` alone finds nothing and falls back to the shell.
+  const parent = await siblings(t);
+  const edit = {
+    hook_event_name: "PostToolUse",
+    tool_name: "NotebookEdit",
+    tool_input: { notebook_path: join(parent, "alpha/src/core/a.ipynb") },
+  };
+
+  assert.match(runEcho(join(parent, "beta"), edit).hookSpecificOutput.additionalContext, /src\/core: 6 \.js/);
+});
+
+test("a search names a directory rather than a file, and is not taken a level above it", async (t) => {
+  // Measured on 2.1.251: `Glob` and `Grep` spell it `path`, and it is a
+  // directory. Handing it to a reader written for a write target takes the
+  // parent of the thing named, which at a repository root is the directory
+  // holding every checkout: the answer would come from a sibling again.
+  const parent = await siblings(t);
+  const globbed = {
+    hook_event_name: "PostToolUse",
+    tool_name: "Glob",
+    tool_input: { pattern: "**/*.js", path: join(parent, "alpha") },
+  };
+
+  assert.match(runEcho(join(parent, "beta"), globbed).hookSpecificOutput.additionalContext, /src\/core: 6 \.js/);
+});
+
+test("a path the payload spells relative is read against the directory the payload names", async (t) => {
+  // Measured on 2.1.251: nothing normalises `tool_input` between the model's
+  // call and the hook, and a relative `file_path` was seen arriving raw. The
+  // tool resolves it against the session's own directory, so this has to as
+  // well; requiring an absolute one falls back to the shell without saying so.
+  // Spelled out of the directory it is read against, so that resolving it and
+  // ignoring it answer with different repositories. A relative path that stays
+  // inside its own base cannot tell the two apart.
+  const parent = await siblings(t);
+  const read = {
+    hook_event_name: "PostToolUse",
+    tool_name: "Read",
+    cwd: join(parent, "beta"),
+    tool_input: { file_path: "../alpha/src/core/a.js" },
+  };
+
+  const said = runEcho(parent, read).hookSpecificOutput.additionalContext;
+
+  assert.match(said, /src\/core: 6 \.js/);
+  assert.doesNotMatch(said, /lib\/widgets/);
+});
+
+test("the working directory the payload carries is the one the agent is in", async (t) => {
+  // Measured on 2.1.251: the envelope `cwd` follows the agent, and one `cd` in
+  // a Bash call moves it for every payload after it. The process this hook runs
+  // in is not told, so for a call that names no place the payload's own answer
+  // is the current one and `process.cwd()` may be a directory the session left.
+  const parent = await siblings(t);
+  const ran = {
+    hook_event_name: "PostToolUse",
+    tool_name: "Bash",
+    cwd: join(parent, "alpha"),
+    tool_input: { command: "ls" },
+  };
+
+  assert.match(runEcho(join(parent, "beta"), ran).hookSpecificOutput.additionalContext, /src\/core: 6 \.js/);
+});
+
+test("the notice reads a relative target the same way the map does", async (t) => {
+  // Two readers of one payload have to agree on what its path means. `aboutDir`
+  // resolves a relative one against the directory the payload names; a
+  // `targetIn` that refuses it measured the target as outside the root it had
+  // just resolved from, and the hook said nothing about a write it had located.
+  const parent = await siblings(t);
+  const write = {
+    hook_event_name: "PreToolUse",
+    tool_name: "Write",
+    cwd: join(parent, "alpha"),
+    tool_input: { file_path: "src/core/__tests__/a.test.js" },
+  };
+
+  const said = runNotice(join(parent, "beta"), write).hookSpecificOutput.additionalContext;
+
+  assert.match(said, /src\/core: 6 files, 0 with a namesake test/);
+});
+
 test("the notice answers for a test going where its kind of file has none", async (t) => {
   const dir = await railsish(t);
 

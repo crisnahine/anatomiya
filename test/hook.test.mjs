@@ -74,12 +74,17 @@ test("a target outside the repository, or absent, is not this repository's busin
   assert.equal(targetIn({}, dir), null);
   assert.equal(targetIn({ tool_name: "Write", tool_input: { file_path: "/elsewhere/x.ts" } }, dir), null);
   assert.equal(targetIn({ tool_name: "Write", tool_input: { file_path: join(dir, "../escape.ts") } }, dir), null);
-  // Measured on 2.1.250, the payload carries an absolute path. One that is not
-  // would be resolved against this process's own directory, which is wherever
-  // the hook happened to be spawned rather than where the write is going. Asked
-  // against that very directory, since against any other one it comes back null
-  // whether the guard is there or not.
-  assert.equal(targetIn({ tool_name: "Write", tool_input: { file_path: "spec/x_spec.rb" } }, process.cwd()), null);
+  // A relative path with nothing to read it against. Measured on 2.1.251 the
+  // payload carries its own `cwd`, and the tool resolved the path against that
+  // one, so a payload holding it is answered rather than refused; this is the
+  // payload that holds neither, where there is no base to pick and silence is
+  // the only honest answer.
+  assert.equal(targetIn({ tool_name: "Write", tool_input: { file_path: "spec/x_spec.rb" } }, "/r"), null);
+  assert.equal(
+    targetIn({ tool_name: "Write", cwd: "/r/app", tool_input: { file_path: "../spec/x_spec.rb" } }, "/r"),
+    "spec/x_spec.rb",
+    "and one that does carry a base is read against it"
+  );
 });
 
 test("a file the payload spells through a link is the same file the root was resolved to", (t) => {
@@ -598,7 +603,6 @@ test("the notice answers an object and exits 0 for anything it cannot decide", (
   const dir = railsish(t);
   const cases = [
     ["a path in another repository", "/elsewhere/spec/mailers/x_spec.rb"],
-    ["a relative path, which the payload never carries", "spec/mailers/x_spec.rb"],
     ["a spec whose siblings have theirs", join(dir, "spec/services/dispatcher_spec.rb")],
     ["a file that is not a test at all", join(dir, "app/mailers/report_mailer.rb")],
   ];
