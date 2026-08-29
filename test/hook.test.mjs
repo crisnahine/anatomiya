@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { chmodSync, existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn, spawnSync, execFileSync } from "node:child_process";
 
@@ -87,11 +87,18 @@ test("a path longer than one a filesystem can hold names no place, in constant t
   // stack rather than costing seconds.
   assert.equal(targetIn({ tool_name: "Write", tool_input: { file_path: absurd } }, "/r"), null);
   assert.equal(targetIn({ tool_name: "Write", cwd: absurd, tool_input: { file_path: "a.js" } }, "/r"), null);
-  // The bound itself, at the byte it refuses on.
-  const exactly = `/${"a".repeat(4094)}`;
-  assert.equal(exactly.length, 4095);
-  assert.notEqual(aboutDir({ tool_name: "Read", tool_input: { file_path: exactly } }, "/tmp"), null);
-  assert.equal(aboutDir({ tool_name: "Read", tool_input: { file_path: `${exactly}aa` } }, "/tmp"), null);
+  // The bound itself, at the byte it refuses on. Built out from a path the
+  // platform already calls absolute, so `resolve` is the identity on it: a
+  // POSIX-shaped `/aaa...` counted 4095 here and 4097 on Windows, where
+  // `resolve` puts a drive letter in front, and the case failed on the bound
+  // being right rather than wrong.
+  const root = resolve(tmpdir());
+  const ofLength = (n) => `${root}${sep}${"a".repeat(n - root.length - 1)}`;
+  assert.equal(ofLength(4096).length, 4096, "the fixture measures what it says");
+  assert.equal(resolve(ofLength(4096)), ofLength(4096), "and resolving it changes nothing");
+
+  assert.notEqual(aboutDir({ tool_name: "Read", tool_input: { file_path: ofLength(4096) } }, root), null);
+  assert.equal(aboutDir({ tool_name: "Read", tool_input: { file_path: ofLength(4097) } }, root), null);
 
   assert.ok(Date.now() - started < 1000, `refusing them took ${Date.now() - started}ms`);
 });
