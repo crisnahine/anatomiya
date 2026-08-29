@@ -59,7 +59,9 @@ test("the case and the spaces a shell leaves behind are the same ask", () => {
 
 test("the answer is the list's own string, not the one the variable held", () => {
   // What comes back goes into a system-reminder the model reads as
-  // instructions, so it may not be text that arrived from anywhere else.
+  // instructions, so it may not be text that arrived from anywhere else. The
+  // property is safe by construction at this point, since `===` matched: the
+  // case above is the one that would catch a prefix match letting text through.
   const found = stageEffortIn(asked(" MEDIUM "));
 
   assert.equal(found, EFFORT_LEVELS[1]);
@@ -141,6 +143,42 @@ test("nothing that could open a line of its own survives into the line a session
       assert.equal(said.includes(carrier), false, `${where} was quoted whole`);
     }
   }
+});
+
+test("what is quoted back is the trimmed value, not the text whose ends could open a line", () => {
+  // The class check reads the trimmed middle, so a value wrapped in line breaks
+  // passes it. Quoting the raw text instead would put those breaks in the
+  // reminder, and every case that puts the character inside the value stays
+  // green either way.
+  for (const code of [0x000a, 0x000d, 0x2028, 0x2029, 0x0020, 0x0009]) {
+    const pad = String.fromCharCode(code);
+
+    const said = askedFor(asked(`${pad}MEDIUMM${pad}`));
+
+    assert.match(said, /is set to "mediumm"/, `U+${code.toString(16)}`);
+    assert.doesNotMatch(said, OPENS_A_LINE, `U+${code.toString(16)} reached the line`);
+  }
+});
+
+test("a setting longer than the bound is refused even where trimming it would find a level", () => {
+  // The bound is what the refusal rests on, so a value that only the bound can
+  // refuse is the one that holds it: trimmed, this is a level.
+  const padded = (spaces) => `medium${" ".repeat(spaces)}`;
+
+  assert.equal(stageEffortIn(asked(padded(250))), "medium", "inside the bound, the spaces come off");
+  assert.equal(stageEffortIn(asked(padded(251))), null, "one past it, the whole value is refused");
+  assert.match(askedFor(asked(padded(251))), /257 characters this will not quote back/);
+});
+
+test("a plain word past the echo bound is counted rather than quoted", () => {
+  // Nothing else separates the echo bound from the character class: every other
+  // over-long value in this file is also refused by the class.
+  assert.match(askedFor(asked("a".repeat(24))), /is set to "a{24}"/);
+  assert.match(askedFor(asked("a".repeat(25))), /25 characters this will not quote back/);
+});
+
+test("one character is one character", () => {
+  assert.match(askedFor(asked("!")), /1 character this will not quote back/);
 });
 
 test("a short sentence is counted rather than quoted, since a level has no spaces in it", () => {

@@ -6,9 +6,10 @@
  * nothing are upstream moving and the settings already doing its job. Both are
  * silent otherwise: the reminder keeps arriving and the model keeps reading it,
  * whether or not the Workflow tool it names is still gated the way it was.
- * Reported at the start of a session and again after a compaction or a clear, except the cap line, which is marked once per state directory and said once,
- * which empty the context; a resume brings the transcript back with the lines
- * in it and is told nothing.
+ * Reported at the start of a session and again after a compaction or a clear,
+ * which empty the context; a resume brings the transcript back with the lines in
+ * it and is told nothing. The cap line is the exception: it is marked once per
+ * state directory and said once.
  */
 import { cached, firstTime, startOver, stateDirFor } from "./counters.mjs";
 import { askedFor } from "./effort.mjs";

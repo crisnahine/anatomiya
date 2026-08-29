@@ -205,7 +205,7 @@ test("a session with workflows disabled is told which switch did it", (t) => {
   );
 });
 
-// --- the level a session asked its stages to run at ----------------------------
+// --- the level a session asked its stages to run at ---------------------------
 
 test("a stage level nobody can read is said at the start, since the cost of missing it is the bill", (t) => {
   // An unreadable cadence costs a refresher its place and says nothing. This
@@ -243,9 +243,8 @@ test("a session already silenced says nothing about a stage level that reaches n
 
 test("a strict session on a build that moved says nothing about a level no text will carry", (t) => {
   // Strict is what makes the prompt hook go quiet on a drifted build, so there
-  // the level reaches no reminder either. The comment above the guard said
-  // "only where the reminder is going out at all" while the code read the
-  // conflict alone.
+  // the level reaches no reminder either, and a line about it is a line about
+  // nothing.
   const t1 = tree(t, { bundle: `${whole()}`.replace(MARKERS[0], "") });
   const env = { CLAUDE_CONFIG_DIR: t1.config, ULTRACODE_ANYWHERE_CAP_NOTICE: "0", ULTRACODE_ANYWHERE_STAGE_EFFORT: "cheap" };
 

@@ -26,7 +26,7 @@
  */
 export const EFFORT_LEVELS = ["low", "medium", "high", "xhigh", "max"];
 
-/** Characters of a setting that named no level worth quoting back at whoever set it. */
+/** How much of a setting that named no level is quoted back to whoever set it. */
 const ECHO_MOST = 24;
 
 /**
@@ -79,12 +79,23 @@ export function askedFor(env = process.env) {
   const raw = String(env.ULTRACODE_ANYWHERE_STAGE_EFFORT ?? "");
   if (raw.trim() === "" || stageEffortIn(env)) return null;
 
+  // The trimmed, folded form rather than the raw one: what is quoted goes into
+  // a system-reminder, and a value whose ends carry a line break passes the
+  // class check on its trimmed middle while the raw text opens a line.
   const asked = normalise(raw);
-  const quoted = QUOTABLE.test(asked) ? `"${asked}"` : `${raw.length} characters this will not quote back`;
-  return `ULTRACODE_ANYWHERE_STAGE_EFFORT is set to ${quoted}, which is no effort level, so the stages are asked for none and run at the session's own. The levels are ${EFFORT_LEVELS.join(", ")}`;
+  const units = raw.length === 1 ? "1 character" : `${raw.length} characters`;
+  const quoted = QUOTABLE.test(asked) ? `"${asked}"` : `${units} this will not quote back`;
+  return `ULTRACODE_ANYWHERE_STAGE_EFFORT is set to ${quoted}, which is no effort level, so the stages are asked for none and run at the session's own level. The levels are ${EFFORT_LEVELS.join(", ")}`;
 }
 
-/** A setting as the build would read one: bounded, case-folded, and without the shell's spaces. */
+/**
+ * A setting read the way this switch reads one: bounded, case-folded, and
+ * without the spaces a shell or an editor left on it.
+ *
+ * The build's own reader folds case and does neither of the other two, so this
+ * is deliberately more forgiving at the ends and stricter about length. A
+ * variable is typed by a person; `opts.effort` is written by a model.
+ */
 function normalise(value) {
   const text = String(value ?? "");
   return text.length > READ_MOST ? "" : text.trim().toLowerCase();
