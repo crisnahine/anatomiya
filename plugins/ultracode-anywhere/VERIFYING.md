@@ -30,8 +30,8 @@ the list in order. Step 2 sets `$BUILD`, which is absolute and survives; step 4 
 a return to step 1 or step 2 needs a `cd` back.
 
 The build is 197 MB, so the reads below find a fixed string with `/usr/bin/grep -a -b -o` and cut
-around its offset. A pattern with a wide `.{n}` context is refused by the stock macOS `grep` above 255 and
-takes minutes on any `grep`.
+around its offset. A pattern with a wide `.{n}` context is refused by the stock macOS `grep` above
+255 and takes minutes on any `grep`.
 
 Spell it `/usr/bin/grep`, as every recipe below does. A `ugrep` or GNU shim on `PATH` reads PCRE
 classes the stock one does not, so a recipe written under a shim can find nothing under the real one
@@ -255,7 +255,16 @@ done
 ```
 
 What has to be true for the skip to work: the object literal carries `source:` where 2.1.251 spells
-`...!1`. Until it does, the README says a wakeup is a turn like any other; the day it does, move
+`...!1`.
+
+While you are in that schema, the effort field beside it. The build hands a hook `effort`, and a
+`CLAUDE_EFFORT` variable with it, only for one that fires inside a tool-use context, and says so:
+"Present for hooks that fire within a tool-use context (PreToolUse, PostToolUse, Stop, SubagentStop,
+etc.) ...; absent for session-lifecycle hooks". Both hooks here are the second kind, which is why the
+reminder names a level and never a direction. A probe that finds `CLAUDE_EFFORT` set is reading the
+environment of the session that launched it, not the session the hook belongs to: strip it and run
+again. The day a `UserPromptSubmit` payload carries `effort`, the hook can read the session's own
+level, and `loweredTo` in `hooks/standing-ultracode.mjs` can say which direction it is going. Until it does, the README says a wakeup is a turn like any other; the day it does, move
 that sentence.
 
 ## 6. The reminder re-enters after a compaction

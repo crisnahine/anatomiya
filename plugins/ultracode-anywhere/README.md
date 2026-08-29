@@ -102,8 +102,8 @@ the ordinary case for anyone reading this page.
 
 ## What it costs
 
-One short-lived `node` process per prompt, about 20 ms of it over ten runs on the machine this was
-measured on, most of which is node starting. What reaches the model is 1266 characters on the first
+One short-lived `node` process per prompt, about 30 ms of it over ten runs on the machine this was
+measured on, most of which is node starting: bare `node` on the same machine is 23. What reaches the model is 1266 characters on the first
 turn, 94 on every tenth after that, and nothing on the rest, appended after the user message so the
 cache prefix is untouched. Over a 30-turn session that is 1454 characters in total,
 the opening text plus two refreshers. A payload that names no session, or a state directory this
@@ -115,7 +115,7 @@ characters on the first turn and 194 on every tenth after that, or 1852 over 30 
 characters more than the default over such a session, against a fan-out it moves by a whole effort
 level.
 
-The session check reads the installed build once per build, not once per session: about 90 ms the
+The session check reads the installed build once per build, not once per session: about 150 ms the
 first time on a warm page cache, about 30 after, since the answer is kept beside the turn counters
 under the build's path, size and timestamp. All of these are one machine's numbers with a warm page cache;
 the shape to rely on is one process per prompt and one bundle read per install, not the
@@ -231,7 +231,7 @@ notice, since a CI runner has no Claude Code to read.
 four, or the gate, the hook stays quiet for the session. It is off by default, since going silent
 costs the mode to everyone whose build is fine. The answer is kept beside the turn counters under
 the build's own path, size and timestamp, so it costs one bundle read after an install rather than
-one per prompt: about 90 ms on the first turn, then about 30, against a hook timeout of 5 seconds.
+one per prompt: about 150 ms on the first turn, then about 30, against a hook timeout of 5 seconds.
 
 `test/upstream.test.mjs` runs the same check against whatever is installed on the machine running
 the suite, and skips where there is none.

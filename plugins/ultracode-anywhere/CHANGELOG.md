@@ -81,8 +81,11 @@ that had been finding nothing repaired and a wire claim corrected from two leave
 - Measurements re-taken on this build: 197 MB rather than 325, 9 `ultra_effort_enter` sites rather
   than 14 and 115 `xhigh` rather than 235 with the closest pair 168,197 bytes apart rather than
   185,312, the built-in reminder at 308 characters rather than 288, 24 tool definitions rather than
-  25, about 20 ms per prompt and about 90 for the first bundle read. The proximity conclusion is
-  unchanged: a 20,000-byte window still fails by a factor of eight.
+  25. The timings did not move: about 30 ms a prompt against a bare `node` floor of 23, and about
+  150 for the session that reads the bundle, then 30. A first pass here read 20 and 90 off a CPU
+  timer and an in-process call rather than off the whole process, which is what a user pays, and
+  would have replaced two right numbers with two wrong ones. The proximity conclusion is unchanged:
+  a 20,000-byte window still fails by a factor of eight.
 
 - The README says what `CLAUDE_CODE_SUBAGENT_MODEL` does, beside the concurrent-cap note it already
   carried. It is the model half of the same question, it is a real subagent-only seam upstream that

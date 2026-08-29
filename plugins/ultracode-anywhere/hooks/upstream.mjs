@@ -278,7 +278,7 @@ export function behind(installed, calibrated = CALIBRATED_AGAINST) {
 
 /**
  * The same answer as `drift`, computed once per build rather than once per
- * session: reading a 197 MB bundle is about ninety milliseconds warm, and the
+ * session: reading a 197 MB bundle is about a hundred milliseconds warm, and the
  * answer cannot change while the file it was read from has not.
  */
 export function driftCached(cli, state, remember) {

@@ -69,6 +69,12 @@ const CHECKING_STAGE = "a stage checking or judging another stage's work";
  * `--effort` and `/effort` write nothing to `settings.json`, so "below the
  * session" would be false in any session that named a level above its own.
  *
+ * The build says the opposite of a hook in general, and both are true: it hands
+ * `effort` and a `CLAUDE_EFFORT` variable to a hook firing inside a tool-use
+ * context, and none to a session-lifecycle one. Both hooks here are the second
+ * kind. Grep the bundle and Anthropic appears to contradict this comment, so the
+ * distinction is written down rather than left to be rediscovered.
+ *
  * The exception is an action rather than a value. "Keeps the session's level"
  * names something the model cannot look up, and a reader has to guess that
  * omitting the argument is what produces it; measured on the wire, a stage with
@@ -190,8 +196,8 @@ export function run({ stdin = "", env = process.env, state = stateDirFor(env) } 
  * Strict is for whoever would rather have the mode off than have it pretend, so
  * it reads the build rather than trusting it. Read once and remembered beside
  * the counters: the answer cannot change inside a session, and the scan streams
- * most of the build, about ninety milliseconds rather than the 20 ms a turn
- * costs otherwise, against a hook timeout of 5 seconds.
+ * most of the build, an added hundred and twenty milliseconds or so on the
+ * turn that reads it, against a hook timeout of 5 seconds.
  */
 function movedBuild(env, state) {
   return driftCached(cliPath(env), state, cached);
