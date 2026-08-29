@@ -81,7 +81,7 @@ export const CONFLICTS = {
   disableWorkflows: "settings.json sets \"disableWorkflows\": true, so there is no Workflow tool for the reminder to point at",
   CLAUDE_CODE_WORKFLOWS: "CLAUDE_CODE_WORKFLOWS is set to false, so there is no Workflow tool for the reminder to point at",
   enableWorkflows: "settings.json sets \"enableWorkflows\": false, so there is no Workflow tool for the reminder to point at",
-  ultracode: "settings.json sets \"ultracode\": true, so effort resolves to xhigh over effortLevel and the built-in reminder fires, unless a --effort or /effort below xhigh beats the key and leaves the session with neither",
+  ultracode: "settings.json sets \"ultracode\": true, so effort resolves to xhigh over effortLevel and the built-in reminder fires in place of this one. A --effort, an /effort or a model that cannot run xhigh takes it lower and silences both",
 };
 
 /** A boolean variable as the build reads one: 1, true, yes or on, in any case. */
@@ -97,7 +97,7 @@ const CHUNK = 1 << 20;
 
 /**
  * The floor a file has to clear to be the build rather than something pointing
- * at it. The shipped bundle is hundreds of megabytes; the `claude` on PATH is
+ * at it. The shipped bundle is a couple of hundred megabytes; the `claude` on PATH is
  * often a launcher of about a kilobyte, and `npm test` puts one first. Read as
  * the build, a launcher carries none of the markers and every machine with one
  * is told upstream moved.

@@ -81,8 +81,15 @@ test("the line about the ultracode key names the flag that beats it, since that 
   const said = conflictIn({ ultracode: true }, {});
 
   assert.match(said, /"ultracode": true/);
-  assert.match(said, /effortLevel/, "the key beats the setting");
-  assert.match(said, /--effort|\/effort/, "and names what beats the key");
+  assert.match(said, /resolves to xhigh over effortLevel/, "the key beats the setting");
+  assert.match(said, /--effort/, "and names what beats the key");
+  // The direction and the outcome, not just the words. Pinned on presence alone
+  // this case passed against a sentence saying a level *above* xhigh beats the
+  // key and leaves the session with both, which is the opposite of the truth and
+  // the shape of defect this repository keeps shipping.
+  assert.match(said, /takes it lower/, "lower, not higher");
+  assert.match(said, /silences both/, "and both go quiet, rather than either firing");
+  assert.doesNotMatch(said, /above xhigh/);
 });
 
 test("CLAUDE_CODE_WORKFLOWS set to false is the same session with no tool", () => {
