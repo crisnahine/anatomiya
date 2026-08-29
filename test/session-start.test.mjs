@@ -125,7 +125,7 @@ test("a cap already raised is not mentioned", (t) => {
 });
 
 test("the build is read once per build, not once per session", (t) => {
-  // Reading a 325 MB binary is a few hundred milliseconds, and a session pays
+  // Reading a 197 MB binary is about ninety milliseconds, and a session pays
   // it for nothing when the answer is the one the last session computed. A
   // second session that read the build again would write the answer again,
   // and the kept file's own timestamp says whether it did. The build's access

@@ -5,7 +5,7 @@ opt-in contract were read out of one build, so the only thing that keeps it hone
 reading. The `SessionStart` check does the cheap half on every session; this is the half a person
 does, and it takes a few minutes.
 
-It was last worked whole against **2.1.241**, on 2026-08-24, which is the version
+It was last worked whole against **2.1.251**, on 2026-08-30, which is the version
 `CALIBRATED_AGAINST` in `hooks/upstream.mjs` names. Move that string when you have worked this list
 on a newer build, and nothing else in this file or the README may name a build that is not it:
 `test/upstream.test.mjs` fails on one that does.
@@ -29,9 +29,13 @@ the list in order. Step 2 sets `$BUILD`, which is absolute and survives; step 4 
 `capture` and moves the shell out of this directory for good, so step 5 runs on what step 4 left and
 a return to step 1 or step 2 needs a `cd` back.
 
-The build is 325 MB, so the reads below find a fixed string with `grep -a -b -o` and cut around
+The build is 197 MB, so the reads below find a fixed string with `grep -a -b -o` and cut around
 its offset. A pattern with a wide `.{n}` context is refused by the stock macOS `grep` above 255 and
 takes minutes on any `grep`.
+
+Spell it `/usr/bin/grep`. A `ugrep` or GNU shim on `PATH` reads PCRE classes the stock one does not,
+so a recipe written under a shim can find nothing under the real one and say so by printing nothing,
+which reads as a claim that no longer holds. Two recipes here were already broken that way.
 
 ## 1. The names are still in the build
 
@@ -59,8 +63,9 @@ What has to be true: the reminder is emitted only when the resolved effort is `x
 the reminder has become the thing that raises effort, this plugin is doing more than it claims and
 the README has to change.
 
-On 2.1.241 it reads `function Ale(e,t,r){return r===!0&&gH()&&kQ(e,t)==="xhigh"}`. Every name in it
-moved from the build this was first read off, which is why the check reads a shape.
+On 2.1.251 it reads `function Wv(e,o,t){return t===!0&&Zu()&&yT(e,o)==="xhigh"}`, at offset
+156,647,852. Every name in it moved again from the build before, which is why the check reads a
+shape and not a name.
 
 While you are there, the cap:
 
@@ -73,8 +78,8 @@ done
 Every hit, since more than one carries that sentence and only one of them is the code: the others
 sit in a data section that holds the message text with nothing around it. The one you want shows
 whether the same predicate still returns before the refusal, which is what the README says lifts the
-cap for native ultracode and not here. On 2.1.241 a second early return sits above it,
-`if(nt("tengu_amber_kestrel",!1))return`, a flag Anthropic sets: turned on it lifts the cap for
+cap for native ultracode and not here. On 2.1.251 a second early return sits above it,
+`if(I("tengu_amber_kestrel",!1))return`, a flag Anthropic sets: turned on it lifts the cap for
 every session on that build, and the README says so.
 
 ## 3. The Workflow tool still carries no effort term
@@ -188,24 +193,39 @@ a background agent may hit the same socket, and walk the two objects leaf by lea
 diffing the text: a request is one enormous line per string, so a line diff says two lines differ and
 not which fields.
 
-What has to be true: they differ in the reminder text and in `output_config.effort`, and nowhere
-else. On 2.1.241 that is what they do: same system prompt, same 25 tool definitions, the Workflow
-tool's description included, with the reminder in the trailing context block either way, this
-plugin's 1266 characters or the built-in's 288. Where it lands inside that block depends on what else
-answers `UserPromptSubmit`, so run both sides from the same directory or another plugin's hook moves
-with you.
+What has to be true: the system prompt is identical and so is every tool definition, the Workflow
+tool's description included, with the reminder in the trailing context block either way. On 2.1.251
+that holds: same system prompt, same 24 tool definitions, byte for byte, this plugin's 1266
+characters or the built-in's 308. Where it lands inside that block depends on what else answers
+`UserPromptSubmit`, so run both sides from the same directory or another plugin's hook moves with
+you.
 
-A third leaf is not a finding until it repeats. Some tool definitions sit behind remote flags whose
+They differ in three places on this build, not two. The reminder text and `output_config.effort` are
+the two the plugin is about. The third is the native side's alone: `"ultracode": true` also injects
+the whole `workflow-authoring` skill into the user message, a command block of 136 characters and a
+body of 16,584, and appends a newline to the prompt. The effort level is not what does it, which two
+control runs settle: against a plain `--effort xhigh` with no `ultracode` key, the two sides differ
+in the reminder and the effort and nowhere else. It is not new to this build either, since an earlier
+one does the same. Nothing this plugin can write reaches a skill load, so this is a difference it cannot close,
+and the README says so rather than claiming a two-leaf diff it no longer has.
+
+A further leaf is not a finding until it repeats. Some tool definitions sit behind remote flags whose
 value differs between two launches minutes apart, and one pair here came back with `ScheduleWakeup`
 carrying a `noop` parameter on the second side and not the first, description and schema both, on a
 pair otherwise identical. Nothing this plugin does can reach a tool definition. Run each side twice
 and count only a leaf that differs both times. Then say which in the README rather than leaving the
 claim standing.
 
+Two of them are the harness rather than the build, and a fresh `CLAUDE_CONFIG_DIR` per side is what
+produces both: `metadata.user_id` carries a device id derived from that directory, and `system[2]`
+carries the transcript path. Share one config directory between the two sides and they collapse.
+A same-side control run, twice through one side, is what tells a harness artifact from a real
+difference.
+
 ## 5. The prompt payload carries `source`, or does not yet
 
 The wakeup skip reads `source` off the `UserPromptSubmit` payload. The schema declares the field and
-2.1.241 does not send it outside Anthropic. Ask the hook itself what it was handed, which beats
+2.1.251 does not send it outside Anthropic. Ask the hook itself what it was handed, which beats
 reading the builder:
 
 ```sh
@@ -216,8 +236,10 @@ kill "$(cat "$d/pid")"
 cat "$d/hook.log"
 ```
 
-On 2.1.241 the payload holds `session_id`, `transcript_path`, `cwd`, `prompt_id`, `permission_mode`,
-`hook_event_name` and `prompt`, and no `source`. The stand-in from step 4 is what keeps this probe
+On 2.1.251 the payload holds `session_id`, `transcript_path`, `cwd`, `prompt_id`, `permission_mode`,
+`hook_event_name` and `prompt`, and no `source`. The literal carries `session_title` as well, which a
+named session sends and an unnamed one does not, and the `source` enum has grown to `user`, `sdk`,
+`system`, `loop_wakeup`, `schedule_wakeup` and `poll_event`. Only the last four are turns to skip. The stand-in from step 4 is what keeps this probe
 from spending a real turn on the real API, and the state directory keeps it out of the counters a
 real session is keeping.
 
@@ -229,25 +251,30 @@ for at in $(grep -a -b -o 'hook_event_name:"UserPromptSubmit",prompt' "$BUILD" |
 done
 ```
 
-What has to be true for the skip to work: the object literal carries `source:` where 2.1.241 spells
+What has to be true for the skip to work: the object literal carries `source:` where 2.1.251 spells
 `...!1`. Until it does, the README says a wakeup is a turn like any other; the day it does, move
 that sentence.
 
 ## 6. The reminder re-enters after a compaction
 
 ```sh
-at=$(grep -a -b -o 'ultra_effort_enter"){n="enter"' "$BUILD" | head -1 | cut -d: -f1)
-tail -c +$((at - 400)) "$BUILD" | head -c 1000; echo
+at=$(/usr/bin/grep -a -b -o 'ultra_effort_enter"){[a-zA-Z_$]*="enter"' "$BUILD" | head -1 | cut -d: -f1)
+tail -c +$((at - 900)) "$BUILD" | head -c 2000; echo
 ```
+
+The identifier is a class, not a name: this recipe pinned `n="enter"` and found nothing the moment the
+minifier chose `o`. It exits 1 and prints nothing, and `tail` then dies on an empty offset, which is
+the loudest this failure gets.
 
 What has to be true: the function walks the messages back to the last `ultra_effort_enter` or
 `ultra_effort_exit` attachment, sends the whole text when it finds none, and the sparse line once
 `TURNS_BETWEEN_MAINTENANCE` user turns have passed. A compaction leaves no attachment to find, which
 is why the `SessionStart` hook starts the counter over on `compact` and `clear`.
 
-On 2.1.241 the turns it counts are user messages that are neither meta nor a tool result, which is
+On 2.1.251 the turns it counts are user messages that are neither meta nor a tool result, which is
 the same set of turns a prompt hook fires on: a tool result never fires one. The constant is still
-10, through `CLAUDE_CODE_JUNIPER_SUNDIAL`, then the `tengu_juniper_sundial` flag, then
+10, but the chain is four steps now rather than three: `CLAUDE_CODE_JUNIPER_SUNDIAL`, then a
+gate-config read of `tengu_juniper_sundial`, then the flag of that name, then
 `TURNS_BETWEEN_MAINTENANCE`.
 
 ## 7. A workflow stage still has no effort but the one a script passes
