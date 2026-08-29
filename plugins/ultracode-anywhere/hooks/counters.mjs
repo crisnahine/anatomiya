@@ -205,7 +205,7 @@ export function firstTime(dir, mark) {
  * computed for.
  *
  * For a question whose answer costs more than a turn should: reading the build
- * is about ninety milliseconds warm against a hook timeout of 5 seconds, and on
+ * is about a hundred milliseconds warm against a hook timeout of 5 seconds, and on
  * a cold disk more. The key is what the answer depends on, so an upgrade in
  * place is a new key rather than a stale yes, and one file holds the current
  * answer rather than one per build ever installed. A directory this may not
