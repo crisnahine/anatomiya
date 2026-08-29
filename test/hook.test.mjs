@@ -76,8 +76,13 @@ test("a path longer than one a filesystem can hold names no place, in constant t
   const started = Date.now();
 
   assert.equal(aboutDir({ tool_name: "Read", tool_input: { file_path: absurd } }, "/tmp"), null);
+  // Both fields, because the walk runs on the two joined and the payload
+  // carries both: a gate on the target alone was got round with a short target
+  // and a long `cwd`, at 10.5s.
+  assert.equal(aboutDir({ tool_name: "Read", cwd: absurd, tool_input: { file_path: "a.js" } }, "/tmp"), null);
+  assert.equal(aboutDir({ tool_name: "Bash", cwd: absurd, tool_input: { command: "ls" } }, "/tmp"), null);
 
-  assert.ok(Date.now() - started < 1000, `refusing it took ${Date.now() - started}ms`);
+  assert.ok(Date.now() - started < 1000, `refusing them took ${Date.now() - started}ms`);
 });
 
 test("a target outside the repository, or absent, is not this repository's business", (t) => {
