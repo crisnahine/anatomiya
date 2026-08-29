@@ -145,11 +145,20 @@ test("both readers answer a payload with no base to fall back to", (t) => {
   );
   // The node behaviour the reader is written around, pinned rather than
   // relied on: `resolve` walks its arguments from the right and stops at the
-  // first absolute one, so it never looks at an absent base behind one, while a
-  // relative path leaves it looking and it throws. The reader passes `"/"`
-  // rather than the absent base either way, so it depends on neither, and this
-  // is what would have to change for that to stop being belt and braces.
-  assert.equal(resolve(undefined, "/abs"), resolve("/abs"), "an absolute path is reached before the base is read");
+  // first one it can finish from, so it never looks at an absent base behind
+  // one, while a relative path leaves it looking and it throws. The reader
+  // passes `"/"` rather than the absent base either way, so it depends on
+  // neither, and this is what would have to change for that to stop being belt
+  // and braces.
+  //
+  // Built out from a path the platform already resolves to itself, the way the
+  // length case above is. `isAbsolute` and "resolve can finish here" are not
+  // the same test on Windows: `/abs` answers true to the first and still sends
+  // `resolve` looking for a drive, so it reaches the absent base and throws
+  // where POSIX had already returned.
+  const rooted = join(resolve(tmpdir()), "abs");
+  assert.equal(resolve(rooted), rooted, "the fixture is a path resolve is the identity on");
+  assert.equal(resolve(undefined, rooted), rooted, "an absolute path is reached before the base is read");
   assert.throws(() => resolve(undefined, "rel"), { code: "ERR_INVALID_ARG_TYPE" });
   assert.equal(
     aboutDir({ tool_name: "Read", tool_input: { file_path: "a/b.ts" } }, undefined),
