@@ -11,6 +11,7 @@
  */
 
 import { appendLine, cached, nextTurn, stateDirFor, sweep } from "./counters.mjs";
+import { stageEffortIn } from "./effort.mjs";
 import { here, invokedAs, parsePayload, readStdin, respond } from "./hook-io.mjs";
 import { cliPath, conflictIn, driftCached, settingsFor } from "./upstream.mjs";
 
@@ -27,8 +28,9 @@ export const FULL_EVERY = 10;
 /**
  * Turns the user did not type. A wakeup carries its own instructions.
  *
- * Read off the `source` the build's own payload schema declares, with exactly
- * these values. 2.1.241 declares the field and does not send it: a payload
+ * Read off the `source` the build's own payload schema declares. The schema
+ * carries more than these four now, `user` and `sdk` among them, and neither is
+ * a turn to skip. 2.1.251 declares the field and does not send it: a payload
  * caught off that build carries `session_id`, `transcript_path`, `cwd`,
  * `prompt_id`, `permission_mode`, `hook_event_name` and `prompt`, and no
  * `source`. So a wakeup counts as a turn there and gets whatever its place in
@@ -37,21 +39,81 @@ export const FULL_EVERY = 10;
  */
 const WAKEUP_SOURCES = new Set(["loop_wakeup", "schedule_wakeup", "poll_event", "system"]);
 
-const FULL = [
+/** The two paragraphs that say the same thing at every level. */
+const OPENING = [
   "Ultracode is on: optimize for the most exhaustive, correct answer, not the fastest or cheapest. Use the Workflow tool on work whose scale or risk earns it; token cost is not a constraint there. See the Workflow tool's **Ultracode** section and quality patterns.",
   "Where it does not earn it, stay solo, and say so in one clause rather than orchestrating to look thorough: a question you can answer, a fact you can read back, one file's mechanical edit, anything already verified this turn. Before spawning one, name what the fan-out buys in one clause, the coverage or the independent check; if that clause will not come, the work did not need it. Scale the harness to the work: a few finders for a narrow question, a larger pool with adversarial verification for an audit.",
-  "This standing opt-in comes from the user's own configuration and is the explicit opt-in the Workflow tool asks for, so do not wait for the keyword. It restores the orchestration instruction only: the session's effort level is unchanged and this text does not raise it. Every subagent and every workflow stage runs at that same level, so leave opts.effort alone. Depth comes from how the work is split and independently checked, at the level the session is set to.",
-].join("\n\n");
+];
 
-const SHORT = "Ultracode is still on: use the Workflow tool where the work is worth it, solo where it is not.";
+/** The sentences either third paragraph opens with, since both are true either way. */
+const STANDING =
+  "This standing opt-in comes from the user's own configuration and is the explicit opt-in the Workflow tool asks for, so do not wait for the keyword. It restores the orchestration instruction: the session's effort level is unchanged and this text does not raise it.";
 
-/** The cadence this session runs at, and the default for anything unreadable. */
-function cadenceFrom(env) {
+/** What a session that named no level gets: the level it is already running at. */
+const ONE_LEVEL =
+  "Every subagent and every workflow stage runs at that same level unless its own definition sets one, so leave opts.effort alone. Depth comes from how the work is split and independently checked, at the level the session is set to.";
+
+/**
+ * The one stage the named level does not reach, spelled once because both texts
+ * state it and a model reading them compares them.
+ *
+ * It is the exception rather than a detail: the stage that checks another
+ * stage's work is the independent check the whole depth argument rests on.
+ */
+const CHECKING_STAGE = "a stage checking or judging another stage's work";
+
+/**
+ * The fan-out at the level the user named.
+ *
+ * A level and not a direction, since the hook cannot read the session's own:
+ * `--effort` and `/effort` write nothing to `settings.json`, so "below the
+ * session" would be false in any session that named a level above its own.
+ *
+ * The build says the opposite of a hook in general, and both are true: it hands
+ * `effort` and a `CLAUDE_EFFORT` variable to a hook firing inside a tool-use
+ * context, and none to a session-lifecycle one. Both hooks here are the second
+ * kind. Grep the bundle and Anthropic appears to contradict this comment, so the
+ * distinction is written down rather than left to be rediscovered.
+ *
+ * The exception is an action rather than a value. "Keeps the session's level"
+ * names something the model cannot look up, and a reader has to guess that
+ * omitting the argument is what produces it; measured on the wire, a stage with
+ * no `opts.effort` tracked its session from medium to high.
+ *
+ * It carries the same carve-out as the paragraph above, and for the same reason:
+ * a stage naming an `agentType` resolves a registered definition, and an
+ * `effort:` in that file wins where the script passes none. Said without it, the
+ * text promised a floor it cannot hold.
+ */
+function loweredTo(level) {
+  return `That same configuration names the level the fan-out should run at, so pass opts.effort '${level}' on every workflow stage but one. Leave it out of ${CHECKING_STAGE}, so that one runs at the session's level unless its own definition sets one. The Agent tool takes no effort argument, so this reaches workflow stages and nothing else. Depth comes from how the work is split and independently checked.`;
+}
+
+/** The whole standing opt-in, at the stage level this session asked for. */
+function full(stageEffort = null) {
+  return [...OPENING, `${STANDING} ${stageEffort ? loweredTo(stageEffort) : ONE_LEVEL}`].join("\n\n");
+}
+
+/**
+ * The line that keeps the mode in view, carrying the level where one was named.
+ *
+ * A sentence of its own rather than a third conjunct, since the level would
+ * otherwise hang off "use" with no verb of its own, on the line that goes out on
+ * every tenth turn for the life of the session.
+ */
+function short(stageEffort = null) {
+  const still = "Ultracode is still on: use the Workflow tool where the work is worth it, solo where it is not.";
+  return stageEffort ? `${still} Stages take opts.effort '${stageEffort}'; leave it out of ${CHECKING_STAGE}.` : still;
+}
+
+/** What this session's switches ask the text to be, and the default for anything unreadable. */
+function switchesFrom(env) {
   const every = String(env.ULTRACODE_ANYWHERE_EVERY ?? "");
   return {
     every: /^\d{1,4}$/.test(every) && Number(every) > 0 ? Number(every) : FULL_EVERY,
     refresher: env.ULTRACODE_ANYWHERE_REFRESHER !== "0",
     repeatFull: env.ULTRACODE_ANYWHERE_FULL === "repeat",
+    stageEffort: stageEffortIn(env),
   };
 }
 
@@ -76,13 +138,23 @@ function sessionIn(payload) {
 const onCadence = (turn, every = FULL_EVERY) => (turn - 1) % every === 0;
 
 /**
+ * What a session that set no switch gets.
+ *
+ * Read through rather than compared against, so a caller handing over part of
+ * the object gets these for the keys it left out, and a key added here reaches
+ * every caller rather than arriving as `undefined` at the partial ones.
+ */
+const DEFAULTS = { every: FULL_EVERY, refresher: true, repeatFull: false, stageEffort: null };
+
+/**
  * What this turn is owed: the whole opt-in on the first turn, the line that
  * keeps it in view on every tenth after that, and nothing on the rest.
  */
-export function contextFor(turn, cadence = { every: FULL_EVERY, refresher: true, repeatFull: false }) {
-  if (turn === 1) return FULL;
-  if (!cadence.refresher || !onCadence(turn, cadence.every)) return null;
-  return cadence.repeatFull ? FULL : SHORT;
+export function contextFor(turn, asked = DEFAULTS) {
+  const { every, refresher, repeatFull, stageEffort } = { ...DEFAULTS, ...asked };
+  if (turn === 1) return full(stageEffort);
+  if (!refresher || !onCadence(turn, every)) return null;
+  return repeatFull ? full(stageEffort) : short(stageEffort);
 }
 
 /** The text this turn should carry, or null when the turn is owed nothing. */
@@ -111,11 +183,11 @@ export function run({ stdin = "", env = process.env, state = stateDirFor(env) } 
   if (debug) log(debug, stdin, conflict ?? moved);
   if (conflict || moved) return null;
 
-  const cadence = cadenceFrom(env);
+  const switches = switchesFrom(env);
   const session = sessionIn(payload);
   const turn = session ? nextTurn(state, session) : 1;
-  if (session && onCadence(turn, cadence.every)) sweep(state);
-  return contextFor(turn, cadence);
+  if (session && onCadence(turn, switches.every)) sweep(state);
+  return contextFor(turn, switches);
 }
 
 /**
@@ -124,8 +196,8 @@ export function run({ stdin = "", env = process.env, state = stateDirFor(env) } 
  * Strict is for whoever would rather have the mode off than have it pretend, so
  * it reads the build rather than trusting it. Read once and remembered beside
  * the counters: the answer cannot change inside a session, and the scan streams
- * most of a 325 MB file, a few hundred milliseconds rather than the 30 ms a
- * turn costs otherwise, against a hook timeout of 5 seconds.
+ * most of the build, an added hundred and twenty milliseconds or so on the
+ * turn that reads it, against a hook timeout of 5 seconds.
  */
 function movedBuild(env, state) {
   return driftCached(cliPath(env), state, cached);

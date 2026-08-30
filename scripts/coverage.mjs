@@ -11,10 +11,10 @@
  * an aggregate hides is proportional to how much larger the rest of its scope
  * is. Moving one down moves the problem rather than removing it.
  *
- * Measured on the whole tree afterwards, 13 of its 151 files sit under its own
- * floor while the total cleared, and the largest module the plugin ships could
- * have lost every covered line unnoticed. So the plugin's own `lib` is held to
- * a floor per file too.
+ * Measured on the whole tree when this floor was set, 13 of the 151 files then
+ * counted sat under the whole-tree floor on their own while the total cleared,
+ * and the largest module the plugin ships could have lost every covered line
+ * unnoticed. So the plugin's own `lib` is held to a floor per file too.
  * The rest of the tree is not: the `--deep` tier runs only in the smoke job and
  * the harnesses under `scripts/` are run by hand, so `scripts/ab/run.mjs`
  * reports a third of its lines, and a floor low enough to admit that says
@@ -46,32 +46,32 @@ export const FLOORS = [
     // two things inside it.
     scope: "the whole tree",
     include: "**",
-    // Measured at 97.9 line, 94.4 branch, 97.6 function over 151 files.
+    // Measured at 98.0 line, 94.3 branch, 97.7 function over 160 files.
     whole: { lines: 95, branches: 87, functions: 95 },
     file: {},
   },
   {
     scope: "ultracode-anywhere",
     include: `${REL.ultracode}/**`,
-    // Measured at 97.1 line, 89.2 branch, 98.5 function over the five files.
+    // Measured at 97.8 line, 89.5 branch, 98.8 function over the six files.
     whole: { lines: 95, branches: 87, functions: 97 },
     // The worst single file is `counters.mjs` at 95.9 of lines on the run where
-    // its sweep catch goes uncovered, and `hook-io.mjs` at 80.5 of branches and
-    // 94.1 of functions. These sit a few points under each.
+    // its sweep catch goes uncovered, and `hook-io.mjs` at 83.8 of branches and
+    // 96.0 of functions. These sit a few points under each.
     file: { lines: 92, branches: 75, functions: 90 },
   },
   {
     // The shipped code, held to a floor each. The aggregate above says nothing
     // about one file inside it, and the size of that silence was measured: 13
-    // of 151 files sit under the whole-tree floor on their own, and the largest
-    // module the plugin ships could lose every covered line with the total
-    // still clearing 95. This is the bound on how far any one of them may
-    // fall.
+    // of the 151 files counted then sat under the whole-tree floor on their
+    // own, and the largest module the plugin ships could lose every covered
+    // line with the total still clearing 95. This is the bound on how far any
+    // one of them may fall.
     scope: "anatomiya lib",
     include: `${REL.anatomiya}/lib/**`,
     // The aggregate is the scope above; this row exists for the per-file floor.
     whole: {},
-    // Measured at 98.4 line, 93.1 branch, 98.4 function over 51 files. The
+    // Measured at 98.5 line, 93.3 branch, 98.5 function over 52 files. The
     // worst single one CI can reach is `commands.mjs` at 84.9 of lines, 71.0 of
     // branches and 83.3 of functions, and these sit a few points under each.
     // The floor caught `tsconfig.mjs` at 71.4 of functions on the first run it

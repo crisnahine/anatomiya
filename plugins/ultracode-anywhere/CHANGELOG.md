@@ -9,6 +9,99 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-08-30
+
+A session can name one effort level for its whole fan-out, which is the one thing `opts.effort`
+reaches and nothing else does. Re-calibrated against the build that ships today, with two recipes
+that had been finding nothing repaired and a wire claim corrected from two leaves to three.
+
+### Added
+
+- `ULTRACODE_ANYWHERE_STAGE_EFFORT=<level>` names the level the fan-out should run at: the reminder
+  then asks for `opts.effort` at that level on every workflow stage, and for it to be left out of a
+  stage checking or judging another stage's work, which is what makes that one run at the session's
+  level where its own definition sets none. `opts.effort` is the only lever a caller has on a stage,
+  since the built-in definition a stage gets carries no effort and the Agent tool takes no effort
+  argument, so a session wanting its fan-out cheaper than its main loop has nothing but the reminder
+  text to say it with. Unset, the text is the one-level paragraph it always was: leave `opts.effort`
+  alone. The levels are `low`, `medium`, `high`, `xhigh` and `max`, read past case and surrounding
+  spaces, and the answer put into the text is the list's own spelling rather than what the variable
+  held. The text names a level and not a direction, because `--effort` and `/effort` write nothing
+  to `settings.json` and the hook cannot read the session's own level to say which way it points.
+  A30, A43 and now A47.
+- A session opens with a line naming a `ULTRACODE_ANYWHERE_STAGE_EFFORT` that is not a level, and
+  what the levels are. An unreadable cadence costs a refresher its place and says nothing; this one
+  costs a session the whole saving it was turned on for, and costs it silently. A setting holding
+  anything but a plain word is counted rather than quoted back, since a project's own
+  `settings.json` sets `env` and this text is on its way into a system-reminder.
+- `hooks/effort.mjs`, holding the level list and the reader, because both hooks need them and
+  neither may import the other's entry point.
+- A case that fails when a switch the hooks read is not in the README, or a switch the README names
+  is read by nothing. Read off the shipped files rather than listed in the case, so the next one is
+  covered by having been added.
+- `test/effort.test.mjs` reads the five level names out of whatever build is installed and skips
+  where there is none, since a level renamed upstream would cost a user their setting in silence.
+  `VERIFYING.md` gains a step for the other half a person has to read: that the spawn builder still
+  pushes an effort layer only where the agent definition carries one, that `workflow-subagent`
+  still carries neither effort nor model and cannot be shadowed, and that the Agent tool's schema
+  still has no `effort`.
+
+### Fixed
+
+- Re-calibrated against Claude Code 2.1.251, the whole of `VERIFYING.md` worked rather than the
+  cheap half. The premise holds: the gate is still one conjunct, all four markers are still there,
+  the Workflow tool still counts a standing ultracode mode as its explicit opt-in, and the cadence
+  constant is still 10. Every name inside the gate moved again, which is what the shape check is
+  for, and the build's own spelling is kept beside the last one so the next respelling has something
+  to compare to. `CALIBRATED_AGAINST` had sat ten patch releases behind, which is exactly the run
+  `behind` waits for, so every session on this machine opened with a line saying nobody had checked
+  it. That line is the guard working, and the answer to it is the list rather than a wider band.
+- Two recipes in `VERIFYING.md` found nothing and said so by printing nothing. The compaction walk
+  pinned a minified identifier, `n="enter"`, which the build now spells `o`; it reads a character
+  class now. Both are the failure this file is least able to notice, so it says to spell `grep` as
+  `/usr/bin/grep`, since a PCRE shim on `PATH` answers where the stock one does not.
+- The wire diff is three leaves, not two. `"ultracode": true` also loads the whole
+  `workflow-authoring` skill into the user message, about sixteen thousand characters of it, which
+  no hook can do. The system prompt and all 24 tool definitions are still identical. Two control
+  runs place it on the key rather than on the effort level, and the README says so instead of
+  claiming a two-leaf diff it no longer has.
+- The line naming `"ultracode": true` said the built-in "already fires", which is false in one real
+  case: a `--effort` flag or `/effort` below xhigh beats the key, the gate does not hold, and the
+  session gets no reminder from either side. It names both now, since nothing else can tell that
+  session.
+
+- The reminder said "Every subagent and every workflow stage runs at that same level, so leave
+  `opts.effort` alone", which is false for a spawn whose own agent definition carries an `effort:`.
+  It says "unless its own definition sets one" now, the same carve-out the levelled paragraph
+  carries, which moves the text from 1236 characters to 1266 and a 30-turn session from 1424 to
+  1454.
+
+### Changed
+
+- Measurements re-taken on this build: 197 MB rather than 325, 9 `ultra_effort_enter` sites rather
+  than 14 and 115 `xhigh` rather than 235 with the closest pair 168,197 bytes apart rather than
+  185,312, the built-in reminder at 308 characters rather than 288, 24 tool definitions rather than
+  25. The timings did not move: about 30 ms a prompt against a bare `node` floor of 23, and about
+  150 for the session that reads the bundle, then 30. A first pass here read 20 and 90 off a CPU
+  timer and an in-process call rather than off the whole process, which is what a user pays, and
+  would have replaced two right numbers with two wrong ones. The proximity conclusion is unchanged:
+  a 20,000-byte window still fails by a factor of eight.
+
+- The README says what `CLAUDE_CODE_SUBAGENT_MODEL` does, beside the concurrent-cap note it already
+  carried. It is the model half of the same question, it is a real subagent-only seam upstream that
+  reaches workflow stages, and it needs nothing from this plugin. There is no such variable for
+  effort, which is why the switch above is a sentence of text rather than a setting.
+- The same section names the settings route to a subagent's effort, `modelSettings` keyed by the
+  model a spawn resolves to, and the three things that make it worth knowing about rather than
+  using: the row is keyed by a model rather than by who is spawning, so with no
+  `CLAUDE_CODE_SUBAGENT_MODEL` split it takes the main loop down with it; its validator takes four
+  level names where `opts.effort` takes five; and a level pinned by `--effort` or `/effort` is read
+  in front of it. `VERIFYING.md` step 7 carries the greps and the capture that check all three.
+- It also names the one case where a stage has a definition of its own: a script that passes
+  `agentType` resolves a registered agent, and an `effort:` in that file's frontmatter sets the
+  stage's level with no `opts.effort` in sight. `opts.effort` still wins where both are present, so
+  the reminder's instruction holds and only its reason narrows.
+
 ## [0.2.1] - 2026-08-29
 
 A payload one byte over the bound, or one long enough to run past it, answered as
@@ -131,7 +224,8 @@ wherever `effortLevel` is set, and says out loud what it does not restore.
 - Turn counters under `~/.claude/ultracode-anywhere/` rather than the temporary directory, in a
   directory this account owns with no access for anyone else.
 
-[Unreleased]: https://github.com/crisnahine/anatomiya/compare/ultracode-anywhere-v0.2.1...HEAD
+[Unreleased]: https://github.com/crisnahine/anatomiya/compare/ultracode-anywhere-v0.3.0...HEAD
+[0.3.0]: https://github.com/crisnahine/anatomiya/compare/ultracode-anywhere-v0.2.1...ultracode-anywhere-v0.3.0
 [0.2.1]: https://github.com/crisnahine/anatomiya/compare/ultracode-anywhere-v0.2.0...ultracode-anywhere-v0.2.1
 [0.2.0]: https://github.com/crisnahine/anatomiya/compare/ultracode-anywhere-v0.1.1...ultracode-anywhere-v0.2.0
 [0.1.1]: https://github.com/crisnahine/anatomiya/compare/v0.2.9...ultracode-anywhere-v0.1.1
