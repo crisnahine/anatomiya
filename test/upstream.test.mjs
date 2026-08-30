@@ -71,6 +71,27 @@ test("workflows switched off by disableWorkflows, or by the environment, leave n
   assert.equal(conflictIn({ disableWorkflows: false }, { CLAUDE_CODE_DISABLE_WORKFLOWS: "" }), null);
 });
 
+test("the line about the ultracode key names the flag that beats it, since that session gets nothing", () => {
+  // Measured on the wire: `"ultracode": true` does resolve effort to xhigh over
+  // `effortLevel`, so the built-in fires and a second copy would be noise. A
+  // `--effort` or `/effort` below xhigh wins over both, and then the gate does
+  // not hold, the built-in stays silent, and this hook has already gone quiet on
+  // the key. That session gets no reminder from either side, and the only place
+  // it can be told so is the line that says why this one is quiet.
+  const said = conflictIn({ ultracode: true }, {});
+
+  assert.match(said, /"ultracode": true/);
+  assert.match(said, /resolves to xhigh over effortLevel/, "the key beats the setting");
+  assert.match(said, /--effort/, "and names what beats the key");
+  // The direction and the outcome, not just the words. Pinned on presence alone
+  // this case passed against a sentence saying a level *above* xhigh beats the
+  // key and leaves the session with both, which is the opposite of the truth and
+  // the shape of defect this repository keeps shipping.
+  assert.match(said, /takes it lower/, "lower, not higher");
+  assert.match(said, /silences both/, "and both go quiet, rather than either firing");
+  assert.doesNotMatch(said, /above xhigh/);
+});
+
 test("CLAUDE_CODE_WORKFLOWS set to false is the same session with no tool", () => {
   assert.match(conflictIn({}, { CLAUDE_CODE_WORKFLOWS: "false" }), /CLAUDE_CODE_WORKFLOWS/);
   assert.equal(conflictIn({}, { CLAUDE_CODE_WORKFLOWS: "true" }), null);
@@ -379,9 +400,11 @@ test("the gate is found however a build spells true, quotes the string, or calls
     `function Mae(e,t,r){return r===!0&&ZL(e)&&zZ(e,t)==="xhigh"}`,
     `function Mae(e,t,r){return r===!0&&ZL?.()&&zZ(e,t)==="xhigh"}`,
     // Every name in it moved between the build this was first read off and the
-    // one it is calibrated against now. The shape did not, which is the whole
-    // reason the check reads a shape.
+    // one it is calibrated against now, and then moved again. The shape did not,
+    // which is the whole reason the check reads a shape. Each build's own
+    // spelling is kept so the next respelling has something to be compared to.
     `function Ale(e,t,r){return r===!0&&gH()&&kQ(e,t)==="xhigh"}`,
+    `function Wv(e,o,t){return t===!0&&Zu()&&yT(e,o)==="xhigh"}`,
   ]) {
     const tree = installed(t, { bundle: `${gate}\n${MARKERS.join("\n")}` });
     assert.deepEqual(drift({ cli: tree.cli }).missing, [], gate);

@@ -125,7 +125,7 @@ test("a cap already raised is not mentioned", (t) => {
 });
 
 test("the build is read once per build, not once per session", (t) => {
-  // Reading a 325 MB binary is a few hundred milliseconds, and a session pays
+  // Reading a 197 MB binary is about a hundred milliseconds, and a session pays
   // it for nothing when the answer is the one the last session computed. A
   // second session that read the build again would write the answer again,
   // and the kept file's own timestamp says whether it did. The build's access
@@ -203,6 +203,57 @@ test("a session with workflows disabled is told which switch did it", (t) => {
     notice({ cwd: t2.dir, cli: t2.cli, env: { CLAUDE_CONFIG_DIR: t2.config, CLAUDE_CODE_DISABLE_WORKFLOWS: "1" }, state: t2.state }),
     /CLAUDE_CODE_DISABLE_WORKFLOWS/,
   );
+});
+
+// --- the level a session asked its stages to run at ---------------------------
+
+test("a stage level nobody can read is said at the start, since the cost of missing it is the bill", (t) => {
+  // An unreadable cadence costs a refresher its place and says nothing. This
+  // one costs a session the saving it was turned on for, and silently: the
+  // fan-out runs at the session's own level and nothing in the transcript says
+  // the switch did not take.
+  const t1 = tree(t, { settings: { effortLevel: "xhigh" } });
+  const env = { CLAUDE_CONFIG_DIR: t1.config, ULTRACODE_ANYWHERE_CAP_NOTICE: "0", ULTRACODE_ANYWHERE_STAGE_EFFORT: "cheap" };
+
+  const said = notice({ cwd: t1.dir, cli: t1.cli, state: t1.state, env });
+
+  assert.match(said, /ULTRACODE_ANYWHERE_STAGE_EFFORT/);
+  assert.match(said, /cheap/, "and what it was set to, since the typo is the thing to fix");
+  assert.match(said, /low, medium, high, xhigh, max/, "and what it could have been");
+});
+
+test("a stage level that reads is not remarked on", (t) => {
+  const t1 = tree(t, { settings: { effortLevel: "xhigh" } });
+  const env = { CLAUDE_CONFIG_DIR: t1.config, ULTRACODE_ANYWHERE_CAP_NOTICE: "0", ULTRACODE_ANYWHERE_STAGE_EFFORT: "Medium " };
+
+  assert.equal(notice({ cwd: t1.dir, cli: t1.cli, state: t1.state, env }), null);
+});
+
+test("a session already silenced says nothing about a stage level that reaches no reminder", (t) => {
+  // With the prompt hook quiet there is no text to carry the level, so the
+  // setting is not wrong, it is beside the point.
+  const t1 = tree(t, { settings: { ultracode: true } });
+  const env = { CLAUDE_CONFIG_DIR: t1.config, ULTRACODE_ANYWHERE_CAP_NOTICE: "0", ULTRACODE_ANYWHERE_STAGE_EFFORT: "cheap" };
+
+  const said = notice({ cwd: t1.dir, cli: t1.cli, state: t1.state, env });
+
+  assert.match(said, /"ultracode": true/);
+  assert.equal(said.includes("ULTRACODE_ANYWHERE_STAGE_EFFORT"), false);
+});
+
+test("a strict session on a build that moved says nothing about a level no text will carry", (t) => {
+  // Strict is what makes the prompt hook go quiet on a drifted build, so there
+  // the level reaches no reminder either, and a line about it is a line about
+  // nothing.
+  const t1 = tree(t, { bundle: `${whole()}`.replace(MARKERS[0], "") });
+  const env = { CLAUDE_CONFIG_DIR: t1.config, ULTRACODE_ANYWHERE_CAP_NOTICE: "0", ULTRACODE_ANYWHERE_STAGE_EFFORT: "cheap" };
+
+  const loud = notice({ cwd: t1.dir, cli: t1.cli, state: t1.state, env });
+  const strict = notice({ cwd: t1.dir, cli: t1.cli, state: t1.state, env: { ...env, ULTRACODE_ANYWHERE_STRICT: "1" } });
+
+  assert.match(loud, /ULTRACODE_ANYWHERE_STAGE_EFFORT/, "the reminder still goes out, so the level still matters");
+  assert.match(strict, new RegExp(MARKERS[0]), "the build that moved is still named");
+  assert.equal(strict.includes("ULTRACODE_ANYWHERE_STAGE_EFFORT"), false);
 });
 
 // --- a compaction starts the cadence over -------------------------------------

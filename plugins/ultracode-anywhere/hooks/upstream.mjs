@@ -23,7 +23,7 @@ import { homedir } from "node:os";
  * one nobody has checked, which is worth saying out loud even when every name
  * is still there.
  */
-export const CALIBRATED_AGAINST = "2.1.241";
+export const CALIBRATED_AGAINST = "2.1.251";
 
 /**
  * The gate itself, as a shape rather than a name.
@@ -59,9 +59,9 @@ const GATE_REACH = 200;
  * reminder still arrives and means nothing.
  *
  * A proximity test on the gate itself was tried and dropped: the closest
- * `xhigh` to any of the 14 `ultra_effort_enter` sites in the build this was
- * read off is 185,312 bytes away, so any window narrow enough to mean anything
- * would have failed on the build it was calibrated against (A29).
+ * `xhigh` to any of the 9 `ultra_effort_enter` sites in the build this was read
+ * off is 168,197 bytes away, so any window narrow enough to mean anything would
+ * have failed on the build it was calibrated against (A29).
  */
 export const MARKERS = [
   "ultra_effort_enter",
@@ -81,7 +81,7 @@ export const CONFLICTS = {
   disableWorkflows: "settings.json sets \"disableWorkflows\": true, so there is no Workflow tool for the reminder to point at",
   CLAUDE_CODE_WORKFLOWS: "CLAUDE_CODE_WORKFLOWS is set to false, so there is no Workflow tool for the reminder to point at",
   enableWorkflows: "settings.json sets \"enableWorkflows\": false, so there is no Workflow tool for the reminder to point at",
-  ultracode: "settings.json sets \"ultracode\": true, so the built-in reminder already fires and effort is xhigh whatever effortLevel says",
+  ultracode: "settings.json sets \"ultracode\": true, so effort resolves to xhigh over effortLevel and the built-in reminder fires in place of this one. A --effort, an /effort or a model that cannot run xhigh takes it lower and silences both",
 };
 
 /** A boolean variable as the build reads one: 1, true, yes or on, in any case. */
@@ -97,7 +97,7 @@ const CHUNK = 1 << 20;
 
 /**
  * The floor a file has to clear to be the build rather than something pointing
- * at it. The shipped bundle is hundreds of megabytes; the `claude` on PATH is
+ * at it. The shipped bundle is a couple of hundred megabytes; the `claude` on PATH is
  * often a launcher of about a kilobyte, and `npm test` puts one first. Read as
  * the build, a launcher carries none of the markers and every machine with one
  * is told upstream moved.
@@ -278,7 +278,7 @@ export function behind(installed, calibrated = CALIBRATED_AGAINST) {
 
 /**
  * The same answer as `drift`, computed once per build rather than once per
- * session: reading a 325 MB bundle is a few hundred milliseconds, and the
+ * session: reading a 197 MB bundle is about a hundred milliseconds warm, and the
  * answer cannot change while the file it was read from has not.
  */
 export function driftCached(cli, state, remember) {
@@ -351,9 +351,9 @@ export function drift({ cli = cliPath() } = {}) {
 /**
  * The markers and the gate present in a file, found in one read.
  *
- * The bundle is hundreds of megabytes, so it is streamed rather than read
- * whole, and a second pass for the gate read most of it twice: the last marker
- * and the gate both sit past the 288 MB mark of a 325 MB build.
+ * The bundle is streamed rather than read whole, and a second pass for the gate
+ * read most of it twice: the last marker sits at the 172 MB mark of a 197 MB
+ * build and the gate at the 156 MB mark.
  */
 function carries(path) {
   const markers = new Set();

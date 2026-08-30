@@ -7,7 +7,7 @@ Keeps ultracode's standing Workflow orchestration on at any effort level.
 In Claude Code the ultracode gate is one predicate:
 
 ```js
-function Ale(model, effort, flag) { return flag === true && gH() && kQ(model, effort) === "xhigh" }
+function Wv(model, effort, flag) { return flag === true && Zu() && yT(model, effort) === "xhigh" }
 ```
 
 The `xhigh` term is a conjunct, not a side effect, so dropping to `medium` turns the mode off.
@@ -17,10 +17,13 @@ around it, and on no effort term at all, so wherever the tool is available it st
 every level.
 
 A wire-level diff of `ultracode:true` at xhigh against `effortLevel:medium` plus this plugin, with
-the session id held fixed and the same prompt in the same directory, differs in exactly two places:
-the reminder text itself, and `output_config.effort`. The system prompt is identical, and so is
-every tool definition, the Workflow tool's included. The reminder is the difference the plugin
-exists to make; the effort is the one it deliberately leaves alone. `VERIFYING.md` has the recipe.
+the session id held fixed and the same prompt in the same directory, differs in three places: the
+reminder text itself, `output_config.effort`, and the `workflow-authoring` skill the native side
+loads into the user message. The system prompt is identical, and so is every one of the 24 tool
+definitions, the Workflow tool's included. The reminder is the difference the plugin exists to make,
+the effort is the one it deliberately leaves alone, and the skill is the one it cannot reach. Against
+a plain `--effort xhigh` with no `ultracode` key the diff is two leaves, so the flag is what loads the
+skill and not the level. `VERIFYING.md` has the recipe.
 
 This plugin restates that reminder, so the mode holds at whatever level is set.
 
@@ -37,12 +40,12 @@ It does not lift the concurrent-subagent cap, and no reminder can. Native ultrac
 which the build says in as many words:
 
 ```js
-let yt = PHp(); if (l.taskRegistry.getConcurrentSubagents() < yt) return;
-if (nt("tengu_amber_kestrel", false)) return;
-let lt = l.getAppState();
-if (Ale(l.rootToolSurface.mainLoopModel, fC(lt), lt.ultracode)) return;
+let Pr = AXn(); if (A.taskRegistry.getConcurrentSubagents() < Pr) return;
+if (I("tengu_amber_kestrel", false)) return;
+let ss = A.getAppState();
+if (Wv(A.rootToolSurface.mainLoopModel, il(ss), ss.ultracode)) return;
 ... "Concurrent subagent limit reached"
-function PHp() { return G.CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS ?? H4S }   // H4S = 20
+function AXn() { return a.CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS ?? J }   // J = 20
 ```
 
 The refusal returns early when the ultracode predicate holds, and that predicate reads the session's
@@ -52,25 +55,69 @@ first session on a machine that has not says so once. `tengu_amber_kestrel`, on 
 flag Anthropic sets and nobody here does: turned on, it lifts the cap for every session on that
 build, this plugin's included.
 
-Workflow subagents inherit the session effort, so a medium session is medium all the way down, and
-the reminder says to leave it that way. `opts.effort` can raise a stage above the level the session
-was set to, and a stage that quietly runs deeper than the session is a second variable in whatever
-that session was measuring. Depth here is bought by how the work is split and independently checked,
-which is the lever a prompt controls without changing what the session costs.
+This plugin does not set a stage's effort, and no hook can. A spawn's effort comes from its agent
+definition, and the built-in definition a workflow stage gets carries none, so a stage falls through
+to the session's own level unless the script passes `opts.effort`. That is the only lever a caller
+has, and the model is the only one holding it. So `ULTRACODE_ANYWHERE_STAGE_EFFORT` asks the model
+to pass it, which is a request and not a setting: a session that ignores the text runs its fan-out
+at the session's level, which is where it was going to run anyway. Set nothing and the reminder says
+to leave `opts.effort` alone.
+
+A workflow script that names an `agentType` is the one case where a stage has a definition of its
+own, and a `.claude/agents/*.md` carrying `effort:` then sets that stage's level with no `opts.effort`
+in sight. `opts.effort` still wins where the script passes both, so the reminder's instruction holds;
+what it does not hold for is a stage the script never asks the model to configure.
+
+The switch names a level rather than a direction, and the hook cannot read the session's own to tell
+which way it points: `--effort` and `/effort` write nothing to `settings.json`. Below the session is
+what it was built for, since fan-out is where the tokens go. Above it works and buys the opposite,
+and one thing changes shape with it: the reminder tells the checking stage to leave `opts.effort`
+out, so that stage runs at the session's level, which is the deeper setting below the session and
+the shallower one above. Set a level above your session and the stage that checks the others is the
+one running cheapest, which is the reading to avoid. Depth is otherwise bought by how the work is
+split and independently checked, which is the lever a prompt controls without changing what the
+session costs.
+
+It does not load the `workflow-authoring` skill, and native ultracode does. That is the third leaf
+of the wire diff: `"ultracode": true` puts the whole reference into the user message, a command block
+and about sixteen thousand characters of body, so a native session starts holding the script API,
+the resume rules and the worked examples that the reminder's own text points at. Nothing a hook
+writes can load a skill. The reminder names the reference instead, and a session that wants it in
+context can ask for it.
+
+The model half of the same question needs nothing from this plugin. `CLAUDE_CODE_SUBAGENT_MODEL` is
+a real subagent-only seam upstream: set it and every spawn resolves to that model while the main loop
+keeps its own, workflow stages included. Measured in the environment, and `settings.json`'s `"env"`
+block populates that environment, which is how the cap above is set. There is no matching variable
+for effort, which is the whole reason the switch above is a sentence of text rather than a setting.
+
+There is a settings route to a subagent's effort, and it is worth knowing about rather than using.
+`modelSettings` carries an `effortLevel` per model, and a spawn resolves its effort against its own
+model, so `CLAUDE_CODE_SUBAGENT_MODEL` plus a row for that model does split the fan-out from the
+session, workflow stages included. Three things make it a poor lever, each measured on the wire. The
+row is keyed by a model rather than by who is spawning, so without the model split it takes the main
+loop down with it. It stops at `xhigh`, since that path validates against four names where
+`opts.effort` takes five. And it is dead the moment `--effort` or `/effort` pins a level, which is
+the ordinary case for anyone reading this page.
 
 ## What it costs
 
 One short-lived `node` process per prompt, about 30 ms of it over ten runs on the machine this was
-measured on, most of which is node starting. What reaches the model is 1236 characters on the first
+measured on, most of which is node starting: bare `node` on the same machine is 23. What reaches the model is 1266 characters on the first
 turn, 94 on every tenth after that, and nothing on the rest, appended after the user message so the
-cache prefix is untouched. Over a 30-turn session that is 1424 characters in total,
+cache prefix is untouched. Over a 30-turn session that is 1454 characters in total,
 the opening text plus two refreshers. A payload that names no session, or a state directory this
 cannot use, reads every turn as the first one, and a 30-turn session then costs 30 opening texts
 instead. The reminder is the cheap half either way.
 
-The session check reads the installed build once per build, not once per session: about 200 ms
-the first time, about 30 after, since the answer is kept beside the turn counters under the
-build's path, size and timestamp. All of these are one machine's numbers with a warm page cache;
+`ULTRACODE_ANYWHERE_STAGE_EFFORT` puts the level into both, which at its longest level name is 1464
+characters on the first turn and 194 on every tenth after that, or 1852 over 30 turns. That is 398
+characters more than the default over such a session, against a fan-out it moves by a whole effort
+level.
+
+The session check reads the installed build once per build, not once per session: about 150 ms the
+first time on a warm page cache, about 30 after, since the answer is kept beside the turn counters
+under the build's path, size and timestamp. All of these are one machine's numbers with a warm page cache;
 the shape to rely on is one process per prompt and one bundle read per install, not the
 milliseconds.
 
@@ -86,7 +133,7 @@ Five deliberate differences, each with a reason:
 |---|---|---|
 | what the text asks for | the Workflow tool on every substantive task | the Workflow tool where the scale or risk earns it, with a floor under it |
 | effort | resolves to xhigh | unchanged, whatever `effortLevel` says |
-| what a stage may raise | `opts.effort` on the stages wanting depth | nothing: one level runs the session, subagents and stages included |
+| what names a stage's effort | nothing but the script, on the tool's own guidance | the same, or one level a switch names for the whole fan-out |
 | subagent cap | lifted, by the same predicate | left at 20, since no reminder reaches it, unless a remote flag lifts it for the whole build |
 | upstream contract | a supported mode | four strings and the gate's shape, read off one build and re-checked by hand |
 
@@ -106,8 +153,11 @@ It reads the settings files Claude Code reads, the user's with a project's own o
 environment variables the build reads alongside them, and says nothing at all in a session where it
 would be noise:
 
-- `"ultracode": true` forces xhigh whatever `effortLevel` says, and the built-in reminder already
-  fires. A second copy is tokens for nothing.
+- `"ultracode": true` resolves effort to xhigh over `effortLevel`, and the built-in reminder fires.
+  A second copy is tokens for nothing. One case gets neither reminder: the gate reads the effort the
+  session actually resolved to, so a `--effort`, an `/effort` or a model that cannot run xhigh takes
+  it below xhigh, the built-in stays silent, and this hook has already gone quiet on the key it can
+  see. The line at the start of the session names both, since nothing else can.
 - `"enableWorkflows": false`, `"disableWorkflows": true`, `CLAUDE_CODE_DISABLE_WORKFLOWS=1` or
   `CLAUDE_CODE_WORKFLOWS=false` all mean there is no Workflow tool for the reminder to point at.
   The build reads the disable switches first, and so does this.
@@ -147,7 +197,7 @@ inside, and the predicate is one minified function whose names change between bu
 shape does not.
 
 ```js
-function Ale(e,t,r){return r===!0&&gH()&&kQ(e,t)==="xhigh"}
+function Wv(e,o,t){return t===!0&&Zu()&&yT(e,o)==="xhigh"}
 ```
 
 What the premise needs is that `"xhigh"` is a conjunct there rather than something the reminder
@@ -155,10 +205,10 @@ sets, so the check matches a function returning a flag, a call and an effort com
 `"xhigh"`, in any of the spellings a minifier chooses between. A build that stops requiring it is a
 build this plugin no longer describes, whatever names survive.
 
-A proximity test was tried first and dropped on evidence: the build has 14 `ultra_effort_enter`
-sites and 235 occurrences of `xhigh`, and the closest pair is 185,312 bytes apart, so a window of
-20,000 would have failed on the build it was calibrated against. Reading the predicate is what
-replaced it.
+A proximity test was tried first and dropped on evidence: the build has 9 `ultra_effort_enter` sites
+and 115 occurrences of `xhigh`, and the closest pair is 168,197 bytes apart, so a window of 20,000
+would have failed on the build it was calibrated against by a factor of eight. Reading the predicate
+is what replaced it.
 
 Claude Code updates itself, so expect the version line whenever the minor moves, and again once a
 run of patch releases has gone by without one. A single patch bump gets no line, which is not the
@@ -181,7 +231,7 @@ notice, since a CI runner has no Claude Code to read.
 four, or the gate, the hook stays quiet for the session. It is off by default, since going silent
 costs the mode to everyone whose build is fine. The answer is kept beside the turn counters under
 the build's own path, size and timestamp, so it costs one bundle read after an install rather than
-one per prompt: about 200 ms on the first turn, then about 30, against a hook timeout of 5 seconds.
+one per prompt: about 150 ms on the first turn, then about 30, against a hook timeout of 5 seconds.
 
 `test/upstream.test.mjs` runs the same check against whatever is installed on the machine running
 the suite, and skips where there is none.
@@ -196,7 +246,7 @@ whole text again. A resumed session keeps its count; a fork is a new session and
 whole text.
 
 It skips loop, schedule, poll and system wakeups, which are turns the user did not type, when the
-payload says which it is. 2.1.241 declares that `source` field in its hook schema and does not send
+payload says which it is. 2.1.251 declares that `source` field in its hook schema and does not send
 it: a payload caught off that build carries the session, the transcript, the directory, the prompt
 and its id, the permission mode, and nothing naming who typed it. So a wakeup counts as a turn there
 and gets whatever its place in the cadence earns; the skip starts working the day the field arrives,
@@ -232,6 +282,17 @@ and the cap line then comes back every session rather than once.
   silence.
 - `ULTRACODE_ANYWHERE_FULL=repeat claude` brings the whole text back on the cadence instead of the
   one-line refresher, for a session long enough to lose it.
+- `ULTRACODE_ANYWHERE_STAGE_EFFORT=medium claude` names the level the fan-out should run at:
+  `opts.effort` at that level on every workflow stage, and left out of one checking or judging
+  another stage's work, which then runs at the session's level unless its own definition sets one.
+  Unset, the text is the one above, which says to leave `opts.effort` alone. The levels are `low`,
+  `medium`, `high`, `xhigh`, `max`, read past case and surrounding spaces; anything else is read as
+  unset, and the session opens with a line saying so rather than leaving it to be found on the bill.
+  It reaches a workflow stage and nothing else: a fan-out done with the Agent tool runs at the
+  session's level whatever this says, since that tool takes no effort argument. Those five and
+  nothing else: `opts.effort` itself also takes `med` and an integer, and this switch takes neither,
+  since the text names a level. `VERIFYING.md` step 7 says what the integer does upstream, which is
+  another reason.
 - `ULTRACODE_ANYWHERE_DEBUG=/tmp/uc.log claude` logs every prompt the hook fires on, its stdin
   payload, and what silenced it when something did. The session hook writes nothing there. A fifo
   nobody is reading, standing at that path, is refused without waiting.

@@ -6,11 +6,13 @@
  * nothing are upstream moving and the settings already doing its job. Both are
  * silent otherwise: the reminder keeps arriving and the model keeps reading it,
  * whether or not the Workflow tool it names is still gated the way it was.
- * Reported at the start of a session and again after a compaction or a clear, except the cap line, which is marked once per state directory and said once,
- * which empty the context; a resume brings the transcript back with the lines
- * in it and is told nothing.
+ * Reported at the start of a session and again after a compaction or a clear,
+ * which empty the context; a resume brings the transcript back with the lines in
+ * it and is told nothing. The cap line is the exception: it is marked once per
+ * state directory and said once.
  */
 import { cached, firstTime, startOver, stateDirFor } from "./counters.mjs";
+import { askedFor } from "./effort.mjs";
 import { here, invokedAs, parsePayload, readStdin, respond } from "./hook-io.mjs";
 import { CALIBRATED_AGAINST, behind, cliPath, conflictIn, driftCached, settingsFor, versionOf } from "./upstream.mjs";
 
@@ -56,6 +58,16 @@ export function notice({
 
   const conflict = conflictIn(settings, env);
   if (conflict) said.push(`ultracode-anywhere is quiet this session: ${conflict}.`);
+
+  // Said every session rather than once per machine, since this is a variable
+  // one session carries and the next may not. Only where the reminder is going
+  // out at all: with the prompt hook quiet there is no text to carry a level,
+  // so the setting is not wrong, it is beside the point. Strict on a build that
+  // moved is the second way it goes quiet, and the prompt hook reads the same
+  // two answers in the same order.
+  const quiet = conflict || (env.ULTRACODE_ANYWHERE_STRICT === "1" && moved);
+  const asked = quiet ? null : askedFor(env);
+  if (asked) said.push(`ultracode-anywhere: ${asked}.`);
 
   // The one thing native ultracode does that no reminder can: it lifts the
   // concurrent-subagent cap. Named once here rather than left in a README
