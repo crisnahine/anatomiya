@@ -29,6 +29,10 @@ One table per section, one row per decision:
 | E       | Baseline and drift                         |
 | F       | Safety                                     |
 | G       | Scope                                      |
+| H       | Layout: where a new file goes              |
+
+The closing `What is deliberately not built` is prose rather than rows. Read it before proposing a
+channel or a dependency this repo already refused.
 
 Each row is `| # | Decision | Why | Status |`.
 
@@ -47,13 +51,15 @@ honours **is** a defect, and worth surfacing.
 ```
 /
 ├── CONTEXT.md          ← the glossary
-├── DECISIONS.md        ← the decision record, sections A to G
+├── DECISIONS.md        ← the decision record, sections A to H
 ├── docs/
 │   ├── how-it-works.md
 │   ├── why.md
 │   └── agents/         ← this directory: how skills read the repo
-├── lib/
-├── bin/
+├── plugins/
+│   ├── anatomiya/      ← bin/, lib/, commands/, hooks/
+│   └── ultracode-anywhere/
+├── scripts/
 └── test/
 ```
 

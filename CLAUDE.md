@@ -15,5 +15,5 @@ The five canonical roles, each label string equal to its name. See `docs/agents/
 
 ### Domain docs
 
-Single-context. `DECISIONS.md` stands in for `docs/adr/`, and `CONTEXT.md` is created lazily.
+Single-context. `DECISIONS.md` stands in for `docs/adr/`, and `CONTEXT.md` at the root is the glossary.
 See `docs/agents/domain.md`.
