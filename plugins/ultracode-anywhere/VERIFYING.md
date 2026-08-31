@@ -401,7 +401,21 @@ If `omitClaudeMd` becomes a frontmatter key, the README paragraph naming it as a
 shadow of `Explore` stops loading `CLAUDE.md`. If `appendSystemPrompt` becomes one, `claude` joins
 `SHADOWABLE` in `hooks/shadows.mjs` and the switch reports on four types rather than three.
 
-Third, that the Agent tool still takes no effort argument. Ask a session for the tool's own schema
+Third, that no hook output schema has grown an effort, and that the two which can rewrite a call are
+still the two:
+
+```sh
+/usr/bin/grep -a -o 'hookEventName:N("[A-Za-z]*")' "$BUILD" | sort -u | wc -l   # 22 in 2.1.251
+/usr/bin/grep -a -o 'hookEventName:N("[A-Za-z]*")[^;]\{0,250\}' "$BUILD" | /usr/bin/grep -c -i effort  # expect 0
+/usr/bin/grep -a -o 'hookEventName:N("[A-Za-z]*")[^;]\{0,250\}updatedInput' "$BUILD" | /usr/bin/grep -o 'N("[A-Za-z]*")' | sort -u
+```
+
+The last one answers `PreToolUse` and `PermissionRequest`. Issue #131 said `PreToolUse` was the only
+one; it is not, and it does not matter, because both rewrite the tool's input and the effort is not
+in it. A third name appearing there is worth reading, and an effort turning up in the second grep is
+the day this whole section is wrong.
+
+Fourth, that the Agent tool still takes no effort argument. Ask a session for the tool's own schema
 rather than reading for it: `claude -p 'List the exact parameter names the Agent tool accepts, and
 nothing else.'` In 2.1.251 the answer is `description`, `prompt`, `subagent_type`, `model` and
 `isolation`. An `effort` appearing there is the day this switch stops being a report and can become a

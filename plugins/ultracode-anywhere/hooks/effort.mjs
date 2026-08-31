@@ -109,7 +109,7 @@ export function askedForSubagent(env = process.env) {
  * `env.ULTRACODE_ANYWHERE_...` out, because the test that pairs a switch the
  * code reads with a switch the README names finds them by that spelling and by
  * no other: read through this object instead, both switches would go invisible
- * to it and could ship undocumented. Its floor caught exactly that.
+ * to it and could ship undocumented.
  */
 const STAGE = {
   name: "ULTRACODE_ANYWHERE_STAGE_EFFORT",
