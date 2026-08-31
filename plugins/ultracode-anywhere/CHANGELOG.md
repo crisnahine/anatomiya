@@ -9,6 +9,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-08-31
+
+The other half of the effort question, the one the Agent tool asks. Nothing can set it, so this
+reports instead: whether the agent files that would give a spawn the level you asked for are there,
+carry it, and were written since the build they copy.
+
 ### Added
 
 - `ULTRACODE_ANYWHERE_SUBAGENT_EFFORT=<level>` covers the Agent-tool half of the question the stage
@@ -261,7 +267,8 @@ wherever `effortLevel` is set, and says out loud what it does not restore.
 - Turn counters under `~/.claude/ultracode-anywhere/` rather than the temporary directory, in a
   directory this account owns with no access for anyone else.
 
-[Unreleased]: https://github.com/crisnahine/anatomiya/compare/ultracode-anywhere-v0.3.0...HEAD
+[Unreleased]: https://github.com/crisnahine/anatomiya/compare/ultracode-anywhere-v0.4.0...HEAD
+[0.4.0]: https://github.com/crisnahine/anatomiya/compare/ultracode-anywhere-v0.3.0...ultracode-anywhere-v0.4.0
 [0.3.0]: https://github.com/crisnahine/anatomiya/compare/ultracode-anywhere-v0.2.1...ultracode-anywhere-v0.3.0
 [0.2.1]: https://github.com/crisnahine/anatomiya/compare/ultracode-anywhere-v0.2.0...ultracode-anywhere-v0.2.1
 [0.2.0]: https://github.com/crisnahine/anatomiya/compare/ultracode-anywhere-v0.1.1...ultracode-anywhere-v0.2.0
