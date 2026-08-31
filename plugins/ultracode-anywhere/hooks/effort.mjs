@@ -13,6 +13,11 @@
  * definition, and neither the Agent tool nor a workflow stage takes one from
  * the caller except through a script's own `opts.effort`, which is the model's
  * to pass and nobody else's.
+ *
+ * Two switches read a level here, for the two halves of that sentence. The
+ * stage one reaches the reminder. The subagent one reaches nothing at all: it
+ * names the level a reader meant their agent files to carry, and buys only a
+ * sentence about whether those files are there and how old they are.
  */
 
 /**
@@ -62,8 +67,19 @@ const READ_MOST = 256;
  * else is null, and `askedFor` below is what keeps that from being silent.
  */
 export function stageEffortIn(env = process.env) {
-  const asked = normalise(env.ULTRACODE_ANYWHERE_STAGE_EFFORT);
-  return EFFORT_LEVELS.find((level) => level === asked) ?? null;
+  return levelIn(env.ULTRACODE_ANYWHERE_STAGE_EFFORT);
+}
+
+/**
+ * The level this session says its agent files carry, or null where it says none.
+ *
+ * Read the same way and from a variable of its own, because the two name
+ * different halves of one question and a session may set either alone. One
+ * variable answering both would turn a stage setting into a claim about files
+ * on disk that nobody wrote.
+ */
+export function subagentEffortIn(env = process.env) {
+  return levelIn(env.ULTRACODE_ANYWHERE_SUBAGENT_EFFORT);
 }
 
 /**
@@ -76,8 +92,44 @@ export function stageEffortIn(env = process.env) {
  * the transcript says the switch did not take.
  */
 export function askedFor(env = process.env) {
-  const raw = String(env.ULTRACODE_ANYWHERE_STAGE_EFFORT ?? "");
-  if (raw.trim() === "" || stageEffortIn(env)) return null;
+  return unreadable(env.ULTRACODE_ANYWHERE_STAGE_EFFORT, STAGE);
+}
+
+/** The same, for the switch that names the level the agent files should carry. */
+export function askedForSubagent(env = process.env) {
+  return unreadable(env.ULTRACODE_ANYWHERE_SUBAGENT_EFFORT, SUBAGENT);
+}
+
+/**
+ * What each switch is called, and what a session loses when its value names no
+ * level. The tail is per switch because the cost is: one asks for nothing and
+ * the fan-out runs deep, the other says nothing and the files go unchecked.
+ *
+ * The name is here for the sentence alone. Every read above spells
+ * `env.ULTRACODE_ANYWHERE_...` out, because the test that pairs a switch the
+ * code reads with a switch the README names finds them by that spelling and by
+ * no other: read through this object instead, both switches would go invisible
+ * to it and could ship undocumented. Its floor caught exactly that.
+ */
+const STAGE = {
+  name: "ULTRACODE_ANYWHERE_STAGE_EFFORT",
+  costs: "so the stages are asked for none and run at the session's own level",
+};
+const SUBAGENT = {
+  name: "ULTRACODE_ANYWHERE_SUBAGENT_EFFORT",
+  costs: "so nothing is said about the agent files a spawn reads",
+};
+
+/** The level a value names, or null for anything that is not one of the five. */
+function levelIn(value) {
+  const asked = normalise(value);
+  return EFFORT_LEVELS.find((level) => level === asked) ?? null;
+}
+
+/** The line a switch owes a session when its value named no level, or null. */
+function unreadable(value, which) {
+  const raw = String(value ?? "");
+  if (raw.trim() === "" || levelIn(value)) return null;
 
   // The trimmed, folded form rather than the raw one: what is quoted goes into
   // a system-reminder, and a value whose ends carry a line break passes the
@@ -85,7 +137,7 @@ export function askedFor(env = process.env) {
   const asked = normalise(raw);
   const units = raw.length === 1 ? "1 character" : `${raw.length} characters`;
   const quoted = QUOTABLE.test(asked) ? `"${asked}"` : `${units} this will not quote back`;
-  return `ULTRACODE_ANYWHERE_STAGE_EFFORT is set to ${quoted}, which is no effort level, so the stages are asked for none and run at the session's own level. The levels are ${EFFORT_LEVELS.join(", ")}`;
+  return `${which.name} is set to ${quoted}, which is no effort level, ${which.costs}. The levels are ${EFFORT_LEVELS.join(", ")}`;
 }
 
 /**

@@ -100,6 +100,39 @@ loop down with it. It stops at `xhigh`, since that path validates against four n
 `opts.effort` takes five. And it is dead the moment `--effort` or `/effort` pins a level, which is
 the ordinary case for anyone reading this page.
 
+The other half of that question is the Agent tool, and this plugin cannot set its effort either. A
+spawn's effort comes from its agent definition, and the one lever is `.claude/agents/<type>.md`
+frontmatter carrying `effort:`. That layer beats both `effortLevel` and `modelSettings`: the identical
+file with the `effort:` line removed reports the session's own level in the same session. No hook
+reaches it. `SubagentStart` sees the spawn and answers with text, never with a setting, and
+`PreToolUse` is the one event that can rewrite a call but the Agent tool's input is `description`,
+`prompt`, `subagent_type`, `model` and `isolation`, with no effort among them; writing one in fails
+validation. A reminder cannot do it either, since the model has no argument to pass, which is what
+makes this different from `opts.effort` on a workflow stage.
+
+Covering a built-in type means writing a file that carries a copy of that type's system prompt, and
+two things such a copy cannot carry, both absent from the frontmatter schema:
+
+- `omitClaudeMd`. The built-in `Explore` and `Plan` set it and a file cannot, so both start loading
+  `CLAUDE.md`. On a repository with a large one that is real added input on every spawn, working
+  against the saving the switch is for. The `gitStatus` omission survives, because the build keys that
+  one off the agent's name rather than off its definition.
+- `appendSystemPrompt`. The built-in `claude` catch-all sets it, so its prompt is added to the base
+  one. A markdown file replaces instead. That type cannot be covered at all and is better left alone,
+  which is why the switch below reports on three types and not four.
+
+A plugin-provided agent type is a third gap of a different kind: covering one means editing the
+plugin cache, which `autoUpdate` overwrites.
+
+The copy is the part that rots. It is frozen at the build it was taken from, and an upgrade moves the
+original while the copy reads the same as ever. Nothing in a session says so, which is what
+`ULTRACODE_ANYWHERE_SUBAGENT_EFFORT` below is for: it writes nothing and generates nothing, and only
+says whether the files are there, whether they carry the level asked for, and whether they were
+written before the build now installed. Whether a copy is still faithful is not knowable from the
+file; when it was last written is, and that is the half a reader cannot see. Taking a fresh copy is a
+live extraction, one session per type per build, and the upstream fix stays
+[anthropics/claude-code#79135](https://github.com/anthropics/claude-code/issues/79135).
+
 ## What it costs
 
 One short-lived `node` process per prompt, about 30 ms of it over ten runs on the machine this was
@@ -293,6 +326,15 @@ and the cap line then comes back every session rather than once.
   nothing else: `opts.effort` itself also takes `med` and an integer, and this switch takes neither,
   since the text names a level. `VERIFYING.md` step 7 says what the integer does upstream, which is
   another reason.
+- `ULTRACODE_ANYWHERE_SUBAGENT_EFFORT=medium claude` names the level you meant your agent files to
+  carry, and buys a sentence rather than a setting. Nothing is written, generated or repaired: the
+  session opens by saying which of `general-purpose`, `Explore` and `Plan` have no
+  `.claude/agents/<type>.md`, which carry another level, and which were last written before the
+  installed build, that last being the one a reader cannot see for themselves. Silence means all
+  three are there at that level and newer than the build. A project's own `.claude/agents` is read
+  before the user's, the way the build resolves a name. The same five levels as the switch above, and
+  anything else is read as unset with a line saying so. It reports and never acts, so it is safe to
+  leave set; unset it to stop asking.
 - `ULTRACODE_ANYWHERE_DEBUG=/tmp/uc.log claude` logs every prompt the hook fires on, its stdin
   payload, and what silenced it when something did. The session hook writes nothing there. A fifo
   nobody is reading, standing at that path, is refused without waiting.

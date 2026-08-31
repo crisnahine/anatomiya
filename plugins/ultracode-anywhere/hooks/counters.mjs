@@ -11,8 +11,8 @@
  */
 import { closeSync, constants, lstatSync, mkdirSync, openSync, readdirSync, rmSync, writeSync } from "node:fs";
 
-import { readOwnFile } from "./hook-io.mjs";
-import { homedir, userInfo } from "node:os";
+import { configDirFor, readOwnFile } from "./hook-io.mjs";
+import { userInfo } from "node:os";
 import { join } from "node:path";
 
 /** A counter older than this has outlived the session that wrote it. */
@@ -59,21 +59,8 @@ const MOST_KEPT = 4096;
 export function stateDirFor(env = process.env) {
   if (env.ULTRACODE_ANYWHERE_STATE) return env.ULTRACODE_ANYWHERE_STATE;
 
-  const home = homeOf(env);
-  const config = env.CLAUDE_CONFIG_DIR || (home && join(home, ".claude"));
+  const config = configDirFor(env);
   return config ? join(config, "ultracode-anywhere") : "";
-}
-
-/** The home this account keeps its configuration in, and nothing when it has none. */
-function homeOf(env) {
-  const named = env.HOME || env.USERPROFILE;
-  if (named) return named;
-  if ("HOME" in env || "USERPROFILE" in env) return "";
-  try {
-    return homedir();
-  } catch {
-    return "";
-  }
 }
 
 /** Whether the state directory is one this account owns and no other account can write to. */

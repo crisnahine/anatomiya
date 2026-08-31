@@ -363,7 +363,56 @@ Step 4's capture is what settles all three, and the integer claim above with the
 so a subagent actually spawns, and read `output_config.effort` off the subagent's own request rather
 than the main loop's.
 
-## 8. What a re-check changes
+## 8. The agent-file half, and the two fields a copy cannot carry
+
+`ULTRACODE_ANYWHERE_SUBAGENT_EFFORT` reports on `.claude/agents/<type>.md` files. It writes nothing,
+so nothing here can break a user's setup; what it can do is describe a lever that has moved.
+
+Three claims to re-read. First, that `effort` is still a frontmatter key, beside the ones a shadow
+uses:
+
+```sh
+/usr/bin/grep -a -o 'disallowedTools:[A-Za-z_$]*()\.optional()\.describe("Tools removed from the default set[^"]*"),[^;]\{0,200\}' "$BUILD" | head -1
+```
+
+That window carries `color` and then `effort` in 2.1.251. A build where `effort` has left it is one
+where the whole switch describes a lever that no longer exists, and the README's section on it is
+then wrong rather than stale.
+
+One thing in that window is a trap and not a fact. Its own text reads `Thinking effort: \`low\`,
+\`medium\`, \`high\`, \`max\`, or an integer.` and leaves `xhigh` out, in all four places the build
+spells it. It is a description rather than a validator: the field takes a string, no
+`["low","medium","high","max"]` enum exists anywhere in 2.1.251, and the five-level list this plugin
+holds appears nine times. So do not read that sentence as the accepted set, and do not shorten
+`EFFORT_LEVELS` to match it. Whether a shadow carrying `effort: xhigh` is accepted was not measured
+here; the switch reports what a file says and leaves what the build does with it to the build.
+
+Second, that the two fields a markdown file still cannot carry are still set the way the README says.
+Neither is ever a validated key, only a literal on a built-in definition, and that is the difference
+that matters:
+
+```sh
+/usr/bin/grep -a -c -o 'omitClaudeMd:[A-Za-z_$]*()' "$BUILD"          # expect 0: never a schema field
+/usr/bin/grep -a -o 'omitClaudeMd:!0,getSystemPrompt' "$BUILD" | wc -l # expect several: built-in definitions
+/usr/bin/grep -a -o 'appendSystemPrompt:!0' "$BUILD" | wc -l           # expect 1: the catch-all
+```
+
+If `omitClaudeMd` becomes a frontmatter key, the README paragraph naming it as a gap comes out and a
+shadow of `Explore` stops loading `CLAUDE.md`. If `appendSystemPrompt` becomes one, `claude` joins
+`SHADOWABLE` in `hooks/shadows.mjs` and the switch reports on four types rather than three.
+
+Third, that the Agent tool still takes no effort argument. Ask a session for the tool's own schema
+rather than reading for it: `claude -p 'List the exact parameter names the Agent tool accepts, and
+nothing else.'` In 2.1.251 the answer is `description`, `prompt`, `subagent_type`, `model` and
+`isolation`. An `effort` appearing there is the day this switch stops being a report and can become a
+setting, and the day `PreToolUse`'s `updatedInput` could carry one.
+
+What this step cannot check is whether a user's copied prompt still matches the built-in it copies.
+Nothing static can: the built-in prompts are not stored where a script can reliably reach them, and
+the only faithful comparison is a live extraction, one session per type. The switch reports the file's
+age against the build's for that reason, which is a proxy and says so.
+
+## 9. What a re-check changes
 
 - `CALIBRATED_AGAINST` in `hooks/upstream.mjs`, and every build named in this file and the README.
   Move it before step 4 rather than after, since the session line it silences would otherwise show up
@@ -379,6 +428,8 @@ than the main loop's.
   validator beside it: the tool takes an integer effort as well, and this switch deliberately does
   not.
 - `WAKEUP_SOURCES` in `hooks/standing-ultracode.mjs`, if the `source` enum moved.
+- `SHADOWABLE` in `hooks/shadows.mjs`, if a built-in agent type was added, renamed or dropped, or if
+  `appendSystemPrompt` stopped being what keeps `claude` off that list. Step 8 has the greps.
 - The README, if any claim in it is no longer what the diff shows: the site count, the character
   counts, the bundle size and the timing figures are all measurements of one build on one machine.
 - The cadence in `FULL_EVERY`, if `TURNS_BETWEEN_MAINTENANCE` moved.
