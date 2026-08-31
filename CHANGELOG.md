@@ -7,6 +7,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-08-31
+
+The glossary said eleven things the code does not do, and one of them reached a reader: an area file
+printed "5589 of 5589 sites" for a number the word it used put at zero. Nothing had ever read that
+file, which is how they got there.
+
 ### Fixed
 
 - Eleven `CONTEXT.md` entries said something the code does not do. `Conforming` was
@@ -2389,7 +2395,8 @@ which are partial; several listed there are not implemented yet.
 - No claim that this catches defects. Measured across ten repositories, 1 of 317 defect review
   comments was preventable by a conventions map.
 
-[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/crisnahine/anatomiya/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/crisnahine/anatomiya/compare/v0.4.2...v0.5.0
 [0.4.2]: https://github.com/crisnahine/anatomiya/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/crisnahine/anatomiya/compare/v0.4.0...v0.4.1
