@@ -9,6 +9,35 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- `ULTRACODE_ANYWHERE_SUBAGENT_EFFORT=<level>` covers the Agent-tool half of the question the stage
+  switch answers for workflows. It is a report and not a setting: nothing is written, generated or
+  repaired. A spawn's effort comes from its agent definition, so the one lever is
+  `.claude/agents/<type>.md` frontmatter carrying `effort:`, and covering a built-in type means
+  keeping a copy of that type's system prompt in the file. The copy is what rots, silently: it is
+  frozen at the build it was taken from and an upgrade moves the original. The session now opens by
+  saying which of `general-purpose`, `Explore` and `Plan` have no such file, which carry another
+  level, and which were last written before the build now installed. Silence means all three are
+  there at the level asked for and newer than the build. A project's own `.claude/agents` is read
+  before the user's, the way the build resolves a name, and a build whose age cannot be read leaves
+  the age unanswered rather than reported as fine.
+
+### Changed
+
+- The README says what the Agent-tool half costs, which it did not: that no hook event reaches a
+  spawn's effort, that `PreToolUse` cannot carry one because the Agent tool's input has no such
+  field, and the two things a markdown file cannot carry whatever it holds. `omitClaudeMd` is set by
+  the built-in `Explore` and `Plan` and is not a frontmatter key, so a copy of either starts loading
+  `CLAUDE.md`; `appendSystemPrompt` is set by the `claude` catch-all, so that one cannot be copied at
+  all and is left alone. `VERIFYING.md` gains a step with the greps for all three.
+
+### Fixed
+
+- One rule for where Claude Code keeps its configuration, in `hooks/hook-io.mjs`, where two files
+  had a copy each. The rule that a home named and empty is no home rather than the process's own was
+  written out twice and is now written once.
+
 ## [0.3.0] - 2026-08-30
 
 A session can name one effort level for its whole fan-out, which is the one thing `opts.effort`

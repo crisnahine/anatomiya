@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, statSync } from "node:fs";
 
-import { EFFORT_LEVELS, askedFor, stageEffortIn } from "../plugins/ultracode-anywhere/hooks/effort.mjs";
+import { EFFORT_LEVELS, askedFor, askedForSubagent, stageEffortIn, subagentEffortIn } from "../plugins/ultracode-anywhere/hooks/effort.mjs";
 import { MIN_BUNDLE, cliPath } from "../plugins/ultracode-anywhere/hooks/upstream.mjs";
 
 /** The setting under test, and nothing of the machine this runs on. */
@@ -226,4 +226,50 @@ test("every level in the list is one the reader takes and the notice stays quiet
     assert.equal(stageEffortIn(asked(level)), level, level);
     assert.equal(askedFor(asked(level)), null, level);
   }
+});
+
+// --- the subagent switch ------------------------------------------------------
+
+/** The subagent setting under test, and nothing of the machine this runs on. */
+function askedSub(value) {
+  return { ULTRACODE_ANYWHERE_SUBAGENT_EFFORT: value };
+}
+
+test("the subagent switch reads the same five levels the stage switch does", () => {
+  for (const level of EFFORT_LEVELS) assert.equal(subagentEffortIn(askedSub(level)), level);
+});
+
+test("the subagent switch forgives case and the spaces a shell leaves behind", () => {
+  assert.equal(subagentEffortIn(askedSub("  Medium \n")), "medium");
+});
+
+test("a subagent setting naming no level reads as unset", () => {
+  assert.equal(subagentEffortIn(askedSub("deep")), null);
+  assert.equal(subagentEffortIn(askedSub("")), null);
+  assert.equal(subagentEffortIn({}), null);
+});
+
+test("the two switches are read apart, so one does not answer for the other", () => {
+  // They name different halves of the same question and a session may set
+  // either alone. Reading one variable for both would turn a stage setting
+  // into a claim about agent files nobody wrote.
+  assert.equal(subagentEffortIn({ ULTRACODE_ANYWHERE_STAGE_EFFORT: "medium" }), null);
+  assert.equal(stageEffortIn({ ULTRACODE_ANYWHERE_SUBAGENT_EFFORT: "medium" }), null);
+});
+
+test("a subagent setting that named no level is quoted back by name", () => {
+  const said = askedForSubagent(askedSub("deep"));
+  assert.match(said, /ULTRACODE_ANYWHERE_SUBAGENT_EFFORT is set to "deep"/);
+  assert.match(said, /low, medium, high, xhigh, max/);
+});
+
+test("a subagent setting too strange to quote is counted instead", () => {
+  const said = askedForSubagent(askedSub("a b c"));
+  assert.match(said, /5 characters this will not quote back/);
+  assert.doesNotMatch(said, /a b c/);
+});
+
+test("a subagent setting naming a level is nothing to say", () => {
+  assert.equal(askedForSubagent(askedSub("medium")), null);
+  assert.equal(askedForSubagent({}), null);
 });
