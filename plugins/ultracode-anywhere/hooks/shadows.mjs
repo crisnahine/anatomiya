@@ -399,10 +399,16 @@ function upTo(from, home) {
   return seen;
 }
 
-/** A path without the separator a caller left on the end, unless it is the root. */
+/**
+ * A path without the separator a caller left on the end, unless it is the root.
+ *
+ * Both separators, not just this platform's: Windows takes a forward slash as
+ * well, and stripping only `\\` there left `HOME=C:/Users/me/` unequal to the
+ * directory it names, so the walk ran past the home to the filesystem root.
+ */
 function trimEnd(path) {
   let text = String(path ?? "");
-  while (text.length > 1 && text.endsWith(sep)) text = text.slice(0, -1);
+  while (text.length > 1 && (text.endsWith(sep) || text.endsWith("/"))) text = text.slice(0, -1);
   return text;
 }
 

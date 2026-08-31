@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, sep } from "node:path";
 
 import { SHADOWABLE, agentDirsFor, shadowLine, shadowsFor } from "../plugins/ultracode-anywhere/hooks/shadows.mjs";
 
@@ -56,6 +56,16 @@ function shadow(agents, type, { effort = "medium", at = AFTER, eol = "\n", body 
 }
 
 const stateOf = (seen, type) => seen.find((s) => s.type === type)?.state;
+
+/**
+ * A posix path as this platform spells it.
+ *
+ * The cases below are written with forward slashes because that is what a
+ * reader of them expects, and `agentDirsFor` builds its answers with `join`,
+ * which spells them with a backslash on Windows. What is under test is which
+ * directories are asked and in what order, not the separator.
+ */
+const spelt = (path) => path.split("/").join(sep);
 
 // --- what a shadow is ---------------------------------------------------------
 
@@ -423,8 +433,8 @@ test("a project's own agents directory is asked before the user's", () => {
   // order would report on the user's file while the project's was in use.
   const dirs = agentDirsFor({ HOME: "/home/me" }, "/work/repo");
 
-  assert.equal(dirs[0], "/work/repo/.claude/agents");
-  assert.equal(dirs[dirs.length - 1], "/home/me/.claude/agents");
+  assert.equal(dirs[0], spelt("/work/repo/.claude/agents"));
+  assert.equal(dirs[dirs.length - 1], spelt("/home/me/.claude/agents"));
 });
 
 test("CLAUDE_CONFIG_DIR moves the user's agents directory with the rest of its state", () => {
@@ -432,12 +442,12 @@ test("CLAUDE_CONFIG_DIR moves the user's agents directory with the rest of its s
 
   // Not `$CLAUDE_CONFIG_DIR/.claude/agents`: the build takes the variable as
   // the configuration directory itself.
-  assert.equal(dirs[dirs.length - 1], "/elsewhere/cc/agents");
-  assert.equal(dirs.includes("/elsewhere/cc/.claude/agents"), false);
+  assert.equal(dirs[dirs.length - 1], spelt("/elsewhere/cc/agents"));
+  assert.equal(dirs.includes(spelt("/elsewhere/cc/.claude/agents")), false);
 });
 
 test("no working directory leaves the user's directory alone to answer", () => {
-  assert.deepEqual(agentDirsFor({ HOME: "/home/me" }, ""), ["/home/me/.claude/agents"]);
+  assert.deepEqual(agentDirsFor({ HOME: "/home/me" }, ""), [spelt("/home/me/.claude/agents")]);
 });
 
 test("a machine with no home named yields no user directory rather than a bad path", () => {
@@ -448,8 +458,8 @@ test("a machine with no home named yields no user directory rather than a bad pa
   // The walk still runs, and every entry it yields is some directory's own
   // `.claude/agents`. What must not appear is the user-level one, which with
   // no home to hang off would be the bare "/agents".
-  assert.equal(dirs.every((d) => d.endsWith("/.claude/agents")), true, dirs.join(" "));
-  assert.equal(dirs[0], "/work/repo/.claude/agents");
+  assert.equal(dirs.every((d) => d.endsWith(spelt("/.claude/agents"))), true, dirs.join(" "));
+  assert.equal(dirs[0], spelt("/work/repo/.claude/agents"));
 });
 
 test("the same directory named twice is asked once", () => {
@@ -457,7 +467,7 @@ test("the same directory named twice is asked once", () => {
   // the same path twice and could report one file as two.
   const dirs = agentDirsFor({ HOME: "/home/me" }, "/home/me");
 
-  assert.deepEqual(dirs, ["/home/me/.claude/agents"]);
+  assert.deepEqual(dirs, [spelt("/home/me/.claude/agents")]);
 });
 
 
@@ -476,13 +486,13 @@ test("every .claude/agents from the working directory up to the home is asked", 
     "/home/me/work/repo/.claude/agents",
     "/home/me/work/.claude/agents",
     "/home/me/.claude/agents",
-  ]);
+  ].map(spelt));
 });
 
 test("the walk stops at the home directory rather than climbing to the root", () => {
   const dirs = agentDirsFor({ HOME: "/home/me" }, "/home/me/work");
 
-  assert.deepEqual(dirs, ["/home/me/work/.claude/agents", "/home/me/.claude/agents"]);
+  assert.deepEqual(dirs, ["/home/me/work/.claude/agents", "/home/me/.claude/agents"].map(spelt));
 });
 
 test("a working directory outside the home yields itself and the user's", () => {
@@ -490,16 +500,16 @@ test("a working directory outside the home yields itself and the user's", () => 
   // reaches one, so the walk runs to the root and the user's comes last.
   const dirs = agentDirsFor({ HOME: "/home/me" }, "/srv/checkout");
 
-  assert.equal(dirs[0], "/srv/checkout/.claude/agents");
-  assert.equal(dirs[dirs.length - 1], "/home/me/.claude/agents");
-  assert.equal(dirs.includes("/srv/.claude/agents"), true);
+  assert.equal(dirs[0], spelt("/srv/checkout/.claude/agents"));
+  assert.equal(dirs[dirs.length - 1], spelt("/home/me/.claude/agents"));
+  assert.equal(dirs.includes(spelt("/srv/.claude/agents")), true);
 });
 
 test("the deepest directory comes first, since that is the one the build prefers", () => {
   const dirs = agentDirsFor({ HOME: "/home/me" }, "/home/me/a/b");
 
-  assert.equal(dirs[0], "/home/me/a/b/.claude/agents");
-  assert.equal(dirs[dirs.length - 1], "/home/me/.claude/agents");
+  assert.equal(dirs[0], spelt("/home/me/a/b/.claude/agents"));
+  assert.equal(dirs[dirs.length - 1], spelt("/home/me/.claude/agents"));
 });
 
 // --- files the build itself will not load --------------------------------------
@@ -579,18 +589,23 @@ test("a file at the top wins over one in a subfolder of the same directory", (t)
 
 test("the home is matched past a trailing separator", () => {
   // A raw string compare let `HOME=/home/me/` miss `/home/me` and walk on to
-  // the filesystem root.
+  // the filesystem root. This one only bites on Windows, where a forward slash
+  // is a separator too and the first fix stripped only the backslash, so it
+  // passes here whatever the code does and earns its place on the CI runner.
   const dirs = agentDirsFor({ HOME: "/home/me/" }, "/home/me/work");
 
-  assert.equal(dirs.includes("/.claude/agents"), false, dirs.join(" "));
-  assert.equal(dirs[dirs.length - 1], "/home/me/agents".replace("/agents", "/.claude/agents"));
+  assert.equal(dirs.includes(spelt("/.claude/agents")), false, dirs.join(" "));
+  assert.equal(dirs[dirs.length - 1], spelt("/home/me/.claude/agents"));
 });
 
 test("a working directory that is not an absolute path is not walked", () => {
   // A relative candidate would resolve against whatever directory this hook
   // process happens to be in, which is not the session's.
-  assert.deepEqual(agentDirsFor({ HOME: "/home/me" }, "work/repo"), ["/home/me/.claude/agents"]);
-  assert.deepEqual(agentDirsFor({ HOME: "/home/me" }, "C:\\Users\\me"), ["/home/me/.claude/agents"]);
+  assert.deepEqual(agentDirsFor({ HOME: "/home/me" }, "work/repo"), [spelt("/home/me/.claude/agents")]);
+  // A Windows path is absolute on Windows, so it is only unresolvable here.
+  if (sep === "/") {
+    assert.deepEqual(agentDirsFor({ HOME: "/home/me" }, "C:\\Users\\me"), ["/home/me/.claude/agents"]);
+  }
 });
 
 // --- the key the build actually uses ------------------------------------------
@@ -717,11 +732,11 @@ test("the home directory is not walked as a project directory", () => {
   // there above the one CLAUDE_CONFIG_DIR points at.
   const dirs = agentDirsFor({ HOME: "/home/me", CLAUDE_CONFIG_DIR: "/home/me/custom" }, "/home/me/repo");
 
-  assert.deepEqual(dirs, ["/home/me/repo/.claude/agents", "/home/me/custom/agents"]);
+  assert.deepEqual(dirs, ["/home/me/repo/.claude/agents", "/home/me/custom/agents"].map(spelt));
 });
 
 test("a session started in the home directory reads only the user's own", () => {
-  assert.deepEqual(agentDirsFor({ HOME: "/home/me" }, "/home/me"), ["/home/me/.claude/agents"]);
+  assert.deepEqual(agentDirsFor({ HOME: "/home/me" }, "/home/me"), [spelt("/home/me/.claude/agents")]);
 });
 
 test("the first description in a block wins, the way the name and the level do", (t) => {
@@ -872,7 +887,7 @@ test("the line names the file it read, since one type can have several candidate
     { type: "Plan", state: "current", path: "/home/me/.claude/agents/Plan.md" },
   ]);
 
-  assert.match(said, /\/work\/repo\/\.claude\/agents\/Explore\.md/);
+  assert.ok(said.includes("/work/repo/.claude/agents/Explore.md"), said);
   assert.doesNotMatch(said, /gp\.md/, "only the files the line is about");
 });
 
