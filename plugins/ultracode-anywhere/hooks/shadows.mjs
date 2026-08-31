@@ -125,10 +125,7 @@ export function shadowsFor({ level, dirs = [], build = null } = {}) {
     // agent and left the built-in alone.
     if (!found) return { type, state: "absent", path: null };
 
-    // Each of the next three is a different line to write, so each is said
-    // apart. A file the build refuses is one line short of being an agent; one
-    // naming no effort is an agent running at the session's level; one naming
-    // another level is a line to change.
+    // Each of the next three is a different line to write, so each is said apart.
     if (!found.described) return { type, state: "refused", path: found.path };
     if (found.level === null) return { type, state: "no-level", path: found.path };
     if (found.level !== level) return { type, state: "other-level", path: found.path };
@@ -171,8 +168,8 @@ export function shadowLine(level, seen = []) {
   if (other.length) clauses.push(`${list(other)} ${other.length === 1 ? "carries" : "carry"} another level`);
   if (older.length) {
     const one = older.length === 1;
-    // What a timestamp knows and no more. Whether the copied prompt actually
-    // differs is not knowable from the file, and an earlier draft said it was.
+    // What a timestamp knows and no more: whether the copied prompt actually
+    // differs is not knowable from the file.
     clauses.push(
       `${list(older)} ${one ? "was" : "were"} written before the installed build, so whether the ${one ? "prompt it copies" : "prompts they copy"} still ${one ? "matches" : "match"} is unchecked`,
     );
@@ -273,8 +270,22 @@ function frontmatterIn(path) {
   if (!FENCE.test(lines[i] ?? "")) return nothing;
 
   const seen = { name: null, level: null, described: false };
+  let described = false;
+  let continues = false;
   for (i++; i < lines.length; i++) {
     if (FENCE.test(lines[i])) return seen;
+
+    // A plain value may sit on the lines under its key, indented. Read from
+    // the key's own line alone, such a description looked empty and the file
+    // was reported as one the build refuses, which is a line to add that is
+    // already there.
+    if (continues) {
+      continues = false;
+      if (/^[ \t]+\S/.test(lines[i])) {
+        seen.described = true;
+        continue;
+      }
+    }
 
     const name = NAME_LINE.exec(lines[i]);
     // Kept as written rather than folded: agent names are matched exactly
@@ -284,10 +295,15 @@ function frontmatterIn(path) {
     const effort = EFFORT_LINE.exec(lines[i]);
     if (effort && seen.level === null) seen.level = levelOf(effort[1]);
 
-    const description = DESCRIPTION_LINE.exec(lines[i]);
     // The build refuses a file whose description is absent or not a string, so
-    // a block that only names an effort never becomes an agent at all.
-    if (description) seen.described = unquote(description[1]) !== "";
+    // a block that only names an effort never becomes an agent at all. Read
+    // first-wins, as the other two keys are.
+    const description = DESCRIPTION_LINE.exec(lines[i]);
+    if (description && !described) {
+      described = true;
+      if (unquote(description[1]) !== "") seen.described = true;
+      else continues = true;
+    }
   }
   // No closing fence inside the head that was read: either the block is
   // unterminated or it is longer than a frontmatter block has any business
@@ -329,9 +345,11 @@ function upTo(from, home) {
   const stop = trimEnd(home);
   const seen = [];
   let dir = trimEnd(from);
-  while (dir && seen.length < WALK_MOST) {
+  // The home itself is not among them. The build breaks there before adding it,
+  // so `~/.claude/agents` is reached only as the user directory, and walking
+  // into it ranked a file there above the one `CLAUDE_CONFIG_DIR` points at.
+  while (dir && dir !== stop && seen.length < WALK_MOST) {
     seen.push(dir);
-    if (dir === stop) break;
     const parent = dirname(dir);
     if (parent === dir) break;
     dir = parent;

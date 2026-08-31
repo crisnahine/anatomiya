@@ -19,7 +19,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   moves the original. The session now opens by saying which of `general-purpose`, `Explore` and
   `Plan` no file names, which have a file the build refuses for want of a `description:`, which name
   no effort, which name another level, and which were last written before the build now installed.
-  Silence means all three are named at the level asked for by a file newer than the build.
+  Silence means all three are named at the level asked for by a file newer than the build, or that
+  the build's own age could not be read.
 - An agent file is keyed on its frontmatter `name:` and never on its filename, which is how the
   build keys one: `Explore.md` naming something else is that other agent and leaves the built-in
   alone, and `anything.md` naming `Plan` is the file a spawn of `Plan` reads. Every

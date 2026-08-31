@@ -528,7 +528,7 @@ test("a description in quotes still counts as one", (t) => {
 test("an empty description is no description", (t) => {
   const { agents, build } = tree(t);
   const path = join(agents, "Plan.md");
-  writeFileSync(path, "---\nname: Plan\ndescription: What Plan is for.\ndescription:\neffort: medium\n---\n\nprompt\n");
+  writeFileSync(path, "---\nname: Plan\ndescription:\neffort: medium\n---\n\nprompt\n");
   utimesSync(path, AFTER, AFTER);
 
   assert.equal(stateOf(shadowsFor({ level: "medium", dirs: [agents], build }), "Plan"), "refused");
@@ -681,4 +681,116 @@ test("a file written in the same moment as the build is not older than it", (t) 
   agentFile(agents, "Explore.md", "name: Explore\ndescription: Reads.\neffort: medium", BUILD_AT);
 
   assert.equal(stateOf(shadowsFor({ level: "medium", dirs: [agents], build }), "Explore"), "current");
+});
+
+// --- what the last round found ------------------------------------------------
+
+test("a description continued on the next line is still a description", (t) => {
+  // Plain YAML: a value may sit on the lines under its key. Reading the key's
+  // own line alone saw an empty value and called the file one the build
+  // refuses, which sends a reader to add a line that is already there.
+  const { agents, build } = tree(t);
+  agentFile(agents, "e.md", "name: Explore\ndescription:\n  Reads a lot of files and reports back.\neffort: medium");
+
+  assert.equal(stateOf(shadowsFor({ level: "medium", dirs: [agents], build }), "Explore"), "current");
+});
+
+test("a block scalar description is a description", (t) => {
+  const { agents, build } = tree(t);
+  agentFile(agents, "e.md", "name: Explore\ndescription: |\n  Reads things.\neffort: medium");
+
+  assert.equal(stateOf(shadowsFor({ level: "medium", dirs: [agents], build }), "Explore"), "current");
+});
+
+test("a description followed by another key at the same indent is still empty", (t) => {
+  // The continuation has to be indented. A key at column zero ends the value,
+  // so this file really has none and the build really does refuse it.
+  const { agents, build } = tree(t);
+  agentFile(agents, "e.md", "name: Explore\ndescription:\neffort: medium");
+
+  assert.equal(stateOf(shadowsFor({ level: "medium", dirs: [agents], build }), "Explore"), "refused");
+});
+
+test("the home directory is not walked as a project directory", () => {
+  // The build breaks at the home directory before pushing it, so `~/.claude`
+  // is reached only as the user directory. Walking into it put a stale file
+  // there above the one CLAUDE_CONFIG_DIR points at.
+  const dirs = agentDirsFor({ HOME: "/home/me", CLAUDE_CONFIG_DIR: "/home/me/custom" }, "/home/me/repo");
+
+  assert.deepEqual(dirs, ["/home/me/repo/.claude/agents", "/home/me/custom/agents"]);
+});
+
+test("a session started in the home directory reads only the user's own", () => {
+  assert.deepEqual(agentDirsFor({ HOME: "/home/me" }, "/home/me"), ["/home/me/.claude/agents"]);
+});
+
+test("the first description in a block wins, the way the name and the level do", (t) => {
+  // All three keys are read first-wins, so a duplicate cannot turn a described
+  // file into an undescribed one.
+  const { agents, build } = tree(t);
+  agentFile(agents, "e.md", "name: Explore\ndescription: Reads things.\ndescription:\neffort: medium");
+
+  assert.equal(stateOf(shadowsFor({ level: "medium", dirs: [agents], build }), "Explore"), "current");
+});
+
+// --- cases that kill a mutant -------------------------------------------------
+
+test("prose that merely mentions the keys is not an agent file", (t) => {
+  // Without the opening fence check, any document saying `name:` in passing
+  // becomes an agent definition.
+  const { agents, build } = tree(t);
+  const path = join(agents, "notes.md");
+  writeFileSync(path, "Some notes.\n\nname: Explore\ndescription: not really\neffort: medium\n");
+  utimesSync(path, AFTER, AFTER);
+
+  assert.equal(stateOf(shadowsFor({ level: "medium", dirs: [agents], build }), "Explore"), "absent");
+});
+
+test("a name key with no space after the colon is not the name key", (t) => {
+  const { agents, build } = tree(t);
+  agentFile(agents, "e.md", "name:Explore\ndescription: Reads.\neffort: medium");
+
+  assert.equal(stateOf(shadowsFor({ level: "medium", dirs: [agents], build }), "Explore"), "absent");
+});
+
+test("a description key with no space after the colon is not the description key", (t) => {
+  const { agents, build } = tree(t);
+  agentFile(agents, "e.md", "name: Explore\ndescription:Reads.\neffort: medium");
+
+  assert.equal(stateOf(shadowsFor({ level: "medium", dirs: [agents], build }), "Explore"), "refused");
+});
+
+test("the level asked for is the level the sentence names", () => {
+  // A sentence that hardcoded one level would still pass every other case.
+  for (const level of ["low", "high", "xhigh", "max"]) {
+    const said = shadowLine(level, seenAs(["absent", "absent", "absent"]));
+    assert.match(said, new RegExp(`names ${level},`), level);
+    assert.match(said, new RegExp(`effort: ${level}\``), level);
+  }
+});
+
+test("a file whose name merely contains .md is not a markdown file", (t) => {
+  const { agents, build } = tree(t);
+  const path = join(agents, "Explore.md.bak");
+  writeFileSync(path, "---\nname: Explore\ndescription: Reads.\neffort: medium\n---\nbody\n");
+  utimesSync(path, AFTER, AFTER);
+
+  assert.equal(stateOf(shadowsFor({ level: "medium", dirs: [agents], build }), "Explore"), "absent");
+});
+
+test("the first file to claim a name keeps it, later ones do not overwrite", (t) => {
+  const { agents, build } = tree(t);
+  agentFile(agents, "a-first.md", "name: Explore\ndescription: Reads.\neffort: medium");
+  agentFile(agents, "z-second.md", "name: Explore\ndescription: Reads.\neffort: high");
+
+  assert.equal(stateOf(shadowsFor({ level: "medium", dirs: [agents], build }), "Explore"), "current");
+});
+
+test("a file the build refuses is reported as refused before its level is judged", (t) => {
+  // The branches are ordered, and a reordering would report the level of a
+  // file that never becomes an agent.
+  const { agents, build } = tree(t);
+  agentFile(agents, "e.md", "name: Explore\neffort: high");
+
+  assert.equal(stateOf(shadowsFor({ level: "medium", dirs: [agents], build }), "Explore"), "refused");
 });
