@@ -29,6 +29,7 @@ import { pairingsFor } from "../plugins/anatomiya/lib/pairing.mjs";
 import { REGISTRY, rowsForLangs, rowsOfKind } from "../plugins/anatomiya/lib/registry.mjs";
 import { EXCLUDE_LINES } from "../plugins/anatomiya/lib/rules.mjs";
 import { GATES } from "../plugins/anatomiya/lib/reduce.mjs";
+import { PARSE_OUTCOMES } from "../plugins/anatomiya/lib/parse.mjs";
 import { ELIGIBLE, REFUSED } from "../test/fixtures/counter-pins.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -156,6 +157,56 @@ export function sitesOwed(row, { defaults, intake, dropped, eligible, refused })
   return owed;
 }
 
+/**
+ * The glossary, as entries.
+ *
+ * An entry is a bold name alone on a line, the lines under it, and an
+ * `_Avoid_` line closing it. A blank line closes one too, which is how an
+ * entry that never reached its `_Avoid_` is caught rather than swallowing
+ * the entry after it.
+ *
+ * Only the shape is read here. What an entry means against the code is a
+ * human's to check, and eleven of them had drifted before anyone did.
+ */
+export function readGlossary(text) {
+  const terms = new Map();
+  const problems = [];
+  let open = null;
+
+  const close = () => {
+    if (!open) return;
+    if (!open.body) problems.push(`${open.name} has no definition under it`);
+    if (!open.avoid) problems.push(`${open.name} has no _Avoid_ line, so nothing says which words it displaces`);
+    terms.set(open.name, { body: open.body, avoid: open.avoid, line: open.line });
+    open = null;
+  };
+
+  for (const [i, line] of text.split(/\r?\n/).entries()) {
+    // The whole line, so the bold words inside a definition are not entries.
+    const named = /^\*\*(.+?)\*\*:\s*$/.exec(line);
+    if (named) {
+      close();
+      const held = terms.get(named[1]);
+      if (held) problems.push(`${named[1]} is defined twice, on line ${held.line} and line ${i + 1}`);
+      open = { name: named[1], body: "", avoid: null, line: i + 1 };
+      continue;
+    }
+    if (!open) continue;
+    if (line.startsWith("_Avoid_:")) {
+      open.avoid = line.slice("_Avoid_:".length).trim();
+      close();
+      continue;
+    }
+    if (!line.trim()) {
+      close();
+      continue;
+    }
+    open.body += (open.body ? "\n" : "") + line;
+  }
+  close();
+  return { terms, problems };
+}
+
 function claim(where, ok, detail) {
   if (!ok) problems.push(`${where}: ${detail}`);
 }
@@ -270,6 +321,7 @@ export const READS = [
   "CONTRIBUTING.md",
   "CHANGELOG.md",
   "DECISIONS.md",
+  "CONTEXT.md",
   "SECURITY.md",
   "package.json",
   `${REL.anatomiya}/package.json`,
@@ -474,6 +526,21 @@ for (const cmd of unique) {
 const readme = read("README.md");
 for (const cmd of unique) {
   claim("README.md", readme.includes(`/anatomiya:${cmd}`), `does not mention /anatomiya:${cmd}`);
+}
+
+// --- the glossary -----------------------------------------------------------
+
+// Shape only. The one claim here that reaches the code is the entry spelling
+// out a closed set the code owns: a sixth parse outcome reaches a reader as a
+// word the glossary does not hold, and nothing else would say so.
+const glossary = readGlossary(read("CONTEXT.md"));
+for (const problem of glossary.problems) claim("CONTEXT.md", false, problem);
+
+const unexamined = glossary.terms.get("Unexamined");
+claim("CONTEXT.md", unexamined !== undefined, "has no Unexamined entry, which is where a file's outcomes are named");
+if (unexamined) {
+  const unnamed = PARSE_OUTCOMES.filter((outcome) => !new RegExp(`\\b${outcome}\\b`).test(unexamined.body));
+  claim("CONTEXT.md", unnamed.length === 0, `Unexamined does not name ${unnamed.join(", ")}, which parse.mjs counts a file as`);
 }
 
 // --- the intake table -------------------------------------------------------

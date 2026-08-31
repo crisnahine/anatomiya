@@ -6,7 +6,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
 
-import { READS, pathsThatMoved, sitesOwed } from "../scripts/check-docs.mjs";
+import { READS, pathsThatMoved, readGlossary, sitesOwed } from "../scripts/check-docs.mjs";
+import { PARSE_OUTCOMES } from "../plugins/anatomiya/lib/parse.mjs";
 import { REL } from "../scripts/plugins.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -555,4 +556,96 @@ test("a changelog names the paths its releases had, at the root and inside a plu
   const { status, output } = check(dir);
 
   assert.equal(status, 0, output);
+});
+
+// --- the glossary -----------------------------------------------------------
+
+const entry = (name, body, avoid) => `**${name}**:\n${body}\n_Avoid_: ${avoid}\n`;
+
+test("an entry parses to its definition and the words it displaces", () => {
+  const { terms, problems } = readGlossary(entry("Area", "A directory holding enough source files.", "module, package"));
+
+  assert.deepEqual(problems, []);
+  assert.equal(terms.get("Area").body, "A directory holding enough source files.");
+  assert.equal(terms.get("Area").avoid, "module, package");
+});
+
+test("a definition spanning several lines keeps all of them", () => {
+  const { terms } = readGlossary(entry("Area", "One line.\nAnd a second.", "module"));
+
+  assert.equal(terms.get("Area").body, "One line.\nAnd a second.");
+});
+
+test("an entry with no _Avoid_ line is named, and does not swallow the entry after it", (t) => {
+  // A blank line closes an entry. Without that the parser reads the next
+  // entry's definition as this one's and reports nothing at all.
+  const text = `**Area**:\nA directory.\n\n${entry("Root", "A directory the roster names.", "folder")}`;
+  const { terms, problems } = readGlossary(text);
+
+  assert.deepEqual(problems, ["Area has no _Avoid_ line, so nothing says which words it displaces"]);
+  assert.equal(terms.get("Area").body, "A directory.");
+  assert.equal(terms.get("Root").avoid, "folder");
+});
+
+test("an entry with nothing under it is named", () => {
+  const { problems } = readGlossary("**Area**:\n_Avoid_: module\n");
+
+  assert.deepEqual(problems, ["Area has no definition under it"]);
+});
+
+test("an entry defined twice names both lines, so the author can delete one", () => {
+  const { problems } = readGlossary(`${entry("Area", "First.", "module")}\n${entry("Area", "Second.", "package")}`);
+
+  assert.deepEqual(problems, ["Area is defined twice, on line 1 and line 5"]);
+});
+
+test("bold words inside a definition are not entries", () => {
+  // `Unexamined` names its four outcomes in bold mid-sentence. Reading those as
+  // entries would report four definitions with no _Avoid_ line each.
+  const { terms, problems } = readGlossary(entry("Unexamined", "Which of them: **crashed**, or **rejected**.", "failed"));
+
+  assert.deepEqual(problems, []);
+  assert.deepEqual([...terms.keys()], ["Unexamined"]);
+});
+
+test("the shipped glossary is whole", () => {
+  // The unit cases above prove the parser reports; this one is the file.
+  const { terms, problems } = readGlossary(readFileSync(join(ROOT, "CONTEXT.md"), "utf8"));
+
+  assert.deepEqual(problems, []);
+  assert.ok(terms.size > 30, `only ${terms.size} entries parsed`);
+});
+
+test("the glossary names every outcome the parser counts a file as", () => {
+  const { terms } = readGlossary(readFileSync(join(ROOT, "CONTEXT.md"), "utf8"));
+  const body = terms.get("Unexamined").body;
+
+  for (const outcome of PARSE_OUTCOMES) {
+    assert.match(body, new RegExp(`\\b${outcome}\\b`), `Unexamined does not name ${outcome}`);
+  }
+});
+
+test("an entry that loses its _Avoid_ line fails the check", { ...needsCheckout }, (t) => {
+  const dir = repoCopy(t);
+  const path = join(dir, "CONTEXT.md");
+  writeFileSync(path, readFileSync(path, "utf8").replace("_Avoid_: module, package, folder, scope\n", ""));
+
+  const { status, output } = check(dir);
+
+  assert.equal(status, 1, output);
+  assert.match(output, /Area has no _Avoid_ line/);
+});
+
+test("an outcome the glossary stops naming fails the check", { ...needsCheckout }, (t) => {
+  // The one claim here that reaches the code. A sixth outcome added to
+  // `PARSE_OUTCOMES` and never written down reaches a reader as a word the
+  // glossary does not hold, and this is what says so.
+  const dir = repoCopy(t);
+  const path = join(dir, "CONTEXT.md");
+  writeFileSync(path, readFileSync(path, "utf8").replace("**oversize** past the per-file cap", "past the per-file cap"));
+
+  const { status, output } = check(dir);
+
+  assert.equal(status, 1, output);
+  assert.match(output, /Unexamined does not name oversize/);
 });
