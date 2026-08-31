@@ -608,6 +608,15 @@ test("bold words inside a definition are not entries", () => {
   assert.deepEqual([...terms.keys()], ["Unexamined"]);
 });
 
+test("a glossary checked out with CRLF endings parses the same as one with LF", () => {
+  const lf = entry("Area", "A directory.", "module");
+  const { terms, problems } = readGlossary(lf.replace(/\n/g, "\r\n"));
+
+  assert.deepEqual(problems, []);
+  assert.equal(terms.get("Area").body, "A directory.");
+  assert.equal(terms.get("Area").avoid, "module");
+});
+
 test("the shipped glossary is whole", () => {
   // The unit cases above prove the parser reports; this one is the file.
   const { terms, problems } = readGlossary(readFileSync(join(ROOT, "CONTEXT.md"), "utf8"));
@@ -628,7 +637,10 @@ test("the glossary names every outcome the parser counts a file as", () => {
 test("an entry that loses its _Avoid_ line fails the check", { ...needsCheckout }, (t) => {
   const dir = repoCopy(t);
   const path = join(dir, "CONTEXT.md");
-  writeFileSync(path, readFileSync(path, "utf8").replace("_Avoid_: module, package, folder, scope\n", ""));
+  // Anchored and line-ending agnostic: git checks this file out CRLF on
+  // Windows, and a literal "\n" matched nothing there, so the copy stayed
+  // whole and the check passed while the case read as covered.
+  writeFileSync(path, readFileSync(path, "utf8").replace(/^_Avoid_: module, package, folder, scope\r?\n/m, ""));
 
   const { status, output } = check(dir);
 
