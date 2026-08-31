@@ -297,11 +297,11 @@ test("the baseline line says which population the gates read", () => {
   );
   assert.equal(
     line({ status: "ok", sha: "abcdef1234567890", drift: 1, baseRef: { ref: "main" }, countsOnly: false }),
-    "baseline abcdef12, 1 file changed since main"
+    "baseline abcdef12, 1 file changed since the pin (measured against main)"
   );
   assert.equal(
     line({ status: "ok", sha: "abcdef1234567890", drift: 4, baseRef: null, countsOnly: false }),
-    "baseline abcdef12, 4 files changed since the base"
+    "baseline abcdef12, 4 files changed since the pin (measured against the base)"
   );
 });
 
