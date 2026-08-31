@@ -100,6 +100,52 @@ loop down with it. It stops at `xhigh`, since that path validates against four n
 `opts.effort` takes five. And it is dead the moment `--effort` or `/effort` pins a level, which is
 the ordinary case for anyone reading this page.
 
+The other half of that question is the Agent tool, and this plugin cannot set its effort either. A
+spawn's effort comes from its agent definition, and the one lever is `.claude/agents/<type>.md`
+frontmatter carrying `effort:`. That layer beats both `effortLevel` and `modelSettings`: the identical
+file with the `effort:` line removed reports the session's own level in the same session. No hook
+reaches it, and that is all twenty-two output schemas rather than the two worth guessing at: not one
+of them names an effort. `SubagentStart` sees the spawn and answers with text alone. Two events can
+rewrite a call, `PreToolUse` through `updatedInput` and `PermissionRequest` through the same field on
+its `allow` branch, and neither helps, because what they rewrite is the tool's input and the Agent
+tool's input is `description`, `prompt`, `subagent_type`, `model`, `run_in_background`, `name`,
+`team_name`, `mode`, `isolation` and `cwd`, with no effort among them. An invented `effort` key does
+not fail validation either, which would at least be loud: both validators drop unrecognised keys, so
+the call goes through with the key gone and the spawn runs at the level it was always going to. A reminder cannot do it either, since the model has no argument to pass, which is what
+makes this different from `opts.effort` on a workflow stage.
+
+Covering a built-in type means writing a file that carries a copy of that type's system prompt. Two
+fields on the built-in definitions cannot go in that file, since neither is a frontmatter key, and
+the interesting part is that neither costs what it looks like it costs:
+
+- `omitClaudeMd`, set by four built-ins including `Explore` and `Plan`. It reads as though a copy
+  would start loading `CLAUDE.md` and pay for it on every spawn. Measured, it does not: the built-in
+  `Explore` already paid 45,921 tokens for a 138 KB `CLAUDE.md` on this build, so the built-in was
+  never saving anything and a copy loses nothing. What a copy does lose is the tool set, if it forgets
+  `disallowedTools`: the same measurement put a one-line shadow 993 tokens above the built-in on six
+  extra tool definitions. Copy the `disallowedTools` line, not just the prompt.
+- `appendSystemPrompt`, set by the `claude` catch-all. It reads as though a copy of that type would
+  replace a prompt the built-in appends. On the Agent-tool path it would not, because that path never
+  appends; the append belongs to `--agent`, where a definition becomes the session's own prompt. So
+  `claude` is left off the list below for a narrower reason than "cannot be copied": a file named for
+  it changes the `--agent` path too, and that is a wider blast radius than the three types this
+  switch is about.
+
+Both of those were in the issue this came from, stated the other way round. They are recorded here as
+measured because a README that repeats a plausible cost is how the cost becomes folklore.
+
+A plugin-provided agent type is a third gap of a different kind: covering one means editing the
+plugin cache, which `autoUpdate` overwrites.
+
+The copy is the part that rots. It is frozen at the build it was taken from, and an upgrade moves the
+original while the copy reads the same as ever. Nothing in a session says so, which is what
+`ULTRACODE_ANYWHERE_SUBAGENT_EFFORT` below is for: it writes nothing and generates nothing, and only
+says whether the files are there, whether they carry the level asked for, and whether they were
+written before the build now installed. Whether a copy is still faithful is not knowable from the
+file; when it was last written is, and that is the half a reader cannot see. Taking a fresh copy is a
+live extraction, one session per type per build, and the upstream fix stays
+[anthropics/claude-code#79135](https://github.com/anthropics/claude-code/issues/79135).
+
 ## What it costs
 
 One short-lived `node` process per prompt, about 30 ms of it over ten runs on the machine this was
@@ -293,6 +339,34 @@ and the cap line then comes back every session rather than once.
   nothing else: `opts.effort` itself also takes `med` and an integer, and this switch takes neither,
   since the text names a level. `VERIFYING.md` step 7 says what the integer does upstream, which is
   another reason.
+- `ULTRACODE_ANYWHERE_SUBAGENT_EFFORT=medium claude` names the level you meant your agent files to
+  carry, and buys a sentence rather than a setting. Nothing is written, generated or repaired: the
+  session opens by saying which of `general-purpose`, `Explore` and `Plan` no file names, which have
+  a file the build refuses for want of a `description:`, which name no effort, which name another
+  level, and which were last written before the installed build, that last being the one a reader
+  cannot see for themselves. It names the file it read for each, since a type can have a candidate
+  in every `.claude/agents` up the tree. It says the file predates the build and stops there, since whether the
+  prompt inside it still matches is not something a timestamp knows. Silence means either that all
+  three are named at that level by a file newer than the build, or that the build's own age could not
+  be read, since a missing build is not evidence that a copy is current.
+
+  An agent is keyed on its frontmatter `name:` and never on its filename, which is how the build
+  keys one: `Explore.md` naming something else is that other agent and leaves the built-in alone,
+  and `anything.md` naming `Plan` is the file a spawn of `Plan` reads. Every `.claude/agents` from
+  the working directory up to your home is read, deepest first and subfolders included, then
+  `$CLAUDE_CONFIG_DIR/agents` or `~/.claude/agents`. A file behind a symlink counts, because the
+  build follows one. Three places the build also looks are not read here: a managed settings
+  directory, which outranks everything; the `--agents` JSON flag, which outranks every project
+  directory; and the additional working directories a session was started with.
+
+  The search stops once all three names are found, so an ordinary setup costs three reads. Where they
+  are not all found it reads at most 2,000 files, measured at 91 ms for 3,000 against a fifteen
+  second budget, and if it hits that bound it says how many files it read rather than reporting an
+  absence it never established. The level is compared as the build compares one, so `effort: med` is
+  `medium` and `effort: HIGH` is `high`; the switch itself still takes only the five spelled out,
+  the way the stage switch does. The same five levels as the switch above, and
+  anything else is read as unset with a line saying so. It reports and never acts, so it is safe to
+  leave set; unset it to stop asking.
 - `ULTRACODE_ANYWHERE_DEBUG=/tmp/uc.log claude` logs every prompt the hook fires on, its stdin
   payload, and what silenced it when something did. The session hook writes nothing there. A fifo
   nobody is reading, standing at that path, is refused without waiting.

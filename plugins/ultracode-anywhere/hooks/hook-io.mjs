@@ -4,7 +4,8 @@
  * differently, which is the shape Claude Code parses.
  */
 import { closeSync, constants, fstatSync, openSync, readSync, realpathSync } from "node:fs";
-import { resolve } from "node:path";
+import { homedir } from "node:os";
+import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 /**
@@ -118,6 +119,27 @@ export function readIfFile(path, most = MOST, flags = 0) {
 }
 
 /**
+ * The first `most` bytes of a file, however long the file is, following a link.
+ *
+ * `readIfFile` answers "" for anything past its bound, which is right for a
+ * file that is only worth reading whole. A file whose first few lines are the
+ * question and whose body is a copied prompt is not that: refusing it reported
+ * a working 9 KB agent file as carrying the wrong level.
+ */
+export function readHead(path, most = MOST) {
+  let fd;
+  try {
+    fd = openSync(path, constants.O_RDONLY | (constants.O_NONBLOCK ?? 0));
+    if (!fstatSync(fd).isFile()) return "";
+    return upTo(fd, most);
+  } catch {
+    return "";
+  } finally {
+    if (fd !== undefined) closeSync(fd);
+  }
+}
+
+/**
  * The same read for a file this plugin wrote itself, which may not be a link.
  *
  * A user's own file is allowed to be one, since a dotfiles repository keeps
@@ -127,6 +149,38 @@ export function readIfFile(path, most = MOST, flags = 0) {
  */
 export function readOwnFile(path, most = MOST) {
   return readIfFile(path, most, constants.O_NOFOLLOW ?? 0);
+}
+
+/**
+ * Where Claude Code keeps this account's configuration, and "" where it has
+ * none.
+ *
+ * Three callers need this and each had its own copy of it, which is three
+ * places for one rule to drift: the settings the plugin reads, the state it
+ * writes, and the agent files it reports on all hang off this one path.
+ */
+export function configDirFor(env = process.env) {
+  const home = homeOf(env);
+  return env.CLAUDE_CONFIG_DIR || (home && join(home, ".claude")) || "";
+}
+
+/**
+ * The home Claude Code would read, which a test may point somewhere of its own,
+ * and "" when the account has none.
+ *
+ * A home named and empty is no home rather than the process's own: a caller
+ * that set `HOME: ""` said where to look, and falling back to `homedir()`
+ * there would read the machine's real one out from under a test.
+ */
+export function homeOf(env) {
+  const named = env.HOME || env.USERPROFILE;
+  if (named) return named;
+  if ("HOME" in env || "USERPROFILE" in env) return "";
+  try {
+    return homedir();
+  } catch {
+    return "";
+  }
 }
 
 /** At most `most` bytes off a handle, however much the far end wants to send. */

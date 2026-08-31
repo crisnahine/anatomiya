@@ -12,10 +12,9 @@
  */
 import { closeSync, existsSync, openSync, readSync, readdirSync, realpathSync, statSync } from "node:fs";
 
-import { readIfFile } from "./hook-io.mjs";
+import { configDirFor, homeOf, readIfFile } from "./hook-io.mjs";
 import { Unkept } from "./counters.mjs";
 import { delimiter, join } from "node:path";
-import { homedir } from "node:os";
 
 /**
  * The build this plugin's premise was read off, and the shape it was read as.
@@ -106,30 +105,13 @@ export const MIN_BUNDLE = 5_000_000;
 
 /** The settings Claude Code would read here: the user's, with a project's own on top. */
 export function settingsFor(env = process.env, cwd = "") {
-  const home = homeOf(env);
-  const config = env.CLAUDE_CONFIG_DIR || (home && join(home, ".claude"));
+  const config = configDirFor(env);
   const paths = config ? [join(config, "settings.json")] : [];
   if (cwd) paths.push(join(cwd, ".claude", "settings.json"), join(cwd, ".claude", "settings.local.json"));
 
   const merged = {};
   for (const path of paths) Object.assign(merged, readSettings(path));
   return merged;
-}
-
-/**
- * The home Claude Code would read, which a test may point somewhere of its
- * own, and nothing when the account has none. The same rule as the counters
- * keep: a home named and empty is no home, not the process's own.
- */
-function homeOf(env) {
-  const named = env.HOME || env.USERPROFILE;
-  if (named) return named;
-  if ("HOME" in env || "USERPROFILE" in env) return "";
-  try {
-    return homedir();
-  } catch {
-    return "";
-  }
 }
 
 function readSettings(path) {
