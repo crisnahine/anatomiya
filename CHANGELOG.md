@@ -7,6 +7,34 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- Eleven `CONTEXT.md` entries said something the code does not do. `Conforming` was
+  the one that reached a reader: it read "a candidate matching the positive
+  pattern" while a counter-stated slot prints the candidates matching the
+  counter-claim, so an area file said "5589 of 5589 sites" for a number the
+  glossary's own word put at 0. `Corpus`, `Uncovered`, `Stated`, `Counts`,
+  `Exception`, `Drift`, `Staleness`, `Map`, `Finding` and `Newly introduced` were
+  each narrower or wider than what they name. Seven words a reader meets and could
+  not look up were added: `Root`, `Namesake test`, `Eligible files`, `Declined`,
+  `Principle`, `Author` and `Notice`.
+- Three sites called the whole hook payload an "event", which the glossary refuses
+  by name, since the event is one field inside the payload.
+
+### Changed
+
+- The scan summary names the pin as the point drift is measured from and puts the
+  base ref in parentheses, which is the spelling the check report already used. One
+  number had two sentences.
+
+### Added
+
+- `npm run check:docs` reads `CONTEXT.md`. Every entry has to be whole, and
+  `Unexamined` has to name every outcome the parser counts a file as, which the
+  tally and the check now read off one list. Shape and one closed set only: whether
+  an entry is still true is not mechanically checkable, and stays a reader's to
+  hold.
+
 ## [0.5.0] - 2026-08-29
 
 Every version since 0.3.0 installed with no parser in it, and both hooks could be
