@@ -712,7 +712,7 @@ function skipValue(text, from) {
 }
 
 /**
- * The hook event on stdin, or an empty object where there is none to read.
+ * The payload on stdin, or an empty object where there is none to read.
  *
  * Bounded and timed out, because this runs on every tool call and a hook that
  * waits on a pipe nobody writes to holds the whole session there for the

@@ -263,7 +263,7 @@ function baselineLine(b) {
     return `the pinned commit ${b.sha ? b.sha.slice(0, 8) : "?"} is gone from this clone, so every claim dropped to counts`;
   if (b.countsOnly)
     return "no baseline pinned: claims are measured against the current tree, and no finding can exceed FIX. `anatomiya pin` accepts one";
-  const drift = b.drift === null ? "" : `, ${plural(b.drift, "file")} changed since ${b.baseRef ? b.baseRef.ref : "the base"}`;
+  const drift = b.drift === null ? "" : `, ${plural(b.drift, "file")} changed since the pin (measured against ${b.baseRef ? b.baseRef.ref : "the base"})`;
   return `baseline ${b.sha.slice(0, 8)}${drift}`;
 }
 

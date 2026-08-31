@@ -44,7 +44,7 @@ const COMMANDS = {
   pin: { path: true, dryRun: true, formats: ["text", "json"] },
   doctor: { path: false, dryRun: false, formats: ["text"] },
   setup: { path: false, dryRun: true, formats: ["text"] },
-  // Not for a person: a hook runs this, hands it the event on stdin and reads
+  // Not for a person: a hook runs this, hands it the payload on stdin and reads
   // one JSON object back. It takes a path because a hook's own cwd is the
   // repository it fired in. `hook` is what the never-fail guarantee below is
   // keyed on, so a third verb inherits it by declaring itself here.

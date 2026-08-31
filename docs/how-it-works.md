@@ -555,7 +555,7 @@ through. The text reaches the model on its next turn, after that write and befor
 what makes it worth saying at all when a session is creating twelve files rather than one.
 
 Both are absent from the usage block and from `commands/` on purpose: no person runs them and no
-agent should. Each reads the event on stdin, answers with one JSON object, and answers `{}` and exits
+agent should. Each reads the payload on stdin, answers with one JSON object, and answers `{}` and exits
 0 on every failure path, because a hook that exits non-zero interrupts the session it exists to help.
 Both walk up to find what they answer from, the rendered map for one and the recorded counts for the
 other, and both start from the place the tool call is about rather than from where the session's shell
