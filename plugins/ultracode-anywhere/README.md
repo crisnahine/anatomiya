@@ -341,16 +341,22 @@ and the cap line then comes back every session rather than once.
   another reason.
 - `ULTRACODE_ANYWHERE_SUBAGENT_EFFORT=medium claude` names the level you meant your agent files to
   carry, and buys a sentence rather than a setting. Nothing is written, generated or repaired: the
-  session opens by saying which of `general-purpose`, `Explore` and `Plan` have no
-  `.claude/agents/<type>.md`, which have one nothing could read a frontmatter block out of, which
-  carry another level, and which were last written before the installed build, that last being the
-  one a reader cannot see for themselves. It says the file predates the build and stops there, since
-  whether the prompt inside it still matches is not something a timestamp knows. Silence means either
-  that all three are there at that level and newer than the build, or that the build's own age could
-  not be read, since a missing build is not evidence that a copy is current. Every `.claude/agents`
-  from the working directory up to your home is read, deepest first, then `$CLAUDE_CONFIG_DIR/agents`
-  or `~/.claude/agents`, which is the order the build resolves a name in, and a file behind a symlink
-  counts because the build follows one. The same five levels as the switch above, and
+  session opens by saying which of `general-purpose`, `Explore` and `Plan` no file names, which have
+  a file the build refuses for want of a `description:`, which name no effort, which name another
+  level, and which were last written before the installed build, that last being the one a reader
+  cannot see for themselves. It says the file predates the build and stops there, since whether the
+  prompt inside it still matches is not something a timestamp knows. Silence means either that all
+  three are named at that level by a file newer than the build, or that the build's own age could not
+  be read, since a missing build is not evidence that a copy is current.
+
+  An agent is keyed on its frontmatter `name:` and never on its filename, which is how the build
+  keys one: `Explore.md` naming something else is that other agent and leaves the built-in alone,
+  and `anything.md` naming `Plan` is the file a spawn of `Plan` reads. Every `.claude/agents` from
+  the working directory up to your home is read, deepest first and subfolders included, then
+  `$CLAUDE_CONFIG_DIR/agents` or `~/.claude/agents`. A file behind a symlink counts, because the
+  build follows one. Two places the build also looks are not read here: a managed settings
+  directory, which outranks everything, and the additional working directories a session was
+  started with. The same five levels as the switch above, and
   anything else is read as unset with a line saying so. It reports and never acts, so it is safe to
   leave set; unset it to stop asking.
 - `ULTRACODE_ANYWHERE_DEBUG=/tmp/uc.log claude` logs every prompt the hook fires on, its stdin

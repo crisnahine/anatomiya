@@ -305,7 +305,7 @@ function shadowIn(t1, type, { effort = "medium", after = true } = {}) {
   const agents = join(t1.config, "agents");
   mkdirSync(agents, { recursive: true });
   const path = join(agents, `${type}.md`);
-  writeFileSync(path, `---\nname: ${type}\neffort: ${effort}\n---\n\nthe copied prompt\n`);
+  writeFileSync(path, `---\nname: ${type}\ndescription: What ${type} is for.\neffort: ${effort}\n---\n\nthe copied prompt\n`);
   const built = statSync(t1.cli).mtimeMs / 1000;
   const at = after ? built + 60 : built - 60;
   utimesSync(path, at, at);
@@ -383,7 +383,7 @@ test("a project's own agent file answers before the user's", (t) => {
   mkdirSync(project, { recursive: true });
   for (const type of ["general-purpose", "Explore", "Plan"]) {
     const path = join(project, `${type}.md`);
-    writeFileSync(path, `---\nname: ${type}\neffort: medium\n---\n\nthe copied prompt\n`);
+    writeFileSync(path, `---\nname: ${type}\ndescription: What ${type} is for.\neffort: medium\n---\n\nthe copied prompt\n`);
     const at = statSync(t1.cli).mtimeMs / 1000 + 60;
     utimesSync(path, at, at);
   }

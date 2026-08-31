@@ -13,15 +13,19 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 - `ULTRACODE_ANYWHERE_SUBAGENT_EFFORT=<level>` covers the Agent-tool half of the question the stage
   switch answers for workflows. It is a report and not a setting: nothing is written, generated or
-  repaired. A spawn's effort comes from its agent definition, so the one lever is
-  `.claude/agents/<type>.md` frontmatter carrying `effort:`, and covering a built-in type means
-  keeping a copy of that type's system prompt in the file. The copy is what rots, silently: it is
-  frozen at the build it was taken from and an upgrade moves the original. The session now opens by
-  saying which of `general-purpose`, `Explore` and `Plan` have no such file, which carry another
-  level, and which were last written before the build now installed. Silence means all three are
-  there at the level asked for and newer than the build. A project's own `.claude/agents` is read
-  before the user's, the way the build resolves a name, and a build whose age cannot be read leaves
-  the age unanswered rather than reported as fine.
+  repaired. A spawn's effort comes from its agent definition, so the one lever is an agent file's
+  `effort:`, and covering a built-in type means keeping a copy of that type's system prompt in the
+  file. The copy is what rots, silently: it is frozen at the build it was taken from and an upgrade
+  moves the original. The session now opens by saying which of `general-purpose`, `Explore` and
+  `Plan` no file names, which have a file the build refuses for want of a `description:`, which name
+  no effort, which name another level, and which were last written before the build now installed.
+  Silence means all three are named at the level asked for by a file newer than the build.
+- An agent file is keyed on its frontmatter `name:` and never on its filename, which is how the
+  build keys one: `Explore.md` naming something else is that other agent and leaves the built-in
+  alone, and `anything.md` naming `Plan` is the file a spawn of `Plan` reads. Every
+  `.claude/agents` from the working directory up to the home is read, deepest first and subfolders
+  included, then the user's own, and a file behind a symlink counts because the build follows one.
+  A build whose age cannot be read leaves the age unanswered rather than reported as fine.
 
 ### Changed
 
