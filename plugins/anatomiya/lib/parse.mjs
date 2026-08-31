@@ -194,9 +194,15 @@ export async function parseAll(input, { withProgram = false, guards = null, fram
   }
 }
 
+/**
+ * Every outcome one file can be counted as, in the order they are reported.
+ * `CONTEXT.md` names all of them, and the docs check reads this to say so.
+ */
+export const PARSE_OUTCOMES = ["ok", "rejected", "unreadable", "oversize", "crashed"];
+
 async function run(files, { withProgram, guards, frameworks }) {
   const records = new Map();
-  const tallies = { ok: 0, rejected: 0, unreadable: 0, oversize: 0, crashed: 0 };
+  const tallies = Object.fromEntries(PARSE_OUTCOMES.map((kind) => [kind, 0]));
   const engines = {};
   const missingEngines = [];
   let missingParser = null;
