@@ -1,6 +1,6 @@
 # Contributing
 
-Read `DECISIONS.md` first. It is 201 numbered rows, each one a measurement or a review finding reduced
+Read `DECISIONS.md` first. It is 202 numbered rows, each one a measurement or a review finding reduced
 to the decision it forces on the code. It is the build contract, and most questions you will have
 about why something is shaped the way it is are answered there in one line.
 
@@ -100,6 +100,24 @@ that does it.
 
 Changing an existing row means saying what new evidence overturned the old one. Rows are not opinions
 and they do not get edited because a new implementation would be tidier.
+
+## The glossary says what a word means, and only a reader keeps it true
+
+`CONTEXT.md` is the vocabulary: what each term is, and the words to avoid for it. It is a glossary and
+holds no implementation detail. Use its terms in a claim, an issue title, a test name and a comment,
+and never a word on a term's `_Avoid_` line.
+
+A term the code has moved away from is worse than no term, because a reader trusts it. Eleven entries
+had drifted before anybody set the file beside the code: `Conforming` said "a candidate matching the
+positive pattern" while a counter-stated slot printed the candidates matching the counter-claim, so an
+area file said "5589 of 5589 sites" where the glossary's word meant 0.
+
+If your change moves what a word means, move the entry in the same change. If it adds a word a reader
+will meet, add the entry. (G12)
+
+`npm run check:docs` reads the file and holds two things: every entry is whole, and `Unexamined` still
+names every outcome `parse.mjs` counts a file as. Shape, and one closed set the code owns. Whether an
+entry is still true is not mechanically checkable, and is on you and on whoever reviews it.
 
 ## Adding a dimension
 

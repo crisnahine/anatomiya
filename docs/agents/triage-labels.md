@@ -12,5 +12,5 @@ The skills speak in terms of five canonical triage roles. This file maps those r
 
 When a skill mentions a role (e.g. "apply the AFK-ready triage label"), use the corresponding label string from this table.
 
-None of these labels exist on the repo yet, so the first `/triage` run creates them. Edit the right-hand
-column to match whatever vocabulary you actually use.
+`wontfix` already exists as a GitHub default. The other four do not, so the first `/triage` run creates
+them. Edit the right-hand column to match whatever vocabulary you actually use.
