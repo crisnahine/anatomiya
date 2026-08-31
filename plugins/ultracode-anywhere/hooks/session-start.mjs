@@ -76,8 +76,8 @@ export function notice({
   // not a hook said anything this session, and a copy frozen at an older build
   // is just as frozen where the settings already do the reminder's job.
   //
-  // Either the value named a level or it did not, so at most one of these two
-  // lines is ever owed.
+  // At most one of these two ever fires: a value that named a level makes the
+  // first null, and one that did not makes the second.
   const subagent = askedForSubagent(env);
   if (subagent) said.push(`ultracode-anywhere: ${subagent}.`);
 

@@ -104,22 +104,35 @@ The other half of that question is the Agent tool, and this plugin cannot set it
 spawn's effort comes from its agent definition, and the one lever is `.claude/agents/<type>.md`
 frontmatter carrying `effort:`. That layer beats both `effortLevel` and `modelSettings`: the identical
 file with the `effort:` line removed reports the session's own level in the same session. No hook
-reaches it. `SubagentStart` sees the spawn and answers with text, never with a setting, and
-`PreToolUse` is the one event that can rewrite a call but the Agent tool's input is `description`,
-`prompt`, `subagent_type`, `model` and `isolation`, with no effort among them; writing one in fails
-validation. A reminder cannot do it either, since the model has no argument to pass, which is what
+reaches it, and that is all twenty-two output schemas rather than the two worth guessing at: not one
+of them names an effort. `SubagentStart` sees the spawn and answers with text alone. Two events can
+rewrite a call, `PreToolUse` through `updatedInput` and `PermissionRequest` through the same field on
+its `allow` branch, and neither helps, because what they rewrite is the tool's input and the Agent
+tool's input is `description`, `prompt`, `subagent_type`, `model`, `run_in_background`, `name`,
+`team_name`, `mode`, `isolation` and `cwd`, with no effort among them. An invented `effort` key does
+not fail validation either, which would at least be loud: both validators drop unrecognised keys, so
+the call goes through with the key gone and the spawn runs at the level it was always going to. A reminder cannot do it either, since the model has no argument to pass, which is what
 makes this different from `opts.effort` on a workflow stage.
 
-Covering a built-in type means writing a file that carries a copy of that type's system prompt, and
-two things such a copy cannot carry, both absent from the frontmatter schema:
+Covering a built-in type means writing a file that carries a copy of that type's system prompt. Two
+fields on the built-in definitions cannot go in that file, since neither is a frontmatter key, and
+the interesting part is that neither costs what it looks like it costs:
 
-- `omitClaudeMd`. The built-in `Explore` and `Plan` set it and a file cannot, so both start loading
-  `CLAUDE.md`. On a repository with a large one that is real added input on every spawn, working
-  against the saving the switch is for. The `gitStatus` omission survives, because the build keys that
-  one off the agent's name rather than off its definition.
-- `appendSystemPrompt`. The built-in `claude` catch-all sets it, so its prompt is added to the base
-  one. A markdown file replaces instead. That type cannot be covered at all and is better left alone,
-  which is why the switch below reports on three types and not four.
+- `omitClaudeMd`, set by four built-ins including `Explore` and `Plan`. It reads as though a copy
+  would start loading `CLAUDE.md` and pay for it on every spawn. Measured, it does not: the built-in
+  `Explore` already paid 45,921 tokens for a 138 KB `CLAUDE.md` on this build, so the built-in was
+  never saving anything and a copy loses nothing. What a copy does lose is the tool set, if it forgets
+  `disallowedTools`: the same measurement put a one-line shadow 993 tokens above the built-in on six
+  extra tool definitions. Copy the `disallowedTools` line, not just the prompt.
+- `appendSystemPrompt`, set by the `claude` catch-all. It reads as though a copy of that type would
+  replace a prompt the built-in appends. On the Agent-tool path it would not, because that path never
+  appends; the append belongs to `--agent`, where a definition becomes the session's own prompt. So
+  `claude` is left off the list below for a narrower reason than "cannot be copied": a file named for
+  it changes the `--agent` path too, and that is a wider blast radius than the three types this
+  switch is about.
+
+Both of those were in the issue this came from, stated the other way round. They are recorded here as
+measured because a README that repeats a plausible cost is how the cost becomes folklore.
 
 A plugin-provided agent type is a third gap of a different kind: covering one means editing the
 plugin cache, which `autoUpdate` overwrites.
@@ -329,10 +342,15 @@ and the cap line then comes back every session rather than once.
 - `ULTRACODE_ANYWHERE_SUBAGENT_EFFORT=medium claude` names the level you meant your agent files to
   carry, and buys a sentence rather than a setting. Nothing is written, generated or repaired: the
   session opens by saying which of `general-purpose`, `Explore` and `Plan` have no
-  `.claude/agents/<type>.md`, which carry another level, and which were last written before the
-  installed build, that last being the one a reader cannot see for themselves. Silence means all
-  three are there at that level and newer than the build. A project's own `.claude/agents` is read
-  before the user's, the way the build resolves a name. The same five levels as the switch above, and
+  `.claude/agents/<type>.md`, which have one nothing could read a frontmatter block out of, which
+  carry another level, and which were last written before the installed build, that last being the
+  one a reader cannot see for themselves. It says the file predates the build and stops there, since
+  whether the prompt inside it still matches is not something a timestamp knows. Silence means either
+  that all three are there at that level and newer than the build, or that the build's own age could
+  not be read, since a missing build is not evidence that a copy is current. Every `.claude/agents`
+  from the working directory up to your home is read, deepest first, then `$CLAUDE_CONFIG_DIR/agents`
+  or `~/.claude/agents`, which is the order the build resolves a name in, and a file behind a symlink
+  counts because the build follows one. The same five levels as the switch above, and
   anything else is read as unset with a line saying so. It reports and never acts, so it is safe to
   leave set; unset it to stop asking.
 - `ULTRACODE_ANYWHERE_DEBUG=/tmp/uc.log claude` logs every prompt the hook fires on, its stdin

@@ -127,7 +127,7 @@ test("a shadow older than the build it shadows is the one worth saying", (t) => 
   const { agents, build } = tree(t);
   shadow(agents, "Explore", { effort: "medium", at: BEFORE });
 
-  assert.equal(stateOf(shadowsFor({ level: "medium", dirs: [agents], build }), "Explore"), "stale");
+  assert.equal(stateOf(shadowsFor({ level: "medium", dirs: [agents], build }), "Explore"), "older");
 });
 
 test("a build nobody can read leaves the age unanswered rather than guessed", (t) => {
@@ -191,29 +191,116 @@ test("a directory standing where a shadow should be is not a shadow", (t) => {
   assert.equal(stateOf(shadowsFor({ level: "medium", dirs: [agents], build }), "Explore"), "absent");
 });
 
-test("a symlink standing where a shadow should be is not followed", (t) => {
-  // The agents directory is an ordinary one under the user's home, and a path
-  // this reads is a path someone else may have put a link at. Nothing here
-  // needs to follow one to answer.
+test("a shadow behind a symlink is the shadow, because the build follows one", (t) => {
+  // A dotfiles repository keeps these behind links, and Claude Code follows
+  // them and loads the agent. `hook-io.mjs` already says so for the other
+  // user file this plugin reads. Refusing the link reported a working setup as
+  // having no agent files at all, every session.
   const { dir, agents, build } = tree(t);
   const elsewhere = join(dir, "elsewhere.md");
   writeFileSync(elsewhere, "---\nname: Explore\neffort: medium\n---\nbody\n");
   utimesSync(elsewhere, AFTER, AFTER);
   symlinkSync(elsewhere, join(agents, "Explore.md"));
 
-  assert.equal(stateOf(shadowsFor({ level: "medium", dirs: [agents], build }), "Explore"), "absent");
+  assert.equal(stateOf(shadowsFor({ level: "medium", dirs: [agents], build }), "Explore"), "current");
 });
 
-test("a file too large to be a shadow's frontmatter is read no further", (t) => {
-  // A shadow's frontmatter is five lines. Anything standing there holding a
-  // megabyte is not one, and reading it whole on a hook's budget is the cost
-  // this refuses rather than pays.
+test("a symlink pointing nowhere is absent rather than an error", (t) => {
+  const { dir, agents, build } = tree(t);
+  symlinkSync(join(dir, "no-such-file.md"), join(agents, "Plan.md"));
+
+  assert.equal(stateOf(shadowsFor({ level: "medium", dirs: [agents], build }), "Plan"), "absent");
+});
+
+test("a big file is read at its head, so a long prompt below the frontmatter costs nothing", (t) => {
+  // The whole file is never read: the prompt under the fence runs to hundreds
+  // of kilobytes and a hook has five seconds. Refusing the file outright was
+  // the first attempt, and it reported a working 9 KB shadow as carrying
+  // another level.
   const { agents, build } = tree(t);
   const path = join(agents, "Explore.md");
-  writeFileSync(path, `---\nname: Explore\n${"x".repeat(200_000)}\neffort: medium\n---\nbody\n`);
+  writeFileSync(path, `---\nname: Explore\neffort: medium\n---\n${"x".repeat(200_000)}\n`);
+  utimesSync(path, AFTER, AFTER);
+
+  assert.equal(stateOf(shadowsFor({ level: "medium", dirs: [agents], build }), "Explore"), "current");
+});
+
+test("frontmatter that runs past the head read is unreadable, not another level", (t) => {
+  // Two different moves. "Another level" sends a reader to change a line; this
+  // one is a file nothing could parse, and saying the first about the second
+  // is how a reader is sent to fix a file that already works.
+  const { agents, build } = tree(t);
+  const path = join(agents, "Explore.md");
+  writeFileSync(path, `---\nname: Explore\n${"x".repeat(20_000)}\neffort: medium\n---\nbody\n`);
+  utimesSync(path, AFTER, AFTER);
+
+  assert.equal(stateOf(shadowsFor({ level: "medium", dirs: [agents], build }), "Explore"), "unreadable");
+});
+
+test("a file with no frontmatter at all is unreadable rather than another level", (t) => {
+  const { agents, build } = tree(t);
+  const path = join(agents, "Plan.md");
+  writeFileSync(path, "just a prompt, no fence\n");
+  utimesSync(path, AFTER, AFTER);
+
+  assert.equal(stateOf(shadowsFor({ level: "medium", dirs: [agents], build }), "Plan"), "unreadable");
+});
+
+test("a value in quotes is the level it quotes", (t) => {
+  // The build YAML-parses this block. The shipped Explore.md on the machine
+  // this was written on carries a double-quoted description with escaped
+  // quotes inside and a flow sequence, neither of which a line match survives.
+  const { agents, build } = tree(t);
+  const path = join(agents, "Explore.md");
+  writeFileSync(path, '---\nname: Explore\neffort: "medium"\n---\nbody\n');
+  utimesSync(path, AFTER, AFTER);
+
+  assert.equal(stateOf(shadowsFor({ level: "medium", dirs: [agents], build }), "Explore"), "current");
+});
+
+test("a value in single quotes is the level it quotes", (t) => {
+  const { agents, build } = tree(t);
+  const path = join(agents, "Explore.md");
+  writeFileSync(path, "---\nname: Explore\neffort: 'medium'\n---\nbody\n");
+  utimesSync(path, AFTER, AFTER);
+
+  assert.equal(stateOf(shadowsFor({ level: "medium", dirs: [agents], build }), "Explore"), "current");
+});
+
+test("a comment after the value is not part of the value", (t) => {
+  const { agents, build } = tree(t);
+  const path = join(agents, "Explore.md");
+  writeFileSync(path, "---\nname: Explore\neffort: medium # keep in step with the build\n---\nbody\n");
+  utimesSync(path, AFTER, AFTER);
+
+  assert.equal(stateOf(shadowsFor({ level: "medium", dirs: [agents], build }), "Explore"), "current");
+});
+
+test("a hash inside a quoted value is not a comment", (t) => {
+  const { agents, build } = tree(t);
+  const path = join(agents, "Explore.md");
+  writeFileSync(path, '---\nname: Explore\neffort: "med#ium"\n---\nbody\n');
   utimesSync(path, AFTER, AFTER);
 
   assert.equal(stateOf(shadowsFor({ level: "medium", dirs: [agents], build }), "Explore"), "other-level");
+});
+
+test("a byte-order mark before the fence does not hide the frontmatter", (t) => {
+  const { agents, build } = tree(t);
+  const path = join(agents, "Explore.md");
+  writeFileSync(path, '\uFEFF---\nname: Explore\neffort: medium\n---\nbody\n');
+  utimesSync(path, AFTER, AFTER);
+
+  assert.equal(stateOf(shadowsFor({ level: "medium", dirs: [agents], build }), "Explore"), "current");
+});
+
+test("blank lines before the fence do not hide the frontmatter", (t) => {
+  const { agents, build } = tree(t);
+  const path = join(agents, "Explore.md");
+  writeFileSync(path, '\n\n---\nname: Explore\neffort: medium\n---\nbody\n');
+  utimesSync(path, AFTER, AFTER);
+
+  assert.equal(stateOf(shadowsFor({ level: "medium", dirs: [agents], build }), "Explore"), "current");
 });
 
 test("a level asked for that is no level answers nothing at all", (t) => {
@@ -248,12 +335,34 @@ test("nothing is said when there is nothing to report on", () => {
 });
 
 test("a shadow older than the build is named, with what that costs", () => {
-  const said = shadowLine("medium", seenAs(["current", "stale", "current"]));
+  const said = shadowLine("medium", seenAs(["current", "older", "current"]));
 
   assert.match(said, /Explore/);
   assert.match(said, /written before the installed build/);
   assert.doesNotMatch(said, /general-purpose/);
   assert.doesNotMatch(said, /Plan/);
+});
+
+test("the age line says what a timestamp knows and stops there", () => {
+  // A file older than the build was written against an older one. Whether the
+  // prompt inside it actually differs is not knowable from a timestamp, and
+  // the first draft asserted it did.
+  const said = shadowLine("medium", seenAs(["older", "current", "current"]));
+
+  assert.doesNotMatch(said, /is behind|are behind/);
+  assert.match(said, /unchecked|cannot say|not knowable/);
+});
+
+test("a file nothing could parse is named apart from one carrying another level", () => {
+  const said = shadowLine("medium", seenAs(["unreadable", "other-level", "current"]));
+
+  assert.match(said, /general-purpose[^.]*frontmatter/);
+  assert.match(said, /Explore[^.]*another level/);
+});
+
+test("an unreadable file is not left silent", () => {
+  // It is a file to look at. Silence would read as "all in order".
+  assert.notEqual(shadowLine("medium", seenAs(["unreadable", "current", "current"])), null);
 });
 
 test("every type missing a shadow is named in one line, not one line each", () => {
@@ -285,7 +394,7 @@ test("the line says where the lever is and what it cannot carry", () => {
 });
 
 test("the line names no state it is not reporting", () => {
-  const said = shadowLine("medium", seenAs(["stale", "current", "current"]));
+  const said = shadowLine("medium", seenAs(["older", "current", "current"]));
 
   assert.doesNotMatch(said, /no agent file/);
   assert.doesNotMatch(said, /another level/);
@@ -299,13 +408,17 @@ test("a project's own agents directory is asked before the user's", () => {
   // order would report on the user's file while the project's was in use.
   const dirs = agentDirsFor({ HOME: "/home/me" }, "/work/repo");
 
-  assert.deepEqual(dirs, ["/work/repo/.claude/agents", "/home/me/.claude/agents"]);
+  assert.equal(dirs[0], "/work/repo/.claude/agents");
+  assert.equal(dirs[dirs.length - 1], "/home/me/.claude/agents");
 });
 
 test("CLAUDE_CONFIG_DIR moves the user's agents directory with the rest of its state", () => {
   const dirs = agentDirsFor({ HOME: "/home/me", CLAUDE_CONFIG_DIR: "/elsewhere/cc" }, "/work/repo");
 
-  assert.deepEqual(dirs, ["/work/repo/.claude/agents", "/elsewhere/cc/agents"]);
+  // Not `$CLAUDE_CONFIG_DIR/.claude/agents`: the build takes the variable as
+  // the configuration directory itself.
+  assert.equal(dirs[dirs.length - 1], "/elsewhere/cc/agents");
+  assert.equal(dirs.includes("/elsewhere/cc/.claude/agents"), false);
 });
 
 test("no working directory leaves the user's directory alone to answer", () => {
@@ -315,7 +428,13 @@ test("no working directory leaves the user's directory alone to answer", () => {
 test("a machine with no home named yields no user directory rather than a bad path", () => {
   // The same reading the state directory takes: an environment that names HOME
   // as empty means it, and joining "" would build a path at the filesystem root.
-  assert.deepEqual(agentDirsFor({ HOME: "" }, "/work/repo"), ["/work/repo/.claude/agents"]);
+  const dirs = agentDirsFor({ HOME: "" }, "/work/repo");
+
+  // The walk still runs, and every entry it yields is some directory's own
+  // `.claude/agents`. What must not appear is the user-level one, which with
+  // no home to hang off would be the bare "/agents".
+  assert.equal(dirs.every((d) => d.endsWith("/.claude/agents")), true, dirs.join(" "));
+  assert.equal(dirs[0], "/work/repo/.claude/agents");
 });
 
 test("the same directory named twice is asked once", () => {
@@ -324,4 +443,46 @@ test("the same directory named twice is asked once", () => {
   const dirs = agentDirsFor({ HOME: "/home/me" }, "/home/me");
 
   assert.deepEqual(dirs, ["/home/me/.claude/agents"]);
+});
+
+
+// --- walking up to the shadows a spawn would actually read ---------------------
+
+test("every .claude/agents from the working directory up to the home is asked", () => {
+  // The build walks up from the working directory and stops at the home
+  // directory, so a repository whose agent files sit at its root answers for a
+  // session started three directories down. Asking only the working directory
+  // reported those files absent.
+  const dirs = agentDirsFor({ HOME: "/home/me" }, "/home/me/work/repo/src/deep");
+
+  assert.deepEqual(dirs, [
+    "/home/me/work/repo/src/deep/.claude/agents",
+    "/home/me/work/repo/src/.claude/agents",
+    "/home/me/work/repo/.claude/agents",
+    "/home/me/work/.claude/agents",
+    "/home/me/.claude/agents",
+  ]);
+});
+
+test("the walk stops at the home directory rather than climbing to the root", () => {
+  const dirs = agentDirsFor({ HOME: "/home/me" }, "/home/me/work");
+
+  assert.deepEqual(dirs, ["/home/me/work/.claude/agents", "/home/me/.claude/agents"]);
+});
+
+test("a working directory outside the home yields itself and the user's", () => {
+  // The stop is the home directory, and a working directory outside it never
+  // reaches one, so the walk runs to the root and the user's comes last.
+  const dirs = agentDirsFor({ HOME: "/home/me" }, "/srv/checkout");
+
+  assert.equal(dirs[0], "/srv/checkout/.claude/agents");
+  assert.equal(dirs[dirs.length - 1], "/home/me/.claude/agents");
+  assert.equal(dirs.includes("/srv/.claude/agents"), true);
+});
+
+test("the deepest directory comes first, since that is the one the build prefers", () => {
+  const dirs = agentDirsFor({ HOME: "/home/me" }, "/home/me/a/b");
+
+  assert.equal(dirs[0], "/home/me/a/b/.claude/agents");
+  assert.equal(dirs[dirs.length - 1], "/home/me/.claude/agents");
 });

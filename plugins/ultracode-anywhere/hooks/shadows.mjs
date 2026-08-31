@@ -14,11 +14,11 @@
  * cannot see. Whether the copy is faithful is not knowable from the file; when
  * it was last written, against a build with a timestamp of its own, is.
  */
-import { lstatSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { statSync } from "node:fs";
+import { dirname, join } from "node:path";
 
 import { EFFORT_LEVELS } from "./effort.mjs";
-import { configDirFor, readOwnFile } from "./hook-io.mjs";
+import { configDirFor, homeOf, readHead } from "./hook-io.mjs";
 
 /**
  * The built-in types a markdown file can stand in for, in the order they are
@@ -32,20 +32,26 @@ import { configDirFor, readOwnFile } from "./hook-io.mjs";
 export const SHADOWABLE = ["general-purpose", "Explore", "Plan"];
 
 /**
- * How much of a file is read looking for its frontmatter.
+ * How much of a file's head is read looking for its frontmatter.
  *
- * Frontmatter is a handful of short lines and the prompt below it runs to
- * hundreds of kilobytes. The read refuses a file larger than this outright
- * rather than taking a prefix, so a hook's budget does not go on a file that
- * was never a shadow. A real one is comfortably inside it: the largest of the
- * three here is 2.6 KB with its whole prompt.
+ * A prefix rather than the whole file: frontmatter is a handful of short lines
+ * and the copied prompt under it runs to hundreds of kilobytes, and a hook has
+ * five seconds for everything. Generous enough that a block which does not
+ * close inside it is malformed rather than merely long.
  */
 const FRONTMATTER_MOST = 8192;
 
-/** The fence a frontmatter block opens and closes with, on a line of its own. */
-const FENCE = /^---[ \t]*$/;
+/**
+ * How many directories up the walk goes before it stops asking.
+ *
+ * The home directory ends it on an ordinary session and this never fires. It is
+ * here for the one that starts outside the home, where nothing else would stop
+ * the walk before the filesystem root, and for a path long enough that a stat
+ * per segment is worth refusing.
+ */
+const WALK_MOST = 32;
 
-/** The key a shadow carries the level in, and the value up to the line's end. */
+const FENCE = /^---[ \t]*$/;
 const EFFORT_LINE = /^effort:[ \t]*(.*)$/;
 
 /**
@@ -62,10 +68,31 @@ const EFFORT_LINE = /^effort:[ \t]*(.*)$/;
  */
 export function agentDirsFor(env = process.env, cwd = "") {
   const config = configDirFor(env);
+  const home = homeOf(env);
   const dirs = [];
-  if (cwd) dirs.push(join(cwd, ".claude", "agents"));
+  for (const dir of upTo(cwd, home)) dirs.push(join(dir, ".claude", "agents"));
   if (config) dirs.push(join(config, "agents"));
   return [...new Set(dirs)];
+}
+
+/**
+ * A directory and each of its parents, stopping at `home` or at the root.
+ *
+ * Deepest first, which is the order the build prefers among them. The bound is
+ * the home directory rather than the filesystem root: the build stops there,
+ * and a walk that did not would ask about `/.claude/agents` on every session.
+ */
+function upTo(from, home) {
+  const seen = [];
+  let dir = from;
+  while (dir && seen.length < WALK_MOST) {
+    seen.push(dir);
+    if (dir === home) break;
+    const parent = dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return seen;
 }
 
 /**
@@ -87,9 +114,17 @@ export function shadowsFor({ level, dirs = [], build = null } = {}) {
   return SHADOWABLE.map((type) => {
     const found = findIn(dirs, `${type}.md`);
     if (!found) return { type, state: "absent", path: null };
-    if (levelIn(found.path) !== level) return { type, state: "other-level", path: found.path };
+
+    // Three answers, not two. A file nothing could parse is a different move
+    // from one carrying another level: the first is a file to look at, the
+    // second is a line to change, and saying the second about the first sends
+    // a reader to fix a file that already works.
+    const read = frontmatterIn(found.path);
+    if (!read.parsed) return { type, state: "unreadable", path: found.path };
+    if (read.level !== level) return { type, state: "other-level", path: found.path };
+
     if (built === null) return { type, state: "unknown-age", path: found.path };
-    return { type, state: found.at < built ? "stale" : "current", path: found.path };
+    return { type, state: found.at < built ? "older" : "current", path: found.path };
   });
 }
 
@@ -109,17 +144,23 @@ export function shadowsFor({ level, dirs = [], build = null } = {}) {
 export function shadowLine(level, seen = []) {
   const named = (state) => seen.filter((s) => s.state === state).map((s) => s.type);
   const absent = named("absent");
+  const unreadable = named("unreadable");
   const other = named("other-level");
-  const stale = named("stale");
-  if (absent.length + other.length + stale.length === 0) return null;
+  const older = named("older");
+  if (absent.length + unreadable.length + other.length + older.length === 0) return null;
 
   const clauses = [];
   if (absent.length) clauses.push(`no agent file carries it for ${list(absent)}`);
+  if (unreadable.length) {
+    clauses.push(`${list(unreadable)} ${unreadable.length === 1 ? "has" : "have"} a file with no frontmatter this could read`);
+  }
   if (other.length) clauses.push(`${list(other)} ${other.length === 1 ? "carries" : "carry"} another level`);
-  if (stale.length) {
-    const one = stale.length === 1;
+  if (older.length) {
+    const one = older.length === 1;
+    // What a timestamp knows and no more. Whether the copied prompt actually
+    // differs is not knowable from the file, and an earlier draft said it was.
     clauses.push(
-      `${list(stale)} ${one ? "was" : "were"} written before the installed build, so the ${one ? "prompt it copies is" : "prompts they copy are"} behind`,
+      `${list(older)} ${one ? "was" : "were"} written before the installed build, so whether the ${one ? "prompt it copies" : "prompts they copy"} still ${one ? "matches" : "match"} is unchecked`,
     );
   }
 
@@ -139,43 +180,73 @@ function list(names) {
   return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
 }
 
-/** The first directory holding a regular file of that name, and its time. */
+/**
+ * The first directory holding a file of that name, and when it was written.
+ *
+ * A link is followed, because the build follows one and loads the agent behind
+ * it, and a dotfiles repository keeps these behind links. Refusing a link
+ * reported such a setup as having no agent files at all, every session. The
+ * time is the target's for the same reason: the target is the file somebody
+ * edits.
+ */
 function findIn(dirs, name) {
   for (const dir of dirs) {
     if (!dir) continue;
     const path = join(dir, name);
     try {
-      // `lstat` rather than `stat`: a link standing where a shadow should be is
-      // not one, and the read below refuses to follow it either. Answering
-      // "absent" says the thing that is true, which is that no shadow of this
-      // plugin's kind is there.
-      const seen = lstatSync(path);
+      const seen = statSync(path);
       if (seen.isFile()) return { path, at: seen.mtimeMs };
     } catch {
-      // Nothing there, or a directory this account may not look inside. Both
-      // are "no shadow here", and the next directory is still worth asking.
+      // Nothing there, a link pointing nowhere, or a directory this account
+      // may not look inside. All three are "no shadow here", and the next
+      // directory is still worth asking.
     }
   }
   return null;
 }
 
-/** The level a file's frontmatter names, or null where it names none. */
-function levelIn(path) {
-  // A file too large to be frontmatter reads as nothing rather than as a
-  // prefix, so a stray `effort:` far down a copied prompt is never read as the
-  // block's own.
-  const text = readOwnFile(path, FRONTMATTER_MOST);
+/**
+ * What a file's frontmatter says: whether there was a block to read at all,
+ * and the level it names.
+ *
+ * The build hands this block to a YAML parser, so what people write in it is
+ * what YAML allows: quotes around a value, a comment after it, a byte-order
+ * mark from an editor that adds one. This reads the one key it needs rather
+ * than parsing YAML, and forgives those three, because reporting a working
+ * file as carrying the wrong level is the failure that costs a reader an
+ * afternoon.
+ */
+function frontmatterIn(path) {
+  const text = readHead(path, FRONTMATTER_MOST).replace(/^\uFEFF/, "");
   const lines = text.split(/\r?\n/);
-  if (!FENCE.test(lines[0] ?? "")) return null;
 
-  for (let i = 1; i < lines.length; i++) {
-    if (FENCE.test(lines[i])) return null;
+  let i = 0;
+  while (i < lines.length && lines[i].trim() === "") i++;
+  if (!FENCE.test(lines[i] ?? "")) return { parsed: false, level: null };
+
+  for (i++; i < lines.length; i++) {
+    if (FENCE.test(lines[i])) return { parsed: true, level: null };
     const named = EFFORT_LINE.exec(lines[i]);
-    if (named) return named[1].trim().toLowerCase();
+    if (named) return { parsed: true, level: valueOf(named[1]) };
   }
-  // No closing fence inside what was read: the block is unterminated, and a
-  // key found in it belongs to nothing.
-  return null;
+  // No closing fence inside the head that was read: either the block is
+  // unterminated or it is longer than a frontmatter block has any business
+  // being, and a key found in it belongs to nothing either way.
+  return { parsed: false, level: null };
+}
+
+/**
+ * A scalar as YAML reads one: quotes taken off, and a comment after it cut.
+ *
+ * The comment rule is YAML's own, a `#` at the start or after a space, so a
+ * hash inside the value survives. Quotes are checked first for the same
+ * reason.
+ */
+function valueOf(raw) {
+  const text = raw.trim();
+  const quoted = /^(["'])(.*)\1[ \t]*(?:#.*)?$/.exec(text);
+  if (quoted) return quoted[2].toLowerCase();
+  return text.replace(/(^|[ \t])#.*$/, "").trim().toLowerCase();
 }
 
 /** When a path was last written, and null for one nothing can be read about. */

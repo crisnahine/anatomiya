@@ -119,6 +119,27 @@ export function readIfFile(path, most = MOST, flags = 0) {
 }
 
 /**
+ * The first `most` bytes of a file, however long the file is, following a link.
+ *
+ * `readIfFile` answers "" for anything past its bound, which is right for a
+ * file that is only worth reading whole. A file whose first few lines are the
+ * question and whose body is a copied prompt is not that: refusing it reported
+ * a working 9 KB agent file as carrying the wrong level.
+ */
+export function readHead(path, most = MOST) {
+  let fd;
+  try {
+    fd = openSync(path, constants.O_RDONLY | (constants.O_NONBLOCK ?? 0));
+    if (!fstatSync(fd).isFile()) return "";
+    return upTo(fd, most);
+  } catch {
+    return "";
+  } finally {
+    if (fd !== undefined) closeSync(fd);
+  }
+}
+
+/**
  * The same read for a file this plugin wrote itself, which may not be a link.
  *
  * A user's own file is allowed to be one, since a dotfiles repository keeps
