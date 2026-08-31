@@ -407,19 +407,47 @@ still the two:
 ```sh
 /usr/bin/grep -a -o 'hookEventName:N("[A-Za-z]*")' "$BUILD" | sort -u | wc -l   # 22 in 2.1.251
 /usr/bin/grep -a -o 'hookEventName:N("[A-Za-z]*")[^;]\{0,250\}' "$BUILD" | /usr/bin/grep -c -i effort  # expect 0
-/usr/bin/grep -a -o 'hookEventName:N("[A-Za-z]*")[^;]\{0,250\}updatedInput' "$BUILD" | /usr/bin/grep -o 'N("[A-Za-z]*")' | sort -u
+/usr/bin/grep -a -o 'hookEventName:N("[A-Za-z]*")[^;]\{0,110\}updatedInput' "$BUILD" | /usr/bin/grep -o 'N("[A-Za-z]*")' | sort -u
 ```
 
-The last one answers `PreToolUse` and `PermissionRequest`. Issue #131 said `PreToolUse` was the only
-one; it is not, and it does not matter, because both rewrite the tool's input and the effort is not
-in it. A third name appearing there is worth reading, and an effort turning up in the second grep is
-the day this whole section is wrong.
+The last one answers `PreToolUse`, `PermissionRequest` and `allow`, that third being
+`PermissionRequest`'s own branch marker rather than an event. The window is 110 characters on purpose:
+the schemas sit next to each other in the bundle, and a wider one reaches over the boundary and
+answers `Notification` and `PermissionDenied` as well, which own no such field. Issue #131 said
+`PreToolUse` was the only event that can rewrite a call; it is not, and it does not matter, because
+both rewrite the tool's input and the effort is not in it. A fourth name appearing there is worth
+reading, and an effort turning up in the second grep is the day this whole section is wrong.
 
 Fourth, that the Agent tool still takes no effort argument. Ask a session for the tool's own schema
 rather than reading for it: `claude -p 'List the exact parameter names the Agent tool accepts, and
-nothing else.'` In 2.1.251 the answer is `description`, `prompt`, `subagent_type`, `model` and
-`isolation`. An `effort` appearing there is the day this switch stops being a report and can become a
-setting, and the day `PreToolUse`'s `updatedInput` could carry one.
+nothing else.'` In 2.1.251 the answer is `description`, `prompt`, `subagent_type`, `model`,
+`run_in_background`, `name`, `team_name`, `mode`, `isolation` and `cwd`. An `effort` appearing there
+is the day this switch stops being a report and can become a setting, and the day `updatedInput`
+could carry one. Note that an invented key does not fail loudly: both validators drop unrecognised
+keys, so a hook writing one in gets a call that goes through with the key gone.
+
+Fifth, that an agent is still keyed on its frontmatter `name:` rather than on its filename, and that
+a `description:` is still required:
+
+```sh
+/usr/bin/grep -a -o "missing required 'description' in frontmatter" "$BUILD" | head -1
+/usr/bin/grep -a -o 'agentType:[a-zA-Z_$]*,whenToUse' "$BUILD" | head -1
+```
+
+The first is the message the loader emits before returning null, so a file without one never becomes
+an agent. The second is the returned record, whose `agentType` is the destructured `name`. Both are
+what `hooks/shadows.mjs` reads a directory by: a file called `Explore.md` naming something else is
+that other agent, and the built-in `Explore` is untouched.
+
+Two sources the check does not look in, and should be named rather than quietly missed: the managed
+settings directory, which outranks every other, and the additional working directories a session was
+started with. A managed agent file would be what actually loads while the notice reports on the
+user's.
+
+One known divergence, in `configDirFor` in `hooks/hook-io.mjs`: it takes `CLAUDE_CONFIG_DIR` with
+`||` where the build uses `??`, so a variable set to the empty string falls back to `~/.claude` here
+and is taken literally there. It is left alone because the same function answers for `settings.json`,
+where the fallback is the safer reading.
 
 What this step cannot check is whether a user's copied prompt still matches the built-in it copies.
 Nothing static can: the built-in prompts are not stored where a script can reliably reach them, and

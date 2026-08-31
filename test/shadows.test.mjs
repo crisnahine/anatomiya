@@ -31,10 +31,25 @@ function tree(t) {
   return { dir, build, agents };
 }
 
-/** A shadow file as a person writes one: frontmatter, then the copied prompt. */
+/**
+ * A shadow file as a person writes one: frontmatter, then the copied prompt.
+ *
+ * The description is there because the build requires it and refuses a file
+ * without one. A fixture that left it out was not a shadow, and the cases
+ * built on it were asking about a file that never becomes an agent.
+ */
 function shadow(agents, type, { effort = "medium", at = AFTER, eol = "\n", body = "copied prompt" } = {}) {
   const path = join(agents, `${type}.md`);
-  const lines = ["---", `name: ${type}`, ...(effort === null ? [] : [`effort: ${effort}`]), "---", "", body, ""];
+  const lines = [
+    "---",
+    `name: ${type}`,
+    `description: What ${type} is for.`,
+    ...(effort === null ? [] : [`effort: ${effort}`]),
+    "---",
+    "",
+    body,
+    "",
+  ];
   writeFileSync(path, lines.join(eol));
   utimesSync(path, at, at);
   return path;
@@ -87,11 +102,11 @@ test("a shadow carrying a different level is not a shadow for the level asked", 
   assert.equal(stateOf(shadowsFor({ level: "medium", dirs: [agents], build }), "Plan"), "other-level");
 });
 
-test("a shadow with no effort line carries no level, whatever else it carries", (t) => {
+test("a shadow with no effort line names no level, whatever else it carries", (t) => {
   const { agents, build } = tree(t);
   shadow(agents, "Plan", { effort: null });
 
-  assert.equal(stateOf(shadowsFor({ level: "medium", dirs: [agents], build }), "Plan"), "other-level");
+  assert.equal(stateOf(shadowsFor({ level: "medium", dirs: [agents], build }), "Plan"), "no-level");
 });
 
 test("the level is read past case and the spaces an editor leaves", (t) => {
@@ -116,7 +131,7 @@ test("an effort line below the frontmatter is not the frontmatter's", (t) => {
   const { agents, build } = tree(t);
   shadow(agents, "Explore", { effort: null, body: "effort: medium\nand the rest of the prompt" });
 
-  assert.equal(stateOf(shadowsFor({ level: "medium", dirs: [agents], build }), "Explore"), "other-level");
+  assert.equal(stateOf(shadowsFor({ level: "medium", dirs: [agents], build }), "Explore"), "no-level");
 });
 
 // --- the age ------------------------------------------------------------------
@@ -198,7 +213,7 @@ test("a shadow behind a symlink is the shadow, because the build follows one", (
   // having no agent files at all, every session.
   const { dir, agents, build } = tree(t);
   const elsewhere = join(dir, "elsewhere.md");
-  writeFileSync(elsewhere, "---\nname: Explore\neffort: medium\n---\nbody\n");
+  writeFileSync(elsewhere, "---\nname: Explore\ndescription: What Explore is for.\neffort: medium\n---\nbody\n");
   utimesSync(elsewhere, AFTER, AFTER);
   symlinkSync(elsewhere, join(agents, "Explore.md"));
 
@@ -219,13 +234,13 @@ test("a big file is read at its head, so a long prompt below the frontmatter cos
   // another level.
   const { agents, build } = tree(t);
   const path = join(agents, "Explore.md");
-  writeFileSync(path, `---\nname: Explore\neffort: medium\n---\n${"x".repeat(200_000)}\n`);
+  writeFileSync(path, `---\nname: Explore\ndescription: What Explore is for.\neffort: medium\n---\n${"x".repeat(200_000)}\n`);
   utimesSync(path, AFTER, AFTER);
 
   assert.equal(stateOf(shadowsFor({ level: "medium", dirs: [agents], build }), "Explore"), "current");
 });
 
-test("frontmatter that runs past the head read is unreadable, not another level", (t) => {
+test("frontmatter that runs past the head read defines no agent at all", (t) => {
   // Two different moves. "Another level" sends a reader to change a line; this
   // one is a file nothing could parse, and saying the first about the second
   // is how a reader is sent to fix a file that already works.
@@ -234,16 +249,16 @@ test("frontmatter that runs past the head read is unreadable, not another level"
   writeFileSync(path, `---\nname: Explore\n${"x".repeat(20_000)}\neffort: medium\n---\nbody\n`);
   utimesSync(path, AFTER, AFTER);
 
-  assert.equal(stateOf(shadowsFor({ level: "medium", dirs: [agents], build }), "Explore"), "unreadable");
+  assert.equal(stateOf(shadowsFor({ level: "medium", dirs: [agents], build }), "Explore"), "absent");
 });
 
-test("a file with no frontmatter at all is unreadable rather than another level", (t) => {
+test("a file with no frontmatter at all defines no agent either", (t) => {
   const { agents, build } = tree(t);
   const path = join(agents, "Plan.md");
   writeFileSync(path, "just a prompt, no fence\n");
   utimesSync(path, AFTER, AFTER);
 
-  assert.equal(stateOf(shadowsFor({ level: "medium", dirs: [agents], build }), "Plan"), "unreadable");
+  assert.equal(stateOf(shadowsFor({ level: "medium", dirs: [agents], build }), "Plan"), "absent");
 });
 
 test("a value in quotes is the level it quotes", (t) => {
@@ -252,7 +267,7 @@ test("a value in quotes is the level it quotes", (t) => {
   // quotes inside and a flow sequence, neither of which a line match survives.
   const { agents, build } = tree(t);
   const path = join(agents, "Explore.md");
-  writeFileSync(path, '---\nname: Explore\neffort: "medium"\n---\nbody\n');
+  writeFileSync(path, '---\nname: Explore\ndescription: What Explore is for.\neffort: "medium"\n---\nbody\n');
   utimesSync(path, AFTER, AFTER);
 
   assert.equal(stateOf(shadowsFor({ level: "medium", dirs: [agents], build }), "Explore"), "current");
@@ -261,7 +276,7 @@ test("a value in quotes is the level it quotes", (t) => {
 test("a value in single quotes is the level it quotes", (t) => {
   const { agents, build } = tree(t);
   const path = join(agents, "Explore.md");
-  writeFileSync(path, "---\nname: Explore\neffort: 'medium'\n---\nbody\n");
+  writeFileSync(path, "---\nname: Explore\ndescription: What Explore is for.\neffort: 'medium'\n---\nbody\n");
   utimesSync(path, AFTER, AFTER);
 
   assert.equal(stateOf(shadowsFor({ level: "medium", dirs: [agents], build }), "Explore"), "current");
@@ -270,7 +285,7 @@ test("a value in single quotes is the level it quotes", (t) => {
 test("a comment after the value is not part of the value", (t) => {
   const { agents, build } = tree(t);
   const path = join(agents, "Explore.md");
-  writeFileSync(path, "---\nname: Explore\neffort: medium # keep in step with the build\n---\nbody\n");
+  writeFileSync(path, "---\nname: Explore\ndescription: What Explore is for.\neffort: medium # keep in step with the build\n---\nbody\n");
   utimesSync(path, AFTER, AFTER);
 
   assert.equal(stateOf(shadowsFor({ level: "medium", dirs: [agents], build }), "Explore"), "current");
@@ -279,7 +294,7 @@ test("a comment after the value is not part of the value", (t) => {
 test("a hash inside a quoted value is not a comment", (t) => {
   const { agents, build } = tree(t);
   const path = join(agents, "Explore.md");
-  writeFileSync(path, '---\nname: Explore\neffort: "med#ium"\n---\nbody\n');
+  writeFileSync(path, '---\nname: Explore\ndescription: What Explore is for.\neffort: "med#ium"\n---\nbody\n');
   utimesSync(path, AFTER, AFTER);
 
   assert.equal(stateOf(shadowsFor({ level: "medium", dirs: [agents], build }), "Explore"), "other-level");
@@ -288,7 +303,7 @@ test("a hash inside a quoted value is not a comment", (t) => {
 test("a byte-order mark before the fence does not hide the frontmatter", (t) => {
   const { agents, build } = tree(t);
   const path = join(agents, "Explore.md");
-  writeFileSync(path, '\uFEFF---\nname: Explore\neffort: medium\n---\nbody\n');
+  writeFileSync(path, '\uFEFF---\nname: Explore\ndescription: What Explore is for.\neffort: medium\n---\nbody\n');
   utimesSync(path, AFTER, AFTER);
 
   assert.equal(stateOf(shadowsFor({ level: "medium", dirs: [agents], build }), "Explore"), "current");
@@ -297,7 +312,7 @@ test("a byte-order mark before the fence does not hide the frontmatter", (t) => 
 test("blank lines before the fence do not hide the frontmatter", (t) => {
   const { agents, build } = tree(t);
   const path = join(agents, "Explore.md");
-  writeFileSync(path, '\n\n---\nname: Explore\neffort: medium\n---\nbody\n');
+  writeFileSync(path, '\n\n---\nname: Explore\ndescription: What Explore is for.\neffort: medium\n---\nbody\n');
   utimesSync(path, AFTER, AFTER);
 
   assert.equal(stateOf(shadowsFor({ level: "medium", dirs: [agents], build }), "Explore"), "current");
@@ -353,16 +368,16 @@ test("the age line says what a timestamp knows and stops there", () => {
   assert.match(said, /unchecked|cannot say|not knowable/);
 });
 
-test("a file nothing could parse is named apart from one carrying another level", () => {
-  const said = shadowLine("medium", seenAs(["unreadable", "other-level", "current"]));
+test("a file the build refuses is named apart from one carrying another level", () => {
+  const said = shadowLine("medium", seenAs(["refused", "other-level", "current"]));
 
-  assert.match(said, /general-purpose[^.]*frontmatter/);
+  assert.match(said, /general-purpose[^.]*description/);
   assert.match(said, /Explore[^.]*another level/);
 });
 
-test("an unreadable file is not left silent", () => {
-  // It is a file to look at. Silence would read as "all in order".
-  assert.notEqual(shadowLine("medium", seenAs(["unreadable", "current", "current"])), null);
+test("a file the build refuses is not left silent", () => {
+  // One line short of working. Silence would read as "all in order".
+  assert.notEqual(shadowLine("medium", seenAs(["refused", "current", "current"])), null);
 });
 
 test("every type missing a shadow is named in one line, not one line each", () => {
@@ -485,4 +500,185 @@ test("the deepest directory comes first, since that is the one the build prefers
 
   assert.equal(dirs[0], "/home/me/a/b/.claude/agents");
   assert.equal(dirs[dirs.length - 1], "/home/me/.claude/agents");
+});
+
+// --- files the build itself will not load --------------------------------------
+
+test("a file with no description is one the build refuses, not one in step", (t) => {
+  // `ngr` returns null on a missing description: "Agent file ... is missing
+  // required 'description' in frontmatter". Reporting it current was silence
+  // over a file that never became an agent.
+  const { agents, build } = tree(t);
+  const path = join(agents, "Explore.md");
+  writeFileSync(path, "---\nname: Explore\neffort: medium\n---\n\nprompt\n");
+  utimesSync(path, AFTER, AFTER);
+
+  assert.equal(stateOf(shadowsFor({ level: "medium", dirs: [agents], build }), "Explore"), "refused");
+});
+
+test("a description in quotes still counts as one", (t) => {
+  const { agents, build } = tree(t);
+  const path = join(agents, "Explore.md");
+  writeFileSync(path, '---\nname: Explore\ndescription: What Explore is for.\ndescription: "Reads things."\neffort: medium\n---\n\nprompt\n');
+  utimesSync(path, AFTER, AFTER);
+
+  assert.equal(stateOf(shadowsFor({ level: "medium", dirs: [agents], build }), "Explore"), "current");
+});
+
+test("an empty description is no description", (t) => {
+  const { agents, build } = tree(t);
+  const path = join(agents, "Plan.md");
+  writeFileSync(path, "---\nname: Plan\ndescription: What Plan is for.\ndescription:\neffort: medium\n---\n\nprompt\n");
+  utimesSync(path, AFTER, AFTER);
+
+  assert.equal(stateOf(shadowsFor({ level: "medium", dirs: [agents], build }), "Plan"), "refused");
+});
+
+test("a refused file is named apart, since the move is to add a line", (t) => {
+  const said = shadowLine("medium", [
+    { type: "general-purpose", state: "refused", path: null },
+    { type: "Explore", state: "current", path: null },
+    { type: "Plan", state: "current", path: null },
+  ]);
+
+  assert.match(said, /general-purpose[^.]*description/);
+});
+
+test("a key with no space after the colon is not a key the build reads", (t) => {
+  // YAML wants whitespace after the colon in a block mapping. Without it the
+  // line is the plain scalar "effort:medium" and the build takes no effort at
+  // all, so reporting the level as carried was the wrong direction entirely.
+  const { agents, build } = tree(t);
+  const path = join(agents, "Explore.md");
+  writeFileSync(path, "---\nname: Explore\ndescription: Reads.\neffort:medium\n---\n\nprompt\n");
+  utimesSync(path, AFTER, AFTER);
+
+  assert.equal(stateOf(shadowsFor({ level: "medium", dirs: [agents], build }), "Explore"), "no-level");
+});
+
+// --- where the build looks that this did not ----------------------------------
+
+test("a shadow in a subfolder of the agents directory is found", (t) => {
+  // The build walks `.claude/agents` recursively for `*.md`, so a file kept in
+  // a subfolder loads. Looking only at the top reported it absent.
+  const { agents, build } = tree(t);
+  mkdirSync(join(agents, "team"), { recursive: true });
+  shadow(join(agents, "team"), "Explore");
+
+  assert.equal(stateOf(shadowsFor({ level: "medium", dirs: [agents], build }), "Explore"), "current");
+});
+
+test("a file at the top wins over one in a subfolder of the same directory", (t) => {
+  const { agents, build } = tree(t);
+  mkdirSync(join(agents, "team"), { recursive: true });
+  shadow(join(agents, "team"), "Explore", { effort: "high" });
+  shadow(agents, "Explore", { effort: "medium" });
+
+  assert.equal(stateOf(shadowsFor({ level: "medium", dirs: [agents], build }), "Explore"), "current");
+});
+
+test("the home is matched past a trailing separator", () => {
+  // A raw string compare let `HOME=/home/me/` miss `/home/me` and walk on to
+  // the filesystem root.
+  const dirs = agentDirsFor({ HOME: "/home/me/" }, "/home/me/work");
+
+  assert.equal(dirs.includes("/.claude/agents"), false, dirs.join(" "));
+  assert.equal(dirs[dirs.length - 1], "/home/me/agents".replace("/agents", "/.claude/agents"));
+});
+
+test("a working directory that is not an absolute path is not walked", () => {
+  // A relative candidate would resolve against whatever directory this hook
+  // process happens to be in, which is not the session's.
+  assert.deepEqual(agentDirsFor({ HOME: "/home/me" }, "work/repo"), ["/home/me/.claude/agents"]);
+  assert.deepEqual(agentDirsFor({ HOME: "/home/me" }, "C:\\Users\\me"), ["/home/me/.claude/agents"]);
+});
+
+// --- the key the build actually uses ------------------------------------------
+
+/** A file at any name, carrying whatever frontmatter the case is about. */
+function agentFile(dir, filename, frontmatter, at = AFTER) {
+  const path = join(dir, filename);
+  writeFileSync(path, `---\n${frontmatter}\n---\n\ncopied prompt\n`);
+  utimesSync(path, at, at);
+  return path;
+}
+
+test("a file named for a type but claiming another name shadows neither", (t) => {
+  // The build keys an agent on its frontmatter `name:` and keeps the filename
+  // only as a label. So this file becomes the agent `not-explore`, the
+  // built-in Explore is untouched, and reporting Explore as in step was
+  // silence over a setup that does nothing at all.
+  const { agents, build } = tree(t);
+  agentFile(agents, "Explore.md", "name: not-explore\ndescription: Something else.\neffort: medium");
+
+  assert.equal(stateOf(shadowsFor({ level: "medium", dirs: [agents], build }), "Explore"), "absent");
+});
+
+test("a file at any filename shadows the type its name claims", (t) => {
+  const { agents, build } = tree(t);
+  agentFile(agents, "my-plan.md", "name: Plan\ndescription: Plans things.\neffort: medium");
+
+  assert.equal(stateOf(shadowsFor({ level: "medium", dirs: [agents], build }), "Plan"), "current");
+});
+
+test("a file with no name is no agent, whatever it is called", (t) => {
+  const { agents, build } = tree(t);
+  agentFile(agents, "Explore.md", "description: Reads things.\neffort: medium");
+
+  assert.equal(stateOf(shadowsFor({ level: "medium", dirs: [agents], build }), "Explore"), "absent");
+});
+
+test("a name in quotes is the name it quotes", (t) => {
+  const { agents, build } = tree(t);
+  agentFile(agents, "x.md", 'name: "Plan"\ndescription: Plans.\neffort: medium');
+
+  assert.equal(stateOf(shadowsFor({ level: "medium", dirs: [agents], build }), "Plan"), "current");
+});
+
+test("the first directory holding a name answers, whatever the files are called", (t) => {
+  const { dir, agents, build } = tree(t);
+  const project = join(dir, "project-agents");
+  mkdirSync(project);
+  agentFile(project, "a.md", "name: Explore\ndescription: Reads.\neffort: medium");
+  agentFile(agents, "Explore.md", "name: Explore\ndescription: Reads.\neffort: high");
+
+  assert.equal(stateOf(shadowsFor({ level: "medium", dirs: [project, agents], build }), "Explore"), "current");
+});
+
+// --- the levels the build takes -----------------------------------------------
+
+test("med is medium, because the build's own alias table says so", (t) => {
+  const { agents, build } = tree(t);
+  agentFile(agents, "Explore.md", "name: Explore\ndescription: Reads.\neffort: med");
+
+  assert.equal(stateOf(shadowsFor({ level: "medium", dirs: [agents], build }), "Explore"), "current");
+});
+
+test("a file naming no effort is one line short, not one line wrong", (t) => {
+  // Two different moves again: add a line, or change one. The sentence said
+  // "carries another level" about a file that carries none.
+  const { agents, build } = tree(t);
+  agentFile(agents, "Plan.md", "name: Plan\ndescription: Plans.");
+
+  assert.equal(stateOf(shadowsFor({ level: "medium", dirs: [agents], build }), "Plan"), "no-level");
+});
+
+test("a file naming no effort is named apart in the sentence", () => {
+  const said = shadowLine("medium", [
+    { type: "general-purpose", state: "no-level", path: null },
+    { type: "Explore", state: "other-level", path: null },
+    { type: "Plan", state: "current", path: null },
+  ]);
+
+  assert.match(said, /general-purpose[^.]*no effort/);
+  assert.match(said, /Explore[^.]*another level/);
+});
+
+test("a file written in the same moment as the build is not older than it", (t) => {
+  // The comparison is strict, so a tie reads as current. An installer that
+  // writes both inside one timestamp tick should not nag.
+  const { agents, build } = tree(t);
+  agentFile(agents, "Explore.md", "name: Explore\ndescription: Reads.\neffort: medium", BUILD_AT);
+
+  assert.equal(stateOf(shadowsFor({ level: "medium", dirs: [agents], build }), "Explore"), "current");
 });
