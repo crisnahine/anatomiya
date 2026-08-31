@@ -37,23 +37,29 @@ export const SHADOWABLE = ["general-purpose", "Explore", "Plan"];
  * How much of a file's head is read looking for its frontmatter.
  *
  * A prefix rather than the whole file: frontmatter is a handful of short lines
- * and the copied prompt under it runs to hundreds of kilobytes, and a hook has
- * five seconds for everything. Generous enough that a block which does not
- * close inside it is malformed rather than merely long.
+ * and the copied prompt under it runs to hundreds of kilobytes. Generous enough
+ * that a block which does not close inside it is malformed rather than merely
+ * long.
  */
 const FRONTMATTER_MOST = 8192;
 
 /** Entries one listing of an agents directory will look at. */
-const ENTRIES_MOST = 500;
+const ENTRIES_MOST = 4000;
 
 /**
  * Files whose head this will read across every directory in one call.
  *
- * Each is a small read, and these are directories a person curates by hand, so
- * this never fires on a real setup. It is here because a session can be started
- * anywhere and a hook has five seconds for everything it does.
+ * Measured on the machine this was written on: 3,000 real-sized agent files
+ * read in 91 ms, 1,000 in 36 ms, against a declared hook timeout of 15 seconds.
+ * The first bound tried was 200, which a curated library of 250 files walked
+ * straight past while the notice said the file was not there.
+ *
+ * The scan also stops as soon as all three names are found, so the ordinary
+ * case pays for three files rather than for the directory. This bound is what
+ * a search that finds nothing costs, and when it fires the answer says so
+ * instead of reporting an absence it did not establish.
  */
-const FILES_MOST = 200;
+export const FILES_MOST = 2000;
 
 /**
  * How many directories up the walk goes before it stops asking.
@@ -113,13 +119,16 @@ export function agentDirsFor(env = process.env, cwd = "") {
  * that is not one of the five is a bug in the caller rather than a state to
  * report, so it answers with nothing at all.
  */
-export function shadowsFor({ level, dirs = [], build = null } = {}) {
+export function shadowsFor({ level, dirs = [], build = null, filesMost = FILES_MOST } = {}) {
   if (!EFFORT_LEVELS.includes(level)) return [];
   const built = mtimeOf(build);
-  const held = indexIn(dirs);
+  const { held, stopped } = indexIn(dirs, filesMost);
 
   return SHADOWABLE.map((type) => {
     const found = held.get(type);
+    // A scan that stopped before it ran out of files established no absence,
+    // and saying one anyway is the bound going quiet on the case it exists for.
+    if (!found && stopped) return { type, state: "unknown", path: null, stopped };
     // No file anywhere claims this name. A file called `Explore.md` whose
     // frontmatter names something else is one of these: it became that other
     // agent and left the built-in alone.
@@ -150,14 +159,19 @@ export function shadowsFor({ level, dirs = [], build = null } = {}) {
  */
 export function shadowLine(level, seen = []) {
   const named = (state) => seen.filter((s) => s.state === state).map((s) => s.type);
+  const unknown = named("unknown");
   const absent = named("absent");
   const refused = named("refused");
   const noLevel = named("no-level");
   const other = named("other-level");
   const older = named("older");
-  if (absent.length + refused.length + noLevel.length + other.length + older.length === 0) return null;
+  if (unknown.length + absent.length + refused.length + noLevel.length + other.length + older.length === 0) return null;
 
   const clauses = [];
+  if (unknown.length) {
+    const stopped = seen.find((s) => s.stopped)?.stopped ?? 0;
+    clauses.push(`this stopped after ${stopped} files without reaching one that names ${list(unknown)}`);
+  }
   if (absent.length) clauses.push(`no agent file names ${list(absent)}`);
   if (refused.length) {
     clauses.push(
@@ -175,10 +189,17 @@ export function shadowLine(level, seen = []) {
     );
   }
 
+  // Which file, for the states that read one. A type can have a candidate in
+  // every `.claude/agents` up the tree, and a line naming only the type leaves
+  // a reader to work out which of them the answer is about.
+  const reported = new Set([...refused, ...noLevel, ...other, ...older]);
+  const files = seen.filter((s) => reported.has(s.type) && s.path).map((s) => s.path);
+  const read = files.length === 0 ? "" : ` The ${files.length === 1 ? "file" : "files"} read: ${files.join(", ")}.`;
+
   // The lever names no type, so a line reporting one type does not read as
   // though it were reporting all three.
   return (
-    `ULTRACODE_ANYWHERE_SUBAGENT_EFFORT names ${level}, and ${clauses.join("; ")}. ` +
+    `ULTRACODE_ANYWHERE_SUBAGENT_EFFORT names ${level}, and ${clauses.join("; ")}.${read} ` +
     `A spawn's effort comes from its agent definition and no hook can reach it, so an agent file ` +
     `under \`.claude/agents\` carrying \`name:\` and \`effort: ${level}\` is the only lever, and the ` +
     `plugin README says what such a file cannot carry`
@@ -203,21 +224,42 @@ function list(names) {
  * The first directory to define a name keeps it, and inside one directory the
  * top level comes before a subfolder. Both are the order the build resolves in.
  */
-function indexIn(dirs) {
+function indexIn(dirs, filesMost) {
   const held = new Map();
+  const wanted = new Set(SHADOWABLE);
   let read = 0;
   for (const dir of dirs) {
     if (!dir) continue;
+
+    // The obvious filename first, and only then the sweep. A file for
+    // `Explore` is called `Explore.md` almost every time, and asking three
+    // paths costs three reads whatever else the directory holds. Named for a
+    // type but claiming another name, it is that other agent, so the guess
+    // has to be checked rather than trusted, and a wrong one falls through.
+    for (const type of [...wanted]) {
+      const seen = frontmatterIn(join(dir, `${type}.md`));
+      if (seen.name !== type) continue;
+      const at = mtimeOf(join(dir, `${type}.md`));
+      if (at === null) continue;
+      held.set(type, { ...seen, path: join(dir, `${type}.md`), at });
+      wanted.delete(type);
+    }
+
     for (const path of markdownIn(dir)) {
-      if (read >= FILES_MOST) return held;
+      // Three names is all this is looking for, so a directory of thousands
+      // costs three reads once they are found rather than a full sweep.
+      if (wanted.size === 0) return { held, stopped: 0 };
+      if (read >= filesMost) return { held, stopped: read };
       read++;
       const seen = frontmatterIn(path);
       if (!seen.name || held.has(seen.name)) continue;
       const at = mtimeOf(path);
-      if (at !== null) held.set(seen.name, { ...seen, path, at });
+      if (at === null) continue;
+      held.set(seen.name, { ...seen, path, at });
+      wanted.delete(seen.name);
     }
   }
-  return held;
+  return { held, stopped: 0 };
 }
 
 /**

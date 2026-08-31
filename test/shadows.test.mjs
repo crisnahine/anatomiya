@@ -794,3 +794,118 @@ test("a file the build refuses is reported as refused before its level is judged
 
   assert.equal(stateOf(shadowsFor({ level: "medium", dirs: [agents], build }), "Explore"), "refused");
 });
+
+// --- a bound that must not go quiet -------------------------------------------
+
+/** `count` agent files that answer for nobody, and one that answers for `type`. */
+function crowd(agents, count, type) {
+  for (let i = 0; i < count; i++) {
+    agentFile(agents, `filler-${String(i).padStart(4, "0")}.md`, `name: filler-${i}\ndescription: One of many.\neffort: medium`);
+  }
+  if (type) agentFile(agents, "zz-real.md", `name: ${type}\ndescription: The real one.\neffort: medium`);
+}
+
+test("a scan that stopped early does not call a type absent", (t) => {
+  // The bound is real and a directory can be larger than it. Saying "no agent
+  // file names Explore" about a directory this stopped reading is the gate
+  // going quiet on exactly the case it was bounded for.
+  const { agents, build } = tree(t);
+  crowd(agents, 6, "Explore");
+
+  const seen = shadowsFor({ level: "medium", dirs: [agents], build, filesMost: 3 });
+
+  assert.equal(stateOf(seen, "Explore"), "unknown");
+});
+
+test("a scan that stopped early says so rather than reporting an absence", (t) => {
+  const { agents, build } = tree(t);
+  crowd(agents, 6, "Explore");
+
+  const said = shadowLine("medium", shadowsFor({ level: "medium", dirs: [agents], build, filesMost: 3 }));
+
+  assert.match(said, /stopped after 3 files/);
+  assert.doesNotMatch(said, /no agent file names/);
+});
+
+test("a scan that finished names an absence as it always did", (t) => {
+  const { agents, build } = tree(t);
+  crowd(agents, 2, null);
+
+  const said = shadowLine("medium", shadowsFor({ level: "medium", dirs: [agents], build, filesMost: 50 }));
+
+  assert.match(said, /no agent file names general-purpose, Explore and Plan/);
+  assert.doesNotMatch(said, /stopped after/);
+});
+
+test("what a stopped scan did find is still reported", (t) => {
+  // Truncation only makes an absence unknowable. A file it did read and found
+  // at another level is a fact either way.
+  const { agents, build } = tree(t);
+  agentFile(agents, "aa.md", "name: Explore\ndescription: Reads.\neffort: high");
+  crowd(agents, 6, null);
+
+  const seen = shadowsFor({ level: "medium", dirs: [agents], build, filesMost: 2 });
+
+  assert.equal(stateOf(seen, "Explore"), "other-level");
+});
+
+test("the scan stops as soon as all three are found, however big the directory", (t) => {
+  // The ordinary case is three files among many, and a bound big enough for a
+  // large directory should not be paid on every session start.
+  const { agents, build } = tree(t);
+  for (const type of SHADOWABLE) agentFile(agents, `aa-${type}.md`, `name: ${type}\ndescription: For ${type}.\neffort: medium`);
+  crowd(agents, 40, null);
+
+  const seen = shadowsFor({ level: "medium", dirs: [agents], build, filesMost: 5 });
+
+  assert.deepEqual(seen.map((s) => s.state), ["current", "current", "current"]);
+});
+
+// --- which file to open -------------------------------------------------------
+
+test("the line names the file it read, since one type can have several candidates", () => {
+  // With a `.claude/agents` at several levels, "Explore carries another level"
+  // does not say which of them to open.
+  const said = shadowLine("medium", [
+    { type: "general-purpose", state: "current", path: "/home/me/.claude/agents/gp.md" },
+    { type: "Explore", state: "other-level", path: "/work/repo/.claude/agents/Explore.md" },
+    { type: "Plan", state: "current", path: "/home/me/.claude/agents/Plan.md" },
+  ]);
+
+  assert.match(said, /\/work\/repo\/\.claude\/agents\/Explore\.md/);
+  assert.doesNotMatch(said, /gp\.md/, "only the files the line is about");
+});
+
+test("a line about nothing but absences names no file", () => {
+  const said = shadowLine("medium", seenAs(["absent", "absent", "absent"]));
+
+  assert.doesNotMatch(said, /read /);
+});
+
+test("the file named for a type is looked at first, whatever the directory holds", (t) => {
+  // The overwhelmingly common name for Explore's file is `Explore.md`, and a
+  // directory of thousands should not have to be swept to find it. Sorted
+  // last by the filesystem, it fell past the bound and the scan reported that
+  // it had stopped looking.
+  const { agents, build } = tree(t);
+  agentFile(agents, "Explore.md", "name: Explore\ndescription: Reads.\neffort: medium");
+  // Named to sort ahead of it, so the sweep meets its bound first whatever
+  // order the filesystem lists in.
+  for (let i = 0; i < 8; i++) {
+    agentFile(agents, `AAA-${i}.md`, `name: filler-${i}\ndescription: One of many.\neffort: medium`);
+  }
+
+  const seen = shadowsFor({ level: "medium", dirs: [agents], build, filesMost: 1 });
+
+  assert.equal(stateOf(seen, "Explore"), "current");
+});
+
+test("a file named for a type that claims another name does not shortcut the search", (t) => {
+  // The shortcut is a guess at the name, and a guess that is wrong has to fall
+  // back to the search rather than answer.
+  const { agents, build } = tree(t);
+  agentFile(agents, "Explore.md", "name: something-else\ndescription: Other.\neffort: medium");
+  agentFile(agents, "aa-real.md", "name: Explore\ndescription: Reads.\neffort: medium");
+
+  assert.equal(stateOf(shadowsFor({ level: "medium", dirs: [agents], build }), "Explore"), "current");
+});
