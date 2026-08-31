@@ -392,7 +392,7 @@ Neither is ever a validated key, only a literal on a built-in definition, and th
 that matters:
 
 ```sh
-/usr/bin/grep -a -c -o 'omitClaudeMd:[A-Za-z_$]*()' "$BUILD"          # expect 0: never a schema field
+/usr/bin/grep -a -c 'omitClaudeMd:[A-Za-z_$]*()' "$BUILD"             # expect 0: never a schema field
 /usr/bin/grep -a -o 'omitClaudeMd:!0,getSystemPrompt' "$BUILD" | wc -l # expect several: built-in definitions
 /usr/bin/grep -a -o 'appendSystemPrompt:!0' "$BUILD" | wc -l           # expect 1: the catch-all
 ```
@@ -412,8 +412,9 @@ still the two:
 
 The last one answers `PreToolUse`, `PermissionRequest` and `allow`, that third being
 `PermissionRequest`'s own branch marker rather than an event. The window is 110 characters on purpose:
-the schemas sit next to each other in the bundle, and a wider one reaches over the boundary and
-answers `Notification` and `PermissionDenied` as well, which own no such field. Issue #131 said
+the schemas sit next to each other in the bundle, and a wider one reaches over the boundary. At 250
+it answers `Notification`, `PermissionDenied` and `SubagentStop` as well, none of which owns such a
+field. Issue #131 said
 `PreToolUse` was the only event that can rewrite a call; it is not, and it does not matter, because
 both rewrite the tool's input and the effort is not in it. A fourth name appearing there is worth
 reading, and an effort turning up in the second grep is the day this whole section is wrong.
@@ -435,13 +436,14 @@ a `description:` is still required:
 ```
 
 The first is the message the loader emits before returning null, so a file without one never becomes
-an agent. The second is the returned record, whose `agentType` is the destructured `name`. Both are
+an agent. The build is one line, so `grep -c` counts matching lines rather than occurrences: read the
+counts above as "none" or "some" and use `grep -o | wc -l` where the number itself matters. The second is the returned record, whose `agentType` is the destructured `name`. Both are
 what `hooks/shadows.mjs` reads a directory by: a file called `Explore.md` naming something else is
 that other agent, and the built-in `Explore` is untouched.
 
-Two sources the check does not look in, and should be named rather than quietly missed: the managed
-settings directory, which outranks every other, and the additional working directories a session was
-started with. A managed agent file would be what actually loads while the notice reports on the
+Three sources the check does not look in, and named here rather than quietly missed: the managed
+settings directory, which outranks every other; the `--agents` JSON flag, which outranks every
+project directory; and the additional working directories a session was started with. A managed agent file would be what actually loads while the notice reports on the
 user's.
 
 One known divergence, in `configDirFor` in `hooks/hook-io.mjs`: it takes `CLAUDE_CONFIG_DIR` with

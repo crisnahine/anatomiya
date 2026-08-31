@@ -44,8 +44,8 @@ _Avoid_: input, message, calling the whole payload an event
 
 **Shadow**:
 A markdown agent file standing in for a built-in agent type, holding a copy of that type's system
-prompt so a spawn of it can be given a setting the built-in has no way to take. The copy is what
-dates it, and nothing in the file says which build it was taken from.
+prompt so a spawn of it can be given a setting the built-in has no way to take. Nothing in it says
+which build the copy was taken from.
 _Avoid_: override, custom agent, subagent definition
 
 ### The corpus and its shape

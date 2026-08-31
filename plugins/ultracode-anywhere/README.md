@@ -354,9 +354,9 @@ and the cap line then comes back every session rather than once.
   and `anything.md` naming `Plan` is the file a spawn of `Plan` reads. Every `.claude/agents` from
   the working directory up to your home is read, deepest first and subfolders included, then
   `$CLAUDE_CONFIG_DIR/agents` or `~/.claude/agents`. A file behind a symlink counts, because the
-  build follows one. Two places the build also looks are not read here: a managed settings
-  directory, which outranks everything, and the additional working directories a session was
-  started with. The same five levels as the switch above, and
+  build follows one. Three places the build also looks are not read here: a managed settings
+  directory, which outranks everything; the `--agents` JSON flag, which outranks every project
+  directory; and the additional working directories a session was started with. The same five levels as the switch above, and
   anything else is read as unset with a line saying so. It reports and never acts, so it is safe to
   leave set; unset it to stop asking.
 - `ULTRACODE_ANYWHERE_DEBUG=/tmp/uc.log claude` logs every prompt the hook fires on, its stdin
