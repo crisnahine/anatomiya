@@ -12,8 +12,9 @@
  * state directory and said once.
  */
 import { cached, firstTime, startOver, stateDirFor } from "./counters.mjs";
-import { askedFor } from "./effort.mjs";
+import { askedFor, askedForSubagent, subagentEffortIn } from "./effort.mjs";
 import { here, invokedAs, parsePayload, readStdin, respond } from "./hook-io.mjs";
+import { agentDirsFor, shadowLine, shadowsFor } from "./shadows.mjs";
 import { CALIBRATED_AGAINST, behind, cliPath, conflictIn, driftCached, settingsFor, versionOf } from "./upstream.mjs";
 
 /** The starts that empty the context under a session that goes on. */
@@ -68,6 +69,23 @@ export function notice({
   const quiet = conflict || (env.ULTRACODE_ANYWHERE_STRICT === "1" && moved);
   const asked = quiet ? null : askedFor(env);
   if (asked) said.push(`ultracode-anywhere: ${asked}.`);
+
+  // The other half of the same question, and not gated by `quiet`. Both ways
+  // this plugin goes silent are about the reminder, and the reminder is not
+  // what an agent file competes with: a spawn reads its definition whether or
+  // not a hook said anything this session, and a copy frozen at an older build
+  // is just as frozen where the settings already do the reminder's job.
+  //
+  // At most one of these two ever fires: a value that named a level makes the
+  // first null, and one that did not makes the second.
+  const subagent = askedForSubagent(env);
+  if (subagent) said.push(`ultracode-anywhere: ${subagent}.`);
+
+  const wanted = subagentEffortIn(env);
+  if (wanted) {
+    const shadows = shadowLine(wanted, shadowsFor({ level: wanted, dirs: agentDirsFor(env, cwd), build: cli }));
+    if (shadows) said.push(`ultracode-anywhere: ${shadows}.`);
+  }
 
   // The one thing native ultracode does that no reminder can: it lifts the
   // concurrent-subagent cap. Named once here rather than left in a README

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, truncateSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, truncateSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -296,4 +296,97 @@ test("the hook reads the compaction off its payload", (t) => {
 
   assert.equal(fired.status, 0, fired.stderr);
   assert.equal(nextTurn(t1.state, "s"), 1, "the next prompt is the first turn again");
+});
+
+// --- the agent files a spawn reads --------------------------------------------
+
+/** A shadow under the config directory, at a time either side of the build's. */
+function shadowIn(t1, type, { effort = "medium", after = true } = {}) {
+  const agents = join(t1.config, "agents");
+  mkdirSync(agents, { recursive: true });
+  const path = join(agents, `${type}.md`);
+  writeFileSync(path, `---\nname: ${type}\ndescription: What ${type} is for.\neffort: ${effort}\n---\n\nthe copied prompt\n`);
+  const built = statSync(t1.cli).mtimeMs / 1000;
+  const at = after ? built + 60 : built - 60;
+  utimesSync(path, at, at);
+  return path;
+}
+
+const quietEnv = (t1, over = {}) => ({ CLAUDE_CONFIG_DIR: t1.config, ULTRACODE_ANYWHERE_CAP_NOTICE: "0", ...over });
+
+test("a session that asked nothing about agent files is told nothing about them", (t) => {
+  const t1 = tree(t, { settings: { effortLevel: "medium" } });
+  shadowIn(t1, "Explore", { after: false });
+
+  // The stale file is there and says nothing, because nobody asked.
+  assert.equal(notice({ cwd: t1.dir, cli: t1.cli, state: t1.state, env: quietEnv(t1) }), null);
+});
+
+test("a session that asked is told which types have no agent file", (t) => {
+  const t1 = tree(t, { settings: { effortLevel: "medium" } });
+
+  const said = notice({ cwd: t1.dir, cli: t1.cli, state: t1.state, env: quietEnv(t1, { ULTRACODE_ANYWHERE_SUBAGENT_EFFORT: "medium" }) });
+
+  assert.match(said, /general-purpose, Explore and Plan/);
+  assert.match(said, /effort: medium/);
+});
+
+test("a shadow written before the installed build is the line a session is owed", (t) => {
+  const t1 = tree(t, { settings: { effortLevel: "medium" } });
+  for (const type of ["general-purpose", "Plan"]) shadowIn(t1, type);
+  shadowIn(t1, "Explore", { after: false });
+
+  const said = notice({ cwd: t1.dir, cli: t1.cli, state: t1.state, env: quietEnv(t1, { ULTRACODE_ANYWHERE_SUBAGENT_EFFORT: "medium" }) });
+
+  assert.match(said, /Explore was written before the installed build/);
+});
+
+test("shadows all present and newer than the build are nothing to say", (t) => {
+  const t1 = tree(t, { settings: { effortLevel: "medium" } });
+  for (const type of ["general-purpose", "Explore", "Plan"]) shadowIn(t1, type);
+
+  assert.equal(notice({ cwd: t1.dir, cli: t1.cli, state: t1.state, env: quietEnv(t1, { ULTRACODE_ANYWHERE_SUBAGENT_EFFORT: "medium" }) }), null);
+});
+
+test("the agent-file line stands even where the plugin's own reminder is redundant", (t) => {
+  // A conflict means the settings already do what the reminder does. It says
+  // nothing about files on disk: a spawn reads its agent definition either way,
+  // and a copy frozen at an older build is just as frozen in that session.
+  const t1 = tree(t, { settings: { ultracode: true } });
+
+  const said = notice({ cwd: t1.dir, cli: t1.cli, state: t1.state, env: quietEnv(t1, { ULTRACODE_ANYWHERE_SUBAGENT_EFFORT: "medium" }) });
+
+  assert.match(said, /quiet this session/);
+  assert.match(said, /no agent file/);
+});
+
+test("the master switch silences the agent-file line with everything else", (t) => {
+  const t1 = tree(t, { settings: { effortLevel: "medium" } });
+
+  assert.equal(notice({ cwd: t1.dir, cli: t1.cli, state: t1.state, env: quietEnv(t1, { ULTRACODE_ANYWHERE: "0", ULTRACODE_ANYWHERE_SUBAGENT_EFFORT: "medium" }) }), null);
+});
+
+test("a subagent setting naming no level is quoted back rather than passed over", (t) => {
+  const t1 = tree(t, { settings: { effortLevel: "medium" } });
+
+  const said = notice({ cwd: t1.dir, cli: t1.cli, state: t1.state, env: quietEnv(t1, { ULTRACODE_ANYWHERE_SUBAGENT_EFFORT: "deep" }) });
+
+  assert.match(said, /ULTRACODE_ANYWHERE_SUBAGENT_EFFORT is set to "deep"/);
+  // And nothing is reported about files, since no level was named to report on.
+  assert.doesNotMatch(said, /no agent file/);
+});
+
+test("a project's own agent file answers before the user's", (t) => {
+  const t1 = tree(t, { settings: { effortLevel: "medium" } });
+  for (const type of ["general-purpose", "Explore", "Plan"]) shadowIn(t1, type, { effort: "high" });
+  const project = join(t1.dir, ".claude", "agents");
+  mkdirSync(project, { recursive: true });
+  for (const type of ["general-purpose", "Explore", "Plan"]) {
+    const path = join(project, `${type}.md`);
+    writeFileSync(path, `---\nname: ${type}\ndescription: What ${type} is for.\neffort: medium\n---\n\nthe copied prompt\n`);
+    const at = statSync(t1.cli).mtimeMs / 1000 + 60;
+    utimesSync(path, at, at);
+  }
+
+  assert.equal(notice({ cwd: t1.dir, cli: t1.cli, state: t1.state, env: quietEnv(t1, { ULTRACODE_ANYWHERE_SUBAGENT_EFFORT: "medium" }) }), null);
 });

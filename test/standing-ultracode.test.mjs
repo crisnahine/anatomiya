@@ -233,7 +233,7 @@ test("every switch the hooks read is one the README names", () => {
   // `env.NAME` is the one spelling either hook writes: a bracket read, a
   // destructure, or a rename of that binding is invisible here, and the README
   // is then the only record of it.
-  assert.equal(read.size >= 9, true, `found only ${read.size}: ${[...read].join(", ")}`);
+  assert.equal(read.size >= 10, true, `found only ${read.size}: ${[...read].join(", ")}`);
   assert.deepEqual([...read].filter((name) => !readme.includes(name)).sort(), [], "these are read and never written down");
 
   const named = new Set([...readme.matchAll(/\b(ULTRACODE_ANYWHERE[A-Z0-9_]*)/g)].map((found) => found[1]));

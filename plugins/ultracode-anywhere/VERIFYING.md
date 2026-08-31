@@ -363,7 +363,100 @@ Step 4's capture is what settles all three, and the integer claim above with the
 so a subagent actually spawns, and read `output_config.effort` off the subagent's own request rather
 than the main loop's.
 
-## 8. What a re-check changes
+## 8. The agent-file half, and the two fields a copy cannot carry
+
+`ULTRACODE_ANYWHERE_SUBAGENT_EFFORT` reports on `.claude/agents/<type>.md` files. It writes nothing,
+so nothing here can break a user's setup; what it can do is describe a lever that has moved.
+
+Three claims to re-read. First, that `effort` is still a frontmatter key, beside the ones a shadow
+uses:
+
+```sh
+/usr/bin/grep -a -o 'disallowedTools:[A-Za-z_$]*()\.optional()\.describe("Tools removed from the default set[^"]*"),[^;]\{0,200\}' "$BUILD" | head -1
+```
+
+That window carries `color` and then `effort` in 2.1.251. A build where `effort` has left it is one
+where the whole switch describes a lever that no longer exists, and the README's section on it is
+then wrong rather than stale.
+
+One thing in that window is a trap and not a fact. Its own text reads `Thinking effort: \`low\`,
+\`medium\`, \`high\`, \`max\`, or an integer.` and leaves `xhigh` out, in all four places the build
+spells it. It is a description rather than a validator: the field takes a string, no
+`["low","medium","high","max"]` enum exists anywhere in 2.1.251, and the five-level list this plugin
+holds appears nine times. So do not read that sentence as the accepted set, and do not shorten
+`EFFORT_LEVELS` to match it. Whether a shadow carrying `effort: xhigh` is accepted was not measured
+here; the switch reports what a file says and leaves what the build does with it to the build.
+
+Second, that the two fields a markdown file still cannot carry are still set the way the README says.
+Neither is ever a validated key, only a literal on a built-in definition, and that is the difference
+that matters:
+
+```sh
+/usr/bin/grep -a -c 'omitClaudeMd:[A-Za-z_$]*()' "$BUILD"             # expect 0: never a schema field
+/usr/bin/grep -a -o 'omitClaudeMd:!0,getSystemPrompt' "$BUILD" | wc -l # expect several: built-in definitions
+/usr/bin/grep -a -o 'appendSystemPrompt:!0' "$BUILD" | wc -l           # expect 1: the catch-all
+```
+
+If `omitClaudeMd` becomes a frontmatter key, the README paragraph naming it as a gap comes out and a
+shadow of `Explore` stops loading `CLAUDE.md`. If `appendSystemPrompt` becomes one, `claude` joins
+`SHADOWABLE` in `hooks/shadows.mjs` and the switch reports on four types rather than three.
+
+Third, that no hook output schema has grown an effort, and that the two which can rewrite a call are
+still the two:
+
+```sh
+/usr/bin/grep -a -o 'hookEventName:N("[A-Za-z]*")' "$BUILD" | sort -u | wc -l   # 22 in 2.1.251
+/usr/bin/grep -a -o 'hookEventName:N("[A-Za-z]*")[^;]\{0,250\}' "$BUILD" | /usr/bin/grep -c -i effort  # expect 0
+/usr/bin/grep -a -o 'hookEventName:N("[A-Za-z]*")[^;]\{0,110\}updatedInput' "$BUILD" | /usr/bin/grep -o 'N("[A-Za-z]*")' | sort -u
+```
+
+The last one answers `PreToolUse`, `PermissionRequest` and `allow`, that third being
+`PermissionRequest`'s own branch marker rather than an event. The window is 110 characters on purpose:
+the schemas sit next to each other in the bundle, and a wider one reaches over the boundary. At 250
+it answers `Notification`, `PermissionDenied` and `SubagentStop` as well, none of which owns such a
+field. Issue #131 said
+`PreToolUse` was the only event that can rewrite a call; it is not, and it does not matter, because
+both rewrite the tool's input and the effort is not in it. A fourth name appearing there is worth
+reading, and an effort turning up in the second grep is the day this whole section is wrong.
+
+Fourth, that the Agent tool still takes no effort argument. Ask a session for the tool's own schema
+rather than reading for it: `claude -p 'List the exact parameter names the Agent tool accepts, and
+nothing else.'` In 2.1.251 the answer is `description`, `prompt`, `subagent_type`, `model`,
+`run_in_background`, `name`, `team_name`, `mode`, `isolation` and `cwd`. An `effort` appearing there
+is the day this switch stops being a report and can become a setting, and the day `updatedInput`
+could carry one. Note that an invented key does not fail loudly: both validators drop unrecognised
+keys, so a hook writing one in gets a call that goes through with the key gone.
+
+Fifth, that an agent is still keyed on its frontmatter `name:` rather than on its filename, and that
+a `description:` is still required:
+
+```sh
+/usr/bin/grep -a -o "missing required 'description' in frontmatter" "$BUILD" | head -1
+/usr/bin/grep -a -o 'agentType:[a-zA-Z_$]*,whenToUse' "$BUILD" | head -1
+```
+
+The first is the message the loader emits before returning null, so a file without one never becomes
+an agent. The build is one line, so `grep -c` counts matching lines rather than occurrences: read the
+counts above as "none" or "some" and use `grep -o | wc -l` where the number itself matters. The second is the returned record, whose `agentType` is the destructured `name`. Both are
+what `hooks/shadows.mjs` reads a directory by: a file called `Explore.md` naming something else is
+that other agent, and the built-in `Explore` is untouched.
+
+Three sources the check does not look in, and named here rather than quietly missed: the managed
+settings directory, which outranks every other; the `--agents` JSON flag, which outranks every
+project directory; and the additional working directories a session was started with. A managed agent file would be what actually loads while the notice reports on the
+user's.
+
+One known divergence, in `configDirFor` in `hooks/hook-io.mjs`: it takes `CLAUDE_CONFIG_DIR` with
+`||` where the build uses `??`, so a variable set to the empty string falls back to `~/.claude` here
+and is taken literally there. It is left alone because the same function answers for `settings.json`,
+where the fallback is the safer reading.
+
+What this step cannot check is whether a user's copied prompt still matches the built-in it copies.
+Nothing static can: the built-in prompts are not stored where a script can reliably reach them, and
+the only faithful comparison is a live extraction, one session per type. The switch reports the file's
+age against the build's for that reason, which is a proxy and says so.
+
+## 9. What a re-check changes
 
 - `CALIBRATED_AGAINST` in `hooks/upstream.mjs`, and every build named in this file and the README.
   Move it before step 4 rather than after, since the session line it silences would otherwise show up
@@ -379,6 +472,8 @@ than the main loop's.
   validator beside it: the tool takes an integer effort as well, and this switch deliberately does
   not.
 - `WAKEUP_SOURCES` in `hooks/standing-ultracode.mjs`, if the `source` enum moved.
+- `SHADOWABLE` in `hooks/shadows.mjs`, if a built-in agent type was added, renamed or dropped, or if
+  `appendSystemPrompt` stopped being what keeps `claude` off that list. Step 8 has the greps.
 - The README, if any claim in it is no longer what the diff shows: the site count, the character
   counts, the bundle size and the timing figures are all measurements of one build on one machine.
 - The cadence in `FULL_EVERY`, if `TURNS_BETWEEN_MAINTENANCE` moved.
