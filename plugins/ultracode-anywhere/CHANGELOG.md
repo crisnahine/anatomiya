@@ -26,7 +26,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   alone, and `anything.md` naming `Plan` is the file a spawn of `Plan` reads. Every
   `.claude/agents` from the working directory up to the home is read, deepest first and subfolders
   included, then the user's own, and a file behind a symlink counts because the build follows one.
-  A build whose age cannot be read leaves the age unanswered rather than reported as fine.
+  A build whose age cannot be read leaves the age unanswered rather than reported as fine, and a
+  search that hit its own bound says how many files it read rather than reporting an absence it
+  never established. The line names the file it read for each type, since a type can have a
+  candidate in every `.claude/agents` up the tree.
 
 ### Changed
 
