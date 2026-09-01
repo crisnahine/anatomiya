@@ -46,6 +46,8 @@ export function parseArgs(argv) {
   }
   if (!out.repo || !out.task) return { error: "both --repo and --task are required" };
   if (!Number.isInteger(out.trials) || out.trials < 1) return { error: "--trials takes a positive integer" };
+  // NaN compares false against every headroom, which is the floor switched off.
+  if (!(out.minHeadroom >= 0 && out.minHeadroom <= 1)) return { error: "--min-headroom takes a number from 0 to 1" };
   const engine = engineFor(out);
   if (engine.error) return { error: engine.error };
   const { model, effort, ...rest } = out;

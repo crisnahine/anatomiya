@@ -767,13 +767,18 @@ test("the argument gate answers in process, with the engine folded in", async ()
   assert.deepEqual(parseArgs(["--repo", "r", "--task", "t", "--bogus", "1"]), { error: "unknown option --bogus" });
   assert.deepEqual(parseArgs(["--repo", "r", "--task", "t", "--trials", "0"]), { error: "--trials takes a positive integer" });
   assert.match(parseArgs(["--repo", "r", "--task", "t", "--effort", "med"]).error, /--effort takes one of low, medium, high, xhigh, max, not "med"/);
+  // NaN compares false against every headroom, which switches the floor off
+  // for the whole batch rather than refusing at the door.
+  assert.deepEqual(parseArgs(["--repo", "r", "--task", "t", "--min-headroom", "0.O5"]), { error: "--min-headroom takes a number from 0 to 1" });
+  assert.deepEqual(parseArgs(["--repo", "r", "--task", "t", "--min-headroom", "2"]), { error: "--min-headroom takes a number from 0 to 1" });
+  assert.equal(parseArgs(["--repo", "r", "--task", "t", "--min-headroom", "0.2"]).minHeadroom, 0.2);
 });
 
 test("the usage text names every option the gate takes", async () => {
   const { parseArgs, USAGE } = await import("../scripts/ab/args.mjs");
   for (const flag of ["--repo", "--task", "--trials", "--model", "--effort", "--out", "--min-headroom", "--key", "--area"]) {
     assert.ok(USAGE.includes(`${flag} `), `${flag} is missing from the usage text`);
-    assert.notEqual(parseArgs(["--repo", "r", "--task", "t", flag, "x"]).error, `unknown option ${flag}`, `${flag} is documented but refused`);
+    assert.notEqual(parseArgs(["--repo", "r", "--task", "t", flag, "1"]).error, `unknown option ${flag}`, `${flag} is documented but refused`);
   }
 });
 

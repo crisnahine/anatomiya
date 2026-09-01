@@ -363,6 +363,15 @@ test("every JSX hit carries a typed node with offsets into the parsed source", (
       assert.ok(h.where === null || typeof h.where === "string", `${d.key} where`);
       assert.ok(slice(EVERY_DIMENSION, h.node).length > 0, `${d.key} reports an empty span`);
     }
+    // The identity is the slice, never the offset: the same file with one more
+    // line ahead of it identifies every site the same way.
+    const shifted = `\n${EVERY_DIMENSION}`;
+    const moved = [];
+    d.run(parseSync("f.tsx", shifted, { sourceType: "module" }).program, (h) => moved.push(h));
+    assert.equal(moved.length, out.length, d.key);
+    for (const [i, h] of out.entries()) {
+      assert.equal(siteIdentity("src/a.tsx", d.key, h.node, EVERY_DIMENSION), siteIdentity("src/a.tsx", d.key, moved[i].node, shifted), `${d.key} site ${i}`);
+    }
   }
 });
 

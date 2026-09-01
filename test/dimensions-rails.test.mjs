@@ -1132,6 +1132,9 @@ test("a rails dimension only ever calls add with what the reducer reads", needsR
         assert.notEqual(typeof h.node.end, "number", at);
         // With no offsets the identity is the name, and the line plays no part.
         assert.equal(siteIdentity("app/w.rb", d.key, h.node, ""), siteIdentity("app/w.rb", d.key, { ...h.node, line: h.node.line + 100 }, ""), at);
+        if (typeof h.node.name === "string") {
+          assert.notEqual(siteIdentity("app/w.rb", d.key, h.node, ""), siteIdentity("app/w.rb", d.key, { ...h.node, name: `${h.node.name}X` }, ""), at);
+        }
       });
     }
     assert.ok(fired > 0, `${d.key} never fired, so no fixture holds it to this shape`);

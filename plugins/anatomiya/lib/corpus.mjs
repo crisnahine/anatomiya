@@ -120,13 +120,21 @@ export function isSource(path) {
 }
 
 /**
- * Whether a path is one the corpus counts: source, not denied and not under an
- * excluded directory. The generated-file head read and the realpath check are
- * not path-only questions and stay with `collect`: a caller asking about a
- * diff path, or asking inside a pre-write hook, has no file to open.
+ * Which path-only rule refuses a path, or null where none does. The generated-
+ * file head read and the realpath check are not path-only questions and stay
+ * with `classify`: a caller asking about a diff path, or asking inside a
+ * pre-write hook, has no file to open.
  */
+function pathDrop(path) {
+  if (isDenied(path)) return "denied";
+  if (isExcludedDir(path)) return "excluded";
+  if (!isSource(path)) return "notSource";
+  return null;
+}
+
+/** Whether a path is one the corpus counts: source, not denied and not under an excluded directory. */
 export function isCorpusPath(path) {
-  return isSource(path) && !isDenied(path) && !isExcludedDir(path);
+  return pathDrop(path) === null;
 }
 
 // Generated and vendored code is ordinary-looking: it carries real git-blame
@@ -403,9 +411,8 @@ export async function countUntrackedSource(root) {
  * once per path, since it is the same `.gitattributes` for every file asked.
  */
 function classify(root, rel, generatedRules) {
-  if (isDenied(rel)) return { drop: "denied" };
-  if (isExcludedDir(rel)) return { drop: "excluded" };
-  if (!isSource(rel)) return { drop: "notSource" };
+  const drop = pathDrop(rel);
+  if (drop) return { drop };
   const abs = safeResolve(root, rel);
   if (!abs) return { drop: "escaped" };
   // A file that is generated must not contribute evidence to a stated

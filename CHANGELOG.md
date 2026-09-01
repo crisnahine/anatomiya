@@ -15,6 +15,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   that write the document stayed outside it. The harness now runs as one
   guarded `main`, and a guard in `test/modules.test.mjs` refuses a binding
   declared inside a block and read outside it, in every source file.
+  `--min-headroom` refuses a value it cannot compare, which used to switch the
+  floor off for the whole batch.
 - The harness probed an arm with the first `.rb`, `.ts`, `.tsx`, `.js` or `.jsx`
   file under the target area, a hand-kept list that missed every `.mjs`
   repository, this one included. It asks the corpus's own predicates now.
@@ -41,8 +43,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   one case runs the whole harness from an empty repository with the model
   stubbed.
 - `isCorpusPath` in `corpus.mjs` is the one spelling of whether a path is
-  corpus; the check, the notice and the harness's probe read it instead of
-  composing the three predicates by hand.
+  corpus, over the same rule list `collect` classifies by; the check, the
+  notice and the harness's probe read it instead of composing the three
+  predicates by hand.
 
 ## [0.6.0] - 2026-08-31
 
