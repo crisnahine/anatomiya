@@ -13,6 +13,7 @@ import { EFFORT_LEVELS } from "../plugins/ultracode-anywhere/hooks/effort.mjs";
 
 import { FULL_EVERY, contextFor, isWakeup, run } from "../plugins/ultracode-anywhere/hooks/standing-ultracode.mjs";
 import { ULTRACODE } from "../scripts/plugins.mjs";
+import { hostEnv } from "./host-env.mjs";
 
 const HOOK = fileURLToPath(new URL("../plugins/ultracode-anywhere/hooks/standing-ultracode.mjs", import.meta.url));
 
@@ -59,7 +60,7 @@ function fire(t, { stdin = payload(), env = {}, dir = stateDir(t) } = {}) {
     input: stdin,
     cwd: dir,
     encoding: "utf8",
-    env: { ...process.env, ...nowhere(t), ULTRACODE_ANYWHERE_STATE: dir, ...env },
+    env: { ...hostEnv(), ...nowhere(t), ULTRACODE_ANYWHERE_STATE: dir, ...env },
   });
   return { ...result, dir };
 }
@@ -606,7 +607,7 @@ test("the hook runs when it is reached through a symlinked directory", needsSyml
   const through = spawnSync(process.execPath, [join(dir, "link", "ultracode-anywhere", "hooks", "standing-ultracode.mjs")], {
     input: payload(),
     encoding: "utf8",
-    env: { ...process.env, ...nowhere(t), ULTRACODE_ANYWHERE_STATE: join(dir, "state") },
+    env: { ...hostEnv(), ...nowhere(t), ULTRACODE_ANYWHERE_STATE: join(dir, "state") },
   });
 
   assert.equal(through.status, 0);
@@ -617,7 +618,7 @@ test("a reader that goes away mid-write does not turn the hook into a failed one
   // The one path in this plugin that could reach stderr and a non-zero exit,
   // which is the outcome a hook must not have.
   const dir = stateDir(t);
-  const child = spawn(process.execPath, [HOOK], { env: { ...process.env, ...nowhere(t), ULTRACODE_ANYWHERE_STATE: dir } });
+  const child = spawn(process.execPath, [HOOK], { env: { ...hostEnv(), ...nowhere(t), ULTRACODE_ANYWHERE_STATE: dir } });
   let stderr = "";
   child.stderr.on("data", (chunk) => {
     stderr += chunk;
@@ -690,7 +691,7 @@ test("a turn taken from a directory that is no longer there is still a turn that
   const run = spawnSync("/bin/sh", ["-c", `cd "${gone}" && rm -rf "${gone}" && exec "${process.execPath}" "${HOOK}"`], {
     input: "",
     encoding: "utf8",
-    env: { ...process.env, ULTRACODE_ANYWHERE_STATE: join(dir, "state"), CLAUDE_CONFIG_DIR: join(dir, "config") },
+    env: { ...hostEnv(), ULTRACODE_ANYWHERE_STATE: join(dir, "state"), CLAUDE_CONFIG_DIR: join(dir, "config") },
   });
 
   assert.equal(run.status, 0, run.stderr);

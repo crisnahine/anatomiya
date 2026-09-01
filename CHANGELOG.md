@@ -27,8 +27,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   that build installs the fetched catalog in place of the compiled model list
   rather than logging it. `docs/research/claude-code-2-1-257-engine-variables.md`
   holds the read.
-- A session-start case handed the hook the host's own `ULTRACODE_ANYWHERE_*`
-  settings, so it failed on any machine running the plugin.
+- The session-start and standing-ultracode cases handed the hook the host's
+  own `CLAUDE_*` and `ULTRACODE_ANYWHERE*` settings, so they failed on a
+  machine running the plugin; `test/host-env.mjs` takes those out for every
+  spawn.
 
 ### Changed
 
