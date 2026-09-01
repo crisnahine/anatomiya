@@ -56,13 +56,16 @@ test("a machine with no build to read is not warned about", (t) => {
   assert.equal(notice({ cwd: t1.dir, cli: null, state: t1.state, env: { CLAUDE_CONFIG_DIR: t1.config, ULTRACODE_ANYWHERE_CAP_NOTICE: "0" } }), null);
 });
 
+/** The process environment with the plugin's own settings taken out: a machine that runs this plugin must not decide what a case is told. */
+const hostEnv = () => Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.startsWith("ULTRACODE_ANYWHERE")));
+
 test("the hook prints one SessionStart object and nothing when there is nothing to say", (t) => {
   const t1 = tree(t, { bundle: `${whole()}`.replace(MARKERS[0], "") });
   const fire = (env) =>
     spawnSync(process.execPath, [HOOK], {
       input: JSON.stringify({ session_id: "s", hook_event_name: "SessionStart", source: "startup", cwd: t1.dir }),
       encoding: "utf8",
-      env: { ...process.env, CLAUDE_CONFIG_DIR: t1.config, CLAUDE_CODE_EXECPATH: env, ULTRACODE_ANYWHERE_STATE: t1.state, ULTRACODE_ANYWHERE_CAP_NOTICE: "0" },
+      env: { ...hostEnv(), CLAUDE_CONFIG_DIR: t1.config, CLAUDE_CODE_EXECPATH: env, ULTRACODE_ANYWHERE_STATE: t1.state, ULTRACODE_ANYWHERE_CAP_NOTICE: "0" },
     });
 
   const drifted = fire(t1.cli);

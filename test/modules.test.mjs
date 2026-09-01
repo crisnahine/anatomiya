@@ -4,6 +4,8 @@ import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ANATOMIYA, BINARY, REL } from "../scripts/plugins.mjs";
+import { parseSync } from "oxc-parser";
+import { boundNames } from "../plugins/anatomiya/lib/walk.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const LIB = join(ANATOMIYA, "lib");
@@ -446,6 +448,219 @@ test("a name this repository's own module offers is imported where it is used, n
   }
 
   assert.deepEqual(assumed, []);
+});
+
+const FUNCTIONS = new Set(["FunctionDeclaration", "FunctionExpression", "ArrowFunctionExpression"]);
+
+/**
+ * Every read in a module that no scope in reach declares, where a block in the
+ * same module does.
+ *
+ * Resolved the way the engine resolves it: a block, a `for` head, a `switch`,
+ * a `catch` and a function each open a scope, `var` hoists to the nearest
+ * function or the module, and an import or a top-level declaration is the
+ * module's. What is left is a name that exists in the file and not where it is
+ * read, which is the one shape `node --check` passes and the first run to get
+ * there throws on.
+ */
+function readOutsideTheirBlock(src, file) {
+  const { program } = parseSync(file, src, { sourceType: "module" });
+  const inBlocks = new Set();
+  const out = [];
+  const lineOf = (offset) => src.slice(0, offset).split("\n").length;
+  const open = (parent, kind) => ({ names: new Set(), parent, kind });
+  const resolves = (name, scope) => {
+    for (let s = scope; s; s = s.parent) if (s.names.has(name)) return true;
+    return false;
+  };
+  // What a statement list declares into the scope holding it, ahead of the
+  // walk, so a read above its declaration still resolves.
+  const hoist = (stmts, scope, block) => {
+    for (let stmt of stmts) {
+      if (stmt.type === "ExportNamedDeclaration" || stmt.type === "ExportDefaultDeclaration") stmt = stmt.declaration;
+      if (!stmt) continue;
+      const names = [];
+      if (stmt.type === "VariableDeclaration" && stmt.kind !== "var") for (const d of stmt.declarations) boundNames(d.id, names);
+      else if (stmt.type === "FunctionDeclaration" || stmt.type === "ClassDeclaration") {
+        if (stmt.id) names.push(stmt.id.name);
+      } else if (stmt.type === "ImportDeclaration") for (const sp of stmt.specifiers) names.push(sp.local.name);
+      for (const n of names) {
+        scope.names.add(n);
+        if (block) inBlocks.add(n);
+      }
+    }
+  };
+  // `var` declared anywhere below, short of the next function.
+  const hoistVars = (node, scope) => {
+    if (!node || typeof node !== "object") return;
+    if (Array.isArray(node)) {
+      for (const n of node) hoistVars(n, scope);
+      return;
+    }
+    if (FUNCTIONS.has(node.type)) return;
+    if (node.type === "VariableDeclaration" && node.kind === "var") {
+      for (const d of node.declarations) for (const n of boundNames(d.id)) scope.names.add(n);
+    }
+    for (const k of Object.keys(node)) if (k !== "type") hoistVars(node[k], scope);
+  };
+  // A pattern binds names the scope already holds, and reads only what its
+  // defaults and computed keys say.
+  const visitPattern = (p, scope) => {
+    if (!p) return;
+    switch (p.type) {
+      case "AssignmentPattern":
+        visitPattern(p.left, scope);
+        return visit(p.right, scope);
+      case "ObjectPattern":
+        for (const q of p.properties) {
+          if (q.type === "RestElement") visitPattern(q.argument, scope);
+          else {
+            if (q.computed) visit(q.key, scope);
+            visitPattern(q.value, scope);
+          }
+        }
+        return;
+      case "ArrayPattern":
+        for (const el of p.elements) visitPattern(el, scope);
+        return;
+      case "RestElement":
+        return visitPattern(p.argument, scope);
+    }
+  };
+  const visit = (node, scope) => {
+    if (!node || typeof node !== "object") return;
+    if (Array.isArray(node)) {
+      for (const n of node) visit(n, scope);
+      return;
+    }
+    switch (node.type) {
+      case "Identifier":
+        if (!resolves(node.name, scope) && inBlocks.has(node.name)) out.push({ name: node.name, line: lineOf(node.start) });
+        return;
+      case "BlockStatement":
+      case "StaticBlock": {
+        const inner = open(scope, "block");
+        hoist(node.body, inner, true);
+        return visit(node.body, inner);
+      }
+      case "SwitchStatement": {
+        visit(node.discriminant, scope);
+        const inner = open(scope, "block");
+        hoist(node.cases.flatMap((c) => c.consequent), inner, true);
+        for (const c of node.cases) {
+          visit(c.test, inner);
+          visit(c.consequent, inner);
+        }
+        return;
+      }
+      case "ForStatement":
+      case "ForInStatement":
+      case "ForOfStatement": {
+        const inner = open(scope, "block");
+        const head = node.init ?? node.left;
+        if (head && head.type === "VariableDeclaration") hoist([head], inner, true);
+        visit(head, inner);
+        visit(node.test, inner);
+        visit(node.update, inner);
+        visit(node.right, inner);
+        return visit(node.body, inner);
+      }
+      case "CatchClause": {
+        const inner = open(scope, "block");
+        for (const n of boundNames(node.param)) {
+          inner.names.add(n);
+          inBlocks.add(n);
+        }
+        visitPattern(node.param, inner);
+        return visit(node.body, inner);
+      }
+      case "FunctionDeclaration":
+      case "FunctionExpression":
+      case "ArrowFunctionExpression": {
+        const inner = open(scope, "function");
+        if (node.type === "FunctionExpression" && node.id) inner.names.add(node.id.name);
+        for (const p of node.params) for (const n of boundNames(p)) inner.names.add(n);
+        hoistVars(node.body, inner);
+        for (const p of node.params) visitPattern(p, inner);
+        if (node.body.type === "BlockStatement") {
+          hoist(node.body.body, inner, false);
+          return visit(node.body.body, inner);
+        }
+        return visit(node.body, inner);
+      }
+      case "VariableDeclaration":
+        for (const d of node.declarations) {
+          visitPattern(d.id, scope);
+          visit(d.init, scope);
+        }
+        return;
+      case "ClassDeclaration":
+      case "ClassExpression":
+        visit(node.superClass, scope);
+        return visit(node.body, scope);
+      case "MethodDefinition":
+      case "PropertyDefinition":
+      case "Property":
+        if (node.computed) visit(node.key, scope);
+        return visit(node.value, scope);
+      case "MemberExpression":
+        visit(node.object, scope);
+        if (node.computed) visit(node.property, scope);
+        return;
+      case "ImportDeclaration":
+      case "ExportAllDeclaration":
+      case "BreakStatement":
+      case "ContinueStatement":
+      case "MetaProperty":
+        return;
+      case "ExportNamedDeclaration":
+      case "ExportDefaultDeclaration":
+        return visit(node.declaration, scope);
+      case "LabeledStatement":
+        return visit(node.body, scope);
+      default:
+        for (const k of Object.keys(node)) if (k !== "type") visit(node[k], scope);
+    }
+  };
+  const module = open(null, "module");
+  hoist(program.body, module, false);
+  hoistVars(program.body, module);
+  visit(program.body, module);
+  return out;
+}
+
+// A binding declared inside a block and read outside it is a `ReferenceError`
+// on the one run that gets that far. `scripts/ab.mjs` carried one from
+// 2026-08-29: `label` and `result` moved inside the `try` around the trials,
+// the two lines that write the result document stayed at module scope, and
+// every trial was paid for before the throw. Nothing imports the file, so no
+// case could reach it, and the argument gate above made it look healthy to the
+// one case that spawns it.
+test("a name declared inside a block is read only where that block is in reach", () => {
+  const outside = [];
+  for (const rel of sourceFiles()) {
+    for (const { name, line } of readOutsideTheirBlock(readFileSync(join(ROOT, rel), "utf8"), rel)) {
+      outside.push(`${rel}:${line}: ${name}`);
+    }
+  }
+
+  assert.deepEqual(outside, []);
+});
+
+// The rule above sees whatever this resolves, so it is driven directly.
+test("the block reader tells a read inside a block from one outside it", () => {
+  const reads = (src) => readOutsideTheirBlock(src, "t.mjs").map((r) => `${r.line}:${r.name}`);
+  assert.deepEqual(reads("try { const a = 1; } catch {}\nconsole.log(a);"), ["2:a"]);
+  assert.deepEqual(reads("try { const a = 1; console.log(a); } catch {}"), []);
+  assert.deepEqual(reads("let a;\ntry { a = 1; } catch {}\nconsole.log(a);"), []);
+  assert.deepEqual(reads("{ let a = 1; }\nconst f = () => a;"), ["2:a"]);
+  assert.deepEqual(reads("{ let a = 1; }\nconst f = (a) => a;"), []);
+  assert.deepEqual(reads("{ var a = 1; }\nconsole.log(a);"), []);
+  assert.deepEqual(reads("for (const i of []) {}\nconsole.log(i);"), ["2:i"]);
+  assert.deepEqual(reads("try {} catch (e) {}\nconsole.log(e);"), ["2:e"]);
+  assert.deepEqual(reads("{ const a = 1; }\nconst o = { a: 1 };\nconsole.log(o.a);"), []);
+  assert.deepEqual(reads("switch (1) { case 1: { const a = 1; } }\nconsole.log(a);"), ["2:a"]);
+  assert.deepEqual(reads("{ const a = 1; }\nfunction f() { return a; }"), ["2:a"]);
 });
 
 /**

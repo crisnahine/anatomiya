@@ -7,6 +7,33 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- The A/B harness threw `ReferenceError: label is not defined` on every run that
+  reached its result document, after every trial had been paid for: two
+  bindings had moved inside the `try` around the trials while the two lines
+  that write the document stayed outside it. The harness now runs as one
+  guarded `main`, and a guard in `test/modules.test.mjs` refuses a binding
+  declared inside a block and read outside it, in every source file.
+- The harness probed an arm with the first `.rb`, `.ts`, `.tsx`, `.js` or `.jsx`
+  file under the target area, a hand-kept list that missed every `.mjs`
+  repository, this one included. It asks the corpus's own predicates now.
+- The harness scrubs three engine-shaped variables build 2.1.257 reads:
+  `CLAUDE_CODE_SUBAGENT_MODEL_FORCE`, and the served model catalog's switch and
+  URL, `CLAUDE_CODE_MODEL_CATALOG` and `CLAUDE_CODE_MODEL_CATALOG_URL`, since
+  that build installs the fetched catalog in place of the compiled model list
+  rather than logging it. `docs/research/claude-code-2-1-257-engine-variables.md`
+  holds the read.
+- A session-start case handed the hook the host's own `ULTRACODE_ANYWHERE_*`
+  settings, so it failed on any machine running the plugin.
+
+### Changed
+
+- The harness's argument gate and result document live in `scripts/ab/args.mjs`
+  and `scripts/ab/render.mjs`, so a test reaches them without spawning a run,
+  and one case runs the whole harness from an empty repository with the model
+  stubbed.
+
 ## [0.6.0] - 2026-08-31
 
 The glossary said eleven things the code does not do, and one of them reached a reader: an area file

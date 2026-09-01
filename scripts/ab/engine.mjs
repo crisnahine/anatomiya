@@ -50,6 +50,12 @@ export const OVERRIDES = new Set([
   "CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT",
   "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY",
   "CLAUDE_EFFORT",
+  // 2.1.257 forces a child's model with a flag of its own and installs a served
+  // catalog in place of the compiled model list, so the switch and the URL that
+  // feed it go too: docs/research/claude-code-2-1-257-engine-variables.md.
+  "CLAUDE_CODE_SUBAGENT_MODEL_FORCE",
+  "CLAUDE_CODE_MODEL_CATALOG",
+  "CLAUDE_CODE_MODEL_CATALOG_URL",
 ]);
 
 /**
