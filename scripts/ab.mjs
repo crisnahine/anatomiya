@@ -19,7 +19,7 @@ import { fileURLToPath } from "node:url";
 
 import { parseArgs, USAGE } from "./ab/args.mjs";
 import { rankAreas, NO_HEADROOM } from "./ab/pick.mjs";
-import { buildArms, installMap, PROBE } from "./ab/arms.mjs";
+import { buildArms, installMap, probeFor } from "./ab/arms.mjs";
 import { runTrial } from "./ab/run.mjs";
 import { conflictingSettings, engineRan } from "./ab/engine.mjs";
 import { settingsFor } from "../plugins/ultracode-anywhere/hooks/upstream.mjs";
@@ -99,8 +99,7 @@ async function main(argv) {
         .find((f) => f && isCorpusPath(f));
       if (!probeFile) throw new Error(`no readable file under ${target.path} to probe with`);
 
-      // A function, so a `$` in the name is a character and not a pattern.
-      const probe = PROBE.replace("{file}", () => probeFile);
+      const probe = probeFor(probeFile);
       const said = {};
       for (const [name, arm] of [["a", arms.a], ["b", arms.b]]) {
         const r = await runTrial(arm, probe, { ...args.engine, tools: ["Read"] });

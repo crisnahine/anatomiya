@@ -165,6 +165,14 @@ test("a written file is scored by the dimension's own predicate, not by a grep",
   assert.deepEqual(bad, { candidates: 1, conforming: 0, ratio: 0 });
 });
 
+test("the probe names the file verbatim, whatever characters the name carries", async () => {
+  const { PROBE, probeFor } = await import("../scripts/ab/arms.mjs");
+  // `$&` and `$'` are replacement patterns to a string replace, so a file named
+  // with either used to reach the model spelled as the match or the text after it.
+  assert.ok(probeFor("src/x/$&.mjs").includes("Read the file at src/x/$&.mjs."), probeFor("src/x/$&.mjs"));
+  assert.equal(probeFor("src/x/a.mjs"), PROBE.replace("{file}", "src/x/a.mjs"));
+});
+
 test("an arm is summed by the predicate, and a trial that wrote nothing is not a trial", async () => {
   const { scoreArm } = await import("../scripts/ab/score.mjs");
   const conforming = `export function f() { try { a() } catch (e) { log(e) } }`;

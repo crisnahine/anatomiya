@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 import { hostEnv } from "./host-env.mjs";
 
-test("the host's Claude Code and plugin settings never reach a case, and everything else does", () => {
+test("the host's Claude Code and plugin settings never reach a case, and everything else does", (t) => {
   const given = {
     PATH: "p",
     HOME: "h",
@@ -16,5 +16,11 @@ test("the host's Claude Code and plugin settings never reach a case, and everyth
   };
 
   assert.deepEqual(hostEnv(given), { PATH: "p", HOME: "h", OTHER: "1" });
-  assert.ok(!("CLAUDE_CONFIG_DIR" in hostEnv(process.env)), "and it reads the process by default");
+
+  // The default reads the process, held to a name this case puts there so the
+  // assertion cannot pass on a machine that never set one.
+  process.env.CLAUDE_CODE_HOST_ENV_PROBE = "1";
+  t.after(() => delete process.env.CLAUDE_CODE_HOST_ENV_PROBE);
+  assert.ok(!("CLAUDE_CODE_HOST_ENV_PROBE" in hostEnv()));
+  assert.ok("PATH" in hostEnv());
 });

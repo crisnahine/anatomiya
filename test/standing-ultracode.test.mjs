@@ -691,7 +691,7 @@ test("a turn taken from a directory that is no longer there is still a turn that
   const run = spawnSync("/bin/sh", ["-c", `cd "${gone}" && rm -rf "${gone}" && exec "${process.execPath}" "${HOOK}"`], {
     input: "",
     encoding: "utf8",
-    env: { ...hostEnv(), ULTRACODE_ANYWHERE_STATE: join(dir, "state"), CLAUDE_CONFIG_DIR: join(dir, "config") },
+    env: { ...hostEnv(), ...nowhere(t), ULTRACODE_ANYWHERE_STATE: join(dir, "state"), CLAUDE_CONFIG_DIR: join(dir, "config") },
   });
 
   assert.equal(run.status, 0, run.stderr);
