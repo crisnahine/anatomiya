@@ -47,7 +47,7 @@ test("a library hook is not a candidate for the React namespace claim, because i
 test("the bare hook form conforms and reports the callee, not the call it heads", () => {
   // A site's identity is normalise(source.slice(node.start, node.end)) with no
   // truncation, so reporting the CallExpression would put a whole useEffect body
-  // in it and any edit inside would resurface as a new violation.
+  // in it and any edit inside would resurface as a new site.
   const src = `import * as React from "react";
 export const C = () => {
   const [a, set] = useState(0);
@@ -127,7 +127,7 @@ test("a violation's reported node is the attribute name, so an edit inside the a
   assert.equal(
     siteIdentity("src/a.jsx", "handler_is_named", ha.node, a),
     siteIdentity("src/a.jsx", "handler_is_named", hb.node, b),
-    "the two are one site, so the edit is not a new violation"
+    "the two are one site, so the edit introduces nothing"
   );
 });
 

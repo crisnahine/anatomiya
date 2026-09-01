@@ -73,14 +73,18 @@ export function newlyIntroduced({
  * leaves the node's own name as the identity.
  */
 export function siteIdentity(keyPath, key, node, source) {
-  const located = typeof node.start === "number" && typeof node.end === "number";
-  const text = located ? normalise(source.slice(node.start, node.end)) : "";
-  return fingerprint(keyPath, key, node.type, text || node.name || "");
+  return identityOf(keyPath, key, node, sliceOf(node, source));
 }
+
+/** The normalised slice of the parsed string under a node, or nothing where the parser reported no offsets. */
+const sliceOf = (node, source) =>
+  typeof node.start === "number" && typeof node.end === "number" ? normalise(source.slice(node.start, node.end)) : "";
+
+const identityOf = (keyPath, key, node, text) => fingerprint(keyPath, key, node.type, text || node.name || "");
 
 /**
  * The identity of one grouped body: what it declares, sorted, so two includes
- * swapped are not a violation anyone introduced.
+ * swapped are not a site anyone introduced.
  */
 export function bodyIdentity(keyPath, key, hits) {
   return fingerprint(keyPath, key, "body", constantsOf(hits));
@@ -189,19 +193,15 @@ function violations(program, source, lang, keyPath, { sides = new Map(), learned
       // Slice the same in-memory string the parser was handed. oxc reports
       // UTF-16 code units, a disk buffer is bytes, and 5.4% of real files are
       // non-ASCII, so indexing a buffer with a parser offset corrupts silently.
-      const located = typeof node.start === "number" && typeof node.end === "number";
-      const text = located ? normalise(source.slice(node.start, node.end)) : "";
+      const text = sliceOf(node, source);
       return {
         dimension: dim.key,
         claim: counter ? dim.counterClaim : dim.learnedClasses ? claimFor(dim, cls, qualified.get(dim.key)) : dim.claim,
         precision: dim.precision,
         where: hit.where || null,
-        line: located ? lineAt(source, node.start) : node.line || 1,
+        line: typeof node.start === "number" ? lineAt(source, node.start) : node.line || 1,
         text,
-        // A parser that reports no offset into the string above leaves the
-        // node's own name as the site's identity. The line is never part of it:
-        // one added import shifts every line below it.
-        fp: siteIdentity(keyPath, dim.key, node, source),
+        fp: identityOf(keyPath, dim.key, node, text),
       };
     };
     // A grouped row answers per enclosing body, so its hits are held until the

@@ -77,13 +77,13 @@ test("a line shift introduces nothing, and the same file against no base introdu
   const shifted = `\n\n${src}`;
 
   assert.deepEqual(judge({ head: revision(shifted), base: revision(src) }), []);
-  const [only, ...rest] = judge({ head: revision(shifted), base: null });
+  const [one, ...rest] = judge({ head: revision(shifted), base: null });
   assert.deepEqual(rest, []);
-  assert.equal(only.dimension, "handler_is_named");
-  assert.equal(only.claim, "an event handler prop is given a named function, not an inline arrow");
-  assert.equal(only.text, "onClick", "the reported node is the attribute name");
-  assert.equal(only.line, 3, "the line is on the site for the added-lines mode, and in the identity for nothing");
-  assert.match(only.fp, /^[0-9a-f]{16}$/);
+  assert.equal(one.dimension, "handler_is_named");
+  assert.equal(one.claim, "an event handler prop is given a named function, not an inline arrow");
+  assert.equal(one.text, "onClick", "the reported node is the attribute name");
+  assert.equal(one.line, 3, "the line is on the site for the added-lines mode, and in the identity for nothing");
+  assert.match(one.fp, /^[0-9a-f]{16}$/);
 });
 
 test("an edit inside a pre-existing inline handler is not a new site", () => {
@@ -97,8 +97,8 @@ test("a renamed file is judged under the path it had, so the rename forges nothi
   const src = revision(`const A = () => <B onClick={() => save(1)} />;`);
 
   assert.deepEqual(judge({ path: "src/new.jsx", keyPath: "src/old.jsx", head: src, base: src }), []);
-  const [only] = judge({ path: "src/new.jsx", keyPath: "src/old.jsx", head: src, base: null });
-  assert.equal(only.fp, siteIdentity("src/old.jsx", "handler_is_named", { type: "JSXIdentifier", start: 19, end: 26 }, src.source));
+  const [one] = judge({ path: "src/new.jsx", keyPath: "src/old.jsx", head: src, base: null });
+  assert.equal(one.fp, siteIdentity("src/old.jsx", "handler_is_named", { type: "JSXIdentifier", start: 19, end: 26 }, src.source));
 });
 
 test("identical sites are told apart by count: two at the base absorb two at the head, and a third is new", () => {
@@ -116,7 +116,7 @@ test("identical sites are told apart by count: two at the base absorb two at the
 
 const functionStyle = rowByKey("function_style");
 
-test("on the counter side the conforming sites are the violations, and the sentence is the counter-claim", () => {
+test("on the counter side the conforming sites are the findings, and the sentence is the counter-claim", () => {
   const counter = area(stated("function_style", { states: "counter", counterClaim: functionStyle.counterClaim }));
   const base = revision(`export const b = () => 1;`, { file: "f.ts" });
   const head = revision(`function a() {}\nexport const b = () => 1;`, { file: "f.ts" });
