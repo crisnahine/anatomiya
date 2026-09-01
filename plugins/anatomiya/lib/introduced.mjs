@@ -52,7 +52,7 @@ export function newlyIntroduced({
   const polarity = sidesFor(area, ancestorsOf);
   const judge = (rev) =>
     breakingSites(rev.program, rev.source, lang, keyPath, {
-      ...polarity,
+      polarity,
       frameworks,
       capabilities,
       rows,
@@ -80,7 +80,13 @@ export function siteIdentity(keyPath, key, node, source) {
 /** Whether the parser reported offsets for a node; prism reports none (B5). */
 const located = (node) => typeof node.start === "number" && typeof node.end === "number";
 
-/** The normalised slice of the parsed string under a node, or nothing where the parser reported no offsets. */
+/**
+ * The normalised slice of the parsed string under a node, or nothing where the
+ * parser reported no offsets. The same in-memory string the parser was handed,
+ * never a disk buffer: oxc reports UTF-16 code units, a buffer is bytes, and
+ * 5.4% of real files are non-ASCII, so indexing a buffer with a parser offset
+ * corrupts silently (B5).
+ */
 const sliceOf = (node, source) => (located(node) ? normalise(source.slice(node.start, node.end)) : "");
 
 /**
@@ -162,7 +168,8 @@ function enforceableClass(dim, cls) {
  */
 const isOmission = (hit) => hit.class === undefined || hit.class === null;
 
-function breakingSites(program, source, lang, keyPath, { sides = new Map(), learned = new Map(), kinds = new Map(), qualified = new Map(), stated = new Set(), frameworks, capabilities, rows, comments = [], stripped = false, rel = null, facets = null } = {}) {
+function breakingSites(program, source, lang, keyPath, { polarity, frameworks, capabilities, rows, comments = [], stripped = false, rel = null, facets = null }) {
+  const { sides, learned, kinds, qualified, stated } = polarity;
   const out = [];
   // A tree that came back from the Flow retry has its annotations blanked, so
   // the dimensions whose question is the annotation would report a site
@@ -191,9 +198,6 @@ function breakingSites(program, source, lang, keyPath, { sides = new Map(), lear
       dim.learnedClasses ? hit.class === cls || isLearnedItself(hit, cls) : hit.conforming;
     const site = (hit) => {
       const node = hit.node || {};
-      // Slice the same in-memory string the parser was handed. oxc reports
-      // UTF-16 code units, a disk buffer is bytes, and 5.4% of real files are
-      // non-ASCII, so indexing a buffer with a parser offset corrupts silently.
       return {
         dimension: dim.key,
         claim: counter ? dim.counterClaim : dim.learnedClasses ? claimFor(dim, cls, qualified.get(dim.key)) : dim.claim,
@@ -242,8 +246,8 @@ function breakingSites(program, source, lang, keyPath, { sides = new Map(), lear
       // The whole body is the site, so its identity is what it mixes in, sorted:
       // the first hit's own node is `include` in every body of the file, and
       // swapping two includes is not a site anyone introduced. Adding one
-      // to a body that already violated is charged, which is accepted: the
-      // branch did edit the violating body.
+      // to a body that already broke the sentence is charged, which is accepted:
+      // the branch did edit that body.
       at.fp = bodyIdentity(keyPath, dim.key, hits);
       found.push(at);
     }

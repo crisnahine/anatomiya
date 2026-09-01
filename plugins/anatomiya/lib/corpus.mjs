@@ -132,7 +132,11 @@ function pathDrop(path) {
   return null;
 }
 
-/** Whether a path is one the corpus counts: source, not denied and not under an excluded directory. */
+/**
+ * Whether a path is one the corpus counts, asked of the path alone: source, not
+ * denied and not under an excluded directory. What needs the file open stays
+ * with `classify`.
+ */
 export function isCorpusPath(path) {
   return pathDrop(path) === null;
 }

@@ -622,7 +622,8 @@ function readOutsideTheirBlock(src, file) {
       case "UnaryExpression": {
         // `typeof x` answers "undefined" for a name nothing declares, with or
         // without the parentheses oxc keeps as a node of their own.
-        const asked = node.argument.type === "ParenthesizedExpression" ? node.argument.expression : node.argument;
+        let asked = node.argument;
+        while (asked.type === "ParenthesizedExpression") asked = asked.expression;
         if (node.operator === "typeof" && asked.type === "Identifier") return;
         return visit(node.argument, scope);
       }
@@ -663,8 +664,8 @@ function readOutsideTheirBlock(src, file) {
 }
 
 // A binding declared inside a block and read outside it is a `ReferenceError`
-// on the one run that gets that far. `scripts/ab.mjs` carried one from
-// 2026-08-29: `label` and `result` moved inside the `try` around the trials,
+// on the one run that gets that far. `scripts/ab.mjs` carried one: `label`
+// and `result` had moved inside the `try` around the trials,
 // the two lines that write the result document stayed at module scope, and
 // every trial was paid for before the throw. Nothing imports the file, so no
 // case could reach it, and the argument gate above made it look healthy to the
@@ -698,6 +699,7 @@ test("the block reader tells a read inside a block from one outside it", () => {
   assert.deepEqual(reads("{ const maybe = 1; }\nconsole.log(typeof maybe);"), [], "typeof never throws");
   assert.deepEqual(reads("{ const N = 1; }\nconst C = class N { m() { return N; } };"), [], "a class expression's own name is in reach inside it");
   assert.deepEqual(reads("{ const a = 1; }\nconsole.log(typeof (a));"), [], "parentheses do not make typeof throw");
+  assert.deepEqual(reads("{ const a = 1; }\nconsole.log(typeof (((a))));"), [], "however many of them");
   assert.deepEqual(reads("{ const a = 1; }\nconsole.log(typeof a.b);"), ["2:a"], "typeof of a member reads its object");
   // Shapes that are legal and unusual, none of which reads past a block.
   assert.deepEqual(reads("outer: for (const a of []) { inner: for (const b of []) { if (a) break outer; if (b) continue inner; } }"), []);

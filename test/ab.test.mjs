@@ -931,4 +931,3 @@ test("the harness completes a run from an empty state and writes the document", 
   const worktrees = execFileSync("git", ["worktree", "list", "--porcelain"], { cwd: repo, encoding: "utf8" });
   assert.equal(worktrees.split("\n").filter((l) => l.startsWith("worktree ")).length, 1, worktrees);
 });
-

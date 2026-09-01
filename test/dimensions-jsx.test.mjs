@@ -112,10 +112,10 @@ test("a bare prop and a string prop are not handler sites", () => {
   assert.equal(hits("handler_is_named", src).length, 0, "only /^on[A-Z]/ names a handler");
 });
 
-test("a violation's reported node is the attribute name, so an edit inside the arrow body does not re-report it as new", () => {
-  // Reporting the JSXAttribute puts the whole arrow body in the fingerprint, so
+test("a finding's reported node is the attribute name, so an edit inside the arrow body does not re-report it as new", () => {
+  // Reporting the JSXAttribute puts the whole arrow body in the identity, so
   // every edit inside a pre-existing inline handler surfaces as a newly
-  // introduced violation on the branch that touched it.
+  // introduced site on the branch that touched it.
   const a = `const A = () => <B onClick={() => save(1)} />;`;
   const b = `const A = () => <B onClick={() => save(2)} />;`;
   const [ha] = hits("handler_is_named", a);
