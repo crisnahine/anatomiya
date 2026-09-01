@@ -9,9 +9,7 @@ import {
   frameworksIn,
   capabilitiesIn,
   gitRoot,
-  isSource,
-  isDenied,
-  isExcludedDir,
+  isCorpusPath,
   safeResolve,
   lsFiles,
 } from "./corpus.mjs";
@@ -134,7 +132,7 @@ export async function check(cwd, { baseRef = null } = {}) {
   // in an uncommitted file against an author who may not have written one.
   const pending = status !== null && mode === "compare" ? status : { present: [], deleted: [] };
   await resolvePendingBases(root, base.mergeBase, pending.present);
-  const examined = withPendingEdits(changed.filter((c) => wanted(c.path)), pending.present);
+  const examined = withPendingEdits(changed.filter((c) => isCorpusPath(c.path)), pending.present);
   const fromTree = examined.filter((c) => c.tree).length;
   if (fromTree) {
     caveat(
@@ -343,10 +341,6 @@ function namedRow(row) {
     path: row.to,
     from: row.from ?? (row.status[0] === "A" ? null : row.to),
   };
-}
-
-function wanted(path) {
-  return isSource(path) && !isDenied(path) && !isExcludedDir(path);
 }
 
 /**
@@ -697,6 +691,8 @@ async function collect(root, { examined, areas, base, mode, added, fresh, caveat
         continue;
       }
 
+      // The path the file had at the base, so a rename keeps every identity;
+      // introduced.mjs says why the line never is one.
       const keyPath = job.file.from || path;
       const baseParse = parsed.get(`base:${path}`);
       const baseUsable = !baseParse || (baseParse.ok && baseParse.program);
@@ -1189,7 +1185,7 @@ async function pendingPaths(root) {
   // new directory checked before its first commit read clean.
   const r = await git(root, ["status", "--porcelain", "-uall", "-z"]);
   if (!r.ok) return null;
-  const rows = parsePorcelainRows(r.out).filter((row) => wanted(row.path));
+  const rows = parsePorcelainRows(r.out).filter((row) => isCorpusPath(row.path));
   const gone = (row) => row.x === "D" || row.y === "D";
   // Untracked, or added to the index: there is no committed version to compare
   // against, which is what an addition is.
@@ -1213,7 +1209,7 @@ async function pendingPaths(root) {
     // that path is taken from `orig` rather than from the status letters.
     deleted: [
       ...rows.filter(gone).map((row) => row.path),
-      ...rows.map((row) => row.orig).filter((path) => path !== null && wanted(path)),
+      ...rows.map((row) => row.orig).filter((path) => path !== null && isCorpusPath(path)),
     ],
   };
 }

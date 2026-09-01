@@ -36,9 +36,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   identity rule four other test files had pinned by comment. The check's output
   is byte for byte what it was.
 - The harness's argument gate and result document live in `scripts/ab/args.mjs`
-  and `scripts/ab/render.mjs`, so a test reaches them without spawning a run,
-  and one case runs the whole harness from an empty repository with the model
+  and `scripts/ab/render.mjs`, and an arm's trials are summed in
+  `scripts/ab/score.mjs`, so a test reaches each without spawning a run, and
+  one case runs the whole harness from an empty repository with the model
   stubbed.
+- `isCorpusPath` in `corpus.mjs` is the one spelling of whether a path is
+  corpus; the check, the notice and the harness's probe read it instead of
+  composing the three predicates by hand.
 
 ## [0.6.0] - 2026-08-31
 

@@ -165,6 +165,26 @@ test("a written file is scored by the dimension's own predicate, not by a grep",
   assert.deepEqual(bad, { candidates: 1, conforming: 0, ratio: 0 });
 });
 
+test("an arm is summed by the predicate, and a trial that wrote nothing is not a trial", async () => {
+  const { scoreArm } = await import("../scripts/ab/score.mjs");
+  const conforming = `export function f() { try { a() } catch (e) { log(e) } }`;
+  const violating = `export function f() { try { a() } catch (e) { } }`;
+  const runs = [
+    { ok: true, wrote: [{ rel: "a.ts", source: conforming }, { rel: "b.ts", source: violating }] },
+    { ok: true, wrote: [{ rel: "c.ts", source: `export const a = 1` }] },
+    { ok: true, wrote: [] },
+    { ok: false, wrote: [{ rel: "d.ts", source: violating }] },
+  ];
+
+  assert.deepEqual(await scoreArm(runs, { key: "swallowed_error" }), {
+    wroteSomething: 2,
+    filesScored: 2,
+    candidates: 2,
+    conforming: 1,
+    trialsWithAViolation: 1,
+  });
+});
+
 test("a file the dimension has nothing to say about scores null, not zero", async () => {
   // Zero and "the construct never appeared" are different outcomes, and folding
   // them puts a trial that wrote an unrelated file into the failing bucket.

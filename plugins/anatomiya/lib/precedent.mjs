@@ -8,7 +8,7 @@
  * instead, and answers it from counts the scan already took (H38).
  */
 import { RUBY_TEST_NAME, TEST_DIRS, TEST_NAME, TEST_ROOTS } from "./test-shape.mjs";
-import { isDenied, isExcludedDir, isSource } from "./corpus.mjs";
+import { isCorpusPath } from "./corpus.mjs";
 import { LEVEL_ONLY_LABEL } from "./layout.mjs";
 import { testsParts } from "./render-layout.mjs";
 
@@ -37,7 +37,7 @@ export const PRECEDENT_FLOOR = 3;
  * four findings became none.
  */
 export function isTestPath(rel) {
-  return isSource(rel) && !isDenied(rel) && !isExcludedDir(rel) && (TEST_NAME.test(rel) || RUBY_TEST_NAME.test(rel));
+  return isCorpusPath(rel) && (TEST_NAME.test(rel) || RUBY_TEST_NAME.test(rel));
 }
 
 /**

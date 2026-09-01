@@ -9,6 +9,7 @@ import { join } from "node:path";
 import { parseRuby, RUBY_GUARDS } from "../plugins/anatomiya/lib/ruby.mjs";
 import { walkRuby, constName, bodyOf } from "../plugins/anatomiya/lib/ruby-walk.mjs";
 import { RUBY_DIMENSIONS } from "../plugins/anatomiya/lib/dimensions-ruby.mjs";
+import { siteIdentity } from "../plugins/anatomiya/lib/introduced.mjs";
 
 const dir = mkdtempSync(join(tmpdir(), "anatomiya-ruby-"));
 process.on("exit", () => rmSync(dir, { recursive: true, force: true }));
@@ -764,6 +765,8 @@ test("a dimension only ever calls add with what the reducer reads", needsRuby, (
         // UTF-16 string.
         assert.notEqual(typeof h.node.start, "number", at);
         assert.notEqual(typeof h.node.end, "number", at);
+        // With no offsets the identity is the name, and the line plays no part.
+        assert.equal(siteIdentity("app/w.rb", d.key, h.node, ""), siteIdentity("app/w.rb", d.key, { ...h.node, line: h.node.line + 100 }, ""), at);
       });
     }
     assert.ok(fired > 0, `${d.key} never fired, so no fixture holds it to this shape`);

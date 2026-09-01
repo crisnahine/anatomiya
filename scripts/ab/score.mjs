@@ -15,6 +15,7 @@
 import { parseAll } from "../../plugins/anatomiya/lib/parse.mjs";
 import { reduceArea } from "../../plugins/anatomiya/lib/reduce.mjs";
 import { classifyBasename } from "../../plugins/anatomiya/lib/dimensions-naming.mjs";
+import { language } from "../../plugins/anatomiya/lib/langs.mjs";
 
 export async function scoreFile({ rel, source, lang }, { key, frameworks = [], learned = null } = {}) {
   const { records } = await parseAll([{ rel, source, lang }], { frameworks });
@@ -44,4 +45,27 @@ export async function scoreFile({ rel, source, lang }, { key, frameworks = [], l
   if (!dim || !dim.candidates) return null;
 
   return { candidates: dim.candidates, conforming: dim.conforming, ratio: dim.conforming / dim.candidates };
+}
+
+/**
+ * One arm's trials summed by the predicate. A trial that wrote nothing is not a
+ * trial, and a file the row has nothing to say about counts in neither arm.
+ */
+export async function scoreArm(runs, options) {
+  const out = { wroteSomething: 0, filesScored: 0, candidates: 0, conforming: 0, trialsWithAViolation: 0 };
+  for (const r of runs) {
+    if (!r.ok || !r.wrote.length) continue;
+    out.wroteSomething++;
+    let violated = false;
+    for (const file of r.wrote) {
+      const s = await scoreFile({ rel: file.rel, source: file.source, lang: language(file.rel) }, options);
+      if (!s) continue;
+      out.filesScored++;
+      out.candidates += s.candidates;
+      out.conforming += s.conforming;
+      if (s.conforming < s.candidates) violated = true;
+    }
+    if (violated) out.trialsWithAViolation++;
+  }
+  return out;
 }

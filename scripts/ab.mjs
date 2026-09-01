@@ -23,13 +23,12 @@ import { buildArms, installMap, PROBE } from "./ab/arms.mjs";
 import { runTrial } from "./ab/run.mjs";
 import { conflictingSettings, engineRan } from "./ab/engine.mjs";
 import { settingsFor } from "../plugins/ultracode-anywhere/hooks/upstream.mjs";
-import { scoreFile } from "./ab/score.mjs";
+import { scoreArm } from "./ab/score.mjs";
 import { render } from "./ab/render.mjs";
 import { repoLabel } from "./ab/label.mjs";
 import { BINARY } from "./plugins.mjs";
 import { invokedAs } from "./entry.mjs";
-import { isDenied, isExcludedDir, isSource } from "../plugins/anatomiya/lib/corpus.mjs";
-import { language } from "../plugins/anatomiya/lib/langs.mjs";
+import { isCorpusPath } from "../plugins/anatomiya/lib/corpus.mjs";
 import { FACTS_PATH } from "../plugins/anatomiya/lib/facts.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -97,7 +96,7 @@ async function main(argv) {
       // extension list here missed every `.mjs` repository, this one included.
       const probeFile = execFileSync("git", ["ls-files", "-z", "--", `${target.path}/`], { cwd: args.repo, encoding: "utf8" })
         .split("\0")
-        .find((f) => f && isSource(f) && !isDenied(f) && !isExcludedDir(f));
+        .find((f) => f && isCorpusPath(f));
       if (!probeFile) throw new Error(`no readable file under ${target.path} to probe with`);
 
       const probe = PROBE.replace("{file}", probeFile);
@@ -122,33 +121,13 @@ async function main(argv) {
       }
 
       // 6. Scored by the predicate the map stated, never by a second one.
-      const score = async (runs) => {
-        const out = { wroteSomething: 0, filesScored: 0, candidates: 0, conforming: 0, trialsWithAViolation: 0 };
-        for (const r of runs) {
-          if (!r.ok || !r.wrote.length) continue;
-          out.wroteSomething++;
-          let violated = false;
-          for (const file of r.wrote) {
-            const s = await scoreFile(
-              { rel: file.rel, source: file.source, lang: language(file.rel) },
-              { key: target.key, frameworks: facts.corpus?.frameworks ?? [], learned: target.learned ?? null }
-            );
-            if (!s) continue;
-            out.filesScored++;
-            out.candidates += s.candidates;
-            out.conforming += s.conforming;
-            if (s.conforming < s.candidates) violated = true;
-          }
-          if (violated) out.trialsWithAViolation++;
-        }
-        return out;
-      };
+      const arm = (runs) => scoreArm(runs, { key: target.key, frameworks: facts.corpus?.frameworks ?? [], learned: target.learned ?? null });
       // The result file quotes the engine the trials reported, not the flags they
       // were given. A run whose arms answered from two engines measured nothing.
       const ran = engineRan(args.engine, [...trials.a, ...trials.b]);
       if (ran.error) throw new Error(ran.error);
       if (ran.note) console.log(ran.note);
-      result = { target, sha, label, said, engine: ran.engine, a: await score(trials.a), b: await score(trials.b) };
+      result = { target, sha, label, said, engine: ran.engine, a: await arm(trials.a), b: await arm(trials.b) };
     } finally {
       await arms.dispose();
     }

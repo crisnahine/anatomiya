@@ -472,11 +472,12 @@ const FUNCTIONS = new Set(["FunctionDeclaration", "FunctionExpression", "ArrowFu
  * same module does.
  *
  * Resolved the way the engine resolves it: a block, a `for` head, a `switch`,
- * a `catch` and a function each open a scope, `var` hoists to the nearest
- * function or the module, and an import or a top-level declaration is the
- * module's. What is left is a name that exists in the file and not where it is
- * read, which is the one shape `node --check` passes and the first run to get
- * there throws on.
+ * a `catch`, a function and a named class expression each open a scope, `var`
+ * hoists to the nearest function or the module, an import or a top-level
+ * declaration is the module's, and so is every global node provides. `typeof`
+ * is left alone, since it never throws. What is left is a name that exists in
+ * the file and not where it is read, which is the one shape `node --check`
+ * passes and the first run to get there throws on.
  */
 function readOutsideTheirBlock(src, file) {
   const { program } = parseSync(file, src, { sourceType: "module" });
@@ -610,9 +611,18 @@ function readOutsideTheirBlock(src, file) {
         }
         return;
       case "ClassDeclaration":
-      case "ClassExpression":
         visit(node.superClass, scope);
         return visit(node.body, scope);
+      case "ClassExpression": {
+        const inner = open(scope, "block");
+        if (node.id) inner.names.add(node.id.name);
+        visit(node.superClass, inner);
+        return visit(node.body, inner);
+      }
+      case "UnaryExpression":
+        // `typeof x` answers "undefined" for a name nothing declares.
+        if (node.operator === "typeof" && node.argument.type === "Identifier") return;
+        return visit(node.argument, scope);
       case "MethodDefinition":
       case "PropertyDefinition":
       case "Property":
@@ -638,6 +648,9 @@ function readOutsideTheirBlock(src, file) {
     }
   };
   const module = open(null, "module");
+  // What node provides as a global is in reach everywhere, so a local named
+  // after one shadows it inside its block and nothing else changes.
+  for (const name of Object.getOwnPropertyNames(globalThis)) module.names.add(name);
   hoist(program.body, module, false);
   hoistVars(program.body, module);
   visit(program.body, module);
@@ -676,6 +689,9 @@ test("the block reader tells a read inside a block from one outside it", () => {
   assert.deepEqual(reads("{ const a = 1; }\nconst o = { a: 1 };\nconsole.log(o.a);"), []);
   assert.deepEqual(reads("switch (1) { case 1: { const a = 1; } }\nconsole.log(a);"), ["2:a"]);
   assert.deepEqual(reads("{ const a = 1; }\nfunction f() { return a; }"), ["2:a"]);
+  assert.deepEqual(reads("function f() { if (1) { const process = 2; return process; } }\nconsole.log(process.env.HOME);"), [], "a global stays in reach where a block shadows its name");
+  assert.deepEqual(reads("{ const maybe = 1; }\nconsole.log(typeof maybe);"), [], "typeof never throws");
+  assert.deepEqual(reads("{ const N = 1; }\nconst C = class N { m() { return N; } };"), [], "a class expression's own name is in reach inside it");
 });
 
 /**

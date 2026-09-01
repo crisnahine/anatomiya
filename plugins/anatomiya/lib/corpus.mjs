@@ -119,6 +119,16 @@ export function isSource(path) {
   return SOURCE.test(path) || BARE_FILENAME.test(path);
 }
 
+/**
+ * Whether a path is one the corpus counts: source, not denied and not under an
+ * excluded directory. The generated-file head read and the realpath check are
+ * not path-only questions and stay with `collect`: a caller asking about a
+ * diff path, or asking inside a pre-write hook, has no file to open.
+ */
+export function isCorpusPath(path) {
+  return isSource(path) && !isDenied(path) && !isExcludedDir(path);
+}
+
 // Generated and vendored code is ordinary-looking: it carries real git-blame
 // authors and none of the old-syntax or low-author-diversity shape the
 // fixture gates above catch. Only its own header tells it apart, so this is a
