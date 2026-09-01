@@ -120,6 +120,21 @@ test("the writers do not reach the pipeline that produced the record", () => {
   ]);
 });
 
+test("the grammar deciding what a branch introduced reaches no git, no child and no disk, and only the check reaches it", () => {
+  // The identity of a site was pinned by comments in four other test files,
+  // one citing a line that had moved, because the rule had no interface of its
+  // own: the only way to run it was a repository committed twice. A leaf with a
+  // namesake test is the fix, and it stays a leaf only while nothing but the
+  // check imports it and it imports nothing that reads a repository.
+  const edges = graph();
+  const reached = reachedFrom("introduced.mjs", edges);
+  for (const module of ["git.mjs", "child.mjs", "corpus.mjs", "revision.mjs", "check.mjs"]) {
+    assert.equal(reached.has(module), false, `introduced.mjs reaches ${module}`);
+  }
+  const importers = [...edges].filter(([, deps]) => deps.includes("introduced.mjs")).map(([file]) => file);
+  assert.deepEqual(importers, ["check.mjs"]);
+});
+
 test("the parse worker does not reach the registry", () => {
   // The worker runs the tree rows off `dimensionsFor` and nothing else: an
   // obligation has no program to run against and a filename row answers off

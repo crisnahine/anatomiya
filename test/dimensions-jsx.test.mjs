@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { parseSync } from "oxc-parser";
+import { siteIdentity } from "../plugins/anatomiya/lib/introduced.mjs";
 import { JSX_DIMENSIONS, jsxName, attrName } from "../plugins/anatomiya/lib/dimensions-jsx.mjs";
 import { ALL_DIMENSIONS, dimensionsFor } from "../plugins/anatomiya/lib/dimensions.mjs";
 import { applyGates } from "../plugins/anatomiya/lib/reduce.mjs";
@@ -44,9 +45,9 @@ test("a library hook is not a candidate for the React namespace claim, because i
 });
 
 test("the bare hook form conforms and reports the callee, not the call it heads", () => {
-  // check.mjs fingerprints normalise(source.slice(node.start, node.end)) with no
+  // A site's identity is normalise(source.slice(node.start, node.end)) with no
   // truncation, so reporting the CallExpression would put a whole useEffect body
-  // in the fingerprint and any edit inside it would resurface as a new violation.
+  // in it and any edit inside would resurface as a new violation.
   const src = `import * as React from "react";
 export const C = () => {
   const [a, set] = useState(0);
@@ -111,9 +112,6 @@ test("a bare prop and a string prop are not handler sites", () => {
   assert.equal(hits("handler_is_named", src).length, 0, "only /^on[A-Z]/ names a handler");
 });
 
-// The fingerprint is normalise(source.slice(node.start, node.end)); check.mjs:437.
-const normalise = (s) => s.replace(/\s+/g, " ").trim();
-
 test("a violation's reported node is the attribute name, so an edit inside the arrow body does not re-report it as new", () => {
   // Reporting the JSXAttribute puts the whole arrow body in the fingerprint, so
   // every edit inside a pre-existing inline handler surfaces as a newly
@@ -127,9 +125,9 @@ test("a violation's reported node is the attribute name, so an edit inside the a
   assert.equal(ha.node.type, "JSXIdentifier");
   assert.equal(slice(a, ha.node), "onClick");
   assert.equal(
-    normalise(slice(a, ha.node)),
-    normalise(slice(b, hb.node)),
-    "the two fingerprint identically, so the edit is not a new violation"
+    siteIdentity("src/a.jsx", "handler_is_named", ha.node, a),
+    siteIdentity("src/a.jsx", "handler_is_named", hb.node, b),
+    "the two are one site, so the edit is not a new violation"
   );
 });
 
@@ -349,9 +347,9 @@ export const Panel = ({ items }) => {
 };`;
 
 test("every JSX hit carries a typed node with offsets into the parsed source", () => {
-  // check.mjs slices the parsed source with node.start/node.end and fingerprints
-  // on node.type, so a hit missing any of the three reports a violation with no
-  // text and an unstable identity.
+  // introduced.mjs slices the parsed source with node.start/node.end and keys
+  // the identity on node.type, so a hit missing any of the three reports a site
+  // with no text and an unstable identity.
   const { program } = parseSync("f.tsx", EVERY_DIMENSION, { sourceType: "module" });
   for (const d of JSX_DIMENSIONS) {
     const out = [];

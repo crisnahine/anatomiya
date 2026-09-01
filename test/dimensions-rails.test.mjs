@@ -1119,8 +1119,8 @@ test("a rails dimension only ever calls add with what the reducer reads", needsR
         const at = `${d.key} on ${name}`;
         assert.equal(typeof h.conforming, "boolean", at);
         assert.ok(h.where === null || typeof h.where === "string", at);
-        // check.mjs destructures hit.node on every hit and reads type, name and
-        // line off it. A hit without one throws there, not here.
+        // introduced.mjs destructures hit.node on every hit and reads type, name
+        // and line off it. A hit without one throws there, not here.
         assert.ok(h.node && typeof h.node === "object", `${at} emitted no node`);
         assert.equal(typeof h.node.type, "string", at);
         assert.ok(h.node.name === null || typeof h.node.name === "string", at);

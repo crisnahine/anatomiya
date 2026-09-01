@@ -307,9 +307,9 @@ test("every extra dimension declares its precision and a readable claim", () => 
   }
 });
 
-// check.mjs slices the parsed source with node.start/node.end and fingerprints
-// on node.type, so a hit missing any of the three reports a violation with no
-// text and an unstable identity.
+// introduced.mjs slices the parsed source with node.start/node.end and keys the
+// identity on node.type, so a hit missing any of the three reports a site with
+// no text and an unstable identity.
 test("every hit carries a typed node with offsets into the parsed source", () => {
   const src = `
     import type { A } from "./a.ts"

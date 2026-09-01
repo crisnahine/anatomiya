@@ -29,6 +29,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Changed
 
+- The sites a branch introduced are decided in
+  `plugins/anatomiya/lib/introduced.mjs`, a leaf the check alone imports:
+  `newlyIntroduced` takes both revisions and the area and answers the sites
+  with their identities, and `siteIdentity` and `bodyIdentity` spell the
+  identity rule four other test files had pinned by comment. The check's output
+  is byte for byte what it was.
 - The harness's argument gate and result document live in `scripts/ab/args.mjs`
   and `scripts/ab/render.mjs`, so a test reaches them without spawning a run,
   and one case runs the whole harness from an empty repository with the model
