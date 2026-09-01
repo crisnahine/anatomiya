@@ -239,4 +239,3 @@ test("an omission is reported only where the map stated the claim", needsRuby, a
   assert.equal(ask(said).length, 1);
   assert.deepEqual(ask(unsaid), []);
 });
-

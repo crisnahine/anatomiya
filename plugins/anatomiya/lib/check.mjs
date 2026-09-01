@@ -957,7 +957,6 @@ function filenameFinding(row, job, area, fresh, { dropped = false, facets = null
   };
 }
 
-
 /**
  * Why a file went unread, in the scan's own vocabulary and with the same four
  * causes kept apart, because the reader's next move differs for each: a crash

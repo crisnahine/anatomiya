@@ -16,7 +16,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   guarded `main`, and a guard in `test/modules.test.mjs` refuses a binding
   declared inside a block and read outside it, in every source file.
   `--min-headroom` refuses a value it cannot compare, which used to switch the
-  floor off for the whole batch.
+  floor off for the whole batch, and a repository with no `origin` no longer
+  prints git's complaint about it.
 - The harness probed an arm with the first `.rb`, `.ts`, `.tsx`, `.js` or `.jsx`
   file under the target area, a hand-kept list that missed every `.mjs`
   repository, this one included. It asks the corpus's own predicates now.
