@@ -51,7 +51,7 @@ export function newlyIntroduced({
   // states the inverse would show every pre-existing site as newly introduced.
   const polarity = sidesFor(area, ancestorsOf);
   const judge = (rev) =>
-    violations(rev.program, rev.source, lang, keyPath, {
+    breakingSites(rev.program, rev.source, lang, keyPath, {
       ...polarity,
       frameworks,
       capabilities,
@@ -73,14 +73,15 @@ export function newlyIntroduced({
  * leaves the node's own name as the identity.
  */
 export function siteIdentity(keyPath, key, node, source) {
-  return identityOf(keyPath, key, node, sliceOf(node, source));
+  const text = sliceOf(node, source);
+  return fingerprint(keyPath, key, node.type, text || node.name || "");
 }
 
-/** The normalised slice of the parsed string under a node, or nothing where the parser reported no offsets. */
-const sliceOf = (node, source) =>
-  typeof node.start === "number" && typeof node.end === "number" ? normalise(source.slice(node.start, node.end)) : "";
+/** Whether the parser reported offsets for a node; prism reports none (B5). */
+const located = (node) => typeof node.start === "number" && typeof node.end === "number";
 
-const identityOf = (keyPath, key, node, text) => fingerprint(keyPath, key, node.type, text || node.name || "");
+/** The normalised slice of the parsed string under a node, or nothing where the parser reported no offsets. */
+const sliceOf = (node, source) => (located(node) ? normalise(source.slice(node.start, node.end)) : "");
 
 /**
  * The identity of one grouped body: what it declares, sorted, so two includes
@@ -161,10 +162,10 @@ function enforceableClass(dim, cls) {
  */
 const isOmission = (hit) => hit.class === undefined || hit.class === null;
 
-function violations(program, source, lang, keyPath, { sides = new Map(), learned = new Map(), kinds = new Map(), qualified = new Map(), stated = new Set(), frameworks, capabilities, rows, comments = [], stripped = false, rel = null, facets = null } = {}) {
+function breakingSites(program, source, lang, keyPath, { sides = new Map(), learned = new Map(), kinds = new Map(), qualified = new Map(), stated = new Set(), frameworks, capabilities, rows, comments = [], stripped = false, rel = null, facets = null } = {}) {
   const out = [];
   // A tree that came back from the Flow retry has its annotations blanked, so
-  // the dimensions whose question is the annotation would report a violation
+  // the dimensions whose question is the annotation would report a site
   // beside the line that satisfies it. The scan drops them for such a file and
   // this has to agree, or the map and the check disagree about the same file.
   for (const dim of dimensionsFor([lang], { frameworks, capabilities, rows })) {
@@ -174,7 +175,7 @@ function violations(program, source, lang, keyPath, { sides = new Map(), learned
     // findings.
     if (dim.needsTypeSyntax && !holdsTypeSyntax(rel ?? keyPath, facets)) continue;
     // A learned row with no class the map may state has no sentence to
-    // enforce: every hit is a vote, and a vote is not a violation.
+    // enforce: every hit is a vote, and a vote is not a finding.
     const cls = learned.get(dim.key);
     if (dim.learnedClasses && !enforceableClass(dim, cls)) continue;
     // The map's class was learned over one kind of file, so judging the other
@@ -184,7 +185,7 @@ function violations(program, source, lang, keyPath, { sides = new Map(), learned
     const counter = sides.get(dim.key) === "counter" && typeof dim.counterClaim === "string";
     const found = [];
     // A site that is the very class the area learned cannot inherit itself, so
-    // it reads as conforming here rather than as a violation. The fold drops it
+    // it reads as conforming here rather than as a finding. The fold drops it
     // from the population; the check re-runs the predicate and has to agree.
     const conformingOf = (hit) =>
       dim.learnedClasses ? hit.class === cls || isLearnedItself(hit, cls) : hit.conforming;
@@ -193,15 +194,16 @@ function violations(program, source, lang, keyPath, { sides = new Map(), learned
       // Slice the same in-memory string the parser was handed. oxc reports
       // UTF-16 code units, a disk buffer is bytes, and 5.4% of real files are
       // non-ASCII, so indexing a buffer with a parser offset corrupts silently.
-      const text = sliceOf(node, source);
       return {
         dimension: dim.key,
         claim: counter ? dim.counterClaim : dim.learnedClasses ? claimFor(dim, cls, qualified.get(dim.key)) : dim.claim,
         precision: dim.precision,
         where: hit.where || null,
-        line: typeof node.start === "number" ? lineAt(source, node.start) : node.line || 1,
-        text,
-        fp: identityOf(keyPath, dim.key, node, text),
+        line: located(node) ? lineAt(source, node.start) : node.line || 1,
+        text: sliceOf(node, source),
+        // Through the exported spelling, so the identity every pin imports is
+        // the one written here, at the cost of slicing the node twice.
+        fp: siteIdentity(keyPath, dim.key, node, source),
       };
     };
     // A grouped row answers per enclosing body, so its hits are held until the
@@ -239,7 +241,7 @@ function violations(program, source, lang, keyPath, { sides = new Map(), learned
       const at = site(hits[0]);
       // The whole body is the site, so its identity is what it mixes in, sorted:
       // the first hit's own node is `include` in every body of the file, and
-      // swapping two includes is not a violation anyone introduced. Adding one
+      // swapping two includes is not a site anyone introduced. Adding one
       // to a body that already violated is charged, which is accepted: the
       // branch did edit the violating body.
       at.fp = bodyIdentity(keyPath, dim.key, hits);
@@ -252,9 +254,9 @@ function violations(program, source, lang, keyPath, { sides = new Map(), learned
 
 /**
  * Identical sites in one file are distinguished by count, not by identity: two
- * copies of the same violation at the base absorb two at HEAD, and a third one
+ * copies of the same site at the base absorb two at HEAD, and a third one
  * is new. The enclosing declaration's name is deliberately not part of the key,
- * because renaming a function does not introduce the violation inside it.
+ * because renaming a function does not introduce the site inside it.
  */
 function absorb(head, base) {
   const remaining = new Map();

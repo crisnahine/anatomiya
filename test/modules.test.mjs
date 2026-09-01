@@ -619,10 +619,13 @@ function readOutsideTheirBlock(src, file) {
         visit(node.superClass, inner);
         return visit(node.body, inner);
       }
-      case "UnaryExpression":
-        // `typeof x` answers "undefined" for a name nothing declares.
-        if (node.operator === "typeof" && node.argument.type === "Identifier") return;
+      case "UnaryExpression": {
+        // `typeof x` answers "undefined" for a name nothing declares, with or
+        // without the parentheses oxc keeps as a node of their own.
+        const asked = node.argument.type === "ParenthesizedExpression" ? node.argument.expression : node.argument;
+        if (node.operator === "typeof" && asked.type === "Identifier") return;
         return visit(node.argument, scope);
+      }
       case "MethodDefinition":
       case "PropertyDefinition":
       case "Property":
@@ -648,8 +651,10 @@ function readOutsideTheirBlock(src, file) {
     }
   };
   const module = open(null, "module");
-  // What node provides as a global is in reach everywhere, so a local named
-  // after one shadows it inside its block and nothing else changes.
+  // What the running node provides as a global is in reach everywhere, so a
+  // local named after one shadows it inside its block and nothing else
+  // changes. The set is this node's rather than a list kept here, which is the
+  // one fact about it a reader has to know.
   for (const name of Object.getOwnPropertyNames(globalThis)) module.names.add(name);
   hoist(program.body, module, false);
   hoistVars(program.body, module);
@@ -692,6 +697,16 @@ test("the block reader tells a read inside a block from one outside it", () => {
   assert.deepEqual(reads("function f() { if (1) { const process = 2; return process; } }\nconsole.log(process.env.HOME);"), [], "a global stays in reach where a block shadows its name");
   assert.deepEqual(reads("{ const maybe = 1; }\nconsole.log(typeof maybe);"), [], "typeof never throws");
   assert.deepEqual(reads("{ const N = 1; }\nconst C = class N { m() { return N; } };"), [], "a class expression's own name is in reach inside it");
+  assert.deepEqual(reads("{ const a = 1; }\nconsole.log(typeof (a));"), [], "parentheses do not make typeof throw");
+  assert.deepEqual(reads("{ const a = 1; }\nconsole.log(typeof a.b);"), ["2:a"], "typeof of a member reads its object");
+  // Shapes that are legal and unusual, none of which reads past a block.
+  assert.deepEqual(reads("outer: for (const a of []) { inner: for (const b of []) { if (a) break outer; if (b) continue inner; } }"), []);
+  assert.deepEqual(reads("async function f(y) { for await (const x of y) { use(x); } }"), []);
+  assert.deepEqual(reads("{ const a = 1; }\nconst v = obj?.a?.b;"), [], "a property is not a read of the name");
+  assert.deepEqual(reads("label: { const a = 1; break label; }"), []);
+  assert.deepEqual(reads("{ const a = 1; }\nfunction f() { return new.target; }"), []);
+  assert.deepEqual(reads("{ const a = 1; }\nconst o = { [a]: 2 };"), ["2:a"], "a computed key reads the name");
+  assert.deepEqual(reads("{ const a = 1; }\nconst s = `${a}`;"), ["2:a"], "a template reads the name");
 });
 
 /**

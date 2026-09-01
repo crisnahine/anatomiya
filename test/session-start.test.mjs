@@ -188,7 +188,7 @@ test("a session started from a directory that is no longer there still starts", 
   const run = spawnSync("/bin/sh", ["-c", `cd "${gone}" && rm -rf "${gone}" && exec "${process.execPath}" "${HOOK}"`], {
     input: "",
     encoding: "utf8",
-    env: { ...process.env, CLAUDE_CONFIG_DIR: join(dir, "config"), HOME: dir, ULTRACODE_ANYWHERE_STATE: join(dir, "state") },
+    env: { ...hostEnv(), CLAUDE_CONFIG_DIR: join(dir, "config"), HOME: dir, ULTRACODE_ANYWHERE_STATE: join(dir, "state") },
   });
 
   assert.equal(run.status, 0, run.stderr);
@@ -294,7 +294,7 @@ test("the hook reads the compaction off its payload", (t) => {
   const fired = spawnSync(process.execPath, [HOOK], {
     input: JSON.stringify({ session_id: "s", hook_event_name: "SessionStart", source: "compact", cwd: t1.dir }),
     encoding: "utf8",
-    env: { ...process.env, CLAUDE_CONFIG_DIR: t1.config, CLAUDE_CODE_EXECPATH: t1.cli, ULTRACODE_ANYWHERE_STATE: t1.state, ULTRACODE_ANYWHERE_CAP_NOTICE: "0" },
+    env: { ...hostEnv(), CLAUDE_CONFIG_DIR: t1.config, CLAUDE_CODE_EXECPATH: t1.cli, ULTRACODE_ANYWHERE_STATE: t1.state, ULTRACODE_ANYWHERE_CAP_NOTICE: "0" },
   });
 
   assert.equal(fired.status, 0, fired.stderr);

@@ -51,14 +51,14 @@ export async function scoreFile({ rel, source, lang }, { key, frameworks = [], l
  * One arm's trials summed by the predicate. A trial that wrote nothing is not a
  * trial, and a file the row has nothing to say about counts in neither arm.
  */
-export async function scoreArm(runs, options) {
+export async function scoreArm(runs, { key, frameworks = [], learned = null } = {}) {
   const out = { wroteSomething: 0, filesScored: 0, candidates: 0, conforming: 0, trialsWithAViolation: 0 };
   for (const r of runs) {
     if (!r.ok || !r.wrote.length) continue;
     out.wroteSomething++;
     let violated = false;
     for (const file of r.wrote) {
-      const s = await scoreFile({ rel: file.rel, source: file.source, lang: language(file.rel) }, options);
+      const s = await scoreFile({ rel: file.rel, source: file.source, lang: language(file.rel) }, { key, frameworks, learned });
       if (!s) continue;
       out.filesScored++;
       out.candidates += s.candidates;
