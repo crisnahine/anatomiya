@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 
 import { needsRemovableCwd } from "./platform.mjs";
+import { hostEnv } from "./host-env.mjs";
 import { CALIBRATED_AGAINST, MARKERS, MIN_BUNDLE } from "../plugins/ultracode-anywhere/hooks/upstream.mjs";
 import { notice } from "../plugins/ultracode-anywhere/hooks/session-start.mjs";
 import { run } from "../plugins/ultracode-anywhere/hooks/standing-ultracode.mjs";
@@ -55,9 +56,6 @@ test("a machine with no build to read is not warned about", (t) => {
 
   assert.equal(notice({ cwd: t1.dir, cli: null, state: t1.state, env: { CLAUDE_CONFIG_DIR: t1.config, ULTRACODE_ANYWHERE_CAP_NOTICE: "0" } }), null);
 });
-
-/** The process environment with the plugin's own settings taken out: a machine that runs this plugin must not decide what a case is told. */
-const hostEnv = () => Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.startsWith("ULTRACODE_ANYWHERE")));
 
 test("the hook prints one SessionStart object and nothing when there is nothing to say", (t) => {
   const t1 = tree(t, { bundle: `${whole()}`.replace(MARKERS[0], "") });

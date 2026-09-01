@@ -99,7 +99,8 @@ async function main(argv) {
         .find((f) => f && isCorpusPath(f));
       if (!probeFile) throw new Error(`no readable file under ${target.path} to probe with`);
 
-      const probe = PROBE.replace("{file}", probeFile);
+      // A function, so a `$` in the name is a character and not a pattern.
+      const probe = PROBE.replace("{file}", () => probeFile);
       const said = {};
       for (const [name, arm] of [["a", arms.a], ["b", arms.b]]) {
         const r = await runTrial(arm, probe, { ...args.engine, tools: ["Read"] });
