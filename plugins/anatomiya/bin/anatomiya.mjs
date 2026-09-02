@@ -39,17 +39,87 @@ const USAGE = [
  * quietly ignored, which is the trade --deep already makes.
  */
 const COMMANDS = {
-  scan: { path: true, dryRun: true, formats: ["text", "json"] },
-  check: { path: true, dryRun: false, formats: ["text", "json", "github"] },
-  pin: { path: true, dryRun: true, formats: ["text", "json"] },
-  doctor: { path: false, dryRun: false, formats: ["text"] },
-  setup: { path: false, dryRun: true, formats: ["text"] },
-  // Not for a person: a hook runs this, hands it the payload on stdin and reads
-  // one JSON object back. It takes a path because a hook's own cwd is the
-  // repository it fired in. `hook` is what the never-fail guarantee below is
-  // keyed on, so a third verb inherits it by declaring itself here.
-  echo: { path: true, dryRun: false, formats: ["json"], hook: true },
-  notice: { path: true, dryRun: false, formats: ["json"], hook: true },
+  scan: {
+    path: true,
+    dryRun: true,
+    formats: ["text", "json"],
+    async run(cwd, opts) {
+      const { summary } = await runScan(cwd, { dryRun: opts.dryRun, deep: opts.deep });
+      if (opts.format === "json") process.stdout.write(scanJson(summary));
+      else console.log(scanLines(summary).join("\n"));
+    },
+  },
+  check: {
+    path: true,
+    dryRun: false,
+    formats: ["text", "json", "github"],
+    async run(cwd, opts) {
+      const { report } = await runCheck(cwd, { baseRef: opts.baseRef });
+      // Findings never set the exit code, in any format. A non-zero exit here
+      // means the check could not run, which is what the command file tells the
+      // agent to trust.
+      process.stdout.write(CHECK_WRITERS[opts.format](report));
+    },
+  },
+  pin: {
+    path: true,
+    dryRun: true,
+    formats: ["text", "json"],
+    async run(cwd, opts) {
+      const { summary } = await runPin(cwd, { dryRun: opts.dryRun });
+      if (opts.format === "json") process.stdout.write(pinJson(summary));
+      else console.log(pinLines(summary).join("\n"));
+    },
+  },
+  doctor: {
+    path: false,
+    dryRun: false,
+    formats: ["text"],
+    async run() {
+      // Exit 0 whichever way it came out: what it found is the report, and a
+      // non-zero exit would read as a probe that could not run.
+      const { lines } = await runDoctor();
+      console.log(lines.join("\n"));
+    },
+  },
+  setup: {
+    path: false,
+    dryRun: true,
+    formats: ["text"],
+    async run(_cwd, opts) {
+      const { ok, output } = await runSetup({ dryRun: opts.dryRun });
+      if (!ok) fail(output);
+      console.log(output);
+    },
+  },
+  // Not for a person: a hook runs these, hands them the payload on stdin and
+  // reads one JSON object back. They take a path because a hook's own cwd is
+  // the repository it fired in. `hook` is what the never-fail guarantee below
+  // is keyed on, so a third verb inherits it by declaring itself here.
+  echo: {
+    path: true,
+    dryRun: false,
+    formats: ["json"],
+    hook: true,
+    async run(cwd) {
+      // A hook, so its own failure is the one thing it must never be: a non-zero
+      // exit interrupts the run it exists to help. Every path here writes an
+      // object and exits 0, including the one where stdin was never readable and
+      // the one where nobody is left to read the answer.
+      respond(runEcho(cwd, await readPayload()));
+    },
+  },
+  notice: {
+    path: true,
+    dryRun: false,
+    formats: ["json"],
+    hook: true,
+    async run(cwd) {
+      // The same guarantee `echo` makes, on the event before the tool rather
+      // than the one after it.
+      respond(runNotice(cwd, await readPayload()));
+    },
+  },
 };
 
 // One writer per format, and the set of names the flag takes.
@@ -165,41 +235,7 @@ if (opts.help) {
     // a directory removed under them decides nothing they say.
     const spec = COMMANDS[opts.cmd];
     const cwd = spec.path ? opts.path ?? sessionDir(spec.hook === true) : null;
-
-    if (opts.cmd === "check") {
-      const { report } = await runCheck(cwd, { baseRef: opts.baseRef });
-      // Findings never set the exit code, in any format. A non-zero exit here
-      // means the check could not run, which is what the command file tells the
-      // agent to trust.
-      process.stdout.write(CHECK_WRITERS[opts.format](report));
-    } else if (opts.cmd === "pin") {
-      const { summary } = await runPin(cwd, { dryRun: opts.dryRun });
-      if (opts.format === "json") process.stdout.write(pinJson(summary));
-      else console.log(pinLines(summary).join("\n"));
-    } else if (opts.cmd === "doctor") {
-      // Exit 0 whichever way it came out: what it found is the report, and a
-      // non-zero exit would read as a probe that could not run.
-      const { lines } = await runDoctor();
-      console.log(lines.join("\n"));
-    } else if (opts.cmd === "setup") {
-      const { ok, output } = await runSetup({ dryRun: opts.dryRun });
-      if (!ok) fail(output);
-      console.log(output);
-    } else if (opts.cmd === "notice") {
-      // The same guarantee `echo` makes, on the event before the tool rather
-      // than the one after it.
-      respond(runNotice(cwd, await readPayload()));
-    } else if (opts.cmd === "echo") {
-      // A hook, so its own failure is the one thing it must never be: a non-zero
-      // exit interrupts the run it exists to help. Every path here writes an
-      // object and exits 0, including the one where stdin was never readable and
-      // the one where nobody is left to read the answer.
-      respond(runEcho(cwd, await readPayload()));
-    } else {
-      const { summary } = await runScan(cwd, { dryRun: opts.dryRun, deep: opts.deep });
-      if (opts.format === "json") process.stdout.write(scanJson(summary));
-      else console.log(scanLines(summary).join("\n"));
-    }
+    await spec.run(cwd, opts);
   } catch (err) {
     // The hook answers for itself, whatever went wrong and wherever it came from.
     // A non-zero exit interrupts the run it exists to help, and it would do it on

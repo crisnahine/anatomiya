@@ -106,6 +106,17 @@ function same(a, b) {
 }
 
 /**
+ * What npm is asked to do, read rather than trusted: a test hands npm a stub
+ * and reads back what it was handed. Offline when checking, because a gate
+ * that reaches a registry fails on the network rather than on the repository,
+ * the rule `shipped.mjs` already states. The seed carries every resolution, so
+ * npm needs nothing from outside unless the manifest has grown a dependency
+ * the root has not installed yet, and then the answer is to run this without
+ * `--check`.
+ */
+export const LOCK_ARGV = ["install", "--package-lock-only", "--ignore-scripts", "--no-audit", "--no-fund"];
+
+/**
  * The lockfile this plugin should ship, built in a directory of its own.
  *
  * Away from the checkout because npm walks up from where it runs and would
@@ -118,17 +129,11 @@ function build(root, pluginRoot, { offline }) {
     const manifest = readJson(join(pluginRoot, "package.json"));
     cpSync(join(pluginRoot, "package.json"), join(work, "package.json"));
     writeFileSync(join(work, "package-lock.json"), `${JSON.stringify(seedFor(readJson(join(root, "package-lock.json")), manifest), null, 2)}\n`);
-    // Offline when checking, because a gate that reaches a registry fails on
-    // the network rather than on the repository, the rule `shipped.mjs` already
-    // states. The seed carries every resolution, so npm needs nothing from
-    // outside unless the manifest has grown a dependency the root has not
-    // installed yet, and then the answer is to run this without `--check`.
-    const args = ["install", "--package-lock-only", "--ignore-scripts", "--no-audit", "--no-fund"];
     // Bounded the way `runSetup` bounds its own npm: a cold resolve on a slow
     // link is minutes, and what comes back is one lockfile, but neither is a
     // reason to let a hung child hold a gate for ever or a runaway one fill
     // memory.
-    const run = spawnSync("npm", offline ? [...args, "--offline"] : args, {
+    const run = spawnSync("npm", offline ? [...LOCK_ARGV, "--offline"] : LOCK_ARGV, {
       cwd: work,
       encoding: "utf8",
       timeout: 10 * 60 * 1000,

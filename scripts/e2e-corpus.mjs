@@ -86,6 +86,17 @@ export const rootsPrinted = (s) => {
 };
 
 /**
+ * Why the roots column could not be read, or nothing. A line the reader did
+ * not parse printed `null/-/-` in the table with no failure, on a run nobody
+ * watches; the truncation sentence is the one layout line that legitimately
+ * carries no count.
+ */
+export const rootsProblems = (s) => {
+  if (rootsPrinted(s) !== null || s.layoutLine === TRUNCATED) return [];
+  return [`the layout line does not open with a roots count: ${JSON.stringify(s.layoutLine ?? null)}`];
+};
+
+/**
  * The summary with the one number that legitimately moves taken out, so two
  * runs over unchanged source can be compared whole.
  */
@@ -481,6 +492,7 @@ async function runRepo(name, source, scratchDir) {
       roots: rootsColumn(rootsPrinted(s1)),
       wrote: s1.wrote,
     });
+    for (const p of rootsProblems(s1)) fail(p);
 
     const overview = join(clone, RULES_DIR, OVERVIEW_FILE);
     if (!existsSync(overview)) fail(`no ${OVERVIEW_FILE} was written`);

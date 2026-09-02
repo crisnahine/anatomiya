@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { byCode } from "../plugins/anatomiya/lib/paths.mjs";
 
 import { baseOf, dirOf, extOf, stemOf, withoutExtension } from "../plugins/anatomiya/lib/paths.mjs";
 
@@ -72,4 +73,12 @@ test("a declaration file's stem drops the whole .d.ts suffix, not just the last 
   assert.equal(stemOf("src/types/image.d.cts"), "image");
   assert.equal(stemOf("src/abcd.ts"), "abcd");
   assert.equal(stemOf("src/types/image.d.js"), "image.d");
+});
+
+test("a tie that decides a printed name is broken by code point, the same on every host", () => {
+  // `localeCompare` orders case by whatever ICU tables the host was built
+  // with; three modules carried this comparator privately and a fourth still
+  // called `localeCompare` on a name that lands in a finding.
+  assert.deepEqual(["b", "B", "a", "A"].sort(byCode), ["A", "B", "a", "b"]);
+  assert.equal(byCode("x", "x"), 0);
 });

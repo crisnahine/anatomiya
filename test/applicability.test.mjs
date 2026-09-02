@@ -7,7 +7,9 @@ import { parseAll } from "../plugins/anatomiya/lib/parse.mjs";
 import { declOf } from "../plugins/anatomiya/lib/langs.mjs";
 import { needsRuby } from "./ruby-available.mjs";
 import { REACT_HOOKS } from "../plugins/anatomiya/lib/dimensions-jsx.mjs";
-import { COLUMN_TYPE } from "../plugins/anatomiya/lib/dimensions-rails.mjs";
+import { COLUMN_TYPE, FRAMEWORK } from "../plugins/anatomiya/lib/dimensions-rails.mjs";
+import { EFFECT_HOOKS } from "../plugins/anatomiya/lib/dimensions-extra.mjs";
+import { RUBY_ERROR } from "../plugins/anatomiya/lib/dimensions-ruby.mjs";
 
 /**
  * One witness pair per dimension: the sources the declared predicate says are
@@ -864,25 +866,115 @@ end`,
     source: (m) =>
       `class M < ActiveRecord::Migration[7.0]\n  def change\n    create_table :posts do |t|\n      t.${m} :user, foreign_key: true\n    end\n  end\nend`,
   },
+  {
+    // Ruby refuses to raise a class that is not an Exception, so a class with
+    // one of these as its base is not a site of the learned-base row.
+    what: "the language's own exception classes",
+    key: "class_base",
+    lang: "ruby",
+    expect: "absent",
+    members: [
+      "Exception", "StandardError", "RuntimeError", "ArgumentError", "TypeError",
+      "NameError", "NoMethodError", "IndexError", "KeyError", "RangeError",
+      "FloatDomainError", "ZeroDivisionError", "IOError", "EOFError", "RegexpError",
+      "ThreadError", "FiberError", "LocalJumpError", "FrozenError", "StopIteration",
+      "ClosedQueueError", "UncaughtThrowError", "NoMatchingPatternError",
+      "NoMatchingPatternKeyError", "EncodingError", "SecurityError", "NotImplementedError",
+      "SystemCallError", "SystemExit", "SystemStackError", "NoMemoryError",
+      "ScriptError", "LoadError", "SyntaxError", "SignalException", "Interrupt",
+      "Encoding::CompatibilityError", "Encoding::ConverterNotFoundError",
+      "Encoding::InvalidByteSequenceError", "Encoding::UndefinedConversionError",
+      "Math::DomainError", "Regexp::TimeoutError", "IO::TimeoutError",
+      "Ractor::Error", "Ractor::ClosedError", "Ractor::IsolationError",
+      "Ractor::MovedError", "Ractor::RemoteError", "Ractor::UnsafeError",
+    ],
+    source: (m) => `class E < ${m}\nend`,
+    control: `class E < ApplicationRecord\nend`,
+  },
+  {
+    what: "the system-call errors, by prefix",
+    key: "class_base",
+    lang: "ruby",
+    expect: "absent",
+    members: ["Errno::ENOENT", "Errno::EACCES"],
+    source: (m) => `class E < ${m}\nend`,
+    control: `class E < ApplicationRecord\nend`,
+  },
+  {
+    // A migration naming one of these touches no data, so its site conforms.
+    what: "the constants a migration may name without touching data",
+    key: "migration_schema_only",
+    lang: "ruby",
+    expect: "conforming",
+    members: [
+      "ActiveRecord", "ActiveStorage", "ActionText", "ActiveSupport", "Arel", "Rails",
+      "Time", "Date", "DateTime", "SecureRandom", "JSON", "YAML", "File", "Dir",
+      "String", "Integer", "Float", "Numeric", "BigDecimal", "Array", "Hash", "Set",
+      "Symbol", "Range", "Regexp", "Struct", "Math", "Kernel", "Object", "Comparable",
+      "Enumerable", "URI", "Digest", "Base64", "Logger", "Marshal", "Process", "IO",
+      "StringIO", "Pathname", "Tempfile", "OpenStruct", "Random", "Encoding",
+    ],
+    source: (m) => `class M < ActiveRecord::Migration[7.0]\n  def change\n    ${m}.now\n  end\nend`,
+    control: `class M < ActiveRecord::Migration[7.0]\n  def change\n    User.update_all(x: 1)\n  end\nend`,
+  },
+  {
+    // React refuses null from an effect, so a null returned inside one is not
+    // this repository choosing how it spells an absent value.
+    what: "the effect hooks whose callback is not a site",
+    key: "absent_is_null",
+    lang: "jsx",
+    expect: "absent",
+    members: ["useEffect", "useLayoutEffect", "useInsertionEffect"],
+    source: (m) => `export function C() { ${m}(() => { return null; }, []); return <p />; }`,
+    control: `export function C() { useCallback(() => { return undefined; }, []); return <p />; }`,
+  },
 ];
 
+/**
+ * What a member's witness has to produce on the row: a hit (the default), no
+ * hit at all, or a conforming hit. A row of the last two kinds carries a
+ * `control`, a witness off the table that has to answer the other way, or a
+ * predicate that answers nothing to everything would pass.
+ */
+function witnessProblem(t, m, hits) {
+  const expect = t.expect ?? "present";
+  if (expect === "absent") return hits.length === 0 ? null : `${t.key} counts ${JSON.stringify(m)}, one of ${t.what}, as a site`;
+  if (hits.length === 0) return `${t.key} does not recognise ${JSON.stringify(m)}, one of ${t.what}`;
+  if (expect === "conforming" && !hits.every((h) => h.conforming)) return `${t.key} counts ${JSON.stringify(m)}, one of ${t.what}, against`;
+  return null;
+}
+
+function controlProblem(t, hits) {
+  if (t.expect === "absent") return hits.length > 0 ? null : `${t.key}'s control off ${t.what} produced no site either`;
+  return hits.some((h) => !h.conforming) ? null : `${t.key}'s control off ${t.what} did not count against`;
+}
+
 async function tableProblems(tables) {
-  const files = tables.flatMap((t, ti) =>
-    t.members.map((m, mi) => ({ rel: `table${ti}.${mi}.${declOf(t.lang).scratchExt}`, source: t.source(m), lang: t.lang }))
-  );
+  const ext = (t) => declOf(t.lang).scratchExt;
+  const files = tables.flatMap((t, ti) => [
+    ...t.members.map((m, mi) => ({ rel: `table${ti}.${mi}.${ext(t)}`, source: t.source(m), lang: t.lang })),
+    ...(t.control ? [{ rel: `table${ti}.control.${ext(t)}`, source: t.control, lang: t.lang }] : []),
+  ]);
   const { records } = await parseAll(files, { frameworks: ["rails"] });
   const problems = [];
 
+  const hitsOf = (rel, key) => {
+    const record = records.get(rel);
+    if (!record || record.ok !== true) return null;
+    return record.hits?.[key] ?? [];
+  };
   tables.forEach((t, ti) => {
     t.members.forEach((m, mi) => {
-      const record = records.get(`table${ti}.${mi}.${declOf(t.lang).scratchExt}`);
-      if (!record || record.ok !== true) {
-        return problems.push(`${t.key}'s witness for ${JSON.stringify(m)} did not parse`);
-      }
-      if ((record.hits?.[t.key] ?? []).length === 0) {
-        problems.push(`${t.key} does not recognise ${JSON.stringify(m)}, one of ${t.what}`);
-      }
+      const hits = hitsOf(`table${ti}.${mi}.${ext(t)}`, t.key);
+      if (hits === null) return problems.push(`${t.key}'s witness for ${JSON.stringify(m)} did not parse`);
+      const problem = witnessProblem(t, m, hits);
+      if (problem) problems.push(problem);
     });
+    if (!t.control) return;
+    const hits = hitsOf(`table${ti}.control.${ext(t)}`, t.key);
+    if (hits === null) return problems.push(`${t.key}'s control did not parse`);
+    const problem = controlProblem(t, hits);
+    if (problem) problems.push(problem);
   });
 
   return problems;
@@ -896,6 +988,9 @@ test("no table grew a member this list has not seen", () => {
   const shipped = {
     hook_call_style: REACT_HOOKS,
     column_null_declared: COLUMN_TYPE,
+    class_base: RUBY_ERROR,
+    migration_schema_only: FRAMEWORK,
+    absent_is_null: EFFECT_HOOKS,
   };
   for (const [key, table] of Object.entries(shipped)) {
     const listed = TABLES.filter((t) => t.key === key && t.members.length === table.size);

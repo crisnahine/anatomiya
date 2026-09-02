@@ -7,6 +7,7 @@
  * one where a convention was most likely broken. This asks the prior question
  * instead, and answers it from counts the scan already took (H38).
  */
+import { byCode } from "./paths.mjs";
 import { RUBY_TEST_NAME, TEST_DIRS, TEST_NAME, TEST_ROOTS } from "./test-shape.mjs";
 import { isCorpusPath } from "./corpus.mjs";
 import { LEVEL_ONLY_LABEL } from "./layout.mjs";
@@ -89,7 +90,7 @@ function coveredRoot(rel, roots) {
     const matches = eligible.filter((r) => r.dir === tail || r.dir.endsWith(`/${tail}`));
     if (matches.length === 0) continue;
     if (matches.some((r) => r.companions.with > 0)) return null;
-    return matches.sort((a, b) => b.companions.of - a.companions.of || a.dir.localeCompare(b.dir))[0];
+    return matches.sort((a, b) => b.companions.of - a.companions.of || byCode(a.dir, b.dir))[0];
   }
   return null;
 }

@@ -20,6 +20,7 @@ import {
   probePlan,
   readJson,
   rootsColumn,
+  rootsProblems,
   rootsPrinted,
   rosterCounts,
   selectRepos,
@@ -68,6 +69,14 @@ test("the harness reads the fields the scan's record answers", () => {
   // layout line rather than from a second count of the areas.
   assert.equal(rootsPrinted(s), 7);
   assert.equal(rootsPrinted({ layoutLine: null }), null);
+  // A layout line the reader cannot parse printed `null/-/-` in the table with
+  // no failure, on a run nobody watches. The truncation sentence is the one
+  // layout line that legitimately carries no count.
+  assert.deepEqual(rootsProblems(s), []);
+  assert.deepEqual(rootsProblems({ layoutLine: "layout: not counted, the scan was truncated" }), []);
+  assert.deepEqual(rootsProblems({ layoutLine: "layout: seven roots, 0 folded" }), [
+    'the layout line does not open with a roots count: "layout: seven roots, 0 folded"',
+  ]);
   assert.equal(readJson("wrote 33 files"), null, "a run that printed lines is not a record");
 });
 
@@ -95,6 +104,7 @@ test("the record the scan really writes answers every field the harness reads", 
   );
 
   assert.deepEqual(summaryProblems(record), []);
+  assert.equal(rootsPrinted(record), 1, "the writer's own layout line opens with the roots count");
 });
 
 test("a record missing a field says which field, rather than reading as zero", () => {

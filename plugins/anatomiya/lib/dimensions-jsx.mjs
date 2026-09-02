@@ -76,7 +76,8 @@ export function attrName(a) {
   return null;
 }
 
-const calleeName = (c) => {
+/** The name being called through `c`, the callee of `f()` or `a.f()`, or null. */
+export const calleeName = (c) => {
   if (!c) return null;
   if (c.type === "Identifier") return c.name ?? null;
   if (c.type === "MemberExpression" && !c.computed && c.property) return c.property.name ?? null;

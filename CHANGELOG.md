@@ -42,6 +42,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - `parseRuby` no longer carries the `parsed`, `crashed` and `skipped` counters or the `onFile` streaming mode; the results are the record (B38).
 - The checker's worker is a shell over `semantic-job.mjs`, whose `runJob` and `measureResolution` are reached in process by a namesake test (B39).
 - Twenty-nine exported names nobody read outside their own file are private, and a guard holds every export to a reader (A50).
+- The binary's verbs are one table, each carrying its own arm; a verb added to the table with no arm no longer falls through to a scan (A51).
+- The corpus harness fails a run whose layout line it could not read the roots count off, exempting the truncation sentence (A52).
+- The docs gate is a function, `checkDocs`, so importing a reader from it runs nothing (A53).
+- The lock gate's npm argv is one exported list, read back through a stub npm: offline under `--check`, online for a write (B40).
+- One callee reader in `dimensions-jsx.mjs`, answering a name or null (C38).
+- The witness gate drives `RUBY_ERROR`, `FRAMEWORK` and `EFFECT_HOOKS` through their rows, with a control per table (C39).
+- Every tie that decides a printed name is broken by code point through one `byCode` in `paths.mjs`; `precedent.mjs` broke one by locale (H42).
+- `repoAuthorCount` and `isPerson` live in `authors.mjs`, and `baseline.mjs` carries one docblock per entry point, naming all three.
 
 - The sites a branch introduced are decided in
   `plugins/anatomiya/lib/introduced.mjs`, a leaf the check alone imports:

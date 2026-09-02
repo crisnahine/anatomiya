@@ -36,7 +36,7 @@ const where = (ctx) => (ctx.def && ctx.def.name) || (ctx.cls && ctx.cls.name) ||
  * base of their own must keep every subclass as a site, or the row stops
  * stating in exactly the directories it is for.
  */
-const RUBY_ERROR = new Set([
+export const RUBY_ERROR = new Set([
   "Exception", "StandardError", "RuntimeError", "ArgumentError", "TypeError",
   "NameError", "NoMethodError", "IndexError", "KeyError", "RangeError",
   "FloatDomainError", "ZeroDivisionError", "IOError", "EOFError", "RegexpError",
