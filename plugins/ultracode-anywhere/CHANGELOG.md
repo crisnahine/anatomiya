@@ -9,6 +9,20 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-09-02
+
+Four module-level names nobody read outside their own file are private, and a test holds the two
+hooks' silence to one answer. Nothing a session sees changed.
+
+### Changed
+
+- `FILES_MOST`, `GATE`, `CONFLICTS` and `PATCHES_BEFORE_STALE` are private to the files that use
+  them; a guard in the marketplace's suite holds every export to a reader. The sweep's bound is
+  pinned by behaviour: two thousand files are read and the next one stops it.
+- A test holds the prompt hook's silence and the session notice's `quiet` to one answer over the
+  three states that decide them: a plain session, a conflict in settings, and strict mode on a
+  build that moved.
+
 ## [0.4.0] - 2026-08-31
 
 The other half of the effort question, the one the Agent tool asks. Nothing can set it, so this
@@ -267,7 +281,8 @@ wherever `effortLevel` is set, and says out loud what it does not restore.
 - Turn counters under `~/.claude/ultracode-anywhere/` rather than the temporary directory, in a
   directory this account owns with no access for anyone else.
 
-[Unreleased]: https://github.com/crisnahine/anatomiya/compare/ultracode-anywhere-v0.4.0...HEAD
+[Unreleased]: https://github.com/crisnahine/anatomiya/compare/ultracode-anywhere-v0.5.0...HEAD
+[0.5.0]: https://github.com/crisnahine/anatomiya/compare/ultracode-anywhere-v0.4.0...ultracode-anywhere-v0.5.0
 [0.4.0]: https://github.com/crisnahine/anatomiya/compare/ultracode-anywhere-v0.3.0...ultracode-anywhere-v0.4.0
 [0.3.0]: https://github.com/crisnahine/anatomiya/compare/ultracode-anywhere-v0.2.1...ultracode-anywhere-v0.3.0
 [0.2.1]: https://github.com/crisnahine/anatomiya/compare/ultracode-anywhere-v0.2.0...ultracode-anywhere-v0.2.1

@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 
 import { needsPathControl, needsShebang, needsSpawnableNpm, needsSymlinks, needsWindows } from "./platform.mjs";
 import { PACK_ARGV, pluginRootsIn, reachableFrom, shipped } from "../scripts/shipped.mjs";
+import { pluginPaths } from "../scripts/validate.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 
@@ -662,4 +663,16 @@ test("a marketplace entry whose source leaves the marketplace names no plugin ro
   mkdirSync(join(held, "..", "elsewhere"), { recursive: true });
 
   assert.deepEqual(pluginRootsIn(held), []);
+});
+
+test("the plugin-path grammar this gate reads is the manifest gate's own", () => {
+  // Two copies of one pattern ended a bare path in different places. The
+  // quoted form wins over a bare one inside it, a subshell or a backtick ends a
+  // bare one, and this file spells none of it.
+  assert.deepEqual(pluginPaths('node "${CLAUDE_PLUGIN_ROOT}/bin/a b.mjs" ${CLAUDE_PLUGIN_ROOT}/bin/c.mjs'), ["bin/a b.mjs", "bin/c.mjs"]);
+  assert.deepEqual(pluginPaths("sh -c '(node ${CLAUDE_PLUGIN_ROOT}/hooks/run.mjs)'"), ["hooks/run.mjs"]);
+  assert.deepEqual(pluginPaths("lives at `${CLAUDE_PLUGIN_ROOT}/tools/scan.mjs`."), ["tools/scan.mjs"]);
+  assert.deepEqual(pluginPaths("node ${CLAUDE_PLUGIN_ROOT}"), []);
+  const source = readFileSync(new URL("../scripts/shipped.mjs", import.meta.url), "utf8");
+  assert.doesNotMatch(source, /CLAUDE_PLUGIN_ROOT\\\}/, "shipped.mjs spells no pattern of its own");
 });

@@ -1,5 +1,5 @@
 import { optionalChain, walk, isFunctionLike, declName, value } from "./walk.mjs";
-import { jsxElementNames } from "./dimensions-jsx.mjs";
+import { calleeName, jsxElementNames } from "./dimensions-jsx.mjs";
 
 /**
  * More dimensions, same contract as `dimensions.mjs`: one claim, three
@@ -68,15 +68,6 @@ const isUndefined = (node) => {
       (n.type === "UnaryExpression" && n.operator === "void"))
   );
 };
-
-/** The name being called in `f()` or in `a.f()`, whichever applies. */
-function calleeName(node) {
-  const c = node.callee;
-  if (!c) return null;
-  if (c.type === "Identifier") return c.name;
-  if (c.type === "MemberExpression" && !c.computed && c.property) return c.property.name;
-  return null;
-}
 
 /**
  * The identifier a non-computed member chain is rooted at: `assert` in both
@@ -221,7 +212,7 @@ function overloadImplementations(program) {
  * React's own warning names the refusal: "You returned null. If your effect
  * does not require clean up, return undefined."
  */
-const EFFECT_HOOKS = new Set(["useEffect", "useLayoutEffect", "useInsertionEffect"]);
+export const EFFECT_HOOKS = new Set(["useEffect", "useLayoutEffect", "useInsertionEffect"]);
 
 const isEffectCallback = (fn, ctx) => {
   const p = ctx.ancestors[ctx.ancestors.length - 1];
@@ -579,7 +570,7 @@ export const EXTRA_DIMENSIONS = [
         if (n.type === "ForOfStatement") {
           return add({ node: n, conforming: true, where: declName(ctx.fn) });
         }
-        if (n.type !== "CallExpression" || calleeName(n) !== "forEach") return;
+        if (n.type !== "CallExpression" || calleeName(n.callee) !== "forEach") return;
         if (n.callee.type !== "MemberExpression") return;
         add({ node: n, conforming: false, where: declName(ctx.fn) });
       });

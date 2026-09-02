@@ -350,3 +350,20 @@ test("a test moved into a directory with no precedent carries where it came from
   assert.equal(found.path, "spec/mailers/alpha_mailer_spec.rb");
   assert.equal(found.oldPath, "spec/services/alpha_spec.rb");
 });
+
+test("the root that speaks for an untested tail is decided by code point, not by locale", () => {
+  // Two untested roots answer the tail with the same count, and the one named
+  // in the finding was picked by `localeCompare`, which orders case by the
+  // host's ICU tables. `layout.mjs` breaks the same kind of tie by code point.
+  const roots = [
+    root("a/x", { files: 4, companions: { with: 0, of: 4, root: null } }),
+    root("B/x", { files: 4, companions: { with: 0, of: 4, root: null } }),
+    root("app/services", { files: 6, companions: { with: 6, of: 6, root: "spec/services" } }),
+    root("spec/services", { files: 6, testRoot: true }),
+  ];
+
+  const found = precedentFindings(["spec/x/thing_spec.rb"], roots);
+
+  assert.equal(found.length, 1);
+  assert.equal(found[0].area, "B/x");
+});

@@ -9,6 +9,7 @@ import { spawn, spawnSync, execFileSync } from "node:child_process";
 import { needsPosixSpecialFiles, needsUnreadableDirs } from "./platform.mjs";
 import { aboutDir, echoContext, fieldsIn, ownLayout, planRemoval, commitRemoval, targetIn, HOOK_COMMAND, NOTICE_COMMAND, PAYLOAD_WAIT_MS, SETTINGS_PATH } from "../plugins/anatomiya/lib/hook.mjs";
 import { FACTS_PATH, FACTS_SCHEMA } from "../plugins/anatomiya/lib/facts.mjs";
+import { pluginPaths } from "../scripts/validate.mjs";
 import { HEAD_BYTES } from "../plugins/anatomiya/lib/rules.mjs";
 import { ANATOMIYA } from "../scripts/plugins.mjs";
 
@@ -581,12 +582,12 @@ test("the declared command runs a file this plugin actually ships", () => {
   // checked here rather than trusted, against the tree this test runs in.
   const declared = JSON.parse(readFileSync(new URL("../plugins/anatomiya/hooks/hooks.json", import.meta.url), "utf8"));
   const command = declared.hooks.UserPromptSubmit[0].hooks[0].command;
-  const target = /\$\{CLAUDE_PLUGIN_ROOT\}\/([^"']+)/.exec(command);
+  const [target] = pluginPaths(command);
 
   assert.ok(target, command);
   // Resolved against the plugin's own root, which is what the loader
   // substitutes the variable for.
-  assert.ok(existsSync(join(ANATOMIYA, target[1])), target[1]);
+  assert.ok(existsSync(join(ANATOMIYA, target)), target);
 });
 
 test("the declared command, run the way the loader runs it, echoes the map", (t) => {

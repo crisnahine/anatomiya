@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 
 import { needsRemovableCwd } from "./platform.mjs";
+import { hostEnv } from "./host-env.mjs";
 import { CALIBRATED_AGAINST, MARKERS, MIN_BUNDLE } from "../plugins/ultracode-anywhere/hooks/upstream.mjs";
 import { notice } from "../plugins/ultracode-anywhere/hooks/session-start.mjs";
 import { run } from "../plugins/ultracode-anywhere/hooks/standing-ultracode.mjs";
@@ -62,7 +63,7 @@ test("the hook prints one SessionStart object and nothing when there is nothing 
     spawnSync(process.execPath, [HOOK], {
       input: JSON.stringify({ session_id: "s", hook_event_name: "SessionStart", source: "startup", cwd: t1.dir }),
       encoding: "utf8",
-      env: { ...process.env, CLAUDE_CONFIG_DIR: t1.config, CLAUDE_CODE_EXECPATH: env, ULTRACODE_ANYWHERE_STATE: t1.state, ULTRACODE_ANYWHERE_CAP_NOTICE: "0" },
+      env: { ...hostEnv(), CLAUDE_CONFIG_DIR: t1.config, CLAUDE_CODE_EXECPATH: env, ULTRACODE_ANYWHERE_STATE: t1.state, ULTRACODE_ANYWHERE_CAP_NOTICE: "0" },
     });
 
   const drifted = fire(t1.cli);
@@ -185,7 +186,7 @@ test("a session started from a directory that is no longer there still starts", 
   const run = spawnSync("/bin/sh", ["-c", `cd "${gone}" && rm -rf "${gone}" && exec "${process.execPath}" "${HOOK}"`], {
     input: "",
     encoding: "utf8",
-    env: { ...process.env, CLAUDE_CONFIG_DIR: join(dir, "config"), HOME: dir, ULTRACODE_ANYWHERE_STATE: join(dir, "state") },
+    env: { ...hostEnv(), CLAUDE_CONFIG_DIR: join(dir, "config"), HOME: dir, ULTRACODE_ANYWHERE_STATE: join(dir, "state") },
   });
 
   assert.equal(run.status, 0, run.stderr);
@@ -291,7 +292,7 @@ test("the hook reads the compaction off its payload", (t) => {
   const fired = spawnSync(process.execPath, [HOOK], {
     input: JSON.stringify({ session_id: "s", hook_event_name: "SessionStart", source: "compact", cwd: t1.dir }),
     encoding: "utf8",
-    env: { ...process.env, CLAUDE_CONFIG_DIR: t1.config, CLAUDE_CODE_EXECPATH: t1.cli, ULTRACODE_ANYWHERE_STATE: t1.state, ULTRACODE_ANYWHERE_CAP_NOTICE: "0" },
+    env: { ...hostEnv(), CLAUDE_CONFIG_DIR: t1.config, CLAUDE_CODE_EXECPATH: t1.cli, ULTRACODE_ANYWHERE_STATE: t1.state, ULTRACODE_ANYWHERE_CAP_NOTICE: "0" },
   });
 
   assert.equal(fired.status, 0, fired.stderr);
@@ -389,4 +390,27 @@ test("a project's own agent file answers before the user's", (t) => {
   }
 
   assert.equal(notice({ cwd: t1.dir, cli: t1.cli, state: t1.state, env: quietEnv(t1, { ULTRACODE_ANYWHERE_SUBAGENT_EFFORT: "medium" }) }), null);
+});
+
+// The prompt hook's silence rule and the session notice's `quiet` are one
+// boolean spelled twice, by design: the two hooks speak in different cases and
+// share no rule. This holds the two spellings to one answer over the three
+// states that decide it, with the standing opt-in on and a plain turn.
+test("the two hooks go quiet on the same two answers", (t) => {
+  const stdin = JSON.stringify({ session_id: "11111111-2222-3333-4444-555555555555", cwd: "/repo", prompt: "hi", hook_event_name: "UserPromptSubmit" });
+  const cases = [
+    ["plain", tree(t, { settings: { effortLevel: "medium" } }), {}],
+    ["a conflict in settings", tree(t, { settings: { ultracode: true } }), {}],
+    ["strict on a build that moved", tree(t, { bundle: whole().replace(MARKERS[0], "") }), { ULTRACODE_ANYWHERE_STRICT: "1" }],
+  ];
+  const spoke = [];
+  for (const [name, t1, extra] of cases) {
+    const env = { ...quietEnv(t1), ULTRACODE_ANYWHERE: "1", ULTRACODE_ANYWHERE_STAGE_EFFORT: "cheap", CLAUDE_CODE_EXECPATH: t1.cli, ...extra };
+    const silent = run({ stdin, env, state: t1.state }) === null;
+    const quiet = !(notice({ cwd: t1.dir, cli: t1.cli, state: t1.state, env }) ?? "").includes("ULTRACODE_ANYWHERE_STAGE_EFFORT");
+    spoke.push(!silent);
+
+    assert.equal(silent, quiet, `${name}: the prompt hook is ${silent ? "silent" : "speaking"} and the notice is ${quiet ? "quiet" : "carrying the level"}`);
+  }
+  assert.deepEqual(spoke, [true, false, false], "the plain case speaks and the two silences are real");
 });

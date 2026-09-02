@@ -924,3 +924,16 @@ test("a file named for a type that claims another name does not shortcut the sea
 
   assert.equal(stateOf(shadowsFor({ level: "medium", dirs: [agents], build }), "Explore"), "current");
 });
+
+test("the sweep reads two thousand files before it stops establishing anything", (t) => {
+  // The bound is the scan's own default and nothing outside names it. The
+  // first bound tried was 200, which a curated library of 250 files walked
+  // straight past while the notice said the file was not there.
+  const { agents, build } = tree(t);
+  const other = (i) => writeFileSync(join(agents, `n${i}.md`), "---\nname: other\ndescription: d\n---\n");
+  for (let i = 0; i < 2000; i++) other(i);
+  assert.deepEqual(shadowsFor({ level: "medium", dirs: [agents], build }).map((s) => s.state), ["absent", "absent", "absent"]);
+
+  other(2000);
+  assert.deepEqual(shadowsFor({ level: "medium", dirs: [agents], build }).map((s) => s.state), ["unknown", "unknown", "unknown"]);
+});
