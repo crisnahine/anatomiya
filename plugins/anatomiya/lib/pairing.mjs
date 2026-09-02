@@ -136,7 +136,7 @@ export function companionRoot(corpus, { from, to, ext, companionSuffix }, prefix
  * `_model_spec.rb`. Never one holding a separator: `spec/models/address/foo_spec.rb`
  * is a file in a directory named after the producer, not a file named after it.
  */
-export function companionSuffixes(corpus, { from, ext, companionSuffix }, root) {
+function companionSuffixes(corpus, { from, ext, companionSuffix }, root) {
   const tails = new Set();
   for (const rel of corpus) {
     if (!rel.startsWith(`${from}/`) || !rel.endsWith(ext) || rel.endsWith(companionSuffix)) continue;
@@ -338,7 +338,7 @@ const isAbstractBase = (from, stem) => {
  * `companionOf` names the one the row is written with, which is what a check
  * reports as missing; a producer conforms when any of these is in the tree.
  */
-export function companionsOf(rel, pairing, root, suffixes = [pairing.companionSuffix]) {
+function companionsOf(rel, pairing, root, suffixes = [pairing.companionSuffix]) {
   const declared = companionOf(rel, pairing, root);
   if (declared === null) return [];
   const stem = declared.slice(0, -pairing.companionSuffix.length);

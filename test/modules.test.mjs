@@ -465,7 +465,9 @@ test("no repository-relative plugin path is spelled outside the one module that 
  * covered by the rule the moment it exists.
  */
 function exportedBy(rel) {
-  const src = readFileSync(join(ROOT, rel), "utf8");
+  // Blanked first: a test's fixture source carries `export` lines inside a
+  // template literal, and those are the fixture's exports, not the file's.
+  const src = scan(readFileSync(join(ROOT, rel), "utf8"), { strings: true });
   const names = new Set();
   for (const [, name] of src.matchAll(/^export\s+(?:async\s+)?(?:const|let|function|class)\s+([A-Za-z_$][\w$]*)/gm)) names.add(name);
   return names;
@@ -494,6 +496,26 @@ test("a name this repository's own module offers is imported where it is used, n
   }
 
   assert.deepEqual(assumed, []);
+});
+
+// An export nobody reads is interface with no caller: it widens what the module
+// promises, C19 counts it as a site, and nothing keeps it honest. The registry
+// gates stay exported standalone so a failure names the rule under test, and
+// each has a test reading it. Read by word rather than by import edge, because
+// tests reach some names through a namespace or a dynamic import; a name two
+// files both export passes on the other's use, which only makes this lenient.
+test("every export is read somewhere outside its own file", () => {
+  const files = sourceFiles();
+  const texts = files.map((rel) => [rel, scan(readFileSync(join(ROOT, rel), "utf8"), { strings: true })]);
+  const unread = [];
+  for (const rel of files) {
+    for (const name of exportedBy(rel)) {
+      const word = new RegExp(`\\b${name.replace(/\$/g, "\\$")}\\b`);
+      if (!texts.some(([other, text]) => other !== rel && word.test(text))) unread.push(`${rel}: ${name}`);
+    }
+  }
+
+  assert.deepEqual(unread, []);
 });
 
 const FUNCTIONS = new Set(["FunctionDeclaration", "FunctionExpression", "ArrowFunctionExpression"]);

@@ -49,7 +49,7 @@ import { newlyIntroduced } from "./introduced.mjs";
  * would deliver at the worst possible moment.
  */
 
-export const CHECK = {
+const CHECK = {
   // A pinned population that has moved this far describes a different
   // repository than the one the agent was handed. No measurement sets this
   // number yet; it is one constant because its only effect is capping

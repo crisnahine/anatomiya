@@ -179,10 +179,10 @@ export function runnerOf(rel, facets) {
  * printed a blend, 4.0%, of a real 6.9% diluted by sites nobody was going to
  * write per-file tests for.
  */
-export const SHELL_NAMES = new Set(["src", "lib", "app", "apps", "packages", "source"]);
+const SHELL_NAMES = new Set(["src", "lib", "app", "apps", "packages", "source"]);
 
 // At most seven lines, so the section can never crowd out the area listing.
-export const ROOT_BUDGET = 7;
+const ROOT_BUDGET = 7;
 
 // A directory one child almost fills is that child under another name.
 const WRAPPER_SHARE = 0.8;

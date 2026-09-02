@@ -43,7 +43,7 @@ export const PACK_ARGV = ["pack", "--dry-run", "--json", "--offline"];
  * Linux job either way, so a Windows checkout is told why rather than handed a
  * failure it cannot fix.
  */
-export const PACKABLE = process.platform !== "win32";
+const PACKABLE = process.platform !== "win32";
 
 /** Where the loader looks for hooks when the manifest names nowhere else. */
 const DECLARATION = "hooks/hooks.json";

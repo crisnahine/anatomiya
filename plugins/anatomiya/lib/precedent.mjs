@@ -48,7 +48,7 @@ export function isTestPath(rel) {
  * goes because it names where tests live rather than what they cover, which is
  * the same reason `companionRoot` drops it going the other way.
  */
-export function testedTail(rel) {
+function testedTail(rel) {
   const parts = rel.split("/").slice(0, -1).filter((p) => !TEST_DIRS.has(p));
   return (TEST_ROOTS.has(parts[0]) ? parts.slice(1) : parts).join("/");
 }
@@ -71,7 +71,7 @@ export function testedTail(rel) {
  * verdict is the same whichever it is, so the one with the most producers
  * speaks, since that is the strongest count that is true.
  */
-export function coveredRoot(rel, roots) {
+function coveredRoot(rel, roots) {
   const parts = testedTail(rel).split("/").filter(Boolean);
   // A root recorded for one level counts nothing its children hold, so its zero
   // says the level is untested and never the directory. React's
@@ -105,9 +105,9 @@ export function coveredRoot(rel, roots) {
 const PRECEDENT_COUNTED = "Nothing here was matched to a test by name.";
 
 /** The claim this rule states, in the voice every other claim is written in. */
-export const PRECEDENT_CLAIM = "a test goes where this kind of file's tests already go";
+const PRECEDENT_CLAIM = "a test goes where this kind of file's tests already go";
 
-export const PRECEDENT_KEY = "test_precedent";
+const PRECEDENT_KEY = "test_precedent";
 
 /**
  * What the counts say about a source root, naming the tests it does hold.

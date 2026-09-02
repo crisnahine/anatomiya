@@ -59,7 +59,7 @@ const ENTRIES_MOST = 4000;
  * a search that finds nothing costs, and when it fires the answer says so
  * instead of reporting an absence it did not establish.
  */
-export const FILES_MOST = 2000;
+const FILES_MOST = 2000;
 
 /**
  * How many directories up the walk goes before it stops asking.

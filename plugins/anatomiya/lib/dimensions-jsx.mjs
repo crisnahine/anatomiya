@@ -35,7 +35,7 @@ const HANDLER_PROP = /^on[A-Z]/;
  * through a binding whatever its last segment is called, so `<Calendar.default/>`
  * is a component; reading the last segment called it a `div`.
  */
-export function isHostElement(node) {
+function isHostElement(node) {
   const n = node && (node.type === "JSXOpeningElement" || node.type === "JSXClosingElement")
     ? node.name
     : node;
