@@ -179,6 +179,54 @@ function last(stack, pred) {
 export const isFunctionLike = isFn;
 
 /**
+ * The fields a site carries across the worker boundary, each with the reading
+ * that takes it off a hit: a reading that answers undefined leaves the field
+ * off the site.
+ *
+ * One owner for a shape that had three writers. A field a row added to a hit
+ * crossed only if the copy in `collectHits` happened to name it, the semantic
+ * worker kept its own two-field copy, and nothing held either to what the
+ * reducer reads: `nesting` was dropped once, and the base-class row stated
+ * nothing. A guard in the tests now reads every field the reducer takes off a
+ * site against this table.
+ *
+ * The node never crosses. The reducer counts sites and names files, never
+ * positions, and on the JavaScript side an AST serialises to about 16x the
+ * source it came from.
+ */
+export const HIT_FIELDS = [
+  ["conforming", (hit) => !!hit.conforming],
+  ["where", (hit) => hit.where ?? null],
+  // A learned-class dimension votes with its class; the reducer decides the
+  // majority, so conforming is settled there, not here.
+  ["class", (hit) => hit.class || undefined],
+  // What this site itself is called, on the rows where a site can be the very
+  // thing the area learned: `class X < X` is a NameError, and only the fold
+  // knows the learned class.
+  ["self", (hit) => hit.self || undefined],
+  // The scopes a bare constant in this site resolves against, on the rows that
+  // learn a class. An empty list is a real answer, the top level, so the key
+  // rides on being an array rather than on being truthy: dropped, the
+  // base-class row counts `BaseController` inside `module Api::V1` as a second
+  // class and states nothing.
+  ["nesting", (hit) => (Array.isArray(hit.nesting) ? hit.nesting : undefined)],
+  // Which enclosing body a site belongs to, on the rows whose site is the body
+  // rather than the construct. Stable within this parse and meaningless
+  // outside it, which is all the reducer asks of it.
+  ["group", (hit) => hit.group ?? undefined],
+];
+
+/** The site a hit becomes on the far side of the worker boundary. */
+export function crossing(hit) {
+  const site = {};
+  for (const [name, read] of HIT_FIELDS) {
+    const value = read(hit);
+    if (value !== undefined) site[name] = value;
+  }
+  return site;
+}
+
+/**
  * Every dimension's sites for one tree, keyed for the reducer.
  *
  * Here rather than beside the registry it walks, because `dimensions-ruby.mjs`
@@ -189,11 +237,6 @@ export const isFunctionLike = isFn;
  * One copy, because both parser bridges ran this loop and its one guarantee has
  * to hold in both: a dimension that throws on one odd tree costs that
  * dimension's count for this file, not the file and not the other twenty.
- *
- * A site keeps its conforming flag and the scope it sits in, and drops its
- * node. The reducer counts sites and names files, never positions, and on the
- * JavaScript side this crosses a process boundary where an AST serialises to
- * about 16x the source it came from.
  */
 export function collectHits(program, dimensions, extra = {}) {
   const hits = {};
@@ -202,28 +245,7 @@ export function collectHits(program, dimensions, extra = {}) {
     try {
       dim.run(
         program,
-        (hit) =>
-          sites.push({
-            conforming: !!hit.conforming,
-            where: hit.where ?? null,
-            // A learned-class dimension votes with its class; the reducer
-            // decides the majority, so conforming is settled there, not here.
-            ...(hit.class ? { class: hit.class } : {}),
-            // What this site itself is called, on the rows where a site can be
-            // the very thing the area learned: `class X < X` is a NameError,
-            // and only the fold knows the learned class.
-            ...(hit.self ? { self: hit.self } : {}),
-            // The scopes a bare constant in this site resolves against, on the
-            // rows that learn a class. An empty list is a real answer, the top
-            // level, so the key rides on being an array rather than on being
-            // truthy: dropped, the base-class row counts `BaseController` inside
-            // `module Api::V1` as a second class and states nothing.
-            ...(Array.isArray(hit.nesting) ? { nesting: hit.nesting } : {}),
-            // Which enclosing body a site belongs to, on the rows whose site is
-            // the body rather than the construct. Stable within this parse and
-            // meaningless outside it, which is all the reducer asks of it.
-            ...(hit.group === undefined || hit.group === null ? {} : { group: hit.group }),
-          }),
+        (hit) => sites.push(crossing(hit)),
         // The tree's own side channel: the comments the parser reported, the
         // exact string it parsed, and the path it was read from, for the rows
         // whose question the tree alone cannot answer. Same string, never the
