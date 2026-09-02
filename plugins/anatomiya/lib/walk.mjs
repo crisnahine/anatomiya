@@ -198,8 +198,8 @@ export const HIT_FIELDS = [
   ["conforming", (hit) => !!hit.conforming],
   ["where", (hit) => hit.where ?? null],
   // A learned-class dimension votes with its class; the reducer decides the
-  // majority, so conforming is settled there, not here. Truthy, as the copy
-  // this replaced tested: an empty class is no vote.
+  // majority, so conforming is settled there, not here. Truthy: an empty
+  // class is no vote.
   ["class", (hit) => (hit.class ? hit.class : undefined)],
   // What this site itself is called, on the rows where a site can be the very
   // thing the area learned: `class X < X` is a NameError, and only the fold

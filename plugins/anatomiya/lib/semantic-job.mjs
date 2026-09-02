@@ -61,7 +61,7 @@ export async function runJob(job, send, { load = loadTypeScript } = {}) {
 
     send({ done: true });
   } catch (err) {
-    send({ error: String(err && err.message ? err.message : err) });
+    send({ error: String(err?.message ?? err) });
   }
 }
 

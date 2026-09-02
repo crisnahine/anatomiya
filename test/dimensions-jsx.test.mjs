@@ -3,8 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { parseSync } from "oxc-parser";
 import { siteIdentity } from "../plugins/anatomiya/lib/introduced.mjs";
-import { calleeName } from "../plugins/anatomiya/lib/dimensions-jsx.mjs";
-import { JSX_DIMENSIONS, jsxName, attrName } from "../plugins/anatomiya/lib/dimensions-jsx.mjs";
+import { calleeName, JSX_DIMENSIONS, jsxName, attrName } from "../plugins/anatomiya/lib/dimensions-jsx.mjs";
 import { ALL_DIMENSIONS, dimensionsFor } from "../plugins/anatomiya/lib/dimensions.mjs";
 import { applyGates } from "../plugins/anatomiya/lib/reduce.mjs";
 

@@ -525,6 +525,7 @@ test("a name this repository's own module offers is imported where it is used, n
 test("every export is read somewhere outside its own file", () => {
   assert.ok(exportedBy(`${REL.anatomiya}/lib/hook.mjs`).has("SETTINGS_PATH"), "the list form of export is read");
   const files = sourceFiles();
+  assert.ok(files.length >= 100, `read ${files.length} files`);
   const texts = files.map((rel) => [rel, scan(readFileSync(join(ROOT, rel), "utf8"), { strings: true })]);
   const unread = [];
   for (const rel of files) {
@@ -549,17 +550,24 @@ test("every verb the binary declares carries its own arm in the one table", () =
     .flatMap((n) => (n.type === "VariableDeclaration" ? n.declarations : []))
     .find((d) => d.id.type === "Identifier" && d.id.name === "COMMANDS");
   assert.ok(table && table.init.type === "ObjectExpression", "COMMANDS is an object literal");
-  const verbs = table.init.properties.map((p) => [p.key.name ?? p.key.value, p.value]);
+  const keyOf = (p) => p.key.name ?? p.key.value;
+  const verbs = table.init.properties.map((p) => [keyOf(p), p.value]);
   assert.ok(verbs.length >= 5, `read ${verbs.length} verbs`);
   for (const [verb, value] of verbs) {
-    const keys = value.type === "ObjectExpression" ? value.properties.map((p) => p.key.name) : [];
+    const keys = value.type === "ObjectExpression" ? value.properties.map(keyOf) : [];
     assert.ok(keys.includes("run"), `${verb} carries no run`);
   }
-  // Every command call sits inside the table, so no arm can exist outside it
-  // for a verb to fall through to, however it is spelled. The offsets are
-  // asserted first: compared against undefined, every call would read as inside.
+  // Every command the binary imports is called inside the table, so no arm can
+  // exist outside it for a verb to fall through to, however it is spelled. The
+  // names come off the import rather than a list here, so an arm added
+  // tomorrow is one this sees. The offsets are asserted first: compared
+  // against undefined, every call would read as inside.
+  const arms = program.body
+    .filter((n) => n.type === "ImportDeclaration" && n.source.value.endsWith("/commands.mjs"))
+    .flatMap((n) => n.specifiers.map((s) => s.local.name));
+  assert.ok(arms.length >= 5, `read ${arms.length} command imports`);
   assert.ok(Number.isInteger(table.init.start) && Number.isInteger(table.init.end), "the table carries offsets");
-  const outside = [...scan(src).matchAll(/\brun(?:Scan|Check|Pin|Doctor|Setup|Echo|Notice)\(/g)]
+  const outside = [...scan(src).matchAll(new RegExp(`\\b(?:${arms.join("|")})\\(`, "g"))]
     .filter((m) => m.index < table.init.start || m.index >= table.init.end)
     .map((m) => m[0]);
   assert.deepEqual(outside, []);
