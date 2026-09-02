@@ -76,6 +76,26 @@ function last(stack, pred) {
   return null;
 }
 
+/**
+ * The `node` every consumer destructures off a hit, in the one shape the JS
+ * dimensions also emit.
+ *
+ * `start` and `end` are null rather than absent: B5 forbids an offset here at
+ * all, and an absent bound would make a consumer's `source.slice(start, end)`
+ * hand back the whole file as the matched text. `type` plus `name` is what
+ * stays of a site's identity without one.
+ */
+export const site = (n) => ({
+  type: n.t,
+  name: typeof n.name === "string" ? n.name : null,
+  line: typeof n.line === "number" ? n.line : null,
+  start: null,
+  end: null,
+});
+
+/** The arguments of a call, and none for anything that is not one. */
+export const args = (call) => (call && call.arguments && call.arguments.arguments) || [];
+
 /** Statements written directly in a body, skipping the statements wrapper. */
 export function bodyOf(node) {
   const b = node && node.body;

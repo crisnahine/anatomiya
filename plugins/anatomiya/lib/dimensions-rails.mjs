@@ -1,4 +1,4 @@
-import { walkRuby, constName, ownDef } from "./ruby-walk.mjs";
+import { walkRuby, constName, ownDef, site, args } from "./ruby-walk.mjs";
 
 /**
  * Rails-data dimensions, same contract as the other dimension files: one claim,
@@ -52,16 +52,6 @@ const FRAMEWORK = new Set([
   "Enumerable", "URI", "Digest", "Base64", "Logger", "Marshal", "Process", "IO",
   "StringIO", "Pathname", "Tempfile", "OpenStruct", "Random", "Encoding",
 ]);
-
-const site = (n) => ({
-  type: n.t,
-  name: typeof n.name === "string" ? n.name : null,
-  line: typeof n.line === "number" ? n.line : null,
-  start: null,
-  end: null,
-});
-
-const args = (call) => (call && call.arguments && call.arguments.arguments) || [];
 
 /** Symbols and strings spell the same identifier; migrations use one, schema.rb the other. */
 const lit = (node) =>

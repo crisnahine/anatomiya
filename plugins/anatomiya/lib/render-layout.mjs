@@ -39,12 +39,12 @@ export const ROOT_LABEL = "(repository root)";
 
 const runnerLabel = (runner) => RUNNER_LABELS[runner] ?? runner;
 
-const specCount = (n, runner) =>
+export const specCount = (n, runner) =>
   runner === UNNAMED_RUNNER ? plural(n, "test file") : plural(n, `${runnerLabel(runner)} spec`);
 
 // The tests line spells the unit once, on the group that sets it, and the
 // groups after it are read off that one.
-const runnerCount = (n, runner) =>
+export const runnerCount = (n, runner) =>
   runner === UNNAMED_RUNNER ? plural(n, "test file") : `${n} ${runnerLabel(runner)}`;
 
 /**
@@ -137,7 +137,7 @@ const LAYOUT_HEADING = "## What lives where";
 
 // A test root names two runners and counts the rest, the way the extension
 // clause names two extensions: the third one is not what the line is for.
-const RUNNERS_SHOWN = 2;
+export const RUNNERS_SHOWN = 2;
 
 /** One directory: what it holds, what tests it holds, what has a namesake. */
 function rootLine(r) {
@@ -168,7 +168,7 @@ function rootLine(r) {
 
 // At most three groups, then a count: four vitest files beside 102 Cypress
 // specs is the denominator this line exists to be, and a fourth runner is not.
-const TESTS_GROUPS = 3;
+export const TESTS_GROUPS = 3;
 
 /**
  * One line for the whole repository's tests, and the namesake count of the
