@@ -673,7 +673,7 @@ function counts(key, ...names) {
 
 test("every fixture parsed, through one child process", needsRuby, () => {
   assert.equal(parsed.results.length, Object.keys(SRC).length);
-  assert.equal(parsed.crashed, 0);
+  assert.ok(parsed.results.every((r) => !r.crashed));
   assert.equal(parsed.error, null);
 });
 

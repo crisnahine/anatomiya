@@ -152,6 +152,20 @@ test("every field the reducer reads off a site crossed the worker boundary, or i
   assert.deepEqual([...read].filter((f) => !crossing.has(f) && !beside.has(f)).sort(), []);
 });
 
+// The filename row's sentence was rebuilt in the check from the template
+// alone, skipping the two rules `claimFor` carries, and C25 records that
+// duplication producing a defect once. The check words every learned row
+// through its owner now.
+test("the check words a learned row's claim through its owner", () => {
+  const src = scan(readFileSync(join(LIB, "check.mjs"), "utf8"));
+  const naming = /import \{([^}]*)\} from "\.\/dimensions-naming\.mjs"/.exec(src);
+  assert.ok(naming, "check.mjs imports the naming registry");
+  const names = naming[1].split(",").map((s) => s.trim());
+  assert.ok(names.includes("claimFor"), names.join(", "));
+  assert.ok(!names.includes("fillClass"), "the template is filled by its owner, not here");
+  assert.doesNotMatch(src, /claimTemplate/);
+});
+
 test("the parse worker does not reach the registry", () => {
   // The worker runs the tree rows off `dimensionsFor` and nothing else: an
   // obligation has no program to run against and a filename row answers off
