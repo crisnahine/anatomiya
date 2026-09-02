@@ -287,9 +287,10 @@ const RECORDS_THE_PAST = [/^docs\/measurements\//, /^docs\/research\//];
 // one, so this is the name at any depth rather than the one at the root.
 const CHANGELOG = /(^|\/)CHANGELOG\.md$/;
 
-/** The section a changelog's next release ships, or nothing where it has none. */
+/** The heading a changelog keeps for the next change, spelled once. */
 const UNRELEASED = "## [Unreleased]";
 
+/** The section a changelog's next release ships, or nothing where it has none. */
 const unreleased = (text) => {
   const start = text.indexOf(UNRELEASED);
   if (start === -1) return "";
@@ -371,8 +372,6 @@ export function checkDocs() {
   // number that drifts in silence, which is what this file is for.
   const NUMERALS = new Map([["one", 1], ["two", 2], ["three", 3]]);
   const counted = (word) => NUMERALS.get(word) ?? Number(word);
-
-  /** The heading a changelog keeps for the next change, spelled once. */
 
   // A released entry states the number that shipped in it and stays true forever.
   // Reading the whole changelog made every past release a claim about today, so

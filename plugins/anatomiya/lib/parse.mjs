@@ -179,10 +179,11 @@ for (const engine of ENGINE_ORDER) {
  * routed to the engine that hosts each language; languages sharing an engine
  * share the merged result, so a `js` override reaches a `jsx` batch-mate. A
  * key naming no declared language refuses the call rather than moving
- * nothing, and so does a guard name the bridge's own defaults do not carry. `frameworks` filters the framework-gated dimensions (C8) where an
- * engine selects them parent-side; the oxc worker selects its own, and the
- * reducer and the check are the arbiters of which of its hits any slot reads,
- * so a framework row on a language that worker parses is allowed.
+ * nothing, and so does a guard name the bridge's own defaults do not carry.
+ * `frameworks` filters the framework-gated dimensions (C8) where an engine
+ * selects them parent-side; the oxc worker selects its own, and the reducer
+ * and the check are the arbiters of which of its hits any slot reads, so a
+ * framework row on a language that worker parses is allowed.
  */
 export async function parseAll(input, { withProgram = false, guards = null, frameworks } = {}) {
   for (const id of Object.keys(guards ?? {})) declOf(id);

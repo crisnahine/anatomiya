@@ -1,12 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { needsPosixSeparators } from "./platform.mjs";
 import { FACTS_PATH, FACTS_SCHEMA } from "../plugins/anatomiya/lib/facts.mjs";
 import { scanJson, scanSummary } from "../plugins/anatomiya/lib/summary.mjs";
+import { layoutSummary } from "../plugins/anatomiya/lib/render-layout.mjs";
 import {
   COLUMNS,
   areaProblems,
@@ -74,6 +75,13 @@ test("the harness reads the fields the scan's record answers", () => {
   // layout line that legitimately carries no count.
   assert.deepEqual(rootsProblems(s), []);
   assert.deepEqual(rootsProblems({ layoutLine: "layout: not counted, the scan was truncated" }), []);
+  // Off the writer as well as the literal: the harness once spelled this
+  // sentence for itself, and a reworded one would have failed every truncated
+  // repository.
+  assert.deepEqual(rootsProblems({ layoutLine: layoutSummary({ truncated: true }) }), []);
+  for (const rel of ["scripts/e2e-corpus.mjs", "scripts/measure-layout.mjs"]) {
+    assert.doesNotMatch(readFileSync(new URL(`../${rel}`, import.meta.url), "utf8"), /not counted, the scan was truncated/, `${rel} spells the writer's sentence`);
+  }
   assert.deepEqual(rootsProblems({ layoutLine: "layout: seven roots, 0 folded" }), [
     'the layout line does not open with a roots count: "layout: seven roots, 0 folded"',
   ]);

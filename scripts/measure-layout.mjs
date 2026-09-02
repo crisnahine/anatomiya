@@ -38,14 +38,13 @@ import { parseAll } from "../plugins/anatomiya/lib/parse.mjs";
 import { baseOf, dirOf, extOf, stemOf } from "../plugins/anatomiya/lib/paths.mjs";
 import { scan } from "../plugins/anatomiya/lib/scan.mjs";
 import { MAX_LINES } from "../plugins/anatomiya/lib/render.mjs";
-import { namesakeClause, ROOT_LABEL, runnerCount, RUNNERS_SHOWN, specCount, TESTS_GROUPS } from "../plugins/anatomiya/lib/render-layout.mjs";
+import { namesakeClause, ROOT_LABEL, runnerCount, RUNNERS_SHOWN, specCount, TESTS_GROUPS, TRUNCATED_LAYOUT } from "../plugins/anatomiya/lib/render-layout.mjs";
 import { statedSide, writeFacts } from "../plugins/anatomiya/lib/facts.mjs";
 import { OVERVIEW_FILE } from "../plugins/anatomiya/lib/rules.mjs";
 import { planMap } from "../plugins/anatomiya/lib/write.mjs";
 import { encodePath } from "../plugins/anatomiya/lib/encode.mjs";
 
 const HEADING = "## What lives where";
-const TRUNCATED = "layout: not counted, the scan was truncated";
 const LEVEL_SUFFIX = " (files at this level)";
 
 // The five rows part 2 added, counted per repository so a row nothing states
@@ -278,7 +277,7 @@ const same = (what, got, want) => {
  */
 function checkSection(section, corpus, root, recordRoots) {
   if (section === null) fail(`${HEADING} is missing`);
-  if (section.includes(TRUNCATED)) return { roots: 0, folded: 0, principles: 0, truncated: true };
+  if (section.includes(TRUNCATED_LAYOUT)) return { roots: 0, folded: 0, principles: 0, truncated: true };
 
   const bullets = section.filter((l) => l.startsWith("- "));
   const rootLines = bullets.filter((l) => !l.startsWith("- tests: ") && !l.startsWith("- and "));

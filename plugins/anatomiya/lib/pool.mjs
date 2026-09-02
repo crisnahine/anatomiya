@@ -4,7 +4,7 @@ import { statSync } from "node:fs";
 import { cpus } from "node:os";
 
 import { guardedChild, retryOnce } from "./child.mjs";
-import { MAX_FILE_BYTES } from "./limits.mjs";
+import { guardsOver, MAX_FILE_BYTES } from "./limits.mjs";
 import { firstLine } from "./encode.mjs";
 
 const WORKER = fileURLToPath(new URL("./parse-worker.mjs", import.meta.url));
@@ -46,15 +46,7 @@ const STDERR_BYTES = 2048;
  * cores no matter how many workers ran.
  */
 export function createPool({ size, withProgram = false, execArgv = [], guards = null } = {}) {
-  // The pool's defaults with a caller's defined overrides on top: an explicit
-  // undefined never erases a default, the same rule the Ruby bridge merges by.
-  const limits = { ...GUARDS };
-  for (const [k, v] of Object.entries(guards ?? {})) {
-    // A name these defaults do not carry would move nothing: a mistyped one
-    // ran the defaults and reported nothing.
-    if (!(k in GUARDS)) throw new TypeError(`${k} is not one of the oxc guards: ${Object.keys(GUARDS).join(", ")}`);
-    if (v !== undefined) limits[k] = v;
-  }
+  const limits = guardsOver(GUARDS, guards, "oxc");
   const workers = [];
   const idle = [];
   const queue = [];

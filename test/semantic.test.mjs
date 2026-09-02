@@ -79,10 +79,10 @@ test("the floor is stated rather than buried", () => {
   assert.equal(typeof SEMANTIC_GUARDS.buildMs, "number");
 });
 
-test("a guard name the checker does not know refuses before anything is forked", () => {
-  // The same rule as the two parse bridges: a bag is merged over the defaults,
-  // and a name the defaults do not carry is refused rather than run around.
-  assert.throws(() => runSemantic("/nowhere", [], { guards: { idleMS: 50 } }), /idleMS/);
+test("a guard name the checker does not know refuses before anything is forked", async () => {
+  // The same rule as the two parse bridges, failing the same way they do: a
+  // rejection, not a throw, so the three bridges are read alike by a caller.
+  await assert.rejects(runSemantic("/nowhere", [], { guards: { idleMS: 50 } }), /idleMS/);
 });
 
 test("a partial guard bag keeps the checker's other default", needsTs, async () => {

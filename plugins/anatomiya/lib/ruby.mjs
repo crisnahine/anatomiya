@@ -1,7 +1,7 @@
 import { guardedChild, absentInterpreter } from "./child.mjs";
 import { collectHits } from "./walk.mjs";
 import { rubyFacets } from "./facets.mjs";
-import { MAX_FILE_BYTES } from "./limits.mjs";
+import { guardsOver, MAX_FILE_BYTES } from "./limits.mjs";
 import { firstLine } from "./encode.mjs";
 
 /**
@@ -160,11 +160,6 @@ data.split("\\0").each_slice(2) do |rel, abs|
 end
 `;
 
-// A spread copies an explicit `undefined` over the default, and a timer built
-// from one fires at once rather than never. Naming a guard and naming nothing
-// are the same gesture from a caller building an override object.
-const defined = (o) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined));
-
 /**
  * Parse Ruby files. Resolves once the child has exited or a guard has fired.
  *
@@ -175,13 +170,7 @@ export async function parseRuby(
   files,
   { ruby = "ruby", guards: given = null, dimensions = [] } = {},
 ) {
-  // A caller overriding one guard keeps the rest. Replacing the whole object
-  // left every guard it did not name undefined, and a timer set from one of
-  // those fires immediately rather than never.
-  for (const name of Object.keys(given ?? {})) {
-    if (!(name in RUBY_GUARDS)) throw new TypeError(`${name} is not one of the prism guards: ${Object.keys(RUBY_GUARDS).join(", ")}`);
-  }
-  const guards = given ? { ...RUBY_GUARDS, ...defined(given) } : RUBY_GUARDS;
+  const guards = guardsOver(RUBY_GUARDS, given, "prism");
   // Built once, and before any child: a bad override refuses here, loudly,
   // rather than dying inside the spawn where it reads as a broken install.
   const rubyScript = scriptFor(guards.maxBytes);
