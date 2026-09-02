@@ -34,6 +34,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Changed
 - The fields a site carries across the worker boundary are one table, `HIT_FIELDS` in `walk.mjs`, and both workers build their sites from it. A test reads every field the reducer takes off a site and holds it to the table (B36).
+- The roster nouns the layout recount reads back are the renderer's own exports; the recount spells none (H41).
+- One function in `scripts/validate.mjs` reads the paths a text names as `${CLAUDE_PLUGIN_ROOT}/...`, and the shipped-set gate and the hook test take theirs from it. A bare path ends at a subshell's parenthesis or a backtick in both gates now (A49).
+- The Ruby hit's `node` and a call's argument list are built in `ruby-walk.mjs` and imported by both Ruby registries (C36).
 
 - The sites a branch introduced are decided in
   `plugins/anatomiya/lib/introduced.mjs`, a leaf the check alone imports:

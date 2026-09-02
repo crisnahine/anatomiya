@@ -14,7 +14,8 @@ import {
   parseArgs,
   selectRepos,
 } from "../scripts/measure-layout.mjs";
-import { namesakeClause, renderLayout } from "../plugins/anatomiya/lib/render-layout.mjs";
+import { namesakeClause, renderLayout, runnerCount, RUNNERS_SHOWN, specCount, TESTS_GROUPS } from "../plugins/anatomiya/lib/render-layout.mjs";
+import { UNNAMED_RUNNER } from "../plugins/anatomiya/lib/test-shape.mjs";
 import { layoutFacts } from "../plugins/anatomiya/lib/layout.mjs";
 import { OVERVIEW_FILE, RULES_DIR } from "../plugins/anatomiya/lib/rules.mjs";
 import { planMap, writeMap } from "../plugins/anatomiya/lib/write.mjs";
@@ -119,6 +120,23 @@ test("the namesake clause the recount reads back is the renderer's own", () => {
     namesakeClause({ with: 1, of: 4, root: null }, ".js file"),
     "1 of 4 .js files has a namesake test"
   );
+});
+
+test("the roster nouns the recount reads back are the renderer's own", () => {
+  // The recount held its own copy of each: a runner group's noun, the tests
+  // line's second-group form, and how many of each the map shows before it
+  // counts the rest. One spelling now, and the harness reads it.
+  assert.equal(specCount(1, "rspec"), "1 RSpec spec");
+  assert.equal(specCount(4, UNNAMED_RUNNER), "4 test files");
+  assert.equal(runnerCount(3, "cypress"), "3 Cypress");
+  assert.equal(runnerCount(1, UNNAMED_RUNNER), "1 test file");
+  assert.equal(RUNNERS_SHOWN, 2);
+  assert.equal(TESTS_GROUPS, 3);
+  const recount = readFileSync(new URL("../scripts/measure-layout.mjs", import.meta.url), "utf8");
+  for (const name of ["specCount", "runnerCount", "RUNNERS_SHOWN", "TESTS_GROUPS"]) {
+    assert.match(recount, new RegExp(`import \\{[^}]*\\b${name}\\b[^}]*\\} from "\\.\\./plugins/anatomiya/lib/render-layout\\.mjs"`), `${name} is the renderer's`);
+    assert.doesNotMatch(recount, new RegExp(`const ${name} =`), `${name} is not respelled`);
+  }
 });
 
 test("the clause names the directory the denominator was counted over, and both sides read it alike", () => {

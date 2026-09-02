@@ -7,7 +7,7 @@ import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseRuby, RUBY_GUARDS } from "../plugins/anatomiya/lib/ruby.mjs";
-import { walkRuby, constName, bodyOf } from "../plugins/anatomiya/lib/ruby-walk.mjs";
+import { walkRuby, constName, bodyOf, site, args } from "../plugins/anatomiya/lib/ruby-walk.mjs";
 import { RUBY_DIMENSIONS } from "../plugins/anatomiya/lib/dimensions-ruby.mjs";
 import { siteIdentity } from "../plugins/anatomiya/lib/introduced.mjs";
 
@@ -1186,4 +1186,18 @@ test("a learned-class hit carries the scope its bare names resolve in", needsRub
   const [base] = hits("class_base", "compact_superclass").filter((h) => h.class);
   assert.equal(base.self, "Api::V1::QboController");
   assert.deepEqual(base.nesting, [], "the compact form resolves its superclass at the top level");
+});
+
+test("the Ruby site and argument readers live in the leaf both registries import", () => {
+  // Both registries carried a byte-identical `site`, and only one carried the
+  // reason its offsets are null (B5); the argument read was spelled four ways.
+  assert.deepEqual(site({ t: "call", name: "include", line: 4 }), { type: "call", name: "include", line: 4, start: null, end: null });
+  assert.deepEqual(site({ t: "class", name: 7, line: "x" }), { type: "class", name: null, line: null, start: null, end: null });
+  assert.deepEqual(args(null), []);
+  assert.deepEqual(args({ t: "call" }), []);
+  assert.deepEqual(args({ t: "call", arguments: { arguments: [1, 2] } }), [1, 2]);
+  for (const file of ["dimensions-ruby.mjs", "dimensions-rails.mjs"]) {
+    const source = readFileSync(new URL(`../plugins/anatomiya/lib/${file}`, import.meta.url), "utf8");
+    assert.doesNotMatch(source, /const site =|arguments\.arguments|arguments\?\.arguments/, `${file} reads both off the leaf`);
+  }
 });
