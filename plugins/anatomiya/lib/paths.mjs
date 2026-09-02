@@ -54,7 +54,7 @@ export const withoutExtension = (rel) => {
 };
 
 /**
- * Order by code point, for every tie that decides a name a reader sees.
+ * Order by code point, for a tie that decides which name a reader sees.
  *
  * `localeCompare` orders case by whatever ICU tables the host was built with,
  * so two machines rendered two maps from one repository. Four modules carried

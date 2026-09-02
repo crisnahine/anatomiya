@@ -69,10 +69,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - One callee reader in `dimensions-jsx.mjs`, answering a name or null (C38).
 - The witness gate drives `RUBY_ERROR`, `FRAMEWORK` and `EFFECT_HOOKS` through their
   rows, with a control per table (C39).
-- Every tie that decides a printed name is broken by code point through one `byCode` in
+- A tie that decides which name is rendered is broken by code point through one `byCode` in
   `paths.mjs`; `precedent.mjs` broke one by locale (H42).
 - `repoAuthorCount` and `isPerson` live in `authors.mjs`, and `baseline.mjs` carries one
-  docblock per entry point, naming all three.
+  docblock per entry point, naming all three (a move and a docblock, with no row of
+  their own).
 - The sites a branch introduced are decided in
   `plugins/anatomiya/lib/introduced.mjs`, a leaf the check alone imports:
   `newlyIntroduced` takes both revisions and the area and answers the sites
