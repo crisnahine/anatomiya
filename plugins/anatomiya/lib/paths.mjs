@@ -57,7 +57,7 @@ export const withoutExtension = (rel) => {
  * Order by code point, for every tie that decides a name a reader sees.
  *
  * `localeCompare` orders case by whatever ICU tables the host was built with,
- * so two machines rendered two maps from one repository. Three modules carried
- * this privately and a fourth broke its tie by locale.
+ * so two machines rendered two maps from one repository. Four modules carried
+ * this privately or spelled it inline, and a fifth broke its tie by locale.
  */
 export const byCode = (a, b) => (a < b ? -1 : a > b ? 1 : 0);

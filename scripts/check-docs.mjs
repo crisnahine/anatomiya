@@ -706,10 +706,6 @@ export function checkDocs() {
 
   // ----------------------------------------------------------------------------
 
-  // This file exports `readIntake` as well as running as a script, and a bare
-  // `process.exit(1)` at module scope would take the test process with it the
-  // moment a doc claim failed.
-
   // Only where nothing failed: the line reads a manifest's version, and a
   // manifest that is not one was already claimed above.
   const summary = problems.length || owed.size ? null :

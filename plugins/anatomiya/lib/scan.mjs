@@ -278,7 +278,7 @@ function authorCount(files = [], authors, toCurrent) {
     const path = toCurrent ? toCurrent.get(rel) ?? rel : rel;
     // The same predicate on both sides, or one person plus a bot clears a bar
     // set from a population the bot was excluded from.
-    for (const a of authors.get(path) || []) if (isPerson(a)) who.add(a);
+    for (const a of authors.get(path) ?? []) if (isPerson(a)) who.add(a);
   }
   return who.size;
 }

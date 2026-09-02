@@ -34,9 +34,11 @@ const USAGE = [
 ].join("\n");
 
 /**
- * Every command, and which of the shared arguments it answers to. An argument a
- * command has no use for is refused with the usage rather than accepted and
- * quietly ignored, which is the trade --deep already makes.
+ * Every command: which of the shared arguments it answers to, and its arm. An
+ * argument a command has no use for is refused with the usage rather than
+ * accepted and quietly ignored, which is the trade --deep already makes. The
+ * arm lives here so a verb cannot be declared without one: the dispatch that
+ * ended in a bare else scanned for any verb it did not name.
  */
 const COMMANDS = {
   scan: {

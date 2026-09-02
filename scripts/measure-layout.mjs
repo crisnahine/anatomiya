@@ -35,7 +35,7 @@ import {
   underTestTree,
 } from "../plugins/anatomiya/lib/layout.mjs";
 import { parseAll } from "../plugins/anatomiya/lib/parse.mjs";
-import { baseOf, dirOf, extOf, stemOf } from "../plugins/anatomiya/lib/paths.mjs";
+import { baseOf, byCode, dirOf, extOf, stemOf } from "../plugins/anatomiya/lib/paths.mjs";
 import { scan } from "../plugins/anatomiya/lib/scan.mjs";
 import { MAX_LINES } from "../plugins/anatomiya/lib/render.mjs";
 import { namesakeClause, ROOT_LABEL, runnerCount, RUNNERS_SHOWN, specCount, TESTS_GROUPS, TRUNCATED_LAYOUT } from "../plugins/anatomiya/lib/render-layout.mjs";
@@ -52,10 +52,6 @@ const LEVEL_SUFFIX = " (files at this level)";
 export const LEARNED_ROWS = ["extends_base", "class_base", "module_include", "interface_prefix", "type_alias_prefix"];
 
 // --- the recount ------------------------------------------------------------
-
-// The recount orders the way the roster it reads back does, and `localeCompare`
-// orders case by whatever ICU tables the host was built with.
-const byCode = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
 
 // The mirror index the corpus decides, set once per repository before anything
 // is recounted: it is a fact about the whole tree, like the roster's own.
