@@ -12,6 +12,7 @@
 import { loadTypeScript } from "./semantic.mjs";
 import { readConfig, confinedCompilerHost } from "./tsconfig.mjs";
 import { SEMANTIC_DIMENSIONS } from "./dimensions-semantic.mjs";
+import { crossing } from "./walk.mjs";
 
 process.on("message", async (job) => {
   try {
@@ -36,7 +37,7 @@ process.on("message", async (job) => {
       for (const dim of dims) {
         const out = [];
         try {
-          dim.run({ ts, checker, source }, (h) => out.push({ conforming: !!h.conforming, where: h.where ?? null }));
+          dim.run({ ts, checker, source }, (h) => out.push(crossing(h)));
         } catch {
           // A dimension that threw drops its own key for this file and leaves
           // the rest standing, the same rule the syntactic worker follows.

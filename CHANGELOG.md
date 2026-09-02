@@ -33,6 +33,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   spawn.
 
 ### Changed
+- The fields a site carries across the worker boundary are one table, `HIT_FIELDS` in `walk.mjs`, and both workers build their sites from it. A test reads every field the reducer takes off a site and holds it to the table (B36).
 
 - The sites a branch introduced are decided in
   `plugins/anatomiya/lib/introduced.mjs`, a leaf the check alone imports:

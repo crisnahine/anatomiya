@@ -135,6 +135,23 @@ test("the grammar deciding what a branch introduced reaches no git, no child and
   assert.deepEqual(importers, ["check.mjs"]);
 });
 
+// A field a row adds to a hit crossed the worker boundary only if the copy in
+// `collectHits` named it, and nothing held that copy to what the reducer reads:
+// `nesting` was dropped once and the base-class row stated nothing. The table
+// is one owner now, and this reads every field the reducer takes off a hit.
+test("every field the reducer reads off a site crossed the worker boundary, or is produced beside it", async () => {
+  const { HIT_FIELDS } = await import("../plugins/anatomiya/lib/walk.mjs");
+  const crossing = new Set(HIT_FIELDS.map(([name]) => name));
+  // The obligation rows build their own sites in pairing.mjs, beside the fold,
+  // and `elsewhere` is theirs alone.
+  const beside = new Set(["elsewhere"]);
+  const src = scan(readFileSync(join(LIB, "reduce.mjs"), "utf8"));
+  const read = new Set([...src.matchAll(/\b(?:h|hit)\.([a-zA-Z]+)\b/g)].map((m) => m[1]));
+
+  assert.ok(read.size >= 5, `read only ${[...read].join(", ")}`);
+  assert.deepEqual([...read].filter((f) => !crossing.has(f) && !beside.has(f)).sort(), []);
+});
+
 test("the parse worker does not reach the registry", () => {
   // The worker runs the tree rows off `dimensionsFor` and nothing else: an
   // obligation has no program to run against and a filename row answers off

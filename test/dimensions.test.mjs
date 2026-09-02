@@ -327,6 +327,16 @@ test("a site keeps its conforming flag and its scope, and nothing else", () => {
   assert.deepEqual(hits.k, [{ conforming: false, where: "outer" }]);
 });
 
+test("the crossing keeps an empty nesting and a false group, and drops the node and an empty class", () => {
+  // Each field rides its own predicate: an empty nesting is the top level and
+  // a false group is a body, while an empty class is no vote at all.
+  const hits = collectHits({}, [
+    { key: "k", run: (_program, add) => add({ conforming: true, node: { start: 1 }, where: null, class: "", self: "", nesting: [], group: false }) },
+  ]);
+
+  assert.deepEqual(hits.k, [{ conforming: true, where: null, nesting: [], group: false }]);
+});
+
 test("a registry row with no precision does not ship (C5)", () => {
   // C5: the severity rule reads this field, and a row that forgets it is capped
   // by the same comparison a deliberate `partial` is. Silent, and a claim
