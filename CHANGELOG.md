@@ -7,6 +7,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-09-02
+
+Thirteen findings of a deep-module audit, every one a fact with two owners or an interface nobody
+read, closed as one owner each: the site shape both workers build, the paths a hook names, the
+roster nouns the recount reads back, the guard bag every bridge reads, the checker's job, the
+exported rim, and nine smaller ones. No count, claim or map moved: the check, the scan and a deep
+scan of an oracle repository are byte identical across the two builds after every commit.
+
 ### Fixed
 
 - The A/B harness threw `ReferenceError: label is not defined` on every run that
@@ -2478,7 +2486,8 @@ which are partial; several listed there are not implemented yet.
 - No claim that this catches defects. Measured across ten repositories, 1 of 317 defect review
   comments was preventable by a conventions map.
 
-[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/crisnahine/anatomiya/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/crisnahine/anatomiya/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/crisnahine/anatomiya/compare/v0.4.2...v0.5.0
 [0.4.2]: https://github.com/crisnahine/anatomiya/compare/v0.4.1...v0.4.2
