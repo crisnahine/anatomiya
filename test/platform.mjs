@@ -9,7 +9,7 @@
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-export const WINDOWS = process.platform === "win32";
+const WINDOWS = process.platform === "win32";
 
 /**
  * Skips this run could have avoided, by the name of the guard that took them.

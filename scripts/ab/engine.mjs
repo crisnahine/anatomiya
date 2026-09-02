@@ -26,7 +26,7 @@ export const EFFORT_LEVELS = ["low", "medium", "high", "xhigh", "max"];
  * strips the `[1m]` suffix and asks for the long window with a beta header
  * instead, and these four decide whether it gets one.
  */
-export const OVERRIDES = new Set([
+const OVERRIDES = new Set([
   "ANTHROPIC_MODEL",
   "ANTHROPIC_DEFAULT_MODEL",
   "ANTHROPIC_SMALL_FAST_MODEL",

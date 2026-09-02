@@ -8,7 +8,7 @@
  * port and publishes no JS API at all.
  */
 
-export const SEMANTIC_MIN_MAJOR = 5;
+const SEMANTIC_MIN_MAJOR = 5;
 
 /**
  * The checker, or null.

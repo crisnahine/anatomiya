@@ -41,6 +41,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Each parse bridge and the checker refuse a guard name their own defaults do not carry, before anything is spawned, and the checker merges a partial guard bag over its defaults (B37).
 - `parseRuby` no longer carries the `parsed`, `crashed` and `skipped` counters or the `onFile` streaming mode; the results are the record (B38).
 - The checker's worker is a shell over `semantic-job.mjs`, whose `runJob` and `measureResolution` are reached in process by a namesake test (B39).
+- Twenty-nine exported names nobody read outside their own file are private, and a guard holds every export to a reader (A50).
 
 - The sites a branch introduced are decided in
   `plugins/anatomiya/lib/introduced.mjs`, a leaf the check alone imports:

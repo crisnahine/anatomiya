@@ -41,7 +41,7 @@ const lockfileIn = (root) => `${relative(ROOT, root) || "."}/${REL.anatomiya}/pa
  * same reason. The gate runs on the Linux job either way, so what a Windows
  * checkout loses is coverage rather than the check.
  */
-export const RUNNABLE = process.platform !== "win32";
+const RUNNABLE = process.platform !== "win32";
 
 /**
  * The fields a lockfile's own root entry carries over from the manifest.

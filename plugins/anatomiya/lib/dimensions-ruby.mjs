@@ -59,7 +59,7 @@ export const isRubyError = (base) => base.startsWith("Errno::") || RUBY_ERROR.ha
  * namespace is written: `module Api; module V1; class BaseController` and
  * `class Api::V1::BaseController` both read back the same.
  */
-export const qualifiedName = (ctx, n) =>
+const qualifiedName = (ctx, n) =>
   [...ctx.stack.filter((x) => x.t === "class" || x.t === "module"), n]
     .map((x) => constName(x.constant_path) ?? x.name)
     .filter(Boolean)
@@ -80,7 +80,7 @@ export const qualifiedName = (ctx, n) =>
  * `body` includes the site's own body, which is what an `include` is evaluated
  * in; a superclass is evaluated outside it, so that caller asks without.
  */
-export function nestingOf(ctx, body = null) {
+function nestingOf(ctx, body = null) {
   const bodies = ctx.stack.filter((x) => x.t === "class" || x.t === "module");
   if (body && !bodies.includes(body)) bodies.push(body);
   const scopes = [];

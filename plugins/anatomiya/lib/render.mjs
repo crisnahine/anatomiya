@@ -229,7 +229,7 @@ export function splitUncovered(uncovered, orphaned) {
  * the fold count moved with it: two lines of the file that loads on every turn,
  * because the machine was busy. The other three are facts about the tree.
  */
-export const MACHINE_DEPENDENT = new Set(["crashed"]);
+const MACHINE_DEPENDENT = new Set(["crashed"]);
 
 /**
  * The four ways a file goes unexamined, named apart because the reader's next
