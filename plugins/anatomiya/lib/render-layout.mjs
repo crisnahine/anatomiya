@@ -39,11 +39,14 @@ export const ROOT_LABEL = "(repository root)";
 
 const runnerLabel = (runner) => RUNNER_LABELS[runner] ?? runner;
 
+/** A runner group's count with its noun: `4 RSpec specs`, or `4 test files` for the runner nothing named. */
 export const specCount = (n, runner) =>
   runner === UNNAMED_RUNNER ? plural(n, "test file") : plural(n, `${runnerLabel(runner)} spec`);
 
-// The tests line spells the unit once, on the group that sets it, and the
-// groups after it are read off that one.
+/**
+ * The count of a later group on the tests line, which spells the unit once, on
+ * the group that sets it, and reads the groups after it off that one.
+ */
 export const runnerCount = (n, runner) =>
   runner === UNNAMED_RUNNER ? plural(n, "test file") : `${n} ${runnerLabel(runner)}`;
 
@@ -134,6 +137,13 @@ export function kindsLine(kinds) {
 }
 
 const LAYOUT_HEADING = "## What lives where";
+
+/**
+ * The one layout line that carries no count. The two harnesses that read a
+ * layout line back take it from here, since a reworded sentence spelled twice
+ * would fail every truncated repository.
+ */
+export const TRUNCATED_LAYOUT = "layout: not counted, the scan was truncated";
 
 // A test root names two runners and counts the rest, the way the extension
 // clause names two extensions: the third one is not what the line is for.
@@ -274,7 +284,7 @@ export function renderLayout(layout, budget = Infinity) {
   if (!layout) return [];
   if (budget < LAYOUT_FRAME + 1) return [];
   if (layout.truncated) {
-    return [LAYOUT_HEADING, "", "layout: not counted, the scan was truncated", ""];
+    return [LAYOUT_HEADING, "", TRUNCATED_LAYOUT, ""];
   }
   if (layout.roots.length === 0 && layout.tests.length === 0) return [];
 
@@ -327,7 +337,7 @@ export function renderLayout(layout, budget = Infinity) {
  */
 export function layoutSummary(layout, areas = []) {
   if (!layout) return null;
-  if (layout.truncated) return "layout: not counted, the scan was truncated";
+  if (layout.truncated) return TRUNCATED_LAYOUT;
 
   const testsPart =
     layout.tests.length === 0

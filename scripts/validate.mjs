@@ -379,15 +379,6 @@ function lockfileDrift(root, pluginRoot, at, readJson) {
   return problems;
 }
 
-/**
- * The five kinds of thing a plugin can install: the manifest key that names
- * one, and where the loader looks when the manifest does not.
- *
- * One list, because `declaredPathProblems` walked its own copy of the same five
- * keys and `scripts/shipped.mjs` reads this one for the same reason: three
- * hand-kept copies of one fact is the shape this repository keeps writing tests
- * against.
- */
 const PLUGIN_PATH = /(["'])\$\{CLAUDE_PLUGIN_ROOT\}\/([^"']+)\1|\$\{CLAUDE_PLUGIN_ROOT\}\/([^"'\s`)]+)/g;
 
 /**
@@ -410,6 +401,15 @@ export function pluginPaths(text) {
   return named;
 }
 
+/**
+ * The five kinds of thing a plugin can install: the manifest key that names
+ * one, and where the loader looks when the manifest does not.
+ *
+ * One list, because `declaredPathProblems` walked its own copy of the same five
+ * keys and `scripts/shipped.mjs` reads this one for the same reason: three
+ * hand-kept copies of one fact is the shape this repository keeps writing tests
+ * against.
+ */
 export const LOADABLE = [
   ["hooks", "hooks/hooks.json"],
   ["commands", "commands"],

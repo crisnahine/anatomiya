@@ -136,20 +136,28 @@ test("the grammar deciding what a branch introduced reaches no git, no child and
 });
 
 // A field a row adds to a hit crossed the worker boundary only if the copy in
-// `collectHits` named it, and nothing held that copy to what the reducer reads:
+// `collectHits` named it, and nothing held that copy to what a reader reads:
 // `nesting` was dropped once and the base-class row stated nothing. The table
-// is one owner now, and this reads every field the reducer takes off a hit.
-test("every field the reducer reads off a site crossed the worker boundary, or is produced beside it", async () => {
+// is one owner now, and this reads every field the two readers take off a
+// hit. Each reader names the one field that is its own: the obligation rows
+// build their sites in pairing.mjs, beside the fold, and `elsewhere` is
+// theirs; the check runs the rows in process and keeps the `node`, which never
+// crosses. The aliases are the ones each file spells, `at` being a grouped
+// site the fold builds from a hit.
+test("every field a reader takes off a site crossed the worker boundary, or is that reader's own", async () => {
   const { HIT_FIELDS } = await import("../plugins/anatomiya/lib/walk.mjs");
-  const crossing = new Set(HIT_FIELDS.map(([name]) => name));
-  // The obligation rows build their own sites in pairing.mjs, beside the fold,
-  // and `elsewhere` is theirs alone.
-  const beside = new Set(["elsewhere"]);
-  const src = scan(readFileSync(join(LIB, "reduce.mjs"), "utf8"));
-  const read = new Set([...src.matchAll(/\b(?:h|hit)\.([a-zA-Z]+)\b/g)].map((m) => m[1]));
+  const crossed = new Set(HIT_FIELDS.map(([name]) => name));
+  const readers = [
+    ["reduce.mjs", /\b(?:h|hit|at)\.([a-zA-Z]+)\b/g, new Set(["elsewhere"])],
+    ["introduced.mjs", /\b(?:h|hit)\.([a-zA-Z]+)\b/g, new Set(["node"])],
+  ];
+  for (const [file, alias, own] of readers) {
+    const src = scan(readFileSync(join(LIB, file), "utf8"));
+    const read = new Set([...src.matchAll(alias)].map((m) => m[1]));
 
-  assert.ok(read.size >= 5, `read only ${[...read].join(", ")}`);
-  assert.deepEqual([...read].filter((f) => !crossing.has(f) && !beside.has(f)).sort(), []);
+    assert.ok(read.size >= 4, `${file} reads only ${[...read].join(", ")}`);
+    assert.deepEqual([...read].filter((f) => !crossed.has(f) && !own.has(f)).sort(), [], file);
+  }
 });
 
 // The filename row's sentence was rebuilt in the check from the template

@@ -38,12 +38,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - One function in `scripts/validate.mjs` reads the paths a text names as `${CLAUDE_PLUGIN_ROOT}/...`, and the shipped-set gate and the hook test take theirs from it. A bare path ends at a subshell's parenthesis or a backtick in both gates now (A49).
 - The Ruby hit's `node` and a call's argument list are built in `ruby-walk.mjs` and imported by both Ruby registries (C36).
 - The check words the filename row's claim through `claimFor`, the row's owner, and holds no template rule of its own (C37).
-- Each parse bridge and the checker refuse a guard name their own defaults do not carry, before anything is spawned, and the checker merges a partial guard bag over its defaults (B37).
+- Each parse bridge and the checker read a guard bag through one rule, `guardsOver` in `limits.mjs`: a name the defaults do not carry is refused before anything is spawned, and a partial bag keeps the other defaults (B37).
 - `parseRuby` no longer carries the `parsed`, `crashed` and `skipped` counters or the `onFile` streaming mode; the results are the record (B38).
 - The checker's worker is a shell over `semantic-job.mjs`, whose `runJob` and `measureResolution` are reached in process by a namesake test (B39).
 - Twenty-nine exported names nobody read outside their own file are private, and a guard holds every export to a reader (A50).
 - The binary's verbs are one table, each carrying its own arm; a verb added to the table with no arm no longer falls through to a scan (A51).
-- The corpus harness fails a run whose layout line it could not read the roots count off, exempting the truncation sentence (A52).
+- The corpus harness fails a run whose layout line it could not read the roots count off, exempting the truncation sentence, which both harnesses now read off `render-layout.mjs` rather than spelling for themselves (A52).
 - The docs gate is a function, `checkDocs`, so importing a reader from it runs nothing (A53).
 - The lock gate's npm argv is one exported list, read back through a stub npm: offline under `--check`, online for a write (B40).
 - One callee reader in `dimensions-jsx.mjs`, answering a name or null (C38).

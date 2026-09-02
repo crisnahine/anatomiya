@@ -45,6 +45,7 @@ export function notInstalledMessage(remedy) {
 }
 
 import { guardedChild } from "./child.mjs";
+import { guardsOver } from "./limits.mjs";
 import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 
@@ -96,15 +97,11 @@ export function runSemantic(
   files,
   { keys = null, guards: given = null, workerPath = WORKER, cwd = tmpdir() } = {}
 ) {
-  // The bag over the defaults, the way both parse bridges merge theirs: taken
-  // whole, one naming only `idleMs` armed the build window with nothing, and a
-  // name the defaults do not carry is refused rather than run around.
-  const guards = { ...SEMANTIC_GUARDS };
-  for (const [k, v] of Object.entries(given ?? {})) {
-    if (!(k in SEMANTIC_GUARDS)) throw new TypeError(`${k} is not one of the checker guards: ${Object.keys(SEMANTIC_GUARDS).join(", ")}`);
-    if (v !== undefined) guards[k] = v;
-  }
   return new Promise((resolve) => {
+    // Inside the promise so a bad bag rejects, the way the two parse bridges
+    // refuse theirs. Taken whole, a bag naming only `idleMs` armed the build
+    // window with nothing.
+    const guards = guardsOver(SEMANTIC_GUARDS, given, "checker");
     const records = new Map();
     let config = null;
     let resolution = { resolved: 0, total: 0 };

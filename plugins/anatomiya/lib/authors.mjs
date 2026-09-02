@@ -215,8 +215,11 @@ async function logStream(root, onField) {
   );
 }
 
-// GitHub mints `[bot]` into the local part, and brackets are illegal in a real
-// unquoted address, so this excludes nothing a person can be called.
+/**
+ * Whether an author email is a person's. GitHub mints `[bot]` into the local
+ * part, and brackets are illegal in a real unquoted address, so this excludes
+ * nothing a person can be called.
+ */
 export const isPerson = (email) => !email.includes("[bot]");
 
 /**
