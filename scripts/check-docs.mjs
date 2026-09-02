@@ -67,7 +67,6 @@ const readJson = (rel) => {
     return { value: null, problem: missing ? "is missing, so nothing says what version this plugin is at" : `could not be read: ${err.message}` };
   }
 };
-const problems = [];
 
 /**
  * The intake table, as rows.
@@ -207,10 +206,6 @@ export function readGlossary(text) {
   return { terms, problems };
 }
 
-function claim(where, ok, detail) {
-  if (!ok) problems.push(`${where}: ${detail}`);
-}
-
 /**
  * Every file of this repository git can see, or none where git cannot say.
  *
@@ -293,6 +288,8 @@ const RECORDS_THE_PAST = [/^docs\/measurements\//, /^docs\/research\//];
 const CHANGELOG = /(^|\/)CHANGELOG\.md$/;
 
 /** The section a changelog's next release ships, or nothing where it has none. */
+const UNRELEASED = "## [Unreleased]";
+
 const unreleased = (text) => {
   const start = text.indexOf(UNRELEASED);
   if (start === -1) return "";
@@ -331,393 +328,411 @@ export const READS = [
   "docs/dimension-intake.md",
   "docs/measurements",
 ];
-const absent = READS.filter((rel) => !existsSync(join(root, rel)));
-if (absent.length > 0) {
-  for (const rel of absent) problems.push(`${rel}: is missing, and this gate is every claim it makes`);
-  if (invokedAs(import.meta.url)) {
+/**
+ * Every claim, run once, and what it found.
+ *
+ * A function rather than the module's own top level: importing a reader here
+ * used to run the whole gate, so the two tests that reach one spawned the
+ * binary for `--help`, ran `git ls-files` and read every document before
+ * their first assertion. `problems` and `claim` live inside it so a second
+ * call answers for itself.
+ */
+export function checkDocs() {
+  const problems = [];
+  const claim = (where, ok, detail) => {
+    if (!ok) problems.push(`${where}: ${detail}`);
+  };
+
+  const absent = READS.filter((rel) => !existsSync(join(root, rel)));
+  if (absent.length > 0) {
+    for (const rel of absent) problems.push(`${rel}: is missing, and this gate is every claim it makes`);
+    return { problems, owed: new Map(), summary: null };
+  }
+
+  // --- the dimension registry -------------------------------------------------
+
+  // Obligations and filename rows count here too. A checker blind to a whole
+  // dimension class would pass while the README undercounted by nine, which is
+  // the drift this script exists to catch.
+  const total = REGISTRY.length;
+  const js = rowsForLangs(["js"]).length;
+  const jsx = rowsForLangs(["jsx"]).length;
+  const ruby = rowsForLangs(["ruby"]).length;
+  const obligations = rowsOfKind("pairing").length;
+
+  // Section 4 of the walkthrough counts the rows asked of a file, so the
+  // obligations are counted apart from them there: they are one question about
+  // two paths rather than a question asked of a site.
+  const shipping = total - obligations;
+  const rubyRows = ruby - pairingsFor(["ruby"]).length;
+  const typeChecked = REGISTRY.filter((d) => d.tier === "semantic").length;
+
+  // Prose spells a count of one as a word, and a phrasing nothing parses is a
+  // number that drifts in silence, which is what this file is for.
+  const NUMERALS = new Map([["one", 1], ["two", 2], ["three", 3]]);
+  const counted = (word) => NUMERALS.get(word) ?? Number(word);
+
+  /** The heading a changelog keeps for the next change, spelled once. */
+
+  // A released entry states the number that shipped in it and stays true forever.
+  // Reading the whole changelog made every past release a claim about today, so
+  // the first number that ever changed would fail three entries that are correct.
+  //
+  // Its absence is not reported here: the version loop below asks every plugin's
+  // changelog for the same heading, and two sentences about one missing heading
+  // is one more than a reader needs.
+  for (const rel of ["README.md", "docs/how-it-works.md", "CHANGELOG.md"]) {
+    const text = rel === "CHANGELOG.md" ? unreleased(read(rel)) : read(rel);
+    for (const m of text.matchAll(/(\d+)\s+dimensions/g)) {
+      claim(rel, Number(m[1]) === total, `says "${m[1]} dimensions", the registry holds ${total}`);
+    }
+    for (const m of text.matchAll(/(\d+)\s+for\s+JavaScript(?!\s+and)/g)) {
+      claim(rel, Number(m[1]) === js, `says "${m[1]} for JavaScript", the registry holds ${js}`);
+    }
+    for (const m of text.matchAll(/(\d+)\s+reachable\s+in\s+JSX/g)) {
+      claim(rel, Number(m[1]) === jsx, `says "${m[1]} reachable in JSX", the registry holds ${jsx}`);
+    }
+    for (const m of text.matchAll(/(\d+)\s+for\s+Ruby/g)) {
+      claim(rel, Number(m[1]) === ruby, `says "${m[1]} for Ruby", the registry holds ${ruby}`);
+    }
+    for (const m of text.matchAll(/(\d+)\s+file-to-file obligations/g)) {
+      claim(rel, Number(m[1]) === obligations, `says "${m[1]} file-to-file obligations", the registry holds ${obligations}`);
+    }
+    for (const m of text.matchAll(/(\d+)\s+ship\b/g)) {
+      claim(rel, Number(m[1]) === shipping, `says "${m[1]} ship", the registry holds ${shipping} outside the obligations`);
+    }
+    for (const m of text.matchAll(/(\d+)\s+that speak Ruby/g)) {
+      claim(rel, Number(m[1]) === rubyRows, `says "${m[1]} that speak Ruby", the registry holds ${rubyRows} outside the obligations`);
+    }
+    for (const m of text.matchAll(/plus the (\w+) type-checked rows?/g)) {
+      claim(rel, counted(m[1]) === typeChecked, `says "${m[1]} type-checked", the registry holds ${typeChecked}`);
+    }
+  }
+
+  // A dimension either states its inverse or records that it may not. An absent
+  // field is indistinguishable from one nobody classified.
+  for (const d of REGISTRY) {
+    claim(
+      `${REL.anatomiya}/lib/dimensions.mjs`,
+      d.counterClaim === null || typeof d.counterClaim === "string",
+      `${d.key} has no counterClaim decision, which reads the same as refused`
+    );
+  }
+
+  // --- the build contract -----------------------------------------------------
+
+  // Three files state this count, and they have disagreed with each other: the
+  // table held 55 rows, the README said 55 and CONTRIBUTING said 54. It is the
+  // one number in the docs that moves on every substantive change, so all three
+  // are read against the table rather than against one another.
+  const rows = [...read("DECISIONS.md").matchAll(/^\| [A-H]\d+ \|/gm)].length;
+  for (const rel of ["README.md", "docs/why.md", "CONTRIBUTING.md"]) {
+    for (const m of read(rel).matchAll(/(\d+)\s+numbered (?:decisions|rows)/g)) {
+      claim(rel, Number(m[1]) === rows, `says "${m[1]} numbered", DECISIONS.md holds ${rows} rows`);
+    }
+  }
+
+  // A row whose cells outnumber the header's is a row whose tail GitHub drops,
+  // silently: an unescaped `|` inside a code span splits the cell it sits in, and
+  // the Status column falls off the end. Three rows had it at once, one of them a
+  // whole `**done**` list. The escape is `\|`, which the file already uses.
+  for (const [i, line] of read("DECISIONS.md").split(/\r?\n/).entries()) {
+    if (!/^\| [A-H]\d+ \|/.test(line)) continue;
+    // No fallback: the filter above took only lines starting `| A1 |`, and one of
+    // those holds at least two unescaped pipes.
+    const cells = line.match(/(?<!\\)\|/g).length;
+    claim(
+      "DECISIONS.md",
+      cells === 5,
+      `row ${/^\| ([A-H]\d+) \|/.exec(line)[1]} on line ${i + 1} has ${cells - 1} cells, not 4: escape a \`|\` inside a code span as \`\\|\``
+    );
+  }
+
+  // A row number appearing twice is a row nobody can cite.
+  const ids = [...read("DECISIONS.md").matchAll(/^\| ([A-H]\d+) \|/gm)].map((m) => m[1]);
+  claim("DECISIONS.md", new Set(ids).size === ids.length, "two rows share a number");
+
+  // --- the gate table ---------------------------------------------------------
+
+  const gateText = read("README.md") + read("docs/how-it-works.md");
+  claim(
+    "docs",
+    /\b0\.90\b/.test(gateText),
+    "no document states the 0.90 bar, which is the one number that never moves"
+  );
+  claim(`${REL.anatomiya}/lib/reduce.mjs`, GATES.minRatio === 0.9, `minRatio is ${GATES.minRatio}, and it is fixed at 0.90 by decision`);
+
+  // Anything the gates stopped reading must stop being described.
+  for (const dead of ["minCandidates", "minAuthors", "maxSingleFileShare"]) {
+    claim(`${REL.anatomiya}/lib/reduce.mjs`, GATES[dead] === undefined, `${dead} is back in GATES; it was replaced by a repository-relative rule`);
+    claim("docs", !gateText.includes(dead), `the docs still name ${dead}, which the gates no longer read`);
+  }
+
+  // --- the caveat codes -------------------------------------------------------
+
+  // The codes became a public surface the day `--format json` printed them, so
+  // the table documenting them is held to the code in both directions: an
+  // undocumented code is a field a CI job cannot branch on, and a documented one
+  // that no longer exists is a branch nothing will ever take.
+  function caveatSection(text) {
+    const start = text.indexOf("### The caveat codes");
+    claim("docs/how-it-works.md", start !== -1, "has no ### The caveat codes section to read");
+    if (start === -1) return "";
+    // To the next heading of either level, so the window is this subsection
+    // rather than whatever is written after it. It is the last of section 8
+    // today, which is the only reason stopping at the next `##` read the same.
+    const next = text.slice(start).search(/\n#{2,3} /);
+    return next === -1 ? text.slice(start) : text.slice(start, start + next);
+  }
+
+  const codes = new Set(Object.values(CAVEATS));
+  const caveatText = caveatSection(read("docs/how-it-works.md"));
+  const documented = new Set([...caveatText.matchAll(/^\| `([a-z-]+)` \|/gm)].map((m) => m[1]));
+  for (const code of codes) {
+    claim("docs/how-it-works.md", documented.has(code), `does not document the caveat code ${code}`);
+  }
+  for (const code of documented) {
+    claim("docs/how-it-works.md", codes.has(code), `documents ${code}, which is not a caveat code`);
+  }
+  // The prose count is the one thing the two directions above cannot catch: a
+  // code added to both the record and the table still leaves the sentence over it
+  // stating the old number. A RegExp because the sentence wraps mid-phrase.
+  claim(
+    "docs/how-it-works.md",
+    new RegExp(`There\\s+are ${codes.size}\\.`).test(caveatText),
+    `does not say there are ${codes.size} caveat codes`
+  );
+
+  // --- what a scan leaves in the working tree ---------------------------------
+
+  // The README spells these by hand, and nothing read them: adding another thing
+  // a scan writes without adding its line leaves a reader with a dirty
+  // `git status` and a document that says the opposite.
+  for (const line of EXCLUDE_LINES) {
+    claim("README.md", read("README.md").includes(`'${line}'`), `does not tell a reader to exclude ${line}`);
+  }
+
+  // --- the command surface ----------------------------------------------------
+
+  const usage = execFileSync(process.execPath, [join(root, `${REL.anatomiya}/bin/anatomiya.mjs`), "--help"], {
+    encoding: "utf8",
+  });
+  const commands = [...usage.matchAll(/anatomiya\s+(\w+)/g)].map((m) => m[1]);
+  const unique = [...new Set(commands)];
+
+  for (const cmd of unique) {
+    let file;
+    try {
+      file = read(`${REL.anatomiya}/commands/${cmd}.md`);
+    } catch {
+      problems.push(`${REL.anatomiya}/commands/: ${cmd} is in the usage line and has no command file`);
+      continue;
+    }
+    claim(`${REL.anatomiya}/commands/${cmd}.md`, file.trim().length > 0, "is empty");
+  }
+
+  const readme = read("README.md");
+  for (const cmd of unique) {
+    claim("README.md", readme.includes(`/anatomiya:${cmd}`), `does not mention /anatomiya:${cmd}`);
+  }
+
+  // --- the glossary -----------------------------------------------------------
+
+  // Shape only. The one claim here that reaches the code is the entry spelling
+  // out a closed set the code owns: a sixth parse outcome reaches a reader as a
+  // word the glossary does not hold, and nothing else would say so.
+  const glossary = readGlossary(read("CONTEXT.md"));
+  for (const problem of glossary.problems) claim("CONTEXT.md", false, problem);
+
+  const unexamined = glossary.terms.get("Unexamined");
+  claim("CONTEXT.md", unexamined !== undefined, "has no Unexamined entry, which is where a file's outcomes are named");
+  if (unexamined) {
+    const unnamed = PARSE_OUTCOMES.filter((outcome) => !new RegExp(`\\b${outcome}\\b`).test(unexamined.body));
+    claim("CONTEXT.md", unnamed.length === 0, `Unexamined does not name ${unnamed.join(", ")}, which parse.mjs counts a file as`);
+  }
+
+  // --- the intake table -------------------------------------------------------
+
+  // A dimension that ships without an intake row is one nobody decided to build:
+  // the collapse, the rename and the drop were never asked about it. The README's
+  // dimension count has already drifted once, and this is the same failure with a
+  // worse consequence, so the table is checked rather than trusted.
+  const intake = readIntake(read("docs/dimension-intake.md"));
+  for (const p of intake.problems) claim("docs/dimension-intake.md", false, p);
+
+  // Two rows claiming one entry print the same three numbers twice under two
+  // names, which is the duplication the collapse exists to stop.
+  const absorbedBy = new Map();
+  for (const r of intake.rows) {
+    for (const entry of r.absorbs) {
+      const previous = absorbedBy.get(entry);
+      claim("docs/dimension-intake.md", previous === undefined, `"${entry}" is absorbed by both ${previous} and ${r.key ?? "a dropped row"}`);
+      absorbedBy.set(entry, r.key ?? "a dropped row");
+    }
+  }
+
+  // --- the sites a new registry key has to reach ------------------------------
+
+  const sites = {
+    defaults: new Set(Object.keys(JSON.parse(read(`${REL.anatomiya}/lib/model-defaults.json`)))),
+    intake: new Map(intake.rows.filter((r) => r.key).map((r) => [r.key, r])),
+    dropped: new Set(intake.rows.filter((r) => r.status === "dropped" && r.key).map((r) => r.key)),
+    eligible: new Set(ELIGIBLE),
+    refused: new Set(REFUSED),
+  };
+
+  const owed = new Map();
+  for (const row of REGISTRY) {
+    const missing = sitesOwed(row, sites);
+    if (missing.length) owed.set(row.key, missing);
+  }
+
+  // --- runtime dependencies ---------------------------------------------------
+
+  // SECURITY.md said "oxc-parser is the only runtime dependency" for as long as
+  // there were two of them. A reader deciding whether to run this on a work
+  // repository is reading exactly that sentence, so the set is checked rather
+  // than trusted.
+  // The plugin's own manifest, not the marketplace's: the root declares the
+  // workspaces and no dependency of its own, so read from there the count was
+  // zero and every document that names one still said two.
+  const deps = Object.keys(JSON.parse(read(`${REL.anatomiya}/package.json`)).dependencies ?? {});
+  for (const doc of ["SECURITY.md", "README.md"]) {
+    const text = read(doc);
+    for (const dep of deps) claim(doc, text.includes(dep), `does not name the runtime dependency ${dep}`);
+    claim(doc, !/only runtime dependency/.test(text), `says "only runtime dependency" with ${deps.length} of them`);
+  }
+
+  // --- committed documents carry no local path --------------------------------
+
+  // The first A/B result committed here carried /Users/<name>/Documents/... into
+  // a public repository, in its title and in its table. Where a clone sat on the
+  // machine that ran something is not part of the record, and nobody else can
+  // check it. Measurements are generated, so the generator was fixed too; this is
+  // the net under it.
+  for (const rel of readdirSync(join(root, "docs/measurements")).filter((f) => f.endsWith(".md"))) {
+    const text = read(join("docs/measurements", rel));
+    const hit = text.match(/\/Users\/[^\s/]+|\/home\/[^\s/]+|[A-Z]:\\Users\\[^\s\\]+/);
+    claim(`docs/measurements/${rel}`, !hit, `carries the local path ${hit ? hit[0] : ""}`);
+  }
+
+
+  // --- committed documents name paths this repository has ---------------------
+
+  // Moving two plugins under `plugins/` left 68 sentences pointing at files that
+  // had gone, in the contributor guide, the security notes and the build
+  // contract. Nothing read them, because a number that drifts fails a gate here
+  // and a path that drifts failed nothing.
+  // Git's list rather than a walk, because the local working directories a tool
+  // leaves behind are full of paths that were never this repository's, and
+  // because a tree git cannot answer for is not this repository: the gate runs on
+  // a checkout, and there is nothing there to check a path against.
+  const tracked = new Set(repositoryFiles());
+  // The same leak the measurements are checked for, from the other kind of
+  // document. A generated one never spells a placeholder, so the shape of a home
+  // directory is enough there; a hand-written one does, and `/Users/me/code/app`
+  // in the README is how the output is shown to a reader. What may never ship is
+  // this machine's own home, which is the one that got into a public repository
+  // before: a note written while reading an installed build carried it nine
+  // times, and the net under the generated documents did not reach it.
+  const HOME = homedir();
+  for (const rel of tracked) {
+    if (!rel.endsWith(".md") || RECORDS_THE_PAST.some((r) => r.test(rel))) continue;
+    const text = read(rel);
+    if (HOME && HOME.length > 3) claim(rel, !text.includes(HOME), "carries the path of the machine it was written on");
+    for (const { spelled, now, several } of pathsThatMoved(CHANGELOG.test(rel) ? unreleased(text) : text, rel, tracked)) {
+      claim(rel, false, several ? `names \`${spelled}\`, which is these files now: ${now}` : `names \`${spelled}\`, which is \`${now}\` now`);
+    }
+  }
+
+  // --- versions ---------------------------------------------------------------
+
+  // Every plugin the marketplace can release, not only the one at the root: the
+  // second plugin's version answered to nothing but semver, so it could move to a
+  // number no changelog described and the tag would be the first to say so, after
+  // it was pushed. `notesFor` is what the release itself runs, so a version that
+  // passes here is one that will tag.
+  for (const release of RELEASES) {
+    // Read through a guard the rest of this file does not need: every other path
+    // here reads a file this repository is known to have, and these two are the
+    // ones a release moves. One that is not there, or one that does not parse,
+    // threw past the sentence naming it, which is the one thing the author needed.
+    const manifest = readJson(release.manifests[0]);
+    claim(release.manifests[0], manifest.problem === null, manifest.problem ?? "");
+
+    // Asked whatever the manifest did, so a plugin with two things wrong is told
+    // both at once rather than one release at a time. A changelog that is not
+    // there is that, rather than one missing a heading.
+    const changelog = readOr(release.changelog, null);
+    claim(release.changelog, changelog !== null, "is missing, so there is nothing to release this plugin with");
+    if (changelog !== null) {
+      claim(release.changelog, changelog.includes(UNRELEASED), `has no ${UNRELEASED} heading to write the next change under`);
+    }
+    // `null` parses, and is not a manifest. Read as "did not parse" it said
+    // nothing here and then threw on the summary line, which names no file.
+    claim(release.manifests[0], isObject(manifest.value), "parses to something that is not a manifest");
+    if (!isObject(manifest.value)) continue;
+
+    // The version has to be there, and be a version, before it can be matched
+    // against anything: a field that is not one reaches the tag resolver and the
+    // reader is told a namespace is unclaimed while the fault is two files away.
+    const version = manifest.value.version;
+    claim(release.manifests[0], typeof version === "string", "has no version");
+    if (typeof version !== "string") continue;
+    claim(release.manifests[0], SEMVER.test(version), `version is not semver: ${version}`);
+    if (!SEMVER.test(version)) continue;
+
+    // The heading the link definitions at the bottom point at. `sectionFor` reads
+    // the number as a token on any `##` line, so an unbracketed heading is a
+    // section to it and the link under it dangles with nothing saying so.
+    if (changelog !== null) {
+      claim(release.changelog, changelog.includes(`## [${version}]`), `has no "## [${version}]" heading for the version its manifest states`);
+    }
+
+    // `notesFor` answers a missing changelog in its own wording, and the author
+    // has one file to put back either way.
+    if (changelog === null) continue;
+
+    const answered = notesFor(root, tagFor(release, version));
+    // Reported against the file the author has to edit: the changelog problems
+    // `notesFor` returns are about the changelog, whatever read them. Its
+    // sentences name that file, and `claim` names it again, so the leading path
+    // comes back off before it is printed under itself.
+    const about =
+      [release.changelog, ...release.manifests].find((rel) => answered.problem?.startsWith(`${rel} `) || answered.problem?.includes(`${rel} says`)) ??
+      release.manifests[0];
+    const said = answered.problem?.startsWith(`${about} `) ? answered.problem.slice(about.length + 1) : answered.problem;
+    claim(about, answered.problem === null, said ?? "");
+  }
+
+  // ----------------------------------------------------------------------------
+
+  // This file exports `readIntake` as well as running as a script, and a bare
+  // `process.exit(1)` at module scope would take the test process with it the
+  // moment a doc claim failed.
+
+  // Only where nothing failed: the line reads a manifest's version, and a
+  // manifest that is not one was already claimed above.
+  const summary = problems.length || owed.size ? null :
+    `docs match the code: ${total} dimensions (${js} js, ${jsx} jsx, ${ruby} ruby, ${obligations} of them file-to-file obligations), ` +
+    `${unique.length} commands, ${codes.size} caveat codes, ${deps.length} runtime dependencies, ` +
+    `${intake.rows.length} intake rows, ${RELEASES.map((r) => `${r.plugin} ${JSON.parse(read(r.manifests[0])).version}`).join(" and ")}`;
+  return { problems, owed, summary };
+}
+
+if (invokedAs(import.meta.url)) {
+  const { problems, owed, summary } = checkDocs();
+  if (problems.length || owed.size) {
     for (const p of problems) console.error(`::error::${p}`);
+    // One line per site, in key order, each naming the file and the move: the
+    // list an author works through, and the annotations a pull request shows.
+    const unmet = [...owed.values()].flat();
+    for (const [key, missing] of owed) {
+      for (const m of missing) console.error(`::error::${m.site}: ${key} has ${m.missing}; ${m.remedy}`);
+    }
+    if (problems.length) console.error(`\n${problems.length} claim(s) in the documentation do not match the code.`);
+    if (owed.size) console.error(`\n${owed.size} registry key(s) still owe ${unmet.length} of the sites a row has to reach.`);
     process.exit(1);
   }
+  console.log(summary);
 }
-
-// --- the dimension registry -------------------------------------------------
-
-// Obligations and filename rows count here too. A checker blind to a whole
-// dimension class would pass while the README undercounted by nine, which is
-// the drift this script exists to catch.
-const total = REGISTRY.length;
-const js = rowsForLangs(["js"]).length;
-const jsx = rowsForLangs(["jsx"]).length;
-const ruby = rowsForLangs(["ruby"]).length;
-const obligations = rowsOfKind("pairing").length;
-
-// Section 4 of the walkthrough counts the rows asked of a file, so the
-// obligations are counted apart from them there: they are one question about
-// two paths rather than a question asked of a site.
-const shipping = total - obligations;
-const rubyRows = ruby - pairingsFor(["ruby"]).length;
-const typeChecked = REGISTRY.filter((d) => d.tier === "semantic").length;
-
-// Prose spells a count of one as a word, and a phrasing nothing parses is a
-// number that drifts in silence, which is what this file is for.
-const NUMERALS = new Map([["one", 1], ["two", 2], ["three", 3]]);
-const counted = (word) => NUMERALS.get(word) ?? Number(word);
-
-/** The heading a changelog keeps for the next change, spelled once. */
-const UNRELEASED = "## [Unreleased]";
-
-// A released entry states the number that shipped in it and stays true forever.
-// Reading the whole changelog made every past release a claim about today, so
-// the first number that ever changed would fail three entries that are correct.
-//
-// Its absence is not reported here: the version loop below asks every plugin's
-// changelog for the same heading, and two sentences about one missing heading
-// is one more than a reader needs.
-for (const rel of ["README.md", "docs/how-it-works.md", "CHANGELOG.md"]) {
-  const text = rel === "CHANGELOG.md" ? unreleased(read(rel)) : read(rel);
-  for (const m of text.matchAll(/(\d+)\s+dimensions/g)) {
-    claim(rel, Number(m[1]) === total, `says "${m[1]} dimensions", the registry holds ${total}`);
-  }
-  for (const m of text.matchAll(/(\d+)\s+for\s+JavaScript(?!\s+and)/g)) {
-    claim(rel, Number(m[1]) === js, `says "${m[1]} for JavaScript", the registry holds ${js}`);
-  }
-  for (const m of text.matchAll(/(\d+)\s+reachable\s+in\s+JSX/g)) {
-    claim(rel, Number(m[1]) === jsx, `says "${m[1]} reachable in JSX", the registry holds ${jsx}`);
-  }
-  for (const m of text.matchAll(/(\d+)\s+for\s+Ruby/g)) {
-    claim(rel, Number(m[1]) === ruby, `says "${m[1]} for Ruby", the registry holds ${ruby}`);
-  }
-  for (const m of text.matchAll(/(\d+)\s+file-to-file obligations/g)) {
-    claim(rel, Number(m[1]) === obligations, `says "${m[1]} file-to-file obligations", the registry holds ${obligations}`);
-  }
-  for (const m of text.matchAll(/(\d+)\s+ship\b/g)) {
-    claim(rel, Number(m[1]) === shipping, `says "${m[1]} ship", the registry holds ${shipping} outside the obligations`);
-  }
-  for (const m of text.matchAll(/(\d+)\s+that speak Ruby/g)) {
-    claim(rel, Number(m[1]) === rubyRows, `says "${m[1]} that speak Ruby", the registry holds ${rubyRows} outside the obligations`);
-  }
-  for (const m of text.matchAll(/plus the (\w+) type-checked rows?/g)) {
-    claim(rel, counted(m[1]) === typeChecked, `says "${m[1]} type-checked", the registry holds ${typeChecked}`);
-  }
-}
-
-// A dimension either states its inverse or records that it may not. An absent
-// field is indistinguishable from one nobody classified.
-for (const d of REGISTRY) {
-  claim(
-    `${REL.anatomiya}/lib/dimensions.mjs`,
-    d.counterClaim === null || typeof d.counterClaim === "string",
-    `${d.key} has no counterClaim decision, which reads the same as refused`
-  );
-}
-
-// --- the build contract -----------------------------------------------------
-
-// Three files state this count, and they have disagreed with each other: the
-// table held 55 rows, the README said 55 and CONTRIBUTING said 54. It is the
-// one number in the docs that moves on every substantive change, so all three
-// are read against the table rather than against one another.
-const rows = [...read("DECISIONS.md").matchAll(/^\| [A-H]\d+ \|/gm)].length;
-for (const rel of ["README.md", "docs/why.md", "CONTRIBUTING.md"]) {
-  for (const m of read(rel).matchAll(/(\d+)\s+numbered (?:decisions|rows)/g)) {
-    claim(rel, Number(m[1]) === rows, `says "${m[1]} numbered", DECISIONS.md holds ${rows} rows`);
-  }
-}
-
-// A row whose cells outnumber the header's is a row whose tail GitHub drops,
-// silently: an unescaped `|` inside a code span splits the cell it sits in, and
-// the Status column falls off the end. Three rows had it at once, one of them a
-// whole `**done**` list. The escape is `\|`, which the file already uses.
-for (const [i, line] of read("DECISIONS.md").split(/\r?\n/).entries()) {
-  if (!/^\| [A-H]\d+ \|/.test(line)) continue;
-  // No fallback: the filter above took only lines starting `| A1 |`, and one of
-  // those holds at least two unescaped pipes.
-  const cells = line.match(/(?<!\\)\|/g).length;
-  claim(
-    "DECISIONS.md",
-    cells === 5,
-    `row ${/^\| ([A-H]\d+) \|/.exec(line)[1]} on line ${i + 1} has ${cells - 1} cells, not 4: escape a \`|\` inside a code span as \`\\|\``
-  );
-}
-
-// A row number appearing twice is a row nobody can cite.
-const ids = [...read("DECISIONS.md").matchAll(/^\| ([A-H]\d+) \|/gm)].map((m) => m[1]);
-claim("DECISIONS.md", new Set(ids).size === ids.length, "two rows share a number");
-
-// --- the gate table ---------------------------------------------------------
-
-const gateText = read("README.md") + read("docs/how-it-works.md");
-claim(
-  "docs",
-  /\b0\.90\b/.test(gateText),
-  "no document states the 0.90 bar, which is the one number that never moves"
-);
-claim(`${REL.anatomiya}/lib/reduce.mjs`, GATES.minRatio === 0.9, `minRatio is ${GATES.minRatio}, and it is fixed at 0.90 by decision`);
-
-// Anything the gates stopped reading must stop being described.
-for (const dead of ["minCandidates", "minAuthors", "maxSingleFileShare"]) {
-  claim(`${REL.anatomiya}/lib/reduce.mjs`, GATES[dead] === undefined, `${dead} is back in GATES; it was replaced by a repository-relative rule`);
-  claim("docs", !gateText.includes(dead), `the docs still name ${dead}, which the gates no longer read`);
-}
-
-// --- the caveat codes -------------------------------------------------------
-
-// The codes became a public surface the day `--format json` printed them, so
-// the table documenting them is held to the code in both directions: an
-// undocumented code is a field a CI job cannot branch on, and a documented one
-// that no longer exists is a branch nothing will ever take.
-function caveatSection(text) {
-  const start = text.indexOf("### The caveat codes");
-  claim("docs/how-it-works.md", start !== -1, "has no ### The caveat codes section to read");
-  if (start === -1) return "";
-  // To the next heading of either level, so the window is this subsection
-  // rather than whatever is written after it. It is the last of section 8
-  // today, which is the only reason stopping at the next `##` read the same.
-  const next = text.slice(start).search(/\n#{2,3} /);
-  return next === -1 ? text.slice(start) : text.slice(start, start + next);
-}
-
-const codes = new Set(Object.values(CAVEATS));
-const caveatText = caveatSection(read("docs/how-it-works.md"));
-const documented = new Set([...caveatText.matchAll(/^\| `([a-z-]+)` \|/gm)].map((m) => m[1]));
-for (const code of codes) {
-  claim("docs/how-it-works.md", documented.has(code), `does not document the caveat code ${code}`);
-}
-for (const code of documented) {
-  claim("docs/how-it-works.md", codes.has(code), `documents ${code}, which is not a caveat code`);
-}
-// The prose count is the one thing the two directions above cannot catch: a
-// code added to both the record and the table still leaves the sentence over it
-// stating the old number. A RegExp because the sentence wraps mid-phrase.
-claim(
-  "docs/how-it-works.md",
-  new RegExp(`There\\s+are ${codes.size}\\.`).test(caveatText),
-  `does not say there are ${codes.size} caveat codes`
-);
-
-// --- what a scan leaves in the working tree ---------------------------------
-
-// The README spells these by hand, and nothing read them: adding another thing
-// a scan writes without adding its line leaves a reader with a dirty
-// `git status` and a document that says the opposite.
-for (const line of EXCLUDE_LINES) {
-  claim("README.md", read("README.md").includes(`'${line}'`), `does not tell a reader to exclude ${line}`);
-}
-
-// --- the command surface ----------------------------------------------------
-
-const usage = execFileSync(process.execPath, [join(root, `${REL.anatomiya}/bin/anatomiya.mjs`), "--help"], {
-  encoding: "utf8",
-});
-const commands = [...usage.matchAll(/anatomiya\s+(\w+)/g)].map((m) => m[1]);
-const unique = [...new Set(commands)];
-
-for (const cmd of unique) {
-  let file;
-  try {
-    file = read(`${REL.anatomiya}/commands/${cmd}.md`);
-  } catch {
-    problems.push(`${REL.anatomiya}/commands/: ${cmd} is in the usage line and has no command file`);
-    continue;
-  }
-  claim(`${REL.anatomiya}/commands/${cmd}.md`, file.trim().length > 0, "is empty");
-}
-
-const readme = read("README.md");
-for (const cmd of unique) {
-  claim("README.md", readme.includes(`/anatomiya:${cmd}`), `does not mention /anatomiya:${cmd}`);
-}
-
-// --- the glossary -----------------------------------------------------------
-
-// Shape only. The one claim here that reaches the code is the entry spelling
-// out a closed set the code owns: a sixth parse outcome reaches a reader as a
-// word the glossary does not hold, and nothing else would say so.
-const glossary = readGlossary(read("CONTEXT.md"));
-for (const problem of glossary.problems) claim("CONTEXT.md", false, problem);
-
-const unexamined = glossary.terms.get("Unexamined");
-claim("CONTEXT.md", unexamined !== undefined, "has no Unexamined entry, which is where a file's outcomes are named");
-if (unexamined) {
-  const unnamed = PARSE_OUTCOMES.filter((outcome) => !new RegExp(`\\b${outcome}\\b`).test(unexamined.body));
-  claim("CONTEXT.md", unnamed.length === 0, `Unexamined does not name ${unnamed.join(", ")}, which parse.mjs counts a file as`);
-}
-
-// --- the intake table -------------------------------------------------------
-
-// A dimension that ships without an intake row is one nobody decided to build:
-// the collapse, the rename and the drop were never asked about it. The README's
-// dimension count has already drifted once, and this is the same failure with a
-// worse consequence, so the table is checked rather than trusted.
-const intake = readIntake(read("docs/dimension-intake.md"));
-for (const p of intake.problems) claim("docs/dimension-intake.md", false, p);
-
-// Two rows claiming one entry print the same three numbers twice under two
-// names, which is the duplication the collapse exists to stop.
-const absorbedBy = new Map();
-for (const r of intake.rows) {
-  for (const entry of r.absorbs) {
-    const previous = absorbedBy.get(entry);
-    claim("docs/dimension-intake.md", previous === undefined, `"${entry}" is absorbed by both ${previous} and ${r.key ?? "a dropped row"}`);
-    absorbedBy.set(entry, r.key ?? "a dropped row");
-  }
-}
-
-// --- the sites a new registry key has to reach ------------------------------
-
-const sites = {
-  defaults: new Set(Object.keys(JSON.parse(read(`${REL.anatomiya}/lib/model-defaults.json`)))),
-  intake: new Map(intake.rows.filter((r) => r.key).map((r) => [r.key, r])),
-  dropped: new Set(intake.rows.filter((r) => r.status === "dropped" && r.key).map((r) => r.key)),
-  eligible: new Set(ELIGIBLE),
-  refused: new Set(REFUSED),
-};
-
-const owed = new Map();
-for (const row of REGISTRY) {
-  const missing = sitesOwed(row, sites);
-  if (missing.length) owed.set(row.key, missing);
-}
-
-// --- runtime dependencies ---------------------------------------------------
-
-// SECURITY.md said "oxc-parser is the only runtime dependency" for as long as
-// there were two of them. A reader deciding whether to run this on a work
-// repository is reading exactly that sentence, so the set is checked rather
-// than trusted.
-// The plugin's own manifest, not the marketplace's: the root declares the
-// workspaces and no dependency of its own, so read from there the count was
-// zero and every document that names one still said two.
-const deps = Object.keys(JSON.parse(read(`${REL.anatomiya}/package.json`)).dependencies ?? {});
-for (const doc of ["SECURITY.md", "README.md"]) {
-  const text = read(doc);
-  for (const dep of deps) claim(doc, text.includes(dep), `does not name the runtime dependency ${dep}`);
-  claim(doc, !/only runtime dependency/.test(text), `says "only runtime dependency" with ${deps.length} of them`);
-}
-
-// --- committed documents carry no local path --------------------------------
-
-// The first A/B result committed here carried /Users/<name>/Documents/... into
-// a public repository, in its title and in its table. Where a clone sat on the
-// machine that ran something is not part of the record, and nobody else can
-// check it. Measurements are generated, so the generator was fixed too; this is
-// the net under it.
-for (const rel of readdirSync(join(root, "docs/measurements")).filter((f) => f.endsWith(".md"))) {
-  const text = read(join("docs/measurements", rel));
-  const hit = text.match(/\/Users\/[^\s/]+|\/home\/[^\s/]+|[A-Z]:\\Users\\[^\s\\]+/);
-  claim(`docs/measurements/${rel}`, !hit, `carries the local path ${hit ? hit[0] : ""}`);
-}
-
-
-// --- committed documents name paths this repository has ---------------------
-
-// Moving two plugins under `plugins/` left 68 sentences pointing at files that
-// had gone, in the contributor guide, the security notes and the build
-// contract. Nothing read them, because a number that drifts fails a gate here
-// and a path that drifts failed nothing.
-// Git's list rather than a walk, because the local working directories a tool
-// leaves behind are full of paths that were never this repository's, and
-// because a tree git cannot answer for is not this repository: the gate runs on
-// a checkout, and there is nothing there to check a path against.
-const tracked = new Set(repositoryFiles());
-// The same leak the measurements are checked for, from the other kind of
-// document. A generated one never spells a placeholder, so the shape of a home
-// directory is enough there; a hand-written one does, and `/Users/me/code/app`
-// in the README is how the output is shown to a reader. What may never ship is
-// this machine's own home, which is the one that got into a public repository
-// before: a note written while reading an installed build carried it nine
-// times, and the net under the generated documents did not reach it.
-const HOME = homedir();
-for (const rel of tracked) {
-  if (!rel.endsWith(".md") || RECORDS_THE_PAST.some((r) => r.test(rel))) continue;
-  const text = read(rel);
-  if (HOME && HOME.length > 3) claim(rel, !text.includes(HOME), "carries the path of the machine it was written on");
-  for (const { spelled, now, several } of pathsThatMoved(CHANGELOG.test(rel) ? unreleased(text) : text, rel, tracked)) {
-    claim(rel, false, several ? `names \`${spelled}\`, which is these files now: ${now}` : `names \`${spelled}\`, which is \`${now}\` now`);
-  }
-}
-
-// --- versions ---------------------------------------------------------------
-
-// Every plugin the marketplace can release, not only the one at the root: the
-// second plugin's version answered to nothing but semver, so it could move to a
-// number no changelog described and the tag would be the first to say so, after
-// it was pushed. `notesFor` is what the release itself runs, so a version that
-// passes here is one that will tag.
-for (const release of RELEASES) {
-  // Read through a guard the rest of this file does not need: every other path
-  // here reads a file this repository is known to have, and these two are the
-  // ones a release moves. One that is not there, or one that does not parse,
-  // threw past the sentence naming it, which is the one thing the author needed.
-  const manifest = readJson(release.manifests[0]);
-  claim(release.manifests[0], manifest.problem === null, manifest.problem ?? "");
-
-  // Asked whatever the manifest did, so a plugin with two things wrong is told
-  // both at once rather than one release at a time. A changelog that is not
-  // there is that, rather than one missing a heading.
-  const changelog = readOr(release.changelog, null);
-  claim(release.changelog, changelog !== null, "is missing, so there is nothing to release this plugin with");
-  if (changelog !== null) {
-    claim(release.changelog, changelog.includes(UNRELEASED), `has no ${UNRELEASED} heading to write the next change under`);
-  }
-  // `null` parses, and is not a manifest. Read as "did not parse" it said
-  // nothing here and then threw on the summary line, which names no file.
-  claim(release.manifests[0], isObject(manifest.value), "parses to something that is not a manifest");
-  if (!isObject(manifest.value)) continue;
-
-  // The version has to be there, and be a version, before it can be matched
-  // against anything: a field that is not one reaches the tag resolver and the
-  // reader is told a namespace is unclaimed while the fault is two files away.
-  const version = manifest.value.version;
-  claim(release.manifests[0], typeof version === "string", "has no version");
-  if (typeof version !== "string") continue;
-  claim(release.manifests[0], SEMVER.test(version), `version is not semver: ${version}`);
-  if (!SEMVER.test(version)) continue;
-
-  // The heading the link definitions at the bottom point at. `sectionFor` reads
-  // the number as a token on any `##` line, so an unbracketed heading is a
-  // section to it and the link under it dangles with nothing saying so.
-  if (changelog !== null) {
-    claim(release.changelog, changelog.includes(`## [${version}]`), `has no "## [${version}]" heading for the version its manifest states`);
-  }
-
-  // `notesFor` answers a missing changelog in its own wording, and the author
-  // has one file to put back either way.
-  if (changelog === null) continue;
-
-  const answered = notesFor(root, tagFor(release, version));
-  // Reported against the file the author has to edit: the changelog problems
-  // `notesFor` returns are about the changelog, whatever read them. Its
-  // sentences name that file, and `claim` names it again, so the leading path
-  // comes back off before it is printed under itself.
-  const about =
-    [release.changelog, ...release.manifests].find((rel) => answered.problem?.startsWith(`${rel} `) || answered.problem?.includes(`${rel} says`)) ??
-    release.manifests[0];
-  const said = answered.problem?.startsWith(`${about} `) ? answered.problem.slice(about.length + 1) : answered.problem;
-  claim(about, answered.problem === null, said ?? "");
-}
-
-// ----------------------------------------------------------------------------
-
-// This file exports `readIntake` as well as running as a script, and a bare
-// `process.exit(1)` at module scope would take the test process with it the
-// moment a doc claim failed.
-const isEntry = invokedAs(import.meta.url);
-if (isEntry && (problems.length || owed.size)) {
-  for (const p of problems) console.error(`::error::${p}`);
-  // One line per site, in key order, each naming the file and the move: the
-  // list an author works through, and the annotations a pull request shows.
-  const unmet = [...owed.values()].flat();
-  for (const [key, missing] of owed) {
-    for (const m of missing) console.error(`::error::${m.site}: ${key} has ${m.missing}; ${m.remedy}`);
-  }
-  if (problems.length) console.error(`\n${problems.length} claim(s) in the documentation do not match the code.`);
-  if (owed.size) console.error(`\n${owed.size} registry key(s) still owe ${unmet.length} of the sites a row has to reach.`);
-  process.exit(1);
-}
-if (isEntry)
-  console.log(
-  `docs match the code: ${total} dimensions (${js} js, ${jsx} jsx, ${ruby} ruby, ${obligations} of them file-to-file obligations), ` +
-    `${unique.length} commands, ${codes.size} caveat codes, ${deps.length} runtime dependencies, ` +
-    `${intake.rows.length} intake rows, ${RELEASES.map((r) => `${r.plugin} ${JSON.parse(read(r.manifests[0])).version}`).join(" and ")}`
-);

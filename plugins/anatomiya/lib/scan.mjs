@@ -6,7 +6,7 @@ import { parseAll } from "./parse.mjs";
 import { runSemantic } from "./semantic.mjs";
 import { blockOf, reduceArea, verdictFor } from "./reduce.mjs";
 import { applyPairings } from "./pairing.mjs";
-import { authorsByFile } from "./authors.mjs";
+import { authorsByFile, isPerson, repoAuthorCount } from "./authors.mjs";
 import { resolve as resolveBaseline, measure as measureBaseline } from "./baseline.mjs";
 import { roster } from "./layout-scan.mjs";
 import { tally } from "./layout.mjs";
@@ -269,25 +269,6 @@ export async function scan(cwd, { guards = null, deep = false } = {}) {
     layout,
     areas: out,
   };
-}
-
-// GitHub mints `[bot]` into the local part, and brackets are illegal in a real
-// unquoted address, so this excludes nothing a person can be called.
-const isPerson = (email) => !email.includes("[bot]");
-
-/**
- * How many people could supply author evidence at all: the authors of the files
- * this tool counts over.
- *
- * Someone who has only ever touched documentation can never appear in a
- * dimension's author set, so counting them raises a bar they cannot help clear.
- * Measured: 15 emails in one repository's log against 13 who ever touched a
- * counted source file, 154 against 131 on another.
- */
-export function repoAuthorCount(files, authors) {
-  const who = new Set();
-  for (const f of files) for (const a of authors.get(f.rel) || []) if (isPerson(a)) who.add(a);
-  return who.size;
 }
 
 /** Distinct authors over the files carrying the counted sites (D4). */

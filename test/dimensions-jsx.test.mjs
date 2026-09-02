@@ -1,7 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { parseSync } from "oxc-parser";
 import { siteIdentity } from "../plugins/anatomiya/lib/introduced.mjs";
+import { calleeName } from "../plugins/anatomiya/lib/dimensions-jsx.mjs";
 import { JSX_DIMENSIONS, jsxName, attrName } from "../plugins/anatomiya/lib/dimensions-jsx.mjs";
 import { ALL_DIMENSIONS, dimensionsFor } from "../plugins/anatomiya/lib/dimensions.mjs";
 import { applyGates } from "../plugins/anatomiya/lib/reduce.mjs";
@@ -615,4 +617,16 @@ test("the naming row leaves a conditional component out of its vote", async () =
   assert.deepEqual(classesOf(`export function CardBox() { return a ? <div /> : null }`), []);
   assert.deepEqual(classesOf(`export function CardBox() { return a && <div /> }`), []);
   assert.deepEqual(classesOf(`export function formatDate(d) { return String(d) }`), ["camelCase"]);
+});
+
+test("the callee reader answers a name or null, never undefined, and there is one of it", () => {
+  // Two copies answered a missing property differently, and every caller
+  // compared against a literal so nothing decided. One reader, the nearer home.
+  assert.equal(calleeName({ type: "Identifier", name: "f" }), "f");
+  assert.equal(calleeName({ type: "MemberExpression", computed: false, property: { type: "Identifier", name: "g" } }), "g");
+  assert.equal(calleeName({ type: "MemberExpression", computed: false, property: {} }), null);
+  assert.equal(calleeName({ type: "MemberExpression", computed: true, property: { name: "g" } }), null);
+  assert.equal(calleeName(null), null);
+  const extra = readFileSync(new URL("../plugins/anatomiya/lib/dimensions-extra.mjs", import.meta.url), "utf8");
+  assert.doesNotMatch(extra, /function calleeName|const calleeName/, "the second copy is gone");
 });

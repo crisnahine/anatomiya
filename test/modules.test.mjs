@@ -518,6 +518,27 @@ test("every export is read somewhere outside its own file", () => {
   assert.deepEqual(unread, []);
 });
 
+// The binary listed its verbs three times: the table, a dispatch chain of
+// named arms ending in a bare else that scanned, and the usage text. A verb
+// added to the table with no arm silently scanned. The usage stays a
+// hand-written subset (A24); the table is the one reachable owner, so every
+// verb in it carries its own arm.
+test("every verb the binary declares carries its own arm in the one table", () => {
+  const src = readFileSync(BINARY, "utf8");
+  const { program } = parseSync("anatomiya.mjs", src, { sourceType: "module" });
+  const table = program.body
+    .flatMap((n) => (n.type === "VariableDeclaration" ? n.declarations : []))
+    .find((d) => d.id.type === "Identifier" && d.id.name === "COMMANDS");
+  assert.ok(table && table.init.type === "ObjectExpression", "COMMANDS is an object literal");
+  const verbs = table.init.properties.map((p) => [p.key.name ?? p.key.value, p.value]);
+  assert.ok(verbs.length >= 5, `read ${verbs.length} verbs`);
+  for (const [verb, value] of verbs) {
+    const keys = value.type === "ObjectExpression" ? value.properties.map((p) => p.key.name) : [];
+    assert.ok(keys.includes("run"), `${verb} carries no run`);
+  }
+  assert.doesNotMatch(scan(src), /\} else \{\s*const \{ summary \} = await runScan/, "no verb reaches the scan by falling through");
+});
+
 const FUNCTIONS = new Set(["FunctionDeclaration", "FunctionExpression", "ArrowFunctionExpression"]);
 
 /**

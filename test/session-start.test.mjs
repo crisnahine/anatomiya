@@ -391,3 +391,26 @@ test("a project's own agent file answers before the user's", (t) => {
 
   assert.equal(notice({ cwd: t1.dir, cli: t1.cli, state: t1.state, env: quietEnv(t1, { ULTRACODE_ANYWHERE_SUBAGENT_EFFORT: "medium" }) }), null);
 });
+
+// The prompt hook's silence rule and the session notice's `quiet` are one
+// boolean spelled twice, by design: the two hooks speak in different cases and
+// share no rule. This holds the two spellings to one answer over the three
+// states that decide it, with the standing opt-in on and a plain turn.
+test("the two hooks go quiet on the same two answers", (t) => {
+  const stdin = JSON.stringify({ session_id: "11111111-2222-3333-4444-555555555555", cwd: "/repo", prompt: "hi", hook_event_name: "UserPromptSubmit" });
+  const cases = [
+    ["plain", tree(t, { settings: { effortLevel: "medium" } }), {}],
+    ["a conflict in settings", tree(t, { settings: { ultracode: true } }), {}],
+    ["strict on a build that moved", tree(t, { bundle: whole().replace(MARKERS[0], "") }), { ULTRACODE_ANYWHERE_STRICT: "1" }],
+  ];
+  const spoke = [];
+  for (const [name, t1, extra] of cases) {
+    const env = { ...quietEnv(t1), ULTRACODE_ANYWHERE: "1", ULTRACODE_ANYWHERE_STAGE_EFFORT: "cheap", CLAUDE_CODE_EXECPATH: t1.cli, ...extra };
+    const silent = run({ stdin, env, state: t1.state }) === null;
+    const quiet = !(notice({ cwd: t1.dir, cli: t1.cli, state: t1.state, env }) ?? "").includes("ULTRACODE_ANYWHERE_STAGE_EFFORT");
+    spoke.push(!silent);
+
+    assert.equal(silent, quiet, `${name}: the prompt hook is ${silent ? "silent" : "speaking"} and the notice is ${quiet ? "quiet" : "carrying the level"}`);
+  }
+  assert.deepEqual(spoke, [true, false, false], "the plain case speaks and the two silences are real");
+});

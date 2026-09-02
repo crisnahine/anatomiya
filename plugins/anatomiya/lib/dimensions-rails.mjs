@@ -44,7 +44,7 @@ export const COLUMN_TYPE = new Set([
  * which over-counts violations and so suppresses a directive rather than
  * stating one.
  */
-const FRAMEWORK = new Set([
+export const FRAMEWORK = new Set([
   "ActiveRecord", "ActiveStorage", "ActionText", "ActiveSupport", "Arel", "Rails",
   "Time", "Date", "DateTime", "SecureRandom", "JSON", "YAML", "File", "Dir",
   "String", "Integer", "Float", "Numeric", "BigDecimal", "Array", "Hash", "Set",
