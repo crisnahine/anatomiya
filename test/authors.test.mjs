@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { execFileSync } from "node:child_process";
 
-import { authorsByFile } from "../plugins/anatomiya/lib/authors.mjs";
+import { authorsByFile, repoAuthorCount } from "../plugins/anatomiya/lib/authors.mjs";
 import { applyGates } from "../plugins/anatomiya/lib/reduce.mjs";
 import * as scan from "../plugins/anatomiya/lib/scan.mjs";
 
@@ -234,7 +234,7 @@ test("one commit is one author, and that author's practice is the repository's c
   const files = Array.from({ length: 6 }, (_, i) => `src/m${i}.ts`);
   const gated = applyGates(evenly(files), {
     authors: who.size,
-    repoAuthors: scan.repoAuthorCount(files.map((rel) => ({ rel })), map),
+    repoAuthors: repoAuthorCount(files.map((rel) => ({ rel })), map),
     areaFileCount: 6,
     areaDirCount: 1,
   });
@@ -263,11 +263,11 @@ test("a second person in the repository restores the two-author requirement", as
   const files = Array.from({ length: 6 }, (_, i) => `src/mine/m${i}.ts`);
   const corpus = [...files, "src/theirs/t.ts"].map((rel) => ({ rel }));
 
-  assert.equal(scan.repoAuthorCount(corpus, map), 2);
+  assert.equal(repoAuthorCount(corpus, map), 2);
 
   const gated = applyGates(evenly(files), {
     authors: 1,
-    repoAuthors: scan.repoAuthorCount(corpus, map),
+    repoAuthors: repoAuthorCount(corpus, map),
     areaFileCount: 7,
     areaDirCount: 1,
   });
@@ -395,13 +395,13 @@ test("a bot is not the second author", async () => {
   ]);
   const files = [{ rel: "src/a.ts" }];
 
-  assert.equal(scan.repoAuthorCount(files, authors), 1);
+  assert.equal(repoAuthorCount(files, authors), 1);
 
   // Six files, not three: the evidence gate wants 35 sites before a perfect
   // record may be stated, and this test is about the author bar, not the size.
   const gated = applyGates(evenly(["a", "b", "c", "d", "e", "f"].map((n) => `src/${n}.ts`)), {
     authors: 1,
-    repoAuthors: scan.repoAuthorCount(files, authors),
+    repoAuthors: repoAuthorCount(files, authors),
     historyRead: true,
     areaFileCount: 12,
     areaDirCount: 1,
@@ -422,11 +422,11 @@ test("someone who only ever touched documentation does not raise the bar", async
   ]);
   const files = Array.from({ length: 6 }, (_, i) => ({ rel: `src/f${i}.ts` }));
 
-  assert.equal(scan.repoAuthorCount(files, authors), 1);
+  assert.equal(repoAuthorCount(files, authors), 1);
 
   const gated = applyGates(evenly(files.map((f) => f.rel)), {
     authors: 1,
-    repoAuthors: scan.repoAuthorCount(files, authors),
+    repoAuthors: repoAuthorCount(files, authors),
     areaFileCount: 6,
     areaDirCount: 1,
   });

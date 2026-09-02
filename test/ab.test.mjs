@@ -2,6 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { chmodSync, existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -9,7 +10,7 @@ import { rankAreas } from "../scripts/ab/pick.mjs";
 import { scoreFile } from "../scripts/ab/score.mjs";
 import { readingFor } from "../scripts/ab/read.mjs";
 import { repoLabel } from "../scripts/ab/label.mjs";
-import { needsShebang } from "./platform.mjs";
+import { needsPathControl, needsShebang } from "./platform.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -162,6 +163,34 @@ test("a written file is scored by the dimension's own predicate, not by a grep",
 
   assert.deepEqual(good, { candidates: 1, conforming: 1, ratio: 1 });
   assert.deepEqual(bad, { candidates: 1, conforming: 0, ratio: 0 });
+});
+
+test("the probe names the file verbatim, whatever characters the name carries", async () => {
+  const { PROBE, probeFor } = await import("../scripts/ab/arms.mjs");
+  // `$&` and `$'` are replacement patterns to a string replace, so a file named
+  // with either used to reach the model spelled as the match or the text after it.
+  assert.ok(probeFor("src/x/$&.mjs").includes("Read the file at src/x/$&.mjs."), probeFor("src/x/$&.mjs"));
+  assert.equal(probeFor("src/x/a.mjs"), PROBE.replace("{file}", "src/x/a.mjs"));
+});
+
+test("an arm is summed by the predicate, and a trial that wrote nothing is not a trial", async () => {
+  const { scoreArm } = await import("../scripts/ab/score.mjs");
+  const conforming = `export function f() { try { a() } catch (e) { log(e) } }`;
+  const violating = `export function f() { try { a() } catch (e) { } }`;
+  const runs = [
+    { ok: true, wrote: [{ rel: "a.ts", source: conforming }, { rel: "b.ts", source: violating }] },
+    { ok: true, wrote: [{ rel: "c.ts", source: `export const a = 1` }] },
+    { ok: true, wrote: [] },
+    { ok: false, wrote: [{ rel: "d.ts", source: violating }] },
+  ];
+
+  assert.deepEqual(await scoreArm(runs, { key: "swallowed_error" }), {
+    wroteSomething: 2,
+    filesScored: 2,
+    candidates: 2,
+    conforming: 1,
+    trialsWithAViolation: 1,
+  });
 });
 
 test("a file the dimension has nothing to say about scores null, not zero", async () => {
@@ -348,6 +377,9 @@ test("everything the build reads to decide a model, an effort or a context windo
     "CLAUDE_CODE_DISABLE_THINKING", "CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING", "DISABLE_INTERLEAVED_THINKING",
     "CLAUDE_CODE_DISABLE_1M_CONTEXT", "ANTHROPIC_BETAS",
     "CLAUDE_CODE_MAX_CONTEXT_TOKENS", "CLAUDE_CODE_AUTO_COMPACT_WINDOW",
+    // 2.1.257: a forced subagent model, and the served catalog that now
+    // replaces the compiled model list, with the switch and the URL that feed it.
+    "CLAUDE_CODE_SUBAGENT_MODEL_FORCE", "CLAUDE_CODE_MODEL_CATALOG_URL", "CLAUDE_CODE_MODEL_CATALOG",
   ]) {
     assert.equal(overridesEngine(name), true, `${name} can move the engine and has to go`);
   }
@@ -665,18 +697,10 @@ const KEPT = new Map([
   ["ANTHROPIC_SMALL_FAST_MODEL_AWS_REGION", "a region, not a model, and a Bedrock run needs it"],
   ["CLAUDE_CODE_NO_MODEL_FALLBACK", "set rather than scrubbed, so a trial runs the pinned model or fails"],
   ["CLAUDE_CODE_THINKING_DISPLAY_UPDATES", "how thinking is shown, not how much of it there is"],
-  // Read out of 2.1.251 rather than reasoned from the name. It is an off
-  // switch, not an enabler: the build tests it with a helper that answers true
-  // for 0, false, no and off, and its only outcome is short-circuiting the
-  // served-catalog mode to "off". The catalog that mode gates fetches an
-  // organisation's model list, compares it against the model, window and output
-  // cap the CLI already resolved, and logs the comparison. Nothing writes the
-  // answer back, in either of the two live modes. So no value of this can make
-  // two arms run different engines, which is the only thing the scrub is for.
-  // A ruling about what a build does, not about a name: if a later build ever
-  // applies the catalog rather than logging it, this row goes stale with
-  // nothing here to notice, and the read to redo is the consumer of that mode.
-  ["CLAUDE_CODE_MODEL_CATALOG", "an off switch for a catalog that is compared and logged, never applied"],
+  // CLAUDE_CODE_MODEL_CATALOG sat here through 2.1.252 as the off switch for a
+  // catalog that was compared and logged. 2.1.257 installs the fetched catalog
+  // in place of the compiled model list, so the switch is scrubbed with the URL
+  // that feeds it: docs/research/claude-code-2-1-257-engine-variables.md.
 ]);
 
 test("the build carries no engine-shaped variable this run has not decided about", async (t) => {
@@ -731,4 +755,187 @@ test("a substitution reaches the record, not just the console", async () => {
 
   const straight = engineRan(asked, [{ ran: { model: "claude-opus-5[1m]", contextWindow: 1000000 } }]);
   assert.equal("asked" in straight.engine, false, "and a run that got what it asked for says nothing extra");
+});
+
+/* --- the harness as a whole: its gate, its document and one run end to end --- */
+
+test("the argument gate answers in process, with the engine folded in", async () => {
+  const { parseArgs } = await import("../scripts/ab/args.mjs");
+
+  assert.deepEqual(parseArgs(["--repo", "r", "--task", "t"]), {
+    repo: "r",
+    task: "t",
+    trials: 10,
+    minHeadroom: 0.05,
+    engine: { model: "claude-opus-5[1m]", effort: "medium" },
+  });
+  assert.deepEqual(parseArgs(["--repo", "r", "--task", "t", "--model", "m", "--effort", "high", "--trials", "3"]).engine, { model: "m", effort: "high" });
+  assert.deepEqual(parseArgs([]), { error: "both --repo and --task are required" });
+  assert.deepEqual(parseArgs(["--repo"]), { error: "--repo takes a value" });
+  assert.deepEqual(parseArgs(["--repo", "r", "--task", "t", "--bogus", "1"]), { error: "unknown option --bogus" });
+  assert.deepEqual(parseArgs(["--repo", "r", "--task", "t", "--trials", "0"]), { error: "--trials takes a positive integer" });
+  assert.match(parseArgs(["--repo", "r", "--task", "t", "--effort", "med"]).error, /--effort takes one of low, medium, high, xhigh, max, not "med"/);
+  // NaN compares false against every headroom, which switches the floor off
+  // for the whole batch rather than refusing at the door.
+  assert.deepEqual(parseArgs(["--repo", "r", "--task", "t", "--min-headroom", "0.O5"]), { error: "--min-headroom takes a number from 0 to 1" });
+  assert.deepEqual(parseArgs(["--repo", "r", "--task", "t", "--min-headroom", "2"]), { error: "--min-headroom takes a number from 0 to 1" });
+  assert.equal(parseArgs(["--repo", "r", "--task", "t", "--min-headroom", "0.2"]).minHeadroom, 0.2);
+});
+
+test("the usage text names every option the gate takes", async () => {
+  const { parseArgs, USAGE } = await import("../scripts/ab/args.mjs");
+  for (const flag of ["--repo", "--task", "--trials", "--model", "--effort", "--out", "--min-headroom", "--key", "--area"]) {
+    assert.ok(USAGE.includes(`${flag} `), `${flag} is missing from the usage text`);
+    assert.notEqual(parseArgs(["--repo", "r", "--task", "t", flag, "1"]).error, `unknown option ${flag}`, `${flag} is documented but refused`);
+  }
+});
+
+/** A result the way step 6 of the harness builds one, with the numbers a reader would check. */
+const RESULT = {
+  target: { path: "src/x", key: "nullish_default", claim: "defaults are taken with ??, not ||", candidates: 300, ratio: 0.94, headroom: 0.06 },
+  sha: "0123456789abcdef0123456789abcdef01234567",
+  label: "crisnahine/anatomiya",
+  said: { a: "src/x 20 files", b: "NONE" },
+  engine: { model: "claude-opus-5[1m]", effort: "medium", contextWindow: 1000000 },
+  a: { wroteSomething: 1, filesScored: 1, candidates: 10, conforming: 9, trialsWithAViolation: 1 },
+  b: { wroteSomething: 2, filesScored: 0, candidates: 0, conforming: 0, trialsWithAViolation: 0 },
+};
+
+test("the result document is rendered from the result, with both arms' numbers where a reader looks", async () => {
+  const { render } = await import("../scripts/ab/render.mjs");
+
+  const doc = render(RESULT, { trials: 2 });
+
+  for (const line of [
+    "# A/B: crisnahine/anatomiya at 01234567",
+    "| area | src/x |",
+    "| claim | defaults are taken with ??, not || |",
+    "| baseline | 282 of 300, ratio 0.940 |",
+    "| headroom | 0.060 |",
+    "| model | claude-opus-5[1m] |",
+    "| effort | medium |",
+    "| context window | 1000000 |",
+    "| trials per arm | 2 |",
+    'Injection: arm A answered "src/x 20 files", arm B answered "NONE".',
+    "| trials that wrote a file | 1/2 | 2/2 |",
+    "| files scored | 1 | 0 |",
+    "| sites conforming | 9 of 10 (0.900) | 0 of 0 (no sites) |",
+    "| trials with a violating site | 1 | 0 |",
+    "## Reading this",
+  ]) assert.ok(doc.includes(line), `missing: ${line}\n\n${doc}`);
+  assert.ok(!doc.includes("| asked for |"), "a run served by what it asked for carries no substitution row");
+});
+
+test("a substituted engine is named in the document beside the one that served", async () => {
+  const { render } = await import("../scripts/ab/render.mjs");
+
+  const doc = render({ ...RESULT, engine: { ...RESULT.engine, model: "claude-sonnet-5", asked: "claude-opus-5[1m]" } }, { trials: 2 });
+
+  assert.ok(doc.includes("| model | claude-sonnet-5 |"), doc);
+  assert.ok(doc.includes("| asked for | claude-opus-5[1m], which is not what served it |"), doc);
+});
+
+/**
+ * A repository the harness can measure: one leaf area holding one stated claim
+ * with headroom, written by two hands.
+ *
+ * The gates size it. The Wilson bound at z=1.96 holds 0.90 from a ratio of 0.94
+ * at about 400 sites, the ranking wants headroom above 0.05, the concentration
+ * gate wants the sites spread over three files' worth, and the author bar wants
+ * a second pair of hands on files carrying conforming sites. `nullish_default`
+ * sites are one line each, and the model's default for it is unmeasured, so
+ * the map states it as a directive rather than dropping it to a counts line.
+ */
+function measurable(t) {
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-ab-repo-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe", encoding: "utf8" });
+  const write = (rel, body) => {
+    mkdirSync(dirname(join(dir, rel)), { recursive: true });
+    writeFileSync(join(dir, rel), body);
+  };
+  git("init", "-q");
+  git("config", "user.email", "one@t.test");
+  git("config", "user.name", "one");
+  for (let f = 0; f < 20; f++) {
+    // 24 of the 400 sites take ||: three each in the first eight files.
+    const lines = Array.from({ length: 20 }, (_, s) => `export const v${s} = a.p${s} ${f < 8 && s < 3 ? "||" : "??"} {};`);
+    write(`src/x/f${f}.mjs`, `const a = {};\n${lines.join("\n")}\n`);
+  }
+  git("add", "-A");
+  git("commit", "-qm", "init");
+  git("config", "user.email", "two@t.test");
+  git("config", "user.name", "two");
+  for (const f of [10, 11]) write(`src/x/f${f}.mjs`, readFileSync(join(dir, `src/x/f${f}.mjs`), "utf8") + "export const touched = 1;\n");
+  git("add", "-A");
+  git("commit", "-qm", "second hand");
+  return dir;
+}
+
+/**
+ * A `claude` that answers the probe from the arm it is run in and writes one
+ * file per trial: the map's own area line where the map is present, NONE where
+ * it is not, so the injection check passes for the right reason in each arm.
+ */
+const measuring = () => [
+  'case "$2" in',
+  '  *NONE*)',
+  '    if [ -d .claude/rules ]; then R=$(grep -h "^# " .claude/rules/anatomiya-area-*.md | head -1 | tr -d "#" | sed "s/^ *//"); else R=NONE; fi',
+  '    ;;',
+  '  *)',
+  '    mkdir -p src/x',
+  "    printf 'const a = {};\\nexport const w0 = a.q0 ?? {};\\nexport const w1 = a.q1 ?? {};\\nexport const w2 = a.q2 || {};\\n' > src/x/written.mjs",
+  '    R="wrote a file"',
+  '    ;;',
+  'esac',
+  `printf '{"result":"%s","modelUsage":{"claude-opus-5[1m]":{"contextWindow":1000000,"outputTokens":1}}}\\n' "$R"`,
+].join("\n");
+
+test("the harness completes a run from an empty state and writes the document", { ...needsShebang, ...needsPathControl }, async (t) => {
+  // Every step the harness has, in order, with nothing but the model stubbed:
+  // scan, pin, scan, rank, arms, probe, trials, score, render, write. The
+  // ReferenceError that stopped step 7 lived past 2,500 unit tests because no
+  // case ran the file to its end.
+  const repo = measurable(t);
+  const stub = stubClaude(t, measuring);
+  const out = join(mkdtempSync(join(tmpdir(), "anatomiya-ab-out-")), "result.md");
+  t.after(() => rmSync(dirname(out), { recursive: true, force: true }));
+  const config = mkdtempSync(join(tmpdir(), "anatomiya-ab-config-"));
+  t.after(() => rmSync(config, { recursive: true, force: true }));
+  writeFileSync(join(config, "settings.json"), "{}\n");
+  const task = join(config, "task.md");
+  writeFileSync(task, "Write a new module under src/x that reads three defaults.\n");
+
+  let status = 0;
+  let stdout = "";
+  let stderr = "";
+  try {
+    stdout = execFileSync(process.execPath, [join(root, "scripts", "ab.mjs"), "--repo", repo, "--task", task, "--trials", "1", "--out", out], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+      timeout: 180_000,
+      env: { PATH: stub.path, HOME: process.env.HOME, CLAUDE_CONFIG_DIR: config },
+    });
+  } catch (err) {
+    status = err.status;
+    stdout = String(err.stdout ?? "");
+    stderr = String(err.stderr ?? "");
+  }
+
+  assert.equal(status, 0, `${stdout}\n${stderr}`);
+  assert.match(stdout, /injection verified: A said "src\/x/, stdout);
+  assert.match(stdout, /wrote .*result\.md/, stdout);
+  const doc = readFileSync(out, "utf8");
+  for (const line of [
+    "| area | src/x |",
+    "| claim | defaults are taken with ??, not || |",
+    "| baseline | 376 of 400, ratio 0.940 |",
+    "| model | claude-opus-5[1m] |",
+    "| trials per arm | 1 |",
+    "| trials that wrote a file | 1/1 | 1/1 |",
+    "| sites conforming | 2 of 3 (0.667) | 2 of 3 (0.667) |",
+  ]) assert.ok(doc.includes(line), `missing: ${line}\n\n${doc}`);
+  // Both arms were removed from the repository under measurement.
+  const worktrees = execFileSync("git", ["worktree", "list", "--porcelain"], { cwd: repo, encoding: "utf8" });
+  assert.equal(worktrees.split("\n").filter((l) => l.startsWith("worktree ")).length, 1, worktrees);
 });

@@ -40,10 +40,10 @@ import { PIN_PATH } from "../plugins/anatomiya/lib/baseline.mjs";
 import { MAX_LINES } from "../plugins/anatomiya/lib/render.mjs";
 import { isGeneratedName, OVERVIEW_FILE, RULES_DIR } from "../plugins/anatomiya/lib/rules.mjs";
 import { scanLines } from "../plugins/anatomiya/lib/summary.mjs";
+import { TRUNCATED_LAYOUT } from "../plugins/anatomiya/lib/render-layout.mjs";
 import { formatReport } from "../plugins/anatomiya/lib/check-report.mjs";
 
 const LAYOUT_HEADING = "## What lives where";
-const TRUNCATED = "layout: not counted, the scan was truncated";
 
 // --- the records the commands print -----------------------------------------
 
@@ -86,6 +86,17 @@ export const rootsPrinted = (s) => {
 };
 
 /**
+ * Why the roots column could not be read, or nothing. A line the reader did
+ * not parse printed `null/-/-` in the table with no failure, on a run nobody
+ * watches; the truncation sentence is the one layout line that legitimately
+ * carries no count.
+ */
+export const rootsProblems = (s) => {
+  if (rootsPrinted(s) !== null || s.layoutLine === TRUNCATED_LAYOUT) return [];
+  return [`the layout line does not open with a roots count: ${JSON.stringify(s.layoutLine ?? null)}`];
+};
+
+/**
  * The summary with the one number that legitimately moves taken out, so two
  * runs over unchanged source can be compared whole.
  */
@@ -115,7 +126,7 @@ export function overviewProblems(text) {
   const lines = text.trimEnd().split("\n");
   const body = lines.length - frontmatterEnd(lines);
   if (body > MAX_LINES) problems.push(`the overview has ${body} body lines, past ${MAX_LINES}`);
-  if (!lines.includes(LAYOUT_HEADING) && !lines.includes(TRUNCATED)) {
+  if (!lines.includes(LAYOUT_HEADING) && !lines.includes(TRUNCATED_LAYOUT)) {
     problems.push(`the overview has neither "${LAYOUT_HEADING}" nor the truncation notice`);
   }
   return problems;
@@ -481,6 +492,7 @@ async function runRepo(name, source, scratchDir) {
       roots: rootsColumn(rootsPrinted(s1)),
       wrote: s1.wrote,
     });
+    for (const p of rootsProblems(s1)) fail(p);
 
     const overview = join(clone, RULES_DIR, OVERVIEW_FILE);
     if (!existsSync(overview)) fail(`no ${OVERVIEW_FILE} was written`);

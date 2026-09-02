@@ -61,6 +61,15 @@ for (const decl of LANGUAGES) {
     assert.equal(tallies.rejected, 1);
   });
 
+  test(`${decl.id}: a guard name the bridge does not know refuses the call`, optsFor(decl), async () => {
+    // The language key was refused one level up and the names inside it were
+    // not: a mistyped `maxByts` ran the defaults and reported nothing.
+    await assert.rejects(
+      parseAll([{ rel: `src/a.${decl.exts[0]}`, source: fixture.ok, lang: decl.id }], { guards: { [decl.id]: { maxByts: 1 } } }),
+      /maxByts/
+    );
+  });
+
   test(`${decl.id}: the size guard answers oversize without a parse`, optsFor(decl), async () => {
     const rel = `src/big.${decl.exts[0]}`;
     const { records, tallies } = await parseAll([{ rel, source: fixture.ok, lang: decl.id }], {

@@ -214,3 +214,27 @@ async function logStream(root, onField) {
     }
   );
 }
+
+/**
+ * Whether an author email is a person's. GitHub mints `[bot]` into the local
+ * part, and brackets are illegal in a real unquoted address, so this excludes
+ * nothing a person can be called.
+ */
+export function isPerson(email) {
+  return !email.includes("[bot]");
+}
+
+/**
+ * How many people could supply author evidence at all: the authors of the files
+ * this tool counts over.
+ *
+ * Someone who has only ever touched documentation can never appear in a
+ * dimension's author set, so counting them raises a bar they cannot help clear.
+ * Measured: 15 emails in one repository's log against 13 who ever touched a
+ * counted source file, 154 against 131 on another.
+ */
+export function repoAuthorCount(files, authors) {
+  const who = new Set();
+  for (const f of files) for (const a of authors.get(f.rel) ?? []) if (isPerson(a)) who.add(a);
+  return who.size;
+}

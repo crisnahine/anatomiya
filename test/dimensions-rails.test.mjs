@@ -9,6 +9,7 @@ import { ALL_DIMENSIONS } from "../plugins/anatomiya/lib/dimensions.mjs";
 import { applicabilityFloor, applyGates } from "../plugins/anatomiya/lib/reduce.mjs";
 import { RAILS_DIMENSIONS } from "../plugins/anatomiya/lib/dimensions-rails.mjs";
 import { RUBY_DECLINED } from "./declined-fixtures.mjs";
+import { siteIdentity } from "../plugins/anatomiya/lib/introduced.mjs";
 
 const dir = mkdtempSync(join(tmpdir(), "anatomiya-rails-"));
 process.on("exit", () => rmSync(dir, { recursive: true, force: true }));
@@ -672,7 +673,7 @@ function counts(key, ...names) {
 
 test("every fixture parsed, through one child process", needsRuby, () => {
   assert.equal(parsed.results.length, Object.keys(SRC).length);
-  assert.equal(parsed.crashed, 0);
+  assert.ok(parsed.results.every((r) => !r.crashed));
   assert.equal(parsed.error, null);
 });
 
@@ -1119,8 +1120,8 @@ test("a rails dimension only ever calls add with what the reducer reads", needsR
         const at = `${d.key} on ${name}`;
         assert.equal(typeof h.conforming, "boolean", at);
         assert.ok(h.where === null || typeof h.where === "string", at);
-        // check.mjs destructures hit.node on every hit and reads type, name and
-        // line off it. A hit without one throws there, not here.
+        // introduced.mjs destructures hit.node on every hit and reads type, name
+        // and line off it. A hit without one throws there, not here.
         assert.ok(h.node && typeof h.node === "object", `${at} emitted no node`);
         assert.equal(typeof h.node.type, "string", at);
         assert.ok(h.node.name === null || typeof h.node.name === "string", at);
@@ -1129,6 +1130,11 @@ test("a rails dimension only ever calls add with what the reducer reads", needsR
         // UTF-16 string.
         assert.notEqual(typeof h.node.start, "number", at);
         assert.notEqual(typeof h.node.end, "number", at);
+        // With no offsets the identity is the name, and the line plays no part.
+        assert.equal(siteIdentity("app/w.rb", d.key, h.node, ""), siteIdentity("app/w.rb", d.key, { ...h.node, line: h.node.line + 100 }, ""), at);
+        if (typeof h.node.name === "string") {
+          assert.notEqual(siteIdentity("app/w.rb", d.key, h.node, ""), siteIdentity("app/w.rb", d.key, { ...h.node, name: `${h.node.name}X` }, ""), at);
+        }
       });
     }
     assert.ok(fired > 0, `${d.key} never fired, so no fixture holds it to this shape`);

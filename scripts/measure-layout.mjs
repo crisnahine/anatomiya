@@ -35,18 +35,16 @@ import {
   underTestTree,
 } from "../plugins/anatomiya/lib/layout.mjs";
 import { parseAll } from "../plugins/anatomiya/lib/parse.mjs";
-import { baseOf, dirOf, extOf, stemOf } from "../plugins/anatomiya/lib/paths.mjs";
+import { baseOf, byCode, dirOf, extOf, stemOf } from "../plugins/anatomiya/lib/paths.mjs";
 import { scan } from "../plugins/anatomiya/lib/scan.mjs";
 import { MAX_LINES } from "../plugins/anatomiya/lib/render.mjs";
-import { namesakeClause, ROOT_LABEL } from "../plugins/anatomiya/lib/render-layout.mjs";
-import { RUNNER_LABELS, UNNAMED_RUNNER } from "../plugins/anatomiya/lib/test-shape.mjs";
+import { namesakeClause, ROOT_LABEL, runnerCount, RUNNERS_SHOWN, specCount, TESTS_GROUPS, TRUNCATED_LAYOUT } from "../plugins/anatomiya/lib/render-layout.mjs";
 import { statedSide, writeFacts } from "../plugins/anatomiya/lib/facts.mjs";
 import { OVERVIEW_FILE } from "../plugins/anatomiya/lib/rules.mjs";
 import { planMap } from "../plugins/anatomiya/lib/write.mjs";
 import { encodePath } from "../plugins/anatomiya/lib/encode.mjs";
 
 const HEADING = "## What lives where";
-const TRUNCATED = "layout: not counted, the scan was truncated";
 const LEVEL_SUFFIX = " (files at this level)";
 
 // The five rows part 2 added, counted per repository so a row nothing states
@@ -54,10 +52,6 @@ const LEVEL_SUFFIX = " (files at this level)";
 export const LEARNED_ROWS = ["extends_base", "class_base", "module_include", "interface_prefix", "type_alias_prefix"];
 
 // --- the recount ------------------------------------------------------------
-
-// The recount orders the way the roster it reads back does, and `localeCompare`
-// orders case by whatever ICU tables the host was built with.
-const byCode = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
 
 // The mirror index the corpus decides, set once per repository before anything
 // is recounted: it is a fact about the whole tree, like the roster's own.
@@ -234,11 +228,6 @@ export function foldCounts(line) {
 
 const otherText = (n) => (n ? ` and ${n} other` : "");
 
-// What a test root names before it counts the rest, and what the tests line
-// shows before it counts the rest. Both live in the renderer too.
-const RUNNERS_SHOWN = 2;
-const TESTS_GROUPS = 3;
-
 /**
  * The printed clauses of one root line, as numbers and labels.
  *
@@ -264,10 +253,6 @@ function readExtClause(clause) {
   return { exts, other: tail ? Number(tail[1]) : 0 };
 }
 
-const runnerLabel = (runner) => RUNNER_LABELS[runner] ?? runner;
-const specNoun = (n, runner) =>
-  runner === UNNAMED_RUNNER ? `test file${n === 1 ? "" : "s"}` : `${runnerLabel(runner)} spec${n === 1 ? "" : "s"}`;
-
 // --- the assertions ---------------------------------------------------------
 
 class Failed extends Error {}
@@ -288,7 +273,7 @@ const same = (what, got, want) => {
  */
 function checkSection(section, corpus, root, recordRoots) {
   if (section === null) fail(`${HEADING} is missing`);
-  if (section.includes(TRUNCATED)) return { roots: 0, folded: 0, principles: 0, truncated: true };
+  if (section.includes(TRUNCATED_LAYOUT)) return { roots: 0, folded: 0, principles: 0, truncated: true };
 
   const bullets = section.filter((l) => l.startsWith("- "));
   const rootLines = bullets.filter((l) => !l.startsWith("- tests: ") && !l.startsWith("- and "));
@@ -314,7 +299,7 @@ function checkSection(section, corpus, root, recordRoots) {
     if (counted.testRoot && counted.tests.length > 0) {
       const shown = counted.tests.slice(0, RUNNERS_SHOWN);
       const expected =
-        shown.map((t) => `${t.files} ${specNoun(t.files, t.runner)}`).join(", ") +
+        shown.map((t) => specCount(t.files, t.runner)).join(", ") +
         otherText(counted.files - shown.reduce((n, t) => n + t.files, 0));
       const clause = clauses.shift();
       if (clause !== expected) fail(`${parsed.label} test root: printed "${clause}", recount "${expected}"`);
@@ -339,12 +324,10 @@ function checkSection(section, corpus, root, recordRoots) {
     }
 
     for (const group of counted.tests) {
-      const want = specNoun(group.files, group.runner);
       const clause = clauses.shift();
       const named = group.under !== group.files ? `${group.under} of ` : "";
-      const expected = group.sub
-        ? `${named}${group.files} ${want} under ${pathLabel(group.sub)}`
-        : `${named}${group.files} ${want}`;
+      const count = specCount(group.files, group.runner);
+      const expected = group.sub ? `${named}${count} under ${pathLabel(group.sub)}` : `${named}${count}`;
       if (clause !== expected) fail(`${parsed.label} tests clause: printed "${clause}", recount "${expected}"`);
     }
 
@@ -404,9 +387,9 @@ function checkTestsLine(line, corpus, recordRoots, testFiles, byStem) {
   const clauses = line.slice("- tests: ".length).split("; ");
   const shown = recount.slice(0, TESTS_GROUPS);
   for (const [i, g] of shown.entries()) {
-    const noun = i === 0 ? specNoun(g.files, g.runner) : g.runner === UNNAMED_RUNNER ? `test file${g.files === 1 ? "" : "s"}` : runnerLabel(g.runner);
     const named = g.under !== g.files ? `${g.under} of ` : "";
-    const expected = `${named}${g.files} ${noun}` + (g.root ? ` under ${pathLabel(g.root)}` : "");
+    const count = (i === 0 ? specCount : runnerCount)(g.files, g.runner);
+    const expected = `${named}${count}` + (g.root ? ` under ${pathLabel(g.root)}` : "");
     const clause = clauses.shift();
     if (clause !== expected) fail(`tests line group ${i + 1}: printed "${clause}", recount "${expected}"`);
   }

@@ -39,7 +39,7 @@ export const CALIBRATED_AGAINST = "2.1.251";
  * drift, a respelling nags every session, or under strict switches the plugin
  * off on a build whose gate still holds.
  */
-export const GATE = /function [A-Za-z_$][\w$]*\([^)]{0,24}\)\{return [\w$]+===(?:!0|true)&&[\w$]+(?:\?\.)?\([^)]{0,24}\)&&[\w$]+\([^)]{0,24}\)===["']xhigh["']\}/;
+const GATE = /function [A-Za-z_$][\w$]*\([^)]{0,24}\)\{return [\w$]+===(?:!0|true)&&[\w$]+(?:\?\.)?\([^)]{0,24}\)&&[\w$]+\([^)]{0,24}\)===["']xhigh["']\}/;
 
 /** What a missing gate is called when the check reports it. */
 export const GATE_SHAPE = "the xhigh gate the reminder is emitted under";
@@ -75,7 +75,7 @@ export const MARKERS = [
  * the variable that withdraws the feature, then `enableWorkflows`, then the
  * standing mode itself.
  */
-export const CONFLICTS = {
+const CONFLICTS = {
   CLAUDE_CODE_DISABLE_WORKFLOWS: "CLAUDE_CODE_DISABLE_WORKFLOWS is set, so there is no Workflow tool for the reminder to point at",
   disableWorkflows: "settings.json sets \"disableWorkflows\": true, so there is no Workflow tool for the reminder to point at",
   CLAUDE_CODE_WORKFLOWS: "CLAUDE_CODE_WORKFLOWS is set to false, so there is no Workflow tool for the reminder to point at",
@@ -247,7 +247,7 @@ export function versionOf(cli) {
  * cosmetic either way, since two of the builds in that drift were the same size
  * to the byte with 176,881,324 of them different.
  */
-export const PATCHES_BEFORE_STALE = 10;
+const PATCHES_BEFORE_STALE = 10;
 
 /** A sentence when the installed build is one nobody calibrated against, or null. */
 export function behind(installed, calibrated = CALIBRATED_AGAINST) {

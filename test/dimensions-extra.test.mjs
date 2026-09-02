@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { parseSync } from "oxc-parser";
+import { siteIdentity } from "../plugins/anatomiya/lib/introduced.mjs";
 import { EXTRA_DIMENSIONS } from "../plugins/anatomiya/lib/dimensions-extra.mjs";
 import { dimensionsFor, ALL_DIMENSIONS } from "../plugins/anatomiya/lib/dimensions.mjs";
 
@@ -307,9 +308,9 @@ test("every extra dimension declares its precision and a readable claim", () => 
   }
 });
 
-// check.mjs slices the parsed source with node.start/node.end and fingerprints
-// on node.type, so a hit missing any of the three reports a violation with no
-// text and an unstable identity.
+// introduced.mjs slices the parsed source with node.start/node.end and keys the
+// identity on node.type, so a hit missing any of the three reports a site with
+// no text and an unstable identity.
 test("every hit carries a typed node with offsets into the parsed source", () => {
   const src = `
     import type { A } from "./a.ts"
@@ -337,6 +338,15 @@ test("every hit carries a typed node with offsets into the parsed source", () =>
       assert.equal(typeof h.node.start, "number", `${d.key} node has no start offset`);
       assert.equal(typeof h.node.end, "number", `${d.key} node has no end offset`);
       assert.ok(h.where === null || typeof h.where === "string", `${d.key} where`);
+    }
+    // The identity is the slice, never the offset: the same file with one more
+    // line ahead of it identifies every site the same way.
+    const shifted = `\n${src}`;
+    const moved = [];
+    d.run(parseSync("f.tsx", shifted, { sourceType: "module" }).program, (h) => moved.push(h));
+    assert.equal(moved.length, out.length, d.key);
+    for (const [i, h] of out.entries()) {
+      assert.equal(siteIdentity("src/a.tsx", d.key, h.node, src), siteIdentity("src/a.tsx", d.key, moved[i].node, shifted), `${d.key} site ${i}`);
     }
   }
 });

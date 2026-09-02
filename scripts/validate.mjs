@@ -379,6 +379,28 @@ function lockfileDrift(root, pluginRoot, at, readJson) {
   return problems;
 }
 
+const PLUGIN_PATH = /(["'])\$\{CLAUDE_PLUGIN_ROOT\}\/([^"']+)\1|\$\{CLAUDE_PLUGIN_ROOT\}\/([^"'\s`)]+)/g;
+
+/**
+ * The paths into a plugin that a text names as `${CLAUDE_PLUGIN_ROOT}/...`, in
+ * the order it names them.
+ *
+ * A quoted path runs to its closing quote, so a name may carry a space. A bare
+ * one ends at whitespace, a quote, a backtick or a closing parenthesis: prose
+ * wraps a path in backticks and a shell wraps one in a subshell, and a file
+ * honestly named with either is quoted in every hook this repository ships.
+ * One alternation, so a bare match never starts inside a quoted one.
+ *
+ * One grammar, because `scripts/shipped.mjs` read the same variable with a
+ * copy that ended a bare path at whitespace alone, and on
+ * `sh -c "(node ${CLAUDE_PLUGIN_ROOT}/x.mjs)"` the two gates named two files.
+ */
+export function pluginPaths(text) {
+  const named = [];
+  for (const [, , quoted, bare] of text.matchAll(PLUGIN_PATH)) named.push(quoted ?? bare);
+  return named;
+}
+
 /**
  * The five kinds of thing a plugin can install: the manifest key that names
  * one, and where the loader looks when the manifest does not.
@@ -645,12 +667,10 @@ function eventProblems(pluginRoot, at, block) {
         problems.push(`${at} ${event} runs ${command}, which names nothing in this plugin`);
         continue;
       }
-      // Every file the command names, not only the first, and the path ends
-      // where its quote does or where the whitespace does: a command may carry
-      // arguments, a quoted path may carry a space, and a command may name the
-      // plugin root on its own, which names no file to check.
-      for (const [, , quoted, bare] of command.matchAll(/(["'])\$\{CLAUDE_PLUGIN_ROOT\}\/([^"']+)\1|\$\{CLAUDE_PLUGIN_ROOT\}\/([^"'\s]+)/g)) {
-        const named = quoted ?? bare;
+      // Every file the command names, not only the first: a command may carry
+      // arguments, and one may name the plugin root on its own, which names no
+      // file to check.
+      for (const named of pluginPaths(command)) {
         const file = join(pluginRoot, named);
         if (escapes(relative(pluginRoot, resolve(pluginRoot, named))) || outsideByLink(pluginRoot, file)) {
           problems.push(`${at} ${event} runs ${named}, which is outside that plugin`);

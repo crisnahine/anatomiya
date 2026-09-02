@@ -149,7 +149,7 @@ export function namesASite(rel) {
  * line. A record from a build that carried no facets reads as a module, which
  * is what every file was before this existed.
  */
-export const splitByJsx = (record) => (record?.facets?.jsx === true ? "jsx" : "module");
+const splitByJsx = (record) => (record?.facets?.jsx === true ? "jsx" : "module");
 
 export const NAMING_CORPUS = [
   {

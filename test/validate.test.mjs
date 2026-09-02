@@ -630,6 +630,19 @@ test("a hook command that carries arguments names the file, not the flags", (t) 
   assert.deepEqual(validate(dir), []);
 });
 
+test("a hook command that wraps the path in a subshell names the file, not the parenthesis", (t) => {
+  // Two readers of one variable ended a bare path in different places: this
+  // gate at whitespace, the shipped-set gate at a backtick or a parenthesis
+  // too. There is one grammar now, with the wider set.
+  const dir = marketplace(t);
+  writeFileSync(
+    join(dir, "plugins", "second", "hooks", "hooks.json"),
+    JSON.stringify({ hooks: { UserPromptSubmit: [{ hooks: [{ type: "command", command: 'sh -c "(node ${CLAUDE_PLUGIN_ROOT}/hooks/run.mjs)"' }] }] } }),
+  );
+
+  assert.deepEqual(validate(dir), []);
+});
+
 test("problems come back as annotations where a workflow is reading them", (t) => {
   const dir = marketplace(t);
   rmSync(join(dir, REL.anatomiya, ".claude-plugin", "plugin.json"));
