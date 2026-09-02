@@ -39,7 +39,10 @@ export const ROOT_LABEL = "(repository root)";
 
 const runnerLabel = (runner) => RUNNER_LABELS[runner] ?? runner;
 
-/** A runner group's count with its noun: `4 RSpec specs`, or `4 test files` for the runner nothing named. */
+/**
+ * A runner group's count with its noun: `4 RSpec specs`, or `4 test files`
+ * for the runner nothing named.
+ */
 export const specCount = (n, runner) =>
   runner === UNNAMED_RUNNER ? plural(n, "test file") : plural(n, `${runnerLabel(runner)} spec`);
 
@@ -145,8 +148,10 @@ const LAYOUT_HEADING = "## What lives where";
  */
 export const TRUNCATED_LAYOUT = "layout: not counted, the scan was truncated";
 
-// A test root names two runners and counts the rest, the way the extension
-// clause names two extensions: the third one is not what the line is for.
+/**
+ * A test root names two runners and counts the rest, the way the extension
+ * clause names two extensions: the third one is not what the line is for.
+ */
 export const RUNNERS_SHOWN = 2;
 
 /** One directory: what it holds, what tests it holds, what has a namesake. */
@@ -176,8 +181,10 @@ function rootLine(r) {
   return `- ${pathText(r.path)}: ${parts.join("; ")}`;
 }
 
-// At most three groups, then a count: four vitest files beside 102 Cypress
-// specs is the denominator this line exists to be, and a fourth runner is not.
+/**
+ * At most three groups, then a count: four vitest files beside 102 Cypress
+ * specs is the denominator this line exists to be, and a fourth runner is not.
+ */
 export const TESTS_GROUPS = 3;
 
 /**

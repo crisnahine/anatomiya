@@ -147,15 +147,17 @@ test("the grammar deciding what a branch introduced reaches no git, no child and
 test("every field a reader takes off a site crossed the worker boundary, or is that reader's own", async () => {
   const { HIT_FIELDS } = await import("../plugins/anatomiya/lib/walk.mjs");
   const crossed = new Set(HIT_FIELDS.map(([name]) => name));
+  // The floor is what stops the alias list going quiet: a spelling nobody
+  // matches reads as nothing to hold, and nothing passes.
   const readers = [
-    ["reduce.mjs", /\b(?:h|hit|at)\.([a-zA-Z]+)\b/g, new Set(["elsewhere"])],
-    ["introduced.mjs", /\b(?:h|hit)\.([a-zA-Z]+)\b/g, new Set(["node"])],
+    ["reduce.mjs", /\b(?:h|hit|at)\.([a-zA-Z]+)\b/g, new Set(["elsewhere"]), 5],
+    ["introduced.mjs", /\b(?:h|hit)\.([a-zA-Z]+)\b/g, new Set(["node"]), 2],
   ];
-  for (const [file, alias, own] of readers) {
+  for (const [file, alias, own, floor] of readers) {
     const src = scan(readFileSync(join(LIB, file), "utf8"));
     const read = new Set([...src.matchAll(alias)].map((m) => m[1]));
 
-    assert.ok(read.size >= 4, `${file} reads only ${[...read].join(", ")}`);
+    assert.ok(read.size >= floor, `${file} reads only ${[...read].join(", ")}`);
     assert.deepEqual([...read].filter((f) => !crossed.has(f) && !own.has(f)).sort(), [], file);
   }
 });
@@ -477,7 +479,15 @@ function exportedBy(rel) {
   // template literal, and those are the fixture's exports, not the file's.
   const src = scan(readFileSync(join(ROOT, rel), "utf8"), { strings: true });
   const names = new Set();
-  for (const [, name] of src.matchAll(/^export\s+(?:async\s+)?(?:const|let|function|class)\s+([A-Za-z_$][\w$]*)/gm)) names.add(name);
+  for (const [, name] of src.matchAll(/^export\s+(?:async\s+)?(?:const|let|var|function|class)\s+([A-Za-z_$][\w$]*)/gm)) names.add(name);
+  // The list form too, by the name it exports under: `export { a as b }`
+  // offers `b`, and `hook.mjs` offers `SETTINGS_PATH` this way.
+  for (const [, list] of src.matchAll(/^export\s*\{([^}]*)\}/gm)) {
+    for (const entry of list.split(",")) {
+      const name = entry.trim().split(/\s+as\s+/).at(-1);
+      if (name) names.add(name);
+    }
+  }
   return names;
 }
 
@@ -513,6 +523,7 @@ test("a name this repository's own module offers is imported where it is used, n
 // tests reach some names through a namespace or a dynamic import; a name two
 // files both export passes on the other's use, which only makes this lenient.
 test("every export is read somewhere outside its own file", () => {
+  assert.ok(exportedBy(`${REL.anatomiya}/lib/hook.mjs`).has("SETTINGS_PATH"), "the list form of export is read");
   const files = sourceFiles();
   const texts = files.map((rel) => [rel, scan(readFileSync(join(ROOT, rel), "utf8"), { strings: true })]);
   const unread = [];
@@ -544,7 +555,14 @@ test("every verb the binary declares carries its own arm in the one table", () =
     const keys = value.type === "ObjectExpression" ? value.properties.map((p) => p.key.name) : [];
     assert.ok(keys.includes("run"), `${verb} carries no run`);
   }
-  assert.doesNotMatch(scan(src), /\} else \{\s*const \{ summary \} = await runScan/, "no verb reaches the scan by falling through");
+  // Every command call sits inside the table, so no arm can exist outside it
+  // for a verb to fall through to, however it is spelled. The offsets are
+  // asserted first: compared against undefined, every call would read as inside.
+  assert.ok(Number.isInteger(table.init.start) && Number.isInteger(table.init.end), "the table carries offsets");
+  const outside = [...scan(src).matchAll(/\brun(?:Scan|Check|Pin|Doctor|Setup|Echo|Notice)\(/g)]
+    .filter((m) => m.index < table.init.start || m.index >= table.init.end)
+    .map((m) => m[0]);
+  assert.deepEqual(outside, []);
 });
 
 const FUNCTIONS = new Set(["FunctionDeclaration", "FunctionExpression", "ArrowFunctionExpression"]);

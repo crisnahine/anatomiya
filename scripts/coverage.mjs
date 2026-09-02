@@ -46,7 +46,7 @@ export const FLOORS = [
     // two things inside it.
     scope: "the whole tree",
     include: "**",
-    // Measured at 98.4 line, 94.4 branch, 98.0 function over 170 files.
+    // Measured at 98.4 line, 94.4 branch, 98.0 function over 171 files.
     whole: { lines: 95, branches: 87, functions: 95 },
     file: {},
   },

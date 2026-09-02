@@ -233,6 +233,6 @@ export const isPerson = (email) => !email.includes("[bot]");
  */
 export function repoAuthorCount(files, authors) {
   const who = new Set();
-  for (const f of files) for (const a of authors.get(f.rel) || []) if (isPerson(a)) who.add(a);
+  for (const f of files) for (const a of authors.get(f.rel) ?? []) if (isPerson(a)) who.add(a);
   return who.size;
 }

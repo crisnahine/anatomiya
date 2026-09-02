@@ -94,7 +94,7 @@ export const site = (n) => ({
 });
 
 /** The arguments of a call, and none for anything that is not one. */
-export const args = (call) => (call && call.arguments && call.arguments.arguments) || [];
+export const args = (call) => call?.arguments?.arguments ?? [];
 
 /** Statements written directly in a body, skipping the statements wrapper. */
 export function bodyOf(node) {

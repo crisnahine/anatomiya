@@ -90,7 +90,9 @@ export function classifySemantic({ config, resolution }) {
  * Every failure answers itself rather than an empty result: a child that will
  * not start, a build that never finished, a stall, and a checker that is not
  * installed are four different things to do about it, and folding them into
- * "no hits" is the shape B13 and F15 both closed elsewhere.
+ * "no hits" is the shape B13 and F15 both closed elsewhere. A bag naming a
+ * guard the checker does not have is a caller's mistake rather than a run,
+ * and rejects the way `parseAll` refuses one.
  */
 export function runSemantic(
   root,
@@ -98,9 +100,9 @@ export function runSemantic(
   { keys = null, guards: given = null, workerPath = WORKER, cwd = tmpdir() } = {}
 ) {
   return new Promise((resolve) => {
-    // Inside the promise so a bad bag rejects, the way the two parse bridges
-    // refuse theirs. Taken whole, a bag naming only `idleMs` armed the build
-    // window with nothing.
+    // Inside the promise so a bad bag rejects rather than throws, which is how
+    // `parseAll` answers one for either parse bridge. Taken whole, a bag naming
+    // only `idleMs` armed the build window with nothing.
     const guards = guardsOver(SEMANTIC_GUARDS, given, "checker");
     const records = new Map();
     let config = null;
