@@ -49,7 +49,12 @@ export function createPool({ size, withProgram = false, execArgv = [], guards = 
   // The pool's defaults with a caller's defined overrides on top: an explicit
   // undefined never erases a default, the same rule the Ruby bridge merges by.
   const limits = { ...GUARDS };
-  for (const [k, v] of Object.entries(guards ?? {})) if (v !== undefined) limits[k] = v;
+  for (const [k, v] of Object.entries(guards ?? {})) {
+    // A name these defaults do not carry would move nothing: a mistyped one
+    // ran the defaults and reported nothing.
+    if (!(k in GUARDS)) throw new TypeError(`${k} is not one of the oxc guards: ${Object.keys(GUARDS).join(", ")}`);
+    if (v !== undefined) limits[k] = v;
+  }
   const workers = [];
   const idle = [];
   const queue = [];

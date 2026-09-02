@@ -37,6 +37,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - The roster nouns the layout recount reads back are the renderer's own exports; the recount spells none (H41).
 - One function in `scripts/validate.mjs` reads the paths a text names as `${CLAUDE_PLUGIN_ROOT}/...`, and the shipped-set gate and the hook test take theirs from it. A bare path ends at a subshell's parenthesis or a backtick in both gates now (A49).
 - The Ruby hit's `node` and a call's argument list are built in `ruby-walk.mjs` and imported by both Ruby registries (C36).
+- The check words the filename row's claim through `claimFor`, the row's owner, and holds no template rule of its own (C37).
+- Each parse bridge and the checker refuse a guard name their own defaults do not carry, before anything is spawned, and the checker merges a partial guard bag over its defaults (B37).
+- `parseRuby` no longer carries the `parsed`, `crashed` and `skipped` counters or the `onFile` streaming mode; the results are the record (B38).
 
 - The sites a branch introduced are decided in
   `plugins/anatomiya/lib/introduced.mjs`, a leaf the check alone imports:

@@ -94,8 +94,16 @@ export function classifySemantic({ config, resolution }) {
 export function runSemantic(
   root,
   files,
-  { keys = null, guards = SEMANTIC_GUARDS, workerPath = WORKER, cwd = tmpdir() } = {}
+  { keys = null, guards: given = null, workerPath = WORKER, cwd = tmpdir() } = {}
 ) {
+  // The bag over the defaults, the way both parse bridges merge theirs: taken
+  // whole, one naming only `idleMs` armed the build window with nothing, and a
+  // name the defaults do not carry is refused rather than run around.
+  const guards = { ...SEMANTIC_GUARDS };
+  for (const [k, v] of Object.entries(given ?? {})) {
+    if (!(k in SEMANTIC_GUARDS)) throw new TypeError(`${k} is not one of the checker guards: ${Object.keys(SEMANTIC_GUARDS).join(", ")}`);
+    if (v !== undefined) guards[k] = v;
+  }
   return new Promise((resolve) => {
     const records = new Map();
     let config = null;

@@ -168,26 +168,25 @@ const defined = (o) => Object.fromEntries(Object.entries(o).filter(([, v]) => v 
 /**
  * Parse Ruby files. Resolves once the child has exited or a guard has fired.
  *
- * With `onFile` the results are handed over one at a time and not retained: a
- * Rails-sized corpus is 5,500 syntax trees, and holding them all costs more
- * than the reduction that consumes them.
+ * The results are the whole record: `parse.mjs` classifies every outcome off
+ * them, so no count rides beside them.
  */
 export async function parseRuby(
   files,
-  { onFile = null, ruby = "ruby", guards: given = null, dimensions = [] } = {},
+  { ruby = "ruby", guards: given = null, dimensions = [] } = {},
 ) {
   // A caller overriding one guard keeps the rest. Replacing the whole object
   // left every guard it did not name undefined, and a timer set from one of
   // those fires immediately rather than never.
+  for (const name of Object.keys(given ?? {})) {
+    if (!(name in RUBY_GUARDS)) throw new TypeError(`${name} is not one of the prism guards: ${Object.keys(RUBY_GUARDS).join(", ")}`);
+  }
   const guards = given ? { ...RUBY_GUARDS, ...defined(given) } : RUBY_GUARDS;
   // Built once, and before any child: a bad override refuses here, loudly,
   // rather than dying inside the spawn where it reads as a broken install.
   const rubyScript = scriptFor(guards.maxBytes);
   const out = {
     results: [],
-    parsed: 0,
-    crashed: 0,
-    skipped: 0,
     truncated: false,
     // Which prism read these files, off the child's own ready line. It was
     // parsed and dropped before anything could read it, so a map could not say
@@ -203,7 +202,7 @@ export async function parseRuby(
     // F5 keeps a leading dash out of argv. Paths never reach argv here, but a
     // path that would need that rule is malformed for our purposes either way.
     if (f.rel.startsWith("-") || f.abs.startsWith("-")) {
-      deliver(out, onFile, { rel: f.rel, ok: false, error: "suspicious path", skipped: true }, 1);
+      deliver(out, { rel: f.rel, ok: false, error: "suspicious path", skipped: true }, 1);
       continue;
     }
     queued.push(f);
@@ -269,7 +268,7 @@ export async function parseRuby(
         while ((i = buf.indexOf("\n")) >= 0) {
           const line = buf.slice(0, i);
           buf = buf.slice(i + 1);
-          if (line) take(out, onFile, seen, line, dimensions, attempt);
+          if (line) take(out, seen, line, dimensions, attempt);
         }
         // A single line this long means one file produced it, and V8 refuses to
         // hold a string much larger. Dropping the run beats an unattributable
@@ -287,7 +286,7 @@ export async function parseRuby(
         // whatever never answered. Reading the tail here would hand it a result
         // for a file it has already accounted for, after it stopped listening.
         if (settled) return;
-        if (buf) take(out, onFile, seen, buf, dimensions, attempt);
+        if (buf) take(out, seen, buf, dimensions, attempt);
         // The ready line is the proof that the script itself started. Without it
         // the failure is the interpreter, not a file, and stderr is the only
         // thing that says which.
@@ -335,7 +334,6 @@ export async function parseRuby(
   for (const f of unanswered()) {
     deliver(
       out,
-      onFile,
       {
         rel: f.rel,
         ok: false,
@@ -350,7 +348,7 @@ export async function parseRuby(
   return out;
 }
 
-function take(out, onFile, seen, line, dimensions, attempt) {
+function take(out, seen, line, dimensions, attempt) {
   let msg;
   try {
     msg = JSON.parse(line);
@@ -403,14 +401,10 @@ function take(out, onFile, seen, line, dimensions, attempt) {
       result.program = null;
     }
   }
-  deliver(out, onFile, result, attempt);
+  deliver(out, result, attempt);
 }
 
-function deliver(out, onFile, result, attempts) {
+function deliver(out, result, attempts) {
   result.attempts = attempts;
-  if (result.ok) out.parsed++;
-  if (result.crashed) out.crashed++;
-  if (result.skipped) out.skipped++;
-  if (onFile) onFile(result);
-  else out.results.push(result);
+  out.results.push(result);
 }

@@ -22,7 +22,7 @@ import { MAX_FILE_BYTES } from "./limits.mjs";
 import { resolve as resolveBaseline } from "./baseline.mjs";
 import { pairingsFor, pairingViolations } from "./pairing.mjs";
 import { isTestPath, precedentFindings } from "./precedent.mjs";
-import { fillClass, CLASSES } from "./dimensions-naming.mjs";
+import { claimFor, CLASSES } from "./dimensions-naming.mjs";
 import { rowsOfKind } from "./registry.mjs";
 import { couldSignal } from "./frameworks.mjs";
 import {
@@ -893,14 +893,6 @@ function cappedAway(verdict, away, area) {
   return { severity: "FIX", reason: `counted in ${area.path}, which this directory sits inside` };
 }
 
-/**
- * The template the map printed for this row: the plain sentence, or the one
- * naming the kind wherever the narrowing left something out.
- */
-function claimTemplate(row, dim) {
-  return (dim.narrowed === true && row.splitClaim?.[dim.learnedKind]) || row.claim;
-}
-
 function filenameFinding(row, job, area, fresh, { dropped = false, facets = null, from = null } = {}) {
   const path = job.file.path;
   const nameDim = area && (area.dimensions || []).find((d) => d.key === row.key);
@@ -949,7 +941,9 @@ function filenameFinding(row, job, area, fresh, { dropped = false, facets = null
     line: 1,
     area: area.path,
     dimension: row.key,
-    claim: fillClass(claimTemplate(row, nameDim), nameDim.learned),
+    // Worded by the row's owner, which also knows the kind the narrowing left
+    // out and the two rules the template alone cannot carry.
+    claim: claimFor(row, nameDim.learned, nameDim.narrowed === true ? nameDim.learnedKind : undefined),
     precision: nameDim.precision ?? "precise",
     where: null,
     companion: null,

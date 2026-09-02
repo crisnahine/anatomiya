@@ -429,7 +429,7 @@ const counts = (key, name) => {
 
 test("every fixture parsed, through one child process", needsRuby, () => {
   assert.equal(parsed.results.length, Object.keys(SRC).length);
-  assert.equal(parsed.crashed, 0);
+  assert.ok(parsed.results.every((r) => !r.crashed));
   assert.equal(parsed.error, null);
   assert.ok(parsed.version, "the child reports which prism it loaded");
 });
@@ -452,20 +452,11 @@ test("the tree carries no byte offsets, so none can index the wrong string", nee
 test("no files is an empty run, not a spawn", needsRuby, async () => {
   const out = await parseRuby([]);
   assert.deepEqual(out.results, []);
-  assert.equal(out.parsed, 0);
+  // The results are the record: `parse.mjs` classifies every outcome off them,
+  // and the three counters this once carried beside them had no reader.
+  assert.deepEqual(Object.keys(out).sort(), ["error", "missingParser", "results", "truncated", "version"]);
   assert.equal(out.version, null, "nothing was started, so nothing reported a version");
   assert.equal(out.error, null);
-});
-
-test("onFile hands each result over and retains none", needsRuby, async () => {
-  const streamed = [];
-  const out = await parseRuby([{ rel: "here.rb", abs: join(dir, "rescue_none.rb") }], {
-    onFile: (r) => streamed.push(r),
-  });
-  assert.equal(streamed.length, 1);
-  assert.equal(streamed[0].ok, true);
-  assert.deepEqual(out.results, [], "a Rails-sized corpus must not be held in memory");
-  assert.equal(out.parsed, 1, "the counters still move when nothing is retained");
 });
 
 test("a newline in a path is a path, not two paths", needsPosixPaths, needsRuby, async () => {
@@ -483,7 +474,6 @@ test("a file over the size cap is skipped without a tree", needsRuby, async () =
   assert.equal(out.results[0].ok, false);
   assert.equal(out.results[0].skipped, true);
   assert.equal(out.results[0].program, null);
-  assert.equal(out.parsed, 0);
 });
 
 test("one unreadable file costs that file, not the run", needsRuby, async () => {
@@ -532,7 +522,6 @@ test("a parser too old for these field names reports rather than counting zero",
   writeFileSync(stub, '#!/bin/sh\necho \'{"fatal":"prism 0.19.0 predates it"}\'\n', { mode: 0o755 });
   const out = await parseRuby([{ rel: "a.rb", abs: join(dir, "rescue_none.rb") }], { ruby: stub });
   assert.match(out.error, /prism 0\.19\.0/);
-  assert.equal(out.parsed, 0);
   assert.equal(out.results[0].crashed, true, "the file is charged, not silently dropped");
 });
 
@@ -554,7 +543,7 @@ test("total output is not capped, so repository size alone never truncates", nee
   const out = await parseRuby(files);
 
   assert.equal(out.truncated, false);
-  assert.equal(out.parsed, 40, "every file answered");
+  assert.equal(out.results.filter((r) => r.ok).length, 40, "every file answered");
 });
 
 test("one enormous line still stops the run, because V8 refuses to hold the string", needsRuby, async () => {
@@ -565,7 +554,7 @@ test("one enormous line still stops the run, because V8 refuses to hold the stri
   const out = await parseRuby([big], { guards: { ...RUBY_GUARDS, maxLineBytes: 8 } });
 
   assert.equal(out.truncated, true, "the caller must suppress every directive on this");
-  assert.equal(out.parsed, 0, "nothing was counted from a run that stopped mid-line");
+  assert.equal(out.results.filter((r) => r.ok).length, 0, "nothing was counted from a run that stopped mid-line");
 });
 
 test("broken syntax is reported as unread, not counted from the recovery", needsRuby, async () => {
@@ -838,8 +827,7 @@ test("a child our own timer killed is spawned once more for what never answered"
   const out = await parseRuby(files, { ruby: stub, guards: { idleMs: 1500 } });
 
   assert.equal(out.error, null, "the second child answered, so the run did not fail");
-  assert.equal(out.parsed, 3);
-  assert.equal(out.crashed, 0);
+  assert.deepEqual(out.results.map((r) => r.ok), [true, true, true]);
   assert.deepEqual(out.results.map((r) => r.attempts), [2, 2, 2]);
   assert.equal(readFileSync(join(home, "runs"), "utf8").trim(), "2", "one more child, not a loop");
 });
@@ -851,7 +839,7 @@ test("the second child is handed only what the first never answered", needsSheba
   const files = ["a.rb", "b.rb", "c.rb"].map((rel) => ({ rel, abs: join(dir, "rescue_none.rb") }));
   const out = await parseRuby(files, { ruby: stub, guards: { idleMs: 1500 } });
 
-  assert.equal(out.parsed, 3);
+  assert.deepEqual(out.results.map((r) => r.ok), [true, true, true]);
   const attempts = new Map(out.results.map((r) => [r.rel, r.attempts]));
   assert.deepEqual([...attempts], [["a.rb", 1], ["b.rb", 2], ["c.rb", 2]]);
   // Every other line, since the paths arrive as rel and abs pairs.
@@ -868,8 +856,7 @@ test("a retry killed after answering everything is not a failed run", needsSheba
   const files = ["a.rb", "b.rb"].map((rel) => ({ rel, abs: join(dir, "rescue_none.rb") }));
   const out = await parseRuby(files, { ruby: stub, guards: { idleMs: 1500 } });
 
-  assert.equal(out.parsed, 2);
-  assert.equal(out.crashed, 0);
+  assert.deepEqual(out.results.map((r) => r.ok), [true, true]);
   assert.equal(out.error, null, "a run whose every file answered did not fail");
 });
 
@@ -900,8 +887,7 @@ test("a file the retry left unanswered is charged with what killed the first chi
   const out = await parseRuby(files, { ruby: stub, guards: { idleMs: 1500 } });
 
   assert.equal(readFileSync(join(home, "runs"), "utf8").trim(), "2", "the first child was killed by our own timer");
-  assert.equal(out.crashed, 2);
-  assert.deepEqual(out.results.map((r) => r.attempts), [2, 2]);
+  assert.deepEqual(out.results.map((r) => [r.crashed, r.attempts]), [[true, 2], [true, 2]]);
   assert.deepEqual(out.results.map((r) => r.error), ["ruby went silent", "ruby went silent"]);
 });
 
@@ -917,8 +903,7 @@ test("a child that died by itself is charged, not tried again", needsShebang, as
   const out = await parseRuby(files, { ruby: join(home, "ruby") });
 
   assert.equal(readFileSync(join(home, "runs"), "utf8"), "x\n", "one child, no second one");
-  assert.equal(out.parsed, 0);
-  assert.equal(out.crashed, 2);
+  assert.deepEqual(out.results.map((r) => [r.ok, r.crashed]), [[false, true], [false, true]]);
   assert.deepEqual(out.results.map((r) => r.attempts), [1, 1]);
   assert.equal(out.results[0].crashed, true);
   assert.equal(out.missingParser, null, "an interpreter that ran is not an absent one");
@@ -944,7 +929,7 @@ test("overriding one guard keeps the rest", needsRuby, async () => {
   });
 
   assert.equal(out.error, null, "the wall clock it did not name still held off");
-  assert.equal(out.parsed, 1);
+  assert.equal(out.results[0].ok, true);
 });
 
 test("a guard named as undefined keeps its default", needsRuby, async () => {
@@ -957,7 +942,7 @@ test("a guard named as undefined keeps its default", needsRuby, async () => {
   });
 
   assert.equal(out.error, null);
-  assert.equal(out.parsed, 1);
+  assert.equal(out.results[0].ok, true);
 });
 
 // --- capability routing, Ruby side ---
