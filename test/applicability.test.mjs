@@ -963,22 +963,48 @@ async function tableProblems(tables) {
     if (!record || record.ok !== true) return null;
     return record.hits?.[key] ?? [];
   };
-  tables.forEach((t, ti) => {
-    t.members.forEach((m, mi) => {
+  for (const [ti, t] of tables.entries()) {
+    for (const [mi, m] of t.members.entries()) {
       const hits = hitsOf(`table${ti}.${mi}.${ext(t)}`, t.key);
-      if (hits === null) return problems.push(`${t.key}'s witness for ${JSON.stringify(m)} did not parse`);
+      if (hits === null) {
+        problems.push(`${t.key}'s witness for ${JSON.stringify(m)} did not parse`);
+        continue;
+      }
       const problem = witnessProblem(t, m, hits);
       if (problem) problems.push(problem);
-    });
-    if (!t.control) return;
+    }
+    if (!t.control) {
+      // A row that expects no site, or a conforming one, is proven by nothing
+      // without a witness that answers the other way.
+      if ((t.expect ?? "present") !== "present") problems.push(`${t.key}'s ${t.expect} row carries no control`);
+      continue;
+    }
     const hits = hitsOf(`table${ti}.control.${ext(t)}`, t.key);
-    if (hits === null) return problems.push(`${t.key}'s control did not parse`);
+    if (hits === null) {
+      problems.push(`${t.key}'s control did not parse`);
+      continue;
+    }
     const problem = controlProblem(t, hits);
     if (problem) problems.push(problem);
-  });
+  }
 
   return problems;
 }
+
+test("a row expecting no site, or a conforming one, has to carry a control", async () => {
+  // Without one, a predicate that answers nothing to everything passes the
+  // row: the witnesses produce no site, which is what the row asked for.
+  const row = {
+    what: "a table with no control",
+    key: "absent_is_null",
+    lang: "jsx",
+    expect: "absent",
+    members: ["useEffect"],
+    source: (m) => `export function C() { ${m}(() => { return null; }, []); return <p />; }`,
+  };
+
+  assert.deepEqual(await tableProblems([row]), ["absent_is_null's absent row carries no control"]);
+});
 
 test("no table grew a member this list has not seen", () => {
   // The other direction. Driving each listed member through the predicate shows

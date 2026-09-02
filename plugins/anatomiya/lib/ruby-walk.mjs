@@ -85,13 +85,15 @@ function last(stack, pred) {
  * hand back the whole file as the matched text. `type` plus `name` is what
  * stays of a site's identity without one.
  */
-export const site = (n) => ({
-  type: n.t,
-  name: typeof n.name === "string" ? n.name : null,
-  line: typeof n.line === "number" ? n.line : null,
-  start: null,
-  end: null,
-});
+export function site(n) {
+  return {
+    type: n.t,
+    name: typeof n.name === "string" ? n.name : null,
+    line: typeof n.line === "number" ? n.line : null,
+    start: null,
+    end: null,
+  };
+}
 
 /** The arguments of a call, and none for anything that is not one. */
 export const args = (call) => call?.arguments?.arguments ?? [];

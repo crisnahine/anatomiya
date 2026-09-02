@@ -220,7 +220,9 @@ async function logStream(root, onField) {
  * part, and brackets are illegal in a real unquoted address, so this excludes
  * nothing a person can be called.
  */
-export const isPerson = (email) => !email.includes("[bot]");
+export function isPerson(email) {
+  return !email.includes("[bot]");
+}
 
 /**
  * How many people could supply author evidence at all: the authors of the files
