@@ -5,7 +5,7 @@ opt-in contract were read out of one build, so the only thing that keeps it hone
 reading. The `SessionStart` check does the cheap half on every session; this is the half a person
 does, and it takes a few minutes.
 
-It was last worked whole against **2.1.268**, on 2026-09-11, which is the version
+It was last worked whole against **2.1.269**, on 2026-09-12, which is the version
 `CALIBRATED_AGAINST` in `hooks/upstream.mjs` names. Move that string when you have worked this list
 on a newer build, and nothing else in this file or the README may name a build that is not it:
 `test/upstream.test.mjs` fails on one that does.
@@ -69,9 +69,9 @@ What has to be true: the reminder is emitted only when the resolved effort is `x
 the reminder has become the thing that raises effort, this plugin is doing more than it claims and
 the README has to change.
 
-On 2.1.268 the command above prints exactly one line,
-`162832197:function fC(e,n,o,r){return o===!0&&eu()&&NA(e,n,{turnEffort:r})==="xhigh"}`.
- Every name in it moved again from the build before, which is why the check
+On 2.1.269 the command above prints exactly one line,
+`163442217:function GC(e,o,n,r){return n===!0&&lu()&&Ew(e,o,{turnEffort:r})==="xhigh"}`.
+ Every name in it moved again from the build before, `fC` to `GC`, `eu` to `lu` and `NA` to `Ew`, which is why the check
 reads a shape and not a name. The arguments moved too: a fourth parameter is threaded through and
 passed as `{turnEffort:r}`, so the pattern's old 24-character bound on an argument list was 18 full
 with six to spare. It is generous now, and the tight part of the pattern is the three conjuncts and
@@ -88,7 +88,7 @@ done
 Every hit, since more than one carries that sentence and only one of them is the code: the others
 sit in a data section that holds the message text with nothing around it. The one you want shows
 whether the same predicate still returns before the refusal, which is what the README says lifts the
-cap for native ultracode and not here. On 2.1.268 a second early return sits above it,
+cap for native ultracode and not here. On 2.1.269 a second early return sits above it,
 `if(H("tengu_amber_kestrel",!1))return`, a flag Anthropic sets: turned on it lifts the cap for
 every session on that build, and the README says so.
 
@@ -205,11 +205,20 @@ diffing the text: a request is one enormous line per string, so a line diff says
 not which fields.
 
 What has to be true: the system prompt is identical and so is every tool definition, the Workflow
-tool's description included, with the reminder in the trailing context block either way. On 2.1.268
+tool's description included, with the reminder in the trailing context block either way. On 2.1.269
 that holds: same system prompt, and every tool definition byte for byte, this plugin's 3035
 characters or the built-in's 308. Most of the difference is the catalogue of shipped workflows,
 which the built-in has no equivalent of; `ULTRACODE_ANYWHERE_CATALOGUE=0` takes this side to 1266
-and is the fairer comparison of the reminder alone. Where it lands inside that block depends on what else answers
+and is the fairer comparison of the reminder alone. Run the same-side control first or none of it is
+evidence: two side-A runs sharing a `CLAUDE_CONFIG_DIR` differ in zero leaves, and a pair that does
+not is a harness artefact before it is a build change.
+
+Those two figures are this plugin's own text and nothing else, which is what `test/standing-
+ultracode.test.mjs` holds them to by reading `contextFor(1).length`. Measuring them off the block as
+it arrives instead reads high by whatever else answered `UserPromptSubmit` on that machine: a
+re-measurement here came back 198 characters over on both, which was another installed hook's
+contribution rather than a build change, and the test is what caught it. Count the plugin's text,
+then find it inside the block. Where it lands inside that block depends on what else answers
 `UserPromptSubmit`, so run both sides from the same directory or another plugin's hook moves with
 you.
 
@@ -217,9 +226,12 @@ They differ in three places on this build, not two. The reminder text and `outpu
 the two the plugin is about. The third is the native side's alone: `"ultracode": true` also injects
 the whole `workflow-authoring` skill into the user message, a command block of 136 characters and a
 body of about 17,000, and appends a newline to the prompt. The body is a template the build fills in
-at send time, so the exact figure moves with what it interpolates as well as with the build: measured
-off 2.1.268's own string it decodes to 17,010 characters before interpolation, against 16,584 on the
-build this file was first written against. The effort level is not what does it, which two
+at send time, so the exact figure moves with what it interpolates as well as with the build, and the
+count is only comparable across builds where the next reader counts it the same way: summing the
+template's own chunks and skipping its nine balanced `${…}` slots, 2.1.269's string is 16,930
+characters before interpolation, and the body that actually goes out is 16,966. Earlier builds were
+counted here without the method being written down, so those figures are not comparable with these
+and have been dropped rather than carried forward. The effort level is not what does it, which two
 control runs settle: against a plain `--effort xhigh` with no `ultracode` key, the two sides differ
 in the reminder and the effort and nowhere else. It is not new to this build either, since an earlier
 one does the same. Nothing this plugin can write reaches a skill load, so this is a difference it
@@ -241,7 +253,7 @@ difference.
 ## 5. The prompt payload carries `source`, or does not yet
 
 The wakeup skip reads `source` off the `UserPromptSubmit` payload. The schema declares the field and
-2.1.268 does not send it outside Anthropic. Ask the hook itself what it was handed, which beats
+2.1.269 does not send it outside Anthropic. Ask the hook itself what it was handed, which beats
 reading the builder:
 
 ```sh
@@ -252,7 +264,7 @@ kill "$(cat "$d/pid")"
 cat "$d/hook.log"
 ```
 
-On 2.1.268 the payload holds `session_id`, `transcript_path`, `cwd`, `prompt_id`, `permission_mode`,
+On 2.1.269 the payload holds `session_id`, `transcript_path`, `cwd`, `prompt_id`, `permission_mode`,
 `hook_event_name` and `prompt`, and no `source`. The literal carries `session_title` as well, which a
 named session sends and an unnamed one does not, and the `source` enum has grown to `user`, `sdk`,
 `system`, `loop_wakeup`, `schedule_wakeup` and `poll_event`. Only the last four are turns to skip.
@@ -268,7 +280,7 @@ for at in $(/usr/bin/grep -a -b -o 'hook_event_name:"UserPromptSubmit",prompt' "
 done
 ```
 
-What has to be true for the skip to work: the object literal carries `source:` where 2.1.268 spells
+What has to be true for the skip to work: the object literal carries `source:` where 2.1.269 spells
 `...!1`.
 
 While you are in that schema, the effort field beside it. The build hands a hook `effort`, and a
@@ -297,7 +309,7 @@ What has to be true: the function walks the messages back to the last `ultra_eff
 `TURNS_BETWEEN_MAINTENANCE` user turns have passed. A compaction leaves no attachment to find, which
 is why the `SessionStart` hook starts the counter over on `compact` and `clear`.
 
-On 2.1.268 the turns it counts are user messages that are neither meta nor a tool result, which is
+On 2.1.269 the turns it counts are user messages that are neither meta nor a tool result, which is
 the same set of turns a prompt hook fires on: a tool result never fires one. The constant is still
 10, but the chain is four steps now rather than three: `CLAUDE_CODE_JUNIPER_SUNDIAL`, then a
 gate-config read of `tengu_juniper_sundial`, then the flag of that name, then
@@ -403,7 +415,7 @@ CLAUDE_CODE_DEBUG_LOGS_DIR=/tmp/uc-logs claude --debug \
 /usr/bin/grep -h 'workflows from plugin\|agents from plugin' /tmp/uc-logs/*.txt
 ```
 
-On 2.1.268 that prints `Loaded 3 workflows from plugin ultracode-anywhere default directory` and
+On 2.1.269 that prints `Loaded 3 workflows from plugin ultracode-anywhere default directory` and
 `Loaded 4 agents from plugin ultracode-anywhere default directory`. A count that dropped is a file
 the loader skipped, and it skips in silence.
 
@@ -415,7 +427,7 @@ claude --plugin-dir "$(git rev-parse --show-toplevel)/plugins/ultracode-anywhere
   -p "Call the Workflow tool once with name 'ultracode-anywhere:does-not-exist' and print its error verbatim. Call nothing else."
 ```
 
-Every shipped name has to appear after `Available:`. On 2.1.268 the answer is
+Every shipped name has to appear after `Available:`. On 2.1.269 the answer is
 `deep-research, ultracode-anywhere:hunt, ultracode-anywhere:review, ultracode-anywhere:understand`.
 
 ### Only `.js` is read
@@ -452,7 +464,7 @@ This is the whole reason the shipped workflows pass no `opts.effort`.
 /usr/bin/grep -a -o 'for(let [A-Za-z_$]* of\["permissionMode","hooks","mcpServers"\])' "$BUILD"
 ```
 
-The first is the build reading the key: on 2.1.268 it sits at offset 166,017,172, inside
+The first is the build reading the key: on 2.1.269 it sits at offset 166,801,876, inside
 `Je=D.effort,Ze=Je!==void 0?u0(Je):void 0`, which reads `effort` off a plugin agent's frontmatter and
 complains where it will not parse. A build that stopped reading it would lose that message. The
 second prints the three keys a plugin agent may not set; everything else in the frontmatter is read.
@@ -468,7 +480,8 @@ An agent type that does not resolve answers with the list of the ones that do.
 
 Those two establish that the key is read and that the type resolves. Neither reads the level back:
 the resolved effort is visible only on the wire, and `--debug` will not do instead, since the debug
-log carries no effort field (checked on 2.1.268). So read it off the socket, with step 4's stand-in
+log carries no effort field (checked on 2.1.269; the word appears there only inside this plugin's own
+reminder text, echoed into the log with the rest of the prompt). So read it off the socket, with step 4's stand-in
 answering the first request with a `Workflow` tool call so a real run happens:
 
 ```sh
@@ -488,13 +501,17 @@ monitor answers the Workflow call and no stage is ever spawned, so the capture h
 requests and looks like a workflow that did nothing. The session runs at `high` on purpose, so a
 stage carrying `medium` can only have got it from its agent file.
 
-On 2.1.268, grouping the captured requests by their system prompt:
+On 2.1.269, grouping the captured requests by their system prompt:
 
 ```
-  6 x  finder stage   (agents/finder.md says effort: medium)  ->  effort="medium"
-  3 x  verifier stage (agents/verifier.md names none)         ->  effort="high"
-  4 x  main loop      (--effort high)                         ->  effort="high"
+  6 x  finder stage      (agents/finder.md says effort: medium)  ->  effort="medium"
+  3 x  verifier stage    (agents/verifier.md names none)         ->  effort="high"
+  1 x  synthesist stage  (agents/synthesist.md names none)       ->  effort="high"
+  3 x  main loop         (--effort high)                         ->  effort="high"
 ```
+
+Four groups rather than three: the synthesist has a system prompt of its own, and an earlier reading
+folded its one request into the main loop's count.
 
 That is the whole claim, read off the socket: the agent file sets the level for the stages that
 fan out, and the stage that checks another stage's work runs at the session's level because its file
