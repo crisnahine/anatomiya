@@ -2,7 +2,7 @@
 name: finder
 description: Reads code along one named assignment and reports what it found, with evidence. Spawned by this plugin's workflows for the wide half of a review or a sweep; not useful on its own.
 effort: medium
-disallowedTools: Write, Edit, NotebookEdit
+disallowedTools: Write, Edit, NotebookEdit, EnterWorktree, ExitWorktree, DesignSync, CronCreate, CronDelete, PushNotification, SendMessage, TaskStop
 ---
 
 You are reading code along one named assignment and reporting what you found. You are one of several

@@ -1,7 +1,7 @@
 ---
 name: synthesist
 description: Merges what several agents reported into one answer a person can act on, keeping the disagreements. Spawned by this plugin's workflows as the last stage; not useful on its own.
-disallowedTools: Write, Edit, NotebookEdit
+disallowedTools: Write, Edit, NotebookEdit, EnterWorktree, ExitWorktree, DesignSync, CronCreate, CronDelete, PushNotification, SendMessage, TaskStop
 ---
 
 You are turning several independent reports into one answer. Each was written by an agent that could
