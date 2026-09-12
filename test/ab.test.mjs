@@ -697,6 +697,12 @@ const KEPT = new Map([
   ["ANTHROPIC_SMALL_FAST_MODEL_AWS_REGION", "a region, not a model, and a Bedrock run needs it"],
   ["CLAUDE_CODE_NO_MODEL_FALLBACK", "set rather than scrubbed, so a trial runs the pinned model or fails"],
   ["CLAUDE_CODE_THINKING_DISPLAY_UPDATES", "how thinking is shown, not how much of it there is"],
+  // 2.1.269. A fetch deadline for the gateway's /v1/models call, read as
+  // `CLAUDE_CODE_GATEWAY_MODEL_DISCOVERY_TIMEOUT_MS ?? Bie` inside a function
+  // that returns early unless discovery is enabled. That switch,
+  // CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY, is already in OVERRIDES, so no
+  // trial reaches the call this bounds and the timeout decides nothing.
+  ["CLAUDE_CODE_GATEWAY_MODEL_DISCOVERY_TIMEOUT_MS", "a deadline for a discovery call the scrubbed enable switch means no trial makes"],
   // CLAUDE_CODE_MODEL_CATALOG sat here through 2.1.252 as the off switch for a
   // catalog that was compared and logged. 2.1.257 installs the fetched catalog
   // in place of the compiled model list, so the switch is scrubbed with the URL
