@@ -31,8 +31,8 @@ export const FULL_EVERY = 10;
  *
  * Read off the `source` the build's own payload schema declares. The schema
  * carries more than these four now, `user` and `sdk` among them, and neither is
- * a turn to skip. 2.1.268 declares the field and does not send it, and the
- * payload it builds says so in one token: `{...Ia(…), hook_event_name:
+ * a turn to skip. 2.1.269 declares the field and does not send it, and the
+ * payload it builds says so in one token: `{...Na(…), hook_event_name:
  * "UserPromptSubmit", prompt:r, ...!1, session_title:…}`, where `...!1` is a
  * conditional spread the minifier collapsed to nothing. So a wakeup counts as a
  * turn here and gets whatever its place in the cadence earns; the day that
@@ -91,6 +91,40 @@ function loweredTo(level) {
 }
 
 /** The whole standing opt-in, at the stage level this session asked for. */
+/**
+ * The permission modes under which a spawned stage's shell redirect lands.
+ *
+ * Measured one mode per run against a stand-in, on the write a stage's own
+ * prompt forbids: these three let `echo … > file` through inside the working
+ * directory. `default` and `dontAsk` refuse it, and both refusals survive an
+ * allow rule matching the command, so neither is an ask that `-p` converted.
+ * `plan` is absent because nobody could establish it rather than because it
+ * refuses: every Bash under it fails closed against a stand-in its safety
+ * classifier cannot reach. A mode nobody measured is one this says nothing
+ * about, since a false alarm costs a line on every tenth turn for ever (A80).
+ */
+export const WRITES_THROUGH_SHELL = new Set(["acceptEdits", "bypassPermissions", "auto"]);
+
+/**
+ * What a session whose stages can write is owed, or null where it is owed
+ * nothing.
+ *
+ * Said on the reminder's own cadence rather than once: it is a standing
+ * condition, and the mode can change on any turn, so a line said once at the
+ * start is wrong for the rest of the session the moment somebody switches.
+ */
+function shellWrite(mode) {
+  if (!WRITES_THROUGH_SHELL.has(mode)) return null;
+  return (
+    `This session's permission mode is \`${mode}\`, so a stage one of these workflows spawns can ` +
+    "write to the working directory through a shell redirect, whatever its own prompt says. Its " +
+    "agent file refuses Write, Edit and NotebookEdit and cannot refuse Bash, which is where this " +
+    "build puts search. Nothing in the plugin can narrow it, because Claude Code takes no " +
+    "per-spawn permission mode. Run in `default` where a stage must not write: the redirect is " +
+    "refused there and every read still works. ULTRACODE_ANYWHERE_MODE_NOTICE=0 stops this line."
+  );
+}
+
 function full(stageEffort = null, catalogue = null) {
   const said = [...OPENING, `${STANDING} ${stageEffort ? loweredTo(stageEffort) : ONE_LEVEL}`];
   // Last rather than first: what comes before it is why orchestration is on at
@@ -124,6 +158,7 @@ function switchesFrom(env) {
     refresher: env.ULTRACODE_ANYWHERE_REFRESHER !== "0",
     repeatFull: env.ULTRACODE_ANYWHERE_FULL === "repeat",
     stageEffort: stageEffortIn(env),
+    ...(env.ULTRACODE_ANYWHERE_MODE_NOTICE === "0" ? { mode: null } : {}),
     // Named explicitly as null so `contextFor` does not read the directory for
     // a session that asked for silence about it.
     ...(env.ULTRACODE_ANYWHERE_CATALOGUE === "0" ? { catalogue: null, names: [] } : {}),
@@ -157,14 +192,14 @@ const onCadence = (turn, every = FULL_EVERY) => (turn - 1) % every === 0;
  * the object gets these for the keys it left out, and a key added here reaches
  * every caller rather than arriving as `undefined` at the partial ones.
  */
-const DEFAULTS = { every: FULL_EVERY, refresher: true, repeatFull: false, stageEffort: null };
+const DEFAULTS = { every: FULL_EVERY, refresher: true, repeatFull: false, stageEffort: null, mode: null };
 
 /**
  * What this turn is owed: the whole opt-in on the first turn, the line that
  * keeps it in view on every tenth after that, and nothing on the rest.
  */
 export function contextFor(turn, asked = {}) {
-  const { every, refresher, repeatFull, stageEffort } = { ...DEFAULTS, ...asked };
+  const { every, refresher, repeatFull, stageEffort, mode } = { ...DEFAULTS, ...asked };
 
   // Whether this turn says anything is decided before the directory is read:
   // nine turns in ten are owed nothing, and a read on each of them is three
@@ -173,8 +208,9 @@ export function contextFor(turn, asked = {}) {
   if (!speaks) return null;
 
   const { catalogue, names } = { ...catalogueDefault(asked), ...asked };
-  if (turn === 1 || repeatFull) return full(stageEffort, catalogue);
-  return short(stageEffort, names);
+  const text = turn === 1 || repeatFull ? full(stageEffort, catalogue) : short(stageEffort, names);
+  const writes = shellWrite(mode);
+  return writes ? `${text}\n\n${writes}` : text;
 }
 
 /**
@@ -221,6 +257,10 @@ export function run({ stdin = "", env = process.env, state = stateDirFor(env) } 
   if (conflict || moved) return null;
 
   const switches = switchesFrom(env);
+  // Only the prompt hook is handed one: `SessionStart` calls the same payload
+  // builder with two arguments where this one passes three, so the mode is
+  // undefined there and this line can live nowhere else.
+  if (!("mode" in switches) && typeof payload.permission_mode === "string") switches.mode = payload.permission_mode;
   const session = sessionIn(payload);
   const turn = session ? nextTurn(state, session) : 1;
   if (session && onCadence(turn, switches.every)) sweep(state);
