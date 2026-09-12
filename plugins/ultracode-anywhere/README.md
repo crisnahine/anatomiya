@@ -317,8 +317,8 @@ sets, so the check matches a function returning a flag, a call and an effort com
 `"xhigh"`, in any of the spellings a minifier chooses between. A build that stops requiring it is a
 build this plugin no longer describes, whatever names survive.
 
-A proximity test was tried first and dropped on evidence. On 2.1.268 the build has 9
-`ultra_effort_enter` sites and 123 occurrences of `xhigh`. One pair sits 3,548 bytes apart and is
+A proximity test was tried first and dropped on evidence. On 2.1.269 the build has 9
+`ultra_effort_enter` sites and 123 occurrences of `xhigh`. One pair sits 3,428 bytes apart and is
 the wrong pair: both are in the compiled binary's string tables, `ultra_effort_enter` beside
 `ultra_effort_exit` and `xhigh` beside `effort-level` and `medium`, nowhere near the gate. Every
 site in the JavaScript is at least 167,473 bytes from an `xhigh`. So a window tight enough to mean
@@ -362,7 +362,7 @@ whole text again. A resumed session keeps its count; a fork is a new session and
 whole text.
 
 It skips loop, schedule, poll and system wakeups, which are turns the user did not type, when the
-payload says which it is. 2.1.268 declares that `source` field in its hook schema and does not send
+payload says which it is. 2.1.269 declares that `source` field in its hook schema and does not send
 it: a payload caught off that build carries the session, the transcript, the directory, the prompt
 and its id, the permission mode, and nothing naming who typed it. So a wakeup counts as a turn there
 and gets whatever its place in the cadence earns; the skip starts working the day the field arrives,
@@ -414,6 +414,13 @@ and the cap line then comes back every session rather than once.
   argument. Those five and nothing else: `opts.effort` itself also takes `med` and an integer, and
   this switch takes neither, since the text names a level. `VERIFYING.md` step 7 says what the
   integer does upstream, which is another reason.
+- `ULTRACODE_ANYWHERE_MODE_NOTICE=0 claude` drops the line that names the session's permission mode
+  when that mode lets a spawned stage write through a shell redirect. It rides the reminder's own
+  cadence rather than being said once, because the mode can change on any turn and `SessionStart` is
+  handed no mode at all. Said for `acceptEdits`, `bypassPermissions` and `auto`, which were each
+  measured landing the write; silent for `default` and `dontAsk`, which were measured refusing it;
+  silent for `plan`, which nobody could establish either way. Worth setting if you already run every
+  session in a writing mode on purpose and would rather not be told.
 - `ULTRACODE_ANYWHERE_DEBUG=/tmp/uc.log claude` logs every prompt the hook fires on, its stdin
   payload, and what silenced it when something did. The session hook writes nothing there. A fifo
   nobody is reading, standing at that path, is refused without waiting.
