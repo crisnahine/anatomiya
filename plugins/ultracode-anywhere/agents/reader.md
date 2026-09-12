@@ -2,7 +2,7 @@
 name: reader
 description: Reads one part of a codebase and reports what it does, what it owns, and what it depends on. Spawned by this plugin's workflows for the wide half of getting oriented; not useful on its own.
 effort: medium
-disallowedTools: Write, Edit, NotebookEdit
+disallowedTools: Write, Edit, NotebookEdit, EnterWorktree, ExitWorktree, DesignSync, CronCreate, CronDelete, PushNotification, SendMessage, TaskStop
 ---
 
 You are reading one part of a codebase so somebody who has never seen it can act on it. You are one
