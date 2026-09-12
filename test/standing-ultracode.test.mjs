@@ -11,7 +11,7 @@ import { needsRemovableCwd, needsSymlinks } from "./platform.mjs";
 import { MARKERS, MIN_BUNDLE } from "../plugins/ultracode-anywhere/hooks/upstream.mjs";
 import { EFFORT_LEVELS } from "../plugins/ultracode-anywhere/hooks/effort.mjs";
 
-import { FULL_EVERY, contextFor, isWakeup, run } from "../plugins/ultracode-anywhere/hooks/standing-ultracode.mjs";
+import { FULL_EVERY, WRITES_THROUGH_SHELL, contextFor, isWakeup, run } from "../plugins/ultracode-anywhere/hooks/standing-ultracode.mjs";
 import { ULTRACODE } from "../scripts/plugins.mjs";
 import { WORKFLOWS_DIR, shippedIn } from "../plugins/ultracode-anywhere/hooks/catalogue.mjs";
 import { hostEnv } from "./host-env.mjs";
@@ -208,6 +208,69 @@ test("a caller handing over part of the switches gets the default for the rest",
   assert.match(contextFor(1, { stageEffort: "low" }), /opts\.effort 'low'/, "while the key it was handed is honoured");
   assert.equal(contextFor(3, { every: 3 }), null, "a cadence alone still decides the quiet turns");
   assert.match(contextFor(4, { every: 3 }), /worth it/, "and the loud ones");
+});
+
+test("a mode measured to let a stage write is named, and one measured not to is not", () => {
+  // The three are what a stand-in measured landing `echo … > file` inside the
+  // working directory, one mode per run. The rest are the other half of that
+  // measurement and have to stay silent, or the line is a false alarm on every
+  // tenth turn of every session.
+  for (const mode of ["acceptEdits", "bypassPermissions", "auto"]) {
+    assert.match(contextFor(1, { mode, catalogue: null }), /shell redirect/, mode);
+    assert.match(contextFor(1, { mode, catalogue: null }), new RegExp(`\`${mode}\``), `${mode} is named`);
+  }
+  for (const mode of ["default", "dontAsk"]) {
+    assert.doesNotMatch(contextFor(1, { mode, catalogue: null }), /shell redirect/, mode);
+  }
+});
+
+test("plan is silent because nobody established it, which is the same silence as a mode that refuses", () => {
+  // Its Bash fails closed against a stand-in the safety classifier cannot
+  // reach, so the refusal measured nothing. Pinned so that a later run which
+  // does establish it has to change this line rather than find it already true.
+  assert.equal(WRITES_THROUGH_SHELL.has("plan"), false);
+  assert.doesNotMatch(contextFor(1, { mode: "plan", catalogue: null }), /shell redirect/);
+});
+
+test("the line rides the reminder's cadence, since the mode can change on any turn", (t) => {
+  const dir = stateDir(t);
+  const env = { ULTRACODE_ANYWHERE_EVERY: "3" };
+  const said = [];
+  for (let i = 0; i < 6; i++) {
+    said.push(run({ stdin: payload({ session_id: "modes", permission_mode: "auto" }), env, state: dir }));
+  }
+
+  // Turn 1 and turn 4 speak; the turns between say nothing at all, and a line
+  // on those would be the plugin talking on a turn it had decided to be quiet.
+  assert.deepEqual(
+    said.map((text) => (text === null ? "-" : /shell redirect/.test(text) ? "W" : "s")),
+    ["W", "-", "-", "W", "-", "-"],
+  );
+});
+
+test("a session that switches into a writing mode is told on its next speaking turn", (t) => {
+  // The reason this is not said once at SessionStart: that payload carries no
+  // mode at all, and a line said at the start is wrong the moment somebody
+  // switches. Same session id throughout, so the turn counter is the real one.
+  const dir = stateDir(t);
+  const env = { ULTRACODE_ANYWHERE_EVERY: "2" };
+  const at = (permission_mode) => run({ stdin: payload({ session_id: "switcher", permission_mode }), env, state: dir });
+
+  assert.doesNotMatch(at("default"), /shell redirect/, "turn 1, a mode that refuses");
+  at("default");
+  assert.match(at("acceptEdits"), /shell redirect/, "turn 3 speaks, and the mode has changed");
+});
+
+test("the mode line can be turned off on its own, leaving the rest of the reminder", (t) => {
+  const dir = stateDir(t);
+  const said = run({
+    stdin: payload({ session_id: "muted", permission_mode: "auto" }),
+    env: { ULTRACODE_ANYWHERE_MODE_NOTICE: "0" },
+    state: dir,
+  });
+
+  assert.doesNotMatch(said, /shell redirect/);
+  assert.match(said, /Workflow tool/, "and the reminder it rides on still goes out");
 });
 
 test("run answers with the text a turn is owed, and null when it is owed nothing", (t) => {
