@@ -9,7 +9,27 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-09-12
+
+A stage told to read and report could open a worktree, schedule a run, stop somebody else's or
+message another session, and it can still write through a shell redirect. The first half is now
+refused. The second cannot be refused from here, so the README says so and names the one thing that
+does decide it, which is the session's own permission mode.
+
+### Changed
+
+- The four agent types refuse eight more tools: `EnterWorktree`, `ExitWorktree`, `DesignSync`,
+  `CronCreate`, `CronDelete`, `PushNotification`, `SendMessage` and `TaskStop`. A stage whose prompt
+  says to read and report could open a worktree, schedule a run, stop somebody else's or message
+  another session, and none of it appears in the report it is judged by.
+
 ### Fixed
+
+- The README now says what a stage's refusals do not cover. They take away the tools that write and
+  leave `Bash`, so a shell redirect is a write nothing in the plugin sees: measured, a
+  stage run under `acceptEdits` or `bypassPermissions` writes into the working directory, and the
+  same redirect is refused under `default` with every read still working. `bashCommandClamp` was
+  built for this and was measured not doing it, so it is not shipped; DECISIONS A79 carries the runs.
 
 - The README said `node` was something Claude Code brings with it. It is not: the CLI is a compiled
   binary and ships none, so on a machine without node on `PATH` both hooks die with
@@ -368,7 +388,8 @@ wherever `effortLevel` is set, and says out loud what it does not restore.
 - Turn counters under `~/.claude/ultracode-anywhere/` rather than the temporary directory, in a
   directory this account owns with no access for anyone else.
 
-[Unreleased]: https://github.com/crisnahine/anatomiya/compare/ultracode-anywhere-v0.6.0...HEAD
+[Unreleased]: https://github.com/crisnahine/anatomiya/compare/ultracode-anywhere-v0.7.0...HEAD
+[0.7.0]: https://github.com/crisnahine/anatomiya/compare/ultracode-anywhere-v0.6.0...ultracode-anywhere-v0.7.0
 [0.6.0]: https://github.com/crisnahine/anatomiya/compare/ultracode-anywhere-v0.5.0...ultracode-anywhere-v0.6.0
 [0.5.0]: https://github.com/crisnahine/anatomiya/compare/ultracode-anywhere-v0.4.0...ultracode-anywhere-v0.5.0
 [0.4.0]: https://github.com/crisnahine/anatomiya/compare/ultracode-anywhere-v0.3.0...ultracode-anywhere-v0.4.0

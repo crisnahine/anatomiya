@@ -1,6 +1,6 @@
 {
   "name": "ultracode-anywhere",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Ships three tested orchestrations you run by name, the agent types they spawn, and the reminder that keeps the Workflow tool in play at any effort level",
   "author": {
     "name": "crisnahine",

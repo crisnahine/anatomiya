@@ -351,6 +351,28 @@ export function drift({ cli = cliPath() } = {}) {
 }
 
 /**
+ * Which of `wanted` the file at `path` carries, or null where there was nothing
+ * to read.
+ *
+ * A deny list is checked against the build for one reason: a name no build
+ * carries denies nothing, and a test that only reads the list back passes on a
+ * typo just as happily as on a real tool name.
+ */
+export function carriedBy(path, wanted) {
+  if (!path || wanted.length === 0 || !isBundle(path)) return null;
+  const found = new Set();
+  try {
+    scan(path, Math.max(...wanted.map((name) => name.length)), (text) => {
+      for (const name of wanted) if (!found.has(name) && text.includes(name)) found.add(name);
+      return found.size === wanted.length;
+    });
+  } catch {
+    return null;
+  }
+  return found;
+}
+
+/**
  * The markers and the gate present in a file, found in one read.
  *
  * The bundle is streamed rather than read whole, and a second pass for the gate
