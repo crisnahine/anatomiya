@@ -9,6 +9,34 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-09-13
+
+0.7.0 said the session's permission mode is the only thing that decides whether a stage told to read
+can write, and gave nobody a way to see which mode they were in. The reminder now says so, on the
+turns it already speaks, and only for the modes that were measured letting the write land.
+
+### Added
+
+- The reminder now names the session's permission mode when that mode lets a stage write through a
+  shell redirect, which 0.7.0 documented and left the operator no way to notice. Said for
+  `acceptEdits`, `bypassPermissions` and `auto`, each measured landing the write; silent for
+  `default` and `dontAsk`, each measured refusing it; silent for `plan`, which nobody could
+  establish either way. It rides the reminder's own cadence rather than being said once, because
+  the mode changes on any turn and `SessionStart` is handed no mode at all.
+  `ULTRACODE_ANYWHERE_MODE_NOTICE=0` drops the line and leaves the rest. DECISIONS A80.
+
+### Changed
+
+- Re-calibrated against Claude Code 2.1.269, every recipe in `VERIFYING.md` worked rather than the
+  constant moved. The premise holds: the gate is still one conjunct, now
+  `function GC(e,o,n,r){return n===!0&&lu()&&Ew(e,o,{turnEffort:r})==="xhigh"}` with every name
+  moved again; the cap's second early return is still above the refusal; a plugin agent's `effort:`
+  is still read and `permissionMode`, `hooks` and `mcpServers` are still the three it may not set; a
+  stage still runs at the level its agent file names, measured off the socket at six finders on
+  `medium` and three verifiers on `high`. Numbers that moved are in the file. One figure was dropped
+  rather than carried: the injected skill's character count was recorded without saying how it was
+  counted, so the old and new numbers are not comparable, and the method is now written beside it.
+
 ## [0.7.0] - 2026-09-12
 
 A stage told to read and report could open a worktree, schedule a run, stop somebody else's or
@@ -388,7 +416,8 @@ wherever `effortLevel` is set, and says out loud what it does not restore.
 - Turn counters under `~/.claude/ultracode-anywhere/` rather than the temporary directory, in a
   directory this account owns with no access for anyone else.
 
-[Unreleased]: https://github.com/crisnahine/anatomiya/compare/ultracode-anywhere-v0.7.0...HEAD
+[Unreleased]: https://github.com/crisnahine/anatomiya/compare/ultracode-anywhere-v0.8.0...HEAD
+[0.8.0]: https://github.com/crisnahine/anatomiya/compare/ultracode-anywhere-v0.7.0...ultracode-anywhere-v0.8.0
 [0.7.0]: https://github.com/crisnahine/anatomiya/compare/ultracode-anywhere-v0.6.0...ultracode-anywhere-v0.7.0
 [0.6.0]: https://github.com/crisnahine/anatomiya/compare/ultracode-anywhere-v0.5.0...ultracode-anywhere-v0.6.0
 [0.5.0]: https://github.com/crisnahine/anatomiya/compare/ultracode-anywhere-v0.4.0...ultracode-anywhere-v0.5.0
