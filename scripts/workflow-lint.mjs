@@ -14,7 +14,7 @@
  * real parse over every shipped file and refuses any answer the hook's reader
  * does not match.
  */
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { closeSync, constants, fstatSync, openSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 import { parseSync } from "oxc-parser";
@@ -116,30 +116,36 @@ export function lintWorkflows({ dir = join(ULTRACODE, WORKFLOWS_DIR), agents = j
   const names = new Map();
   for (const entry of entries) {
     const path = join(dir, entry);
-    let stat;
+    // Opened once and asked what it is through the handle, the way the plugin's
+    // own `readIfFile` does it: a path checked with `stat` and then read by name
+    // is a path something else can swap between the two, and what this gate
+    // then vouches for is not the file the loader will run.
+    let handle;
     try {
-      stat = statSync(path);
+      handle = openSync(path, constants.O_RDONLY | (constants.O_NONBLOCK ?? 0));
     } catch (err) {
-      // A link pointing nowhere, or a file this account cannot stat. Reported
+      // A link pointing nowhere, or a file this account cannot open. Reported
       // rather than thrown: a gate that dies on one entry checks none of the rest.
       problems.push(`${entry}: could not be read: ${err.message}`);
       continue;
     }
-    if (!stat.isFile()) continue;
-    if (!entry.endsWith(".js")) {
-      // Named rather than passed over: the loader recognises these three and
-      // refuses them, so a workflow written as `.mjs` is one nobody can run and
-      // nothing says why.
-      problems.push(`${entry}: the loader reads only .js here, so this file ships and never loads`);
-      continue;
-    }
-    checked++;
     let text;
     try {
-      text = readFileSync(path, "utf8");
+      if (!fstatSync(handle).isFile()) continue;
+      if (!entry.endsWith(".js")) {
+        // Named rather than passed over: the loader recognises these three and
+        // refuses them, so a workflow written as `.mjs` is one nobody can run and
+        // nothing says why.
+        problems.push(`${entry}: the loader reads only .js here, so this file ships and never loads`);
+        continue;
+      }
+      checked++;
+      text = readFileSync(handle, "utf8");
     } catch (err) {
       problems.push(`${entry}: could not be read: ${err.message}`);
       continue;
+    } finally {
+      closeSync(handle);
     }
     problems.push(...problemsIn(entry, text, read, shipped));
 

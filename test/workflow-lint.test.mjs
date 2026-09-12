@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -208,6 +208,21 @@ test("a file the gate cannot read is named, rather than ending the run", (t) => 
   const result = lintWorkflows({ dir });
   assert.match(result.problems.join("\n"), /broken\.js/);
   assert.ok(result.checked >= 1, "it stopped before reading the file that was fine");
+});
+
+test("a directory named like a workflow is passed over, and the file is read through one handle", (t) => {
+  // The gate used to `stat` the path and then read it by name, which is a
+  // window something else can swap the file in. It opens once and asks the
+  // handle what it is, the way the plugin's own reader does; a directory is
+  // still not a workflow and a link to nothing is still reported.
+  const dir = dirWith(t, { "fine.js": OK });
+  mkdirSync(join(dir, "adir.js"));
+  symlinkSync(join(dir, "gone.js"), join(dir, "broken.js"));
+
+  const result = lintWorkflows({ dir });
+  assert.equal(result.checked, 1, "the directory or the dead link was counted as a workflow");
+  assert.match(result.problems.join("\n"), /broken\.js/);
+  assert.doesNotMatch(result.problems.join("\n"), /adir\.js/);
 });
 
 test("a parse error that is not the expected one is reported rather than swallowed", (t) => {
