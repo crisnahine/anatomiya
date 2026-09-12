@@ -46,6 +46,23 @@ a stage runs at is decided by these files rather than by a request the model may
 `synthesist` name no effort at all, which is how a spawn keeps the session's own level: the stages
 that check and merge must not be the cheap ones.
 
+Each of the four also refuses `Write`, `Edit` and `NotebookEdit`, and the eight tools that would let
+a stage change something outside its own report: `EnterWorktree`, `ExitWorktree`, `DesignSync`,
+`CronCreate`, `CronDelete`, `PushNotification`, `SendMessage` and `TaskStop`.
+
+**A stage can still write through the shell, and your session's permission mode is what decides
+whether it does.** The refusals above take away the tools that write; they do not take away `Bash`,
+and they cannot, because this search mode folds `Grep` and `Glob` into it and a stage without `Bash`
+cannot search. A shell redirect is a write those refusals never see. Measured, and the build it
+was measured on is named in DECISIONS A79 rather than here, where it would rot against the
+calibration constant: in
+`acceptEdits` or `bypassPermissions`, a stage told in its own prompt not to write can still run
+`echo … > file` anywhere inside the session's working directories, and it lands. In `default` the
+same redirect is refused outright while `grep`, `cat`, `sed -n` and pipelines all still work, so a
+run there loses nothing and closes the hole. The plugin cannot set this for you: Claude Code takes no
+per-spawn permission mode, and the key a plugin agent file could name is dropped at parse time.
+DECISIONS A79 has the runs behind each of those sentences.
+
 ## Why the reminder is still here
 
 In Claude Code the ultracode gate is one predicate:

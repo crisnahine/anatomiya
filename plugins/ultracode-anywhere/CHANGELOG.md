@@ -9,7 +9,20 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Changed
+
+- The four agent types refuse eight more tools: `EnterWorktree`, `ExitWorktree`, `DesignSync`,
+  `CronCreate`, `CronDelete`, `PushNotification`, `SendMessage` and `TaskStop`. A stage whose prompt
+  says to read and report could open a worktree, schedule a run, stop somebody else's or message
+  another session, and none of it appears in the report it is judged by.
+
 ### Fixed
+
+- The README now says what a stage's refusals do not cover. They take away the tools that write and
+  leave `Bash`, so a shell redirect is a write nothing in the plugin sees: measured, a
+  stage run under `acceptEdits` or `bypassPermissions` writes into the working directory, and the
+  same redirect is refused under `default` with every read still working. `bashCommandClamp` was
+  built for this and was measured not doing it, so it is not shipped; DECISIONS A79 carries the runs.
 
 - The README said `node` was something Claude Code brings with it. It is not: the CLI is a compiled
   binary and ships none, so on a machine without node on `PATH` both hooks die with
