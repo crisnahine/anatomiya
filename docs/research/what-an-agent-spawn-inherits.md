@@ -929,6 +929,12 @@ and the build will not object.
 
 ## 12. What a check built on this can and cannot say
 
+> The notice this section designs was built, shipped as `hooks/shadows.mjs` under
+> `ULTRACODE_ANYWHERE_SUBAGENT_EFFORT`, and removed again in ultracode-anywhere 0.6.0: the plugin
+> ships its own agent types now, each carrying `effort:`, so there is nothing left to report on. The
+> reading below is kept because it is the reading, and because the next question about how a spawn
+> resolves its agent file starts here (A48, A58).
+
 Pulling the actionable parts together, for the `ULTRACODE_ANYWHERE_SUBAGENT_EFFORT` notice the issue
 asks for.
 

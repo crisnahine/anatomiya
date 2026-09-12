@@ -56,6 +56,12 @@ const OVERRIDES = new Set([
   "CLAUDE_CODE_SUBAGENT_MODEL_FORCE",
   "CLAUDE_CODE_MODEL_CATALOG",
   "CLAUDE_CODE_MODEL_CATALOG_URL",
+  // 2.1.268 answers "can this model do X" from a variable before it asks the
+  // served or compiled list: `BIt(capability, model) ?? Eit(...)`, where the
+  // variable is `model=cap,-cap;prefix*=cap` and a `-` turns one off. So it
+  // decides what a trial's model is allowed to do, one capability at a time,
+  // and two machines that differ on it are not comparable.
+  "CLAUDE_CODE_MODEL_CAPABILITIES",
 ]);
 
 /**
