@@ -5,7 +5,7 @@ opt-in contract were read out of one build, so the only thing that keeps it hone
 reading. The `SessionStart` check does the cheap half on every session; this is the half a person
 does, and it takes a few minutes.
 
-It was last worked whole against **2.1.251**, on 2026-08-30, which is the version
+It was last worked whole against **2.1.268**, on 2026-09-11, which is the version
 `CALIBRATED_AGAINST` in `hooks/upstream.mjs` names. Move that string when you have worked this list
 on a newer build, and nothing else in this file or the README may name a build that is not it:
 `test/upstream.test.mjs` fails on one that does.
@@ -29,7 +29,7 @@ the list in order. Step 2 sets `$BUILD`, which is absolute and survives; step 4 
 `capture` and moves the shell out of this directory for good, so step 5 runs on what step 4 left and
 a return to step 1 or step 2 needs a `cd` back.
 
-The build is 197 MB, so the reads below find a fixed string with `/usr/bin/grep -a -b -o` and cut
+The build is 202 MB, so the reads below find a fixed string with `/usr/bin/grep -a -b -o` and cut
 around its offset. A pattern with a wide `.{n}` context is refused by the stock macOS `grep` above
 255 and takes minutes on any `grep`.
 
@@ -56,17 +56,26 @@ meaning:
 
 ```sh
 BUILD="$(node -e 'import("./hooks/upstream.mjs").then(m=>console.log(m.cliPath()))')"
-/usr/bin/grep -a -o 'function [A-Za-z_$]*([^)]*){return [^}]*"xhigh"[^}]*}' "$BUILD" | head
+/usr/bin/grep -a -o -b 'function [A-Za-z_$]*([^)]*){return [^{}]*{[^{}]*}[^}]*"xhigh"[^}]*}' "$BUILD"
 ```
+
+The inner `{[^{}]*}` is what lets the body carry the `{turnEffort:r}` object it now passes. Without
+it the pattern cannot reach past that brace, and the run prints a different function,
+`function tw(e){return eu()&&(e===void 0||Ez(e)&&Yye("xhigh",e))}`, which reads as the gate having
+been respelled when it has not.
 
 What has to be true: the reminder is emitted only when the resolved effort is `xhigh`, and that
 `xhigh` is one conjunct of the condition rather than something the reminder text itself sets. If
 the reminder has become the thing that raises effort, this plugin is doing more than it claims and
 the README has to change.
 
-On 2.1.251 it reads `function Wv(e,o,t){return t===!0&&Zu()&&yT(e,o)==="xhigh"}`, at offset
-156,647,852. Every name in it moved again from the build before, which is why the check reads a
-shape and not a name.
+On 2.1.268 the command above prints exactly one line,
+`162832197:function fC(e,n,o,r){return o===!0&&eu()&&NA(e,n,{turnEffort:r})==="xhigh"}`.
+ Every name in it moved again from the build before, which is why the check
+reads a shape and not a name. The arguments moved too: a fourth parameter is threaded through and
+passed as `{turnEffort:r}`, so the pattern's old 24-character bound on an argument list was 18 full
+with six to spare. It is generous now, and the tight part of the pattern is the three conjuncts and
+the comparison, which is where the premise actually lives.
 
 While you are there, the cap:
 
@@ -79,8 +88,8 @@ done
 Every hit, since more than one carries that sentence and only one of them is the code: the others
 sit in a data section that holds the message text with nothing around it. The one you want shows
 whether the same predicate still returns before the refusal, which is what the README says lifts the
-cap for native ultracode and not here. On 2.1.251 a second early return sits above it,
-`if(I("tengu_amber_kestrel",!1))return`, a flag Anthropic sets: turned on it lifts the cap for
+cap for native ultracode and not here. On 2.1.268 a second early return sits above it,
+`if(H("tengu_amber_kestrel",!1))return`, a flag Anthropic sets: turned on it lifts the cap for
 every session on that build, and the README says so.
 
 ## 3. The Workflow tool still carries no effort term
@@ -196,16 +205,21 @@ diffing the text: a request is one enormous line per string, so a line diff says
 not which fields.
 
 What has to be true: the system prompt is identical and so is every tool definition, the Workflow
-tool's description included, with the reminder in the trailing context block either way. On 2.1.251
-that holds: same system prompt, same 24 tool definitions, byte for byte, this plugin's 1266
-characters or the built-in's 308. Where it lands inside that block depends on what else answers
+tool's description included, with the reminder in the trailing context block either way. On 2.1.268
+that holds: same system prompt, and every tool definition byte for byte, this plugin's 3035
+characters or the built-in's 308. Most of the difference is the catalogue of shipped workflows,
+which the built-in has no equivalent of; `ULTRACODE_ANYWHERE_CATALOGUE=0` takes this side to 1266
+and is the fairer comparison of the reminder alone. Where it lands inside that block depends on what else answers
 `UserPromptSubmit`, so run both sides from the same directory or another plugin's hook moves with
 you.
 
 They differ in three places on this build, not two. The reminder text and `output_config.effort` are
 the two the plugin is about. The third is the native side's alone: `"ultracode": true` also injects
 the whole `workflow-authoring` skill into the user message, a command block of 136 characters and a
-body of 16,584, and appends a newline to the prompt. The effort level is not what does it, which two
+body of about 17,000, and appends a newline to the prompt. The body is a template the build fills in
+at send time, so the exact figure moves with what it interpolates as well as with the build: measured
+off 2.1.268's own string it decodes to 17,010 characters before interpolation, against 16,584 on the
+build this file was first written against. The effort level is not what does it, which two
 control runs settle: against a plain `--effort xhigh` with no `ultracode` key, the two sides differ
 in the reminder and the effort and nowhere else. It is not new to this build either, since an earlier
 one does the same. Nothing this plugin can write reaches a skill load, so this is a difference it
@@ -227,7 +241,7 @@ difference.
 ## 5. The prompt payload carries `source`, or does not yet
 
 The wakeup skip reads `source` off the `UserPromptSubmit` payload. The schema declares the field and
-2.1.251 does not send it outside Anthropic. Ask the hook itself what it was handed, which beats
+2.1.268 does not send it outside Anthropic. Ask the hook itself what it was handed, which beats
 reading the builder:
 
 ```sh
@@ -238,7 +252,7 @@ kill "$(cat "$d/pid")"
 cat "$d/hook.log"
 ```
 
-On 2.1.251 the payload holds `session_id`, `transcript_path`, `cwd`, `prompt_id`, `permission_mode`,
+On 2.1.268 the payload holds `session_id`, `transcript_path`, `cwd`, `prompt_id`, `permission_mode`,
 `hook_event_name` and `prompt`, and no `source`. The literal carries `session_title` as well, which a
 named session sends and an unnamed one does not, and the `source` enum has grown to `user`, `sdk`,
 `system`, `loop_wakeup`, `schedule_wakeup` and `poll_event`. Only the last four are turns to skip.
@@ -254,7 +268,7 @@ for at in $(/usr/bin/grep -a -b -o 'hook_event_name:"UserPromptSubmit",prompt' "
 done
 ```
 
-What has to be true for the skip to work: the object literal carries `source:` where 2.1.251 spells
+What has to be true for the skip to work: the object literal carries `source:` where 2.1.268 spells
 `...!1`.
 
 While you are in that schema, the effort field beside it. The build hands a hook `effort`, and a
@@ -283,7 +297,7 @@ What has to be true: the function walks the messages back to the last `ultra_eff
 `TURNS_BETWEEN_MAINTENANCE` user turns have passed. A compaction leaves no attachment to find, which
 is why the `SessionStart` hook starts the counter over on `compact` and `clear`.
 
-On 2.1.251 the turns it counts are user messages that are neither meta nor a tool result, which is
+On 2.1.268 the turns it counts are user messages that are neither meta nor a tool result, which is
 the same set of turns a prompt hook fires on: a tool result never fires one. The constant is still
 10, but the chain is four steps now rather than three: `CLAUDE_CODE_JUNIPER_SUNDIAL`, then a
 gate-config read of `tengu_juniper_sundial`, then the flag of that name, then
@@ -363,98 +377,140 @@ Step 4's capture is what settles all three, and the integer claim above with the
 so a subagent actually spawns, and read `output_config.effort` off the subagent's own request rather
 than the main loop's.
 
-## 8. The agent-file half, and the two fields a copy cannot carry
+## 8. The half that ships: workflows and agent types
 
-`ULTRACODE_ANYWHERE_SUBAGENT_EFFORT` reports on `.claude/agents/<type>.md` files. It writes nothing,
-so nothing here can break a user's setup; what it can do is describe a lever that has moved.
+The plugin ships `workflows/*.js` and `agents/*.md`, and both load through contracts nothing in the
+code can check for itself. Each fact below is one the feature stops working without, silently.
 
-Three claims to re-read. First, that `effort` is still a frontmatter key, beside the ones a shadow
-uses:
-
-```sh
-/usr/bin/grep -a -o 'disallowedTools:[A-Za-z_$]*()\.optional()\.describe("Tools removed from the default set[^"]*"),[^;]\{0,200\}' "$BUILD" | head -1
-```
-
-That window carries `color` and then `effort` in 2.1.251. A build where `effort` has left it is one
-where the whole switch describes a lever that no longer exists, and the README's section on it is
-then wrong rather than stale.
-
-One thing in that window is a trap and not a fact. Its own text reads `Thinking effort: \`low\`,
-\`medium\`, \`high\`, \`max\`, or an integer.` and leaves `xhigh` out, in all four places the build
-spells it. It is a description rather than a validator: the field takes a string, no
-`["low","medium","high","max"]` enum exists anywhere in 2.1.251, and the five-level list this plugin
-holds appears nine times. So do not read that sentence as the accepted set, and do not shorten
-`EFFORT_LEVELS` to match it. Whether a shadow carrying `effort: xhigh` is accepted was not measured
-here; the switch reports what a file says and leaves what the build does with it to the build.
-
-Second, that the two fields a markdown file still cannot carry are still set the way the README says.
-Neither is ever a validated key, only a literal on a built-in definition, and that is the difference
-that matters:
+### A plugin's own `workflows/` is loaded, and under the name this plugin advertises
 
 ```sh
-/usr/bin/grep -a -c 'omitClaudeMd:[A-Za-z_$]*()' "$BUILD"             # expect 0: never a schema field
-/usr/bin/grep -a -o 'omitClaudeMd:!0,getSystemPrompt' "$BUILD" | wc -l # expect several: built-in definitions
-/usr/bin/grep -a -o 'appendSystemPrompt:!0' "$BUILD" | wc -l           # expect 1: the catch-all
+/usr/bin/grep -a -o 'if(.\{1,4\})U.workflowsPath=[A-Za-z_$]*(e,"workflows")' "$BUILD"
+/usr/bin/grep -a -o 'let [A-Za-z_$]*=`\${[A-Za-z_$]*}:\${[A-Za-z_$]*.meta.name}`' "$BUILD"
 ```
 
-If `omitClaudeMd` becomes a frontmatter key, the README paragraph naming it as a gap comes out and a
-shadow of `Explore` stops loading `CLAUDE.md`. If `appendSystemPrompt` becomes one, `claude` joins
-`SHADOWABLE` in `hooks/shadows.mjs` and the switch reports on four types rather than three.
+What has to be true: the loader still builds a path from the plugin's own `workflows` directory, and
+the workflow module still registers each file under `<plugin>:<meta.name>`. A build that dropped the
+namespacing would resolve these under a bare name and every catalogue entry would answer "not found".
 
-Third, that no hook output schema has grown an effort, and that the two which can rewrite a call are
-still the two:
+The live check is cheaper and settles it whole:
 
 ```sh
-/usr/bin/grep -a -o 'hookEventName:N("[A-Za-z]*")' "$BUILD" | sort -u | wc -l   # 22 in 2.1.251
-/usr/bin/grep -a -o 'hookEventName:N("[A-Za-z]*")[^;]\{0,250\}' "$BUILD" | /usr/bin/grep -c -i effort  # expect 0
-/usr/bin/grep -a -o 'hookEventName:N("[A-Za-z]*")[^;]\{0,110\}updatedInput' "$BUILD" | /usr/bin/grep -o 'N("[A-Za-z]*")' | sort -u
+mkdir -p /tmp/uc-logs        # without it the build writes a FILE at that path and the glob below matches nothing
+CLAUDE_CODE_DEBUG_LOGS_DIR=/tmp/uc-logs claude --debug \
+  --plugin-dir "$(git rev-parse --show-toplevel)/plugins/ultracode-anywhere" \
+  -p "Reply with the single word: ok" >/dev/null 2>&1
+/usr/bin/grep -h 'workflows from plugin\|agents from plugin' /tmp/uc-logs/*.txt
 ```
 
-The last one answers `PreToolUse`, `PermissionRequest` and `allow`, that third being
-`PermissionRequest`'s own branch marker rather than an event. The window is 110 characters on purpose:
-the schemas sit next to each other in the bundle, and a wider one reaches over the boundary. At 250
-it answers `Notification`, `PermissionDenied` and `SubagentStop` as well, none of which owns such a
-field. Issue #131 said
-`PreToolUse` was the only event that can rewrite a call; it is not, and it does not matter, because
-both rewrite the tool's input and the effort is not in it. A fourth name appearing there is worth
-reading, and an effort turning up in the second grep is the day this whole section is wrong.
+On 2.1.268 that prints `Loaded 3 workflows from plugin ultracode-anywhere default directory` and
+`Loaded 4 agents from plugin ultracode-anywhere default directory`. A count that dropped is a file
+the loader skipped, and it skips in silence.
 
-Fourth, that the Agent tool still takes no effort argument. Ask a session for the tool's own schema
-rather than reading for it: `claude -p 'List the exact parameter names the Agent tool accepts, and
-nothing else.'` In 2.1.251 the answer is `description`, `prompt`, `subagent_type`, `model`,
-`run_in_background`, `name`, `team_name`, `mode`, `isolation` and `cwd`. An `effort` appearing there
-is the day this switch stops being a report and can become a setting, and the day `updatedInput`
-could carry one. Note that an invented key does not fail loudly: both validators drop unrecognised
-keys, so a hook writing one in gets a call that goes through with the key gone.
-
-Fifth, that an agent is still keyed on its frontmatter `name:` rather than on its filename, and that
-a `description:` is still required:
+Then ask the tool itself what it can resolve. The failure path is the only place a workflow name
+reaches the model, which makes it the cheapest listing there is:
 
 ```sh
-/usr/bin/grep -a -o "missing required 'description' in frontmatter" "$BUILD" | head -1
-/usr/bin/grep -a -o 'agentType:[a-zA-Z_$]*,whenToUse' "$BUILD" | head -1
+claude --plugin-dir "$(git rev-parse --show-toplevel)/plugins/ultracode-anywhere" \
+  -p "Call the Workflow tool once with name 'ultracode-anywhere:does-not-exist' and print its error verbatim. Call nothing else."
 ```
 
-The first is the message the loader emits before returning null, so a file without one never becomes
-an agent. The build is one line, so `grep -c` counts matching lines rather than occurrences: read the
-counts above as "none" or "some" and use `grep -o | wc -l` where the number itself matters. The second is the returned record, whose `agentType` is the destructured `name`. Both are
-what `hooks/shadows.mjs` reads a directory by: a file called `Explore.md` naming something else is
-that other agent, and the built-in `Explore` is untouched.
+Every shipped name has to appear after `Available:`. On 2.1.268 the answer is
+`deep-research, ultracode-anywhere:hunt, ultracode-anywhere:review, ultracode-anywhere:understand`.
 
-Three sources the check does not look in, and named here rather than quietly missed: the managed
-settings directory, which outranks every other; the `--agents` JSON flag, which outranks every
-project directory; and the additional working directories a session was started with. A managed agent file would be what actually loads while the notice reports on the
-user's.
+### Only `.js` is read
 
-One known divergence, in `configDirFor` in `hooks/hook-io.mjs`: it takes `CLAUDE_CONFIG_DIR` with
-`||` where the build uses `??`, so a variable set to the empty string falls back to `~/.claude` here
-and is taken literally there. It is left alone because the same function answers for `settings.json`,
-where the fallback is the safer reading.
+```sh
+/usr/bin/grep -a -o 'if(/\\.(mjs|cjs|ts)\$/.test([A-Za-z_$.]*))[A-Za-z_$.]*++' "$BUILD" | head
+```
 
-What this step cannot check is whether a user's copied prompt still matches the built-in it copies.
-Nothing static can: the built-in prompts are not stored where a script can reliably reach them, and
-the only faithful comparison is a live extraction, one session per type. The switch reports the file's
-age against the build's for that reason, which is a proxy and says so.
+The loader recognises the other three extensions and skips them. That is why these files are the one
+exception to `.mjs` everywhere else in this repository. A build that started reading `.mjs` would not
+break anything; a build that stopped reading `.js` would break all three, and `npm run lint:workflows`
+cannot see it.
+
+### The sandbox still injects eleven names and no more
+
+```sh
+/usr/bin/grep -a -o 'for(let\[[A-Za-z_$]*,[A-Za-z_$]*\]of\[\["agent"' "$BUILD" | head -2
+/usr/bin/grep -a -c 'Math.random() is unavailable in workflow scripts' "$BUILD"
+```
+
+What has to be true: the context is built from `log`, `phase`, `console`, `budget`, `setTimeout` and
+`clearTimeout`, with `agent`, `parallel`, `pipeline` and `workflow` defined onto it and `args` parsed
+in. `scripts/workflow-lint.mjs` holds every shipped script to exactly that list, and a name added
+upstream is a name the lint refuses until somebody adds it here. `test/workflow-lint.test.mjs` states
+the eleven rather than reading them off the module, so the list is a claim about the build and not
+about itself.
+
+### A plugin agent's `effort:` is honoured
+
+This is the whole reason the shipped workflows pass no `opts.effort`.
+
+```sh
+/usr/bin/grep -a -o "has invalid effort '\${[A-Za-z_$]*}'" "$BUILD"
+/usr/bin/grep -a -o 'for(let [A-Za-z_$]* of\["permissionMode","hooks","mcpServers"\])' "$BUILD"
+```
+
+The first is the build reading the key: on 2.1.268 it sits at offset 166,017,172, inside
+`Je=D.effort,Ze=Je!==void 0?u0(Je):void 0`, which reads `effort` off a plugin agent's frontmatter and
+complains where it will not parse. A build that stopped reading it would lose that message. The
+second prints the three keys a plugin agent may not set; everything else in the frontmatter is read.
+
+Then check the type resolves at all, which is one spawn:
+
+```sh
+claude --plugin-dir "$(git rev-parse --show-toplevel)/plugins/ultracode-anywhere" \
+  -p "Use the Agent tool once with subagent_type 'ultracode-anywhere:verifier' and the prompt 'Answer with the single word: resolved'. Print only what it returned."
+```
+
+An agent type that does not resolve answers with the list of the ones that do.
+
+Those two establish that the key is read and that the type resolves. Neither reads the level back:
+the resolved effort is visible only on the wire, and `--debug` will not do instead, since the debug
+log carries no effort field (checked on 2.1.268). So read it off the socket, with step 4's stand-in
+answering the first request with a `Workflow` tool call so a real run happens:
+
+```sh
+# in the stand-in from step 4, answer by who is asking:
+#   the main loop         -> a tool_use for Workflow, {name: 'ultracode-anywhere:review', args: 'one small file'}
+#   a "named assignment"  -> a tool_use for StructuredOutput carrying one finding, so the run reaches Verify
+#   a "refute one claim"  -> a tool_use for StructuredOutput, {refuted: false, verdict: 'holds'}
+#   anything else         -> plain text
+capture "$d/stages.jsonl"
+claude -p "run it" --strict-mcp-config --effort high --dangerously-skip-permissions \
+  --plugin-dir "$(git rev-parse --show-toplevel)/plugins/ultracode-anywhere" \
+  --session-id 77777777-7777-4777-8777-777777777777 --no-session-persistence < /dev/null
+```
+
+`--dangerously-skip-permissions` is load-bearing here and only here: without it the run's own safety
+monitor answers the Workflow call and no stage is ever spawned, so the capture holds two monitor
+requests and looks like a workflow that did nothing. The session runs at `high` on purpose, so a
+stage carrying `medium` can only have got it from its agent file.
+
+On 2.1.268, grouping the captured requests by their system prompt:
+
+```
+  6 x  finder stage   (agents/finder.md says effort: medium)  ->  effort="medium"
+  3 x  verifier stage (agents/verifier.md names none)         ->  effort="high"
+  4 x  main loop      (--effort high)                         ->  effort="high"
+```
+
+That is the whole claim, read off the socket: the agent file sets the level for the stages that
+fan out, and the stage that checks another stage's work runs at the session's level because its file
+names none. A build that stopped honouring the frontmatter would show `high` on all nine.
+
+### The catalogue is still the only listing
+
+```sh
+/usr/bin/grep -a -c 'Available workflows' "$BUILD"
+/usr/bin/grep -a -o 'function [A-Za-z_$]*(){return}' "$BUILD" | head -3
+```
+
+The first is 0 and has to stay 0 for the catalogue to be worth its characters: the day Claude Code
+lists a plugin's workflows to the model, `ULTRACODE_ANYWHERE_CATALOGUE=0` becomes the sensible
+default and the README's cost section is wrong. The second is the stub that would carry such a
+listing if it ever stopped being a stub.
 
 ## 9. What a re-check changes
 
@@ -472,8 +528,14 @@ age against the build's for that reason, which is a proxy and says so.
   validator beside it: the tool takes an integer effort as well, and this switch deliberately does
   not.
 - `WAKEUP_SOURCES` in `hooks/standing-ultracode.mjs`, if the `source` enum moved.
-- `SHADOWABLE` in `hooks/shadows.mjs`, if a built-in agent type was added, renamed or dropped, or if
-  `appendSystemPrompt` stopped being what keeps `claude` off that list. Step 8 has the greps.
+- `INJECTED` in `scripts/workflow-lint.mjs`, if the sandbox began injecting a name or stopped
+  injecting one. A name it is missing is a shipped workflow that fails on the line that reaches it;
+  a name it holds that the sandbox does not is a lint that passes a script nobody can run. Step 8
+  has the greps, and `test/workflow-lint.test.mjs` states the eleven rather than reading them off
+  the module.
+- `RESOLVABLE` in `hooks/catalogue.mjs`, if the class of names the tool resolves widened. It is
+  deliberately narrower than whatever the build accepts, since the sentence quotes a name inside
+  backticks and hands it back as the tool's `name`.
 - The README, if any claim in it is no longer what the diff shows: the site count, the character
   counts, the bundle size and the timing figures are all measurements of one build on one machine.
 - The cadence in `FULL_EVERY`, if `TURNS_BETWEEN_MAINTENANCE` moved.

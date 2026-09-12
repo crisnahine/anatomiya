@@ -198,6 +198,14 @@ jobs:
       - name: The plugin's own lockfile is the one the seed produces
         run: node scripts/plugin-lock.mjs --check
 
+      # A shipped workflow whose meta will not parse is skipped by the loader
+      # with a warning in a log nobody opens, and the model is then told the
+      # workflow does not exist at the moment it reaches for it. This is the
+      # only thing that catches that, so it runs where a pull request can fail
+      # on it rather than only in `npm run validate` on somebody's machine.
+      - name: The shipped workflows keep the loader's contract
+        run: node scripts/workflow-lint.mjs
+
       # What a marketplace install actually does, on the files it actually
       # copies. Claude Code reads the plugin root with a non-recursive `readdir`
       # and runs this exact command where a manifest and a lockfile sit

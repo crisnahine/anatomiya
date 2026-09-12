@@ -405,9 +405,33 @@ test("the gate is found however a build spells true, quotes the string, or calls
     // spelling is kept so the next respelling has something to be compared to.
     `function Ale(e,t,r){return r===!0&&gH()&&kQ(e,t)==="xhigh"}`,
     `function Wv(e,o,t){return t===!0&&Zu()&&yT(e,o)==="xhigh"}`,
+    // 2.1.268 threads a fourth argument through and passes it as an options
+    // object, so the effort resolver's argument list carries braces and a key.
+    // Under the bound this pattern used to carry, 18 of its 24 characters were
+    // spent on `e,n,{turnEffort:r}`: six characters of headroom is a
+    // coincidence rather than a bound, and one more key would have read as a
+    // build that dropped the gate.
+    `function fC(e,n,o,r){return o===!0&&eu()&&NA(e,n,{turnEffort:r})==="xhigh"}`,
+    `function fC(e,n,o,r){return o===!0&&eu()&&NA(e,n,{turnEffort:r,honorLaunchPin:!0,someLaterKey:"a"})==="xhigh"}`,
+    // A resolver called with a nested call in its arguments, which the old
+    // `[^)]` class could not cross at all.
+    `function fC(e,n,o,r){return o===!0&&eu()&&NA(e,n,{turnEffort:pin(r)})==="xhigh"}`,
   ]) {
     const tree = installed(t, { bundle: `${gate}\n${MARKERS.join("\n")}` });
     assert.deepEqual(drift({ cli: tree.cli }).missing, [], gate);
+  }
+});
+
+test("a predicate that only compares an effort is not the gate, whatever else is near it", (t) => {
+  // The premise is that xhigh is one conjunct of the condition rather than the
+  // whole of it. A pattern loose enough to match a bare comparison would report
+  // a gate on a build that had stopped having one.
+  for (const notTheGate of [
+    `function Mae(e,t,r){return zZ(e,t)==="xhigh"}`,
+    `function Mae(e,t,r){return r===!0}`,
+  ]) {
+    const tree = installed(t, { bundle: `${notTheGate}\n${MARKERS.join("\n")}` });
+    assert.deepEqual(drift({ cli: tree.cli }).missing, [GATE_SHAPE], notTheGate);
   }
 });
 
