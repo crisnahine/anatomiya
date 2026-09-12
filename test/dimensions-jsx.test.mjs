@@ -1,7 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { parseSync } from "oxc-parser";
-import { JSX_DIMENSIONS, jsxName, attrName } from "../plugins/anatomiya/lib/dimensions-jsx.mjs";
+import { siteIdentity } from "../plugins/anatomiya/lib/introduced.mjs";
+import { calleeName, JSX_DIMENSIONS, jsxName, attrName } from "../plugins/anatomiya/lib/dimensions-jsx.mjs";
 import { ALL_DIMENSIONS, dimensionsFor } from "../plugins/anatomiya/lib/dimensions.mjs";
 import { applyGates } from "../plugins/anatomiya/lib/reduce.mjs";
 
@@ -44,9 +46,9 @@ test("a library hook is not a candidate for the React namespace claim, because i
 });
 
 test("the bare hook form conforms and reports the callee, not the call it heads", () => {
-  // check.mjs fingerprints normalise(source.slice(node.start, node.end)) with no
+  // A site's identity is normalise(source.slice(node.start, node.end)) with no
   // truncation, so reporting the CallExpression would put a whole useEffect body
-  // in the fingerprint and any edit inside it would resurface as a new violation.
+  // in it and any edit inside would resurface as a new site.
   const src = `import * as React from "react";
 export const C = () => {
   const [a, set] = useState(0);
@@ -111,13 +113,10 @@ test("a bare prop and a string prop are not handler sites", () => {
   assert.equal(hits("handler_is_named", src).length, 0, "only /^on[A-Z]/ names a handler");
 });
 
-// The fingerprint is normalise(source.slice(node.start, node.end)); check.mjs:437.
-const normalise = (s) => s.replace(/\s+/g, " ").trim();
-
-test("a violation's reported node is the attribute name, so an edit inside the arrow body does not re-report it as new", () => {
-  // Reporting the JSXAttribute puts the whole arrow body in the fingerprint, so
+test("a finding's reported node is the attribute name, so an edit inside the arrow body does not re-report it as new", () => {
+  // Reporting the JSXAttribute puts the whole arrow body in the identity, so
   // every edit inside a pre-existing inline handler surfaces as a newly
-  // introduced violation on the branch that touched it.
+  // introduced site on the branch that touched it.
   const a = `const A = () => <B onClick={() => save(1)} />;`;
   const b = `const A = () => <B onClick={() => save(2)} />;`;
   const [ha] = hits("handler_is_named", a);
@@ -127,9 +126,9 @@ test("a violation's reported node is the attribute name, so an edit inside the a
   assert.equal(ha.node.type, "JSXIdentifier");
   assert.equal(slice(a, ha.node), "onClick");
   assert.equal(
-    normalise(slice(a, ha.node)),
-    normalise(slice(b, hb.node)),
-    "the two fingerprint identically, so the edit is not a new violation"
+    siteIdentity("src/a.jsx", "handler_is_named", ha.node, a),
+    siteIdentity("src/a.jsx", "handler_is_named", hb.node, b),
+    "the two are one site, so the edit introduces nothing"
   );
 });
 
@@ -349,9 +348,9 @@ export const Panel = ({ items }) => {
 };`;
 
 test("every JSX hit carries a typed node with offsets into the parsed source", () => {
-  // check.mjs slices the parsed source with node.start/node.end and fingerprints
-  // on node.type, so a hit missing any of the three reports a violation with no
-  // text and an unstable identity.
+  // introduced.mjs slices the parsed source with node.start/node.end and keys
+  // the identity on node.type, so a hit missing any of the three reports a site
+  // with no text and an unstable identity.
   const { program } = parseSync("f.tsx", EVERY_DIMENSION, { sourceType: "module" });
   for (const d of JSX_DIMENSIONS) {
     const out = [];
@@ -364,6 +363,15 @@ test("every JSX hit carries a typed node with offsets into the parsed source", (
       assert.equal(typeof h.node.end, "number", `${d.key} node has no end offset`);
       assert.ok(h.where === null || typeof h.where === "string", `${d.key} where`);
       assert.ok(slice(EVERY_DIMENSION, h.node).length > 0, `${d.key} reports an empty span`);
+    }
+    // The identity is the slice, never the offset: the same file with one more
+    // line ahead of it identifies every site the same way.
+    const shifted = `\n${EVERY_DIMENSION}`;
+    const moved = [];
+    d.run(parseSync("f.tsx", shifted, { sourceType: "module" }).program, (h) => moved.push(h));
+    assert.equal(moved.length, out.length, d.key);
+    for (const [i, h] of out.entries()) {
+      assert.equal(siteIdentity("src/a.tsx", d.key, h.node, EVERY_DIMENSION), siteIdentity("src/a.tsx", d.key, moved[i].node, shifted), `${d.key} site ${i}`);
     }
   }
 });
@@ -608,4 +616,16 @@ test("the naming row leaves a conditional component out of its vote", async () =
   assert.deepEqual(classesOf(`export function CardBox() { return a ? <div /> : null }`), []);
   assert.deepEqual(classesOf(`export function CardBox() { return a && <div /> }`), []);
   assert.deepEqual(classesOf(`export function formatDate(d) { return String(d) }`), ["camelCase"]);
+});
+
+test("the callee reader answers a name or null, never undefined, and there is one of it", () => {
+  // Two copies answered a missing property differently, and every caller
+  // compared against a literal so nothing decided. One reader, the nearer home.
+  assert.equal(calleeName({ type: "Identifier", name: "f" }), "f");
+  assert.equal(calleeName({ type: "MemberExpression", computed: false, property: { type: "Identifier", name: "g" } }), "g");
+  assert.equal(calleeName({ type: "MemberExpression", computed: false, property: {} }), null);
+  assert.equal(calleeName({ type: "MemberExpression", computed: true, property: { name: "g" } }), null);
+  assert.equal(calleeName(null), null);
+  const extra = readFileSync(new URL("../plugins/anatomiya/lib/dimensions-extra.mjs", import.meta.url), "utf8");
+  assert.doesNotMatch(extra, /function calleeName|const calleeName/, "the second copy is gone");
 });

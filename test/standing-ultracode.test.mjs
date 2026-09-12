@@ -13,6 +13,8 @@ import { EFFORT_LEVELS } from "../plugins/ultracode-anywhere/hooks/effort.mjs";
 
 import { FULL_EVERY, contextFor, isWakeup, run } from "../plugins/ultracode-anywhere/hooks/standing-ultracode.mjs";
 import { ULTRACODE } from "../scripts/plugins.mjs";
+import { WORKFLOWS_DIR, shippedIn } from "../plugins/ultracode-anywhere/hooks/catalogue.mjs";
+import { hostEnv } from "./host-env.mjs";
 
 const HOOK = fileURLToPath(new URL("../plugins/ultracode-anywhere/hooks/standing-ultracode.mjs", import.meta.url));
 
@@ -22,6 +24,17 @@ function stateDir(t) {
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   return dir;
 }
+
+/**
+ * Which of the two texts this is: the whole opt-in, the one-line refresher, or
+ * silence.
+ *
+ * Read off the sentence each opens with rather than off its length. The length
+ * was a stand-in for the same question and it stopped being one when the
+ * refresher grew a clause naming the shipped workflows: a threshold is a proxy
+ * that fails the first time the content legitimately moves.
+ */
+const shapeOf = (said) => (said === null || said === "" ? "-" : said.startsWith("Ultracode is on:") ? "F" : "s");
 
 /** What Claude Code writes to the hook's stdin, in the shape it writes it. */
 function payload(fields = {}) {
@@ -59,7 +72,7 @@ function fire(t, { stdin = payload(), env = {}, dir = stateDir(t) } = {}) {
     input: stdin,
     cwd: dir,
     encoding: "utf8",
-    env: { ...process.env, ...nowhere(t), ULTRACODE_ANYWHERE_STATE: dir, ...env },
+    env: { ...hostEnv(), ...nowhere(t), ULTRACODE_ANYWHERE_STATE: dir, ...env },
   });
   return { ...result, dir };
 }
@@ -106,7 +119,7 @@ test("the whole text lands once, then a one-line refresher every tenth turn and 
   const shapes = [];
   for (let i = 0; i < FULL_EVERY * 2 + 1; i++) {
     const out = fire(t, { dir }).stdout;
-    shapes.push(out === "" ? "-" : contextOf(out).length > 200 ? "F" : "s");
+    shapes.push(out === "" ? "-" : shapeOf(contextOf(out)));
   }
 
   assert.equal(shapes.join(""), `F${"-".repeat(FULL_EVERY - 1)}s${"-".repeat(FULL_EVERY - 1)}s`);
@@ -180,9 +193,9 @@ test("isWakeup reads the parsed source, not the raw text", () => {
 });
 
 test("contextFor opens with the whole text and answers nothing between refreshers", () => {
-  assert.equal(contextFor(1).length > 200, true);
+  assert.equal(shapeOf(contextFor(1)), "F");
   assert.equal(contextFor(2), null);
-  assert.equal(contextFor(FULL_EVERY + 1).length < 200, true, "the tenth turn after the first is the short line");
+  assert.equal(shapeOf(contextFor(FULL_EVERY + 1)), "s", "the tenth turn after the first is the short line");
   assert.equal(contextFor(FULL_EVERY + 1), contextFor(FULL_EVERY * 2 + 1));
 });
 
@@ -368,7 +381,7 @@ test("how often the refresher comes back can be set, and a bad setting falls bac
     const shapes = [];
     for (let i = 0; i < 6; i++) {
       const said = run({ stdin: payload({ session_id: session }), env, state: dir });
-      shapes.push(said === null ? "-" : said.length > 200 ? "F" : "s");
+      shapes.push(shapeOf(said));
     }
     return shapes.join("");
   };
@@ -393,7 +406,7 @@ test("the whole text can be brought back on the cadence, for a session that want
   const shapes = [];
   for (let i = 0; i < 7; i++) {
     const said = run({ stdin: payload({ session_id: "repeat" }), env, state: dir });
-    shapes.push(said === null ? "-" : said.length > 200 ? "F" : "s");
+    shapes.push(shapeOf(said));
   }
 
   assert.equal(shapes.join(""), "F--F--F");
@@ -506,7 +519,7 @@ test("the refresher carries the level too, since a switch that lapses on turn el
   for (let i = 0; i < 4; i++) said.push(run({ stdin: payload({ session_id: "refreshed" }), env, state: dir }));
 
   assert.match(said[3], /opts\.effort 'low'/, "the refresher names the level the session asked for");
-  assert.equal(said[3].length < 200, true, "and it is still the short line, not the whole text again");
+  assert.equal(shapeOf(said[3]), "s", "and it is still the short line, not the whole text again");
 });
 
 // --- sessions where this hook has nothing to add ------------------------------
@@ -606,7 +619,7 @@ test("the hook runs when it is reached through a symlinked directory", needsSyml
   const through = spawnSync(process.execPath, [join(dir, "link", "ultracode-anywhere", "hooks", "standing-ultracode.mjs")], {
     input: payload(),
     encoding: "utf8",
-    env: { ...process.env, ...nowhere(t), ULTRACODE_ANYWHERE_STATE: join(dir, "state") },
+    env: { ...hostEnv(), ...nowhere(t), ULTRACODE_ANYWHERE_STATE: join(dir, "state") },
   });
 
   assert.equal(through.status, 0);
@@ -617,7 +630,7 @@ test("a reader that goes away mid-write does not turn the hook into a failed one
   // The one path in this plugin that could reach stderr and a non-zero exit,
   // which is the outcome a hook must not have.
   const dir = stateDir(t);
-  const child = spawn(process.execPath, [HOOK], { env: { ...process.env, ...nowhere(t), ULTRACODE_ANYWHERE_STATE: dir } });
+  const child = spawn(process.execPath, [HOOK], { env: { ...hostEnv(), ...nowhere(t), ULTRACODE_ANYWHERE_STATE: dir } });
   let stderr = "";
   child.stderr.on("data", (chunk) => {
     stderr += chunk;
@@ -655,7 +668,7 @@ test("a cadence of zero turns between refreshers falls back to the default", (t)
   const shapes = [];
   for (let i = 0; i < 12; i++) {
     const said = run({ stdin: payload({ session_id: "zero" }), env: { ...nowhere(t), ULTRACODE_ANYWHERE_EVERY: "0" }, state: dir });
-    shapes.push(said === null ? "-" : said.length > 200 ? "F" : "s");
+    shapes.push(shapeOf(said));
   }
 
   assert.equal(shapes.join(""), "F---------s-");
@@ -690,9 +703,52 @@ test("a turn taken from a directory that is no longer there is still a turn that
   const run = spawnSync("/bin/sh", ["-c", `cd "${gone}" && rm -rf "${gone}" && exec "${process.execPath}" "${HOOK}"`], {
     input: "",
     encoding: "utf8",
-    env: { ...process.env, ULTRACODE_ANYWHERE_STATE: join(dir, "state"), CLAUDE_CONFIG_DIR: join(dir, "config") },
+    env: { ...hostEnv(), ...nowhere(t), ULTRACODE_ANYWHERE_STATE: join(dir, "state"), CLAUDE_CONFIG_DIR: join(dir, "config") },
   });
 
   assert.equal(run.status, 0, run.stderr);
   assert.equal(run.stderr, "");
+});
+
+test("the opening text names every workflow this plugin ships, by the name the tool resolves", () => {
+  // Nothing upstream advertises a plugin workflow: the listing hook is a stub
+  // and the only place a name reaches the model is the error raised when one
+  // does not resolve. So a shipped workflow nobody names is one nobody runs.
+  const text = contextFor(1);
+  for (const { meta } of shippedIn(join(ULTRACODE, WORKFLOWS_DIR))) {
+    assert.match(text, new RegExp(`ultracode-anywhere:${meta.name}`), meta.name);
+  }
+});
+
+test("the refresher keeps naming them, since a long session loses the opening text", () => {
+  const text = contextFor(FULL_EVERY + 1);
+  for (const { meta } of shippedIn(join(ULTRACODE, WORKFLOWS_DIR))) {
+    assert.match(text, new RegExp(`ultracode-anywhere:${meta.name}`), meta.name);
+  }
+});
+
+test("the catalogue tells the model to run one rather than write its own for that shape", () => {
+  assert.match(contextFor(1), /Workflow\(\{\s*name:/);
+  assert.match(contextFor(1), /rather than writing/i);
+});
+
+test("a plugin shipping no workflows says nothing about workflows and keeps the rest of the text", () => {
+  const without = contextFor(1, { catalogue: null });
+  assert.doesNotMatch(without, /ultracode-anywhere:/);
+  assert.match(without, /Ultracode is on/);
+});
+
+test("ULTRACODE_ANYWHERE_CATALOGUE=0 drops the listing and leaves the reminder", (t) => {
+  const dir = stateDir(t);
+  const text = run({ stdin: payload(), env: { ...nowhere(t), ULTRACODE_ANYWHERE_CATALOGUE: "0" }, state: dir });
+  assert.doesNotMatch(text, /ultracode-anywhere:/);
+  assert.match(text, /Ultracode is on/);
+});
+
+test("a turn the hook actually runs carries the catalogue read off the plugin's own directory", (t) => {
+  const dir = stateDir(t);
+  const text = run({ stdin: payload(), env: nowhere(t), state: dir });
+  for (const { meta } of shippedIn(join(ULTRACODE, WORKFLOWS_DIR))) {
+    assert.match(text, new RegExp(`ultracode-anywhere:${meta.name}`), meta.name);
+  }
 });

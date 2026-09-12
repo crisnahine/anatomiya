@@ -11,11 +11,11 @@
  * it and is told nothing. The cap line is the exception: it is marked once per
  * state directory and said once.
  */
+import { PLUGIN, catalogueLine, shippedHere } from "./catalogue.mjs";
 import { cached, firstTime, startOver, stateDirFor } from "./counters.mjs";
-import { askedFor, askedForSubagent, subagentEffortIn } from "./effort.mjs";
+import { askedFor, retired } from "./effort.mjs";
 import { here, invokedAs, parsePayload, readStdin, respond } from "./hook-io.mjs";
-import { agentDirsFor, shadowLine, shadowsFor } from "./shadows.mjs";
-import { CALIBRATED_AGAINST, behind, cliPath, conflictIn, driftCached, settingsFor, versionOf } from "./upstream.mjs";
+import { CALIBRATED_AGAINST, CONFLICTS, behind, cliPath, conflictIn, driftCached, settingsFor, versionOf } from "./upstream.mjs";
 
 /** The starts that empty the context under a session that goes on. */
 const EMPTIES_CONTEXT = new Set(["compact", "clear"]);
@@ -60,6 +60,24 @@ export function notice({
   const conflict = conflictIn(settings, env);
   if (conflict) said.push(`ultracode-anywhere is quiet this session: ${conflict}.`);
 
+  // The prompt hook carries the catalogue on its first turn, so saying it here
+  // as well is the same paragraph twice. The exception is the session where
+  // that hook has gone quiet and the Workflow tool is still there: the built-in
+  // reminder it stood aside for says nothing about a plugin's workflows, so the
+  // users most likely to want these are the ones who would never hear of them.
+  // Where the conflict is that there is no Workflow tool, there is nothing to
+  // point at either.
+  //
+  // Both ways the prompt hook goes quiet, not only the first: strict on a build
+  // that moved silences it too, and the workflows load and run whatever the
+  // build did to the reminder's premise, so that session would otherwise be the
+  // one session that never hears they exist.
+  const alone = conflict === CONFLICTS.ultracode || (!conflict && env.ULTRACODE_ANYWHERE_STRICT === "1" && Boolean(moved));
+  if (alone && env.ULTRACODE_ANYWHERE_CATALOGUE !== "0") {
+    const catalogue = catalogueLine(shippedHere(), PLUGIN);
+    if (catalogue) said.push(catalogue);
+  }
+
   // Said every session rather than once per machine, since this is a variable
   // one session carries and the next may not. Only where the reminder is going
   // out at all: with the prompt hook quiet there is no text to carry a level,
@@ -70,22 +88,10 @@ export function notice({
   const asked = quiet ? null : askedFor(env);
   if (asked) said.push(`ultracode-anywhere: ${asked}.`);
 
-  // The other half of the same question, and not gated by `quiet`. Both ways
-  // this plugin goes silent are about the reminder, and the reminder is not
-  // what an agent file competes with: a spawn reads its definition whether or
-  // not a hook said anything this session, and a copy frozen at an older build
-  // is just as frozen where the settings already do the reminder's job.
-  //
-  // At most one of these two ever fires: a value that named a level makes the
-  // first null, and one that did not makes the second.
-  const subagent = askedForSubagent(env);
-  if (subagent) said.push(`ultracode-anywhere: ${subagent}.`);
-
-  const wanted = subagentEffortIn(env);
-  if (wanted) {
-    const shadows = shadowLine(wanted, shadowsFor({ level: wanted, dirs: agentDirsFor(env, cwd), build: cli }));
-    if (shadows) said.push(`ultracode-anywhere: ${shadows}.`);
-  }
+  // Said whether or not the reminder is going out: a switch that no longer does
+  // anything is wrong in every session, not only the ones this plugin speaks in.
+  const gone = retired(env);
+  if (gone) said.push(`ultracode-anywhere: ${gone}.`);
 
   // The one thing native ultracode does that no reminder can: it lifts the
   // concurrent-subagent cap. Named once here rather than left in a README

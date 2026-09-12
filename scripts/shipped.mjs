@@ -28,7 +28,7 @@ import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 
 import { invokedAs } from "./entry.mjs";
-import { LOADABLE } from "./validate.mjs";
+import { LOADABLE, pluginPaths } from "./validate.mjs";
 
 /** Read rather than trusted: this gate must not reach a registry. */
 export const PACK_ARGV = ["pack", "--dry-run", "--json", "--offline"];
@@ -43,7 +43,7 @@ export const PACK_ARGV = ["pack", "--dry-run", "--json", "--offline"];
  * Linux job either way, so a Windows checkout is told why rather than handed a
  * failure it cannot fix.
  */
-export const PACKABLE = process.platform !== "win32";
+const PACKABLE = process.platform !== "win32";
 
 /** Where the loader looks for hooks when the manifest names nowhere else. */
 const DECLARATION = "hooks/hooks.json";
@@ -115,19 +115,6 @@ const SPECIFIERS = [
   // started this way, `new URL("./parse-worker.mjs", import.meta.url)` handed
   // to a child process, so nothing imports the two files it cannot run without.
   /new\s+URL\s*\(\s*(["'])(\.[^"']*)\1/g,
-];
-
-/**
- * A path into the plugin, as a hook command or a command file spells it.
- *
- * The quoted form is tried first because a hook command is parsed out of JSON
- * before it is read here, so the quotes left in it are the shell's and they are
- * what delimit the path: read to the first space instead, a file with a space
- * in its name was reported as one the plugin does not have.
- */
-const PLUGIN_PATHS = [
-  /(["'])\$\{CLAUDE_PLUGIN_ROOT\}\/([^"']+)\1/g,
-  /()\$\{CLAUDE_PLUGIN_ROOT\}\/([^"'\s`)]+)/g,
 ];
 
 /**
@@ -220,15 +207,7 @@ export function reachableFrom(root, entries) {
 function pluginPathsIn(root, rel, body) {
   const named = [];
   const collect = (text) => {
-    // The quoted form first, and what it matched is then taken out of the text:
-    // the unquoted pattern matches inside a quoted reference too, and would
-    // report the part before the space as a second, shorter path.
-    const [quoted, bare] = PLUGIN_PATHS;
-    const rest = text.replace(quoted, (whole, _q, path) => {
-      named.push(spelledInTree(root, path));
-      return " ".repeat(whole.length);
-    });
-    for (const [, , path] of rest.matchAll(bare)) named.push(spelledInTree(root, path));
+    for (const path of pluginPaths(text)) named.push(spelledInTree(root, path));
   };
 
   if (!rel.endsWith(".json")) {

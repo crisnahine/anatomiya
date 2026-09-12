@@ -24,7 +24,7 @@ import { schemaProblem } from "../plugins/anatomiya/lib/facts.mjs";
 export const NARROW_AND_PRECISE = "narrow and precise: check the predicate";
 
 /** The share below which a precise row is worth opening. */
-export const NARROW = 0.25;
+const NARROW = 0.25;
 
 const median = (xs) => {
   const s = [...xs].sort((a, b) => a - b);

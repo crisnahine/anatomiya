@@ -156,20 +156,6 @@ function indexAreas(pin) {
 /* --- what the scan asks for --- */
 
 /**
- * The baseline, resolved once, with the pin read here rather than by the caller.
- *
- * One of the two entry points this module offers the scan. The other is
- * `measure`. Everything else here is the check's or this module's own, so the
- * order these must be called in stays inside the module rather than in a caller.
- *
- * `partitionSize` is the corpus size the pin was taken over. The area floor is a
- * step function of it, so a caller deriving it from today's file count
- * re-partitions the repository on one added file, and every area then reads as
- * a population change against a pin that knew the old partition.
- */
-
-
-/**
  * One record per area, carrying everything a verdict reads: what the map should
  * report about the population, the shape the gates measure against, the counts
  * the dimension had at the pin, and what closes the area before any gate is
@@ -239,10 +225,21 @@ function areaBlock(state, population, baseline) {
 }
 
 /**
- * Everything the scan needs to know about the baseline, resolved once.
+ * Everything the scan needs to know about the baseline, resolved once, with the
+ * pin read here rather than by the caller.
+ *
+ * One of the three entry points this module offers the scan, with `measure`
+ * and `baselinePopulation`. Everything else here is the check's or this
+ * module's own, so the order these must be called in stays inside the module
+ * rather than in a caller.
  *
  * `countsOnly` is the hard stop: no pin, or a pinned sha this repository can no
  * longer reach, and every directive drops to counts (E3).
+ *
+ * `partitionSize` is the corpus size the pin was taken over. The area floor is a
+ * step function of it, so a caller deriving it from today's file count
+ * re-partitions the repository on one added file, and every area then reads as
+ * a population change against a pin that knew the old partition.
  */
 export async function resolve(root, { pin = loadPin(root), baseRef = null } = {}) {
   // A pin handed in directly has not been through `loadPin`, and an area list

@@ -7,10 +7,13 @@ import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 
 import { needsRemovableCwd } from "./platform.mjs";
+import { hostEnv } from "./host-env.mjs";
 import { CALIBRATED_AGAINST, MARKERS, MIN_BUNDLE } from "../plugins/ultracode-anywhere/hooks/upstream.mjs";
 import { notice } from "../plugins/ultracode-anywhere/hooks/session-start.mjs";
 import { run } from "../plugins/ultracode-anywhere/hooks/standing-ultracode.mjs";
 import { nextTurn } from "../plugins/ultracode-anywhere/hooks/counters.mjs";
+import { WORKFLOWS_DIR, shippedIn } from "../plugins/ultracode-anywhere/hooks/catalogue.mjs";
+import { ULTRACODE } from "../scripts/plugins.mjs";
 
 /** What a build carries: the four names, and the gate the reminder is emitted under. */
 const whole = () => `function Mae(e,t,r){return r===!0&&ZL()&&zZ(e,t)==="xhigh"}\n${MARKERS.join("\n")}`;
@@ -62,7 +65,7 @@ test("the hook prints one SessionStart object and nothing when there is nothing 
     spawnSync(process.execPath, [HOOK], {
       input: JSON.stringify({ session_id: "s", hook_event_name: "SessionStart", source: "startup", cwd: t1.dir }),
       encoding: "utf8",
-      env: { ...process.env, CLAUDE_CONFIG_DIR: t1.config, CLAUDE_CODE_EXECPATH: env, ULTRACODE_ANYWHERE_STATE: t1.state, ULTRACODE_ANYWHERE_CAP_NOTICE: "0" },
+      env: { ...hostEnv(), CLAUDE_CONFIG_DIR: t1.config, CLAUDE_CODE_EXECPATH: env, ULTRACODE_ANYWHERE_STATE: t1.state, ULTRACODE_ANYWHERE_CAP_NOTICE: "0" },
     });
 
   const drifted = fire(t1.cli);
@@ -185,7 +188,7 @@ test("a session started from a directory that is no longer there still starts", 
   const run = spawnSync("/bin/sh", ["-c", `cd "${gone}" && rm -rf "${gone}" && exec "${process.execPath}" "${HOOK}"`], {
     input: "",
     encoding: "utf8",
-    env: { ...process.env, CLAUDE_CONFIG_DIR: join(dir, "config"), HOME: dir, ULTRACODE_ANYWHERE_STATE: join(dir, "state") },
+    env: { ...hostEnv(), CLAUDE_CONFIG_DIR: join(dir, "config"), HOME: dir, ULTRACODE_ANYWHERE_STATE: join(dir, "state") },
   });
 
   assert.equal(run.status, 0, run.stderr);
@@ -291,7 +294,7 @@ test("the hook reads the compaction off its payload", (t) => {
   const fired = spawnSync(process.execPath, [HOOK], {
     input: JSON.stringify({ session_id: "s", hook_event_name: "SessionStart", source: "compact", cwd: t1.dir }),
     encoding: "utf8",
-    env: { ...process.env, CLAUDE_CONFIG_DIR: t1.config, CLAUDE_CODE_EXECPATH: t1.cli, ULTRACODE_ANYWHERE_STATE: t1.state, ULTRACODE_ANYWHERE_CAP_NOTICE: "0" },
+    env: { ...hostEnv(), CLAUDE_CONFIG_DIR: t1.config, CLAUDE_CODE_EXECPATH: t1.cli, ULTRACODE_ANYWHERE_STATE: t1.state, ULTRACODE_ANYWHERE_CAP_NOTICE: "0" },
   });
 
   assert.equal(fired.status, 0, fired.stderr);
@@ -300,93 +303,118 @@ test("the hook reads the compaction off its payload", (t) => {
 
 // --- the agent files a spawn reads --------------------------------------------
 
-/** A shadow under the config directory, at a time either side of the build's. */
-function shadowIn(t1, type, { effort = "medium", after = true } = {}) {
-  const agents = join(t1.config, "agents");
-  mkdirSync(agents, { recursive: true });
-  const path = join(agents, `${type}.md`);
-  writeFileSync(path, `---\nname: ${type}\ndescription: What ${type} is for.\neffort: ${effort}\n---\n\nthe copied prompt\n`);
-  const built = statSync(t1.cli).mtimeMs / 1000;
-  const at = after ? built + 60 : built - 60;
-  utimesSync(path, at, at);
-  return path;
-}
 
-const quietEnv = (t1, over = {}) => ({ CLAUDE_CONFIG_DIR: t1.config, ULTRACODE_ANYWHERE_CAP_NOTICE: "0", ...over });
-
-test("a session that asked nothing about agent files is told nothing about them", (t) => {
-  const t1 = tree(t, { settings: { effortLevel: "medium" } });
-  shadowIn(t1, "Explore", { after: false });
-
-  // The stale file is there and says nothing, because nobody asked.
-  assert.equal(notice({ cwd: t1.dir, cli: t1.cli, state: t1.state, env: quietEnv(t1) }), null);
-});
-
-test("a session that asked is told which types have no agent file", (t) => {
-  const t1 = tree(t, { settings: { effortLevel: "medium" } });
-
-  const said = notice({ cwd: t1.dir, cli: t1.cli, state: t1.state, env: quietEnv(t1, { ULTRACODE_ANYWHERE_SUBAGENT_EFFORT: "medium" }) });
-
-  assert.match(said, /general-purpose, Explore and Plan/);
-  assert.match(said, /effort: medium/);
-});
-
-test("a shadow written before the installed build is the line a session is owed", (t) => {
-  const t1 = tree(t, { settings: { effortLevel: "medium" } });
-  for (const type of ["general-purpose", "Plan"]) shadowIn(t1, type);
-  shadowIn(t1, "Explore", { after: false });
-
-  const said = notice({ cwd: t1.dir, cli: t1.cli, state: t1.state, env: quietEnv(t1, { ULTRACODE_ANYWHERE_SUBAGENT_EFFORT: "medium" }) });
-
-  assert.match(said, /Explore was written before the installed build/);
-});
-
-test("shadows all present and newer than the build are nothing to say", (t) => {
-  const t1 = tree(t, { settings: { effortLevel: "medium" } });
-  for (const type of ["general-purpose", "Explore", "Plan"]) shadowIn(t1, type);
-
-  assert.equal(notice({ cwd: t1.dir, cli: t1.cli, state: t1.state, env: quietEnv(t1, { ULTRACODE_ANYWHERE_SUBAGENT_EFFORT: "medium" }) }), null);
-});
-
-test("the agent-file line stands even where the plugin's own reminder is redundant", (t) => {
-  // A conflict means the settings already do what the reminder does. It says
-  // nothing about files on disk: a spawn reads its agent definition either way,
-  // and a copy frozen at an older build is just as frozen in that session.
+test("a session already on native ultracode is still told what this plugin ships", (t) => {
+  // The prompt hook goes quiet there, and the built-in reminder it stands aside
+  // for says nothing about a plugin's workflows. Left alone, the users most
+  // likely to want these are the ones who never hear they exist.
   const t1 = tree(t, { settings: { ultracode: true } });
+  const said = notice({
+    cwd: t1.dir,
+    cli: t1.cli,
+    state: t1.state,
+    env: { CLAUDE_CONFIG_DIR: t1.config, ULTRACODE_ANYWHERE_CAP_NOTICE: "0" },
+  });
 
-  const said = notice({ cwd: t1.dir, cli: t1.cli, state: t1.state, env: quietEnv(t1, { ULTRACODE_ANYWHERE_SUBAGENT_EFFORT: "medium" }) });
+  assert.match(said, /quiet this session/, "it still says why the reminder is off");
+  for (const { meta } of shippedIn(join(ULTRACODE, WORKFLOWS_DIR))) {
+    assert.match(said, new RegExp(`ultracode-anywhere:${meta.name}`), meta.name);
+  }
+});
+
+test("a session with no Workflow tool is told nothing about workflows it cannot run", (t) => {
+  const t1 = tree(t, { settings: { enableWorkflows: false } });
+  const said = notice({
+    cwd: t1.dir,
+    cli: t1.cli,
+    state: t1.state,
+    env: { CLAUDE_CONFIG_DIR: t1.config, ULTRACODE_ANYWHERE_CAP_NOTICE: "0" },
+  });
 
   assert.match(said, /quiet this session/);
-  assert.match(said, /no agent file/);
+  assert.doesNotMatch(said, /ultracode-anywhere:review/);
 });
 
-test("the master switch silences the agent-file line with everything else", (t) => {
+test("a session where the prompt hook speaks does not say the catalogue twice", (t) => {
+  // The prompt hook's opening text carries it on turn one. Saying it here too
+  // is the same paragraph in the context twice, for nothing.
   const t1 = tree(t, { settings: { effortLevel: "medium" } });
+  const said = notice({
+    cwd: t1.dir,
+    cli: t1.cli,
+    state: t1.state,
+    env: { CLAUDE_CONFIG_DIR: t1.config, ULTRACODE_ANYWHERE_CAP_NOTICE: "0" },
+  });
 
-  assert.equal(notice({ cwd: t1.dir, cli: t1.cli, state: t1.state, env: quietEnv(t1, { ULTRACODE_ANYWHERE: "0", ULTRACODE_ANYWHERE_SUBAGENT_EFFORT: "medium" }) }), null);
+  assert.equal(said, null);
 });
 
-test("a subagent setting naming no level is quoted back rather than passed over", (t) => {
-  const t1 = tree(t, { settings: { effortLevel: "medium" } });
+test("the session where strict silences the prompt hook still hears what ships", (t) => {
+  // The prompt hook goes quiet two ways: native ultracode, and strict on a
+  // build whose markers moved. The notice covered the first only, so the second
+  // was the one session where nothing named the shipped workflows, though they
+  // load and run whatever the build did to the reminder's premise.
+  const t1 = tree(t, { bundle: `${whole()}`.replace(MARKERS[0], ""), settings: { effortLevel: "medium" } });
+  const said = notice({
+    cwd: t1.dir,
+    cli: t1.cli,
+    state: t1.state,
+    env: { CLAUDE_CONFIG_DIR: t1.config, ULTRACODE_ANYWHERE_CAP_NOTICE: "0", ULTRACODE_ANYWHERE_STRICT: "1" },
+  });
 
-  const said = notice({ cwd: t1.dir, cli: t1.cli, state: t1.state, env: quietEnv(t1, { ULTRACODE_ANYWHERE_SUBAGENT_EFFORT: "deep" }) });
-
-  assert.match(said, /ULTRACODE_ANYWHERE_SUBAGENT_EFFORT is set to "deep"/);
-  // And nothing is reported about files, since no level was named to report on.
-  assert.doesNotMatch(said, /no agent file/);
-});
-
-test("a project's own agent file answers before the user's", (t) => {
-  const t1 = tree(t, { settings: { effortLevel: "medium" } });
-  for (const type of ["general-purpose", "Explore", "Plan"]) shadowIn(t1, type, { effort: "high" });
-  const project = join(t1.dir, ".claude", "agents");
-  mkdirSync(project, { recursive: true });
-  for (const type of ["general-purpose", "Explore", "Plan"]) {
-    const path = join(project, `${type}.md`);
-    writeFileSync(path, `---\nname: ${type}\ndescription: What ${type} is for.\neffort: medium\n---\n\nthe copied prompt\n`);
-    const at = statSync(t1.cli).mtimeMs / 1000 + 60;
-    utimesSync(path, at, at);
+  assert.match(said, /ultracode-anywhere:review/);
+  for (const { meta } of shippedIn(join(ULTRACODE, WORKFLOWS_DIR))) {
+    assert.match(said, new RegExp(`ultracode-anywhere:${meta.name}`), meta.name);
   }
 
-  assert.equal(notice({ cwd: t1.dir, cli: t1.cli, state: t1.state, env: quietEnv(t1, { ULTRACODE_ANYWHERE_SUBAGENT_EFFORT: "medium" }) }), null);
+  // Without strict the prompt hook speaks, so the notice must not repeat it.
+  const loud = notice({
+    cwd: t1.dir,
+    cli: t1.cli,
+    state: t1.state,
+    env: { CLAUDE_CONFIG_DIR: t1.config, ULTRACODE_ANYWHERE_CAP_NOTICE: "0" },
+  });
+  assert.doesNotMatch(loud, /ultracode-anywhere:review/);
+});
+
+test("the catalogue switch turns off the strict-path listing too", (t) => {
+  const t1 = tree(t, { bundle: `${whole()}`.replace(MARKERS[0], ""), settings: { effortLevel: "medium" } });
+  const said = notice({
+    cwd: t1.dir,
+    cli: t1.cli,
+    state: t1.state,
+    env: {
+      CLAUDE_CONFIG_DIR: t1.config,
+      ULTRACODE_ANYWHERE_CAP_NOTICE: "0",
+      ULTRACODE_ANYWHERE_STRICT: "1",
+      ULTRACODE_ANYWHERE_CATALOGUE: "0",
+    },
+  });
+
+  assert.doesNotMatch(said, /ultracode-anywhere:review/);
+});
+
+test("a switch this plugin stopped reading is said once, not dropped in silence", (t) => {
+  // The variable sits in a user's settings doing nothing after the upgrade, and
+  // the session that relied on it would never find out: the plugin used to
+  // write agent files under it and now ships its own.
+  const t1 = tree(t, { settings: { effortLevel: "medium" } });
+  const said = notice({
+    cwd: t1.dir,
+    cli: t1.cli,
+    state: t1.state,
+    env: { CLAUDE_CONFIG_DIR: t1.config, ULTRACODE_ANYWHERE_CAP_NOTICE: "0", ULTRACODE_ANYWHERE_SUBAGENT_EFFORT: "medium" },
+  });
+
+  assert.match(said, /ULTRACODE_ANYWHERE_SUBAGENT_EFFORT/);
+  assert.match(said, /no longer does anything/);
+
+  // And nothing is said where it is not set.
+  const clean = notice({
+    cwd: t1.dir,
+    cli: t1.cli,
+    state: t1.state,
+    env: { CLAUDE_CONFIG_DIR: t1.config, ULTRACODE_ANYWHERE_CAP_NOTICE: "0" },
+  });
+  assert.equal(clean, null);
 });
