@@ -13,6 +13,12 @@ they spawn, and the reminder that keeps the Workflow tool in play at any effort 
 It is its own plugin: installing `anatomiya` from the same marketplace does not install this one.
 Restart the session afterwards, since workflows and agent types are read once at startup.
 
+Nothing else to install: no dependencies, no lockfile, no configuration file to write. One thing has
+to be there already, and it is the only one: **`node` on `PATH`**, which both hooks are spelled to
+run. Claude Code is a compiled binary and ships none, so a machine without node gets
+`sh: node: command not found` on every prompt and loses the reminder and the session notice. The
+workflows and the agent types still load, since the plugin loader reads those itself.
+
 ## What it ships
 
 Three orchestrations live under `workflows/`. Claude Code loads a plugin's workflows and resolves
@@ -348,8 +354,8 @@ with no change here.
 A turn here is a prompt, and the built-in counts user messages that are neither meta nor a tool
 result, so the two count the same turns: neither of those fires a prompt hook.
 
-The hook runs through `node`, which Claude Code brings with it, so it fires the same on a machine
-with no shell. It counts a session's turns in a file named for that session under
+The hook runs through `node`, which has to be on `PATH`: Claude Code is a compiled binary and
+brings none. It counts a session's turns in a file named for that session under
 `~/.claude/ultracode-anywhere/` (or whatever `CLAUDE_CONFIG_DIR` names), beside the rest of this
 account's own Claude Code state, and forgets counters a week after their last turn. Anything it cannot
 read or write costs the session its cadence, not its reminder: the turn still gets the full text,

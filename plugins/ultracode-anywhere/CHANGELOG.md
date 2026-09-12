@@ -9,6 +9,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- The README said `node` was something Claude Code brings with it. It is not: the CLI is a compiled
+  binary and ships none, so on a machine without node on `PATH` both hooks die with
+  `sh: node: command not found` and the session loses its reminder and its notice. The requirement
+  is now stated where someone installing reads it.
+
 ## [0.6.0] - 2026-09-12
 
 The plugin stops asking for orchestration and starts shipping it. Three workflows resolve by name,
