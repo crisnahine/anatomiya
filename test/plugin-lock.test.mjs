@@ -5,9 +5,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 
-import { seedFor } from "../scripts/plugin-lock.mjs";
+import { LOCK_ARGV, seedFor } from "../scripts/plugin-lock.mjs";
 import { REL, ROOT } from "../scripts/plugins.mjs";
-import { needsSpawnableNpm } from "./platform.mjs";
+import { needsPathControl, needsShebang, needsSpawnableNpm } from "./platform.mjs";
 
 const MANIFEST = {
   name: "anatomiya",
@@ -213,4 +213,24 @@ test("on Windows the gate says why it did not run, rather than failing on npm", 
 
   assert.equal(run.status, 0, `${run.stdout}${run.stderr}`);
   assert.match(run.stdout, /^not checked here: npm on Windows is a batch file/m, `${run.stdout}${run.stderr}`);
+});
+
+// The list says what the gate means to run, and nothing checked the argv the
+// npm it spawns is handed: `--offline` under `--check` is what keeps a gate off
+// the network (B35), and a call site spelling its own argv would pass the list.
+// The stub records what it was handed and answers nothing this can read, so
+// the exit status is the gate's own reported condition and not this case's.
+test("the npm the gate runs is handed the list, offline under --check and online for a write", { ...needsShebang, ...needsPathControl }, (t) => {
+  const dir = marketplace(t);
+  const bin = mkdtempSync(join(tmpdir(), "anatomiya-lock-npm-"));
+  t.after(() => rmSync(bin, { recursive: true, force: true }));
+  const seen = join(bin, "argv.txt");
+  writeFileSync(join(bin, "npm"), `#!/bin/sh\nprintf '%s\\n' "$@" > ${seen}\n`, { mode: 0o755 });
+  const env = { PATH: `${bin}:${process.env.PATH}` };
+
+  check(dir, env);
+  assert.deepEqual(readFileSync(seen, "utf8").split("\n").filter(Boolean), [...LOCK_ARGV, "--offline"]);
+
+  spawnSync(process.execPath, [join(ROOT, "scripts", "plugin-lock.mjs"), dir], { encoding: "utf8", timeout: 120_000, env: { ...process.env, ...env } });
+  assert.deepEqual(readFileSync(seen, "utf8").split("\n").filter(Boolean), LOCK_ARGV);
 });

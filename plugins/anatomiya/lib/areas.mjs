@@ -311,7 +311,7 @@ function spellableCover(root, positive, negative) {
  * negations. 37 of those 156 areas change; the other 119 hold a whole subtree
  * and emit the same single recursive glob they emitted before.
  */
-export function assignGlobs(areas, files) {
+function assignGlobs(areas, files) {
   const corpus = corpusTree(files);
   for (const area of areas) {
     const mine = areaTree(area.files);

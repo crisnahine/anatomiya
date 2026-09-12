@@ -23,7 +23,7 @@
  */
 
 import { engineOf, language } from "./langs.mjs";
-import { dirOf, extOf, stemOf, withoutExtension } from "./paths.mjs";
+import { byCode, dirOf, extOf, stemOf, withoutExtension } from "./paths.mjs";
 import {
   LEARNED_SUFFIX_FLOOR,
   LEARNED_SUFFIX_SHARE,
@@ -361,10 +361,8 @@ export function namesakeIndex(testFiles, sourceFiles = null) {
     byStem.get(stem).push({ rel: t.rel, dir, bare: withoutTree(dir), covers: coversOf(t), owner: null });
   }
   if (sourceFiles !== null) registerLearnedSpellings(byStem, sourceFiles);
-  // By code unit, the comparator the learned class already sorts with: this
-  // order picks the root that gets rendered, and `localeCompare` orders case by
-  // whatever ICU tables the host was built with.
-  for (const candidates of byStem.values()) candidates.sort((a, b) => (a.rel < b.rel ? -1 : 1));
+  // This order picks the root that gets rendered.
+  for (const candidates of byStem.values()) candidates.sort((a, b) => byCode(a.rel, b.rel));
   if (sourceFiles !== null) assignOwners(byStem, sourceFiles);
   return byStem;
 }

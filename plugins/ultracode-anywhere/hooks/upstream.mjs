@@ -22,7 +22,7 @@ import { delimiter, join } from "node:path";
  * one nobody has checked, which is worth saying out loud even when every name
  * is still there.
  */
-export const CALIBRATED_AGAINST = "2.1.251";
+export const CALIBRATED_AGAINST = "2.1.268";
 
 /**
  * The gate itself, as a shape rather than a name.
@@ -38,8 +38,20 @@ export const CALIBRATED_AGAINST = "2.1.251";
  * either quote, a helper called with an argument or through `?.`. Read as a
  * drift, a respelling nags every session, or under strict switches the plugin
  * off on a build whose gate still holds.
+ *
+ * What each argument list may hold is deliberately generous. An argument list
+ * is not where the premise lives, and a tight bound there fails on a build that
+ * adds one option key: 2.1.268 passes `e,n,{turnEffort:r}`, 18 characters, and
+ * a reader allowing 24 would call a gate that still holds a gate that is gone,
+ * which nags every session or, under strict, switches the plugin off. What the
+ * premise needs is the three conjuncts and the comparison against `"xhigh"`, so
+ * those are matched exactly and the arguments are allowed a literal, one nested
+ * call and room to grow.
  */
-export const GATE = /function [A-Za-z_$][\w$]*\([^)]{0,24}\)\{return [\w$]+===(?:!0|true)&&[\w$]+(?:\?\.)?\([^)]{0,24}\)&&[\w$]+\([^)]{0,24}\)===["']xhigh["']\}/;
+const ARGS = String.raw`(?:[^()]|\([^()]{0,80}\)){0,160}`;
+const GATE = new RegExp(
+  String.raw`function [A-Za-z_$][\w$]*\(${ARGS}\)\{return [\w$]+===(?:!0|true)&&[\w$]+(?:\?\.)?\(${ARGS}\)&&[\w$]+\(${ARGS}\)===["']xhigh["']\}`,
+);
 
 /** What a missing gate is called when the check reports it. */
 export const GATE_SHAPE = "the xhigh gate the reminder is emitted under";
@@ -57,10 +69,13 @@ const GATE_REACH = 200;
  * this plugin satisfies by restating the reminder. Reworded upstream, the
  * reminder still arrives and means nothing.
  *
- * A proximity test on the gate itself was tried and dropped: the closest
- * `xhigh` to any of the 9 `ultra_effort_enter` sites in the build this was read
- * off is 168,197 bytes away, so any window narrow enough to mean anything would
- * have failed on the build it was calibrated against (A29).
+ * A proximity test on the gate itself was tried and dropped. On 2.1.268 the 9
+ * `ultra_effort_enter` sites sit at least 167,473 bytes from any of the 123
+ * `xhigh` occurrences, except one pair 3,548 bytes apart that is the wrong
+ * pair: both are in the compiled binary's string tables rather than in the
+ * JavaScript. A window tight enough to mean anything misses the gate, one wide
+ * enough to reach it matches a table of event names, and the distance moves by
+ * a megabyte between builds (A29).
  */
 export const MARKERS = [
   "ultra_effort_enter",
@@ -74,6 +89,11 @@ export const MARKERS = [
  * add, in the order the build reads them: the two disable switches first, then
  * the variable that withdraws the feature, then `enableWorkflows`, then the
  * standing mode itself.
+ *
+ * Exported because the session notice has to tell one of these apart from the
+ * others: four of them mean there is no Workflow tool at all, and the fifth
+ * means the tool is there and the built-in reminder is carrying it. Compared
+ * against this rather than against a second copy of the sentence.
  */
 export const CONFLICTS = {
   CLAUDE_CODE_DISABLE_WORKFLOWS: "CLAUDE_CODE_DISABLE_WORKFLOWS is set, so there is no Workflow tool for the reminder to point at",
@@ -247,7 +267,7 @@ export function versionOf(cli) {
  * cosmetic either way, since two of the builds in that drift were the same size
  * to the byte with 176,881,324 of them different.
  */
-export const PATCHES_BEFORE_STALE = 10;
+const PATCHES_BEFORE_STALE = 10;
 
 /** A sentence when the installed build is one nobody calibrated against, or null. */
 export function behind(installed, calibrated = CALIBRATED_AGAINST) {
@@ -260,7 +280,7 @@ export function behind(installed, calibrated = CALIBRATED_AGAINST) {
 
 /**
  * The same answer as `drift`, computed once per build rather than once per
- * session: reading a 197 MB bundle is about a hundred milliseconds warm, and the
+ * session: reading a 202 MB bundle is about a hundred milliseconds warm, and the
  * answer cannot change while the file it was read from has not.
  */
 export function driftCached(cli, state, remember) {
@@ -334,8 +354,8 @@ export function drift({ cli = cliPath() } = {}) {
  * The markers and the gate present in a file, found in one read.
  *
  * The bundle is streamed rather than read whole, and a second pass for the gate
- * read most of it twice: the last marker sits at the 172 MB mark of a 197 MB
- * build and the gate at the 156 MB mark.
+ * read most of it twice: the last marker sits at the 180 MB mark of a 202 MB
+ * build and the gate at the 163 MB mark.
  */
 function carries(path) {
   const markers = new Set();

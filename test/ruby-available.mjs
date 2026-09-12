@@ -8,7 +8,7 @@ import { execFileSync } from "node:child_process";
  * image bump should not turn every unrelated change red. Asked once, because
  * spawning Ruby per test file costs more than the check is worth.
  */
-export const RUBY_AVAILABLE = (() => {
+const RUBY_AVAILABLE = (() => {
   try {
     execFileSync("ruby", ["--disable-gems", "-rprism", "-e", "print Prism::VERSION"], {
       stdio: ["ignore", "pipe", "ignore"],

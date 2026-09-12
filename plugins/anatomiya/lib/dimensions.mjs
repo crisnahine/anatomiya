@@ -405,7 +405,7 @@ export function assertApplicability(rows) {
   return rows;
 }
 
-export const TIERS = ["syntactic", "semantic"];
+const TIERS = ["syntactic", "semantic"];
 
 /**
  * Two values, and a row carrying neither does not ship.
@@ -517,7 +517,7 @@ export const KINDS = Object.freeze(["tree", "corpus", "pairing"]);
  * construction and is stamped rather than made to say so once per row; the
  * other two kinds were already spelled and must be.
  */
-export function stampKind(rows) {
+function stampKind(rows) {
   for (const d of rows) {
     if (d.kind === undefined && typeof d.run === "function") d.kind = "tree";
     if (!KINDS.includes(d.kind)) {

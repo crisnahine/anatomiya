@@ -10,6 +10,7 @@
  * no interpreter to run it.
  */
 
+import { PLUGIN, catalogueLine, shippedHere } from "./catalogue.mjs";
 import { appendLine, cached, nextTurn, stateDirFor, sweep } from "./counters.mjs";
 import { stageEffortIn } from "./effort.mjs";
 import { here, invokedAs, parsePayload, readStdin, respond } from "./hook-io.mjs";
@@ -30,12 +31,12 @@ export const FULL_EVERY = 10;
  *
  * Read off the `source` the build's own payload schema declares. The schema
  * carries more than these four now, `user` and `sdk` among them, and neither is
- * a turn to skip. 2.1.251 declares the field and does not send it: a payload
- * caught off that build carries `session_id`, `transcript_path`, `cwd`,
- * `prompt_id`, `permission_mode`, `hook_event_name` and `prompt`, and no
- * `source`. So a wakeup counts as a turn there and gets whatever its place in
- * the cadence earns; the day the field arrives, the skip starts working with no
- * change here (A30).
+ * a turn to skip. 2.1.268 declares the field and does not send it, and the
+ * payload it builds says so in one token: `{...Ia(…), hook_event_name:
+ * "UserPromptSubmit", prompt:r, ...!1, session_title:…}`, where `...!1` is a
+ * conditional spread the minifier collapsed to nothing. So a wakeup counts as a
+ * turn here and gets whatever its place in the cadence earns; the day that
+ * spread carries an object, the skip starts working with no change here (A30).
  */
 const WAKEUP_SOURCES = new Set(["loop_wakeup", "schedule_wakeup", "poll_event", "system"]);
 
@@ -90,8 +91,12 @@ function loweredTo(level) {
 }
 
 /** The whole standing opt-in, at the stage level this session asked for. */
-function full(stageEffort = null) {
-  return [...OPENING, `${STANDING} ${stageEffort ? loweredTo(stageEffort) : ONE_LEVEL}`].join("\n\n");
+function full(stageEffort = null, catalogue = null) {
+  const said = [...OPENING, `${STANDING} ${stageEffort ? loweredTo(stageEffort) : ONE_LEVEL}`];
+  // Last rather than first: what comes before it is why orchestration is on at
+  // all, and a listing read without that reads as three commands to run.
+  if (catalogue) said.push(catalogue);
+  return said.join("\n\n");
 }
 
 /**
@@ -101,9 +106,14 @@ function full(stageEffort = null) {
  * otherwise hang off "use" with no verb of its own, on the line that goes out on
  * every tenth turn for the life of the session.
  */
-function short(stageEffort = null) {
+function short(stageEffort = null, names = []) {
   const still = "Ultracode is still on: use the Workflow tool where the work is worth it, solo where it is not.";
-  return stageEffort ? `${still} Stages take opts.effort '${stageEffort}'; leave it out of ${CHECKING_STAGE}.` : still;
+  const level = stageEffort ? ` Stages take opts.effort '${stageEffort}'; leave it out of ${CHECKING_STAGE}.` : "";
+  // The names alone on the refresher, without the descriptions: what a long
+  // session loses is that they exist, not what each one is for, and the whole
+  // text is what a reader gets back on the turn after a compaction.
+  const shipped = names.length === 0 ? "" : ` Shipped and ready to run by name: ${names.join(", ")}.`;
+  return `${still}${level}${shipped}`;
 }
 
 /** What this session's switches ask the text to be, and the default for anything unreadable. */
@@ -114,6 +124,9 @@ function switchesFrom(env) {
     refresher: env.ULTRACODE_ANYWHERE_REFRESHER !== "0",
     repeatFull: env.ULTRACODE_ANYWHERE_FULL === "repeat",
     stageEffort: stageEffortIn(env),
+    // Named explicitly as null so `contextFor` does not read the directory for
+    // a session that asked for silence about it.
+    ...(env.ULTRACODE_ANYWHERE_CATALOGUE === "0" ? { catalogue: null, names: [] } : {}),
   };
 }
 
@@ -150,11 +163,35 @@ const DEFAULTS = { every: FULL_EVERY, refresher: true, repeatFull: false, stageE
  * What this turn is owed: the whole opt-in on the first turn, the line that
  * keeps it in view on every tenth after that, and nothing on the rest.
  */
-export function contextFor(turn, asked = DEFAULTS) {
+export function contextFor(turn, asked = {}) {
   const { every, refresher, repeatFull, stageEffort } = { ...DEFAULTS, ...asked };
-  if (turn === 1) return full(stageEffort);
-  if (!refresher || !onCadence(turn, every)) return null;
-  return repeatFull ? full(stageEffort) : short(stageEffort);
+
+  // Whether this turn says anything is decided before the directory is read:
+  // nine turns in ten are owed nothing, and a read on each of them is three
+  // file reads bought for a sentence nobody is sent.
+  const speaks = turn === 1 || (refresher && onCadence(turn, every));
+  if (!speaks) return null;
+
+  const { catalogue, names } = { ...catalogueDefault(asked), ...asked };
+  if (turn === 1 || repeatFull) return full(stageEffort, catalogue);
+  return short(stageEffort, names);
+}
+
+/**
+ * The shipped listing a caller did not hand over, read off this plugin's own
+ * directory.
+ *
+ * Read here rather than held as a list, so the sentence a model reads cannot
+ * describe a workflow the plugin does not have. A caller naming `catalogue`
+ * explicitly, including as null, is answered with what it named.
+ */
+function catalogueDefault(asked) {
+  // `catalogue` is deliberately absent from DEFAULTS: a caller that named it,
+  // including as null, has to be distinguishable from one that named nothing,
+  // and a key sitting in the defaults makes `in` true for both.
+  if (asked && "catalogue" in asked) return { names: [] };
+  const shipped = shippedHere();
+  return { catalogue: catalogueLine(shipped, PLUGIN), names: shipped.map(({ meta }) => `\`${PLUGIN}:${meta.name}\``) };
 }
 
 /** The text this turn should carry, or null when the turn is owed nothing. */

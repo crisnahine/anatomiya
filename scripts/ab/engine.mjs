@@ -26,7 +26,7 @@ export const EFFORT_LEVELS = ["low", "medium", "high", "xhigh", "max"];
  * strips the `[1m]` suffix and asks for the long window with a beta header
  * instead, and these four decide whether it gets one.
  */
-export const OVERRIDES = new Set([
+const OVERRIDES = new Set([
   "ANTHROPIC_MODEL",
   "ANTHROPIC_DEFAULT_MODEL",
   "ANTHROPIC_SMALL_FAST_MODEL",
@@ -50,6 +50,18 @@ export const OVERRIDES = new Set([
   "CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT",
   "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY",
   "CLAUDE_EFFORT",
+  // 2.1.257 forces a child's model with a flag of its own and installs a served
+  // catalog in place of the compiled model list, so the switch and the URL that
+  // feed it go too: docs/research/claude-code-2-1-257-engine-variables.md.
+  "CLAUDE_CODE_SUBAGENT_MODEL_FORCE",
+  "CLAUDE_CODE_MODEL_CATALOG",
+  "CLAUDE_CODE_MODEL_CATALOG_URL",
+  // 2.1.268 answers "can this model do X" from a variable before it asks the
+  // served or compiled list: `BIt(capability, model) ?? Eit(...)`, where the
+  // variable is `model=cap,-cap;prefix*=cap` and a `-` turns one off. So it
+  // decides what a trial's model is allowed to do, one capability at a time,
+  // and two machines that differ on it are not comparable.
+  "CLAUDE_CODE_MODEL_CAPABILITIES",
 ]);
 
 /**

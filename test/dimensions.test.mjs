@@ -10,6 +10,7 @@ import {
   assertClaimIsNotAVerdict,
   assertTier,
   assertRegistryRows,
+  assertDeclaredFields,
   KINDS,
   PRINCIPLE_NAMES,
   PRECISIONS,
@@ -325,6 +326,16 @@ test("a site keeps its conforming flag and its scope, and nothing else", () => {
   ]);
 
   assert.deepEqual(hits.k, [{ conforming: false, where: "outer" }]);
+});
+
+test("the crossing keeps an empty nesting and a false group, and drops the node and an empty class", () => {
+  // Each field rides its own predicate: an empty nesting is the top level and
+  // a false group is a body, while an empty class is no vote at all.
+  const hits = collectHits({}, [
+    { key: "k", run: (_program, add) => add({ conforming: true, node: { start: 1 }, where: null, class: "", self: "", nesting: [], group: false }) },
+  ]);
+
+  assert.deepEqual(hits.k, [{ conforming: true, where: null, nesting: [], group: false }]);
 });
 
 test("a registry row with no precision does not ship (C5)", () => {
@@ -920,4 +931,25 @@ test("no row carries a clause that nothing runs", () => {
   ]);
 
   assert.deepEqual(claused.filter((k) => !pinned.has(k)), [], "these rows state a clause nothing runs");
+});
+
+test("the newest declared fields are held to shape at load, each refused by name", () => {
+  // The battery covered the fields that had already caused an incident; these
+  // are the ones from H11 and H14, and this is the one gate no test drove.
+  const learned = { key: "k", learnedClasses: true, claim: "x <style>" };
+  assert.throws(() => assertDeclaredFields([{ key: "k", groupedSites: true }]), /groupedSites without learning a class/);
+  assert.throws(() => assertDeclaredFields([{ key: "k", noneClaim: "none" }]), /noneClaim off a learned row/);
+  assert.throws(() => assertDeclaredFields([{ key: "k", learnedFromSource: true }]), /learnedFromSource without learning a class/);
+  assert.throws(() => assertDeclaredFields([{ key: "k", splitBy: () => "a" }]), /splitBy without learning a class/);
+  assert.throws(
+    () => assertDeclaredFields([{ ...learned, splitBy: () => "a", splitClaim: { a: "x <style>" } }]),
+    /without a sentence per kind/
+  );
+  assert.throws(
+    () => assertDeclaredFields([{ ...learned, splitBy: () => "a", splitClaim: { a: "x <style>", b: "no class" } }]),
+    /states a class the learning cannot fill/
+  );
+  assert.doesNotThrow(() =>
+    assertDeclaredFields([{ ...learned, groupedSites: true, noneClaim: "n", learnedFromSource: true, splitBy: () => "a", splitClaim: { a: "x <style>", b: "y <style>" } }])
+  );
 });

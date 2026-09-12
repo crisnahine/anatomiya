@@ -51,3 +51,21 @@ export const MAX_FILE_BYTES = 1024 * 1024;
  * only the speed differs.
  */
 export const rawTransferAllowed = (platform = process.platform) => platform !== "win32";
+
+/**
+ * A caller's overrides on top of a bridge's defaults.
+ *
+ * A name the defaults do not carry is refused, naming the engine and the names
+ * it knows: a mistyped one moved nothing and reported nothing. An explicit
+ * undefined never erases a default, since a timer built from one fires at once
+ * rather than never. The numbers stay with each bridge (B24); this is the one
+ * rule for reading a bag over them.
+ */
+export function guardsOver(defaults, given, engine) {
+  const merged = { ...defaults };
+  for (const [name, value] of Object.entries(given ?? {})) {
+    if (!(name in defaults)) throw new TypeError(`${name} is not one of the ${engine} guards: ${Object.keys(defaults).join(", ")}`);
+    if (value !== undefined) merged[name] = value;
+  }
+  return merged;
+}

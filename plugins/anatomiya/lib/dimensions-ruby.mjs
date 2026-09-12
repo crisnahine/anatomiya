@@ -1,4 +1,4 @@
-import { walkRuby, constName, bodyOf, ownDef } from "./ruby-walk.mjs";
+import { walkRuby, constName, bodyOf, ownDef, site, args } from "./ruby-walk.mjs";
 import { CAPABILITY_WORDS, implementsCapability, stemWords } from "./dimensions-capability.mjs";
 
 /**
@@ -26,23 +26,6 @@ const MODEL_BASE = /(^|::)(ApplicationRecord|ActiveRecord::Base|ApplicationRecor
 const where = (ctx) => (ctx.def && ctx.def.name) || (ctx.cls && ctx.cls.name) || null;
 
 /**
- * The `node` every consumer destructures off a hit, in the one shape the JS
- * dimensions also emit.
- *
- * `start` and `end` are null rather than absent: B5 forbids an offset here at
- * all, and an absent bound would make a consumer's `source.slice(start, end)`
- * hand back the whole file as the matched text. `type` plus `name` is what
- * stays of a site's identity without one.
- */
-const site = (n) => ({
-  type: n.t,
-  name: typeof n.name === "string" ? n.name : null,
-  line: typeof n.line === "number" ? n.line : null,
-  start: null,
-  end: null,
-});
-
-/**
  * Ruby's own exception classes, as of 3.4: everything
  * `ObjectSpace.each_object(Class) { |c| c < Exception }` names, minus the
  * platform-generated `Errno::*` family, which the prefix covers, and minus
@@ -53,7 +36,7 @@ const site = (n) => ({
  * base of their own must keep every subclass as a site, or the row stops
  * stating in exactly the directories it is for.
  */
-const RUBY_ERROR = new Set([
+export const RUBY_ERROR = new Set([
   "Exception", "StandardError", "RuntimeError", "ArgumentError", "TypeError",
   "NameError", "NoMethodError", "IndexError", "KeyError", "RangeError",
   "FloatDomainError", "ZeroDivisionError", "IOError", "EOFError", "RegexpError",
@@ -76,7 +59,7 @@ export const isRubyError = (base) => base.startsWith("Errno::") || RUBY_ERROR.ha
  * namespace is written: `module Api; module V1; class BaseController` and
  * `class Api::V1::BaseController` both read back the same.
  */
-export const qualifiedName = (ctx, n) =>
+const qualifiedName = (ctx, n) =>
   [...ctx.stack.filter((x) => x.t === "class" || x.t === "module"), n]
     .map((x) => constName(x.constant_path) ?? x.name)
     .filter(Boolean)
@@ -97,7 +80,7 @@ export const qualifiedName = (ctx, n) =>
  * `body` includes the site's own body, which is what an `include` is evaluated
  * in; a superclass is evaluated outside it, so that caller asks without.
  */
-export function nestingOf(ctx, body = null) {
+function nestingOf(ctx, body = null) {
   const bodies = ctx.stack.filter((x) => x.t === "class" || x.t === "module");
   if (body && !bodies.includes(body)) bodies.push(body);
   const scopes = [];
@@ -128,7 +111,7 @@ function sidekiqBodies(ast) {
   walkRuby(ast, (n, ctx) => {
     if (n.t !== "call" || n.receiver || n.name !== "include") return;
     if (ctx.def || !ctx.cls) return;
-    for (const arg of (n.arguments && n.arguments.arguments) || []) {
+    for (const arg of args(n)) {
       if (SIDEKIQ_JOB.test(constName(arg) || "")) bodies.add(ctx.cls);
     }
   });
@@ -249,7 +232,7 @@ export const RUBY_DIMENSIONS = [
           // `raise ActiveRecord::Rollback` unwinds the transaction block, which
           // swallows it, and the method still returns. It is control flow, not
           // a service raising its failure.
-          if (constName((m.arguments?.arguments ?? [])[0]) === "ActiveRecord::Rollback") return;
+          if (constName(args(m)[0]) === "ActiveRecord::Rollback") return;
           raises = true;
         });
         add({ node: site(n), conforming: !raises, where: n.name });
@@ -510,12 +493,12 @@ export const RUBY_DIMENSIONS = [
         const body = ctx.def || !ctx.cls ? null : bodies.get(ctx.cls);
         if (!body) return;
         if (n.name !== "include") {
-          if ((n.arguments?.arguments ?? []).some((arg) => constName(arg))) body.declares = true;
+          if (args(n).some((arg) => constName(arg))) body.declares = true;
           return;
         }
         // One hit per constant, because `include A, B` mixes in both and each
         // is a vote; the group is what keeps the body counting as one site.
-        for (const arg of (n.arguments && n.arguments.arguments) || []) {
+        for (const arg of args(n)) {
           const mixin = constName(arg);
           if (mixin) {
             // Where a bare mixin is looked up: the body holding the call, then

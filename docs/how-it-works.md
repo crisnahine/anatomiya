@@ -1038,7 +1038,7 @@ check reports findings in code the author never touched.
 
 "Newly introduced" cannot be derived from one run at HEAD, so the analysis runs twice, at HEAD and
 at the merge base, and the two finding sets are differenced by content fingerprint rather than by
-position.
+position. That grammar is `plugins/anatomiya/lib/introduced.mjs`, one leaf the check alone imports.
 
 The head side is read from the working tree wherever the tree differs from the commit, and a file
 that exists only in the tree is examined like any other file this branch added. An agent writes,

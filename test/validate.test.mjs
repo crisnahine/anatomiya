@@ -8,7 +8,7 @@ import { basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 
-import { validate } from "../scripts/validate.mjs";
+import { LOADABLE, validate } from "../scripts/validate.mjs";
 import { REL } from "../scripts/plugins.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
@@ -630,6 +630,19 @@ test("a hook command that carries arguments names the file, not the flags", (t) 
   assert.deepEqual(validate(dir), []);
 });
 
+test("a hook command that wraps the path in a subshell names the file, not the parenthesis", (t) => {
+  // Two readers of one variable ended a bare path in different places: this
+  // gate at whitespace, the shipped-set gate at a backtick or a parenthesis
+  // too. There is one grammar now, with the wider set.
+  const dir = marketplace(t);
+  writeFileSync(
+    join(dir, "plugins", "second", "hooks", "hooks.json"),
+    JSON.stringify({ hooks: { UserPromptSubmit: [{ hooks: [{ type: "command", command: 'sh -c "(node ${CLAUDE_PLUGIN_ROOT}/hooks/run.mjs)"' }] }] } }),
+  );
+
+  assert.deepEqual(validate(dir), []);
+});
+
 test("problems come back as annotations where a workflow is reading them", (t) => {
   const dir = marketplace(t);
   rmSync(join(dir, REL.anatomiya, ".claude-plugin", "plugin.json"));
@@ -1151,4 +1164,33 @@ test("every hooks file a manifest lists is read, not the first one", (t) => {
   );
 
   assert.deepEqual(validate(dir), ["plugins/second/hooks/more.json UserPromptSubmit runs hooks/gone.mjs, which that plugin does not ship"]);
+});
+
+test("the loadable kinds cover what a plugin here actually ships", () => {
+  // The list stopped at five while the loader reads more, and the second plugin
+  // now ships two of the ones it was missing. A plugin whose only behaviour is
+  // a workflows directory read as one that installs nothing at all.
+  const keys = LOADABLE.map(([key]) => key);
+  for (const key of ["hooks", "commands", "agents", "skills", "mcpServers", "workflows", "outputStyles", "lspServers"]) {
+    assert.ok(keys.includes(key), `${key} is a kind the loader reads and this list does not`);
+  }
+});
+
+test("every kind names the path the loader falls back to when the manifest names none", () => {
+  const paths = Object.fromEntries(LOADABLE);
+  assert.equal(paths.workflows, "workflows");
+  assert.equal(paths.agents, "agents");
+  assert.equal(paths.outputStyles, "output-styles");
+  assert.equal(paths.lspServers, ".lsp.json");
+});
+
+test("a plugin whose only behaviour is a workflows directory does not read as empty", (t) => {
+  // The kind that reads as nothing is the kind nobody can ship on its own.
+  const dir = marketplace(t);
+  const root = join(dir, "plugins", "second");
+  rmSync(join(root, "hooks"), { recursive: true, force: true });
+  mkdirSync(join(root, "workflows"), { recursive: true });
+  writeFileSync(join(root, "workflows", "a.js"), "export const meta = { name: 'a', description: 'b' }\n");
+
+  assert.deepEqual(validate(dir), []);
 });

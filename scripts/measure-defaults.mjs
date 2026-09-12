@@ -36,7 +36,7 @@ const TABLE_PATH = join(ANATOMIYA, "lib", "model-defaults.json");
  * feed every dimension at once: what construct appears is the model's choice,
  * which is the thing being measured.
  */
-export const TASKS = [
+const TASKS = [
   {
     id: "js-service",
     prompt:

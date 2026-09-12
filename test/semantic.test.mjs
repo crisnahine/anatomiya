@@ -79,6 +79,28 @@ test("the floor is stated rather than buried", () => {
   assert.equal(typeof SEMANTIC_GUARDS.buildMs, "number");
 });
 
+test("a guard name the checker does not know refuses before anything is forked", async () => {
+  // The same rule as the two parse bridges, failing the same way they do: a
+  // rejection, not a throw, so the three bridges are read alike by a caller.
+  await assert.rejects(runSemantic("/nowhere", [], { guards: { idleMS: 50 } }), /idleMS/);
+});
+
+test("a partial guard bag keeps the checker's other default", needsTs, async () => {
+  // Taken whole, a bag naming one guard left the other undefined, and the
+  // build window was then armed with nothing.
+  const dir = repo({
+    "tsconfig.json": `{"compilerOptions":{"strict":true}}`,
+    "a.ts": `export const a = 1;`,
+  });
+  try {
+    const r = await runSemantic(dir, [{ rel: "a.ts", abs: join(dir, "a.ts"), lang: "js" }], { guards: { idleMs: 60_000 } });
+    assert.equal(r.error, null);
+    assert.equal(r.status, "ok");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("the tier answers a real file and reports a resolution rate", needsTs, async () => {
   const dir = repo({
     "tsconfig.json": `{"compilerOptions":{"strict":true}}`,

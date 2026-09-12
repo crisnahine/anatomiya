@@ -9,6 +9,100 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-09-12
+
+The plugin stops asking for orchestration and starts shipping it. Three workflows resolve by name,
+four agent types carry the effort and the tool refusals their stages need, and the reminder now
+lists what is shipped, because Claude Code loads a plugin's workflows and then tells nobody they
+exist. Re-calibrated against 2.1.268 along the way.
+
+### Added
+
+- `workflows/review.js`, `workflows/understand.js` and `workflows/hunt.js`, resolving as
+  `ultracode-anywhere:review`, `:understand` and `:hunt`. Each is a distinct control flow rather than
+  a task: dimensions with adversarial verification, readers with one synthesis, and rounds that stop
+  after two turn up nothing new. The scripts are `.js` because the loader recognises `.mjs`, `.cjs`
+  and `.ts` and refuses all three, which makes them the one exception to `.mjs` everywhere else here.
+- `agents/finder.md`, `reader.md`, `verifier.md` and `synthesist.md`. A plugin agent is reachable as
+  a `subagent_type` under `<plugin>:<name>` and its frontmatter `effort:` is read when a workflow
+  stage names it, so a stage's depth is now a line in a file rather than a request in a reminder.
+  `finder` and `reader` name `medium`; `verifier` and `synthesist` name none, so the stages that
+  check and merge run at the session's own level. All four refuse `Write`, `Edit` and `NotebookEdit`.
+- A finding nobody could check is reported as such rather than dropped or counted as refuted.
+  `review` returns it in `unverified`; `hunt` puts a candidate its judges did not answer for back on
+  the queue and names what is left in `unjudged`, because counting a dead judge as a rejection hides
+  an instance nobody looked at. A run that verified nothing says so rather than reporting what a
+  synthesis made of an empty list, and a run whose finders came back with nothing says that too
+  rather than "nothing found". The same rule covers a stage that answered nothing: `hunt` counts the
+  angles that came back empty as `silent` and will not call itself `exhausted` while any did, since
+  a sweep that never ran is not a sweep that found nothing; `understand` returns the areas its cap
+  left unread as `skipped`, and says when a survey came back with nothing readable rather than
+  reporting that it proposed no areas.
+- The report stage is handed each verifier's lens, whether it refuted the finding and any correction
+  it wrote, rather than three verdict strings under one word; and it is handed what each finder said
+  it covered, since it is the stage asked what nobody covered.
+- The catalogue: the opening text and the refresher name every shipped workflow by the name the tool
+  resolves. Nothing upstream does this. The hook that would append a listing to the Workflow tool's
+  description is `function ke(){return}` and its sibling is `function ct(){return""}`, so the only
+  place a name otherwise reaches the model is the error raised when one fails to resolve. A session
+  already on native ultracode gets the listing from the `SessionStart` notice instead, since the
+  prompt hook stands aside there and the built-in reminder says nothing about a plugin's workflows.
+- `ULTRACODE_ANYWHERE_CATALOGUE=0` drops the listing and keeps the reminder.
+- `scripts/workflow-lint.mjs`, run by CI and by `npm run validate`, and available on its own as
+  `npm run lint:workflows`. It holds every shipped script to the rules the loader enforces in
+  silence: `export const meta` first, one declarator, a pure literal; `name` and `description`
+  non-empty; under 524,288 bytes and named `.js`; a body that compiles as an async function body;
+  only the eleven globals the sandbox injects; no `Date.now`, bare `new Date()` or `Math.random`,
+  and no `with`, `import()`, `await using` or `__wRg$` identifier; a `meta.phases` entry per
+  `phase()` call and back, and no entry the build would drop without a word; an `agentType` this
+  plugin ships; no two files declaring one `meta.name`; a `meta.name` the catalogue sentence can
+  quote, since a name outside that class loads and is then named in no session at all; and the
+  plugin's own dependency-free reader answering what a real parse answers, with the strict-mode
+  early errors reported so the two cannot agree on a decode no engine performs. A file that breaks
+  one is skipped by the loader with a warning nobody reads, so the gate is the only thing between a
+  typo and a workflow that silently does not exist.
+
+### Removed
+
+- `ULTRACODE_ANYWHERE_SUBAGENT_EFFORT`, along with the module that wrote agent files under it. The
+  plugin ships the four agent types now, each carrying its own `effort:`, so there is nothing for the
+  switch to set. A session that still has it in `settings.json` is told so once at startup rather
+  than left with a setting that quietly does nothing.
+
+### Changed
+
+- Re-calibrated against Claude Code 2.1.268. The gate still holds and still reads as a conjunct,
+  now spelled `function fC(e,n,o,r){return o===!0&&eu()&&NA(e,n,{turnEffort:r})==="xhigh"}` at offset
+  162,832,197. Its argument list grew a fourth parameter passed as `{turnEffort:r}`, which filled 18
+  of the 24 characters the drift pattern allowed: six characters of headroom is a coincidence, not a
+  bound, so the pattern is generous about arguments now and tight about the three conjuncts and the
+  comparison, which is where the premise lives.
+- `scripts/validate.mjs` reads eight loadable kinds rather than five. `workflows`, `outputStyles` and
+  `lspServers` were missing, so a plugin whose only behaviour was a workflows directory read as one
+  that installs nothing.
+
+### Removed
+
+- `hooks/shadows.mjs` and `ULTRACODE_ANYWHERE_SUBAGENT_EFFORT`. Both existed to report on agent files
+  a reader was expected to hand-write, because the plugin could not write them. It ships them now, so
+  the module, the switch and 939 lines of tests for them are gone. The agent files it ships are its
+  own types rather than copies of built-in prompts, so none of the freezing that made shadowing a bad
+  trade applies.
+
+## [0.5.0] - 2026-09-02
+
+Four module-level names nobody read outside their own file are private, and a test holds the two
+hooks' silence to one answer. Nothing a session sees changed.
+
+### Changed
+
+- `FILES_MOST`, `GATE`, `CONFLICTS` and `PATCHES_BEFORE_STALE` are private to the files that use
+  them; a guard in the marketplace's suite holds every export to a reader. The sweep's bound is
+  pinned by behaviour: two thousand files are read and the next one stops it.
+- A test holds the prompt hook's silence and the session notice's `quiet` to one answer over the
+  three states that decide them: a plain session, a conflict in settings, and strict mode on a
+  build that moved.
+
 ## [0.4.0] - 2026-08-31
 
 The other half of the effort question, the one the Agent tool asks. Nothing can set it, so this
@@ -267,7 +361,9 @@ wherever `effortLevel` is set, and says out loud what it does not restore.
 - Turn counters under `~/.claude/ultracode-anywhere/` rather than the temporary directory, in a
   directory this account owns with no access for anyone else.
 
-[Unreleased]: https://github.com/crisnahine/anatomiya/compare/ultracode-anywhere-v0.4.0...HEAD
+[Unreleased]: https://github.com/crisnahine/anatomiya/compare/ultracode-anywhere-v0.6.0...HEAD
+[0.6.0]: https://github.com/crisnahine/anatomiya/compare/ultracode-anywhere-v0.5.0...ultracode-anywhere-v0.6.0
+[0.5.0]: https://github.com/crisnahine/anatomiya/compare/ultracode-anywhere-v0.4.0...ultracode-anywhere-v0.5.0
 [0.4.0]: https://github.com/crisnahine/anatomiya/compare/ultracode-anywhere-v0.3.0...ultracode-anywhere-v0.4.0
 [0.3.0]: https://github.com/crisnahine/anatomiya/compare/ultracode-anywhere-v0.2.1...ultracode-anywhere-v0.3.0
 [0.2.1]: https://github.com/crisnahine/anatomiya/compare/ultracode-anywhere-v0.2.0...ultracode-anywhere-v0.2.1

@@ -16,11 +16,7 @@
 
 import { posix } from "node:path";
 
-import { withoutExtension } from "./paths.mjs";
-
-// Both rosters break their tie on a name that gets rendered, and
-// `localeCompare` orders case by whatever ICU tables the host was built with.
-const byCode = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+import { withoutExtension, byCode } from "./paths.mjs";
 
 /**
  * The packages a JSX area cannot be written without, so importing one says

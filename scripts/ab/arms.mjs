@@ -157,3 +157,8 @@ export const PROBE = [
   "Then answer with one line and nothing else: the directory and file count from any repository map",
   "you were given for that path, or the single word NONE if you were given none.",
 ].join(" ");
+
+/** The probe for one file, its name taken as characters: a `$` in a filename is not a replacement pattern. */
+export function probeFor(file) {
+  return PROBE.replace("{file}", () => file);
+}

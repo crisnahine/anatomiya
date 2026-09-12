@@ -4,6 +4,8 @@ import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ANATOMIYA, BINARY, REL } from "../scripts/plugins.mjs";
+import { parseSync } from "oxc-parser";
+import { boundNames } from "../plugins/anatomiya/lib/walk.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const LIB = join(ANATOMIYA, "lib");
@@ -116,6 +118,62 @@ test("the writers do not reach the pipeline that produced the record", () => {
     "encode.mjs",
     "rules.mjs",
   ]);
+});
+
+test("the grammar deciding what a branch introduced reaches no git, no child and no disk, and only the check reaches it", () => {
+  // The identity of a site was pinned by comments in four other test files,
+  // one citing a line that had moved, because the rule had no interface of its
+  // own: the only way to run it was a repository committed twice. A leaf with a
+  // namesake test is the fix, and it stays a leaf only while nothing but the
+  // check imports it and it imports nothing that reads a repository.
+  const edges = graph();
+  const reached = reachedFrom("introduced.mjs", edges);
+  for (const module of ["git.mjs", "child.mjs", "corpus.mjs", "revision.mjs", "check.mjs"]) {
+    assert.equal(reached.has(module), false, `introduced.mjs reaches ${module}`);
+  }
+  const importers = [...edges].filter(([, deps]) => deps.includes("introduced.mjs")).map(([file]) => file);
+  assert.deepEqual(importers, ["check.mjs"]);
+});
+
+// A field a row adds to a hit crossed the worker boundary only if the copy in
+// `collectHits` named it, and nothing held that copy to what a reader reads:
+// `nesting` was dropped once and the base-class row stated nothing. The table
+// is one owner now, and this reads every field the two readers take off a
+// hit. Each reader names the one field that is its own: the obligation rows
+// build their sites in pairing.mjs, beside the fold, and `elsewhere` is
+// theirs; the check runs the rows in process and keeps the `node`, which never
+// crosses. The aliases are the ones each file spells, `at` being a grouped
+// site the fold builds from a hit.
+test("every field a reader takes off a site crossed the worker boundary, or is that reader's own", async () => {
+  const { HIT_FIELDS } = await import("../plugins/anatomiya/lib/walk.mjs");
+  const crossed = new Set(HIT_FIELDS.map(([name]) => name));
+  // The floor is what stops the alias list going quiet: a spelling nobody
+  // matches reads as nothing to hold, and nothing passes.
+  const readers = [
+    ["reduce.mjs", /\b(?:h|hit|at)\.([a-zA-Z]+)\b/g, new Set(["elsewhere"]), 5],
+    ["introduced.mjs", /\b(?:h|hit)\.([a-zA-Z]+)\b/g, new Set(["node"]), 2],
+  ];
+  for (const [file, alias, own, floor] of readers) {
+    const src = scan(readFileSync(join(LIB, file), "utf8"));
+    const read = new Set([...src.matchAll(alias)].map((m) => m[1]));
+
+    assert.ok(read.size >= floor, `${file} reads only ${[...read].join(", ")}`);
+    assert.deepEqual([...read].filter((f) => !crossed.has(f) && !own.has(f)).sort(), [], file);
+  }
+});
+
+// The filename row's sentence was rebuilt in the check from the template
+// alone, skipping the two rules `claimFor` carries, and C25 records that
+// duplication producing a defect once. The check words every learned row
+// through its owner now.
+test("the check words a learned row's claim through its owner", () => {
+  const src = scan(readFileSync(join(LIB, "check.mjs"), "utf8"));
+  const naming = /import \{([^}]*)\} from "\.\/dimensions-naming\.mjs"/.exec(src);
+  assert.ok(naming, "check.mjs imports the naming registry");
+  const names = naming[1].split(",").map((s) => s.trim());
+  assert.ok(names.includes("claimFor"), names.join(", "));
+  assert.ok(!names.includes("fillClass"), "the template is filled by its owner, not here");
+  assert.doesNotMatch(src, /claimTemplate/);
 });
 
 test("the parse worker does not reach the registry", () => {
@@ -417,9 +475,19 @@ test("no repository-relative plugin path is spelled outside the one module that 
  * covered by the rule the moment it exists.
  */
 function exportedBy(rel) {
-  const src = readFileSync(join(ROOT, rel), "utf8");
+  // Blanked first: a test's fixture source carries `export` lines inside a
+  // template literal, and those are the fixture's exports, not the file's.
+  const src = scan(readFileSync(join(ROOT, rel), "utf8"), { strings: true });
   const names = new Set();
-  for (const [, name] of src.matchAll(/^export\s+(?:async\s+)?(?:const|let|function|class)\s+([A-Za-z_$][\w$]*)/gm)) names.add(name);
+  for (const [, name] of src.matchAll(/^export\s+(?:async\s+)?(?:const|let|var|function|class)\s+([A-Za-z_$][\w$]*)/gm)) names.add(name);
+  // The list form too, by the name it exports under: `export { a as b }`
+  // offers `b`, and `hook.mjs` offers `SETTINGS_PATH` this way.
+  for (const [, list] of src.matchAll(/^export\s*\{([^}]*)\}/gm)) {
+    for (const entry of list.split(",")) {
+      const name = entry.trim().split(/\s+as\s+/).at(-1);
+      if (name) names.add(name);
+    }
+  }
   return names;
 }
 
@@ -446,6 +514,309 @@ test("a name this repository's own module offers is imported where it is used, n
   }
 
   assert.deepEqual(assumed, []);
+});
+
+// An export nobody reads is interface with no caller: it widens what the module
+// promises, C19 counts it as a site, and nothing keeps it honest. The registry
+// gates stay exported standalone so a failure names the rule under test, and
+// each has a test reading it. Read by word rather than by import edge, because
+// tests reach some names through a namespace or a dynamic import; a name two
+// files both export passes on the other's use, which only makes this lenient.
+test("every export is read somewhere outside its own file", () => {
+  assert.ok(exportedBy(`${REL.anatomiya}/lib/hook.mjs`).has("SETTINGS_PATH"), "the list form of export is read");
+  const files = sourceFiles();
+  assert.ok(files.length >= 100, `read ${files.length} files`);
+  const texts = files.map((rel) => [rel, scan(readFileSync(join(ROOT, rel), "utf8"), { strings: true })]);
+  const unread = [];
+  for (const rel of files) {
+    for (const name of exportedBy(rel)) {
+      const word = new RegExp(`\\b${name.replace(/\$/g, "\\$")}\\b`);
+      if (!texts.some(([other, text]) => other !== rel && word.test(text))) unread.push(`${rel}: ${name}`);
+    }
+  }
+
+  assert.deepEqual(unread, []);
+});
+
+// The binary listed its verbs three times: the table, a dispatch chain of
+// named arms ending in a bare else that scanned, and the usage text. A verb
+// added to the table with no arm silently scanned. The usage stays a
+// hand-written subset (A24); the table is the one reachable owner, so every
+// verb in it carries its own arm.
+test("every verb the binary declares carries its own arm in the one table", () => {
+  const src = readFileSync(BINARY, "utf8");
+  const { program } = parseSync("anatomiya.mjs", src, { sourceType: "module" });
+  const table = program.body
+    .flatMap((n) => (n.type === "VariableDeclaration" ? n.declarations : []))
+    .find((d) => d.id.type === "Identifier" && d.id.name === "COMMANDS");
+  assert.ok(table && table.init.type === "ObjectExpression", "COMMANDS is an object literal");
+  const keyOf = (p) => p.key.name ?? p.key.value;
+  const verbs = table.init.properties.map((p) => [keyOf(p), p.value]);
+  assert.ok(verbs.length >= 5, `read ${verbs.length} verbs`);
+  for (const [verb, value] of verbs) {
+    const keys = value.type === "ObjectExpression" ? value.properties.map(keyOf) : [];
+    assert.ok(keys.includes("run"), `${verb} carries no run`);
+  }
+  // Every command the binary imports is called inside the table, so no arm can
+  // exist outside it for a verb to fall through to, however it is spelled. The
+  // names come off the import rather than a list here, so an arm added
+  // tomorrow is one this sees. The offsets are asserted first: compared
+  // against undefined, every call would read as inside.
+  const arms = program.body
+    .filter((n) => n.type === "ImportDeclaration" && n.source.value.endsWith("/commands.mjs"))
+    .flatMap((n) => n.specifiers.map((s) => s.local.name));
+  assert.ok(arms.length >= 5, `read ${arms.length} command imports`);
+  assert.ok(Number.isInteger(table.init.start) && Number.isInteger(table.init.end), "the table carries offsets");
+  const outside = [...scan(src).matchAll(new RegExp(`\\b(?:${arms.join("|")})\\(`, "g"))]
+    .filter((m) => m.index < table.init.start || m.index >= table.init.end)
+    .map((m) => m[0]);
+  assert.deepEqual(outside, []);
+});
+
+const FUNCTIONS = new Set(["FunctionDeclaration", "FunctionExpression", "ArrowFunctionExpression"]);
+
+/**
+ * Every read in a module that no scope in reach declares, where a block in the
+ * same module does.
+ *
+ * Resolved the way the engine resolves it: a block, a `for` head, a `switch`,
+ * a `catch`, a function and a named class expression each open a scope, `var`
+ * hoists to the nearest function or the module, an import or a top-level
+ * declaration is the module's, and so is every global node provides. `typeof`
+ * is left alone, since it never throws. What is left is a name that exists in
+ * the file and not where it is read, which is the one shape `node --check`
+ * passes and the first run to get there throws on.
+ */
+function readOutsideTheirBlock(src, file) {
+  const { program } = parseSync(file, src, { sourceType: "module" });
+  const inBlocks = new Set();
+  const out = [];
+  const lineOf = (offset) => src.slice(0, offset).split("\n").length;
+  const open = (parent, kind) => ({ names: new Set(), parent, kind });
+  const resolves = (name, scope) => {
+    for (let s = scope; s; s = s.parent) if (s.names.has(name)) return true;
+    return false;
+  };
+  // What a statement list declares into the scope holding it, ahead of the
+  // walk, so a read above its declaration still resolves.
+  const hoist = (stmts, scope, block) => {
+    for (let stmt of stmts) {
+      if (stmt.type === "ExportNamedDeclaration" || stmt.type === "ExportDefaultDeclaration") stmt = stmt.declaration;
+      if (!stmt) continue;
+      const names = [];
+      if (stmt.type === "VariableDeclaration" && stmt.kind !== "var") for (const d of stmt.declarations) boundNames(d.id, names);
+      else if (stmt.type === "FunctionDeclaration" || stmt.type === "ClassDeclaration") {
+        if (stmt.id) names.push(stmt.id.name);
+      } else if (stmt.type === "ImportDeclaration") for (const sp of stmt.specifiers) names.push(sp.local.name);
+      for (const n of names) {
+        scope.names.add(n);
+        if (block) inBlocks.add(n);
+      }
+    }
+  };
+  // `var` declared anywhere below, short of the next function.
+  const hoistVars = (node, scope) => {
+    if (!node || typeof node !== "object") return;
+    if (Array.isArray(node)) {
+      for (const n of node) hoistVars(n, scope);
+      return;
+    }
+    if (FUNCTIONS.has(node.type)) return;
+    if (node.type === "VariableDeclaration" && node.kind === "var") {
+      for (const d of node.declarations) for (const n of boundNames(d.id)) scope.names.add(n);
+    }
+    for (const k of Object.keys(node)) if (k !== "type") hoistVars(node[k], scope);
+  };
+  // A pattern binds names the scope already holds, and reads only what its
+  // defaults and computed keys say.
+  const visitPattern = (p, scope) => {
+    if (!p) return;
+    switch (p.type) {
+      case "AssignmentPattern":
+        visitPattern(p.left, scope);
+        return visit(p.right, scope);
+      case "ObjectPattern":
+        for (const q of p.properties) {
+          if (q.type === "RestElement") visitPattern(q.argument, scope);
+          else {
+            if (q.computed) visit(q.key, scope);
+            visitPattern(q.value, scope);
+          }
+        }
+        return;
+      case "ArrayPattern":
+        for (const el of p.elements) visitPattern(el, scope);
+        return;
+      case "RestElement":
+        return visitPattern(p.argument, scope);
+    }
+  };
+  const visit = (node, scope) => {
+    if (!node || typeof node !== "object") return;
+    if (Array.isArray(node)) {
+      for (const n of node) visit(n, scope);
+      return;
+    }
+    switch (node.type) {
+      case "Identifier":
+        if (!resolves(node.name, scope) && inBlocks.has(node.name)) out.push({ name: node.name, line: lineOf(node.start) });
+        return;
+      case "BlockStatement":
+      case "StaticBlock": {
+        const inner = open(scope, "block");
+        hoist(node.body, inner, true);
+        return visit(node.body, inner);
+      }
+      case "SwitchStatement": {
+        visit(node.discriminant, scope);
+        const inner = open(scope, "block");
+        hoist(node.cases.flatMap((c) => c.consequent), inner, true);
+        for (const c of node.cases) {
+          visit(c.test, inner);
+          visit(c.consequent, inner);
+        }
+        return;
+      }
+      case "ForStatement":
+      case "ForInStatement":
+      case "ForOfStatement": {
+        const inner = open(scope, "block");
+        const head = node.init ?? node.left;
+        if (head && head.type === "VariableDeclaration") hoist([head], inner, true);
+        visit(head, inner);
+        visit(node.test, inner);
+        visit(node.update, inner);
+        visit(node.right, inner);
+        return visit(node.body, inner);
+      }
+      case "CatchClause": {
+        const inner = open(scope, "block");
+        for (const n of boundNames(node.param)) {
+          inner.names.add(n);
+          inBlocks.add(n);
+        }
+        visitPattern(node.param, inner);
+        return visit(node.body, inner);
+      }
+      case "FunctionDeclaration":
+      case "FunctionExpression":
+      case "ArrowFunctionExpression": {
+        const inner = open(scope, "function");
+        if (node.type === "FunctionExpression" && node.id) inner.names.add(node.id.name);
+        for (const p of node.params) for (const n of boundNames(p)) inner.names.add(n);
+        hoistVars(node.body, inner);
+        for (const p of node.params) visitPattern(p, inner);
+        if (node.body.type === "BlockStatement") {
+          hoist(node.body.body, inner, false);
+          return visit(node.body.body, inner);
+        }
+        return visit(node.body, inner);
+      }
+      case "VariableDeclaration":
+        for (const d of node.declarations) {
+          visitPattern(d.id, scope);
+          visit(d.init, scope);
+        }
+        return;
+      case "ClassDeclaration":
+        visit(node.superClass, scope);
+        return visit(node.body, scope);
+      case "ClassExpression": {
+        const inner = open(scope, "block");
+        if (node.id) inner.names.add(node.id.name);
+        visit(node.superClass, inner);
+        return visit(node.body, inner);
+      }
+      case "UnaryExpression": {
+        // `typeof x` answers "undefined" for a name nothing declares, with or
+        // without the parentheses oxc keeps as a node of their own.
+        let asked = node.argument;
+        while (asked.type === "ParenthesizedExpression") asked = asked.expression;
+        if (node.operator === "typeof" && asked.type === "Identifier") return;
+        return visit(node.argument, scope);
+      }
+      case "MethodDefinition":
+      case "PropertyDefinition":
+      case "Property":
+        if (node.computed) visit(node.key, scope);
+        return visit(node.value, scope);
+      case "MemberExpression":
+        visit(node.object, scope);
+        if (node.computed) visit(node.property, scope);
+        return;
+      case "ImportDeclaration":
+      case "ExportAllDeclaration":
+      case "BreakStatement":
+      case "ContinueStatement":
+      case "MetaProperty":
+        return;
+      case "ExportNamedDeclaration":
+      case "ExportDefaultDeclaration":
+        return visit(node.declaration, scope);
+      case "LabeledStatement":
+        return visit(node.body, scope);
+      default:
+        for (const k of Object.keys(node)) if (k !== "type") visit(node[k], scope);
+    }
+  };
+  const module = open(null, "module");
+  // What the running node provides as a global is in reach everywhere, so a
+  // local named after one shadows it inside its block and nothing else
+  // changes. The set is this node's rather than a list kept here, which is the
+  // one fact about it a reader has to know.
+  for (const name of Object.getOwnPropertyNames(globalThis)) module.names.add(name);
+  hoist(program.body, module, false);
+  hoistVars(program.body, module);
+  visit(program.body, module);
+  return out;
+}
+
+// A binding declared inside a block and read outside it is a `ReferenceError`
+// on the one run that gets that far. `scripts/ab.mjs` carried one: `label`
+// and `result` had moved inside the `try` around the trials,
+// the two lines that write the result document stayed at module scope, and
+// every trial was paid for before the throw. Nothing imports the file, so no
+// case could reach it, and the argument gate above made it look healthy to the
+// one case that spawns it.
+test("a name declared inside a block is read only where that block is in reach", () => {
+  const outside = [];
+  for (const rel of sourceFiles()) {
+    for (const { name, line } of readOutsideTheirBlock(readFileSync(join(ROOT, rel), "utf8"), rel)) {
+      outside.push(`${rel}:${line}: ${name}`);
+    }
+  }
+
+  assert.deepEqual(outside, []);
+});
+
+// The rule above sees whatever this resolves, so it is driven directly.
+test("the block reader tells a read inside a block from one outside it", () => {
+  const reads = (src) => readOutsideTheirBlock(src, "t.mjs").map((r) => `${r.line}:${r.name}`);
+  assert.deepEqual(reads("try { const a = 1; } catch {}\nconsole.log(a);"), ["2:a"]);
+  assert.deepEqual(reads("try { const a = 1; console.log(a); } catch {}"), []);
+  assert.deepEqual(reads("let a;\ntry { a = 1; } catch {}\nconsole.log(a);"), []);
+  assert.deepEqual(reads("{ let a = 1; }\nconst f = () => a;"), ["2:a"]);
+  assert.deepEqual(reads("{ let a = 1; }\nconst f = (a) => a;"), []);
+  assert.deepEqual(reads("{ var a = 1; }\nconsole.log(a);"), []);
+  assert.deepEqual(reads("for (const i of []) {}\nconsole.log(i);"), ["2:i"]);
+  assert.deepEqual(reads("try {} catch (e) {}\nconsole.log(e);"), ["2:e"]);
+  assert.deepEqual(reads("{ const a = 1; }\nconst o = { a: 1 };\nconsole.log(o.a);"), []);
+  assert.deepEqual(reads("switch (1) { case 1: { const a = 1; } }\nconsole.log(a);"), ["2:a"]);
+  assert.deepEqual(reads("{ const a = 1; }\nfunction f() { return a; }"), ["2:a"]);
+  assert.deepEqual(reads("function f() { if (1) { const process = 2; return process; } }\nconsole.log(process.env.HOME);"), [], "a global stays in reach where a block shadows its name");
+  assert.deepEqual(reads("{ const maybe = 1; }\nconsole.log(typeof maybe);"), [], "typeof never throws");
+  assert.deepEqual(reads("{ const N = 1; }\nconst C = class N { m() { return N; } };"), [], "a class expression's own name is in reach inside it");
+  assert.deepEqual(reads("{ const a = 1; }\nconsole.log(typeof (a));"), [], "parentheses do not make typeof throw");
+  assert.deepEqual(reads("{ const a = 1; }\nconsole.log(typeof (((a))));"), [], "however many of them");
+  assert.deepEqual(reads("{ const a = 1; }\nconsole.log(typeof a.b);"), ["2:a"], "typeof of a member reads its object");
+  // Shapes that are legal and unusual, none of which reads past a block.
+  assert.deepEqual(reads("outer: for (const a of []) { inner: for (const b of []) { if (a) break outer; if (b) continue inner; } }"), []);
+  assert.deepEqual(reads("async function f(y) { for await (const x of y) { use(x); } }"), []);
+  assert.deepEqual(reads("{ const a = 1; }\nconst v = obj?.a?.b;"), [], "a property is not a read of the name");
+  assert.deepEqual(reads("label: { const a = 1; break label; }"), []);
+  assert.deepEqual(reads("{ const a = 1; }\nfunction f() { return new.target; }"), []);
+  assert.deepEqual(reads("{ const a = 1; }\nconst o = { [a]: 2 };"), ["2:a"], "a computed key reads the name");
+  assert.deepEqual(reads("{ const a = 1; }\nconst s = `${a}`;"), ["2:a"], "a template reads the name");
 });
 
 /**

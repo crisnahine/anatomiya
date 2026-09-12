@@ -1,13 +1,51 @@
 # ultracode-anywhere
 
-Keeps ultracode's standing Workflow orchestration on at any effort level.
+Ships the orchestration instead of asking for it: three workflows you run by name, the agent types
+they spawn, and the reminder that keeps the Workflow tool in play at any effort level.
 
-## Why
+## Install
+
+```
+/plugin marketplace add crisnahine/anatomiya
+/plugin install ultracode-anywhere@crisnahine
+```
+
+It is its own plugin: installing `anatomiya` from the same marketplace does not install this one.
+Restart the session afterwards, since workflows and agent types are read once at startup.
+
+## What it ships
+
+Three orchestrations live under `workflows/`. Claude Code loads a plugin's workflows and resolves
+each under `<plugin>:<name>`, so they are called like this:
+
+```
+Workflow({ name: 'ultracode-anywhere:review', args: 'the staged diff' })
+```
+
+| name | what it does | when |
+| --- | --- | --- |
+| `ultracode-anywhere:review` | six readers, one per dimension, then three lenses try to refute each finding before it is reported, up to twenty-four of them | there is a diff, a branch or a file to review |
+| `ultracode-anywhere:understand` | readers fan out over the areas of an unfamiliar codebase, one synthesis merges them into a map | before changing code nobody in the session has read |
+| `ultracode-anywhere:hunt` | rounds of finders, each searching a different way, until two rounds running turn up nothing new | the question is "find them all" and nobody knows the count |
+
+Each is a file. It was written once, it is gated in CI, and it runs the same way every time. That is
+the whole difference from a script the model improvises on the turn it needs one: the fan-out width,
+the vote arithmetic, the early exits and the caps are the same today as they were last week, and
+`test/workflows.test.mjs` drives each one against fake agents to prove it.
+
+Four agent types live under `agents/` and are what those workflows spawn: `finder`, `reader`,
+`verifier` and `synthesist`. Each carries its own tool refusals and its own prompt, and what effort
+a stage runs at is decided by these files rather than by a request the model may or may not honour.
+`finder` and `reader` name `effort: medium`, since they are the wide, cheap half. `verifier` and
+`synthesist` name no effort at all, which is how a spawn keeps the session's own level: the stages
+that check and merge must not be the cheap ones.
+
+## Why the reminder is still here
 
 In Claude Code the ultracode gate is one predicate:
 
 ```js
-function Wv(model, effort, flag) { return flag === true && Zu() && yT(model, effort) === "xhigh" }
+function fC(e,n,o,r){ return o===!0 && eu() && NA(e,n,{turnEffort:r})==="xhigh" }
 ```
 
 The `xhigh` term is a conjunct, not a side effect, so dropping to `medium` turns the mode off.
@@ -25,7 +63,27 @@ the effort is the one it deliberately leaves alone, and the skill is the one it 
 a plain `--effort xhigh` with no `ultracode` key the diff is two leaves, so the flag is what loads the
 skill and not the level. `VERIFYING.md` has the recipe.
 
-This plugin restates that reminder, so the mode holds at whatever level is set.
+## Why the catalogue is not optional
+
+Claude Code loads a plugin's workflows and then never mentions them. The hook that would append a
+listing to the Workflow tool's description is a stub, `function ke(){return}`, and its sibling
+`function ct(){return""}` is appended to the tool's prompt and description. The only place a
+workflow name reaches the model is the error raised when one fails to resolve:
+
+```js
+return { error: `Workflow "${e.name}" not found. Available: ${o || "(none)"}` }
+```
+
+So a shipped workflow is loadable, resolvable, and unreachable unless something names it. This
+plugin's prompt hook is that something: the opening text lists what is shipped and when each applies,
+and the refresher keeps the names in view. Turn the listing off with
+`ULTRACODE_ANYWHERE_CATALOGUE=0` and the workflows are still installed, still resolvable by name, and
+nothing in the session will tell the model they are there.
+
+A session already running native ultracode gets the listing too, from the `SessionStart` notice.
+The prompt hook stands aside there, and the built-in reminder it stands aside for says nothing about
+a plugin's workflows, so without that the users most likely to want these would be the ones who never
+hear of them.
 
 ## What it does not do
 
@@ -40,12 +98,12 @@ It does not lift the concurrent-subagent cap, and no reminder can. Native ultrac
 which the build says in as many words:
 
 ```js
-let Pr = AXn(); if (A.taskRegistry.getConcurrentSubagents() < Pr) return;
-if (I("tengu_amber_kestrel", false)) return;
-let ss = A.getAppState();
-if (Wv(A.rootToolSurface.mainLoopModel, il(ss), ss.ultracode)) return;
+let Yo = qur(); if (n.taskRegistry.getConcurrentSubagents() < Yo) return;
+if (H("tengu_amber_kestrel", !1)) return;
+let xa = n.getAppState();
+if (fC(n.rootToolSurface.mainLoopModel, ul(xa), xa.ultracode)) return;
 ... "Concurrent subagent limit reached"
-function AXn() { return a.CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS ?? J }   // J = 20
+function qur() { return a.CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS ?? J }   // J = 20
 ```
 
 The refusal returns early when the ultracode predicate holds, and that predicate reads the session's
@@ -55,18 +113,35 @@ first session on a machine that has not says so once. `tengu_amber_kestrel`, on 
 flag Anthropic sets and nobody here does: turned on, it lifts the cap for every session on that
 build, this plugin's included.
 
-This plugin does not set a stage's effort, and no hook can. A spawn's effort comes from its agent
-definition, and the built-in definition a workflow stage gets carries none, so a stage falls through
-to the session's own level unless the script passes `opts.effort`. That is the only lever a caller
-has, and the model is the only one holding it. So `ULTRACODE_ANYWHERE_STAGE_EFFORT` asks the model
-to pass it, which is a request and not a setting: a session that ignores the text runs its fan-out
-at the session's level, which is where it was going to run anyway. Set nothing and the reminder says
-to leave `opts.effort` alone.
+It does not outrank anything. A plugin's strongest lever is context injected at `SessionStart` and
+on every prompt, which is what this uses. That text sits alongside the system prompt and your own
+`CLAUDE.md` rather than above them, and nothing in the plugin surface changes that: there is no
+manifest key, no hook field and no settings entry that makes a plugin's instructions win an
+argument. A plugin's own `settings.json` is honoured for two keys, `agent` and `subagentStatusLine`,
+and neither is one. The catalogue is written to be directive about the work it covers and to stop
+there, because text that told the model to disregard its other instructions would be a promise the
+hook cannot keep and would teach a reader to discount the rest of it.
 
-A workflow script that names an `agentType` is the one case where a stage has a definition of its
-own, and a `.claude/agents/*.md` carrying `effort:` then sets that stage's level with no `opts.effort`
-in sight. `opts.effort` still wins where the script passes both, so the reminder's instruction holds;
-what it does not hold for is a stage the script never asks the model to configure.
+Your own `.claude/workflows/` outranks this plugin's where the two use one name, deliberately. The
+build merges the lists built-in first, then plugin, then `~/.claude/workflows`, then the nearest
+`.claude/workflows` walking up from the working directory, and a later entry of the same name wins.
+An override that does not parse is refused in favour of the shipped copy, which is the safe
+direction.
+
+In practice the two rarely meet, because a plugin's workflow is registered under
+`<plugin>:<meta.name>` and yours under its bare `meta.name`. A repository that writes its own
+`review` gets `review` beside `ultracode-anywhere:review`, and both are callable; replacing the
+shipped one means naming yours `ultracode-anywhere:review` exactly.
+
+This plugin does not set a stage's effort from the reminder, and no hook can. What it does instead is
+ship the agent types its own workflows spawn, each carrying `effort:` in its frontmatter, which the
+build reads when a stage names an `agentType`. That is a file rather than a request, and it is the
+whole reason the shipped workflows pass no `opts.effort` at all.
+
+`ULTRACODE_ANYWHERE_STAGE_EFFORT` remains for the other case: a script the model writes itself has no
+agent definition to read, so the level there can only be asked for. It is a request and not a
+setting: a session that ignores the text runs its fan-out at the session's level, which is where it
+was going to run anyway. Set nothing and the reminder says to leave `opts.effort` alone.
 
 The switch names a level rather than a direction, and the hook cannot read the session's own to tell
 which way it points: `--effort` and `/effort` write nothing to `settings.json`. Below the session is
@@ -74,16 +149,16 @@ what it was built for, since fan-out is where the tokens go. Above it works and 
 and one thing changes shape with it: the reminder tells the checking stage to leave `opts.effort`
 out, so that stage runs at the session's level, which is the deeper setting below the session and
 the shallower one above. Set a level above your session and the stage that checks the others is the
-one running cheapest, which is the reading to avoid. Depth is otherwise bought by how the work is
-split and independently checked, which is the lever a prompt controls without changing what the
-session costs.
+one running cheapest, which is the reading to avoid.
 
 It does not load the `workflow-authoring` skill, and native ultracode does. That is the third leaf
 of the wire diff: `"ultracode": true` puts the whole reference into the user message, a command block
 and about sixteen thousand characters of body, so a native session starts holding the script API,
 the resume rules and the worked examples that the reminder's own text points at. Nothing a hook
-writes can load a skill. The reminder names the reference instead, and a session that wants it in
-context can ask for it.
+writes can load a skill. The reminder points at the Workflow tool's own description instead, which
+names the skill and says to load it before writing a script, so a session that wants it in context
+can ask for it by name. A session running a shipped workflow needs less of it: the script is already
+written.
 
 The model half of the same question needs nothing from this plugin. `CLAUDE_CODE_SUBAGENT_MODEL` is
 a real subagent-only seam upstream: set it and every spawn resolves to that model while the main loop
@@ -100,64 +175,26 @@ loop down with it. It stops at `xhigh`, since that path validates against four n
 `opts.effort` takes five. And it is dead the moment `--effort` or `/effort` pins a level, which is
 the ordinary case for anyone reading this page.
 
-The other half of that question is the Agent tool, and this plugin cannot set its effort either. A
-spawn's effort comes from its agent definition, and the one lever is `.claude/agents/<type>.md`
-frontmatter carrying `effort:`. That layer beats both `effortLevel` and `modelSettings`: the identical
-file with the `effort:` line removed reports the session's own level in the same session. No hook
-reaches it, and that is all twenty-two output schemas rather than the two worth guessing at: not one
-of them names an effort. `SubagentStart` sees the spawn and answers with text alone. Two events can
-rewrite a call, `PreToolUse` through `updatedInput` and `PermissionRequest` through the same field on
-its `allow` branch, and neither helps, because what they rewrite is the tool's input and the Agent
-tool's input is `description`, `prompt`, `subagent_type`, `model`, `run_in_background`, `name`,
-`team_name`, `mode`, `isolation` and `cwd`, with no effort among them. An invented `effort` key does
-not fail validation either, which would at least be loud: both validators drop unrecognised keys, so
-the call goes through with the key gone and the spawn runs at the level it was always going to. A reminder cannot do it either, since the model has no argument to pass, which is what
-makes this different from `opts.effort` on a workflow stage.
-
-Covering a built-in type means writing a file that carries a copy of that type's system prompt. Two
-fields on the built-in definitions cannot go in that file, since neither is a frontmatter key, and
-the interesting part is that neither costs what it looks like it costs:
-
-- `omitClaudeMd`, set by four built-ins including `Explore` and `Plan`. It reads as though a copy
-  would start loading `CLAUDE.md` and pay for it on every spawn. Measured, it does not: the built-in
-  `Explore` already paid 45,921 tokens for a 138 KB `CLAUDE.md` on this build, so the built-in was
-  never saving anything and a copy loses nothing. What a copy does lose is the tool set, if it forgets
-  `disallowedTools`: the same measurement put a one-line shadow 993 tokens above the built-in on six
-  extra tool definitions. Copy the `disallowedTools` line, not just the prompt.
-- `appendSystemPrompt`, set by the `claude` catch-all. It reads as though a copy of that type would
-  replace a prompt the built-in appends. On the Agent-tool path it would not, because that path never
-  appends; the append belongs to `--agent`, where a definition becomes the session's own prompt. So
-  `claude` is left off the list below for a narrower reason than "cannot be copied": a file named for
-  it changes the `--agent` path too, and that is a wider blast radius than the three types this
-  switch is about.
-
-Both of those were in the issue this came from, stated the other way round. They are recorded here as
-measured because a README that repeats a plausible cost is how the cost becomes folklore.
-
-A plugin-provided agent type is a third gap of a different kind: covering one means editing the
-plugin cache, which `autoUpdate` overwrites.
-
-The copy is the part that rots. It is frozen at the build it was taken from, and an upgrade moves the
-original while the copy reads the same as ever. Nothing in a session says so, which is what
-`ULTRACODE_ANYWHERE_SUBAGENT_EFFORT` below is for: it writes nothing and generates nothing, and only
-says whether the files are there, whether they carry the level asked for, and whether they were
-written before the build now installed. Whether a copy is still faithful is not knowable from the
-file; when it was last written is, and that is the half a reader cannot see. Taking a fresh copy is a
-live extraction, one session per type per build, and the upstream fix stays
-[anthropics/claude-code#79135](https://github.com/anthropics/claude-code/issues/79135).
-
 ## What it costs
 
 One short-lived `node` process per prompt, about 30 ms of it over ten runs on the machine this was
-measured on, most of which is node starting: bare `node` on the same machine is 23. What reaches the model is 1266 characters on the first
-turn, 94 on every tenth after that, and nothing on the rest, appended after the user message so the
-cache prefix is untouched. Over a 30-turn session that is 1454 characters in total,
-the opening text plus two refreshers. A payload that names no session, or a state directory this
-cannot use, reads every turn as the first one, and a 30-turn session then costs 30 opening texts
-instead. The reminder is the cheap half either way.
+measured on, most of which is node starting: bare `node` on the same machine is 23. What reaches the
+model is 3035 characters on the first turn, 217 on every tenth after that, and nothing on the rest,
+appended after the user message so the cache prefix is untouched. Over a 30-turn session that is
+3469 characters in total, the opening text plus two refreshers.
 
-`ULTRACODE_ANYWHERE_STAGE_EFFORT` puts the level into both, which at its longest level name is 1464
-characters on the first turn and 194 on every tenth after that, or 1852 over 30 turns. That is 398
+The catalogue is most of that. Without it the opening text is 1266 characters, so listing three
+workflows costs 1769 on the first turn and takes the refresher from 94 to 217. That is the price of
+the only sentence in the session that says the workflows exist, and `ULTRACODE_ANYWHERE_CATALOGUE=0`
+buys it back for anyone who would rather name them by hand.
+
+A payload that names no session, or a state directory this cannot use, reads every turn as the first
+one, and a 30-turn session then costs 30 opening texts instead. The reminder is the cheap half
+either way: one run of `ultracode-anywhere:review` spawns up to 79 agents, six finders plus three
+verifiers for each of at most twenty-four findings plus one synthesis.
+
+`ULTRACODE_ANYWHERE_STAGE_EFFORT` puts the level into both, which at its longest level name is 3233
+characters on the first turn and 317 on every tenth after that, or 3867 over 30 turns. That is 398
 characters more than the default over such a session, against a fan-out it moves by a whole effort
 level.
 
@@ -166,6 +203,12 @@ first time on a warm page cache, about 30 after, since the answer is kept beside
 under the build's path, size and timestamp. All of these are one machine's numbers with a warm page cache;
 the shape to rely on is one process per prompt and one bundle read per install, not the
 milliseconds.
+
+Reading the shipped workflows for the catalogue is one directory listing and three file reads of a
+few kilobytes each, and it happens only on the turns the text goes out: the cadence is decided
+before the read, so nine prompts in ten read nothing at all. A session whose turns cannot be counted
+reads every turn as the first one and pays the read on each of them.
+`ULTRACODE_ANYWHERE_CATALOGUE=0` skips it entirely.
 
 Turns are counted per session in a file, and the count is read and written without a lock. Two
 prompts of one session arriving at once can lose a turn, which moves where a refresher lands and
@@ -243,7 +286,7 @@ inside, and the predicate is one minified function whose names change between bu
 shape does not.
 
 ```js
-function Wv(e,o,t){return t===!0&&Zu()&&yT(e,o)==="xhigh"}
+function fC(e,n,o,r){return o===!0&&eu()&&NA(e,n,{turnEffort:r})==="xhigh"}
 ```
 
 What the premise needs is that `"xhigh"` is a conjunct there rather than something the reminder
@@ -251,9 +294,13 @@ sets, so the check matches a function returning a flag, a call and an effort com
 `"xhigh"`, in any of the spellings a minifier chooses between. A build that stops requiring it is a
 build this plugin no longer describes, whatever names survive.
 
-A proximity test was tried first and dropped on evidence: the build has 9 `ultra_effort_enter` sites
-and 115 occurrences of `xhigh`, and the closest pair is 168,197 bytes apart, so a window of 20,000
-would have failed on the build it was calibrated against by a factor of eight. Reading the predicate
+A proximity test was tried first and dropped on evidence. On 2.1.268 the build has 9
+`ultra_effort_enter` sites and 123 occurrences of `xhigh`. One pair sits 3,548 bytes apart and is
+the wrong pair: both are in the compiled binary's string tables, `ultra_effort_enter` beside
+`ultra_effort_exit` and `xhigh` beside `effort-level` and `medium`, nowhere near the gate. Every
+site in the JavaScript is at least 167,473 bytes from an `xhigh`. So a window tight enough to mean
+anything misses the gate, and one wide enough to reach it matches a table of event names. The
+distance also moves by a megabyte between builds, which is the deeper reason: reading the predicate
 is what replaced it.
 
 Claude Code updates itself, so expect the version line whenever the minor moves, and again once a
@@ -292,7 +339,7 @@ whole text again. A resumed session keeps its count; a fork is a new session and
 whole text.
 
 It skips loop, schedule, poll and system wakeups, which are turns the user did not type, when the
-payload says which it is. 2.1.251 declares that `source` field in its hook schema and does not send
+payload says which it is. 2.1.268 declares that `source` field in its hook schema and does not send
 it: a payload caught off that build carries the session, the transcript, the directory, the prompt
 and its id, the permission mode, and nothing naming who typed it. So a wakeup counts as a turn there
 and gets whatever its place in the cadence earns; the skip starts working the day the field arrives,
@@ -322,51 +369,28 @@ and the cap line then comes back every session rather than once.
 ## Switches
 
 - `ULTRACODE_ANYWHERE=0 claude` turns it off for one session.
+- `ULTRACODE_ANYWHERE_CATALOGUE=0 claude` drops the listing of shipped workflows and leaves the
+  reminder. The workflows stay installed and stay resolvable by name; what goes is the only sentence
+  in the session that says so, since Claude Code lists a plugin's workflows nowhere. Worth setting
+  if you already know the three names and would rather have the 1769 characters back.
 - `ULTRACODE_ANYWHERE_EVERY=25 claude` puts more turns between refreshers. Anything unreadable, or
   zero, falls back to 10.
 - `ULTRACODE_ANYWHERE_REFRESHER=0 claude` drops the refresher, leaving the opening text and
   silence.
 - `ULTRACODE_ANYWHERE_FULL=repeat claude` brings the whole text back on the cadence instead of the
   one-line refresher, for a session long enough to lose it.
-- `ULTRACODE_ANYWHERE_STAGE_EFFORT=medium claude` names the level the fan-out should run at:
-  `opts.effort` at that level on every workflow stage, and left out of one checking or judging
-  another stage's work, which then runs at the session's level unless its own definition sets one.
-  Unset, the text is the one above, which says to leave `opts.effort` alone. The levels are `low`,
-  `medium`, `high`, `xhigh`, `max`, read past case and surrounding spaces; anything else is read as
-  unset, and the session opens with a line saying so rather than leaving it to be found on the bill.
-  It reaches a workflow stage and nothing else: a fan-out done with the Agent tool runs at the
-  session's level whatever this says, since that tool takes no effort argument. Those five and
-  nothing else: `opts.effort` itself also takes `med` and an integer, and this switch takes neither,
-  since the text names a level. `VERIFYING.md` step 7 says what the integer does upstream, which is
-  another reason.
-- `ULTRACODE_ANYWHERE_SUBAGENT_EFFORT=medium claude` names the level you meant your agent files to
-  carry, and buys a sentence rather than a setting. Nothing is written, generated or repaired: the
-  session opens by saying which of `general-purpose`, `Explore` and `Plan` no file names, which have
-  a file the build refuses for want of a `description:`, which name no effort, which name another
-  level, and which were last written before the installed build, that last being the one a reader
-  cannot see for themselves. It names the file it read for each, since a type can have a candidate
-  in every `.claude/agents` up the tree. It says the file predates the build and stops there, since whether the
-  prompt inside it still matches is not something a timestamp knows. Silence means either that all
-  three are named at that level by a file newer than the build, or that the build's own age could not
-  be read, since a missing build is not evidence that a copy is current.
-
-  An agent is keyed on its frontmatter `name:` and never on its filename, which is how the build
-  keys one: `Explore.md` naming something else is that other agent and leaves the built-in alone,
-  and `anything.md` naming `Plan` is the file a spawn of `Plan` reads. Every `.claude/agents` from
-  the working directory up to your home is read, deepest first and subfolders included, then
-  `$CLAUDE_CONFIG_DIR/agents` or `~/.claude/agents`. A file behind a symlink counts, because the
-  build follows one. Three places the build also looks are not read here: a managed settings
-  directory, which outranks everything; the `--agents` JSON flag, which outranks every project
-  directory; and the additional working directories a session was started with.
-
-  The search stops once all three names are found, so an ordinary setup costs three reads. Where they
-  are not all found it reads at most 2,000 files, measured at 91 ms for 3,000 against a fifteen
-  second budget, and if it hits that bound it says how many files it read rather than reporting an
-  absence it never established. The level is compared as the build compares one, so `effort: med` is
-  `medium` and `effort: HIGH` is `high`; the switch itself still takes only the five spelled out,
-  the way the stage switch does. The same five levels as the switch above, and
-  anything else is read as unset with a line saying so. It reports and never acts, so it is safe to
-  leave set; unset it to stop asking.
+- `ULTRACODE_ANYWHERE_STAGE_EFFORT=medium claude` names the level a workflow the model writes itself
+  should run its stages at: `opts.effort` at that level on every stage, and left out of one checking
+  or judging another stage's work, which then runs at the session's level. It does not reach the
+  workflows this plugin ships, and it is not meant to: those name an `agentType`, and the level comes
+  from that agent's own file. Unset, the text is the one above, which says to leave `opts.effort`
+  alone. The levels are `low`, `medium`, `high`, `xhigh`, `max`, read past case and surrounding
+  spaces; anything else is read as unset, and the session opens with a line saying so rather than
+  leaving it to be found on the bill. It reaches a workflow stage and nothing else: a fan-out done
+  with the Agent tool runs at the session's level whatever this says, since that tool takes no effort
+  argument. Those five and nothing else: `opts.effort` itself also takes `med` and an integer, and
+  this switch takes neither, since the text names a level. `VERIFYING.md` step 7 says what the
+  integer does upstream, which is another reason.
 - `ULTRACODE_ANYWHERE_DEBUG=/tmp/uc.log claude` logs every prompt the hook fires on, its stdin
   payload, and what silenced it when something did. The session hook writes nothing there. A fifo
   nobody is reading, standing at that path, is refused without waiting.
@@ -374,9 +398,47 @@ and the cap line then comes back every session rather than once.
   carries what this plugin mirrors.
 - `ULTRACODE_ANYWHERE_CAP_NOTICE=0 claude` stops the one-time line about the concurrent-subagent
   cap.
+- `ULTRACODE_ANYWHERE_SUBAGENT_EFFORT` is **gone** as of 0.6.0 and sets nothing. It named the level
+  for agent files this plugin used to tell you to hand-write; it ships those types itself now, each
+  carrying its own `effort:`. The only thing still read here is whether it is set at all: a session
+  that has it in `settings.json` is told once that it does nothing and what replaced it, because a
+  switch removed in silence is a setting somebody keeps trusting. Remove it, or put `effort:` on an
+  agent file of your own.
 - `ULTRACODE_ANYWHERE_STATE=/some/dir claude` keeps the turn counters somewhere other than
   `~/.claude/ultracode-anywhere/`. The directory is the hook's alone, and it has to be one this
   account owns with mode `0700`, which is what the hook creates for itself. A directory made by hand
   under the usual umask is `0755` and is refused, which costs the cadence: every turn then carries
   the full text. Spell it absolute: `~` is not expanded here, and a relative path follows each
   process's own directory.
+
+## Changing a shipped workflow
+
+The scripts are plain JavaScript under `workflows/`, and `npm run lint:workflows` holds each one to
+the rules the build enforces silently:
+
+- `export const meta = {…}` is the first statement, a `const`, one declarator, and a pure literal
+- `name` and `description` are non-empty strings, and no key is `__proto__`, `constructor` or `prototype`
+- the file is under 524,288 bytes, and its name ends in `.js`
+- the body compiles as an async function body
+- every free name it reaches is one of the eleven the sandbox injects or a language name the sandbox
+  leaves alone (`LANGUAGE` in `scripts/workflow-lint.mjs`, which is the realm's own list minus what
+  the build's hardening deletes and what `codeGeneration: {strings: false}` forbids)
+- nothing calls `Date.now()`, bare `new Date()` or `Math.random()`, and nothing uses `with`,
+  `import()`, `await using` or an identifier beginning `__wRg$`
+- every `phase()` title has an entry in `meta.phases` and every entry is used, and no entry is
+  malformed, which the build drops without a word
+- every `agentType` is one this plugin ships
+- no two files declare the same `meta.name`
+- the plugin's own dependency-free reader answers what a real parse answers
+
+A file that breaks any of those is skipped by the loader with a warning in a log nobody opens, so
+the gate is the only thing standing between a typo and a workflow that silently does not exist.
+
+Two things catch people. The extension has to be `.js`: the loader recognises `.mjs`, `.cjs` and
+`.ts` and refuses all three, which is why these files are the one exception to the `.mjs` everywhere
+else in this repository. And the directory is read once per session and never watched, so a script
+edited mid-session does not take effect until Claude Code restarts.
+
+`test/workflows.test.mjs` runs each script's real body against fake agents in a context holding only
+the eleven injected names, which is how the fan-out width, the vote arithmetic and the early exits
+are tested without spending a token.

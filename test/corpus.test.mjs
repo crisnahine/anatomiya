@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join, isAbsolute, sep } from "node:path";
 import { execFileSync } from "node:child_process";
 
-import { collect, countUntrackedSource, isDenied, isExcludedDir, isGeneratedFile, isSource, safeResolve, gitRoot, frameworksIn } from "../plugins/anatomiya/lib/corpus.mjs";
+import { collect, countUntrackedSource, isDenied, isCorpusPath, isExcludedDir, isGeneratedFile, isSource, safeResolve, gitRoot, frameworksIn } from "../plugins/anatomiya/lib/corpus.mjs";
 import { language } from "../plugins/anatomiya/lib/langs.mjs";
 import * as areaLib from "../plugins/anatomiya/lib/areas.mjs";
 
@@ -218,6 +218,16 @@ test("fixture and vendor directories are excluded", () => {
   assert.equal(isExcludedDir("node_modules/pkg/a.js"), true);
   assert.equal(isExcludedDir("src/features/billing/a.ts"), false);
   assert.equal(isExcludedDir("src/fixtures-helper/a.ts"), false, "the segment must match whole");
+});
+
+test("a path is corpus when it is source, not denied and not under an excluded directory, and nothing else is asked of it", () => {
+  // The three predicates were composed by hand at three call sites, so the
+  // composition has one spelling here. The generated-file head read and the
+  // realpath check are not path-only questions and stay with `collect`.
+  assert.equal(isCorpusPath("src/a.mjs"), true);
+  assert.equal(isCorpusPath("src/a.md"), false, "not source");
+  assert.equal(isCorpusPath(".git/hooks/a.js"), false, "denied");
+  assert.equal(isCorpusPath("node_modules/pkg/a.js"), false, "an excluded directory");
 });
 
 test("the other names deliberately unidiomatic code goes by are excluded too", () => {

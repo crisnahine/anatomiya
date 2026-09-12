@@ -6,7 +6,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
 
-import { READS, pathsThatMoved, readGlossary, sitesOwed } from "../scripts/check-docs.mjs";
+import { READS, checkDocs, pathsThatMoved, readGlossary, sitesOwed } from "../scripts/check-docs.mjs";
 import { PARSE_OUTCOMES } from "../plugins/anatomiya/lib/parse.mjs";
 import { REL } from "../scripts/plugins.mjs";
 
@@ -660,4 +660,16 @@ test("an outcome the glossary stops naming fails the check", { ...needsCheckout 
 
   assert.equal(status, 1, output);
   assert.match(output, /Unexamined does not name oversize/);
+});
+
+// Importing this module ran the whole gate: the two tests that reach a reader
+// spawned the binary for `--help`, ran `git ls-files` and read every document
+// before their first assertion. The gate is a function now, and this is the
+// one call that runs it, on the checkout the suite is in.
+test("the gate is a function, and on this checkout it answers no problem", () => {
+  const { problems, owed, summary } = checkDocs();
+
+  assert.deepEqual(problems, []);
+  assert.equal(owed.size, 0);
+  assert.match(summary, /^docs match the code: \d+ dimensions/);
 });

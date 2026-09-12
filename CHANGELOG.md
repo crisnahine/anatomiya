@@ -7,6 +7,97 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-09-02
+
+Thirteen findings of a deep-module audit, every one a fact with two owners or an interface nobody
+read, closed as one owner each: the site shape both workers build, the paths a hook names, the
+roster nouns the recount reads back, the guard bag every bridge reads, the checker's job, the
+exported rim, and nine smaller ones. No count, claim or map moved: the check, the scan and a deep
+scan of an oracle repository are byte identical across the two builds after every commit.
+
+### Fixed
+
+- The A/B harness threw `ReferenceError: label is not defined` on every run that
+  reached its result document, after every trial had been paid for: two
+  bindings had moved inside the `try` around the trials while the two lines
+  that write the document stayed outside it. The harness now runs as one
+  guarded `main`, and a guard in `test/modules.test.mjs` refuses a binding
+  declared inside a block and read outside it, in every source file.
+  `--min-headroom` refuses a value it cannot compare, which used to switch the
+  floor off for the whole batch, and a repository with no `origin` no longer
+  prints git's complaint about it.
+- The harness probed an arm with the first `.rb`, `.ts`, `.tsx`, `.js` or `.jsx`
+  file under the target area, a hand-kept list that missed every `.mjs`
+  repository, this one included. It asks the corpus's own predicates now.
+- The harness scrubs three engine-shaped variables build 2.1.257 reads:
+  `CLAUDE_CODE_SUBAGENT_MODEL_FORCE`, and the served model catalog's switch and
+  URL, `CLAUDE_CODE_MODEL_CATALOG` and `CLAUDE_CODE_MODEL_CATALOG_URL`, since
+  that build installs the fetched catalog in place of the compiled model list
+  rather than logging it. `docs/research/claude-code-2-1-257-engine-variables.md`
+  holds the read.
+- The session-start and standing-ultracode cases handed the hook the host's
+  own `CLAUDE_*` and `ULTRACODE_ANYWHERE*` settings, so they failed on a
+  machine running the plugin; `test/host-env.mjs` takes those out for every
+  spawn.
+
+### Changed
+
+- The fields a site carries across the worker boundary are one table, `HIT_FIELDS` in
+  `walk.mjs`, and both workers build their sites from it. A test reads every field the reducer
+  takes off a site and holds it to the table (B36).
+- The roster nouns the layout recount reads back are the renderer's own exports; the recount
+  spells none (H41).
+- One function in `scripts/validate.mjs` reads the paths a text names as
+  `${CLAUDE_PLUGIN_ROOT}/...`, and the shipped-set gate and the hook test take theirs from it. A
+  bare path ends at a subshell's parenthesis or a backtick in both gates now (A49).
+- The Ruby hit's `node` and a call's argument list are built in `ruby-walk.mjs` and imported by
+  both Ruby registries (C36).
+- The check words the filename row's claim through `claimFor`, the row's owner, and holds no
+  template rule of its own (C37).
+- Each parse bridge and the checker read a guard bag through one rule, `guardsOver` in
+  `limits.mjs`: a name the defaults do not carry is refused before anything is spawned, and a
+  partial bag keeps the other defaults (B37).
+- `parseRuby` no longer carries the `parsed`, `crashed` and `skipped` counters or the
+  `onFile` streaming mode; the results are the record (B38).
+- The checker's worker is a shell over `semantic-job.mjs`, whose `runJob` and
+  `measureResolution` are reached in process by a namesake test (B39).
+- Twenty-nine exported names nobody read outside their own file are private, and a guard holds
+  every export to a reader (A50).
+- The binary's verbs are one table, each carrying its own arm; a verb added to the table
+  with no arm no longer falls through to a scan (A51).
+- The corpus harness fails a run whose layout line it could not read the roots count
+  off, exempting the truncation sentence, which both harnesses now read off
+  `render-layout.mjs` rather than spelling for themselves (A52).
+- The docs gate is a function, `checkDocs`, so importing a reader from it runs nothing
+  (A53).
+- A test holds the two ultracode hooks' silence to one answer over the three states that decide it
+  (A54).
+- The lock gate's npm argv is one exported list, read back through a stub npm: offline under
+  `--check`, online for a write (B40).
+- One callee reader in `dimensions-jsx.mjs`, answering a name or null (C38).
+- The witness gate drives `RUBY_ERROR`, `FRAMEWORK` and `EFFECT_HOOKS` through their
+  rows, with a control per table (C39).
+- A tie that decides which name is rendered is broken by code point through one `byCode` in
+  `paths.mjs`; `precedent.mjs` broke one by locale (H42).
+- `repoAuthorCount` and `isPerson` live in `authors.mjs`, and `baseline.mjs` carries one
+  docblock per entry point, naming all three (a move and a docblock, with no row of
+  their own).
+- The sites a branch introduced are decided in
+  `plugins/anatomiya/lib/introduced.mjs`, a leaf the check alone imports:
+  `newlyIntroduced` takes both revisions and the area and answers the sites
+  with their identities, and `siteIdentity` and `bodyIdentity` spell the
+  identity rule four other test files had pinned by comment. The check's output
+  is byte for byte what it was.
+- The harness's argument gate and result document live in `scripts/ab/args.mjs`
+  and `scripts/ab/render.mjs`, and an arm's trials are summed in
+  `scripts/ab/score.mjs`, so a test reaches each without spawning a run, and
+  one case runs the whole harness from an empty repository with the model
+  stubbed.
+- `isCorpusPath` in `corpus.mjs` is the one spelling of whether a path is
+  corpus, over the same rule list `collect` classifies by; the check, the
+  notice and the harness's probe read it instead of composing the three
+  predicates by hand.
+
 ## [0.6.0] - 2026-08-31
 
 The glossary said eleven things the code does not do, and one of them reached a reader: an area file
@@ -2395,7 +2486,8 @@ which are partial; several listed there are not implemented yet.
 - No claim that this catches defects. Measured across ten repositories, 1 of 317 defect review
   comments was preventable by a conventions map.
 
-[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/crisnahine/anatomiya/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/crisnahine/anatomiya/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/crisnahine/anatomiya/compare/v0.4.2...v0.5.0
 [0.4.2]: https://github.com/crisnahine/anatomiya/compare/v0.4.1...v0.4.2

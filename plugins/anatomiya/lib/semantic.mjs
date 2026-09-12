@@ -8,7 +8,7 @@
  * port and publishes no JS API at all.
  */
 
-export const SEMANTIC_MIN_MAJOR = 5;
+const SEMANTIC_MIN_MAJOR = 5;
 
 /**
  * The checker, or null.
@@ -45,6 +45,7 @@ export function notInstalledMessage(remedy) {
 }
 
 import { guardedChild } from "./child.mjs";
+import { guardsOver } from "./limits.mjs";
 import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 
@@ -89,14 +90,20 @@ export function classifySemantic({ config, resolution }) {
  * Every failure answers itself rather than an empty result: a child that will
  * not start, a build that never finished, a stall, and a checker that is not
  * installed are four different things to do about it, and folding them into
- * "no hits" is the shape B13 and F15 both closed elsewhere.
+ * "no hits" is the shape B13 and F15 both closed elsewhere. A bag naming a
+ * guard the checker does not have is a caller's mistake rather than a run,
+ * and rejects the way `parseAll` refuses one.
  */
 export function runSemantic(
   root,
   files,
-  { keys = null, guards = SEMANTIC_GUARDS, workerPath = WORKER, cwd = tmpdir() } = {}
+  { keys = null, guards: given = null, workerPath = WORKER, cwd = tmpdir() } = {}
 ) {
   return new Promise((resolve) => {
+    // Inside the promise so a bad bag rejects rather than throws, which is how
+    // `parseAll` answers one for either parse bridge. Taken whole, a bag naming
+    // only `idleMs` armed the build window with nothing.
+    const guards = guardsOver(SEMANTIC_GUARDS, given, "checker");
     const records = new Map();
     let config = null;
     let resolution = { resolved: 0, total: 0 };

@@ -11,12 +11,8 @@
  */
 
 import { namesakeCompanions, namesakeIndex } from "./companions.mjs";
-import { baseOf, dirOf, extOf, stemOf, withoutExtension } from "./paths.mjs";
+import { baseOf, dirOf, extOf, stemOf, withoutExtension, byCode } from "./paths.mjs";
 import { TEST_DIRS, TEST_NAME, RUBY_TEST_NAME, TEST_ROOTS, TEST_TREES, UNNAMED_RUNNER } from "./test-shape.mjs";
-
-// Every sort below breaks its tie on a name that gets rendered, and
-// `localeCompare` orders case by whatever ICU tables the host was built with.
-const byCode = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
 
 /**
  * The floor rises with the corpus, so a directory earns a line by holding a
@@ -179,10 +175,10 @@ export function runnerOf(rel, facets) {
  * printed a blend, 4.0%, of a real 6.9% diluted by sites nobody was going to
  * write per-file tests for.
  */
-export const SHELL_NAMES = new Set(["src", "lib", "app", "apps", "packages", "source"]);
+const SHELL_NAMES = new Set(["src", "lib", "app", "apps", "packages", "source"]);
 
 // At most seven lines, so the section can never crowd out the area listing.
-export const ROOT_BUDGET = 7;
+const ROOT_BUDGET = 7;
 
 // A directory one child almost fills is that child under another name.
 const WRAPPER_SHARE = 0.8;
