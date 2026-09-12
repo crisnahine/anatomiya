@@ -416,6 +416,17 @@ export const LOADABLE = [
   ["agents", "agents"],
   ["skills", "skills"],
   ["mcpServers", ".mcp.json"],
+  // The list stopped at five while the loader read more, which was invisible
+  // until a plugin here shipped one of the others: a directory of workflows is
+  // behaviour, and a plugin whose only behaviour was that read as one that
+  // installs nothing. `docs/plugin-contract.md` has the whole table.
+  ["workflows", "workflows"],
+  ["outputStyles", "output-styles"],
+  ["lspServers", ".lsp.json"],
+  // `themes` and `monitors` are left off deliberately. Both are experimental
+  // and belong under an `experimental.` prefix that the checks here do not
+  // read, so listing them at the top level would hold a manifest to a shape
+  // the loader is in the middle of changing.
 ];
 
 /** The manifest keys alone, in the order the kinds are declared. */

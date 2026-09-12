@@ -9,15 +9,11 @@
  * rather than sitting in `upstream.mjs` with the other read-off-a-build facts,
  * since a level name is only ever read through the reader below it.
  *
- * The reminder is the only way to ask. A spawn's effort comes from its agent
- * definition, and neither the Agent tool nor a workflow stage takes one from
- * the caller except through a script's own `opts.effort`, which is the model's
- * to pass and nobody else's.
- *
- * Two switches read a level here, for the two halves of that sentence. The
- * stage one reaches the reminder. The subagent one reaches nothing at all: it
- * names the level a reader meant their agent files to carry, and buys only a
- * sentence about whether those files are there and how old they are.
+ * One switch, and it reaches the reminder alone. A spawn's effort comes from
+ * its agent definition, and the stages of the workflows this plugin ships take
+ * theirs from the agent files under `agents/`, where a reader can see it and
+ * where no request to the model is involved. This switch is for the scripts the
+ * model writes itself, which have no such definition to read.
  */
 
 /**
@@ -71,18 +67,6 @@ export function stageEffortIn(env = process.env) {
 }
 
 /**
- * The level this session says its agent files carry, or null where it says none.
- *
- * Read the same way and from a variable of its own, because the two name
- * different halves of one question and a session may set either alone. One
- * variable answering both would turn a stage setting into a claim about files
- * on disk that nobody wrote.
- */
-export function subagentEffortIn(env = process.env) {
-  return levelIn(env.ULTRACODE_ANYWHERE_SUBAGENT_EFFORT);
-}
-
-/**
  * What a session should be told about a setting that named no level, and null
  * where there is nothing to tell it.
  *
@@ -95,9 +79,21 @@ export function askedFor(env = process.env) {
   return unreadable(env.ULTRACODE_ANYWHERE_STAGE_EFFORT, STAGE);
 }
 
-/** The same, for the switch that names the level the agent files should carry. */
-export function askedForSubagent(env = process.env) {
-  return unreadable(env.ULTRACODE_ANYWHERE_SUBAGENT_EFFORT, SUBAGENT);
+/**
+ * What a session is owed about a switch this plugin used to read and does not.
+ *
+ * Removing a switch in silence is the same failure as a switch that reads a
+ * value it cannot use: the setting sits in a user's `settings.json` doing
+ * nothing, and the session that relied on it never finds out. Said once, with
+ * what replaced it, so the line is worth the room it takes.
+ */
+export function retired(env = process.env) {
+  if (String(env.ULTRACODE_ANYWHERE_SUBAGENT_EFFORT ?? "").trim() === "") return null;
+  return (
+    "ULTRACODE_ANYWHERE_SUBAGENT_EFFORT is set and no longer does anything: this plugin stopped " +
+    "writing agent files for you and ships its own, each carrying its `effort:` in frontmatter. " +
+    "Remove it from settings, or set it on an agent file of your own"
+  );
 }
 
 /**
@@ -114,10 +110,6 @@ export function askedForSubagent(env = process.env) {
 const STAGE = {
   name: "ULTRACODE_ANYWHERE_STAGE_EFFORT",
   costs: "so the stages are asked for none and run at the session's own level",
-};
-const SUBAGENT = {
-  name: "ULTRACODE_ANYWHERE_SUBAGENT_EFFORT",
-  costs: "so nothing is said about the agent files a spawn reads",
 };
 
 /** The level a value names, or null for anything that is not one of the five. */

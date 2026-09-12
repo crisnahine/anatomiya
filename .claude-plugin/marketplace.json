@@ -14,7 +14,7 @@
     {
       "name": "ultracode-anywhere",
       "source": "./plugins/ultracode-anywhere",
-      "description": "Keeps ultracode's standing Workflow orchestration on at any effort level, not only xhigh"
+      "description": "Ships three tested orchestrations you run by name, the agent types they spawn, and the reminder that keeps the Workflow tool in play at any effort level"
     }
   ]
 }
