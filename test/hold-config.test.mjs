@@ -129,12 +129,14 @@ test("NODE_OPTIONS is split the way node splits it", (t) => {
   const spaced = preloadAt(join(dir, "a b", "preload.cjs")).preload;
   const plain = preloadAt(join(dir, "plain", "preload.cjs")).preload;
   const gapsFor = (options, preload) => holdGaps({ ...WHOLE, NODE_OPTIONS: options }, { preload }).recommended.length;
+  // Inside quotes node reads a backslash as an escape, so a Windows path is quoted with forward slashes.
+  const inQuotes = spaced.replaceAll("\\", "/");
 
-  assert.equal(gapsFor(`--require="${spaced}"`, spaced), 0, "a quote can open in the middle of a word");
-  assert.equal(gapsFor(`"--require" "${spaced}"`, spaced), 0);
-  assert.equal(gapsFor(`"" --require "${spaced}"`, spaced), 0, "an empty pair of quotes adds no word");
-  assert.equal(gapsFor(`--require "${spaced}`, spaced), 1, "node starts nothing with an unterminated quote");
-  assert.equal(gapsFor(`--require "${spaced}\\`, spaced), 1, "or with a backslash that escapes nothing");
+  assert.equal(gapsFor(`--require="${inQuotes}"`, spaced), 0, "a quote can open in the middle of a word");
+  assert.equal(gapsFor(`"--require" "${inQuotes}"`, spaced), 0);
+  assert.equal(gapsFor(`"" --require "${inQuotes}"`, spaced), 0, "an empty pair of quotes adds no word");
+  assert.equal(gapsFor(`--require "${inQuotes}`, spaced), 1, "node starts nothing with an unterminated quote");
+  assert.equal(gapsFor(`--require "${inQuotes}\\`, spaced), 1, "or with a backslash that escapes nothing");
   assert.equal(gapsFor(`-r=${plain}`, plain), 1, "node refuses -r= in NODE_OPTIONS");
   assert.equal(gapsFor(`--require\t${plain}`, plain), 1, "and splits on spaces only");
   assert.equal(gapsFor(`--require`, plain), 1, "a flag with nothing after it requires nothing");
