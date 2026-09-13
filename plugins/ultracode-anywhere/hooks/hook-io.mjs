@@ -430,7 +430,15 @@ function skipValue(text, from) {
  */
 export function respond(event, context) {
   if (context === null || context === undefined) return;
-  const line = `${JSON.stringify({ hookSpecificOutput: { hookEventName: event, additionalContext: context } })}\n`;
+  respondWith({ hookSpecificOutput: { hookEventName: event, additionalContext: context } });
+}
+
+/**
+ * One JSON object on stdout whatever its members, for a hook whose answer is a
+ * decision, behind the same guard against a reader that went away.
+ */
+export function respondWith(object) {
+  const line = `${JSON.stringify(object)}\n`;
   // One listener however many times this is called: node warns at eleven, and
   // the warning goes to stderr, which a hook may not write to.
   if (process.stdout.listenerCount("error") === 0) process.stdout.on("error", () => {});
@@ -454,7 +462,8 @@ export function invokedAs(url) {
   return realOf(fileURLToPath(url)) === realOf(resolve(process.argv[1]));
 }
 
-function realOf(path) {
+/** A path through its links, or the path as given where it cannot be resolved. */
+export function realOf(path) {
   try {
     return realpathSync(path);
   } catch {

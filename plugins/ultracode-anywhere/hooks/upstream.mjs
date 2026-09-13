@@ -22,7 +22,7 @@ import { delimiter, join } from "node:path";
  * one nobody has checked, which is worth saying out loud even when every name
  * is still there.
  */
-export const CALIBRATED_AGAINST = "2.1.269";
+export const CALIBRATED_AGAINST = "2.1.270";
 
 /**
  * The gate itself, as a shape rather than a name.
@@ -41,7 +41,7 @@ export const CALIBRATED_AGAINST = "2.1.269";
  *
  * What each argument list may hold is deliberately generous. An argument list
  * is not where the premise lives, and a tight bound there fails on a build that
- * adds one option key: 2.1.269 passes `e,o,{turnEffort:r}`, 18 characters, and
+ * adds one option key: 2.1.270 passes `e,o,{turnEffort:r}`, 18 characters, and
  * a reader allowing 24 would call a gate that still holds a gate that is gone,
  * which nags every session or, under strict, switches the plugin off. What the
  * premise needs is the three conjuncts and the comparison against `"xhigh"`, so
@@ -69,8 +69,8 @@ const GATE_REACH = 200;
  * this plugin satisfies by restating the reminder. Reworded upstream, the
  * reminder still arrives and means nothing.
  *
- * A proximity test on the gate itself was tried and dropped. On 2.1.269 the 9
- * `ultra_effort_enter` sites sit at least 144,581 bytes from any of the 123
+ * A proximity test on the gate itself was tried and dropped. On 2.1.270 the 9
+ * `ultra_effort_enter` sites sit at least 169,032 bytes from any of the 123
  * `xhigh` occurrences, except one pair 3,428 bytes apart that is the wrong
  * pair: both are in the compiled binary's string tables rather than in the
  * JavaScript. A window tight enough to mean anything misses the gate, one wide
@@ -104,11 +104,12 @@ export const CONFLICTS = {
 };
 
 /** A boolean variable as the build reads one: 1, true, yes or on, in any case. */
-function isOn(value) {
+export function isOn(value) {
   return ["1", "true", "yes", "on"].includes(String(value ?? "").toLowerCase().trim());
 }
 
-function isOff(value) {
+/** The same variable read as switched off: 0, false, no or off, in any case. */
+export function isOff(value) {
   return ["0", "false", "no", "off"].includes(String(value ?? "").toLowerCase().trim());
 }
 
