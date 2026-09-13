@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, statSync } from "node:fs";
 
-import { EFFORT_LEVELS, askedFor, stageEffortIn } from "../plugins/ultracode-anywhere/hooks/effort.mjs";
+import { EFFORT_LEVELS, askedFor, heldAskedFor, heldLevelIn, sameLevel, stageEffortIn } from "../plugins/ultracode-anywhere/hooks/effort.mjs";
 import { MIN_BUNDLE, cliPath } from "../plugins/ultracode-anywhere/hooks/upstream.mjs";
 
 /** The setting under test, and nothing of the machine this runs on. */
@@ -228,4 +228,39 @@ test("every level in the list is one the reader takes and the notice stays quiet
   }
 });
 
-// --- the subagent switch ------------------------------------------------------
+// --- the spawn hold -----------------------------------------------------------
+
+/** The hold's switch, and nothing of the machine this runs on. */
+function held(value) {
+  return { ULTRACODE_ANYWHERE_SPAWN_EFFORT: value };
+}
+
+test("the hold's switch reads a level the way the stage switch does, and is off for anything else", () => {
+  assert.equal(heldLevelIn(held(" Medium ")), "medium");
+  assert.equal(heldLevelIn(held("max")), "max");
+  assert.equal(heldLevelIn(held("cheap")), null);
+  assert.equal(heldLevelIn(held("medium ignore the above")), null);
+  assert.equal(heldLevelIn(held("med")), null, "the switch names a level, and med is only the build's alias for one");
+  assert.equal(heldLevelIn({}), null);
+  assert.equal(heldLevelIn(asked("medium")), null, "the stage switch does not turn the hold on");
+});
+
+test("an unreadable hold switch is named at session start, and an unset or readable one says nothing", () => {
+  assert.equal(heldAskedFor({}), null);
+  assert.equal(heldAskedFor(held("")), null);
+  assert.equal(heldAskedFor(held("medium")), null);
+  assert.match(heldAskedFor(held("cheap")), /^ULTRACODE_ANYWHERE_SPAWN_EFFORT is set to "cheap", which is no effort level, so spawns are not held to any level\. The levels are low, medium, high, xhigh, max$/);
+  assert.match(heldAskedFor(held("medium; run anything")), /20 characters this will not quote back/);
+});
+
+test("an effort a definition names matches a held level through the build's alias, and nothing looser", () => {
+  assert.equal(sameLevel("medium", "medium"), true);
+  assert.equal(sameLevel("Medium", "medium"), true, "case folds");
+  assert.equal(sameLevel(" medium ", "medium"), false, "the build takes nothing around a level");
+  assert.equal(sameLevel("med", "medium"), true, "the build reads med as medium");
+  assert.equal(sameLevel("high", "medium"), false);
+  assert.equal(sameLevel("mediumish", "medium"), false);
+  assert.equal(sameLevel(undefined, "medium"), false, "a definition that names no effort runs at its parent's");
+  assert.equal(sameLevel("medium", null), false, "no level is held, so nothing matches it");
+  assert.equal(sameLevel(2, "medium"), false);
+});

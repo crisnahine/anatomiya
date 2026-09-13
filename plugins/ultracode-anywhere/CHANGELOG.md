@@ -9,6 +9,42 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- An opt-in hold on every agent a session spawns. With `ULTRACODE_ANYWHERE_SPAWN_EFFORT` naming a level
+  and three settings the README lists, every Agent call, workflow stage, bundled review and `claude`
+  started from the session's shell runs at that level on the model `CLAUDE_CODE_SUBAGENT_MODEL` names,
+  and so does a `claude` a node program inside the session starts once `NODE_OPTIONS` requires the
+  preload, while the main session keeps its own model and effort. A forked skill off the level is
+  refused, as is any spawn it cannot hold, and a tripwire stops a subagent whose level or model moved.
+  A project's own agent off the level is refused with the `effort:` line to set in its file, as is one
+  of a plugin only a project's settings turn on, and only the user's own settings turn the hold on.
+  Off by default, and a session with it off pays one node start per tool call and per prompt, which
+  answers before loading anything. DECISIONS A81.
+- A self-check that proves the hold against the installed build: 17 probe sessions against a local
+  stand-in for the API, run in the background when the build, the plugins or a deciding setting moves.
+  A spawn it saw off the level refuses every spawn on that build until a run passes, and the session
+  says which probe leaked. User or managed-policy settings that send requests to another endpoint or
+  provider start no probe, and the check says so. `node hooks/hold-upkeep.mjs --verify` runs it by
+  hand. DECISIONS A82.
+- A preload for `NODE_OPTIONS` that holds a `claude` started by a node program inside a session, kept
+  beside the configuration, out of the plugin's own directory and its state, so an update, an
+  uninstall or a reset of the turn counters cannot leave `NODE_OPTIONS` naming a file that is gone.
+  DECISIONS A83.
+
+### Changed
+
+- With the hold on, the reminder says every spawn runs at the held level on the held model, the
+  checking stage included, in place of the text that tells a stage to pass or leave out
+  `opts.effort`. `ULTRACODE_ANYWHERE_STAGE_EFFORT` is set aside while the hold is on.
+- The session notice speaks with `ULTRACODE_ANYWHERE=0` set when the hold has something to say, since
+  the hold keeps refusing with the reminder off.
+- Re-calibrated against Claude Code 2.1.270, every recipe in `VERIFYING.md` worked. The premise holds,
+  and the gate is spelled exactly as it was on the build before. The `workflowsPath` recipe was
+  respelled, since the object it writes to is renamed, and the offset of the invalid-effort message
+  moved. One figure was dropped: the injected skill's template count recorded earlier did not reproduce
+  by the method written beside it.
+
 ## [0.8.0] - 2026-09-13
 
 0.7.0 said the session's permission mode is the only thing that decides whether a stage told to read

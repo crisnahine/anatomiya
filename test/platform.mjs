@@ -67,6 +67,13 @@ export const needsPosixSeparators = WINDOWS
   ? { skip: "Windows paths carry a drive letter and a backslash separator, so a POSIX fixture path is inside nothing" }
   : {};
 
+// A superuser reads a file whatever its mode, and Windows cannot take read access away with chmod.
+export const needsUnreadableFiles = WINDOWS
+  ? { skip: "Windows chmod only toggles read-only, so a file cannot be made unreadable" }
+  : typeof process.getuid === "function" && process.getuid() === 0
+    ? { skip: "root reads a file whatever its mode, so the denial this needs cannot happen" }
+    : {};
+
 // A fifo or a unix socket in a directory is a shape only POSIX can make.
 export const needsPosixSpecialFiles = WINDOWS
   ? { skip: "Windows has no mkfifo and no filesystem-visible unix socket to test with" }

@@ -13,6 +13,8 @@
 import { PLUGIN, catalogueLine, shippedHere } from "./catalogue.mjs";
 import { appendLine, cached, nextTurn, stateDirFor, sweep } from "./counters.mjs";
 import { stageEffortIn } from "./effort.mjs";
+import { FULL_ID, holdTarget } from "./hold-config.mjs";
+import { projectRoot } from "./hold-switch.mjs";
 import { here, invokedAs, parsePayload, readStdin, respond } from "./hook-io.mjs";
 import { cliPath, conflictIn, driftCached, settingsFor } from "./upstream.mjs";
 
@@ -31,7 +33,7 @@ export const FULL_EVERY = 10;
  *
  * Read off the `source` the build's own payload schema declares. The schema
  * carries more than these four now, `user` and `sdk` among them, and neither is
- * a turn to skip. 2.1.269 declares the field and does not send it, and the
+ * a turn to skip. 2.1.270 declares the field and does not send it, and the
  * payload it builds says so in one token: `{...Na(…), hook_event_name:
  * "UserPromptSubmit", prompt:r, ...!1, session_title:…}`, where `...!1` is a
  * conditional spread the minifier collapsed to nothing. So a wakeup counts as a
@@ -90,7 +92,17 @@ function loweredTo(level) {
   return `That same configuration names the level the fan-out should run at, so pass opts.effort '${level}' on every workflow stage but one. Leave it out of ${CHECKING_STAGE}, so that one runs at the session's level unless its own definition sets one. The Agent tool takes no effort argument, so this reaches workflow stages and nothing else. Depth comes from how the work is split and independently checked.`;
 }
 
-/** The whole standing opt-in, at the stage level this session asked for. */
+/**
+ * Every spawn at the level the spawn hold forces (A81). Both texts above promise
+ * a stage something the hold then rewrites, so while it is on they would tell
+ * the model to do what the hook undoes. The model is quoted only when it is a
+ * model id, since a project's settings can set it.
+ */
+function heldTo({ level, model }) {
+  const on = FULL_ID.test(model) ? model : "the model CLAUDE_CODE_SUBAGENT_MODEL names";
+  return `Every subagent and every workflow stage is held to effort '${level}' on ${on} by that same configuration, ${CHECKING_STAGE} included: a spawn asking for another level or model is rewritten to this one, and one that cannot be held is refused. Leave opts.effort and opts.model out, and give every Agent call a subagent_type. Depth comes from how the work is split and independently checked.`;
+}
+
 /**
  * The permission modes under which a spawned stage's shell redirect lands.
  *
@@ -125,8 +137,8 @@ function shellWrite(mode) {
   );
 }
 
-function full(stageEffort = null, catalogue = null) {
-  const said = [...OPENING, `${STANDING} ${stageEffort ? loweredTo(stageEffort) : ONE_LEVEL}`];
+function full(stageEffort = null, catalogue = null, held = null) {
+  const said = [...OPENING, `${STANDING} ${held ? heldTo(held) : stageEffort ? loweredTo(stageEffort) : ONE_LEVEL}`];
   // Last rather than first: what comes before it is why orchestration is on at
   // all, and a listing read without that reads as three commands to run.
   if (catalogue) said.push(catalogue);
@@ -140,9 +152,9 @@ function full(stageEffort = null, catalogue = null) {
  * otherwise hang off "use" with no verb of its own, on the line that goes out on
  * every tenth turn for the life of the session.
  */
-function short(stageEffort = null, names = []) {
+function short(stageEffort = null, names = [], held = null) {
   const still = "Ultracode is still on: use the Workflow tool where the work is worth it, solo where it is not.";
-  const level = stageEffort ? ` Stages take opts.effort '${stageEffort}'; leave it out of ${CHECKING_STAGE}.` : "";
+  const level = held ? ` Spawns are held to effort '${held.level}'.` : stageEffort ? ` Stages take opts.effort '${stageEffort}'; leave it out of ${CHECKING_STAGE}.` : "";
   // The names alone on the refresher, without the descriptions: what a long
   // session loses is that they exist, not what each one is for, and the whole
   // text is what a reader gets back on the turn after a compaction.
@@ -151,13 +163,14 @@ function short(stageEffort = null, names = []) {
 }
 
 /** What this session's switches ask the text to be, and the default for anything unreadable. */
-function switchesFrom(env) {
+function switchesFrom(env, cwd = "") {
   const every = String(env.ULTRACODE_ANYWHERE_EVERY ?? "");
   return {
     every: /^\d{1,4}$/.test(every) && Number(every) > 0 ? Number(every) : FULL_EVERY,
     refresher: env.ULTRACODE_ANYWHERE_REFRESHER !== "0",
     repeatFull: env.ULTRACODE_ANYWHERE_FULL === "repeat",
     stageEffort: stageEffortIn(env),
+    held: holdTarget(env, { root: projectRoot(env, cwd) }),
     ...(env.ULTRACODE_ANYWHERE_MODE_NOTICE === "0" ? { mode: null } : {}),
     // Named explicitly as null so `contextFor` does not read the directory for
     // a session that asked for silence about it.
@@ -192,14 +205,14 @@ const onCadence = (turn, every = FULL_EVERY) => (turn - 1) % every === 0;
  * the object gets these for the keys it left out, and a key added here reaches
  * every caller rather than arriving as `undefined` at the partial ones.
  */
-const DEFAULTS = { every: FULL_EVERY, refresher: true, repeatFull: false, stageEffort: null, mode: null };
+const DEFAULTS = { every: FULL_EVERY, refresher: true, repeatFull: false, stageEffort: null, mode: null, held: null };
 
 /**
  * What this turn is owed: the whole opt-in on the first turn, the line that
  * keeps it in view on every tenth after that, and nothing on the rest.
  */
 export function contextFor(turn, asked = {}) {
-  const { every, refresher, repeatFull, stageEffort, mode } = { ...DEFAULTS, ...asked };
+  const { every, refresher, repeatFull, stageEffort, mode, held } = { ...DEFAULTS, ...asked };
 
   // Whether this turn says anything is decided before the directory is read:
   // nine turns in ten are owed nothing, and a read on each of them is three
@@ -208,7 +221,7 @@ export function contextFor(turn, asked = {}) {
   if (!speaks) return null;
 
   const { catalogue, names } = { ...catalogueDefault(asked), ...asked };
-  const text = turn === 1 || repeatFull ? full(stageEffort, catalogue) : short(stageEffort, names);
+  const text = turn === 1 || repeatFull ? full(stageEffort, catalogue, held) : short(stageEffort, names, held);
   const writes = shellWrite(mode);
   return writes ? `${text}\n\n${writes}` : text;
 }
@@ -256,7 +269,7 @@ export function run({ stdin = "", env = process.env, state = stateDirFor(env) } 
   if (debug) log(debug, stdin, conflict ?? moved);
   if (conflict || moved) return null;
 
-  const switches = switchesFrom(env);
+  const switches = switchesFrom(env, cwd);
   // Only the prompt hook is handed one: `SessionStart` calls the same payload
   // builder with two arguments where this one passes three, so the mode is
   // undefined there and this line can live nowhere else.
