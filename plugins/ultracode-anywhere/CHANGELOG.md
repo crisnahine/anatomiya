@@ -9,6 +9,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-09-13
+
+Until now the plugin could ask the stages of a workflow the model writes to run at a level, and
+nothing reached an Agent call, a forked skill or a `claude` started from the shell. 0.9.0 adds a
+switch that holds every spawned agent to one level on one model while the main session keeps its
+own, refuses what it cannot hold, and proves the hold against the installed build before trusting
+it. It is off unless your own settings turn it on.
+
 ### Added
 
 - An opt-in hold on every agent a session spawns. With `ULTRACODE_ANYWHERE_SPAWN_EFFORT` naming a level
@@ -452,7 +460,8 @@ wherever `effortLevel` is set, and says out loud what it does not restore.
 - Turn counters under `~/.claude/ultracode-anywhere/` rather than the temporary directory, in a
   directory this account owns with no access for anyone else.
 
-[Unreleased]: https://github.com/crisnahine/anatomiya/compare/ultracode-anywhere-v0.8.0...HEAD
+[Unreleased]: https://github.com/crisnahine/anatomiya/compare/ultracode-anywhere-v0.9.0...HEAD
+[0.9.0]: https://github.com/crisnahine/anatomiya/compare/ultracode-anywhere-v0.8.0...ultracode-anywhere-v0.9.0
 [0.8.0]: https://github.com/crisnahine/anatomiya/compare/ultracode-anywhere-v0.7.0...ultracode-anywhere-v0.8.0
 [0.7.0]: https://github.com/crisnahine/anatomiya/compare/ultracode-anywhere-v0.6.0...ultracode-anywhere-v0.7.0
 [0.6.0]: https://github.com/crisnahine/anatomiya/compare/ultracode-anywhere-v0.5.0...ultracode-anywhere-v0.6.0
