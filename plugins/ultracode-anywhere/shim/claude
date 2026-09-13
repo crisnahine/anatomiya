@@ -1,0 +1,15 @@
+#!/usr/bin/env node
+// ultracode-anywhere-shim: a held session's shell finds this before the real claude, see hooks/hold-shim.mjs.
+"use strict";
+
+const { join } = require("node:path");
+const { pathToFileURL } = require("node:url");
+
+import(pathToFileURL(join(__dirname, "..", "hooks", "hold-shim.mjs")).href)
+  .then((shim) => {
+    process.exitCode = shim.runShim(process.argv.slice(2));
+  })
+  .catch((err) => {
+    process.stderr.write(`claude: the ultracode-anywhere shim could not load, so nothing was started: ${err.message}\n`);
+    process.exitCode = 2;
+  });

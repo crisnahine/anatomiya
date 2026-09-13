@@ -5,7 +5,7 @@ opt-in contract were read out of one build, so the only thing that keeps it hone
 reading. The `SessionStart` check does the cheap half on every session; this is the half a person
 does, and it takes a few minutes.
 
-It was last worked whole against **2.1.269**, on 2026-09-12, which is the version
+It was last worked whole against **2.1.270**, on 2026-09-13, which is the version
 `CALIBRATED_AGAINST` in `hooks/upstream.mjs` names. Move that string when you have worked this list
 on a newer build, and nothing else in this file or the README may name a build that is not it:
 `test/upstream.test.mjs` fails on one that does.
@@ -69,11 +69,12 @@ What has to be true: the reminder is emitted only when the resolved effort is `x
 the reminder has become the thing that raises effort, this plugin is doing more than it claims and
 the README has to change.
 
-On 2.1.269 the command above prints exactly one line,
-`163442217:function GC(e,o,n,r){return n===!0&&lu()&&Ew(e,o,{turnEffort:r})==="xhigh"}`.
- Every name in it moved again from the build before, `fC` to `GC`, `eu` to `lu` and `NA` to `Ew`, which is why the check
-reads a shape and not a name. The arguments moved too: a fourth parameter is threaded through and
-passed as `{turnEffort:r}`, so the pattern's old 24-character bound on an argument list was 18 full
+On 2.1.270 the command above prints exactly one line,
+`167791529:function GC(e,o,n,r){return n===!0&&lu()&&Ew(e,o,{turnEffort:r})==="xhigh"}`.
+No name in it moved from the build before. Names have moved between builds, `fC` to `GC`, `eu` to
+`lu` and `NA` to `Ew`, which is why the check reads the shape of the code, since names move. The
+arguments have moved between builds too: a fourth parameter is threaded through and passed as
+`{turnEffort:r}`, so the pattern's old 24-character bound on an argument list was 18 full
 with six to spare. It is generous now, and the tight part of the pattern is the three conjuncts and
 the comparison, which is where the premise actually lives.
 
@@ -88,7 +89,7 @@ done
 Every hit, since more than one carries that sentence and only one of them is the code: the others
 sit in a data section that holds the message text with nothing around it. The one you want shows
 whether the same predicate still returns before the refusal, which is what the README says lifts the
-cap for native ultracode and not here. On 2.1.269 a second early return sits above it,
+cap for native ultracode and not here. On 2.1.270 a second early return sits above it,
 `if(H("tengu_amber_kestrel",!1))return`, a flag Anthropic sets: turned on it lifts the cap for
 every session on that build, and the README says so.
 
@@ -205,7 +206,7 @@ diffing the text: a request is one enormous line per string, so a line diff says
 not which fields.
 
 What has to be true: the system prompt is identical and so is every tool definition, the Workflow
-tool's description included, with the reminder in the trailing context block either way. On 2.1.269
+tool's description included, with the reminder in the trailing context block either way. On 2.1.270
 that holds: same system prompt, and every tool definition byte for byte, this plugin's 3035
 characters or the built-in's 308. Most of the difference is the catalogue of shipped workflows,
 which the built-in has no equivalent of; `ULTRACODE_ANYWHERE_CATALOGUE=0` takes this side to 1266
@@ -228,8 +229,10 @@ the whole `workflow-authoring` skill into the user message, a command block of 1
 body of about 17,000, and appends a newline to the prompt. The body is a template the build fills in
 at send time, so the exact figure moves with what it interpolates as well as with the build, and the
 count is only comparable across builds where the next reader counts it the same way: summing the
-template's own chunks and skipping its nine balanced `${…}` slots, 2.1.269's string is 16,930
-characters before interpolation, and the body that actually goes out is 16,966. Earlier builds were
+template's own chunks and skipping its nine balanced `${...}` slots, 2.1.270's string is 16,588
+characters before interpolation, the same as the build before by this method, and the body that
+actually goes out is 16,966. A count of 16,930 recorded here earlier did not reproduce by this method
+on either build, so it has been dropped. Earlier builds were
 counted here without the method being written down, so those figures are not comparable with these
 and have been dropped rather than carried forward. The effort level is not what does it, which two
 control runs settle: against a plain `--effort xhigh` with no `ultracode` key, the two sides differ
@@ -253,7 +256,7 @@ difference.
 ## 5. The prompt payload carries `source`, or does not yet
 
 The wakeup skip reads `source` off the `UserPromptSubmit` payload. The schema declares the field and
-2.1.269 does not send it outside Anthropic. Ask the hook itself what it was handed, which beats
+2.1.270 does not send it outside Anthropic. Ask the hook itself what it was handed, which beats
 reading the builder:
 
 ```sh
@@ -264,7 +267,7 @@ kill "$(cat "$d/pid")"
 cat "$d/hook.log"
 ```
 
-On 2.1.269 the payload holds `session_id`, `transcript_path`, `cwd`, `prompt_id`, `permission_mode`,
+On 2.1.270 the payload holds `session_id`, `transcript_path`, `cwd`, `prompt_id`, `permission_mode`,
 `hook_event_name` and `prompt`, and no `source`. The literal carries `session_title` as well, which a
 named session sends and an unnamed one does not, and the `source` enum has grown to `user`, `sdk`,
 `system`, `loop_wakeup`, `schedule_wakeup` and `poll_event`. Only the last four are turns to skip.
@@ -280,7 +283,7 @@ for at in $(/usr/bin/grep -a -b -o 'hook_event_name:"UserPromptSubmit",prompt' "
 done
 ```
 
-What has to be true for the skip to work: the object literal carries `source:` where 2.1.269 spells
+What has to be true for the skip to work: the object literal carries `source:` where 2.1.270 spells
 `...!1`.
 
 While you are in that schema, the effort field beside it. The build hands a hook `effort`, and a
@@ -309,7 +312,7 @@ What has to be true: the function walks the messages back to the last `ultra_eff
 `TURNS_BETWEEN_MAINTENANCE` user turns have passed. A compaction leaves no attachment to find, which
 is why the `SessionStart` hook starts the counter over on `compact` and `clear`.
 
-On 2.1.269 the turns it counts are user messages that are neither meta nor a tool result, which is
+On 2.1.270 the turns it counts are user messages that are neither meta nor a tool result, which is
 the same set of turns a prompt hook fires on: a tool result never fires one. The constant is still
 10, but the chain is four steps now rather than three: `CLAUDE_CODE_JUNIPER_SUNDIAL`, then a
 gate-config read of `tengu_juniper_sundial`, then the flag of that name, then
@@ -397,7 +400,7 @@ code can check for itself. Each fact below is one the feature stops working with
 ### A plugin's own `workflows/` is loaded, and under the name this plugin advertises
 
 ```sh
-/usr/bin/grep -a -o 'if(.\{1,4\})U.workflowsPath=[A-Za-z_$]*(e,"workflows")' "$BUILD"
+/usr/bin/grep -a -o 'if(.\{1,4\})[A-Za-z_$]*\.workflowsPath=[A-Za-z_$]*(e,"workflows")' "$BUILD"
 /usr/bin/grep -a -o 'let [A-Za-z_$]*=`\${[A-Za-z_$]*}:\${[A-Za-z_$]*.meta.name}`' "$BUILD"
 ```
 
@@ -415,7 +418,7 @@ CLAUDE_CODE_DEBUG_LOGS_DIR=/tmp/uc-logs claude --debug \
 /usr/bin/grep -h 'workflows from plugin\|agents from plugin' /tmp/uc-logs/*.txt
 ```
 
-On 2.1.269 that prints `Loaded 3 workflows from plugin ultracode-anywhere default directory` and
+On 2.1.270 that prints `Loaded 3 workflows from plugin ultracode-anywhere default directory` and
 `Loaded 4 agents from plugin ultracode-anywhere default directory`. A count that dropped is a file
 the loader skipped, and it skips in silence.
 
@@ -427,7 +430,7 @@ claude --plugin-dir "$(git rev-parse --show-toplevel)/plugins/ultracode-anywhere
   -p "Call the Workflow tool once with name 'ultracode-anywhere:does-not-exist' and print its error verbatim. Call nothing else."
 ```
 
-Every shipped name has to appear after `Available:`. On 2.1.269 the answer is
+Every shipped name has to appear after `Available:`. On 2.1.270 the answer is
 `deep-research, ultracode-anywhere:hunt, ultracode-anywhere:review, ultracode-anywhere:understand`.
 
 ### Only `.js` is read
@@ -464,8 +467,8 @@ This is the whole reason the shipped workflows pass no `opts.effort`.
 /usr/bin/grep -a -o 'for(let [A-Za-z_$]* of\["permissionMode","hooks","mcpServers"\])' "$BUILD"
 ```
 
-The first is the build reading the key: on 2.1.269 it sits at offset 166,801,876, inside
-`Je=D.effort,Ze=Je!==void 0?u0(Je):void 0`, which reads `effort` off a plugin agent's frontmatter and
+The first is the build reading the key: on 2.1.270 it sits at offset 171,151,186, inside
+`Je=M.effort,et=Je!==void 0?N0(Je):void 0`, which reads `effort` off a plugin agent's frontmatter and
 complains where it will not parse. A build that stopped reading it would lose that message. The
 second prints the three keys a plugin agent may not set; everything else in the frontmatter is read.
 
@@ -480,9 +483,10 @@ An agent type that does not resolve answers with the list of the ones that do.
 
 Those two establish that the key is read and that the type resolves. Neither reads the level back:
 the resolved effort is visible only on the wire, and `--debug` will not do instead, since the debug
-log carries no effort field (checked on 2.1.269; the word appears there only inside this plugin's own
-reminder text, echoed into the log with the rest of the prompt). So read it off the socket, with step 4's stand-in
-answering the first request with a `Workflow` tool call so a real run happens:
+log carries no effort field. That was checked on an earlier build, where the word appeared only inside
+this plugin's own reminder text, echoed into the log with the rest of the prompt. So read it off the
+socket, with step 4's stand-in answering the first request with a `Workflow` tool call so a real run
+happens:
 
 ```sh
 # in the stand-in from step 4, answer by who is asking:
@@ -501,7 +505,7 @@ monitor answers the Workflow call and no stage is ever spawned, so the capture h
 requests and looks like a workflow that did nothing. The session runs at `high` on purpose, so a
 stage carrying `medium` can only have got it from its agent file.
 
-On 2.1.269, grouping the captured requests by their system prompt:
+On 2.1.270, grouping the captured requests by their system prompt:
 
 ```
   6 x  finder stage      (agents/finder.md says effort: medium)  ->  effort="medium"
@@ -529,7 +533,59 @@ lists a plugin's workflows to the model, `ULTRACODE_ANYWHERE_CATALOGUE=0` become
 default and the README's cost section is wrong. The second is the stub that would carry such a
 listing if it ever stopped being a stub.
 
-## 9. What a re-check changes
+## 9. The spawn hold still holds
+
+The hold reads more of the build than the reminder does, so its own check is worked whole on every
+re-check. Run it from this directory against a copy of a configuration whose `settings.json` holds
+the hold's settings in its `"env"`. From a terminal the check reads that `env` the way a session
+would, and it wins over the same variables set on the command line:
+
+```sh
+CLAUDE_CONFIG_DIR=/path/to/copy ULTRACODE_ANYWHERE_STATE=/path/to/state \
+node hooks/hold-upkeep.mjs --verify
+```
+
+It writes copies and shadows into the configuration it runs against and records what it found beside
+the turn counters, so point `CLAUDE_CONFIG_DIR` and `ULTRACODE_ANYWHERE_STATE` at a copy where the real
+ones should stay as they are. To check a checkout, point that copy's
+`plugins/installed_plugins.json` entry for this plugin at it. `self-check passed on` the build means
+every probe reached the stand-in and none saw a spawn off the level. Read `details` in the record
+anyway: a probe listed as skipped proved nothing.
+
+Each probe rests on something the build does, and a probe reported as unable to finish usually means
+one of these moved:
+
+- The Agent tool's listing opens `Available agent types for the Agent tool` with one
+  `- type: description (Tools: ...)` line per type. The capture reads the built-in types off it.
+- A subagent's system prompt ends before `Messages from the agent that launched you`. The shadow keeps
+  what comes before it.
+- A subagent's request carries `cc_is_subagent=true` in its billing header and its level in
+  `output_config.effort`.
+- A `PreToolUse` payload carries `effort.level`, and a subagent's carries `agent_id`. The tripwire
+  reads both.
+- A subagent's transcript sits under its session's transcript directory, where the tripwire reads the
+  model off its last assistant line.
+- A hook's environment carries `CLAUDE_PID`, and `/clear` gives the same process a new session id. The
+  hold keeps what a session loaded under the process.
+- A hook's environment carries `CLAUDE_PROJECT_DIR` and the Bash tool's does not, which is why the
+  exports name the session's project in `ULTRACODE_ANYWHERE_PROJECT_DIR` for the shim and the preload.
+- `CLAUDE_CODE_SIMPLE` and `CLAUDE_CODE_SAFE_MODE` still stand for `--bare` and `--safe-mode`.
+- `CLAUDE_ENV_FILE` reaches a plugin's `SessionStart` hook, and a plugin agent may not set
+  `permissionMode`, `hooks` or `mcpServers`, which is why a copy of one leaves them out.
+- `CLAUDE_CODE_EFFORT_LEVEL`, in the environment or a settings `env`, outranks an agent's `effort:`,
+  and `maxEffortLevel` caps it. Either one off the level refuses every spawn.
+- A `--settings` value's `env` outranks a project's settings `env`, which is why the shim hands the
+  held level there as well as in the environment.
+- A reply the build makes itself is recorded under a bracketed model name, `<synthetic>` on this
+  build, which the tripwire reads past.
+- A session's project folder is its directory with every character but a letter or a digit made a
+  hyphen, and a name past 200 characters is cut there with a base-36 hash of the path after it.
+  `projectFolderName` in `hooks/hold-check.mjs` names a probe's folder that way to remove it.
+- A managed policy's settings are `managed-settings.json` and the files in `managed-settings.d/` under
+  `/Library/Application Support/ClaudeCode` on macOS, `C:\Program Files\ClaudeCode` on Windows and
+  `/etc/claude-code` elsewhere. `routedAway` in `hooks/hold-check.mjs` reads their `env` too.
+
+## 10. What a re-check changes
 
 - `CALIBRATED_AGAINST` in `hooks/upstream.mjs`, and every build named in this file and the README.
   Move it before step 4 rather than after, since the session line it silences would otherwise show up
@@ -556,6 +612,24 @@ listing if it ever stopped being a stub.
 - The README, if any claim in it is no longer what the diff shows: the site count, the character
   counts, the bundle size and the timing figures are all measurements of one build on one machine.
 - The cadence in `FULL_EVERY`, if `TURNS_BETWEEN_MAINTENANCE` moved.
+- `PROMPT_END` and `listingEntries` in `hooks/hold-upkeep.mjs`, if the listing or the end of a
+  subagent's prompt moved.
+- `SESSION_NAMES` and `SESSION_PREFIXES` in `hooks/hold-check.mjs`, if a session sets a new variable
+  for what it starts. A probe that inherits one runs as a child of the session that ran the check.
+- `HOOKS_OFF` in `hooks/hold-shim.mjs`, if another variable turns the hooks off, and `REDIRECTS` in
+  `hooks/hold-switch.mjs`, if another one moves where the settings are read or names the build.
+- `PASS_THROUGH`, `DAEMON` and `CLOUD` in `hooks/hold-shim.mjs`, if a subcommand or flag was added
+  that starts no session, starts one through a daemon, or starts one in the cloud. `FORCED` and
+  `AGENT_FLAGS` there, if a flag was added that sets the model, the effort or the agents, and
+  `REFUSED_SETTINGS`, if a settings key was added that decides any of those or the hooks, and
+  `LAUNCHERS`, if a Windows install puts another launcher script on PATH.
+- `SPAWN_TOOLS` in `hooks/hold.mjs`, if a tool that starts a spawn or a cloud session was added or
+  renamed, and `ROUTINE_READS` in `hooks/hold-rules.mjs`, if `RemoteTrigger` gained an action.
+- `EFFORT_WORDS` and `REVIEW_FLAGS` in `hooks/hold-rules.mjs`, if the bundled review reads its effort
+  word or drops its flags another way.
+- `UNLISTED_FIELDS` in `hooks/hold-agents.mjs`, if a built-in carries frontmatter the listing does not
+  show, and `DEFAULT_BUILT_IN` there, if the built-in types a session has before any capture moved.
+- `WAIT_MS` in `hooks/hold-tripwire.mjs`, if a subagent's transcript is written later than it was.
 
 If the premise no longer holds at all, the honest change is to remove the plugin from the
 marketplace rather than to loosen the check until it passes.

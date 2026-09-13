@@ -9,11 +9,11 @@
  * rather than sitting in `upstream.mjs` with the other read-off-a-build facts,
  * since a level name is only ever read through the reader below it.
  *
- * One switch, and it reaches the reminder alone. A spawn's effort comes from
- * its agent definition, and the stages of the workflows this plugin ships take
- * theirs from the agent files under `agents/`, where a reader can see it and
- * where no request to the model is involved. This switch is for the scripts the
- * model writes itself, which have no such definition to read.
+ * Two switches read the same list. The stage switch reaches the reminder alone:
+ * a spawn's effort comes from its agent definition, and the stages of the
+ * workflows this plugin ships take theirs from the agent files under `agents/`,
+ * so that switch is for the scripts the model writes itself. The hold switch is
+ * the other kind: hooks hold every spawn to its level, whatever asked for one.
  */
 
 /**
@@ -80,6 +80,36 @@ export function askedFor(env = process.env) {
 }
 
 /**
+ * The level every spawn is held to, or null where the hold is off (A81).
+ *
+ * A level and nothing else, the way the stage switch reads one, since a value
+ * that names none turning the hold on at some guessed level would be a hold
+ * nobody chose.
+ */
+export function heldLevelIn(env = process.env) {
+  return levelIn(env.ULTRACODE_ANYWHERE_SPAWN_EFFORT);
+}
+
+/** What a session is owed about a hold switch that named no level, and null where it is owed nothing. */
+export function heldAskedFor(env = process.env) {
+  return unreadable(env.ULTRACODE_ANYWHERE_SPAWN_EFFORT, HOLD);
+}
+
+/**
+ * Whether an effort a definition names is the held level.
+ *
+ * The build reads `med` as `medium`, so a definition spelling it that way
+ * already runs at the level and needs no copy. Nothing looser than case: a
+ * value with anything around the level is one the build refuses, and it runs
+ * at its parent's level instead.
+ */
+export function sameLevel(value, level) {
+  if (!level || typeof value !== "string") return false;
+  const named = value.toLowerCase();
+  return (named === "med" ? "medium" : named) === level;
+}
+
+/**
  * What a session is owed about a switch this plugin used to read and does not.
  *
  * Removing a switch in silence is the same failure as a switch that reads a
@@ -112,6 +142,11 @@ const STAGE = {
   costs: "so the stages are asked for none and run at the session's own level",
 };
 
+const HOLD = {
+  name: "ULTRACODE_ANYWHERE_SPAWN_EFFORT",
+  costs: "so spawns are not held to any level",
+};
+
 /** The level a value names, or null for anything that is not one of the five. */
 function levelIn(value) {
   const asked = normalise(value);
@@ -122,14 +157,22 @@ function levelIn(value) {
 function unreadable(value, which) {
   const raw = String(value ?? "");
   if (raw.trim() === "" || levelIn(value)) return null;
+  return `${which.name} is set to ${shown(raw)}, which is no effort level, ${which.costs}. The levels are ${EFFORT_LEVELS.join(", ")}`;
+}
 
-  // The trimmed, folded form rather than the raw one: what is quoted goes into
-  // a system-reminder, and a value whose ends carry a line break passes the
-  // class check on its trimmed middle while the raw text opens a line.
+/**
+ * A setting as a session may be shown it: quoted when it is plain, and counted
+ * when it is not, since the sentence goes into a system-reminder.
+ *
+ * The trimmed, folded form is what gets quoted. A value whose ends carry a line
+ * break passes the class check on its trimmed middle while the raw text opens a
+ * line.
+ */
+export function shown(value) {
+  const raw = String(value ?? "");
   const asked = normalise(raw);
-  const units = raw.length === 1 ? "1 character" : `${raw.length} characters`;
-  const quoted = QUOTABLE.test(asked) ? `"${asked}"` : `${units} this will not quote back`;
-  return `${which.name} is set to ${quoted}, which is no effort level, ${which.costs}. The levels are ${EFFORT_LEVELS.join(", ")}`;
+  if (QUOTABLE.test(asked)) return `"${asked}"`;
+  return `${raw.length === 1 ? "1 character" : `${raw.length} characters`} this will not quote back`;
 }
 
 /**
