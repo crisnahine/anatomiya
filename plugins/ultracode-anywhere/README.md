@@ -306,6 +306,9 @@ Name it before it exists and no node program starts, since node refuses to requi
 "NODE_OPTIONS": "--require=/Users/you/.claude/ultracode-anywhere-preload.cjs"
 ```
 
+On Windows, write that path with forward slashes wherever it sits in quotes, since node reads a
+backslash inside quotes as an escape.
+
 The preload acts only inside a session, so a `claude` started from a terminal stays a main session, an
 npm install's included, and it reads the level from your own settings the way the hooks do. With
 `episodic-memory` enabled, set `EPISODIC_MEMORY_API_MODEL` and `EPISODIC_MEMORY_API_MODEL_FALLBACK` to
