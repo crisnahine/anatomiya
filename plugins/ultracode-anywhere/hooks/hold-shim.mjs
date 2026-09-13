@@ -7,7 +7,7 @@
  * user's PATH and loses to the real claude, which is why the shim is not there.
  */
 import { spawnSync } from "node:child_process";
-import { accessSync, closeSync, constants, existsSync, openSync, readFileSync, readSync, statSync } from "node:fs";
+import { accessSync, closeSync, constants, existsSync, openSync, readSync, statSync } from "node:fs";
 import { constants as os } from "node:os";
 import { delimiter, join } from "node:path";
 
@@ -17,7 +17,7 @@ import { enabledPlugins } from "./hold-agents.mjs";
 import { holdGaps, holdTarget, pluginEnabled } from "./hold-config.mjs";
 import { gateReason } from "./hold-rules.mjs";
 import { projectRoot } from "./hold-switch.mjs";
-import { here } from "./hook-io.mjs";
+import { here, readIfFile } from "./hook-io.mjs";
 import { isOff } from "./upstream.mjs";
 
 /** What marks a file as a copy of this shim, which a lookup for the real claude skips. */
@@ -132,12 +132,9 @@ function readSettingsFlag(value) {
   if (text === "") return { refused: "--settings with no value is not one this shim can check" };
   let body = text;
   if (!text.startsWith("{")) {
-    try {
-      if (!statSync(text).isFile()) return { refused: `--settings ${shown(text)} is not a file this shim can read` };
-      body = readFileSync(text, "utf8");
-    } catch {
-      return { refused: `--settings ${shown(text)} could not be read` };
-    }
+    // Opened once and asked through the handle, so the file checked is the file read.
+    body = readIfFile(text);
+    if (body === "") return { refused: `--settings ${shown(text)} could not be read as a settings file` };
   }
   let settings;
   try {
