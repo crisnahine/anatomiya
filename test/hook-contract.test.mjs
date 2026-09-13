@@ -80,8 +80,12 @@ function commandsOf({ plugin, root }) {
   return found;
 }
 
-/** The verbs that answer only when the counts have something to say (A44). */
-const SOMETIMES_SILENT = new Set(["notice"]);
+/**
+ * The verbs that answer only when they have something to say: `notice` when the
+ * counts do (A44), and the spawn hold's two when it is on and a call is one it
+ * decides (A81).
+ */
+const SOMETIMES_SILENT = new Set(["notice", "spawn-tool", "spawn-prompt"]);
 
 const DECLARED = PLUGINS.flatMap(commandsOf);
 

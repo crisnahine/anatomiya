@@ -14,6 +14,7 @@
 import { PLUGIN, catalogueLine, shippedHere } from "./catalogue.mjs";
 import { cached, firstTime, startOver, stateDirFor } from "./counters.mjs";
 import { askedFor, retired } from "./effort.mjs";
+import { holdNotice, startHold } from "./hold-session.mjs";
 import { here, invokedAs, parsePayload, readStdin, respond } from "./hook-io.mjs";
 import { CALIBRATED_AGAINST, CONFLICTS, behind, cliPath, conflictIn, driftCached, settingsFor, versionOf } from "./upstream.mjs";
 
@@ -29,7 +30,8 @@ export function notice({
   source = "startup",
   session = null,
 } = {}) {
-  if (env.ULTRACODE_ANYWHERE === "0") return null;
+  // The spawn hold keeps refusing with the reminder switched off, so its lines are still owed.
+  if (env.ULTRACODE_ANYWHERE === "0") return source === "resume" ? null : holdNotice({ env, cwd }).join(" ") || null;
 
   // A compaction takes the opening text out of the context, and the built-in
   // answers that by sending it whole again on the next turn; the cadence here
@@ -93,6 +95,8 @@ export function notice({
   const gone = retired(env);
   if (gone) said.push(`ultracode-anywhere: ${gone}.`);
 
+  said.push(...holdNotice({ env, cwd }));
+
   // The one thing native ultracode does that no reminder can: it lifts the
   // concurrent-subagent cap. Named once here rather than left in a README
   // nobody opens when a workflow is refused at 20.
@@ -115,10 +119,20 @@ function capRaised(settings, env) {
 if (invokedAs(import.meta.url)) {
   try {
     const payload = parsePayload(await readStdin());
+    const cwd = typeof payload.cwd === "string" ? payload.cwd : here();
+    try {
+      startHold({
+        cwd,
+        session: typeof payload.session_id === "string" ? payload.session_id : null,
+        source: typeof payload.source === "string" ? payload.source : "startup",
+      });
+    } catch {
+      // The notice still goes out, and says what the hold's record holds.
+    }
     respond(
       "SessionStart",
       notice({
-        cwd: typeof payload.cwd === "string" ? payload.cwd : here(),
+        cwd,
         source: typeof payload.source === "string" ? payload.source : "startup",
         session: typeof payload.session_id === "string" && payload.session_id ? payload.session_id : null,
       }),

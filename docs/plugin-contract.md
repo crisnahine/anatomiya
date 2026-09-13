@@ -732,6 +732,14 @@ never does, and what landed in the cache was verified on disk at
 the sibling plugin itself, so a user who installed both held two copies of one of them. A source naming a
 directory copies that directory, which is the fix and is now what each entry does.
 
+**`ultracode-anywhere` declares its hooks in its own `hooks/hooks.json`**, each one `node` on a file
+under `${CLAUDE_PLUGIN_ROOT}` with a bound of its own: the reminder and the spawn hold's prompt check
+on `UserPromptSubmit`, the spawn hold's tool check on `PreToolUse` with no matcher, so a tool the hold
+does not know by name is still read, and the session notice on `SessionStart`. A plugin's hooks run
+beside the user's own, in parallel, and the hooks reference, read against Claude Code 2.1.270, says
+nothing about which `updatedInput` wins when two hooks rewrite one call, which is why the spawn hold
+is a switch and a second hook that rewrites spawns should not be on at the same time.
+
 **Both plugins pin an explicit `version`, at different values** (0.3.0 and 0.1.1), and the
 marketplace itself has none: it publishes nothing, so a number there is one more thing to keep in
 step and one more thing to mistake for a plugin's. Not required, and the
