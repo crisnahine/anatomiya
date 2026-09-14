@@ -9,6 +9,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.9.2] - 2026-09-14
+
+0.9.2 fixes the first session after a plugin update, or after the held level changed, refusing
+Agent calls to copied agent types such as `ultracode-anywhere:verifier`. Claude Code 2.1.270 reads
+its agent files at the first prompt and again while it runs, so a copy upkeep writes just after a
+session starts is one the session can run, and the hold now reads the session's transcript to see
+it listed.
+
 ### Fixed
 
 - The first session after a plugin update, or after the held level changed, no longer refuses an
@@ -586,7 +594,8 @@ wherever `effortLevel` is set, and says out loud what it does not restore.
 - Turn counters under `~/.claude/ultracode-anywhere/` rather than the temporary directory, in a
   directory this account owns with no access for anyone else.
 
-[Unreleased]: https://github.com/crisnahine/anatomiya/compare/ultracode-anywhere-v0.9.1...HEAD
+[Unreleased]: https://github.com/crisnahine/anatomiya/compare/ultracode-anywhere-v0.9.2...HEAD
+[0.9.2]: https://github.com/crisnahine/anatomiya/compare/ultracode-anywhere-v0.9.1...ultracode-anywhere-v0.9.2
 [0.9.1]: https://github.com/crisnahine/anatomiya/compare/ultracode-anywhere-v0.9.0...ultracode-anywhere-v0.9.1
 [0.9.0]: https://github.com/crisnahine/anatomiya/compare/ultracode-anywhere-v0.8.0...ultracode-anywhere-v0.9.0
 [0.8.0]: https://github.com/crisnahine/anatomiya/compare/ultracode-anywhere-v0.7.0...ultracode-anywhere-v0.8.0
