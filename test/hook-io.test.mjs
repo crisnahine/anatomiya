@@ -370,6 +370,27 @@ test("a worktree pointer its main repository does not point back at reads its ow
   assert.deepEqual(projectSettingsFiles(tree, {}), ownFiles(tree));
 });
 
+test("a worktree pointer whose commondir is a link reads its own local settings", needsSymlinks, (t) => {
+  const { tree, admin } = linkedWorktree(t);
+  write(join(admin, "commondir-target"), "../..\n");
+  rmSync(join(admin, "commondir"));
+  symlinkSync(join(admin, "commondir-target"), join(admin, "commondir"));
+
+  assert.deepEqual(projectSettingsFiles(tree, {}), ownFiles(tree));
+});
+
+test("a worktree pointer whose commondir is a fifo is read without waiting on it", needsPosixSpecialFiles, (t) => {
+  const { tree, admin } = linkedWorktree(t);
+  rmSync(join(admin, "commondir"));
+  execFileSync("mkfifo", [join(admin, "commondir")]);
+  const script = `import { projectSettingsFiles } from ${JSON.stringify(HOOK_IO)}; process.stdout.write(JSON.stringify(projectSettingsFiles(${JSON.stringify(tree)}, {})));`;
+
+  const run = spawnSync(process.execPath, ["--input-type=module", "-e", script], { encoding: "utf8", timeout: 10000 });
+
+  assert.equal(run.signal, null, "the read waited on the fifo for a writer");
+  assert.deepEqual(JSON.parse(run.stdout), ownFiles(tree));
+});
+
 test("Windows keeps local settings at the session's directory", (t) => {
   const { sub } = repoWithSub(t);
 

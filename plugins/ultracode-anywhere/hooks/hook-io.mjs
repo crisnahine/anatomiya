@@ -180,7 +180,7 @@ export function accountHome() {
  * `dir`, as `DWn` does. It is `dir` otherwise, and always on Windows.
  *
  * The preload carries its source with `homeOf` and `projectSettingsFiles`, so
- * the three name nothing but node:fs, node:os and node:path functions.
+ * the three name nothing but what node:fs, node:os and node:path export.
  */
 export function localSettingsDir(dir, home, platform = process.platform, uid = process.geteuid?.() ?? process.getuid?.()) {
   if (platform === "win32" || uid == null) return dir;
@@ -191,7 +191,15 @@ export function localSettingsDir(dir, home, platform = process.platform, uid = p
       return null;
     }
   };
-  const textOf = (path) => (lstatSync(path).isFile() ? readFileSync(path, "utf8").trim() : "");
+  // Opened once and asked through the handle, so the file checked is the file read, and a fifo never blocks.
+  const textOf = (path) => {
+    const fd = openSync(path, constants.O_RDONLY | constants.O_NONBLOCK | constants.O_NOFOLLOW);
+    try {
+      return fstatSync(fd).isFile() ? readFileSync(fd, "utf8").trim() : "";
+    } finally {
+      closeSync(fd);
+    }
+  };
   const realPath = (path) => {
     try {
       return path ? realpathSync(path) : "";
@@ -207,7 +215,7 @@ export function localSettingsDir(dir, home, platform = process.platform, uid = p
     entry = statOf(join(root, ".git"));
   }
   try {
-    const pointer = entry.isFile() ? readFileSync(join(root, ".git"), "utf8").trim() : "";
+    const pointer = textOf(join(root, ".git"));
     if (pointer.startsWith("gitdir:")) {
       const git = resolve(root, pointer.slice(7).trim());
       const common = resolve(git, textOf(join(git, "commondir")));
