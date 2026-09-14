@@ -9,6 +9,22 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-09-14
+
+0.9.1 fixes what testing 0.9.0 against the installed Claude Code 2.1.270 turned up: a live battery
+of hook calls, two runs of the plugin's own `review` workflow, a `hunt` for docs the code no longer
+matched, measurements of the build itself, and review rounds over every fix. The self-check now
+judges a probe's main loop against a run of the same build with the plugin switched off, where 0.9.0
+expected the level the settings named and read a `modelSettings` level at the held level as a
+lowered main loop, which refused every spawn. The spawn hold now refuses in cases it missed: a
+switch or a redirect in the `.claude/settings.local.json` Claude Code reads at a project's git root,
+a project that sets `CLAUDE_PROJECT_DIR`, an exported `CLAUDE_CODE_EFFORT_LEVEL` the preload hid
+from the hooks, and a typed slash command inside a prompt over a megabyte. The preload decides the
+level for each directory the way the shim does. The self-check stops leaving its probes' records
+behind, passes with the environment scrub on, and retries a failed capture on the same 30-minute
+pause as a failed check. `hunt` stops counting one instance twice and stops spending its rounds on a
+candidate its judges cannot decide.
+
 ### Fixed
 
 - A self-check no longer leaves its probe sessions' records among the ones the hold keeps for real
@@ -561,7 +577,8 @@ wherever `effortLevel` is set, and says out loud what it does not restore.
 - Turn counters under `~/.claude/ultracode-anywhere/` rather than the temporary directory, in a
   directory this account owns with no access for anyone else.
 
-[Unreleased]: https://github.com/crisnahine/anatomiya/compare/ultracode-anywhere-v0.9.0...HEAD
+[Unreleased]: https://github.com/crisnahine/anatomiya/compare/ultracode-anywhere-v0.9.1...HEAD
+[0.9.1]: https://github.com/crisnahine/anatomiya/compare/ultracode-anywhere-v0.9.0...ultracode-anywhere-v0.9.1
 [0.9.0]: https://github.com/crisnahine/anatomiya/compare/ultracode-anywhere-v0.8.0...ultracode-anywhere-v0.9.0
 [0.8.0]: https://github.com/crisnahine/anatomiya/compare/ultracode-anywhere-v0.7.0...ultracode-anywhere-v0.8.0
 [0.7.0]: https://github.com/crisnahine/anatomiya/compare/ultracode-anywhere-v0.6.0...ultracode-anywhere-v0.7.0
