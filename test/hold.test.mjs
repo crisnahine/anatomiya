@@ -8,9 +8,10 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { recordLoaded } from "../plugins/ultracode-anywhere/hooks/hold-agents.mjs";
 import { opensWithSlash, refusal, switchedOn } from "../plugins/ultracode-anywhere/hooks/hold.mjs";
+import { projectNamesSwitch, projectRedirects } from "../plugins/ultracode-anywhere/hooks/hold-switch.mjs";
 import { hostEnv } from "./host-env.mjs";
-import { agentText, probeLog, world, write } from "./hold-fixtures.mjs";
-import { needsPosixPaths } from "./platform.mjs";
+import { agentText, probeLog, repoWithSub, world, write } from "./hold-fixtures.mjs";
+import { needsGitRootLocalSettings, needsPosixPaths } from "./platform.mjs";
 
 const HOOKS = fileURLToPath(new URL("../plugins/ultracode-anywhere/hooks/", import.meta.url));
 
@@ -93,6 +94,25 @@ test("a hold that cannot load blocks a prompt that may open with a slash command
   assert.deepEqual(answered("Проверь /etc/hosts"), {}, "a word in any script before the slash is a word");
 });
 
+test("a payload the entry could not read whole is refused as unchecked, never as a spawn past the hold and never rewritten from what was read", (t) => {
+  const { cfg, root, env } = world(t);
+  write(join(cfg, "agents", "fast.md"), agentText({ name: "fast", description: "d", effort: "medium" }));
+  recordLoaded(env, "s-1", root);
+  const big = "x".repeat(1100 * 1024);
+  const answered = (verb, payload) => fire(join(HOOKS, "hold.mjs"), verb, { session_id: "s-1", cwd: root, ...payload }, env).answer;
+  const reason = (answer) => answer.hookSpecificOutput?.permissionDecisionReason ?? "";
+
+  const written = answered("spawn-tool", { agent_id: "a1", effort: { level: "medium" }, tool_name: "Write", tool_input: { file_path: "/tmp/x", content: big } });
+  assert.match(reason(written), /megabyte/);
+  assert.doesNotMatch(reason(written), /got past the spawn hold/);
+  const spawn = answered("spawn-tool", { effort: { level: "xhigh" }, tool_name: "Agent", tool_input: { description: "d", subagent_type: "fast", model: "sonnet", prompt: big } });
+  assert.equal(spawn.hookSpecificOutput?.updatedInput, undefined);
+  assert.equal(spawn.hookSpecificOutput?.permissionDecision, "deny");
+  assert.deepEqual(answered("spawn-tool", { effort: { level: "xhigh" }, tool_name: "Write", tool_input: { file_path: "/tmp/x", content: big } }), {}, "the main session's own large write goes on");
+  assert.equal(answered("spawn-prompt", { prompt: `/code-review max ${big}` }).decision, "block", "a typed command the read cut off is one the hold never checked");
+  assert.deepEqual(answered("spawn-prompt", { prompt: `please read this log ${big}` }), {}, "a long prompt that opens with no slash goes on");
+});
+
 test("a payload that cannot be read at all is still answered", (t) => {
   const { env } = world(t);
 
@@ -120,6 +140,16 @@ test("the refusal a broken hold gives is decided from the raw payload and the ve
   assert.match(refusal("spawn-tool", JSON.stringify({ tool_name: "Skill" }), {}, err).hookSpecificOutput.permissionDecisionReason, /boom/);
   assert.equal(refusal("spawn-prompt", JSON.stringify({ prompt: "/x" }), {}, err).decision, "block");
   assert.deepEqual(refusal("spawn-prompt", "", {}, err), {});
+  // The build sends the prompt last, so a payload cut at the megabyte is cut inside it.
+  const cut = (prompt, at) => JSON.stringify({ cwd: "/r", prompt }).slice(0, at);
+  assert.equal(refusal("spawn-prompt", cut(`/x${"y".repeat(50)}`, 30), {}, err).decision, "block", "a prompt the read cut off still shows how it opens");
+  assert.equal(refusal("spawn-prompt", cut("/a\\b", 25), {}, err).decision, "block", "cut in the middle of an escape");
+  assert.equal(refusal("spawn-prompt", '{"cwd":"/r","prompt":"/\\u00e9 more"}'.slice(0, 27), {}, err).decision, "block", "cut inside a unicode escape");
+  assert.deepEqual(refusal("spawn-prompt", cut(`hello ${"y".repeat(50)}`, 30), {}, err), {});
+  const nested = `{"cwd":"/r","prompt":"/x go","meta":{"notes":"${"y".repeat(50)}`;
+  assert.equal(refusal("spawn-prompt", nested, {}, err).decision, "block", "a field after the prompt that holds an object still leaves the prompt's opening to read");
+  assert.equal(refusal("spawn-prompt", `{"cwd":"/r","prompt":"/x \\"quoted\\" go","tail":[1,2`, {}, err).decision, "block", "an escaped quote inside the prompt does not end it");
+  assert.deepEqual(refusal("spawn-prompt", `{"cwd":"/r","prompt":"hello /x","meta":{"notes":"${"y".repeat(50)}`, {}, err), {}, "a prompt that opens with a word goes on");
   assert.deepEqual(refusal("something-else", "{}", {}, err), {});
 });
 
@@ -154,12 +184,30 @@ test("a project that moves the home away from the user's settings does not switc
   assert.equal(switchedOn({ ...moved, CLAUDE_PROJECT_DIR: project }, { cwd: root }, home), true, "the project is the session's, wherever the call runs");
 });
 
+test("a switch or a redirect the git root's local settings set counts for a session below the root", needsGitRootLocalSettings, (t) => {
+  const { cfg, home, project, env } = world(t);
+  write(join(cfg, "settings.json"), JSON.stringify({ env: {} }));
+  write(join(home, "work", ".git", "HEAD"), "ref: refs/heads/main\n");
+  write(join(home, "work", ".claude", "settings.local.json"), JSON.stringify({ env: { ULTRACODE_ANYWHERE_SPAWN_EFFORT: "low", HOME: join(project, "elsewhere") } }));
+
+  assert.equal(projectNamesSwitch(project), true);
+  assert.deepEqual(projectRedirects(project), ["HOME"]);
+  assert.equal(switchedOn({ ...env, ULTRACODE_ANYWHERE_SPAWN_EFFORT: "low" }, { cwd: project }, home), false);
+});
+
 test("the account's own home is read off the account, whatever HOME a project sets", () => {
-  const code = `import(${JSON.stringify(pathToFileURL(join(HOOKS, "hold-switch.mjs")).href)}).then((m) => process.stdout.write(m.accountHome()))`;
+  const code = `import(${JSON.stringify(pathToFileURL(join(HOOKS, "hook-io.mjs")).href)}).then((m) => process.stdout.write(m.accountHome()))`;
 
   const run = spawnSync(process.execPath, ["-e", code], { encoding: "utf8", env: { ...hostEnv(), HOME: "/nowhere", USERPROFILE: "/nowhere" } });
   assert.notEqual(run.stdout, "/nowhere");
   assert.ok(existsSync(run.stdout), "the account's home is a directory that is there");
+});
+
+test("a project whose root local settings set the variable the preload writes is refused from a directory below it", needsGitRootLocalSettings, (t) => {
+  const { repo, sub } = repoWithSub(t);
+  write(join(repo, ".claude", "settings.local.json"), JSON.stringify({ env: { ULTRACODE_ANYWHERE_REPLACED_EFFORT: "high" } }));
+
+  assert.deepEqual(projectRedirects(sub), ["ULTRACODE_ANYWHERE_REPLACED_EFFORT"]);
 });
 
 test("a project that moves the configuration directory to one of its own cannot turn the hold on from there", (t) => {

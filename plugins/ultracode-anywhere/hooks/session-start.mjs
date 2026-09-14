@@ -8,13 +8,15 @@
  * whether or not the Workflow tool it names is still gated the way it was.
  * Reported at the start of a session and again after a compaction or a clear,
  * which empty the context; a resume brings the transcript back with the lines in
- * it and is told nothing. The cap line is the exception: it is marked once per
- * state directory and said once.
+ * it and is told nothing. The cap line and the retired switch are the exceptions:
+ * each is marked once per state directory and said once.
  */
 import { PLUGIN, catalogueLine, shippedHere } from "./catalogue.mjs";
 import { cached, firstTime, startOver, stateDirFor } from "./counters.mjs";
 import { askedFor, retired } from "./effort.mjs";
+import { holdTarget } from "./hold-config.mjs";
 import { holdNotice, startHold } from "./hold-session.mjs";
+import { projectRoot } from "./hold-switch.mjs";
 import { here, invokedAs, parsePayload, readStdin, respond } from "./hook-io.mjs";
 import { CALIBRATED_AGAINST, CONFLICTS, behind, cliPath, conflictIn, driftCached, settingsFor, versionOf } from "./upstream.mjs";
 
@@ -26,7 +28,7 @@ export function notice({
   env = process.env,
   cli = cliPath(env),
   cwd = process.cwd(),
-  state = stateDirFor(env),
+  state = stateDirFor(env, projectRoot(env, cwd)),
   source = "startup",
   session = null,
 } = {}) {
@@ -43,7 +45,9 @@ export function notice({
   if (source === "resume") return null;
 
   const said = [];
-  const settings = settingsFor(env, cwd);
+  // Claude Code reads a project's settings at the root it names for the session.
+  const root = projectRoot(env, cwd);
+  const settings = settingsFor(env, root);
 
   const moved = driftCached(cli, state, cached);
   if (moved) {
@@ -86,14 +90,16 @@ export function notice({
   // so the setting is not wrong, it is beside the point. Strict on a build that
   // moved is the second way it goes quiet, and the prompt hook reads the same
   // two answers in the same order.
-  const quiet = conflict || (env.ULTRACODE_ANYWHERE_STRICT === "1" && moved);
+  // The spawn hold sets the stage level aside too, and its reminder names the held level instead.
+  const quiet = conflict || (env.ULTRACODE_ANYWHERE_STRICT === "1" && moved) || holdTarget(env, { root });
   const asked = quiet ? null : askedFor(env);
   if (asked) said.push(`ultracode-anywhere: ${asked}.`);
 
   // Said whether or not the reminder is going out: a switch that no longer does
   // anything is wrong in every session, not only the ones this plugin speaks in.
+  // Once per state directory, since the next start would only say it again.
   const gone = retired(env);
-  if (gone) said.push(`ultracode-anywhere: ${gone}.`);
+  if (gone && firstTime(state, "retired-said")) said.push(`ultracode-anywhere: ${gone}.`);
 
   said.push(...holdNotice({ env, cwd }));
 

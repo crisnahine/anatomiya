@@ -1,11 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, truncateSync, utimesSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, symlinkSync, truncateSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 
 import { REL, ROOT } from "../scripts/plugins.mjs";
 import { cached } from "../plugins/ultracode-anywhere/hooks/counters.mjs";
+import { repoWithSub } from "./hold-fixtures.mjs";
+import { needsGitRootLocalSettings, needsSymlinks } from "./platform.mjs";
 import { CALIBRATED_AGAINST, GATE_SHAPE, MARKERS, MIN_BUNDLE, behind, cliPath, conflictIn, drift, driftCached, settingsFor } from "../plugins/ultracode-anywhere/hooks/upstream.mjs";
 
 /** What a build carries: the four names, and the gate the reminder is emitted under. */
@@ -50,6 +52,65 @@ test("a project's own settings sit on top of the user's", (t) => {
 
   assert.equal(merged.ultracode, true);
   assert.equal(merged.enableWorkflows, true);
+});
+
+test("a project's local settings sit on top of its shared ones", (t) => {
+  const tree = installed(t, { project: { ultracode: false, enableWorkflows: true } });
+  writeFileSync(join(tree.repo, ".claude", "settings.local.json"), JSON.stringify({ ultracode: true }));
+
+  assert.deepEqual(settingsFor({ CLAUDE_CONFIG_DIR: tree.config }, tree.repo), { ultracode: true, enableWorkflows: true });
+});
+
+test("a session below a git root reads the root's local settings on top of its own local file", needsGitRootLocalSettings, (t) => {
+  const tree = installed(t);
+  const { repo, sub } = repoWithSub(t);
+  writeFileSync(join(sub, ".claude", "settings.local.json"), JSON.stringify({ ultracode: false, enableWorkflows: true }));
+  mkdirSync(join(repo, ".claude"));
+  writeFileSync(join(repo, ".claude", "settings.local.json"), JSON.stringify({ ultracode: true }));
+
+  assert.deepEqual(settingsFor({ CLAUDE_CONFIG_DIR: tree.config }, sub), { ultracode: true, enableWorkflows: true });
+});
+
+test("a project's env and modelSettings merge into the user's key by key, the way the build merges every scope", (t) => {
+  // The build folds each scope in with lodash mergeWith, so a project's env replaces only the keys it names.
+  const tree = installed(t, {
+    settings: { env: { CLAUDE_CODE_EFFORT_LEVEL: "low", SHARED: "user" }, modelSettings: { "claude-opus-5": { maxEffortLevel: "high" } } },
+    project: { env: { FOO: "1", SHARED: "project" }, modelSettings: { "claude-opus-5": { other: 1 }, "claude-haiku-4-5": { maxEffortLevel: "low" } } },
+  });
+
+  const merged = settingsFor({ CLAUDE_CONFIG_DIR: tree.config }, tree.repo);
+
+  assert.deepEqual(merged.env, { CLAUDE_CODE_EFFORT_LEVEL: "low", SHARED: "project", FOO: "1" });
+  assert.deepEqual(merged.modelSettings, { "claude-opus-5": { maxEffortLevel: "high", other: 1 }, "claude-haiku-4-5": { maxEffortLevel: "low" } });
+});
+
+test("a project's arrays join the user's without repeats, and the keys the build replaces or spreads are treated that way", (t) => {
+  // The build's mergeWith customizer joins two arrays without repeats, replaces fallbackModel and modelPicker, and spreads two maps one level deep.
+  const tree = installed(t, {
+    settings: { permissions: { allow: ["A", "C"] }, fallbackModel: ["x"], modelPicker: { options: ["a"], keep: 1 }, extraKnownMarketplaces: { m: { source: "user" } }, managedMcpServers: { s: { command: "u", args: ["1"] } } },
+    project: { permissions: { allow: ["B", "C"] }, fallbackModel: ["y"], modelPicker: { options: ["b"] }, extraKnownMarketplaces: { m: { path: "project" } }, managedMcpServers: { s: { command: "p" } } },
+  });
+
+  const merged = settingsFor({ CLAUDE_CONFIG_DIR: tree.config }, tree.repo);
+
+  assert.deepEqual(merged.permissions.allow, ["A", "C", "B"]);
+  assert.deepEqual(merged.fallbackModel, ["y"]);
+  assert.deepEqual(merged.modelPicker, { options: ["b"] });
+  assert.deepEqual(merged.extraKnownMarketplaces, { m: { path: "project" } });
+  assert.deepEqual(merged.managedMcpServers, { s: { command: "p" } });
+  writeFileSync(join(tree.config, "settings.json"), JSON.stringify({ modelPicker: ["a"] }));
+  writeFileSync(join(tree.repo, ".claude", "settings.json"), JSON.stringify({ modelPicker: ["b"] }));
+  assert.deepEqual(settingsFor({ CLAUDE_CONFIG_DIR: tree.config }, tree.repo).modelPicker, ["b"], "modelPicker is replaced before two arrays are joined");
+});
+
+test("a __proto__ key in a settings file is not merged into what the others read", (t) => {
+  const tree = installed(t);
+  writeFileSync(join(tree.config, "settings.json"), '{"__proto__": {"ultracode": true}, "env": {"__proto__": {"A": "1"}}}');
+
+  const merged = settingsFor({ CLAUDE_CONFIG_DIR: tree.config });
+
+  assert.equal(merged.ultracode, undefined);
+  assert.equal(merged.env.A, undefined);
 });
 
 test("settings that are missing or unreadable are an empty answer, not a throw", (t) => {
@@ -133,10 +194,19 @@ test("a build this check cannot find is reported as unchecked, not as drifted", 
   assert.deepEqual(drift({ cli: null }), { checked: false, missing: [], reason: null });
 });
 
-test("the bundle is found from the command on PATH, and answers null when there is none", (t) => {
+test("the bundle is found from the command on PATH", needsSymlinks, (t) => {
+  // An npm global install puts a link to the build on PATH, and nothing else says where it is.
+  const tree = installed(t);
+  const bin = join(tree.dir, "bin");
+  mkdirSync(bin);
+  symlinkSync(tree.cli, join(bin, "claude"));
+
+  assert.equal(cliPath({ PATH: bin, HOME: tree.dir }), realpathSync(tree.cli));
+});
+
+test("no bundle is found where the running build is gone and PATH and the home hold none", (t) => {
   const tree = installed(t);
 
-  assert.equal(cliPath({ CLAUDE_CODE_EXECPATH: tree.cli }), realpathSync(tree.cli));
   assert.equal(cliPath({ CLAUDE_CODE_EXECPATH: join(tree.dir, "gone.js"), PATH: join(tree.dir, "empty"), HOME: tree.dir }), null);
 });
 
@@ -433,6 +503,43 @@ test("a predicate that only compares an effort is not the gate, whatever else is
     const tree = installed(t, { bundle: `${notTheGate}\n${MARKERS.join("\n")}` });
     assert.deepEqual(drift({ cli: tree.cli }).missing, [GATE_SHAPE], notTheGate);
   }
+});
+
+/** A bundle-sized file with each text written at its own byte offset. */
+function placed(t, pieces) {
+  const dir = mkdtempSync(join(tmpdir(), "ultracode-boundary-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const body = Buffer.alloc(4 << 20, " ");
+  for (const [at, text] of pieces) body.write(text, at, "latin1");
+  const cli = join(dir, "cli.js");
+  bundle(cli, body);
+  return cli;
+}
+
+const MB = 1 << 20;
+
+test("a marker or the gate lying across a megabyte read boundary is still found", (t) => {
+  const gate = whole().split("\n")[0];
+  const marker = MARKERS[3];
+  const cli = placed(t, [
+    [0, MARKERS.slice(0, 3).join("\n")],
+    [MB - Math.floor(marker.length / 2), marker],
+    [2 * MB - Math.floor(gate.length / 2), gate],
+  ]);
+
+  assert.deepEqual(drift({ cli }).missing, []);
+});
+
+test("the longest gate the pattern allows is found with all but its last character before a boundary", (t) => {
+  const name = "a".repeat(64);
+  const args = `(${"x".repeat(80)})`.repeat(160);
+  const gate = `function ${name}(${args}){return ${name}===!0&&${name}?.(${args})&&${name}(${args})==="xhigh"}`;
+  const cli = placed(t, [
+    [0, MARKERS.join("\n")],
+    [3 * MB - gate.length + 1, gate],
+  ]);
+
+  assert.deepEqual(drift({ cli }).missing, [], `a gate of ${gate.length} characters`);
 });
 
 test("the installed build still carries that shape", (t) => {

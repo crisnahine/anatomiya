@@ -13,10 +13,10 @@ import { appendLine, ownState, stateDirFor } from "./counters.mjs";
 import { sameLevel, shown } from "./effort.mjs";
 import { onceNamed } from "./frontmatter.mjs";
 import { copyOf, enabledPlugins, loadedTiers, resolveAgent } from "./hold-agents.mjs";
-import { RECHECK, globalConfigFile, holdGaps, holdStatePath, holdTarget, pluginEnabled, probingIn, runningVersion } from "./hold-config.mjs";
+import { RECHECK, globalConfigFile, holdGaps, holdTarget, pluginEnabled, probingIn, runningVersion, verifiedRecord } from "./hold-config.mjs";
 import { inGitRepo, readJson } from "./hold-files.mjs";
 import { findSkills } from "./hold-skills.mjs";
-import { projectRoot } from "./hold-switch.mjs";
+import { projectRedirects, projectRoot } from "./hold-switch.mjs";
 import { logLine, verdict } from "./hold-tripwire.mjs";
 import { copiesBeside, injectLevel, knownWorkflows, resolveWorkflow, workflowCopies } from "./hold-workflows.mjs";
 import { here, readIfFile } from "./hook-io.mjs";
@@ -52,7 +52,7 @@ export function gateReason(env = process.env) {
     return "The spawn hold keeps its record in a state directory that is not this account's alone, so whether this build leaks cannot be told and spawns are refused. Make that directory this account's alone, mode 0700, or point ULTRACODE_ANYWHERE_STATE at one that is.";
   }
   const version = runningVersion(env);
-  const state = readJson(holdStatePath(env, "verified.json"), null);
+  const state = verifiedRecord(env);
   const leaks = state?.version === version && Array.isArray(state.leaks) ? state.leaks.filter((leak) => typeof leak === "string") : [];
   if (leaks.length === 0) return null;
   return `The spawn hold's self-check found spawns off the level on Claude Code ${version}: ${leaks.join("; ")}. Spawns are refused until it passes. Run ${RECHECK} once it is fixed, in the background, since it takes a few minutes.`;
@@ -151,7 +151,7 @@ export function decideWorkflow(input, { env = process.env, root = "", cwd = root
   delete rest.scriptPath;
   delete rest.name;
   const dir = copiesBeside(transcriptPath, env);
-  const injected = injectLevel(script, level, dir ? workflowCopies(env, root, dir, level) : {});
+  const injected = injectLevel(script, level, dir ? workflowCopies(env, root, dir, level) : {}, { worktree: inGitRepo(root, env) });
   if (injected === null) {
     return { deny: `This workflow script does not open with an \`export const meta = {...}\` literal this hook can read, so its stages cannot be held to ${level}. Start the script with the meta literal, and keep \`\${}\` substitutions out of it.` };
   }
@@ -296,8 +296,10 @@ export function toolAnswer(event, env = process.env) {
   const target = holdTarget(env, { root: ctx.root });
   if (!target) return {};
   ctx.level = target.level;
-  if (probingIn(env)) appendLine(env.ULTRACODE_ANYWHERE_HOLD_CHECK_LOG, logLine(event, env));
-  const tripped = verdict(event, { env, target });
+  // A project that moves what the hold reads may have pointed its state into itself, so nothing is written there.
+  const moved = projectRedirects(ctx.root).length > 0;
+  if (!moved && probingIn(env)) appendLine(env.ULTRACODE_ANYWHERE_HOLD_CHECK_LOG, logLine(event, env));
+  const tripped = verdict(event, { env: moved ? { ...env, ULTRACODE_ANYWHERE_STATE: "", CLAUDE_CONFIG_DIR: "", HOME: "", USERPROFILE: "" } : env, target });
   if (tripped !== "allow") return deny(tripped);
   const input = event.tool_input && typeof event.tool_input === "object" ? event.tool_input : {};
   const decided = decideTool(event.tool_name, input, ctx);

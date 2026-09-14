@@ -14,7 +14,7 @@ import { PLUGIN, catalogueLine, shippedHere } from "./catalogue.mjs";
 import { appendLine, cached, nextTurn, stateDirFor, sweep } from "./counters.mjs";
 import { stageEffortIn } from "./effort.mjs";
 import { FULL_ID, holdTarget } from "./hold-config.mjs";
-import { projectRoot } from "./hold-switch.mjs";
+import { projectNames, projectRoot } from "./hold-switch.mjs";
 import { here, invokedAs, parsePayload, readStdin, respond } from "./hook-io.mjs";
 import { cliPath, conflictIn, driftCached, settingsFor } from "./upstream.mjs";
 
@@ -164,9 +164,10 @@ function short(stageEffort = null, names = [], held = null) {
 
 /** What this session's switches ask the text to be, and the default for anything unreadable. */
 function switchesFrom(env, cwd = "") {
-  const every = String(env.ULTRACODE_ANYWHERE_EVERY ?? "");
+  const every = String(env.ULTRACODE_ANYWHERE_EVERY ?? "").trim();
   return {
-    every: /^\d{1,4}$/.test(every) && Number(every) > 0 ? Number(every) : FULL_EVERY,
+    // Fifteen digits always fit a safe integer, and a count that large already means never.
+    every: /^\d{1,15}$/.test(every) && Number(every) > 0 ? Number(every) : FULL_EVERY,
     refresher: env.ULTRACODE_ANYWHERE_REFRESHER !== "0",
     repeatFull: env.ULTRACODE_ANYWHERE_FULL === "repeat",
     stageEffort: stageEffortIn(env),
@@ -244,9 +245,14 @@ function catalogueDefault(asked) {
 }
 
 /** The text this turn should carry, or null when the turn is owed nothing. */
-export function run({ stdin = "", env = process.env, state = stateDirFor(env) } = {}) {
+export function run({ stdin = "", env = process.env, state = null } = {}) {
   const payload = parsePayload(stdin);
-  const debug = env.ULTRACODE_ANYWHERE_DEBUG;
+  const cwd = typeof payload.cwd === "string" ? payload.cwd : here();
+  // Claude Code reads a project's settings at its root, wherever the session has moved since.
+  const root = projectRoot(env, cwd);
+  // A cloned repository's settings can set it, and it names a file every prompt is appended to.
+  const debug = env.ULTRACODE_ANYWHERE_DEBUG && !projectNames(root, "ULTRACODE_ANYWHERE_DEBUG") ? env.ULTRACODE_ANYWHERE_DEBUG : null;
+  state ??= stateDirFor(env, root);
 
   // Logged before the answers that are silence, since a fire that said nothing
   // is the one somebody turns the switch on to understand.
@@ -262,8 +268,7 @@ export function run({ stdin = "", env = process.env, state = stateDirFor(env) } 
   // A session that already resolves to xhigh gets the built-in reminder, and one
   // with no Workflow tool has nothing to be pointed at. Either way this hook has
   // nothing to add, and saying it anyway is tokens for nothing.
-  const cwd = typeof payload.cwd === "string" ? payload.cwd : here();
-  const conflict = conflictIn(settingsFor(env, cwd), env);
+  const conflict = conflictIn(settingsFor(env, root), env);
   const moved = !conflict && env.ULTRACODE_ANYWHERE_STRICT === "1" ? movedBuild(env, state) : null;
 
   if (debug) log(debug, stdin, conflict ?? moved);

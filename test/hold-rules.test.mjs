@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { chmodSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -64,7 +64,7 @@ test("an Agent call always names its type, drops its model, and keeps a remote a
   const { root, cfg, ctx } = fixture(t);
 
   assert.match(decideAgent({ prompt: "p" }, ctx()).deny, /general-purpose would not run at medium/, "a built-in with no shadow at the level cannot be held");
-  assert.doesNotMatch(decideAgent({ prompt: "p" }, ctx()).deny, /or use general-purpose/, "general-purpose is refused the same way until its shadow is loaded");
+  assert.doesNotMatch(decideAgent({ prompt: "p" }, ctx()).deny, /or general-purpose/, "general-purpose is refused the same way until its shadow is loaded");
   write(join(cfg, "agents", "general-purpose.md"), agentText({ name: "general-purpose", description: "d", effort: "medium", "ultracode-anywhere-shadow-of": "9.9.9" }));
   assert.equal(decideAgent({ prompt: "p" }, ctx()).updatedInput.subagent_type, "general-purpose");
   assert.equal(decideAgent({ subagent_type: "fast", model: "sonnet" }, ctx()).updatedInput.model, undefined);
@@ -292,6 +292,21 @@ test("a forked skill typed as a command is stopped, and only a prompt that opens
 
 // --- the gate --------------------------------------------------------------------
 
+test("a main-loop leak from a record no control run judged refuses nothing, and one a control judged refuses", (t) => {
+  const { env } = fixture(t);
+  const at = { ...env, CLAUDE_CODE_EXECPATH: "/versions/9.9.9" };
+  const lowered = "fork: the main loop was lowered to medium";
+  write(holdStatePath(env, "verified.json"), JSON.stringify({ version: "9.9.9", ok: false, leaks: [lowered], infra: [] }));
+  assert.equal(gateReason(at), null, "a main-loop leak no control run judged refuses nothing");
+  write(holdStatePath(env, "verified.json"), JSON.stringify({ version: "9.9.9", ok: false, leaks: [lowered, "x broke"], infra: [] }));
+  assert.doesNotMatch(gateReason(at), /lowered/);
+  assert.match(gateReason(at), /x broke/, "its other leaks still refuse");
+  write(holdStatePath(env, "verified.json"), JSON.stringify({ version: "9.9.9", ok: false, leaks: [lowered], infra: [], mainLoopJudge: "settings" }));
+  assert.equal(gateReason(at), null, "a mark with any value but the control's is not trusted");
+  write(holdStatePath(env, "verified.json"), JSON.stringify({ version: "9.9.9", ok: false, leaks: [lowered], infra: [], mainLoopJudge: "control" }));
+  assert.match(gateReason(at), /fork: the main loop was lowered to medium/);
+});
+
 test("once the self-check has recorded a leak on the running build, spawns are refused", (t) => {
   const { root, env } = fixture(t);
   write(holdStatePath(env, "verified.json"), JSON.stringify({ version: "9.9.9", ok: false, leaks: ["x broke"], infra: [] }));
@@ -302,7 +317,9 @@ test("once the self-check has recorded a leak on the running build, spawns are r
   assert.match(toolAnswer(event, at()).hookSpecificOutput.permissionDecisionReason, /x broke/);
   assert.deepEqual(toolAnswer({ ...event, tool_name: "Read" }, at()), {});
   assert.match(toolAnswer(event, at({ ULTRACODE_ANYWHERE_HOLD_CHECK: "1", ANTHROPIC_BASE_URL: "http://127.0.0.1:4000" })).hookSpecificOutput.permissionDecisionReason, /x broke/, "the flag and a local base URL alone open nothing");
-  assert.deepEqual(toolAnswer(event, at({ ULTRACODE_ANYWHERE_HOLD_CHECK: "1", ANTHROPIC_BASE_URL: "http://127.0.0.1:4000", ULTRACODE_ANYWHERE_HOLD_CHECK_LOG: probeLog(env) })), {}, "a probe with the check's own log is not gated");
+  const probe = at({ ULTRACODE_ANYWHERE_HOLD_CHECK: "1", ANTHROPIC_BASE_URL: "http://127.0.0.1:4000", ULTRACODE_ANYWHERE_HOLD_CHECK_LOG: probeLog(env) });
+  recordLoaded(probe, "s-1", root);
+  assert.deepEqual(toolAnswer(event, probe), {}, "a probe with the check's own log is not gated");
   assert.deepEqual(toolAnswer(event, at({ CLAUDE_CODE_EXECPATH: "/versions/9.9.10" })), {}, "a leak on another build does not gate this one");
   assert.equal(gateReason({ ...env, AI_AGENT: "claude-code_9-9-9_agent" }) !== null, true, "AI_AGENT names the build where the exec path does not");
 });
@@ -406,4 +423,31 @@ test("a record in a state directory this account does not own alone is not belie
 
   assert.doesNotMatch(gateReason(at) ?? "", /PLANTED/);
   assert.match(gateReason(at) ?? "", /state directory/);
+});
+
+test("a project that moves the hold's state has nothing written there, the tripwire's marks included", (t) => {
+  const { root, project, env } = world(t);
+  const moved = join(project, "st");
+  write(join(project, ".claude", "settings.json"), JSON.stringify({ env: { ULTRACODE_ANYWHERE_STATE: moved } }));
+  const transcript = write(join(root, "child.jsonl"), "");
+  const at = { ...env, ULTRACODE_ANYWHERE_STATE: moved, ULTRACODE_ANYWHERE_HELD_CHILD: "1" };
+
+  assert.deepEqual(toolAnswer({ tool_name: "Read", tool_input: {}, cwd: project, session_id: "s-1", transcript_path: transcript, effort: { level: "medium" } }, at), {});
+  assert.equal(existsSync(moved), false);
+});
+
+test("a workflow's own stages run in a worktree inside a git repository and with no isolation outside one", (t) => {
+  const base = mkdtempSync(join(tmpdir(), "ultracode-isolation-"));
+  t.after(() => rmSync(base, { recursive: true, force: true }));
+  const [plain, repo] = [join(base, "plain"), join(base, "repo")];
+  mkdirSync(plain);
+  mkdirSync(join(repo, ".git"), { recursive: true });
+  // A home above neither, since the walk for a git directory stops at the home.
+  const env = { HOME: join(base, "home") };
+  const script = 'export const meta = { name: "i", description: "d" }\nreturn 1';
+
+  const outside = decideWorkflow({ script }, { env, root: plain, cwd: plain, level: "medium" }).updatedInput.script;
+  const inside = decideWorkflow({ script }, { env, root: repo, cwd: repo, level: "medium" }).updatedInput.script;
+  assert.match(outside, /delete o\.isolation/);
+  assert.match(inside, /o\.isolation = "worktree"/);
 });

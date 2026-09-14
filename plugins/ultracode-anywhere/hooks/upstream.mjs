@@ -12,7 +12,7 @@
  */
 import { closeSync, existsSync, openSync, readSync, readdirSync, realpathSync, statSync } from "node:fs";
 
-import { configDirFor, homeOf, readIfFile } from "./hook-io.mjs";
+import { configDirFor, homeOf, projectSettingsFiles, readIfFile } from "./hook-io.mjs";
 import { Unkept } from "./counters.mjs";
 import { delimiter, join } from "node:path";
 
@@ -50,14 +50,18 @@ export const CALIBRATED_AGAINST = "2.1.270";
  */
 const ARGS = String.raw`(?:[^()]|\([^()]{0,80}\)){0,160}`;
 const GATE = new RegExp(
-  String.raw`function [A-Za-z_$][\w$]*\(${ARGS}\)\{return [\w$]+===(?:!0|true)&&[\w$]+(?:\?\.)?\(${ARGS}\)&&[\w$]+\(${ARGS}\)===["']xhigh["']\}`,
+  String.raw`function [A-Za-z_$][\w$]{0,63}\(${ARGS}\)\{return [\w$]{1,64}===(?:!0|true)&&[\w$]{1,64}(?:\?\.)?\(${ARGS}\)&&[\w$]{1,64}\(${ARGS}\)===["']xhigh["']\}`,
 );
 
 /** What a missing gate is called when the check reports it. */
 export const GATE_SHAPE = "the xhigh gate the reminder is emitted under";
 
-/** Characters kept across a read boundary so a gate lying on one is still whole. */
-const GATE_REACH = 200;
+/**
+ * Characters kept across a read boundary: the longest text GATE can match, so
+ * a gate lying on one is still whole. Three argument lists of 160 groups of 82,
+ * four names of 64, and the fixed text around them.
+ */
+const GATE_REACH = 3 * 160 * 82 + 4 * 64 + 'function (){return ===true&&?.()&&()==="xhigh"}'.length;
 
 /**
  * What the premise rests on, each one read out of an installed build.
@@ -128,11 +132,29 @@ export const MIN_BUNDLE = 5_000_000;
 export function settingsFor(env = process.env, cwd = "") {
   const config = configDirFor(env);
   const paths = config ? [join(config, "settings.json")] : [];
-  if (cwd) paths.push(join(cwd, ".claude", "settings.json"), join(cwd, ".claude", "settings.local.json"));
-
+  paths.push(...projectSettingsFiles(cwd, env));
   const merged = {};
-  for (const path of paths) Object.assign(merged, readSettings(path));
+  for (const path of paths) mergeInto(merged, readSettings(path));
   return merged;
+}
+
+/** The two maps the build's merge spreads one level deep where it merges every other object key by key. */
+const SPREAD_KEYS = new Set(["extraKnownMarketplaces", "managedMcpServers"]);
+
+/** Whether a value is an object the merge folds key by key. */
+const plain = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
+
+/** Folds one scope in the way the build's mergeWith customizer does (`Kj` in 2.1.270), with `__proto__` skipped. */
+function mergeInto(into, from) {
+  for (const [key, value] of Object.entries(from)) {
+    if (key === "__proto__") continue;
+    if (key === "modelPicker") into[key] = value;
+    else if (Array.isArray(value) && Array.isArray(into[key]) && key !== "fallbackModel") into[key] = [...new Set([...into[key], ...value])];
+    else if (!plain(value)) into[key] = value;
+    else if (SPREAD_KEYS.has(key) && plain(into[key])) into[key] = { ...into[key], ...value };
+    else into[key] = mergeInto(plain(into[key]) ? into[key] : {}, value);
+  }
+  return into;
 }
 
 function readSettings(path) {

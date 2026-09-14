@@ -8,14 +8,15 @@
  * saw off the level is a leak every later spawn on that build is refused over.
  */
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { basename, delimiter, join } from "node:path";
 
+import { PLUGIN } from "./catalogue.mjs";
 import { sameLevel } from "./effort.mjs";
-import { copyOf, pluginDefs, syncCopies } from "./hold-agents.mjs";
-import { SCRATCH, checksDir, holdGaps, holdStatePath, holdTarget, preloadPath, sameFamily } from "./hold-config.mjs";
-import { filesIn, plainLine, readJson, writeWhole } from "./hold-files.mjs";
+import { copyOf, enabledPlugins, pluginDefs, syncCopies } from "./hold-agents.mjs";
+import { JUDGED_BY_CONTROL, LOWERED, SCRATCH, checksDir, holdGaps, holdStatePath, holdTarget, isMainLoopLeak, leftBehindChecks, preloadPath, sameFamily, verifiedRecord } from "./hold-config.mjs";
+import { plainLine, readJson, writeWhole } from "./hold-files.mjs";
 import { shellQuoted } from "./hold-session.mjs";
 import { isRunnable, isShim, realClaudeOn } from "./hold-shim.mjs";
 import { configDirFor, readIfFile, realOf } from "./hook-io.mjs";
@@ -33,12 +34,12 @@ const PROBE_NAME = "ultracode-hold-check";
 /** What the hook's refusal of a skill or a typed command off the level says. */
 const SKILL_REFUSAL = "must run at";
 
+/** A line of the agent listing naming one of this plugin's agents, as it sits in a request's JSON-encoded messages, which the build ends with the agent's tools. */
+const LISTED = new RegExp(String.raw`\\n- ${PLUGIN}:[a-z][\w-]*: (?:(?!\\n).)*? \(Tools: `);
+
 const PROBE_TIMEOUT_MS = 150_000;
 const KILL_GRACE_MS = 5000;
 const PROBES_AT_ONCE = 4;
-
-/** How old a check directory is before a later run takes it for one a killed run left, the age a stale lock is taken over at. */
-const LEFT_BEHIND_MS = 30 * 60 * 1000;
 const OUTPUT_MOST = 64 * 1024;
 
 /**
@@ -216,17 +217,12 @@ export function projectFolderName(dir) {
 /** Removes the check directories, and their probes' session folders, that a run killed before its own cleanup left behind. */
 export function pruneChecks(env = process.env, now = Date.now()) {
   const checks = checksDir(env);
-  let names = [];
-  try {
-    names = readdirSync(checks).filter((name) => name.startsWith(SCRATCH));
-  } catch {
-    return;
-  }
+  const names = leftBehindChecks(checks, now);
+  if (names.length === 0) return;
   const config = configDirFor(probeEnv(env));
   for (const name of names) {
     const dir = join(checks, name);
     try {
-      if (now - statSync(dir).mtimeMs <= LEFT_BEHIND_MS) continue;
       forgetSession(join(dir, "project"), config);
       forgetSession(dir, config);
       rmSync(dir, { recursive: true, force: true });
@@ -256,7 +252,8 @@ function forgetSession(workDir, config) {
  */
 export async function runProbe({ plan = {}, cwd, env = {}, base = process.env, binary = realClaude(base), binaryArgs = [], timeoutMs = PROBE_TIMEOUT_MS, prompt = `${MARKER} ping`, args = [], persist = false }) {
   const workDir = cwd ?? scratchIn(base);
-  const flags = [...binaryArgs, "-p", prompt, "--strict-mcp-config", "--dangerously-skip-permissions", ...(persist ? [] : ["--no-session-persistence"]), ...args];
+  // CLAUDE_CODE_SUBPROCESS_ENV_SCRUB forces the default permission mode past --dangerously-skip-permissions, so the tools a probe calls are allowed by name too.
+  const flags = [...binaryArgs, "-p", prompt, "--strict-mcp-config", "--dangerously-skip-permissions", "--allowedTools", "Agent,Bash,Skill,Workflow", ...(persist ? [] : ["--no-session-persistence"]), ...args];
   let api = null;
   let output = "";
   try {
@@ -293,7 +290,11 @@ export async function runProbe({ plan = {}, cwd, env = {}, base = process.env, b
     // A directory the caller named may be shared with probes still running, so its session folder is the caller's to remove.
     if (!cwd) {
       forgetSession(workDir, configDirFor(probeEnv(base, env)));
-      rmSync(workDir, { recursive: true, force: true });
+      try {
+        rmSync(workDir, { recursive: true, force: true });
+      } catch {
+        // What the stand-in saw still stands, and a later run prunes the directory.
+      }
     }
   }
   return { seen: api.seen, output };
@@ -321,12 +322,21 @@ function refusedIn(rows, words) {
  *
  * A leak is a spawn off the held level or model, the main loop lowered to it, or
  * a refusal the hooks did not make. Anything that only kept a probe from running
- * is infrastructure, which proves nothing either way.
+ * is infrastructure, which proves nothing either way. `controlLevels` is the
+ * control run's main-loop levels by model, or null where no control was
+ * measured. `judgedMain` names each probe whose main loop was judged: a probe with
+ * no main row at the held level and some at a known effort, `ownMain` included, or
+ * a probe whose rows at the held level ran on models the control ran.
  */
-export function evaluate(probes, { expectedMain, target }) {
+export function evaluate(probes, { controlLevels, target }) {
   const leaks = [];
   const infra = [];
+  const judgedMain = [];
   const offTarget = (row) => row.effort !== target.level || !sameFamily(row.model, target.family);
+  const lowered = (row) => {
+    const levels = controlLevels.get(row.model);
+    return levels !== undefined && !levels.some((level) => sameLevel(level, target.level));
+  };
   for (const { name, skip, failed, seen = [], output = "", lines = [], expect = {}, ownMain = false, callsTools = false } of probes) {
     if (skip) continue;
     if (failed) {
@@ -344,9 +354,14 @@ export function evaluate(probes, { expectedMain, target }) {
       infra.push(`${name}: the probe session never reached the stand-in`);
       continue;
     }
-    if (!ownMain && expectedMain && !sameLevel(expectedMain, target.level) && main.some((row) => row.effort === target.level)) {
-      leaks.push(`${name}: the main loop was lowered to ${target.level}`);
-    }
+    const held = ownMain ? [] : main.filter((row) => row.effort === target.level);
+    const unmeasured = controlLevels === null ? [] : [...new Set(held.filter((row) => controlLevels.get(row.model) === undefined).map((row) => row.model))];
+    if (unmeasured.length > 0) infra.push(`main loop: ${name} ran on ${unmeasured.join(" or ")}, which the control run never ran, so it was not judged`);
+    if (controlLevels !== null && held.some(lowered)) leaks.push(`${name}${LOWERED}${target.level}`);
+    const knownEffort = main.some((row) => row.effort !== null);
+    if (!ownMain && held.length === 0 && !knownEffort) infra.push(`main loop: ${name} sent no effort, so it was not judged`);
+    const judged = held.length === 0 ? knownEffort : (controlLevels !== null && unmeasured.length === 0);
+    if (judged) judgedMain.push(name);
     if (expect.tripwire) {
       if (spawns.length === 0) infra.push(`${name}: no spawn reached the stand-in`);
       else if (!refusedIn(spawns, expect.tripwire)) leaks.push(`${name}: a subagent off the level was not stopped`);
@@ -374,7 +389,7 @@ export function evaluate(probes, { expectedMain, target }) {
       infra.push(`${name}: the tripwire could not read the subagent's model from its transcript, so the transcript layout may have moved`);
     }
   }
-  return { leaks, infra };
+  return { leaks, infra, judgedMain };
 }
 
 function probeOf(finding) {
@@ -386,14 +401,15 @@ function probeOf(finding) {
  *
  * A run that could not finish a probe proves nothing about it, so that probe's
  * last leak on this build stays. A leak from a probe that ran clean, or that no
- * longer exists, goes.
+ * longer exists, goes. `verify` carries a main-loop leak, since it knows whose
+ * main loop the run judged.
  */
 export function carryLeaks(previous, next) {
   if (previous?.version !== next.version || !Array.isArray(previous?.leaks) || previous.leaks.length === 0) return next;
   const skipped = Object.entries(next.details ?? {}).filter(([, detail]) => detail?.skipped !== undefined);
   const unsure = new Set([...(next.infra ?? []).map(probeOf), ...skipped.map(([name]) => name)]);
   const found = new Set(next.leaks);
-  const kept = previous.leaks.filter((leak) => typeof leak === "string" && !found.has(leak) && unsure.has(probeOf(leak)));
+  const kept = previous.leaks.filter((leak) => typeof leak === "string" && !isMainLoopLeak(leak) && !found.has(leak) && unsure.has(probeOf(leak)));
   return kept.length > 0 ? { ...next, ok: false, leaks: [...next.leaks, ...kept] } : next;
 }
 
@@ -492,11 +508,25 @@ function managedSettingsDir(platform = process.platform) {
   return platform === "win32" ? "C:\\Program Files\\ClaudeCode" : "/etc/claude-code";
 }
 
+/** A managed policy's settings files: its base file, then each drop-in in name order, listed the way `d1t` in 2.1.270 lists them. */
+function managedFiles(managedDir) {
+  const dropIns = join(managedDir, "managed-settings.d");
+  let names = [];
+  try {
+    names = readdirSync(dropIns, { withFileTypes: true })
+      .filter((entry) => (entry.isFile() || entry.isSymbolicLink()) && entry.name.endsWith(".json") && !entry.name.startsWith("."))
+      .map((entry) => entry.name)
+      .sort();
+  } catch {
+    // No drop-ins.
+  }
+  return [join(managedDir, "managed-settings.json"), ...names.map((name) => join(dropIns, name))];
+}
+
 /** The settings `env` names, the user's and a managed policy's, that send a session's requests past a probe's stand-in. */
 export function routedAway(env = process.env, managedDir = managedSettingsDir()) {
-  const files = [join(managedDir, "managed-settings.json"), ...filesIn(join(managedDir, "managed-settings.d"), ".json")];
   const names = new Set();
-  for (const named of [settingsFor(env).env, ...files.map((file) => readJson(file, null)?.env)]) {
+  for (const named of [settingsFor(env).env, ...managedFiles(managedDir).map((file) => readJson(file, null)?.env)]) {
     if (!named || typeof named !== "object") continue;
     for (const [name, value] of Object.entries(named)) {
       if (/^ANTHROPIC_(\w+_)?BASE_URL$|^CLAUDE_CODE_USE_/.test(name) && String(value ?? "").trim() !== "" && !isOff(value)) names.add(name);
@@ -507,14 +537,35 @@ export function routedAway(env = process.env, managedDir = managedSettingsDir())
 
 /** The probe leaks the last run recorded on this build, which a run that proved nothing keeps. */
 function lastProbeLeaks(env, version) {
-  const last = readJson(holdStatePath(env, "verified.json"), null);
+  const last = verifiedRecord(env);
   return last?.version === version && Array.isArray(last.leaks) ? last.leaks.filter((leak) => typeof leak === "string" && !leak.startsWith("settings: ")) : [];
+}
+
+/**
+ * The main loop's levels by model in a run of the same build and user settings
+ * with this plugin switched off and no preload, or why that run proves nothing.
+ */
+async function controlRun({ env, binary, binaryArgs, timeoutMs }) {
+  const ids = Object.keys(enabledPlugins(env)).filter((id) => id.startsWith(`${PLUGIN}@`));
+  if (ids.length === 0) return { why: "the user settings enable this plugin under no id, so the control could not switch it off" };
+  let seen = [];
+  try {
+    const off = JSON.stringify({ enabledPlugins: Object.fromEntries(ids.map((id) => [id, false])) });
+    ({ seen } = await runProbe({ base: env, binary, binaryArgs, timeoutMs, env: { NODE_OPTIONS: "" }, args: ["--settings", off] }));
+  } catch {
+    // A control that could not start measured nothing, so no main loop is judged against it.
+  }
+  const main = seen.filter((request) => request.isMain);
+  if (main.some((row) => LISTED.test(row.conversation) || LISTED.test(JSON.stringify(row.body?.tools ?? [])))) return { why: "the run meant to switch this plugin off still loaded this plugin's agents" };
+  const levels = new Map();
+  for (const row of main) levels.set(row.model, [...(levels.get(row.model) ?? []), row.effort]);
+  return levels.size > 0 ? { levels } : { why: "the run with this plugin switched off never reached the stand-in" };
 }
 
 /** Writes the next record over the last, its leaks carried where they still stand. */
 function record(env, next) {
   const file = holdStatePath(env, "verified.json");
-  const state = carryLeaks(readJson(file, null), { ...next, ok: next.leaks.length === 0 && next.infra.length === 0, at: new Date().toISOString() });
+  const state = carryLeaks(verifiedRecord(env), { ...next, mainLoopJudge: JUDGED_BY_CONTROL, ok: next.leaks.length === 0 && next.infra.length === 0, at: new Date().toISOString() });
   if (file) writeWhole(file, `${JSON.stringify(state, null, 2)}\n`);
   return state;
 }
@@ -532,14 +583,15 @@ function linesOf(path) {
  * stand-in, and the last leaks on this build stay. A run that throws records
  * nothing, so the last record stands.
  */
-export async function verify({ env = process.env, version, stamp, binary = realClaude(env), binaryArgs = [], timeoutMs = PROBE_TIMEOUT_MS }) {
+export async function verify({ env = process.env, version, stamp, binary = realClaude(env), binaryArgs = [], timeoutMs = PROBE_TIMEOUT_MS, managedDir = managedSettingsDir() }) {
   const target = holdTarget(env);
   if (!target) return { version, ok: false, error: "the spawn hold is not on, since ULTRACODE_ANYWHERE_SPAWN_EFFORT names no level" };
+  const namesHeldLevel = (leak) => leak.endsWith(`${LOWERED}${target.level}`);
   const required = holdGaps(env).required.map((gap) => `settings: ${gap}`);
-  const routed = routedAway(env);
+  const routed = routedAway(env, managedDir);
   if (routed.length > 0) {
     const infra = [`probes: the settings set ${routed.join(" and ")}, which would send a probe's requests past its local stand-in, so none ran`];
-    return record(env, { version, stamp, leaks: [...required, ...lastProbeLeaks(env, version)], infra, details: {} });
+    return record(env, { version, stamp, leaks: [...required, ...lastProbeLeaks(env, version).filter((leak) => !isMainLoopLeak(leak) || namesHeldLevel(leak))], infra, details: {} });
   }
 
   const scratch = scratchIn(env);
@@ -553,6 +605,7 @@ export async function verify({ env = process.env, version, stamp, binary = realC
       log: join(scratch, `tripwire-${at}.log`),
     }));
     for (const probe of probes) writeFileSync(probe.log, "");
+    const control = await controlRun({ env, binary, binaryArgs, timeoutMs });
     const results = await inBatches(probes, PROBES_AT_ONCE, async (probe) => {
       if (probe.skip) return { ...probe, seen: [], output: "", lines: [] };
       try {
@@ -563,11 +616,19 @@ export async function verify({ env = process.env, version, stamp, binary = realC
       }
     });
 
-    const found = evaluate(results, { expectedMain: settingsFor(env).effortLevel, target });
-    return record(env, { version, stamp, leaks: [...new Set([...required, ...found.leaks])], infra: found.infra, details: detailsOf(results) });
+    const found = evaluate(results, { controlLevels: control.levels ?? null, target });
+    const probeNames = new Set(probes.map((probe) => probe.name));
+    const judgedMain = new Set(found.judgedMain);
+    const kept = lastProbeLeaks(env, version).filter((leak) => namesHeldLevel(leak) && probeNames.has(probeOf(leak)) && !judgedMain.has(probeOf(leak)));
+    const infra = control.why ? [...found.infra, `control: ${control.why}, so no main loop at the held level was judged`] : found.infra;
+    return record(env, { version, stamp, leaks: [...new Set([...required, ...found.leaks, ...kept])], infra, controlWhy: control.why, details: detailsOf(results) });
   } finally {
     forgetSession(join(scratch, "project"), configDirFor(probeEnv(env)));
-    rmSync(scratch, { recursive: true, force: true });
+    try {
+      rmSync(scratch, { recursive: true, force: true });
+    } catch {
+      // The record is written already, and a later run prunes the directory.
+    }
   }
 }
 

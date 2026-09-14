@@ -16,7 +16,6 @@ import { shown } from "./effort.mjs";
 import { enabledPlugins } from "./hold-agents.mjs";
 import { holdGaps, holdTarget, pluginEnabled } from "./hold-config.mjs";
 import { gateReason } from "./hold-rules.mjs";
-import { projectRoot } from "./hold-switch.mjs";
 import { here, readIfFile } from "./hook-io.mjs";
 import { isOff } from "./upstream.mjs";
 
@@ -115,10 +114,17 @@ function splitFlag(arg) {
   return arg.startsWith("--") && at > 0 ? [arg.slice(0, at), arg.slice(at + 1)] : [arg, null];
 }
 
+/** How long a `--setting-sources` list may be and still be quoted back whole, which any list of the three sources is. */
+const SOURCES_SHOWN_MOST = 32;
+
 /** Why a `--setting-sources` value is refused: a list without `user` drops the settings that hold the hooks. */
 function sourcesRefusal(value) {
   const sources = String(value ?? "").split(",").map((source) => source.trim());
-  return sources.includes("user") ? null : `--setting-sources ${value === null ? "with no value" : shown(value)} leaves out the user settings that hold the hooks`;
+  if (sources.includes("user")) return null;
+  // shown() quotes one plain word, so a short list is quoted when each of its words would be.
+  const plain = value !== null && value.length <= SOURCES_SHOWN_MOST && sources.every((source) => shown(source).startsWith('"'));
+  const said = value === null ? "with no value" : plain ? `"${sources.join(",")}"` : shown(value);
+  return `--setting-sources ${said} leaves out the user settings that hold the hooks`;
 }
 
 /**
@@ -155,6 +161,16 @@ function refuse(reason, target) {
 }
 
 /**
+ * The hold a claude started in `cwd` takes from the first directory that holds:
+ * the session's project, whose settings made the environment it inherits, or its
+ * own directory, whose settings it reads. The preload decides the same way.
+ */
+export function heldFrom(env = process.env, cwd = here()) {
+  const roots = [...new Set([env.ULTRACODE_ANYWHERE_PROJECT_DIR, env.CLAUDE_PROJECT_DIR, cwd].filter(Boolean))];
+  return { roots, target: roots.map((root) => holdTarget(env, { root })).find(Boolean) ?? null };
+}
+
+/**
  * What the shim does with one command line: the real claude to start, with its
  * arguments and environment, or a refusal and the status to exit with.
  */
@@ -165,9 +181,7 @@ export function shimPlan(args, env = process.env, cwd = here(), platform = proce
     if (!launcher) return { refuse: "claude: not found on PATH", status: 127 };
     return { refuse: `claude: ${launcher} is a launcher script, and starting one takes a shell this shim will not hand a prompt to. Install Claude Code's native build, whose claude.exe it starts`, status: 126 };
   }
-  // The session's project, which the exports name, since the environment this claude inherits came from there.
-  const root = projectRoot(env, cwd);
-  const target = holdTarget(env, { root });
+  const { roots, target } = heldFrom(env, cwd);
   if (!target) return { exec: { file: real, args, env } };
 
   // Handed as flag settings too, whose env a project's settings cannot outrank.
@@ -217,10 +231,11 @@ export function shimPlan(args, env = process.env, cwd = here(), platform = proce
     const value = String(env[name] ?? "").trim();
     if (value !== "" && !isOff(value)) return refuse(`${name} turns off the hooks`, target);
   }
+  // Read the way the build reads them: project settings in cwd, local settings at the git root above it as well.
   if (!pluginEnabled(enabledPlugins(env, cwd, sources), PLUGIN)) {
     return refuse(`the configuration this claude reads does not enable ${PLUGIN}, so nothing would hold its spawns`, target);
   }
-  const { required } = holdGaps(env, { root });
+  const required = [...new Set(roots.flatMap((root) => holdGaps(env, { root }).required))];
   if (required.length > 0) return refuse(`this configuration cannot hold spawns: ${required.join("; ")}`, target);
   const leak = gateReason(env);
   if (leak) return refuse(leak, target);

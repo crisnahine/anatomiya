@@ -8,17 +8,17 @@
  * prelude does not reach, so every workflow a name can resolve to gets an
  * injected copy of its own.
  *
- * The meta reader here is not `catalogue.mjs`'s. That one reads the pure-literal
- * subset this plugin ships and refuses anything else. This one has to find the
- * end of any meta the build accepts, parentheses and a shebang included.
+ * Where the meta ends is found here, parentheses and a shebang included, since
+ * `catalogue.mjs`'s reader refuses both. What the meta says is read by that one,
+ * since the build takes a name only from a pure literal.
  */
 import { createHash } from "node:crypto";
 import { join } from "node:path";
 
-import { SCRIPT_MOST } from "./catalogue.mjs";
+import { SCRIPT_MOST, metaIn } from "./catalogue.mjs";
 import { enabledPluginInstalls } from "./hold-agents.mjs";
 import { holdStatePath } from "./hold-config.mjs";
-import { ancestors, filesIn, writeWhole } from "./hold-files.mjs";
+import { ancestors, filesIn, inGitRepo, writeWhole } from "./hold-files.mjs";
 import { configDirFor, readIfFile } from "./hook-io.mjs";
 
 /** What marks the prelude, so injecting again replaces it. */
@@ -71,35 +71,43 @@ function objectEnd(src, from) {
 }
 
 /**
- * Just past the `export const meta = {...}` statement that opens a script, or
- * -1, and -1 too for a meta holding a template string with a substitution,
- * whose `${}` the reader above does not follow.
+ * Where the object literal of the `export const meta = {...}` statement that
+ * opens a script starts and stops, and where the statement ends, or null, and
+ * null too for a meta holding a template string with a substitution, whose
+ * `${}` the reader above does not follow.
  */
-export function metaEnd(src) {
+function metaSpan(src) {
   let at = skipTrivia(src, 0);
   const head = /^export\s+const\s+meta\s*=\s*/.exec(src.slice(at));
-  if (!head) return -1;
+  if (!head) return null;
   at += head[0].length;
   let parens = 0;
   while (src[at] === "(") {
     parens++;
     at = skipTrivia(src, at + 1);
   }
-  if (src[at] !== "{") return -1;
-  let end = objectEnd(src, at);
-  if (end < 0 || (src.slice(at, end).includes("`") && src.slice(at, end).includes("${"))) return -1;
+  if (src[at] !== "{") return null;
+  const close = objectEnd(src, at);
+  if (close < 0 || (src.slice(at, close).includes("`") && src.slice(at, close).includes("${"))) return null;
+  let end = close;
   for (; parens > 0; parens--) {
     end = skipTrivia(src, end);
-    if (src[end] !== ")") return -1;
+    if (src[end] !== ")") return null;
     end++;
   }
-  return src[end] === ";" ? end + 1 : end;
+  return { open: at, close, end: src[end] === ";" ? end + 1 : end };
 }
 
-function prelude(level, copies) {
+/** Just past the `export const meta = {...}` statement that opens a script, or -1. */
+export function metaEnd(src) {
+  return metaSpan(src)?.end ?? -1;
+}
+
+function prelude(level, copies, worktree) {
+  const remote = worktree ? `o.isolation = "worktree"` : "delete o.isolation";
   return (
     `\n${MARK} { const run = globalThis.agent, nest = globalThis.workflow, copies = ${JSON.stringify(copies)}; ` +
-    `globalThis.agent = (prompt, opts) => { const o = opts && typeof opts === "object" ? { ...opts } : {}; delete o.model; if (o.isolation === "remote") o.isolation = "worktree"; return run(prompt, { ...o, effort: ${JSON.stringify(level)} }); }; ` +
+    `globalThis.agent = (prompt, opts) => { const o = opts && typeof opts === "object" ? { ...opts } : {}; delete o.model; if (o.isolation === "remote") ${remote}; return run(prompt, { ...o, effort: ${JSON.stringify(level)} }); }; ` +
     `if (typeof nest === "function") globalThis.workflow = (ref, args) => { const key = typeof ref === "string" ? ref : ref && ref.scriptPath; ` +
     `if (typeof key !== "string" || !Object.hasOwn(copies, key)) throw new Error("workflow(" + JSON.stringify(key) + ") has no copy held to the level, so it cannot run here. Name a known workflow or call agent() directly"); ` +
     `return nest({ scriptPath: copies[key] }, args); }; }\n`
@@ -112,17 +120,18 @@ function prelude(level, copies) {
  *
  * The prelude drops a stage's `model`, since `"inherit"` there escapes the
  * forced subagent model, and keeps a remote stage on this machine, where the
- * hold reaches it.
+ * hold reaches it: in a worktree where `worktree` says the project is in a git
+ * repository, and with no isolation where it is not, since a script cannot look.
  */
-export function injectLevel(script, level, copies = {}) {
+export function injectLevel(script, level, copies = {}, { worktree = true } = {}) {
   const clean = String(script).replace(PRELUDE_LINE, "");
   const end = metaEnd(clean);
-  return end < 0 ? null : clean.slice(0, end) + prelude(level, copies) + clean.slice(end);
+  return end < 0 ? null : clean.slice(0, end) + prelude(level, copies, worktree) + clean.slice(end);
 }
 
 function metaName(src) {
-  const end = metaEnd(src);
-  return end < 0 ? null : (/\bname\s*:\s*(["'])(.*?)\1/.exec(src.slice(0, end))?.[2] ?? null);
+  const span = metaSpan(src);
+  return span ? (metaIn(`export const meta = ${src.slice(span.open, span.close)}`)?.name ?? null) : null;
 }
 
 /**
@@ -172,8 +181,9 @@ export function workflowCopies(env = process.env, root, dir, level) {
     const winner = resolveWorkflow(flows, name);
     if (winner) copies[name] = own.get(winner);
   }
+  const worktree = inGitRepo(root, env);
   for (const [flow, path] of own) {
-    const text = injectLevel(flow.src, level, copies);
+    const text = injectLevel(flow.src, level, copies, { worktree });
     if (text !== null && readIfFile(path, SCRIPT_MOST * 2) !== text) writeWhole(path, text);
   }
   return copies;

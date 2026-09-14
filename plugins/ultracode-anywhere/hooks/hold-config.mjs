@@ -7,13 +7,14 @@
  * preload a node program loads all stay the user's settings. This reads them
  * the way the build does and names each one the hold cannot do without (A81).
  */
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync, statSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { ownState, stateDirFor } from "./counters.mjs";
-import { EFFORT_LEVELS, heldLevelIn, sameLevel, shown } from "./effort.mjs";
-import { projectRedirects, switchEnv } from "./hold-switch.mjs";
+import { EFFORT_LEVELS, heldLevelIn, shown } from "./effort.mjs";
+import { readJson } from "./hold-files.mjs";
+import { projectNames, projectRedirects, switchEnv } from "./hold-switch.mjs";
 import { configDirFor, homeOf, realOf } from "./hook-io.mjs";
 import { isOff, isOn, settingsFor, versionOf } from "./upstream.mjs";
 
@@ -28,6 +29,32 @@ export const FILE_ID = /^[\w-]{1,128}$/;
 
 /** How long a self-check that did not pass waits before a session start tries it again. */
 export const RETRY_MS = 30 * 60 * 1000;
+
+/** How old a check directory is before a later run takes it for one a killed run left, the age a stale lock is taken over at. */
+const LEFT_BEHIND_MS = 30 * 60 * 1000;
+
+/** The directories in the checks directory `dir` a killed run left, old enough that no run still going owns one. */
+export function leftBehindChecks(dir, now = Date.now()) {
+  try {
+    return readdirSync(dir).filter((name) => {
+      if (!name.startsWith(SCRATCH)) return false;
+      try {
+        return now - statSync(join(dir, name)).mtimeMs > LEFT_BEHIND_MS;
+      } catch {
+        // Gone since the listing, so nothing to clean.
+        return false;
+      }
+    });
+  } catch {
+    return [];
+  }
+}
+
+/** What follows a probe's name in a leak that says its main loop was lowered. */
+export const LOWERED = ": the main loop was lowered to ";
+
+/** The value of a record's `mainLoopJudge` when a control run judged its main-loop leaks. */
+export const JUDGED_BY_CONTROL = "control";
 
 /** Where the hold keeps one file of its own state, beside the turn counters, or null for a machine with nowhere to keep it. */
 export function holdStatePath(env = process.env, name) {
@@ -110,6 +137,22 @@ function modelShown(value) {
 }
 
 /**
+ * What CLAUDE_CODE_EFFORT_LEVEL pins every request to, read the way the build
+ * reads it: untrimmed, a level or an integer budget, null for unset or auto,
+ * which send no effort and drop a spawn's own with it, and undefined for a value
+ * that names nothing, which pins nothing.
+ */
+export function effortPin(value) {
+  if (value === undefined || value === null || value === "") return undefined;
+  const text = String(value).toLowerCase();
+  if (text === "unset" || text === "auto") return null;
+  const level = text === "med" ? "medium" : text;
+  if (EFFORT_LEVELS.includes(level)) return level;
+  const budget = Number.parseInt(text, 10);
+  return Number.isInteger(budget) ? budget : undefined;
+}
+
+/**
  * The level and model every spawn is held to, or null where the hold is off.
  *
  * The model is whatever `CLAUDE_CODE_SUBAGENT_MODEL` names, since that variable
@@ -140,7 +183,7 @@ export function holdGaps(env = process.env, { preload = null, settings = {}, roo
 
   const moved = projectRedirects(root);
   if (moved.length > 0) {
-    gaps.required.push(`a project's settings set ${listed(moved)}, which the hold reads to find the user's settings, its own state and the build a session runs`);
+    gaps.required.push(`a project's settings set ${listed(moved)}, which the hold reads to find the user's settings, the session's project, its own state and the build a session runs`);
   }
 
   if (!FULL_ID.test(target.model)) {
@@ -150,6 +193,9 @@ export function holdGaps(env = process.env, { preload = null, settings = {}, roo
   if (userModel && userModel !== target.model) {
     gaps.required.push(`CLAUDE_CODE_SUBAGENT_MODEL is ${target.model ? modelShown(target.model) : "unset"} in this session and ${modelShown(userModel)} in the user settings, so a project's settings moved the model spawns run on`);
   }
+  if (!userModel && projectNames(root, "CLAUDE_CODE_SUBAGENT_MODEL")) {
+    gaps.required.push("a project's settings set CLAUDE_CODE_SUBAGENT_MODEL, and spawns can only be held to a model the user settings name beside the switch");
+  }
   if (!isOn(env.CLAUDE_CODE_SUBAGENT_MODEL_FORCE)) {
     gaps.required.push("CLAUDE_CODE_SUBAGENT_MODEL_FORCE is not on, so an agent's own model or its caller's still decides what a spawn runs");
   }
@@ -157,10 +203,11 @@ export function holdGaps(env = process.env, { preload = null, settings = {}, roo
     gaps.required.push("CLAUDE_CODE_FORK_SUBAGENT is not 0, and a fork runs at the session's own effort and model");
   }
   const read = settingsFor(env, root);
-  // The preload sets this variable in every node process of a session, a hook's included, so the settings are read for it too.
-  for (const effort of new Set([env.CLAUDE_CODE_EFFORT_LEVEL, read.env?.CLAUDE_CODE_EFFORT_LEVEL])) {
-    if (String(effort ?? "").trim() !== "" && !sameLevel(String(effort), target.level)) {
-      gaps.required.push(`CLAUDE_CODE_EFFORT_LEVEL is ${shown(effort)}, and it outranks every spawn's own effort, so it has to be ${target.level} or unset`);
+  // The preload sets this variable in every node process of a session, a hook's included, so the value it replaced and the settings are read too.
+  for (const effort of new Set([env.CLAUDE_CODE_EFFORT_LEVEL, env.ULTRACODE_ANYWHERE_REPLACED_EFFORT, read.env?.CLAUDE_CODE_EFFORT_LEVEL])) {
+    const pin = effortPin(effort);
+    if (pin !== undefined && pin !== target.level) {
+      gaps.required.push(`CLAUDE_CODE_EFFORT_LEVEL is ${shown(effort)}, and it outranks every spawn's own effort, so it has to be ${target.level} or removed`);
     }
   }
   for (const [name, cap] of [["maxEffortLevel", read.maxEffortLevel], ["the held model's maxEffortLevel", read.modelSettings?.[target.family]?.maxEffortLevel]]) {
@@ -228,4 +275,16 @@ function nodeOptionWords(text) {
     fresh = false;
   }
   return quoted ? [] : words;
+}
+
+/** Whether a leak says a probe's main loop was lowered. */
+export function isMainLoopLeak(leak) {
+  return typeof leak === "string" && leak.includes(LOWERED);
+}
+
+/** The self-check's last record, leaving out the main-loop leaks of one no control run judged. */
+export function verifiedRecord(env = process.env) {
+  const last = readJson(holdStatePath(env, "verified.json"), null);
+  if (last?.mainLoopJudge === JUDGED_BY_CONTROL || !Array.isArray(last?.leaks)) return last;
+  return { ...last, leaks: last.leaks.filter((leak) => !isMainLoopLeak(leak)) };
 }

@@ -54,6 +54,10 @@ for (const file of files) {
     assert.equal(read(file).name, file.replace(/\.md$/, ""));
   });
 
+  test(`${file} keeps its description on one line, which the build's agent listing ends with the agent's tools`, () => {
+    assert.doesNotMatch(read(file).description, /^[>|]|[\n\r\u2028\u2029]/);
+  });
+
   test(`${file} names an effort the build accepts, or names none at all`, () => {
     const { effort } = read(file);
     if (effort === null) return;

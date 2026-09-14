@@ -78,10 +78,20 @@ for (const file of shipped) {
   });
 
   test(`${file} puts every spawn in a phase the meta declares`, async () => {
+    // Driven through every phase, and understand through both of its argument
+    // forms: the default answer stops each run after its first phase, where a
+    // renamed Verify, Judge or Survey title was never compared with anything.
     const { meta } = splitScript(readFileSync(at(file), "utf8"));
     const declared = new Set((meta.phases ?? []).map((phase) => phase.title));
-    const run = await runWorkflow(at(file), { args: argsFor(file) });
-    for (const call of run.calls) assert.ok(declared.has(call.phase), `${call.opts.label} is in phase ${call.phase}`);
+    const reached = new Set();
+    for (const args of file === "understand.js" ? [argsFor(file), "this repository"] : [argsFor(file)]) {
+      const run = await runWorkflow(at(file), { args, onAgent: everyStage });
+      for (const call of run.calls) {
+        assert.ok(declared.has(call.phase), `${call.opts.label} is in phase ${call.phase}`);
+        reached.add(call.phase);
+      }
+    }
+    assert.deepEqual([...declared].filter((title) => !reached.has(title)), [], "a declared phase was never reached");
   });
 
   test(`${file} answers an error rather than spawning when it was given nothing to work on`, async () => {
@@ -638,7 +648,10 @@ test("a single-spawn stage that dies costs its own answer, not the whole run", a
   });
   assert.equal(run.result.findings.length, 1, "the verified finding survived the report stage dying");
   assert.equal(run.result.report, null);
-  assert.equal(run.result.verdict, "reviewed");
+  // The verdict is the one line a caller reads, so it cannot read like a clean
+  // review while a verified finding sits in `findings`.
+  assert.match(run.result.verdict, /1 verified finding/);
+  assert.match(run.result.verdict, /report stage came back with nothing readable/);
 });
 
 test("understand keeps its readings when the map stage dies", async () => {
@@ -1051,7 +1064,7 @@ test("hunt's majority is two of three, held at the boundary rather than at the e
   const offer = { candidates: [{ what: "hit", where: "a.js:1", evidence: "e" }] };
   const two = await hunt("dead code", {
     find: () => offer,
-    judge: (prompt, opts) => ({ real: !opts.label.endsWith("is-new"), reason: "r" }),
+    judge: (prompt, opts) => ({ real: !opts.label.endsWith("evidence"), reason: "r" }),
   });
   assert.equal(two.result.found.length, 1, "two of three said real and it was dropped");
 
@@ -1074,4 +1087,156 @@ test("a run whose finders came back with nothing does not report that as nothing
   const empty = await review(null, { find: () => findings(0), verify: () => assert.fail("verified with nothing to verify") });
   assert.equal(empty.result.unread, 0);
   assert.equal(empty.result.verdict, "nothing found");
+});
+
+test("review verifies two claims at one location apart, and one claim cited twice once", async () => {
+  // Merged into one candidate, a claim the verifiers refuted took a different,
+  // real defect another dimension cited on that line out of `findings` with it.
+  const at3 = (claim) => ({ findings: [{ file: "a.js:3", claim, evidence: "e", failure: "f", severity: "high" }] });
+  const twoWords = (prompt, opts) =>
+    opts.label === "find:correctness" ? at3("Loop skips the last element.") : opts.label === "find:edges" ? at3("Result is never awaited.") : findings(0);
+
+  let handed = "";
+  const both = await review(null, {
+    find: twoWords,
+    verify: () => ({ refuted: false, verdict: "holds" }),
+    report: (prompt) => {
+      handed = prompt;
+      return { verdict: "v", summary: "s" };
+    },
+  });
+  assert.equal(callsIn(both, "Verify").length, 6);
+  assert.equal(both.result.findings.length, 2);
+  assert.match(handed, /same location may be one defect/, "the merge is not told that survivors sharing a location may be one defect");
+
+  const oneRefuted = await review(null, {
+    find: twoWords,
+    verify: (prompt) => ({ refuted: prompt.includes("Loop skips"), verdict: "v" }),
+  });
+  assert.deepEqual(oneRefuted.result.findings.map((finding) => finding.claim), ["Result is never awaited."], "a refuted claim took the other one down with it");
+  assert.equal(oneRefuted.result.dropped, 1);
+
+  // One claim, the same once case and whitespace are set aside, is one candidate.
+  const same = await review(null, {
+    find: (prompt, opts) => (opts.label === "find:correctness" ? at3("Off by one") : opts.label === "find:edges" ? at3("  off  BY one ") : findings(0)),
+    verify: () => ({ refuted: false, verdict: "holds" }),
+  });
+  assert.equal(callsIn(same, "Verify").length, 3);
+  assert.equal(same.result.findings.length, 1);
+});
+
+test("review verifies one claim named with and without a leading ./ once", async () => {
+  const cited = (file) => ({ findings: [{ file, claim: "Off by one", evidence: "e", failure: "f", severity: "high" }] });
+  const spelled = await review(null, {
+    find: (prompt, opts) => (opts.label === "find:correctness" ? cited("a.js:3") : opts.label === "find:edges" ? cited(" ./a.js:3") : findings(0)),
+    verify: () => ({ refuted: false, verdict: "holds" }),
+  });
+  assert.equal(callsIn(spelled, "Verify").length, 3);
+  assert.equal(spelled.result.findings.length, 1);
+});
+
+test("hunt counts one instance named with and without a leading ./ once", async () => {
+  const spelled = await hunt("calls to fetchUser", {
+    find: (prompt, opts) =>
+      opts.label === "hunt:1:by-name"
+        ? { candidates: [{ where: "a.js:3", what: "call to fetchUser", evidence: "e" }] }
+        : opts.label === "hunt:1:by-caller"
+          ? { candidates: [{ where: " ./a.js:3", what: "fetchUser is called here", evidence: "e" }] }
+          : { candidates: [] },
+    judge: () => ({ real: true, reason: "r" }),
+  });
+  assert.deepEqual(spelled.result.found.map((entry) => entry.where), ["a.js:3"]);
+});
+
+test("hunt counts one instance two answers describe in different words once", async () => {
+  // A sweep's count is its answer. Keyed on the wording, one call two angles
+  // described differently was judged twice and reported as two instances.
+  const reworded = await hunt("calls to fetchUser", {
+    find: (prompt, opts) =>
+      opts.label === "hunt:1:by-name"
+        ? { candidates: [{ where: "a.js:3", what: "call to fetchUser", evidence: "e" }] }
+        : opts.label === "hunt:1:by-caller"
+          ? { candidates: [{ where: "a.js:3", what: "fetchUser is called here", evidence: "e" }] }
+          : opts.label === "hunt:2:by-shape"
+            ? { candidates: [{ where: "a.js:3", what: "a fetchUser invocation", evidence: "e" }] }
+            : { candidates: [] },
+    judge: () => ({ real: true, reason: "r" }),
+  });
+  assert.deepEqual(reworded.result.found.map((entry) => entry.where), ["a.js:3"]);
+  assert.equal(reworded.calls.filter((call) => call.opts.label?.startsWith("judge:2:")).length, 0, "a kept location was judged again in a later round");
+
+  // Only a kept instance claims its line. A wrong description the judges
+  // rejected must not stop a later, correct one there from being judged, and
+  // that later round is not dry.
+  const corrected = await hunt("calls to fetchUser", {
+    find: (prompt, opts) =>
+      opts.label === "hunt:1:by-name"
+        ? { candidates: [{ where: "a.js:3", what: "a comment naming fetchUser", evidence: "e" }] }
+        : opts.label === "hunt:2:by-name"
+          ? { candidates: [{ where: "a.js:3", what: "call to fetchUser", evidence: "e" }] }
+          : { candidates: [] },
+    judge: (prompt) => ({ real: !prompt.includes("a comment"), reason: "r" }),
+  });
+  assert.deepEqual(corrected.result.found.map((entry) => entry.what), ["call to fetchUser"], "a real instance at a rejected location was never judged");
+  assert.equal(corrected.result.rounds, 4);
+
+  // The other side: one answer naming two instances on one line read both.
+  const twoOnALine = await hunt("calls to fetchUser", {
+    find: (prompt, opts) =>
+      opts.label === "hunt:1:by-name"
+        ? { candidates: [{ where: "a.js:3", what: "first fetchUser call", evidence: "e" }, { where: "a.js:3", what: "second fetchUser call", evidence: "e" }] }
+        : { candidates: [] },
+    judge: () => ({ real: true, reason: "r" }),
+  });
+  assert.equal(twoOnALine.result.found.length, 2, "two instances one finder read on one line were counted as one");
+});
+
+test("hunt drops a held-over candidate at a line another answer's kept instance holds, before judging it again", async () => {
+  const run = await hunt("calls to fetchUser", {
+    find: (prompt, opts) =>
+      opts.label === "hunt:1:by-name"
+        ? { candidates: [{ where: "a.js:3", what: "call to fetchUser", evidence: "e" }] }
+        : opts.label === "hunt:1:by-caller"
+          ? { candidates: [{ where: "a.js:3", what: "fetchUser is called here", evidence: "e" }] }
+          : { candidates: [] },
+    judge: (prompt) => (prompt.includes("called here") ? null : { real: true, reason: "r" }),
+  });
+  assert.deepEqual(run.result.found.map((entry) => entry.what), ["call to fetchUser"]);
+  assert.equal(run.calls.filter((call) => call.opts.label?.startsWith("judge:2:")).length, 0, "the reworded instance was judged again after its line was kept");
+  assert.deepEqual(run.result.unjudged, []);
+});
+
+test("hunt gives up on a candidate whose judges keep failing, well before the round ceiling", async () => {
+  // Put back every round with no limit, the one stuck candidate counted as
+  // something to judge each time, the dry counter never reached two, and the
+  // run spent eight rounds and logged that rounds were still finding things.
+  const offer = { candidates: [{ what: "hit", where: "a.js:1", evidence: "e" }] };
+  // Offered again every round, so giving up has to hold against a finder that
+  // keeps naming it.
+  const run = await hunt("dead code", { find: () => offer, judge: () => null });
+  // Judged in two rounds, then two dry rounds.
+  assert.equal(run.result.rounds, 4);
+  assert.equal(callsIn(run, "Judge").length, 6);
+  assert.equal(run.calls.length, 22);
+  assert.equal(run.result.unjudged.length, 1, "the candidate given up on is still named");
+  assert.equal(run.result.exhausted, false);
+  assert.doesNotMatch(run.logs.join("\n"), /still finding things/);
+});
+
+test("hunt says which lens cast each vote on what it kept", async () => {
+  // Unlabelled and with the dead votes filtered out, a kept candidate could not
+  // say which lens dissented or which never answered.
+  const run = await hunt("dead code", {
+    find: () => candidates("one"),
+    judge: (prompt, opts) => (opts.label.endsWith("is-live") ? null : { real: true, reason: "r" }),
+  });
+  assert.deepEqual(run.result.found[0].votes.map((vote) => vote.lens), ["is-it", "evidence"]);
+});
+
+test("hunt handed a scope and no quarry says which key the quarry goes in", async () => {
+  // `target` is what to review in review and where to look here, so a caller
+  // carrying review's shape over gets told the name that was missing.
+  const run = await runWorkflow(HUNT, { args: { target: "every call to fetchUser" } });
+  assert.equal(run.calls.length, 0);
+  assert.match(run.result.error, /looking_for/);
 });

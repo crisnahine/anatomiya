@@ -409,6 +409,17 @@ test("a switch this plugin stopped reading is said once, not dropped in silence"
   assert.match(said, /ULTRACODE_ANYWHERE_SUBAGENT_EFFORT/);
   assert.match(said, /no longer does anything/);
 
+  // Once per state directory, so a compaction or the next start does not repeat it.
+  const again = notice({
+    cwd: t1.dir,
+    cli: t1.cli,
+    state: t1.state,
+    source: "compact",
+    session: "s-1",
+    env: { CLAUDE_CONFIG_DIR: t1.config, ULTRACODE_ANYWHERE_CAP_NOTICE: "0", ULTRACODE_ANYWHERE_SUBAGENT_EFFORT: "medium" },
+  });
+  assert.equal(again, null);
+
   // And nothing is said where it is not set.
   const clean = notice({
     cwd: t1.dir,
@@ -417,4 +428,35 @@ test("a switch this plugin stopped reading is said once, not dropped in silence"
     env: { CLAUDE_CONFIG_DIR: t1.config, ULTRACODE_ANYWHERE_CAP_NOTICE: "0" },
   });
   assert.equal(clean, null);
+});
+
+test("the session reads a project's settings at the root Claude Code names for it", (t) => {
+  const t1 = tree(t);
+  mkdirSync(join(t1.dir, ".claude"), { recursive: true });
+  mkdirSync(join(t1.dir, "sub"), { recursive: true });
+  writeFileSync(join(t1.dir, ".claude", "settings.json"), JSON.stringify({ enableWorkflows: false }));
+  const env = { CLAUDE_CONFIG_DIR: t1.config, CLAUDE_PROJECT_DIR: t1.dir, ULTRACODE_ANYWHERE_CAP_NOTICE: "0" };
+
+  assert.match(notice({ cwd: join(t1.dir, "sub"), cli: t1.cli, state: t1.state, env }), /"enableWorkflows": false/);
+});
+
+test("a stage level nobody can read is not remarked on while the spawn hold sets it aside", (t) => {
+  // The reminder names the held level in its place, so a line saying the stages lost their level contradicts it.
+  const t1 = tree(t, { settings: { effortLevel: "xhigh" } });
+  const env = { CLAUDE_CONFIG_DIR: t1.config, ULTRACODE_ANYWHERE_CAP_NOTICE: "0", ULTRACODE_ANYWHERE_STAGE_EFFORT: "mediun" };
+
+  assert.match(notice({ cwd: t1.dir, cli: t1.cli, state: t1.state, env }), /ULTRACODE_ANYWHERE_STAGE_EFFORT/, "said with the hold off");
+  const held = notice({ cwd: t1.dir, cli: t1.cli, state: t1.state, env: { ...env, ULTRACODE_ANYWHERE_SPAWN_EFFORT: "medium", CLAUDE_CODE_SUBAGENT_MODEL: "claude-opus-5[1m]" } });
+  assert.equal(String(held).includes("ULTRACODE_ANYWHERE_STAGE_EFFORT"), false);
+});
+
+test("a state directory a project's settings set is read past to the account's own", (t) => {
+  const t1 = tree(t);
+  mkdirSync(join(t1.dir, ".claude"), { recursive: true });
+  writeFileSync(join(t1.dir, ".claude", "settings.local.json"), JSON.stringify({ env: { ultracode_anywhere_state: t1.state } }));
+
+  notice({ cwd: t1.dir, cli: t1.cli, env: { CLAUDE_CONFIG_DIR: t1.config, ULTRACODE_ANYWHERE_STATE: t1.state, ULTRACODE_ANYWHERE_CAP_NOTICE: "0" } });
+
+  assert.equal(existsSync(t1.state), false);
+  assert.equal(existsSync(join(t1.config, "ultracode-anywhere", ".drift")), true, "the build's answer is kept in the account's own state");
 });
