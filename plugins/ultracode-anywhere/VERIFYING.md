@@ -546,11 +546,12 @@ node hooks/hold-upkeep.mjs --verify
 ```
 
 It writes copies and shadows into the configuration it runs against and records what it found beside
-the turn counters, so point `CLAUDE_CONFIG_DIR` and `ULTRACODE_ANYWHERE_STATE` at a copy where the real
-ones should stay as they are. To check a checkout, point that copy's
+the turn counters, so point `CLAUDE_CONFIG_DIR` and `ULTRACODE_ANYWHERE_STATE` at a copy where the
+real ones should stay as they are. To check a checkout, point that copy's
 `plugins/installed_plugins.json` entry for this plugin at it. `self-check passed on` the build means
-every probe reached the stand-in and none saw a spawn off the level. Read `details` in the record
-anyway: a probe listed as skipped proved nothing.
+no probe that ran saw a spawn off the level or came back unable to finish. A probe of a typed
+command passes by being blocked, which reaches no stand-in, and a probe listed as skipped proved
+nothing, so read `details` in the record.
 
 Each probe rests on something the build does, and a probe reported as unable to finish usually means
 one of these moved:
@@ -570,10 +571,37 @@ one of these moved:
 - A hook's environment carries `CLAUDE_PROJECT_DIR` and the Bash tool's does not, which is why the
   exports name the session's project in `ULTRACODE_ANYWHERE_PROJECT_DIR` for the shim and the preload.
 - `CLAUDE_CODE_SIMPLE` and `CLAUDE_CODE_SAFE_MODE` still stand for `--bare` and `--safe-mode`.
+- A project's settings `env` cannot set `HOME`, `USERPROFILE` or `CLAUDE_CONFIG_DIR`: the build
+  drops them with a warning. It can set `AI_AGENT`, `CLAUDE_CODE_EXECPATH` and every
+  `ULTRACODE_ANYWHERE_*` name, which is why the hold refuses those as redirects and the hooks read
+  past them.
+- Settings from each scope are folded in with lodash `mergeWith`, so an object such as `env` or
+  `modelSettings` merges key by key. `settingsFor` in `hooks/upstream.mjs` merges the same way.
+- `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB` forces the default permission mode, which is why a probe allows
+  the tools it calls by name. It does not stop the Bash tool sourcing the hold's exports.
+- A `PreToolUse` payload is sent whole with no size limit, and carries `effort` but no model, which
+  is why a payload over the megabyte the hooks read is refused as unchecked when its call starts a
+  spawn or comes from a subagent or a `claude` started from the shell.
+- The build registers each process once in `sessions/<pid>.json` under the configuration directory,
+  with a `startedAt`. The hold keeps that value with a session's record, which is how a record left
+  by an earlier process with the same id is told apart.
+- A `claude` reads `.claude/settings.json` in the directory it starts in, and `settings.local.json`
+  there and at its canonical git root, whose file wins. A linked worktree's canonical root is its
+  main repository. The root is passed over where it is that directory, the real home, or not owned
+  by this account (the root, its `.git` or its `.claude`), and on Windows. `localSettingsDir` in
+  `hooks/hook-io.mjs` follows the same rule, and the preload carries its source. Its hooks get
+  `CLAUDE_PROJECT_DIR` set to the directory it starts in, and the Bash tool gets none of its own, so
+  a project's settings `env` can set one there. To check it, start a session in `repo/sub` with the
+  switch named only in `repo/.claude/settings.local.json`: the session opens saying a project names
+  it, as it does when `repo/sub/.claude/settings.json` names it.
 - `CLAUDE_ENV_FILE` reaches a plugin's `SessionStart` hook, and a plugin agent may not set
   `permissionMode`, `hooks` or `mcpServers`, which is why a copy of one leaves them out.
 - `CLAUDE_CODE_EFFORT_LEVEL`, in the environment or a settings `env`, outranks an agent's `effort:`,
-  and `maxEffortLevel` caps it. Either one off the level refuses every spawn.
+  and `maxEffortLevel` caps it. Either one refuses every spawn, the first off the level and the
+  second below it. The build reads that variable untrimmed and in any case, takes `med` for `medium`
+  and a number as a budget, reads `unset` and `auto` as no effort for any spawn, and ignores
+  anything else (`$P` and `N0` near offset 167794350 on 2.1.270). `effortPin` in
+  `hooks/hold-config.mjs` reads it the same way.
 - A `--settings` value's `env` outranks a project's settings `env`, which is why the shim hands the
   held level there as well as in the environment.
 - A reply the build makes itself is recorded under a bracketed model name, `<synthetic>` on this

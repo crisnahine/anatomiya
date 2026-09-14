@@ -1,16 +1,16 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, readFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, symlinkSync, utimesSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { loadedTiers, resolveAgent } from "../plugins/ultracode-anywhere/hooks/hold-agents.mjs";
-import { holdStatePath, preloadPath } from "../plugins/ultracode-anywhere/hooks/hold-config.mjs";
+import { checksDir, holdStatePath, preloadPath } from "../plugins/ultracode-anywhere/hooks/hold-config.mjs";
 import { bashPath, exportsFor, holdNotice, startHold } from "../plugins/ultracode-anywhere/hooks/hold-session.mjs";
 import { notice } from "../plugins/ultracode-anywhere/hooks/session-start.mjs";
 import { agentText, probeLog, world, write } from "./hold-fixtures.mjs";
-import { needsPosixPaths, needsPosixPermissions } from "./platform.mjs";
+import { needsPosixPaths, needsPosixPermissions, needsSymlinks } from "./platform.mjs";
 
 const PLUGIN = fileURLToPath(new URL("../plugins/ultracode-anywhere/", import.meta.url)).replace(/[\\/]$/, "");
 
@@ -77,13 +77,29 @@ test("the last self-check on the running build is said when it found a leak, cou
   assert.match(holdNotice({ env: at, cwd: root }).join(), /found spawns off the level on Claude Code 2\.1\.999, so spawns are refused: fork: it spawned/);
 
   record({ version: "2.1.999", ok: false, leaks: [], infra: ["nested workflow: no spawn reached the stand-in"] });
-  assert.match(holdNotice({ env: at, cwd: root }).join(), /could not finish on Claude Code 2\.1\.999: nested workflow.*runs again at a session start once 30 minutes have passed/);
+  assert.match(holdNotice({ env: at, cwd: root }).join(), /could not finish on Claude Code 2\.1\.999: nested workflow.*runs again at a session start once 30 minutes have passed.*hold-upkeep\.mjs" --verify/);
 
   record({ version: "2.1.998", ok: false, leaks: ["old: gone"], infra: [] });
   assert.deepEqual(holdNotice({ env: at, cwd: root }), [], "a record for another build says nothing about this one");
 
   write(holdStatePath(env, "upkeep.json"), JSON.stringify({ version: "2.1.999", error: "boom" }));
   assert.match(holdNotice({ env: at, cwd: root }).join(), /upkeep failed on Claude Code 2\.1\.999, so spawns may be refused: boom/);
+});
+
+test("a main-loop leak a control that proved nothing kept is said with that control's reason, and no other leak or record gets it", (t) => {
+  const { root, env } = world(t);
+  const at = { ...env, AI_AGENT: "claude-code_2-1-999_agent" };
+  const record = (state) => write(holdStatePath(env, "verified.json"), JSON.stringify(state));
+
+  const failedControl = { infra: ["control: the run with this plugin switched off never reached the stand-in, so no main loop at the held level was judged"], controlWhy: "the run with this plugin switched off never reached the stand-in", mainLoopJudge: "control" };
+  record({ version: "2.1.999", ok: false, leaks: ["fork: it spawned instead of being refused", "fork: the main loop was lowered to medium"], ...failedControl });
+  assert.match(holdNotice({ env: at, cwd: root }).join(), /refused: fork: it spawned instead of being refused; fork: the main loop was lowered to medium\. The main-loop leaks are kept, since the run with this plugin switched off never reached the stand-in\. Run /, "a main-loop leak the control could not judge again says why it stays");
+  record({ version: "2.1.999", ok: false, leaks: ["fork: it spawned instead of being refused"], ...failedControl });
+  assert.doesNotMatch(holdNotice({ env: at, cwd: root }).join(), /are kept/, "a spawn leak keeps nothing from a control, so no reason goes beside it");
+  record({ version: "2.1.999", ok: false, leaks: ["fork: the main loop was lowered to medium"], infra: ["main loop: nested workflow ran on claude-sonnet-5, which the control run never ran, so it was not judged"], mainLoopJudge: "control" });
+  assert.doesNotMatch(holdNotice({ env: at, cwd: root }).join(), /are kept/, "only a control that proved nothing explains a kept leak");
+  record({ version: "2.1.999", ok: false, leaks: ["fork: the main loop was lowered to medium"], infra: [] });
+  assert.deepEqual(holdNotice({ env: at, cwd: root }), [], "a main-loop leak from a record no control run judged is not said");
 });
 
 test("the session-start notice carries the hold's lines, with the reminder switched off too, and a resumed session is told nothing", (t) => {
@@ -117,7 +133,34 @@ test("a session with the hold off writes no exports, and starts upkeep only wher
   startHold({ env: off, pluginRoot: PLUGIN, cwd: root, startUpkeep: (args) => started.push(args) });
   assert.equal(readFileSync(envFile, "utf8"), "");
   assert.equal(started.length, 0, "a session that never held anything starts no process");
+  const left = join(checksDir(env), "ultracode-hold-check-left01");
+  mkdirSync(left, { recursive: true });
+  startHold({ env: off, pluginRoot: PLUGIN, cwd: root, startUpkeep: (args) => started.push(args) });
+  assert.equal(started.length, 0, "a check directory a run may still be using is not left behind yet");
+  const old = new Date(Date.now() - 60 * 60 * 1000);
+  utimesSync(left, old, old);
+  startHold({ env: off, pluginRoot: PLUGIN, cwd: root, startUpkeep: (args) => started.push(args) });
+  assert.equal(started.length, 1, "a check directory a killed run left is something to clean");
   write(holdStatePath(env, "shadows.json"), "{}");
+  startHold({ env: off, pluginRoot: PLUGIN, cwd: root, startUpkeep: (args) => started.push(args) });
+  assert.equal(started.length, 2);
+});
+
+test("a check directory gone since the listing is nothing to clean, and does not hide a stale one beside it", needsSymlinks, (t) => {
+  const { root, env } = world(t);
+  const off = { ...env, ULTRACODE_ANYWHERE_SPAWN_EFFORT: "" };
+  const checks = checksDir(env);
+  mkdirSync(checks, { recursive: true });
+  // A link to nothing fails its stat the way a directory another run removed after the listing does.
+  symlinkSync(join(root, "gone"), join(checks, "ultracode-hold-check-a-dangling"));
+  const started = [];
+
+  startHold({ env: off, pluginRoot: PLUGIN, cwd: root, startUpkeep: (args) => started.push(args) });
+  assert.equal(started.length, 0, "a check directory gone since the listing started upkeep");
+  const left = join(checks, "ultracode-hold-check-left01");
+  mkdirSync(left);
+  const old = new Date(Date.now() - 60 * 60 * 1000);
+  utimesSync(left, old, old);
   startHold({ env: off, pluginRoot: PLUGIN, cwd: root, startUpkeep: (args) => started.push(args) });
   assert.equal(started.length, 1);
 });
@@ -164,6 +207,24 @@ test("a held session's process records the agents it loaded once, before upkeep 
   assert.equal(resolveAgent("late", { env: restarted, root, tiers: loadedTiers(restarted, "s-3") }).agentType, "late", "claude --resume is a new process, which loads them again");
   startHold({ env, pluginRoot: PLUGIN, cwd: root, session: "s-9", source: "clear", startUpkeep: () => {} });
   assert.ok(loadedTiers(env, "s-9"), "without a process id the session is the key, and a session with no record gets one");
+});
+
+test("a new process that starts under a process id a dead one left a record for records its own agents", (t) => {
+  const { cfg, root, env } = world(t);
+  const running = { ...env, CLAUDE_PID: "4242" };
+  startHold({ env: running, pluginRoot: PLUGIN, cwd: root, session: "s-1", source: "startup", startUpkeep: () => {} });
+  write(join(cfg, "agents", "late.md"), agentText({ name: "late", description: "d", effort: "medium" }));
+
+  startHold({ env: running, pluginRoot: PLUGIN, cwd: root, session: "s-2", source: "startup", startUpkeep: () => {} });
+  assert.equal(resolveAgent("late", { env: running, root, tiers: loadedTiers(running, "s-2") })?.agentType, "late");
+});
+
+test("an env file that cannot be written still starts upkeep", (t) => {
+  const { root, env } = world(t);
+  const started = [];
+
+  startHold({ env: { ...env, CLAUDE_ENV_FILE: join(root, "no-such-dir", "env.sh") }, pluginRoot: PLUGIN, cwd: root, startUpkeep: (args) => started.push(args) });
+  assert.equal(started.length, 1);
 });
 
 test("a state directory the hold cannot keep its state in is said, since upkeep then never runs", needsPosixPermissions, (t) => {

@@ -6,7 +6,8 @@ import { join } from "node:path";
 
 import { execFileSync } from "node:child_process";
 
-import { needsPosixPermissions, needsPosixSpecialFiles, needsSymlinks } from "./platform.mjs";
+import { needsGitRootLocalSettings, needsPosixPermissions, needsPosixSpecialFiles, needsSymlinks } from "./platform.mjs";
+import { repoWithSub } from "./hold-fixtures.mjs";
 import { SWEEP_MOST, appendLine, cached, firstTime, nextTurn, ownState, startOver, stateDirFor, sweep } from "../plugins/ultracode-anywhere/hooks/counters.mjs";
 
 /** A state directory of its own, so one test's turn count cannot reach another's. */
@@ -205,6 +206,16 @@ test("state lives in this account's own configuration directory, not in the shar
   assert.doesNotMatch(stateDirFor({ HOME: "/home/someone" }), /tmp/i);
 });
 
+test("a state directory the git root's local settings set is read past from a session below the root", needsGitRootLocalSettings, (t) => {
+  const { repo, sub } = repoWithSub(t);
+  mkdirSync(join(repo, ".claude"));
+  writeFileSync(join(repo, ".claude", "settings.local.json"), JSON.stringify({ env: { ULTRACODE_ANYWHERE_STATE: join(repo, "state") } }));
+
+  assert.equal(stateDirFor({ CLAUDE_CONFIG_DIR: "/somewhere/config", ULTRACODE_ANYWHERE_STATE: join(repo, "state") }, sub), join("/somewhere/config", "ultracode-anywhere"));
+  writeFileSync(join(sub, ".claude", "settings.local.json"), JSON.stringify({ env: {} }));
+  assert.equal(stateDirFor({ CLAUDE_CONFIG_DIR: "/somewhere/config", ULTRACODE_ANYWHERE_STATE: join(repo, "state") }, sub), join("/somewhere/config", "ultracode-anywhere"), "the session's own local file does not hide it");
+});
+
 test("a machine with no home to write into keeps no state rather than keeping it anywhere", (t) => {
   // The temporary directory is the one place a plugin can always write and the
   // one place it should not. Without a home there is nowhere of this account's
@@ -319,19 +330,26 @@ test("a sweep of a directory holding more than it should stops rather than readi
   assert.equal(sweep(dir), SWEEP_MOST, "one turn's worth, and the rest on the turns after");
 });
 
-test("a sweep reads a bounded number of entries, not every file in the directory", (t) => {
+test("a sweep reads a bounded number of entries, and a later sweep reaches what one did not", (t) => {
   // The cap is on what it looks at, not on what it removes: a directory full of
   // counters that are all too fresh to remove read two seconds of a five second
-  // budget while removing nothing.
+  // budget while removing nothing. The window opens at `now` modulo the entry
+  // count, and the old counter's place is read off the listing, since ext4
+  // promises no order a name could predict.
   const dir = stateDir(t);
   for (let i = 0; i < 700; i++) writeFileSync(join(dir, `fresh-${i}`), "3");
   const longAgo = (Date.now() - 30 * 86_400_000) / 1000;
   writeFileSync(join(dir, "zz-old"), "3");
   utimesSync(join(dir, "zz-old"), longAgo, longAgo);
+  const listed = readdirSync(dir);
+  const at = listed.indexOf("zz-old");
+  const clock = Date.now();
+  const base = clock - (clock % listed.length);
 
   assert.equal(SWEEP_MOST, 500);
-  assert.equal(sweep(dir), 0, "the old one sits past the bound, and the next turn reaches it");
+  assert.equal(sweep(dir, base + ((at + 1) % listed.length)), 0, "a window opening past the old one ends before it comes round");
   assert.equal(readdirSync(dir).length, 701);
+  assert.equal(sweep(dir, base + at), 1, "and a sweep whose window opens elsewhere reaches it");
 });
 
 test("a mark file of no bytes is one already made, not one to make again forever", (t) => {

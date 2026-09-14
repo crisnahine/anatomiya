@@ -11,6 +11,7 @@
  */
 import { closeSync, constants, lstatSync, mkdirSync, openSync, readdirSync, rmSync, writeSync } from "node:fs";
 
+import { projectNames } from "./hold-switch.mjs";
 import { configDirFor, readOwnFile } from "./hook-io.mjs";
 import { userInfo } from "node:os";
 import { join } from "node:path";
@@ -22,7 +23,8 @@ const KEEP_DAYS = 7;
  * Counters one sweep will stat and read, whether or not it removes them. A
  * sweep runs on a turn, and a directory holding fifty thousand counters too
  * fresh to remove read two seconds of a five second budget looking at all of
- * them; what this does not reach on one turn it reaches on the next. Names
+ * them. Each sweep starts where the clock puts it, so what one turn does not
+ * reach a later one does, whatever sorts ahead of it. Names
  * that are not a counter's cost a listing entry each and nothing more.
  */
 export const SWEEP_MOST = 500;
@@ -55,9 +57,12 @@ const MOST_KEPT = 4096;
  * A machine with no home to write into gets no state, and the session loses its
  * cadence rather than its reminder: the one place a plugin can always write is
  * the one place this should not.
+ *
+ * A switch a project's own settings set is read past, since a cloned repository
+ * can point it into its own working tree.
  */
-export function stateDirFor(env = process.env) {
-  if (env.ULTRACODE_ANYWHERE_STATE) return env.ULTRACODE_ANYWHERE_STATE;
+export function stateDirFor(env = process.env, root = "") {
+  if (env.ULTRACODE_ANYWHERE_STATE && !projectNames(root, "ULTRACODE_ANYWHERE_STATE")) return env.ULTRACODE_ANYWHERE_STATE;
 
   const config = configDirFor(env);
   return config ? join(config, "ultracode-anywhere") : "";
@@ -285,9 +290,10 @@ export function sweep(dir, now = Date.now()) {
   } catch {
     return 0;
   }
+  const start = entries.length === 0 ? 0 : Math.floor(now) % entries.length;
   let looked = 0;
-  for (const entry of entries) {
-    if (looked >= SWEEP_MOST) break;
+  for (let i = 0; i < entries.length && looked < SWEEP_MOST; i++) {
+    const entry = entries[(start + i) % entries.length];
     if (!COUNTER_NAME.test(entry)) continue;
     looked++;
     const path = join(dir, entry);

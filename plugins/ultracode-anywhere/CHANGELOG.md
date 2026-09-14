@@ -9,6 +9,107 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- A self-check no longer leaves its probe sessions' records among the ones the hold keeps for real
+  sessions. Each run added about twenty, and they stayed for a month. A probe now keeps its record
+  inside its own check, which is removed when the check ends.
+- With `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB` on, the build forces the default permission mode, so the
+  self-check's shell and workflow probes were refused their tools and the check failed every 30
+  minutes without ever passing. The probes now allow the tools they call, by name.
+- A project whose settings set `ULTRACODE_ANYWHERE_PROJECT_DIR` now refuses every spawn, like the
+  other variables the hold reads to find its settings.
+- The preload reads the directories the shim reads, the one it runs in included, and holds a node
+  program's `claude` wherever the shim would hold one typed in the same shell.
+- A call whose payload is larger than the megabyte the hold reads is refused as unchecked when it
+  starts a spawn or comes from a subagent or a `claude` started from the shell, where it was
+  reported as a spawn that got past the hold, or rewritten without its prompt. A prompt that large
+  is blocked when it opens with a slash, where a typed command in one ran unchecked.
+- Settings from the user, the project and the local file merge the way Claude Code merges them,
+  objects key by key and arrays joined without repeats, so a project's `env` or `modelSettings` no
+  longer hides the user's `CLAUDE_CODE_EFFORT_LEVEL` or `maxEffortLevel` from the hold.
+- A quoted frontmatter value no longer takes in a trailing comment that holds the same quote, and a
+  key written quoted or with a space before its colon counts as that key, both where an agent's
+  effort is read and where a plugin agent's copy drops `permissionMode`, `hooks` and `mcpServers`.
+- A workflow's name is read from its meta literal, so a `name:` inside another member's text no
+  longer registers it under that name.
+- A remote stage runs with no isolation outside a git repository, the way a remote Agent call
+  already did.
+- A session start whose `CLAUDE_ENV_FILE` cannot be written still starts upkeep.
+- The retired `ULTRACODE_ANYWHERE_SUBAGENT_EFFORT` line is said once, where it came back at every
+  start, compaction and clear.
+- Removing a `maxEffortLevel` cap or an exported `CLAUDE_CODE_EFFORT_LEVEL` reruns the self-check at
+  the next session start, where spawns stayed refused for half an hour.
+- An exported `CLAUDE_CODE_EFFORT_LEVEL` refuses spawns in a session whose `NODE_OPTIONS` names the
+  preload. The preload runs in the hooks' own processes too and set the held level over the
+  session's value before they read it. It now keeps the value it replaced in
+  `ULTRACODE_ANYWHERE_REPLACED_EFFORT`.
+- A self-check run from a terminal no longer makes the next session start run every probe again.
+- The refusal over a `CLAUDE_CODE_EFFORT_LEVEL` off the level says to remove it, where it offered
+  `unset`, which is refused too.
+- The notice for a self-check that could not finish carries the command to run it again.
+- A killed self-check's directory is removed with the hold off, or with no build version read, too.
+  A session in a project whose own settings switch the hold off, or move what it reads, leaves it to
+  a session elsewhere.
+- `ULTRACODE_ANYWHERE_EVERY` is read past surrounding spaces and past four digits.
+- A `CLAUDE_CODE_EFFORT_LEVEL` the build cannot read, such as one with a trailing space, no longer
+  refuses every spawn. `unset`, `auto` and a number still do, since the build drops a spawn's own
+  effort for each.
+- The self-check judges a probe's main loop against a run of the same build with this plugin
+  switched off, where it expected the level the settings named. A `modelSettings` entry, a cap, a
+  policy or a launch default that put the main loop at the held level read as lowered and refused
+  every spawn. A main-loop leak the last run recorded stays only for a probe whose main loop this
+  run could not judge, and only while it names the level held now: a probe that was skipped, failed
+  or never reached the stand-in, one whose main requests carry no effort, one on a model the control
+  never ran, or every probe at the held level when the control finds no id to switch this plugin
+  off, still loads it, or never reaches the stand-in. A main loop the run saw at a known effort off
+  the held level counts as judged. A run whose settings send requests elsewhere keeps the last
+  leaks, leaving out a main-loop leak that names another level. The session start gives a failed
+  control's reason beside the leak, and the self-check says when a main loop went unjudged.
+  Main-loop leaks in a record from 0.9.0 refuse no spawn, since no control judged them.
+- A policy drop-in in a folder below `managed-settings.d`, or named with a leading dot, no longer
+  stops the self-check's probes as routing requests elsewhere, since Claude Code does not read it.
+- Turning `ultracode` on or off in the user's settings reruns the self-check at the next session
+  start.
+- A spawn off the level is still recorded as a leak when a probe's directory cannot be removed.
+- A capture that left a built-in agent without its shadow waits 30 minutes before it runs again, as
+  does one that could not read the listing, which is reported at the next session start.
+- A new process that reuses an exited process's id no longer inherits its loaded-agent record.
+- A project whose settings set `CLAUDE_PROJECT_DIR` or `ULTRACODE_ANYWHERE_REPLACED_EFFORT`, or set
+  `CLAUDE_CODE_SUBAGENT_MODEL` while the user's own settings name none beside the switch, refuses
+  every spawn.
+- A session started below its git root read a project's settings only in its own directory, while
+  Claude Code also reads `.claude/settings.local.json` at the git root, or at the main repository
+  for a linked worktree. A switch, a redirect, `ULTRACODE_ANYWHERE_STATE`,
+  `ULTRACODE_ANYWHERE_DEBUG` or an enabled plugin set there went unseen. The hooks, the shim and the
+  preload now read that file too, by the build's rule: not at the home directory, not on Windows,
+  and only where this account owns the root, its `.git` and its `.claude`. The home is compared by
+  real path, and a home with no real path reads no root file, as Claude Code decides it.
+- A project that moves the hold's state has nothing written there, the tripwire's marks included.
+- A `claude` the shim refuses for a `--setting-sources` list without `user`, such as
+  `project,local`, now names that list, where it only said how many characters it would not quote
+  back.
+- The prompt and session hooks read a project's `enableWorkflows`, `disableWorkflows` and
+  `ultracode` at the project root Claude Code names, wherever the session has moved since.
+- `ULTRACODE_ANYWHERE_DEBUG` and `ULTRACODE_ANYWHERE_STATE` set in a project's own settings are
+  ignored, so a cloned repository cannot have prompts logged to a file it names or counters written
+  into its working tree.
+- A session start no longer reports an unreadable `ULTRACODE_ANYWHERE_STAGE_EFFORT` while the spawn
+  hold sets that switch aside.
+- The counter sweep starts at a different place each turn, so an old counter behind 500 entries it
+  cannot remove is still forgotten.
+- The build check keeps enough text across a read boundary for the longest gate its pattern matches.
+- A workflow meta with a negative number as a key is no longer listed.
+- `review` verifies one claim once whether its file is written with a leading `./` or not, tells
+  its report that findings sharing a location may be one defect, and its verdict counts the
+  verified findings when the report stage fails.
+- `hunt` counts an instance once per location once it is kept, so a second instance on that line
+  that only another answer names is not counted, and it drops a held-over candidate there before
+  judging it again. `./a.js:3` and `a.js:3` are one location. It gives up on a candidate after two
+  rounds without enough judges where it ran to its round ceiling, and records which lens cast each
+  vote. Its third lens is renamed from `is-new` to `evidence`, so judge labels change. Handed a
+  scope and no quarry, it says the quarry goes in `looking_for`.
+
 ## [0.9.0] - 2026-09-13
 
 Until now the plugin could ask the stages of a workflow the model writes to run at a level, and

@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { frontmatter, readFrontmatter } from "../plugins/ultracode-anywhere/hooks/frontmatter.mjs";
+import { frontmatter, onceNamed, readFrontmatter } from "../plugins/ultracode-anywhere/hooks/frontmatter.mjs";
 
 test("the top-level keys come back as plain scalars", () => {
   const read = frontmatter("---\nname: slow\ndescription: Reads a lot.\neffort: xhigh\n---\nThe body.\n");
@@ -39,6 +39,25 @@ test("quoted scalars read their own escapes and fold a line break to a space", (
   assert.equal(frontmatter('---\ndescription: "a # not a comment"\n---\n').fields.description, "a # not a comment");
   assert.equal(frontmatter("---\ndescription: 'it''s'\n---\n").fields.description, "it's");
   assert.equal(frontmatter('---\ndescription: "\\x41 is YAML only"\n---\n').fields.description, "\\x41 is YAML only", "an escape JSON does not know is kept as written");
+});
+
+test("a quoted scalar ends at its own closing quote, so a comment holding that quote stays out of it", () => {
+  assert.equal(frontmatter("---\neffort: 'high' # it's\n---\n").fields.effort, "high");
+  assert.equal(frontmatter('---\neffort: "high" # say "x"\n---\n').fields.effort, "high");
+  assert.equal(frontmatter("---\ndescription: 'it''s' # it's\n---\n").fields.description, "it's");
+  assert.equal(frontmatter('---\ndescription: "a \\"b\\"" # "c"\n---\n').fields.description, 'a "b"');
+});
+
+test("a key spelled with a space before its colon, or quoted, is the key, and naming it twice that way is still twice", () => {
+  // The build hands the head to Bun.YAML.parse, and YAML reads both spellings as the plain key.
+  assert.equal(frontmatter("---\neffort : high\n---\n").fields.effort, "high");
+  assert.equal(frontmatter('---\n"effort": max\n---\n').fields.effort, "max");
+  assert.equal(frontmatter("---\n'effort': max\n---\n").fields.effort, "max");
+
+  for (const head of ['effort: high\n"effort": max', "effort: high\neffort : max", "effort: high\n'effort': max", "effort: high\neffort:max"]) {
+    assert.equal(onceNamed(frontmatter(`---\n${head}\n---\n`), "effort"), null, head);
+  }
+  assert.equal(onceNamed(frontmatter("---\neffort : high\nefforts: max\n---\n"), "effort"), "high");
 });
 
 test("a file that cannot be read has no frontmatter, and one that can is read", (t) => {

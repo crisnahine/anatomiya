@@ -8,13 +8,12 @@
  * past, to a CLAUDE_CONFIG_DIR it did not set or the account's own home, and a
  * project that names the switch itself turns nothing on.
  */
-import { userInfo } from "node:os";
 import { join } from "node:path";
 
-import { configDirFor, readIfFile } from "./hook-io.mjs";
+import { accountHome, configDirFor, projectSettingsFiles, readIfFile } from "./hook-io.mjs";
 
-/** The variables a project could set to move what the hold reads: the user's settings, its own state, and the build a session runs. */
-const REDIRECTS = ["CLAUDE_CONFIG_DIR", "HOME", "USERPROFILE", "ULTRACODE_ANYWHERE_STATE", "AI_AGENT", "CLAUDE_CODE_EXECPATH"];
+/** The variables a project could set to move what the hold reads: the user's settings, the session's project, its own state, and the build a session runs. */
+const REDIRECTS = ["CLAUDE_CONFIG_DIR", "HOME", "USERPROFILE", "ULTRACODE_ANYWHERE_STATE", "AI_AGENT", "CLAUDE_CODE_EXECPATH", "ULTRACODE_ANYWHERE_PROJECT_DIR", "CLAUDE_PROJECT_DIR", "ULTRACODE_ANYWHERE_REPLACED_EFFORT"];
 
 function settingsEnvIn(file) {
   try {
@@ -40,7 +39,7 @@ export function projectRoot(env = process.env, cwd = "") {
 }
 
 function projectEnvs(root) {
-  return root ? [settingsEnvIn(join(root, ".claude", "settings.json")), settingsEnvIn(join(root, ".claude", "settings.local.json"))] : [];
+  return projectSettingsFiles(root).map(settingsEnvIn);
 }
 
 /** The redirecting variables a project's own settings set, in any case since Windows reads names that way, in the order `REDIRECTS` lists them. */
@@ -51,20 +50,16 @@ export function projectRedirects(root) {
 
 /** Whether a project's own settings name the switch, in any case, which only the user's own settings may. */
 export function projectNamesSwitch(root) {
-  return projectEnvs(root).some((env) => Object.entries(env).some(([name, value]) => name.toUpperCase() === "ULTRACODE_ANYWHERE_SPAWN_EFFORT" && String(value ?? "").trim() !== ""));
+  return projectNames(root, "ULTRACODE_ANYWHERE_SPAWN_EFFORT", { filled: true });
+}
+
+/** Whether a project's own settings name a variable, in any case, and with a value that is not blank where `filled` asks for one. */
+export function projectNames(root, key, { filled = false } = {}) {
+  return projectEnvs(root).some((env) => Object.entries(env).some(([name, value]) => name.toUpperCase() === key && (!filled || String(value ?? "").trim() !== "")));
 }
 
 /** The redirects that move where Claude Code reads the user's own settings. */
 const SETTINGS_LOCATION = ["CLAUDE_CONFIG_DIR", "HOME", "USERPROFILE"];
-
-/** The account's own home, read off the account, where a project's settings cannot move it. */
-export function accountHome() {
-  try {
-    return userInfo().homedir;
-  } catch {
-    return "";
-  }
-}
 
 /**
  * Where the user's own settings are, as far as a project cannot have moved them:

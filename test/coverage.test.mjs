@@ -164,7 +164,8 @@ function measured(t, body, options = []) {
   // Bounded: this spawns a runner that spawns a runner, and `node --test` has
   // no per-case timeout, so a child that never finishes takes the whole file
   // with nothing printed, the passing cases included.
-  const run = spawnSync(process.execPath, [SCRIPT, ...options, spec], { encoding: "utf8", timeout: 120_000 });
+  // CI runs without color. A shell that forces it puts an escape in front of the first summary line.
+  const run = spawnSync(process.execPath, [SCRIPT, ...options, spec], { encoding: "utf8", timeout: 120_000, env: { ...process.env, FORCE_COLOR: "0" } });
   return {
     ...run,
     lines: run.stdout.split("\n").filter((line) => line.startsWith(SUMMARY)),

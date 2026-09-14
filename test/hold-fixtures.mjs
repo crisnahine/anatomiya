@@ -3,7 +3,7 @@
  * configuration, one enabled plugin, a project, and the environment that points
  * at them and at nothing of the machine running the case.
  */
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import vm from "node:vm";
@@ -15,6 +15,16 @@ export function write(path, text) {
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, text);
   return path;
+}
+
+/** A git repository with a directory below its root, where a session can start short of the root. */
+export function repoWithSub(t) {
+  // Real, as a session directory is, since the build compares it with the real home.
+  const repo = realpathSync(mkdtempSync(join(tmpdir(), "ultracode-repo-")));
+  t.after(() => rmSync(repo, { recursive: true, force: true }));
+  mkdirSync(join(repo, ".git"));
+  mkdirSync(join(repo, "sub", ".claude"), { recursive: true });
+  return { repo, sub: join(repo, "sub") };
 }
 
 /** An agent or skill file whose frontmatter holds `fields`. */

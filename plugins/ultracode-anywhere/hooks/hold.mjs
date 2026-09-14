@@ -11,15 +11,20 @@
  * read as a refusal would let it through.
  */
 import { namesSwitch, projectRoot, switchEnv } from "./hold-switch.mjs";
-import { fieldsIn, invokedAs, parsePayload, readStdin, respondWith } from "./hook-io.mjs";
+import { fieldsIn, invokedAs, parsePayload, readStdin, readWhole, respondWith } from "./hook-io.mjs";
 
 /** The tools that start a spawn or a cloud session, which a hold that could not decide refuses. */
 const SPAWN_TOOLS = new Set(["Agent", "Task", "Workflow", "Skill", "RemoteTrigger"]);
+
+/** Why a payload the hold could not read whole is refused. */
+const UNREAD = "its payload is over the megabyte the hold reads or is not JSON, so it was not read whole. Split a write or a prompt that large";
 
 /** What this hook answers for one payload: an empty object, a decision, or the refusal a broken hold owes. */
 export async function answer(verb, stdin, env = process.env) {
   const event = parsePayload(stdin);
   if (!switchedOn(env, event)) return {};
+  // A partial read has no level, and a rewrite from it drops what it never read.
+  if (!readWhole(event)) return refusal(verb, stdin, env, UNREAD);
   try {
     const rules = await import("./hold-rules.mjs");
     if (verb === "spawn-tool") return rules.toolAnswer(event, env);
@@ -51,8 +56,19 @@ export function refusal(verb, stdin, env, err) {
     const held = SPAWN_TOOLS.has(fields.tool_name) || typeof fields.agent_id === "string" || env.ULTRACODE_ANYWHERE_HELD_CHILD === "1";
     return held ? { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: why } } : {};
   }
-  if (verb === "spawn-prompt" && opensWithSlash(fields.prompt)) return { decision: "block", reason: why };
+  if (verb === "spawn-prompt" && opensWithSlash(fields.prompt ?? promptCut(stdin))) return { decision: "block", reason: why };
   return {};
+}
+
+/** How a prompt the read stopped inside opens: the build sends the prompt last, so closing its string reads the start back. */
+function promptCut(stdin) {
+  const text = String(stdin ?? "").replace(/\\u[0-9a-fA-F]{0,3}$/, "").replace(/(^|[^\\])((?:\\\\)*)\\$/, "$1$2");
+  try {
+    const value = JSON.parse(`${text}"}`);
+    return typeof value?.prompt === "string" ? value.prompt : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /**

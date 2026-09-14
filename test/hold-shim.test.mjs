@@ -9,7 +9,7 @@ import { holdStatePath } from "../plugins/ultracode-anywhere/hooks/hold-config.m
 import { SHIM_HEAD_BYTES, SHIM_MARKER, realClaudeOn, runShim, shimPlan } from "../plugins/ultracode-anywhere/hooks/hold-shim.mjs";
 import { hostEnv } from "./host-env.mjs";
 import { world, write } from "./hold-fixtures.mjs";
-import { needsPosixPaths, needsShebang, needsUnreadableFiles } from "./platform.mjs";
+import { needsGitRootLocalSettings, needsPosixPaths, needsShebang, needsUnreadableFiles } from "./platform.mjs";
 
 const SHIM = fileURLToPath(new URL("../plugins/ultracode-anywhere/shim/claude", import.meta.url));
 const NAME = process.platform === "win32" ? "claude.exe" : "claude";
@@ -205,6 +205,14 @@ test("the plugin must be enabled in the settings sources the claude will read", 
   assert.ok(plan(["--setting-sources=user,project", "-p", "x"]).exec);
 });
 
+test("a --setting-sources list is quoted back with the blanks around its sources trimmed, and one carrying anything else is not", (t) => {
+  const { plan } = shimWorld(t);
+
+  assert.match(plan(["--setting-sources", "project,local", "-p", "x"]).refuse, /--setting-sources "project,local" leaves out the user settings/);
+  assert.match(plan(["--setting-sources=project, local", "-p", "x"]).refuse, /--setting-sources "project,local" leaves out/);
+  assert.match(plan(["--setting-sources", "project,$(id)", "-p", "x"]).refuse, /--setting-sources 13 characters this will not quote back/);
+});
+
 test("a --settings value is checked once and handed on as the text that was checked, with the child's own level held in it", (t) => {
   const { root, plan } = shimWorld(t);
   const file = write(join(root, "worker.json"), '{"skipDangerousModePermissionPrompt": true}');
@@ -239,4 +247,34 @@ test("a claude started in a subdirectory is checked against the session's projec
   mkdirSync(sub, { recursive: true });
 
   assert.match(shimPlan(["-p", "x"], { ...env, ULTRACODE_ANYWHERE_PROJECT_DIR: project }, sub).refuse ?? "", /a project's settings set ULTRACODE_ANYWHERE_STATE/);
+});
+
+test("a claude is checked against the plugins its own directory's settings enable, with a git repository's local settings read at its root", needsGitRootLocalSettings, (t) => {
+  // Measured: a claude started below a project reads .claude/settings.json in its own directory, and settings.local.json at the git root.
+  const { cfg, project, env } = shimWorld(t);
+  const sub = join(project, "src");
+  mkdirSync(join(project, ".git"), { recursive: true });
+  mkdirSync(sub, { recursive: true });
+  const at = { ...env, ULTRACODE_ANYWHERE_PROJECT_DIR: project };
+
+  write(join(project, ".claude", "settings.local.json"), JSON.stringify({ enabledPlugins: { "ultracode-anywhere@m": false } }));
+  assert.match(shimPlan(["-p", "x"], at, sub).refuse ?? "", /does not enable ultracode-anywhere/, "the git root's local settings reach a claude started below it");
+  write(join(project, ".claude", "settings.local.json"), "{}");
+  write(join(cfg, "settings.json"), JSON.stringify({ enabledPlugins: {} }));
+  write(join(project, ".claude", "settings.json"), JSON.stringify({ enabledPlugins: { "ultracode-anywhere@m": true } }));
+  assert.match(shimPlan(["-p", "x"], at, sub).refuse ?? "", /does not enable ultracode-anywhere/, "the project settings above it do not");
+  write(join(sub, ".claude", "settings.json"), JSON.stringify({ enabledPlugins: { "ultracode-anywhere@m": true } }));
+  assert.ok(shimPlan(["-p", "x"], at, sub).exec);
+});
+
+test("a CLAUDE_PROJECT_DIR that a project's settings put in the shell does not move the project the shim checks", (t) => {
+  const { root, project, env } = shimWorld(t);
+  const elsewhere = join(root, "elsewhere");
+  mkdirSync(elsewhere, { recursive: true });
+  write(join(project, ".claude", "settings.json"), JSON.stringify({ env: { CLAUDE_PROJECT_DIR: elsewhere } }));
+  const sub = join(project, "src");
+  mkdirSync(sub, { recursive: true });
+
+  const decided = shimPlan(["-p", "x"], { ...env, ULTRACODE_ANYWHERE_PROJECT_DIR: project, CLAUDE_PROJECT_DIR: elsewhere }, sub);
+  assert.match(decided.refuse ?? "", /a project's settings set CLAUDE_PROJECT_DIR/);
 });
