@@ -13,6 +13,7 @@ import {
   copyNameFor,
   copyOf,
   dropKey,
+  enabledPlugins,
   loadedTiers,
   pluginDefs,
   projectDefs,
@@ -29,7 +30,7 @@ import {
 
 import { holdStatePath } from "../plugins/ultracode-anywhere/hooks/hold-config.mjs";
 import { agentText, probeLog, world, write } from "./hold-fixtures.mjs";
-import { needsPosixPaths } from "./platform.mjs";
+import { needsGitRootLocalSettings, needsPosixPaths } from "./platform.mjs";
 
 const copyFile = (env, agentType, file, level = "medium") => join(copiesDir(env), `${copyNameFor({ agentType, file }, level)}.md`);
 
@@ -44,6 +45,12 @@ test("dropKey removes a key together with its indented or listed lines", () => {
   const head = "name: x\nhooks:\n  PreToolUse:\n    - matcher: Bash\nmcpServers:\n- one\npermissionMode: default\ndescription: d";
 
   assert.equal(["hooks", "mcpServers", "permissionMode"].reduce(dropKey, head), "name: x\ndescription: d");
+});
+
+test("dropKey removes a key however YAML lets it be spelled, since the build reads every spelling as that key", () => {
+  const head = "name: x\n\"permissionMode\": bypassPermissions\npermissionMode : bypassPermissions\n'hooks':\n  PreToolUse: []\nmcpServers\t: {}\npermissionModes: kept\ndescription: d";
+
+  assert.equal(["hooks", "mcpServers", "permissionMode"].reduce(dropKey, head), "name: x\npermissionModes: kept\ndescription: d");
 });
 
 test("a copy follows its source: written above the level, removed once the source reaches it", (t) => {
@@ -271,6 +278,15 @@ test("a plugin enabled only by the project's settings is read from that project"
   assert.equal(resolveAgent("local:checker", { env, root }), null);
 });
 
+test("a plugin the git root's local settings enable counts for a session below the root, and only as a local source", needsGitRootLocalSettings, (t) => {
+  const { home, project, env } = world(t);
+  write(join(home, "work", ".git", "HEAD"), "ref: refs/heads/main\n");
+  write(join(home, "work", ".claude", "settings.local.json"), JSON.stringify({ enabledPlugins: { "local@m": true } }));
+
+  assert.equal(enabledPlugins(env, project)["local@m"], true);
+  assert.equal(enabledPlugins(env, project, ["user", "project"])["local@m"], undefined);
+});
+
 test("a plugin index in an unexpected shape is read as far as it goes", (t) => {
   const { cfg, root, plugin, env } = world(t);
   write(join(plugin, "agents", "verifier.md"), agentText({ name: "verifier", description: "d" }));
@@ -388,6 +404,22 @@ test("the agents a session loaded are recorded when it starts, and a definition 
   assert.equal(recordLoaded(env, "../escape", root), false, "a session id is a file name here");
 });
 
+test("a process given an exited process's id does not inherit its record, and the process that wrote one keeps it", (t) => {
+  const { cfg, root, env } = world(t);
+  const running = { ...env, CLAUDE_PID: "4242" };
+  const registered = (startedAt) => write(join(cfg, "sessions", "4242.json"), JSON.stringify({ pid: 4242, startedAt }));
+  registered(1000);
+  recordLoaded(running, "s-1", root);
+  write(join(cfg, "agents", "late.md"), agentText({ name: "late", description: "d", effort: "medium" }));
+
+  recordLoaded(running, "s-2", root, { replace: false });
+  assert.equal(resolveAgent("late", { env: running, root, tiers: loadedTiers(running, "s-2") }), null, "/clear keeps what the process loaded");
+  registered(2000);
+  assert.equal(loadedTiers(running, "s-2"), null, "another process registered under this id since the record was written");
+  recordLoaded(running, "s-3", root, { replace: false });
+  assert.equal(resolveAgent("late", { env: running, root, tiers: loadedTiers(running, "s-3") }).agentType, "late", "claude --resume under a reused id loads them again");
+});
+
 test("a record of the agents a session loaded is kept for a month, and one older goes", (t) => {
   const { root, env } = world(t);
   recordLoaded(env, "old", root);
@@ -449,6 +481,16 @@ test("a self-check probe keeps its record under its session, so the real session
   recordLoaded(probe, "s-probe", root);
   assert.ok(loadedTiers({ ...probe, CLAUDE_PID: "99" }, "s-probe"));
   assert.equal(existsSync(holdStatePath(env, join("sessions", "pid-4242.json"))), false);
+});
+
+test("a self-check probe's record stays inside its check, so repeated checks add nothing to the sessions the hold keeps", (t) => {
+  const { root, env } = world(t);
+  const probe = { ...env, CLAUDE_PID: "4242", ULTRACODE_ANYWHERE_HOLD_CHECK: "1", ANTHROPIC_BASE_URL: "http://127.0.0.1:4000", ULTRACODE_ANYWHERE_HOLD_CHECK_LOG: probeLog(env) };
+
+  recordLoaded(probe, "s-probe", root);
+  assert.ok(loadedTiers(probe, "s-probe"));
+  const kept = holdStatePath(env, "sessions");
+  assert.deepEqual(existsSync(kept) ? readdirSync(kept) : [], []);
 });
 
 test("the record of a process that has exited goes at the next prune, and a running one's stays", (t) => {

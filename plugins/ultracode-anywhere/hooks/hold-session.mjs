@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 import { ownState, stateDirFor } from "./counters.mjs";
 import { heldAskedFor } from "./effort.mjs";
 import { copiesDir, enabledPlugins, recordLoaded } from "./hold-agents.mjs";
-import { RECHECK, RETRY_MS, holdGaps, holdStatePath, holdTarget, preloadPath, probingIn, runningVersion } from "./hold-config.mjs";
+import { RECHECK, RETRY_MS, checksDir, holdGaps, holdStatePath, holdTarget, isMainLoopLeak, leftBehindChecks, preloadPath, probingIn, runningVersion, verifiedRecord } from "./hold-config.mjs";
 import { readJson } from "./hold-files.mjs";
 import { namesSwitch, projectNamesSwitch, projectRedirects, projectRoot, switchEnv } from "./hold-switch.mjs";
 import { readIfFile } from "./hook-io.mjs";
@@ -94,25 +94,27 @@ export function holdNotice({ env = process.env, cwd = "", accountHome = null } =
   if (upkeep?.version === version && typeof upkeep.error === "string") {
     said.push(`ultracode-anywhere's spawn hold upkeep failed on Claude Code ${version}, so spawns may be refused: ${upkeep.error}. Run ${RECHECK} to see it again.`);
   }
-  const verified = readJson(holdStatePath(env, "verified.json"), null);
+  const verified = verifiedRecord(env);
   if (verified?.version !== version) return said;
   const leaks = onlyStrings(verified.leaks);
   const infra = onlyStrings(verified.infra);
   if (leaks.length > 0) {
-    said.push(`ultracode-anywhere's self-check found spawns off the level on Claude Code ${version}, so spawns are refused: ${leaks.join("; ")}. Run ${RECHECK} once it is fixed.`);
+    const keptWhy = leaks.some(isMainLoopLeak) ? verified.controlWhy : undefined;
+    const kept = typeof keptWhy === "string" ? ` The main-loop leaks are kept, since ${keptWhy}.` : "";
+    said.push(`ultracode-anywhere's self-check found spawns off the level on Claude Code ${version}, so spawns are refused: ${leaks.join("; ")}.${kept} Run ${RECHECK} once it is fixed.`);
   } else if (infra.length > 0) {
     said.push(
-      `ultracode-anywhere's self-check could not finish on Claude Code ${version}: ${infra.join("; ")}. The tripwire still stops a subagent off the level, and the check runs again at a session start once ${RETRY_MS / 60000} minutes have passed.`,
+      `ultracode-anywhere's self-check could not finish on Claude Code ${version}: ${infra.join("; ")}. The tripwire still stops a subagent off the level, and the check runs again at a session start once ${RETRY_MS / 60000} minutes have passed. Run ${RECHECK} to try it sooner.`,
     );
   }
   return said;
 }
 
-/** Whether a hold that is off now left copies or shadows behind for upkeep to clean. */
-function leftBehind(env) {
+/** Whether a hold that is off now left copies, shadows or a killed self-check's directory behind for upkeep to clean. */
+function leftBehind(env, now = Date.now()) {
   const shadows = holdStatePath(env, "shadows.json");
   const copies = copiesDir(env);
-  return Boolean((shadows && existsSync(shadows)) || (copies && existsSync(copies)));
+  return Boolean((shadows && existsSync(shadows)) || (copies && existsSync(copies)) || leftBehindChecks(checksDir(env), now).length > 0);
 }
 
 /** Starts upkeep detached, since a capture or a self-check outlives any hook's timeout. */
@@ -142,7 +144,13 @@ export function startHold({ env = process.env, pluginRoot = dirname(HOOKS), cwd 
       // An Agent call in this session is refused with the reason, which is the safe way to fail.
     }
   }
-  if (exports && env.CLAUDE_ENV_FILE && !readIfFile(env.CLAUDE_ENV_FILE).includes(EXPORTED)) appendFileSync(env.CLAUDE_ENV_FILE, exports);
+  if (exports && env.CLAUDE_ENV_FILE && !readIfFile(env.CLAUDE_ENV_FILE).includes(EXPORTED)) {
+    try {
+      appendFileSync(env.CLAUDE_ENV_FILE, exports);
+    } catch {
+      // Upkeep holds every other spawn, so a shell left without the exports is no reason to skip it.
+    }
+  }
   // A project that names the switch turns the hold off only here, so what the hold wrote for sessions elsewhere stays.
   if (moved || (projectNamesSwitch(root) && !exports) || probingIn(env)) return;
   if (exports || leftBehind(env)) startUpkeep(["--session-start", "--cwd", cwd]);

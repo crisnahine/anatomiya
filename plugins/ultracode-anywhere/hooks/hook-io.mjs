@@ -3,9 +3,9 @@
  * object back. Shared so the two entry points cannot spell the answer
  * differently, which is the shape Claude Code parses.
  */
-import { closeSync, constants, fstatSync, openSync, readSync, realpathSync } from "node:fs";
-import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { closeSync, constants, fstatSync, lstatSync, openSync, readFileSync, readSync, realpathSync, statSync } from "node:fs";
+import { homedir, userInfo } from "node:os";
+import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 /**
@@ -162,6 +162,85 @@ export function homeOf(env) {
   }
 }
 
+/** The account's own home, read off the account, where a project's settings cannot move it. */
+export function accountHome() {
+  try {
+    return userInfo().homedir;
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * The directory whose `.claude/settings.local.json` a session at `dir` reads,
+ * decided the way 2.1.270 decides it. That is the git root above `dir`, a linked
+ * worktree's main repository standing for its own, where that root is neither
+ * `dir` nor the home and this account owns it, its `.git` and its `.claude`. The
+ * root is compared with the home by real path, and a home with no real path keeps
+ * `dir`, as `DWn` does. It is `dir` otherwise, and always on Windows.
+ *
+ * The preload carries its source with `homeOf` and `projectSettingsFiles`, so
+ * the three name nothing but node:fs, node:os and node:path functions.
+ */
+export function localSettingsDir(dir, home, platform = process.platform, uid = process.geteuid?.() ?? process.getuid?.()) {
+  if (platform === "win32" || uid == null) return dir;
+  const statOf = (path) => {
+    try {
+      return statSync(path);
+    } catch {
+      return null;
+    }
+  };
+  const textOf = (path) => (lstatSync(path).isFile() ? readFileSync(path, "utf8").trim() : "");
+  const realPath = (path) => {
+    try {
+      return path ? realpathSync(path) : "";
+    } catch {
+      return "";
+    }
+  };
+  let root = resolve(dir);
+  let entry = statOf(join(root, ".git"));
+  while (!(entry?.isDirectory() || entry?.isFile())) {
+    if (dirname(root) === root) return dir;
+    root = dirname(root);
+    entry = statOf(join(root, ".git"));
+  }
+  try {
+    const pointer = entry.isFile() ? readFileSync(join(root, ".git"), "utf8").trim() : "";
+    if (pointer.startsWith("gitdir:")) {
+      const git = resolve(root, pointer.slice(7).trim());
+      const common = resolve(git, textOf(join(git, "commondir")));
+      // A worktree its main repository does not point back at is a repository of its own.
+      if (dirname(git) === join(common, "worktrees") && realpathSync(resolve(git, textOf(join(git, "gitdir")))) === join(realpathSync(root), ".git")) {
+        if (basename(common) === ".git") root = dirname(common);
+        else if (!statOf(join(common, ".git"))) root = common;
+      }
+    }
+  } catch {}
+  const realHome = realPath(home);
+  if (root === resolve(dir) || !realHome || realPath(root) === realHome) return dir;
+  try {
+    let claude = null;
+    try {
+      claude = lstatSync(join(root, ".claude")).uid;
+    } catch (err) {
+      if (err?.code !== "ENOENT") throw err;
+    }
+    return statSync(root).uid === uid && lstatSync(join(root, ".git")).uid === uid && (claude === null || claude === uid) ? root : dir;
+  } catch {
+    return dir;
+  }
+}
+
+/** The settings files a project at `dir` contributes, in the order the build folds them, so the git root's local file wins over the directory's own. */
+export function projectSettingsFiles(dir, env = process.env, platform = process.platform, uid = process.geteuid?.() ?? process.getuid?.()) {
+  if (!dir) return [];
+  const files = [join(dir, ".claude", "settings.json"), join(dir, ".claude", "settings.local.json")];
+  const local = localSettingsDir(dir, homeOf(env), platform, uid);
+  return local === dir ? files : [...files, join(local, ".claude", "settings.local.json")];
+}
+
 /** At most `most` bytes off a handle, however much the far end wants to send. */
 function upTo(fd, most) {
   const buffer = Buffer.allocUnsafe(Math.min(most, 1 << 20));
@@ -197,6 +276,9 @@ export function here() {
   }
 }
 
+/** What marks a payload read only in part, kept off every member `JSON.stringify` or `Object.keys` shows. */
+const IN_PART = Symbol("read in part");
+
 /** The payload as an object, or what can still be read of one that will not parse. */
 export function parsePayload(stdin) {
   try {
@@ -206,7 +288,12 @@ export function parsePayload(stdin) {
     // Not a document. What is here may still hold the short fields these hooks
     // read, and the other plugin's reader answers the same for the same bytes.
   }
-  return fieldsIn(stdin);
+  return Object.defineProperty(fieldsIn(stdin), IN_PART, { value: true });
+}
+
+/** Whether a payload was read whole, so a decision that needs a member it drops can be refused. */
+export function readWhole(event) {
+  return !event?.[IN_PART];
 }
 
 /**

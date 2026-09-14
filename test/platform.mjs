@@ -114,10 +114,21 @@ export const needsRemovableCwd = WINDOWS
   ? { skip: "Windows locks a process's own directory, so it cannot be removed under it" }
   : {};
 
+// Handing a directory to another account takes a superuser, and a normal account
+// is not one, so a case that needs it runs only where the suite itself runs as root.
+export const needsSuperuser = process.geteuid?.() === 0 ? {} : { skip: "only root can hand a directory to another account" };
+
 // Windows creates a symlink only for an administrator or with developer mode
 // on, so a test whose fixture is a symlink cannot build its own input there.
 export const needsSymlinks = WINDOWS
   ? { skip: "Windows needs a privilege this run may not have to create a symlink" }
+  : {};
+
+// Claude Code reads a project's local settings from the session's own directory
+// on Windows, never from the git root above it, and the hooks read them the same
+// way, so a case built on the root's file has nothing to read there.
+export const needsGitRootLocalSettings = WINDOWS
+  ? { skip: "Windows keeps local settings at the session's directory, so a git root's settings.local.json is never read" }
   : {};
 
 // npm ships on Windows as `npm.cmd` with no `npm.exe`, a spawn resolves an

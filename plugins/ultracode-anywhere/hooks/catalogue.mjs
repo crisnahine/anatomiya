@@ -278,8 +278,9 @@ function readKey(text, at) {
   const bare = KEY.exec(text.slice(i));
   if (bare) return { value: bare[0], end: i + bare[0].length };
   // A numeric key is a key: the build reads any literal one as
-  // `String(value)`, so refusing it here drops a workflow the loader reads.
-  const number = NUMBER.exec(text.slice(i));
+  // `String(value)`, so refusing it here drops a workflow the loader reads. A
+  // `-` in front is not a key, and no parser reads the object that has one.
+  const number = text[i] === "-" ? null : NUMBER.exec(text.slice(i));
   if (number) return { value: String(Number(number[0])), end: i + number[0].length };
   // `[expr]` is a computed key and `...x` a spread, both refused upstream.
   throw new Error("computed or unsupported key");
