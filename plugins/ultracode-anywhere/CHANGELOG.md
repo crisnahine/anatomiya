@@ -9,6 +9,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- The first session after a plugin update, or after the held level changed, no longer refuses an
+  Agent call to a copied agent type such as `ultracode-anywhere:verifier`. The hold checked the call
+  against the agents it recorded as the session started, before upkeep wrote the new copies, while
+  Claude Code 2.1.270 reads its agent files at the first prompt and again while it runs. The hold now
+  reads the agent types the build lists in the session's transcript and routes to a copy it wrote
+  once the copy is listed.
+
 ## [0.9.1] - 2026-09-14
 
 0.9.1 fixes what testing 0.9.0 against the installed Claude Code 2.1.270 turned up: a live battery

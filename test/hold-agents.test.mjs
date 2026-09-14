@@ -29,7 +29,7 @@ import {
 } from "../plugins/ultracode-anywhere/hooks/hold-agents.mjs";
 
 import { holdStatePath } from "../plugins/ultracode-anywhere/hooks/hold-config.mjs";
-import { agentText, probeLog, world, write } from "./hold-fixtures.mjs";
+import { agentText, listing, probeLog, world, write } from "./hold-fixtures.mjs";
 import { needsGitRootLocalSettings, needsPosixPaths } from "./platform.mjs";
 
 const copyFile = (env, agentType, file, level = "medium") => join(copiesDir(env), `${copyNameFor({ agentType, file }, level)}.md`);
@@ -384,7 +384,7 @@ test("the copy of a definition written with CRLF line ends carries one kind of l
 
 // --- what a session loaded ------------------------------------------------------------
 
-test("the agents a session loaded are recorded when it starts, and a definition written later is not among them", (t) => {
+test("with no transcript to read, a session is held to the agents recorded as it started, and a definition written later is not among them", (t) => {
   const { cfg, root, env } = world(t);
   write(join(cfg, "agents", "early.md"), agentText({ name: "early", description: "d", effort: "medium" }));
   write(join(cfg, "agents", "slow.md"), agentText({ name: "slow", description: "d", effort: "xhigh" }));
@@ -395,13 +395,121 @@ test("the agents a session loaded are recorded when it starts, and a definition 
   syncCopies({ env, level: "medium" });
   const tiers = loadedTiers(env, "s-1");
 
-  assert.equal(resolveAgent("early", { env, root, tiers }).effort, "medium", "the session runs the text it loaded");
+  assert.equal(resolveAgent("early", { env, root, tiers }).effort, "medium", "the record keeps the text it read");
   assert.equal(resolveAgent("late", { env, root, tiers }), null);
   assert.equal(resolveAgent("late", { env, root }).effort, "medium", "the files on disk say otherwise");
-  assert.equal(copyOf(resolveAgent("slow", { env, root, tiers }), "medium", env, tiers), null, "a copy written after the session started was never loaded");
+  assert.equal(copyOf(resolveAgent("slow", { env, root, tiers }), "medium", env, tiers), null, "a copy written after the record is not in it");
   assert.ok(copyOf(resolveAgent("slow", { env, root }), "medium", env), "and one is on disk");
   assert.equal(loadedTiers(env, "never"), null);
   assert.equal(recordLoaded(env, "../escape", root), false, "a session id is a file name here");
+});
+
+test("a session is held to the types its transcript lists, since the build reads its agent files at the first prompt and again while it runs", (t) => {
+  const { cfg, root, env, transcript } = world(t);
+  const slow = write(join(cfg, "agents", "slow.md"), agentText({ name: "slow", description: "d", effort: "xhigh" }));
+  recordLoaded(env, "s-1", root);
+  syncCopies({ env, level: "medium" });
+  write(join(cfg, "agents", "late.md"), agentText({ name: "late", description: "d", effort: "medium" }));
+  const copy = copyNameFor({ agentType: "slow", file: slow }, "medium");
+  const first = { added: ["slow", copy, ...DEFAULT_BUILT_IN], initial: true };
+  const at = (...deltas) => loadedTiers(env, "s-1", { root, transcriptPath: listing(transcript, ...deltas) });
+
+  let tiers = at(first);
+  assert.equal(copyOf(resolveAgent("slow", { env, root, tiers }), "medium", env, tiers)?.agentType, copy, "a copy upkeep wrote before the first prompt was loaded with it");
+  assert.equal(resolveAgent("late", { env, root, tiers }), null, "a file the build has not listed yet");
+  tiers = at(first, { added: ["late"] });
+  assert.equal(resolveAgent("late", { env, root, tiers }), null, "a file written since is taken from disk only as a copy this plugin wrote, since nothing says which text of it runs");
+  for (const transcriptPath of [null, join(root, "missing.jsonl")]) {
+    tiers = loadedTiers(env, "s-1", { root, transcriptPath });
+    assert.equal(copyOf(resolveAgent("slow", { env, root, tiers }), "medium", env, tiers), null, "with no listing to read the record is all there is");
+  }
+});
+
+test("a type the transcript stopped listing is not run, a compaction lists them over, and a type the record holds is answered by the record", (t) => {
+  const { cfg, root, env, transcript } = world(t);
+  write(join(cfg, "agents", "gone.md"), agentText({ name: "gone", description: "d", effort: "medium" }));
+  write(join(cfg, "agents", "early.md"), agentText({ name: "early", description: "d", effort: "medium" }));
+  write(join(cfg, "agents", "cooled.md"), agentText({ name: "cooled", description: "d", effort: "xhigh" }));
+  recordLoaded(env, "s-1", root);
+  write(join(cfg, "agents", "early.md"), agentText({ name: "early", description: "d", effort: "high" }));
+  write(join(cfg, "agents", "cooled.md"), agentText({ name: "cooled", description: "d", effort: "medium" }));
+  const all = { added: ["gone", "early", "cooled"], initial: true };
+  const tiers = (...deltas) => loadedTiers(env, "s-1", { root, transcriptPath: listing(transcript, ...deltas) });
+
+  assert.equal(resolveAgent("gone", { env, root, tiers: tiers(all, { removed: ["gone"] }) }), null);
+  assert.equal(resolveAgent("gone", { env, root, tiers: tiers(all, { added: ["early", "cooled"], initial: true }) }), null, "a compaction lists the types over from nothing");
+  assert.equal(resolveAgent("gone", { env, root, tiers: tiers({ added: ["early"] }) }), null, "a transcript whose first listing only adds, one cut short say, still narrows to it");
+  // Nothing says when a rewritten file is read again, so the record answers.
+  assert.equal(resolveAgent("early", { env, root, level: "medium", tiers: tiers(all) }).effort, "medium");
+  assert.equal(resolveAgent("cooled", { env, root, level: "medium", tiers: tiers(all) }).effort, "xhigh");
+});
+
+test("only the listing lines the build itself reads are read: not a subagent's, another kind of line, or one with no lines to add", (t) => {
+  const { cfg, root, env, transcript } = world(t);
+  const slow = write(join(cfg, "agents", "slow.md"), agentText({ name: "slow", description: "d", effort: "xhigh" }));
+  const fast = write(join(cfg, "agents", "fast.md"), agentText({ name: "fast", description: "d", effort: "high" }));
+  recordLoaded(env, "s-1", root);
+  syncCopies({ env, level: "medium" });
+  const [slowCopy, fastCopy] = [["slow", slow], ["fast", fast]].map(([agentType, file]) => copyNameFor({ agentType, file }, "medium"));
+  const other = JSON.stringify({ type: "user", attachment: { type: "agent_listing_delta", addedTypes: [fastCopy], addedLines: ["- x: d"], removedTypes: [], isInitial: false } });
+  const unlined = JSON.stringify({ type: "attachment", attachment: { type: "agent_listing_delta", addedTypes: [fastCopy], removedTypes: [], isInitial: false } });
+  const torn = `{"type":"attachment","attachment":{"type":"agent_listing_delta","addedTypes":["${fastCopy}"`;
+  const tiers = loadedTiers(env, "s-1", { root, transcriptPath: listing(transcript, { added: [slowCopy], initial: true }, { added: [fastCopy], sidechain: true }, other, unlined, torn) });
+
+  assert.equal(resolveAgent(fastCopy, { env, root, tiers }), null);
+  assert.equal(resolveAgent(slowCopy, { env, root, tiers })?.agentType, slowCopy, "the listing itself was read, a line that does not parse aside");
+});
+
+test("a listing is read however far into a long transcript it sits", (t) => {
+  const { cfg, root, env, transcript } = world(t);
+  const slow = write(join(cfg, "agents", "slow.md"), agentText({ name: "slow", description: "d", effort: "xhigh" }));
+  recordLoaded(env, "s-1", root);
+  syncCopies({ env, level: "medium" });
+  const copy = copyNameFor({ agentType: "slow", file: slow }, "medium");
+  const filler = JSON.stringify({ type: "user", message: { role: "user", content: "é".repeat(700 * 1024) } });
+  // Longer than any one read, so the line has to be put back together.
+  const long = JSON.stringify({ type: "attachment", attachment: { type: "agent_listing_delta", addedTypes: [copy], addedLines: [`- ${copy}: ${"é".repeat(800 * 1024)}`], removedTypes: [], isInitial: false } });
+  const tiers = loadedTiers(env, "s-1", { root, transcriptPath: listing(transcript, { added: ["general-purpose"], initial: true }, filler, filler, filler, long) });
+
+  assert.equal(resolveAgent(copy, { env, root, tiers })?.agentType, copy);
+});
+
+test("a last line with no newline after it is read when it is whole", (t) => {
+  const { cfg, root, env, transcript } = world(t);
+  const slow = write(join(cfg, "agents", "slow.md"), agentText({ name: "slow", description: "d", effort: "xhigh" }));
+  recordLoaded(env, "s-1", root);
+  syncCopies({ env, level: "medium" });
+  const copy = copyNameFor({ agentType: "slow", file: slow }, "medium");
+  const path = listing(transcript, { added: ["general-purpose"], initial: true }, { added: [copy] });
+  writeFileSync(path, readFileSync(path, "utf8").trimEnd());
+
+  assert.equal(resolveAgent(copy, { env, root, tiers: loadedTiers(env, "s-1", { root, transcriptPath: path }) })?.agentType, copy);
+});
+
+test("a transcript path that is not a regular file falls back to the record instead of reading forever", (t) => {
+  if (process.platform === "win32") return t.skip("no /dev/zero");
+  const { root, env } = world(t);
+  recordLoaded(env, "s-1", root);
+  const module = new URL("../plugins/ultracode-anywhere/hooks/hold-agents.mjs", import.meta.url).href;
+  const script = `import { loadedTiers } from ${JSON.stringify(module)}; process.exit(loadedTiers(${JSON.stringify(env)}, "s-1", { root: ${JSON.stringify(root)}, transcriptPath: "/dev/zero" }) ? 0 : 1);`;
+
+  const run = spawnSync(process.execPath, ["--input-type=module", "-e", script], { timeout: 5000 });
+  assert.equal(run.status, 0, run.error ? String(run.error) : run.stderr?.toString());
+});
+
+test("a type the record lacks is taken from disk only as a copy this plugin wrote, and not where another file carries its name", (t) => {
+  const { cfg, project, env, transcript } = world(t);
+  const slow = write(join(cfg, "agents", "slow.md"), agentText({ name: "slow", description: "d", effort: "xhigh" }));
+  recordLoaded(env, "s-1", project);
+  syncCopies({ env, level: "medium" });
+  const copy = copyNameFor({ agentType: "slow", file: slow }, "medium");
+  write(join(cfg, "agents", "late.md"), agentText({ name: "late", description: "d", effort: "medium" }));
+  const tiers = () => loadedTiers(env, "s-1", { root: project, transcriptPath: listing(transcript, { added: ["late", copy], initial: true }) });
+
+  assert.equal(resolveAgent("late", { env, root: project, tiers: tiers() }), null, "a file of the user's own may be rewritten with nothing to say so");
+  assert.equal(resolveAgent(copy, { env, root: project, tiers: tiers() })?.agentType, copy);
+  write(join(project, ".claude", "agents", `${copy}.md`), agentText({ name: copy, description: "d", effort: "xhigh" }));
+  assert.equal(resolveAgent(copy, { env, root: project, tiers: tiers() }), null, "a project file of that name may be what the build runs");
 });
 
 test("a process given an exited process's id does not inherit its record, and the process that wrote one keeps it", (t) => {
@@ -413,7 +521,7 @@ test("a process given an exited process's id does not inherit its record, and th
   write(join(cfg, "agents", "late.md"), agentText({ name: "late", description: "d", effort: "medium" }));
 
   recordLoaded(running, "s-2", root, { replace: false });
-  assert.equal(resolveAgent("late", { env: running, root, tiers: loadedTiers(running, "s-2") }), null, "/clear keeps what the process loaded");
+  assert.equal(resolveAgent("late", { env: running, root, tiers: loadedTiers(running, "s-2") }), null, "/clear keeps the process's record");
   registered(2000);
   assert.equal(loadedTiers(running, "s-2"), null, "another process registered under this id since the record was written");
   recordLoaded(running, "s-3", root, { replace: false });

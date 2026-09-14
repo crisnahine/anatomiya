@@ -33,6 +33,20 @@ export function agentText(fields, body = "body") {
 }
 
 /**
+ * A transcript holding the build's agent listing, one line per delta: `{ added,
+ * removed, initial, sidechain }`, or a string written as it is.
+ */
+export function listing(path, ...deltas) {
+  const line = (delta) => {
+    if (typeof delta === "string") return delta;
+    const { added = [], removed = [], initial = false, sidechain = false } = delta;
+    const attachment = { type: "agent_listing_delta", addedTypes: added, addedLines: added.map((type) => `- ${type}: d`), removedTypes: removed, isInitial: initial };
+    return JSON.stringify({ type: "attachment", isSidechain: sidechain, attachment });
+  };
+  return write(path, `${deltas.map(line).join("\n")}\n`);
+}
+
+/**
  * A home holding a configuration with the plugin `kit` installed and enabled, a
  * project two levels under the home, and a transcript path for a session.
  *

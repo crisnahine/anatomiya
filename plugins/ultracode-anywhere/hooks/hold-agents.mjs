@@ -9,7 +9,7 @@
  * is off.
  */
 import { createHash } from "node:crypto";
-import { existsSync, readdirSync, rmSync } from "node:fs";
+import { closeSync, constants, existsSync, fstatSync, openSync, readSync, readdirSync, rmSync } from "node:fs";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 
 import { sameLevel } from "./effort.mjs";
@@ -44,6 +44,9 @@ const NAME_SEGMENT = /^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$/;
 
 /** How long the record of what a session loaded is kept, which is how long a session may run unrestarted. */
 const SESSION_KEEP_MS = 30 * 24 * 60 * 60 * 1000;
+
+/** How much of a transcript is read at a time, so a long one is read whole without being held whole. */
+const TRANSCRIPT_CHUNK = 1024 * 1024;
 
 /** Where the copies live: a folder of their own under the user's agents, which the build reads at any depth. */
 export function copiesDir(env = process.env) {
@@ -177,10 +180,10 @@ function pidOf(env) {
 }
 
 /**
- * Records the definitions a process starting now loads, or keeps the record it
- * has unless `replace` asks for a new one. A session reads its agent files once,
- * so a file written after it started is not one it can run, and a file
- * rewritten after it started still runs as it was (A81).
+ * Records the definitions a process starting now has, or keeps the record it has
+ * unless `replace` asks for a new one. The build reads its agent files at the
+ * first prompt and again while it runs, so this is what a session falls back on
+ * where its transcript lists no agent types (A81).
  */
 export function recordLoaded(env = process.env, session, root = "", { replace = true } = {}) {
   const file = recordFile(env, session);
@@ -191,11 +194,75 @@ export function recordLoaded(env = process.env, session, root = "", { replace = 
   return true;
 }
 
-/** The definitions a session recorded as it started, or null where it recorded none. */
-export function loadedTiers(env = process.env, session) {
+/**
+ * The definitions a session can run, or null where it recorded none: the record
+ * narrowed to the types its transcript lists, and beside it the copies this
+ * plugin wrote under a listed name no other file on disk carries. Nothing says
+ * when the build reads a rewritten file again, so nothing else is taken from
+ * disk (A81).
+ */
+export function loadedTiers(env = process.env, session, { root = "", transcriptPath = null } = {}) {
   const record = readJson(recordFile(env, session), null);
   const tiers = fromAnother(record, registeredAt(env)) ? null : record?.tiers;
-  return Array.isArray(tiers) && tiers.length === 4 && tiers.every(Array.isArray) ? tiers : null;
+  if (!(Array.isArray(tiers) && tiers.length === 4 && tiers.every(Array.isArray))) return null;
+  const listed = listedTypes(transcriptPath);
+  if (!listed) return tiers;
+  const merged = tiers.map((tier) => tier.filter((def) => listed.has(def.agentType)));
+  const added = agentTiers(env, root).flat().filter((def) => listed.has(def.agentType));
+  // A copy is written at the level, so whichever of its texts the build runs is held.
+  merged[1].push(...added.filter((def) => added.every((other) => other.agentType !== def.agentType || other.copiedFrom !== null)));
+  return merged;
+}
+
+/**
+ * The agent types a transcript says the build lists for the Agent tool, or null
+ * where it says none or cannot be read. Read in pieces, however long it is.
+ */
+function listedTypes(transcriptPath) {
+  let fd;
+  try {
+    fd = openSync(transcriptPath, constants.O_RDONLY | (constants.O_NONBLOCK ?? 0));
+  } catch {
+    return null;
+  }
+  try {
+    if (!fstatSync(fd).isFile()) return null;
+    const chunk = Buffer.allocUnsafe(TRANSCRIPT_CHUNK);
+    let listed = null;
+    let rest = "";
+    // A character cut at a chunk's edge garbles only string content, never a name or the JSON around it.
+    for (let read; (read = readSync(fd, chunk, 0, chunk.length, null)) > 0; ) {
+      const lines = (rest + chunk.toString("utf8", 0, read)).split("\n");
+      rest = lines.pop();
+      for (const line of lines) listed = foldListing(listed, line);
+    }
+    // A last line the build is still writing does not parse, and is passed over.
+    return foldListing(listed, rest);
+  } catch {
+    return null;
+  } finally {
+    closeSync(fd);
+  }
+}
+
+/**
+ * One transcript line folded into the listed types the way the build folds its
+ * own: what a delta adds and removes, over from nothing after a compaction.
+ */
+function foldListing(listed, line) {
+  if (!line.includes('"agent_listing_delta"')) return listed;
+  let entry;
+  try {
+    entry = JSON.parse(line);
+  } catch {
+    return listed;
+  }
+  const delta = entry?.type === "attachment" && entry.isSidechain !== true ? entry.attachment : null;
+  if (delta?.type !== "agent_listing_delta") return listed;
+  const next = delta.isInitial === true || !listed ? new Set() : listed;
+  if (Array.isArray(delta.addedLines) && Array.isArray(delta.addedTypes)) for (const type of delta.addedTypes) next.add(type);
+  if (Array.isArray(delta.removedTypes)) for (const type of delta.removedTypes) next.delete(type);
+  return next;
 }
 
 /**
@@ -257,8 +324,8 @@ export function resolveAgent(type, { env = process.env, root = "", tiers = agent
 
 /**
  * The copy of a definition held to `level`, only when it was copied from that
- * very file, among the user's definitions a session loaded or, without that
- * record, the ones on disk.
+ * very file, among the user's definitions a session can run or, without those,
+ * the ones on disk.
  */
 export function copyOf(def, level, env = process.env, tiers = null) {
   if (!def?.file) return null;
