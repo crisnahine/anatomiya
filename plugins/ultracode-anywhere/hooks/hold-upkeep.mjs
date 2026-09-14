@@ -49,7 +49,7 @@ const DECIDING_ENV = ["ULTRACODE_ANYWHERE_SPAWN_EFFORT", "CLAUDE_CODE_SUBAGENT_M
 const PRELOAD = `"use strict";
 // ultracode-anywhere's spawn hold. A claude that a node program inside a session starts runs at the held level on the held model.
 if (process.env.CLAUDECODE === "1") {
-  const { lstatSync, readFileSync, realpathSync, statSync } = require("node:fs");
+  const { closeSync, constants, fstatSync, lstatSync, openSync, readFileSync, realpathSync, statSync } = require("node:fs");
   const { homedir, userInfo } = require("node:os");
   const { basename, dirname, join, resolve } = require("node:path");
   ${homeOf}

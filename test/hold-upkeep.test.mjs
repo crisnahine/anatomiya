@@ -194,6 +194,26 @@ test("the preload leaves a node process alone where the git root's local setting
   assert.equal(run.stdout, "undefined");
 });
 
+test("the preload leaves a node process alone where a linked worktree's main repository names the switch in its local settings", needsGitRootLocalSettings, (t) => {
+  const { home, env } = world(t);
+  const preload = upkeep.writePreload(env);
+  const repo = join(home, "main");
+  const tree = join(home, "tree");
+  const admin = join(repo, ".git", "worktrees", "tree");
+  write(join(repo, ".git", "HEAD"), "ref: refs/heads/main\n");
+  write(join(admin, "commondir"), "../..\n");
+  write(join(admin, "gitdir"), join(tree, ".git") + "\n");
+  write(join(tree, ".git"), `gitdir: ${admin}\n`);
+  write(join(repo, ".claude", "settings.local.json"), JSON.stringify({ env: { ULTRACODE_ANYWHERE_SPAWN_EFFORT: "low" } }));
+  const run = spawnSync(process.execPath, ["--require", preload, "-e", "process.stdout.write(String(process.env.CLAUDE_CODE_EFFORT_LEVEL))"], {
+    encoding: "utf8",
+    cwd: tree,
+    env: { ...hostEnv(), NODE_OPTIONS: "", HOME: home, USERPROFILE: home, CLAUDECODE: "1", CLAUDE_PROJECT_DIR: tree, ULTRACODE_ANYWHERE_SPAWN_EFFORT: "low" },
+  });
+
+  assert.equal(run.stdout, "undefined");
+});
+
 test("the preload pins the level the shim would hold a claude at, from every directory both read", (t) => {
   // A directory whose settings name the switch or move the user's settings takes no level from the session's environment, and the first that holds decides.
   const { root, project, env } = world(t);
