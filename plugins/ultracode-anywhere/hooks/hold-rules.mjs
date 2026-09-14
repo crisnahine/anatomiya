@@ -212,7 +212,7 @@ export function decideSkill(input, ctx) {
   const refused = refusedFor(ctx);
   if (refused) return { deny: refused };
   if (forked.length > 0) {
-    const tiers = loadedTiers(ctx.env, ctx.session);
+    const tiers = loadedTiers(ctx.env, ctx.session, ctx);
     if (!tiers) return { deny: UNRECORDED };
     for (const skill of forked) {
       const reason = forkRefusal(skill, { ...ctx, tiers });
@@ -282,7 +282,7 @@ function decideTool(tool, input, ctx) {
       if (refused) return { deny: refused };
       if (probingIn(ctx.env) && ctx.env.ULTRACODE_ANYWHERE_HOLD_CHECK_UNROUTED === "1") return null;
       if (tool === "Workflow") return decideWorkflow(input, ctx);
-      const tiers = loadedTiers(ctx.env, ctx.session);
+      const tiers = loadedTiers(ctx.env, ctx.session, ctx);
       return tiers ? decideAgent(input, { ...ctx, tiers }) : { deny: UNRECORDED };
     }
     default:

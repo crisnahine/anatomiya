@@ -186,8 +186,8 @@ test("a self-check probe's own session starts no upkeep, and the flag alone, whi
   assert.equal(started.length, 1, "a probe starts none, since upkeep there would start another self-check");
 });
 
-test("a held session's process records the agents it loaded once, before upkeep can write any, and /clear, a compaction and an in-session /resume keep that record", (t) => {
-  // /clear starts a new session id in the same process, which still runs the agents it loaded at startup.
+test("a held session's process records its agents once, before upkeep can write any, and /clear, a compaction and an in-session /resume keep that record", (t) => {
+  // /clear starts a new session id in the same process, which keeps the record its startup took.
   const { cfg, root, env } = world(t);
   const running = { ...env, CLAUDE_PID: "4242" };
   write(join(cfg, "agents", "early.md"), agentText({ name: "early", description: "d", effort: "medium" }));
@@ -200,7 +200,7 @@ test("a held session's process records the agents it loaded once, before upkeep 
     startHold({ env: running, pluginRoot: PLUGIN, cwd: root, session, source, startUpkeep: () => {} });
     const tiers = loadedTiers(running, session);
     assert.ok(tiers, `${source} keeps a record`);
-    assert.equal(resolveAgent("late", { env: running, root, tiers }), null, `${source} runs in the process that loaded them`);
+    assert.equal(resolveAgent("late", { env: running, root, tiers }), null, `${source} keeps the record the process took`);
   }
   const restarted = { ...env, CLAUDE_PID: "4343" };
   startHold({ env: restarted, pluginRoot: PLUGIN, cwd: root, session: "s-3", source: "resume", startUpkeep: () => {} });
