@@ -33,9 +33,13 @@ Workflow({ name: 'ultracode-anywhere:review', args: 'the staged diff' })
 
 | name | what it does | when |
 | --- | --- | --- |
-| `ultracode-anywhere:review` | six readers, one per dimension, then three lenses try to refute each finding before it is reported, up to twenty-four of them | there is a diff, a branch or a file to review |
+| `ultracode-anywhere:review` | six finders, one per dimension, then three lenses try to refute each finding before it is reported, up to twenty-four of them | there is a diff, a branch or a file to review |
 | `ultracode-anywhere:understand` | readers fan out over the areas of an unfamiliar codebase, one synthesis merges them into a map | before changing code nobody in the session has read |
-| `ultracode-anywhere:hunt` | rounds of finders, each searching a different way, until two rounds running turn up nothing new | the question is "find them all" and nobody knows the count |
+| `ultracode-anywhere:hunt` | rounds of finders, each searching a different way, until two rounds running turn up nothing new, or eight rounds have run | the question is "find them all" and nobody knows the count |
+
+`args` can be an object too: `review` takes `{target}`, what to review, `hunt` takes
+`{looking_for, target}`, what to hunt for and where to look, and `understand` takes `{subject}` or
+`{targets: [...]}`.
 
 Each is a file. It was written once, it is gated in CI, and it runs the same way every time. That is
 the whole difference from a script the model improvises on the turn it needs one: the fan-out width,
@@ -223,41 +227,47 @@ level is decided:
   project's settings turn on, since a copy in your agents would reach every project. The call's
   `model` is dropped, a fork and a teammate are refused, and a remote agent runs in a local worktree,
   or with no isolation outside a git repository.
-- A Workflow script gets a prelude that puts every stage at the level, drops its `model`, and sends a
-  nested workflow to a copy carrying the same prelude.
-- A skill that forks off the level is refused, whether the model calls it or you type it.
-  `/code-review` and `/review` called by the model are rewritten to the level, `ultra` included.
-  Typed with another level, with `ultra`, or with no level unless the last review ran at the held
-  one, they are stopped with the command to type instead. `/ultrareview` and a routine that starts a
-  cloud run are refused, since nothing on this machine reaches those agents.
+- A Workflow script gets a prelude that puts every stage at the level, drops its `model`, sends a
+  nested workflow it can name to a copy carrying the same prelude, and refuses one it cannot.
+- A skill that forks off the level, or onto the session's own model with `model: inherit`, is
+  refused, whether the model calls it or you type it. `/code-review` and `/review` called by the
+  model are rewritten to the level, `ultra` included. Typed with another level, with `ultra`, or
+  with no level unless the last review ran at the held one, they are stopped with the command to
+  type instead. `/ultrareview` and every routine action but `list`, `get`, `list_runs` and
+  `get_run_log` are refused, since nothing on this machine reaches those agents.
 - `claude` typed in the session's shell, or started through `CSD_CLAUDE_BIN` by a session driver,
   finds a shim first. The shim starts the real one on the held model at the held level with the
   hooks on, in place of any `--model`, `--effort` or `--fallback-model` it was given. It refuses the
   flags, `--settings` keys and variables that would turn the hooks off, set the model or effort
   through settings, move the session to the cloud, or read settings that do not enable this plugin,
-  and hands the child the settings it checked with the held level in their `env`. Everything after a
-  `--` is passed on as it is.
+  and hands the child the settings it checked with the held level in their `env`. It also refuses
+  `--agent` and `--agents`, which define agents, `--bg`, `--background`, `agents` and `respawn`,
+  which start sessions through the background daemon, and `--restricted`, wherever the word stands,
+  a prompt or another flag's value included, since the shim has no table of which flags take a
+  value. Everything after a `--` is passed on as it is. It checks the plugins that `claude` would
+  load the way the build reads them: project settings in the directory it starts in, and local
+  settings at the git root above it.
 - A tripwire reads the level off every tool call a subagent makes, and the model off its transcript,
   and stops one that got past everything above.
 
 A self-check proves this against the build you run. When a session starts after the build, the
-plugins or a setting that decides a spawn has moved, a background run starts 17 short sessions of the
-installed build against a local stand-in for the API, each trying one way past the hold, and reads
-each spawn's model and effort off the wire. None of them talks to Anthropic's API. A spawn it saw off
-the level refuses every spawn on that build until a run passes, and the next session start says which
-probe leaked. A run that did not pass, whether it found a leak or could not finish, is said at the
-next session start and tried again 30 minutes after it ran. Each probe loads your own configuration,
-hooks and plugins included, since that is what it checks, and works in
-`~/.claude/ultracode-anywhere/hold/checks/`, inside the hold's state. A probe that cannot run here is
-listed as skipped, and a leak it found before stays until it runs clean, as does every leak of a run
-whose probes could not start. With `ANTHROPIC_BASE_URL`, another `ANTHROPIC_*_BASE_URL` or a
-`CLAUDE_CODE_USE_*` provider in your settings or a managed policy's, no probe starts, since its
-requests would go to that service, and the check says so. A run killed partway leaves its directory
-behind, and a later session start removes it once it is half an hour old. Run it yourself with
-`node <plugin>/hooks/hold-upkeep.mjs --verify`, where `<plugin>` is the plugin's install directory.
-It takes a few minutes. From a terminal it reads the `env` of your settings the way a session would,
-and while a session's upkeep holds the lock it says so and records nothing. A session notice about a
-failed check prints that command with the path filled in.
+plugins or a setting that decides a spawn has moved, a background run starts up to 17 short sessions
+of the installed build against a local stand-in for the API, each trying one way past the hold, and
+reads each spawn's model and effort off the wire. None of them talks to Anthropic's API. A spawn it
+saw off the level refuses every spawn on that build until the probe that leaked runs clean, and the
+next session start says which probe leaked. A run that did not pass, whether it found a leak or
+could not finish, is said at the next session start and tried again 30 minutes after it ran. Each
+probe loads your own configuration, hooks and plugins included, since that is what it checks, and
+works in `~/.claude/ultracode-anywhere/hold/checks/`, inside the hold's state. A probe that cannot
+run here is listed as skipped, and a leak it found before stays until it runs clean, as does every
+leak of a run whose probes could not start. With `ANTHROPIC_BASE_URL`, another
+`ANTHROPIC_*_BASE_URL` or a `CLAUDE_CODE_USE_*` provider in your settings or a managed policy's, no
+probe starts, since its requests would go to that service, and the check says so. A run killed
+partway leaves its directory behind, and a later session start removes it once it is half an hour
+old. Run it yourself with `node <plugin>/hooks/hold-upkeep.mjs --verify`, where `<plugin>` is the
+plugin's install directory. It takes a few minutes. From a terminal it reads the `env` of your
+settings the way a session would, and while a session's upkeep holds the lock it says so and records
+nothing. A session notice about a failed check prints that command with the path filled in.
 
 ### Turning it on
 
@@ -273,28 +283,37 @@ the `"env"` of `~/.claude/settings.json`:
 }
 ```
 
-The model has to be a full `claude-` model id, since an alias names no model a request can be compared
-against, and a Bedrock, Vertex or Foundry id is not one the hold reads. Until all three are set, every
-spawn is refused and each session opens naming the one that is missing. Every spawn is refused as well
-while `CLAUDE_CODE_EFFORT_LEVEL` names another level, since it outranks every spawn's own effort, and
-while `maxEffortLevel`, or the held model's own under `modelSettings`, caps effort below the level.
-Start a new session after changing settings: Claude Code reads them once.
+The model has to be a full `claude-` model id, since an alias names no model a request can be
+compared against, and a Bedrock, Vertex or Foundry id is not one the hold reads. Until all three are
+set, every spawn is refused and each session opens naming the one that is missing. Every spawn is
+refused as well while `CLAUDE_CODE_EFFORT_LEVEL` names another level, a number, `unset` or `auto`,
+since each outranks every spawn's own effort, and while `maxEffortLevel`, or the held model's own
+under `modelSettings`, caps effort below the level. A value of that variable the build cannot read,
+a level with a space after it included, pins nothing and is not refused. Start a new session after
+changing settings: Claude Code reads them once.
 
 Turn off any hook of your own that rewrites Agent calls or workflow scripts first. When two hooks
 rewrite one call, which rewrite runs is not documented, so one can undo the other.
 
-Set the switch in the user settings. A project's settings cannot turn it on, turn it off or move its
-level: a project that sets the switch while your own settings do not leaves the hold off, and the
-session says so. A project that sets another `CLAUDE_CODE_SUBAGENT_MODEL` refuses every spawn until
-the two agree, and so does one that sets `HOME`, `USERPROFILE`, `CLAUDE_CONFIG_DIR`,
-`ULTRACODE_ANYWHERE_STATE`, `AI_AGENT` or `CLAUDE_CODE_EXECPATH`, which the hold reads to find your
-settings, its own state and the build a session runs. Where such a project moves your settings, the
-hold reads them from a `CLAUDE_CONFIG_DIR` you set yourself, or else from your account's own
-`~/.claude`, and a switch those do not name leaves the hold off there, with the session told so. The
-first session with the hold on, or after its level changes or a plugin updates, writes the shadows and
-copies in the background, and until the next session its Agent calls to a definition off the level
-are refused: a session reads its agent files once, when it starts, so a file written after that is
-not one it can run.
+Set the switch in the user settings. A project's settings, which include the
+`.claude/settings.local.json` Claude Code reads at the git root above a session's directory (in a
+linked worktree, the main repository's), cannot turn it on, turn it off or move its level: a project
+that sets the switch while your own settings do not leaves the hold off, and the session says so. A
+project that sets `CLAUDE_CODE_SUBAGENT_MODEL` refuses every spawn unless your own settings name
+that same model beside the switch, and so does one that sets `HOME`, `USERPROFILE`,
+`CLAUDE_CONFIG_DIR`, `ULTRACODE_ANYWHERE_STATE`, `ULTRACODE_ANYWHERE_PROJECT_DIR`,
+`CLAUDE_PROJECT_DIR`, `AI_AGENT`, `CLAUDE_CODE_EXECPATH` or `ULTRACODE_ANYWHERE_REPLACED_EFFORT`,
+which the hold reads to find your settings, your project, its own state, the build a session runs
+and the level your own `CLAUDE_CODE_EFFORT_LEVEL` named. Claude Code 2.1.270 already
+drops `HOME`, `USERPROFILE` and `CLAUDE_CONFIG_DIR` from a project's settings with a warning, and
+the hold refuses them anyway, since a build that honours them would move what the hold reads. Where
+such a project moves your settings, the hold reads them from your account's own `~/.claude`, or from
+the session's `CLAUDE_CONFIG_DIR` where the project moves only `HOME` or `USERPROFILE`, and a switch
+those do not name leaves the hold off there, with the session told so. The first session with the
+hold on, or after its level changes or a plugin updates, writes the shadows and copies in the
+background, and until the next session its Agent calls to a definition off the level are refused: a
+session reads its agent files once, when it starts, so a file written after that is not one it can
+run.
 
 Two more are recommended, and a session opens naming them while they are missing. The first session
 start with the hold on writes a preload to `~/.claude/ultracode-anywhere-preload.cjs`, or inside
@@ -310,25 +329,31 @@ On Windows, write that path with forward slashes wherever it sits in quotes, sin
 backslash inside quotes as an escape.
 
 The preload acts only inside a session, so a `claude` started from a terminal stays a main session, an
-npm install's included, and it reads the level from your own settings the way the hooks do. With
+npm install's included, and it reads the level from your own settings the way the hooks do. A hook
+runs under it too, so a `CLAUDE_CODE_EFFORT_LEVEL` it replaces is kept in
+`ULTRACODE_ANYWHERE_REPLACED_EFFORT`, where the hold still reads the session's own value. With
 `episodic-memory` enabled, set `EPISODIC_MEMORY_API_MODEL` and `EPISODIC_MEMORY_API_MODEL_FALLBACK` to
 the held model as well, or its summarizer runs on another one.
 
 While the hold is on, `ULTRACODE_ANYWHERE_STAGE_EFFORT` is set aside and the reminder names the held
-level, since that is the level every stage runs at.
+level, since that is the level every stage runs at, and a session start says nothing about a value
+of it that names no level.
 
 ### Turning it off
 
 Take the preload out of `NODE_OPTIONS` first. Node refuses to start when a file it is told to require
 is gone, so a preload removed while `NODE_OPTIONS` still names it stops every node program on the
 machine, this plugin's hooks included. Then remove `ULTRACODE_ANYWHERE_SPAWN_EFFORT`, and the next
-session start removes the copies and shadows the hold wrote and leaves every agent file of your own.
+session start removes the copies and shadows the hold wrote and leaves every agent file of your own,
+unless its project names the switch or sets a variable the hold reads, or another upkeep holds the
+lock.
 
-Turn the hold off and start one session before uninstalling the plugin, or the copies and shadows stay
-behind. Each carries `ultracode-anywhere-copy-of` or `ultracode-anywhere-shadow-of` in its
-frontmatter, which is how to find them by hand. Uninstalling leaves the preload where it is, for the
-reason above. If the file `NODE_OPTIONS` names is ever gone, no node program starts inside a session,
-this plugin's hooks included, and nothing holds spawns until `NODE_OPTIONS` stops naming it.
+Turn the hold off and start one such session before uninstalling the plugin, or the copies and
+shadows stay behind. Each carries `ultracode-anywhere-copy-of` or `ultracode-anywhere-shadow-of` in
+its frontmatter, which is how to find them by hand. Uninstalling leaves the preload where it is, for
+the reason above. If the file `NODE_OPTIONS` names is ever gone, no node program starts inside a
+session, this plugin's hooks included, and nothing holds spawns until `NODE_OPTIONS` stops naming
+it.
 
 ### What it cannot hold
 
@@ -342,25 +367,41 @@ this plugin's hooks included, and nothing holds spawns until `NODE_OPTIONS` stop
   persistence runs on that model. A command that clears these variables on purpose gets past both,
   and so does `--bare` there, which turns its hooks off.
 - A node program that hands the `claude` it starts a fresh environment, or passes it `--model`, drops
-  what the preload set.
+  what the preload set. The preload refuses nothing: it sets that `claude`'s level and model, and
+  its own hooks refuse its spawns.
+- With `CLAUDE_CODE_MCP_ALLOWLIST_ENV` on, or under the `local-agent` entrypoint, a stdio MCP server
+  starts with a short list of variables that leaves `NODE_OPTIONS` out, so a `claude` such a server
+  starts is not held.
 - `disableAllHooks`, in any settings file, turns off every hook, this one's included.
+- A call whose payload is larger than the megabyte the hold reads is refused as unchecked when it
+  starts a spawn or comes from a subagent or a `claude` started from the shell, so a held subagent
+  cannot write more than about a megabyte in one call. A prompt that large is blocked when it opens
+  with a slash.
+- A stage that rewrites a workflow copy on disk during its run starts a nested workflow from that
+  copy without the prelude, until the next Workflow call writes the copy back. The tripwire stops
+  that nested workflow's stages at their first tool call.
 - A spawn tool a later build adds under a name the hold does not know is stopped by the tripwire
   alone, at its first tool call.
 - A project's own agent off the level is refused, and runs once its file says `effort:` at the level.
   So is an agent of a plugin only a project's settings turn on, until your own settings turn it on.
 - A project whose settings set `ULTRACODE_ANYWHERE_HELD_CHILD` makes its main session look like a
   `claude` started from a held shell, so the tripwire refuses that session's tool calls unless it runs
-  at the level, and the refusal names the setting.
+  at the level on the subagent model, and the refusal names the setting.
 - An install whose hook entry, or one of the two files it loads before it reads the switch, cannot
   load lets every call through, since Claude Code reads a hook that fails to start as no answer. One
-  that loads those and fails further in refuses spawns.
+  that loads those and fails further in refuses spawn tools, every call a subagent or a
+  shell-started `claude` makes, and a prompt that may open with a slash.
 - A machine without `node` on `PATH` holds nothing.
 - A setting changed mid-session can miss the running session, so start a new one after any change.
-  Turning the switch on mid-session refuses spawns until then, since the session may have none of the
-  settings the hold needs.
+  Turning the switch on mid-session refuses Agent calls and forked skills until then, since the
+  session recorded no agents when it started. A Workflow call still runs, since its prelude sets
+  every stage's level.
 - With `ANTHROPIC_BASE_URL`, another `ANTHROPIC_*_BASE_URL` or a `CLAUDE_CODE_USE_*` provider in your
   settings or a managed policy's, the self-check starts no probe. The routing and the tripwire still
   hold, and nothing proves them against the build.
+- With the plugin loaded through `--plugin-dir`, or turned on only by a project's settings or a
+  managed policy, the self-check has no id to switch off in its control run. Every check says so and
+  none passes, and no main loop at the held level is judged.
 - An agent a managed policy defines, or one `--agents` gives the main session, outranks the definitions
   the hold routes between, and the tripwire alone stops one that runs off the level.
 
@@ -404,12 +445,13 @@ prompts of one session arriving at once can lose a turn, which moves where a ref
 nothing else, so the cadence is close rather than exact.
 
 With the spawn hold on, every tool call and every prompt starts one more `node` process, measured at
-about 21 ms over a bare node start. With it off, the same process answers before it loads anything,
-about 8 ms over a bare start. A subagent's first tool call can wait up to 1.5 seconds for its
-transcript to be written, once per subagent. At `medium` on `claude-opus-5[1m]` the reminder grows to
-3235 characters on the first turn and 253 on every tenth, or 3741 over a 30-turn session. The
-self-check's 17 sessions, and one capture session per built-in type, run in the background and only
-when something they rest on has moved.
+about 21 ms over a bare node start. With it off, the same process loads the two files that read the
+switch, reads the settings that could name it, and answers, about 8 ms over a bare start. A
+subagent's first tool call can wait up to 1.5 seconds for its transcript to be written, once per
+subagent. At `medium` on `claude-opus-5[1m]` the reminder grows to 3235 characters on the first turn
+and 253 on every tenth, or 3741 over a 30-turn session. The self-check's up to 17 sessions, and one
+capture session per built-in type, run in the background and only when something they rest on has
+moved.
 
 ## How this differs from native ultracode
 
@@ -435,7 +477,8 @@ and scale the harness to the work rather than running the largest one every time
 
 ## When it stays quiet
 
-It reads the settings files Claude Code reads, the user's with a project's own on top, and the
+It reads the settings files Claude Code reads, the user's with a project's own merged over them key
+by key the way the build merges them, read at the project root Claude Code names, and the
 environment variables the build reads alongside them, and says nothing at all in a session where it
 would be noise:
 
@@ -543,25 +586,28 @@ and gets whatever its place in the cadence earns; the skip starts working the da
 with no change here.
 
 A turn here is a prompt, and the built-in counts user messages that are neither meta nor a tool
-result, so the two count the same turns: neither of those fires a prompt hook.
+result, so the two count the same turns: neither of those fires a prompt hook. One prompt counts
+here and not there: a prompt the spawn hold blocks.
 
-The hook runs through `node`, which has to be on `PATH`: Claude Code is a compiled binary and
-brings none. It counts a session's turns in a file named for that session under
+The hook runs through `node`, which has to be on `PATH`: Claude Code is a compiled binary and brings
+none. It counts a session's turns in a file named for that session under
 `~/.claude/ultracode-anywhere/` (or whatever `CLAUDE_CONFIG_DIR` names), beside the rest of this
-account's own Claude Code state, and forgets counters a week after their last turn. Anything it cannot
-read or write costs the session its cadence, not its reminder: the turn still gets the full text,
-which is the safe direction to fail in. A payload naming no session reads as a first turn every
-time, for the same reason.
+account's own Claude Code state, and forgets a counter once it is a week past its last turn, reading
+at most 500 of them on any one turn. Anything it cannot read or write costs the session its cadence,
+not its reminder: the turn still gets the full text, which is the safe direction to fail in. A
+payload naming no session reads as a first turn every time, for the same reason.
 
 The state directory is the hook's alone. It is refused unless it is a real directory this account
-owns with no access for anyone else. That check was written when this state lived under `/tmp`,
-where a predictable path is one another account can create first; the state moved out of there, and
-the check stayed for the switch below. A machine with no home to write into keeps no state at all,
-which costs the cadence and not the reminder. Inside it, a file is only removed when its name is a plain word and its contents
-are a count, and a file standing where a counter would go, holding anything else, is left alone
-rather than written over. Two dotfiles live there too and are never swept: what the build check
-last answered, and whether the cap line has been said. A directory it refuses costs the cadence,
-and the cap line then comes back every session rather than once.
+owns with no access for anyone else, and on Windows only that it is a real directory. That check was
+written when this state lived under `/tmp`, where a predictable path is one another account can
+create first. The state moved out of there, and the check stayed for the switch below. A machine
+with no home to write into keeps no state at all, which costs the cadence and not the reminder.
+Inside it, a turn counter is only removed when its name is a plain word and it holds a count or
+nothing, as an interrupted write leaves it, and a file standing where a counter would go, holding
+anything else, is left alone and never written over. The spawn hold keeps its own `hold/` tree
+there, with its own rules for what it removes. Two dotfiles live there too and are never swept: what
+the build check last answered, and whether the cap line has been said. A directory it refuses costs
+the cadence, and the cap line is then said at every session start.
 
 ## Switches
 
@@ -571,8 +617,8 @@ and the cap line then comes back every session rather than once.
   reminder. The workflows stay installed and stay resolvable by name; what goes is the only sentence
   in the session that says so, since Claude Code lists a plugin's workflows nowhere. Worth setting
   if you already know the three names and would rather have the 1769 characters back.
-- `ULTRACODE_ANYWHERE_EVERY=25 claude` puts more turns between refreshers. Anything unreadable, or
-  zero, falls back to 10.
+- `ULTRACODE_ANYWHERE_EVERY=25 claude` puts more turns between refreshers, read past surrounding
+  spaces. Anything unreadable, zero, or longer than fifteen digits falls back to 10.
 - `ULTRACODE_ANYWHERE_REFRESHER=0 claude` drops the refresher, leaving the opening text and
   silence.
 - `ULTRACODE_ANYWHERE_FULL=repeat claude` brings the whole text back on the cadence instead of the
@@ -598,7 +644,9 @@ and the cap line then comes back every session rather than once.
   session in a writing mode on purpose and would rather not be told.
 - `ULTRACODE_ANYWHERE_DEBUG=/tmp/uc.log claude` logs every prompt the hook fires on, its stdin
   payload, and what silenced it when something did. The session hook writes nothing there. A fifo
-  nobody is reading, standing at that path, is refused without waiting.
+  nobody is reading, standing at that path, is refused without waiting. A value a project's own
+  `.claude/settings.json` or `settings.local.json` sets is ignored, since a cloned repository could
+  otherwise name a file every prompt is written to.
 - `ULTRACODE_ANYWHERE_STRICT=1 claude` stays quiet for the session on a build that no longer
   carries what this plugin mirrors.
 - `ULTRACODE_ANYWHERE_CAP_NOTICE=0 claude` stops the one-time line about the concurrent-subagent
@@ -610,23 +658,27 @@ and the cap line then comes back every session rather than once.
   switch removed in silence is a setting somebody keeps trusting. Remove it, or put `effort:` on an
   agent file of your own.
 - `ULTRACODE_ANYWHERE_SPAWN_EFFORT=medium` in the `"env"` of `settings.json` holds every spawn to that
-  level, as the section on holding every spawn describes. Only your own settings turn it on. Read past
+  level, as the section on holding every spawn describes. Your own settings, a managed policy or the
+  environment Claude Code starts in turn it on, and a project's settings cannot. Read past
   case and surrounding spaces. Any value but the five levels holds nothing, and the session opens with
   a line saying so.
-- `ULTRACODE_ANYWHERE_HELD_CHILD`, `ULTRACODE_ANYWHERE_PROJECT_DIR`, `ULTRACODE_ANYWHERE_HOLD_CHECK`,
-  `ULTRACODE_ANYWHERE_HOLD_CHECK_LOG` and `ULTRACODE_ANYWHERE_HOLD_CHECK_UNROUTED` belong to the hold
-  and are not for setting by hand. The first
-  marks a `claude` started from a held session's shell, which the tripwire then holds like a subagent.
-  The second names the session's project to what that shell starts, from whatever directory it is in.
-  The other three mark a self-check probe, and a hook believes them only beside a stand-in on
-  `127.0.0.1` and a log inside a directory the self-check made in the hold's own state.
+- `ULTRACODE_ANYWHERE_HELD_CHILD`, `ULTRACODE_ANYWHERE_PROJECT_DIR`,
+  `ULTRACODE_ANYWHERE_HOLD_CHECK`, `ULTRACODE_ANYWHERE_HOLD_CHECK_LOG` and
+  `ULTRACODE_ANYWHERE_HOLD_CHECK_UNROUTED` belong to the hold and are not for setting by hand. The
+  first marks a `claude` started from a held session's shell, which the tripwire then holds like a
+  subagent. The second names the session's project to what that shell starts, from whatever
+  directory it is in, and a project whose own settings set it refuses every spawn. The other three
+  mark a self-check probe, and a hook believes them only beside a stand-in on `127.0.0.1` and a log
+  inside a directory the self-check made in the hold's own state.
 - `ULTRACODE_ANYWHERE_STATE=/some/dir claude` keeps the turn counters somewhere other than
   `~/.claude/ultracode-anywhere/`. The directory is the hook's alone, and it has to be one this
-  account owns with mode `0700`, which is what the hook creates for itself. A directory made by hand
-  under the usual umask is `0755` and is refused, which costs the cadence: every turn then carries
-  the full text. Spell it absolute: `~` is not expanded here, and a relative path follows each
-  process's own directory. With the spawn hold on, a state directory that is not this account's alone
-  refuses every spawn, since the record the hold keeps there could say anything.
+  account owns with no access for anyone else, like the `0700` the hook creates for itself. A
+  directory made by hand under the usual umask is `0755` and is refused, which costs the cadence:
+  every turn then carries the full text. Spell it absolute: `~` is not expanded here, and a relative
+  path follows each process's own directory. With the spawn hold on, a state directory that is not
+  this account's alone refuses every spawn, since the record the hold keeps there could say
+  anything. A value a project's own settings set is ignored, so the counters stay in
+  `~/.claude/ultracode-anywhere/`.
 
 ## Changing a shipped workflow
 

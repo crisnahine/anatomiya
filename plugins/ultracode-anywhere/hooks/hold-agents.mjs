@@ -13,10 +13,10 @@ import { existsSync, readdirSync, rmSync } from "node:fs";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 
 import { sameLevel } from "./effort.mjs";
-import { frontmatter, onceNamed, readFrontmatter } from "./frontmatter.mjs";
+import { frontmatter, keyLine, onceNamed, readFrontmatter } from "./frontmatter.mjs";
 import { FILE_ID, holdStatePath, probingIn } from "./hold-config.mjs";
 import { ancestors, filesIn, processRunning, pruneOlder, readJson, writeWhole } from "./hold-files.mjs";
-import { configDirFor, readIfFile, realOf } from "./hook-io.mjs";
+import { configDirFor, projectSettingsFiles, readIfFile, realOf } from "./hook-io.mjs";
 
 /** The built-in types before a capture has listed them. */
 export const DEFAULT_BUILT_IN = ["general-purpose", "Explore", "Plan", "claude", "claude-code-guide", "statusline-setup"];
@@ -103,11 +103,8 @@ export function installedPlugins(env = process.env) {
  */
 export function enabledPlugins(env = process.env, root = "", sources = ["user", "project", "local"]) {
   const config = configDirFor(env);
-  const files = [
-    sources.includes("user") && config && join(config, "settings.json"),
-    sources.includes("project") && root && join(root, ".claude", "settings.json"),
-    sources.includes("local") && root && join(root, ".claude", "settings.local.json"),
-  ];
+  const [project, ...local] = projectSettingsFiles(root, env);
+  const files = [sources.includes("user") && config && join(config, "settings.json"), sources.includes("project") && project, ...(sources.includes("local") ? local : [])];
   const enabled = {};
   for (const path of files.filter(Boolean)) {
     const named = readJson(path, null)?.enabledPlugins;
@@ -162,12 +159,21 @@ function agentTiers(env = process.env, root = "") {
 /**
  * Where the record of what a session loaded is kept: under the process that
  * loaded it, since /clear gives the same process a new session id, or under the
- * session where the build names no process or a self-check probe runs.
+ * session where the build names no process. A self-check probe keeps its record
+ * inside its own check, which is removed when the check ends.
  */
 function recordFile(env, session) {
-  const pid = String(env.CLAUDE_PID ?? "");
-  const key = /^\d{1,10}$/.test(pid) && !probingIn(env) ? `pid-${pid}` : FILE_ID.test(String(session ?? "")) ? session : null;
+  const named = FILE_ID.test(String(session ?? "")) ? session : null;
+  if (probingIn(env)) return named ? join(dirname(env.ULTRACODE_ANYWHERE_HOLD_CHECK_LOG), "sessions", `${named}.json`) : null;
+  const pid = pidOf(env);
+  const key = pid ? `pid-${pid}` : named;
   return key ? holdStatePath(env, join("sessions", `${key}.json`)) : null;
+}
+
+/** The process id the build names for the session a hook runs in, or null. */
+function pidOf(env) {
+  const pid = String(env.CLAUDE_PID ?? "");
+  return /^\d{1,10}$/.test(pid) ? pid : null;
 }
 
 /**
@@ -179,15 +185,34 @@ function recordFile(env, session) {
 export function recordLoaded(env = process.env, session, root = "", { replace = true } = {}) {
   const file = recordFile(env, session);
   if (!file) return false;
-  if (!replace && existsSync(file)) return true;
-  writeWhole(file, JSON.stringify({ at: new Date().toISOString(), tiers: agentTiers(env, root) }));
+  const started = registeredAt(env);
+  if (!replace && existsSync(file) && !fromAnother(readJson(file, null), started)) return true;
+  writeWhole(file, JSON.stringify({ at: new Date().toISOString(), started, tiers: agentTiers(env, root) }));
   return true;
 }
 
 /** The definitions a session recorded as it started, or null where it recorded none. */
 export function loadedTiers(env = process.env, session) {
-  const tiers = readJson(recordFile(env, session), null)?.tiers;
+  const record = readJson(recordFile(env, session), null);
+  const tiers = fromAnother(record, registeredAt(env)) ? null : record?.tiers;
   return Array.isArray(tiers) && tiers.length === 4 && tiers.every(Array.isArray) ? tiers : null;
+}
+
+/**
+ * When the build registered the process CLAUDE_PID names, or null. It writes
+ * this once per process, so a later process given the same id writes another.
+ */
+function registeredAt(env) {
+  const pid = pidOf(env);
+  const config = configDirFor(env);
+  if (!pid || !config) return null;
+  const at = readJson(join(config, "sessions", `${pid}.json`), null)?.startedAt;
+  return Number.isFinite(at) ? at : null;
+}
+
+/** Whether a record was written by another process than the one registered now, which only two readable registrations can show. */
+function fromAnother(record, started) {
+  return Number.isFinite(record?.started) && started !== null && record.started !== started;
 }
 
 /** Removes the records of sessions that have not started for a month, and of processes that have exited. */
@@ -247,7 +272,7 @@ export function dropKey(head, key) {
   const kept = [];
   let dropping = false;
   for (const line of head.split("\n")) {
-    if (line.startsWith(`${key}:`)) {
+    if (line.startsWith(`${key}:`) || keyLine(line)?.key === key) {
       dropping = true;
       continue;
     }

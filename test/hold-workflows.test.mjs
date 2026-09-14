@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { MARK, copiesBeside, injectLevel, knownWorkflows, metaEnd, resolveWorkflow, workflowCopies } from "../plugins/ultracode-anywhere/hooks/hold-workflows.mjs";
@@ -81,7 +81,39 @@ test("a nested workflow runs its injected copy, by name or by path, and an unkno
   assert.deepEqual(calls.map((o) => o.effort), ["medium", "medium"], "the children's own high stages ran at medium");
   assert.ok(existsSync(nested[0].scriptPath));
   assert.match(readFileSync(nested[1].scriptPath, "utf8"), /MINE/);
-  assert.equal(Object.keys(workflowCopies(env, project, dir, "medium")).length, Object.keys(copies).length, "a second pass rewrites nothing new");
+  const long = new Date(Date.now() - 3600 * 1000);
+  for (const file of readdirSync(dir)) utimesSync(join(dir, file), long, long);
+  const tampered = copies.mine;
+  writeFileSync(tampered, flow("mine", "TAMPERED"));
+  utimesSync(tampered, long, long);
+  assert.deepEqual(workflowCopies(env, project, dir, "medium"), copies);
+  for (const file of readdirSync(dir)) {
+    const path = join(dir, file);
+    assert.equal(statSync(path).mtimeMs > long.getTime(), path === tampered, `${file}: a second pass rewrites only a copy that changed`);
+  }
+  assert.doesNotMatch(readFileSync(tampered, "utf8"), /TAMPERED/);
+});
+
+test("a workflow's name is its meta's own name member, never a name: inside another member's string", (t) => {
+  const { cfg, project, env } = world(t);
+  write(join(cfg, "workflows", "foo.js"), flow("foo", "USER"));
+  write(join(project, ".claude", "workflows", "bar.js"), "export const meta = { description: \"Set the name: 'foo' on it\", name: \"bar\" }\nreturn 2\n");
+
+  const flows = knownWorkflows(env, project);
+  assert.match(resolveWorkflow(flows, "foo").src, /USER/);
+  assert.equal(resolveWorkflow(flows, "bar").file, join(project, ".claude", "workflows", "bar.js"));
+});
+
+test("a remote stage runs in a worktree inside a git repository and with no isolation outside one", async (t) => {
+  const { cfg, project, env, transcript } = world(t);
+  write(join(cfg, "workflows", "far.js"), 'export const meta = { name: "far", description: "d" }\nreturn await agent("a", { isolation: "remote" })\n');
+  const dir = copiesBeside(transcript, env);
+  const stage = async () => (await runStages(readFileSync(workflowCopies(env, project, dir, "medium").far, "utf8")))[0];
+
+  assert.equal((await runStages(injectLevel('export const meta = { name: "p", description: "d" }\nawait agent("a", { isolation: "remote" })', "low", {}, { worktree: false })))[0].isolation, undefined);
+  assert.equal((await stage()).isolation, undefined, "a nested copy outside git");
+  mkdirSync(join(project, ".git"));
+  assert.equal((await stage()).isolation, "worktree", "a nested copy inside git");
 });
 
 test("copies go beside the session transcript, or into the state directory when there is none", (t) => {

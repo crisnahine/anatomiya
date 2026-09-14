@@ -88,6 +88,11 @@ test("a reserved key is refused whole, since the build refuses the meta that car
   }
 });
 
+test("a numeric key is a key, and a negative one is refused, since no parser reads that object literal", () => {
+  assert.deepEqual(metaIn(meta(`{ 1: 1, name: 'a', description: 'b' }`)), { name: "a", description: "b", whenToUse: null });
+  assert.equal(metaIn(meta(`{ -1: 1, name: 'a', description: 'b' }`)), null);
+});
+
 test("a template literal with nothing in it to interpolate is a string", () => {
   assert.equal(metaIn(meta("{ name: 'a', description: `plain` }")).description, "plain");
 });
@@ -217,12 +222,13 @@ test("a name the tool could not resolve, or a code span could not hold, is not a
   );
 });
 
-test("names that differ only below the collation still come back in one fixed order", (t) => {
-  // `localeCompare` is not a total order, so a tie fell to whatever the
-  // filesystem answered and the sentence differed between machines. The order
-  // is written out rather than compared with a second call: two calls in one
-  // process agree whatever the comparator does, since `readdir` answers the
-  // same both times and the sort is stable, so that shape could not fail.
+test("names come back in collation order ahead of file order, and a tie in one fixed order", (t) => {
+  // The name decides before the file does: `a-b` collates first and lives in
+  // the later file. No two distinct names this class resolves collate equal
+  // here (every one up to three characters was tried), so the code-unit
+  // comparator has no case of its own. The order is written out, since a second
+  // call proves nothing: two calls in one process agree whatever the comparator
+  // does, and `readdir` answers the same both times.
   const dir = dirWith(t, {
     "b.js": meta(`{ name: 'a-b', description: 'd' }`),
     "a.js": meta(`{ name: 'ab', description: 'd' }`),

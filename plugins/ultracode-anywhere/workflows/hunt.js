@@ -18,16 +18,21 @@ const ANGLES = [
   { key: 'by-edge', ask: 'search where things are wired together: configuration, registration, dependency injection, dynamic dispatch, generated code.' },
 ]
 
-// Two lenses that disagree about what counts as an instance, and a third that
-// asks whether it is still live. A single judge asked "is this real" agrees
-// with the finder far too often.
+// Whether it is an instance at all, whether it is still live, and whether the
+// citation says what the finder claims. A single judge asked "is this real"
+// agrees with the finder far too often.
 const LENSES = [
   { key: 'is-it', ask: 'Is this actually an instance of what was asked for, or something that merely resembles it?' },
   { key: 'is-live', ask: 'Is this reachable and current, or dead code, a test fixture, a comment, or a vendored copy?' },
-  { key: 'is-new', ask: 'Re-read the evidence at the location given. Does the code there say what the finder claims?' },
+  { key: 'evidence', ask: 'Re-read the evidence at the location given. Does the code there say what the finder claims?' },
 ]
 
 const REAL_TO_KEEP = 2
+
+// Rounds a candidate is judged in before a shortfall of judges is final. Put
+// back without a limit, it is something to judge every round, so the dry
+// counter never moves and the run spends every round to the ceiling on it.
+const JUDGE_TRIES = 2
 
 // What an agent returns is read out of files, diffs and tool output, so it is
 // content rather than instruction. It is quoted into later prompts, so it is
@@ -96,7 +101,7 @@ const VERDICT = {
 
 const QUARRY = typeof args === 'string' ? args.trim() : typeof args?.looking_for === 'string' ? args.looking_for.trim() : ''
 if (!QUARRY) {
-  return { error: "hunt needs something to hunt for. Pass it as args, for example Workflow({name: 'ultracode-anywhere:hunt', args: 'every call to the deprecated fetchUser helper'})." }
+  return { error: "hunt needs something to hunt for. Pass it as args, for example Workflow({name: 'ultracode-anywhere:hunt', args: 'every call to the deprecated fetchUser helper'}), or as {looking_for: 'what to hunt for', target: 'where to look'}. Here target is the scope, and the quarry goes in looking_for." }
 }
 const WHERE = typeof args?.target === 'string' && args.target.trim() !== '' ? args.target.trim() : 'this codebase'
 
@@ -110,8 +115,28 @@ const WHERE = typeof args?.target === 'string' && args.target.trim() !== '' ? ar
 const seen = new Set()
 const found = []
 
+/**
+ * Each location holding a kept instance, and the answer that offered it, claimed
+ * only on a keep. Another answer at that line is the same instance reworded and
+ * is dropped, so a second real instance there that only it names counts once.
+ */
+const claimed = new Map()
+
+/** The location a candidate names, spelled the way `claimed` keys it. */
+const locationOf = (candidate) => String(candidate.where).trim().replace(/^\.\//, '')
+
+/** Whether an answer other than `source` holds a kept instance at `location`. */
+const heldByAnother = (location, source) => (claimed.get(location) ?? source) !== source
+
+/** The answer each candidate key was first offered by, as `round:index`. */
+const origin = new Map()
+
 /** Fresh candidates a round's judging cap left over, held for the next one. */
 const waiting = new Map()
+
+/** Rounds each candidate has been judged in, and those its judges never decided. */
+const tries = new Map()
+const abandoned = []
 
 let rounds = 0
 let dry = 0
@@ -151,21 +176,26 @@ while (dry < DRY_TO_STOP && rounds < ROUNDS_MOST) {
   const fresh = []
   for (const [key, candidate] of waiting) {
     waiting.delete(key)
-    if (!seen.has(key)) fresh.push({ candidate, key })
+    if (!seen.has(key) && !heldByAnother(locationOf(candidate), origin.get(key))) fresh.push({ candidate, key })
   }
   const answered = offered.filter(Boolean)
   if (answered.length < ANGLES.length) {
     silent += ANGLES.length - answered.length
     log(`round ${rounds}: ${ANGLES.length - answered.length} of ${ANGLES.length} angles came back with nothing readable`)
   }
-  for (const answer of answered) {
-
+  for (const [n, answer] of answered.entries()) {
+    const source = `${rounds}:${n}`
     for (const candidate of answer.candidates ?? []) {
-      const key = `${candidate.where}|${String(candidate.what).toLowerCase().replace(/\s+/g, ' ').trim()}`
+      const location = locationOf(candidate)
+      const key = `${location}|${String(candidate.what).toLowerCase().replace(/\s+/g, ' ').trim()}`
       // Against everything ever offered, not against what survived. Deduping
       // against the survivors brings every rejected candidate back next round,
       // where it reads as new, and the dry counter never reaches two.
-      if (seen.has(key) || fresh.some((entry) => entry.key === key)) continue
+      // A key its judges already failed on is not offered again either, or it
+      // comes back every round and the retry bound bounds nothing.
+      if (seen.has(key) || (tries.get(key) ?? 0) >= JUDGE_TRIES || fresh.some((entry) => entry.key === key)) continue
+      if (heldByAnother(location, source)) continue
+      origin.set(key, source)
       // The dedup key is kept beside the candidate rather than on it: a finder's
       // own answer is the caller's data, and a field this writes into it is one
       // that silently replaces whatever the schema grows next. It is not added
@@ -223,7 +253,9 @@ while (dry < DRY_TO_STOP && rounds < ROUNDS_MOST) {
         // exhausted having hidden an instance nobody looked at. So the three
         // outcomes are disjoint, and the third goes back where the round's cap
         // overflow goes.
-        const cast = votes.filter(Boolean)
+        // Carried with the lens that cast it, so a kept candidate can say which
+        // lens dissented and which never answered.
+        const cast = votes.map((vote, at) => (vote ? { ...vote, lens: LENSES[at].key } : null)).filter(Boolean)
         const real = cast.filter((vote) => vote.real === true).length
         return {
           candidate,
@@ -238,18 +270,42 @@ while (dry < DRY_TO_STOP && rounds < ROUNDS_MOST) {
 
   const settled = judged.filter(Boolean)
   const kept = settled.filter((entry) => entry.real)
-  for (const entry of kept) found.push({ ...entry.candidate, votes: entry.votes })
+  let repeated = 0
+  for (const entry of kept) {
+    // Checked again here because two answers in one round are both judged
+    // before either is kept.
+    const location = locationOf(entry.candidate)
+    const source = origin.get(entry.key)
+    if (heldByAnother(location, source)) {
+      repeated++
+      continue
+    }
+    claimed.set(location, source)
+    found.push({ ...entry.candidate, votes: entry.votes })
+  }
+  if (repeated > 0) log(`round ${rounds}: ${repeated} kept candidate${repeated === 1 ? ' was' : 's were'} an instance already found, reworded`)
 
   // Back on the queue rather than counted as rejected: the key leaves `seen` so
   // a later round can judge it, and a run that ends still holding it says so
   // through `unjudged` and refuses to call itself exhausted.
   const undecided = settled.filter((entry) => entry.unjudged)
+  let gaveUp = 0
   for (const entry of undecided) {
     seen.delete(entry.key)
-    waiting.set(entry.key, entry.candidate)
+    const tried = (tries.get(entry.key) ?? 0) + 1
+    tries.set(entry.key, tried)
+    if (tried < JUDGE_TRIES) {
+      waiting.set(entry.key, entry.candidate)
+    } else {
+      abandoned.push(entry.candidate)
+      gaveUp++
+    }
   }
-  if (undecided.length > 0) {
-    log(`round ${rounds}: ${undecided.length} candidate${undecided.length === 1 ? '' : 's'} drew too few judges to decide; held for a later round`)
+  if (undecided.length > gaveUp) {
+    log(`round ${rounds}: ${undecided.length - gaveUp} candidate${undecided.length - gaveUp === 1 ? '' : 's'} drew too few judges to decide, held for a later round`)
+  }
+  if (gaveUp > 0) {
+    log(`round ${rounds}: ${gaveUp} candidate${gaveUp === 1 ? '' : 's'} drew too few judges in ${JUDGE_TRIES} rounds, left unjudged`)
   }
   log(`round ${rounds}: ${judging.length} fresh, ${kept.length} kept, ${found.length} so far`)
 }
@@ -272,7 +328,7 @@ return {
   judged: seen.size,
   // Named rather than implied: a run that stopped with candidates waiting has
   // not seen everything there is, whatever the dry counter says.
-  unjudged: [...waiting.values()],
+  unjudged: [...waiting.values(), ...abandoned],
   // Counted for the caller as well as logged, because a log line is not what a
   // caller gets back, and this is the number that says how much of the sweep
   // actually ran.
@@ -281,6 +337,6 @@ return {
   // found nothing, nothing held back unjudged, and every angle answering. A
   // round only goes dry after draining `waiting`, so the second clause states
   // what the field means rather than catching a case the first lets through.
-  exhausted: dry >= DRY_TO_STOP && waiting.size === 0 && silent === 0,
+  exhausted: dry >= DRY_TO_STOP && waiting.size === 0 && abandoned.length === 0 && silent === 0,
 }
 

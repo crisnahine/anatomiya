@@ -1,11 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { checksDir, holdGaps, holdTarget, probingIn, sameFamily } from "../plugins/ultracode-anywhere/hooks/hold-config.mjs";
-import { needsPosixPaths } from "./platform.mjs";
+import { needsPosixPaths, needsPosixPermissions } from "./platform.mjs";
 
 /** An environment that names no configuration directory, so the machine's own settings are never read. */
 const NOWHERE = { HOME: "", USERPROFILE: "", CLAUDE_CONFIG_DIR: "" };
@@ -191,7 +191,13 @@ test("a model is the held family only as its own name or that name with a date",
 
 test("an effort variable in the session is a required gap unless it names the held level, since it outranks every spawn's own", () => {
   assert.match(holdGaps({ ...WHOLE, CLAUDE_CODE_EFFORT_LEVEL: "high" }).required.join(" "), /CLAUDE_CODE_EFFORT_LEVEL is "high"/);
+  assert.match(holdGaps({ ...WHOLE, CLAUDE_CODE_EFFORT_LEVEL: "unset" }).required.join(" "), /has to be medium or removed/, "the literal unset is refused too, so the sentence cannot offer it");
   assert.deepEqual(holdGaps({ ...WHOLE, CLAUDE_CODE_EFFORT_LEVEL: "medium" }).required, []);
+  assert.match(holdGaps({ ...WHOLE, CLAUDE_CODE_EFFORT_LEVEL: "medium", ULTRACODE_ANYWHERE_REPLACED_EFFORT: "high" }).required.join(" "), /CLAUDE_CODE_EFFORT_LEVEL is "high"/, "the session's value, which the preload in a hook's own process set the held level over");
+  // The build reads it untrimmed, so a value naming no level pins nothing and each spawn's own effort stands.
+  for (const value of ["medium ", " high", "bogus", "MED"]) assert.deepEqual(holdGaps({ ...WHOLE, CLAUDE_CODE_EFFORT_LEVEL: value }).required, [], value);
+  // unset and auto send no effort at all, and a number is a budget, so each still outranks the spawn's own.
+  for (const value of ["auto", "Unset", "7"]) assert.match(holdGaps({ ...WHOLE, CLAUDE_CODE_EFFORT_LEVEL: value }).required.join(" "), /CLAUDE_CODE_EFFORT_LEVEL is/, value);
 });
 
 test("a cap on effort below the held level is a required gap, whether it caps every model or the held one", (t) => {
@@ -223,7 +229,7 @@ test("a project that moves where the hold reads, or names the build a session ru
   mkdirSync(join(home, ".claude"), { recursive: true });
   writeFileSync(join(home, ".claude", "settings.json"), JSON.stringify({ env: { ULTRACODE_ANYWHERE_SPAWN_EFFORT: "medium" } }));
 
-  for (const key of ["CLAUDE_CONFIG_DIR", "HOME", "USERPROFILE", "ULTRACODE_ANYWHERE_STATE", "AI_AGENT", "CLAUDE_CODE_EXECPATH"]) {
+  for (const key of ["CLAUDE_CONFIG_DIR", "HOME", "USERPROFILE", "ULTRACODE_ANYWHERE_STATE", "AI_AGENT", "CLAUDE_CODE_EXECPATH", "ULTRACODE_ANYWHERE_PROJECT_DIR"]) {
     writeFileSync(join(root, ".claude", "settings.json"), JSON.stringify({ env: { [key]: "x" } }));
     assert.match(holdGaps(WHOLE, { root, accountHome: home }).required.join(" "), new RegExp(`a project's settings set ${key}\\b`), key);
   }
@@ -255,4 +261,47 @@ test("a project's settings are read past the case of their keys, since Windows r
   assert.equal(holdTarget(WHOLE, { root }), null, "a project that names the switch in any case turns nothing on");
   writeFileSync(join(root, ".claude", "settings.json"), JSON.stringify({ env: { home: "x" } }));
   assert.match(holdGaps(WHOLE, { root, accountHome: home }).required.join(" "), /a project's settings set HOME/);
+});
+
+test("a probe's log is believed only where it exists", (t) => {
+  const env = { ...WHOLE, ULTRACODE_ANYWHERE_STATE: join(scratch(t), "state"), ULTRACODE_ANYWHERE_HOLD_CHECK: "1", ANTHROPIC_BASE_URL: "http://127.0.0.1:4000" };
+  mkdirSync(checksDir(env), { recursive: true, mode: 0o700 });
+  const inside = mkdtempSync(join(checksDir(env), "ultracode-hold-check-"));
+
+  assert.equal(probingIn({ ...env, ULTRACODE_ANYWHERE_HOLD_CHECK_LOG: join(inside, "tripwire.log") }), false);
+});
+
+test("a probe's log is believed only in a directory no other account can open", needsPosixPermissions, (t) => {
+  const env = { ...WHOLE, ULTRACODE_ANYWHERE_STATE: join(scratch(t), "state"), ULTRACODE_ANYWHERE_HOLD_CHECK: "1", ANTHROPIC_BASE_URL: "http://127.0.0.1:4000" };
+  mkdirSync(checksDir(env), { recursive: true, mode: 0o700 });
+  const open = mkdtempSync(join(checksDir(env), "ultracode-hold-check-"));
+  chmodSync(open, 0o755);
+  writeFileSync(join(open, "tripwire.log"), "");
+
+  assert.equal(probingIn({ ...env, ULTRACODE_ANYWHERE_HOLD_CHECK_LOG: join(open, "tripwire.log") }), false);
+});
+
+test("a project's settings that set the subagent model refuse spawns unless the user's own settings name that model beside the switch", (t) => {
+  const dir = scratch(t);
+  const root = join(dir, "project");
+  mkdirSync(join(root, ".claude"), { recursive: true });
+  writeFileSync(join(root, ".claude", "settings.json"), JSON.stringify({ env: { CLAUDE_CODE_SUBAGENT_MODEL: "claude-haiku-4-5" } }));
+  const cfg = join(dir, ".claude");
+  mkdirSync(cfg, { recursive: true });
+  const user = (env) => writeFileSync(join(cfg, "settings.json"), JSON.stringify({ env }));
+  const session = { ...WHOLE, CLAUDE_CODE_SUBAGENT_MODEL: "claude-haiku-4-5" };
+
+  assert.match(holdGaps(session, { root }).required.join(" "), /a project's settings set CLAUDE_CODE_SUBAGENT_MODEL/, "the switch came from the shell");
+  user({ ULTRACODE_ANYWHERE_SPAWN_EFFORT: "medium" });
+  assert.match(holdGaps({ ...session, CLAUDE_CONFIG_DIR: cfg }, { root }).required.join(" "), /a project's settings set CLAUDE_CODE_SUBAGENT_MODEL/, "the user settings name no model");
+  user({ ULTRACODE_ANYWHERE_SPAWN_EFFORT: "medium", CLAUDE_CODE_SUBAGENT_MODEL: "claude-haiku-4-5" });
+  assert.deepEqual(holdGaps({ ...session, CLAUDE_CONFIG_DIR: cfg }, { root }).required, []);
+});
+
+test("a project's settings that set CLAUDE_PROJECT_DIR are a required gap, since a shell reads the session's project from it", (t) => {
+  const root = join(scratch(t), "project");
+  mkdirSync(join(root, ".claude"), { recursive: true });
+  writeFileSync(join(root, ".claude", "settings.json"), JSON.stringify({ env: { CLAUDE_PROJECT_DIR: "/elsewhere" } }));
+
+  assert.match(holdGaps(WHOLE, { root }).required.join(" "), /a project's settings set CLAUDE_PROJECT_DIR\b/);
 });

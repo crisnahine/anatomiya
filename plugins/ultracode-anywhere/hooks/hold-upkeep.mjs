@@ -17,10 +17,10 @@ import { ownState, stateDirFor } from "./counters.mjs";
 import { EFFORT_LEVELS } from "./effort.mjs";
 import { TYPE_NAME, copiesDir, installedPlugins, pruneSessions, removeCopies, removeShadows, staleShadows, syncCopies, userFileAt, writeShadow } from "./hold-agents.mjs";
 import { agentPlan, claudeVersion, inBatches, pruneChecks, realClaude, runProbe, scratchIn, verify } from "./hold-check.mjs";
-import { FULL_ID, RETRY_MS, holdStatePath, holdTarget, preloadPath, runningVersion } from "./hold-config.mjs";
+import { FULL_ID, RETRY_MS, effortPin, holdStatePath, holdTarget, preloadPath, runningVersion } from "./hold-config.mjs";
 import { plainLine, processRunning, readJson, writeWhole } from "./hold-files.mjs";
 import { projectRoot } from "./hold-switch.mjs";
-import { configDirFor, here, invokedAs, readIfFile } from "./hook-io.mjs";
+import { configDirFor, here, homeOf, invokedAs, localSettingsDir, projectSettingsFiles, readIfFile } from "./hook-io.mjs";
 import { settingsFor } from "./upstream.mjs";
 
 /** Where a captured subagent prompt ends and the text of the agent that launched it begins. */
@@ -33,53 +33,69 @@ const CAPTURES_AT_ONCE = 4;
 const LOCK_STALE_MS = 30 * 60 * 1000;
 
 /** The user settings keys that decide a spawn's model, effort or hooks. */
-const DECIDING_KEYS = ["env", "hooks", "disableAllHooks", "effortLevel", "model", "modelSettings"];
+const DECIDING_KEYS = ["env", "hooks", "disableAllHooks", "effortLevel", "maxEffortLevel", "model", "modelSettings", "ultracode"];
 
 /** The variables the hold reads, which decide what a self-check finds as much as any setting does. */
-const DECIDING_ENV = ["ULTRACODE_ANYWHERE_SPAWN_EFFORT", "CLAUDE_CODE_SUBAGENT_MODEL", "CLAUDE_CODE_SUBAGENT_MODEL_FORCE", "CLAUDE_CODE_FORK_SUBAGENT", "NODE_OPTIONS"];
+const DECIDING_ENV = ["ULTRACODE_ANYWHERE_SPAWN_EFFORT", "CLAUDE_CODE_SUBAGENT_MODEL", "CLAUDE_CODE_SUBAGENT_MODEL_FORCE", "CLAUDE_CODE_FORK_SUBAGENT", "CLAUDE_CODE_EFFORT_LEVEL", "NODE_OPTIONS"];
 
 /**
  * What NODE_OPTIONS loads into every node process. Inside a session a claude that
  * a node program starts runs at the held level on the held model, the switch
- * read the way hold-switch.mjs reads it, and a claude started from a terminal is
- * a main session that keeps its own, an npm install's included. It needs nothing
- * of the plugin, which can be uninstalled while NODE_OPTIONS still names this file.
+ * read the way `heldFrom` in hold-shim.mjs reads it, and a claude started from a
+ * terminal is a main session that keeps its own, an npm install's included. It
+ * needs nothing of the plugin, which can be uninstalled while NODE_OPTIONS still
+ * names this file.
  */
 const PRELOAD = `"use strict";
 // ultracode-anywhere's spawn hold. A claude that a node program inside a session starts runs at the held level on the held model.
 if (process.env.CLAUDECODE === "1") {
-  const { readFileSync } = require("node:fs");
+  const { closeSync, constants, fstatSync, lstatSync, openSync, readFileSync, realpathSync, statSync } = require("node:fs");
   const { homedir, userInfo } = require("node:os");
-  const { join } = require("node:path");
-  const envIn = (file) => {
+  const { basename, dirname, join, resolve } = require("node:path");
+  ${homeOf}
+  ${localSettingsDir}
+  ${projectSettingsFiles}
+  // A preload that throws stops every node program in the session, so anything unforeseen leaves this one alone.
+  try {
+    const envIn = (file) => {
+      try {
+        const env = JSON.parse(readFileSync(file, "utf8")).env;
+        return env && typeof env === "object" && !Array.isArray(env) ? env : {};
+      } catch {
+        return {};
+      }
+    };
+    const named = (env) => String(env.ULTRACODE_ANYWHERE_SPAWN_EFFORT ?? "").trim() !== "";
+    const levelAt = (root) => {
+      const project = projectSettingsFiles(root).map(envIn);
+      // Windows reads an environment's names in any case, so a project's keys are too.
+      const sets = (key, filled = false) => project.some((env) => Object.entries(env).some(([name, value]) => name.toUpperCase() === key && (!filled || String(value ?? "").trim() !== "")));
+      const movesHome = sets("HOME") || sets("USERPROFILE");
+      let own = {};
+      try {
+        const under = (home) => (home ? join(home, ".claude") : "");
+        const account = () => under(userInfo().homedir);
+        const dir = sets("CLAUDE_CONFIG_DIR") ? account() : process.env.CLAUDE_CONFIG_DIR || (movesHome ? account() : under(homeOf(process.env)));
+        if (dir) own = envIn(join(dir, "settings.json"));
+      } catch {}
+      const decided = named(own) ? own : sets("ULTRACODE_ANYWHERE_SPAWN_EFFORT", true) || sets("CLAUDE_CONFIG_DIR") || movesHome ? {} : process.env;
+      return String(decided.ULTRACODE_ANYWHERE_SPAWN_EFFORT ?? "").trim().toLowerCase();
+    };
+    // The directories the shim reads, in its order, and the first that holds decides.
+    const roots = [process.env.ULTRACODE_ANYWHERE_PROJECT_DIR, process.env.CLAUDE_PROJECT_DIR];
     try {
-      const env = JSON.parse(readFileSync(file, "utf8")).env;
-      return env && typeof env === "object" && !Array.isArray(env) ? env : {};
-    } catch {
-      return {};
+      roots.push(process.cwd());
+    } catch {}
+    const level = [...new Set(roots.filter(Boolean))].map(levelAt).find((found) => ${JSON.stringify(EFFORT_LEVELS)}.includes(found));
+    const model = String(process.env.CLAUDE_CODE_SUBAGENT_MODEL || "").trim();
+    if (level) {
+      const was = process.env.CLAUDE_CODE_EFFORT_LEVEL;
+      // A hook runs under this too, and the hold refuses over the session's own value.
+      if (was !== undefined && was !== level) process.env.ULTRACODE_ANYWHERE_REPLACED_EFFORT = was;
+      process.env.CLAUDE_CODE_EFFORT_LEVEL = level;
+      if (new RegExp(${JSON.stringify(FULL_ID.source)}, "i").test(model)) process.env.ANTHROPIC_MODEL = model;
     }
-  };
-  const named = (env) => String(env.ULTRACODE_ANYWHERE_SPAWN_EFFORT ?? "").trim() !== "";
-  let root = process.env.CLAUDE_PROJECT_DIR || process.env.ULTRACODE_ANYWHERE_PROJECT_DIR || "";
-  try {
-    root = root || process.cwd();
   } catch {}
-  const project = root ? [envIn(join(root, ".claude", "settings.json")), envIn(join(root, ".claude", "settings.local.json"))] : [];
-  // Windows reads an environment's names in any case, so a project's keys are too.
-  const sets = (key, filled = false) => project.some((env) => Object.entries(env).some(([name, value]) => name.toUpperCase() === key && (!filled || String(value ?? "").trim() !== "")));
-  const movesHome = sets("HOME") || sets("USERPROFILE");
-  let own = {};
-  try {
-    const account = () => join(userInfo().homedir, ".claude");
-    own = envIn(join(sets("CLAUDE_CONFIG_DIR") ? account() : process.env.CLAUDE_CONFIG_DIR || (movesHome ? account() : join(homedir(), ".claude")), "settings.json"));
-  } catch {}
-  const decided = named(own) ? own : sets("ULTRACODE_ANYWHERE_SPAWN_EFFORT", true) || sets("CLAUDE_CONFIG_DIR") || movesHome ? {} : process.env;
-  const level = String(decided.ULTRACODE_ANYWHERE_SPAWN_EFFORT ?? "").trim().toLowerCase();
-  const model = String(process.env.CLAUDE_CODE_SUBAGENT_MODEL || "").trim();
-  if (${JSON.stringify(EFFORT_LEVELS)}.includes(level)) {
-    process.env.CLAUDE_CODE_EFFORT_LEVEL = level;
-    if (new RegExp(${JSON.stringify(FULL_ID.source)}, "i").test(model)) process.env.ANTHROPIC_MODEL = model;
-  }
 }
 `;
 
@@ -132,7 +148,14 @@ export function pluginStamp(env = process.env) {
 /** What a self-check result rests on: the plugin stamp, the user settings that decide a spawn, and the variables the hold reads. */
 export function configStamp(env = process.env) {
   const settings = settingsFor(env);
-  return digest([pluginStamp(env), DECIDING_KEYS.map((key) => settings[key] ?? null), DECIDING_ENV.map((name) => env[name] ?? null)]);
+  const held = holdTarget(env)?.level;
+  // A hook carries the level the preload set and keeps the session's own aside, where a terminal carries the session's own.
+  const effort = env.ULTRACODE_ANYWHERE_REPLACED_EFFORT ?? env.CLAUDE_CODE_EFFORT_LEVEL;
+  const stamped = (name) => {
+    if (name !== "CLAUDE_CODE_EFFORT_LEVEL") return env[name] ?? null;
+    return held && effortPin(effort) === held ? null : effort ?? null;
+  };
+  return digest([pluginStamp(env), DECIDING_KEYS.map((key) => settings[key] ?? null), DECIDING_ENV.map(stamped)]);
 }
 
 /**
@@ -182,7 +205,12 @@ export async function syncShadows({ env = process.env, version, stamp, level, ..
   const first = await captureType(env, "general-purpose", run);
   const listing = listingEntries(first.main);
   const types = listing.map((entry) => entry.type).filter((type) => !type.includes(":"));
-  if (types.length === 0) return ["shadows: the listing could not be read, so nothing was written"];
+  if (types.length === 0) {
+    // Kept so the session is told why a built-in is refused, and so the capture waits out the pause.
+    const error = "the listing of built-in agents could not be read off this build, so no shadow was written, and a built-in agent without a current shadow is refused";
+    writeWhole(holdStatePath(env, "shadows.json"), JSON.stringify({ version, stamp, level, at: new Date().toISOString(), error }));
+    return ["shadows: the listing could not be read, so nothing was written"];
+  }
   writeWhole(typesFile, JSON.stringify(types));
 
   const lines = await inBatches(types, CAPTURES_AT_ONCE, async (type) => {
@@ -195,7 +223,7 @@ export async function syncShadows({ env = process.env, version, stamp, level, ..
     const written = writeShadow(env, listing.find((entry) => entry.type === type), text.slice(0, end), version, level);
     return written ? `${type}: written from ${version}` : `${type}: kept, a file of the user's own is there`;
   });
-  writeWhole(holdStatePath(env, "shadows.json"), JSON.stringify({ version, stamp, at: new Date().toISOString() }));
+  writeWhole(holdStatePath(env, "shadows.json"), JSON.stringify({ version, stamp, level, at: new Date().toISOString() }));
   return lines;
 }
 
@@ -286,14 +314,19 @@ export function recordFailure(env = process.env, version, err) {
  */
 export async function refresh({ env = process.env, root = "", version, force = false, now = Date.now(), ...run }) {
   const target = holdTarget(env, { root });
-  if (!target) return { off: true, cleaned: cleanUp(env, root) };
+  if (!target) {
+    pruneChecks(env, now);
+    return { off: true, cleaned: cleanUp(env, root) };
+  }
 
   pruneSessions(env, now);
   pruneChecks(env, now);
   writePreload(env);
   const plugins = pluginStamp(env);
-  const captured = readJson(holdStatePath(env, "shadows.json"), null);
-  const due = captured?.version !== version || captured?.stamp !== plugins || staleShadows(env, version, target.level).length > 0;
+  const lastCapture = readJson(holdStatePath(env, "shadows.json"), null);
+  const moved = lastCapture?.version !== version || lastCapture?.stamp !== plugins || lastCapture?.level !== target.level;
+  // A capture that left a built-in without its shadow, or read no listing, waits out the same pause a failed self-check does.
+  const due = moved || ((staleShadows(env, version, target.level).length > 0 || typeof lastCapture.error === "string") && !(now - Date.parse(lastCapture.at) < RETRY_MS));
   const shadows = due ? await syncShadows({ env, version, stamp: plugins, level: target.level, ...run }) : [];
   const copies = syncCopies({ env, level: target.level });
   const stamp = configStamp(env);
@@ -301,7 +334,9 @@ export async function refresh({ env = process.env, root = "", version, force = f
   const verified = force || needsVerify(previous, version, stamp, now);
   const state = verified ? await verify({ env, version, stamp, ...run }) : previous;
   const failed = holdStatePath(env, "upkeep.json");
-  if (failed) rmSync(failed, { force: true });
+  const afterCapture = readJson(holdStatePath(env, "shadows.json"), null);
+  if (afterCapture?.version === version && typeof afterCapture.error === "string") recordFailure(env, version, afterCapture.error);
+  else if (failed) rmSync(failed, { force: true });
   return { shadows, copies, verified, state };
 }
 
@@ -351,10 +386,13 @@ async function main(args, env = sessionEnv(process.env)) {
     if (!token) return 0;
     try {
       if (version) await refresh({ env, root, version, binary });
-      else if (holdTarget(env, { root })) {
-        writePreload(env);
-        syncCopies({ env, level: holdTarget(env, { root }).level });
-      } else cleanUp(env, root);
+      else {
+        pruneChecks(env);
+        if (holdTarget(env, { root })) {
+          writePreload(env);
+          syncCopies({ env, level: holdTarget(env, { root }).level });
+        } else cleanUp(env, root);
+      }
     } catch (err) {
       if (version) recordFailure(env, version, err);
     }

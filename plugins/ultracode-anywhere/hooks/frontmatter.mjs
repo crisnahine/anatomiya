@@ -16,20 +16,32 @@ export function frontmatter(text) {
   const lines = found[1].split(/\r?\n/);
   const fields = {};
   for (let at = 0; at < lines.length; at++) {
-    const pair = /^([A-Za-z][\w-]*):(?:[ \t]+(.*))?$/.exec(lines[at]);
+    const pair = keyLine(lines[at]);
     if (!pair) continue;
     const more = [];
     while (at + 1 < lines.length && (/^[ \t]/.test(lines[at + 1]) || (lines[at + 1].trim() === "" && /^[ \t]/.test(lines[at + 2] ?? "")))) {
       more.push(lines[++at]);
     }
-    fields[pair[1]] = scalar((pair[2] ?? "").trim(), more.map((line) => line.trim()));
+    fields[pair.key] = scalar(pair.value.trim(), more.map((line) => line.trim()));
   }
   return { fields, head: found[1], body: source.slice(found[0].length) };
 }
 
+/**
+ * The top-level key a head line names and the value written after it, or null.
+ *
+ * The build reads the head with a YAML parser, which takes a quoted key or one
+ * with blanks before its colon as the same key as the bare spelling.
+ */
+export function keyLine(line) {
+  const pair = /^(?:([A-Za-z][\w-]*)|"([A-Za-z][\w-]*)"|'([A-Za-z][\w-]*)')[ \t]*:(?:[ \t]+(.*))?$/.exec(line);
+  return pair && { key: pair[1] ?? pair[2] ?? pair[3], value: pair[4] ?? "" };
+}
+
 /** A key's value, or null where the head names that key more than once, since which one a reader takes is not said anywhere. */
 export function onceNamed(fm, key) {
-  return fm.head.split(/\r?\n/).filter((line) => line.startsWith(`${key}:`)).length > 1 ? null : fm.fields[key];
+  // A `key:` with no blank after it is no key to YAML, and counting it anyway keeps a doubtful head doubtful.
+  return fm.head.split(/\r?\n/).filter((line) => line.startsWith(`${key}:`) || keyLine(line)?.key === key).length > 1 ? null : fm.fields[key];
 }
 
 /** A file's frontmatter, or null for a file that cannot be read or has none. */
@@ -44,8 +56,9 @@ function scalar(value, more) {
   if (quote === '"' || quote === "'") {
     // A line break inside a quoted scalar folds to a space.
     const joined = [value, ...more].join(" ");
-    const end = joined.lastIndexOf(quote);
-    const inner = end > 0 ? joined.slice(1, end) : joined.slice(1);
+    // Ends at the first quote that closes it, so a comment after it holding that quote stays out.
+    const closed = (quote === "'" ? /^'(?:[^']|'')*'/ : /^"(?:[^"\\]|\\.)*"/).exec(joined);
+    const inner = closed ? closed[0].slice(1, -1) : joined.slice(1);
     if (quote === "'") return inner.replace(/''/g, "'");
     // YAML's double-quoted escapes include all of JSON's, so JSON reads the common ones exactly.
     try {

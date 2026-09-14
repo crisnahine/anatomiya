@@ -7,15 +7,26 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { copiesDir, syncCopies } from "../plugins/ultracode-anywhere/hooks/hold-agents.mjs";
-import { holdStatePath, preloadPath } from "../plugins/ultracode-anywhere/hooks/hold-config.mjs";
+import { checksDir, holdStatePath, preloadPath } from "../plugins/ultracode-anywhere/hooks/hold-config.mjs";
+import { holdNotice } from "../plugins/ultracode-anywhere/hooks/hold-session.mjs";
+import { heldFrom } from "../plugins/ultracode-anywhere/hooks/hold-shim.mjs";
 import * as upkeep from "../plugins/ultracode-anywhere/hooks/hold-upkeep.mjs";
 import { hostEnv } from "./host-env.mjs";
 import { agentText, world, write } from "./hold-fixtures.mjs";
 import { ownState, stateDirFor } from "../plugins/ultracode-anywhere/hooks/counters.mjs";
-import { needsPosixPermissions, needsShebang } from "./platform.mjs";
+import { needsGitRootLocalSettings, needsPosixPermissions, needsShebang } from "./platform.mjs";
 
 const FAKE = fileURLToPath(new URL("./hold-fake-claude.mjs", import.meta.url));
 const UPKEEP = fileURLToPath(new URL("../plugins/ultracode-anywhere/hooks/hold-upkeep.mjs", import.meta.url));
+
+/** A check directory a killed run left an hour ago. */
+function oldCheckDir(env) {
+  const left = join(checksDir(env), "ultracode-hold-check-left01");
+  mkdirSync(left, { recursive: true });
+  const old = new Date(Date.now() - 60 * 60 * 1000);
+  utimesSync(left, old, old);
+  return left;
+}
 
 // --- the built-in listing ------------------------------------------------------------
 
@@ -69,12 +80,16 @@ test("the self-check runs again when a setting that decides a spawn changes, and
 
   settings({ ...base, feedbackSurveyState: 2 });
   assert.equal(upkeep.configStamp(env), before);
-  for (const changed of [{ hooks: { PreToolUse: [] } }, { effortLevel: "high" }, { model: "sonnet" }, { modelSettings: { opus: {} } }, { disableAllHooks: true }, { env: { A: "1" } }]) {
+  for (const changed of [{ hooks: { PreToolUse: [] } }, { effortLevel: "high" }, { model: "sonnet" }, { modelSettings: { opus: {} } }, { disableAllHooks: true }, { env: { A: "1" } }, { maxEffortLevel: "low" }, { ultracode: true }]) {
     settings({ ...base, ...changed });
     assert.notEqual(upkeep.configStamp(env), before, JSON.stringify(changed));
   }
   settings({ ...base, feedbackSurveyState: 1 });
   assert.notEqual(upkeep.configStamp({ ...env, CLAUDE_CODE_SUBAGENT_MODEL: "claude-sonnet-5" }), before, "the environment the hold reads counts too");
+  assert.notEqual(upkeep.configStamp({ ...env, CLAUDE_CODE_EFFORT_LEVEL: "high" }), before, "and an effort variable set outside the settings env, since the hold refuses over it");
+  assert.equal(upkeep.configStamp({ ...env, CLAUDE_CODE_EFFORT_LEVEL: "medium" }), before, "a hook carries the held level the preload set, where a terminal carries none");
+  assert.notEqual(upkeep.configStamp({ ...env, ULTRACODE_ANYWHERE_REPLACED_EFFORT: "high" }), before, "and the value the preload replaced counts");
+  assert.equal(upkeep.configStamp({ ...env, CLAUDE_CODE_EFFORT_LEVEL: "medium", ULTRACODE_ANYWHERE_REPLACED_EFFORT: "high" }), upkeep.configStamp({ ...env, CLAUDE_CODE_EFFORT_LEVEL: "high" }), "a hook and a terminal stamp one exported level alike");
   assert.notEqual(upkeep.configStamp(env), upkeep.pluginStamp(env));
 });
 
@@ -153,6 +168,85 @@ test("the preload sets the held level in a node process inside a session while t
   assert.equal(upkeep.writePreload({ HOME: "", USERPROFILE: "", CLAUDE_CONFIG_DIR: "" }), null);
 });
 
+test("the preload keeps the effort variable it replaced, since a hook runs under it too", (t) => {
+  const { cfg, env } = world(t);
+  const preload = upkeep.writePreload(env);
+  const replacedIn = (extra) => spawnSync(process.execPath, ["--require", preload, "-e", "process.stdout.write(String(process.env.ULTRACODE_ANYWHERE_REPLACED_EFFORT))"], { encoding: "utf8", env: { ...hostEnv(), NODE_OPTIONS: "", HOME: join(cfg, "no-home"), USERPROFILE: join(cfg, "no-home"), CLAUDECODE: "1", ULTRACODE_ANYWHERE_SPAWN_EFFORT: "medium", ...extra } }).stdout;
+
+  assert.equal(replacedIn({ CLAUDE_CODE_EFFORT_LEVEL: "high" }), "high");
+  assert.equal(replacedIn({ CLAUDE_CODE_EFFORT_LEVEL: "high", ULTRACODE_ANYWHERE_REPLACED_EFFORT: "medium" }), "high", "a project's settings cannot set it over the value replaced");
+  assert.equal(replacedIn({ CLAUDE_CODE_EFFORT_LEVEL: "medium", ULTRACODE_ANYWHERE_REPLACED_EFFORT: "high" }), "high", "a node process a hook starts keeps what the hook's preload replaced");
+  assert.equal(replacedIn({ CLAUDE_CODE_EFFORT_LEVEL: "medium" }), "undefined", "nothing was replaced");
+  assert.equal(replacedIn({}), "undefined");
+});
+
+test("the preload leaves a node process alone where the git root's local settings name the switch for a session below it", needsGitRootLocalSettings, (t) => {
+  const { home, project, env } = world(t);
+  const preload = upkeep.writePreload(env);
+  write(join(home, "work", ".git", "HEAD"), "ref: refs/heads/main\n");
+  write(join(home, "work", ".claude", "settings.local.json"), JSON.stringify({ env: { ULTRACODE_ANYWHERE_SPAWN_EFFORT: "low" } }));
+  const run = spawnSync(process.execPath, ["--require", preload, "-e", "process.stdout.write(String(process.env.CLAUDE_CODE_EFFORT_LEVEL))"], {
+    encoding: "utf8",
+    cwd: project,
+    env: { ...hostEnv(), NODE_OPTIONS: "", HOME: home, USERPROFILE: home, CLAUDECODE: "1", CLAUDE_PROJECT_DIR: project, ULTRACODE_ANYWHERE_SPAWN_EFFORT: "low" },
+  });
+
+  assert.equal(run.stdout, "undefined");
+});
+
+test("the preload leaves a node process alone where a linked worktree's main repository names the switch in its local settings", needsGitRootLocalSettings, (t) => {
+  const { home, env } = world(t);
+  const preload = upkeep.writePreload(env);
+  const repo = join(home, "main");
+  const tree = join(home, "tree");
+  const admin = join(repo, ".git", "worktrees", "tree");
+  write(join(repo, ".git", "HEAD"), "ref: refs/heads/main\n");
+  write(join(admin, "commondir"), "../..\n");
+  write(join(admin, "gitdir"), join(tree, ".git") + "\n");
+  write(join(tree, ".git"), `gitdir: ${admin}\n`);
+  write(join(repo, ".claude", "settings.local.json"), JSON.stringify({ env: { ULTRACODE_ANYWHERE_SPAWN_EFFORT: "low" } }));
+  const run = spawnSync(process.execPath, ["--require", preload, "-e", "process.stdout.write(String(process.env.CLAUDE_CODE_EFFORT_LEVEL))"], {
+    encoding: "utf8",
+    cwd: tree,
+    env: { ...hostEnv(), NODE_OPTIONS: "", HOME: home, USERPROFILE: home, CLAUDECODE: "1", CLAUDE_PROJECT_DIR: tree, ULTRACODE_ANYWHERE_SPAWN_EFFORT: "low" },
+  });
+
+  assert.equal(run.stdout, "undefined");
+});
+
+test("the preload pins the level the shim would hold a claude at, from every directory both read", (t) => {
+  // A directory whose settings name the switch or move the user's settings takes no level from the session's environment, and the first that holds decides.
+  const { root, project, env } = world(t);
+  const preload = upkeep.writePreload(env);
+  const other = join(root, "other");
+  const theirs = join(root, "theirs");
+  write(join(theirs, "settings.json"), JSON.stringify({ env: { ULTRACODE_ANYWHERE_SPAWN_EFFORT: "max" } }));
+  write(join(root, "profile", ".claude", "settings.json"), JSON.stringify({ env: { ULTRACODE_ANYWHERE_SPAWN_EFFORT: "low" } }));
+  const kinds = [{}, { ULTRACODE_ANYWHERE_SPAWN_EFFORT: "low" }, { HOME: join(root, "elsewhere") }, { CLAUDE_CONFIG_DIR: theirs }];
+  const places = [
+    { cwd: project },
+    { cwd: other, ULTRACODE_ANYWHERE_PROJECT_DIR: project },
+    { cwd: project, CLAUDE_PROJECT_DIR: other },
+    { cwd: other, ULTRACODE_ANYWHERE_PROJECT_DIR: project, CLAUDE_CONFIG_DIR: theirs },
+    { cwd: project, HOME: "", USERPROFILE: join(root, "profile") },
+  ];
+  const pinned = new Set();
+
+  for (const ours of kinds) {
+    for (const others of kinds) {
+      write(join(project, ".claude", "settings.json"), JSON.stringify({ env: ours }));
+      write(join(other, ".claude", "settings.json"), JSON.stringify({ env: others }));
+      for (const { cwd, ...exported } of places) {
+        const childEnv = { ...hostEnv(), NODE_OPTIONS: "", HOME: join(root, "no-home"), USERPROFILE: join(root, "no-home"), CLAUDECODE: "1", ULTRACODE_ANYWHERE_SPAWN_EFFORT: "high", ...exported };
+        const run = spawnSync(process.execPath, ["--require", preload, "-e", "process.stdout.write(String(process.env.CLAUDE_CODE_EFFORT_LEVEL))"], { encoding: "utf8", cwd, env: childEnv });
+        assert.equal(run.stdout, String(heldFrom(childEnv, cwd).target?.level), JSON.stringify({ ours, others, cwd, exported }));
+        pinned.add(run.stdout);
+      }
+    }
+  }
+  assert.ok(["high", "max", "low", "undefined"].every((level) => pinned.has(level)), `the cases reach a session's value, a moved configuration's, a profile's and none: ${[...pinned]}`);
+});
+
 // --- turning the hold off --------------------------------------------------------------
 
 test("once the user settings no longer turn the hold on, its shadows and copies go, and the preload stays", (t) => {
@@ -192,10 +286,12 @@ test("a session-start run writes the preload, the shadows and the copies, checks
 test("a session-start run with the hold off cleans up and checks nothing", async (t) => {
   const { cfg, env } = world(t);
   write(join(cfg, "agents", "Plan.md"), "---\nname: Plan\ndescription: d\neffort: medium\nultracode-anywhere-shadow-of: 2.1.999\n---\nx\n");
+  const left = oldCheckDir(env);
 
   const done = await upkeep.refresh({ env: { ...env, ULTRACODE_ANYWHERE_SPAWN_EFFORT: "" }, root: cfg, version: "2.1.999", binary: "/nowhere" });
   assert.deepEqual(done, { off: true, cleaned: { copies: 0, shadows: 1 } });
   assert.equal(existsSync(holdStatePath(env, "verified.json")), false);
+  assert.equal(existsSync(left), false, "a check directory a killed run left goes with the hold off too");
 });
 
 test("upkeep that fails is recorded for the notice, and a later success clears it", async (t) => {
@@ -207,6 +303,55 @@ test("upkeep that fails is recorded for the notice, and a later success clears i
   assert.equal(existsSync(holdStatePath(env, "upkeep.json")), false);
 });
 
+test("a capture that left a built-in without its shadow waits out the pause before it runs again", async (t) => {
+  const { cfg, root, env } = world(t);
+  write(holdStatePath(env, "builtin-types.json"), JSON.stringify(["general-purpose", "Plan"]));
+  write(join(cfg, "agents", "general-purpose.md"), "---\nname: general-purpose\ndescription: d\neffort: medium\nultracode-anywhere-shadow-of: 2.1.999\n---\nx\n");
+  const at = Date.parse("2026-09-13T12:00:00Z");
+  write(holdStatePath(env, "shadows.json"), JSON.stringify({ version: "2.1.999", stamp: upkeep.pluginStamp(env), level: "medium", at: new Date(at).toISOString() }));
+  const run = (minutes) => upkeep.refresh({ env, root, version: "2.1.999", binary: join(root, "no-claude"), timeoutMs: 1000, now: at + minutes * 60000 });
+
+  assert.deepEqual((await run(5)).shadows, []);
+  assert.notDeepEqual((await run(45)).shadows, []);
+});
+
+test("a capture made at another held level runs again at once, inside the pause", async (t) => {
+  const { cfg, root, env } = world(t);
+  write(holdStatePath(env, "builtin-types.json"), JSON.stringify(["general-purpose"]));
+  write(join(cfg, "agents", "general-purpose.md"), "---\nname: general-purpose\ndescription: d\neffort: medium\nultracode-anywhere-shadow-of: 2.1.999\n---\nx\n");
+  const at = Date.parse("2026-09-13T12:00:00Z");
+  write(holdStatePath(env, "shadows.json"), JSON.stringify({ version: "2.1.999", stamp: upkeep.pluginStamp(env), level: "high", at: new Date(at).toISOString() }));
+
+  const run = await upkeep.refresh({ env, root, version: "2.1.999", binary: join(root, "no-claude"), timeoutMs: 1000, now: at + 5 * 60000 });
+  assert.notDeepEqual(run.shadows, [], "the held level moved, so the capture is due whatever the pause says");
+});
+
+test("a capture that could not read the listing runs again once the pause is over, though every shadow on disk still matches", async (t) => {
+  // Only the plugins moved, so the shadows still carry this build and level and the recorded error alone says the capture is due.
+  const { cfg, root, env } = world(t);
+  write(holdStatePath(env, "builtin-types.json"), JSON.stringify(["general-purpose"]));
+  write(join(cfg, "agents", "general-purpose.md"), "---\nname: general-purpose\ndescription: d\neffort: medium\nultracode-anywhere-shadow-of: 2.1.999\n---\nx\n");
+  const at = Date.parse("2026-09-13T12:00:00Z");
+  write(holdStatePath(env, "shadows.json"), JSON.stringify({ version: "2.1.999", stamp: upkeep.pluginStamp(env), level: "medium", at: new Date(at).toISOString(), error: "the listing could not be read" }));
+  const run = (minutes) => upkeep.refresh({ env, root, version: "2.1.999", binary: join(root, "no-claude"), timeoutMs: 1000, now: at + minutes * 60000 });
+
+  assert.deepEqual((await run(5)).shadows, [], "the capture waits out the pause");
+  assert.notDeepEqual((await run(45)).shadows, [], "and then runs again");
+});
+
+test("a capture that cannot read the built-in listing is recorded, so the session is told why a built-in agent is refused", async (t) => {
+  const { root, env } = world(t);
+  const at = Date.now();
+  const run = (later) => upkeep.refresh({ env, root, version: "2.1.999", binary: join(root, "no-claude"), timeoutMs: 1000, now: at + later });
+  const recorded = () => JSON.parse(readFileSync(holdStatePath(env, "upkeep.json"), "utf8")).error;
+
+  await run(0);
+  assert.match(recorded(), /listing/);
+  assert.deepEqual((await run(60000)).shadows, [], "the capture waits out the pause");
+  assert.match(recorded(), /listing/, "a run that captured nothing keeps saying so");
+  assert.ok(holdNotice({ env: { ...env, AI_AGENT: "claude-code_2-1-999_agent" }, cwd: root }).some((line) => /upkeep failed .*listing/.test(line)));
+});
+
 // --- the command line -------------------------------------------------------------------
 
 test("a run that cannot tell which build is installed records nothing", (t) => {
@@ -216,8 +361,10 @@ test("a run that cannot tell which build is installed records nothing", (t) => {
   const asked = run(["--verify"]);
   assert.equal(asked.status, 1);
   assert.match(asked.stderr, /which Claude Code build/);
+  const left = oldCheckDir(env);
   assert.equal(run(["--session-start"]).status, 0);
   assert.equal(existsSync(holdStatePath(env, "verified.json")), false);
+  assert.equal(existsSync(left), false, "a check directory a killed run left goes without a build to check against");
 });
 
 test("from a terminal the check runs against the claude on PATH and prints what it found", needsShebang, (t) => {
@@ -265,20 +412,21 @@ test("a project that names the switch leaves the hold off, so what the hold wrot
   assert.deepEqual(done, { off: true, cleaned: { copies: 0, shadows: 1 } });
 });
 
-test("the preload leaves a node process alone where only a project's settings name the switch, the way the hooks do", (t) => {
+test("the preload holds nothing through a directory whose project settings name the switch, and another directory it reads still holds", (t) => {
   const { cfg, project, env } = world(t);
   const preload = upkeep.writePreload(env);
   write(join(project, ".claude", "settings.json"), JSON.stringify({ env: { ULTRACODE_ANYWHERE_SPAWN_EFFORT: "low" } }));
-  const levelIn = (extra) =>
+  const levelIn = (extra, cwd = project) =>
     spawnSync(process.execPath, ["--require", preload, "-e", "process.stdout.write(String(process.env.CLAUDE_CODE_EFFORT_LEVEL))"], {
       encoding: "utf8",
-      cwd: project,
+      cwd,
       env: { ...hostEnv(), NODE_OPTIONS: "", HOME: join(cfg, "no-home"), USERPROFILE: join(cfg, "no-home"), CLAUDECODE: "1", ULTRACODE_ANYWHERE_SPAWN_EFFORT: "low", ...extra },
     }).stdout;
 
   assert.equal(levelIn({ CLAUDE_PROJECT_DIR: project }), "undefined");
   assert.equal(levelIn({}), "undefined", "the directory it runs in stands for the project where the session names none");
-  assert.equal(levelIn({ CLAUDE_PROJECT_DIR: cfg }), "low", "outside that project the session's value holds");
+  assert.equal(levelIn({ CLAUDE_PROJECT_DIR: cfg }), "low", "the project the session names holds where the directory it runs in does not");
+  assert.equal(levelIn({ CLAUDE_PROJECT_DIR: cfg }, cfg), "low", "outside that project the session's value holds");
 });
 
 test("a terminal check while another run holds the lock says so and records nothing", (t) => {
@@ -339,21 +487,6 @@ test("the preload keeps a level a user's own CLAUDE_CONFIG_DIR names where a pro
   assert.equal(run.stdout, "high");
 });
 
-test("the preload finds the session's project through the exports, from any directory a node program runs in", (t) => {
-  const { cfg, project, env } = world(t);
-  const preload = upkeep.writePreload(env);
-  write(join(project, ".claude", "settings.json"), JSON.stringify({ env: { ULTRACODE_ANYWHERE_SPAWN_EFFORT: "low" } }));
-  const sub = join(project, "src");
-  mkdirSync(sub, { recursive: true });
-
-  const run = spawnSync(process.execPath, ["--require", preload, "-e", "process.stdout.write(String(process.env.CLAUDE_CODE_EFFORT_LEVEL))"], {
-    encoding: "utf8",
-    cwd: sub,
-    env: { ...hostEnv(), NODE_OPTIONS: "", HOME: join(cfg, "no-home"), USERPROFILE: join(cfg, "no-home"), CLAUDECODE: "1", ULTRACODE_ANYWHERE_SPAWN_EFFORT: "low", ULTRACODE_ANYWHERE_PROJECT_DIR: project },
-  });
-  assert.equal(run.stdout, "undefined");
-});
-
 test("a terminal check with --cwd reads that directory's project, whatever project a held shell names", (t) => {
   const { root, project, env } = world(t);
   write(join(project, ".claude", "settings.json"), JSON.stringify({ env: { ULTRACODE_ANYWHERE_SPAWN_EFFORT: "medium" } }));
@@ -361,5 +494,6 @@ test("a terminal check with --cwd reads that directory's project, whatever proje
   mkdirSync(other, { recursive: true });
 
   const run = spawnSync(process.execPath, [UPKEEP, "--verify", "--cwd", other], { encoding: "utf8", env: { ...hostEnv(), ...env, PATH: "", AI_AGENT: "claude-code_2-1-999_agent", ULTRACODE_ANYWHERE_PROJECT_DIR: project }, timeout: 120000 });
+  assert.match(run.stdout, /^copies: /m, "the check ran and reported");
   assert.doesNotMatch(run.stdout, /The spawn hold is not on/, "the project the shell names is not the one asked about");
 });

@@ -144,7 +144,9 @@ test("a wakeup says nothing, whichever way the payload is spelled", (t) => {
 });
 
 test("a user turn whose text mentions a wakeup source still gets the reminder", (t) => {
-  const { stdout } = fire(t, { stdin: payload({ prompt: 'why did "source":"loop_wakeup" fire?' }) });
+  // A prompt's quotes arrive escaped, so the unescaped spelling a raw substring
+  // reader would match is planted in a nested object as well.
+  const { stdout } = fire(t, { stdin: payload({ prompt: 'why did "source":"loop_wakeup" fire?', tool_input: { source: "loop_wakeup" } }) });
 
   assert.match(contextOf(stdout), /Workflow tool/);
 });
@@ -203,8 +205,8 @@ test("a caller handing over part of the switches gets the default for the rest",
   // A caller handing over an object without a key it predates gets the default
   // for it rather than `undefined`, which is what a literal at the signature
   // gave and nothing failed on.
-  assert.equal(contextFor(11, {}), contextFor(11), "every key defaults on a turn that reads them all");
-  assert.equal(contextFor(1, { stageEffort: null }), contextFor(1), "and on the turn that reads one");
+  assert.equal(shapeOf(contextFor(FULL_EVERY + 1, {})), "s", "every key defaults on a turn that reads them all");
+  assert.equal(shapeOf(contextFor(FULL_EVERY + 1, { stageEffort: null })), "s", "and where the caller named another key");
   assert.match(contextFor(1, { stageEffort: "low" }), /opts\.effort 'low'/, "while the key it was handed is honoured");
   assert.equal(contextFor(3, { every: 3 }), null, "a cadence alone still decides the quiet turns");
   assert.match(contextFor(4, { every: 3 }), /worth it/, "and the loud ones");
@@ -248,6 +250,18 @@ test("the line rides the reminder's cadence, since the mode can change on any tu
   );
 });
 
+test("the cadence is read past surrounding spaces, and a count of five digits is still a count", (t) => {
+  const shape = (every, turns) => {
+    const dir = stateDir(t);
+    const said = [];
+    for (let i = 0; i < turns; i++) said.push(run({ stdin: payload({ session_id: "every" }), env: { ULTRACODE_ANYWHERE_EVERY: every }, state: dir }));
+    return said.map((text) => (text === null ? "-" : "s")).join("");
+  };
+
+  assert.equal(shape(" 3 ", 4), "s--s");
+  assert.equal(shape("10000", 11), `s${"-".repeat(10)}`);
+});
+
 test("a session that switches into a writing mode is told on its next speaking turn", (t) => {
   // The reason this is not said once at SessionStart: that payload carries no
   // mode at all, and a line said at the start is wrong the moment somebody
@@ -274,11 +288,10 @@ test("the mode line can be turned off on its own, leaving the rest of the remind
 });
 
 test("run answers with the text a turn is owed, and null when it is owed nothing", (t) => {
-  const dir = stateDir(t);
-
-  assert.match(run({ stdin: payload(), env: nowhere(t), state: dir }), /Workflow tool/);
-  assert.equal(run({ stdin: payload({ source: "loop_wakeup" }), env: nowhere(t), state: dir }), null);
-  assert.equal(run({ stdin: payload(), env: { ...nowhere(t), ULTRACODE_ANYWHERE: "0" }, state: dir }), null);
+  // A state directory each, so every null comes from a first turn going quiet.
+  assert.match(run({ stdin: payload(), env: nowhere(t), state: stateDir(t) }), /Workflow tool/);
+  assert.equal(run({ stdin: payload({ source: "loop_wakeup" }), env: nowhere(t), state: stateDir(t) }), null);
+  assert.equal(run({ stdin: payload(), env: { ...nowhere(t), ULTRACODE_ANYWHERE: "0" }, state: stateDir(t) }), null);
 });
 
 // --- what the plugin ships ---------------------------------------------------
@@ -413,7 +426,8 @@ test("the turn a payload belongs to is the one its session field names", (t) => 
   const dir = stateDir(t);
   const first = fire(t, { dir, stdin: payload({ session_id: "the-real-one" }) });
 
-  const second = fire(t, { dir, stdin: payload({ session_id: "the-real-one", prompt: 'see "session_id":"forged"' }) });
+  // Nested as well as quoted, since a prompt's quotes arrive escaped and a raw reader would not see them.
+  const second = fire(t, { dir, stdin: payload({ session_id: "the-real-one", prompt: 'see "session_id":"forged"', tool_input: { session_id: "forged" } }) });
 
   assert.match(contextOf(first.stdout), /Workflow tool/);
   assert.equal(second.stdout, "", "the second turn of one session is a quiet one");
@@ -651,14 +665,15 @@ test("strict mode goes quiet on a build that no longer carries what the plugin m
   // Off by default: on a build that moved, a reminder nobody reads costs
   // tokens, and going silent costs the mode to anyone who wanted it on. Strict
   // is for whoever would rather have the mode off than have it pretend.
-  const dir = stateDir(t);
-  const cli = join(dir, "moved-build");
-  writeFileSync(cli, "a build carrying none of the names this plugin mirrors");
+  // One marker dropped, since drift reads all four gone as no build at all,
+  // and a state directory per call, so the null is not a second turn's.
+  const cli = join(stateDir(t), "moved-build");
+  writeFileSync(cli, `function Mae(e,t,r){return r===!0&&ZL()&&zZ(e,t)==="xhigh"}\n${MARKERS.slice(1).join("\n")}`);
   truncateSync(cli, MIN_BUNDLE + 1);
   const env = { ...nowhere(t), CLAUDE_CODE_EXECPATH: cli, CLAUDE_CONFIG_DIR: configWith(t, {}) };
 
-  assert.match(run({ stdin: payload(), env, state: dir }), /Workflow tool/, "loud by default");
-  assert.equal(run({ stdin: payload(), env: { ...nowhere(t), ...env, ULTRACODE_ANYWHERE_STRICT: "1" }, state: dir }), null);
+  assert.match(run({ stdin: payload(), env, state: stateDir(t) }), /Workflow tool/, "loud by default");
+  assert.equal(run({ stdin: payload(), env: { ...env, ULTRACODE_ANYWHERE_STRICT: "1" }, state: stateDir(t) }), null);
 });
 
 test("strict mode still speaks where the build is the one this was calibrated against", (t) => {
@@ -795,6 +810,7 @@ test("a turn taken from a directory that is no longer there is still a turn that
 
   assert.equal(run.status, 0, run.stderr);
   assert.equal(run.stderr, "");
+  assert.match(contextOf(run.stdout), /Workflow tool/, "and it still carries the reminder, so the boundary swallowed no failure");
 });
 
 test("the opening text names every workflow this plugin ships, by the name the tool resolves", () => {
@@ -849,4 +865,51 @@ test("a project that names the spawn switch without the user's own settings gets
   assert.doesNotMatch(run({ stdin: payload({ cwd: project }), env, state: stateDir(t) }), /held to effort/);
   assert.doesNotMatch(run({ stdin: payload(), env: { ...env, CLAUDE_PROJECT_DIR: project }, state: stateDir(t) }), /held to effort/);
   assert.match(run({ stdin: payload(), env, state: stateDir(t) }), /held to effort 'medium'/, "with no project naming it, the session's value is the user's");
+});
+
+test("the settings that silence the hook are read at the project root, wherever the session has moved", (t) => {
+  // Claude Code reads a project's settings from its root, and the hold in the same turn does too.
+  const project = stateDir(t);
+  mkdirSync(join(project, ".claude"), { recursive: true });
+  mkdirSync(join(project, "packages", "api", ".claude"), { recursive: true });
+  writeFileSync(join(project, ".claude", "settings.json"), JSON.stringify({ enableWorkflows: false }));
+  const env = { ...nowhere(t), CLAUDE_PROJECT_DIR: project };
+
+  assert.equal(run({ stdin: payload({ cwd: join(project, "packages", "api") }), env, state: stateDir(t) }), null);
+
+  const other = stateDir(t);
+  writeFileSync(join(project, "packages", "api", ".claude", "settings.json"), JSON.stringify({ disableWorkflows: true }));
+  assert.match(
+    run({ stdin: payload({ cwd: join(project, "packages", "api") }), env: { ...nowhere(t), CLAUDE_PROJECT_DIR: other }, state: stateDir(t) }),
+    /Workflow tool/,
+    "and a directory the session only visited does not silence it",
+  );
+});
+
+test("a debug path a project's settings set is not written, in any case, since a cloned repository can carry one", (t) => {
+  const dir = stateDir(t);
+  const log = join(dir, "debug.log");
+  for (const [file, name] of [["settings.json", "ULTRACODE_ANYWHERE_DEBUG"], ["settings.local.json", "ultracode_anywhere_debug"]]) {
+    const project = join(dir, file);
+    mkdirSync(join(project, ".claude"), { recursive: true });
+    writeFileSync(join(project, ".claude", file), JSON.stringify({ env: { [name]: log } }));
+
+    const { stdout } = fire(t, { dir, stdin: payload({ cwd: project, session_id: file.replace(".", "-") }), env: { ULTRACODE_ANYWHERE_DEBUG: log } });
+
+    assert.match(contextOf(stdout), /Workflow tool/, file);
+    assert.equal(existsSync(log), false, file);
+  }
+});
+
+test("a state directory a project's settings set is read past to the account's own", (t) => {
+  // A project can point it into its own working tree, where the counters and the cached build path would land.
+  const project = stateDir(t);
+  const moved = join(project, "state");
+  mkdirSync(join(project, ".claude"), { recursive: true });
+  writeFileSync(join(project, ".claude", "settings.json"), JSON.stringify({ env: { ULTRACODE_ANYWHERE_STATE: moved } }));
+  const env = { ...nowhere(t), ULTRACODE_ANYWHERE_STATE: moved };
+
+  assert.match(run({ stdin: payload({ cwd: project }), env }), /Workflow tool/);
+  assert.equal(existsSync(moved), false);
+  assert.deepEqual(readdirSync(join(env.CLAUDE_CONFIG_DIR, "ultracode-anywhere")), ["11111111-2222-3333-4444-555555555555"]);
 });
