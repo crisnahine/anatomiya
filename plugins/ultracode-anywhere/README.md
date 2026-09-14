@@ -311,9 +311,14 @@ such a project moves your settings, the hold reads them from your account's own 
 the session's `CLAUDE_CONFIG_DIR` where the project moves only `HOME` or `USERPROFILE`, and a switch
 those do not name leaves the hold off there, with the session told so. The first session with the
 hold on, or after its level changes or a plugin updates, writes the shadows and copies in the
-background, and until the next session its Agent calls to a definition off the level are refused: a
-session reads its agent files once, when it starts, so a file written after that is not one it can
-run.
+background. Claude Code reads its agent files at a session's first prompt and again while it runs,
+and records the agent types it lists in the session's transcript. The hold checks an Agent call
+against those types: one the session started with is answered by the agents recorded as it started,
+since nothing says when Claude Code reads a changed file again, and one listed since only by a copy
+this plugin wrote for it. A call to a definition off the level is refused until the transcript lists
+its copy, and a built-in whose shadow, or an agent whose file, the session started without is refused
+until the next session. A session whose transcript is missing or cannot be read is checked
+against the agents it had when it started.
 
 Two more are recommended, and a session opens naming them while they are missing. The first session
 start with the hold on writes a preload to `~/.claude/ultracode-anywhere-preload.cjs`, or inside

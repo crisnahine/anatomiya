@@ -568,6 +568,13 @@ one of these moved:
   model off its last assistant line.
 - A hook's environment carries `CLAUDE_PID`, and `/clear` gives the same process a new session id. The
   hold keeps what a session loaded under the process.
+- The build reads its agent files at a session's first prompt and again while it runs, and writes the
+  types it lists into the session's transcript as `agent_listing_delta` attachments carrying
+  `addedTypes`, `addedLines`, `removedTypes` and `isInitial`, when the list changes and over from
+  nothing after a compaction. A rewritten effort takes effect with no attachment. A `--resume` appends
+  to the same transcript and a `--fork-session` copies the attachments into its own before adding
+  more. `listedTypes` in `hooks/hold-agents.mjs` reads them the same way. To check it, write an agent
+  file during a session, wait 15 seconds, prompt again, and find the attachment that adds it.
 - A hook's environment carries `CLAUDE_PROJECT_DIR` and the Bash tool's does not, which is why the
   exports name the session's project in `ULTRACODE_ANYWHERE_PROJECT_DIR` for the shim and the preload.
 - `CLAUDE_CODE_SIMPLE` and `CLAUDE_CODE_SAFE_MODE` still stand for `--bare` and `--safe-mode`.

@@ -4,7 +4,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, wri
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { copiesDir, copyNameFor, recordLoaded, syncCopies } from "../plugins/ultracode-anywhere/hooks/hold-agents.mjs";
+import { copiesDir, copyNameFor, loadedTiers, recordLoaded, syncCopies } from "../plugins/ultracode-anywhere/hooks/hold-agents.mjs";
 import { holdStatePath } from "../plugins/ultracode-anywhere/hooks/hold-config.mjs";
 import {
   decideAgent,
@@ -17,7 +17,7 @@ import {
   toolAnswer,
 } from "../plugins/ultracode-anywhere/hooks/hold-rules.mjs";
 import { MARK } from "../plugins/ultracode-anywhere/hooks/hold-workflows.mjs";
-import { agentText, probeLog, runStages, world, write } from "./hold-fixtures.mjs";
+import { agentText, listing, probeLog, runStages, world, write } from "./hold-fixtures.mjs";
 import { needsPosixPermissions } from "./platform.mjs";
 
 /** A hand-made copy of the definition in `file`, where the sync would put it. */
@@ -91,22 +91,59 @@ test("a project's agent off the level is refused with what to set in it, and a u
   assert.equal(decideAgent({ subagent_type: "slow" }, { env, root, level: "medium" }).updatedInput.subagent_type, copyNameFor({ agentType: "slow", file: userFile }, "medium"));
 });
 
-test("an Agent call is held to the agents its session loaded, and a session with no record of them is refused", (t) => {
-  // A session reads its agent files once, when it starts: measured, a file written after that is
-  // "not found" and a file rewritten after that still runs at the effort it had.
+test("with no transcript to read, an Agent call is held to the agents recorded as its session started, and a session with no record is refused", (t) => {
   const { cfg, root, env } = world(t);
   const call = (session) => toolAnswer({ tool_name: "Agent", tool_input: { subagent_type: "general-purpose" }, cwd: root, session_id: session }, env);
   recordLoaded(env, "before", root);
   write(join(cfg, "agents", "general-purpose.md"), agentText({ name: "general-purpose", description: "d", effort: "medium", "ultracode-anywhere-shadow-of": "9.9.9" }));
   recordLoaded(env, "after", root);
 
-  assert.match(call("before").hookSpecificOutput.permissionDecisionReason, /general-purpose would not run at medium/, "the shadow was written after that session loaded its agents");
+  assert.match(call("before").hookSpecificOutput.permissionDecisionReason, /general-purpose would not run at medium/, "the shadow was written after that session's record");
   assert.deepEqual(call("after"), {});
   assert.match(call("unrecorded").hookSpecificOutput.permissionDecisionReason, /not recorded when it started.*Start a new session/);
   assert.match(call(undefined).hookSpecificOutput.permissionDecisionReason, /Start a new session/);
 });
 
-test("a forked skill is checked against the agents its session loaded, and a session with no record of them is refused", (t) => {
+test("an Agent call and a forked skill are held to the agents the transcript lists, a copy upkeep wrote after the record among them", (t) => {
+  const { plugin, root, env, transcript } = world(t);
+  const verifier = write(join(plugin, "agents", "verifier.md"), agentText({ name: "verifier", description: "d" }));
+  recordLoaded(env, "s-1", root);
+  syncCopies({ env, level: "medium" });
+  const copy = copyNameFor({ agentType: "kit:verifier", file: verifier }, "medium");
+  write(join(plugin, "skills", "light", "SKILL.md"), agentText({ name: "light", description: "d", context: "fork", agent: copy }));
+  const answer = (tool_name, tool_input, transcriptPath) => toolAnswer({ tool_name, tool_input, cwd: root, session_id: "s-1", ...(transcriptPath && { transcript_path: transcriptPath }) }, env).hookSpecificOutput;
+
+  assert.match(answer("Agent", { subagent_type: "kit:verifier" }).permissionDecisionReason, /has no copy held to medium/, "the record alone predates the copy");
+  assert.match(answer("Skill", { skill: "kit:light" }).permissionDecisionReason, new RegExp(`forks into ${copy}`));
+  listing(transcript, { added: ["kit:verifier", copy], initial: true });
+  assert.equal(answer("Agent", { subagent_type: "kit:verifier" }, transcript).updatedInput.subagent_type, copy);
+  assert.equal(answer("Skill", { skill: "kit:light" }, transcript), undefined);
+});
+
+test("a definition written mid-session in a higher tier does not hide the one the session started with", (t) => {
+  const { cfg, project, env, transcript } = world(t);
+  const foo = write(join(cfg, "agents", "foo.md"), agentText({ name: "foo", description: "d", effort: "xhigh" }));
+  recordLoaded(env, "s-1", project);
+  syncCopies({ env, level: "medium" });
+  const fooCopy = copyNameFor({ agentType: "foo", file: foo }, "medium");
+  listing(transcript, { added: ["foo", fooCopy], initial: true });
+  write(join(project, ".claude", "agents", "foo.md"), agentText({ name: "foo", description: "d", effort: "medium" }));
+
+  const decided = decideAgent({ subagent_type: "foo" }, { env, root: project, level: "medium", tiers: loadedTiers(env, "s-1", { root: project, transcriptPath: transcript }) });
+  assert.equal(decided.updatedInput.subagent_type, fooCopy);
+});
+
+test("a built-in whose shadow was written after the record is refused until a new session records it", (t) => {
+  const { cfg, root, env, transcript } = world(t);
+  recordLoaded(env, "s-1", root);
+  write(join(cfg, "agents", "general-purpose.md"), agentText({ name: "general-purpose", description: "d", effort: "medium", "ultracode-anywhere-shadow-of": "9.9.9" }));
+  listing(transcript, { added: ["general-purpose"], initial: true });
+
+  const decided = decideAgent({ prompt: "p" }, { env, root, level: "medium", tiers: loadedTiers(env, "s-1", { root, transcriptPath: transcript }) });
+  assert.match(decided.deny, /general-purpose would not run at medium.*start a new session/);
+});
+
+test("a forked skill is checked against the agents recorded as its session started, and a session with no record is refused", (t) => {
   const { cfg, plugin, root, env } = world(t);
   write(join(plugin, "skills", "light", "SKILL.md"), agentText({ name: "light", description: "d", context: "fork" }));
   recordLoaded(env, "s-1", root);

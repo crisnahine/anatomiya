@@ -136,7 +136,7 @@ export function startHold({ env = process.env, pluginRoot = dirname(HOOKS), cwd 
   const exports = exportsFor(env, pluginRoot, root);
   // A project that moves what the hold reads has every spawn refused, and may have pointed the hold's state into itself.
   const moved = projectRedirects(root).length > 0;
-  // Before anything else can fail, and before upkeep can write definitions this process never loads.
+  // Before anything else can fail, and before upkeep writes any, for a call to fall back on where the transcript lists none.
   if (exports && !moved) {
     try {
       recordLoaded(env, session, root, { replace: source === "startup" });
