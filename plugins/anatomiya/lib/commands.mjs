@@ -14,6 +14,7 @@ import { NODE_PROBE_IDS, PROBE_IDS, installProblem, pluginRoot, probeName, readi
 import { pinSummary, scanSummary } from "./summary.mjs";
 import { aboutDir, echoContext, holdsTestIn, inCheckout, isPathTaken, ownLayout, removeStaleHook, targetIn } from "./hook.mjs";
 import { isTestPath, noticeFor } from "./precedent.mjs";
+import { askedMarks, continuedByReuse, pendingChange, reuseReason, reuseRecord, sessionStart } from "./reuse.mjs";
 
 /**
  * One entry per command: the whole recipe, composed once.
@@ -114,6 +115,30 @@ export function runNotice(cwd, payload) {
   const additionalContext = noticeFor(rel, found.layout, { holdsTest });
   if (additionalContext === null) return {};
   return { hookSpecificOutput: { hookEventName: event, additionalContext } };
+}
+
+/**
+ * What the end of a turn is asked about the source it added, or nothing (A91).
+ *
+ * Once per file as it stands: a file an ask or a record in this session already
+ * marked is not named again, and the stop right after this hook's own block
+ * records what the check left, so its fix is not asked about on the next turn.
+ */
+export async function runReuse(cwd, payload) {
+  if (payload?.hook_event_name !== "Stop") return {};
+  const root = answersFor(payload, cwd);
+  if (root === null) return {};
+  const found = ownLayout(root);
+  if (found === null) return {};
+  const change = await pendingChange(found.root, { since: sessionStart(payload.transcript_path) });
+  if (change === null) return {};
+  const asked = askedMarks(payload.transcript_path);
+  const fresh = change.filter((file) => !asked.has(file.mark));
+  if (fresh.length === 0) return {};
+  if (payload.stop_hook_active === true) {
+    return continuedByReuse(payload.transcript_path) ? { systemMessage: reuseRecord(fresh) } : {};
+  }
+  return { decision: "block", reason: reuseReason(fresh) };
 }
 
 /**

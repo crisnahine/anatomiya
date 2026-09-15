@@ -538,7 +538,7 @@ that refusal cites was measured on a hook standing in for the always-loaded file
 is untouched and nothing depends on the weaker one. The echoed text is descriptive rather than
 imperative for the same reason, and it says outright that the code outranks it.
 
-Two hooks run, on different events and answering different questions. `anatomiya echo` fires on
+Three hooks run, on different events and answering different questions. `anatomiya echo` fires on
 `UserPromptSubmit`, `PostToolUse` and `PostToolUseFailure` and re-delivers the map. `anatomiya notice`
 fires on `PreToolUse` for `Write`, `Edit` and `NotebookEdit`, and answers for the one path that call is
 about: whether a test is being put where its kind of file has no test precedent. It is silent otherwise,
@@ -554,14 +554,26 @@ in case. Refusing on a count that can be wrong stalls real work, so it says its 
 through. The text reaches the model on its next turn, after that write and before the next one, which is
 what makes it worth saying at all when a session is creating twelve files rather than one.
 
-Both are absent from the usage block and from `commands/` on purpose: no person runs them and no
+`anatomiya reuse` fires on `Stop`, at the end of a turn, and speaks only where the turn left source
+lines nothing has checked against the repository: a scanned repository, a changed file the corpus
+counts, and at least one added line, in a file written since the session began. It answers `decision: "block"` with one reason, which asks the
+model to give one subagent the diff and the added lines and to call any existing function that does
+the same job in place of the copy. That wording is the only one measured passing every hard case, 24
+of 24, where every wording the model answered inline passed 9 or 10 of 12 (A91). It stops no tool and
+no write: the block asks for one more pass, and a stop the hook already continued is let through. The
+reason ends in a mark for each changed source file, taken over its content, and a file whose mark the
+session's transcript already holds is not named again. The stop right after the hook's own block
+records what the check left in a `systemMessage`, which the transcript keeps, so the check's own fix
+is not asked about on the next turn, and the hook writes nothing a later `git status` would report.
+
+All three are absent from the usage block and from `commands/` on purpose: no person runs them and no
 agent should. Each reads the payload on stdin, answers with one JSON object, and answers `{}` and exits
 0 on every failure path, because a hook that exits non-zero interrupts the session it exists to help.
-Both walk up to find what they answer from, the rendered map for one and the recorded counts for the
-other, and both start from the place the tool call is about rather than from where the session's shell
-happens to be. Measured on 2.1.251, five tools name that place: `Read`, `Write` and `Edit` under
-`file_path`, `NotebookEdit` under `notebook_path`, and `Glob` and `Grep` under `path`, which is a
-directory rather than a file on those two. Where the payload names none, `Bash` and `Agent` among
+All three walk up to find what they answer from, the rendered map for `echo` and the recorded counts
+for the other two, and all start from the place the tool call is about rather than from where the
+session's shell happens to be. Measured on 2.1.251, five tools name that place: `Read`, `Write` and
+`Edit` under `file_path`, `NotebookEdit` under `notebook_path`, and `Glob` and `Grep` under `path`, which
+is a directory rather than a file on those two. Where the payload names none, `Bash` and `Agent` among
 them, the payload's own working directory answers, and that field follows the agent: one `cd` in a
 shell call moves it for every payload after, and nothing tells the hook's process. A path spelled
 relative is read against that same directory, because the tool read it against that one and nothing

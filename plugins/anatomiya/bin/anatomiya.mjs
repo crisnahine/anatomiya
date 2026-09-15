@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { runCheck, runDoctor, runEcho, runNotice, runPin, runScan, runSetup } from "../lib/commands.mjs";
+import { runCheck, runDoctor, runEcho, runNotice, runPin, runReuse, runScan, runSetup } from "../lib/commands.mjs";
 import { readPayload, respond } from "../lib/hook.mjs";
 import { pinJson, pinLines, scanJson, scanLines } from "../lib/summary.mjs";
 import { formatReport, formatReportGithub, formatReportJson } from "../lib/check-report.mjs";
@@ -120,6 +120,16 @@ const COMMANDS = {
       // The same guarantee `echo` makes, on the event before the tool rather
       // than the one after it.
       respond(runNotice(cwd, await readPayload()));
+    },
+  },
+  reuse: {
+    path: true,
+    dryRun: false,
+    formats: ["json"],
+    hook: true,
+    async run(cwd) {
+      // The same guarantee again, at the end of a turn.
+      respond(await runReuse(cwd, await readPayload()));
     },
   },
 };
