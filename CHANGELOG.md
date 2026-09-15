@@ -7,6 +7,32 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-09-15
+
+A third hook: at the end of a turn that added source code in a scanned repository, anatomiya asks once
+per file for one subagent to look for an existing function the new code could call instead. The
+wording is the only one measured passing every hard case, 24 of 24, and the added-lines diff it
+shares with `check` no longer runs a repository's diff driver or loses lines to its diff config.
+
+### Added
+
+- A `Stop` hook asks, once per change, for a turn that added source code in a scanned repository to
+  be checked for existing functions before it ends. The reason hands the search to one subagent:
+  measured on four hard cases it passed 24 of 24, where every wording the model answered inline
+  passed 9 or 10 of 12 and no hook left every duplicate in place. It costs about 1.8 times a turn
+  that changed source code, stays silent on a change with no added source line, and writes nothing.
+  Each file is asked about once as it stands, the fix a check makes is recorded rather than asked
+  about again on the next turn, and a file already changed before the session began is left alone.
+  `docs/research/one-line-that-finds-the-existing-function.md` holds the measurements.
+
+### Fixed
+
+- The added-lines diff `check` reads runs with `--no-ext-diff`, `--no-textconv`, `--no-color`, fixed
+  `a/` and `b/` prefixes and a closing `--`. A diff driver or text conversion named in a repository's own
+  git config is no longer run, and `diff.mnemonicPrefix`, `diff.dstPrefix`, `color.ui=always`, a
+  tracked file named `HEAD`, a quoted file name or an added line starting with `++` no longer hide
+  added lines.
+
 ## [0.7.0] - 2026-09-02
 
 Thirteen findings of a deep-module audit, every one a fact with two owners or an interface nobody
@@ -2486,7 +2512,8 @@ which are partial; several listed there are not implemented yet.
 - No claim that this catches defects. Measured across ten repositories, 1 of 317 defect review
   comments was preventable by a conventions map.
 
-[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/crisnahine/anatomiya/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/crisnahine/anatomiya/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/crisnahine/anatomiya/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/crisnahine/anatomiya/compare/v0.4.2...v0.5.0
