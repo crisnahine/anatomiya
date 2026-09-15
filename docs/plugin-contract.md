@@ -746,12 +746,12 @@ step and one more thing to mistake for a plugin's. Not required, and the
 mixed values are fine (section 6). Because they share one commit SHA, pinning is what keeps a commit to one
 plugin from re-versioning the other.
 
-**Hooks use shell form with a quoted variable and a 5-second timeout.** `plugins/anatomiya/hooks/hooks.json`
+**Hooks use shell form with a quoted variable and a short timeout.** `plugins/anatomiya/hooks/hooks.json`
 runs `node "${CLAUDE_PLUGIN_ROOT}/bin/anatomiya.mjs" echo` on three events and the same binary's `notice`
-verb on `PreToolUse`, both with `"timeout": 5`. The quoting is what shell
+verb on `PreToolUse`, both with `"timeout": 5`, and its `reuse` verb on `Stop` with `"timeout": 15`. The quoting is what shell
 form requires (section 3), so this is correct as written. Two things are worth knowing rather than fixing:
 exec form with `args` is what the documentation prefers for any hook that references a path placeholder
-(hooks.md L458, L596), and 5 seconds is a deliberate reduction from the 600-second default.
+(hooks.md L458, L596), and 5 and 15 seconds are deliberate reductions from the 600-second default.
 
 **`PostToolUse` and `PostToolUseFailure` use `"matcher": "*"`.** Not required; omitting `matcher` also matches
 everything, as the `UserPromptSubmit` entry in the same file does.

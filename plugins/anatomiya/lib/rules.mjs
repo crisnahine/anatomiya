@@ -284,10 +284,10 @@ export function readHead(path, bytes = HEAD_BYTES) {
     const stat = fstatSync(fd);
     if (!stat.isFile()) return { kind: "other" };
     const want = Math.min(bytes, stat.size);
-    if (want === 0) return { kind: "file", head: "" };
+    if (want === 0) return { kind: "file", head: "", mtimeMs: stat.mtimeMs };
     const buf = Buffer.alloc(want);
     const read = readSync(fd, buf, 0, want, 0);
-    return { kind: "file", head: buf.subarray(0, read).toString("utf8") };
+    return { kind: "file", head: buf.subarray(0, read).toString("utf8"), mtimeMs: stat.mtimeMs };
   } catch {
     // A shape that will not open at all is still a shape, not an unreadable
     // file: a socket refuses everywhere, under an errno that differs per

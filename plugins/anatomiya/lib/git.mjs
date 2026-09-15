@@ -72,12 +72,18 @@ const FLAGS = new Set([
   "--max-parents=0",
   "--name-only",
   "--name-status",
+  "--no-color",
+  "--no-ext-diff",
   "--no-merges",
+  "--no-textconv",
   "--others",
   "--porcelain",
   "--quiet",
   "--show-toplevel",
   "--unified=0",
+  // The prefixes a diff is read with, fixed so a repository's config cannot move them.
+  "--src-prefix=a/",
+  "--dst-prefix=b/",
   "--verify",
 ]);
 
