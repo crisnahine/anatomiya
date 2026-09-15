@@ -38,6 +38,9 @@ export const HOOK_COMMAND = 'node "${CLAUDE_PLUGIN_ROOT}/bin/anatomiya.mjs" echo
 /** The write-time half, declared on `PreToolUse` and answering for one path. */
 export const NOTICE_COMMAND = 'node "${CLAUDE_PLUGIN_ROOT}/bin/anatomiya.mjs" notice';
 
+/** The end-of-turn half, declared on `Stop` and answering for what the turn added. */
+export const REUSE_COMMAND = 'node "${CLAUDE_PLUGIN_ROOT}/bin/anatomiya.mjs" reuse';
+
 // What an older version wrote, whichever way it spelled the path. The removal
 // has to reach every spelling that ever shipped rather than only the one this
 // build would write, and the quoting has already changed once.

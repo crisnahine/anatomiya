@@ -505,31 +505,75 @@ async function boundary(root) {
   return first === head.out.trim() ? null : first;
 }
 
-async function addedRanges(root, from) {
+export async function addedRanges(root, from, to = "HEAD", { timeout } = {}) {
   const r = await git(root, [
     "-c", "core.quotePath=false",
-    "diff", "--find-renames", "--unified=0", from, "HEAD",
-  ]);
+    // A repository's own config can name a diff driver, a text conversion, a
+    // colour or a prefix: a command git would run, or output this cannot read.
+    "diff", "--no-ext-diff", "--no-textconv", "--no-color", "--src-prefix=a/", "--dst-prefix=b/",
+    "--find-renames", "--unified=0", from,
+    // `null` reads the working tree, which is what a turn changed. The `--` keeps
+    // a tracked file named like a revision from being read as one.
+    ...(to === null ? [] : [to]), "--",
+  ], GIT.checkMaxBytes, timeout);
   // Same rule as `changedFiles` (F15): a diff git refused to produce reads as a
   // file with no added lines, which drops every finding in it. `null` says the
   // ranges are unknown; an empty map would say there are none.
   if (!r.ok) return null;
   const byFile = new Map();
   let current = null;
+  // A `+++` line is a file's name only between its `diff --git` line and its
+  // first hunk: past that it is an added line whose own text starts with `++`.
+  let inHeader = false;
   for (const line of r.out.split("\n")) {
-    if (line.startsWith("+++ ")) {
-      const p = line.slice(4).trim();
+    if (line.startsWith("diff --git ")) {
+      inHeader = true;
+      current = null;
+      continue;
+    }
+    if (inHeader && line.startsWith("+++ ")) {
+      const p = unquotePath(line.slice(4).replace(/\t$/, ""));
       current = p === "/dev/null" ? null : p.replace(/^b\//, "");
       if (current && !byFile.has(current)) byFile.set(current, []);
       continue;
     }
     const m = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/.exec(line);
-    if (!m || !current) continue;
+    if (!m) continue;
+    inHeader = false;
+    if (!current) continue;
     const start = Number(m[1]);
     const count = m[2] === undefined ? 1 : Number(m[2]);
     if (count > 0) byFile.get(current).push([start, start + count - 1]);
   }
   return byFile;
+}
+
+/**
+ * A name git wrote in C quotes, as the path it names.
+ *
+ * `core.quotePath=false` still quotes a name holding a quote, a backslash or a
+ * control character, with octal escapes for the bytes, while `git status -z`
+ * hands the same name over raw.
+ */
+function unquotePath(text) {
+  if (text.length < 2 || !text.startsWith("\"") || !text.endsWith("\"")) return text;
+  const ESCAPES = { a: 7, b: 8, t: 9, n: 10, v: 11, f: 12, r: 13, "\"": 34, "\\": 92 };
+  const bytes = [];
+  const body = text.slice(1, -1);
+  for (let i = 0; i < body.length; ) {
+    if (body[i] !== "\\") {
+      const ch = String.fromCodePoint(body.codePointAt(i));
+      bytes.push(...Buffer.from(ch, "utf8"));
+      i += ch.length;
+    } else if (/^[0-7]{3}$/.test(body.slice(i + 1, i + 4))) {
+      bytes.push(parseInt(body.slice(i + 1, i + 4), 8));
+      i += 4;
+    } else {
+      bytes.push(ESCAPES[body[i + 1]] ?? body.charCodeAt(i + 1));
+      i += 2;
+    }
+  }
+  return Buffer.from(bytes).toString("utf8");
 }
 
 /* --- analysis, run once at HEAD and once at the merge base --- */
@@ -1172,11 +1216,11 @@ function ancestorSlot(ancestorsOf, area, key) {
  * agent writes, checks, fixes, then commits, so the moment the findings are
  * cheapest is the moment the work is not committed.
  */
-async function pendingPaths(root) {
+export async function pendingPaths(root, { timeout } = {}) {
   // `-uall`, because the default collapses an untracked directory to a single
   // entry ending in `/`, which is not a source path and was dropped: a wholly
   // new directory checked before its first commit read clean.
-  const r = await git(root, ["status", "--porcelain", "-uall", "-z"]);
+  const r = await git(root, ["status", "--porcelain", "-uall", "-z"], GIT.checkMaxBytes, timeout);
   if (!r.ok) return null;
   const rows = parsePorcelainRows(r.out).filter((row) => isCorpusPath(row.path));
   const gone = (row) => row.x === "D" || row.y === "D";
@@ -1287,8 +1331,8 @@ async function treeSource(root, path) {
  * Every git call returns rather than throws. The check reports what it could
  * not determine; it does not refuse.
  */
-async function git(root, args, maxBytes = GIT.checkMaxBytes) {
-  const r = await gitBuffered(root, args, { maxBytes, timeout: GIT.checkTimeoutMs });
+async function git(root, args, maxBytes = GIT.checkMaxBytes, timeout = GIT.checkTimeoutMs) {
+  const r = await gitBuffered(root, args, { maxBytes, timeout });
   return { ok: r.ok, out: r.stdout };
 }
 
