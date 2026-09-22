@@ -607,9 +607,9 @@ string. What this buys is the ordinary large call. A `Write` of a generated file
 used to cost the turn its map over a payload whose four short fields were sitting in the first
 hundred bytes.
 
-The two plugins hold the same reader, since neither may run a file outside its own root, and
-`test/hook-contract.test.mjs` drives both against one list of payloads and refuses any that they
-answer differently.
+A plugin's hook may only run a file inside its own root, so a second plugin needing this reader
+would hold a copy of it rather than import this one, and `test/hook-contract.test.mjs` is where the
+two would be driven against one list of payloads and refused on any they answered differently.
 
 Neither hook needs to know where its own process is. `process.cwd()` refuses with ENOENT once the
 directory a session started in is unlinked, which `git worktree remove` does to a session sitting in
@@ -938,7 +938,7 @@ Every clause is dropped when it counts nothing.
   `src/vs/base/common/foo.ts`. Only those seven names drop, so `spec/support/user.rb` still answers
   no `app/models/user.rb`: `support` against `models` is left to compare. One last question is asked of every
   candidate the whole tail refused: whether it imports the producer outright. A test that writes
-  `from "../ultracode-anywhere/hooks/counters.mjs"` has named what it covers, which is evidence a
+  `from "../lib/counters.mjs"` has named what it covers, which is evidence a
   path cannot carry, and it is the only thing separating a nested source answered by a flat test
   root from the decoy that looks exactly like it. The stem still has to match, so the sentence
   stays the one it always was, and a specifier that carries an extension has to agree on it: a

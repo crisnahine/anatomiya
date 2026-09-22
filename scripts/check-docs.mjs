@@ -248,6 +248,22 @@ const DOC_PATH = /`([A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)+\.(?:mjs|js|ts|json|md|
  * plugin. A rule over one-segment names cries wolf, so what a reader gets is
  * this sentence rather than a gate that gets argued with.
  */
+
+/**
+ * The files the plugin contract names, which prose spells relative to a plugin
+ * root because the loader and the manifest spell them that way. "its own
+ * `hooks/hooks.json`" is right as written, and rewriting it to this plugin's
+ * copy would make it a claim about one plugin where the sentence is about any.
+ *
+ * Exempt only where the file it matches is the one a plugin root holds. The
+ * rule this replaces read the same exemption off two plugins holding one tail,
+ * which a marketplace with one plugin can no longer say; a bare name skipped
+ * before the match is read would switch the sweep off for that name for good,
+ * and a gate that goes quiet is the failure this whole check exists for.
+ */
+const CONTRACT_PATHS = new Set([".claude-plugin/plugin.json", "hooks/hooks.json"]);
+
+/** Where each plugin's own copy of a contract path sits. */
 const PLUGIN_ROOTS = Object.values(REL);
 
 export function pathsThatMoved(text, docRel, tracked) {
@@ -258,16 +274,15 @@ export function pathsThatMoved(text, docRel, tracked) {
     if (from && tracked.has(`${from}/${spelled}`)) continue;
     const now = [...tracked].filter((f) => f.endsWith(`/${spelled}`)).sort();
     if (now.length === 0) continue;
+    // A contract path sitting where a plugin root puts it is the spelling the
+    // manifest uses, not a file that moved. Anywhere else it is a move like any
+    // other, which is what keeps the name under the rule.
+    if (now.every((f) => CONTRACT_PATHS.has(spelled) && PLUGIN_ROOTS.some((dir) => f === `${dir}/${spelled}`))) continue;
     if (now.length === 1) {
       moved.set(spelled, { spelled, now: now[0], several: false });
       continue;
     }
-    // A path both plugins hold is the relative spelling their own manifests
-    // use, and the prose that spells it that way means it: "its own
-    // `.claude-plugin/plugin.json`" is right for either plugin, and rewriting
-    // it to one of them would make it wrong for the other.
-    if (now.every((f) => PLUGIN_ROOTS.some((dir) => f === `${dir}/${spelled}`))) continue;
-    // Any other tail matching twice is a tail this cannot decide, and passing
+    // A tail matching twice is a tail this cannot decide, and passing
     // over it is the silence the rule exists to end: a copy of the repository
     // sitting inside it, a worktree git has stopped tracking or an unpacked
     // archive, gives every moved path a second match and switches the whole

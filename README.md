@@ -38,15 +38,6 @@ scan, pin and check on every commit.
 /plugin install anatomiya@crisnahine
 ```
 
-The marketplace lists a second plugin, `ultracode-anywhere`, which shares this repository and
-nothing else: nothing anatomiya ships imports it (only its own tests do), the shipped set excludes
-it, and it releases on its own tag
-(`ultracode-anywhere-vx.y.z`) with its own version and its own changelog. It ships three tested
-orchestrations you run by name, the agent types their stages spawn, and the reminder that keeps
-Claude Code's standing Workflow mode on at any effort level; its own README says what it does and
-does not restore. Installing `anatomiya` does not install it:
-`/plugin install ultracode-anywhere@crisnahine`.
-
 The scanner has two runtime dependencies, `oxc-parser` and `flow-remove-types`, and `/plugin
 install` installs them for you: Claude Code runs `npm ci --ignore-scripts` in a plugin's own
 directory when it finds a lockfile there, and this plugin ships one. There is no setup step in the
@@ -361,7 +352,7 @@ gate's second opinion. The full numbers and their caveats are in [docs/why.md](d
 - [docs/plugin-contract.md](docs/plugin-contract.md) is what Claude Code requires of a plugin and a
   marketplace, read against the documentation and the CLI itself, with a source per claim and the
   version it was true of.
-- [DECISIONS.md](DECISIONS.md) is the build contract: 260 numbered decisions, each with the
+- [DECISIONS.md](DECISIONS.md) is the build contract: 215 numbered decisions, each with the
   measurement or the review finding that forced it. Why a threshold is where it is, why the parser
   runs in child processes, why there is no hook: that is the file.
 - [docs/why.md](docs/why.md) is the longer argument and the full numbers.

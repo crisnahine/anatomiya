@@ -277,106 +277,107 @@ test("a decision row whose cells outnumber the header is named, with the escape 
   assert.match(output, /escape a `\|` inside a code span/);
 });
 
+/**
+ * The version, moved in every manifest that states it.
+ *
+ * The plugin spells it in four files and the gate compares them, so a fixture
+ * that edits one is a fixture about the mismatch rather than about whatever it
+ * meant to set up.
+ */
+function bump(dir, version) {
+  const at = (...parts) => join(dir, ...parts);
+  const edit = (path, change) => {
+    const json = JSON.parse(readFileSync(path, "utf8"));
+    change(json);
+    writeFileSync(path, JSON.stringify(json, null, 2));
+  };
+  edit(at(REL.anatomiya, "package.json"), (json) => { json.version = version; });
+  edit(at(REL.anatomiya, ".claude-plugin", "plugin.json"), (json) => { json.version = version; });
+  edit(at("package-lock.json"), (json) => { json.packages[REL.anatomiya].version = version; });
+  edit(at(REL.anatomiya, "package-lock.json"), (json) => {
+    json.version = version;
+    json.packages[""].version = version;
+  });
+}
+
 test("a plugin whose manifest moved without its changelog is named", (t) => {
-  // Every plugin the marketplace lists, not just the one at the root. The
-  // second plugin's version was checked for semver and against nothing else,
-  // so it could move to a version no changelog described and the only thing
-  // that would have noticed was the tag, after it was pushed.
+  // A version can move to one no changelog describes, and without this the only
+  // thing that would notice is the tag, after it is pushed.
   const dir = repoCopy(t);
-  const path = join(dir, REL.ultracode, ".claude-plugin", "plugin.json");
-  const manifest = JSON.parse(readFileSync(path, "utf8"));
-  manifest.version = "9.9.9";
-  writeFileSync(path, JSON.stringify(manifest, null, 2));
+  bump(dir, "9.9.9");
 
   const { status, output } = check(dir);
 
   assert.equal(status, 1);
-  assert.match(output, /ultracode-anywhere\/CHANGELOG\.md/);
+  assert.match(output, /CHANGELOG\.md/);
   assert.match(output, /9\.9\.9/);
 });
 
-test("a changelog with no Unreleased heading is named, whichever plugin it belongs to", (t) => {
+test("a changelog with no Unreleased heading is named", (t) => {
   // The release checklist puts an empty one back, and a release that forgets
   // leaves the next change with nowhere to be written down.
   // Spelled with slashes rather than joined: this is matched against what the
   // gate printed, and the gate answers in slashes on every platform.
-  for (const rel of ["CHANGELOG.md", `${REL.ultracode}/CHANGELOG.md`]) {
-    const dir = repoCopy(t);
-    const path = join(dir, ...rel.split("/"));
-    writeFileSync(path, readFileSync(path, "utf8").replace("## [Unreleased]", "## [Coming up]"));
-
-    const { status, output } = check(dir);
-
-    assert.equal(status, 1, rel);
-    assert.match(output, new RegExp(`${rel.replace(/[/.]/g, "\\$&")}.*Unreleased`), output);
-  }
-});
-
-test("a changelog that is gone is one sentence about one file, said once", (t) => {
-  // Two readers answer the same absence: the guard here, and `notesFor`, which
-  // is asked afterwards whatever the guard found. The author has one thing to
-  // do, and was told twice, in two wordings, one of which named the file inside
-  // its own message and so printed the path twice on one line.
   const dir = repoCopy(t);
-  rmSync(join(dir, REL.ultracode, "CHANGELOG.md"));
+  const path = join(dir, "CHANGELOG.md");
+  writeFileSync(path, readFileSync(path, "utf8").replace("## [Unreleased]", "## [Coming up]"));
 
   const { status, output } = check(dir);
-  const said = output.split("\n").filter((line) => line.includes(`${REL.ultracode}/CHANGELOG.md`));
 
   assert.equal(status, 1);
-  assert.equal(said.length, 1, `said it ${said.length} times:\n${said.join("\n")}`);
-  assert.equal(
-    said[0].match(/ultracode-anywhere\/CHANGELOG\.md/g).length,
-    1,
-    `named the file twice in one sentence: ${said[0]}`,
-  );
+  assert.match(output, /CHANGELOG\.md.*Unreleased/, output);
 });
 
 test("a changelog with no section for the version names the file once, not twice", (t) => {
   const dir = repoCopy(t);
-  const path = join(dir, REL.ultracode, ".claude-plugin", "plugin.json");
-  const manifest = JSON.parse(readFileSync(path, "utf8"));
-  manifest.version = "9.9.9";
-  writeFileSync(path, JSON.stringify(manifest, null, 2));
+  bump(dir, "9.9.9");
+  // The heading is there and its section is empty, so the claim under test is
+  // the line `notesFor` adds rather than the missing-heading claim above it.
+  writeFileSync(join(dir, "CHANGELOG.md"), "# Changelog\n\n## [Unreleased]\n\n## [9.9.9] - 2026-01-01\n\n## [0.0.1] - 2026-01-01\n\nThe first one.\n");
 
   const { output } = check(dir);
   const said = output.split("\n").filter((line) => line.includes("has no section for"));
 
   assert.equal(said.length, 1);
-  assert.equal(said[0].match(/ultracode-anywhere\/CHANGELOG\.md/g).length, 1, `named the file twice: ${said[0]}`);
+  assert.equal(said[0].match(/CHANGELOG\.md/g).length, 1, `named the file twice: ${said[0]}`);
 });
 
 test("the marketplace's own changelog going missing is a sentence, not a stack trace", (t) => {
-  // The guard the release loop reads through was added for the second plugin's
-  // changelog, and anatomiya's, which sits at the marketplace root, was read
-  // earlier by the count checks with no guard at all: half the table covered,
-  // and the half that was not is the one every other read here already
-  // touches. Both are on the list the gate checks first now.
+  // Two readers answer the same absence: the guard on the list the gate checks
+  // first, and `notesFor`, which is asked afterwards whatever the guard found.
+  // The author has one thing to do, and was told twice, in two wordings, one of
+  // which named the file inside its own message and so printed the path twice
+  // on one line.
   const dir = repoCopy(t);
   rmSync(join(dir, "CHANGELOG.md"));
 
   const { status, output } = check(dir);
-  const said = output.split("\n").filter((line) => line.includes("CHANGELOG.md") && !line.includes("ultracode-anywhere"));
+  const said = output.split("\n").filter((line) => line.includes("CHANGELOG.md"));
 
   assert.equal(status, 1);
   assert.doesNotMatch(output, /ENOENT|at readFileSync/, "the gate threw rather than reporting");
   assert.equal(said.length, 1, `said it ${said.length} times:\n${said.join("\n")}`);
+  assert.equal(said[0].match(/CHANGELOG\.md/g).length, 1, `named the file twice in one sentence: ${said[0]}`);
 });
 
 test("a plugin with two things wrong is told both, not one release at a time", (t) => {
   // The skip that stopped the changelog being reported twice took the version
   // check with it, which is the failure the block's own comment says it avoids.
+  // The changelog is faulty rather than gone: a document on the gate's own list
+  // going missing ends the run with that one sentence, which is the other half
+  // of the same rule and is its own case above.
   const dir = repoCopy(t);
-  const path = join(dir, REL.ultracode, ".claude-plugin", "plugin.json");
+  const path = join(dir, REL.anatomiya, ".claude-plugin", "plugin.json");
   const manifest = JSON.parse(readFileSync(path, "utf8"));
   delete manifest.version;
   writeFileSync(path, JSON.stringify(manifest, null, 2));
-  rmSync(join(dir, REL.ultracode, "CHANGELOG.md"));
+  const changelog = join(dir, "CHANGELOG.md");
+  writeFileSync(changelog, readFileSync(changelog, "utf8").replace("## [Unreleased]", "## [Coming up]"));
 
   const { status, output } = check(dir);
 
   assert.equal(status, 1);
-  assert.match(output, /CHANGELOG\.md: is missing/);
+  assert.match(output, /CHANGELOG\.md: has no ## \[Unreleased\] heading/);
   assert.match(output, /plugin\.json: has no version/);
 });
 
@@ -415,7 +416,7 @@ test("a version that is not semver is named as that, not as a tag namespace nobo
   // resolver and the reader is told the namespace is unclaimed while the fault
   // is a field two files away.
   const dir = repoCopy(t);
-  const path = join(dir, REL.ultracode, ".claude-plugin", "plugin.json");
+  const path = join(dir, REL.anatomiya, ".claude-plugin", "plugin.json");
   const manifest = JSON.parse(readFileSync(path, "utf8"));
   manifest.version = "0.1";
   writeFileSync(path, JSON.stringify(manifest, null, 2));
@@ -455,7 +456,7 @@ test("a manifest that parses to something that is not one is said, not stepped o
   // `null` parses. Read as "did not parse" it said nothing here and then threw
   // on the summary line, which names no file at all.
   const dir = repoCopy(t);
-  writeFileSync(join(dir, REL.ultracode, ".claude-plugin", "plugin.json"), "null");
+  writeFileSync(join(dir, REL.anatomiya, ".claude-plugin", "plugin.json"), "null");
 
   const { status, output } = check(dir);
 
@@ -469,8 +470,6 @@ test("a manifest that parses to something that is not one is said, not stepped o
 const TRACKED = new Set([
   `${REL.anatomiya}/lib/hook.mjs`,
   `${REL.anatomiya}/hooks/hooks.json`,
-  `${REL.ultracode}/hooks/hooks.json`,
-  `${REL.ultracode}/hooks/upstream.mjs`,
   "docs/why.md",
 ]);
 
@@ -485,24 +484,35 @@ test("a path in some other repository is left alone, because nothing here says w
 });
 
 test("a path is read from the document's own directory before the repository root", () => {
-  const text = "run `hooks/upstream.mjs` from here";
-  assert.deepEqual(pathsThatMoved(text, `${REL.ultracode}/VERIFYING.md`, TRACKED), []);
+  const text = "the read is in `lib/hook.mjs`";
+  assert.deepEqual(pathsThatMoved(text, `${REL.anatomiya}/README.md`, TRACKED), []);
   assert.deepEqual(pathsThatMoved(text, "README.md", TRACKED), [
-    { spelled: "hooks/upstream.mjs", now: `${REL.ultracode}/hooks/upstream.mjs`, several: false },
+    { spelled: "lib/hook.mjs", now: `${REL.anatomiya}/lib/hook.mjs`, several: false },
   ]);
 });
 
-// Both plugins declare hooks under that name, so the prose spelling it is
-// naming the file each plugin has rather than one that moved. Rewritten to
-// either one it stops being true of the other.
-test("a path both plugins hold is the spelling their manifests use, not a move", () => {
+// The loader and the manifest name these relative to a plugin root, so prose
+// that spells one that way is naming the contract rather than a file that moved.
+test("a path the plugin contract names is the spelling a manifest uses, not a move", () => {
   assert.deepEqual(pathsThatMoved("declared in its own `hooks/hooks.json`", "README.md", TRACKED), []);
+  assert.deepEqual(pathsThatMoved("named in `.claude-plugin/plugin.json`", "README.md", TRACKED), []);
+});
+
+// The exemption is the plugin's own copy, not the name: skipped on the name
+// alone, the sweep would go quiet on that name for good, which is the silence
+// this whole check exists to end.
+test("a contract path that is not a plugin's own copy is a move like any other", () => {
+  const elsewhere = new Set([...TRACKED, "tools/hooks/hooks.json"]);
+
+  assert.deepEqual(pathsThatMoved("declared in `hooks/hooks.json`", "README.md", elsewhere), [
+    { spelled: "hooks/hooks.json", now: `${REL.anatomiya}/hooks/hooks.json, tools/hooks/hooks.json`, several: true },
+  ]);
 });
 
 // A tail matching two files switched the whole check off, and the shape that
 // does it is a copy of the repository sitting inside it: a worktree taken out
 // of git's hands, an unpacked archive. That is the same silence the rule exists
-// to end, so it is said, and only the one both plugins genuinely hold is not.
+// to end, so it is said.
 test("a tail matching two files that are not the plugins' own spelling is said, not passed over", () => {
   const withCopy = new Set([...TRACKED, `copy/${REL.anatomiya}/lib/hook.mjs`]);
 
@@ -543,15 +553,13 @@ test("a document carrying the path of the machine it was written on is failed", 
   assert.match(output, /docs\/why\.md: carries the path of the machine it was written on/);
 });
 
-// Each plugin has a changelog of its own, and a note about a past release is
-// what one holds: the entry naming a file at the path it had then is true of
-// that release and would be false rewritten to today's.
-test("a changelog names the paths its releases had, at the root and inside a plugin", (t) => {
+// A note about a past release is what a changelog holds: the entry naming a
+// file at the path it had then is true of that release and would be false
+// rewritten to today's.
+test("a changelog names the paths its releases had", (t) => {
   const dir = repoCopyTracked(t);
-  for (const rel of ["CHANGELOG.md", join(REL.ultracode, "CHANGELOG.md")]) {
-    const path = join(dir, rel);
-    writeFileSync(path, `${readFileSync(path, "utf8")}\n\nThe read was in \`lib/hook.mjs\` then.\n`);
-  }
+  const path = join(dir, "CHANGELOG.md");
+  writeFileSync(path, `${readFileSync(path, "utf8")}\n\nThe read was in \`lib/hook.mjs\` then.\n`);
 
   const { status, output } = check(dir);
 

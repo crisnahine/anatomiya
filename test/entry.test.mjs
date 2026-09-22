@@ -97,7 +97,7 @@ function sources() {
       else if (entry.name.endsWith(".mjs")) found.push(at);
     }
   };
-  for (const dir of ["scripts", "test", `${REL.anatomiya}/bin`, `${REL.anatomiya}/lib`, `${REL.anatomiya}/hooks`, REL.ultracode]) walk(dir);
+  for (const dir of ["scripts", "test", `${REL.anatomiya}/bin`, `${REL.anatomiya}/lib`, `${REL.anatomiya}/hooks`]) walk(dir);
   return found;
 }
 
@@ -115,10 +115,13 @@ test("nothing outside the two guards reads the path this process was started wit
   assert.deepEqual(reading.sort(), [...GUARDS].sort());
 });
 
-/** The two modules that answer the question, one per plugin, and this suite. */
-const GUARDS = ["scripts/entry.mjs", `${REL.ultracode}/hooks/hook-io.mjs`, "test/entry.test.mjs"];
+/** The module that answers the question, and this suite. */
+const GUARDS = ["scripts/entry.mjs", "test/entry.test.mjs"];
 
-test("both copies of the guard recognise a file run as itself", (t) => {
+/** The one of the two that is the guard rather than the suite reading it. */
+const GUARD = GUARDS[0];
+
+test("the guard recognises a file run as itself", (t) => {
   // Measured: node absolutises and normalises `argv[1]` before a script sees
   // it, so `.`, `..`, `//` and a relative spelling all collapse and a symlink
   // is the only difference that survives. There is no spelling that separates
@@ -127,30 +130,25 @@ test("both copies of the guard recognise a file run as itself", (t) => {
   //
   // What this holds on every platform is the failure that costs the most: a
   // guard answering no for its own file leaves a script that runs nothing and
-  // exits 0, and the second plugin's copy is otherwise never run at all where
-  // symlinks are unavailable.
+  // exits 0.
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-entry-direct-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
 
-  for (const module of GUARDS.slice(0, 2)) {
-    const name = `${module.replace(/\W/g, "-")}.mjs`;
-    writeFileSync(
-      join(dir, name),
-      `import { invokedAs } from ${JSON.stringify(pathToFileURL(join(ROOT, module)).href)};\n` +
-        `process.stdout.write(String(invokedAs(import.meta.url)));\n`,
-    );
+  const name = `${GUARD.replace(/\W/g, "-")}.mjs`;
+  writeFileSync(
+    join(dir, name),
+    `import { invokedAs } from ${JSON.stringify(pathToFileURL(join(ROOT, GUARD)).href)};\n` +
+      `process.stdout.write(String(invokedAs(import.meta.url)));\n`,
+  );
 
-    const run = spawnSync(process.execPath, [join(dir, name)], { encoding: "utf8" });
+  const run = spawnSync(process.execPath, [join(dir, name)], { encoding: "utf8" });
 
-    assert.equal(run.status, 0, run.stderr);
-    assert.equal(run.stdout, "true", `${module} does not recognise itself run directly`);
-  }
+  assert.equal(run.status, 0, run.stderr);
+  assert.equal(run.stdout, "true", `${GUARD} does not recognise itself run directly`);
 });
 
-test("both copies of the guard answer yes through a symlinked path", needsSymlinks, (t) => {
-  // The two plugins cannot import from each other, so the second one keeps its
-  // own copy, and what they may not do is disagree about the rule. Run as a
-  // file rather than through `node -e`, because `-e` leaves argv[1] unset and
+test("the guard answers yes through a symlinked path", needsSymlinks, (t) => {
+  // Run as a file rather than through `node -e`, because `-e` leaves argv[1] unset and
   // then every spelling of the guard answers no: the rule under test is what
   // happens when argv[1] is set and holds a link, so a case that never sets it
   // passes whatever the comparison is.
@@ -160,20 +158,18 @@ test("both copies of the guard answer yes through a symlinked path", needsSymlin
   mkdirSync(real);
   symlinkSync(real, join(dir, "link"));
 
-  for (const module of GUARDS.slice(0, 2)) {
-    const name = `${module.replace(/\W/g, "-")}.mjs`;
-    writeFileSync(
-      join(real, name),
-      `import { invokedAs } from ${JSON.stringify(pathToFileURL(join(ROOT, module)).href)};\n` +
-        `process.stdout.write(String(invokedAs(import.meta.url)));\n`,
-    );
+  const name = `${GUARD.replace(/\W/g, "-")}.mjs`;
+  writeFileSync(
+    join(real, name),
+    `import { invokedAs } from ${JSON.stringify(pathToFileURL(join(ROOT, GUARD)).href)};\n` +
+      `process.stdout.write(String(invokedAs(import.meta.url)));\n`,
+  );
 
-    const direct = spawnSync(process.execPath, [join(real, name)], { encoding: "utf8" });
-    const linked = spawnSync(process.execPath, [join(dir, "link", name)], { encoding: "utf8" });
+  const direct = spawnSync(process.execPath, [join(real, name)], { encoding: "utf8" });
+  const linked = spawnSync(process.execPath, [join(dir, "link", name)], { encoding: "utf8" });
 
-    assert.equal(direct.status, 0, direct.stderr);
-    assert.equal(linked.status, 0, linked.stderr);
-    assert.equal(direct.stdout, "true", `${module} does not recognise itself run directly`);
-    assert.equal(linked.stdout, "true", `${module} does not recognise itself reached through a link`);
-  }
+  assert.equal(direct.status, 0, direct.stderr);
+  assert.equal(linked.status, 0, linked.stderr);
+  assert.equal(direct.stdout, "true", `${GUARD} does not recognise itself run directly`);
+  assert.equal(linked.stdout, "true", `${GUARD} does not recognise itself reached through a link`);
 });

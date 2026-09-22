@@ -10,10 +10,7 @@
  * it without trying.
  *
  * Lives here rather than in `lib/`, because nothing the plugin ships needs it:
- * `plugins/anatomiya/bin/anatomiya.mjs` runs at module scope on purpose. The second plugin keeps
- * its own copy in `plugins/ultracode-anywhere/hooks/hook-io.mjs`, since a plugin may
- * not run a file outside its own root, and `test/entry.test.mjs` holds the two
- * to the same rule.
+ * `plugins/anatomiya/bin/anatomiya.mjs` runs at module scope on purpose.
  */
 import { realpathSync } from "node:fs";
 import { resolve } from "node:path";
@@ -24,8 +21,13 @@ export function invokedAs(url) {
   return realOf(fileURLToPath(url)) === realOf(resolve(process.argv[1]));
 }
 
-/** The path behind the links, or the path itself where there is nothing to resolve. */
-function realOf(path) {
+/**
+ * The path behind the links, or the path itself where there is nothing to
+ * resolve. Exported because `scripts/claude-build.mjs` asks the same question
+ * of the build it finds on PATH, and two spellings of one try/catch is two
+ * places to answer it differently.
+ */
+export function realOf(path) {
   try {
     return realpathSync(path);
   } catch {

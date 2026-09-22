@@ -725,3 +725,9 @@ This repository:
 - `plugins/ultracode-anywhere/hooks/upstream.mjs` (`cliPath`, `GATE`, `CALIBRATED_AGAINST`, `MIN_BUNDLE`),
   `plugins/ultracode-anywhere/VERIFYING.md` (the wire-capture recipe this note reuses),
   `scripts/ab/engine.mjs`, `scripts/ab/run.mjs`, `scripts/measure-defaults.mjs`.
+
+## Addendum, 2026-09-22
+
+`plugins/ultracode-anywhere/` was removed from this repository. The build reader this note
+cites (`cliPath`, `MIN_BUNDLE`, `settingsFor`) lives at `scripts/claude-build.mjs` now; the
+paths above are where it sat when the measurements were taken.
