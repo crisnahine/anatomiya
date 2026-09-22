@@ -339,12 +339,12 @@ test("a nested producer is credited by the test of its own name that imports it"
   // `hooks` mirrors nothing on the other side, so path shape alone reads 0 of 5
   // over five files that are each genuinely tested. The import edge is what
   // separates this from the decoys above, which name nothing they cover.
-  const names = ["counters", "hook-io", "session-start", "standing-ultracode", "upstream"];
-  const source = names.map((n) => file(`ultracode-anywhere/hooks/${n}.mjs`));
+  const names = ["counters", "hook-io", "session-start", "sweep", "upstream"];
+  const source = names.map((n) => file(`second/hooks/${n}.mjs`));
   const tests = names.map((n) =>
-    imports(`test/${n}.test.mjs`, [`../ultracode-anywhere/hooks/${n}.mjs`]));
+    imports(`test/${n}.test.mjs`, [`../second/hooks/${n}.mjs`]));
 
-  assert.deepEqual(namesakeCompanions(source, tests, "ultracode-anywhere", namesakeIndex(tests)), {
+  assert.deepEqual(namesakeCompanions(source, tests, "second", namesakeIndex(tests)), {
     with: 5,
     of: 5,
     root: "test",
@@ -369,10 +369,10 @@ test("a test that imports another file of the same stem does not credit this one
 test("a bare package specifier names no file in this repository", () => {
   // `import { counters } from "counters"` is a dependency, not the file beside
   // it, and resolving it as a path would credit any file that shares the name.
-  const source = [file("ultracode-anywhere/hooks/counters.mjs")];
+  const source = [file("second/hooks/counters.mjs")];
   const tests = [imports("test/counters.test.mjs", ["counters"])];
 
-  assert.equal(namesakeCompanions(source, tests, "ultracode-anywhere", namesakeIndex(tests)).with, 0);
+  assert.equal(namesakeCompanions(source, tests, "second", namesakeIndex(tests)).with, 0);
 });
 
 test("an import climbing above the repository root names nothing", () => {

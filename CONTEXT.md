@@ -8,7 +8,7 @@ on that line.
 
 ### What ships
 
-The words above the tool: this repository is a marketplace holding two plugins, and every sentence
+The words above the tool: this repository is a marketplace holding one plugin, and every sentence
 about that was written ad hoc until these entries existed.
 
 **Marketplace**:
@@ -18,9 +18,9 @@ _Avoid_: registry, catalogue, repo
 
 **Plugin**:
 One thing a person installs, with its own manifest, its own version, its own changelog and its own
-tag. Two of them live here, and they share the repository and nothing else: nothing either one
-ships imports the other, though this repository's own tests read both, and neither is released by
-the other's tag.
+tag. One lives here. A second would share the repository and nothing else: a plugin's hook may only
+run a file inside its own root, so neither could import the other, and each is released by its own
+tag alone.
 _Avoid_: package, module, extension
 
 **Plugin root**:

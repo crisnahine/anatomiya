@@ -498,7 +498,7 @@ test("the harness refuses an effort it cannot run before it scans, pins or spawn
  */
 async function carriedBy(cli, wanted) {
   const { createReadStream, statSync } = await import("node:fs");
-  const { MIN_BUNDLE } = await import("../plugins/ultracode-anywhere/hooks/upstream.mjs");
+  const { MIN_BUNDLE } = await import("../scripts/claude-build.mjs");
   if (!cli || statSync(cli).size < MIN_BUNDLE) return null;
 
   const found = new Set();
@@ -523,7 +523,7 @@ test("the installed build still offers the model and the effort this harness pin
   // this says it at `npm test` instead. A skip where no build is installed: a
   // machine without one is not evidence that the pair went away.
   const { ENGINE, EFFORT_LEVELS } = await import("../scripts/ab/engine.mjs");
-  const { cliPath } = await import("../plugins/ultracode-anywhere/hooks/upstream.mjs");
+  const { cliPath } = await import("../scripts/claude-build.mjs");
 
   const cli = cliPath();
   if (!cli) return t.skip("no Claude Code build on this machine to read");
@@ -715,7 +715,7 @@ test("the build carries no engine-shaped variable this run has not decided about
   // says medium. This reads the installed build for anything shaped like a
   // model, an effort or a thinking budget and fails on one nobody has ruled on.
   const { overridesEngine } = await import("../scripts/ab/engine.mjs");
-  const { cliPath } = await import("../plugins/ultracode-anywhere/hooks/upstream.mjs");
+  const { cliPath } = await import("../scripts/claude-build.mjs");
 
   const cli = cliPath();
   if (!cli) return t.skip("no Claude Code build on this machine to read");
@@ -734,7 +734,7 @@ test("the build carries no engine-shaped variable this run has not decided about
 /** Every environment-variable-shaped name in the build that names an engine. */
 async function namesIn(cli) {
   const { createReadStream, statSync } = await import("node:fs");
-  const { MIN_BUNDLE } = await import("../plugins/ultracode-anywhere/hooks/upstream.mjs");
+  const { MIN_BUNDLE } = await import("../scripts/claude-build.mjs");
   if (statSync(cli).size < MIN_BUNDLE) return null;
 
   const shaped = /\b(?:ANTHROPIC|CLAUDE|CLAUDE_CODE|MAX|DISABLE|FALLBACK)_[A-Z0-9_]*(?:MODEL|EFFORT|THINKING)[A-Z0-9_]*\b/g;

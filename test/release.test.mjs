@@ -36,8 +36,8 @@ function scratch(t) {
   return dir;
 }
 
-/** A marketplace with both plugins, each carrying its own version and changelog. */
-function repository(t, { anatomiya = "1.2.3", second = "7.8.9", changelogs = {} } = {}) {
+/** A marketplace with the plugin in it, carrying its version and its changelog. */
+function repository(t, { anatomiya = "1.2.3", changelogs = {} } = {}) {
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-release-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
 
@@ -61,17 +61,7 @@ function repository(t, { anatomiya = "1.2.3", second = "7.8.9", changelogs = {} 
     join(dir, REL.anatomiya, "package-lock.json"),
     JSON.stringify({ name: "anatomiya", version: anatomiya, lockfileVersion: 3, packages: { "": { name: "anatomiya", version: anatomiya } } }),
   );
-  mkdirSync(join(dir, REL.ultracode, ".claude-plugin"), { recursive: true });
-  writeFileSync(
-    join(dir, REL.ultracode, ".claude-plugin", "plugin.json"),
-    JSON.stringify({ name: "ultracode-anywhere", version: second }),
-  );
-
   writeFileSync(join(dir, "CHANGELOG.md"), changelogs.anatomiya ?? `# Changelog\n\n## [Unreleased]\n\n## [${anatomiya}] - 2026-01-01\n\nWhat anatomiya did.\n`);
-  writeFileSync(
-    join(dir, REL.ultracode, "CHANGELOG.md"),
-    changelogs.second ?? `# Changelog\n\n## [Unreleased]\n\n## [${second}] - 2026-01-01\n\nWhat the second plugin did.\n`,
-  );
   return dir;
 }
 
@@ -81,8 +71,15 @@ test("a bare version tag names anatomiya, which has always carried it", () => {
 });
 
 test("a prefixed tag names the plugin it is prefixed with", () => {
-  assert.equal(releaseFor("ultracode-anywhere-v7.8.9")?.plugin, "ultracode-anywhere");
-  assert.equal(releaseFor("ultracode-anywhere-v7.8.9")?.version, "7.8.9");
+  // The table carries one plugin today and the resolver is written for a
+  // namespace per plugin, so the row is supplied rather than shipped: the rule
+  // is what a second plugin's tag would mean, and it is read here rather than
+  // the day one is added.
+  const releases = [...RELEASES, { plugin: "second", root: "plugins/second", tag: "second-v*", manifests: [], changelog: "plugins/second/CHANGELOG.md" }];
+
+  assert.equal(releaseFor("second-v7.8.9", releases)?.plugin, "second");
+  assert.equal(releaseFor("second-v7.8.9", releases)?.version, "7.8.9");
+  assert.equal(releaseFor("v7.8.9", releases)?.plugin, "anatomiya", "and the bare tag still means the plugin it always has");
 });
 
 test("a tag no plugin claims is nobody's release", () => {
@@ -91,30 +88,13 @@ test("a tag no plugin claims is nobody's release", () => {
   assert.equal(releaseFor("1.2.3"), null, "and it carries the v");
 });
 
-test("each plugin reads its own changelog, not the one next to it", (t) => {
-  // The failure this exists for: run the old workflow's matcher for 0.1.0
-  // against the shared changelog and it answers with anatomiya's 0.1.0 section,
-  // silently, as the second plugin's release notes.
-  const dir = repository(t, {
-    anatomiya: "0.1.0",
-    second: "0.1.0",
-    changelogs: {
-      anatomiya: "# Changelog\n\n## [Unreleased]\n\n## [0.1.0] - 2026-01-01\n\nAnatomiya's own notes.\n",
-      second: "# Changelog\n\n## [Unreleased]\n\n## [0.1.0] - 2026-01-02\n\nThe second plugin's own notes.\n",
-    },
-  });
-
-  assert.match(notesFor(dir, "v0.1.0").notes, /Anatomiya's own notes/);
-  assert.match(notesFor(dir, "ultracode-anywhere-v0.1.0").notes, /The second plugin's own notes/);
-});
-
 test("a tag a manifest does not carry is refused, and says which", (t) => {
   const dir = repository(t, { anatomiya: "1.2.3" });
 
   const refused = notesFor(dir, "v9.9.9");
 
   assert.equal(refused.notes, null);
-  assert.match(refused.problem, /package\.json/);
+  assert.match(refused.problem, /plugin\.json/);
   assert.match(refused.problem, /9\.9\.9/);
 });
 
@@ -168,12 +148,12 @@ test("a lockfile whose entry for the plugin is not an object says nothing rather
 });
 
 test("a version with no section of its own is refused rather than released bare", (t) => {
-  const dir = repository(t, { second: "7.8.9", changelogs: { second: "# Changelog\n\n## [Unreleased]\n" } });
+  const dir = repository(t, { changelogs: { anatomiya: "# Changelog\n\n## [Unreleased]\n" } });
 
-  const refused = notesFor(dir, "ultracode-anywhere-v7.8.9");
+  const refused = notesFor(dir, "v1.2.3");
 
   assert.equal(refused.notes, null);
-  assert.match(refused.problem, /ultracode-anywhere\/CHANGELOG\.md/);
+  assert.match(refused.problem, /CHANGELOG\.md/);
 });
 
 test("a version is matched as a whole number, not as a substring of another", () => {
@@ -349,12 +329,12 @@ test("the command writes the plugin and version where a workflow reads them", (t
 
   const run = spawnSync(
     process.execPath,
-    [join(ROOT, "scripts", "release.mjs"), "ultracode-anywhere-v7.8.9", "--github-output", out, "--root", dir],
+    [join(ROOT, "scripts", "release.mjs"), "v1.2.3", "--github-output", out, "--root", dir],
     { cwd: scratch(t), encoding: "utf8" },
   );
 
   assert.equal(run.status, 0, run.stderr);
-  assert.equal(readFileSync(out, "utf8"), "earlier=kept\nplugin=ultracode-anywhere\nversion=7.8.9\n");
+  assert.equal(readFileSync(out, "utf8"), "earlier=kept\nplugin=anatomiya\nversion=1.2.3\n");
 });
 
 test("the command with no tag prints what it takes", (t) => {
@@ -382,9 +362,9 @@ test("a manifest that is missing or unreadable is named rather than skipped", (t
 
 test("a changelog that is not there is named rather than read as empty", (t) => {
   const dir = repository(t);
-  rmSync(join(dir, REL.ultracode, "CHANGELOG.md"));
+  rmSync(join(dir, "CHANGELOG.md"));
 
-  assert.match(notesFor(dir, "ultracode-anywhere-v7.8.9").problem, /is missing/);
+  assert.match(notesFor(dir, "v1.2.3").problem, /is missing/);
 });
 
 

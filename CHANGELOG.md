@@ -7,6 +7,26 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Removed
+
+- The second plugin this marketplace listed, `ultracode-anywhere`, and everything that served it: its
+  directory, its tests, `scripts/workflow-lint.mjs` and the workflow harness under `test/`, its
+  release entry and tag pattern, its coverage scope, its decision rows, and the prose that named it.
+  The marketplace lists one plugin now and the bare `v` tag is the only one that releases anything.
+
+### Changed
+
+- `settingsFor` and the reader that finds the installed Claude Code build live in
+  `scripts/claude-build.mjs`, which is what the measurement harness and its suite read; they used to
+  sit inside the removed plugin.
+- A plugin's release problems are reported against its `.claude-plugin/plugin.json` rather than its
+  `package.json`: node reads that file while resolving the plugin's own dependencies and refuses to
+  start on one that is not an object, so a gate naming it could never print the sentence.
+- The docs gate exempts the two paths the plugin contract names, `.claude-plugin/plugin.json` and
+  `hooks/hooks.json`, instead of inferring the exemption from two plugins holding the same tail. The
+  exemption is the plugin's own copy rather than the name, so a file with one of those tails that
+  moves anywhere else is still reported.
+
 ## [0.8.0] - 2026-09-15
 
 A third hook: at the end of a turn that added source code in a scanned repository, anatomiya asks once
