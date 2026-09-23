@@ -14,14 +14,21 @@ import { LEVEL_ONLY_LABEL } from "./layout.mjs";
 import { testsParts } from "./render-layout.mjs";
 
 /**
- * Producers a source root needs before its silence counts as precedent.
+ * Producers a source root needs before its silence counts as precedent, and
+ * namesake tests it needs before its testing does.
  *
- * One untested file is a repository that has not said anything. Three is where
- * the learned-suffix vote also stops, arrived at separately rather than shared
- * with it: the two answer different questions and moving one is not a reason to
- * move the other.
+ * One untested file is a repository that has not said anything, and one tested
+ * file among five hundred has not either: measured on a front end, a single
+ * namesake silenced the rule for 517 files. Three is where the learned-suffix
+ * vote also stops, arrived at separately rather than shared with it: the two
+ * answer different questions and moving one is not a reason to move the other.
  */
 export const PRECEDENT_FLOOR = 3;
+
+/** Whether a root pairs enough of its files with tests to call that its habit. */
+function pairsTests(r) {
+  return (r?.companions?.with ?? 0) >= PRECEDENT_FLOOR;
+}
 
 /**
  * Whether this path names a test file, in either language's spelling.
@@ -65,12 +72,13 @@ function testedTail(rel) {
  * is the directory the miss this rule was written for was in.
  *
  * A tail more than one root answers to is answered by none of them where any
- * one is already paired. Longest is not nearest: a repository with `app/mailers`
- * specced beside an engine's own untested `app/mailers` told a spec sitting
- * with its four siblings that it had no precedent, off the longer name, which
- * is a directory it has nothing to do with. Where they are all untested the
- * verdict is the same whichever it is, so the one with the most producers
- * speaks, since that is the strongest count that is true.
+ * one already pairs its files with tests (`pairsTests`). Longest is not
+ * nearest: a repository with `app/mailers` specced beside an engine's own
+ * untested `app/mailers` told a spec sitting with its four siblings that it had
+ * no precedent, off the longer name, which is a directory it has nothing to do
+ * with. Where they are all untested the verdict is the same whichever it is, so
+ * the one with the most producers speaks, since that is the strongest count
+ * that is true.
  */
 function coveredRoot(rel, roots) {
   const parts = testedTail(rel).split("/").filter(Boolean);
@@ -89,7 +97,7 @@ function coveredRoot(rel, roots) {
     const tail = parts.slice(0, end).join("/");
     const matches = eligible.filter((r) => r.dir === tail || r.dir.endsWith(`/${tail}`));
     if (matches.length === 0) continue;
-    if (matches.some((r) => r.companions.with > 0)) return null;
+    if (matches.some(pairsTests)) return null;
     return matches.sort((a, b) => b.companions.of - a.companions.of || byCode(a.dir, b.dir))[0];
   }
   return null;
@@ -125,7 +133,8 @@ function countsLine(dir, root) {
   // "Elsewhere", because the guard above has already established that the
   // directory this file is going into holds none. Without the word the clause
   // reads as precedent for the very write it is refusing.
-  const held = here.length > 0 ? `; elsewhere in it ${here.join(", ")}, none of them a namesake` : "";
+  const namesakes = withTest === 0 ? ", none of them a namesake" : "";
+  const held = here.length > 0 ? `; elsewhere in it ${here.join(", ")}${namesakes}` : "";
   return `${dir} holds no other test; ${root.dir}: ${of} files, ${withTest} with a namesake test${held}`;
 }
 
@@ -161,7 +170,7 @@ export function precedentFindings(arrived, roots, { fresh = true, holdsTest = ()
   // A repository that pairs no tests anywhere has no habit to have departed
   // from, and a zero there is the absence of a practice rather than a breach of
   // one. It is also the first thing a repository adopting tests would trip.
-  const testsAnything = roots.some((r) => r?.companions && r.companions.with > 0);
+  const testsAnything = roots.some(pairsTests);
   if (!testsAnything) return [];
 
   const found = [];
@@ -222,12 +231,14 @@ export function precedentFindings(arrived, roots, { fresh = true, holdsTest = ()
  * had one, because the clause that mattered had scrolled past ninety-nine
  * times already (A44).
  */
-export function noticeFor(rel, layout, { holdsTest } = {}) {
+export function noticeFor(rel, layout, { holdsTest, from = null } = {}) {
   const [finding] = precedentFindings([rel], layout?.roots ?? [], holdsTest ? { holdsTest } : {});
   if (!finding) return null;
   return [
     `anatomiya: ${rel}`,
     `  ${finding.reason}.`,
     `  ${PRECEDENT_COUNTED} Put it where the siblings put theirs, or leave it out and say which rule you followed.`,
+    // A worktree with no map of its own is answered from its main checkout's.
+    ...(from === null ? [] : [`  Counted from this repository's main checkout at ${from}, not this worktree.`]),
   ].join("\n");
 }

@@ -112,7 +112,7 @@ export function runNotice(cwd, payload) {
   // brought: the guard above has already answered for a path something is at,
   // so anything this finds in that directory is another file.
   const holdsTest = holdsTestIn(found.root, isTestPath);
-  const additionalContext = noticeFor(rel, found.layout, { holdsTest });
+  const additionalContext = noticeFor(rel, found.layout, { holdsTest, from: found.from });
   if (additionalContext === null) return {};
   return { hookSpecificOutput: { hookEventName: event, additionalContext } };
 }

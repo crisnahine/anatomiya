@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { chmodSync, existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -12,6 +12,8 @@ import { FACTS_PATH, FACTS_SCHEMA } from "../plugins/anatomiya/lib/facts.mjs";
 import { pluginPaths } from "../scripts/validate.mjs";
 import { HEAD_BYTES } from "../plugins/anatomiya/lib/rules.mjs";
 import { ANATOMIYA } from "../scripts/plugins.mjs";
+import { delivered, transcript } from "./transcript.mjs";
+import { addWorktree, initWithCommit, scratch } from "./git-worktrees.mjs";
 
 /** The three entries 0.2.4 through 0.2.6 wrote into a scanned repository. */
 const OLD_SETTINGS = {
@@ -290,6 +292,9 @@ test("the echoed map is stamped with the moment it was read", (t) => {
   assert.match(out, /delivered="2026-08-19T04:20:00\.000Z"/);
   assert.match(out, /# Repository map/);
   assert.doesNotMatch(out, /generator: anatomiya/, "the frontmatter is delivery metadata, not content");
+  // The digest 0.10.0 wrote for this body, so a window holding a copy from
+  // before borrowing was added still counts it as delivered.
+  assert.match(out, /digest="b8a8e138c072"/);
 });
 
 test("the map is found from anywhere inside the repository, not only from its root", (t) => {
@@ -306,13 +311,13 @@ test("the map is found from anywhere inside the repository, not only from its ro
   assert.match(echoContext(join(dir, "src"), {}), /# Repository map/);
 });
 
-test("the walk stops at a repository boundary: a worktree or submodule below the scanned checkout gets nothing", (t) => {
+test("the walk stops at a repository boundary: a .git file below the scanned checkout that git never registered gets nothing", (t) => {
   // A worktree and a submodule both mark their root with a `.git` file, and the
   // hook fires with the session's cwd, which may be inside either. The walk
   // crossed that marker and served the enclosing checkout's map, stamped as
   // re-read just now, into a session whose branch the counts never described.
-  // Probed with `git worktree add` inside the checkout (Claude Code's own
-  // `.claude/worktrees/` layout): the main checkout's map came back every time.
+  // A marker git never registered is still that boundary; a registered
+  // worktree is handed its main checkout's map by name, further down.
   const dir = mapped(t);
   const wt = join(dir, ".claude", "worktrees", "w");
   mkdirSync(join(wt, "src"), { recursive: true });
@@ -380,6 +385,105 @@ test("a boundary marker that is a broken link is still a boundary", (t) => {
   symlinkSync(join(dir, "gone"), join(wt, ".git"));
 
   assert.equal(echoContext(wt, {}), null);
+});
+
+/** A mapped checkout with one commit, and nothing under `.claude/` tracked. */
+function committed(t, layout = { tests: [], roots: [{ dir: "app", path: "app" }] }) {
+  const dir = mapped(t);
+  mkdirSync(join(dir, ".claude", "anatomiya"), { recursive: true });
+  writeFileSync(join(dir, FACTS_PATH), JSON.stringify({ schema: FACTS_SCHEMA, areas: [], layout }));
+  return initWithCommit(dir);
+}
+
+test("a linked worktree with no map of its own is handed its main checkout's, named as such", (t) => {
+  // Claude Code's own `.claude/worktrees/` layout, which v0.2.5 answered with
+  // silence because the map was stamped as this code's own. Silence is what
+  // let a worktree session write tests where the map said none go.
+  const dir = committed(t);
+  const main = realpathSync.native(dir);
+  const wt = addWorktree(dir, join(dir, ".claude", "worktrees", "w"));
+  mkdirSync(join(wt, "src"));
+
+  for (const at of [wt, join(wt, "src")]) {
+    const out = echoContext(at, {});
+    assert.match(out, /# Repository map/);
+    // The same repository on another checkout, which is what the body's own
+    // "this repository's own code" then reads as.
+    assert.ok(out.includes(`Counted from this repository's main checkout at ${main}, not this worktree`));
+    assert.doesNotMatch(out, /Counted from this repository's own code/);
+    // Claude Code loads no rule file from the main checkout into a worktree,
+    // so the area files the body names are not coming.
+    assert.ok(out.includes(`The area files it names are under ${join(main, ".claude", "rules")}, not in this worktree`));
+  }
+  const found = ownLayout(join(wt, "src"));
+  assert.equal(found.root, realpathSync.native(wt), "files are read in the worktree");
+  assert.equal(found.from, main, "counts come from the main checkout");
+  assert.deepEqual(found.layout.roots, [{ dir: "app", path: "app" }]);
+});
+
+test("a borrowed map is delivered once per window, and again when the worktree gets its own", (t) => {
+  // The digest carries where the counts came from: a worktree scanned after it
+  // borrowed can produce the same body, and without that it kept the main
+  // checkout's stamp for the rest of the window.
+  const dir = committed(t);
+  const wt = addWorktree(dir, join(dir, ".claude", "worktrees", "w"));
+
+  const borrowed = echoContext(wt, {});
+  const window = transcript(t, [delivered(borrowed)]);
+  assert.equal(echoContext(wt, { transcript: window }), null, "already in the window");
+
+  mkdirSync(join(wt, ".claude", "rules"), { recursive: true });
+  writeFileSync(join(wt, ".claude", "rules", "anatomiya-overview.md"), readFileSync(join(dir, ".claude", "rules", "anatomiya-overview.md")));
+  const own = echoContext(wt, { transcript: window });
+  assert.ok(own, "its own map, with the same body, is delivered");
+  assert.match(own, /this repository's own code/);
+});
+
+test("a worktree's git files that are not files answer nothing rather than blocking or throwing", needsPosixSpecialFiles, (t) => {
+  // The walk reads these on every tool call from a worktree with no map, so a
+  // fifo or a directory where a pointer should be has to be read as no pointer.
+  const dir = committed(t);
+  const wt = addWorktree(dir, join(scratch(t, "anatomiya-odd-"), "wt"));
+  const own = join(realpathSync.native(dir), ".git", "worktrees", "wt");
+
+  rmSync(join(own, "commondir"));
+  mkdirSync(join(own, "commondir"));
+  assert.equal(echoContext(wt, {}), null, "a directory for commondir");
+
+  rmSync(join(wt, ".git"));
+  execFileSync("mkfifo", [join(wt, ".git")]);
+  const run = spawnSync(process.execPath, [fileURLToPath(new URL("../plugins/anatomiya/bin/anatomiya.mjs", import.meta.url)), "echo"], {
+    cwd: wt,
+    input: JSON.stringify({ hook_event_name: "UserPromptSubmit", cwd: wt }),
+    encoding: "utf8",
+    timeout: 10_000,
+  });
+  assert.equal(run.signal, null, "it came back on its own");
+  assert.equal(run.status, 0);
+  assert.deepEqual(JSON.parse(run.stdout), {});
+});
+
+test("a marker git never registered reaches no other repository's map or record", (t) => {
+  // The security half of borrowing, asked of the readers the hooks use: a
+  // copied marker, or one shipped beside a forged registration, names another
+  // checkout's `.git`, and neither its map nor its counts may come back.
+  const dir = committed(t);
+  const parent = scratch(t, "anatomiya-forged-");
+  const real = addWorktree(dir, join(parent, "real"));
+  const copy = join(parent, "copy");
+  mkdirSync(copy);
+  writeFileSync(join(copy, ".git"), readFileSync(join(real, ".git")));
+  const forged = join(parent, "forged");
+  mkdirSync(join(forged, "reg"), { recursive: true });
+  writeFileSync(join(forged, ".git"), "gitdir: ./reg\n");
+  writeFileSync(join(forged, "reg", "gitdir"), `${join(forged, ".git")}\n`);
+  writeFileSync(join(forged, "reg", "commondir"), `${join(realpathSync.native(dir), ".git")}\n`);
+
+  assert.ok(echoContext(real, {}).includes("main checkout at"), "the registered one borrows");
+  for (const [name, at] of [["a copied marker", copy], ["a forged registration", forged]]) {
+    assert.equal(echoContext(at, {}), null, name);
+    assert.equal(ownLayout(at), null, name);
+  }
 });
 
 test("a working directory reached through a link is read where it really is", (t) => {
