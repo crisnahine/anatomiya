@@ -586,3 +586,17 @@ test("a record path holding a fifo reads as no record, rather than waiting on it
   assert.equal(run.status, 0, run.stderr);
   assert.deepEqual(JSON.parse(run.stdout), { facts: null, unreadable: null });
 });
+
+test("a record past the size cap is named as unread, not taken for a repository nobody scanned", (t) => {
+  // Nothing this tool writes comes near the cap, so a file past it is one it
+  // did not write, and the check says so rather than reading it as no map.
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-big-record-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  mkdirSync(join(dir, ".claude/anatomiya"), { recursive: true });
+  writeFileSync(join(dir, FACTS_PATH), Buffer.alloc(64 * 1024 * 1024 + 1, 0x20));
+
+  const { facts, unreadable } = readFacts(dir);
+  assert.equal(facts, null);
+  assert.match(unreadable ?? "", /64 MB/);
+});
+

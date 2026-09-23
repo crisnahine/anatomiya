@@ -200,18 +200,20 @@ export function schemaProblem(parsed) {
 const RECORD_MOST = 64 * 1024 * 1024;
 
 /**
- * A JSON record this tool wrote, parsed, or null for anything else at the path.
+ * A JSON record this tool wrote, parsed, or `record: null` for anything else at
+ * the path, with `oversize` set where a regular file ran past the cap.
  *
  * Through `readHead` rather than a plain read, which waits for ever on a fifo
  * and takes whatever size it finds, and every scan, check and hook reads one.
  */
 export function readRecord(path) {
   const entry = readHead(path, RECORD_MOST + 1);
-  if (entry.kind !== "file" || Buffer.byteLength(entry.head) > RECORD_MOST) return null;
+  if (entry.kind !== "file") return { record: null, oversize: false };
+  if (Buffer.byteLength(entry.head) > RECORD_MOST) return { record: null, oversize: true };
   try {
-    return JSON.parse(entry.head);
+    return { record: JSON.parse(entry.head), oversize: false };
   } catch {
-    return null;
+    return { record: null, oversize: false };
   }
 }
 
@@ -235,7 +237,10 @@ export function readFacts(root) {
       unreadable: `${dirname(FACTS_PATH)} resolves outside the repository, so no map was read from it`,
     };
   }
-  const parsed = readRecord(join(dir, basename(FACTS_PATH)));
+  const { record: parsed, oversize } = readRecord(join(dir, basename(FACTS_PATH)));
+  if (oversize) {
+    return { facts: null, unreadable: `the map on disk is past the ${RECORD_MOST / 2 ** 20} MB this reads, so nothing was enforced from it` };
+  }
   if (parsed === null) return { facts: null, unreadable: null };
   // A shape that is not a record at all is the ordinary case of a repository
   // nobody has scanned; a version this build has not heard of is not, and says

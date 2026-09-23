@@ -125,7 +125,11 @@ function frontmatterEnd(lines) {
 export function overviewProblems(text) {
   const problems = [];
   const lines = text.trimEnd().split("\n");
-  const body = lines.length - frontmatterEnd(lines);
+  const end = frontmatterEnd(lines);
+  if (lines.slice(0, end).includes("paths:")) {
+    problems.push("the overview carries a paths key, so it no longer loads on every turn");
+  }
+  const body = lines.length - end;
   if (body > MAX_LINES) problems.push(`the overview has ${body} body lines, past ${MAX_LINES}`);
   if (!lines.includes(LAYOUT_HEADING) && !lines.includes(TRUNCATED_LAYOUT)) {
     problems.push(`the overview has neither "${LAYOUT_HEADING}" nor the truncation notice`);
@@ -444,7 +448,7 @@ export function writtenProblems(repo, wrote) {
   for (const [n, body] of written) if (n !== OVERVIEW_FILE) problems.push(...areaProblems(n, body));
   problems.push(...wroteProblems(wrote, [...written.keys()]));
 
-  const facts = readRecord(join(repo, FACTS_PATH));
+  const facts = readRecord(join(repo, FACTS_PATH)).record;
   if (facts === null) problems.push(`no readable ${FACTS_PATH} was written`);
   else problems.push(...factsProblems(facts));
   return { problems, written, facts };

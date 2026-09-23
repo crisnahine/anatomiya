@@ -185,7 +185,7 @@ export function ownLayout(from) {
  */
 function readLayout(path) {
   // No record here, or one nobody can read. Both mean keep walking.
-  const parsed = readRecord(path);
+  const parsed = readRecord(path).record;
   return parsed !== null && schemaProblem(parsed) === null ? (parsed.layout ?? null) : null;
 }
 
