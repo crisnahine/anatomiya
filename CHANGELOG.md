@@ -7,6 +7,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.10.1] - 2026-09-23
+
+The hooks were silent in every linked worktree of a repository that ignores `.claude/`, which is
+where a session goes to do its work, and one namesake test in a large source root was enough to keep
+the notice quiet for all of it. A worktree with no map of its own now hears its main checkout's
+counts under that checkout's name, and a root needs three namesake tests before testing counts as
+its habit.
+
 ### Fixed
 
 - A linked worktree with no map of its own was handed nothing by the hooks, which is every worktree
@@ -2577,7 +2585,8 @@ which are partial; several listed there are not implemented yet.
 - No claim that this catches defects. Measured across ten repositories, 1 of 317 defect review
   comments was preventable by a conventions map.
 
-[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.10.1...HEAD
+[0.10.1]: https://github.com/crisnahine/anatomiya/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/crisnahine/anatomiya/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/crisnahine/anatomiya/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/crisnahine/anatomiya/compare/v0.7.0...v0.8.0
