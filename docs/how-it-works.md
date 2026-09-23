@@ -525,12 +525,13 @@ Output goes to `.claude/rules/`, which is a context directory the agent loads fr
 | `anatomiya-area-<id>.md` | the area glob | when a file under that glob is read, once per context window |
 
 There is a second delivery beside that one, declared by the plugin rather than installed by a scan: a
-hook that echoes the overview back after every turn and every tool call, stamped with the moment it was
-read. A scan writes nothing outside `.claude/rules/` and `.claude/anatomiya/`; what it does to a
-repository's own settings is take out the entry an older version put there. The table above is what the
-platform loads; the hook is what keeps it recent. A run three hundred tool calls deep was working from a
-copy handed to it at the start, and nothing said when that copy was read, so a map that had drifted from
-the code looked exactly like one that had not.
+hook that echoes the overview back after a turn or a tool call, stamped with the moment it was read,
+whenever the context window does not already hold that same map (A92). A scan writes nothing outside
+`.claude/rules/` and `.claude/anatomiya/`; what it does to a repository's own settings is take out the
+entry an older version put there. The table above is what the platform loads; the hook is what keeps it
+recent. A run three hundred tool calls deep was working from a copy handed to it at the start, and
+nothing said when that copy was read, so a map that had drifted from the code looked exactly like one
+that had not.
 
 It is deliberately an addition rather than a replacement. "What is deliberately not built" refuses a hook
 as *the* channel, on complexity and on being flagged as prompt injection, and the 10-to-40% adherence
@@ -665,9 +666,17 @@ people's hooks, and an event that still holds one. The file goes only when it ho
 That read is contained by F2 like every write, so a settings file symlinked out of the repository is
 refused rather than followed, and a refusal is a printed line rather than a failed scan.
 
-The cost is roughly 500 tokens per turn and per tool call, so a session making 300 calls spends about
-150,000 on it. The count was taken on the 2,468-file repository above and moved by arithmetic when the
-head grew, not taken again. There is no flag to turn it down; this tool ships no options.
+A delivery is roughly 500 tokens, and until A92 one was made on every turn and every tool call, so a
+session making 300 calls spent about 150,000 on it. Claude Code keeps every copy. The hook now reads the
+last 256 KiB of the session's transcript first and stays silent when that tail holds a delivery of the
+same map with no compaction after it. Each map carries a `digest` of its body, so a re-scan is delivered
+on the next call, and a copy further back than the window is delivered again, about every 29k tokens of
+context in a typical session. A subagent or a workflow stage is answered from its own transcript.
+Anything the hook cannot read answers with a delivery, which is the old behaviour.
+`scripts/measure-echo.mjs` replays the rule over a transcript store: on 3,502 local transcripts it kept
+7,857 of 65,977 deliveries. The measurements behind the rule are in
+`docs/research/what-a-repeated-hook-context-costs.md`. There is still no flag; this tool ships no
+options.
 
 That last row is the ceiling on the whole design. A `paths` rule attaches when the agent uses the
 Read tool on a matching file or when an `@file` mention names it. It does not attach on grep, on

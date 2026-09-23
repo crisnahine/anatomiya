@@ -7,6 +7,7 @@ import { pathToFileURL } from "node:url";
 import { execFileSync } from "node:child_process";
 
 import { needsShebang } from "./platform.mjs";
+import { compact, delivered, filler, transcript } from "./transcript.mjs";
 import { installWithoutDependencies } from "./plugin-install.mjs";
 import { runCheck, runDoctor, runEcho, runNotice, runPin, runScan, runSetup } from "../plugins/anatomiya/lib/commands.mjs";
 import { scanLines } from "../plugins/anatomiya/lib/summary.mjs";
@@ -772,4 +773,122 @@ test("the echo hands back the map it was asked for, and nothing without an event
   const out = runEcho(dir, { hook_event_name: "PostToolUse" });
   assert.equal(out.hookSpecificOutput.hookEventName, "PostToolUse");
   assert.match(out.hookSpecificOutput.additionalContext, /<repository-map delivered="/);
+});
+
+test("the echo says nothing when this context window already holds the same map", async (t) => {
+  const dir = await railsish(t);
+  const first = runEcho(dir, { hook_event_name: "PostToolUse" }).hookSpecificOutput.additionalContext;
+  const path = transcript(t, [{ type: "user", message: { content: "go" } }, delivered(first)]);
+
+  assert.deepEqual(runEcho(dir, { hook_event_name: "PostToolUse", transcript_path: path }), {});
+});
+
+test("the echo delivers again once a compaction follows the last delivery", async (t) => {
+  const dir = await railsish(t);
+  const first = runEcho(dir, { hook_event_name: "PostToolUse" }).hookSpecificOutput.additionalContext;
+  const path = transcript(t, [delivered(first), compact()]);
+
+  assert.match(runEcho(dir, { hook_event_name: "PostToolUse", transcript_path: path }).hookSpecificOutput.additionalContext, /<repository-map /);
+});
+
+test("the echo delivers a map that differs from the one the window holds", async (t) => {
+  const dir = await railsish(t);
+  const older = runEcho(dir, { hook_event_name: "PostToolUse" }).hookSpecificOutput.additionalContext.replace(/digest="[0-9a-f]{12}"/, `digest="${"0".repeat(12)}"`);
+  const path = transcript(t, [delivered(older)]);
+
+  assert.match(runEcho(dir, { hook_event_name: "PostToolUse", transcript_path: path }).hookSpecificOutput.additionalContext, /<repository-map /);
+});
+
+test("the echo holds a delivery 200 KiB back and delivers again past 256 KiB", async (t) => {
+  const dir = await railsish(t);
+  const first = runEcho(dir, { hook_event_name: "PostToolUse" }).hookSpecificOutput.additionalContext;
+  const after = (bytes) => transcript(t, [delivered(first), filler(bytes)]);
+
+  assert.deepEqual(runEcho(dir, { hook_event_name: "PostToolUse", transcript_path: after(200 * 1024) }), {});
+  assert.match(runEcho(dir, { hook_event_name: "PostToolUse", transcript_path: after(256 * 1024) }).hookSpecificOutput.additionalContext, /<repository-map /);
+});
+
+test("a re-scan that changes the map on disk is delivered on the next call", async (t) => {
+  const dir = await railsish(t);
+  const first = runEcho(dir, { hook_event_name: "PostToolUse" }).hookSpecificOutput.additionalContext;
+  const path = transcript(t, [delivered(first)]);
+  const overview = join(dir, RULES, OVERVIEW_FILE);
+  writeFileSync(overview, readFileSync(overview, "utf8").replace("# Repository map", "# Repository map\n\nOne more line."));
+
+  assert.match(runEcho(dir, { hook_event_name: "PostToolUse", transcript_path: path }).hookSpecificOutput.additionalContext, /One more line/);
+});
+
+test("the echo delivers when the transcript names nothing it can read, and ignores a copy that is not its own delivery", async (t) => {
+  const dir = await railsish(t);
+  const first = runEcho(dir, { hook_event_name: "PostToolUse" }).hookSpecificOutput.additionalContext;
+  const quoted = { type: "user", message: { content: [{ type: "tool_result", content: first }] } };
+
+  for (const transcript_path of [join(dir, "absent.jsonl"), dir, 7]) {
+    assert.match(runEcho(dir, { hook_event_name: "PostToolUse", transcript_path }).hookSpecificOutput.additionalContext, /<repository-map /);
+  }
+  const path = transcript(t, [quoted]);
+  assert.match(runEcho(dir, { hook_event_name: "PostToolUse", transcript_path: path }).hookSpecificOutput.additionalContext, /<repository-map /, "a tool result quoting the map is not a delivery");
+});
+
+test("a subagent's echo is answered from its own transcript, never from the session's", async (t) => {
+  const dir = await railsish(t);
+  const first = runEcho(dir, { hook_event_name: "PostToolUse" }).hookSpecificOutput.additionalContext;
+  const session = transcript(t, [delivered(first)]);
+  const agentLog = join(session.replace(/\.jsonl$/, ""), "subagents", "agent-a1b2c3.jsonl");
+  const sub = { hook_event_name: "PostToolUse", transcript_path: session, agent_id: "a1b2c3" };
+
+  assert.match(runEcho(dir, sub).hookSpecificOutput.additionalContext, /<repository-map /, "the session's copy is not in the subagent's window");
+  mkdirSync(join(agentLog, ".."), { recursive: true });
+  writeFileSync(agentLog, `${JSON.stringify({ ...delivered(first), isSidechain: true, agentId: "a1b2c3" })}\n`);
+  assert.deepEqual(runEcho(dir, sub), {});
+  const outside = join(session.replace(/\.jsonl$/, ""), "probe.jsonl");
+  writeFileSync(outside, `${JSON.stringify(delivered(first))}\n`);
+  assert.match(
+    runEcho(dir, { ...sub, agent_id: "x/../../probe" }).hookSpecificOutput.additionalContext,
+    /<repository-map /,
+    "an id that is not a plain name reads nothing, even where a path through it holds a delivery"
+  );
+});
+
+test("a workflow stage's echo is answered from its transcript under the workflow's run", async (t) => {
+  const dir = await railsish(t);
+  const first = runEcho(dir, { hook_event_name: "PostToolUse" }).hookSpecificOutput.additionalContext;
+  const session = transcript(t, []);
+  const run = join(session.replace(/\.jsonl$/, ""), "subagents", "workflows", "wf_1a2b3c-d4e");
+  const stage = { hook_event_name: "PostToolUse", transcript_path: session, agent_id: "a9f8e7d6" };
+
+  assert.match(runEcho(dir, stage).hookSpecificOutput.additionalContext, /<repository-map /);
+  mkdirSync(run, { recursive: true });
+  writeFileSync(join(run, "agent-a9f8e7d6.jsonl"), `${JSON.stringify(delivered(first))}\n`);
+  assert.deepEqual(runEcho(dir, stage), {});
+});
+
+test("a subagent's window is found whatever case the session transcript's extension is in", async (t) => {
+  const dir = await railsish(t);
+  const first = runEcho(dir, { hook_event_name: "PostToolUse" }).hookSpecificOutput.additionalContext;
+  const session = transcript(t, []).replace(/\.jsonl$/, ".JSONL");
+  const agentLog = join(session.slice(0, -".JSONL".length), "subagents", "agent-b1c2.jsonl");
+  mkdirSync(join(agentLog, ".."), { recursive: true });
+  writeFileSync(agentLog, `${JSON.stringify(delivered(first))}\n`);
+
+  assert.deepEqual(runEcho(dir, { hook_event_name: "PostToolUse", transcript_path: session, agent_id: "b1c2" }), {});
+});
+
+test("the echo holds a delivery made after a compaction, and reads a null agent_id as the main thread", async (t) => {
+  const dir = await railsish(t);
+  const first = runEcho(dir, { hook_event_name: "PostToolUse" }).hookSpecificOutput.additionalContext;
+  const path = transcript(t, [compact(), delivered(first)]);
+
+  assert.deepEqual(runEcho(dir, { hook_event_name: "PostToolUse", transcript_path: path }), {});
+  assert.deepEqual(runEcho(dir, { hook_event_name: "PostToolUse", transcript_path: path, agent_id: null }), {});
+});
+
+test("a rewrite that changes only the frontmatter is not a new map", async (t) => {
+  const dir = await railsish(t);
+  const first = runEcho(dir, { hook_event_name: "PostToolUse" }).hookSpecificOutput.additionalContext;
+  const path = transcript(t, [delivered(first)]);
+  const overview = join(dir, RULES, OVERVIEW_FILE);
+  writeFileSync(overview, readFileSync(overview, "utf8").replace("generator: anatomiya", "generator: anatomiya\nnote: rewritten"));
+
+  assert.deepEqual(runEcho(dir, { hook_event_name: "PostToolUse", transcript_path: path }), {});
 });

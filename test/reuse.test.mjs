@@ -6,6 +6,7 @@ import { dirname, join } from "node:path";
 import { execFileSync, spawnSync } from "node:child_process";
 
 import { needsPosixPaths, needsPosixSpecialFiles, needsShebang } from "./platform.mjs";
+import { transcript } from "./transcript.mjs";
 import { askedMarks, pendingChange, REUSE_GIT_MS, REUSE_MARK, reuseReason } from "../plugins/anatomiya/lib/reuse.mjs";
 import { runReuse } from "../plugins/anatomiya/lib/commands.mjs";
 import { PAYLOAD_WAIT_MS } from "../plugins/anatomiya/lib/hook.mjs";
@@ -39,15 +40,6 @@ function repo(t, { scanned = true, commit = true } = {}) {
 }
 
 const stop = (dir, extra = {}) => ({ hook_event_name: "Stop", cwd: dir, stop_hook_active: false, ...extra });
-
-/** A session transcript outside the repository, one JSON entry per line. */
-function transcript(t, entries = []) {
-  const dir = mkdtempSync(join(tmpdir(), "anatomiya-reuse-session-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
-  const path = join(dir, "session.jsonl");
-  writeFileSync(path, entries.map((entry) => `${JSON.stringify(entry)}\n`).join(""));
-  return path;
-}
 
 // The shapes 2.1.272 was measured writing: a prompt with the moment it arrived,
 // a Stop hook's block reason as a meta user message, and its `systemMessage` as
