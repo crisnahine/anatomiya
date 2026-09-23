@@ -45,7 +45,7 @@ export function buildPin(areas, { sha, corpus = null }) {
 }
 
 export function loadPin(root) {
-  const pin = readRecord(join(root, PIN_PATH));
+  const pin = readRecord(join(root, PIN_PATH)).record;
   if (!pin || pin.schema !== PIN_SCHEMA || !isSha(pin.sha) || !Array.isArray(pin.areas)) return null;
   // A half-shaped area is a pin that reads as a smaller population than the
   // one a human accepted, which is the direction that manufactures claims.

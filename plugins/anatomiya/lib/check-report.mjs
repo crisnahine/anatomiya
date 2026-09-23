@@ -90,9 +90,9 @@ export function encodeReport(report) {
     caveats: report.caveats.map((c) => ({ code: c.code, message: encode(c.message) })),
     parse: { ...report.parse },
     semantic: { ...report.semantic },
-    foreign: report.foreign.map((name) => sanitisePath(name)),
-    unknown: report.unknown.map((name) => sanitisePath(name)),
-    rules: { ...report.rules, unreadable: report.rules.unreadable.map((name) => sanitisePath(name)) },
+    foreign: report.foreign.map(sanitisePath),
+    unknown: report.unknown.map(sanitisePath),
+    rules: { ...report.rules, unreadable: report.rules.unreadable.map(sanitisePath) },
   };
 }
 

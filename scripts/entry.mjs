@@ -47,12 +47,12 @@ export function realOf(path) {
  * A typo used to select nothing and print `0 of 0 repositories passed`, which
  * is exit 0 and reads as an acceptance of a corpus the run never opened.
  */
-export function selectRepos(repos, only, nameOf = (r) => r.name) {
+export function selectRepos(repos, only) {
   if (only === null) return { repos };
   const wanted = only.split(",");
-  const missing = wanted.filter((name) => !repos.some((r) => nameOf(r) === name));
+  const missing = wanted.filter((name) => !repos.some((r) => r.name === name));
   if (missing.length) return { error: `--only ${only}: the corpus holds no repository named ${missing.join(", ")}` };
-  return { repos: repos.filter((r) => wanted.includes(nameOf(r))) };
+  return { repos: repos.filter((r) => wanted.includes(r.name)) };
 }
 
 /**

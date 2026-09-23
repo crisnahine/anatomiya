@@ -192,8 +192,8 @@ function generatedAttrRules(root) {
   const abs = safeResolve(root, ".gitattributes");
   if (!abs) return [];
   const rules = [];
-  const attrs = readHead(abs, ATTR_FILE_BYTES);
-  for (const line of (attrs.kind === "file" ? attrs.head : "").split("\n")) {
+  const file = readHead(abs, ATTR_FILE_BYTES);
+  for (const line of (file.kind === "file" ? file.head : "").split("\n")) {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith("#")) continue;
     const [pattern, ...attrs] = trimmed.split(/\s+/);

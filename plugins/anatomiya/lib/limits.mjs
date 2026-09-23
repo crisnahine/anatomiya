@@ -5,10 +5,9 @@
  * A leaf on purpose, and that is what decides what lives here: the worker is
  * forked per file batch and everything it imports is loaded eight times over.
  * Every obvious home costs something: the per-file ceiling in the corpus pulls
- * the corpus and its git runner into each forked parse worker,
- * which then loads `node:child_process` and a table of deny regexes before it
- * can read its first file, and no parser can own it without a cycle through
- * `parse.mjs`.
+ * the corpus and its git runner into each forked parse worker, which then loads
+ * `node:child_process` and a table of deny regexes before it can read its first
+ * file, and no parser can own it without a cycle through `parse.mjs`.
  */
 
 /**

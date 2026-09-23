@@ -183,8 +183,6 @@ test("a --only name the corpus does not hold is an error, not a shorter run", ()
   assert.deepEqual(selectRepos(repos, "eslint").repos, [{ name: "eslint" }]);
   assert.match(selectRepos(repos, "errbti").error, /errbti/);
   assert.match(selectRepos(repos, "errbit,eslnit").error, /eslnit/);
-  assert.deepEqual(selectRepos(["errbit", "eslint"], "eslint", (n) => n).repos, ["eslint"], "a list of bare names");
-  assert.match(selectRepos(["errbit"], "eslint", (n) => n).error, /eslint/);
 });
 
 test("a --md target that is already there is refused, and --force is how a rerun says it meant it", () => {

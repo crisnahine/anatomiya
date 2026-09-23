@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
 import {
   LEARNED_ROWS,
@@ -281,3 +283,13 @@ test("every fold line the roster can print reconciles through the recount", () =
 
   assert.equal(shapes, 74, "and the loop above is the whole series, not a sample of it");
 });
+
+test("a corpus directory that cannot be listed is refused by name, not with a stack", () => {
+  const script = fileURLToPath(new URL("../scripts/measure-layout.mjs", import.meta.url));
+  const run = spawnSync(process.execPath, [script, join(tmpdir(), "anatomiya-no-such-corpus")], { encoding: "utf8" });
+
+  assert.equal(run.status, 2, run.stderr);
+  assert.match(run.stderr.split("\n")[0], /anatomiya-no-such-corpus cannot be listed/);
+  assert.doesNotMatch(run.stderr, /\n\s+at /, "no stack trace");
+});
+

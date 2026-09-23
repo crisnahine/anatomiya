@@ -141,6 +141,11 @@ test("an overview at the bound passes and one line past it does not", () => {
   assert.deepEqual(overviewProblems(body(41).join("\n")), ["the overview has 41 body lines, past 40"]);
 });
 
+test("an overview carrying a paths key is refused, since it would load only beside those paths", () => {
+  const body = ["---", "generator: anatomiya", "paths:", '  - "src/**/*.ts"', "---", "", "## What lives where"];
+  assert.deepEqual(overviewProblems(body.join("\n")), ["the overview carries a paths key, so it no longer loads on every turn"]);
+});
+
 test("an overview with no layout section says so, and the truncation notice stands in for one", () => {
   assert.deepEqual(overviewProblems([...front, "# Repository map"].join("\n")), [
     'the overview has neither "## What lives where" nor the truncation notice',

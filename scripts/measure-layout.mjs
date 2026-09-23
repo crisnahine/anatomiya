@@ -18,10 +18,11 @@
  * exactly as it was; facts records go to `--facts` under this tool's own
  * scratch directory so the applicability audit has something to read.
  */
-import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 import { checkOutput, invokedAs, readArgv, selectRepos } from "./entry.mjs";
+import { corpusRepos } from "./e2e-corpus.mjs";
 import { namesakeCompanions, namesakeIndex } from "../plugins/anatomiya/lib/companions.mjs";
 import { collect, frameworksIn } from "../plugins/anatomiya/lib/corpus.mjs";
 import {
@@ -651,16 +652,13 @@ async function main() {
     process.exit(2);
   }
 
-  const children = readdirSync(corpusDir, { withFileTypes: true })
-    .filter((e) => e.isDirectory() && existsSync(join(corpusDir, e.name, ".git")))
-    .map((e) => e.name)
-    .sort();
-  const selected = selectRepos(children, opts.only, (name) => name);
+  const found = corpusRepos(corpusDir);
+  const selected = found.error ? found : selectRepos(found.repos, opts.only);
   if (selected.error) {
     console.error(`${selected.error}\n\n${USAGE}`);
     process.exit(2);
   }
-  const repos = selected.repos;
+  const repos = selected.repos.map((r) => r.name);
 
   const rows = [];
   const sections = [];

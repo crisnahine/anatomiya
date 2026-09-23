@@ -58,8 +58,9 @@ _Avoid_: override, custom agent, subagent definition
 
 **Corpus**:
 Every tracked source file this repository will be counted over: what is left after the deny list, the
-excluded directories, paths that escape the repository, and files a generator wrote. The counts of where
-files live are taken over a wider set, every tracked file whether source or not.
+excluded directories, paths that escape the repository or are not a regular file in the working tree, and
+files a generator wrote. The counts of where files live are taken over a wider set, every tracked file
+whether source or not.
 _Avoid_: codebase, file list, tree
 
 **Area**:
