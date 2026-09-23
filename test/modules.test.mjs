@@ -256,16 +256,13 @@ test("the bounded git reads stay on the buffered runner", () => {
 const ROSTER_NAMES = ["kindsLine", "layoutSummary", "namesakeClause", "plural", "renderLayout", "ROOT_LABEL"];
 
 function sourceFiles() {
-  // The marketplace's own directories, and each plugin's: a file that reaches
-  // across the seam lives in one of them. The second plugin is here too, since
-  // a rule that reads one plugin and not the other is a rule that covers the
-  // repository by half.
+  // The marketplace's own directories, and the plugin's.
   // Answered with slashes on every platform: `readdirSync` gives the host's
   // separator, and every rule below compares what comes back against a path
   // this repository spells one way. On Windows the module allowed to hold the
   // plugin path was reported as breaking its own rule, and the filter for what
   // the plugin ships matched none of it.
-  return ["scripts", "test", `${REL.anatomiya}/bin`, `${REL.anatomiya}/commands`, `${REL.anatomiya}/hooks`, `${REL.anatomiya}/lib`, REL.ultracode].flatMap((dir) =>
+  return ["scripts", "test", `${REL.anatomiya}/bin`, `${REL.anatomiya}/commands`, `${REL.anatomiya}/hooks`, `${REL.anatomiya}/lib`].flatMap((dir) =>
     readdirSync(join(ROOT, dir), { recursive: true })
       .filter((name) => typeof name === "string" && name.endsWith(".mjs"))
       .map((name) => `${dir}/${name.split(/[\\/]/).join("/")}`)
@@ -402,41 +399,6 @@ test("no file under scripts/ hardcodes the rules or store directory instead of i
   assert.deepEqual(offenders, []);
 });
 
-test("nothing anatomiya ships imports the plugin beside it", () => {
-  // A plugin's hook may only run a file inside its own root, which is why the
-  // second plugin keeps its own copy of the payload read and the entry guard.
-  // An import across the seam would load under the suite and be missing from
-  // both installs, so the README's claim about the two is pinned here rather
-  // than left as a sentence.
-  // The plugin's own list, not the marketplace's: the root declares the
-  // workspaces and ships nothing itself. Spelled without the trailing slash,
-  // because npm reads `lib` and `lib/` as the same entry and a lookup that knew
-  // one of them skipped every file.
-  const SHIPPED = new Set(
-    JSON.parse(readFileSync(join(ANATOMIYA, "package.json"), "utf8")).files.map((entry) => entry.replace(/\/$/, "")),
-  );
-  const read = [];
-  const offenders = [];
-  for (const rel of sourceFiles()) {
-    if (!rel.startsWith(`${REL.anatomiya}/`)) continue;
-    const dir = rel.slice(REL.anatomiya.length + 1).split(/[\\/]/)[0];
-    if (!SHIPPED.has(dir)) continue;
-    read.push(rel);
-    // The three spellings `graph()` above matches, for the reason it gives:
-    // a bare import and a dynamic one cross the seam as surely as `from` does,
-    // and the one this repository writes least is the one a leak would use.
-    if (/(?:from\s*|import\s*\(\s*|import\s+)["'][^"']*ultracode-anywhere/.test(readFileSync(join(ROOT, rel), "utf8"))) {
-      offenders.push(rel);
-    }
-  }
-
-  // The loop having a body, not the list having entries: `files` can be full
-  // and every one of its spellings miss, which is how this checked nothing.
-  assert.ok(read.length > 20, `read only ${read.length} shipped files`);
-  assert.deepEqual(offenders, []);
-});
-
-
 test("no repository-relative plugin path is spelled outside the one module that holds it", () => {
   // The move that put the plugins under `plugins/` had to find every file that
   // spelled the path by hand. What this covers is the repository-relative
@@ -460,8 +422,8 @@ test("no repository-relative plugin path is spelled outside the one module that 
     // `"./plugins/anatomiya"` is the idiomatic spelling and the first pattern
     // here missed it, and a path handed to `join` a segment at a time is the
     // same fact spelled without a slash in it.
-    if (/["'`](?:\.\/)?plugins\/(?:anatomiya|ultracode-anywhere)\b/.test(src)) offenders.push(rel);
-    else if (/["'`]plugins["'`]\s*,\s*["'`](?:anatomiya|ultracode-anywhere)["'`]/.test(src)) offenders.push(rel);
+    if (/["'`](?:\.\/)?plugins\/anatomiya\b/.test(src)) offenders.push(rel);
+    else if (/["'`]plugins["'`]\s*,\s*["'`]anatomiya["'`]/.test(src)) offenders.push(rel);
   }
 
   assert.ok(sourceFiles().length > 50, "no source files were read");

@@ -1,14 +1,12 @@
 # Contributing
 
-Read `DECISIONS.md` first. It is 260 numbered rows, each one a measurement or a review finding reduced
+Read `DECISIONS.md` first. It is 215 numbered rows, each one a measurement or a review finding reduced
 to the decision it forces on the code. It is the build contract, and most questions you will have
 about why something is shaped the way it is are answered there in one line.
 
 ## Setup and tests
 
-Node 22 or newer. ES modules, `.mjs` everywhere but one place: the workflow scripts under
-`plugins/ultracode-anywhere/workflows/` are `.js`, because Claude Code's loader recognises `.mjs`,
-`.cjs` and `.ts` there and refuses all three (A56). Two runtime dependencies, `oxc-parser` and
+Node 22 or newer. ES modules, `.mjs` throughout. Two runtime dependencies, `oxc-parser` and
 `flow-remove-types`, the second loaded the first time a `.js`-family file is rejected. Ruby
 dimensions need `prism` 1.x, a default gem on Ruby 3.4 and up, so a system Ruby is
 usually enough. If you do not have Ruby, the Ruby tests skip and the rest still run.
@@ -389,7 +387,6 @@ generated-by banners, no co-author trailers.
 
 ## Releases
 
-`docs/releasing.md` is the list. Work it top to bottom rather than from memory: the marketplace holds
-two plugins that ship apart, each with its own tag shape, its own manifests and its own changelog,
-and the tag is what actually releases. `v0.1.9` was released by hand four seconds before its own
+`docs/releasing.md` is the list. Work it top to bottom rather than from memory: a plugin carries its
+own tag shape, its own manifests and its own changelog, and the tag is what actually releases. `v0.1.9` was released by hand four seconds before its own
 workflow run started, and the run went red on a release that already existed.

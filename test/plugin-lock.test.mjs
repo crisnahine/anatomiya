@@ -33,7 +33,6 @@ test("the seed carries the marketplace's resolutions and none of its workspaces"
       "node_modules/anatomiya": { resolved: REL.anatomiya, link: true },
       "node_modules/oxc-parser": { version: "0.144.0" },
       [REL.anatomiya]: { name: "anatomiya", version: "1.2.3" },
-      [REL.ultracode]: { name: "ultracode-anywhere", version: "0.1.1" },
     },
   };
 
@@ -85,7 +84,7 @@ test("a link nested under the plugin is still a link, and still goes", () => {
     packages: {
       "": { name: "crisnahine" },
       "node_modules/x": { version: "1.0.0", resolved: "https://registry.npmjs.org/x/-/x-1.0.0.tgz" },
-      [`${REL.anatomiya}/node_modules/x`]: { link: true, resolved: REL.ultracode },
+      [`${REL.anatomiya}/node_modules/x`]: { link: true, resolved: "plugins/other" },
     },
   };
 

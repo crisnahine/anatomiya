@@ -962,3 +962,9 @@ closed here, and a reminder asking for one would be asking for something that do
 CLAUDE.md, because the built-in already does. And a shadow of `claude` spawned through the Agent tool
 does not lose an append, because that path never appends. Both are worth a line in a README only if the
 line says what is actually true.
+
+## Addendum, 2026-09-22
+
+`plugins/ultracode-anywhere/` was removed from this repository. The build reader this note
+cites (`cliPath`, `MIN_BUNDLE`, `settingsFor`) lives at `scripts/claude-build.mjs` now; the
+paths above are where it sat when the measurements were taken.

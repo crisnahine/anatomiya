@@ -46,19 +46,9 @@ export const FLOORS = [
     // two things inside it.
     scope: "the whole tree",
     include: "**",
-    // Measured at 98.4 line, 94.4 branch, 98.0 function over 171 files.
+    // Measured at 98.4 line, 94.6 branch, 98.0 function over 161 files.
     whole: { lines: 95, branches: 87, functions: 95 },
     file: {},
-  },
-  {
-    scope: "ultracode-anywhere",
-    include: `${REL.ultracode}/**`,
-    // Measured at 98.4 line, 89.7 branch, 99.1 function over the seven files.
-    whole: { lines: 95, branches: 87, functions: 97 },
-    // The worst single file is `counters.mjs` at 95.9 of lines on the run where
-    // its sweep catch goes uncovered, and `hook-io.mjs` at 83.8 of branches and
-    // 96.0 of functions. These sit a few points under each.
-    file: { lines: 92, branches: 75, functions: 90 },
   },
   {
     // The shipped code, held to a floor each. The aggregate above says nothing

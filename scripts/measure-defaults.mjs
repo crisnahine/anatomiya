@@ -27,7 +27,7 @@ import { language } from "../plugins/anatomiya/lib/langs.mjs";
 import { classifyBasename } from "../plugins/anatomiya/lib/dimensions-naming.mjs";
 import { runTrial, CLAUDE_DEFAULTS } from "./ab/run.mjs";
 import { conflictingSettings, engineFor, engineRan } from "./ab/engine.mjs";
-import { settingsFor } from "../plugins/ultracode-anywhere/hooks/upstream.mjs";
+import { settingsFor } from "./claude-build.mjs";
 
 const TABLE_PATH = join(ANATOMIYA, "lib", "model-defaults.json");
 

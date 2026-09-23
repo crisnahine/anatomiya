@@ -671,3 +671,9 @@ This repository:
 - `plugins/anatomiya/hooks/hooks.json` (the three events wired today),
   `plugins/ultracode-anywhere/hooks/upstream.mjs` (`cliPath`, `MIN_BUNDLE`, the chunked scan this note
   reuses), issues #119 and #120.
+
+## Addendum, 2026-09-22
+
+`plugins/ultracode-anywhere/` was removed from this repository. The build reader this note
+cites (`cliPath`, `MIN_BUNDLE`, `settingsFor`) lives at `scripts/claude-build.mjs` now; the
+paths above are where it sat when the measurements were taken.

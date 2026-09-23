@@ -1,12 +1,12 @@
 name: release
 
 # One namespace per plugin. The bare `v` tag has always meant anatomiya and
-# still does, so nothing already pushed changes meaning; anything else carries
-# the name of the plugin it releases. `scripts/release.mjs` holds the same table
-# and a test holds the two in step.
+# still does, so nothing already pushed changes meaning; anything else would
+# carry the name of the plugin it releases. `scripts/release.mjs` holds the same
+# table and a test holds the two in step.
 on:
   push:
-    tags: ["v*.*.*", "ultracode-anywhere-v*.*.*"]
+    tags: ["v*.*.*"]
 
 permissions:
   contents: read
@@ -92,11 +92,10 @@ jobs:
           PLUGIN: ${{ steps.release.outputs.plugin }}
           VERSION: ${{ steps.release.outputs.version }}
         run: |
-          # Latest is one badge for a repository that now releases two plugins,
-          # and GitHub hands it to whichever release was made last. It belongs
-          # to the plugin the repository is named for, and to no pre-release:
-          # a version carrying a hyphen is one by semver, and the tag pattern
-          # accepts it.
+          # Latest is one badge, and GitHub hands it to whichever release was
+          # made last. It belongs to the plugin the repository is named for, and
+          # to no pre-release: a version carrying a hyphen is one by semver, and
+          # the tag pattern accepts it.
           latest=false
           prerelease=""
           case "$VERSION" in

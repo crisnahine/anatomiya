@@ -1,16 +1,14 @@
 # Releasing
 
-This marketplace holds two plugins that ship apart. Work the list for the one you are releasing, and
-work it twice where a change touched both: they carry their own versions, their own changelogs and
-their own tags, and a change that puts a body under `## [Unreleased]` in both is two releases.
+This marketplace holds one plugin. It carries its own version, its own changelog and its own tag,
+and a change that puts a body under `## [Unreleased]` is a release.
 
 | plugin | tag | manifests | changelog |
 | --- | --- | --- | --- |
-| `anatomiya` | `vx.y.z` | `plugins/anatomiya/package.json`, `plugins/anatomiya/.claude-plugin/plugin.json`, `package-lock.json`, `plugins/anatomiya/package-lock.json` | `CHANGELOG.md` |
-| `ultracode-anywhere` | `ultracode-anywhere-vx.y.z` | `plugins/ultracode-anywhere/.claude-plugin/plugin.json` | `plugins/ultracode-anywhere/CHANGELOG.md` |
+| `anatomiya` | `vx.y.z` | `plugins/anatomiya/.claude-plugin/plugin.json`, `plugins/anatomiya/package.json`, `package-lock.json`, `plugins/anatomiya/package-lock.json` | `CHANGELOG.md` |
 
 The table lives in `scripts/release.mjs` and a test holds this copy of it to that one. The workflow
-fires on both tag shapes and refuses a tag whose manifests disagree with it or whose changelog has no
+fires on the tag shape and refuses a tag whose manifests disagree with it or whose changelog has no
 section of its own, naming which. What it cannot tell you is what to do about it, which is what the
 rest of this page is for.
 
@@ -36,8 +34,8 @@ on a release that already existed. Push the tag and let the workflow make the re
       same reason: both spawn npm, which is a batch file there. The Linux job is where either one
       actually gates.
 - [ ] `npm run coverage` passes its floors. It reads them off an lcov record rather than off the
-      total, so the second plugin's five files are each held to one: an aggregate over a scope says
-      nothing about one file inside it, whichever scope it is drawn around.
+      total, so the files in a scope are each held to one: an aggregate over a scope says nothing
+      about one file inside it, whichever scope it is drawn around.
 - [ ] CI is green on the branch. Check it, do not assume: a suite that passes here can fail there
       over `init.defaultBranch`, path separators, or 8.3 short names, and all three have.
 - [ ] The corpus run reports no findings, for a change that touches counting. Leave the checkout
@@ -73,18 +71,6 @@ upstreams and are not meant to move together.
 - [ ] `SECURITY.md` names the current dependency set and says nothing about a tier that now ships.
 - [ ] `DECISIONS.md` has no `todo` row that this release actually closed, and every `**done**` note
       names the symbols that exist today.
-- [ ] For `ultracode-anywhere`: somebody worked `VERIFYING.md` against the installed build, and the
-      build it names is that one. `test/upstream.test.mjs` reads whatever build is installed for the
-      four markers and the gate, and holds the code and those docs to one version, but nothing there
-      can tell whether anyone re-read a build, and `behind` waits for a run of ten patch releases
-      before it says anything about one. Its `README.md` states what it does and does not restore.
-      Three places name a build with no case reading them, and they need a person: `DECISIONS.md`,
-      whose A29 and A30 carry live measurements rather than history, the `[Unreleased]` section of
-      the plugin's changelog, which is not history yet, and `docs/plugin-contract.md`, which dates
-      itself.
-
-## Tag and confirm
-
 - [ ] Merge to `main` and pull it.
 - [ ] `git tag -a <tag> -m "<version>"` then `git push origin <tag>`, with the tag from the table.
       The tag is what releases; a merge alone does not, and a release made by hand turns the run red.

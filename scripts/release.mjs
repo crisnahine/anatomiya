@@ -38,20 +38,18 @@ export const RELEASES = [
     plugin: "anatomiya",
     root: REL.anatomiya,
     tag: "v*",
+    // The plugin manifest first: it is the file a marketplace reads, and it is
+    // the one every reader here reports a release problem against. `package.json`
+    // cannot be that file, because node reads it while resolving the plugin's own
+    // dependencies and refuses to start on one that is not an object, so a gate
+    // naming it would die before it could.
     manifests: [
-      `${REL.anatomiya}/package.json`,
       `${REL.anatomiya}/.claude-plugin/plugin.json`,
+      `${REL.anatomiya}/package.json`,
       "package-lock.json",
       `${REL.anatomiya}/package-lock.json`,
     ],
     changelog: "CHANGELOG.md",
-  },
-  {
-    plugin: "ultracode-anywhere",
-    root: REL.ultracode,
-    tag: "ultracode-anywhere-v*",
-    manifests: [`${REL.ultracode}/.claude-plugin/plugin.json`],
-    changelog: `${REL.ultracode}/CHANGELOG.md`,
   },
 ];
 
@@ -107,9 +105,9 @@ function versionsIn(rel, json, release) {
 /**
  * The release a tag names, or null where it names none.
  *
- * The prefixed entries are tried first, because `v1.2.3` and
- * `ultracode-anywhere-v1.2.3` differ only in what comes before the `v`, and
- * neither pattern matches the other's tag today. Sorted anyway, because a
+ * The prefixed entries are tried first, because `v1.2.3` and a prefixed
+ * `<plugin>-v1.2.3` differ only in what comes before the `v`, and no pattern
+ * matches another's tag today. Sorted anyway, because a
  * third plugin named for a prefix of an existing one would be taken by the
  * shorter pattern, and the tag that goes wrong is one already pushed.
  */

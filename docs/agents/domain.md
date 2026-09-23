@@ -57,8 +57,7 @@ honours **is** a defect, and worth surfacing.
 │   ├── why.md
 │   └── agents/         ← this directory: how skills read the repo
 ├── plugins/
-│   ├── anatomiya/      ← bin/, lib/, commands/, hooks/
-│   └── ultracode-anywhere/
+│   └── anatomiya/      ← bin/, lib/, commands/, hooks/
 ├── scripts/
 └── test/
 ```
