@@ -7,6 +7,20 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Changed
+
+- The hook that re-delivers the map now does it once per context window instead of on every turn and
+  every tool call. It reads the end of the session's transcript and stays silent while that holds the
+  same map with no compaction after it; a changed map, a compaction, or a copy more than 256 KiB of
+  transcript back is delivered again, and a subagent or workflow stage is answered from its own
+  transcript. On 3,502 local transcripts, 94.0% of deliveries had repeated the one before
+  (A92).
+
+### Added
+
+- `scripts/measure-echo.mjs`, which replays that rule over a transcript store and prints how many
+  deliveries repeated, how many the rule keeps, and how many transcript bytes a context token costs.
+
 ## [0.9.0] - 2026-09-23
 
 The marketplace listed two plugins that shared a repository and nothing else. It lists one now, and

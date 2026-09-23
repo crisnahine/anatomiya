@@ -9,6 +9,7 @@ import {
   summarize,
   tableOf,
 } from "../scripts/measure-delivery.mjs";
+import { compact } from "./transcript.mjs";
 
 const OVERVIEW = "/repo/.claude/rules/anatomiya-overview.md";
 const LIB = "/repo/.claude/rules/anatomiya-area-76b5a357.md";
@@ -19,8 +20,6 @@ const delivery = (path, globs = ["lib/**/*.mjs"], over = {}) => ({
   attachment: { type: "nested_memory", path, content: { path, type: "Project", globs } },
   ...over,
 });
-
-const compact = () => ({ type: "system", subtype: "compact_boundary" });
 
 /** The events of one session, in the order a transcript holds them. */
 const events = (entries) => entries.map(eventOf).filter((e) => e !== null);

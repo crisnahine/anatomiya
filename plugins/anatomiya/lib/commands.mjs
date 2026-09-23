@@ -12,7 +12,7 @@ import { buildPin, loadPin, writePin, pinDelta, PIN_PATH } from "./baseline.mjs"
 import { headSha } from "./git.mjs";
 import { NODE_PROBE_IDS, PROBE_IDS, installProblem, pluginRoot, probeName, readiness, readinessLines, remedyFor } from "./readiness.mjs";
 import { pinSummary, scanSummary } from "./summary.mjs";
-import { aboutDir, echoContext, holdsTestIn, inCheckout, isPathTaken, ownLayout, removeStaleHook, targetIn } from "./hook.mjs";
+import { aboutDir, echoContext, holdsTestIn, inCheckout, isPathTaken, ownLayout, removeStaleHook, targetIn, windowOf } from "./hook.mjs";
 import { isTestPath, noticeFor } from "./precedent.mjs";
 import { askedMarks, continuedByReuse, pendingChange, reuseReason, reuseRecord, sessionStart } from "./reuse.mjs";
 
@@ -81,7 +81,7 @@ export function runEcho(cwd, payload) {
   if (!event) return {};
   const root = answersFor(payload, cwd);
   if (root === null) return {};
-  const additionalContext = echoContext(root);
+  const additionalContext = echoContext(root, { transcript: windowOf(payload) });
   if (additionalContext === null) return {};
   return { hookSpecificOutput: { hookEventName: event, additionalContext } };
 }

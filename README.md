@@ -86,16 +86,16 @@ echo '.claude/anatomiya/' >> "$exclude"
 pointer. The common dir is shared, so one set of lines covers every worktree.
 
 Those two lines are everything a scan leaves behind. Three hooks are declared by the plugin, in its own
-`hooks/hooks.json`, so nothing is written into your settings. One re-delivers the map after every
-turn and every tool call. The other runs before a `Write`, an `Edit` or a `NotebookEdit`, and speaks
-only for a path where a test is going into a directory whose kind of file has no test of its own
-anywhere: silent on every other write, which is nearly all of them. It informs and never refuses.
-The third runs when a turn ends, and only after a turn that added source code: it asks, once per
-change, for one subagent to look for an existing function the new code could call instead.
-`check` asks the same question of a whole branch, as `test_precedent`. Versions 0.2.4 through 0.2.6 did write one into
-`.claude/settings.local.json`, where the plugin path it names is never substituted and Claude Code
-refuses the hook by name on every prompt; a scan takes that entry out when it finds one, and leaves
-everything else in the file alone.
+`hooks/hooks.json`, so nothing is written into your settings. One re-delivers the map after a turn or a
+tool call when the context window does not already hold that same map. The other runs before a `Write`,
+an `Edit` or a `NotebookEdit`, and speaks only for a path where a test is going into a directory whose
+kind of file has no test of its own anywhere: silent on every other write, which is nearly all of them.
+It informs and never refuses. The third runs when a turn ends, and only after a turn that added source
+code: it asks, once per change, for one subagent to look for an existing function the new code could
+call instead. `check` asks the same question of a whole branch, as `test_precedent`. Versions 0.2.4
+through 0.2.6 did write one into `.claude/settings.local.json`, where the plugin path it names is never
+substituted and Claude Code refuses the hook by name on every prompt; a scan takes that entry out when
+it finds one, and leaves everything else in the file alone.
 
 > [!NOTE]
 > A session that is already running still holds the old map. Restart to pick up the new one.
@@ -352,7 +352,7 @@ gate's second opinion. The full numbers and their caveats are in [docs/why.md](d
 - [docs/plugin-contract.md](docs/plugin-contract.md) is what Claude Code requires of a plugin and a
   marketplace, read against the documentation and the CLI itself, with a source per claim and the
   version it was true of.
-- [DECISIONS.md](DECISIONS.md) is the build contract: 215 numbered decisions, each with the
+- [DECISIONS.md](DECISIONS.md) is the build contract: 216 numbered decisions, each with the
   measurement or the review finding that forced it. Why a threshold is where it is, why the parser
   runs in child processes, why there is no hook: that is the file.
 - [docs/why.md](docs/why.md) is the longer argument and the full numbers.
