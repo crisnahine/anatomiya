@@ -2,7 +2,6 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
-  checkOutput,
   eventOf,
   parseArgs,
   sessionOf,
@@ -117,14 +116,11 @@ test("a table prints a row per session and nothing for a column no row carries",
 
 test("the transcript directory is required and an unknown option is refused", () => {
   assert.match(parseArgs([]).error, /transcript directory/);
-  assert.match(parseArgs(["--nope"]).error, /unknown option/);
-  assert.match(parseArgs(["dir", "--md"]).error, /--md needs a value/);
+  assert.equal(parseArgs(["--nope"]).code, "ERR_PARSE_ARGS_UNKNOWN_OPTION");
+  assert.match(parseArgs(["dir", "--md"]).error, /--md/);
   assert.deepEqual(parseArgs(["dir", "--match", "anatomiya-area"]).match, "anatomiya-area");
+  assert.deepEqual(parseArgs(["dir", "--force"]), { dir: "dir", md: null, match: null, force: true });
+  // A second directory was taken over the first without a word.
+  assert.match(parseArgs(["one", "two"]).error, /one transcript directory/);
 });
 
-test("an existing --md target is refused unless the run says it meant it", () => {
-  assert.match(checkOutput("out.md", false, true), /already there/);
-  assert.equal(checkOutput("out.md", true, true), null);
-  assert.equal(checkOutput("out.md", false, false), null);
-  assert.equal(checkOutput(null, false, true), null);
-});

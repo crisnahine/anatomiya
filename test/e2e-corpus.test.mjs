@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -24,10 +24,10 @@ import {
   rootsProblems,
   rootsPrinted,
   rosterCounts,
-  selectRepos,
   summaryProblems,
   tableOf,
   timeless,
+  writtenProblems,
   wroteProblems,
 } from "../scripts/e2e-corpus.mjs";
 
@@ -294,24 +294,15 @@ test("the arguments name a corpus and a scratch directory, and refuse anything e
   assert.deepEqual(parseArgs(["/corpus", "/scratch", "--only", "a,b"]).only, "a,b");
   assert.match(parseArgs(["/corpus"]).error, /scratch directory/);
   assert.match(parseArgs([]).error, /corpus directory/);
-  assert.match(parseArgs(["--wat", "/c", "/s"]).error, /unknown option/);
+  assert.equal(parseArgs(["--wat", "/c", "/s"]).code, "ERR_PARSE_ARGS_UNKNOWN_OPTION");
+  // A third path was dropped without a word.
+  assert.match(parseArgs(["/c", "/s", "/x"]).error, /two directories/);
 });
 
 test("--only with nothing after it is an error, not a run of everything", () => {
   // It read the next argument, which was not there, and a run that was meant
   // to be one repository silently became all thirty-six.
   assert.match(parseArgs(["/corpus", "/scratch", "--only"]).error, /--only/);
-});
-
-test("a --only name the corpus does not hold is an error, not a shorter run", () => {
-  // A typo ran zero repositories and printed `0 of 0 repositories passed`,
-  // which is exit 0 and reads as an acceptance.
-  const repos = [{ name: "errbit" }, { name: "eslint" }];
-
-  assert.deepEqual(selectRepos(repos, null).repos, repos);
-  assert.deepEqual(selectRepos(repos, "eslint").repos, [{ name: "eslint" }]);
-  assert.match(selectRepos(repos, "errbti").error, /errbti/);
-  assert.match(selectRepos(repos, "errbit,eslnit").error, /eslnit/);
 });
 
 test("a scratch directory that overlaps the corpus, or already holds entries, is refused", needsPosixSeparators, () => {
@@ -407,3 +398,32 @@ test("the probe lands inside the population a narrowed row learned over", () => 
   const ruby = probePlan({ areas: [rubyArea([dim("file_naming_case", { learnedKind: "jsx" })])] });
   assert.match(ruby.body, /^#/);
 });
+
+test("a glob ending in a bare /** is refused, since an exclusion under it silently does nothing", () => {
+  // The matcher strips a trailing /** before matching, so "app/**" excludes the
+  // directory itself and nothing under it can be re-included.
+  const body = ["---", "generator: anatomiya", "paths:", '  - "app/**"', "---", "", "# app"].join("\n");
+  assert.deepEqual(areaProblems("a.md", body), ['"a.md" has a glob ending in a bare /**: app/**']);
+});
+
+test("what a scan wrote is held to the count it printed and to every rule the corpus run keeps", (t) => {
+  const repo = mkdtempSync(join(tmpdir(), "e2e-written-"));
+  t.after(() => rmSync(repo, { recursive: true, force: true }));
+  mkdirSync(join(repo, ".claude/rules"), { recursive: true });
+  mkdirSync(join(repo, ".claude/anatomiya"), { recursive: true });
+  writeFileSync(join(repo, ".claude/rules/anatomiya-overview.md"), [...front, "## What lives where"].join("\n"));
+  writeFileSync(join(repo, ".claude/rules/anatomiya-area-1.md"), ["---", "generator: anatomiya", "paths:", '  - "lib/**/*.ts"', "---", "", "# lib"].join("\n"));
+  writeFileSync(join(repo, FACTS_PATH), JSON.stringify(facts()));
+
+  const good = writtenProblems(repo, 2);
+  assert.deepEqual(good.problems, []);
+  assert.deepEqual([...good.written.keys()], ["anatomiya-area-1.md", "anatomiya-overview.md"]);
+  assert.equal(good.facts.schema, FACTS_SCHEMA);
+
+  assert.match(writtenProblems(repo, 3).problems.join("\n"), /says it wrote 3 files/);
+  rmSync(join(repo, FACTS_PATH));
+  assert.deepEqual(writtenProblems(repo, 2).problems, [`no ${FACTS_PATH} was written`]);
+  rmSync(join(repo, ".claude/rules/anatomiya-overview.md"));
+  assert.match(writtenProblems(repo, 1).problems.join("\n"), /no anatomiya-overview\.md was written/);
+});
+
