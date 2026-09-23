@@ -39,12 +39,6 @@ export const SEMANTIC_DIMENSIONS = [
 ];
 
 /**
- * The receiver of each link in a member-call chain, outermost first.
- *
- * `a.b().c()` gives the receivers of `c` and of `b`, which is what decides how
- * many types the expression reaches through.
- */
-/**
  * The expression inside its wrappers.
  *
  * `t.maybe!.go()` and `(t.inner()).go()` are chains, and a walk that stops at
@@ -61,6 +55,12 @@ function inner(ts, node) {
   return at;
 }
 
+/**
+ * The receiver of each link in a member-call chain, outermost first.
+ *
+ * `a.b().c()` gives the receivers of `c` and of `b`, which is what decides how
+ * many types the expression reaches through.
+ */
 function chainReceivers(ts, node) {
   const out = [];
   let at = inner(ts, node);

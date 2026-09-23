@@ -214,18 +214,13 @@ const TYPED_EXT = LANGUAGES.filter((l) => l.typed).flatMap((l) => l.typed.exts);
 const CARRIES_TYPES = new RegExp(`\\.(${TYPED_EXT.join("|")})$`);
 
 /**
- * Whether a path can hold a type annotation at all, asked of the path alone.
- *
- * `export function f(): number` is a SyntaxError under Node, so a row whose
- * whole question is the annotation has nothing to ask a `.js` file and cannot
- * be answered by giving it one. Derived from the declarations' own `typed`
- * lists, the way `mayHoldFlow` and `mayBeCommonJS` are.
- */
-export const carriesTypeSyntax = (path) => CARRIES_TYPES.test(path);
-
-/**
  * Whether this file can carry a type annotation at all: its extension says so,
  * or its own tree already does.
+ *
+ * `export function f(): number` is a SyntaxError under Node, so a row whose
+ * whole question is the annotation has nothing to ask a `.js` file. The
+ * extensions come from the declarations' own `typed` lists, the way
+ * `mayHoldFlow` and `mayBeCommonJS` are derived.
  *
  * The extension alone is a proxy and it is wrong on Flow. A `.js` file marked
  * `// @flow` declares return types the way a `.ts` file does, and it is parsed

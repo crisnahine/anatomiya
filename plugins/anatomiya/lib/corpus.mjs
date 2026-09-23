@@ -371,10 +371,9 @@ export async function collect(root) {
     const { drop, abs } = classify(root, rel, generatedRules);
     // Non-source tracked files feed the roster this scan builds over every
     // tracked path, not just the parsed ones.
-    if (drop === "notSource") { dropped.notSource++; others.push({ rel }); return true; }
-    if (drop) { dropped[drop]++; return true; }
+    if (drop === "notSource") { dropped.notSource++; others.push({ rel }); return; }
+    if (drop) { dropped[drop]++; return; }
     files.push({ rel, abs, lang: language(rel) });
-    return true;
   });
 
   // Kept in the shape callers already read. No repository size truncates the
@@ -401,7 +400,6 @@ export async function countUntrackedSource(root) {
   const generatedRules = generatedAttrRules(root);
   await lsFiles(root, (rel) => {
     if (!classify(root, rel, generatedRules).drop) n++;
-    return true;
   }, ["--others", "--exclude-standard"]);
   return n;
 }
@@ -427,7 +425,7 @@ function classify(root, rel, generatedRules) {
 }
 
 /**
- * Feed each NUL-delimited entry to `onEntry`, which returns false to stop.
+ * Feed each NUL-delimited entry to `onEntry`.
  *
  * No pathspec follows `--`; it is there because the rule for every git call in
  * this codebase is that nothing after it can be read as an option.
@@ -439,5 +437,8 @@ function classify(root, rel, generatedRules) {
 export function lsFiles(root, onEntry, extra = []) {
   // An empty field is a delimiter run rather than a listed path, and the caller
   // classifies paths.
-  return gitStreamed(root, ["ls-files", "-z", ...extra, "--"], (rel) => (rel ? onEntry(rel) : true));
+  return gitStreamed(root, ["ls-files", "-z", ...extra, "--"], (rel) => {
+    if (rel) onEntry(rel);
+    return true;
+  });
 }

@@ -175,7 +175,7 @@ test("the source is held only where the caller asked for it", async (t) => {
   assert.equal(readFileSync(out.files[0].abs, "utf8"), FIRST);
 });
 
-test("every path comes back, sorted, however few readers ran at once", async (t) => {
+test("every path comes back, sorted, whatever order the readers finished in", async (t) => {
   const rels = Array.from({ length: 20 }, (_, i) => `src/f${String(i).padStart(2, "0")}.js`);
   let sha;
   const dir = repo(t, (d, { write, commit }) => {
@@ -183,10 +183,7 @@ test("every path comes back, sorted, however few readers ran at once", async (t)
     sha = commit("first");
   });
 
-  const out = await readAtRevision(dir, sha, [...rels].reverse().map((rel) => ({ rel })), {
-    concurrency: 4,
-    withSource: true,
-  });
+  const out = await readAtRevision(dir, sha, [...rels].reverse().map((rel) => ({ rel })), { withSource: true });
   t.after(out.dispose);
 
   assert.deepEqual(out.files.map((f) => f.rel), rels, "answered in path order, not in the order they finished");

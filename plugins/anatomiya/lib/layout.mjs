@@ -312,15 +312,10 @@ export const majorityDir = (dirs) => {
  * beside 102 Cypress specs read as the exception they are.
  */
 export function testsLine(files, mirrored = null) {
-  const dirs = new Map();
-  for (const f of files) {
-    if (!isTestFile(f, mirrored)) continue;
-    const runner = runnerOf(f.rel, f.facets);
-    if (!dirs.has(runner)) dirs.set(runner, []);
-    dirs.get(runner).push(dirOf(f.rel));
-  }
-  return [...dirs]
-    .map(([runner, group]) => {
+  const byRunner = Map.groupBy(files.filter((f) => isTestFile(f, mirrored)), (f) => runnerOf(f.rel, f.facets));
+  return [...byRunner]
+    .map(([runner, tests]) => {
+      const group = tests.map((f) => dirOf(f.rel));
       const root = majorityDir(group);
       // How many are genuinely under it. `majorityDir` names the directory four
       // fifths of them sit in, deliberately, because a strict prefix collapses
@@ -355,20 +350,13 @@ const sharedSub = (group, dir) => {
   return ranked.length > 0 && ranked[0][1] * 2 > group.length ? { name: ranked[0][0], under: ranked[0][1] } : null;
 };
 
-const testGroups = (tests, dir) => {
-  const groups = new Map();
-  for (const f of tests) {
-    const runner = runnerOf(f.rel, f.facets);
-    if (!groups.has(runner)) groups.set(runner, []);
-    groups.get(runner).push(f);
-  }
-  return [...groups]
+const testGroups = (tests, dir) =>
+  [...Map.groupBy(tests, (f) => runnerOf(f.rel, f.facets))]
     .map(([runner, group]) => {
       const sub = sharedSub(group, dir);
       return { runner, files: group.length, sub: sub?.name ?? null, under: sub?.under ?? group.length };
     })
     .sort((a, b) => b.files - a.files || byCode(a.runner, b.runner));
-};
 
 // Which extension the renderer marks `(JSX)`: the first one the line prints
 // whose files are at least half JSX. An extension outside the printed two is

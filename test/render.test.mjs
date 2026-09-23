@@ -12,7 +12,6 @@ import {
   unexaminedPhrase,
   unreadLanguageFiles,
   untrackedSentence,
-  OVERVIEW_AREAS,
   MAX_LINES,
 } from "../plugins/anatomiya/lib/render.mjs";
 import { kindsLine, layoutSummary, namesakeClause, plural, renderLayout } from "../plugins/anatomiya/lib/render-layout.mjs";
@@ -448,7 +447,7 @@ test("a repository with more areas than the overview lists summarises the tail",
   // areas does not: a 100,000-file repository discovers 500 areas, and one line
   // each would put the whole listing in front of the agent on every turn.
   const many = result({
-    areas: Array.from({ length: OVERVIEW_AREAS + 60 }, (_, i) => ({
+    areas: Array.from({ length: 260 }, (_, i) => ({
       id: `id${i}`,
       path: `src/mod${i}`,
       glob: `src/mod${i}/**/*.ts`,

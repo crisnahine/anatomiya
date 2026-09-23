@@ -101,15 +101,28 @@ function isBoundary(at) {
  * the map above it is about the code there.
  */
 function ownMap(from) {
+  const hit = walkUp(from, (at) => readOwned(join(at, RULES_DIR, OVERVIEW_FILE)));
+  return hit && { map: hit.found, from: hit.from };
+}
+
+/**
+ * The walk `ownMap` describes, asking `read` at each level: the first answer
+ * with the directory it came from, or null.
+ *
+ * At the boundary a linked worktree is answered by its main checkout, and
+ * `from` names that checkout; `at` stays the worktree, since its files are what
+ * a write lands among.
+ */
+function walkUp(from, read) {
   let at = realpathOrNull(resolve(from));
   if (at === null) return null;
   for (;;) {
-    const map = readOwned(join(at, RULES_DIR, OVERVIEW_FILE));
-    if (map !== null) return { map, from: null };
+    const found = read(at);
+    if (found !== null) return { at, found, from: null };
     if (isBoundary(at)) {
       const main = mainCheckoutOf(at);
-      const borrowed = main === null ? null : readOwned(join(main, RULES_DIR, OVERVIEW_FILE));
-      return borrowed === null ? null : { map: borrowed, from: main };
+      const borrowed = main === null ? null : read(main);
+      return borrowed === null ? null : { at, found: borrowed, from: main };
     }
     const up = dirname(at);
     if (up === at) return null;
@@ -151,27 +164,14 @@ function readOwned(path) {
  * write rather than once per scan.
  */
 export function ownLayout(from) {
-  let at = realpathOrNull(resolve(from));
-  if (at === null) return null;
-  for (;;) {
-    // F2 again, and the reason `readFacts` already asks it: `join` resolves no
-    // link, so a tracked `.claude/anatomiya -> /tmp/x` had a directory outside
-    // the repository deciding what a write inside it was judged against.
+  // F2 again, and the reason `readFacts` already asks it: `join` resolves no
+  // link, so a tracked `.claude/anatomiya -> /tmp/x` had a directory outside
+  // the repository deciding what a write inside it was judged against.
+  const hit = walkUp(from, (at) => {
     const path = resolveInside(at, FACTS_PATH);
-    const layout = path === null ? null : readLayout(path);
-    if (layout !== null) return { root: at, layout, from: null };
-    if (isBoundary(at)) {
-      // The worktree stays the root, since its files are what a write lands
-      // among; only the counts are the main checkout's.
-      const main = mainCheckoutOf(at);
-      const borrowed = main === null ? null : resolveInside(main, FACTS_PATH);
-      const counted = borrowed === null ? null : readLayout(borrowed);
-      return counted === null ? null : { root: at, layout: counted, from: main };
-    }
-    const up = dirname(at);
-    if (up === at) return null;
-    at = up;
-  }
+    return path === null ? null : readLayout(path);
+  });
+  return hit && { root: hit.at, layout: hit.found, from: hit.from };
 }
 
 /**
@@ -549,12 +549,10 @@ function heldIn(transcript, digest) {
  * longer one is still ours, with a file's contents in it, and what the hooks
  * read is in the first few hundred bytes either way. Counted in UTF-16 units
  * against a decoded string, so it is a megabyte of ASCII and up to three of
- * anything else; the second plugin spends the same number the same way and
- * says so. Nothing here compares it against a count of bytes.
+ * anything else. Nothing here compares it against a count of bytes.
  */
 const PAYLOAD_MOST = 1024 * 1024;
 
-/** How long to wait for a payload before answering without one. */
 /**
  * How long the payload read waits before answering with nothing.
  *
@@ -570,8 +568,7 @@ export const PAYLOAD_WAIT_MS = 2000;
  * The first `most` units of a string, without splitting a character in half.
  *
  * A cap counts UTF-16 units and a surrogate pair is two of them, so a cut at
- * the boundary halves one. The second plugin holds the same function for the
- * same reason, since a plugin may not run a file outside its own root.
+ * the boundary halves one.
  */
 function cutAt(text, most) {
   if (text.length <= most) return text;
@@ -647,14 +644,7 @@ function skipSpace(text, i) {
  * `"cwd"` inside one would answer another repository's path for a live write.
  * Nothing here looks inside a string.
  *
- * The second plugin holds this reader and its helpers too, for the reason
- * `cutAt` above is held twice: a plugin may not run a file outside its own
- * root, so a module both could import cannot exist. Inline rather than in a
- * `lib/` file of its own for the same reason, since what has to be copyable is
- * the text. `test/hook-contract.test.mjs` drives both against one list of
- * payloads and refuses any they answer differently, and compares the block
- * itself character for character. Those two cases are the whole of what keeps
- * the two in step.
+ * `test/hook-contract.test.mjs` drives it against payloads cut at the cap.
  */
 export function fieldsIn(text) {
   const fields = {};

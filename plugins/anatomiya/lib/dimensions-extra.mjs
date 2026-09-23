@@ -28,18 +28,6 @@ import { calleeName, jsxElementNames } from "./dimensions-jsx.mjs";
 const SOURCE_IMPORT = /\.(js|jsx|mjs|cjs|ts|tsx)$/;
 const ASSET_IMPORT = /\.[a-z0-9]+$/i;
 
-/**
- * The value inside its type wrappers.
- *
- * `null as any`, `null satisfies any`, `null!` and `<any>null` are all null,
- * and a walker that matches on the node type of an expression sees a
- * `TSAsExpression` instead. react returns an absent value behind a cast 24
- * times and vscode 20, and none of them were counted.
- *
- * Only for reading a value's shape. `non_null_assertion` is about the wrapper
- * itself and reads the node before this.
- */
-
 const isDefaultValue = (node) => {
   const n = value(node);
   return (
@@ -669,11 +657,6 @@ export const EXTRA_DIMENSIONS = [
 ];
 
 /**
- * Whether any comment sits directly above the offset: nothing but whitespace
- * between them, and the comment opening its own line, or the previous
- * statement's trailing comment would read as the next one's doc.
- */
-/**
  * Comments that instruct a tool rather than a reader.
  *
  * None of these is documentation on either side of the claim: one silences a
@@ -696,7 +679,8 @@ const isDirectiveComment = (c) => DIRECTIVE_COMMENT.test(c.value ?? "");
  * because a directive between a doc comment and the export it documents must
  * not detach it. Comments arrive nearest-first, so the first one past the
  * declaration is the one to ask, and anything with text between it and the
- * declaration ends the run.
+ * declaration ends the run. A comment must open its own line, or the previous
+ * statement's trailing comment would read as this one's doc.
  */
 function attachedAbove(comments, start, source) {
   let edge = start;

@@ -336,7 +336,8 @@ export function optionalChain(node, ancestors) {
   return { outer, allowed: true };
 }
 
-// The wrappers that sit inside a member or call chain without ending it.
+// The type and paren wrappers around a value. They sit inside a member or call
+// chain without ending it.
 const WRAPS = new Set([
   "TSNonNullExpression",
   "TSAsExpression",
@@ -380,16 +381,6 @@ function refusesOptional(parent, node, grand) {
  */
 export const value = (n) => {
   let out = n;
-  while (
-    out &&
-    (out.type === "TSAsExpression" ||
-      out.type === "TSSatisfiesExpression" ||
-      out.type === "TSNonNullExpression" ||
-      out.type === "TSTypeAssertion" ||
-      out.type === "TSInstantiationExpression" ||
-      out.type === "ParenthesizedExpression")
-  ) {
-    out = out.expression;
-  }
+  while (out && WRAPS.has(out.type)) out = out.expression;
   return out;
 };

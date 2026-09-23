@@ -90,8 +90,6 @@ export function encodeReport(report) {
     caveats: report.caveats.map((c) => ({ code: c.code, message: encode(c.message) })),
     parse: { ...report.parse },
     semantic: { ...report.semantic },
-    // Each of these passes one argument on purpose: `map` hands its callback
-    // an index, and `sanitisePath` reads a second argument as the cap.
     foreign: report.foreign.map((name) => sanitisePath(name)),
     unknown: report.unknown.map((name) => sanitisePath(name)),
     rules: { ...report.rules, unreadable: report.rules.unreadable.map((name) => sanitisePath(name)) },
