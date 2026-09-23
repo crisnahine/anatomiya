@@ -948,7 +948,7 @@ test("a re-pin keeps the per-area delta, which is the whole point of one", () =>
   assert.doesNotMatch(again, /areas enter it/, "the count line is the first pin's");
 });
 
-test("a pin and its delta list areas in code-point order, whatever the host's locale", () => {
+test("a pin and its delta list areas in code-unit order, whatever the host's locale", () => {
   const area = (path) => ({ id: path, path, files: [{ rel: `${path}/f.ts` }] });
   const pin = buildPin([area("a"), area("ä"), area("B")], { sha: "a".repeat(40) });
 

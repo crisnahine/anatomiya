@@ -127,6 +127,13 @@ test("a lone surrogate is dropped like any other unprintable character", () => {
   assert.equal(encode("a\udc00"), "a");
 });
 
+test("every category outside letters, marks, numbers, punctuation, symbols and space becomes a space", () => {
+  // Cc, Cf, Co, Zl, Zp and a C1 control, one each; letters with a combining
+  // mark, a digit, punctuation and symbols survive.
+  assert.equal(encode("a\u0007b\u200bc\ue000d\u2028e\u2029f\u0085g"), "a b c d e f g");
+  assert.equal(encode("x7!$\u20ac\u00e9\u0915\u093f"), "x7!$\u20ac\u00e9\u0915\u093f");
+});
+
 test("ordinary values pass through intact", () => {
   assert.equal(encode("Result, not raise"), "Result, not raise");
   assert.equal(encode("31 of 31 sites across 14 files"), "31 of 31 sites across 14 files");

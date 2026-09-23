@@ -186,7 +186,8 @@ test("a flag with no value after it is refused rather than passed over", (t) => 
   });
 
   assert.equal(run.status, 2);
-  assert.match(run.stderr, /--notes/);
+  // The first line, since the usage text under it names --notes as well.
+  assert.match(run.stderr.split("\n")[0], /'--notes\b/);
 });
 
 test("an option this does not know is a typo, not a tag", (t) => {
@@ -226,7 +227,8 @@ test("a single-dash option is not a path either, and nothing is written under it
   });
 
   assert.equal(run.status, 2, run.stdout);
-  assert.match(run.stderr, /--notes/);
+  // The first line, since the usage text under it names --notes as well.
+  assert.match(run.stderr.split("\n")[0], /'--notes\b/);
   assert.deepEqual(readdirSync(dir), []);
 });
 
@@ -248,7 +250,8 @@ test("a mistyped option is not a path the notes are written to", (t) => {
   });
 
   assert.equal(run.status, 2);
-  assert.match(run.stderr, /--notes/);
+  // The first line, since the usage text under it names --notes as well.
+  assert.match(run.stderr.split("\n")[0], /'--notes\b/);
 });
 
 test("the link definitions at the bottom are not the oldest release's notes", () => {

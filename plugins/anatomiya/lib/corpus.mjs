@@ -1,10 +1,11 @@
-import { closeSync, constants, fstatSync, openSync, readSync, realpathSync } from "node:fs";
+import { realpathSync } from "node:fs";
 import { resolve, sep } from "node:path";
 
 import { gitBuffered, gitStreamed } from "./git.mjs";
 import { EXT_BY_LANG, LANGUAGES, language } from "./langs.mjs";
 import { CAPABILITY_WORDS, fileStem, stemWords } from "./dimensions-capability.mjs";
 import { FRAMEWORKS } from "./frameworks.mjs";
+import { readHead } from "./rules.mjs";
 
 // Tracked files only. A working tree holds .env, master.key, an .npmrc with a
 // token and a .git/config with credentials in the remote URL; a filesystem walk
@@ -163,25 +164,12 @@ const MARKER_HEAD_BYTES = 4096;
 const ATTR_FILE_BYTES = 65536;
 
 /**
- * The first bytes of a regular file, or "" for anything else: a symlink
- * swapped in between a stat and an open would read the wrong file, so the
- * type is checked on the same handle the bytes come from, and a path that
- * has vanished, is a directory, or refuses to open answers empty rather than
- * throwing.
+ * The first bytes of a regular file, null for an entry that is not one (a fifo,
+ * a socket, a directory), and "" for a path that has vanished or refuses to open.
  */
 function readPrefix(path, bytes) {
-  let fd;
-  try {
-    fd = openSync(path, constants.O_RDONLY | (constants.O_NONBLOCK ?? 0));
-    if (!fstatSync(fd).isFile()) return "";
-    const buf = Buffer.alloc(bytes);
-    const read = readSync(fd, buf, 0, bytes, 0);
-    return buf.subarray(0, read).toString("utf8");
-  } catch {
-    return "";
-  } finally {
-    if (fd !== undefined) closeSync(fd);
-  }
+  const entry = readHead(path, bytes);
+  return entry.kind === "file" ? entry.head : entry.kind === "other" ? null : "";
 }
 
 // Lines rather than bytes, so a module that documents these markers is safe by
@@ -193,7 +181,11 @@ const MARKER_HEAD_LINES = 10;
 
 /** Whether a file's own head carries a generated-file marker. */
 export function isGeneratedFile(absPath) {
-  const head = readPrefix(absPath, MARKER_HEAD_BYTES).split("\n").slice(0, MARKER_HEAD_LINES).join("\n");
+  return isGeneratedHead(readPrefix(absPath, MARKER_HEAD_BYTES) ?? "");
+}
+
+function isGeneratedHead(prefix) {
+  const head = prefix.split("\n").slice(0, MARKER_HEAD_LINES).join("\n");
   if (GENERATED_MARKER.test(head)) return true;
   return NOT_EDITABLE.test(head) && GENERATION_WORD.test(head);
 }
@@ -213,7 +205,7 @@ function generatedAttrRules(root) {
   const abs = safeResolve(root, ".gitattributes");
   if (!abs) return [];
   const rules = [];
-  for (const line of readPrefix(abs, ATTR_FILE_BYTES).split("\n")) {
+  for (const line of (readPrefix(abs, ATTR_FILE_BYTES) ?? "").split("\n")) {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith("#")) continue;
     const [pattern, ...attrs] = trimmed.split(/\s+/);
@@ -420,7 +412,12 @@ function classify(root, rel, generatedRules) {
   // A file that is generated must not contribute evidence to a stated
   // directive, whichever directory it sits in: the marker is read only once
   // the cheaper string checks above have already let the path through.
-  if (isAttrGenerated(generatedRules, rel) || isGeneratedFile(abs)) return { drop: "generated" };
+  if (isAttrGenerated(generatedRules, rel)) return { drop: "generated" };
+  const head = readPrefix(abs, MARKER_HEAD_BYTES);
+  // Not a regular file has no source to read, the same as a path that resolves
+  // nowhere: a fifo here held a parse worker until its watchdog fired.
+  if (head === null) return { drop: "escaped" };
+  if (isGeneratedHead(head)) return { drop: "generated" };
   return { abs };
 }
 

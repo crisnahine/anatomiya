@@ -583,9 +583,8 @@ function unquotePath(text) {
 
 /* --- analysis, run once at HEAD and once at the merge base --- */
 
-// What a check asks of a commit: eight blobs at a time, and the bytes kept in
-// the parent as well, because the report quotes them and resolves line numbers
-// against them.
+// What a check asks of a commit: the bytes kept in the parent as well, because
+// the report quotes them and resolves line numbers against them.
 const REVISION_READ = { withSource: true, timeout: GIT.checkTimeoutMs };
 
 /**

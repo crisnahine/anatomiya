@@ -286,7 +286,13 @@ export function readHead(path, bytes = HEAD_BYTES) {
     const want = Math.min(bytes, stat.size);
     if (want === 0) return { kind: "file", head: "", mtimeMs: stat.mtimeMs };
     const buf = Buffer.alloc(want);
-    const read = readSync(fd, buf, 0, want, 0);
+    // A read may return short, so it runs to the end of what was asked for.
+    let read = 0;
+    while (read < want) {
+      const n = readSync(fd, buf, read, want - read, read);
+      if (n === 0) break;
+      read += n;
+    }
     return { kind: "file", head: buf.subarray(0, read).toString("utf8"), mtimeMs: stat.mtimeMs };
   } catch {
     // A shape that will not open at all is still a shape, not an unreadable

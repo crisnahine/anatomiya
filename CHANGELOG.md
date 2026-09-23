@@ -12,11 +12,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - The overview could name different areas on two machines scanning the same repository. It lists
   areas in order until its line budget runs out, and that order came from the host's locale, so
   under `sv_SE` an area named `är` sorted after `zoo` and under `en_US` before it. Every list the map,
-  the pin and `check` print is now ordered by code point. A repository with upper-case or non-ASCII
+  the pin and `check` print is now ordered by UTF-16 code unit. A repository with upper-case or non-ASCII
   directory names sees its area lines reorder once, the same way on every machine.
 - `check` hung with nothing printed when a file the branch changed had become a fifo, and `scan` and
   `check` did the same on a fifo where the map's record or the pin belongs. Those reads now open
   without waiting and skip anything that is not a regular file, the way the hooks already did.
+  `scan` no longer hands the parser a tracked path that has become a fifo, where it waited out the
+  parse watchdog and was then reported as a file that crashed the parser.
 
 ## [0.10.1] - 2026-09-23
 

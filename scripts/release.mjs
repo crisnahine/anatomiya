@@ -252,7 +252,7 @@ function main(argv) {
   // released the right version and wrote no notes, and a typo read as a value
   // wrote them to a file named after it.
   const read = readArgv(argv, OPTIONS, { positionals: true });
-  if (read.error) refuse(read.error);
+  if (read.error) return refuse(read.error);
   // A flag whose path never arrived is refused rather than dropped: the caller
   // asked for a file to be written, and exiting 0 without writing it is the
   // failure this module exists to stop happening at a tag. Given twice, the
@@ -264,9 +264,9 @@ function main(argv) {
     return given[0] ?? null;
   });
   const [tag, second] = read.positionals;
-  if (!tag) refuse(null);
+  if (!tag) return refuse(null);
   // One tag, or the second is a release nobody was told did not happen.
-  if (second !== undefined) refuse(`only one tag may be given, and ${second} was the second`);
+  if (second !== undefined) return refuse(`only one tag may be given, and ${second} was the second`);
 
   const answered = notesFor(rootOf(root), tag);
   if (answered.problem !== null) {

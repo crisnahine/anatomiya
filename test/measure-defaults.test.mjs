@@ -325,7 +325,7 @@ test("a flag left without its value is refused, not read as the default", () => 
     const r = spawnSync(process.execPath, [join(root, "scripts", "measure-defaults.mjs"), flag], { encoding: "utf8" });
 
     assert.equal(r.status, 2, `${flag}: ${r.stderr}`);
-    assert.match(r.stderr, new RegExp(flag), `${flag}: ${r.stderr}`);
+    assert.match(r.stderr.split("\n")[0], new RegExp(`'${flag}\\b`), `${flag}: ${r.stderr}`);
   }
 });
 

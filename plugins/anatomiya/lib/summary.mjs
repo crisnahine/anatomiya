@@ -193,8 +193,6 @@ function encodeScan(s) {
     ...s,
     root: sanitisePath(s.root),
     historyError: s.historyError == null ? null : encode(s.historyError),
-    // Each of these passes one argument on purpose: `map` hands its callback an
-    // index, and `sanitisePath` reads a second argument as the cap.
     rules: {
       ...s.rules,
       foreign: s.rules.foreign.map((name) => sanitisePath(name)),
