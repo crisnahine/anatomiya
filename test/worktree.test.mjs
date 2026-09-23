@@ -5,7 +5,7 @@ import { join, relative } from "node:path";
 
 import { mainCheckoutOf } from "../plugins/anatomiya/lib/worktree.mjs";
 import { needsSymlinks } from "./platform.mjs";
-import { addWorktree, git, initWithCommit, scratch } from "./git-worktrees.mjs";
+import { addWorktree, git, initWithCommit, rewrite, scratch } from "./git-worktrees.mjs";
 
 /** A repository with one commit, and a directory beside it to put worktrees in. */
 function repo(t) {
@@ -39,8 +39,8 @@ test("git files spelled relative are read against where each one sits", (t) => {
   const { parent, main } = repo(t);
   const wt = addWorktree(main, join(parent, "wt"));
   const own = join(main, ".git", "worktrees", "wt");
-  writeFileSync(join(wt, ".git"), `gitdir: ${relative(wt, own)}\n`);
-  writeFileSync(join(own, "gitdir"), `${relative(own, join(wt, ".git"))}\n`);
+  rewrite(join(wt, ".git"), `gitdir: ${relative(wt, own)}\n`);
+  rewrite(join(own, "gitdir"), `${relative(own, join(wt, ".git"))}\n`);
 
   assert.equal(mainCheckoutOf(wt), main);
 });
@@ -60,7 +60,7 @@ test("registrations kept behind a link are still the repository's own", needsSym
 test("git reads the first line of the marker and nothing after it", (t) => {
   const { parent, main } = repo(t);
   const wt = addWorktree(main, join(parent, "wt"));
-  writeFileSync(join(wt, ".git"), `not a pointer\n${readFileSync(join(wt, ".git"), "utf8")}`);
+  rewrite(join(wt, ".git"), `not a pointer\n${readFileSync(join(wt, ".git"), "utf8")}`);
 
   assert.equal(mainCheckoutOf(wt), null);
 });

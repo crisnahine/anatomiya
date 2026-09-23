@@ -669,7 +669,10 @@ test("the way out of a mapless worktree, and where it leads, survive the report'
 
   const r = await check(wt, { baseRef: "main" });
 
-  for (const rendered of [formatReport(r), formatReportJson(r)]) {
+  // Read out of the JSON rather than searched in it, where a Windows path's
+  // backslashes arrive escaped.
+  const noMap = JSON.parse(formatReportJson(r)).caveats.find((c) => c.code === CAVEATS.NO_MAP).message;
+  for (const rendered of [formatReport(r), noMap]) {
     assert.match(rendered, /run `?anatomiya scan \.`? here/);
     assert.ok(rendered.includes(main), "and the checkout it names is there whole");
   }

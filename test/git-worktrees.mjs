@@ -35,3 +35,12 @@ export function addWorktree(main, at, branch = null) {
   git(main, "worktree", "add", "-q", ...(branch === null ? ["--detach"] : ["-b", branch]), at);
   return at;
 }
+
+/**
+ * Replace a file's contents. Git on Windows marks a worktree's `.git` file
+ * hidden, and opening a hidden file to truncate it is refused with EPERM.
+ */
+export function rewrite(path, text) {
+  rmSync(path, { force: true });
+  writeFileSync(path, text);
+}
