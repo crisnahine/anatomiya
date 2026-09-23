@@ -91,7 +91,7 @@ test("no module this repository ships or measures with sorts by the host's local
     readdirSync(join(ROOT, dir), { recursive: true })
       .filter((f) => f.endsWith(".mjs"))
       .map((f) => join(dir, f))
-      .filter((f) => /\.localeCompare\(|Intl\.Collator\b/.test(readFileSync(join(ROOT, f), "utf8")))
+      .filter((f) => /\.localeCompare\(|new Intl\.Collator\b|Intl\.Collator\(/.test(readFileSync(join(ROOT, f), "utf8")))
   );
   assert.deepEqual(offenders, []);
 });

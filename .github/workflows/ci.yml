@@ -298,7 +298,7 @@ jobs:
             if (!claimed) problems.push("the scan printed no \"wrote N file(s)\" line");
             for (const p of problems) console.error(`::error::${p}`);
             if (problems.length) process.exit(1);
-            console.log(`${written.size} files written, each within the bound and none with a bare /** glob`);
+            console.log(`${written.size} files written, and every check the corpus run makes of them held`);
           '
 
       # A5 end to end. The overview loads on every turn, so it is only affordable

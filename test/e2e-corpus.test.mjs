@@ -421,8 +421,10 @@ test("what a scan wrote is held to the count it printed and to every rule the co
   assert.equal(good.facts.schema, FACTS_SCHEMA);
 
   assert.match(writtenProblems(repo, 3).problems.join("\n"), /says it wrote 3 files/);
+  writeFileSync(join(repo, FACTS_PATH), "{ half a record");
+  assert.deepEqual(writtenProblems(repo, 2).problems, [`no readable ${FACTS_PATH} was written`]);
   rmSync(join(repo, FACTS_PATH));
-  assert.deepEqual(writtenProblems(repo, 2).problems, [`no ${FACTS_PATH} was written`]);
+  assert.deepEqual(writtenProblems(repo, 2).problems, [`no readable ${FACTS_PATH} was written`]);
   rmSync(join(repo, ".claude/rules/anatomiya-overview.md"));
   assert.match(writtenProblems(repo, 1).problems.join("\n"), /no anatomiya-overview\.md was written/);
 });
