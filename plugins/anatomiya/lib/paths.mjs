@@ -54,7 +54,8 @@ export const withoutExtension = (rel) => {
 };
 
 /**
- * Order by code point, for anything a reader sees or a file records.
+ * Order by UTF-16 code unit, which is what `<` compares, for anything a reader
+ * sees or a file records.
  *
  * `localeCompare` orders by the host's locale and ICU tables, so two machines
  * rendered two maps from one repository, and a list the overview cuts to its

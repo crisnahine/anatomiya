@@ -43,7 +43,7 @@ test("the job answers built, one record per file and done, in that order", needs
   }
 });
 
-test("a file is answered with every type-checked row", needsTs, async () => {
+test("a file is answered with the one type-checked row there is", needsTs, async () => {
   const dir = repo({ "tsconfig.json": config, "a.ts": `export const x = " a ".trim().toLowerCase();` });
   try {
     const out = await sent({ root: dir, files: [{ rel: "a.ts", abs: join(dir, "a.ts") }] });

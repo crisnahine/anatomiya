@@ -1,5 +1,6 @@
 /**
- * What a script's entry point settles before it does any work.
+ * What a script settles from its own command line before it does any work:
+ * whether it was the file run, its flags, and the corpus and output it names.
  *
  * Lives here rather than in `lib/`, because nothing the plugin ships needs it:
  * `plugins/anatomiya/bin/anatomiya.mjs` runs at module scope on purpose.

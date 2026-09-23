@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { needsPosixPaths } from "./platform.mjs";
+import { needsPosixPaths, needsPosixSpecialFiles } from "./platform.mjs";
 import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, rmSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, isAbsolute, sep } from "node:path";
@@ -1118,7 +1118,7 @@ test("a repository with no .gitattributes reads as having no generated declarati
   assert.deepEqual(files.map((f) => f.rel), ["src/a.ts"]);
 });
 
-test("areas list in code-point order, so the host's locale cannot pick which ones the overview names", () => {
+test("areas list in code-unit order, so the host's locale cannot pick which ones the overview names", () => {
   // The overview names areas in this order until its budget runs out, and
   // `localeCompare` put `ä` before `B` under en_US and after `z` under sv_SE.
   const areas = discover(
@@ -1127,3 +1127,23 @@ test("areas list in code-point order, so the host's locale cannot pick which one
   );
   assert.deepEqual(areas.map((a) => a.path), ["B", "a", "ä"]);
 });
+
+test("a tracked path that is a fifo in the working tree is dropped, not handed to a parser", needsPosixSpecialFiles, async (t) => {
+  // It has no source to read, the same as a tracked file that is gone. Handed
+  // on, it held a parse worker until the watchdog fired and was then reported
+  // as a file that crashed the parser.
+  const dir = repo(t, (d, { git, write }) => {
+    write("src/a.ts");
+    write("src/b.ts");
+    git("add", "-A");
+    git("commit", "-qm", "init");
+  });
+  rmSync(join(dir, "src/b.ts"));
+  execFileSync("mkfifo", [join(dir, "src/b.ts")]);
+
+  const { files, dropped } = await collect(dir);
+
+  assert.deepEqual(files.map((f) => f.rel), ["src/a.ts"]);
+  assert.equal(dropped.escaped, 1);
+});
+

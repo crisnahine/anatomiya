@@ -3945,7 +3945,7 @@ test("a shallow clone with no base named still degrades rather than refusing", a
   assert.ok(codesOf(r).includes(CAVEATS.SHALLOW_UNFETCHED), JSON.stringify(codesOf(r)));
 });
 
-test("findings of one severity order by code point, not by the host's locale", async (t) => {
+test("findings of one severity order by code unit, not by the host's locale", async (t) => {
   const dir = repo(t, ({ git, write, commit }) => {
     write("tools/a.ts", clean(2));
     write("tools/B.ts", clean(2));

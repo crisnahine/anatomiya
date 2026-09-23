@@ -194,7 +194,7 @@ test("every path comes back, sorted, whatever order the readers finished in", as
   assert.ok(out.files[0].abs.endsWith(join("src", "f00.js")));
 });
 
-test("the files come back in code-point order, not the host's locale", async (t) => {
+test("the files come back in code-unit order, not the host's locale", async (t) => {
   let sha;
   const dir = repo(t, (d, { write, commit }) => {
     for (const rel of ["a.js", "B.js", "ä.js"]) write(rel, FIRST);
