@@ -29,9 +29,10 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync,
 import { basename, dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { invokedAs } from "./entry.mjs";
+import { invokedAs, readArgv, selectRepos } from "./entry.mjs";
 import { BINARY, REL } from "./plugins.mjs";
 import { isSource } from "../plugins/anatomiya/lib/corpus.mjs";
+import { byCode } from "../plugins/anatomiya/lib/paths.mjs";
 import { language } from "../plugins/anatomiya/lib/langs.mjs";
 import { CLASSES } from "../plugins/anatomiya/lib/dimensions-naming.mjs";
 import { rowByKey } from "../plugins/anatomiya/lib/registry.mjs";
@@ -146,6 +147,12 @@ export function areaProblems(name, text) {
   const globs = lines.filter((l) => /^ {2}- /.test(l)).length;
   const at = lines.slice(0, end).indexOf("paths:");
   if (at === -1 || globs === 0) problems.push(`${JSON.stringify(name)} has no paths pattern, so it loads on every turn`);
+  // The matcher strips a trailing /** before matching, so "app/**" excludes the
+  // directory itself and an exclusion written under it silently does nothing.
+  for (const line of lines.slice(0, end)) {
+    const glob = line.match(/^ {2}- "(.+)"$/)?.[1];
+    if (glob?.endsWith("/**")) problems.push(`${JSON.stringify(name)} has a glob ending in a bare /**: ${glob}`);
+  }
 
   const body = lines.length - end;
   if (body > MAX_LINES) problems.push(`${JSON.stringify(name)} has ${body} body lines, past ${MAX_LINES}`);
@@ -287,43 +294,17 @@ const USAGE = `usage: node scripts/e2e-corpus.mjs <corpusDir> <scratchDir> [opti
 `;
 
 export function parseArgs(argv) {
-  const opts = { corpus: null, scratch: null, only: null };
-  const positional = [];
-  for (let i = 0; i < argv.length; i++) {
-    const arg = argv[i];
-    if (arg === "--only") {
-      // Last on the line it read nothing and ran all thirty-six, which is an
-      // hour of clones for a run that asked for one repository.
-      if (i + 1 >= argv.length) return { error: "--only needs a comma-separated list of repository names" };
-      opts.only = argv[++i];
-      continue;
-    }
-    if (arg.startsWith("-")) return { error: `unknown option: ${arg}` };
-    positional.push(arg);
-  }
-  if (positional.length === 0) return { error: "the corpus directory is required" };
-  if (positional.length === 1) return { error: "the scratch directory is required" };
-  return { ...opts, corpus: positional[0], scratch: positional[1] };
+  const read = readArgv(argv, { only: { type: "string" } }, { positionals: true });
+  if (read.error) return read;
+  const [corpus, scratch, ...rest] = read.positionals;
+  if (corpus === undefined) return { error: "the corpus directory is required" };
+  if (scratch === undefined) return { error: "the scratch directory is required" };
+  if (rest.length > 0) return { error: "two directories, the corpus and the scratch, not more" };
+  return { corpus, scratch, only: read.values.only ?? null };
 }
 
-/**
- * The repositories the run covers, or the names `--only` asked for that the
- * corpus does not hold.
- *
- * A typo used to select nothing and print `0 of 0 repositories passed`, which
- * is exit 0 and reads as an acceptance of the corpus it never ran.
- */
-export function selectRepos(repos, only) {
-  if (only === null) return { repos };
-  const wanted = only.split(",");
-  const missing = wanted.filter((name) => !repos.some((r) => r.name === name));
-  if (missing.length) return { error: `--only ${only}: the corpus holds no repository named ${missing.join(", ")}` };
-  return { repos: repos.filter((r) => wanted.includes(r.name)) };
-}
-
-// The order both measurement documents record the corpus in. Code units, not
-// locale: ICU orders case by whatever tables the host was built with.
-export const byName = (a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
+// The order both measurement documents record the corpus in.
+export const byName = (a, b) => byCode(a.name, b.name);
 
 /**
  * Every child of the corpus directory that is a git repository, or why the path
@@ -449,6 +430,27 @@ function sameFiles(a, b) {
   return true;
 }
 
+/**
+ * What a scan left in a repository, held to the count it printed and to every
+ * rule above, with the rule files and the record it read so a caller can keep
+ * comparing them.
+ */
+export function writtenProblems(repo, wrote) {
+  const problems = [];
+  const overview = join(repo, RULES_DIR, OVERVIEW_FILE);
+  if (!existsSync(overview)) problems.push(`no ${OVERVIEW_FILE} was written`);
+  else problems.push(...overviewProblems(readFileSync(overview, "utf8")));
+  const written = ruleFiles(repo);
+  for (const [n, body] of written) if (n !== OVERVIEW_FILE) problems.push(...areaProblems(n, body));
+  problems.push(...wroteProblems(wrote, [...written.keys()]));
+
+  const factsFile = join(repo, FACTS_PATH);
+  const facts = existsSync(factsFile) ? JSON.parse(readFileSync(factsFile, "utf8")) : null;
+  if (facts === null) problems.push(`no ${FACTS_PATH} was written`);
+  else problems.push(...factsProblems(facts));
+  return { problems, written, facts };
+}
+
 /** The whole flow for one repository, on a clone that is removed either way. */
 async function runRepo(name, source, scratchDir) {
   const clone = join(scratchDir, name);
@@ -495,19 +497,10 @@ async function runRepo(name, source, scratchDir) {
     for (const p of rootsProblems(s1)) fail(p);
 
     const overview = join(clone, RULES_DIR, OVERVIEW_FILE);
-    if (!existsSync(overview)) fail(`no ${OVERVIEW_FILE} was written`);
-    else for (const p of overviewProblems(readFileSync(overview, "utf8"))) fail(p);
-    const written = ruleFiles(clone);
-    for (const [n, body] of written) if (n !== OVERVIEW_FILE) for (const p of areaProblems(n, body)) fail(p);
-    for (const p of wroteProblems(s1.wrote, [...written.keys()])) fail(p);
-
     const factsFile = join(clone, FACTS_PATH);
-    if (!existsSync(factsFile)) fail(`no ${FACTS_PATH} was written`);
-    else {
-      const facts = JSON.parse(readFileSync(factsFile, "utf8"));
-      for (const p of factsProblems(facts)) fail(p);
-      row.roots = rootsColumn(rootsPrinted(s1), rosterCounts(facts));
-    }
+    const { problems: wrongs, written, facts } = writtenProblems(clone, s1.wrote);
+    for (const p of wrongs) fail(p);
+    if (facts !== null) row.roots = rootsColumn(rootsPrinted(s1), rosterCounts(facts));
 
     /* 3: the same source twice, byte for byte, or the map is not worth a
        cached read. */

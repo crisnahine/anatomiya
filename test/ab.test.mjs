@@ -783,8 +783,10 @@ test("the argument gate answers in process, with the engine folded in", async ()
   });
   assert.deepEqual(parseArgs(["--repo", "r", "--task", "t", "--model", "m", "--effort", "high", "--trials", "3"]).engine, { model: "m", effort: "high" });
   assert.deepEqual(parseArgs([]), { error: "both --repo and --task are required" });
-  assert.deepEqual(parseArgs(["--repo"]), { error: "--repo takes a value" });
-  assert.deepEqual(parseArgs(["--repo", "r", "--task", "t", "--bogus", "1"]), { error: "unknown option --bogus" });
+  assert.match(parseArgs(["--repo"]).error, /--repo/);
+  assert.equal(parseArgs(["--repo", "r", "--task", "t", "--bogus", "1"]).code, "ERR_PARSE_ARGS_UNKNOWN_OPTION");
+  assert.equal(parseArgs(["--repo", "r", "--task", "t", "stray"]).code, "ERR_PARSE_ARGS_UNEXPECTED_POSITIONAL");
+  assert.equal(parseArgs(["--repo=r", "--task=t"]).repo, "r");
   assert.deepEqual(parseArgs(["--repo", "r", "--task", "t", "--trials", "0"]), { error: "--trials takes a positive integer" });
   assert.match(parseArgs(["--repo", "r", "--task", "t", "--effort", "med"]).error, /--effort takes one of low, medium, high, xhigh, max, not "med"/);
   // NaN compares false against every headroom, which switches the floor off
@@ -798,7 +800,7 @@ test("the usage text names every option the gate takes", async () => {
   const { parseArgs, USAGE } = await import("../scripts/ab/args.mjs");
   for (const flag of ["--repo", "--task", "--trials", "--model", "--effort", "--out", "--min-headroom", "--key", "--area"]) {
     assert.ok(USAGE.includes(`${flag} `), `${flag} is missing from the usage text`);
-    assert.notEqual(parseArgs(["--repo", "r", "--task", "t", flag, "1"]).error, `unknown option ${flag}`, `${flag} is documented but refused`);
+    assert.notEqual(parseArgs(["--repo", "r", "--task", "t", flag, "1"]).code, "ERR_PARSE_ARGS_UNKNOWN_OPTION", `${flag} is documented but refused`);
   }
 });
 
