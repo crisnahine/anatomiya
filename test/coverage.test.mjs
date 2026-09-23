@@ -133,15 +133,9 @@ test("this repository's own floors are the measured ones", () => {
       file: {},
     },
     {
-      scope: "ultracode-anywhere",
-      include: `${REL.ultracode}/**`,
-      whole: { lines: 95, branches: 87, functions: 97 },
-      file: { lines: 92, branches: 75, functions: 90 },
-    },
-    {
       // Named for the plugin as well as the directory: the scope name is
-      // printed into the job summary beside `ultracode-anywhere`, where a bare
-      // `lib` names nothing a reader of that summary can go and look at.
+      // printed into the job summary, where a bare `lib` names nothing a reader
+      // of that summary can go and look at.
       scope: "anatomiya lib",
       include: `${REL.anatomiya}/lib/**`,
       whole: {},
@@ -181,20 +175,19 @@ test("every scope is stated on a run that misses a floor, not only on one that c
   // The job pipes this to a file and puts the summary in front of whoever broke
   // the build. Printing the scopes only on the way out of a clean run left that
   // summary empty on exactly the runs it exists for. The throwaway suite loads
-  // one file of two of the scopes and exercises none of it, so those two are
-  // missed on a percentage rather than on an empty report; the third says it
-  // measured nothing, which is the other half of the same summary.
+  // one file of one scope and exercises none of it, so that one is missed on a
+  // percentage rather than on an empty report; the other says it measured
+  // nothing, which is the other half of the same summary.
   // As `file://` URLs, not as paths: a path is a specifier only where it starts
   // with a slash, and on Windows `D:\a\...` is read as a package name, so the
   // throwaway suite failed to load and the run said nothing about any scope.
-  const loads = [new URL("../scripts/entry.mjs", import.meta.url).href,
-                 new URL("../plugins/ultracode-anywhere/hooks/hook-io.mjs", import.meta.url).href];
+  const loads = [new URL("../scripts/entry.mjs", import.meta.url).href];
   const { status, lines, stderr, said } = measured(
     t,
     `import { test } from "node:test";\n${loads.map((at) => `import ${JSON.stringify(at)};`).join("\n")}\ntest("t", () => {});\n`,
   );
 
-  assert.notEqual(status, 0, "a run that loads two files and calls neither cannot be clearing the floors");
+  assert.notEqual(status, 0, "a run that loads a file and calls none of it cannot be clearing the floors");
   assert.equal(lines.length, FLOORS.length, `stated ${lines.length} of ${FLOORS.length} scopes\n${said}`);
   for (const floor of FLOORS) {
     assert.ok(lines.some((line) => line.includes(floor.scope)), `${floor.scope} went unstated`);

@@ -11,8 +11,7 @@ test("the host's Claude Code and plugin settings never reach a case, and everyth
     CLAUDE_CONFIG_DIR: "/x",
     CLAUDE_CODE_DISABLE_WORKFLOWS: "1",
     CLAUDE_CODE_EXECPATH: "/cli",
-    ULTRACODE_ANYWHERE: "0",
-    ULTRACODE_ANYWHERE_STAGE_EFFORT: "medium",
+    AI_AGENT: "claude",
   };
 
   assert.deepEqual(hostEnv(given), { PATH: "p", HOME: "h", OTHER: "1" });

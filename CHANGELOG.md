@@ -7,6 +7,33 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-09-23
+
+The marketplace listed two plugins that shared a repository and nothing else. It lists one now, and
+what is left is the scanner, its tooling and its gates. The one piece anatomiya's own measurement
+harness read from the second plugin moved beside the harness, and the two gates whose rule rested on
+there being two plugins were rewritten to rest on what a plugin root holds instead.
+
+### Removed
+
+- The second plugin this marketplace listed, `ultracode-anywhere`, and everything that served it: its
+  directory, its tests, `scripts/workflow-lint.mjs` and the workflow harness under `test/`, its
+  release entry and tag pattern, its coverage scope, its decision rows, and the prose that named it.
+  The marketplace lists one plugin now and the bare `v` tag is the only one that releases anything.
+
+### Changed
+
+- `settingsFor` and the reader that finds the installed Claude Code build live in
+  `scripts/claude-build.mjs`, which is what the measurement harness and its suite read; they used to
+  sit inside the removed plugin.
+- A plugin's release problems are reported against its `.claude-plugin/plugin.json` rather than its
+  `package.json`: node reads that file while resolving the plugin's own dependencies and refuses to
+  start on one that is not an object, so a gate naming it could never print the sentence.
+- The docs gate exempts the two paths the plugin contract names, `.claude-plugin/plugin.json` and
+  `hooks/hooks.json`, instead of inferring the exemption from two plugins holding the same tail. The
+  exemption is the plugin's own copy rather than the name, so a file with one of those tails that
+  moves anywhere else is still reported.
+
 ## [0.8.0] - 2026-09-15
 
 A third hook: at the end of a turn that added source code in a scanned repository, anatomiya asks once
@@ -2512,7 +2539,8 @@ which are partial; several listed there are not implemented yet.
 - No claim that this catches defects. Measured across ten repositories, 1 of 317 defect review
   comments was preventable by a conventions map.
 
-[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/crisnahine/anatomiya/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/crisnahine/anatomiya/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/crisnahine/anatomiya/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/crisnahine/anatomiya/compare/v0.5.0...v0.6.0

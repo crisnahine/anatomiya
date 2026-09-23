@@ -498,3 +498,9 @@ already carry an uncommitted `aboutDir(payload) ?? cwd` on both hooks. It reads
 `tool_input.file_path` only and requires it absolute, so on this build it covers `Read`, `Write` and
 `Edit`, and falls back to `cwd` for `NotebookEdit`, `Glob`, `Grep` and a relative path. That is a
 correct subset, not a complete one, and the gap is the four rows above.
+
+## Addendum, 2026-09-22
+
+`plugins/ultracode-anywhere/` was removed from this repository. The build reader this note
+cites (`cliPath`, `MIN_BUNDLE`, `settingsFor`) lives at `scripts/claude-build.mjs` now; the
+paths above are where it sat when the measurements were taken.

@@ -22,7 +22,7 @@ import { rankAreas, NO_HEADROOM } from "./ab/pick.mjs";
 import { buildArms, installMap, probeFor } from "./ab/arms.mjs";
 import { runTrial } from "./ab/run.mjs";
 import { conflictingSettings, engineRan } from "./ab/engine.mjs";
-import { settingsFor } from "../plugins/ultracode-anywhere/hooks/upstream.mjs";
+import { settingsFor } from "./claude-build.mjs";
 import { scoreArm } from "./ab/score.mjs";
 import { render } from "./ab/render.mjs";
 import { repoLabel } from "./ab/label.mjs";

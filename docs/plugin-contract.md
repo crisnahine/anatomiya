@@ -2,8 +2,8 @@
 
 What Claude Code actually requires of `.claude-plugin/marketplace.json` and `plugins/<name>/.claude-plugin/plugin.json`,
 as of CLI 2.1.241 and the documentation served on 2026-08-23, except where a line names the build it
-was measured on. This page is not on the plugin's re-check list, so it ages where `VERIFYING.md` does
-not.
+was measured on. Nothing re-reads it on a schedule, so it ages: a line here is true of the build it
+names and of nothing later.
 
 Every claim below carries its source. Three kinds of source were used, and nothing else:
 
@@ -687,7 +687,6 @@ Yes, structurally, on disk. Each version is its own directory,
 
 ```
 ~/.claude/plugins/cache/crisnahine/anatomiya/0.2.13/
-~/.claude/plugins/cache/crisnahine/ultracode-anywhere/0.1.0/
 ```
 
 `<cache>/<marketplace>/<plugin>/<version>/`. Two plugins from one marketplace occupy two independent trees.
@@ -719,32 +718,20 @@ decouples them.
 ## What this repository does that the contract does not require
 
 Read from this repository's own `.claude-plugin/marketplace.json`,
-`plugins/anatomiya/.claude-plugin/plugin.json`,
-`plugins/ultracode-anywhere/.claude-plugin/plugin.json` and `plugins/anatomiya/hooks/hooks.json`.
+`plugins/anatomiya/.claude-plugin/plugin.json` and `plugins/anatomiya/hooks/hooks.json`.
 
-**Each plugin is a directory under `plugins/`, and neither is the repository.** `anatomiya` is
-`"source": "./plugins/anatomiya"` and `ultracode-anywhere` is `"source": "./plugins/ultracode-anywhere"`.
+**The plugin is a directory under `plugins/`, and it is not the repository.** `anatomiya` is
+`"source": "./plugins/anatomiya"`.
 That is what this section used to record the other way round, and the measurement is why it changed:
 `anatomiya` was `"source": "./"`, which the contract permits (section 1) and Anthropic's own marketplace
 never does, and what landed in the cache was verified on disk at
 `~/.claude/plugins/cache/crisnahine/anatomiya/0.2.13/` as the entire repository, including `test/`
-(72 entries), `docs/`, `scripts/`, `node_modules/`, `DECISIONS.md` at 246 KB, `CHANGELOG.md` at 124 KB, and
-the sibling plugin itself, so a user who installed both held two copies of one of them. A source naming a
-directory copies that directory, which is the fix and is now what each entry does.
+(72 entries), `docs/`, `scripts/`, `node_modules/`, `DECISIONS.md` at 246 KB and `CHANGELOG.md` at 124 KB.
+A source naming a directory copies that directory, which is the fix and is now what the entry does.
 
-**`ultracode-anywhere` declares its hooks in its own `hooks/hooks.json`**, each one `node` on a file
-under `${CLAUDE_PLUGIN_ROOT}` with a bound of its own: the reminder and the spawn hold's prompt check
-on `UserPromptSubmit`, the spawn hold's tool check on `PreToolUse` with no matcher, so a tool the hold
-does not know by name is still read, and the session notice on `SessionStart`. A plugin's hooks run
-beside the user's own, in parallel, and the hooks reference, read against Claude Code 2.1.270, says
-nothing about which `updatedInput` wins when two hooks rewrite one call, which is why the spawn hold
-is a switch and a second hook that rewrites spawns should not be on at the same time.
-
-**Both plugins pin an explicit `version`, at different values** (0.3.0 and 0.1.1), and the
-marketplace itself has none: it publishes nothing, so a number there is one more thing to keep in
-step and one more thing to mistake for a plugin's. Not required, and the
-mixed values are fine (section 6). Because they share one commit SHA, pinning is what keeps a commit to one
-plugin from re-versioning the other.
+**The plugin pins an explicit `version`** and the marketplace itself has none: it publishes nothing,
+so a number there is one more thing to keep in step and one more thing to mistake for a plugin's.
+Not required (section 6).
 
 **Hooks use shell form with a quoted variable and a short timeout.** `plugins/anatomiya/hooks/hooks.json`
 runs `node "${CLAUDE_PLUGIN_ROOT}/bin/anatomiya.mjs" echo` on three events and the same binary's `notice`

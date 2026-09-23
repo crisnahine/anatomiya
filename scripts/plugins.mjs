@@ -15,7 +15,6 @@ import { join } from "node:path";
 /** Every path here is repository-relative as well, for a gate that reports one. */
 export const REL = {
   anatomiya: "plugins/anatomiya",
-  ultracode: "plugins/ultracode-anywhere",
 };
 
 /** The marketplace: the repository this file lives in. */
@@ -26,9 +25,6 @@ const PLUGINS = join(ROOT, "plugins");
 
 /** The scanner. */
 export const ANATOMIYA = join(PLUGINS, "anatomiya");
-
-/** The plugin that keeps standing orchestration on. */
-export const ULTRACODE = join(PLUGINS, "ultracode-anywhere");
 
 /** The binary a session runs, and the one every end-to-end case drives. */
 export const BINARY = join(ANATOMIYA, "bin", "anatomiya.mjs");
