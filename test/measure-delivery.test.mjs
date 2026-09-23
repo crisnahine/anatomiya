@@ -123,4 +123,3 @@ test("the transcript directory is required and an unknown option is refused", ()
   // A second directory was taken over the first without a word.
   assert.match(parseArgs(["one", "two"]).error, /one transcript directory/);
 });
-

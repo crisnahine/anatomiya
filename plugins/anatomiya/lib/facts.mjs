@@ -209,7 +209,7 @@ const RECORD_MOST = 64 * 1024 * 1024;
 export function readRecord(path) {
   const entry = readHead(path, RECORD_MOST + 1);
   if (entry.kind !== "file") return { record: null, oversize: false };
-  if (Buffer.byteLength(entry.head) > RECORD_MOST) return { record: null, oversize: true };
+  if (entry.size > RECORD_MOST) return { record: null, oversize: true };
   try {
     return { record: JSON.parse(entry.head), oversize: false };
   } catch {

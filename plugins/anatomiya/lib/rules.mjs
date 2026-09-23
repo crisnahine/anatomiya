@@ -270,7 +270,9 @@ function contains(base, target) {
  * and pointed at `/dev/zero` the read never returned at all.
  *
  * The buffer is the smaller of the cap and the file, so an ordinary five-line
- * rule file costs five lines and only a large one pays the cap.
+ * rule file costs five lines and only a large one pays the cap. `size` is the
+ * file's bytes on disk: a cap asked of the decoded head counts each byte that
+ * is not UTF-8 three times.
  */
 export function readHead(path, bytes = HEAD_BYTES) {
   let fd;
@@ -284,7 +286,7 @@ export function readHead(path, bytes = HEAD_BYTES) {
     const stat = fstatSync(fd);
     if (!stat.isFile()) return { kind: "other" };
     const want = Math.min(bytes, stat.size);
-    if (want === 0) return { kind: "file", head: "", mtimeMs: stat.mtimeMs };
+    if (want === 0) return { kind: "file", head: "", size: stat.size, mtimeMs: stat.mtimeMs };
     const buf = Buffer.alloc(want);
     // A read may return short, so it runs to the end of what was asked for.
     let read = 0;
@@ -293,7 +295,7 @@ export function readHead(path, bytes = HEAD_BYTES) {
       if (n === 0) break;
       read += n;
     }
-    return { kind: "file", head: buf.subarray(0, read).toString("utf8"), mtimeMs: stat.mtimeMs };
+    return { kind: "file", head: buf.subarray(0, read).toString("utf8"), size: stat.size, mtimeMs: stat.mtimeMs };
   } catch {
     // A shape that will not open at all is still a shape, not an unreadable
     // file: a socket refuses everywhere, under an errno that differs per

@@ -126,7 +126,7 @@ export function overviewProblems(text) {
   const problems = [];
   const lines = text.trimEnd().split("\n");
   const end = frontmatterEnd(lines);
-  if (lines.slice(0, end).includes("paths:")) {
+  if (lines.slice(0, end).some((l) => /^\s*paths\s*:/.test(l))) {
     problems.push("the overview carries a paths key, so it no longer loads on every turn");
   }
   const body = lines.length - end;

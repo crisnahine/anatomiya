@@ -292,4 +292,3 @@ test("a corpus directory that cannot be listed is refused by name, not with a st
   assert.match(run.stderr.split("\n")[0], /anatomiya-no-such-corpus cannot be listed/);
   assert.doesNotMatch(run.stderr, /\n\s+at /, "no stack trace");
 });
-
