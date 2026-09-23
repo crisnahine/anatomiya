@@ -163,15 +163,6 @@ const GENERATION_WORD = /generated|generator/i;
 const MARKER_HEAD_BYTES = 4096;
 const ATTR_FILE_BYTES = 65536;
 
-/**
- * The first bytes of a regular file, null for an entry that is not one (a fifo,
- * a socket, a directory), and "" for a path that has vanished or refuses to open.
- */
-function readPrefix(path, bytes) {
-  const entry = readHead(path, bytes);
-  return entry.kind === "file" ? entry.head : entry.kind === "other" ? null : "";
-}
-
 // Lines rather than bytes, so a module that documents these markers is safe by
 // where a generator stamps rather than by how much comment happens to sit above
 // its own constants: this tool's own `corpus.mjs` cleared the byte cap by 1,756
@@ -180,10 +171,6 @@ function readPrefix(path, bytes) {
 const MARKER_HEAD_LINES = 10;
 
 /** Whether a file's own head carries a generated-file marker. */
-export function isGeneratedFile(absPath) {
-  return isGeneratedHead(readPrefix(absPath, MARKER_HEAD_BYTES) ?? "");
-}
-
 function isGeneratedHead(prefix) {
   const head = prefix.split("\n").slice(0, MARKER_HEAD_LINES).join("\n");
   if (GENERATED_MARKER.test(head)) return true;
@@ -205,7 +192,8 @@ function generatedAttrRules(root) {
   const abs = safeResolve(root, ".gitattributes");
   if (!abs) return [];
   const rules = [];
-  for (const line of (readPrefix(abs, ATTR_FILE_BYTES) ?? "").split("\n")) {
+  const attrs = readHead(abs, ATTR_FILE_BYTES);
+  for (const line of (attrs.kind === "file" ? attrs.head : "").split("\n")) {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith("#")) continue;
     const [pattern, ...attrs] = trimmed.split(/\s+/);
@@ -342,8 +330,9 @@ export async function gitRoot(cwd) {
 }
 
 /**
- * The corpus: tracked source files, deny-listed paths removed, symlinks and
- * paths escaping the repository dropped.
+ * The corpus: tracked source files, deny-listed paths removed. A symlink, a
+ * path escaping the repository, one that is gone and one that is not a regular
+ * file are dropped together, as `escaped`.
  *
  * `git ls-files -z` is NUL-delimited because git permits newlines in paths, and
  * a newline-split here would turn one hostile filename into two corpus entries.
@@ -413,11 +402,11 @@ function classify(root, rel, generatedRules) {
   // directive, whichever directory it sits in: the marker is read only once
   // the cheaper string checks above have already let the path through.
   if (isAttrGenerated(generatedRules, rel)) return { drop: "generated" };
-  const head = readPrefix(abs, MARKER_HEAD_BYTES);
+  const entry = readHead(abs, MARKER_HEAD_BYTES);
   // Not a regular file has no source to read, the same as a path that resolves
   // nowhere: a fifo here held a parse worker until its watchdog fired.
-  if (head === null) return { drop: "escaped" };
-  if (isGeneratedHead(head)) return { drop: "generated" };
+  if (entry.kind === "other") return { drop: "escaped" };
+  if (entry.kind === "file" && isGeneratedHead(entry.head)) return { drop: "generated" };
   return { abs };
 }
 

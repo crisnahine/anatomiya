@@ -36,7 +36,7 @@ import { byCode } from "../plugins/anatomiya/lib/paths.mjs";
 import { language } from "../plugins/anatomiya/lib/langs.mjs";
 import { CLASSES } from "../plugins/anatomiya/lib/dimensions-naming.mjs";
 import { rowByKey } from "../plugins/anatomiya/lib/registry.mjs";
-import { FACTS_PATH, FACTS_SCHEMA, statedSide } from "../plugins/anatomiya/lib/facts.mjs";
+import { FACTS_PATH, FACTS_SCHEMA, readRecord, statedSide } from "../plugins/anatomiya/lib/facts.mjs";
 import { PIN_PATH } from "../plugins/anatomiya/lib/baseline.mjs";
 import { MAX_LINES } from "../plugins/anatomiya/lib/render.mjs";
 import { isGeneratedName, OVERVIEW_FILE, RULES_DIR } from "../plugins/anatomiya/lib/rules.mjs";
@@ -444,9 +444,8 @@ export function writtenProblems(repo, wrote) {
   for (const [n, body] of written) if (n !== OVERVIEW_FILE) problems.push(...areaProblems(n, body));
   problems.push(...wroteProblems(wrote, [...written.keys()]));
 
-  const factsFile = join(repo, FACTS_PATH);
-  const facts = existsSync(factsFile) ? JSON.parse(readFileSync(factsFile, "utf8")) : null;
-  if (facts === null) problems.push(`no ${FACTS_PATH} was written`);
+  const facts = readRecord(join(repo, FACTS_PATH));
+  if (facts === null) problems.push(`no readable ${FACTS_PATH} was written`);
   else problems.push(...factsProblems(facts));
   return { problems, written, facts };
 }

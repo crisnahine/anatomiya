@@ -257,12 +257,14 @@ function main(argv) {
   // asked for a file to be written, and exiting 0 without writing it is the
   // failure this module exists to stop happening at a tag. Given twice, the
   // first path would be dropped and the step reading it would find nothing.
-  const [notes, output, root] = ["notes", "github-output", "root"].map((name) => {
+  const paths = {};
+  for (const name of ["notes", "github-output", "root"]) {
     const given = read.values[name] ?? [];
-    if (given.length > 1) refuse(`--${name} was given twice, and only one path can be written`);
-    if (given[0] === "") refuse(`--${name} needs a path`);
-    return given[0] ?? null;
-  });
+    if (given.length > 1) return refuse(`--${name} was given twice, and only one path can be written`);
+    if (given[0] === "") return refuse(`--${name} needs a path`);
+    paths[name] = given[0] ?? null;
+  }
+  const { notes, "github-output": output, root } = paths;
   const [tag, second] = read.positionals;
   if (!tag) return refuse(null);
   // One tag, or the second is a release nobody was told did not happen.

@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join, isAbsolute, sep } from "node:path";
 import { execFileSync } from "node:child_process";
 
-import { collect, countUntrackedSource, isDenied, isCorpusPath, isExcludedDir, isGeneratedFile, isSource, safeResolve, gitRoot, frameworksIn } from "../plugins/anatomiya/lib/corpus.mjs";
+import { collect, countUntrackedSource, isDenied, isCorpusPath, isExcludedDir, isSource, safeResolve, gitRoot, frameworksIn } from "../plugins/anatomiya/lib/corpus.mjs";
 import { language } from "../plugins/anatomiya/lib/langs.mjs";
 import * as areaLib from "../plugins/anatomiya/lib/areas.mjs";
 
@@ -1100,12 +1100,6 @@ test("gitattributes negation, an extension pattern and an unsupported shape are 
   ]);
 });
 
-test("isGeneratedFile answers false rather than throwing on anything but a regular file", (t) => {
-  const dir = tmp(t);
-  assert.equal(isGeneratedFile(dir), false, "a directory is not a file to read");
-  assert.equal(isGeneratedFile(join(dir, "missing.ts")), false, "nothing to open");
-});
-
 test("a repository with no .gitattributes reads as having no generated declarations", async (t) => {
   const dir = repo(t, (d, { git, write }) => {
     write("src/a.ts");
@@ -1146,4 +1140,3 @@ test("a tracked path that is a fifo in the working tree is dropped, not handed t
   assert.deepEqual(files.map((f) => f.rel), ["src/a.ts"]);
   assert.equal(dropped.escaped, 1);
 });
-
