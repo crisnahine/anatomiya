@@ -7,10 +7,10 @@
  * older record was copied into two modules, and the reader never looked at the
  * version at all.
  */
-import { mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 
-import { resolveInside } from "./rules.mjs";
+import { readHead, resolveInside } from "./rules.mjs";
 import { wilsonLower } from "./reduce.mjs";
 
 export const FACTS_PATH = ".claude/anatomiya/facts.json";
@@ -188,6 +188,34 @@ export function schemaProblem(parsed) {
 }
 
 /**
+ * How much of a record this tool wrote any reader takes.
+ *
+ * Not `HEAD_BYTES`, which sizes a rule file: the record is the whole count of a
+ * repository, and the largest this tool has written is 9,957,450 bytes, on
+ * microsoft/vscode. A megabyte would have gone silent on exactly the
+ * repositories where a directory nobody read is easiest to miss. The cap is
+ * there for the shape a rule file cap is there for, a path holding something
+ * nobody wrote, and only such a file ever pays it.
+ */
+const RECORD_MOST = 64 * 1024 * 1024;
+
+/**
+ * A JSON record this tool wrote, parsed, or null for anything else at the path.
+ *
+ * Through `readHead` rather than a plain read, which waits for ever on a fifo
+ * and takes whatever size it finds, and every scan, check and hook reads one.
+ */
+export function readRecord(path) {
+  const entry = readHead(path, RECORD_MOST + 1);
+  if (entry.kind !== "file" || Buffer.byteLength(entry.head) > RECORD_MOST) return null;
+  try {
+    return JSON.parse(entry.head);
+  } catch {
+    return null;
+  }
+}
+
+/**
  * The facts on disk, or why they could not be used.
  *
  * A version past this reader's is refused rather than read: fields move between
@@ -207,12 +235,8 @@ export function readFacts(root) {
       unreadable: `${dirname(FACTS_PATH)} resolves outside the repository, so no map was read from it`,
     };
   }
-  let parsed;
-  try {
-    parsed = JSON.parse(readFileSync(join(dir, basename(FACTS_PATH)), "utf8"));
-  } catch {
-    return { facts: null, unreadable: null };
-  }
+  const parsed = readRecord(join(dir, basename(FACTS_PATH)));
+  if (parsed === null) return { facts: null, unreadable: null };
   // A shape that is not a record at all is the ordinary case of a repository
   // nobody has scanned; a version this build has not heard of is not, and says
   // so. Both decided by the one rule every reader shares.

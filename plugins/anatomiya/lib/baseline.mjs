@@ -1,7 +1,7 @@
 import {
   changedSinceWorktree, diffRange, filesAt, isSha, mergeBase, resolveBaseRef, shaReachable,
 } from "./git.mjs";
-import { mkdirSync, readFileSync, existsSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 
 import { areaOwner, dirCount } from "./areas.mjs";
@@ -11,7 +11,7 @@ import { readAtRevision } from "./revision.mjs";
 import { plural } from "./render-layout.mjs";
 import { encodePath } from "./encode.mjs";
 import { applyPairings } from "./pairing.mjs";
-import { atomic } from "./facts.mjs";
+import { atomic, readRecord } from "./facts.mjs";
 import { byCode } from "./paths.mjs";
 
 export const PIN_PATH = ".claude/anatomiya/baseline.json";
@@ -45,19 +45,13 @@ export function buildPin(areas, { sha, corpus = null }) {
 }
 
 export function loadPin(root) {
-  const path = join(root, PIN_PATH);
-  if (!existsSync(path)) return null;
-  try {
-    const pin = JSON.parse(readFileSync(path, "utf8"));
-    if (!pin || pin.schema !== PIN_SCHEMA || !isSha(pin.sha) || !Array.isArray(pin.areas)) return null;
-    // A half-shaped area is a pin that reads as a smaller population than the
-    // one a human accepted, which is the direction that manufactures claims.
-    // Refusing the whole file drops to counts-only instead.
-    if (!pin.areas.every(isPinnedArea)) return null;
-    return pin;
-  } catch {
-    return null;
-  }
+  const pin = readRecord(join(root, PIN_PATH));
+  if (!pin || pin.schema !== PIN_SCHEMA || !isSha(pin.sha) || !Array.isArray(pin.areas)) return null;
+  // A half-shaped area is a pin that reads as a smaller population than the
+  // one a human accepted, which is the direction that manufactures claims.
+  // Refusing the whole file drops to counts-only instead.
+  if (!pin.areas.every(isPinnedArea)) return null;
+  return pin;
 }
 
 function isPinnedArea(a) {

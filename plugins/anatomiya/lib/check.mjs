@@ -1,3 +1,4 @@
+import { constants } from "node:fs";
 import { open } from "node:fs/promises";
 import { dirname } from "node:path";
 
@@ -1331,9 +1332,10 @@ async function treeSource(root, path) {
   // is two lookups of a name, and the file behind the name can be replaced
   // between them. The bound is the one the committed side reads under, because
   // the two sides disagreeing on what is too big is what `limits.mjs` stops.
+  // `O_NONBLOCK`, or a fifo at the path waits for a writer that never comes.
   let handle = null;
   try {
-    handle = await open(abs, "r");
+    handle = await open(abs, constants.O_RDONLY | (constants.O_NONBLOCK ?? 0));
     const info = await handle.stat();
     if (!info.isFile() || info.size > MAX_FILE_BYTES) return null;
     return await handle.readFile("utf8");
