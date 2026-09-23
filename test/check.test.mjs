@@ -1,11 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { needsPosixPaths, needsUnreadableDirs } from "./platform.mjs";
+import { needsPosixPaths, needsPosixSpecialFiles, needsUnreadableDirs } from "./platform.mjs";
 import fs, { mkdtempSync, mkdirSync, writeFileSync, readFileSync, realpathSync, symlinkSync, rmSync, existsSync } from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { installWithoutStripper, FLOW_SOURCE } from "./no-stripper.mjs";
 import { addWorktree, git, scratch } from "./git-worktrees.mjs";
@@ -3960,4 +3960,25 @@ test("findings of one severity order by code point, not by the host's locale", a
   const r = await check(dir, { baseRef: "main" });
 
   assert.deepEqual(forKey(r, "swallowed_error").map((f) => f.path), ["tools/B.ts", "tools/a.ts"]);
+});
+
+test("a changed path that is now a fifo is skipped, not opened and waited on", needsPosixSpecialFiles, (t) => {
+  // An open for reading waits for a writer on a fifo, and git lists the path as
+  // modified, so the check hung with nothing printed. Driven in a child with a
+  // bound, because a hung open holds this process too.
+  const dir = repo(t, ({ git, write, commit }) => {
+    for (let i = 0; i < 8; i++) write(`src/f${i}.js`, `export const a${i} = 1\n`);
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+  });
+  rmSync(join(dir, "src/f1.js"));
+  execFileSync("mkfifo", [join(dir, "src/f1.js")]);
+
+  const script = `import { check } from ${JSON.stringify(new URL("../plugins/anatomiya/lib/check.mjs", import.meta.url).href)};
+    await check(${JSON.stringify(dir)}, { baseRef: "main" });
+    process.stdout.write("answered");`;
+  const run = spawnSync(process.execPath, ["--input-type=module", "-e", script], { encoding: "utf8", timeout: 8000 });
+
+  assert.equal(run.signal, null, `still waiting on the fifo after 8 seconds: killed by ${run.signal}`);
+  assert.equal(run.stdout, "answered", run.stderr);
 });

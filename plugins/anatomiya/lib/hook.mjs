@@ -24,7 +24,7 @@ import { existsSync, lstatSync, readdirSync, statSync, unlinkSync, writeFileSync
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import { HEAD_BYTES, isOwned, OVERVIEW_FILE, RULES_DIR, SETTINGS_PATH, readHead, readTail, realpathOrNull, resolveInside } from "./rules.mjs";
-import { FACTS_PATH, schemaProblem } from "./facts.mjs";
+import { FACTS_PATH, readRecord, schemaProblem } from "./facts.mjs";
 import { mainCheckoutOf } from "./worktree.mjs";
 
 export { SETTINGS_PATH };
@@ -139,18 +139,6 @@ function readOwned(path) {
 }
 
 /**
- * How much of a record this reads before deciding it is not one of ours.
- *
- * Not `HEAD_BYTES`, which sizes a rule file: the record is the whole count of a
- * repository, and the largest this tool has written is 9,957,450 bytes, on
- * microsoft/vscode. A megabyte would have gone silent on exactly the
- * repositories where a directory nobody read is easiest to miss. The cap is
- * there for the shape a rule file cap is there for, a path holding something
- * nobody wrote, and only such a file ever pays it.
- */
-const FACTS_MOST = 64 * 1024 * 1024;
-
-/**
  * The layout this repository recorded, walked up from here, or null.
  *
  * The same walk `ownMap` makes and stopping at the same boundary, so a hook
@@ -196,15 +184,9 @@ export function ownLayout(from) {
  * file.
  */
 function readLayout(path) {
-  const entry = readHead(path, FACTS_MOST + 1);
-  if (entry.kind !== "file" || Buffer.byteLength(entry.head) > FACTS_MOST) return null;
-  try {
-    const parsed = JSON.parse(entry.head);
-    return schemaProblem(parsed) === null ? (parsed.layout ?? null) : null;
-  } catch {
-    // No record here, or one nobody can read. Both mean keep walking.
-    return null;
-  }
+  // No record here, or one nobody can read. Both mean keep walking.
+  const parsed = readRecord(path);
+  return parsed !== null && schemaProblem(parsed) === null ? (parsed.layout ?? null) : null;
 }
 
 /**
