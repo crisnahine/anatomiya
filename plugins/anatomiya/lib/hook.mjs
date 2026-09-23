@@ -147,7 +147,7 @@ function walkUp(from, read) {
  */
 function readOwned(path) {
   const entry = readHead(path, HEAD_BYTES + 1);
-  if (entry.kind !== "file" || Buffer.byteLength(entry.head) > HEAD_BYTES) return null;
+  if (entry.kind !== "file" || entry.size > HEAD_BYTES) return null;
   return isOwned(entry.head) ? entry.head : null;
 }
 
@@ -906,7 +906,7 @@ export function planRemoval(root) {
   if (entry.kind !== "file") {
     throw new Error(`${SETTINGS_PATH} could not be read as a file, so it was left alone`);
   }
-  if (Buffer.byteLength(entry.head) > HEAD_BYTES) {
+  if (entry.size > HEAD_BYTES) {
     throw new Error(`${SETTINGS_PATH} could not be read: it is larger than the ${HEAD_BYTES} bytes this reads`);
   }
   // A byte-order mark is not a malformed file, it is a file an editor wrote.

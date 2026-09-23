@@ -600,3 +600,13 @@ test("a record past the size cap is named as unread, not taken for a repository 
   assert.match(unreadable ?? "", /64 MB/);
 });
 
+test("a record is measured by its bytes on disk, not by its decoded length", (t) => {
+  // A byte that is not UTF-8 decodes to three, and 22 MB of them read as a
+  // record past the 64 MB cap in a sentence that named a size nobody measured.
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-odd-record-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  mkdirSync(join(dir, ".claude/anatomiya"), { recursive: true });
+  writeFileSync(join(dir, FACTS_PATH), Buffer.alloc(22 * 1024 * 1024, 0xff));
+
+  assert.deepEqual(readFacts(dir), { facts: null, unreadable: null });
+});

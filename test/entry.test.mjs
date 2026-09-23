@@ -216,4 +216,3 @@ test("a script's command line is read strictly, and a refusal names the flag", (
   refused(["--force=yes"], "--force", "ERR_PARSE_ARGS_INVALID_OPTION_VALUE");
   refused(["/corpus"], "/corpus", "ERR_PARSE_ARGS_UNEXPECTED_POSITIONAL");
 });
-

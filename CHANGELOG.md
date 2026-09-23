@@ -19,8 +19,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   without waiting and skip anything that is not a regular file, the way the hooks already did.
   `scan` no longer hands the parser a tracked path that has become a fifo, where it waited out the
   parse watchdog and was then reported as a file that crashed the parser. The record and the pin are
-  read up to 64 MB, far past any map this writes; `check` names a record past that rather than reading
-  it as a repository nobody scanned.
+  read up to 64 MB on disk, far past any map this writes; `check` names a record past that rather than
+  reading it as a repository nobody scanned, and a pin past it reads as no pin.
 
 ## [0.10.1] - 2026-09-23
 
