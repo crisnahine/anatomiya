@@ -7,6 +7,24 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- A linked worktree with no map of its own was handed nothing by the hooks, which is every worktree
+  of a repository that ignores `.claude/`, and so the place a session branches off to do its work
+  wrote tests where the map said none go. The echo, the notice and the end-of-turn check now answer
+  there from the main checkout's map and record, labelled as the main checkout's counts rather than
+  this worktree's, and a write or a change is still read from the worktree's own files. Only a
+  worktree git registered in the main repository is followed: a copied or forged `.git` file, a
+  submodule, and a git directory not named `.git` (bare, `--separate-git-dir`, or symlinked
+  elsewhere) still hear nothing. The echo says the area files the map names are in the main
+  checkout, since a worktree never loads them, and `check` there names the main checkout in its
+  no-map caveat rather than borrowing counts it would compare the branch against.
+- One or two namesake tests no longer mark a whole source root as tested. A root needs three, the floor
+  its producers already take, before the notice treats testing as its habit: one namesake among 517
+  files had silenced it for every test written under that root. Across the 40,701 test files the
+  corpus already holds, this adds three findings. Where a root holds one or two, the counts line no
+  longer says the tests it names are none of them a namesake.
+
 ## [0.10.0] - 2026-09-23
 
 The map used to arrive after every turn and every tool call, and Claude Code keeps every copy, so a

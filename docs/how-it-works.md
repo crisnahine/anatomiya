@@ -555,6 +555,12 @@ in case. Refusing on a count that can be wrong stalls real work, so it says its 
 through. The text reaches the model on its next turn, after that write and before the next one, which is
 what makes it worth saying at all when a session is creating twelve files rather than one.
 
+A root counts as testing its files once three of them have a namesake test, the same floor its producers
+take before its silence counts. One is an outlier: on a front end, one namesake among 517 files kept the
+notice quiet for every test written under that root while the 1,023-file root beside it, with none, was
+answered. Asked of the 40,701 test files that already exist across the corpus, the floor adds three
+findings, two of them in that root.
+
 `anatomiya reuse` fires on `Stop`, at the end of a turn, and speaks only where the turn left source
 lines nothing has checked against the repository: a scanned repository, a changed file the corpus
 counts, and at least one added line, in a file written since the session began. It answers `decision: "block"` with one reason, which asks the
@@ -586,6 +592,23 @@ boundary at each level, so a checkout that was scanned still answers from anywhe
 root, whichever shape its marker takes. Measured: a worktree under `.claude/worktrees/`, which is
 where a session that branches off puts one, was handed the main checkout's map, stamped as read just
 now, on a branch it had never been counted over.
+
+A linked worktree is the one boundary the walk looks past, and only where the worktree has no map of
+its own. A repository that ignores `.claude/` gives every worktree nothing, since a worktree carries
+only what is tracked, and the silence cost more than a borrowed count: on a front end whose four
+worktrees all had no map, a session working in one put a spec into a `__tests__` directory the main
+checkout's notice names as having no precedent. So the hooks read the main checkout's map and record,
+and say so: the echo is stamped as counted from the main checkout at its path, not this worktree, and
+says the area files it names are there, since Claude Code loads no rule file from the main checkout
+into a worktree; the notice ends with the same. A write is still judged against the worktree's own
+files, and the end-of-turn check asks about the worktree's own change, taking the record as its gate
+and printing no counts. `check` does not borrow, because it compares a branch against counts of its
+own: in such a worktree its no-map caveat names the main checkout and says to scan the worktree. The
+main checkout is found from the files `git worktree add` writes, not by asking git, and only where the
+registration sits in the main repository's `worktrees/` and points back at this marker: a copied `.git`
+file, one shipped beside a forged registration, a submodule, and a git directory not named `.git`
+(bare, `--separate-git-dir`, or symlinked elsewhere) keep the silence. A worktree that was scanned
+answers with its own map.
 
 Both reads are bounded and typed rather than plain, for the reason the map's is: a named pipe at
 either path never returns, and the record is the whole count of a repository, measured at 9,957,450

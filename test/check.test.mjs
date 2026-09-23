@@ -1,17 +1,18 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { needsPosixPaths, needsUnreadableDirs } from "./platform.mjs";
-import fs, { mkdtempSync, mkdirSync, writeFileSync, readFileSync, symlinkSync, rmSync, existsSync } from "node:fs";
+import fs, { mkdtempSync, mkdirSync, writeFileSync, readFileSync, realpathSync, symlinkSync, rmSync, existsSync } from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { installWithoutStripper, FLOW_SOURCE } from "./no-stripper.mjs";
+import { addWorktree, git, scratch } from "./git-worktrees.mjs";
 
 import { needsRuby } from "./ruby-available.mjs";
 import { check, severityFor, unreadReason, unreadCode } from "../plugins/anatomiya/lib/check.mjs";
-import { formatReport, CAVEATS } from "../plugins/anatomiya/lib/check-report.mjs";
+import { formatReport, formatReportJson, CAVEATS } from "../plugins/anatomiya/lib/check-report.mjs";
 import { scan } from "../plugins/anatomiya/lib/scan.mjs";
 import { writeMap } from "../plugins/anatomiya/lib/write.mjs";
 import { writeFacts } from "../plugins/anatomiya/lib/facts.mjs";
@@ -628,6 +629,61 @@ test("the deepest area containing a file supplies its claims", async (t) => {
   assert.equal(hits.length, 1);
   assert.equal(hits[0].area, "src/api");
   assert.equal(hits[0].severity, "NIT", "the deeper area suppressed this dimension");
+});
+
+test("a worktree with no map of its own is pointed at its main checkout's", async (t) => {
+  // The hooks borrow the main checkout's counts there; a check a person runs
+  // has to compare the branch against a map of its own, so it says where one is.
+  const dir = repo(t, ({ write, commit }) => {
+    write("src/a.ts", clean(2));
+    commit("init");
+  });
+  const wt = addWorktree(dir, join(scratch(t), "wt"), "work");
+
+  const before = (await check(wt, { baseRef: "main" })).caveats.find((c) => c.code === CAVEATS.NO_MAP);
+  assert.equal(before.message, "no map on disk, so nothing was stated and nothing can be enforced", "no map anywhere");
+
+  await writeMap(await scan(dir), {});
+  const r = await check(wt, { baseRef: "main" });
+  const said = r.caveats.find((c) => c.code === CAVEATS.NO_MAP);
+
+  assert.ok(said, "still no map here");
+  assert.ok(said.message.endsWith(`Its main checkout has one: ${realpathSync.native(dir)}`), said.message);
+  assert.match(said.message, /run `anatomiya scan \.` here/);
+});
+
+test("the way out of a mapless worktree, and where it leads, survive the report's length cap", async (t) => {
+  // Caveats are rendered through a 200-grapheme cap, and a path in front of
+  // the instruction cut the instruction off first.
+  const parent = scratch(t, "cap-");
+  assert.ok(parent.length < 89, "the temp root leaves no room to build the ninety-character case");
+  // Ninety characters, a long home directory's worth, whatever the temp root is.
+  const main = join(parent, "m".repeat(90 - parent.length - 1));
+  mkdirSync(join(main, "src"), { recursive: true });
+  writeFileSync(join(main, "src/a.ts"), clean(2));
+  git(main, "init", "-q", "-b", "main");
+  git(main, "add", "-A");
+  git(main, "commit", "-qm", "init");
+  await writeMap(await scan(main), {});
+  const wt = addWorktree(main, join(parent, "wt"), "work");
+
+  const r = await check(wt, { baseRef: "main" });
+
+  for (const rendered of [formatReport(r), formatReportJson(r)]) {
+    assert.match(rendered, /run `?anatomiya scan \.`? here/);
+    assert.ok(rendered.includes(main), "and the checkout it names is there whole");
+  }
+
+  // Past what the cap leaves, the path loses its tail and the way out stays.
+  const deep = join(parent, "d".repeat(150 - parent.length - 1));
+  mkdirSync(join(deep, "src"), { recursive: true });
+  writeFileSync(join(deep, "src/a.ts"), clean(2));
+  git(deep, "init", "-q", "-b", "main");
+  git(deep, "add", "-A");
+  git(deep, "commit", "-qm", "init");
+  await writeMap(await scan(deep), {});
+  const far = await check(addWorktree(deep, join(parent, "far"), "work"), { baseRef: "main" });
+  assert.match(formatReport(far), /run `?anatomiya scan \.`? here\. Its main checkout has one: /);
 });
 
 test("no map on disk enforces nothing and says so", async (t) => {
