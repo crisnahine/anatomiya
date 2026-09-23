@@ -25,6 +25,7 @@ import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "nod
 
 import { HEAD_BYTES, isOwned, OVERVIEW_FILE, RULES_DIR, SETTINGS_PATH, readHead, readTail, realpathOrNull, resolveInside } from "./rules.mjs";
 import { FACTS_PATH, schemaProblem } from "./facts.mjs";
+import { mainCheckoutOf } from "./worktree.mjs";
 
 export { SETTINGS_PATH };
 
@@ -86,9 +87,10 @@ function isBoundary(at) {
  * learn a path already on disk is a subprocess per call. `dirname` is its own
  * fixed point at the filesystem root, which is what ends the loop.
  *
- * The walk ends at a boundary, so a worktree, a submodule or a nested
- * repository hears nothing rather than the enclosing checkout's map, against a
- * branch those counts never described. Anything named `.git` is one, which is
+ * The walk ends at a boundary, so a submodule or a nested repository hears
+ * nothing rather than the enclosing checkout's map, against a branch those
+ * counts never described. A linked worktree hears its main checkout's, under
+ * that checkout's name (`mainCheckoutOf`). Anything named `.git` is one, which is
  * the cheap side of asking the filesystem instead of git on every tool call.
  *
  * The starting directory is resolved through its links rather than around them,
@@ -103,8 +105,12 @@ function ownMap(from) {
   if (at === null) return null;
   for (;;) {
     const map = readOwned(join(at, RULES_DIR, OVERVIEW_FILE));
-    if (map !== null) return map;
-    if (isBoundary(at)) return null;
+    if (map !== null) return { map, from: null };
+    if (isBoundary(at)) {
+      const main = mainCheckoutOf(at);
+      const borrowed = main === null ? null : readOwned(join(main, RULES_DIR, OVERVIEW_FILE));
+      return borrowed === null ? null : { map: borrowed, from: main };
+    }
     const up = dirname(at);
     if (up === at) return null;
     at = up;
@@ -165,8 +171,15 @@ export function ownLayout(from) {
     // the repository deciding what a write inside it was judged against.
     const path = resolveInside(at, FACTS_PATH);
     const layout = path === null ? null : readLayout(path);
-    if (layout !== null) return { root: at, layout };
-    if (isBoundary(at)) return null;
+    if (layout !== null) return { root: at, layout, from: null };
+    if (isBoundary(at)) {
+      // The worktree stays the root, since its files are what a write lands
+      // among; only the counts are the main checkout's.
+      const main = mainCheckoutOf(at);
+      const borrowed = main === null ? null : resolveInside(main, FACTS_PATH);
+      const counted = borrowed === null ? null : readLayout(borrowed);
+      return counted === null ? null : { root: at, layout: counted, from: main };
+    }
     const up = dirname(at);
     if (up === at) return null;
     at = up;
@@ -439,24 +452,40 @@ export const ECHO_WINDOW_BYTES = 256 * 1024;
  * the ordinary case, and saying so on every tool call is worse than silence.
  */
 export function echoContext(root, { now = new Date(), transcript = null } = {}) {
-  const map = ownMap(root);
-  if (map === null) return null;
+  const found = ownMap(root);
+  if (found === null) return null;
 
   // The frontmatter is how the file is delivered, not what it says. A leading
   // BOM and CRLF are both read, the way `isOwned` reads them one module over:
   // a map re-saved on Windows carries both, and a strip that misses them puts
   // `generator: anatomiya` into the echoed body as if it were content.
-  const body = map.replace(/^﻿?---[ \t]*\r?\n[\s\S]*?\r?\n---[ \t]*\r?\n/, "").trim();
+  const body = found.map.replace(/^﻿?---[ \t]*\r?\n[\s\S]*?\r?\n---[ \t]*\r?\n/, "").trim();
   if (body === "") return null;
 
-  const digest = createHash("sha256").update(body).digest("hex").slice(0, 12);
+  // Where the counts came from is part of what was delivered, so a worktree
+  // scanned after it borrowed hears its own stamp even when the body matches.
+  const hash = createHash("sha256").update(body);
+  if (found.from !== null) hash.update(`\0${found.from}`);
+  const digest = hash.digest("hex").slice(0, 12);
   if (heldIn(transcript, digest)) return null;
+
+  const stamp =
+    found.from === null
+      ? [
+          "Counted from this repository's own code and re-read just now.",
+          "Where this and the code disagree, the code is right and the map is stale:",
+          "run `anatomiya scan .` rather than believing this.",
+        ]
+      : [
+          `Counted from this repository's main checkout at ${found.from}, not this worktree, and re-read just now.`,
+          `The area files it names are under ${join(found.from, RULES_DIR)}, not in this worktree, so read them there.`,
+          "Where this and the code here disagree, the code is right:",
+          "run `anatomiya scan .` in this worktree for its own counts.",
+        ];
 
   return [
     `<repository-map delivered="${now.toISOString()}" digest="${digest}">`,
-    "Counted from this repository's own code and re-read just now.",
-    "Where this and the code disagree, the code is right and the map is stale:",
-    "run `anatomiya scan .` rather than believing this.",
+    ...stamp,
     "",
     body,
     "</repository-map>",

@@ -229,6 +229,12 @@ _Avoid_: index, summary, README
 A map file scoped to one area's glob, so it loads when a file in that area is read.
 _Avoid_: rule file, doc, context file
 
+**Main checkout**:
+The checkout a linked worktree was added from, the one whose `.git` directory holds the worktree's
+registration. A worktree with no map of its own is answered from its main checkout's map and facts, and
+the text that reaches the agent says so.
+_Avoid_: parent repo, primary checkout, origin
+
 **Notice**:
 The one sentence handed to the agent before a file is written, saying where that kind of file's tests
 already go. No scan wrote it: it is composed for the path in hand, and no area file carries it.

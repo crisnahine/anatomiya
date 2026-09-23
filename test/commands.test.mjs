@@ -9,7 +9,8 @@ import { execFileSync } from "node:child_process";
 import { needsShebang } from "./platform.mjs";
 import { compact, delivered, filler, transcript } from "./transcript.mjs";
 import { installWithoutDependencies } from "./plugin-install.mjs";
-import { runCheck, runDoctor, runEcho, runNotice, runPin, runScan, runSetup } from "../plugins/anatomiya/lib/commands.mjs";
+import { addWorktree, scratch } from "./git-worktrees.mjs";
+import { runCheck, runDoctor, runEcho, runNotice, runPin, runReuse, runScan, runSetup } from "../plugins/anatomiya/lib/commands.mjs";
 import { scanLines } from "../plugins/anatomiya/lib/summary.mjs";
 import { PIN_PATH } from "../plugins/anatomiya/lib/baseline.mjs";
 import { PROBE_IDS, pluginRoot } from "../plugins/anatomiya/lib/readiness.mjs";
@@ -734,6 +735,73 @@ test("a repository nobody has scanned is answered with an empty object by both h
 
   assert.deepEqual(runNotice(dir, write(dir, "spec/mailers/x_spec.rb")), {});
   assert.deepEqual(runEcho(dir, { hook_event_name: "UserPromptSubmit" }), {});
+});
+
+/** A linked worktree of a checkout, which carries none of its untracked `.claude/`. */
+const worktreeOf = (t, dir) => addWorktree(dir, join(scratch(t), "wt"));
+
+test("a linked worktree with no map of its own is answered from its main checkout, and says so", async (t) => {
+  // Measured on a front end whose `.claude/` is git-ignored: every linked
+  // worktree had no map, so both hooks answered `{}` there, and the sessions
+  // doing the work in one wrote tests into `__tests__` directories the map
+  // would have named as having no precedent. Same repository, same history.
+  const dir = await railsish(t);
+  const wt = worktreeOf(t, dir);
+
+  const said = runNotice(wt, write(wt, "spec/mailers/cim_share_mailer_spec.rb"));
+  assert.match(said.hookSpecificOutput.additionalContext, /spec\/mailers holds no other test/);
+  assert.match(said.hookSpecificOutput.additionalContext, /app\/mailers: 4 files, 0 with a namesake test/);
+  assert.ok(said.hookSpecificOutput.additionalContext.endsWith(`\n  Counted from this repository's main checkout at ${realpathSync.native(dir)}, not this worktree.`), "it names where the counts were taken");
+
+  const echoed = runEcho(wt, read(join(wt, "app/mailers/admin_mailer.rb"))).hookSpecificOutput.additionalContext;
+  assert.match(echoed, /# Repository map/);
+  assert.ok(echoed.includes(`main checkout at ${realpathSync.native(dir)}`), "the stamp does not claim this worktree's own code");
+  assert.doesNotMatch(echoed, /Counted from this repository's own code/);
+});
+
+test("a borrowed layout is judged against the worktree's own files, not the main checkout's", async (t) => {
+  // The counts come from the main checkout; what sits on disk is this branch's.
+  // A spec this worktree already holds is precedent here, and one only the main
+  // checkout holds is not.
+  const dir = await railsish(t);
+  const wt = worktreeOf(t, dir);
+  mkdirSync(join(dir, "spec/mailers"), { recursive: true });
+  writeFileSync(join(dir, "spec/mailers/admin_mailer_spec.rb"), "RSpec.describe AdminMailer do\nend\n");
+
+  assert.match(runNotice(wt, write(wt, "spec/mailers/cim_share_mailer_spec.rb")).hookSpecificOutput.additionalContext, /holds no other test/);
+
+  mkdirSync(join(wt, "spec/mailers"), { recursive: true });
+  writeFileSync(join(wt, "spec/mailers/user_mailer_spec.rb"), "RSpec.describe UserMailer do\nend\n");
+  assert.deepEqual(runNotice(wt, write(wt, "spec/mailers/cim_share_mailer_spec.rb")), {});
+});
+
+test("the end-of-turn check reads a worktree's own change against its main checkout's record", async (t) => {
+  // The third hook gates on the same record, so a worktree used to end every
+  // turn unchecked. The change it asks about is the worktree's, never one
+  // sitting in the main checkout.
+  const dir = await railsish(t);
+  const wt = worktreeOf(t, dir);
+  const stop = (cwd) => ({ hook_event_name: "Stop", cwd });
+
+  writeFileSync(join(dir, "app/services/g.rb"), "class G\nend\n");
+  assert.deepEqual(await runReuse(wt, stop(wt)), {}, "a change only the main checkout holds");
+
+  writeFileSync(join(wt, "app/services/h.rb"), "class H\nend\n");
+  const out = await runReuse(wt, stop(wt));
+  assert.equal(out.decision, "block");
+  assert.match(out.reason, /app\/services\/h\.rb/);
+  assert.doesNotMatch(out.reason, /app\/services\/g\.rb/);
+});
+
+test("a worktree that was scanned answers with its own map, not its main checkout's", async (t) => {
+  const dir = await railsish(t);
+  const wt = worktreeOf(t, dir);
+  await runScan(wt, {});
+
+  const echoed = runEcho(wt, read(join(wt, "app/mailers/admin_mailer.rb"))).hookSpecificOutput.additionalContext;
+  assert.match(echoed, /Counted from this repository's own code/);
+  assert.ok(!echoed.includes("main checkout"));
+  assert.doesNotMatch(runNotice(wt, write(wt, "spec/mailers/cim_share_mailer_spec.rb")).hookSpecificOutput.additionalContext, /main checkout/);
 });
 
 test("both hooks answer a payload when this process has no working directory", async (t) => {
