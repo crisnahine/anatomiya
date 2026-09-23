@@ -19,10 +19,11 @@
  * per-developer scope, it is git-ignored, and it matches where the map already
  * lives: yours, on this machine, not committed.
  */
+import { createHash } from "node:crypto";
 import { existsSync, lstatSync, readdirSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
-import { HEAD_BYTES, isOwned, OVERVIEW_FILE, RULES_DIR, SETTINGS_PATH, readHead, realpathOrNull, resolveInside } from "./rules.mjs";
+import { HEAD_BYTES, isOwned, OVERVIEW_FILE, RULES_DIR, SETTINGS_PATH, readHead, readTail, realpathOrNull, resolveInside } from "./rules.mjs";
 import { FACTS_PATH, schemaProblem } from "./facts.mjs";
 
 export { SETTINGS_PATH };
@@ -423,12 +424,21 @@ export function targetIn(payload, root, from) {
 }
 
 /**
- * The map as a hook would deliver it, or null where there is none to deliver.
+ * How far back a delivery still counts as recent, in transcript bytes.
+ *
+ * 219 local sessions wrote a median 9.0 transcript bytes per context token, so
+ * this is about 29k tokens between two copies of one map (A92).
+ */
+export const ECHO_WINDOW_BYTES = 256 * 1024;
+
+/**
+ * The map as a hook would deliver it, or null where there is none to deliver or
+ * the session's context window already holds this same map (A92).
  *
  * Null rather than a note about the absence: a repository nobody has scanned is
  * the ordinary case, and saying so on every tool call is worse than silence.
  */
-export function echoContext(root, { now = new Date() } = {}) {
+export function echoContext(root, { now = new Date(), transcript = null } = {}) {
   const map = ownMap(root);
   if (map === null) return null;
 
@@ -439,8 +449,11 @@ export function echoContext(root, { now = new Date() } = {}) {
   const body = map.replace(/^﻿?---[ \t]*\r?\n[\s\S]*?\r?\n---[ \t]*\r?\n/, "").trim();
   if (body === "") return null;
 
+  const digest = createHash("sha256").update(body).digest("hex").slice(0, 12);
+  if (heldIn(transcript, digest)) return null;
+
   return [
-    `<repository-map delivered="${now.toISOString()}">`,
+    `<repository-map delivered="${now.toISOString()}" digest="${digest}">`,
     "Counted from this repository's own code and re-read just now.",
     "Where this and the code disagree, the code is right and the map is stale:",
     "run `anatomiya scan .` rather than believing this.",
@@ -448,6 +461,74 @@ export function echoContext(root, { now = new Date() } = {}) {
     body,
     "</repository-map>",
   ].join("\n");
+}
+
+/**
+ * The transcript of the context window a call lands in, or null where the
+ * payload names none. A subagent's calls carry the session's `transcript_path`
+ * and their own `agent_id`, and its window is logged beside the session's, or
+ * under the workflow run that spawned it. The path may not exist yet, which
+ * reads as a window holding nothing.
+ */
+export function windowOf(payload) {
+  const path = payload?.transcript_path;
+  if (typeof path !== "string") return null;
+  const agent = payload.agent_id;
+  if (agent == null) return path;
+  if (typeof agent !== "string" || !/^[\w-]+$/.test(agent) || !/\.jsonl$/i.test(path)) return null;
+  const subagents = join(path.slice(0, -".jsonl".length), "subagents");
+  const file = `agent-${agent}.jsonl`;
+  if (existsSync(join(subagents, file))) return join(subagents, file);
+  return inWorkflowRun(join(subagents, "workflows"), file) ?? join(subagents, file);
+}
+
+// A session on this machine held at most 20 workflow runs; the bound keeps one
+// tool call's cost fixed whatever a session grows to.
+const WORKFLOW_RUNS_MOST = 256;
+
+function inWorkflowRun(workflows, file) {
+  let runs;
+  try {
+    runs = readdirSync(workflows).slice(0, WORKFLOW_RUNS_MOST);
+  } catch {
+    return null;
+  }
+  for (const run of runs) {
+    if (existsSync(join(workflows, run, file))) return join(workflows, run, file);
+  }
+  return null;
+}
+
+/**
+ * What one transcript line says about the echo: "compact" for a compaction
+ * boundary, the texts of a hook's `additionalContext` for a delivery, or null.
+ * Parsed rather than searched, so a tool result quoting a map is not a delivery.
+ */
+export function echoEvent(line) {
+  if (!line.includes("compact_boundary") && !line.includes("hook_additional_context")) return null;
+  let entry;
+  try {
+    entry = JSON.parse(line);
+  } catch {
+    return null;
+  }
+  if (entry?.type === "system" && entry.subtype === "compact_boundary") return "compact";
+  if (entry?.type !== "attachment" || entry.attachment?.type !== "hook_additional_context") return null;
+  return [].concat(entry.attachment.content ?? []).filter((text) => typeof text === "string");
+}
+
+/** Whether the transcript's tail holds a delivery of this map with no compaction after it. */
+function heldIn(transcript, digest) {
+  const tail = readTail(transcript, ECHO_WINDOW_BYTES);
+  if (tail === null) return false;
+  const mark = `digest="${digest}"`;
+  const lines = tail.split("\n");
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const event = echoEvent(lines[i]);
+    if (event === "compact") return false;
+    if (event?.some((text) => text.includes(mark))) return true;
+  }
+  return false;
 }
 
 /**

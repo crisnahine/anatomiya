@@ -311,6 +311,29 @@ export function readHead(path, bytes = HEAD_BYTES) {
 }
 
 /**
+ * The last `bytes` of a regular file, typed on the handle they are read from, or
+ * null where it is not one or will not open. The same open `readHead` makes, for
+ * its reason: a fifo would block a plain open.
+ */
+export function readTail(path, bytes) {
+  if (typeof path !== "string" || path === "") return null;
+  let fd;
+  try {
+    fd = openSync(path, constants.O_RDONLY | (constants.O_NONBLOCK ?? 0));
+    const stat = fstatSync(fd);
+    if (!stat.isFile()) return null;
+    const want = Math.min(bytes, stat.size);
+    const buf = Buffer.alloc(want);
+    const read = readSync(fd, buf, 0, want, stat.size - want);
+    return buf.subarray(0, read).toString("utf8");
+  } catch {
+    return null;
+  } finally {
+    if (fd !== undefined) closeSync(fd);
+  }
+}
+
+/**
  * How much of a rule file the ownership test may read.
  *
  * Sized by our own frontmatter, not by a guess about how long one should be: an

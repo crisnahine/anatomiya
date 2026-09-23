@@ -8,7 +8,6 @@
  * because that measurement is the only reason it is here
  * (`docs/research/one-line-that-finds-the-existing-function.md`).
  */
-import { closeSync, constants, fstatSync, openSync, readSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { join } from "node:path";
 
@@ -16,7 +15,7 @@ import { addedRanges, pendingPaths } from "./check.mjs";
 import { encodePath } from "./encode.mjs";
 import { MAX_FILE_BYTES } from "./limits.mjs";
 import { byCode } from "./paths.mjs";
-import { readHead } from "./rules.mjs";
+import { readHead, readTail } from "./rules.mjs";
 
 /** What an ask or a record carries, so a later stop can tell which files it covered. */
 export const REUSE_MARK = "anatomiya reuse check";
@@ -128,7 +127,7 @@ export function sessionStart(transcriptPath) {
  */
 export function askedMarks(transcriptPath) {
   const marks = new Set();
-  const tail = readTail(transcriptPath);
+  const tail = readTail(transcriptPath, TRANSCRIPT_MOST);
   if (tail === null) return marks;
   for (const [, list] of tail.matchAll(MARKS_READ)) {
     for (const mark of list.trim().split(" ")) marks.add(mark);
@@ -144,29 +143,8 @@ export function askedMarks(transcriptPath) {
  * read.
  */
 export function continuedByReuse(transcriptPath) {
-  const tail = readTail(transcriptPath);
+  const tail = readTail(transcriptPath, TRANSCRIPT_MOST);
   if (tail === null) return false;
   const last = tail.lastIndexOf("Stop hook feedback:");
   return last !== -1 && tail.indexOf(REASON_OPENING, last) !== -1;
-}
-
-/** The last bytes of a regular file, typed on the handle they are read from, or null. */
-function readTail(path) {
-  if (typeof path !== "string" || path === "") return null;
-  let fd;
-  try {
-    // The same open `readHead` makes, for its reason: a fifo would block a plain
-    // open, and a stat of the path before opening it types a different file.
-    fd = openSync(path, constants.O_RDONLY | (constants.O_NONBLOCK ?? 0));
-    const stat = fstatSync(fd);
-    if (!stat.isFile()) return null;
-    const want = Math.min(TRANSCRIPT_MOST, stat.size);
-    const buf = Buffer.alloc(want);
-    const read = readSync(fd, buf, 0, want, stat.size - want);
-    return buf.subarray(0, read).toString("utf8");
-  } catch {
-    return null;
-  } finally {
-    if (fd !== undefined) closeSync(fd);
-  }
 }

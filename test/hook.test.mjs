@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { spawn, spawnSync, execFileSync } from "node:child_process";
 
 import { needsPosixSpecialFiles, needsUnreadableDirs } from "./platform.mjs";
-import { aboutDir, echoContext, fieldsIn, ownLayout, planRemoval, commitRemoval, targetIn, HOOK_COMMAND, NOTICE_COMMAND, PAYLOAD_WAIT_MS, REUSE_COMMAND, SETTINGS_PATH } from "../plugins/anatomiya/lib/hook.mjs";
+import { aboutDir, echoContext, echoEvent, fieldsIn, ownLayout, planRemoval, commitRemoval, targetIn, HOOK_COMMAND, NOTICE_COMMAND, PAYLOAD_WAIT_MS, REUSE_COMMAND, SETTINGS_PATH } from "../plugins/anatomiya/lib/hook.mjs";
 import { FACTS_PATH, FACTS_SCHEMA } from "../plugins/anatomiya/lib/facts.mjs";
 import { pluginPaths } from "../scripts/validate.mjs";
 import { HEAD_BYTES } from "../plugins/anatomiya/lib/rules.mjs";
@@ -1366,4 +1366,15 @@ test("anything that is not an object at all is nothing to read", () => {
   assert.deepEqual(fieldsIn("[1,2]"), {});
   assert.deepEqual(fieldsIn("null"), {});
   assert.deepEqual(fieldsIn("  {  }  "), {});
+});
+
+test("a transcript line is a compaction, the texts of a hook delivery, or nothing", () => {
+  const line = (entry) => JSON.stringify(entry);
+  assert.equal(echoEvent(line({ type: "system", subtype: "compact_boundary" })), "compact");
+  assert.deepEqual(echoEvent(line({ type: "attachment", attachment: { type: "hook_additional_context", content: ["a", 7, "b"] } })), ["a", "b"]);
+  assert.deepEqual(echoEvent(line({ type: "attachment", attachment: { type: "hook_additional_context", content: "a" } })), ["a"], "a single string is read too");
+  assert.equal(echoEvent(line({ type: "user", message: { content: "compact_boundary hook_additional_context" } })), null, "quoted, not written by a hook");
+  assert.equal(echoEvent('{"type":"attachment","attachment":{"type":"hook_additional_con'), null, "a half-written last line");
+  assert.equal(echoEvent(line({ type: "user", message: { content: "ls" } })), null);
+  assert.equal(echoEvent(line({ type: "user", attachment: { type: "hook_additional_context", content: ["a"] } })), null, "only an attachment entry");
 });

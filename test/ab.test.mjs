@@ -697,6 +697,12 @@ const KEPT = new Map([
   ["ANTHROPIC_SMALL_FAST_MODEL_AWS_REGION", "a region, not a model, and a Bedrock run needs it"],
   ["CLAUDE_CODE_NO_MODEL_FALLBACK", "set rather than scrubbed, so a trial runs the pinned model or fails"],
   ["CLAUDE_CODE_THINKING_DISPLAY_UPDATES", "how thinking is shown, not how much of it there is"],
+  // 2.1.280 keeps the name above in a length-prefixed string table, and the
+  // next entry's length byte is 0x44, so the scan reads one name with a D on it.
+  ["CLAUDE_CODE_THINKING_DISPLAY_UPDATESD", "the name above with the next string-table entry's length byte, not a name the build reads"],
+  // 2.1.280, `j7()`: read only to colour the effort label and show a notice
+  // when the effort is already max.
+  ["CLAUDE_CODE_MAX_EFFORT_REMINDER", "a notice in the terminal at max effort, not the effort a trial runs at"],
   // 2.1.269. A fetch deadline for the gateway's /v1/models call, read as
   // `CLAUDE_CODE_GATEWAY_MODEL_DISCOVERY_TIMEOUT_MS ?? Bie` inside a function
   // that returns early unless discovery is enabled. That switch,
