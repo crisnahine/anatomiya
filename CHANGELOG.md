@@ -7,14 +7,20 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-09-23
+
+The map used to arrive after every turn and every tool call, and Claude Code keeps every copy, so a
+long session carried hundreds of identical maps. It arrives once per context window now, and again
+when the map changes, a compaction starts a new window, or the last copy is far enough back that
+recency needs it.
+
 ### Changed
 
 - The hook that re-delivers the map now does it once per context window instead of on every turn and
   every tool call. It reads the end of the session's transcript and stays silent while that holds the
   same map with no compaction after it; a changed map, a compaction, or a copy more than 256 KiB of
   transcript back is delivered again, and a subagent or workflow stage is answered from its own
-  transcript. On 3,502 local transcripts, 94.0% of deliveries had repeated the one before
-  (A92).
+  transcript. On 3,502 local transcripts, 94.0% of deliveries had repeated the one before (A92).
 
 ### Added
 
@@ -2553,7 +2559,8 @@ which are partial; several listed there are not implemented yet.
 - No claim that this catches defects. Measured across ten repositories, 1 of 317 defect review
   comments was preventable by a conventions map.
 
-[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/crisnahine/anatomiya/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/crisnahine/anatomiya/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/crisnahine/anatomiya/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/crisnahine/anatomiya/compare/v0.6.0...v0.7.0
