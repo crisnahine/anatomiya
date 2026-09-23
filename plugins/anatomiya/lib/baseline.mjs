@@ -12,6 +12,7 @@ import { plural } from "./render-layout.mjs";
 import { encodePath } from "./encode.mjs";
 import { applyPairings } from "./pairing.mjs";
 import { atomic } from "./facts.mjs";
+import { byCode } from "./paths.mjs";
 
 export const PIN_PATH = ".claude/anatomiya/baseline.json";
 export const PIN_SCHEMA = 1;
@@ -39,7 +40,7 @@ export function buildPin(areas, { sha, corpus = null }) {
     ...(Number.isFinite(corpus) ? { corpus } : {}),
     areas: [...areas]
       .map((a) => ({ id: a.id, path: a.path, files: a.files.map((f) => f.rel).sort() }))
-      .sort((a, b) => a.path.localeCompare(b.path)),
+      .sort((a, b) => byCode(a.path, b.path)),
   };
 }
 
@@ -97,7 +98,7 @@ export function pinDelta(oldPin, newPin) {
     if (!after.has(path)) areas.push({ path, added: [], removed: [...prev.files].sort(), gone: true });
   }
 
-  areas.sort((a, b) => a.path.localeCompare(b.path));
+  areas.sort((a, b) => byCode(a.path, b.path));
   return {
     from: oldPin ? oldPin.sha : null,
     to: newPin.sha,

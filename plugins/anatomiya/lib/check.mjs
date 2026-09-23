@@ -33,6 +33,7 @@ import { readAtRevision } from "./revision.mjs";
 import { CAVEATS } from "./check-report.mjs";
 import { mainCheckoutOf } from "./worktree.mjs";
 import { newlyIntroduced } from "./introduced.mjs";
+import { byCode } from "./paths.mjs";
 
 /**
  * The check phase: which of the conventions the map stated did this branch
@@ -250,7 +251,7 @@ export async function check(cwd, { baseRef = null } = {}) {
   findings.sort(
     (a, b) =>
       SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity] ||
-      a.path.localeCompare(b.path) ||
+      byCode(a.path, b.path) ||
       a.line - b.line
   );
 

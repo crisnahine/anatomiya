@@ -20,6 +20,7 @@ import { readFileSync } from "node:fs";
 import { invokedAs } from "./entry.mjs";
 import { REGISTRY } from "../plugins/anatomiya/lib/registry.mjs";
 import { schemaProblem } from "../plugins/anatomiya/lib/facts.mjs";
+import { byCode } from "../plugins/anatomiya/lib/paths.mjs";
 
 export const NARROW_AND_PRECISE = "narrow and precise: check the predicate";
 
@@ -85,7 +86,7 @@ export function shareTable(factsList) {
         note: precision === "precise" && med < NARROW ? NARROW_AND_PRECISE : "",
       };
     })
-    .sort((a, b) => a.med - b.med || a.key.localeCompare(b.key));
+    .sort((a, b) => a.med - b.med || byCode(a.key, b.key));
 
   return { rows, denominatorless, measured };
 }

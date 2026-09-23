@@ -947,3 +947,11 @@ test("a re-pin keeps the per-area delta, which is the whole point of one", () =>
   assert.match(again, /^ {2}- "src\/a\/y\.ts"$/m, "and the files that left it");
   assert.doesNotMatch(again, /areas enter it/, "the count line is the first pin's");
 });
+
+test("a pin and its delta list areas in code-point order, whatever the host's locale", () => {
+  const area = (path) => ({ id: path, path, files: [{ rel: `${path}/f.ts` }] });
+  const pin = buildPin([area("a"), area("ä"), area("B")], { sha: "a".repeat(40) });
+
+  assert.deepEqual(pin.areas.map((a) => a.path), ["B", "a", "ä"]);
+  assert.deepEqual(pinDelta(null, pin).areas.map((a) => a.path), ["B", "a", "ä"]);
+});

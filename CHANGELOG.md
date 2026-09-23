@@ -7,6 +7,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- The overview could name different areas on two machines scanning the same repository. It lists
+  areas in order until its line budget runs out, and that order came from the host's locale, so
+  under `sv_SE` an area named `är` sorted after `zoo` and under `en_US` before it. Every list the map,
+  the pin and `check` print is now ordered by code point. A repository with upper-case or non-ASCII
+  directory names sees its area lines reorder once, the same way on every machine.
+
 ## [0.10.1] - 2026-09-23
 
 The hooks were silent in every linked worktree of a repository that ignores `.claude/`, which is

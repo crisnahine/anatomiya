@@ -12,6 +12,7 @@ import { homedir } from "node:os";
 import { delimiter, join } from "node:path";
 
 import { realOf } from "./entry.mjs";
+import { byCode } from "../plugins/anatomiya/lib/paths.mjs";
 
 /**
  * The floor a file has to clear to be the build rather than something pointing
@@ -107,7 +108,7 @@ function newestFirst(dir) {
   try {
     return readdirSync(dir)
       .map((name) => ({ name, version: /^\d+\.\d+\.\d+$/.test(name) ? name : null, at: mtimeOf(join(dir, name)) }))
-      .sort((a, b) => compareVersions(a, b) || b.at - a.at || a.name.localeCompare(b.name))
+      .sort((a, b) => compareVersions(a, b) || b.at - a.at || byCode(a.name, b.name))
       .map((e) => e.name);
   } catch {
     return [];

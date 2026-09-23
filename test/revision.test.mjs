@@ -196,3 +196,15 @@ test("every path comes back, sorted, however few readers ran at once", async (t)
   // than flattened, so two files sharing a basename cannot overwrite each other.
   assert.ok(out.files[0].abs.endsWith(join("src", "f00.js")));
 });
+
+test("the files come back in code-point order, not the host's locale", async (t) => {
+  let sha;
+  const dir = repo(t, (d, { write, commit }) => {
+    for (const rel of ["a.js", "B.js", "ä.js"]) write(rel, FIRST);
+    sha = commit("first");
+  });
+
+  const out = await readAtRevision(dir, sha, [{ rel: "a.js" }, { rel: "ä.js" }, { rel: "B.js" }]);
+  t.after(out.dispose);
+  assert.deepEqual(out.files.map((f) => f.rel), ["B.js", "a.js", "ä.js"]);
+});

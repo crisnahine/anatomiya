@@ -12,6 +12,7 @@
  * A repository without the directory gives its row zero eligible files.
  */
 import { LEARNED_SUFFIX_FLOOR, LEARNED_SUFFIX_SHARE, startsAtSeparator } from "./test-shape.mjs";
+import { byCode } from "./paths.mjs";
 
 const rails = (key, claim, from, to, { companionSuffix = "_spec.rb", ext = ".rb" } = {}) => ({
   key,
@@ -112,7 +113,7 @@ export function companionRoot(corpus, { from, to, ext, companionSuffix }, prefix
   // and picking the alphabetical winner there would decide an obligation by a
   // filename. Ties below that break on the name so the answer never depends on
   // corpus order.
-  const ranked = [...votes].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  const ranked = [...votes].sort((a, b) => b[1] - a[1] || byCode(a[0], b[0]));
   const top = ranked[0][1];
   const tied = ranked.filter(([, n]) => n === top).map(([root]) => root);
   if (tied.length === 1) return tied[0];
