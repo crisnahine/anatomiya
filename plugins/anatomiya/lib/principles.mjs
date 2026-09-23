@@ -28,10 +28,11 @@ export const PRINCIPLES = [
     // `thing0.spec.js` are not namesakes. So the repository has to be seen
     // pairing tests with sources somewhere before this line can say it does not
     // here. The floor is spelled rather than imported because this module reads
-    // nothing from lib; a test holds the two to the same boundary.
+    // nothing from lib; a test holds the two to the same boundary, on both the
+    // producers a directory needs and the namesakes that make it a tested one.
     when: (layout) =>
-      layout.roots.some((r) => r?.companions && r.companions.with > 0) &&
-      layout.roots.some((r) => r?.companions && r.companions.with === 0 && r.companions.of >= 3),
+      layout.roots.some((r) => r?.companions && r.companions.with >= 3) &&
+      layout.roots.some((r) => r?.companions && r.companions.with < 3 && r.companions.of >= 3),
   },
 ];
 

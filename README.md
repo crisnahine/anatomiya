@@ -83,7 +83,19 @@ echo '.claude/anatomiya/' >> "$exclude"
 ```
 
 `--git-common-dir` rather than `.git`, because inside a linked worktree `.git` is a file holding a
-pointer. The common dir is shared, so one set of lines covers every worktree.
+pointer. The common dir is shared, so one set of lines covers every worktree. A worktree left with no
+map of its own this way is handed its main checkout's counts by the hooks, labelled as such; run
+`anatomiya scan .` inside it for counts of its own branch. For worktrees Claude Code creates itself,
+a `.worktreeinclude` at the repository root copies the map in when the worktree is made:
+
+```
+**/.claude/rules/anatomiya-*.md
+**/.claude/anatomiya/facts.json
+```
+
+That copy is a snapshot of the main checkout taken at that moment, with nothing saying so, where
+the hooks' borrowed map carries its source. `docs/research/why-a-worktree-got-no-map.md` has the
+sources for both.
 
 Those two lines are everything a scan leaves behind. Three hooks are declared by the plugin, in its own
 `hooks/hooks.json`, so nothing is written into your settings. One re-delivers the map after a turn or a
@@ -352,7 +364,7 @@ gate's second opinion. The full numbers and their caveats are in [docs/why.md](d
 - [docs/plugin-contract.md](docs/plugin-contract.md) is what Claude Code requires of a plugin and a
   marketplace, read against the documentation and the CLI itself, with a source per claim and the
   version it was true of.
-- [DECISIONS.md](DECISIONS.md) is the build contract: 216 numbered decisions, each with the
+- [DECISIONS.md](DECISIONS.md) is the build contract: 217 numbered decisions, each with the
   measurement or the review finding that forced it. Why a threshold is where it is, why the parser
   runs in child processes, why there is no hook: that is the file.
 - [docs/why.md](docs/why.md) is the longer argument and the full numbers.

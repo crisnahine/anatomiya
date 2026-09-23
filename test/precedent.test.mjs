@@ -367,3 +367,77 @@ test("the root that speaks for an untested tail is decided by code point, not by
   assert.equal(found.length, 1);
   assert.equal(found[0].area, "B/x");
 });
+
+test("one or two namesake tests in a large root are an outlier, not a habit", () => {
+  // Measured on a front end: `src/components` held 517 files and one namesake
+  // test, and that one silenced the notice for every test written anywhere
+  // under it, while `src/pages` at 0 of 1023 was answered. The floor that says
+  // how many producers make silence into precedent says how many namesakes
+  // make testing one.
+  const at = (n) => [
+    root("src/components", {
+      files: 517,
+      companions: { with: n, of: 517, root: null },
+      tests: [{ runner: "vitest", files: 2, sub: null, under: 2 }],
+    }),
+    root("src/utils", { files: 60, companions: { with: 4, of: 60, root: "src/utils/__tests__" } }),
+  ];
+  const spec = "src/components/Button/__tests__/Button.test.tsx";
+
+  const [one] = precedentFindings([spec], at(1));
+  assert.equal(
+    one.reason,
+    "src/components/Button/__tests__ holds no other test; src/components: 517 files, 1 with a namesake test; elsewhere in it 2 vitest specs"
+  );
+  assert.equal(precedentFindings([spec], at(2)).length, 1);
+  assert.deepEqual(precedentFindings([spec], at(3)), [], "three is a habit");
+});
+
+test("a root with a namesake habit still answers for a tail another root shares", () => {
+  // The floor applies to each root the tail reaches, so an engine's copy with
+  // two namesakes does not stand in for the main directory's habit.
+  const roots = [
+    root("app/mailers", { files: 9, companions: { with: 9, of: 9, root: "spec/mailers" } }),
+    root("engines/legacy/app/mailers", { files: 6, companions: { with: 2, of: 6, root: null } }),
+  ];
+
+  assert.deepEqual(precedentFindings(["spec/mailers/new_thing_mailer_spec.rb"], roots), []);
+});
+
+test("a repository whose only namesakes are one or two is starting, not deviating", () => {
+  // The repository-wide guard reads the same floor: a single pair somewhere is
+  // not yet a practice for a test elsewhere to have departed from.
+  const roots = [
+    root("app/mailers", { files: 4, companions: { with: 0, of: 4, root: null } }),
+    root("app/services", { files: 6, companions: { with: 2, of: 6, root: "spec/services" } }),
+  ];
+
+  assert.deepEqual(precedentFindings(["spec/mailers/cim_share_mailer_spec.rb"], roots), []);
+});
+
+test("a notice answered from a worktree's main checkout says where it was counted", () => {
+  const roots = [
+    root("app/mailers", { files: 4, companions: { with: 0, of: 4, root: null } }),
+    root("app/services", { files: 6, companions: { with: 6, of: 6, root: "spec/services" } }),
+  ];
+
+  const said = noticeFor("spec/mailers/cim_share_mailer_spec.rb", { roots }, { from: "/work/app" });
+  assert.match(said, /\n  Counted from this repository's main checkout at \/work\/app, not this worktree\.$/);
+  assert.doesNotMatch(noticeFor("spec/mailers/cim_share_mailer_spec.rb", { roots }), /main checkout/);
+});
+
+test("the principle and the finding read the same namesake floor", () => {
+  // The producers' floor is held by the case above; this holds the other one,
+  // since `principles.mjs` spells its namesake floor rather than importing it.
+  const at = (withTest) => [
+    root("app/mailers", { files: 9, companions: { with: withTest, of: 9, root: null } }),
+    root("app/services", { files: 6, companions: { with: 6, of: 6, root: "spec/services" } }),
+  ];
+  const spec = "spec/mailers/cim_share_mailer_spec.rb";
+
+  assert.equal(precedentFindings([spec], at(PRECEDENT_FLOOR - 1)).length, 1);
+  assert.ok(principleKeys({ tests: [], roots: at(PRECEDENT_FLOOR - 1) }).includes("test_precedent"));
+
+  assert.deepEqual(precedentFindings([spec], at(PRECEDENT_FLOOR)), []);
+  assert.ok(!principleKeys({ tests: [], roots: at(PRECEDENT_FLOOR) }).includes("test_precedent"));
+});

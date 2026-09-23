@@ -88,3 +88,28 @@ test("a repository that pairs no tests anywhere is not told its pairing is missi
 
   assert.deepEqual(principleKeys(layout), ["test_shape"]);
 });
+
+test("a directory with one or two namesakes among many producers grounds the line too", () => {
+  // The same floor the finding holds: one namesake in 517 files is not a
+  // directory with a test habit, so the conflict the line settles is there.
+  const layout = {
+    tests: [{ runner: "vitest", root: "src", files: 6 }],
+    roots: [
+      { companions: { with: 4, of: 60 } },
+      { companions: { with: 1, of: 517 } },
+    ],
+  };
+  assert.ok(principleKeys(layout).includes("test_precedent"));
+  layout.roots[1].companions.with = 3;
+  assert.ok(!principleKeys(layout).includes("test_precedent"));
+});
+
+test("a repository whose only pairing is one or two namesakes is not told about precedent", () => {
+  // The first conjunct reads the floor too, the way the finding's
+  // repository-wide guard does: one pair is not yet a practice to depart from.
+  const layout = {
+    tests: [{ runner: "vitest", root: "src", files: 2 }],
+    roots: [{ companions: { with: 2, of: 60 } }, { companions: { with: 0, of: 40 } }],
+  };
+  assert.ok(!principleKeys(layout).includes("test_precedent"));
+});

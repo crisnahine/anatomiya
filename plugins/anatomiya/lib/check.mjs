@@ -16,8 +16,8 @@ import {
 import { language, MISSING_STRIPPER } from "./langs.mjs";
 import { areaOwner, globsReach } from "./areas.mjs";
 import { droppedDirectives, unexaminedPhrase } from "./render.mjs";
-import { auditRules, knownNames, RULES_DIR } from "./rules.mjs";
-import { readFacts, statedSide } from "./facts.mjs";
+import { auditRules, knownNames, readHead, resolveInside, RULES_DIR } from "./rules.mjs";
+import { FACTS_PATH, readFacts, statedSide } from "./facts.mjs";
 import { MAX_FILE_BYTES } from "./limits.mjs";
 import { resolve as resolveBaseline } from "./baseline.mjs";
 import { pairingsFor, pairingViolations } from "./pairing.mjs";
@@ -31,6 +31,7 @@ import {
 } from "./git.mjs";
 import { readAtRevision } from "./revision.mjs";
 import { CAVEATS } from "./check-report.mjs";
+import { mainCheckoutOf } from "./worktree.mjs";
 import { newlyIntroduced } from "./introduced.mjs";
 
 /**
@@ -65,6 +66,21 @@ function caveat(caveats, code, message) {
   caveats.push({ code, message });
 }
 
+/**
+ * Why nothing was enforced, and in a worktree with no map of its own, where
+ * one is: the hooks answer there from the main checkout's counts, and a check
+ * has to compare the branch against counts taken over it. Kept short, and the
+ * way out before the path, since a caveat is rendered through a 200-grapheme cap.
+ */
+function noMapMessage(root) {
+  const said = "no map on disk, so nothing was stated and nothing can be enforced";
+  const main = mainCheckoutOf(root);
+  const record = main === null ? null : resolveInside(main, FACTS_PATH);
+  // Read no bytes: whether a record is there is the question, and one can be 10MB.
+  if (record === null || readHead(record, 0).kind !== "file") return said;
+  return `no map in this worktree, so nothing can be enforced; run \`anatomiya scan .\` here. Its main checkout has one: ${main}`;
+}
+
 const SEVERITY_ORDER = { "MUST-FIX": 0, FIX: 1, NIT: 2 };
 
 export async function check(cwd, { baseRef = null } = {}) {
@@ -78,7 +94,7 @@ export async function check(cwd, { baseRef = null } = {}) {
   // are the same fact to a reader, that there is a map and none of it was used.
   if (unreadable) caveat(caveats, CAVEATS.MAP_UNREADABLE, unreadable);
   else if (!facts) {
-    caveat(caveats, CAVEATS.NO_MAP, "no map on disk, so nothing was stated and nothing can be enforced");
+    caveat(caveats, CAVEATS.NO_MAP, noMapMessage(root));
   }
 
   // A stated claim nobody measured is the failure this codebase keeps closing:
