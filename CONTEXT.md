@@ -42,6 +42,12 @@ nothing, and exits 0 whatever happened: a hook that fails interrupts the run it 
 own name.
 _Avoid_: input, message, calling the whole payload an event
 
+**Context window**:
+What one conversation holds right now: the session's own, or a subagent's, which starts empty. A
+compaction starts a new one. Its transcript is the record of it, and the echo reads that record to
+tell whether the map it would deliver is already in there, by the map's `digest`.
+_Avoid_: session, calling a subagent's window the session's
+
 **Shadow**:
 A markdown agent file standing in for a built-in agent type, holding a copy of that type's system
 prompt so a spawn of it can be given a setting the built-in has no way to take. Nothing in it says

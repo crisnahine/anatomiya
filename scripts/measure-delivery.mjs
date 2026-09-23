@@ -133,7 +133,7 @@ export function tableOf(rows, columns) {
 // --- reading the store ------------------------------------------------------
 
 /** Every `.jsonl` under the store, session transcripts and subagent ones alike. */
-function transcripts(dir) {
+export function transcripts(dir) {
   const out = [];
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const path = join(dir, entry.name);
