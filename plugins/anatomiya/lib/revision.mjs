@@ -22,6 +22,7 @@ import { tmpdir } from "node:os";
 
 import { showBlob } from "./git.mjs";
 import { language } from "./langs.mjs";
+import { byCode } from "./paths.mjs";
 
 export async function readAtRevision(root, sha, files, { concurrency = 8, withSource = false, timeout } = {}) {
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-revision-"));
@@ -66,7 +67,7 @@ export async function readAtRevision(root, sha, files, { concurrency = 8, withSo
 
   // Sorted, because the order blobs finish in is the order git answered them
   // and nothing downstream should read anything into it.
-  out.sort((a, b) => a.rel.localeCompare(b.rel));
+  out.sort((a, b) => byCode(a.rel, b.rel));
   return { dir, files: out, missing, dispose };
 }
 

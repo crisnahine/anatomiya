@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 // taken over. Listing an extension the repository does not use matches nothing
 // extra, so the list is the language's rather than the area's.
 import { EXT_BY_LANG, LANGUAGES } from "./langs.mjs";
+import { byCode } from "./paths.mjs";
 
 export const AREA = {
   floor: [3, 8],        // a directory below the floor folds into its parent
@@ -401,7 +402,7 @@ export function discover(files, {
 
   const capped = capCount(areas, maxAreas);
   const folded = capped.orphaned || [];
-  const all = capped.sort((a, b) => a.path.localeCompare(b.path));
+  const all = capped.sort((a, b) => byCode(a.path, b.path));
   // After the count is capped, never before: a glob is measured against the
   // areas that ended up existing, and a fold changes which subtrees are foreign.
   assignGlobs(all, files);

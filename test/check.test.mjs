@@ -3944,3 +3944,20 @@ test("a shallow clone with no base named still degrades rather than refusing", a
 
   assert.ok(codesOf(r).includes(CAVEATS.SHALLOW_UNFETCHED), JSON.stringify(codesOf(r)));
 });
+
+test("findings of one severity order by code point, not by the host's locale", async (t) => {
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("tools/a.ts", clean(2));
+    write("tools/B.ts", clean(2));
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("tools/a.ts", clean(2) + swallow(1));
+    write("tools/B.ts", clean(2) + swallow(1));
+    commit("swallow");
+  });
+  facts(dir, { sha: sha(dir, "main") });
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.deepEqual(forKey(r, "swallowed_error").map((f) => f.path), ["tools/B.ts", "tools/a.ts"]);
+});

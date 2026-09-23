@@ -1117,3 +1117,13 @@ test("a repository with no .gitattributes reads as having no generated declarati
 
   assert.deepEqual(files.map((f) => f.rel), ["src/a.ts"]);
 });
+
+test("areas list in code-point order, so the host's locale cannot pick which ones the overview names", () => {
+  // The overview names areas in this order until its budget runs out, and
+  // `localeCompare` put `ä` before `B` under en_US and after `z` under sv_SE.
+  const areas = discover(
+    fakeFiles(["a", "B", "ä"].flatMap((d) => Array.from({ length: 6 }, (_, i) => `${d}/f${i}.js`))),
+    { minFiles: 3 }
+  );
+  assert.deepEqual(areas.map((a) => a.path), ["B", "a", "ä"]);
+});

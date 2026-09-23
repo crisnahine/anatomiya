@@ -1,6 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { byCode, baseOf, dirOf, extOf, stemOf, withoutExtension } from "../plugins/anatomiya/lib/paths.mjs";
+import { REL, ROOT } from "../scripts/plugins.mjs";
 
 test("the basename is everything after the last slash", () => {
   assert.equal(baseOf("src/components/Foo.tsx"), "Foo.tsx");
@@ -79,4 +82,16 @@ test("a tie that decides a printed name is broken by code point, the same on eve
   // and a fifth still called `localeCompare` on a name that lands in a finding.
   assert.deepEqual(["b", "B", "a", "A"].sort(byCode), ["A", "B", "a", "b"]);
   assert.equal(byCode("x", "x"), 0);
+});
+
+test("no module this repository ships or measures with sorts by the host's locale", () => {
+  // Every list here is rendered or written, and two hosts ordered one list two
+  // ways, which also changed which areas a budgeted overview named.
+  const offenders = [`${REL.anatomiya}/bin`, `${REL.anatomiya}/lib`, "scripts"].flatMap((dir) =>
+    readdirSync(join(ROOT, dir), { recursive: true })
+      .filter((f) => f.endsWith(".mjs"))
+      .map((f) => join(dir, f))
+      .filter((f) => /\.localeCompare\(|new Intl\.Collator\(/.test(readFileSync(join(ROOT, f), "utf8")))
+  );
+  assert.deepEqual(offenders, []);
 });
