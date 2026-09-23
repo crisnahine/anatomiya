@@ -97,7 +97,7 @@ export function classifySemantic({ config, resolution }) {
 export function runSemantic(
   root,
   files,
-  { keys = null, guards: given = null, workerPath = WORKER, cwd = tmpdir() } = {}
+  { guards: given = null, workerPath = WORKER, cwd = tmpdir() } = {}
 ) {
   return new Promise((resolve) => {
     // Inside the promise so a bad bag rejects rather than throws, which is how
@@ -145,7 +145,7 @@ export function runSemantic(
     child.on("message", (msg) => {
       if (!msg || typeof msg !== "object") return;
       if (msg.ready) {
-        return child.send({ root, files, keys }, (err) => {
+        return child.send({ root, files }, (err) => {
           if (err) finish(`the checker closed its channel before it was given the corpus: ${err.message}`);
         });
       }

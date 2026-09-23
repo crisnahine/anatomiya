@@ -39,17 +39,13 @@ test("rowsForLangs is the union its readers used to spell by hand", () => {
   }
 });
 
-test("the tier is opt-in here too, so nobody is handed a claim needing a checker", () => {
-  // The same rule `dimensionsFor` carries: a caller that does not ask for the
-  // type-checked tier must never be handed one of its rows.
+test("the type-checked tier is never listed, so nobody is handed a claim needing a checker", () => {
+  // The same rule `dimensionsFor` carries.
   const semantic = REGISTRY.filter((r) => r.tier === "semantic");
   assert.ok(semantic.length > 0, "there is a tier to leave out");
 
   const keys = new Set(rowsForLangs(["js", "jsx", "ruby"]).map((r) => r.key));
   for (const row of semantic) assert.equal(keys.has(row.key), false, row.key);
-
-  const all = new Set(rowsForLangs(["js", "jsx", "ruby"], { tier: "all" }).map((r) => r.key));
-  for (const row of semantic) assert.equal(all.has(row.key), true, row.key);
 });
 
 test("the registry is frozen", () => {

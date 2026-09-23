@@ -334,8 +334,8 @@ test("a test tree nested inside a package does not answer a top-level file", () 
 });
 
 test("a nested producer is credited by the test of its own name that imports it", () => {
-  // The shape this repository's second plugin has: its sources sit together in
-  // a `hooks` directory and every test sits flat under `test/`. The tail
+  // The shape this repository's second plugin had: its sources sat together in
+  // a `hooks` directory and every test sat flat under `test/`. The tail
   // `hooks` mirrors nothing on the other side, so path shape alone reads 0 of 5
   // over five files that are each genuinely tested. The import edge is what
   // separates this from the decoys above, which name nothing they cover.

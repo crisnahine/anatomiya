@@ -24,7 +24,10 @@ import { showBlob } from "./git.mjs";
 import { language } from "./langs.mjs";
 import { byCode } from "./paths.mjs";
 
-export async function readAtRevision(root, sha, files, { concurrency = 8, withSource = false, timeout } = {}) {
+// How many `git cat-file` reads run at once.
+const READERS = 8;
+
+export async function readAtRevision(root, sha, files, { withSource = false, timeout } = {}) {
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-revision-"));
   // The size cap is the reader's own and no caller sets it: `showBlob` gives up
   // at exactly the size the parser skips at, so a blob refused here is one the
@@ -38,7 +41,7 @@ export async function readAtRevision(root, sha, files, { concurrency = 8, withSo
   // The directory exists before anything that can fail, so a throw past this
   // point is one nobody disposes: the caller has no handle on it yet.
   try {
-    await pooled(files, concurrency, async (f) => {
+    await pooled(files, READERS, async (f) => {
       const abs = underTemp(dir, f?.rel);
       if (!abs) return void missing.push({ rel: f?.rel ?? null, reason: "unsafe path" });
 

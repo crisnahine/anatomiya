@@ -185,7 +185,8 @@ export async function check(cwd, { baseRef = null } = {}) {
   // (C8). `[]` rather than an absent value on the cheap branch: absent means
   // "no filter" to `dimensionsFor`, and this caller can answer the question.
   const frameworks = examined.some((f) => couldSignal(language(f.path)))
-    ? await frameworksHere(root, facts, caveats)
+    ? await storedOrCollected(root, facts, "frameworks", frameworksIn, caveats, CAVEATS.FRAMEWORKS_UNKNOWN,
+      "the corpus could not be listed, so no framework's claims were checked")
     : [];
   // The routing rows are offered the way a framework's are: only where the
   // repository shows an adopted wrapper to route through (C14). With no map on
@@ -193,7 +194,10 @@ export async function check(cwd, { baseRef = null } = {}) {
   // a NIT in a repository that never adopted one. Nothing examined asks
   // nothing, so an empty diff never pays a corpus collect; a readable schema-9
   // map still does, once, until its repository is re-scanned.
-  const capabilities = examined.length ? new Set(await capabilitiesHere(root, facts, caveats)) : new Set();
+  const capabilities = examined.length
+    ? new Set(await storedOrCollected(root, facts, "capabilities", capabilitiesIn, caveats, CAVEATS.CAPABILITIES_UNKNOWN,
+      "the corpus could not be listed, so no routing claim was checked"))
+    : new Set();
 
   const { findings, missingEngines, missingParser } = await collect(root, {
     examined,
@@ -362,8 +366,7 @@ function namedRow(row) {
 }
 
 /**
- * Which frameworks this repository shows, for the two dimensions that cannot
- * see their own context (C8).
+ * Which frameworks or capability wrappers this repository shows.
  *
  * The scan already answered this from the corpus and stored it, so a mapped
  * repository pays nothing; a check runs on repositories with no map too, and
@@ -372,15 +375,9 @@ function namedRow(row) {
  *
  * A corpus that will not collect is a question left unanswered, not a run
  * refused: nothing else in this file throws, and refusing to report a branch
- * because a framework probe failed is the blocking behaviour this design
- * rejects. The answer costs the framework's claims, never a wrong one.
+ * because a probe failed is the blocking behaviour this design rejects. The
+ * answer costs the claims that asked, never a wrong one.
  */
-async function frameworksHere(root, facts, caveats) {
-  return storedOrCollected(root, facts, "frameworks", frameworksIn, caveats, CAVEATS.FRAMEWORKS_UNKNOWN,
-    "the corpus could not be listed, so no framework's claims were checked");
-}
-
-/** The scan stored the answer; a repository with no map reads its own corpus. */
 async function storedOrCollected(root, facts, field, derive, caveats, code, refusal) {
   const stored = facts && facts.corpus && facts.corpus[field];
   if (Array.isArray(stored)) return stored;
@@ -392,16 +389,6 @@ async function storedOrCollected(root, facts, field, derive, caveats, code, refu
     caveat(caveats, code, `${refusal}: ${err && err.message ? err.message : err}`);
     return [];
   }
-}
-
-/**
- * Which capability wrappers this repository shows, same contract as
- * `frameworksHere`: the scan stored it, and a repository with no map reads its
- * own corpus. Unanswered costs the routing claims, never a wrong one.
- */
-async function capabilitiesHere(root, facts, caveats) {
-  return storedOrCollected(root, facts, "capabilities", capabilitiesIn, caveats, CAVEATS.CAPABILITIES_UNKNOWN,
-    "the corpus could not be listed, so no routing claim was checked");
 }
 
 /* --- base resolution, including the shallow case --- */
@@ -599,7 +586,7 @@ function unquotePath(text) {
 // What a check asks of a commit: eight blobs at a time, and the bytes kept in
 // the parent as well, because the report quotes them and resolves line numbers
 // against them.
-const REVISION_READ = { concurrency: 8, withSource: true, timeout: GIT.checkTimeoutMs };
+const REVISION_READ = { withSource: true, timeout: GIT.checkTimeoutMs };
 
 /**
  * Every test file git tracks, or null where the listing failed.
@@ -615,7 +602,6 @@ async function trackedTests(root) {
   try {
     await lsFiles(root, (rel) => {
       if (isTestPath(rel)) found.push(rel);
-      return true;
     });
   } catch {
     return null;
@@ -940,12 +926,6 @@ async function addPairingFindings(root, findings, { examined, areas, fresh, cave
 const CORPUS_ROWS = rowsOfKind("corpus");
 
 /**
- * A corpus row's site is the name itself, which no tree walk sees. A file
- * this branch created answers it outright; a rename answers it only when the
- * name changed class, because the old name predates the branch and a same-class
- * rename kept the convention.
- */
-/**
  * MUST-FIX withheld from a path the area's own globs never deliver to, and
  * every other verdict left alone. MUST-FIX means the map told this file's
  * author and they are the first to break it; here the map did not tell.
@@ -955,6 +935,12 @@ function cappedAway(verdict, away, area) {
   return { severity: "FIX", reason: `counted in ${area.path}, which this directory sits inside` };
 }
 
+/**
+ * A corpus row's site is the name itself, which no tree walk sees. A file
+ * this branch created answers it outright; a rename answers it only when the
+ * name changed class, because the old name predates the branch and a same-class
+ * rename kept the convention.
+ */
 function filenameFinding(row, job, area, fresh, { dropped = false, facets = null, from = null } = {}) {
   const path = job.file.path;
   const nameDim = area && (area.dimensions || []).find((d) => d.key === row.key);

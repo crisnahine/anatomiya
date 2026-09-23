@@ -1172,8 +1172,7 @@ test("the payload read gives itself less than half the timeout the declaration a
 test("a payload that arrived whole is answered even when the pipe stays open", async (t) => {
   // The bound exists for a caller that says nothing, not for one that said
   // everything and did not close the handle. Throwing away what arrived costs
-  // that turn its map for no reason, and the second plugin's copy of the same
-  // bound keeps what it has.
+  // that turn its map for no reason.
   const dir = mapped(t);
   const hook = hookProcess(dir);
   const { child } = hook;

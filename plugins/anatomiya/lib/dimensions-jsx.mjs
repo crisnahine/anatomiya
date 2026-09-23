@@ -24,11 +24,6 @@ const HOST = /^[a-z]/; // JSX resolves a lowercase element name to a host tag
 const HANDLER_PROP = /^on[A-Z]/;
 
 /**
- * The element's own name. A member element is its LAST segment, so
- * `<Menu.Item/>` is `Item`; reading the object segment misnames `<ns.div/>`.
- * A namespaced element (`<svg:rect/>`) is never a component, so it is null.
- */
-/**
  * Whether an opening element names a DOM tag rather than a component.
  *
  * Only a bare lowercase identifier is a host tag. A member expression resolves
@@ -45,6 +40,11 @@ function isHostElement(node) {
   return n.type === "JSXIdentifier" && HOST.test(n.name ?? "");
 }
 
+/**
+ * The element's own name. A member element is its LAST segment, so
+ * `<Menu.Item/>` is `Item`; reading the object segment misnames `<ns.div/>`.
+ * A namespaced element (`<svg:rect/>`) is never a component, so it is null.
+ */
 export function jsxName(node) {
   if (!node) return null;
   const n = node.type === "JSXOpeningElement" || node.type === "JSXClosingElement"

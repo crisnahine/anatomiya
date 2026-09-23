@@ -6,11 +6,6 @@ import { globText } from "./areas.mjs";
 import { GENERATOR, listSome, LISTED, PREFIX, RULES_DIR } from "./rules.mjs";
 import { REGISTRY } from "./registry.mjs";
 
-// The overview loads on every turn, so its area listing is bounded even though
-// the number of areas is not. Past this it names only the areas that state
-// something and counts the rest.
-export const OVERVIEW_AREAS = 200;
-
 /**
  * The line bound every generated file is held to.
  *
@@ -37,51 +32,6 @@ const MIN_BODY_LINES = 8;
 // spends: it is one line, it is the same line in every area, and it is the only
 // place the test shape of a directory's siblings is written down.
 const KINDS_LINES = 2;
-
-// How many lines a run of blocks comes to. Spelled once because both drop rules
-// ask it, and two spellings of one sum is a drift waiting for a block shape to
-// grow a line.
-const height = (blocks) => blocks.reduce((n, b) => n + b.length, 0);
-
-/**
- * Fit a list of blocks into a line budget, saying how many did not fit.
- *
- * Greedy in order and stopping at the first block that will not fit, rather
- * than skipping ahead to smaller ones: the order is the order the reducer
- * chose, and a listing that silently reorders itself as an area grows is not
- * something a reader can diff against yesterday's.
- *
- * `more` renders the count of what was left out and costs the line it takes.
- * `null` means the caller reports the remainder itself, folded into a number it
- * already has to print.
- */
-function fit(blocks, budget, more = null) {
-  const kept = fitCount(blocks, budget, more ? 1 : 0);
-  const lines = blocks.slice(0, kept).flat();
-  // Only when something went. A notice reading "and 0 more not shown here" is
-  // a line spent saying nothing, in a file whose whole budget is forty.
-  if (more && kept < blocks.length) lines.push(more(blocks.length - kept));
-  return lines;
-}
-
-/**
- * How many of these blocks survive the budget: the overview's drop rule.
- *
- * `reserve` is the line held back for the notice, or it would be the line that
- * breaks the bound the notice exists to report. An area file does not come
- * through here: it has sentences to name as well as blocks to drop, and that is
- * `settle`.
- */
-function fitCount(blocks, budget, reserve = 0) {
-  if (height(blocks) <= budget) return blocks.length;
-  const room = budget - reserve;
-  let used = 0;
-  for (let i = 0; i < blocks.length; i++) {
-    if (used + blocks[i].length > room) return i;
-    used += blocks[i].length;
-  }
-  return blocks.length;
-}
 
 /**
  * The glob is built from a directory name, so it is repository-controlled and
@@ -517,7 +467,7 @@ function alsoStatedLead(named, unnamed) {
  * keys.
  */
 function settle(blocks, keys, claims, budget) {
-  const upTo = (k) => height(blocks.slice(0, k));
+  const upTo = (k) => blocks.slice(0, k).reduce((n, b) => n + b.length, 0);
   if (upTo(blocks.length) <= budget) return { kept: blocks.length, names: [], unnamed: 0 };
 
   // Counted off `keys` and never off the sentences. The check recomputes this
@@ -748,7 +698,7 @@ function areaListing(result, budget) {
   // is a counts line there, so it must not earn the area a name here.
   const stated = (a) =>
     a.dimensions.filter((d) => statedSide(d).states !== null && d.matchesDefault !== true).length;
-  const eligible = result.areas.filter((a) => stated(a) > 0).slice(0, OVERVIEW_AREAS);
+  const eligible = result.areas.filter((a) => stated(a) > 0);
 
   // A trailing count is owed unless every area is named, and an area the budget
   // cuts is as unnamed as one that states nothing: two numbers a reader has to
@@ -757,10 +707,9 @@ function areaListing(result, budget) {
   // trailer one line past the bound whenever every area stated something and
   // they still did not all fit.
   const namesEveryArea = eligible.length === result.areas.length && eligible.length <= budget;
-  const lines = fit(
-    eligible.map((a) => [`- ${encode(a.path)} — ${a.fileCount} files, ${stated(a)} stated`]),
-    Math.max(0, namesEveryArea ? budget : budget - 1)
-  );
+  const lines = eligible
+    .slice(0, Math.max(0, namesEveryArea ? budget : budget - 1))
+    .map((a) => `- ${encode(a.path)} — ${a.fileCount} files, ${stated(a)} stated`);
 
   // "more" only counts against something already named. A repository whose
   // areas all carry counts and state nothing lists none of them, which is the

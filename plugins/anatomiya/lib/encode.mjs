@@ -18,9 +18,10 @@ const PATH_MAX = 120;
 // Cyrillic is almost always a homoglyph attack rather than a real filename.
 const LATIN = /^[\p{Script=Latin}\p{Script=Common}\p{Script=Inherited}]*$/u;
 
-// Printable: letters, marks, numbers, punctuation, symbols, and the plain
-// space. Everything else goes, which covers Cc, Cf, Co, Cs and Zl/Zp.
-const PRINTABLE = /[\p{L}\p{M}\p{N}\p{P}\p{S} ]/u;
+// Anything but letters, marks, numbers, punctuation, symbols and the plain
+// space, which covers Cc, Cf, Co, Cs and Zl/Zp. A lone surrogate is a code
+// point under the `u` flag, so it matches here too.
+const UNPRINTABLE = /[^\p{L}\p{M}\p{N}\p{P}\p{S} ]/gu;
 
 const STRUCTURAL = [
   /-{3,}/g,      // a markdown rule or a frontmatter fence
@@ -39,9 +40,7 @@ const GRAPHEMES = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 
 /** Strip anything that is not printable, then collapse runs of spaces. */
 function printableOnly(s) {
-  let out = "";
-  for (const ch of s) out += PRINTABLE.test(ch) ? ch : " ";
-  return out.replace(/ {2,}/g, " ").trim();
+  return s.replace(UNPRINTABLE, " ").replace(/ {2,}/g, " ").trim();
 }
 
 /**
@@ -89,12 +88,12 @@ function neutralise(value) {
  * than what makes the value safe: a writer that carries a path in a field of
  * its own would have to strip the quotes back off.
  */
-export function sanitisePath(p, max = PATH_MAX) {
+export function sanitisePath(p) {
   const s = neutralise(p);
   // A rejected path leaks none of itself, so the marker is the whole value and
   // the cap has nothing to do.
   if (s && !LATIN.test(s)) return `<path with mixed scripts, ${[...s].length} chars>`;
-  return capGraphemes(s, max);
+  return capGraphemes(s, PATH_MAX);
 }
 
 // The whole marker, both ends anchored. Matched by its opening words alone, a
@@ -107,22 +106,13 @@ export function quotePath(s) {
   return MIXED_MARKER.test(s) ? `"${s}"` : JSON.stringify(s);
 }
 
-/**
- * Encode a repository-controlled scalar for rendering.
- * `text` is the general form; `path` additionally rejects mixed scripts.
- */
-export function encode(value, { max = MAX, kind = "text" } = {}) {
-  if (kind === "path") return quotePath(sanitisePath(value, max));
+/** Encode a repository-controlled scalar for rendering; `encodePath` for a path. */
+export function encode(value, { max = MAX } = {}) {
   return capGraphemes(neutralise(value), max);
 }
 
+/** A path, which is refused outright where it mixes scripts. */
 export const encodePath = (p) => quotePath(sanitisePath(p));
-
-/** True when encoding changed the value, so the caller can report suppression. */
-export function wasAltered(value) {
-  if (value == null) return false;
-  return encode(value) !== String(value).normalize("NFKC").trim();
-}
 
 /**
  * The first real line of a subprocess's own output, so a failure names its own
