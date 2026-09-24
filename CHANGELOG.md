@@ -7,6 +7,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.10.2] - 2026-09-24
+
+Two machines could render two different maps of one repository, because the list the overview names
+areas from was ordered by the host's locale, and a fifo in the working tree, or where the map's record
+or the pin belongs, could hang `check` and `scan` with nothing printed. Every list is ordered by UTF-16
+code unit now, and every read of a path the repository controls opens without waiting and measures its
+cap in bytes on disk.
+
 ### Fixed
 
 - The overview could name different areas on two machines scanning the same repository. It lists
@@ -2600,7 +2608,8 @@ which are partial; several listed there are not implemented yet.
 - No claim that this catches defects. Measured across ten repositories, 1 of 317 defect review
   comments was preventable by a conventions map.
 
-[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.10.1...HEAD
+[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.10.2...HEAD
+[0.10.2]: https://github.com/crisnahine/anatomiya/compare/v0.10.1...v0.10.2
 [0.10.1]: https://github.com/crisnahine/anatomiya/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/crisnahine/anatomiya/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/crisnahine/anatomiya/compare/v0.8.0...v0.9.0
