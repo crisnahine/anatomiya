@@ -3,16 +3,16 @@ import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
 import {
   LEARNED_ROWS,
-  checkOutput,
   foldCounts,
   learnedRows,
   learnedTables,
   overviewFor,
   parseArgs,
-  selectRepos,
 } from "../scripts/measure-layout.mjs";
 import { namesakeClause, renderLayout, runnerCount, RUNNERS_SHOWN, specCount, TESTS_GROUPS } from "../plugins/anatomiya/lib/render-layout.mjs";
 import { UNNAMED_RUNNER } from "../plugins/anatomiya/lib/test-shape.mjs";
@@ -170,6 +170,8 @@ test("the corpus directory is an argument, never a path off this machine", () =>
   assert.match(parseArgs([]).error, /corpus/);
   assert.match(parseArgs(["--only", "webpack"]).error, /corpus/);
   assert.match(parseArgs(["--nope", "/corpus"]).error, /--nope/);
+  // A second corpus was taken over the first without a word.
+  assert.match(parseArgs(["/corpus", "/other"]).error, /one corpus directory/);
 });
 
 test("the options a run takes are read off the arguments beside the corpus", () => {
@@ -190,17 +192,6 @@ test("an option last on the line read the argument that was not there", () => {
   // one name was meant to replace.
   assert.match(parseArgs(["/corpus", "--only"]).error, /--only/);
   assert.match(parseArgs(["/corpus", "--md"]).error, /--md/);
-});
-
-test("a --only name the corpus does not hold is an error, not a shorter run", () => {
-  // The e2e harness got this rule first: a typo measured nothing and printed
-  // `0 of 0 repositories passed`, which is exit 0 and reads as an acceptance.
-  const repos = ["errbit", "eslint"];
-
-  assert.deepEqual(selectRepos(repos, null).repos, repos);
-  assert.deepEqual(selectRepos(repos, "eslint").repos, ["eslint"]);
-  assert.match(selectRepos(repos, "errbti").error, /errbti/);
-  assert.match(selectRepos(repos, "errbit,eslnit").error, /eslnit/);
 });
 
 test("the overview the recount reads back is the file a write puts on disk", () => {
@@ -226,16 +217,6 @@ test("the overview the recount reads back is the file a write puts on disk", () 
   assert.match(written, /^- "house-style\.md"$/m);
   assert.equal(overviewFor(result), written);
   rmSync(dir, { recursive: true, force: true });
-});
-
-test("a --md target that is already there is refused, and --force is how a rerun says it meant it", () => {
-  // The file is a run of record somebody merged into a document by hand, and
-  // this script writes its target whole.
-  assert.equal(checkOutput("/out/run.md", false, false), null);
-  assert.equal(checkOutput("/out/run.md", true, true), null);
-  assert.equal(checkOutput(null, false, true), null);
-  assert.match(checkOutput("/out/run.md", false, true), /\/out\/run\.md/);
-  assert.match(checkOutput("/out/run.md", false, true), /--force/);
 });
 
 test("the recount reads every clause the fold line can carry", () => {
@@ -301,4 +282,13 @@ test("every fold line the roster can print reconciles through the recount", () =
   }
 
   assert.equal(shapes, 74, "and the loop above is the whole series, not a sample of it");
+});
+
+test("a corpus directory that cannot be listed is refused by name, not with a stack", () => {
+  const script = fileURLToPath(new URL("../scripts/measure-layout.mjs", import.meta.url));
+  const run = spawnSync(process.execPath, [script, join(tmpdir(), "anatomiya-no-such-corpus")], { encoding: "utf8" });
+
+  assert.equal(run.status, 2, run.stderr);
+  assert.match(run.stderr.split("\n")[0], /anatomiya-no-such-corpus cannot be listed/);
+  assert.doesNotMatch(run.stderr, /\n\s+at /, "no stack trace");
 });

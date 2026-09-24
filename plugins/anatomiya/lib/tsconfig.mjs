@@ -12,7 +12,7 @@
  * somebody is working in.
  */
 import { existsSync } from "node:fs";
-import { dirname, join, resolve, relative, isAbsolute, sep, posix, win32 } from "node:path";
+import { dirname, join, resolve, relative, isAbsolute, posix, win32 } from "node:path";
 
 import { realpathOf, resolveInside } from "./rules.mjs";
 

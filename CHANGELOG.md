@@ -7,6 +7,29 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.10.2] - 2026-09-24
+
+Two machines could render two different maps of one repository, because the list the overview names
+areas from was ordered by the host's locale, and a fifo in the working tree, or where the map's record
+or the pin belongs, could hang `check` and `scan` with nothing printed. Every list is ordered by UTF-16
+code unit now, and every read of a path the repository controls opens without waiting and measures its
+cap in bytes on disk.
+
+### Fixed
+
+- The overview could name different areas on two machines scanning the same repository. It lists
+  areas in order until its line budget runs out, and that order came from the host's locale, so
+  under `sv_SE` an area named `är` sorted after `zoo` and under `en_US` before it. Every list the map,
+  the pin and `check` print is now ordered by UTF-16 code unit. A repository with upper-case or non-ASCII
+  directory names sees its area lines reorder once, the same way on every machine.
+- `check` hung with nothing printed when a file the branch changed had become a fifo, and `scan` and
+  `check` did the same on a fifo where the map's record or the pin belongs. Those reads now open
+  without waiting and skip anything that is not a regular file, the way the hooks already did.
+  `scan` no longer hands the parser a tracked path that has become a fifo, where it waited out the
+  parse watchdog and was then reported as a file that crashed the parser. The record and the pin are
+  read up to 64 MB on disk, far past any map this writes; `check` names a record past that rather than
+  reading it as a repository nobody scanned, and a pin past it reads as no pin.
+
 ## [0.10.1] - 2026-09-23
 
 The hooks were silent in every linked worktree of a repository that ignores `.claude/`, which is
@@ -2585,7 +2608,8 @@ which are partial; several listed there are not implemented yet.
 - No claim that this catches defects. Measured across ten repositories, 1 of 317 defect review
   comments was preventable by a conventions map.
 
-[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.10.1...HEAD
+[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.10.2...HEAD
+[0.10.2]: https://github.com/crisnahine/anatomiya/compare/v0.10.1...v0.10.2
 [0.10.1]: https://github.com/crisnahine/anatomiya/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/crisnahine/anatomiya/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/crisnahine/anatomiya/compare/v0.8.0...v0.9.0

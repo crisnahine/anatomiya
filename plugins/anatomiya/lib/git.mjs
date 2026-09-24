@@ -421,17 +421,16 @@ export async function headSha(root) {
  * The two must never collapse into the same value.
  *
  * The read gives up at exactly the size the parser skips at, which is what makes
- * a blob this refuses one the parse would have refused anyway. A caller may
- * widen it; none does.
+ * a blob this refuses one the parse would have refused anyway.
  *
  * The clock is the caller's. The scan and the check do not agree about how long
  * to wait on a stalled git, and this is the check's most frequent call.
  */
-export async function showBlob(root, sha, path, { maxBytes = MAX_FILE_BYTES, timeout, env } = {}) {
+export async function showBlob(root, sha, path, { timeout, env } = {}) {
   if (!isSha(sha)) return { ok: false, reason: "bad sha" };
   const r = await gitBuffered(root, ["cat-file", "blob", `${sha}:${path}`], {
     encoding: "buffer",
-    maxBytes,
+    maxBytes: MAX_FILE_BYTES,
     ...(timeout === undefined ? {} : { timeout }),
     ...(env === undefined ? {} : { env }),
   });

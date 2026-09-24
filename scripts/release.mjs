@@ -16,7 +16,7 @@ import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { invokedAs } from "./entry.mjs";
+import { invokedAs, readArgv } from "./entry.mjs";
 // One rule for what a version is. `validate.mjs` holds it, and its docstring
 // says why a second copy is a second answer to the same question: the copy that
 // stood here was looser, so a version could pass a tag and fail the branch gate.
@@ -239,69 +239,49 @@ function wrote(path, text, how) {
  */
 const rootOf = (named) => (named === null ? resolve(dirname(fileURLToPath(import.meta.url)), "..") : resolve(named));
 
-function main(argv) {
-  const flags = ["--notes", "--github-output", "--root"];
-  const values = new Map();
-  const rest = [];
-  for (let i = 0; i < argv.length; i++) {
-    if (!flags.includes(argv[i])) {
-      // A flag this does not know is a typo, and reading it as the tag is how
-      // `--notes-file` released the right version and wrote no notes.
-      if (argv[i].startsWith("--")) {
-        console.error(`unknown option: ${argv[i]}\n${USAGE}`);
-        process.exit(2);
-      }
-      rest.push(argv[i]);
-      continue;
-    }
-    // A flag whose value never arrived is refused rather than dropped: the
-    // caller asked for a file to be written, and exiting 0 without writing it
-    // is the failure this whole module exists to stop happening at a tag.
-    const value = argv[i + 1];
-    // Any dash, not only the three options this knows: a typo taken as a value
-    // wrote the notes to a file named `--notes-file` and the step that reads
-    // them found the empty one it meant, and `-x` did the same under a shorter
-    // name. The sibling gate in `coverage.mjs` refuses one dash for the same
-    // reason, and this one refused two.
-    if (!value || value.startsWith("-")) {
-      console.error(`${argv[i]} needs a path\n${USAGE}`);
-      process.exit(2);
-    }
-    // Given twice, the first path is silently dropped and the step that reads
-    // it finds a file that was never written.
-    if (values.has(argv[i])) {
-      console.error(`${argv[i]} was given twice, and only one path can be written\n${USAGE}`);
-      process.exit(2);
-    }
-    values.set(argv[i], value);
-    i++;
-  }
-  const valueOf = (flag) => values.get(flag) ?? null;
-  const tag = rest[0];
-  if (!tag) {
-    console.error(USAGE);
-    process.exit(2);
-  }
-  // One tag, or the second is a release nobody was told did not happen.
-  if (rest.length > 1) {
-    console.error(`only one tag may be given, and ${rest[1]} was the second\n${USAGE}`);
-    process.exit(2);
-  }
+const OPTIONS = Object.fromEntries(
+  ["notes", "github-output", "root"].map((name) => [name, { type: "string", multiple: true }])
+);
 
-  const answered = notesFor(rootOf(valueOf("--root")), tag);
+function main(argv) {
+  const refuse = (message) => {
+    console.error(message ? `${message}\n${USAGE}` : USAGE);
+    process.exit(2);
+  };
+  // Strict, because an unknown flag read as the tag is how `--notes-file`
+  // released the right version and wrote no notes, and a typo read as a value
+  // wrote them to a file named after it.
+  const read = readArgv(argv, OPTIONS, { positionals: true });
+  if (read.error) return refuse(read.error);
+  // A flag whose path never arrived is refused rather than dropped: the caller
+  // asked for a file to be written, and exiting 0 without writing it is the
+  // failure this module exists to stop happening at a tag. Given twice, the
+  // first path would be dropped and the step reading it would find nothing.
+  const paths = {};
+  for (const name of ["notes", "github-output", "root"]) {
+    const given = read.values[name] ?? [];
+    if (given.length > 1) return refuse(`--${name} was given twice, and only one path can be written`);
+    if (given[0] === "") return refuse(`--${name} needs a path`);
+    paths[name] = given[0] ?? null;
+  }
+  const { notes, "github-output": output, root } = paths;
+  const [tag, second] = read.positionals;
+  if (!tag) return refuse(null);
+  // One tag, or the second is a release nobody was told did not happen.
+  if (second !== undefined) return refuse(`only one tag may be given, and ${second} was the second`);
+
+  const answered = notesFor(rootOf(root), tag);
   if (answered.problem !== null) {
     console.error(process.env.GITHUB_ACTIONS === "true" ? `::error::${answered.problem}` : answered.problem);
     process.exit(1);
   }
 
-  const notes = valueOf("--notes");
   // Both writes are guarded, because the tag that started this cannot be taken
   // back and a stack trace says less about which half failed than a sentence.
   if (notes && !wrote(notes, `${answered.notes}\n`, writeFileSync)) process.exit(1);
   // Written here rather than cut out of the line below, because a workflow that
   // parses a human-readable summary breaks the first time the summary is
   // reworded, and it breaks after the tag is already pushed.
-  const output = valueOf("--github-output");
   if (output && !wrote(output, `plugin=${answered.plugin}\nversion=${answered.version}\n`, appendFileSync)) process.exit(1);
   console.log(`${answered.plugin} ${answered.version}, ${answered.notes.split("\n").length} lines of notes`);
 }

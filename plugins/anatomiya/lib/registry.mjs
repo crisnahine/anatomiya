@@ -53,17 +53,14 @@ export function rowsOfKind(kind) {
 }
 
 /**
- * Every row that speaks one of these languages, whichever list declared it.
+ * Every syntactic row that speaks one of these languages, whichever list
+ * declared it.
  *
- * The tier is opt-in, the same rule `dimensionsFor` carries: a caller that does
- * not ask for it must never be handed a claim that needs a checker nobody ran.
- * That filter is why this had no readers and three views of the registry were
- * being added together instead.
+ * Never the type-checked tier, the rule `dimensionsFor` carries: nobody may be
+ * handed a claim that needs a checker nobody ran.
  */
-export function rowsForLangs(langs, { tier = "syntactic" } = {}) {
-  return REGISTRY.filter(
-    (row) => row.langs.some((l) => langs.includes(l)) && (tier === "all" || row.tier === tier)
-  );
+export function rowsForLangs(langs) {
+  return REGISTRY.filter((row) => row.tier === "syntactic" && row.langs.some((l) => langs.includes(l)));
 }
 
 /** The row under this key, or null. */

@@ -1,12 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { needsPosixPaths } from "./platform.mjs";
+import { needsPosixPaths, needsPosixSpecialFiles } from "./platform.mjs";
 import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, rmSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, isAbsolute, sep } from "node:path";
 import { execFileSync } from "node:child_process";
 
-import { collect, countUntrackedSource, isDenied, isCorpusPath, isExcludedDir, isGeneratedFile, isSource, safeResolve, gitRoot, frameworksIn } from "../plugins/anatomiya/lib/corpus.mjs";
+import { collect, countUntrackedSource, isDenied, isCorpusPath, isExcludedDir, isSource, safeResolve, gitRoot, frameworksIn } from "../plugins/anatomiya/lib/corpus.mjs";
 import { language } from "../plugins/anatomiya/lib/langs.mjs";
 import * as areaLib from "../plugins/anatomiya/lib/areas.mjs";
 
@@ -1100,12 +1100,6 @@ test("gitattributes negation, an extension pattern and an unsupported shape are 
   ]);
 });
 
-test("isGeneratedFile answers false rather than throwing on anything but a regular file", (t) => {
-  const dir = tmp(t);
-  assert.equal(isGeneratedFile(dir), false, "a directory is not a file to read");
-  assert.equal(isGeneratedFile(join(dir, "missing.ts")), false, "nothing to open");
-});
-
 test("a repository with no .gitattributes reads as having no generated declarations", async (t) => {
   const dir = repo(t, (d, { git, write }) => {
     write("src/a.ts");
@@ -1116,4 +1110,33 @@ test("a repository with no .gitattributes reads as having no generated declarati
   const { files } = await collect(dir);
 
   assert.deepEqual(files.map((f) => f.rel), ["src/a.ts"]);
+});
+
+test("areas list in code-unit order, so the host's locale cannot pick which ones the overview names", () => {
+  // The overview names areas in this order until its budget runs out, and
+  // `localeCompare` put `ä` before `B` under en_US and after `z` under sv_SE.
+  const areas = discover(
+    fakeFiles(["a", "B", "ä"].flatMap((d) => Array.from({ length: 6 }, (_, i) => `${d}/f${i}.js`))),
+    { minFiles: 3 }
+  );
+  assert.deepEqual(areas.map((a) => a.path), ["B", "a", "ä"]);
+});
+
+test("a tracked path that is a fifo in the working tree is dropped, not handed to a parser", needsPosixSpecialFiles, async (t) => {
+  // It has no source to read, the same as a tracked file that is gone. Handed
+  // on, it held a parse worker until the watchdog fired and was then reported
+  // as a file that crashed the parser.
+  const dir = repo(t, (d, { git, write }) => {
+    write("src/a.ts");
+    write("src/b.ts");
+    git("add", "-A");
+    git("commit", "-qm", "init");
+  });
+  rmSync(join(dir, "src/b.ts"));
+  execFileSync("mkfifo", [join(dir, "src/b.ts")]);
+
+  const { files, dropped } = await collect(dir);
+
+  assert.deepEqual(files.map((f) => f.rel), ["src/a.ts"]);
+  assert.equal(dropped.escaped, 1);
 });

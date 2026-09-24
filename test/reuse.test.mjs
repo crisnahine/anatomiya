@@ -144,6 +144,15 @@ test("a file past the size the parser reads is left out", async (t) => {
   assert.deepEqual(hunksOf(await pendingChange(dir)).map(([path]) => path), ["src/b.ts"]);
 });
 
+test("a file is measured by its bytes on disk, the way the parser measures it", async (t) => {
+  // A byte that is not UTF-8 decodes to three, so the decoded length ran past
+  // the cap on a file the parser still reads, and the file was left out.
+  const { dir, write } = repo(t);
+  write("src/odd.ts", Buffer.concat([Buffer.from("export const odd = 1;\n"), Buffer.alloc(512 * 1024, 0xff), Buffer.from("\n")]));
+
+  assert.deepEqual(hunksOf(await pendingChange(dir)).map(([path]) => path), ["src/odd.ts"]);
+});
+
 test("a file's mark moves with its content, even where its lines do not, and no other file's does", async (t) => {
   // The mark is what keeps the hook from asking twice about one file, so two
   // different edits on the same line have to read as two changes, and an edit

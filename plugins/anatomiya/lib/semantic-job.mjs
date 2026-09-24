@@ -40,12 +40,11 @@ export async function runJob(job, send, { load = loadTypeScript } = {}) {
     const resolution = measureResolution(ts, program, checker, job.files);
     send({ built: true, resolution, config: { status: config.status, reason: config.reason } });
 
-    const dims = SEMANTIC_DIMENSIONS.filter((d) => !job.keys || job.keys.includes(d.key));
     for (const file of job.files) {
       const source = program.getSourceFile(file.abs);
       if (!source) continue;
       const hits = {};
-      for (const dim of dims) {
+      for (const dim of SEMANTIC_DIMENSIONS) {
         const out = [];
         try {
           dim.run({ ts, checker, source }, (h) => out.push(crossing(h)));

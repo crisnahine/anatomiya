@@ -186,7 +186,8 @@ test("a flag with no value after it is refused rather than passed over", (t) => 
   });
 
   assert.equal(run.status, 2);
-  assert.match(run.stderr, /--notes/);
+  // The first line, since the usage text under it names --notes as well.
+  assert.match(run.stderr.split("\n")[0], /'--notes\b/);
 });
 
 test("an option this does not know is a typo, not a tag", (t) => {
@@ -197,7 +198,7 @@ test("an option this does not know is a typo, not a tag", (t) => {
   });
 
   assert.equal(run.status, 2);
-  assert.match(run.stderr, /unknown option: --notes-file/);
+  assert.match(run.stderr, /--notes-file/);
 });
 
 test("a second tag is refused rather than dropped", (t) => {
@@ -226,8 +227,18 @@ test("a single-dash option is not a path either, and nothing is written under it
   });
 
   assert.equal(run.status, 2, run.stdout);
-  assert.match(run.stderr, /--notes needs a path/);
+  // The first line, since the usage text under it names --notes as well.
+  assert.match(run.stderr.split("\n")[0], /'--notes\b/);
   assert.deepEqual(readdirSync(dir), []);
+});
+
+test("a path given twice is refused rather than the first one dropped", (t) => {
+  const run = spawnSync(process.execPath, [join(ROOT, "scripts", "release.mjs"), TAG, "--notes", "a.md", "--notes=b.md"], {
+    cwd: scratch(t), encoding: "utf8",
+  });
+
+  assert.equal(run.status, 2);
+  assert.match(run.stderr, /--notes was given twice/);
 });
 
 test("a mistyped option is not a path the notes are written to", (t) => {
@@ -239,7 +250,8 @@ test("a mistyped option is not a path the notes are written to", (t) => {
   });
 
   assert.equal(run.status, 2);
-  assert.match(run.stderr, /--notes needs a path/);
+  // The first line, since the usage text under it names --notes as well.
+  assert.match(run.stderr.split("\n")[0], /'--notes\b/);
 });
 
 test("the link definitions at the bottom are not the oldest release's notes", () => {

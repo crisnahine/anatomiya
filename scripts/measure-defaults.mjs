@@ -19,7 +19,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { invokedAs } from "./entry.mjs";
+import { invokedAs, readArgv } from "./entry.mjs";
 import { ANATOMIYA } from "./plugins.mjs";
 import { ALL_DIMENSIONS } from "../plugins/anatomiya/lib/dimensions.mjs";
 import { parseAll } from "../plugins/anatomiya/lib/parse.mjs";
@@ -237,24 +237,30 @@ export function mergeTable(existing, incoming, { force = false } = {}) {
   return out;
 }
 
-const TAKES_A_VALUE = new Map([
-  ["--samples", (out, v) => { out.samples = Number(v); }],
-  ["--model", (out, v) => { out.model = v; }],
-  ["--effort", (out, v) => { out.effort = v; }],
-  ["--out", (out, v) => { out.out = v; }],
-  ["--tasks", (out, v) => { out.tasks = v.split(","); }],
-]);
+const OPTIONS = {
+  samples: { type: "string" },
+  model: { type: "string" },
+  effort: { type: "string" },
+  out: { type: "string" },
+  tasks: { type: "string" },
+  force: { type: "boolean" },
+  dry: { type: "boolean" },
+};
 
 function parseArgs(argv) {
-  const out = { samples: 3, model: CLAUDE_DEFAULTS.model, effort: CLAUDE_DEFAULTS.effort, out: TABLE_PATH, force: false, dry: false };
-  for (let i = 0; i < argv.length; i++) {
-    const flag = argv[i];
-    if (flag === "--force") out.force = true;
-    else if (flag === "--dry") out.dry = true;
-    else if (!TAKES_A_VALUE.has(flag)) return { error: `unknown option ${flag}` };
-    else if (argv[i + 1] === undefined) return { error: `${flag} takes a value` };
-    else TAKES_A_VALUE.get(flag)(out, argv[++i]);
-  }
+  const read = readArgv(argv, OPTIONS);
+  if (read.error) return read;
+  const { samples = "3", tasks, ...named } = read.values;
+  const out = {
+    model: CLAUDE_DEFAULTS.model,
+    effort: CLAUDE_DEFAULTS.effort,
+    out: TABLE_PATH,
+    force: false,
+    dry: false,
+    ...named,
+    samples: Number(samples),
+    ...(tasks === undefined ? {} : { tasks: tasks.split(",") }),
+  };
   if (!Number.isInteger(out.samples) || out.samples < 1) return { error: "--samples takes a positive integer" };
   const unknown = (out.tasks ?? []).filter((id) => !TASKS.some((t) => t.id === id));
   if (unknown.length) return { error: `--tasks names no task this knows: ${unknown.join(", ")}` };

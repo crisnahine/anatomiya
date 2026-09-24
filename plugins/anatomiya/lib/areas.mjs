@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 // taken over. Listing an extension the repository does not use matches nothing
 // extra, so the list is the language's rather than the area's.
 import { EXT_BY_LANG, LANGUAGES } from "./langs.mjs";
+import { byCode } from "./paths.mjs";
 
 export const AREA = {
   floor: [3, 8],        // a directory below the floor folds into its parent
@@ -73,9 +74,8 @@ export function areaId(path) {
  *
  * `recursive: false` gives the directory's own files and not its subtree, which
  * is what an area that shares a root with a deeper area needs.
- */
-/**
- * The same pattern, kept in its two halves: the directory a caller may need to
+ *
+ * The pattern is kept in its two halves: the directory a caller may need to
  * encode, and the tail it must not.
  *
  * Structured all the way to the renderer, because this file is what puts the
@@ -195,7 +195,7 @@ function dirOf(rel) {
   return d === "." ? "." : d;
 }
 
-/** Every corpus directory's recursive file count, its own file count, and its child directories. */
+/** Every directory's recursive file count, its own file count, and its child directories. */
 function corpusTree(files) {
   const under = new Map();
   const direct = new Map();
@@ -215,23 +215,6 @@ function corpusTree(files) {
   return { under, direct, kids };
 }
 
-/** The same counts over one area's own files, plus the directories it holds files in. */
-function areaTree(files) {
-  const under = new Map();
-  const holds = new Set();
-  for (const f of files) {
-    let d = dirOf(f.rel);
-    holds.add(d);
-    under.set(d, (under.get(d) || 0) + 1);
-    while (d !== ".") {
-      const parent = dirOf(d);
-      under.set(parent, (under.get(parent) || 0) + 1);
-      d = parent;
-    }
-  }
-  return { under, holds };
-}
-
 const children = (corpus, d) => [...(corpus.kids.get(d) || [])].sort();
 
 /** A subtree holding nothing but this area's files needs one pattern and no descent. */
@@ -242,7 +225,7 @@ function positiveCover(root, corpus, mine) {
   const out = [];
   const walk = (d) => {
     if (whollyOwned(corpus, mine, d)) return out.push({ dir: d, recursive: true, negated: false });
-    if (mine.holds.has(d)) out.push({ dir: d, recursive: false, negated: false });
+    if (mine.direct.has(d)) out.push({ dir: d, recursive: false, negated: false });
     for (const c of children(corpus, d)) if (mine.under.get(c)) walk(c);
   };
   walk(root);
@@ -263,7 +246,7 @@ function negativeCover(root, corpus, mine) {
   const out = [{ dir: root, recursive: true, negated: false }];
   const walk = (d) => {
     if (whollyOwned(corpus, mine, d)) return;
-    if ((corpus.direct.get(d) || 0) > 0 && !mine.holds.has(d)) {
+    if ((corpus.direct.get(d) || 0) > 0 && !mine.direct.has(d)) {
       out.push({ dir: d, recursive: false, negated: true });
     }
     for (const c of children(corpus, d)) {
@@ -314,7 +297,7 @@ function spellableCover(root, positive, negative) {
 function assignGlobs(areas, files) {
   const corpus = corpusTree(files);
   for (const area of areas) {
-    const mine = areaTree(area.files);
+    const mine = corpusTree(area.files);
     const positive = positiveCover(area.path, corpus, mine);
     const negative = negativeCover(area.path, corpus, mine);
     // A tie goes to the shape with no negation: one pattern to read rather than
@@ -401,7 +384,7 @@ export function discover(files, {
 
   const capped = capCount(areas, maxAreas);
   const folded = capped.orphaned || [];
-  const all = capped.sort((a, b) => a.path.localeCompare(b.path));
+  const all = capped.sort((a, b) => byCode(a.path, b.path));
   // After the count is capped, never before: a glob is measured against the
   // areas that ended up existing, and a fold changes which subtrees are foreign.
   assignGlobs(all, files);

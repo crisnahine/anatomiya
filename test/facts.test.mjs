@@ -2,7 +2,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
+import { needsPosixSpecialFiles } from "./platform.mjs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
@@ -566,4 +567,46 @@ test("the flip needs a majority at ten sites too, and eight of ten is not one", 
 
   assert.equal(at(2), "claim", "eight of ten: the lower bound on the majority is 0.49");
   assert.equal(at(1), "counter", "nine of ten clears a half");
+});
+
+test("a record path holding a fifo reads as no record, rather than waiting on it", needsPosixSpecialFiles, (t) => {
+  // A plain read of a fifo waits for a writer for ever, and this runs on every
+  // scan and every check. Driven in a child with a bound, because a hung read
+  // holds this process too.
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-fifo-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  mkdirSync(join(dir, ".claude/anatomiya"), { recursive: true });
+  execFileSync("mkfifo", [join(dir, FACTS_PATH)]);
+
+  const script = `import { readFacts } from ${JSON.stringify(new URL("../plugins/anatomiya/lib/facts.mjs", import.meta.url).href)};
+    process.stdout.write(JSON.stringify(readFacts(${JSON.stringify(dir)})));`;
+  const run = spawnSync(process.execPath, ["--input-type=module", "-e", script], { encoding: "utf8", timeout: 8000 });
+
+  assert.equal(run.signal, null, `still waiting on the fifo after 8 seconds: killed by ${run.signal}`);
+  assert.equal(run.status, 0, run.stderr);
+  assert.deepEqual(JSON.parse(run.stdout), { facts: null, unreadable: null });
+});
+
+test("a record past the size cap is named as unread, not taken for a repository nobody scanned", (t) => {
+  // Nothing this tool writes comes near the cap, so a file past it is one it
+  // did not write, and the check says so rather than reading it as no map.
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-big-record-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  mkdirSync(join(dir, ".claude/anatomiya"), { recursive: true });
+  writeFileSync(join(dir, FACTS_PATH), Buffer.alloc(64 * 1024 * 1024 + 1, 0x20));
+
+  const { facts, unreadable } = readFacts(dir);
+  assert.equal(facts, null);
+  assert.match(unreadable ?? "", /64 MB/);
+});
+
+test("a record is measured by its bytes on disk, not by its decoded length", (t) => {
+  // A byte that is not UTF-8 decodes to three, and 22 MB of them read as a
+  // record past the 64 MB cap in a sentence that named a size nobody measured.
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-odd-record-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  mkdirSync(join(dir, ".claude/anatomiya"), { recursive: true });
+  writeFileSync(join(dir, FACTS_PATH), Buffer.alloc(22 * 1024 * 1024, 0xff));
+
+  assert.deepEqual(readFacts(dir), { facts: null, unreadable: null });
 });

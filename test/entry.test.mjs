@@ -8,7 +8,7 @@ import { spawnSync } from "node:child_process";
 
 import { needsSymlinks } from "./platform.mjs";
 import { REL } from "../scripts/plugins.mjs";
-import { invokedAs } from "../scripts/entry.mjs";
+import { checkOutput, invokedAs, readArgv, selectRepos } from "../scripts/entry.mjs";
 
 // Resolved, because `import.meta.url` always is. That is what makes it the
 // control the symlinked spelling below is measured against.
@@ -172,4 +172,47 @@ test("the guard answers yes through a symlinked path", needsSymlinks, (t) => {
   assert.equal(linked.status, 0, linked.stderr);
   assert.equal(direct.stdout, "true", `${GUARD} does not recognise itself run directly`);
   assert.equal(linked.stdout, "true", `${GUARD} does not recognise itself reached through a link`);
+});
+
+test("a --only name the corpus does not hold is an error, not a shorter run", () => {
+  // A typo ran zero repositories and printed `0 of 0 repositories passed`,
+  // which is exit 0 and reads as an acceptance.
+  const repos = [{ name: "errbit" }, { name: "eslint" }];
+
+  assert.deepEqual(selectRepos(repos, null).repos, repos);
+  assert.deepEqual(selectRepos(repos, "eslint").repos, [{ name: "eslint" }]);
+  assert.match(selectRepos(repos, "errbti").error, /errbti/);
+  assert.match(selectRepos(repos, "errbit,eslnit").error, /eslnit/);
+});
+
+test("a --md target that is already there is refused, and --force is how a rerun says it meant it", () => {
+  // The file is a run of record somebody merged into a document by hand, and
+  // the scripts write their target whole.
+  assert.equal(checkOutput("/out/run.md", false, false), null);
+  assert.equal(checkOutput("/out/run.md", true, true), null);
+  assert.equal(checkOutput(null, false, true), null);
+  assert.match(checkOutput("/out/run.md", false, true), /\/out\/run\.md/);
+  assert.match(checkOutput("/out/run.md", false, true), /--force/);
+});
+
+test("a script's command line is read strictly, and a refusal names the flag", () => {
+  const options = { md: { type: "string" }, force: { type: "boolean" } };
+
+  assert.deepEqual({ ...readArgv(["--md", "out.md", "--force"], options).values }, { md: "out.md", force: true });
+  assert.deepEqual({ ...readArgv(["--md=out.md"], options).values }, { md: "out.md" });
+  assert.deepEqual(readArgv(["/corpus"], options, { positionals: true }).positionals, ["/corpus"]);
+
+  const refused = (argv, flag, code) => {
+    const read = readArgv(argv, options);
+    assert.equal(read.code, code, argv.join(" "));
+    assert.match(read.error, new RegExp(flag), argv.join(" "));
+  };
+  refused(["--nope"], "--nope", "ERR_PARSE_ARGS_UNKNOWN_OPTION");
+  refused(["--md"], "--md", "ERR_PARSE_ARGS_INVALID_OPTION_VALUE");
+  // A typo taken as a value is how a release once wrote its notes to a file
+  // named after the flag it meant.
+  refused(["--md", "--force"], "--md", "ERR_PARSE_ARGS_INVALID_OPTION_VALUE");
+  refused(["--md", "-x"], "--md", "ERR_PARSE_ARGS_INVALID_OPTION_VALUE");
+  refused(["--force=yes"], "--force", "ERR_PARSE_ARGS_INVALID_OPTION_VALUE");
+  refused(["/corpus"], "/corpus", "ERR_PARSE_ARGS_UNEXPECTED_POSITIONAL");
 });

@@ -1,10 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { needsPosixPaths } from "./platform.mjs";
+import { needsPosixPaths, needsPosixSpecialFiles } from "./platform.mjs";
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 
 import {
   buildPin, loadPin, writePin, pinDelta, formatDelta,
@@ -946,4 +946,30 @@ test("a re-pin keeps the per-area delta, which is the whole point of one", () =>
   assert.match(again, /^"src\/b" \(new area\)  \+1 -0$/m, again);
   assert.match(again, /^ {2}- "src\/a\/y\.ts"$/m, "and the files that left it");
   assert.doesNotMatch(again, /areas enter it/, "the count line is the first pin's");
+});
+
+test("a pin and its delta list areas in code-unit order, whatever the host's locale", () => {
+  const area = (path) => ({ id: path, path, files: [{ rel: `${path}/f.ts` }] });
+  const pin = buildPin([area("a"), area("ä"), area("B")], { sha: "a".repeat(40) });
+
+  assert.deepEqual(pin.areas.map((a) => a.path), ["B", "a", "ä"]);
+  assert.deepEqual(pinDelta(null, pin).areas.map((a) => a.path), ["B", "a", "ä"]);
+});
+
+test("a pin path holding a fifo reads as no pin, rather than waiting on it", needsPosixSpecialFiles, (t) => {
+  // A plain read of a fifo waits for a writer for ever, and this runs on every
+  // scan and every check. Driven in a child with a bound, because a hung read
+  // holds this process too.
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-fifo-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  mkdirSync(join(dir, ".claude/anatomiya"), { recursive: true });
+  execFileSync("mkfifo", [join(dir, PIN_PATH)]);
+
+  const script = `import { loadPin } from ${JSON.stringify(new URL("../plugins/anatomiya/lib/baseline.mjs", import.meta.url).href)};
+    process.stdout.write(JSON.stringify(loadPin(${JSON.stringify(dir)})));`;
+  const run = spawnSync(process.execPath, ["--input-type=module", "-e", script], { encoding: "utf8", timeout: 8000 });
+
+  assert.equal(run.signal, null, `still waiting on the fifo after 8 seconds: killed by ${run.signal}`);
+  assert.equal(run.status, 0, run.stderr);
+  assert.equal(JSON.parse(run.stdout), null);
 });

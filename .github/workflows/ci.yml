@@ -281,68 +281,25 @@ jobs:
           cd "$RUNNER_TEMP/smoke"
           node "$GITHUB_WORKSPACE/plugins/anatomiya/bin/anatomiya.mjs" scan . | tee "$RUNNER_TEMP/scan.out"
 
+      # The rules the corpus run holds every scan to, against the count the text
+      # summary printed: the count and the disk have to agree, which is the whole
+      # point of running the binary rather than the functions it calls.
       - name: Check it wrote what it said it wrote
         shell: bash
+        env:
+          SMOKE: ${{ runner.temp }}/smoke
+          SCAN_OUT: ${{ runner.temp }}/scan.out
         run: |
-          cat > "$RUNNER_TEMP/check-output.mjs" <<'CHECK'
-          import { readFileSync, readdirSync, existsSync } from "node:fs";
-          import { join } from "node:path";
-
-          const repo = process.argv[2];
-          const stdout = readFileSync(process.argv[3], "utf8");
-          const rules = join(repo, ".claude/rules");
-          const problems = [];
-
-          if (!existsSync(rules)) {
-            console.error("::error::the scan wrote no .claude/rules directory");
-            process.exit(1);
-          }
-
-          const written = readdirSync(rules).filter((f) => f.startsWith("anatomiya-") && f.endsWith(".md"));
-
-          if (!written.includes("anatomiya-overview.md")) {
-            problems.push("no anatomiya-overview.md on disk");
-          }
-
-          // The command prints a count. The count and the disk have to agree,
-          // which is the whole point of running the binary rather than the
-          // functions it calls.
-          const claimed = stdout.match(/wrote (\d+) files?/);
-          if (!claimed) problems.push("the scan printed no \"wrote N file(s)\" line");
-          else if (Number(claimed[1]) !== written.length) {
-            problems.push(`the scan says it wrote ${claimed[1]} files, ${written.length} are on disk`);
-          }
-
-          if (!existsSync(join(repo, ".claude/anatomiya/facts.json"))) {
-            problems.push("no .claude/anatomiya/facts.json, so nothing rendered is derivable");
-          }
-
-          // A trailing /** is stripped by the matcher before matching, so
-          // "app/**" becomes "app" and any exclusion written under it silently
-          // does nothing. It is the kind of thing that regresses quietly, and it
-          // is only visible in the rendered output.
-          let globs = 0;
-          for (const file of written) {
-            const body = readFileSync(join(rules, file), "utf8");
-            const front = body.match(/^---\r?\n([\s\S]*?)\r?\n---/);
-            if (!front) continue;
-            for (const line of front[1].split(/\r?\n/)) {
-              const m = line.match(/^\s*-\s*"(.+)"\s*$/);
-              if (!m) continue;
-              globs++;
-              if (/\/\*\*$/.test(m[1])) {
-                problems.push(`${file} has a glob ending in a bare /**: ${m[1]}`);
-              }
-            }
-          }
-
-          if (problems.length) {
+          node --input-type=module -e '
+            import { readFileSync } from "node:fs";
+            import { writtenProblems } from "./scripts/e2e-corpus.mjs";
+            const claimed = readFileSync(process.env.SCAN_OUT, "utf8").match(/wrote (\d+) files?/);
+            const { problems, written } = writtenProblems(process.env.SMOKE, claimed ? Number(claimed[1]) : NaN);
+            if (!claimed) problems.push("the scan printed no \"wrote N file(s)\" line");
             for (const p of problems) console.error(`::error::${p}`);
-            process.exit(1);
-          }
-          console.log(`${written.length} files written, ${globs} globs checked, none ends in a bare /**`);
-          CHECK
-          node "$RUNNER_TEMP/check-output.mjs" "$RUNNER_TEMP/smoke" "$RUNNER_TEMP/scan.out"
+            if (problems.length) process.exit(1);
+            console.log(`${written.size} files written, and every check the corpus run makes of them held`);
+          '
 
       # A5 end to end. The overview loads on every turn, so it is only affordable
       # on a cached read, and a unit test on the renderer cannot see a timestamp

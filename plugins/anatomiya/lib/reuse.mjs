@@ -86,7 +86,7 @@ export async function pendingChange(root, { since = null } = {}) {
   for (const { path, status } of [...pending.present].sort((a, b) => byCode(a.path, b.path))) {
     const entry = readHead(join(root, path), MAX_FILE_BYTES + 1);
     // Past the size the parser skips, or not a file: nothing this reads either.
-    if (entry.kind !== "file" || Buffer.byteLength(entry.head) > MAX_FILE_BYTES) continue;
+    if (entry.kind !== "file" || entry.size > MAX_FILE_BYTES) continue;
     if (since !== null && entry.mtimeMs < since) continue;
     const hunks =
       status === "A"

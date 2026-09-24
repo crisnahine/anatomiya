@@ -21,7 +21,7 @@ const config = `{"compilerOptions":{"strict":true}}`;
 
 test("a checker that is not installed is one message, and the job ends there", async () => {
   // Ungated: the loader is handed in, so this runs where typescript is absent.
-  assert.deepEqual(await sent({ root: "/nowhere", files: [], keys: null }, { load: async () => null }), [
+  assert.deepEqual(await sent({ root: "/nowhere", files: [] }, { load: async () => null }), [
     { error: "typescript is not installed" },
   ]);
 });
@@ -32,7 +32,7 @@ test("the job answers built, one record per file and done, in that order", needs
     "a.ts": `export class B { v() { return 1 } }\nexport class A { b = new B(); go() { return this.b.v() } }`,
   });
   try {
-    const out = await sent({ root: dir, files: [{ rel: "a.ts", abs: join(dir, "a.ts") }], keys: null });
+    const out = await sent({ root: dir, files: [{ rel: "a.ts", abs: join(dir, "a.ts") }] });
     assert.deepEqual(out.map((m) => Object.keys(m)[0]), ["built", "rel", "done"]);
     assert.deepEqual(out[0].resolution, { resolved: 2, total: 2 });
     assert.equal(out[0].config.status, "ok");
@@ -43,10 +43,10 @@ test("the job answers built, one record per file and done, in that order", needs
   }
 });
 
-test("a key list narrows the rows a file is answered with", needsTs, async () => {
+test("a file is answered with the one type-checked row there is", needsTs, async () => {
   const dir = repo({ "tsconfig.json": config, "a.ts": `export const x = " a ".trim().toLowerCase();` });
   try {
-    const out = await sent({ root: dir, files: [{ rel: "a.ts", abs: join(dir, "a.ts") }], keys: ["law_of_demeter"] });
+    const out = await sent({ root: dir, files: [{ rel: "a.ts", abs: join(dir, "a.ts") }] });
     assert.deepEqual(Object.keys(out[1].hits), ["law_of_demeter"]);
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -68,7 +68,7 @@ test("resolution counts every property access and credits only the typed ones", 
 });
 
 test("whatever the job throws on is one error message, not a dead channel", needsTs, async () => {
-  const out = await sent({ root: "/nowhere", files: null, keys: null });
+  const out = await sent({ root: "/nowhere", files: null });
   assert.equal(out.length, 1);
   assert.match(out[0].error, /null/);
 });

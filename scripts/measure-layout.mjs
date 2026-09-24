@@ -18,10 +18,11 @@
  * exactly as it was; facts records go to `--facts` under this tool's own
  * scratch directory so the applicability audit has something to read.
  */
-import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
-import { invokedAs } from "./entry.mjs";
+import { checkOutput, invokedAs, readArgv, selectRepos } from "./entry.mjs";
+import { corpusRepos } from "./e2e-corpus.mjs";
 import { namesakeCompanions, namesakeIndex } from "../plugins/anatomiya/lib/companions.mjs";
 import { collect, frameworksIn } from "../plugins/anatomiya/lib/corpus.mjs";
 import {
@@ -619,58 +620,20 @@ const USAGE = `usage: node scripts/measure-layout.mjs <corpusDir> [options]
   --facts <dir>      write each repository's facts record under here
 `;
 
-const VALUE_OPTIONS = ["--md", "--facts", "--only"];
+const OPTIONS = {
+  md: { type: "string" },
+  facts: { type: "string" },
+  only: { type: "string" },
+  force: { type: "boolean" },
+};
 
 export function parseArgs(argv) {
-  const opts = { corpus: null, md: null, facts: null, only: null, force: false };
-  for (let i = 0; i < argv.length; i++) {
-    const arg = argv[i];
-    if (arg === "--force") {
-      opts.force = true;
-      continue;
-    }
-    if (VALUE_OPTIONS.includes(arg)) {
-      // Last on the line it read past the end, and `--only` reading undefined
-      // measured all thirty-five rather than the one repository asked for.
-      if (i + 1 >= argv.length) return { error: `${arg} needs a value after it` };
-      opts[arg.slice(2)] = argv[++i];
-      continue;
-    }
-    if (arg.startsWith("-")) return { error: `unknown option: ${arg}` };
-    opts.corpus = arg;
-  }
-  if (opts.corpus === null) return { error: "the corpus directory is required" };
-  return opts;
-}
-
-/**
- * The repositories this run measures, or the names `--only` asked for that the
- * corpus does not hold.
- *
- * The rule the e2e harness got first: a typo selected nothing and printed
- * `0 of 0 repositories passed`, which is exit 0 and reads as an acceptance of a
- * corpus this run never opened.
- */
-export function selectRepos(names, only) {
-  if (only === null) return { repos: names };
-  const wanted = only.split(",");
-  const missing = wanted.filter((name) => !names.includes(name));
-  if (missing.length) {
-    return { error: `--only ${only}: the corpus holds no repository named ${missing.join(", ")}` };
-  }
-  return { repos: names.filter((name) => wanted.includes(name)) };
-}
-
-/**
- * Whether the run may write where `--md` points.
- *
- * The target is written whole, and what usually sits there is a run of record
- * somebody merged into a document by hand. `--force` is how a rerun says it
- * meant that file.
- */
-export function checkOutput(path, force, exists) {
-  if (path === null || force || !exists) return null;
-  return `${path} is already there, and this run writes its --md target whole; pass --force to write over it`;
+  const read = readArgv(argv, OPTIONS, { positionals: true });
+  if (read.error) return read;
+  if (read.positionals.length === 0) return { error: "the corpus directory is required" };
+  if (read.positionals.length > 1) return { error: "one corpus directory, not several" };
+  const { md = null, facts = null, only = null, force = false } = read.values;
+  return { corpus: read.positionals[0], md, facts, only, force };
 }
 
 async function main() {
@@ -689,16 +652,13 @@ async function main() {
     process.exit(2);
   }
 
-  const children = readdirSync(corpusDir, { withFileTypes: true })
-    .filter((e) => e.isDirectory() && existsSync(join(corpusDir, e.name, ".git")))
-    .map((e) => e.name)
-    .sort();
-  const selected = selectRepos(children, opts.only);
+  const found = corpusRepos(corpusDir);
+  const selected = found.error ? found : selectRepos(found.repos, opts.only);
   if (selected.error) {
     console.error(`${selected.error}\n\n${USAGE}`);
     process.exit(2);
   }
-  const repos = selected.repos;
+  const repos = selected.repos.map((r) => r.name);
 
   const rows = [];
   const sections = [];
