@@ -1,10 +1,11 @@
-import { closeSync, constants, fstatSync, openSync, readSync, realpathSync } from "node:fs";
+import { realpathSync } from "node:fs";
 import { resolve, sep } from "node:path";
 
 import { gitBuffered, gitStreamed } from "./git.mjs";
 import { EXT_BY_LANG, LANGUAGES, language } from "./langs.mjs";
 import { CAPABILITY_WORDS, fileStem, stemWords } from "./dimensions-capability.mjs";
 import { FRAMEWORKS } from "./frameworks.mjs";
+import { readHead } from "./rules.mjs";
 
 // Tracked files only. A working tree holds .env, master.key, an .npmrc with a
 // token and a .git/config with credentials in the remote URL; a filesystem walk
@@ -162,28 +163,6 @@ const GENERATION_WORD = /generated|generator/i;
 const MARKER_HEAD_BYTES = 4096;
 const ATTR_FILE_BYTES = 65536;
 
-/**
- * The first bytes of a regular file, or "" for anything else: a symlink
- * swapped in between a stat and an open would read the wrong file, so the
- * type is checked on the same handle the bytes come from, and a path that
- * has vanished, is a directory, or refuses to open answers empty rather than
- * throwing.
- */
-function readPrefix(path, bytes) {
-  let fd;
-  try {
-    fd = openSync(path, constants.O_RDONLY | (constants.O_NONBLOCK ?? 0));
-    if (!fstatSync(fd).isFile()) return "";
-    const buf = Buffer.alloc(bytes);
-    const read = readSync(fd, buf, 0, bytes, 0);
-    return buf.subarray(0, read).toString("utf8");
-  } catch {
-    return "";
-  } finally {
-    if (fd !== undefined) closeSync(fd);
-  }
-}
-
 // Lines rather than bytes, so a module that documents these markers is safe by
 // where a generator stamps rather than by how much comment happens to sit above
 // its own constants: this tool's own `corpus.mjs` cleared the byte cap by 1,756
@@ -192,8 +171,8 @@ function readPrefix(path, bytes) {
 const MARKER_HEAD_LINES = 10;
 
 /** Whether a file's own head carries a generated-file marker. */
-export function isGeneratedFile(absPath) {
-  const head = readPrefix(absPath, MARKER_HEAD_BYTES).split("\n").slice(0, MARKER_HEAD_LINES).join("\n");
+function isGeneratedHead(prefix) {
+  const head = prefix.split("\n").slice(0, MARKER_HEAD_LINES).join("\n");
   if (GENERATED_MARKER.test(head)) return true;
   return NOT_EDITABLE.test(head) && GENERATION_WORD.test(head);
 }
@@ -213,7 +192,8 @@ function generatedAttrRules(root) {
   const abs = safeResolve(root, ".gitattributes");
   if (!abs) return [];
   const rules = [];
-  for (const line of readPrefix(abs, ATTR_FILE_BYTES).split("\n")) {
+  const file = readHead(abs, ATTR_FILE_BYTES);
+  for (const line of (file.kind === "file" ? file.head : "").split("\n")) {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith("#")) continue;
     const [pattern, ...attrs] = trimmed.split(/\s+/);
@@ -350,8 +330,9 @@ export async function gitRoot(cwd) {
 }
 
 /**
- * The corpus: tracked source files, deny-listed paths removed, symlinks and
- * paths escaping the repository dropped.
+ * The corpus: tracked source files, deny-listed paths removed. A symlink, a
+ * path escaping the repository, one that is gone and one that is not a regular
+ * file are dropped together, as `escaped`.
  *
  * `git ls-files -z` is NUL-delimited because git permits newlines in paths, and
  * a newline-split here would turn one hostile filename into two corpus entries.
@@ -371,10 +352,9 @@ export async function collect(root) {
     const { drop, abs } = classify(root, rel, generatedRules);
     // Non-source tracked files feed the roster this scan builds over every
     // tracked path, not just the parsed ones.
-    if (drop === "notSource") { dropped.notSource++; others.push({ rel }); return true; }
-    if (drop) { dropped[drop]++; return true; }
+    if (drop === "notSource") { dropped.notSource++; others.push({ rel }); return; }
+    if (drop) { dropped[drop]++; return; }
     files.push({ rel, abs, lang: language(rel) });
-    return true;
   });
 
   // Kept in the shape callers already read. No repository size truncates the
@@ -401,7 +381,6 @@ export async function countUntrackedSource(root) {
   const generatedRules = generatedAttrRules(root);
   await lsFiles(root, (rel) => {
     if (!classify(root, rel, generatedRules).drop) n++;
-    return true;
   }, ["--others", "--exclude-standard"]);
   return n;
 }
@@ -422,12 +401,17 @@ function classify(root, rel, generatedRules) {
   // A file that is generated must not contribute evidence to a stated
   // directive, whichever directory it sits in: the marker is read only once
   // the cheaper string checks above have already let the path through.
-  if (isAttrGenerated(generatedRules, rel) || isGeneratedFile(abs)) return { drop: "generated" };
+  if (isAttrGenerated(generatedRules, rel)) return { drop: "generated" };
+  const entry = readHead(abs, MARKER_HEAD_BYTES);
+  // Not a regular file has no source to read, the same as a path that resolves
+  // nowhere: a fifo here held a parse worker until its watchdog fired.
+  if (entry.kind === "other") return { drop: "escaped" };
+  if (entry.kind === "file" && isGeneratedHead(entry.head)) return { drop: "generated" };
   return { abs };
 }
 
 /**
- * Feed each NUL-delimited entry to `onEntry`, which returns false to stop.
+ * Feed each NUL-delimited entry to `onEntry`.
  *
  * No pathspec follows `--`; it is there because the rule for every git call in
  * this codebase is that nothing after it can be read as an option.
@@ -439,5 +423,8 @@ function classify(root, rel, generatedRules) {
 export function lsFiles(root, onEntry, extra = []) {
   // An empty field is a delimiter run rather than a listed path, and the caller
   // classifies paths.
-  return gitStreamed(root, ["ls-files", "-z", ...extra, "--"], (rel) => (rel ? onEntry(rel) : true));
+  return gitStreamed(root, ["ls-files", "-z", ...extra, "--"], (rel) => {
+    if (rel) onEntry(rel);
+    return true;
+  });
 }

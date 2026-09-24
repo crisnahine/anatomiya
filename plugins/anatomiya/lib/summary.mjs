@@ -193,14 +193,12 @@ function encodeScan(s) {
     ...s,
     root: sanitisePath(s.root),
     historyError: s.historyError == null ? null : encode(s.historyError),
-    // Each of these passes one argument on purpose: `map` hands its callback an
-    // index, and `sanitisePath` reads a second argument as the cap.
     rules: {
       ...s.rules,
-      foreign: s.rules.foreign.map((name) => sanitisePath(name)),
-      unknown: s.rules.unknown.map((name) => sanitisePath(name)),
-      unreadable: s.rules.unreadable.map((name) => sanitisePath(name)),
-      replaced: s.rules.replaced.map((name) => sanitisePath(name)),
+      foreign: s.rules.foreign.map(sanitisePath),
+      unknown: s.rules.unknown.map(sanitisePath),
+      unreadable: s.rules.unreadable.map(sanitisePath),
+      replaced: s.rules.replaced.map(sanitisePath),
     },
   };
 }
@@ -313,8 +311,8 @@ function encodePin(s) {
       areas: s.delta.areas.map((a) => ({
         ...a,
         path: sanitisePath(a.path),
-        added: a.added.map((name) => sanitisePath(name)),
-        removed: a.removed.map((name) => sanitisePath(name)),
+        added: a.added.map(sanitisePath),
+        removed: a.removed.map(sanitisePath),
       })),
     },
   };

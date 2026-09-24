@@ -54,10 +54,11 @@ export const withoutExtension = (rel) => {
 };
 
 /**
- * Order by code point, for a tie that decides which name a reader sees.
+ * Order by UTF-16 code unit, which is what `<` compares, for anything a reader
+ * sees or a file records.
  *
- * `localeCompare` orders case by whatever ICU tables the host was built with,
- * so two machines rendered two maps from one repository. Four modules carried
- * this privately or spelled it inline, and a fifth broke its tie by locale.
+ * `localeCompare` orders by the host's locale and ICU tables, so two machines
+ * rendered two maps from one repository, and a list the overview cuts to its
+ * budget named different areas on each.
  */
 export const byCode = (a, b) => (a < b ? -1 : a > b ? 1 : 0);

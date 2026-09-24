@@ -295,17 +295,12 @@ export const RUBY_DIMENSIONS = [
         if (n.t !== "call") return;
         const recv = constName(n.receiver);
         if (recv) {
-          if ((recv === "Time" || recv === "DateTime") && n.name === "now") {
-            return add({ node: site(n), conforming: false, where: where(ctx) });
-          }
           // `DateTime.new(2026, 8, 20, 9, 0, 0, 'PST')` always resolves to
           // UTC-08:00 and `Time.new(..., '-08:00')` reports utc_offset -28800,
           // so the application zone never reaches the value. Any arity: a bare
           // `Time.new` is `Time.now` under another name.
-          if ((recv === "Time" || recv === "DateTime") && n.name === "new") {
-            return add({ node: site(n), conforming: false, where: where(ctx) });
-          }
-          if (recv === "Date" && n.name === "today") {
+          const clock = recv === "Time" || recv === "DateTime";
+          if ((clock && (n.name === "now" || n.name === "new")) || (recv === "Date" && n.name === "today")) {
             return add({ node: site(n), conforming: false, where: where(ctx) });
           }
           if (/^(Time|Date|DateTime)$/.test(recv) && n.name === "current") {

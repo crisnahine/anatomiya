@@ -15,9 +15,7 @@ async function counts(src) {
   try {
     writeFileSync(join(dir, "tsconfig.json"), `{"compilerOptions":{"strict":true}}`);
     writeFileSync(join(dir, "a.ts"), src);
-    const r = await runSemantic(dir, [{ rel: "a.ts", abs: join(dir, "a.ts"), lang: "js" }], {
-      keys: ["law_of_demeter"],
-    });
+    const r = await runSemantic(dir, [{ rel: "a.ts", abs: join(dir, "a.ts"), lang: "js" }]);
     const hits = r.records.get("a.ts")?.hits?.law_of_demeter ?? [];
     return { candidates: hits.length, conforming: hits.filter((h) => h.conforming).length };
   } finally {

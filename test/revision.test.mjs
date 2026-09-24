@@ -175,7 +175,7 @@ test("the source is held only where the caller asked for it", async (t) => {
   assert.equal(readFileSync(out.files[0].abs, "utf8"), FIRST);
 });
 
-test("every path comes back, sorted, however few readers ran at once", async (t) => {
+test("every path comes back, sorted, whatever order the readers finished in", async (t) => {
   const rels = Array.from({ length: 20 }, (_, i) => `src/f${String(i).padStart(2, "0")}.js`);
   let sha;
   const dir = repo(t, (d, { write, commit }) => {
@@ -183,10 +183,7 @@ test("every path comes back, sorted, however few readers ran at once", async (t)
     sha = commit("first");
   });
 
-  const out = await readAtRevision(dir, sha, [...rels].reverse().map((rel) => ({ rel })), {
-    concurrency: 4,
-    withSource: true,
-  });
+  const out = await readAtRevision(dir, sha, [...rels].reverse().map((rel) => ({ rel })), { withSource: true });
   t.after(out.dispose);
 
   assert.deepEqual(out.files.map((f) => f.rel), rels, "answered in path order, not in the order they finished");
@@ -195,4 +192,16 @@ test("every path comes back, sorted, however few readers ran at once", async (t)
   // The directory the path names is rebuilt under the temporary root rather
   // than flattened, so two files sharing a basename cannot overwrite each other.
   assert.ok(out.files[0].abs.endsWith(join("src", "f00.js")));
+});
+
+test("the files come back in code-unit order, not the host's locale", async (t) => {
+  let sha;
+  const dir = repo(t, (d, { write, commit }) => {
+    for (const rel of ["a.js", "B.js", "ä.js"]) write(rel, FIRST);
+    sha = commit("first");
+  });
+
+  const out = await readAtRevision(dir, sha, [{ rel: "a.js" }, { rel: "ä.js" }, { rel: "B.js" }]);
+  t.after(out.dispose);
+  assert.deepEqual(out.files.map((f) => f.rel), ["B.js", "a.js", "ä.js"]);
 });

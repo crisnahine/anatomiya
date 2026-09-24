@@ -409,7 +409,7 @@ export const RAILS_DIMENSIONS = [
     run(ast, add) {
       eachMigration(ast, (cls) => {
         walkRuby(cls.body, (m) => {
-          if (!m.t || m.t !== "call" || !bare(m, "create_table")) return;
+          if (!bare(m, "create_table")) return;
           if (lit(args(m)[0]) === null) return;
           const opts = options(m);
           if (opts === null) return;

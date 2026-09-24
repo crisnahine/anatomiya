@@ -20,7 +20,7 @@ import { createReadStream, existsSync, readdirSync, writeFileSync } from "node:f
 import { createInterface } from "node:readline";
 import { join, resolve } from "node:path";
 
-import { invokedAs } from "./entry.mjs";
+import { checkOutput, invokedAs, readArgv } from "./entry.mjs";
 
 // What Claude Code calls the channel. A rule file and a nested CLAUDE.md arrive
 // through the same one, which is why this counts both and splits them by whether
@@ -174,32 +174,15 @@ const USAGE = `usage: node scripts/measure-delivery.mjs <transcriptDir> [options
   --force            write over the --md path if a file is already there
 `;
 
-const VALUE_OPTIONS = ["--md", "--match"];
+const OPTIONS = { md: { type: "string" }, match: { type: "string" }, force: { type: "boolean" } };
 
 export function parseArgs(argv) {
-  const opts = { dir: null, md: null, match: null, force: false };
-  for (let i = 0; i < argv.length; i++) {
-    const arg = argv[i];
-    if (arg === "--force") {
-      opts.force = true;
-      continue;
-    }
-    if (VALUE_OPTIONS.includes(arg)) {
-      if (i + 1 >= argv.length) return { error: `${arg} needs a value after it` };
-      opts[arg.slice(2)] = argv[++i];
-      continue;
-    }
-    if (arg.startsWith("-")) return { error: `unknown option: ${arg}` };
-    opts.dir = arg;
-  }
-  if (opts.dir === null) return { error: "the transcript directory is required" };
-  return opts;
-}
-
-/** Whether the run may write where `--md` points. Same rule the layout bar holds. */
-export function checkOutput(path, force, exists) {
-  if (path === null || force || !exists) return null;
-  return `${path} is already there, and this run writes its --md target whole; pass --force to write over it`;
+  const read = readArgv(argv, OPTIONS, { positionals: true });
+  if (read.error) return read;
+  if (read.positionals.length === 0) return { error: "the transcript directory is required" };
+  if (read.positionals.length > 1) return { error: "one transcript directory, not several" };
+  const { md = null, match = null, force = false } = read.values;
+  return { dir: read.positionals[0], md, match, force };
 }
 
 const SESSION_COLUMNS = ["session", "deliveries", "scoped", "unscoped", "compacts", "repeats", "afterCompact"];

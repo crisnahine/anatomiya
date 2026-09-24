@@ -7,7 +7,7 @@
  * one where a convention was most likely broken. This asks the prior question
  * instead, and answers it from counts the scan already took (H38).
  */
-import { byCode } from "./paths.mjs";
+import { byCode, dirOf } from "./paths.mjs";
 import { RUBY_TEST_NAME, TEST_DIRS, TEST_NAME, TEST_ROOTS } from "./test-shape.mjs";
 import { isCorpusPath } from "./corpus.mjs";
 import { LEVEL_ONLY_LABEL } from "./layout.mjs";
@@ -137,9 +137,6 @@ function countsLine(dir, root) {
   const held = here.length > 0 ? `; elsewhere in it ${here.join(", ")}${namesakes}` : "";
   return `${dir} holds no other test; ${root.dir}: ${of} files, ${withTest} with a namesake test${held}`;
 }
-
-/** The directory a path sits in, or "" at the repository root. */
-const dirOf = (rel) => rel.slice(0, Math.max(0, rel.lastIndexOf("/")));
 
 /**
  * Test files a source root holds, its subtree included, whatever they are named.

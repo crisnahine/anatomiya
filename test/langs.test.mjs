@@ -165,16 +165,16 @@ test("capabilities are the closed pair, declared per language", () => {
   assert.equal(langHas("ruby", "importGraph"), false);
 });
 
-test("carriesTypeSyntax answers off the path alone, and only for the half that can", async () => {
+test("with no facets, type syntax is the path's answer, and only the typed half says yes", async () => {
   // `export function f(): number` is a SyntaxError under Node, so a row whose
   // whole question is the annotation has nothing to ask a plain file.
-  const { carriesTypeSyntax } = await import("../plugins/anatomiya/lib/langs.mjs");
+  const { holdsTypeSyntax } = await import("../plugins/anatomiya/lib/langs.mjs");
 
   for (const p of ["src/a.ts", "src/a.mts", "src/a.cts", "src/a.tsx", "src/a.d.ts"]) {
-    assert.equal(carriesTypeSyntax(p), true, p);
+    assert.equal(holdsTypeSyntax(p), true, p);
   }
   for (const p of ["src/a.js", "src/a.mjs", "src/a.cjs", "src/a.jsx", "app/a.rb", "Rakefile", "src/ats", ""]) {
-    assert.equal(carriesTypeSyntax(p), false, p);
+    assert.equal(holdsTypeSyntax(p), false, p);
   }
 });
 
