@@ -408,6 +408,26 @@ test("an export declared inside an ambient module is not a top-level site", asyn
   }
 });
 
+test("an all-capitals name is a constant or a route handler, and votes for no class", async () => {
+  // Measured on a Next.js `app/api` directory of 41 route files: `GET` and
+  // `POST` voted PascalCase, the area stated "functions are named PascalCase"
+  // 81 of 82, and the check asked for the one camelCase helper to be renamed.
+  // A constants directory of `export const DEBUG = 3` stated "exported names
+  // are PascalCase" 40 of 40. `MAX_DEBUG` already spells no class, and `DEBUG`
+  // is the same constant with one word fewer.
+  const src = `
+    export async function GET() {}
+    export async function POST() {}
+    export const DEBUG = 3;
+    export const MAX_DEBUG = 3;
+    export function normalizeQuery() {}
+  `;
+  for (const key of ["function_naming_case", "exported_symbol_case"]) {
+    const h = await astHits(key, src);
+    assert.deepEqual(h.map((x) => [x.where, x.class]), [["normalizeQuery", "camelCase"]], key);
+  }
+});
+
 test("the naming AST rows are reachable from the registry", async () => {
   const { dimensionsFor } = await import("../plugins/anatomiya/lib/dimensions.mjs");
   const keys = dimensionsFor(["js"]).map((d) => d.key);
@@ -576,7 +596,10 @@ test("classifyWord answers a long uppercase run followed by a non-word in linear
   assert.equal(classifyWord("v2Client"), "camelCase");
   assert.equal(classifyWord("FooBar"), "PascalCase");
   assert.equal(classifyWord("foo"), null);
-  assert.equal(classifyWord("FOO"), "PascalCase");
+  // Capitals alone are a constant, the SCREAMING case `FOO_BAR` already
+  // spells, and a capital run inside a word is still an acronym in it.
+  assert.equal(classifyWord("FOO"), null);
+  assert.equal(classifyWord("URLParser"), "PascalCase");
 });
 
 /* --- the class a declared type name's prefix votes for --- */
