@@ -297,20 +297,30 @@ export function applyPairings(parsed, corpus, langs) {
  * Producers this branch touched whose companion is not in the tree.
  *
  * Only files the branch touched: an obligation the repository has carried for
- * years is what the map counts, not a finding against this diff.
+ * years is what the map counts, not a finding against this diff. A producer
+ * whose companion the branch removed is one it touched, through the other
+ * file: deleting an inconvenient spec passed clean while a one-line edit to
+ * its model was flagged. `removed` is every path the branch took away.
  */
-export function pairingViolations(changed, corpus, pairing) {
+export function pairingViolations(changed, corpus, pairing, removed = new Set()) {
   const packages = packagedPairings(corpus, pairing);
-  const out = [];
-  for (const path of changed) {
+  // The first package whose shape the path has decides, as the scan's own
+  // count does.
+  const owed = (path) => {
     for (const { from, root, suffixes } of packages) {
       const companion = companionOf(path, { ...pairing, from }, root);
-      if (companion === null) continue;
-      if (!companionsOf(path, { ...pairing, from }, root, suffixes).some((c) => corpus.has(c))) {
-        out.push({ path, companion });
-      }
-      break;
+      if (companion !== null) return { companion, any: companionsOf(path, { ...pairing, from }, root, suffixes) };
     }
+    return null;
+  };
+  const producers = new Set(changed);
+  if (removed.size) {
+    for (const path of corpus) if (owed(path)?.any.some((c) => removed.has(c))) producers.add(path);
+  }
+  const out = [];
+  for (const path of producers) {
+    const owes = owed(path);
+    if (owes && !owes.any.some((c) => corpus.has(c))) out.push({ path, companion: owes.companion });
   }
   return out;
 }
