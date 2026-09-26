@@ -17,7 +17,9 @@ there. This command is for a repository with no remote, or for a user accepting 
    Add `--dry-run` to print the delta and write nothing.
 
 2. Report what came back:
-   - the commit it pinned, and the previous one if there was a pin already
+   - the commit it pinned, and the previous one if there was a pin already. Where the pin on disk
+     could not be read, say that it was replaced and why: a merge conflict in it, or a newer build's
+     pin, is the user's to know about
    - how many files enter the baseline population and how many leave it, and how many only moved
      between areas
    - the areas it lists, and for each one the files that left. A file leaving is a file whose

@@ -13,7 +13,7 @@ import { encodePath } from "./encode.mjs";
 import { applyPairings } from "./pairing.mjs";
 import { atomic, readRecord } from "./facts.mjs";
 import { byCode } from "./paths.mjs";
-import { resolveInside } from "./rules.mjs";
+import { readHead, resolveInside } from "./rules.mjs";
 
 export const PIN_PATH = ".claude/anatomiya/baseline.json";
 export const PIN_SCHEMA = 1;
@@ -66,17 +66,50 @@ export function pinTarget(root) {
 }
 
 export function loadPin(root) {
+  return readPin(root).pin;
+}
+
+/**
+ * The pin on disk, or why the file there is not one this build can read.
+ *
+ * Both halves, because a file that will not load and no file at all get the
+ * same counts-only answer and need different sentences: a committed pin that
+ * conflicted on a merge, or one a newer build wrote, printed "no baseline
+ * pinned" in a repository that had one, and `pin` then overwrote it as if it
+ * were the first.
+ */
+export function readPin(root) {
   // A pin outside the repository is no pin: the same counts-only answer an
   // unreadable one gets, never a population a directory we do not own chose.
   const path = pinFile(root);
-  if (path === null) return null;
-  const pin = readRecord(path).record;
-  if (!pin || pin.schema !== PIN_SCHEMA || !isSha(pin.sha) || !Array.isArray(pin.areas)) return null;
+  if (path === null) return { pin: null, unreadable: null };
+  const { record, oversize } = readRecord(path);
+  if (oversize) return { pin: null, unreadable: "it is past the size this reads" };
+  if (record === null) {
+    return { pin: null, unreadable: readHead(path, 0).kind === "file" ? "it does not parse as JSON" : null };
+  }
+  const why = pinProblem(record);
+  return why === null ? { pin: record, unreadable: null } : { pin: null, unreadable: why };
+}
+
+/**
+ * Why a parsed record is not a pin this build reads, or null.
+ *
+ * Only this module's own words go into the answer, never a value out of the
+ * file, which the repository controls and every caller prints.
+ */
+function pinProblem(pin) {
+  if (!pin || typeof pin !== "object" || Array.isArray(pin)) return "it is not a pin";
+  if (pin.schema !== PIN_SCHEMA) {
+    const found = Number.isInteger(pin.schema) ? `it is schema ${pin.schema}` : "it names no schema this reads";
+    return `${found} and this build reads ${PIN_SCHEMA}`;
+  }
+  if (!isSha(pin.sha)) return "the commit it names is not a sha";
   // A half-shaped area is a pin that reads as a smaller population than the
   // one a human accepted, which is the direction that manufactures claims.
   // Refusing the whole file drops to counts-only instead.
-  if (!pin.areas.every(isPinnedArea)) return null;
-  return pin;
+  if (!Array.isArray(pin.areas) || !pin.areas.every(isPinnedArea)) return "an area in it is not whole";
+  return null;
 }
 
 function isPinnedArea(a) {
@@ -283,16 +316,25 @@ function areaBlock(state, population, baseline) {
  * module's own, so the order these must be called in stays inside the module
  * rather than in a caller.
  *
- * `countsOnly` is the hard stop: no pin, or a pinned sha this repository can no
- * longer reach, and every directive drops to counts (E3).
+ * `countsOnly` is the hard stop: no pin, a pin this build cannot read, or a
+ * pinned sha this repository can no longer reach, and every directive drops to
+ * counts (E3).
  *
  * `partitionSize` is the corpus size the pin was taken over. The area floor is a
  * step function of it, so a caller deriving it from today's file count
  * re-partitions the repository on one added file, and every area then reads as
  * a population change against a pin that knew the old partition.
  */
-export async function resolve(root, { pin = loadPin(root), baseRef = null } = {}) {
-  // A pin handed in directly has not been through `loadPin`, and an area list
+export async function resolve(root, { pin, baseRef = null } = {}) {
+  // Read here unless handed in. A pin on disk that will not load drops to
+  // counts like no pin at all, and carries why, so nothing prints "no baseline
+  // pinned" over a pin a human committed.
+  if (pin === undefined) {
+    const read = readPin(root);
+    if (read.unreadable !== null) return state({ status: "pin-unreadable", countsOnly: true, unreadable: read.unreadable });
+    pin = read.pin;
+  }
+  // A pin handed in directly has not been through `readPin`, and an area list
   // this cannot index is not a smaller baseline, it is no baseline.
   if (!pin || !Array.isArray(pin.areas) || !pin.areas.every(isPinnedArea)) {
     return state({ status: "unpinned", countsOnly: true });
@@ -392,6 +434,7 @@ function state(o) {
     renames: o.renames ?? new Map(),
     drift: o.drift ?? null,
     sinceFork: o.sinceFork ?? new Set(),
+    unreadable: o.unreadable ?? null,
   };
 }
 

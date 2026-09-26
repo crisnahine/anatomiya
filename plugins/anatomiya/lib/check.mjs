@@ -1135,6 +1135,7 @@ async function staleness(root, facts, base, unreadable = null) {
   // same base ref the scan pinned rather than a second reading of them.
   const state = await resolveBaseline(root, { baseRef: base.ref });
   if (state.status === "unpinned") return { reason: "no baseline pinned" };
+  if (state.status === "pin-unreadable") return { reason: `the pin on disk could not be read because ${state.unreadable}` };
   if (state.status === "unreachable") return { reason: "the pinned baseline commit is unreachable" };
   if (!state.drift) return { reason: state.baseRefReason || "drift could not be measured" };
 
