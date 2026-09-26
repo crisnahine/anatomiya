@@ -6,7 +6,7 @@ import { mkdirSync, mkdtempSync, writeFileSync, readFileSync, realpathSync, rmSy
 import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { choosePrism, listPrism, parseRuby, RUBY_GUARDS } from "../plugins/anatomiya/lib/ruby.mjs";
+import { choosePrism, listPrism, parseRuby, prismLoadArgs, RUBY_GUARDS } from "../plugins/anatomiya/lib/ruby.mjs";
 import { walkRuby, constName, bodyOf, site, args } from "../plugins/anatomiya/lib/ruby-walk.mjs";
 import { RUBY_DIMENSIONS } from "../plugins/anatomiya/lib/dimensions-ruby.mjs";
 import { siteIdentity } from "../plugins/anatomiya/lib/introduced.mjs";
@@ -74,10 +74,34 @@ test("the listing names a prism installed in a gem path, by version and absolute
   assert.deepEqual(planted.paths, [join(gems, "gems", "prism-1.99.0", "lib")]);
 });
 
+test("a listed prism that raises on load is never put on the load path", needsRubyInterpreter, async (t) => {
+  // The listing is RubyGems' record, and a record says nothing about whether
+  // the extension it names was built for this interpreter. A gem that raises
+  // the way an extension linked to another libruby does is newest here, so
+  // the choice has to be proved to load before the parser is handed it.
+  const gems = mkdtempSync(join(tmpdir(), "anatomiya-gems-broken-"));
+  t.after(() => rmSync(gems, { recursive: true, force: true }));
+  mkdirSync(join(gems, "specifications"), { recursive: true });
+  mkdirSync(join(gems, "gems", "prism-1.99.0", "lib"), { recursive: true });
+  writeFileSync(join(gems, "gems", "prism-1.99.0", "lib", "prism.rb"), 'raise LoadError, "incompatible library version"\n');
+  writeFileSync(
+    join(gems, "specifications", "prism-1.99.0.gemspec"),
+    'Gem::Specification.new do |s|\n  s.name = "prism"\n  s.version = "1.99.0"\n  s.summary = "planted"\n  s.authors = ["t"]\n  s.files = ["lib/prism.rb"]\n  s.require_paths = ["lib"]\nend\n'
+  );
+  const env = { ...process.env, GEM_PATH: gems };
+  assert.ok((await listPrism({ env })).some((s) => s.version === "1.99.0"), "the broken one is listed");
+
+  const load = await prismLoadArgs({ env });
+
+  assert.ok(!load.some((p) => p.startsWith(gems)), `the broken prism was chosen: ${load.join(" ")}`);
+});
+
 test("the parser loads the prism the listing chose, and says which", needsShebang, async (t) => {
   // A stub interpreter answers the ready line only for the load path the
   // listing handed it, so the version the run reports is the proof of which
-  // prism parsed, off the same resolution the readiness probe uses.
+  // prism parsed, off the same resolution the readiness probe uses. It also
+  // answers the version question on that path, which is how the choice is
+  // proved to load before the parser is handed it.
   const bin = mkdtempSync(join(tmpdir(), "anatomiya-ruby-stub-"));
   t.after(() => rmSync(bin, { recursive: true, force: true }));
   writeFileSync(
@@ -85,6 +109,7 @@ test("the parser loads the prism the listing chose, and says which", needsSheban
     `#!/bin/sh
 case "$*" in
   *Gem::Specification*) printf '[{"version":"0.19.0","default":true,"paths":["/old/lib"]},{"version":"1.9.0","default":false,"paths":["/new/lib","/new/ext"]}]' ;;
+  *"--disable-gems -I /new/lib -I /new/ext -rprism"*) printf 1.9.0 ;;
   *"--disable-gems -I /new/lib -I /new/ext -e"*) cat >/dev/null; printf '{"ready":true,"prism":"1.9.0"}\\n' ;;
   *) cat >/dev/null; printf '{"ready":true,"prism":"0.19.0"}\\n{"fatal":"prism 0.19.0 predates the field names this reads"}\\n'; exit 1 ;;
 esac
