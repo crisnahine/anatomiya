@@ -844,3 +844,28 @@ test("a hook declared without a body is still the hook this module exports", () 
     { candidates: 1, conforming: 0 }
   );
 });
+
+/* --- a decorator list belongs to the class it decorates --- */
+
+test("a doc comment above a decorator list documents the class it decorates", () => {
+  // The parser starts an exported class at `export`, after its decorators, so
+  // the gap to the comment held `@Injectable()` and read as text: forty
+  // documented NestJS services scanned as "code here explains itself", and the
+  // check then flagged a documented function added beside them. TypeScript and
+  // JSDoc attach a comment written above the decorators to the class.
+  for (const src of [
+    `/** what S does */\n@Injectable()\nexport class S {}`,
+    `/** what S does */\n@Component({ selector: "s" })\n@Other()\nexport default class S {}`,
+    `/** what S does */\n// eslint-disable-next-line max-classes-per-file\n@Injectable()\nexport class S {}`,
+    `/** what S does */\n@Injectable() // provided in root\nexport class S {}`,
+  ]) {
+    assert.deepEqual(docHits(src).map((x) => x.conforming), [true], src);
+  }
+  // Decorators alone document nothing, and another statement's trailing
+  // comment still does not reach past them.
+  assert.deepEqual(docHits(`@Injectable()\nexport class S {}`).map((x) => x.conforming), [false]);
+  assert.deepEqual(
+    docHits(`const x = 1 // note\n@Injectable()\nexport class S {}`).map((x) => x.conforming),
+    [false]
+  );
+});
