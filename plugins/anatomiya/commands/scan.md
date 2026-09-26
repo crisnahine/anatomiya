@@ -30,6 +30,9 @@ start of each session and whenever HEAD moves. Run this when the user asks for i
    - what it could not cover: files in no area, files that crashed the parser, files that failed to
      parse, files over the per-file size cap, and history git could not read, which fails the author
      gate on every claim
+   - a language it read no file of, with the reason and the remedy on the line after it. The rest
+     of the map is still written, and the areas holding that language keep what the last scan that
+     could read it wrote
    - how many files it wrote, or would write, and how many area files it removed
    - every file in `.claude/rules/` this tool did not write, since those also reach the agent on
      every turn. The scanner names them one per line, and names separately any file carrying our

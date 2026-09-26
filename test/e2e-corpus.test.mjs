@@ -106,7 +106,7 @@ test("the record the scan really writes answers every field the harness reads", 
           authors: { error: null },
         },
         { write: ["anatomiya-overview.md"], remove: [], foreign: [], unknown: [], replaced: [],
-          unreadableRules: [], listed: true, uncovered: 0, orphaned: 0, unreadable: [] }
+          unreadableRules: [], listed: true, uncovered: 0, orphaned: 0, unreadable: [], held: [], blind: false }
       )
     )
   );

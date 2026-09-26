@@ -6,6 +6,7 @@ import { scan } from "./scan.mjs";
 import { loadTypeScript, notInstalledMessage } from "./semantic.mjs";
 import { writeMap } from "./write.mjs";
 import { check } from "./check.mjs";
+import { engineOf, language } from "./langs.mjs";
 import { collect, countUntrackedSource, gitRoot } from "./corpus.mjs";
 import { discover } from "./areas.mjs";
 import { buildPin, readPin, writePin, pinDelta, pinTarget, PIN_PATH } from "./baseline.mjs";
@@ -34,7 +35,12 @@ export async function runScan(cwd, { dryRun = false, deep = false } = {}) {
   if (deep && (await loadTypeScript()) === null) throw new Error(notInstalledMessage(remedyFor("typescript")));
 
   const result = await scan(cwd, { deep });
-  if (result.parse.missingParser) throw notInstalled(result.parse, "scan");
+  // Only where it left nothing to read (B13). An engine missing for one
+  // language costs that language's files and the scan goes on for the rest:
+  // refusing here gave a TypeScript repository with one Gemfile no map at all
+  // on every machine without Ruby, and the summary and the map say which
+  // language went unread and what to do about it (B40).
+  if (result.parse.missingParser && result.readNothing) throw notInstalled(result.parse, "scan");
 
   const plan = writeMap(result, { dryRun });
   // 0.2.4 through 0.2.6 installed the re-delivery hook into the repository's own
@@ -224,7 +230,17 @@ export async function runPin(cwd, { dryRun = false } = {}) {
 /** Answer the branch against the map on disk. */
 export async function runCheck(cwd, { baseRef = null } = {}) {
   const report = await check(cwd, { baseRef });
-  if (report.parse.missingParser) throw notInstalled(report.parse, "check");
+  const { missingParser, missingEngines } = report.parse;
+  if (missingParser) {
+    // The scan's rule, for the same reason: a change that touched a Gemfile
+    // beside a TypeScript file went unchecked because one file of another
+    // language could not be read (B40). Refused only where every file this
+    // change examined needed the missing engine, since a report of no findings
+    // there reads as a check that ran (B13). Otherwise each unread file carries
+    // its own caveat, and one more says which engine and what to do.
+    const readable = report.examined.some((c) => !missingEngines.includes(engineOf(language(c.path))));
+    if (!readable) throw notInstalled(report.parse, "check");
+  }
   return { report };
 }
 

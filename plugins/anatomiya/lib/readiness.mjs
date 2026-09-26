@@ -128,6 +128,24 @@ export function remedyFor(engineId, root = pluginRoot()) {
 }
 
 /**
+ * Why an engine read no file of its language, in its own terms, from the
+ * versions a parse reported.
+ *
+ * One sentence used to cover every cause, and it guessed the likeliest: a
+ * missing interpreter. Measured with ruby on PATH and no prism, that sentence
+ * was wrong and there was no version anywhere on screen to say so. An engine
+ * that reported a version ran, so the files are what failed; one that reported
+ * none is the install, and its own remedy is the next move. Here rather than
+ * with one printer, because the summary and the map both say it.
+ */
+export function whyUnread(engineId, engines, root = pluginRoot()) {
+  const version = engines?.[engineId]?.version ?? null;
+  return version
+    ? `${engineId} ${version} ran and answered for none of them`
+    : `${engineId} reported no version: ${remedyFor(engineId, root)}`;
+}
+
+/**
  * Ask every named engine whether it is there, and answer one row each.
  *
  * A node-hosted engine answers a row of its own plus one per declared extra: a

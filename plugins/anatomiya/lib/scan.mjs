@@ -111,6 +111,16 @@ export async function scan(cwd, { guards = null, deep = false } = {}) {
   // HEAD and never from the pin.
   const { layout, kinds } = roster({ files, others, records: head.records, truncated });
 
+  // A language this run read no file of is decided on its own, not for the
+  // whole repository (B40). An area holding any file of it is held: this run
+  // cannot say what that area holds, so the writer leaves its file as the last
+  // run that could wrote it. Every other area is described as usual. A mixed
+  // area is held rather than described from half its files, because
+  // describing it would write over claims this run had no way to measure.
+  const unreadable = unreadableLangs(files, head.records);
+  const held = areas.filter((a) => a.langs.some((l) => unreadable.includes(l)));
+  const heldIds = new Set(held.map((a) => a.id));
+
   // Two passes over the areas, because one gate reads a number no single area
   // has: how the whole repository answers this dimension. The first pass folds
   // every area and adds its slots to that pool; the second asks the gates.
@@ -156,8 +166,13 @@ export async function scan(cwd, { guards = null, deep = false } = {}) {
     }
   }
 
+  // A held area is still folded into the pool above: the slots it could be
+  // measured on are the languages that were read, which a run that read
+  // everything counts the same way, so the priors every other area borrows do
+  // not move with the machine the scan ran on.
   const out = [];
   for (const { area, areaParsed, dims, measuredArea } of folded) {
+    if (heldIds.has(area.id)) continue;
     // A language with no static import surface is asked neither question: an
     // empty roster there would read as a measured "imports nothing". Ruby
     // names its dependencies in a Gemfile and reaches them through `require`,
@@ -252,8 +267,13 @@ export async function scan(cwd, { guards = null, deep = false } = {}) {
       missingEngines: head.missingEngines,
       missingParser: head.missingParser,
       missingStripper: head.missingStripper,
-      unreadable: unreadableLangs(files, head.records),
+      unreadable,
     },
+    // The areas the writer leaves as they are, and whether this run read any
+    // file at all. Beside the record rather than in it: both say what this run
+    // could not do, and the facts on disk describe the repository.
+    held: held.map((a) => ({ id: a.id, path: a.path, fileCount: a.fileCount })),
+    readNothing: unreadable.length > 0 && files.every((f) => unreadable.includes(f.lang)),
     baseline: {
       status: state.status,
       sha: state.sha,
@@ -299,16 +319,22 @@ function authorCount(files = [], authors, toCurrent) {
  * file is the whole population of it. The parser ran and answered; the answer
  * was that the file is broken, which is a fact about the repository and not a
  * reason to stop describing it.
+ *
+ * An engine whose install is absent never answered either, whichever outcome
+ * its bridge charged the file as: oxc's records classify unreadable and
+ * prism's crashed (`parse.mjs`). Before a missing engine stopped costing the
+ * whole run, the scan refused on it before this was asked; now it is how the
+ * writer learns that language's areas are not this run's to describe.
  */
 function unreadableLangs(files, parsed) {
   const total = new Map();
-  const crashed = new Map();
+  const unanswered = new Map();
   for (const f of files) {
     total.set(f.lang, (total.get(f.lang) || 0) + 1);
     const r = parsed.get(f.rel);
-    if (r && r.crashed) crashed.set(f.lang, (crashed.get(f.lang) || 0) + 1);
+    if (r && (r.crashed || r.missingParser)) unanswered.set(f.lang, (unanswered.get(f.lang) || 0) + 1);
   }
-  return [...total.keys()].filter((lang) => crashed.get(lang) === total.get(lang)).sort();
+  return [...total.keys()].filter((lang) => unanswered.get(lang) === total.get(lang)).sort();
 }
 
 /**

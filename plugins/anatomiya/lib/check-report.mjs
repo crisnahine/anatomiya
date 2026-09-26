@@ -57,6 +57,10 @@ export const CAVEATS = Object.freeze({
   HEAD_UNPARSED: "head-unparsed",
   BASE_UNPARSED: "base-unparsed",
   STRIPPER_MISSING: "stripper-missing",
+  // An engine that is not installed, said once with its remedy beside the one
+  // caveat per file it could not read. Only a check that still examined files
+  // of another language says it: one with nothing else to read refuses.
+  ENGINE_MISSING: "engine-missing",
   OBLIGATIONS_UNCHECKED: "obligations-unchecked",
   RULES_ESCAPED: "rules-escaped",
   RULES_UNLISTED: "rules-unlisted",
