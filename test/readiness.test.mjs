@@ -7,13 +7,13 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { needsRuby } from "./ruby-available.mjs";
-import { needsShebang } from "./platform.mjs";
+import { needsShebang, needsSymlinks } from "./platform.mjs";
 import { installWithoutStripper } from "./no-stripper.mjs";
 import { installWithoutDependencies } from "./plugin-install.mjs";
-import { BINARY, REL, ROOT } from "../scripts/plugins.mjs";
+import { ANATOMIYA, BINARY, REL, ROOT, installed } from "../scripts/plugins.mjs";
 import { ENGINES } from "../plugins/anatomiya/lib/langs.mjs";
 import { runScan } from "../plugins/anatomiya/lib/commands.mjs";
-import { installProblem, pluginRoot, readiness, readinessLines, remedyFor } from "../plugins/anatomiya/lib/readiness.mjs";
+import { installProblem, pluginRoot, readiness, readinessAfresh, readinessLines, remedyFor } from "../plugins/anatomiya/lib/readiness.mjs";
 import { olderThan } from "../plugins/anatomiya/lib/version.mjs";
 
 /** A directory on PATH holding one stub interpreter, so a probe meets a Ruby that is not this one. */
@@ -253,6 +253,44 @@ test("a checker --deep would refuse is not ok, and setup counts it as needed", (
   assert.equal(row.ok, false);
   assert.match(row.reason, /5\.x/, row.reason);
   assert.ok(needed.includes("typescript"), `setup would install it: ${needed}`);
+});
+
+test("an engine fixed after a failed load reads as fixed only to a node that never tried it", needsSymlinks, (t) => {
+  // Measured with `npm_config_optional=false`: oxc-parser was there and its
+  // native binding was not, so loading it threw. A module whose evaluation
+  // threw stays failed for the life of the process that tried it, so setup,
+  // which probes before npm runs, would read an install that fixed it as still
+  // absent. The re-probe asks a fresh node, and this is why.
+  const home = mkdtempSync(join(tmpdir(), "anatomiya-afresh-"));
+  t.after(() => rmSync(home, { recursive: true, force: true }));
+  for (const part of ["lib", "bin"]) cpSync(join(ANATOMIYA, part), join(home, part), { recursive: true });
+  cpSync(join(ANATOMIYA, "package.json"), join(home, "package.json"));
+  // Copied rather than linked: a linked package resolves what it requires from
+  // where it really lives, and the binding is there.
+  for (const pkg of ["oxc-parser", "@oxc-project"]) cpSync(join(installed(), pkg), join(home, "node_modules", pkg), { recursive: true });
+  const script = `
+    import { symlinkSync } from "node:fs";
+    const { readiness, readinessAfresh } = await import(${JSON.stringify(pathToFileURL(join(home, "lib", "readiness.mjs")).href)});
+    const parser = (rows) => rows.find((r) => r.engine === "oxc" && r.extra === null).present;
+    const before = parser(await readiness({ engines: ["oxc"] }));
+    symlinkSync(${JSON.stringify(join(installed(), "@oxc-parser"))}, ${JSON.stringify(join(home, "node_modules", "@oxc-parser"))}, "dir");
+    const again = parser(await readiness({ engines: ["oxc"] }));
+    const fresh = parser((await readinessAfresh({ engines: ["oxc"] })).rows);
+    process.stdout.write(JSON.stringify({ before, again, fresh }));
+  `;
+
+  const seen = JSON.parse(execFileSync(process.execPath, ["--input-type=module", "-e", script], { encoding: "utf8" }));
+
+  assert.deepEqual(seen, { before: false, again: false, fresh: true });
+});
+
+test("a fresh probe answers what this process's own probe does", async () => {
+  // The same rows, so setup's verdict after npm reads like doctor's.
+  const here = await readiness({ engines: ["oxc", "typescript"] });
+  const { rows, error } = await readinessAfresh({ engines: ["oxc", "typescript"] });
+
+  assert.equal(error, null);
+  assert.deepEqual(rows, here);
 });
 
 test("the default probe asks every declared engine and nothing else", async () => {

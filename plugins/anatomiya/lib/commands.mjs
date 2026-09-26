@@ -11,7 +11,7 @@ import { discover } from "./areas.mjs";
 import { buildPin, readPin, writePin, pinDelta, pinTarget, PIN_PATH } from "./baseline.mjs";
 import { gitBuffered, headSha } from "./git.mjs";
 import { firstLine } from "./encode.mjs";
-import { NODE_PROBE_IDS, PROBE_IDS, installProblem, pluginRoot, probeName, readiness, readinessLines, remedyFor } from "./readiness.mjs";
+import { NODE_PROBE_IDS, PROBE_IDS, installProblem, pluginRoot, probeName, readiness, readinessAfresh, readinessLines, remedyFor } from "./readiness.mjs";
 import { pinSummary, scanSummary } from "./summary.mjs";
 import { untrackedSentence } from "./render.mjs";
 import { aboutDir, echoContext, holdsTestIn, inCheckout, isPathTaken, ownLayout, removeStaleHook, targetIn, windowOf } from "./hook.mjs";
@@ -305,44 +305,14 @@ export async function runSetup({ dryRun = false, platform = process.platform } =
   // reported success to a doctor that went on sending the user back to setup.
   // So the engines are asked again, and one this run needs that still does not
   // load fails the setup under its own row's reason.
-  const { rows: after, error } = await probeAfresh(root);
-  const still = (after ?? []).filter((r) => !r.ok);
+  // Asked of a fresh node: this process tried every engine before the install,
+  // and a module whose evaluation threw stays failed here whatever npm did.
+  const { rows: after, error } = await readinessAfresh({ engines: NODE_PROBE_IDS });
+  const still = [];
+  for (const r of after ?? []) if (!r.ok) still.push(`${probeName(r)} (${r.reason})`);
   if (error) lines.push(`npm finished, and whether the engines load now could not be asked: ${error}`);
-  else if (still.length) lines.push(`npm finished, and still not loading: ${still.map((r) => `${probeName(r)} (${r.reason})`).join(", ")}`);
+  else if (still.length) lines.push(`npm finished, and still not loading: ${still.join(", ")}`);
   return answer(root, needed, { ran: true, ok: !error && still.length === 0, output: lines.join("\n") });
-}
-
-/**
- * The node-hosted rows, asked by a node that has never tried to load them.
- *
- * Not `readiness()` in this process: a module whose evaluation threw stays
- * failed for the life of the process that tried it, and this one tried every
- * engine before the install. oxc-parser without its native binding is exactly
- * that, so asked here, a setup whose npm had fixed it would still read it as
- * absent. Outside the repository like every other child, and bounded like
- * one.
- */
-function probeAfresh(cwd) {
-  const readinessUrl = new URL("./readiness.mjs", import.meta.url).href;
-  const script = [
-    `const { readiness, NODE_PROBE_IDS } = await import(${JSON.stringify(readinessUrl)});`,
-    "process.stdout.write(JSON.stringify(await readiness({ engines: NODE_PROBE_IDS })));",
-  ].join("\n");
-  return new Promise((resolve) => {
-    execFile(
-      process.execPath,
-      ["--input-type=module", "-e", script],
-      { cwd, encoding: "utf8", timeout: 60_000, killSignal: "SIGKILL", maxBuffer: 1024 * 1024 },
-      (err, stdout, stderr) => {
-        if (err) return resolve({ rows: null, error: firstLine(stderr) || err.message });
-        try {
-          resolve({ rows: JSON.parse(stdout), error: null });
-        } catch {
-          resolve({ rows: null, error: "the probe answered something other than its rows" });
-        }
-      }
-    );
-  });
 }
 
 /**

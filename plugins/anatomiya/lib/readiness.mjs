@@ -19,6 +19,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { absentInterpreter } from "./child.mjs";
+import { firstLine } from "./encode.mjs";
 import { ENGINES } from "./langs.mjs";
 import { prismLoadArgs, rubyEnv } from "./ruby.mjs";
 import { loadTypeScript } from "./semantic.mjs";
@@ -145,6 +146,38 @@ export async function readiness({ engines = Object.keys(ENGINES), timeoutMs = 5_
     else rows.push(await probeInterpreter(engine, { timeoutMs, env }));
   }
   return rows;
+}
+
+/**
+ * The same rows, asked by a node that has never tried to load anything.
+ *
+ * A module whose evaluation threw stays failed for the life of the process
+ * that tried it. oxc-parser without its native binding is exactly that, so a
+ * process that probed, watched npm install the binding, and probed again read
+ * the parser as absent both times. Setup asks this after npm for that reason.
+ * The node that runs it is this one, and it runs from the plugin's own
+ * directory, as bounded as any other child here.
+ */
+export function readinessAfresh({ engines = NODE_PROBE_IDS, timeoutMs = 60_000 } = {}) {
+  const script = [
+    `const { readiness } = await import(${JSON.stringify(import.meta.url)});`,
+    `process.stdout.write(JSON.stringify(await readiness({ engines: ${JSON.stringify(engines)} })));`,
+  ].join("\n");
+  return new Promise((resolve) => {
+    execFile(
+      process.execPath,
+      ["--input-type=module", "-e", script],
+      { cwd: pluginRoot(), encoding: "utf8", timeout: timeoutMs, killSignal: "SIGKILL", maxBuffer: 1024 * 1024 },
+      (err, stdout, stderr) => {
+        if (err) return resolve({ rows: null, error: firstLine(stderr) || err.message });
+        try {
+          resolve({ rows: JSON.parse(stdout), error: null });
+        } catch {
+          resolve({ rows: null, error: "the probe answered something other than its rows" });
+        }
+      }
+    );
+  });
 }
 
 /**
