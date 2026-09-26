@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { statSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { cpus } from "node:os";
 
 import { guardedChild, retryOnce } from "./child.mjs";
@@ -283,28 +283,36 @@ export function defaultPoolSize() {
   return Math.max(1, Math.min(8, cpus().length - 1));
 }
 
+// Absolute, never looked up. `scan .` runs from the repository, and an empty
+// PATH entry is the current directory, so `ps` by name ran whatever the
+// repository had committed under that name, as the user, while the guard
+// polled. macOS and the BSDs keep it here.
+const PS = "/bin/ps";
+
 /**
  * Resident size per pid, and the one subprocess this module runs that is not a
- * worker.
+ * worker, where it runs one at all.
  *
  * Exported because it is the guard's own guard: `execFileSync` blocks the
  * parent's event loop, so a `ps` that never returns is the memory guard
  * becoming the hang it exists to prevent, and the only way to show that the
- * timeout holds is to hand it a `ps` that stalls.
+ * timeout holds is to hand it a `ps` that stalls. `platform` and `ps` are that
+ * seam: on Linux the poll never reaches a `ps`.
  */
-export function rssOf(pids, limits = GUARDS) {
+export function rssOf(pids, limits = GUARDS, { platform = process.platform, ps = PS } = {}) {
   // No `ps` on Windows, and the usual replacement is on its way out: `wmic` is
   // removed in Windows 11 25H2 and gone entirely in the next feature update,
   // which is what `pidusage` still shells out to. Rather than ship an untested
   // `tasklist` parser, the guard stands down there and the five-second timeout
   // is what catches a runaway parse.
-  if (process.platform === "win32") return new Map();
+  if (platform === "win32") return new Map();
+  if (platform === "linux") return rssFromProc(pids);
 
   // ps is the portable way to read another process's resident size without a
   // native dependency.
   const out = new Map();
   try {
-    const stdout = execFileSync("ps", ["-o", "pid=,rss=", "-p", pids.join(",")], {
+    const stdout = execFileSync(ps, ["-o", "pid=,rss=", "-p", pids.join(",")], {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "ignore"],
       timeout: limits.psTimeoutMs,
@@ -317,6 +325,27 @@ export function rssOf(pids, limits = GUARDS) {
     }
   } catch {
     /* the process is gone, or there is no ps; the exit handler takes it */
+  }
+  return out;
+}
+
+/**
+ * Linux answers from the kernel's own table, with no subprocess and nothing
+ * looked up on PATH. Slim images (node:*-slim, most devcontainers) ship no
+ * procps, and there the `ps` this used to run was ENOENT on every poll,
+ * swallowed: measured, three files a forced 1 MB ceiling killed with `ps`
+ * present all parsed with it absent, and nothing said the ceiling had stood
+ * down. `VmRSS` is in kB, the unit `ps -o rss=` answers in.
+ */
+function rssFromProc(pids) {
+  const out = new Map();
+  for (const pid of pids) {
+    try {
+      const kb = /^VmRSS:\s+(\d+) kB$/m.exec(readFileSync(`/proc/${pid}/status`, "utf8"))?.[1];
+      if (kb) out.set(pid, Number(kb) * 1024);
+    } catch {
+      /* gone between the poll and the read; the exit handler takes it */
+    }
   }
   return out;
 }
