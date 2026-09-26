@@ -1281,8 +1281,10 @@ export async function pendingPaths(root, { timeout } = {}) {
   const rows = parsePorcelainRows(r.out).filter((row) => isCorpusPath(row.path));
   const gone = (row) => row.x === "D" || row.y === "D";
   // Untracked, or added to the index: there is no committed version to compare
-  // against, which is what an addition is.
-  const isNew = (row) => row.x === "?" || row.x === "A";
+  // against, which is what an addition is. `git add -N` writes its letter in
+  // the tree column, ` A`, and read off the index column alone it was taken for
+  // an edit of a file the merge base never held and skipped.
+  const isNew = (row) => row.x === "?" || row.x === "A" || row.y === "A";
   return {
     present: rows
       .filter((row) => !gone(row))
