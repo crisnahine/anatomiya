@@ -8,7 +8,7 @@ import { writeMap } from "./write.mjs";
 import { check } from "./check.mjs";
 import { collect, countUntrackedSource, gitRoot } from "./corpus.mjs";
 import { discover } from "./areas.mjs";
-import { buildPin, loadPin, writePin, pinDelta, pinTarget, PIN_PATH } from "./baseline.mjs";
+import { buildPin, readPin, writePin, pinDelta, pinTarget, PIN_PATH } from "./baseline.mjs";
 import { gitBuffered, headSha } from "./git.mjs";
 import { firstLine } from "./encode.mjs";
 import { NODE_PROBE_IDS, PROBE_IDS, installProblem, pluginRoot, probeName, readiness, readinessLines, remedyFor } from "./readiness.mjs";
@@ -189,11 +189,19 @@ export async function runPin(cwd, { dryRun = false } = {}) {
   }
 
   const next = buildPin(discover(files), { sha, corpus: files.length });
-  const previous = loadPin(root);
+  // A pin on disk this build cannot read is compared against as nothing, and
+  // replaced. Said, rather than printed as a first pin: it may be a conflict
+  // somebody meant to resolve, or a newer build's.
+  const { pin: previous, unreadable } = readPin(root);
   const delta = pinDelta(previous, next);
   if (!dryRun) writePin(root, next);
 
-  return { summary: pinSummary({ previous, next, delta, path: PIN_PATH, dryRun }), pin: next, previous, delta };
+  return {
+    summary: pinSummary({ previous, next, delta, path: PIN_PATH, dryRun, previousUnreadable: unreadable }),
+    pin: next,
+    previous,
+    delta,
+  };
 }
 
 /** Answer the branch against the map on disk. */

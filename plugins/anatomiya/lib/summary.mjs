@@ -57,6 +57,8 @@ export function scanSummary(result, plan, { dryRun = false, hook = null } = {}) 
       drift: result.baseline.drift,
       baseRef: result.baseline.baseRef,
       countsOnly: result.baseline.countsOnly,
+      // Why a pin on disk would not load, which is not the same line as no pin.
+      unreadable: result.baseline.unreadable ?? null,
     },
     hookRemoved: hook?.removed === true,
     // The reason the install did not happen, where there is one: a settings file
@@ -259,6 +261,11 @@ function ruleFileLines(names, what) {
 function baselineLine(b) {
   if (b.status === "unreachable")
     return `the pinned commit ${b.sha ? b.sha.slice(0, 8) : "?"} is gone from this clone, so every claim dropped to counts`;
+  // A pin is there and this build cannot read it. The unpinned line's pointer
+  // at `anatomiya pin` is left off: the file may be a conflict to resolve or a
+  // newer build's, and nothing on the scan path suggests a re-pin (E5).
+  if (b.status === "pin-unreadable")
+    return `the pin on disk could not be read because ${b.unreadable}, so claims are measured against the current tree and no finding can exceed FIX`;
   if (b.countsOnly)
     return "no baseline pinned: claims are measured against the current tree, and no finding can exceed FIX. `anatomiya pin` accepts one";
   const drift = b.drift === null ? "" : `, ${plural(b.drift, "file")} changed since the pin (measured against ${b.baseRef ? b.baseRef.ref : "the base"})`;
@@ -266,10 +273,13 @@ function baselineLine(b) {
 }
 
 /** What a pin accepted, and where it put it. */
-export function pinSummary({ previous, next, delta, path, dryRun = false }) {
+export function pinSummary({ previous, next, delta, path, dryRun = false, previousUnreadable = null }) {
   return {
     sha: next.sha,
     previousSha: previous ? previous.sha : null,
+    // Why the pin on disk would not load, where there was one: the delta then
+    // counts from nothing, which reads exactly like a first pin.
+    previousUnreadable,
     areas: next.areas.length,
     delta,
     path,
@@ -279,7 +289,14 @@ export function pinSummary({ previous, next, delta, path, dryRun = false }) {
 
 /** The pin summary as the lines the CLI prints. Facts only, no recommendation. */
 export function pinLines(s) {
-  const lines = [...formatDelta(s.delta).split("\n"), ""];
+  const lines = formatDelta(s.delta).split("\n");
+  if (s.previousUnreadable) {
+    lines.push(
+      `the pin on disk could not be read because ${s.previousUnreadable}, so nothing was compared against it ` +
+        `and this ${s.dryRun ? "would replace" : "replaced"} it`
+    );
+  }
+  lines.push("");
   if (s.dryRun) {
     lines.push(`would write ${s.path}`);
     return lines;

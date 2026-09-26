@@ -291,10 +291,38 @@ test("a pin file that will not load drops to counts-only, never to a smaller pop
     // off on, which is the direction that manufactures claims.
     assert.equal(loadPin(dir), null, body.slice(0, 60));
 
+    // Not "unpinned": a file is there, and the next test is about saying so.
     const state = await resolve(dir, { baseRef: "main" });
-    assert.equal(state.status, "unpinned");
+    assert.equal(state.status, "pin-unreadable");
     assert.equal(state.countsOnly, true);
     assert.equal(baselinePopulation(state, area("src/a", ["src/a/x.ts"])).directive, false);
+  }
+});
+
+test("a pin on disk that will not load says why, rather than reading as no pin", async (t) => {
+  // A committed pin that conflicted on a merge, and one a newer build wrote,
+  // each printed "no baseline pinned" on the scan and the check, in a
+  // repository that had one. Counts-only is still the answer; the reason is
+  // what a human needs to put the pin back.
+  let sha;
+  const dir = repo(t, (d, { write, commit }) => {
+    write("src/a/x.ts", CONFORMING);
+    sha = commit("init");
+  });
+  const good = buildPin([area("src/a", ["src/a/x.ts"])], { sha });
+  writePin(dir, good);
+  const text = JSON.stringify(good, null, 2);
+  const cases = [
+    ["merge-conflict markers", `<<<<<<< HEAD\n${text}\n=======\n${text}\n>>>>>>> b1\n`, /does not parse as JSON/],
+    ["a newer schema", JSON.stringify({ ...good, schema: 2 }), /schema 2 and this build reads 1/],
+  ];
+
+  for (const [name, body, why] of cases) {
+    writeFileSync(join(dir, PIN_PATH), body);
+    const state = await resolve(dir, { baseRef: "main" });
+    assert.equal(state.status, "pin-unreadable", name);
+    assert.equal(state.countsOnly, true, name);
+    assert.match(state.unreadable, why, name);
   }
 });
 

@@ -12,7 +12,7 @@ import { compact, delivered, filler, transcript } from "./transcript.mjs";
 import { installWithoutDependencies } from "./plugin-install.mjs";
 import { addWorktree, scratch } from "./git-worktrees.mjs";
 import { runCheck, runDoctor, runEcho, runNotice, runPin, runReuse, runScan, runSetup } from "../plugins/anatomiya/lib/commands.mjs";
-import { scanLines } from "../plugins/anatomiya/lib/summary.mjs";
+import { pinLines, scanLines } from "../plugins/anatomiya/lib/summary.mjs";
 import { PIN_PATH } from "../plugins/anatomiya/lib/baseline.mjs";
 import { PROBE_IDS, pluginRoot } from "../plugins/anatomiya/lib/readiness.mjs";
 import { OVERVIEW_FILE } from "../plugins/anatomiya/lib/rules.mjs";
@@ -368,6 +368,46 @@ test("a pin over no tracked source refuses, and counts the source still untracke
     await assert.rejects(() => runPin(dir, { dryRun }), /nothing to pin: 4 source files in the working tree are untracked/, `dryRun ${dryRun}`);
   }
   assert.equal(existsSync(join(dir, PIN_PATH)), false);
+});
+
+test("a scan over a pin that conflicted on a merge says the pin would not load", async (t) => {
+  // The pin is committed, so a merge can leave markers in it. The scan printed
+  // "no baseline pinned" and pointed at `anatomiya pin`, over a pin a human had
+  // accepted and a conflict nobody had been told about.
+  const dir = repo(t);
+  await runPin(dir);
+  const path = join(dir, PIN_PATH);
+  const text = readFileSync(path, "utf8");
+  writeFileSync(path, `<<<<<<< HEAD\n${text}=======\n${text}>>>>>>> other\n`);
+
+  const { summary } = await runScan(dir, { dryRun: true });
+  const lines = scanLines(summary);
+
+  assert.ok(lines.some((l) => l.startsWith("the pin on disk could not be read because it does not parse as JSON")), lines.join("\n"));
+});
+
+test("a pin over one this build cannot read says it is replacing it, not pinning for the first time", async (t) => {
+  // A pin a newer build wrote read as no pin at all, so the delta printed
+  // "baseline pinned at", the first pin's wording, and the write replaced the
+  // newer file with nothing on screen saying there had been one.
+  const dir = repo(t);
+  await runPin(dir);
+  const path = join(dir, PIN_PATH);
+  writeFileSync(path, JSON.stringify({ ...JSON.parse(readFileSync(path, "utf8")), schema: 2 }));
+
+  for (const [dryRun, verb] of [[true, "would replace"], [false, "replaced"]]) {
+    const { summary } = await runPin(dir, { dryRun });
+    assert.ok(
+      pinLines(summary).includes(
+        `the pin on disk could not be read because it is schema 2 and this build reads 1, so nothing was compared against it and this ${verb} it`
+      ),
+      pinLines(summary).join("\n")
+    );
+    if (dryRun) continue;
+    // Pinned over, the file reads again, and the next pin compares against it.
+    const { summary: again } = await runPin(dir, { dryRun: true });
+    assert.equal(again.previousUnreadable, null);
+  }
 });
 
 test("a repository with no commit cannot be pinned", async (t) => {
