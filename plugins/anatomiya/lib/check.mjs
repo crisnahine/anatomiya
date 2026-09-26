@@ -9,6 +9,7 @@ import {
   collect as collectCorpus,
   frameworksIn,
   capabilitiesIn,
+  corpusDrop,
   gitRoot,
   isCorpusPath,
   safeResolve,
@@ -150,7 +151,14 @@ export async function check(cwd, { baseRef = null } = {}) {
   // in an uncommitted file against an author who may not have written one.
   const pending = status !== null && mode === "compare" ? status : { present: [], deleted: [] };
   await resolvePendingBases(root, base.mergeBase, pending.present);
-  const examined = withPendingEdits(changed.filter((c) => isCorpusPath(c.path)), pending);
+  // Generated files leave with the path filter's rejects, by the corpus's own
+  // rule: a regenerated client was a MUST-FIX per site in code nobody writes by
+  // hand, judged against claims the map counted without it. The rule's other
+  // refusals stay in, because a file this run could not read is named rather
+  // than dropped.
+  const dropOf = corpusDrop(root);
+  const examined = withPendingEdits(changed.filter((c) => isCorpusPath(c.path)), pending)
+    .filter((c) => dropOf(c.path) !== "generated");
   const fromTree = examined.filter((c) => c.tree).length;
   if (fromTree) {
     caveat(
