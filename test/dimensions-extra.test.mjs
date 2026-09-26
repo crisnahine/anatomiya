@@ -869,3 +869,47 @@ test("a doc comment above a decorator list documents the class it decorates", ()
     [false]
   );
 });
+
+/* --- a dotted file stem is not an asset --- */
+
+test("a dotted file stem imported without its extension is a site, not an asset", () => {
+  // `./user.service` names `user.service.ts`. Angular and NestJS name every file
+  // that way, and `*.types.ts` and `*.config.ts` are everywhere, but any dotted
+  // suffix read as an asset's extension: a directory writing 40 of its 120
+  // relative imports with `.js` stated the claim at 40 of 40, and the check
+  // never flagged the missing `.js` that node16 and nodenext refuse (TS2835).
+  const r = counts("import_extension", `
+    import { UserService } from "./user.service"
+    import { AppModule } from "./app.module"
+    import type { Opts } from "../types/opts.types"
+    import { CreateUserDto } from "../dto/create-user.dto"
+    import { helper } from "./helper.js"
+  `);
+  assert.deepEqual(r, { candidates: 5, conforming: 1 });
+});
+
+test("every asset format is still imported by its full name and is not a site", () => {
+  // Written out rather than read from the table, so a format dropped from it
+  // fails here instead of turning every import of that format into a violation.
+  for (const ext of [
+    "css", "scss", "sass", "less", "styl", "pcss",
+    "svg", "png", "jpg", "jpeg", "gif", "webp", "avif", "ico", "bmp",
+    "woff", "woff2", "ttf", "otf", "eot",
+    "mp3", "mp4", "webm", "wav", "ogg",
+    "json", "json5", "yaml", "yml", "toml", "csv", "txt", "xml", "html", "md", "mdx",
+    "vue", "svelte", "astro", "graphql", "gql", "wasm", "node", "glsl", "wgsl",
+  ]) {
+    assert.equal(hits("import_extension", `import a from "./asset.${ext}"`).length, 0, ext);
+  }
+  assert.equal(hits("import_extension", `import a from "./Photo.JPG"`).length, 0, "the format, whatever its case");
+  assert.equal(hits("import_extension", `import s from "./Button.module.scss"`).length, 0, "the last suffix decides");
+});
+
+test("a TypeScript module extension is carried as much as a JavaScript one", () => {
+  // Once an unknown suffix counts, `.mts` and `.cts` would read as extensionless
+  // unless the row knows them for the source extensions they are.
+  assert.deepEqual(counts("import_extension", `import a from "./a.mts"\nimport b from "./b.cts"`), {
+    candidates: 2,
+    conforming: 2,
+  });
+});

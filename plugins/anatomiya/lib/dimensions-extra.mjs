@@ -25,8 +25,17 @@ import { calleeName, jsxElementNames } from "./dimensions-jsx.mjs";
  * one can never state its inverse, whatever the counts say.
  */
 
-const SOURCE_IMPORT = /\.(js|jsx|mjs|cjs|ts|tsx)$/;
-const ASSET_IMPORT = /\.[a-z0-9]+$/i;
+const SOURCE_IMPORT = /\.(js|jsx|mjs|cjs|ts|tsx|mts|cts)$/;
+
+// The formats a bundler or a runtime is handed by their full name. A closed
+// list rather than "any dotted suffix", because a dotted suffix is just as
+// often part of a source file's stem: Angular and NestJS name every file
+// `user.service.ts` or `app.module.ts`, and `*.types.ts` and `*.config.ts` are
+// everywhere. Read as an asset, `./user.service` left the row, and a directory
+// writing 40 of its 120 relative imports with `.js` stated the claim at 40 of
+// 40 while the check never flagged the `.js` node16 and nodenext require.
+const ASSET_IMPORT =
+  /\.(css|scss|sass|less|styl|pcss|svg|png|jpe?g|gif|webp|avif|ico|bmp|woff2?|ttf|otf|eot|mp3|mp4|webm|wav|ogg|json5?|ya?ml|toml|csv|txt|xml|html|mdx?|vue|svelte|astro|graphql|gql|wasm|node|glsl|wgsl)$/i;
 
 const isDefaultValue = (node) => {
   const n = value(node);
@@ -396,7 +405,7 @@ export const EXTRA_DIMENSIONS = [
     applicabilityPredicate: {
       sites: "a file whose static import or re-export names a file through a relative specifier, once directory and asset specifiers are dropped. A dynamic import() is not a static one",
       notCounted:
-        "a specifier that is . or .. or ends in /, one ending in any extension but js/jsx/mjs/cjs/ts/tsx, and a dynamic import()",
+        "a specifier that is . or .. or ends in /, one naming a stylesheet, image, font or other asset, and a dynamic import()",
       blind: null,
     },
     // A type-only import is one of these sites, and the stripper deletes the
@@ -418,8 +427,9 @@ export const EXTRA_DIMENSIONS = [
         // cannot conform and is not a choice anyone made.
         if (spec === "." || spec === ".." || spec.endsWith("/")) return;
         // A stylesheet or an image is always imported by its full name, so
-        // counting it would report an extension convention no one chose.
-        if (ASSET_IMPORT.test(spec) && !SOURCE_IMPORT.test(spec)) return;
+        // counting it would report an extension convention no one chose. Any
+        // other suffix is a stem the source file carries before its extension.
+        if (ASSET_IMPORT.test(spec)) return;
         add({ node: n, conforming: SOURCE_IMPORT.test(spec), where: null });
       });
     },
