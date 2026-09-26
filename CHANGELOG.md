@@ -20,6 +20,104 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- `check` examined nothing on the checkout `actions/checkout` makes for a pull request, one depth-1
+  fetch of the merge ref, and printed 0 MUST-FIX, 0 FIX, 0 NIT on every pull request. A base that is
+  one of the merge commit's own parents is now taken as the merge base, and a shallow clone that
+  still reaches none says to fetch the history (`fetch-depth: 0`).
+- On a shallow clone where the base commit could be fetched, every finding was capped at FIX under
+  "cannot resolve origin/main", one line below a header naming origin/main as the base. Staleness is
+  now measured against the commit the run compared against.
+- A file the branch committed and then deleted before committing again got a MUST-FIX on a file
+  that no longer existed, and one moved with `git mv` was skipped with a false "could not read at
+  the merge base", its new violations with it. A path deleted or moved away in the tree is no longer
+  judged, and a move of a file the branch added is judged as the addition it is.
+- `check` judged generated files the map never counted (an `@generated` header, or
+  `linguist-generated` in `.gitattributes`), so a branch that regenerated a client got a MUST-FIX per
+  site in code nobody writes by hand. They are left out of the check the way the scan leaves them out.
+- With two identical sites in one file, a branch that added the new one above the old one was
+  reported at the old one: wrong line, wrong function, and an annotation on code the branch never
+  touched. Every Ruby rescue added above a swallowing one was misplaced this way.
+- A `.ts` file renamed to `.tsx`, or back, was skipped whole with a false "did not parse at the
+  merge base": its old version was parsed with the new name's grammar. It is parsed as the file it was.
+- Deleting a spec on a branch and leaving its model alone passed clean against a map stating "a
+  model ships with a spec", while a one-line edit to the model was flagged. A producer whose
+  companion the branch removed, committed or not, is now held to the obligation.
+- A new file staged with `git add -N` was skipped with a false "could not read at the merge base".
+  It is judged as the addition it is.
+- With `diff.renames` or `status.renames` turned off, an uncommitted `git mv` read as a deletion and
+  an addition, and every violation the moved file already held was reported at MUST-FIX against
+  whoever moved it. The check asks for rename detection itself.
+- A file over the 1 MiB cap was reported as one `check` could not read, under `head-unreadable`,
+  which points at git or the disk. It is named as past the size cap, under `head-oversize`.
+- A file its area's globs miss by type, such as a `.tsx` in an area of `.ts` files, was capped with
+  a reason naming a directory above the one it sits in. The reason names the type the area file
+  does not reach.
+- A symlinked source file answered two ways by commit state: committed, `check` parsed the link's
+  own text and blamed syntax the parser rejected; uncommitted, it charged the target's sites a second
+  time under the link's name. A link is left out of the check.
+- `check` rewrote the paths it reported, in every format: one over 120 characters came out ending
+  in `…`, and one in a non-Latin script as "<path with mixed scripts, N chars>", in the JSON record
+  and the GitHub `file=` property as well, so the annotation could not be placed and the file could
+  not be opened. A path is now the file's own, with only what breaks or reorders a line removed.
+- The end-of-turn check blocked every turn, a question included, when the session's transcript
+  could not be read, over files left changed before the session began, and it never stopped: what it
+  had already asked is read back from that transcript too. A stop with no readable transcript now
+  asks nothing.
+- Mid-merge, the end-of-turn check named the other branch's code as the turn's added functions and
+  asked for the copy to be deleted. It asks nothing while a merge, a cherry-pick, a revert or a rebase
+  is unfinished.
+- A scan took out any hook in `.claude/settings.local.json` whose command held `anatomiya.mjs` and
+  then `echo`, including an echo wired by hand to a clone's absolute path, which works, and somebody's
+  own `echo-stats`, and said this tool had written them. It now takes out only the
+  `${CLAUDE_PLUGIN_ROOT}` entry 0.2.4 through 0.2.6 wrote.
+- `scan --dry-run` said the old settings hook "was taken out" over a file it had not touched. It now
+  says the hook would be taken out.
+- The echoed map told the model to run `anatomiya scan .` when it looked stale, a command nothing
+  installs, so following it ended in "command not found". It now names `/anatomiya:scan`, in a
+  worktree too, and so does the README.
+- An echoed map said only that it was counted from "this repository", so a session reading files
+  in two checkouts held two maps it could not tell apart. It now names the checkout it was counted at.
+- In a vendored copy of a scanned project, whose record sits below the git root, the end-of-turn
+  check named an unchanged file and missed the real edit. It no longer reads a change against a
+  record that is not at its checkout's root.
+- A tracked symlink to a source file inside the repository was read as source. Every site in its
+  target counted twice. An uncommitted edit to the target also moved the pinned baseline the branch is
+  measured against, because the link itself had not changed since the pin. A symlink is now left out
+  of the map wherever it points, and its target is counted where it is tracked.
+- An area file for a directory with a non-Latin name, or with a path longer than 120 characters, was
+  written with a `paths` pattern that could never match it (`<path with mixed scripts, 14 chars>/**`,
+  `.../w…/**`), so its rules never loaded and nothing said so. Such a directory no longer gets an
+  area of its own. Its files join the nearest parent directory whose name can be written as is, and
+  are reported as uncovered where no such parent exists below the repository root.
+- In TypeScript written for Node16 or NodeNext, which puts `.js` on every relative import, every
+  area was missing its "Most imported from here" line, because `../utils/format.js` was never matched
+  to `format.ts`. Such an import now names the source it is compiled from, and so does an alias
+  like `@/utils/format.js`.
+- With a regular file at `.claude/rules`, `.claude` or `.claude/anatomiya`, `scan --dry-run` said it
+  would write the map, and the real `scan` then failed with a raw `EEXIST` or `ENOTDIR`. Both now
+  refuse, name the file in the way and say to remove it.
+- On Node 20 or 21, `scan` died halfway with `Map.groupBy is not a function`, which names neither
+  Node nor a fix, while `doctor` called every engine ok. Nothing enforces the Node 22 the plugin
+  declares, and Claude Code's own installer needs no Node, so the `node` on `PATH` can be any version.
+  `doctor` now starts with a row for the Node it runs on and the fix. Every other command refuses an
+  older Node with that sentence before it does any work, and the hooks answer nothing and exit 0.
+- A worktree Claude Code made from the README's `.worktreeinclude` got the map but not the pin, so
+  `check` there capped every finding at FIX with "no baseline pinned" in a repository that had one.
+  The recipe now copies `.claude/anatomiya/baseline.json` as well.
+- `pin` accepted an empty population with exit 0 when the source had never been committed, and every
+  area the first commit then made stated nothing until somebody pinned again. It now refuses, a dry
+  run included, and counts the untracked source the way the scan does.
+- A re-pin counted a file that only moved to another area as one file entering the population and
+  one leaving it, and listed it as leaving, so a floor step that re-partitioned a repository
+  reported departures that never happened. Entering and leaving are now counted over the whole
+  population, and a move is reported as a move beside the areas it crossed.
+- A pin that would not load, whether a merge left conflict markers in it or a newer build wrote it,
+  read as no pin: the scan and the check said "no baseline pinned" and `pin` printed a first pin over
+  it. Each now says the pin on disk could not be read and why, and `pin` says it is replacing it.
+  Claims still drop to counts, as before.
+- `pin` could still be taken mid-merge when the conflict was in a tracked source file under
+  `.claude/`, recording that file once per merge stage and a corpus larger than the tree. It now
+  refuses while any path in the index is unmerged.
 - A repository using SHA-256 object names could not be pinned (`pin` said it had no commit) and
   `check` could read none of its files. Object names of up to 64 digits are accepted now.
 - On a partial clone, reading a pinned file fetched it from the remote, which nothing here may do
