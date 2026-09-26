@@ -1,6 +1,6 @@
 /**
- * Whether the engines this tool parses with are installed, and what to do when
- * one is not.
+ * Whether the engines this tool parses with are installed, and the node it runs
+ * on new enough, and what to do when one is not.
  *
  * Three engines were detected three different ways and their remedies were
  * spelled at every printer that needed one, so a missing Ruby was answered with
@@ -42,9 +42,28 @@ const OPTIONAL = {
   },
 };
 
-const PROBES = { ...ENGINES, ...OPTIONAL };
+/**
+ * The node this process runs on, probed first and deliberately not an engine.
+ *
+ * Both manifests declare it in `engines`, and nothing enforces that for a
+ * plugin: Claude Code's own installer needs no Node, so the `node` on a user's
+ * PATH is whatever was there. Measured on Node 20.20.2: doctor called every
+ * engine ok, and the scan then died with `Map.groupBy is not a function`, which
+ * names neither Node nor a fix. The floor is the manifests' number, and a test
+ * holds the three together.
+ */
+const RUNTIME = {
+  node: {
+    id: "node",
+    host: "runtime",
+    floor: "22.0.0",
+    remedy: "install Node 22 or newer and put it first on PATH",
+  },
+};
 
-/** Everything a readiness report asks about: the engines, then the checker beside them. */
+const PROBES = { ...RUNTIME, ...ENGINES, ...OPTIONAL };
+
+/** Everything a readiness report asks about: the node it runs on, the engines, then the checker beside them. */
 export const PROBE_IDS = Object.freeze(Object.keys(PROBES));
 
 /**
@@ -113,10 +132,33 @@ export async function readiness({ engines = Object.keys(ENGINES), timeoutMs = 5_
   const rows = [];
   for (const id of engines) {
     const engine = probeFor(id);
-    if (engine.host === "node") rows.push(...(await probeNode(engine)));
+    if (engine.host === "runtime") rows.push(probeRuntime(engine));
+    else if (engine.host === "node") rows.push(...(await probeNode(engine)));
     else rows.push(await probeInterpreter(engine, { timeoutMs, env }));
   }
   return rows;
+}
+
+/**
+ * Why this node cannot run anything here, with the fix, or null where it can.
+ *
+ * Asked by the entry point before any verb that works, so a scan refuses in
+ * one sentence instead of dying halfway through on a builtin the old node
+ * lacks. Doctor is the one verb that runs anyway, and says the same thing on
+ * its row.
+ */
+export function unsupportedNode() {
+  const row = probeRuntime(RUNTIME.node);
+  return row.ok ? null : `${row.reason}, ${row.remedy}`;
+}
+
+/** The node this process runs on, held to its floor. */
+function probeRuntime(engine) {
+  const version = process.versions.node;
+  if (olderThan(version, engine.floor)) {
+    return row(engine, { present: true, version, reason: `${engine.id} ${version} is older than the ${engine.floor} this runs on` });
+  }
+  return row(engine, { present: true, version, ok: true });
 }
 
 /** What a row is called wherever one is printed: an extra by its module, an engine by its own name. */

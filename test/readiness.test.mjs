@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { execFileSync } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { execFileSync, spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -10,8 +10,9 @@ import { needsRuby } from "./ruby-available.mjs";
 import { needsShebang } from "./platform.mjs";
 import { installWithoutStripper } from "./no-stripper.mjs";
 import { installWithoutDependencies } from "./plugin-install.mjs";
-import { REL } from "../scripts/plugins.mjs";
+import { BINARY, REL, ROOT } from "../scripts/plugins.mjs";
 import { ENGINES } from "../plugins/anatomiya/lib/langs.mjs";
+import { runScan } from "../plugins/anatomiya/lib/commands.mjs";
 import { installProblem, pluginRoot, readiness, readinessLines, remedyFor } from "../plugins/anatomiya/lib/readiness.mjs";
 import { olderThan } from "../plugins/anatomiya/lib/version.mjs";
 
@@ -342,4 +343,97 @@ test("an install that ran and stopped short is left to the rows that say which e
   t.after(() => rmSync(bare, { recursive: true, force: true }));
 
   assert.match(installProblem(absent, join(bare, "deep", "deeper")) ?? "", /nothing is installed/, "and a tree with none still answers");
+});
+
+// --- the node this runs on ----------------------------------------------------
+
+/**
+ * The binary, run on a node that reports itself as 20.20.2.
+ *
+ * Only the version is faked, because the floor is held against what
+ * `process.versions.node` says and a real Node 20 is not on every machine this
+ * suite runs on. Measured on a real one: doctor called every engine ok, and the
+ * scan died with `Map.groupBy is not a function`, which names neither Node nor
+ * a fix.
+ */
+const OLD_NODE = "20.20.2";
+function onOldNode(args, { input = "" } = {}) {
+  const pretend = `Object.defineProperty(process.versions, "node", { value: ${JSON.stringify(OLD_NODE)} })`;
+  const run = spawnSync(process.execPath, [`--import=data:text/javascript,${encodeURIComponent(pretend)}`, BINARY, ...args], {
+    encoding: "utf8",
+    input,
+  });
+  return { code: run.status, stdout: run.stdout, stderr: run.stderr };
+}
+
+/** A committed repository of plain source, scanned, so every hook has a map to answer from. */
+async function mapped(t) {
+  const dir = mkdtempSync(join(realpathSync(tmpdir()), "anatomiya-oldnode-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  mkdirSync(join(dir, "src"), { recursive: true });
+  for (const f of ["a", "b", "c", "d", "e", "f"]) writeFileSync(join(dir, "src", `${f}.js`), `export const ${f} = (x) => x\n`);
+  execFileSync("git", ["init", "-q"], { cwd: dir });
+  execFileSync("git", ["add", "-A"], { cwd: dir });
+  execFileSync("git", ["-c", "user.email=t@t.test", "-c", "user.name=T", "commit", "-qm", "init"], { cwd: dir });
+  await runScan(dir);
+  return dir;
+}
+
+test("the node this runs on is a row of its own, held to the floor the manifests declare", async () => {
+  const [row] = await readiness({ engines: ["node"] });
+
+  assert.equal(row.engine, "node");
+  assert.equal(row.version, process.versions.node);
+  assert.equal(row.ok, true, "the suite itself runs on a node past the floor");
+  // One number, and the one both manifests already state: a floor spelled
+  // twice is a floor that moves in one place.
+  for (const manifest of [join(ROOT, "package.json"), join(pluginRoot(), "package.json")]) {
+    const declared = JSON.parse(readFileSync(manifest, "utf8")).engines.node;
+    assert.equal(declared, `>=${row.floor.split(".")[0]}`, manifest);
+  }
+});
+
+test("a node under the floor is refused by every command that works, before any of them starts", (t) => {
+  // A directory that is no repository, so a command that got past the gate
+  // answers about the directory instead, and the case can tell the two apart.
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-oldnode-bare-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+  for (const args of [["scan", dir], ["scan", "--dry-run", dir], ["check", dir], ["pin", dir], ["setup", "--dry-run"], ["refresh-run", dir]]) {
+    const { code, stderr } = onOldNode(args);
+
+    assert.equal(code, 1, `${args.join(" ")} ran on node ${OLD_NODE}: ${stderr}`);
+    assert.match(stderr, /^anatomiya: node 20\.20\.2 is older than the 22\.0\.0 this runs on, install Node 22 or newer/, `${args.join(" ")}: ${stderr}`);
+    assert.doesNotMatch(stderr, /repository|groupBy|\n\s+at /, `${args.join(" ")} reached work it could not finish: ${stderr}`);
+  }
+});
+
+test("doctor on a node under the floor says so with the fix, and still reports every engine", () => {
+  // The one command that runs anyway: saying what is wrong is its whole job,
+  // and it exits 0 whatever it found.
+  const { code, stdout } = onOldNode(["doctor"]);
+
+  assert.equal(code, 0);
+  assert.match(stdout, /^node 20\.20\.2: node 20\.20\.2 is older than the 22\.0\.0 this runs on, install Node 22 or newer/m, stdout);
+  assert.match(stdout, /^oxc /m, stdout);
+  assert.match(stdout, /^prism /m, stdout);
+});
+
+test("a hook on a node under the floor answers the empty object and exits 0", async (t) => {
+  // Answered from a mapped repository, so a hook that ran anyway would have
+  // handed the map back: the empty object here is the gate, not the fixture.
+  const dir = await mapped(t);
+  const payloads = {
+    echo: { hook_event_name: "UserPromptSubmit", cwd: dir },
+    notice: { hook_event_name: "PreToolUse", tool_name: "Write", tool_input: { file_path: join(dir, "src", "g.test.js") }, cwd: dir },
+    reuse: { hook_event_name: "Stop", cwd: dir },
+    refresh: { hook_event_name: "SessionStart", cwd: dir },
+  };
+
+  for (const [hook, payload] of Object.entries(payloads)) {
+    const { code, stdout, stderr } = onOldNode([hook, dir], { input: JSON.stringify(payload) });
+
+    assert.equal(code, 0, `${hook}: ${stderr}`);
+    assert.equal(stdout, "{}", hook);
+  }
 });
