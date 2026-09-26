@@ -1,7 +1,43 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 
 import { parseFile } from "../plugins/anatomiya/lib/parse-file.mjs";
+
+// Linux is where a child's address space can be capped from a shell: macOS
+// refuses `ulimit -v` outright, and Windows never asks for the raw transfer.
+const needsAddressSpaceLimit =
+  process.platform === "linux" ? {} : { skip: "only Linux enforces an address-space limit set with ulimit -v" };
+
+test("a process that cannot reserve the raw transfer's buffer still parses every file", needsAddressSpaceLimit, () => {
+  // Measured under `ulimit -v 4000000`, a limit shared servers and some CI
+  // hosts set, and what strict overcommit amounts to: the raw transfer asks
+  // for a 6 GiB buffer before it parses anything, V8 refuses it, and every
+  // JavaScript and TypeScript file came back unreadable. The scan then wrote
+  // an overview of zero areas and removed the correct area files beside it.
+  // The parser answers the same tree without the raw transfer, so a buffer
+  // it cannot have costs speed rather than the file.
+  const body = new URL("../plugins/anatomiya/lib/parse-file.mjs", import.meta.url).href;
+  const script = [
+    `const { parseFile } = await import(${JSON.stringify(body)});`,
+    "const out = [];",
+    'for (const rel of ["src/a.ts", "src/b.ts"]) {',
+    "  try {",
+    '    const r = await parseFile("export const n: number = 1;\\n", rel, "js");',
+    "    out.push(`${rel} ${r.ok}`);",
+    "  } catch (err) {",
+    "    out.push(`${rel} threw ${err.message}`);",
+    "  }",
+    "}",
+    'console.log(out.join("\\n"));',
+  ].join("\n");
+  const run = spawnSync("sh", ["-c", 'ulimit -v 4000000 && exec "$0" --input-type=module -e "$1"', process.execPath, script], {
+    encoding: "utf8",
+    timeout: 20_000,
+  });
+  assert.equal(run.status, 0, run.stderr);
+  assert.equal(run.stdout.trim(), "src/a.ts true\nsrc/b.ts true");
+});
 
 test("the grammar follows the real extension: a ts assertion parses in .ts and not in .tsx", async () => {
   const cast = "const x = <string>window.name;\nexport const y = x;\n";

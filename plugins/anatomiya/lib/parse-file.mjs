@@ -71,15 +71,45 @@ function readVersion() {
  * Not every platform has it, and the flag is still experimental upstream, so it
  * is asked for rather than assumed.
  */
-let parseOptions = { sourceType: "module" };
+const PLAIN_OPTIONS = { sourceType: "module" };
+let parseOptions = PLAIN_OPTIONS;
+
+// V8's own text for an ArrayBuffer the process could not reserve; there is no
+// error code to switch on instead. The raw transfer asks for 6 GiB of address
+// space before it reads a byte, which a `ulimit -v` or strict overcommit
+// refuses, and measured under `ulimit -v 4000000` every JavaScript and
+// TypeScript file came back unreadable, so the scan wrote zero areas and
+// removed the correct area files beside them. Matched on the text rather than
+// on the class: a nesting deep enough to exhaust the stack is a RangeError
+// from the same call, and the same file under the plain transfer is the
+// segfault B2 exists to contain, so it must stay a parse that failed.
+const NO_BUFFER = "Array buffer allocation failed";
+
+/**
+ * One parse, off the raw transfer for good once this process has been refused
+ * its buffer.
+ *
+ * The limit is the process's rather than the file's, so every later file would
+ * pay the same failed reservation, and the plain transfer answers the same
+ * tree: what the refusal costs is the speed, not the file.
+ */
+function parseWith(filename, source) {
+  try {
+    return parseSync(filename, source, parseOptions);
+  } catch (err) {
+    if (parseOptions === PLAIN_OPTIONS || !(err instanceof RangeError) || err.message !== NO_BUFFER) throw err;
+    parseOptions = PLAIN_OPTIONS;
+    return parseSync(filename, source, parseOptions);
+  }
+}
 
 async function ensureParser() {
-  if (parseSync) return parseSync;
+  if (parseSync) return parseWith;
   try {
     const oxc = await import("oxc-parser");
     parseSync = oxc.parseSync;
     if (rawTransferAllowed() && oxc.rawTransferSupported?.()) {
-      parseOptions = { ...parseOptions, experimentalRawTransfer: true };
+      parseOptions = { ...PLAIN_OPTIONS, experimentalRawTransfer: true };
     }
   } catch (err) {
     // Distinguished from a parse failure by the caller: an absent dependency is
@@ -89,7 +119,7 @@ async function ensureParser() {
     e.missingParser = true;
     throw e;
   }
-  return parseSync;
+  return parseWith;
 }
 
 /**
@@ -130,7 +160,7 @@ export async function parseFile(source, rel, lang, { withProgram = false, stripp
   // TypeScript grammar reads `<div` there as a type assertion, so the two
   // grammars are chosen by extension (B14), on the route the registry declares.
   const filename = `f.${grammarFor(lang, rel)}`;
-  const result = parse(filename, source, parseOptions);
+  const result = parse(filename, source);
 
   // A recovered tree is not the file. oxc answers a syntax error by returning
   // whatever it could salvage, which is usually far less than was written, so
@@ -155,7 +185,7 @@ export async function parseFile(source, rel, lang, { withProgram = false, stripp
     if (strip) {
       try {
         const blanked = strip(source, { all: true }).toString();
-        const retried = parse(filename, blanked, parseOptions);
+        const retried = parse(filename, blanked);
         if ((retried.errors || []).length === 0) {
           tree = retried;
           parsedSource = blanked;
@@ -183,7 +213,7 @@ export async function parseFile(source, rel, lang, { withProgram = false, stripp
   if (tree === result && (result.errors || []).length && mayBeCommonJS(rel)) {
     const patched = withoutTopLevelReturns(source, result.errors);
     if (patched !== null) {
-      const retried = parse(filename, patched, parseOptions);
+      const retried = parse(filename, patched);
       if ((retried.errors || []).length === 0) {
         tree = retried;
         parsedSource = patched;
