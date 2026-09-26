@@ -78,6 +78,36 @@ test("an extends pointing outside the repository is refused and reported", needs
   }
 });
 
+test("a solution-style root's reference leaving the repository is refused and reported", needsTs, () => {
+  // The referenced project is a path the repository writes, the same as an
+  // `extends`, so it is read under the same confinement rather than opened.
+  const dir = repo({ "tsconfig.json": `{"files":[],"references":[{"path":"../../outside"}]}` });
+  try {
+    const r = readConfig(ts, dir);
+    assert.equal(r.status, "degraded");
+    assert.equal(r.reason, "reference-escaped");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a root that holds files of its own is read as itself, references or not", needsTs, () => {
+  // Only the shape that builds nothing itself hands its options over: a root
+  // with an include is a project, and its references are its dependencies.
+  const dir = repo({
+    "tsconfig.json": `{"compilerOptions":{"strict":true},"include":["src"],"references":[{"path":"./lib"}]}`,
+    "lib/tsconfig.json": `{"compilerOptions":{"strict":false,"jsx":"react-jsx"}}`,
+  });
+  try {
+    const r = readConfig(ts, dir);
+    assert.equal(r.status, "ok");
+    assert.equal(r.options.strict, true);
+    assert.equal(r.options.jsx, undefined);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("an extends inside the repository is followed", needsTs, () => {
   const dir = repo({
     "base/tsconfig.json": `{"compilerOptions":{"strict":true}}`,
