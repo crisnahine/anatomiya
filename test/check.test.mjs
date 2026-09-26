@@ -2011,6 +2011,50 @@ test("a file the branch added and then moved in the tree is judged as an additio
   assert.deepEqual(forKey(r, "swallowed_error").map((f) => [f.path, f.line]), [["src/c.ts", 2]]);
 });
 
+/** A model and its spec, twice, with the map stating the obligation. */
+function pairedModels(t, change) {
+  const dir = repo(t, ({ dir: root, git, write, commit }) => {
+    for (const n of ["thing", "other"]) {
+      write(`app/models/${n}.rb`, `class ${n}\nend\n`);
+      write(`spec/models/${n}_spec.rb`, `describe ${n} do\nend\n`);
+    }
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    change({ root, git, commit });
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    path: "app/models",
+    dimensions: [dim({ key: "model_spec", directive: true })],
+  });
+  return dir;
+}
+
+test("a branch that deletes a companion and leaves its producer alone breaks the obligation", async (t) => {
+  // Only producers the branch touched were asked, and a deletion is no file to
+  // examine, so dropping an inconvenient spec passed clean while a one-line
+  // edit to its model would have been flagged.
+  const dir = pairedModels(t, ({ git, commit }) => {
+    git("rm", "-q", "spec/models/thing_spec.rb");
+    commit("drop the spec");
+  });
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.deepEqual(
+    forKey(r, "model_spec").map((f) => [f.path, f.companion]),
+    [["app/models/thing.rb", "spec/models/thing_spec.rb"]]
+  );
+});
+
+test("a companion deleted in the tree breaks the obligation before it is committed", async (t) => {
+  const dir = pairedModels(t, ({ root }) => rmSync(join(root, "spec/models/thing_spec.rb")));
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.deepEqual(forKey(r, "model_spec").map((f) => f.path), ["app/models/thing.rb"]);
+});
+
 test("a producer whose companion the branch never wrote is still reported", async (t) => {
   // The control for the guard above. A `return` that fired on every tree rather
   // than on a missing one would turn the whole obligation off, and every case
