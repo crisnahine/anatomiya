@@ -964,3 +964,23 @@ test("a TypeScript module extension is carried as much as a JavaScript one", () 
     conforming: 2,
   });
 });
+
+/* --- a ! nobody can write is no counter-site --- */
+
+test("a plain JavaScript file is not asked to prefer ?. over a ! it cannot write", async () => {
+  // `o!.a` is a SyntaxError in a .js or .mjs file, so every ?. there was a
+  // conforming site with no possible counter-site: this repository's own lib,
+  // sixty .mjs files and no TypeScript, stated the row at 190 of 190, a
+  // language default holding a line of always-loaded context that the check
+  // could never enforce.
+  const { parseFile } = await import("../plugins/anatomiya/lib/parse-file.mjs");
+  const src = "export const pick = (o) => o?.a\n";
+
+  for (const [rel, lang] of [["src/a.js", "js"], ["src/a.mjs", "js"], ["src/a.cjs", "js"], ["src/a.jsx", "jsx"]]) {
+    const r = await parseFile(src, rel, lang);
+    assert.equal(r.ok, true, rel);
+    assert.equal(r.hits.non_null_assertion, undefined, rel);
+  }
+  const ts = await parseFile(src, "src/a.ts", "js");
+  assert.equal(ts.hits.non_null_assertion.length, 1, "a TypeScript file still answers it");
+});
