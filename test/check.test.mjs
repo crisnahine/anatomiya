@@ -1634,6 +1634,29 @@ test("a generated file the corpus leaves out is not judged against the map", asy
   assert.deepEqual(r.examined.map((f) => f.path), ["src/mine.ts"]);
 });
 
+test("a symlinked source file is neither parsed nor reported, committed or not", needsPosixPaths, async (t) => {
+  // A link is not source: its target is counted where it is tracked. Committed,
+  // the link's own text was parsed and named as syntax the parser rejected;
+  // uncommitted, the target was read through it and its sites charged again
+  // under the link's name. The same file answered two ways by commit state.
+  const dir = repo(t, ({ dir: root, git, write, commit }) => {
+    write("src/a.ts", clean(2));
+    write("lib/impl.ts", swallow(1));
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    symlinkSync("../lib/impl.ts", join(root, "src", "committed.ts"));
+    commit("link it");
+    symlinkSync("../lib/impl.ts", join(root, "src", "pending.ts"));
+  });
+  facts(dir, { sha: sha(dir, "main") });
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.deepEqual(r.examined.map((f) => f.path), []);
+  assert.deepEqual(r.findings, []);
+  assert.deepEqual(notes(r).filter((m) => /committed\.ts|pending\.ts/.test(m)), []);
+});
+
 test("a rules directory linked out of the repository is reported, not examined", async (t) => {
   // The scan refuses to write through such a link. The check has nothing to
   // refuse, so it says what it could not look at: a clean rules directory
