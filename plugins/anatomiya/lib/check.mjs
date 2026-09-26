@@ -1170,7 +1170,12 @@ async function staleness(root, facts, base, unreadable = null) {
   // The pin, its reachability and the drift range all come from the baseline
   // module, so the check measures staleness against the same population and the
   // same base ref the scan pinned rather than a second reading of them.
-  const state = await resolveBaseline(root, { baseRef: base.ref });
+  //
+  // Named by the commit this run resolved rather than by the ref's name: on a
+  // shallow clone the base is fetched by sha and no ref names it, so reading
+  // the name again capped every finding under "cannot resolve origin/main".
+  // Everywhere else the two resolve to the same fork point.
+  const state = await resolveBaseline(root, { baseRef: base.sha });
   if (state.status === "unpinned") return { reason: "no baseline pinned" };
   if (state.status === "pin-unreadable") return { reason: `the pin on disk could not be read because ${state.unreadable}` };
   if (state.status === "unreachable") return { reason: "the pinned baseline commit is unreachable" };

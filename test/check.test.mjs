@@ -3967,8 +3967,11 @@ test("a name spelling no class is an omission too, so it needs a stated claim", 
 
 /* --- the shallow arm, which #51 was measured on --- */
 
-/** A depth-1 clone of a repository with history, which is what CI checks out. */
-function shallowClone(t, build) {
+/**
+ * A depth-1 clone of a repository with history, which is what CI checks out,
+ * or a window as deep as a case needs.
+ */
+function shallowClone(t, build, { depth = 1 } = {}) {
   const outer = mkdtempSync(join(tmpdir(), "anatomiya-shallow-"));
   t.after(() => rmSync(outer, { recursive: true, force: true }));
   const origin = join(outer, "origin");
@@ -3993,7 +3996,7 @@ function shallowClone(t, build) {
   });
 
   const clone = join(outer, "clone");
-  execFileSync("git", ["clone", "-q", "--depth=1", `file://${origin}`, clone], { stdio: "pipe" });
+  execFileSync("git", ["clone", "-q", `--depth=${depth}`, `file://${origin}`, clone], { stdio: "pipe" });
   return clone;
 }
 
@@ -4094,6 +4097,27 @@ function mergeRefCheckout(t, build) {
   git(clone, "checkout", "-q", "--force", "refs/remotes/pull/1/merge");
   return { clone, base: execFileSync("git", ["rev-parse", "main"], { cwd: origin, encoding: "utf8" }).trim() };
 }
+
+test("a base fetched into a shallow clone is the base its staleness is measured against", async (t) => {
+  // The fetch lands in FETCH_HEAD and makes no ref, and staleness re-resolved
+  // the base by its name: `origin/main` resolved nowhere, so every finding was
+  // capped at FIX under "cannot resolve origin/main", one line below a header
+  // naming origin/main as the base this run compared against.
+  const dir = shallowClone(t, ({ write, commit, git }) => {
+    write("src/a.ts", clean(2));
+    commit("init");
+    git("checkout", "-q", "-b", "feat");
+    write("src/a.ts", clean(2) + swallow(1));
+    commit("swallow");
+  }, { depth: 2 });
+  facts(dir, { sha: sha(dir, "HEAD~1") });
+
+  const r = await check(dir, { baseRef: "origin/main" });
+
+  assert.equal(r.mode, "compare", JSON.stringify(notes(r)));
+  assert.equal(r.staleReason, null);
+  assert.deepEqual(forKey(r, "swallowed_error").map((f) => f.severity), ["MUST-FIX"]);
+});
 
 test("a depth-1 pull request checkout is judged against the base its merge commit names", async (t) => {
   // The default CI checkout. The base fetched off the remote is the merge
