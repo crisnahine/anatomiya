@@ -600,7 +600,7 @@ test("doctor says nothing about the install where the packages are there", () =>
 test("setup --dry-run prints the command and installs nothing", () => {
   const out = cli("setup", "--dry-run");
 
-  assert.match(out, /^would run npm install --omit=dev --ignore-scripts --no-audit --no-fund in /m, out);
+  assert.match(out, /^would run npm install --omit=dev --include=optional --ignore-scripts --no-audit --no-fund in /m, out);
 });
 
 test("setup runs npm in the plugin's own directory, with the arguments it printed", needsShebang, (t) => {
@@ -622,7 +622,7 @@ test("setup runs npm in the plugin's own directory, with the arguments it printe
   assert.match(stdout, /added 2 packages/, "npm's own words come back");
   assert.deepEqual(
     readFileSync(join(install, "npm-argv.txt"), "utf8").trim().split("\n"),
-    ["install", "--omit=dev", "--ignore-scripts", "--no-audit", "--no-fund"],
+    ["install", "--omit=dev", "--include=optional", "--ignore-scripts", "--no-audit", "--no-fund"],
     "the argv is what it said it would be, and it ran in the plugin's own directory"
   );
 });
@@ -655,7 +655,7 @@ test("setup on Windows refuses, and prints the command to run by hand", needsWin
   }
 
   assert.equal(code, 2);
-  assert.match(stderr, /npm install --omit=dev --ignore-scripts --no-audit --no-fund/, stderr);
+  assert.match(stderr, /npm install --omit=dev --include=optional --ignore-scripts --no-audit --no-fund/, stderr);
   assert.ok(stderr.includes(install), `it names the directory to run it in: ${stderr}`);
 });
 

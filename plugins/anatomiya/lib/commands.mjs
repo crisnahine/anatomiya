@@ -347,8 +347,14 @@ function probeAfresh(cwd) {
  *
  * `--ignore-scripts` is the load-bearing flag: without it a dependency's
  * install script runs arbitrary code in the plugin directory.
+ *
+ * `--include=optional` because the parser's native binding is an optional
+ * dependency of `oxc-parser`, one per platform, and so is the checker. npm
+ * reads `optional=false` or `omit=optional` from the user's own config, and
+ * under it the install answered "up to date" and left no parser that loads;
+ * an include wins over an omit of the same type, whoever set it.
  */
-const INSTALL = Object.freeze(["npm", "install", "--omit=dev", "--ignore-scripts", "--no-audit", "--no-fund"]);
+const INSTALL = Object.freeze(["npm", "install", "--omit=dev", "--include=optional", "--ignore-scripts", "--no-audit", "--no-fund"]);
 
 // A cold install of a native parser on a slow link is minutes, so this is a
 // bound on a hang rather than on a slow network.
