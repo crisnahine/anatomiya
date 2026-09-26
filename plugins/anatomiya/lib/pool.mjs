@@ -92,7 +92,21 @@ export function createPool({ size, withProgram = false, execArgv = [], guards = 
     // next moves the unexamined count in the always-loaded overview (A5). A
     // worker over the RSS ceiling, or one that died by itself, is a poison file
     // and gets the one attempt.
-    child.on("exit", (code, signal) => {
+    child.on("exit", (code, signal) => died(code, signal));
+
+    // A fork that never started emits this and never 'exit': a cwd that is
+    // gone, which a cleaned-up per-session TMPDIR makes of every child, or
+    // EAGAIN at a process limit, or EMFILE. Unlistened it is an uncaught
+    // exception and the scan dies on Node's own stack; listened and ignored,
+    // the worker is never replaced and a queued file waits forever. It is a
+    // worker that died before it answered, so it takes that path. A child that
+    // did start answers here only for a kill or a send that failed, and its own
+    // 'exit' still says how it ended.
+    child.on("error", (err) => {
+      if (child.pid === undefined) died(null, null, err);
+    });
+
+    function died(code, signal, cause = null) {
       const timedOut = w.sup.killedBy() === "timeout";
       if (w.job && timedOut && !closed && retryOnce(w.job)) {
         const job = w.job;
@@ -114,10 +128,12 @@ export function createPool({ size, withProgram = false, execArgv = [], guards = 
       drop(idle, w);
       if (closed) return;
       if (!w.ready && ++stillborn >= MAX_STILLBORN) {
-        return fail([`parser worker will not start`, firstLine(w.sup.stderr())].filter(Boolean).join(": "));
+        // A fork that never ran printed nothing, so the reason is the spawn's.
+        const why = firstLine(w.sup.stderr()) || firstLine(cause?.message);
+        return fail([`parser worker will not start`, why].filter(Boolean).join(": "));
       }
       spawn();
-    });
+    }
 
     workers.push(w);
     return w;
@@ -128,9 +144,17 @@ export function createPool({ size, withProgram = false, execArgv = [], guards = 
     if (i >= 0) list.splice(i, 1);
   }
 
+  // A pool no worker will start in never answered for any file, which is a
+  // crash on every file of the language: the condition A13 reads as a blind
+  // run. Charged as unreadable, the scan went on to remove every correct area
+  // file and write an overview of zero areas.
   function fail(reason) {
     broken = reason;
-    for (const job of queue.splice(0)) job.resolve({ rel: job.file.rel, ok: false, error: reason });
+    for (const job of queue.splice(0)) job.resolve(neverAnswered(job.file.rel));
+  }
+
+  function neverAnswered(rel) {
+    return { rel, ok: false, error: broken, crashed: true };
   }
 
   function finish(w, msg, dead = false) {
@@ -208,7 +232,7 @@ export function createPool({ size, withProgram = false, execArgv = [], guards = 
   function parse(file) {
     return new Promise((resolve) => {
       if (closed) return resolve({ rel: file.rel, ok: false, error: "pool closed" });
-      if (broken) return resolve({ rel: file.rel, ok: false, error: broken });
+      if (broken) return resolve(neverAnswered(file.rel));
 
       let bytes = 0;
       try {
@@ -231,7 +255,7 @@ export function createPool({ size, withProgram = false, execArgv = [], guards = 
     if (closed) return;
     closed = true;
     stopRssPoll();
-    fail("pool closed");
+    for (const job of queue.splice(0)) job.resolve({ rel: job.file.rel, ok: false, error: "pool closed" });
     idle.length = 0;
 
     await Promise.all(
