@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { spawn, spawnSync, execFileSync } from "node:child_process";
 
 import { needsPosixSpecialFiles, needsUnreadableDirs } from "./platform.mjs";
-import { aboutDir, echoContext, echoEvent, fieldsIn, ownLayout, planRemoval, commitRemoval, targetIn, HOOK_COMMAND, NOTICE_COMMAND, PAYLOAD_WAIT_MS, REUSE_COMMAND, SETTINGS_PATH } from "../plugins/anatomiya/lib/hook.mjs";
+import { aboutDir, echoContext, echoEvent, fieldsIn, ownLayout, planRemoval, commitRemoval, targetIn, HOOK_COMMAND, NOTICE_COMMAND, PAYLOAD_WAIT_MS, REFRESH_COMMAND, REUSE_COMMAND, SETTINGS_PATH } from "../plugins/anatomiya/lib/hook.mjs";
 import { FACTS_PATH, FACTS_SCHEMA } from "../plugins/anatomiya/lib/facts.mjs";
 import { pluginPaths } from "../scripts/validate.mjs";
 import { HEAD_BYTES } from "../plugins/anatomiya/lib/rules.mjs";
@@ -669,13 +669,13 @@ test("the plugin declares the hook itself, in the one file the variable works in
   // The top-level key is not decoration: without it the file loads nothing and
   // says nothing about it.
   assert.deepEqual(Object.keys(declared), ["hooks"]);
-  assert.deepEqual(Object.keys(declared.hooks).sort(), ["PostToolUse", "PostToolUseFailure", "PreToolUse", "Stop", "UserPromptSubmit"]);
+  assert.deepEqual(Object.keys(declared.hooks).sort(), ["FileChanged", "PostToolUse", "PostToolUseFailure", "PreToolUse", "SessionStart", "Stop", "UserPromptSubmit"]);
 
   // The write-time hook and the end-of-turn hook run their own verbs; every
   // other event re-delivers the map. All are held to the same
   // `${CLAUDE_PLUGIN_ROOT}` spelling, which is the half that shipped broken in
   // 0.2.4 through 0.2.6.
-  const verbFor = { PreToolUse: NOTICE_COMMAND, Stop: REUSE_COMMAND };
+  const verbFor = { PreToolUse: NOTICE_COMMAND, Stop: REUSE_COMMAND, SessionStart: REFRESH_COMMAND, FileChanged: REFRESH_COMMAND };
   for (const [event, groups] of Object.entries(declared.hooks)) {
     assert.ok(Array.isArray(groups) && groups.length === 1, event);
     assert.deepEqual(groups[0].hooks.map((h) => h.type), ["command"], event);

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { runCheck, runDoctor, runEcho, runNotice, runPin, runReuse, runScan, runSetup } from "../lib/commands.mjs";
 import { readPayload, respond } from "../lib/hook.mjs";
+import { refreshRepository, runRefresh, WORKER_DEADLINE_MS } from "../lib/refresh.mjs";
 import { pinJson, pinLines, scanJson, scanLines } from "../lib/summary.mjs";
 import { formatReport, formatReportGithub, formatReportJson } from "../lib/check-report.mjs";
 
@@ -130,6 +131,29 @@ const COMMANDS = {
     async run(cwd) {
       // The same guarantee again, at the end of a turn.
       respond(await runReuse(cwd, await readPayload()));
+    },
+  },
+  refresh: {
+    path: true,
+    dryRun: false,
+    formats: ["json"],
+    hook: true,
+    async run(cwd) {
+      // At a session's start and whenever HEAD moves: names the git files to
+      // watch and starts the worker below, and returns before it does anything.
+      respond(runRefresh(cwd, await readPayload()));
+    },
+  },
+  // Not a hook and not for a person either: the detached worker `refresh`
+  // starts, with its stdio closed, so nothing reads what it would print. Its
+  // own clock ends it if a scan never does (F5).
+  "refresh-run": {
+    path: true,
+    dryRun: false,
+    formats: ["text"],
+    async run(cwd) {
+      setTimeout(() => process.exit(1), WORKER_DEADLINE_MS).unref();
+      await refreshRepository(cwd);
     },
   },
 };

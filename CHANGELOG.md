@@ -7,7 +7,21 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- The map keeps itself current. After the first `scan` in a checkout, a background refresh rescans
+  at the start of every session and whenever HEAD moves, and only when the commit, the tracked
+  files, the pin or the plugin version changed. The hook returns at once and the scan runs detached.
+  It leaves alone a checkout with no map of its own, a map committed to the repository, a `--deep`
+  map, and a repository mid-merge or mid-rebase, and keeps the previous map when a rescan fails.
+- The pin follows the remote default branch: when the checkout sits on the tip of `origin`'s default
+  branch with nothing uncommitted, the refresh moves the pin forward to it. A feature branch, an
+  unpushed commit, an edited or staged file, and a repository with no remote never pin.
+
 ### Fixed
+
+- A branch cut before the pin read every file the default branch added since as missing, and closed
+  each area those files were in. Those files were never on the branch, and no longer count as gone.
 
 - Ruby before 3.4 could not be used at all. Ruby 3.3 ships `prism` 0.19, which the parser refuses
   because it spells the fields the dimensions read differently, and `gem install prism` did not

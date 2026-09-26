@@ -98,8 +98,9 @@ That copy is a snapshot of the main checkout taken at that moment, with nothing 
 the hooks' borrowed map carries its source. `docs/research/why-a-worktree-got-no-map.md` has the
 sources for both.
 
-Those two lines are everything a scan leaves behind. Three hooks are declared by the plugin, in its own
-`hooks/hooks.json`, so nothing is written into your settings. One re-delivers the map after a turn or a
+Those two lines are everything a scan leaves behind. Four hooks are declared by the plugin, in its own
+`hooks/hooks.json`, so nothing is written into your settings. The first keeps the map current, and
+is described under [Staying current](#staying-current). One re-delivers the map after a turn or a
 tool call when the context window does not already hold that same map. The other runs before a `Write`,
 an `Edit` or a `NotebookEdit`, and speaks only for a path where a test is going into a directory whose
 kind of file has no test of its own anywhere: silent on every other write, which is nearly all of them.
@@ -111,7 +112,26 @@ substituted and Claude Code refuses the hook by name on every prompt; a scan tak
 it finds one, and leaves everything else in the file alone.
 
 > [!NOTE]
-> A session that is already running still holds the old map. Restart to pick up the new one.
+> A session that is already running holds the overview it started with, and gets a changed one
+> handed to it on its next prompt or tool call. A new session, a compaction or `/clear` loads the new
+> one outright.
+
+### Staying current
+
+After the first `/anatomiya:scan` in a checkout, you do not run it again. At the start of every
+session, and whenever HEAD moves (a checkout, a commit, a pull, a merge, a reset), the plugin starts
+a background refresh that rescans only when something the map depends on changed: the commit, the
+tracked files, the pin, or this plugin's version. The hook returns at once and the scan runs
+detached, so nothing waits on it. It leaves alone a checkout with no map of its own, a map committed
+to the repository, a map built with `--deep`, and a repository in the middle of a merge or rebase,
+and it keeps the previous map when a rescan fails.
+
+The pin follows the same way, but only onto commits the team has already accepted: when the
+checkout sits exactly on the tip of `origin`'s default branch with nothing uncommitted, the pin moves
+forward to it. A feature branch, a commit the remote has not seen, an edited or staged file, and a
+repository with no remote never pin. `/anatomiya:pin` is still there for a repository with no
+remote, or to accept a population by hand. A branch cut before the pin does not read the files the
+default branch added since as missing.
 
 ## What it prints
 
@@ -365,9 +385,9 @@ gate's second opinion. The full numbers and their caveats are in [docs/why.md](d
 - [docs/plugin-contract.md](docs/plugin-contract.md) is what Claude Code requires of a plugin and a
   marketplace, read against the documentation and the CLI itself, with a source per claim and the
   version it was true of.
-- [DECISIONS.md](DECISIONS.md) is the build contract: 219 numbered decisions, each with the
+- [DECISIONS.md](DECISIONS.md) is the build contract: 222 numbered decisions, each with the
   measurement or the review finding that forced it. Why a threshold is where it is, why the parser
-  runs in child processes, why there is no hook: that is the file.
+  runs in child processes, why no hook carries the map on its own: that is the file.
 - [docs/why.md](docs/why.md) is the longer argument and the full numbers.
 - [docs/how-it-works.md](docs/how-it-works.md) is the mechanical walkthrough, close enough to
   predict what the tool prints on your repository before you run it.

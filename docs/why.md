@@ -109,7 +109,7 @@ not a claim that it is built: three rows below are marked where the two differ.
 | `execFile` threw `RangeError: Invalid string length` from inside Node's own exit handler, with `maxBuffer` set far above the output size | Subprocess output is streamed, never buffered. **Partial:** every read that grows with the repository streams; the ones that ask for a single blob or ref still buffer | F6 |
 | 18 of 85 areas in one measured repository were fixture directories | Fixture, vendor, dist and build directories are excluded from the corpus | see `plugins/anatomiya/lib/corpus.mjs` |
 | Bidi controls and zero-width joiners are Unicode category Cf, so they pass an ASCII control filter, and `JSON.stringify` does not escape them either | One encoder, allowlist not denylist, applied to every repository-controlled value | F3, F4 |
-| A hook was measured being flagged as prompt injection | No hooks, at all | see `DECISIONS.md` |
+| A hook was measured being flagged as prompt injection | No hook is the delivery channel: the always-loaded file carries the map, and the hooks add recency, a write-time notice, a reuse check and a background refresh beside it | see `DECISIONS.md` (A24, A95) |
 
 The pattern across the table: nearly every replaced design was reasonable on paper, and lost to one
 cheap probe against a real repository.
@@ -155,8 +155,9 @@ producing nothing.
 
 ## What is deliberately absent
 
-- **No hooks.** Worst-trusted channel, highest complexity, and measured being flagged as prompt
-  injection.
+- **No hook as the delivery channel.** Worst-trusted channel, highest complexity, and measured being
+  flagged as prompt injection. The hooks that exist sit beside the always-loaded file rather than
+  instead of it.
 - **No MCP server.** There is nothing to expose.
 - **No skill.** It would spend resident context describing the tool instead of the repository.
 - **No health score or grade.** It changes nothing about the next line of code.
@@ -165,5 +166,5 @@ producing nothing.
 
 ## Further reading
 
-[`DECISIONS.md`](../DECISIONS.md) is the build contract: 219 numbered decisions with the finding
+[`DECISIONS.md`](../DECISIONS.md) is the build contract: 222 numbered decisions with the finding
 behind each. [`how-it-works.md`](how-it-works.md) is the mechanical walkthrough.

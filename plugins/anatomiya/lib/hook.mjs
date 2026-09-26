@@ -43,6 +43,9 @@ export const NOTICE_COMMAND = 'node "${CLAUDE_PLUGIN_ROOT}/bin/anatomiya.mjs" no
 /** The end-of-turn half, declared on `Stop` and answering for what the turn added. */
 export const REUSE_COMMAND = 'node "${CLAUDE_PLUGIN_ROOT}/bin/anatomiya.mjs" reuse';
 
+/** The session-start and HEAD-moved hook: starts the refresh worker (`refresh.mjs`). */
+export const REFRESH_COMMAND = 'node "${CLAUDE_PLUGIN_ROOT}/bin/anatomiya.mjs" refresh';
+
 // What an older version wrote, whichever way it spelled the path. The removal
 // has to reach every spelling that ever shipped rather than only the one this
 // build would write, and the quoting has already changed once.

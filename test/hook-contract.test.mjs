@@ -68,10 +68,10 @@ function commandsOf({ plugin, root }) {
 
 /**
  * The verbs that answer only when they have something to say: `notice` when the
- * counts do (A44), and `reuse` when a turn added source code nobody has checked
- * (A91).
+ * counts do (A44), `reuse` when a turn added source code nobody has checked
+ * (A91), and `refresh` only in a checkout that holds a map of its own (A24).
  */
-const SOMETIMES_SILENT = new Set(["notice", "reuse"]);
+const SOMETIMES_SILENT = new Set(["notice", "reuse", "refresh"]);
 
 const DECLARED = PLUGINS.flatMap(commandsOf);
 

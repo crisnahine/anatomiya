@@ -539,7 +539,8 @@ that refusal cites was measured on a hook standing in for the always-loaded file
 is untouched and nothing depends on the weaker one. The echoed text is descriptive rather than
 imperative for the same reason, and it says outright that the code outranks it.
 
-Three hooks run, on different events and answering different questions. `anatomiya echo` fires on
+Four hooks run, on different events and answering different questions. `anatomiya refresh` fires on
+`SessionStart` and `FileChanged` and keeps the map current (below). `anatomiya echo` fires on
 `UserPromptSubmit`, `PostToolUse` and `PostToolUseFailure` and re-delivers the map. `anatomiya notice`
 fires on `PreToolUse` for `Write`, `Edit` and `NotebookEdit`, and answers for the one path that call is
 about: whether a test is being put where its kind of file has no test precedent. It is silent otherwise,
@@ -833,6 +834,35 @@ sentence rather than a repository-controlled value. It used to: the encoder stri
 boundary, so "defaults are taken with ??, not ||" rendered as "defaults are taken with ??, not" in
 every JavaScript area of every repository. Line breaks are still collapsed, and a test pins the
 registry to sentences that need nothing more than that.
+
+### Staying current
+
+A map is a snapshot of one working tree, and nothing on disk said which one. `anatomiya refresh`
+runs on `SessionStart` and on `FileChanged`, answers with two absolute `watchPaths` in the
+checkout's own git directory, `logs/HEAD` and `HEAD`, and starts a detached worker. The reflog is
+appended on every move of HEAD, a commit, a merge, a pull or a reset included, where `HEAD` itself is
+rewritten only when the branch changes. Plugin `FileChanged` matchers add nothing to the watch list,
+so the paths come back from the hook itself, every time, since the list is one list and the last
+hook to answer replaces it (`docs/research/when-a-hook-can-refresh-the-map.md`).
+
+The hook does no git work and returns at once. A `SessionStart` hook holds the session's first
+response until its pipes close, and Claude Code reads the always-loaded rules before its hooks
+finish, so a synchronous scan there would cost the whole scan and still miss the session it ran
+for. The worker is spawned with every stdio closed for the same reason: a child holding the hook's
+pipe keeps the hook pending with no timeout left to end it.
+
+The worker keeps its state beside `facts.json`. It takes an exclusive lock, stamps what a scan
+depends on (HEAD, the index as `ls-files -s`, the pin's bytes, the plugin version), and rescans only
+when the stamp moved. It leaves alone a checkout with no map of its own (A24), a map the repository
+tracks, a map built with `--deep`, and a merge, rebase, cherry-pick, revert or bisect in progress.
+A scan that throws writes nothing, so the previous map stays, and the same stamp is not tried again.
+It has its own clock. A changed overview reaches a running session through the echo's digest, and
+an area file is read from disk the first time its directory is.
+
+The same worker moves the pin, and only onto what the remote default branch holds: HEAD equal to
+the first of `origin/HEAD`, `origin/main` or `origin/master` that resolves, with no tracked file
+edited or staged, and never onto a commit older than the pin (E11). A branch cut before the pin
+reads the pinned files the base added after the fork as never held rather than as missing (E12).
 
 ## 7b. What lives where
 
