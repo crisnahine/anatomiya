@@ -1,18 +1,102 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { needsPosixPaths, needsShebang } from "./platform.mjs";
-import { needsRuby } from "./ruby-available.mjs";
-import { mkdtempSync, writeFileSync, readFileSync, rmSync } from "node:fs";
+import { needsRuby, needsRubyInterpreter } from "./ruby-available.mjs";
+import { mkdirSync, mkdtempSync, writeFileSync, readFileSync, rmSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { parseRuby, RUBY_GUARDS } from "../plugins/anatomiya/lib/ruby.mjs";
+import { choosePrism, listPrism, parseRuby, RUBY_GUARDS } from "../plugins/anatomiya/lib/ruby.mjs";
 import { walkRuby, constName, bodyOf, site, args } from "../plugins/anatomiya/lib/ruby-walk.mjs";
 import { RUBY_DIMENSIONS } from "../plugins/anatomiya/lib/dimensions-ruby.mjs";
 import { siteIdentity } from "../plugins/anatomiya/lib/introduced.mjs";
 
 const dir = mkdtempSync(join(tmpdir(), "anatomiya-ruby-"));
 process.on("exit", () => rmSync(dir, { recursive: true, force: true }));
+
+/* --- which prism the parser loads --- */
+
+// Ruby 3.3 ships prism 0.19 as its default gem, and 0.x spells the fields the
+// dimensions read differently. `gem install prism` puts a 1.x beside it on any
+// Ruby from 2.7, but the parser runs with gems disabled and saw only the
+// default, so the one remedy that fits in a command could not work.
+const spec = (version, { isDefault = false, paths = [`/gems/prism-${version}/lib`, `/ext/prism-${version}`] } = {}) =>
+  ({ version, default: isDefault, paths });
+
+test("a default prism at or past the floor is loaded as it always was, with nothing added", () => {
+  assert.deepEqual(choosePrism([spec("1.2.0", { isDefault: true }), spec("1.9.0")], "1.0.0"), null);
+});
+
+test("a default prism under the floor gives way to the newest installed one past it", () => {
+  const picked = choosePrism([spec("0.19.0", { isDefault: true }), spec("1.2.0"), spec("1.10.0"), spec("1.9.0")], "1.0.0");
+  assert.equal(picked.version, "1.10.0", "by its numbers: 1.10 is newer than 1.9");
+  assert.deepEqual(picked.paths, ["/gems/prism-1.10.0/lib", "/ext/prism-1.10.0"]);
+});
+
+test("nothing past the floor is nothing to add, and the default answers for itself", () => {
+  assert.equal(choosePrism([spec("0.19.0", { isDefault: true }), spec("0.30.0")], "1.0.0"), null);
+  assert.equal(choosePrism([], "1.0.0"), null);
+});
+
+test("a listing that is not the shape asked for adds nothing rather than a path it made up", () => {
+  for (const bad of [
+    null,
+    "1.9.0",
+    [{ version: "1.9.0", default: false, paths: ["relative/lib"] }],
+    [{ version: "1.9.0", default: false, paths: ["-e"] }],
+    [{ version: "1.9.0", default: false, paths: [] }],
+    [{ version: "1.9.0", default: false }],
+    [{ version: 1.9, default: false, paths: ["/gems/lib"] }],
+  ]) {
+    assert.equal(choosePrism(bad, "1.0.0"), null, JSON.stringify(bad));
+  }
+});
+
+test("the listing names a prism installed in a gem path, by version and absolute load path", needsRubyInterpreter, async (t) => {
+  // Asked of RubyGems rather than of prism, so it answers on any interpreter,
+  // including one whose own prism is the 0.x this cannot read.
+  const gems = mkdtempSync(join(tmpdir(), "anatomiya-gems-"));
+  t.after(() => rmSync(gems, { recursive: true, force: true }));
+  mkdirSync(join(gems, "specifications"), { recursive: true });
+  mkdirSync(join(gems, "gems", "prism-1.99.0", "lib"), { recursive: true });
+  writeFileSync(join(gems, "gems", "prism-1.99.0", "lib", "prism.rb"), "module Prism; VERSION = \"1.99.0\"; end\n");
+  writeFileSync(
+    join(gems, "specifications", "prism-1.99.0.gemspec"),
+    'Gem::Specification.new do |s|\n  s.name = "prism"\n  s.version = "1.99.0"\n  s.summary = "planted"\n  s.authors = ["t"]\n  s.files = ["lib/prism.rb"]\n  s.require_paths = ["lib"]\nend\n'
+  );
+
+  const specs = await listPrism({ env: { ...process.env, GEM_PATH: gems } });
+
+  const planted = specs.find((s) => s.version === "1.99.0");
+  assert.ok(planted, JSON.stringify(specs));
+  assert.equal(planted.default, false);
+  assert.deepEqual(planted.paths, [join(gems, "gems", "prism-1.99.0", "lib")]);
+});
+
+test("the parser loads the prism the listing chose, and says which", needsShebang, async (t) => {
+  // A stub interpreter answers the ready line only for the load path the
+  // listing handed it, so the version the run reports is the proof of which
+  // prism parsed, off the same resolution the readiness probe uses.
+  const bin = mkdtempSync(join(tmpdir(), "anatomiya-ruby-stub-"));
+  t.after(() => rmSync(bin, { recursive: true, force: true }));
+  writeFileSync(
+    join(bin, "ruby"),
+    `#!/bin/sh
+case "$*" in
+  *Gem::Specification*) printf '[{"version":"0.19.0","default":true,"paths":["/old/lib"]},{"version":"1.9.0","default":false,"paths":["/new/lib","/new/ext"]}]' ;;
+  *"--disable-gems -I /new/lib -I /new/ext -e"*) cat >/dev/null; printf '{"ready":true,"prism":"1.9.0"}\\n' ;;
+  *) cat >/dev/null; printf '{"ready":true,"prism":"0.19.0"}\\n{"fatal":"prism 0.19.0 predates the field names this reads"}\\n'; exit 1 ;;
+esac
+`,
+    { mode: 0o755 }
+  );
+  const file = join(bin, "a.rb");
+  writeFileSync(file, "class A\nend\n");
+
+  const out = await parseRuby([{ rel: "a.rb", abs: file }], { ruby: join(bin, "ruby") });
+
+  assert.equal(out.version, "1.9.0");
+});
 
 test("a mistyped size override refuses loudly instead of dying inside the child", async () => {
   // Ungated: the refusal happens before any interpreter is spawned. `null` is
@@ -794,6 +878,9 @@ function retryStub(home, first, afterAnswers = []) {
   const script = [
     "#!/bin/sh",
     `if [ "$1" = "--warm" ]; then exit 0; fi`,
+    // The question of which prism to load is asked before any parse child,
+    // and is not one: it holds no default to replace, so nothing is added.
+    `case "$*" in *Gem::Specification*) printf '[]'; exit 0 ;; esac`,
     `n=$(cat '${home}/runs' 2>/dev/null || echo 0)`,
     `echo $((n + 1)) > '${home}/runs'`,
     `tr '\\0' '\\n' > '${home}/in.'$n`,
@@ -871,6 +958,7 @@ test("a file the retry left unanswered is charged with what killed the first chi
     [
       "#!/bin/sh",
       `if [ "$1" = "--warm" ]; then exit 0; fi`,
+      `case "$*" in *Gem::Specification*) printf '[]'; exit 0 ;; esac`,
       `n=$(cat '${home}/runs' 2>/dev/null || echo 0)`,
       `echo $((n + 1)) > '${home}/runs'`,
       `tr '\\0' '\\n' > '${home}/in.'$n`,
@@ -896,7 +984,14 @@ test("a child that died by itself is charged, not tried again", needsShebang, as
   // broken install or a fatal from the script, and a second child answers it
   // the same way at twice the cost.
   const home = mkdtempSync(join(dir, "no-retry-"));
-  const script = ["#!/bin/sh", `echo x >> '${home}/runs'`, "cat > /dev/null", "exit 1", ""].join("\n");
+  const script = [
+    "#!/bin/sh",
+    `case "$*" in *Gem::Specification*) printf '[]'; exit 0 ;; esac`,
+    `echo x >> '${home}/runs'`,
+    "cat > /dev/null",
+    "exit 1",
+    "",
+  ].join("\n");
   writeFileSync(join(home, "ruby"), script, { mode: 0o755 });
 
   const files = ["a.rb", "b.rb"].map((rel) => ({ rel, abs: join(dir, "rescue_none.rb") }));

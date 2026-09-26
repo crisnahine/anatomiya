@@ -145,8 +145,9 @@ This is availability, not confidentiality. A repository can still make a scan sl
 ### Subprocesses, and the one command that installs anything
 
 Every subprocess here runs through `execFile`, `spawn` or `fork` with an argument array and never a
-shell. Beyond the parser and checker children there are four: `git`, `ps` for the memory guard, the
-`ruby` the readiness probe asks for a version, and `npm`.
+shell. Beyond the parser and checker children there are five: `git`, `ps` for the memory guard, the
+`ruby` the readiness probe asks for a version, the `ruby` asked which prism gems are installed, and
+`npm`.
 
 `npm` runs from `anatomiya setup` and from nothing else. `scan`, `check` and `pin` never call it,
 which is the whole reason the install is a command of its own rather than something a scan does on
@@ -173,6 +174,16 @@ no outbound call at any point.
 ships. It runs under the same scrub the Ruby parser child gets, with `RUBYOPT`, `RUBYLIB` and
 `GEM_HOME` dropped and `cwd` outside the repository, because it points an interpreter at whatever
 `PATH` names.
+
+Before either the probe or the parser starts, one more `ruby` lists the `prism` gems that interpreter
+holds, from RubyGems' own records: no gem's code is loaded to answer. Ruby 3.3 ships a `prism` older
+than the one the parser reads, and `gem install prism` puts a newer one beside it, so when the
+default is too old the newest installed one past the floor is handed to both children as `-I` load
+paths, absolute and never starting with a dash. Both still run with gems disabled. The listing alone
+keeps `GEM_HOME`, `GEM_PATH`, `HOME` and `USERPROFILE`, which only say where gems are installed and
+are where rvm, chruby and `--user-install` put them; `RUBYOPT` and `RUBYLIB`, which inject code, are
+dropped there too. It has the same `cwd`, a 10 second timeout and a 64 KB output bound, and any
+failure leaves the interpreter's own default to answer for itself.
 
 ## What this does not defend against
 

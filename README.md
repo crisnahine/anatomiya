@@ -29,8 +29,9 @@ and out of how many.
 
 ## Quick start
 
-Needs Node 22 or newer. Ruby dimensions also want Ruby 3.4 or newer on `PATH` (the first release
-shipping `prism` 1.x as a default gem). Linux, macOS and Windows run the suite and an end-to-end
+Needs Node 22 or newer. Ruby dimensions also want `ruby` on `PATH` with `prism` 1.x: Ruby 3.4 or
+newer ships it, and on an older Ruby (2.7 or newer) `gem install prism` adds it, which the parser
+then loads in place of the older default. Linux, macOS and Windows run the suite and an end-to-end
 scan, pin and check on every commit.
 
 ```

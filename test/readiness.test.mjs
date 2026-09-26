@@ -12,7 +12,8 @@ import { installWithoutStripper } from "./no-stripper.mjs";
 import { installWithoutDependencies } from "./plugin-install.mjs";
 import { REL } from "../scripts/plugins.mjs";
 import { ENGINES } from "../plugins/anatomiya/lib/langs.mjs";
-import { installProblem, olderThan, pluginRoot, readiness, readinessLines, remedyFor } from "../plugins/anatomiya/lib/readiness.mjs";
+import { installProblem, pluginRoot, readiness, readinessLines, remedyFor } from "../plugins/anatomiya/lib/readiness.mjs";
+import { olderThan } from "../plugins/anatomiya/lib/version.mjs";
 
 /** A directory on PATH holding one stub interpreter, so a probe meets a Ruby that is not this one. */
 function stubInterpreter(t, body) {
@@ -48,6 +49,13 @@ test("the interpreter engine's remedy names the interpreter and never npm", () =
 
   assert.match(remedy, /3\.4/);
   assert.doesNotMatch(remedy, /npm/);
+});
+
+test("an old prism's remedy names the gem, so an interpreter under 3.4 is not a dead end", () => {
+  // Ruby 3.3 ships prism 0.19, and upgrading an interpreter a project pins is
+  // not a command. `gem install prism` puts a 1.x beside it on any Ruby from
+  // 2.7, and the parser now loads it, so the remedy has to say so.
+  assert.match(remedyFor("prism"), /gem install prism/);
 });
 
 test("an engine nobody declares has no remedy to hand out", () => {
@@ -164,6 +172,27 @@ test("a library older than the floor names both numbers", needsShebang, async (t
   // sanitiser that reads complete and is not.
   assert.match(row.reason, /0\.19\.0/);
   assert.ok(row.reason.includes(ENGINES.prism.floor), `${row.reason} names the floor`);
+});
+
+test("a prism installed beside a default under the floor is the one reported", needsShebang, async (t) => {
+  // Ruby 3.3 ships prism 0.19, and `gem install prism` puts a 1.x beside it.
+  // The probe asks with the same load path the parser is handed, so it reports
+  // the one that will parse rather than the default nobody will load.
+  const env = stubInterpreter(
+    t,
+    `#!/bin/sh
+case "$*" in
+  *Gem::Specification*) printf '[{"version":"0.19.0","default":true,"paths":["/old/lib"]},{"version":"1.9.0","default":false,"paths":["/new/lib","/new/ext"]}]' ;;
+  *"--disable-gems -I /new/lib -I /new/ext -rprism"*) printf 1.9.0 ;;
+  *) printf 0.19.0 ;;
+esac
+`
+  );
+
+  const [row] = await readiness({ engines: ["prism"], env });
+
+  assert.equal(row.version, "1.9.0");
+  assert.equal(row.ok, true);
 });
 
 test("an interpreter that answers reports its version and the floor it is held to", needsRuby, async () => {

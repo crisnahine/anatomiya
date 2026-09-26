@@ -20,7 +20,8 @@ import { fileURLToPath } from "node:url";
 
 import { absentInterpreter } from "./child.mjs";
 import { ENGINES } from "./langs.mjs";
-import { rubyEnv } from "./ruby.mjs";
+import { prismLoadArgs, rubyEnv } from "./ruby.mjs";
+import { olderThan } from "./version.mjs";
 
 /**
  * The type checker, probed beside the engines and deliberately not one of them.
@@ -53,10 +54,12 @@ export const PROBE_IDS = Object.freeze(Object.keys(PROBES));
  */
 export const NODE_PROBE_IDS = Object.freeze(PROBE_IDS.filter((id) => PROBES[id].host === "node"));
 
-// How to ask an interpreter-hosted engine for its version. The argv belongs to
-// the engine rather than to its interpreter, so a second one adds a row here
-// instead of a branch below.
-const ASK_VERSION = { prism: ["--disable-gems", "-rprism", "-e", "print Prism::VERSION"] };
+// How to ask an interpreter-hosted engine for its version, and which of its
+// installs to ask: the same load path the parser is handed, so the answer is
+// about the library that will parse. The argv belongs to the engine rather than
+// to its interpreter, so a second one adds a row here instead of a branch below.
+const ASK_VERSION = { prism: (load) => ["--disable-gems", ...load, "-rprism", "-e", "print Prism::VERSION"] };
+const LOAD_ARGS = { prism: prismLoadArgs };
 
 // The phrase the node remedy spells in the directory for. The table states it
 // the way a person would read it aloud; a person following it needs the path.
@@ -95,27 +98,6 @@ export function remedyFor(engineId, root = pluginRoot()) {
   const engine = probeFor(engineId);
   return engine.host === "node" ? `run ${engine.remedy.replace(PLUGIN_DIRECTORY, root)}` : engine.remedy;
 }
-
-/**
- * Whether a version is below a floor, by its numbers.
- *
- * Exported because a string compare is the wrong answer that looks right:
- * "1.10.0" sorts below "1.9.0" as text, and prism is already past its tenth
- * minor, so text would refuse the version this asks for.
- */
-export function olderThan(version, floor) {
-  if (!version || !floor) return false;
-  const have = numbers(version);
-  const want = numbers(floor);
-  for (let i = 0; i < Math.max(have.length, want.length); i++) {
-    if ((have[i] ?? 0) !== (want[i] ?? 0)) return (have[i] ?? 0) < (want[i] ?? 0);
-  }
-  return false;
-}
-
-// `||` rather than `??`: a part that is not a number parses to NaN, which is
-// not absent, and comparing against it answers false in both directions.
-const numbers = (v) => v.split(".").map((n) => Number.parseInt(n, 10) || 0);
 
 /**
  * Ask every named engine whether it is there, and answer one row each.
@@ -290,7 +272,8 @@ function versionOf(module) {
  * under the floor parses without raising and counts every site as zero.
  */
 async function probeInterpreter(engine, { timeoutMs, env }) {
-  const { err, stdout } = await ask(engine.command, ASK_VERSION[engine.id], { timeoutMs, env });
+  const load = await LOAD_ARGS[engine.id]({ ruby: engine.command, env, timeoutMs });
+  const { err, stdout } = await ask(engine.command, ASK_VERSION[engine.id](load), { timeoutMs, env });
   if (absentInterpreter(err)) {
     return row(engine, { present: false, reason: `${engine.command} is not on PATH` });
   }
