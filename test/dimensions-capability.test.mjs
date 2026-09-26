@@ -136,6 +136,22 @@ test("adoption needs no filename vocabulary: Rails.logger carries none", async (
   assert.deepEqual([...adoptedCapabilities(records)], ["logging"]);
 });
 
+test("a stylesheet or a data file whose name says settings is not the config module", () => {
+  // Measured on a `settings` feature of 12 components, each reading its own
+  // CSS module: `styles.root` counted as a conforming env read, three files
+  // adopted the capability, and the map stated "environment reads go through
+  // the repository's own config module" 72 of 73 over a repository holding
+  // none, with the one real process.env read as its exception.
+  const r = counts("route_env", `
+    import styles from "./SettingsPanel.module.css";
+    import defaults from "./settings.json";
+    const a = styles.root;
+    const b = defaults.theme;
+    const c = process.env.NEXT_PUBLIC_API_URL;
+  `);
+  assert.deepEqual(r, { candidates: 1, conforming: 0 }, "only the process.env read is a site");
+});
+
 test("a destructuring read off process.env is a direct site per name", () => {
   const r = counts("route_env", `const { PORT, HOST } = process.env;`);
   assert.deepEqual(r, { candidates: 2, conforming: 0 });
