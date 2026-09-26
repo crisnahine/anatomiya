@@ -313,6 +313,8 @@ function encodePin(s) {
         path: sanitisePath(a.path),
         added: a.added.map(sanitisePath),
         removed: a.removed.map(sanitisePath),
+        movedIn: a.movedIn.map(sanitisePath),
+        movedOut: a.movedOut.map(sanitisePath),
       })),
     },
   };

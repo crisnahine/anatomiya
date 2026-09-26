@@ -18,9 +18,11 @@ there. This command is for a repository with no remote, or for a user accepting 
 
 2. Report what came back:
    - the commit it pinned, and the previous one if there was a pin already
-   - how many files enter the baseline population and how many leave it
+   - how many files enter the baseline population and how many leave it, and how many only moved
+     between areas
    - the areas it lists, and for each one the files that left. A file leaving is a file whose
-     claims are no longer counted at the baseline
+     claims are no longer counted at the baseline. A file that moved is still counted, in its new
+     area
 
 3. Then run the scan again. The pin decides which population the gates read, so the map on disk is
    still measured against the old one until it is rebuilt:
