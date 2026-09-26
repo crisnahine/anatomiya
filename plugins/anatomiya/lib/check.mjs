@@ -322,11 +322,16 @@ export async function check(cwd, { baseRef = null } = {}) {
 /* --- the diff --- */
 
 /**
- * Three dots, never two.
+ * From the fork point, never from the base branch's tip.
  *
- * Two dots compares the endpoints, so the moment the base branch moves ahead
- * it lists files other people changed, as reverse deltas, and the check then
- * reports findings in code the author never touched.
+ * The tip compared against HEAD lists, the moment the base branch moves ahead,
+ * files other people changed, as reverse deltas, and the check then reports
+ * findings in code the author never touched.
+ *
+ * `from` is already the fork point, or the oldest commit HEAD reaches, so the
+ * two are compared directly. Spelled `from...HEAD`, git computes the merge
+ * base a second time, which on every clone answers `from` itself and on a
+ * depth-1 one, whose HEAD is grafted as a root, fails the whole diff.
  */
 async function changedFiles(root, from) {
   const rows = [];
@@ -339,7 +344,7 @@ async function changedFiles(root, from) {
   try {
     await gitStreamed(
       root,
-      ["diff", "--find-renames", "-z", "--name-status", `${from}...HEAD`],
+      ["diff", "--find-renames", "-z", "--name-status", from, "HEAD"],
       nameStatusReader((row) => {
         rows.push(namedRow(row));
         return true;
@@ -446,19 +451,29 @@ async function resolveBase(root, baseRef, caveats) {
       const fetched = await git(root, ["fetch", "--depth=1", "origin", remote]);
       if (!fetched.ok) continue;
       const mb = await mergeBase(root, remote, "HEAD");
-      if (!mb.found) {
+      // A depth-1 checkout grafts HEAD as a root, so `merge-base` cannot see
+      // past it, not even to the commit just fetched. The commit object still
+      // records its parents, and a parent of HEAD is its own merge base with
+      // HEAD: on a pull request's merge ref, which is what the default CI
+      // checkout holds, the first parent is the base branch's tip.
+      const fork = mb.found ? mb.sha : (await recordedParents(root)).includes(remote) ? remote : null;
+      // Deepening until one appears is not offered (see above), so the way out
+      // is named instead: at depth one the oldest commit held is HEAD, and the
+      // run that follows examines nothing.
+      if (!fork) {
         caveat(
           caveats,
           CAVEATS.SHALLOW_NO_HISTORY,
-          "shallow clone: the base commit is present but shares no held history with HEAD"
+          "shallow clone: the base commit is present but shares no held history with HEAD; " +
+            "fetch the history to compare (fetch-depth: 0 on actions/checkout)"
         );
       }
       return {
         ref: c,
         sha: remote,
-        mergeBase: mb.sha,
+        mergeBase: fork,
         shallow,
-        boundary: mb.found ? null : await boundary(root),
+        boundary: fork ? null : await boundary(root),
       };
     }
     if (asked) throw new Error(refusal(baseRef, shallow));
@@ -495,6 +510,20 @@ async function remoteSha(root, ref) {
   const ls = await git(root, ["ls-remote", "origin", `refs/heads/${branch}`]);
   const m = /^([0-9a-f]+)\s/.exec(ls.out.trim() + "\n");
   return m && isSha(m[1]) ? m[1] : null;
+}
+
+/**
+ * The parents HEAD's own commit object names, whether or not the clone holds
+ * them. Read off the raw object, because every command that walks history
+ * reads a shallow clone's graft instead and answers that HEAD has none.
+ */
+async function recordedParents(root) {
+  const r = await git(root, ["cat-file", "commit", "HEAD"]);
+  if (!r.ok) return [];
+  // The header ends at the first blank line, and a message can hold a line
+  // that reads like one of its fields.
+  const header = r.out.split("\n\n")[0];
+  return [...header.matchAll(/^parent ([0-9a-f]+)$/gm)].map((m) => m[1]);
 }
 
 /**
