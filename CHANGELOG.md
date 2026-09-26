@@ -7,6 +7,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- `pin` wrote `baseline.json` through a `.claude` symlinked out of the repository, which a clone can
+  carry as a tracked link, and every later `scan` and `check` read the pinned population from
+  there. The map and its record already refused such a link. The pin now resolves the same way:
+  `pin` refuses it, a dry run included, and a pin read through it is treated as no pin.
+
 ## [0.10.2] - 2026-09-24
 
 Two machines could render two different maps of one repository, because the list the overview names

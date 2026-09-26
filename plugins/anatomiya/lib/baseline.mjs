@@ -2,7 +2,7 @@ import {
   changedSinceWorktree, diffRange, filesAt, isSha, mergeBase, resolveBaseRef, shaReachable,
 } from "./git.mjs";
 import { mkdirSync } from "node:fs";
-import { join, dirname } from "node:path";
+import { basename, join, dirname } from "node:path";
 
 import { areaOwner, dirCount } from "./areas.mjs";
 import { langsIn } from "./corpus.mjs";
@@ -13,6 +13,7 @@ import { encodePath } from "./encode.mjs";
 import { applyPairings } from "./pairing.mjs";
 import { atomic, readRecord } from "./facts.mjs";
 import { byCode } from "./paths.mjs";
+import { resolveInside } from "./rules.mjs";
 
 export const PIN_PATH = ".claude/anatomiya/baseline.json";
 export const PIN_SCHEMA = 1;
@@ -44,8 +45,32 @@ export function buildPin(areas, { sha, corpus = null }) {
   };
 }
 
+/**
+ * Where the pin lives, resolved rather than joined: the containment the map and
+ * the facts record already carry (F2). `join` normalises `..` and follows no
+ * link, so a tracked `.claude -> ../victim` (git mode 120000, which survives a
+ * clone) had `pin` write baseline.json into a directory the repository does not
+ * own, and had every later scan and check read its population from there.
+ * `null` is a store outside the repository.
+ */
+function pinFile(root) {
+  const dir = resolveInside(root, dirname(PIN_PATH));
+  return dir === null ? null : join(dir, basename(PIN_PATH));
+}
+
+/** The file a pin would be written to, refused before anything is planned (A19). */
+export function pinTarget(root) {
+  const path = pinFile(root);
+  if (path === null) throw new Error(`${dirname(PIN_PATH)} resolves outside the repository, so no pin is written there`);
+  return path;
+}
+
 export function loadPin(root) {
-  const pin = readRecord(join(root, PIN_PATH)).record;
+  // A pin outside the repository is no pin: the same counts-only answer an
+  // unreadable one gets, never a population a directory we do not own chose.
+  const path = pinFile(root);
+  if (path === null) return null;
+  const pin = readRecord(path).record;
   if (!pin || pin.schema !== PIN_SCHEMA || !isSha(pin.sha) || !Array.isArray(pin.areas)) return null;
   // A half-shaped area is a pin that reads as a smaller population than the
   // one a human accepted, which is the direction that manufactures claims.
@@ -61,7 +86,7 @@ function isPinnedArea(a) {
 }
 
 export function writePin(root, pin) {
-  const path = join(root, PIN_PATH);
+  const path = pinTarget(root);
   mkdirSync(dirname(path), { recursive: true });
   atomic(path, JSON.stringify(pin, null, 2) + "\n");
   return path;

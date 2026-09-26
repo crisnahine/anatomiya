@@ -290,6 +290,21 @@ test("a dry-run pin writes nothing", async (t) => {
   assert.equal(summary.dryRun, true);
 });
 
+test("a pin whose store is linked outside the repository refuses, dry run included", async (t) => {
+  // The refusal belongs to the half that plans (A19), or a dry run answers with
+  // a clean delta for a write that lands in `../victim` the moment one is asked
+  // for.
+  const dir = repo(t);
+  const outside = mkdtempSync(join(tmpdir(), "anatomiya-outside-"));
+  t.after(() => rmSync(outside, { recursive: true, force: true }));
+  symlinkSync(outside, join(dir, ".claude"));
+
+  for (const dryRun of [true, false]) {
+    await assert.rejects(() => runPin(dir, { dryRun }), /outside the repository/, `dryRun ${dryRun}`);
+  }
+  assert.deepEqual(readdirSync(outside), [], "nothing was written through the link");
+});
+
 test("a second pin measures itself against the first", async (t) => {
   const dir = repo(t);
   await runPin(dir);
