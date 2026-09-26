@@ -136,6 +136,10 @@ export async function check(cwd, { baseRef = null } = {}) {
     );
   }
   const changed = diff.rows.filter((c) => c.status !== "D");
+  // What the branch took away: no file to examine, and still a companion its
+  // producer no longer has. The tree's own deletions join these below.
+  const removed = diff.rows.filter((c) => c.status === "D").map((c) => c.path)
+    .concat(diff.rows.filter((c) => c.from && c.from !== c.path).map((c) => c.from));
 
   const status = await pendingPaths(root);
   if (status === null) {
@@ -216,6 +220,7 @@ export async function check(cwd, { baseRef = null } = {}) {
     frameworks,
     capabilities,
     pending,
+    removed: new Set([...removed, ...pending.deleted]),
     // Only the two-run comparison establishes that a site is newly introduced,
     // so the degraded mode caps severity for the same reason a stale map does.
     fresh: !stale.reason && mode === "compare",
@@ -645,7 +650,7 @@ async function trackedTests(root) {
   return found;
 }
 
-async function collect(root, { examined, areas, base, mode, added, fresh, caveats, frameworks, capabilities, pending }) {
+async function collect(root, { examined, areas, base, mode, added, fresh, caveats, frameworks, capabilities, pending, removed }) {
   const areaFor = areaIndex(areas);
   const ancestorsOf = ancestorsIndex(areas);
   // Which directives each area's file had no room to state, recomputed from the
@@ -854,7 +859,7 @@ async function collect(root, { examined, areas, base, mode, added, fresh, caveat
 
     }
 
-    await addPairingFindings(root, findings, { examined, areas, fresh, caveats, pending, droppedIn });
+    await addPairingFindings(root, findings, { examined, areas, fresh, caveats, pending, removed, droppedIn });
     // The scan says this on its own summary, and a check runs in CI where nobody
     // read that. Without it a Flow file reads as a broken file.
     if (missingStripper) {
@@ -879,10 +884,12 @@ async function collect(root, { examined, areas, base, mode, added, fresh, caveat
  * claim it could execute, reported clean, and said nothing about the one it
  * could not: the same shape as reporting clean for a file that was never read.
  */
-async function addPairingFindings(root, findings, { examined, areas, fresh, caveats, pending, droppedIn }) {
+async function addPairingFindings(root, findings, { examined, areas, fresh, caveats, pending, removed, droppedIn }) {
   const areaFor = areaIndex(areas);
   const changed = examined.map((f) => f.path);
-  const langs = [...new Set(changed.map((p) => language(p)))];
+  // A removed companion asks its language's obligations too, or a branch that
+  // only deleted a spec asked none of them.
+  const langs = [...new Set([...changed, ...removed].map((p) => language(p)))];
   const pairings = pairingsFor(langs);
   if (pairings.length === 0) return;
 
@@ -920,7 +927,7 @@ async function addPairingFindings(root, findings, { examined, areas, fresh, cave
   for (const row of pending?.present ?? []) asItStands.add(row.path);
 
   for (const pairing of pairings) {
-    for (const { path, companion } of pairingViolations(changed, asItStands, pairing)) {
+    for (const { path, companion } of pairingViolations(changed, asItStands, pairing, removed)) {
       const area = areaFor(path);
       const dim = area && (area.dimensions || []).find((d) => d.key === pairing.key);
       // Same rule as every other finding: the check enforces what the map
