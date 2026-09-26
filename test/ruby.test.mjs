@@ -661,6 +661,21 @@ test("a file over the size cap is skipped without a tree", needsRuby, async () =
   assert.equal(out.results[0].program, null);
 });
 
+test("a file prism parses cleanly is read however long its chain of branches", needsRuby, async () => {
+  // Measured: a 98-branch elsif chain, a 98-call method chain and a 98-term
+  // `+` expression each came back `JSON::NestingError` and were reported as
+  // files that could not be parsed, though prism found no error in any. The
+  // tree is one to three JSON levels per node, and the encoder's default cap
+  // is 100: a detail of how the answer is carried, charged to the repository.
+  const branches = Array.from({ length: 99 }, (_, i) => `  elsif x == ${i + 1}\n    :a${i + 1}\n`).join("");
+  const elsif = write("elsif_chain", `def kind(x)\n  if x == 0\n    :a0\n${branches}  end\nend\n`);
+  const chain = write("method_chain", `def q\n  Model${Array.from({ length: 98 }, (_, i) => `.m${i}`).join("")}\nend\n`);
+
+  const out = await parseRuby([elsif, chain]);
+
+  for (const r of out.results) assert.equal(r.ok, true, `${r.rel}: ${r.error}`);
+});
+
 test("one unreadable file costs that file, not the run", needsRuby, async () => {
   const out = await parseRuby([
     { rel: "gone.rb", abs: join(dir, "does-not-exist.rb") },
