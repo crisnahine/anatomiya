@@ -373,6 +373,32 @@ test("a stop whose transcript cannot be read asks about nothing", async (t) => {
   }
 });
 
+test("what another branch brings in is not asked about while its merge or pick is unfinished", async (t) => {
+  // Until the operation ends, the tree against HEAD is the other branch's
+  // work, and the reason tells the model to delete the copy it finds: measured
+  // before this, an uncommitted merge of a teammate's branch was named as this
+  // turn's added functions on a turn that only answered a question.
+  const merging = repo(t);
+  const cherryPicking = repo(t);
+  for (const { git, write } of [merging, cherryPicking]) {
+    git("checkout", "-q", "-b", "mate");
+    write("src/dates.ts", "export function formatDate(d) {\n  return d.toISOString();\n}\n");
+    write("src/a.ts", "export const one = 1;\nexport const two = 22;\n");
+    git("add", "-A");
+    git("commit", "-qm", "mate");
+    git("checkout", "-q", "-");
+  }
+  merging.git("merge", "--no-ff", "--no-commit", "-q", "mate");
+  // A pick that stops on a conflict, which is what leaves one unfinished.
+  cherryPicking.write("src/a.ts", "export const one = 1;\nexport const two = 20;\n");
+  cherryPicking.git("commit", "-qam", "ours");
+  assert.throws(() => cherryPicking.git("cherry-pick", "mate"), "the pick stops on the conflict");
+
+  for (const [what, { dir }] of [["a merge", merging], ["a cherry-pick", cherryPicking]]) {
+    assert.deepEqual(await runReuse(dir, stop(dir, { transcript_path: begun(t) })), {}, what);
+  }
+});
+
 test("a later turn is asked only about the files nobody has asked about yet", async (t) => {
   const { dir, write } = repo(t);
   write("src/b.ts", NEW_B);
