@@ -293,7 +293,53 @@ export async function runSetup({ dryRun = false, platform = process.platform } =
   // spawn that never started says nothing at all, so its own error stands in.
   const how = err ? `${where} ${err.killed ? `did not finish within ${INSTALL_TIMEOUT_MS / 60_000} minutes` : "failed"}` : `ran ${where}`;
   const said = err ? stderr || stdout || err.message : stdout;
-  return answer(root, needed, { ran: true, ok: !err, output: [state, how, tail(said)].filter(Boolean).join("\n") });
+  const lines = [state, how, tail(said)].filter(Boolean);
+  if (err) return answer(root, needed, { ran: true, ok: false, output: lines.join("\n") });
+
+  // An exit of 0 says npm finished, not that anything loads. Measured with
+  // `npm_config_optional=false`: npm left out oxc's native binding, which is an
+  // optional dependency of the parser, answered "up to date", and setup
+  // reported success to a doctor that went on sending the user back to setup.
+  // So the engines are asked again, and one this run needs that still does not
+  // load fails the setup under its own row's reason.
+  const { rows: after, error } = await probeAfresh(root);
+  const still = (after ?? []).filter((r) => !r.ok);
+  if (error) lines.push(`npm finished, and whether the engines load now could not be asked: ${error}`);
+  else if (still.length) lines.push(`npm finished, and still not loading: ${still.map((r) => `${probeName(r)} (${r.reason})`).join(", ")}`);
+  return answer(root, needed, { ran: true, ok: !error && still.length === 0, output: lines.join("\n") });
+}
+
+/**
+ * The node-hosted rows, asked by a node that has never tried to load them.
+ *
+ * Not `readiness()` in this process: a module whose evaluation threw stays
+ * failed for the life of the process that tried it, and this one tried every
+ * engine before the install. oxc-parser without its native binding is exactly
+ * that, so asked here, a setup whose npm had fixed it would still read it as
+ * absent. Outside the repository like every other child, and bounded like
+ * one.
+ */
+function probeAfresh(cwd) {
+  const readinessUrl = new URL("./readiness.mjs", import.meta.url).href;
+  const script = [
+    `const { readiness, NODE_PROBE_IDS } = await import(${JSON.stringify(readinessUrl)});`,
+    "process.stdout.write(JSON.stringify(await readiness({ engines: NODE_PROBE_IDS })));",
+  ].join("\n");
+  return new Promise((resolve) => {
+    execFile(
+      process.execPath,
+      ["--input-type=module", "-e", script],
+      { cwd, encoding: "utf8", timeout: 60_000, killSignal: "SIGKILL", maxBuffer: 1024 * 1024 },
+      (err, stdout, stderr) => {
+        if (err) return resolve({ rows: null, error: firstLine(stderr) || err.message });
+        try {
+          resolve({ rows: JSON.parse(stdout), error: null });
+        } catch {
+          resolve({ rows: null, error: "the probe answered something other than its rows" });
+        }
+      }
+    );
+  });
 }
 
 /**
