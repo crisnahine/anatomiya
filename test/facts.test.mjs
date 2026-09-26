@@ -1,13 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { execFileSync, spawnSync } from "node:child_process";
 import { needsPosixSpecialFiles } from "./platform.mjs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
-import { writeFacts, readFacts, statedSide, FACTS_SCHEMA, FACTS_PATH } from "../plugins/anatomiya/lib/facts.mjs";
+import { atomic, writeFacts, readFacts, statedSide, FACTS_SCHEMA, FACTS_PATH } from "../plugins/anatomiya/lib/facts.mjs";
 
 /**
  * One owner for the machine record, so one round trip through it.
@@ -609,4 +609,27 @@ test("a record is measured by its bytes on disk, not by its decoded length", (t)
   writeFileSync(join(dir, FACTS_PATH), Buffer.alloc(22 * 1024 * 1024, 0xff));
 
   assert.deepEqual(readFacts(dir), { facts: null, unreadable: null });
+});
+
+test("the replace never writes through a link planted where its temporary file goes", () => {
+  // The directories are resolved (F2), and the temporary name beside the
+  // destination was not: it was `<path>.tmp-<pid>`, predictable, and opened
+  // with a plain write that follows a link. A repository shipping that name as
+  // a tracked symlink had the scan write the map's bytes wherever it pointed.
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-atomic-"));
+  const outside = mkdtempSync(join(tmpdir(), "anatomiya-atomic-outside-"));
+  try {
+    const victim = join(outside, "victim.txt");
+    writeFileSync(victim, "untouched\n");
+    const target = join(dir, "facts.json");
+    symlinkSync(victim, `${target}.tmp-${process.pid}`);
+
+    atomic(target, "{}\n");
+
+    assert.equal(readFileSync(victim, "utf8"), "untouched\n");
+    assert.equal(readFileSync(target, "utf8"), "{}\n");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+    rmSync(outside, { recursive: true, force: true });
+  }
 });

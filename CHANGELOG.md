@@ -20,6 +20,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- A scan could write outside the repository through a symlink planted where its temporary file
+  went. Each file was written to `<name>.tmp-<pid>` beside its destination with a write that
+  follows a link, so a repository shipping that name as a tracked symlink had the map's bytes
+  written wherever it pointed. The temporary name is now unpredictable and created exclusively, which
+  refuses any entry already there.
+- A Ruby whose `prism` is too old read as every Ruby file crashing the parser: `scan` exited 0,
+  withheld the whole map, JavaScript areas included, and named no remedy. It now fails the way a
+  missing interpreter does, with the remedy.
 - A branch cut before the pin read every file the default branch added since as missing, and closed
   each area those files were in. Those files were never on the branch, and no longer count as gone.
 
