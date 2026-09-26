@@ -457,18 +457,21 @@ export function echoContext(root, { now = new Date(), transcript = null } = {}) 
   const digest = hash.digest("hex").slice(0, 12);
   if (heldIn(transcript, digest)) return null;
 
+  // The remedy is the plugin's own command, which is the one spelling a model
+  // can run: the binary is `anatomiya.mjs` under a directory only the plugin
+  // loader knows, and a bare `anatomiya` is on nobody's PATH.
   const stamp =
     found.from === null
       ? [
           "Counted from this repository's own code and re-read just now.",
           "Where this and the code disagree, the code is right and the map is stale:",
-          "run `anatomiya scan .` rather than believing this.",
+          "run `/anatomiya:scan` rather than believing this.",
         ]
       : [
           `Counted from this repository's main checkout at ${found.from}, not this worktree, and re-read just now.`,
           `The area files it names are under ${join(found.from, RULES_DIR)}, not in this worktree, so read them there.`,
           "Where this and the code here disagree, the code is right:",
-          "run `anatomiya scan .` in this worktree for its own counts.",
+          "run `/anatomiya:scan` in this worktree for its own counts.",
         ];
 
   return [

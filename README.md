@@ -94,7 +94,7 @@ echo '.claude/anatomiya/' >> "$exclude"
 `--git-common-dir` rather than `.git`, because inside a linked worktree `.git` is a file holding a
 pointer. The common dir is shared, so one set of lines covers every worktree. A worktree left with no
 map of its own this way is handed its main checkout's counts by the hooks, labelled as such; run
-`anatomiya scan .` inside it for counts of its own branch. For worktrees Claude Code creates itself,
+`/anatomiya:scan` inside it for counts of its own branch. For worktrees Claude Code creates itself,
 a `.worktreeinclude` at the repository root copies the map and the pin in when the worktree is made:
 
 ```
