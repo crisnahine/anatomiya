@@ -332,6 +332,33 @@ test("a pin refuses a tree that differs from the commit it would record", async 
   assert.ok(existsSync(join(dir, PIN_PATH)));
 });
 
+test("a pin refuses while a merge has left a path unmerged, under .claude/ as well", async (t) => {
+  // `ls-files` lists an unmerged path once per stage, so a pin taken mid-merge
+  // recorded the file three times and a corpus two larger than the tree, and
+  // the corpus fixes the area floor for every scan after. The dirty check
+  // caught a conflict in src/ and let one through under .claude/, which it
+  // leaves out for this tool's own output: a tracked source file there made
+  // an area of one file listed three times.
+  const dir = repo(t);
+  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
+  mkdirSync(join(dir, ".claude", "hooks"), { recursive: true });
+  writeFileSync(join(dir, ".claude", "hooks", "h.mjs"), "export const h = 1\n");
+  git("add", "-A");
+  git("commit", "-qm", "hook");
+  git("checkout", "-q", "-b", "other");
+  writeFileSync(join(dir, ".claude", "hooks", "h.mjs"), "export const h = 2\n");
+  git("commit", "-qam", "other");
+  git("checkout", "-q", "-");
+  writeFileSync(join(dir, ".claude", "hooks", "h.mjs"), "export const h = 3\n");
+  git("commit", "-qam", "here");
+  assert.throws(() => git("merge", "-q", "other"), "the merge conflicts");
+
+  for (const dryRun of [true, false]) {
+    await assert.rejects(() => runPin(dir, { dryRun }), /unmerged paths, and a pin records HEAD/, `dryRun ${dryRun}`);
+  }
+  assert.equal(existsSync(join(dir, PIN_PATH)), false);
+});
+
 test("a second pin measures itself against the first", async (t) => {
   const dir = repo(t);
   await runPin(dir);
