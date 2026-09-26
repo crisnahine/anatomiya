@@ -703,11 +703,24 @@ async function collect(root, { examined, areas, base, mode, added, fresh, caveat
       : null;
     const headBlobs = new Map(atHead.files.map((f) => [f.rel, f]));
     const baseBlobs = new Map((atBase?.files ?? []).map((f) => [f.rel, f]));
+    const headOverCap = new Set(atHead.missing.filter((m) => m.reason === "over size cap").map((m) => m.rel));
 
     const jobs = [];
     for (const { file, lang } of claimed) {
       const atHeadBlob = headBlobs.get(file.path);
-      const source = file.tree ? await treeSource(root, file.path) : (atHeadBlob ? atHeadBlob.source : null);
+      const read = file.tree
+        ? await treeSource(root, file.path)
+        : { source: atHeadBlob ? atHeadBlob.source : null, oversize: headOverCap.has(file.path) };
+      const source = read.source;
+      // Past the cap is the parser's own cause, which it never gets to answer:
+      // both readers stop at the size it skips at. Named as one that would not
+      // come back, it read as git or disk trouble, where the cause is a file
+      // nobody writes by hand.
+      if (source === null && read.oversize) {
+        const past = { kind: "oversize" };
+        caveat(caveats, unreadCode(past), `${file.path} ${unreadReason(past)}, so it was not checked`);
+        continue;
+      }
       if (source === null) {
         // One code for both, because either way the head version is what this
         // run did not get; the sentence says which of the two it looked in.
@@ -1379,7 +1392,8 @@ function withPendingEdits(rows, { present, deleted }) {
 }
 
 /**
- * One path as it stands on disk, or null.
+ * One path as it stands on disk, as `{ source, oversize }`, the source null
+ * where it was not read and `oversize` saying whether the cap was why.
  *
  * Resolved rather than joined. The scan refuses to write through a link out of
  * the repository, and this reads, so it refuses to read through one: the text
@@ -1387,8 +1401,9 @@ function withPendingEdits(rows, { present, deleted }) {
  * enough to put a file from anywhere on the machine in it.
  */
 async function treeSource(root, path) {
+  const unread = { source: null, oversize: false };
   const abs = safeResolve(root, path);
-  if (abs === null) return null;
+  if (abs === null) return unread;
   // One handle, opened once and asked its own size: a path stat'd and then read
   // is two lookups of a name, and the file behind the name can be replaced
   // between them. The bound is the one the committed side reads under, because
@@ -1398,10 +1413,11 @@ async function treeSource(root, path) {
   try {
     handle = await open(abs, constants.O_RDONLY | (constants.O_NONBLOCK ?? 0));
     const info = await handle.stat();
-    if (!info.isFile() || info.size > MAX_FILE_BYTES) return null;
-    return await handle.readFile("utf8");
+    if (!info.isFile()) return unread;
+    if (info.size > MAX_FILE_BYTES) return { source: null, oversize: true };
+    return { source: await handle.readFile("utf8"), oversize: false };
   } catch {
-    return null;
+    return unread;
   } finally {
     await handle?.close();
   }

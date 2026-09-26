@@ -1902,12 +1902,36 @@ test("a pending file over the size cap is not read from the tree", async (t) => 
   const r = await check(dir, { baseRef: "main" });
 
   assert.deepEqual(forKey(r, "swallowed_error"), [], JSON.stringify(r.findings));
-  // The whole sentence rather than the prefix, like the other two: which of
-  // the three places was looked in is the only thing the three of them say.
   assert.ok(
-    notes(r).includes("could not read src/big.ts in the working tree"),
+    notes(r).includes("src/big.ts exceeded the size cap, so it was not checked"),
     `a file it refused to read is named, not silently dropped: ${JSON.stringify(r.caveats)}`
   );
+});
+
+test("a file past the size cap is named as past it, by its own code, committed or not", async (t) => {
+  // Both readers stop at the cap the parser skips at, so the parser's own
+  // "oversize" answer never arrived and every such file read as one that would
+  // not come back: git or disk trouble, where the documented code says a file
+  // nobody writes by hand.
+  const big = `${swallow(2)}\n// ${"x".repeat(1024 * 1024)}\n`;
+  const dir = repo(t, ({ dir: root, git, write, commit }) => {
+    write("src/a.ts", clean(2));
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/big.ts", big);
+    commit("over the cap");
+    writeFileSync(join(root, "src", "copy.ts"), big);
+  });
+  facts(dir, { sha: sha(dir, "main") });
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.deepEqual(
+    r.caveats.filter((c) => c.code === CAVEATS.HEAD_OVERSIZE).map((c) => c.message).sort(),
+    ["src/big.ts exceeded the size cap, so it was not checked", "src/copy.ts exceeded the size cap, so it was not checked"],
+    JSON.stringify(r.caveats)
+  );
+  assert.deepEqual(r.caveats.filter((c) => c.code === CAVEATS.HEAD_UNREADABLE), []);
 });
 
 // Both committed sides are read in one pass per revision, so which revision a
@@ -1915,19 +1939,24 @@ test("a pending file over the size cap is not read from the tree", async (t) => 
 // The three sentences say which of the three places was looked in, and an agent
 // reads them to know whether to fix the file or the run.
 test("a committed file that will not come back is named at HEAD", async (t) => {
-  const dir = repo(t, ({ git, write, commit }) => {
+  // Its object is gone from the store, which nothing but the blob read asks
+  // for: the diff lists an added path without opening it, and the tree copy
+  // is unchanged, so nothing is read from there.
+  const dir = repo(t, ({ dir: root, git, write, commit }) => {
     write("src/a.ts", clean(2));
     commit("init");
     git("checkout", "-q", "-b", "work");
-    write("src/big.ts", `${swallow(2)}\n// ${"x".repeat(1024 * 1024)}\n`);
-    commit("over the cap");
+    write("src/lost.ts", swallow(2));
+    commit("add it");
+    const blob = String(git("rev-parse", "HEAD:src/lost.ts")).trim();
+    rmSync(join(root, ".git", "objects", blob.slice(0, 2), blob.slice(2)));
   });
   facts(dir, { sha: sha(dir, "main") });
 
   const r = await check(dir, { baseRef: "main" });
 
   assert.deepEqual(forKey(r, "swallowed_error"), [], JSON.stringify(r.findings));
-  assert.ok(notes(r).includes("could not read src/big.ts at HEAD"), JSON.stringify(r.caveats));
+  assert.ok(notes(r).includes("could not read src/lost.ts at HEAD"), JSON.stringify(r.caveats));
   assert.ok(r.caveats.some((c) => c.code === CAVEATS.HEAD_UNREADABLE));
 });
 
@@ -4329,10 +4358,12 @@ test("a changed path that is now a fifo is skipped, not opened and waited on", n
   execFileSync("mkfifo", [join(dir, "src/f1.js")]);
 
   const script = `import { check } from ${JSON.stringify(new URL("../plugins/anatomiya/lib/check.mjs", import.meta.url).href)};
-    await check(${JSON.stringify(dir)}, { baseRef: "main" });
-    process.stdout.write("answered");`;
+    const r = await check(${JSON.stringify(dir)}, { baseRef: "main" });
+    process.stdout.write(JSON.stringify(r.caveats.map((c) => c.message)));`;
   const run = spawnSync(process.execPath, ["--input-type=module", "-e", script], { encoding: "utf8", timeout: 8000 });
 
   assert.equal(run.signal, null, `still waiting on the fifo after 8 seconds: killed by ${run.signal}`);
-  assert.equal(run.stdout, "answered", run.stderr);
+  // The whole sentence rather than the prefix, like the other two: which of
+  // the three places was looked in is the only thing the three of them say.
+  assert.ok(JSON.parse(run.stdout || "[]").includes("could not read src/f1.js in the working tree"), run.stdout + run.stderr);
 });
