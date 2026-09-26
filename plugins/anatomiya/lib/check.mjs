@@ -150,7 +150,7 @@ export async function check(cwd, { baseRef = null } = {}) {
   // in an uncommitted file against an author who may not have written one.
   const pending = status !== null && mode === "compare" ? status : { present: [], deleted: [] };
   await resolvePendingBases(root, base.mergeBase, pending.present);
-  const examined = withPendingEdits(changed.filter((c) => isCorpusPath(c.path)), pending.present);
+  const examined = withPendingEdits(changed.filter((c) => isCorpusPath(c.path)), pending);
   const fromTree = examined.filter((c) => c.tree).length;
   if (fromTree) {
     caveat(
@@ -1318,16 +1318,31 @@ async function resolvePendingBases(root, mergeBase, rows) {
  * path. A path only in the tree is a row of its own. Either way the row is
  * marked, because the head side of a marked row is read from disk and the run
  * is then not reproducible from git alone, which the report has to say.
+ *
+ * A path deleted in the tree leaves, the path a pending move left included:
+ * judged from HEAD it was a finding on a file that no longer exists.
  */
-function withPendingEdits(rows, pending) {
-  const byPath = new Map(rows.map((row) => [row.path, row]));
-  for (const { path, status, from } of pending) {
-    const row = byPath.get(path);
+function withPendingEdits(rows, { present, deleted }) {
+  const committed = new Map(rows.map((row) => [row.path, row]));
+  const gone = new Set(deleted);
+  const byPath = new Map(rows.filter((row) => !gone.has(row.path)).map((row) => [row.path, row]));
+  for (const { path, status, from } of present) {
+    const row = committed.get(path);
     // A row the diff already named keeps its own `from`: the diff resolved the
     // rename against the merge base, which is the comparison being made, and
     // `status` says nothing the diff has not already said better.
-    if (row) byPath.set(path, { ...row, tree: true });
-    else byPath.set(path, { status, path, from, tree: true });
+    if (row) {
+      byPath.set(path, { ...row, tree: true });
+      continue;
+    }
+    // A pending move names where the file sits at HEAD, and the diff says where
+    // that file was at the merge base, which is the side it is judged against.
+    // A move of a file the branch itself added is still an addition: read at
+    // its HEAD path, the base version was missing and the file was skipped.
+    const moved = from === null ? undefined : committed.get(from);
+    byPath.set(path, moved
+      ? { status: moved.from === null ? "A" : status, path, from: moved.from, tree: true }
+      : { status, path, from, tree: true });
   }
   return [...byPath.values()];
 }

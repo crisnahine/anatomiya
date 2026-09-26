@@ -1910,6 +1910,47 @@ test("a file deleted in the working tree is not examined", async (t) => {
   assert.deepEqual(notes(r).filter((m) => /could not read/.test(m)), []);
 });
 
+test("a file the branch committed and then deleted in the tree is not judged", async (t) => {
+  // The committed diff still lists it, and its HEAD version was judged: a
+  // MUST-FIX on a file that no longer exists, in a run that says it answers
+  // for the work as it stands.
+  const dir = repo(t, ({ dir: root, git, write, commit }) => {
+    write("src/a.ts", clean(2));
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/b.ts", swallow(1));
+    commit("swallow");
+    rmSync(join(root, "src/b.ts"));
+  });
+  facts(dir, { sha: sha(dir, "main") });
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.deepEqual(r.findings, []);
+  assert.deepEqual(r.examined.map((f) => f.path), []);
+});
+
+test("a file the branch added and then moved in the tree is judged as an addition at its new path", async (t) => {
+  // The move's `from` names a path that exists at HEAD and not at the merge
+  // base, so the base read failed and the moved file, holding the only new
+  // violation, was skipped, while the path it left was judged from HEAD.
+  const dir = repo(t, ({ dir: root, git, write, commit }) => {
+    write("src/a.ts", clean(2));
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/b.ts", swallow(1));
+    commit("swallow");
+    git("mv", "src/b.ts", "src/c.ts");
+    writeFileSync(join(root, "src/c.ts"), clean(1) + "export function h() { try { x() } catch (e) { } }\n");
+  });
+  facts(dir, { sha: sha(dir, "main") });
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assertExamined(r, "src/c.ts");
+  assert.deepEqual(forKey(r, "swallowed_error").map((f) => [f.path, f.line]), [["src/c.ts", 2]]);
+});
+
 test("a producer whose companion the branch never wrote is still reported", async (t) => {
   // The control for the guard above. A `return` that fired on every tree rather
   // than on a missing one would turn the whole obligation off, and every case
