@@ -386,6 +386,19 @@ export async function countUntrackedSource(root) {
 }
 
 /**
+ * Which rule refuses one path, asked of the working tree the way `collect`
+ * asks it, or null where the corpus would count it.
+ *
+ * For a caller holding a few paths rather than a listing: the check judges the
+ * files a branch changed, and one the corpus leaves out is one the map never
+ * counted. `.gitattributes` is read once, when the question is built.
+ */
+export function corpusDrop(root) {
+  const generatedRules = generatedAttrRules(root);
+  return (rel) => classify(root, rel, generatedRules).drop ?? null;
+}
+
+/**
  * Whether a listed path is corpus, and if not, which rule refused it.
  *
  * One classifier for both listings: the corpus and the untracked count are the
