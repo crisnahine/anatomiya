@@ -150,6 +150,22 @@ test("a scan takes out the hook an older version wrote, and says so once", async
   assert.equal(second.hookRemoved, false, "nothing left to take out");
 });
 
+test("a dry run says the old hook would be taken out, and leaves it where it is", async (t) => {
+  // A dry run is the plan without the write, and this line said the write had
+  // happened: measured before this, `scan --dry-run` printed "it was taken
+  // out" over a settings file it had not touched.
+  const dir = repo(t);
+  mkdirSync(join(dir, ".claude"), { recursive: true });
+  const settings = join(dir, ".claude", "settings.local.json");
+  writeFileSync(settings, JSON.stringify(OLD_HOOK_SETTINGS));
+
+  const lines = scanLines((await runScan(dir, { dryRun: true })).summary);
+
+  assert.ok(lines.some((l) => l.endsWith("it would be taken out")), lines.join("\n"));
+  assert.ok(!lines.some((l) => l.includes("was taken out")), lines.join("\n"));
+  assert.equal(readFileSync(settings, "utf8"), JSON.stringify(OLD_HOOK_SETTINGS), "and it is still there");
+});
+
 test("two scans over unchanged source say the same thing", async (t) => {
   // The corpus harness asserts a second scan's summary equals the first beyond
   // its timing, and every line but the repair one is a function of the tree.
