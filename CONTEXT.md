@@ -189,7 +189,7 @@ _Avoid_: partial, incomplete, capped
 
 **Pin**:
 The commit, and the file list each area held at it, that a human accepted as the thing claims are measured
-against.
+against: by running `pin`, or by merging to the remote default branch, which the pin follows on its own.
 _Avoid_: snapshot, lockfile, baseline
 
 **Population**:

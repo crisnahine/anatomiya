@@ -85,6 +85,13 @@ const FLAGS = new Set([
   "--src-prefix=a/",
   "--dst-prefix=b/",
   "--verify",
+  // What the refresh worker asks (`refresh.mjs`): the index with its modes and
+  // blob ids for the stamp, where this checkout's git directory is, whether
+  // tracked files carry edits, and whether a pin is newer than HEAD.
+  "-s",
+  "--absolute-git-dir",
+  "--untracked-files=no",
+  "--is-ancestor",
 ]);
 
 // `--format=<pattern>` carries a pattern this tool composes; the value is not

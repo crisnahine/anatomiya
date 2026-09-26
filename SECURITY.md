@@ -145,9 +145,12 @@ This is availability, not confidentiality. A repository can still make a scan sl
 ### Subprocesses, and the one command that installs anything
 
 Every subprocess here runs through `execFile`, `spawn` or `fork` with an argument array and never a
-shell. Beyond the parser and checker children there are five: `git`, `ps` for the memory guard, the
-`ruby` the readiness probe asks for a version, the `ruby` asked which prism gems are installed, and
-`npm`.
+shell. Beyond the parser and checker children there are six: `git`, `ps` for the memory guard, the
+`ruby` the readiness probe asks for a version, the `ruby` asked which prism gems are installed, `npm`,
+and the refresh worker: the plugin's own `bin/anatomiya.mjs refresh-run <root>` under the `node`
+already running, started by the `refresh` hook, detached, with every stdio closed, `cwd` outside the
+repository and a 20 minute clock. It runs only in a checkout that already holds a map of its own,
+and does what `scan` and `pin` do there, under the conditions `docs/how-it-works.md` states.
 
 `npm` runs from `anatomiya setup` and from nothing else. `scan`, `check` and `pin` never call it,
 which is the whole reason the install is a command of its own rather than something a scan does on
