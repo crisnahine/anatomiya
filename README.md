@@ -95,18 +95,20 @@ echo '.claude/anatomiya/' >> "$exclude"
 pointer. The common dir is shared, so one set of lines covers every worktree. A worktree left with no
 map of its own this way is handed its main checkout's counts by the hooks, labelled as such; run
 `anatomiya scan .` inside it for counts of its own branch. For worktrees Claude Code creates itself,
-a `.worktreeinclude` at the repository root copies the map in when the worktree is made:
+a `.worktreeinclude` at the repository root copies the map and the pin in when the worktree is made:
 
 ```
 **/.claude/rules/anatomiya-*.md
 **/.claude/anatomiya/facts.json
+**/.claude/anatomiya/baseline.json
 ```
 
-That copy is a snapshot of the main checkout taken at that moment, with nothing saying so, where
-the hooks' borrowed map carries its source. `docs/research/why-a-worktree-got-no-map.md` has the
-sources for both.
+The pin is the third line because the exclude above hides it along with the map, and a worktree
+without it checks as if nothing had been pinned: every finding capped at FIX. That copy is a snapshot
+of the main checkout taken at that moment, with nothing saying so, where the hooks' borrowed map
+carries its source. `docs/research/why-a-worktree-got-no-map.md` has the sources for both.
 
-Those two lines are everything a scan leaves behind. Four hooks are declared by the plugin, in its own
+The two exclude lines are everything a scan leaves behind. Four hooks are declared by the plugin, in its own
 `hooks/hooks.json`, so nothing is written into your settings. The first keeps the map current, and
 is described under [Staying current](#staying-current). One re-delivers the map after a turn or a
 tool call when the context window does not already hold that same map. The other runs before a `Write`,
