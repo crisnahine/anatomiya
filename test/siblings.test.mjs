@@ -108,6 +108,34 @@ test("a relative specifier resolves against the importer's directory", () => {
   assert.equal(specifierToFile("./missing", "src/app.ts", rels), null);
 });
 
+test("a compiled specifier resolves to the TypeScript source it is emitted from", () => {
+  // TypeScript under Node16 and NodeNext requires the emitted extension on every
+  // relative import, so `../utils/format.js` is how a service names
+  // `src/utils/format.ts`. Measured: a repository written that way lost its
+  // "Most imported from here" line in every area, 1 with reuse against 0.
+  const rels = corpus("src/utils/format.ts", "src/ui/Button.tsx", "src/lib/esm.mts", "src/lib/cjs.cts", "src/app/main.ts");
+
+  assert.equal(specifierToFile("../utils/format.js", "src/app/main.ts", rels), "src/utils/format.ts");
+  assert.equal(specifierToFile("../ui/Button.js", "src/app/main.ts", rels), "src/ui/Button.tsx");
+  assert.equal(specifierToFile("../ui/Button.jsx", "src/app/main.ts", rels), "src/ui/Button.tsx");
+  assert.equal(specifierToFile("../lib/esm.mjs", "src/app/main.ts", rels), "src/lib/esm.mts");
+  assert.equal(specifierToFile("../lib/cjs.cjs", "src/app/main.ts", rels), "src/lib/cjs.cts");
+  assert.equal(specifierToFile("@/utils/format.js", "src/app/main.ts", rels), "src/utils/format.ts", "through an alias too");
+});
+
+test("a specifier with an extension names only the file it spells or the source that emits it", () => {
+  // The written file wins where it exists, and a `.js` is never emitted from an
+  // `.mts`, so dropping the extension outright would credit the wrong module
+  // with its importers.
+  const both = corpus("src/utils/format.ts", "src/utils/format.js");
+  assert.equal(specifierToFile("./format.js", "src/utils/x.ts", both), "src/utils/format.js");
+
+  const other = corpus("src/utils/format.mts", "src/utils/parse.rb");
+  assert.equal(specifierToFile("./format.js", "src/utils/x.ts", other), null);
+  assert.equal(specifierToFile("@/utils/format.js", "src/app.ts", other), null);
+  assert.equal(specifierToFile("@/utils/parse.js", "src/app.ts", other), null, "a tail is not any file sharing its stem");
+});
+
 test("an alias tail matches the file it names, and an ambiguous one matches nothing", () => {
   const rels = corpus("src/utils/user.ts", "src/components/Avatar.tsx");
 
