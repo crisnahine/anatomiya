@@ -42,6 +42,12 @@ own. To parse with another Ruby, make it the global one or put its `bin` first o
 `/anatomiya:doctor` reports the prism the chosen one holds. Linux, macOS and Windows run the suite
 and an end-to-end scan, pin and check on every commit.
 
+The Node has to answer to `node` on the `PATH` Claude Code runs hooks with, and Claude Code's own
+installer does not provide one. The hooks run `node` by name through a shell, so on a machine with
+none every prompt and tool call reports `node: not found` until Node is installed or the plugin is
+disabled. The hooks cannot guard that themselves: the POSIX test that would silence it is a syntax
+error in the PowerShell Claude Code falls back to on Windows without Git Bash, where they work today.
+
 ```
 /plugin marketplace add crisnahine/anatomiya
 /plugin install anatomiya@crisnahine
