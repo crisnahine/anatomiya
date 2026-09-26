@@ -388,6 +388,37 @@ test("what a reader would take for grammar is escaped, and the percent first", (
   );
 });
 
+test("a finding's path is the file's own path in every writer, however long and in whatever script", () => {
+  // The display encoder capped a path at 120 graphemes and put a placeholder
+  // in place of any non-Latin one, and every writer went through it: GitHub
+  // could not place the annotation, a JSON reader could not join the finding
+  // back to a file, and the agent could not open the one the text named.
+  const long = `src/${"organisation-management/".repeat(5)}credit-card-tokenisation-service.ts`;
+  const kana = "src/日本/user-service.ts";
+  const r = bare({
+    findings: [finding({ path: long }), finding({ path: kana })],
+    counts: { "MUST-FIX": 2, FIX: 0, NIT: 0 },
+  });
+
+  assert.deepEqual(JSON.parse(formatReportJson(r)).findings.map((f) => f.path), [long, kana]);
+  const files = formatReportGithub(r).split("\n").slice(0, 2).map((l) => /file=([^,]*),/.exec(l)[1]);
+  assert.deepEqual(files, [long, kana]);
+  const text = formatReport(r);
+  assert.ok(text.includes(`"${long}":12`) && text.includes(`"${kana}":12`), text);
+});
+
+test("a path keeps no character that breaks its line or reorders it, in any writer", () => {
+  // The control the case above leaves standing: what the display encoder did
+  // for a path that is still the locator's job is refusing a newline, a
+  // control character, and a bidi override or zero-width joiner, none of
+  // which JSON.stringify escapes past the first two.
+  const r = bare({ findings: [finding({ path: "src/a\nb‮‍c.ts" })], counts: { "MUST-FIX": 1, FIX: 0, NIT: 0 } });
+
+  for (const out of [formatReportJson(r), formatReportGithub(r), formatReport(r)]) {
+    assert.doesNotMatch(out, /‮|‍|a\nb|a\\nb|a%0Ab/, out);
+  }
+});
+
 test("a clean report is still an answer, not an empty file", () => {
   assert.equal(formatReportGithub(bare()), "::notice::0 MUST-FIX, 0 FIX, 0 NIT\n");
 });
