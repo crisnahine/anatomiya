@@ -1109,9 +1109,9 @@ file fit beside the ones already there.
 
 `check` answers one question: which of the conventions the map stated did this branch break.
 
-The diff is three dots against the merge base, never two. Two dots compares the endpoints, so the
-moment the base branch moves ahead it lists files other people changed, as reverse deltas, and the
-check reports findings in code the author never touched.
+The diff is taken from the merge base, never from the base branch's tip. The tip compared against
+HEAD lists, the moment the base branch moves ahead, files other people changed, as reverse deltas,
+and the check reports findings in code the author never touched.
 
 "Newly introduced" cannot be derived from one run at HEAD, so the analysis runs twice, at HEAD and
 at the merge base, and the two finding sets are differenced by content fingerprint rather than by
@@ -1129,8 +1129,12 @@ Base ref resolution tries `origin/HEAD`, `origin/main`, `origin/master`, `main`,
 order, or whatever `--base` names. `@{upstream}` is deliberately absent: a pushed feature branch
 tracks itself, and the merge base with itself is HEAD. On a shallow clone the base commit is fetched
 with `--depth=1`, which costs about 3.65s and 12 MB; `--unshallow` measured 56s and 305 MB and
-`--deepen=500` measured the same, so bounded deepening is not offered. When there is still no merge
-base, the check degrades to lines added since the oldest commit the clone holds and says so.
+`--deepen=500` measured the same, so bounded deepening is not offered. A depth-1 clone grafts HEAD as
+a root, so `merge-base` cannot answer there even with the base fetched, but HEAD's commit still
+names its parents, and a base that is one of them is the merge base: that is the pull request's
+merge ref the default `actions/checkout` fetches. When there is still no merge base, the check
+degrades to lines added since the oldest commit the clone holds and says so, and at depth one that
+commit is HEAD, so nothing is examined and the caveat names the fix, `fetch-depth: 0`.
 
 One rule here is not a dimension and does not come from the registry. `test_precedent` asks whether a
 test the change added has any precedent in the source root it covers, rather than whether its contents

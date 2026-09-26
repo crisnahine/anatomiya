@@ -182,7 +182,7 @@ test("no caveat reaches the report without a code", () => {
   }
 });
 
-test("a code no case names is one of the five nobody could force cheaply", () => {
+test("a code no case names is one of the three nobody could force cheaply", () => {
   // The two checks above catch a code nothing spells and a code nothing
   // declares. Neither catches a code spelled at the wrong site: exchanging
   // `frameworks-unknown` and `capabilities-unknown` was green across every
@@ -190,13 +190,13 @@ test("a code no case names is one of the five nobody could force cheaply", () =>
   // the code back, and this is the list of the ones no case does.
   //
   // Each needs a state a temporary repository cannot cheaply be put in: a
-  // shallow clone whose base commit is fetchable but shares no history; a
   // degraded-mode run whose added-line ranges fail while its diff succeeds; a
   // `ls-tree` of HEAD that fails while every other read works; and a rule file
   // the filesystem refuses to open, which is a permission bit a run as root
   // does not have. `SHALLOW_UNFETCHED` left this list when the refusal a typed
   // `--base` now gets made the shallow arm worth reaching: a depth-1 clone of a
-  // `file://` origin is one `git clone` away.
+  // `file://` origin is one `git clone` away, and `SHALLOW_NO_HISTORY` left it
+  // on the same clone once that caveat named the fetch that fixes it.
   const dir = dirname(fileURLToPath(import.meta.url));
   const suites = readdirSync(dir)
     .filter((f) => f.endsWith(".test.mjs"))
@@ -206,7 +206,6 @@ test("a code no case names is one of the five nobody could force cheaply", () =>
   const unheld = Object.keys(CAVEATS).filter((name) => !new RegExp(`CAVEATS\\.${name}\\b`).test(suites));
 
   assert.deepEqual(unheld, [
-    "SHALLOW_NO_HISTORY",
     "ADDED_RANGES_UNREADABLE",
     "OBLIGATIONS_UNCHECKED",
     "RULES_UNREADABLE",

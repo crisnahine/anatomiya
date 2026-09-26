@@ -3988,6 +3988,91 @@ test("a shallow clone with no base named still degrades rather than refusing", a
   assert.ok(codesOf(r).includes(CAVEATS.SHALLOW_UNFETCHED), JSON.stringify(codesOf(r)));
 });
 
+/**
+ * What `actions/checkout` does on a pull request: no clone, one depth-1 fetch
+ * of the merge ref the host built, and a detached checkout of it. The merge's
+ * first parent is the base branch's tip, and the clone holds neither parent.
+ * The build leaves the branch under review as `feat`, off `main`.
+ */
+function mergeRefCheckout(t, build) {
+  const outer = mkdtempSync(join(tmpdir(), "anatomiya-mergeref-"));
+  t.after(() => rmSync(outer, { recursive: true, force: true }));
+  const origin = join(outer, "origin");
+  mkdirSync(origin, { recursive: true });
+  const git = (cwd, ...a) => execFileSync("git", a, { cwd, stdio: "pipe" });
+  git(origin, "init", "-q");
+  git(origin, "config", "user.email", "t@t.test");
+  git(origin, "config", "user.name", "T");
+  git(origin, "checkout", "-q", "-b", "main");
+  build({
+    write: (rel, body) => {
+      const abs = join(origin, rel);
+      mkdirSync(dirname(abs), { recursive: true });
+      writeFileSync(abs, body);
+    },
+    commit: (m) => {
+      git(origin, "add", "-A");
+      git(origin, "commit", "-qm", m);
+    },
+    git: (...a) => git(origin, ...a),
+  });
+  git(origin, "checkout", "-q", "--detach", "main");
+  git(origin, "merge", "-q", "--no-ff", "feat", "-m", "Merge pull request #1");
+  git(origin, "update-ref", "refs/pull/1/merge", "HEAD");
+  git(origin, "checkout", "-q", "main");
+
+  const clone = join(outer, "clone");
+  mkdirSync(clone);
+  git(clone, "init", "-q");
+  git(clone, "remote", "add", "origin", `file://${origin}`);
+  git(clone, "fetch", "-q", "--no-tags", "--depth=1", "origin", "+refs/pull/1/merge:refs/remotes/pull/1/merge");
+  git(clone, "checkout", "-q", "--force", "refs/remotes/pull/1/merge");
+  return { clone, base: execFileSync("git", ["rev-parse", "main"], { cwd: origin, encoding: "utf8" }).trim() };
+}
+
+test("a depth-1 pull request checkout is judged against the base its merge commit names", async (t) => {
+  // The default CI checkout. The base fetched off the remote is the merge
+  // commit's own first parent, which the commit records whatever the clone
+  // holds, and `merge-base` cannot see past the graft: the run examined
+  // nothing and printed 0 MUST-FIX, 0 FIX, 0 NIT on every pull request.
+  const { clone, base } = mergeRefCheckout(t, ({ write, commit, git }) => {
+    write("src/a.ts", clean(2));
+    commit("init");
+    git("checkout", "-q", "-b", "feat");
+    write("src/a.ts", clean(2) + swallow(1));
+    commit("swallow");
+  });
+  facts(clone, { sha: base });
+
+  const r = await check(clone);
+
+  assert.equal(r.mode, "compare", JSON.stringify(notes(r)));
+  assert.equal(r.base.mergeBase, base);
+  assert.deepEqual(forKey(r, "swallowed_error").map((f) => [f.path, f.line]), [["src/a.ts", 3]]);
+});
+
+test("a depth-1 checkout that still reaches no merge base names the fetch that would", async (t) => {
+  // A branch head two commits past its base: HEAD's parent is the branch's own
+  // first commit, so nothing the clone holds reaches the base. The run can
+  // only examine nothing, and a CI log saying so without the way out reads as
+  // this tool being unable to review pull requests at all.
+  const dir = shallowClone(t, ({ write, commit, git }) => {
+    write("src/a.ts", clean(2));
+    commit("init");
+    git("checkout", "-q", "-b", "feat");
+    write("src/a.ts", clean(2) + swallow(1));
+    commit("swallow");
+    write("src/a.ts", clean(2) + swallow(2));
+    commit("swallow again");
+  });
+
+  const r = await check(dir, { baseRef: "origin/main" });
+
+  assert.equal(r.mode, "none");
+  const said = r.caveats.find((c) => c.code === CAVEATS.SHALLOW_NO_HISTORY);
+  assert.match(said?.message ?? "", /fetch-depth: 0/, JSON.stringify(r.caveats));
+});
+
 test("findings of one severity order by code unit, not by the host's locale", async (t) => {
   const dir = repo(t, ({ git, write, commit }) => {
     write("tools/a.ts", clean(2));
