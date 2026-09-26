@@ -18,7 +18,7 @@ import { kindsLine, layoutSummary, namesakeClause, plural, renderLayout } from "
 import { areaFilename, isOwned, GENERATOR } from "../plugins/anatomiya/lib/rules.mjs";
 import { layoutFacts } from "../plugins/anatomiya/lib/layout.mjs";
 import { principleKeys } from "../plugins/anatomiya/lib/principles.mjs";
-import { globEntry, globText } from "../plugins/anatomiya/lib/areas.mjs";
+import { discover, globEntry, globText } from "../plugins/anatomiya/lib/areas.mjs";
 import { REGISTRY } from "../plugins/anatomiya/lib/registry.mjs";
 
 const dim = (o = {}) => ({
@@ -145,6 +145,45 @@ test("a bare-name glob keeps its leading star as well", () => {
 test("a bare-name glob under a directory keeps both halves", () => {
   const out = renderArea(area({ path: "lib", globs: [{ negated: false, dir: "lib", tail: "**/Gemfile" }] }));
   assert.match(out, /^ {2}- "lib\/\*\*\/Gemfile"$/m);
+});
+
+/** The `paths` patterns an area file delivers, read back the way a YAML reader takes them. */
+const renderedPaths = (out) =>
+  out.split("\n").slice(3, out.split("\n").indexOf("---", 1)).map((l) => JSON.parse(l.replace(/^ {2}- /, "")));
+
+/** The matcher's semantics: `*` stops at a slash, a `**` segment spans any depth including none. */
+function globMatches(pattern, rel) {
+  const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  let re = "^";
+  for (let i = 0; i < pattern.length; i++) {
+    if (pattern.startsWith("**/", i)) { re += "(?:[^/]*/)*"; i += 2; }
+    else if (pattern[i] === "*") re += "[^/]*";
+    else if (pattern[i] === "{") { const end = pattern.indexOf("}", i); re += `(?:${pattern.slice(i + 1, end).split(",").map(esc).join("|")})`; i = end; }
+    else re += esc(pattern[i]);
+  }
+  return new RegExp(`${re}$`, "u").test(rel);
+}
+
+test("every delivered paths pattern reaches the files its area counted, whatever the directory is spelled in", () => {
+  // Measured: `src/компоненты` rendered as `<path with mixed scripts, 10 chars>/**`
+  // and a 129-character directory as `.../w…/**`. The encoder that keeps a
+  // hostile name off a rendered line rewrote the directory half of the glob, so
+  // the area file was written and could never attach, and nothing said so.
+  const deep = "packages/organisation-management/billing-and-invoicing/subscription-lifecycle/payment-methods/credit-card-tokenisation/widgets/ch";
+  const files = [
+    ...["src/компоненты", "src/служба", "src", deep, "packages/other"].flatMap((d) =>
+      Array.from({ length: 6 }, (_, i) => ({ rel: `${d}/m${i}.ts`, lang: "js" }))
+    ),
+  ];
+
+  for (const a of discover(files)) {
+    const delivered = renderedPaths(renderArea(area({ path: a.path, globs: a.globs })));
+    for (const f of a.files) {
+      let hit = false;
+      for (const p of delivered) if (globMatches(p.replace(/^!/, ""), f.rel)) hit = !p.startsWith("!");
+      assert.ok(hit, `${a.path}: ${f.rel} is reached by none of ${JSON.stringify(delivered)}`);
+    }
+  }
 });
 
 test("author identity reaches a rendered file as a count, never as a name", () => {

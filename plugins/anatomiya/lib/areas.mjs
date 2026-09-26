@@ -5,6 +5,7 @@ import { createHash } from "node:crypto";
 // extra, so the list is the language's rather than the area's.
 import { EXT_BY_LANG, LANGUAGES } from "./langs.mjs";
 import { byCode } from "./paths.mjs";
+import { sanitisePath } from "./encode.mjs";
 
 export const AREA = {
   floor: [3, 8],        // a directory below the floor folds into its parent
@@ -185,9 +186,19 @@ export function assertGlobSafe(g) {
  * nothing at all. An area rooted there cannot be delivered either way, so it is
  * never rooted there: the files fold into an ancestor that can be spelled, whose
  * recursive tail still reaches them.
+ *
+ * The encoder is the other half of the same question. Every directory reaches
+ * the rendered glob through it (F4), and it rewrites what it cannot render
+ * safely rather than refusing it: a non-Latin name becomes a placeholder and a
+ * path past its cap ends in `…`. Measured: `src/компоненты` and a 129-character
+ * directory each got an area file whose `paths` could never match, written and
+ * silent. So a directory is spellable only where the encoder hands it back
+ * unchanged, and one it would rewrite folds like glob syntax does; what reaches
+ * the root with nowhere spellable to go is reported as uncovered.
  */
 const GLOB_SYNTAX = /[*?[\]{}!]/;
-const spellable = (dir) => dir === "." || !dir.split("/").some((seg) => GLOB_SYNTAX.test(seg));
+const spellable = (dir) =>
+  dir === "." || (!dir.split("/").some((seg) => GLOB_SYNTAX.test(seg)) && sanitisePath(dir) === dir);
 
 /** Directory of a repository-relative file path, "." for the root. */
 function dirOf(rel) {
