@@ -44,5 +44,7 @@ there. This command is for a repository with no remote, or for a user accepting 
 Before the first pin the scan measures against the current working tree, and no check finding can
 exceed FIX. That is the weaker mode, not a broken one.
 
-If the pin exits non-zero, show its output and stop. A capped corpus refuses to pin, because a
+If the pin exits non-zero, show its output and stop. It refuses while tracked files differ from HEAD,
+since the pin records HEAD and the files it holds: tell the user to commit or stash them first, and
+do not do either yourself. A capped corpus refuses to pin, because a
 partial population recorded as the whole one is the one error this file cannot be recovered from.

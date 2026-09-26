@@ -305,6 +305,32 @@ test("a pin whose store is linked outside the repository refuses, dry run includ
   assert.deepEqual(readdirSync(outside), [], "nothing was written through the link");
 });
 
+test("a pin refuses a tree that differs from the commit it would record", async (t) => {
+  // The pin records HEAD's sha and its file list came from the index and the
+  // working tree: a staged file, an intent-to-add or an uncommitted edit was
+  // listed against a commit that does not hold it, and every scan after read
+  // that area as a population change for as long as the pin stood.
+  const dir = repo(t);
+  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
+  const cases = [
+    ["a staged file", () => { writeFileSync(join(dir, "src", "new.ts"), "export const n = 1\n"); git("add", "src/new.ts"); }],
+    ["an edited file", () => writeFileSync(join(dir, "src", "f0.ts"), "export const a0 = 2\n")],
+  ];
+  for (const [name, dirty] of cases) {
+    dirty();
+    for (const dryRun of [true, false]) {
+      await assert.rejects(() => runPin(dir, { dryRun }), /commit or stash/, `${name}, dryRun ${dryRun}`);
+    }
+    assert.equal(existsSync(join(dir, PIN_PATH)), false, name);
+    git("reset", "-q", "--hard");
+    git("clean", "-qfd", "src");
+  }
+  // Untracked files are not in the corpus, so they are not a difference.
+  writeFileSync(join(dir, "notes.txt"), "scratch\n");
+  await runPin(dir);
+  assert.ok(existsSync(join(dir, PIN_PATH)));
+});
+
 test("a second pin measures itself against the first", async (t) => {
   const dir = repo(t);
   await runPin(dir);
