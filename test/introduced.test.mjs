@@ -112,6 +112,32 @@ test("identical sites are told apart by count: two at the base absorb two at the
   assert.deepEqual(judge({ head: two, base: three }), []);
 });
 
+test("a site added above an identical one is reported where it was added, not where the base held one", () => {
+  // Count alone absorbed the first site in walk order, which was the new one,
+  // and reported the one the base already held: the line, the function and the
+  // annotation all pointed at code the branch never touched.
+  const slot = area(stated("swallowed_error"));
+  const base = revision(`export class L {\n  legacy() {\n    try { old(); } catch (e) {}\n  }\n}\n`, { file: "f.ts" });
+  const head = revision(
+    `export class L {\n  brandNew() {\n    try { risky(); } catch (e) {}\n  }\n  legacy() {\n    try { old(); } catch (e) {}\n  }\n}\n`,
+    { file: "f.ts" }
+  );
+
+  const found = only("swallowed_error", newlyIntroduced({ area: slot, path: "src/l.ts", lang: "js", head, base }));
+
+  assert.deepEqual(found.map((f) => [f.line, f.where]), [[3, "brandNew"]]);
+});
+
+test("renaming the function around a site still introduces nothing", () => {
+  // The control for the case above: the enclosing name picks which of a
+  // group's copies is which, and is never what makes a site new.
+  const slot = area(stated("swallowed_error"));
+  const base = revision(`export function before() {\n  try { old(); } catch (e) {}\n}\n`, { file: "f.ts" });
+  const head = revision(`export function after() {\n  try { old(); } catch (e) {}\n}\n`, { file: "f.ts" });
+
+  assert.deepEqual(only("swallowed_error", newlyIntroduced({ area: slot, path: "src/l.ts", lang: "js", head, base })), []);
+});
+
 /* --- one polarity for both revisions --- */
 
 const functionStyle = rowByKey("function_style");
@@ -225,6 +251,19 @@ test("a grouped row is judged per body, and a body's identity survives its inclu
   assert.deepEqual(ask(swapped, base), []);
   const [charged] = ask(grown, base);
   assert.equal(charged.fp, bodyIdentity("app/w.rb", "module_include", [{ class: "Foo" }, { class: "Bar" }, { class: "Enumerable" }]), "the body's identity is its sorted constants");
+});
+
+test("a Ruby rescue added above one the base held is the one reported", needsRuby, async (t) => {
+  // prism reports no offsets, so every rescue in a file is one identity and
+  // any added above an existing swallowing one was reported at the old one.
+  const slot = area(stated("rescue_uses_error"));
+  const body = (name) => `  def ${name}\n    go\n  rescue StandardError => e\n    nil\n  end\n`;
+  const base = await rubyRevision(t, `class W\n${body("legacy")}end\n`);
+  const head = await rubyRevision(t, `class W\n${body("brand_new")}${body("legacy")}end\n`);
+
+  const found = only("rescue_uses_error", newlyIntroduced({ area: slot, path: "app/w.rb", lang: "ruby", head, base }));
+
+  assert.deepEqual(found.map((f) => f.where), ["brand_new"]);
 });
 
 test("an omission is reported only where the map stated the claim", needsRuby, async (t) => {
