@@ -10,6 +10,7 @@
  * one (C14), so no map carries a line that can only ever read zero.
  */
 import { walk, declName } from "./walk.mjs";
+import { EXT_BY_LANG } from "./langs.mjs";
 
 /** A stem's words: delimiters and camel humps both split. */
 export function stemWords(stem) {
@@ -59,13 +60,39 @@ export function implementsCapability(rel, capability) {
   return parts.length > 0 && parts.every((w) => words.has(w));
 }
 
-/** Local names bound by relative imports whose stem carries the vocabulary. */
+// The extensions a module these rows could be reading is written in: the
+// languages every row below declares, taken from the registry rather than
+// copied out of it.
+const MODULE_EXTS = new Set(["js", "jsx"].flatMap((id) => EXT_BY_LANG[id]));
+
+/**
+ * Whether a relative specifier names a module, rather than a file a loader
+ * turns into a value.
+ *
+ * `fileStem` cuts at the first dot, so `./SettingsPanel.module.css` is read as
+ * `SettingsPanel` and carried the env vocabulary: a `settings` feature of 12
+ * components reading their own CSS modules adopted the capability off
+ * `styles.root`, and the map stated that environment reads go through a
+ * config module the repository does not have. A stylesheet, a JSON table or an
+ * image is imported by its full name and cannot read the environment, log or
+ * call the network, so a specifier ending in any other extension is not a
+ * wrapper, which is the line `import_extension` draws between a source import
+ * and an asset one. A loader suffix is left on rather than cut: `?raw` and
+ * `?url` hand back a string, not the module the name says.
+ */
+function namesAModule(spec) {
+  const name = spec.slice(spec.lastIndexOf("/") + 1);
+  const dot = name.lastIndexOf(".");
+  return dot <= 0 || MODULE_EXTS.has(name.slice(dot + 1));
+}
+
+/** Local names bound by relative imports of a module whose stem carries the vocabulary. */
 function wrapperBindings(program, words) {
   const names = new Set();
   walk(program, (n) => {
     if (n.type !== "ImportDeclaration") return;
     const spec = n.source?.value;
-    if (typeof spec !== "string" || !spec.startsWith(".")) return;
+    if (typeof spec !== "string" || !spec.startsWith(".") || !namesAModule(spec)) return;
     if (!stemWords(fileStem(spec)).some((w) => words.has(w))) return;
     for (const s of n.specifiers || []) if (s.local?.name) names.add(s.local.name);
   });
