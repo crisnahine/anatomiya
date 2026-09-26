@@ -25,14 +25,17 @@ const loaded = await loadTypeScript();
 const ts = loaded?.ts;
 const needsTs = { skip: ts ? false : "typescript is not installed" };
 
-test("a repository with no tsconfig is degraded, not broken", needsTs, () => {
+test("a repository with no tsconfig runs on the compiler's defaults and says it had none", needsTs, () => {
   const dir = repo({ "a.ts": "export const a = 1" });
   try {
     const r = readConfig(ts, dir);
-    assert.equal(r.status, "degraded");
+    // Not broken, and not degraded before anything was measured: `tsc` runs
+    // on these same defaults there, and the resolution rate decides.
+    assert.equal(r.status, "ok");
     assert.equal(r.reason, "no-tsconfig");
-    // Degraded still runs. Refusing would make every untyped repository silent.
+    // It still runs. Refusing would make every untyped repository silent.
     assert.equal(typeof r.options, "object");
+    assert.equal(r.options.noEmit, true, "the forced options hold on the defaults too");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

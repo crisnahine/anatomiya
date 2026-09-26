@@ -120,7 +120,21 @@ export function readConfig(ts, root) {
     configPath: null,
   });
 
-  if (!existsSync(configPath)) return degraded("no-tsconfig");
+  // No file is not a broken one: the checker runs on its own defaults, which is
+  // what `tsc` does in a directory without one, and whether that resolved is
+  // the rate's to say. Degraded here, a monorepo keeping its options in
+  // `tsconfig.base.json` and one config per package read as counts only at
+  // 100% resolution. The reason rides along, so a rate under the floor names
+  // the likeliest cause rather than the generic one.
+  if (!existsSync(configPath)) {
+    return {
+      options: { ...ts.getDefaultCompilerOptions(), ...FORCED_OPTIONS },
+      fileNames: [],
+      status: "ok",
+      reason: "no-tsconfig",
+      configPath: null,
+    };
+  }
 
   const tsPath = toTsPath(configPath);
 

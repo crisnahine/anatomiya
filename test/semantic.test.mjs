@@ -117,6 +117,35 @@ test("the tier answers a real file and reports a resolution rate", needsTs, asyn
   }
 });
 
+test("a repository with no root tsconfig is judged on what resolved, not on the missing file", needsTs, async () => {
+  // Measured on an Nx-style monorepo, a tsconfig.base.json at the root and one
+  // tsconfig per package, and on any plain TypeScript tree without one:
+  // `type-checked claims are counts only: 100% of type lookups resolved
+  // (no-tsconfig)`, the two halves of one line contradicting each other. With
+  // no file the checker runs on its own defaults, which is what `tsc` does
+  // there too, and the rate is the measurement the degraded verdict exists for.
+  const dir = repo({
+    "a.ts": `export class B { v() { return 1 } }\nexport class A { b = new B(); go() { return this.b.v() } }`,
+  });
+  try {
+    const r = await runSemantic(dir, [{ rel: "a.ts", abs: join(dir, "a.ts"), lang: "js" }]);
+    assert.equal(r.error, null);
+    assert.equal(r.typedResolutionRate, 1);
+    assert.equal(r.status, "ok");
+    assert.equal(r.reason, null);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a repository with no root tsconfig whose types did not resolve says it had none", () => {
+  // Under the floor the missing file is still the likeliest cause, so it keeps
+  // its own name rather than the generic one a config that read cleanly gets.
+  const r = classifySemantic({ config: { status: "ok", reason: "no-tsconfig" }, resolution: { resolved: 3, total: 10 } });
+  assert.equal(r.status, "degraded");
+  assert.equal(r.reason, "no-tsconfig");
+});
+
 test("a checker outside major 5 is refused, because 7 has no JS API", async (t) => {
   // The range in package.json may never widen past major 5: typescript@7 is the
   // Go port and publishes no JS API, so a range that admits it turns --deep into
