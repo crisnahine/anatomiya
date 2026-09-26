@@ -143,6 +143,83 @@ function valueReads(program) {
     if (parent.type === "MemberExpression" && parent.property === n && !parent.computed) return;
     names.add(n.name);
   });
+  for (const name of metadataReads(program)) names.add(name);
+  return names;
+}
+
+/**
+ * The name a decorator's emitted metadata reads for one annotation, or null.
+ *
+ * The compiler serialises only the reference at the top of the type: a
+ * generic's argument, an array's element and a union of two types become
+ * `Promise`, `Array` and `Object`, and name nothing that was imported. A union
+ * with null or undefined keeps its one reference unless strictNullChecks is on,
+ * which this tier cannot see, so it is read as that reference: the mistake it
+ * risks leaves a site uncounted, where the other one asks for a broken
+ * injection.
+ */
+function emittedName(annotation) {
+  let t = annotation && annotation.type === "TSTypeAnnotation" ? annotation.typeAnnotation : annotation;
+  while (t && t.type === "TSParenthesizedType") t = t.typeAnnotation;
+  if (!t) return null;
+  if (t.type === "TSUnionType" || t.type === "TSIntersectionType") {
+    const rest = t.types.filter((m) => m.type !== "TSNullKeyword" && m.type !== "TSUndefinedKeyword");
+    return rest.length === 1 ? emittedName(rest[0]) : null;
+  }
+  if (t.type !== "TSTypeReference") return null;
+  // `ns.Service` is emitted as a read of `ns`, the namespace import.
+  let name = t.typeName;
+  while (name && name.type === "TSQualifiedName") name = name.left;
+  return name && name.type === "Identifier" ? name.name : null;
+}
+
+const hasDecorators = (n) => !!n && (n.decorators || []).length > 0;
+
+// A parameter property carries its decorators on itself or on the binding
+// inside it, and a default moves the annotation onto the binding's left side.
+const paramDecorated = (p) => hasDecorators(p) || (p.type === "TSParameterProperty" && hasDecorators(p.parameter));
+const paramAnnotation = (p) => {
+  const q = p.type === "TSParameterProperty" ? p.parameter : p;
+  return q && q.type === "AssignmentPattern" ? q.left.typeAnnotation : q && q.typeAnnotation;
+};
+
+/**
+ * Names a decorated signature's metadata reads as values.
+ *
+ * Under emitDecoratorMetadata a class with a decorator on it, or on one of its
+ * constructor's parameters, writes that constructor's parameter types into
+ * `design:paramtypes`, and a decorated member writes its own into `design:type`,
+ * `design:paramtypes` and `design:returntype`, each as the value the name is
+ * bound to. That is how Nest and Angular find what to inject. `import type`
+ * turns the emit into `Object`, which compiles, and the injector then fails at
+ * runtime. Whether the option is on is a tsconfig question this tier cannot
+ * see, so a decorated signature is read as though it were: the row loses a
+ * site where it is off, rather than asking for a break where it is on.
+ */
+function metadataReads(program) {
+  const names = new Set();
+  const take = (annotation) => {
+    const name = emittedName(annotation);
+    if (name) names.add(name);
+  };
+  walk(program, (n) => {
+    if (n.type !== "ClassDeclaration" && n.type !== "ClassExpression") return;
+    for (const m of n.body.body) {
+      if (m.type === "MethodDefinition") {
+        const fn = m.value;
+        // An overload signature has no body and emits nothing: the metadata is
+        // read off the implementation.
+        if (!fn || !fn.body) continue;
+        const params = fn.params || [];
+        const owner = m.kind === "constructor" ? n : m;
+        if (!hasDecorators(owner) && !params.some(paramDecorated)) continue;
+        for (const p of params) take(paramAnnotation(p));
+        if (m.kind !== "constructor") take(fn.returnType);
+      } else if ((m.type === "PropertyDefinition" || m.type === "AccessorProperty") && hasDecorators(m)) {
+        take(m.typeAnnotation);
+      }
+    }
+  });
   return names;
 }
 
@@ -371,7 +448,7 @@ export const EXTRA_DIMENSIONS = [
     precision: "partial",
     applicabilityPredicate: {
       sites: "a file importing a name that appears in type position and is never read as a value",
-      blind: "a name used in both positions, or re-exported, is not decidable from this file alone. A JSX element name reads as a value, so a lowercase host tag puts its own name in the value set and an imported type spelled the same stops being a site",
+      blind: "a name used in both positions, or re-exported, is not decidable from this file alone. A JSX element name reads as a value, so a lowercase host tag puts its own name in the value set and an imported type spelled the same stops being a site. A type a decorated signature names reads as a value, which its metadata emit is, whether or not the tsconfig turns that emit on",
     },
     // The whole question is the annotation, so a tree whose annotations were
     // blanked can only answer it wrongly. `parse-worker.mjs` drops this row for
