@@ -1276,7 +1276,13 @@ export async function pendingPaths(root, { timeout } = {}) {
   // `-uall`, because the default collapses an untracked directory to a single
   // entry ending in `/`, which is not a source path and was dropped: a wholly
   // new directory checked before its first commit read clean.
-  const r = await git(root, ["status", "--porcelain", "-uall", "-z"], GIT.checkMaxBytes, timeout);
+  //
+  // Rename detection asked for rather than inherited, the way the committed
+  // diff asks with `--find-renames`: `status` follows `status.renames`, which
+  // defaults to `diff.renames`, and a user who turned that off for speed had a
+  // `git mv` read as a deletion and an addition, every site that came with the
+  // file charged to whoever moved it.
+  const r = await git(root, ["-c", "status.renames=true", "status", "--porcelain", "-uall", "-z"], GIT.checkMaxBytes, timeout);
   if (!r.ok) return null;
   const rows = parsePorcelainRows(r.out).filter((row) => isCorpusPath(row.path));
   const gone = (row) => row.x === "D" || row.y === "D";
