@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { needsPosixPaths, needsPosixSpecialFiles } from "./platform.mjs";
+import { needsPosixPaths, needsPosixSpecialFiles, needsSymlinks } from "./platform.mjs";
 import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, rmSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, isAbsolute, sep } from "node:path";
@@ -102,6 +102,25 @@ test("a tracked symlink pointing outside the repository is dropped", async (t) =
 
   assert.deepEqual(files.map((f) => f.rel), ["src/a.ts"]);
   assert.equal(dropped.escaped, 1);
+});
+
+test("a tracked symlink to a file inside the repository is dropped, since its target is counted where it is tracked", needsSymlinks, async (t) => {
+  // Measured: a link kept here was parsed through to today's target, so every
+  // site in the target counted twice, and the baseline reused that parse for a
+  // path whose link blob had not changed since the pin: an uncommitted edit to
+  // the target moved the pinned counts from 52/52 to 52/55 and dropped the
+  // directive. What git tracks for a link is the target's name, not source.
+  const dir = repo(t, (d, { git, write }) => {
+    write("src/a.ts");
+    symlinkSync("a.ts", join(d, "src", "linked.ts"));
+    git("add", "-A");
+    git("commit", "-qm", "init");
+  });
+
+  const { files, dropped } = await collect(dir);
+
+  assert.deepEqual(files.map((f) => f.rel), ["src/a.ts"]);
+  assert.equal(dropped.escaped, 1, "dropped where a link out of the repository is");
 });
 
 test("untracked source is counted by the same rule the corpus is collected by", async (t) => {
