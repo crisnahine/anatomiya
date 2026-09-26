@@ -46,16 +46,19 @@ export const REUSE_COMMAND = 'node "${CLAUDE_PLUGIN_ROOT}/bin/anatomiya.mjs" reu
 /** The session-start and HEAD-moved hook: starts the refresh worker (`refresh.mjs`). */
 export const REFRESH_COMMAND = 'node "${CLAUDE_PLUGIN_ROOT}/bin/anatomiya.mjs" refresh';
 
-// What an older version wrote, whichever way it spelled the path. The removal
-// has to reach every spelling that ever shipped rather than only the one this
-// build would write, and the quoting has already changed once.
+// What an older version wrote, quoted or not. The removal has to reach every
+// spelling that ever shipped rather than only the one this build would write.
 // `echo` and no other verb, because the sweep may only take out what a version
 // of this tool put there: 0.2.4 through 0.2.6 wrote that one and nothing has
 // written a settings hook since, so matching `notice` here would delete one a
-// person installed by hand. A whole group goes at a time, so one sharing a
-// group with the old entry still goes with it; what that installer wrote was a
-// group of its own, which is what keeps the path narrow rather than closed.
-const isOurCommand = (command) => /anatomiya\.mjs"?\s+echo\b/.test(String(command ?? ""));
+// person installed by hand. Named through `${CLAUDE_PLUGIN_ROOT}` and ending at
+// the verb, because every one of them did, and that variable going unsubstituted
+// is what broke them: a hook a person wired to a clone's absolute path runs,
+// and `echo-stats` is somebody's own verb, and both used to go. A whole group
+// goes at a time, so one sharing a group with the old entry still goes with it;
+// what that installer wrote was a group of its own, which is what keeps the
+// path narrow rather than closed.
+const isOurCommand = (command) => /\$\{CLAUDE_PLUGIN_ROOT\}\/bin\/anatomiya\.mjs"?\s+echo\s*$/.test(String(command ?? ""));
 
 /**
  * Whether anything is already at a path, a broken link and a path that cannot
