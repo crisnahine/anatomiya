@@ -261,7 +261,10 @@ export async function runDoctor() {
 export async function runSetup({ dryRun = false, platform = process.platform } = {}) {
   const root = pluginRoot();
   const rows = await readiness({ engines: NODE_PROBE_IDS });
-  const needed = rows.filter((r) => !r.present).map(probeName);
+  // Present and not ready is a copy resolving from somewhere other than this
+  // plugin's own install, one the tool will not use, and the install puts a
+  // usable one ahead of it.
+  const needed = rows.filter((r) => !r.present || !r.ok).map(probeName);
   const where = `${INSTALL.join(" ")} in ${root}`;
   const state =
     needed.length === 0

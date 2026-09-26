@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { execFileSync, spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -223,6 +223,36 @@ test("the optional checker is never what makes a probe fail", async () => {
   assert.equal(row.engine, "typescript");
   assert.equal(row.ok, true);
   assert.match(row.reason, /--deep/, "and the row still says which flag wants it");
+});
+
+test("a checker --deep would refuse is not ok, and setup counts it as needed", (t) => {
+  // Measured with a typescript 4.9.5 in a node_modules above the plugin, the
+  // kind a home directory collects: doctor said `typescript 4.9.5 ok`, setup
+  // said `nothing to install`, and `scan --deep` refused it as not installed,
+  // because the loader holds it to major 5 and the probe only imported it.
+  // Probed out of process: module resolution is what is under test.
+  const above = mkdtempSync(join(tmpdir(), "anatomiya-oldts-"));
+  t.after(() => rmSync(above, { recursive: true, force: true }));
+  mkdirSync(join(above, "node_modules", "typescript"), { recursive: true });
+  writeFileSync(join(above, "node_modules", "typescript", "package.json"), `{"name":"typescript","version":"4.9.5","main":"index.js"}`);
+  writeFileSync(join(above, "node_modules", "typescript", "index.js"), `module.exports = { version: "4.9.5", createProgram() {} };`);
+  const home = join(above, "plugin");
+  for (const part of ["lib", "bin"]) cpSync(join(ROOT, REL.anatomiya, part), join(home, part), { recursive: true });
+  cpSync(join(ROOT, REL.anatomiya, "package.json"), join(home, "package.json"));
+  const script = `
+    const { readiness } = await import(${JSON.stringify(pathToFileURL(join(home, "lib", "readiness.mjs")).href)});
+    const { runSetup } = await import(${JSON.stringify(pathToFileURL(join(home, "lib", "commands.mjs")).href)});
+    const [row] = await readiness({ engines: ["typescript"] });
+    const { needed } = await runSetup({ dryRun: true });
+    process.stdout.write(JSON.stringify({ row, needed }));
+  `;
+
+  const { row, needed } = JSON.parse(execFileSync(process.execPath, ["--input-type=module", "-e", script], { encoding: "utf8" }));
+
+  assert.equal(row.version, "4.9.5");
+  assert.equal(row.ok, false);
+  assert.match(row.reason, /5\.x/, row.reason);
+  assert.ok(needed.includes("typescript"), `setup would install it: ${needed}`);
 });
 
 test("the default probe asks every declared engine and nothing else", async () => {
