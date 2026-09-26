@@ -967,6 +967,33 @@ test("a dry run refuses the occupied name a real write refuses", () => {
   rmSync(dir, { recursive: true, force: true });
 });
 
+test("a file where a map directory belongs is refused by name, and a dry run refuses it too", () => {
+  // Measured: with a regular file at `.claude/rules`, a dry run printed "would
+  // write 2 files" and the real scan died on a raw `EEXIST` out of `mkdir`; a
+  // file at `.claude` gave `ENOTDIR`, and one at the store `EEXIST` again. The
+  // plan is what a dry run answers with, so it has to know the write cannot
+  // happen, and say which path is in the way.
+  for (const [blocker, named] of [
+    [RULES, RULES],
+    [".claude", ".claude"],
+    [STORE, STORE],
+  ]) {
+    const dir = workspace();
+    mkdirSync(join(dir, blocker, ".."), { recursive: true });
+    writeFileSync(join(dir, blocker), "occupied\n");
+
+    for (const dryRun of [true, false]) {
+      assert.throws(
+        () => writeMap(result(dir, [area("src/services")]), { dryRun }),
+        (err) => err.message === `${named} is not a directory, so the map could not be written: remove it and scan again`,
+        `${blocker}, ${dryRun ? "dry run" : "real write"}`
+      );
+    }
+    assert.equal(readFileSync(join(dir, blocker), "utf8"), "occupied\n", "and it is left as it was");
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("a symlinked rule file is reported like the regular file it loads as", () => {
   // Claude loads a symlinked `.md` on every turn exactly as it loads a regular
   // one, so it belongs in the same report. The type test exists for shapes that
