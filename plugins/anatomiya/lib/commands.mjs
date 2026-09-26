@@ -169,6 +169,16 @@ export async function runPin(cwd, { dryRun = false } = {}) {
   if (dirty.stdout.length > 0) {
     throw new Error("tracked files differ from HEAD, and a pin records HEAD: commit or stash them first, then pin");
   }
+  // Asked of the whole index, since the exclusion above is for this tool's
+  // output and a tracked source file under `.claude/` is corpus like any other.
+  // An unmerged path is listed once per stage, so a pin taken mid-merge holds
+  // it three times and a corpus larger than the tree, and the corpus fixes the
+  // area floor for every scan after.
+  const unmerged = await gitBuffered(root, ["ls-files", "--unmerged", "-z"]);
+  if (!unmerged.ok) throw new Error(`could not read whether the index holds unmerged paths: ${firstLine(unmerged.error ?? "")}`);
+  if (unmerged.stdout.length > 0) {
+    throw new Error("the index holds unmerged paths, and a pin records HEAD: finish or abort the merge first, then pin");
+  }
 
   const { files, truncated } = await collect(root);
   // No repository size truncates the corpus any more, so this cannot fire from
