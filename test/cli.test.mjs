@@ -607,8 +607,13 @@ test("setup runs npm in the plugin's own directory, with the arguments it printe
   // An install that did not run leaves the plugin's own code with nothing
   // beside it, which is the shape this command exists for. The stub stands in
   // for npm: a test that runs the real one is a test that reaches the network.
+  // It links this checkout's own packages in, by an absolute `ln` since the
+  // stub is all that is on PATH, because setup now asks the engines afterwards
+  // whether they load, and an npm that installed nothing is the failure the
+  // next case is about.
   const install = installWithoutDependencies(t);
-  const bin = stubNpm(t, "#!/bin/sh\nprintf '%s\\n' \"$@\" > npm-argv.txt\necho 'added 2 packages'\n");
+  const packages = join(ROOT, "node_modules");
+  const bin = stubNpm(t, `#!/bin/sh\nprintf '%s\\n' "$@" > npm-argv.txt\n/bin/ln -s ${JSON.stringify(packages)} node_modules\necho 'added 2 packages'\n`);
 
   const { code, stdout } = runFrom(install, ["setup"], bin);
 
@@ -663,6 +668,23 @@ test("a setup whose npm failed exits non-zero and shows what npm said", needsShe
   assert.equal(code, 2);
   assert.match(stderr, /npm error code E404/, stderr);
   assert.match(stderr, /failed/, stderr);
+});
+
+test("a setup whose npm finished without the engine loading fails and names it", needsShebang, (t) => {
+  // Measured with `npm_config_optional=false`: oxc's native binding is an
+  // optional dependency, npm answered "up to date" and exit 0, setup printed
+  // `ran npm install ...` and exited 0, and doctor went on saying oxc was
+  // absent and to run setup. The stub stands for any npm that exits 0 and
+  // leaves the parser unloadable: success is what loads afterwards, not what
+  // npm's exit said.
+  const install = installWithoutDependencies(t);
+  const bin = stubNpm(t, "#!/bin/sh\necho 'up to date in 1ms'\n");
+
+  const { code, stdout, stderr } = runFrom(install, ["setup"], bin);
+
+  assert.equal(code, 2, stdout);
+  assert.match(stderr, /up to date in 1ms/, "npm's own words still come back");
+  assert.match(stderr, /^npm finished, and still not loading: oxc \(oxc-parser did not load\)/m, stderr);
 });
 
 test("doctor and setup refuse the arguments they have no use for", () => {
