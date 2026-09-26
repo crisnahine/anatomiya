@@ -28,7 +28,7 @@ import { rowsOfKind } from "./registry.mjs";
 import { couldSignal } from "./frameworks.mjs";
 import {
   gitBuffered, gitStreamed, nameStatusReader, parsePorcelainRows, resolveBaseRef, mergeBase, filesAt,
-  headSha, BASE_REFS, GIT,
+  headSha, isSha, BASE_REFS, GIT,
 } from "./git.mjs";
 import { readAtRevision } from "./revision.mjs";
 import { CAVEATS } from "./check-report.mjs";
@@ -493,8 +493,8 @@ function refusal(ref, shallow) {
 async function remoteSha(root, ref) {
   const branch = ref.replace(/^origin\//, "");
   const ls = await git(root, ["ls-remote", "origin", `refs/heads/${branch}`]);
-  const m = /^([0-9a-f]{40})/.exec(ls.out.trim());
-  return m ? m[1] : null;
+  const m = /^([0-9a-f]+)\s/.exec(ls.out.trim() + "\n");
+  return m && isSha(m[1]) ? m[1] : null;
 }
 
 /**

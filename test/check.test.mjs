@@ -3899,6 +3899,7 @@ function shallowClone(t, build) {
       git("add", "-A");
       git("commit", "-qm", m);
     },
+    git,
   });
 
   const clone = join(outer, "clone");
@@ -3926,6 +3927,23 @@ test("a shallow clone refuses a base it cannot reach rather than reviewing the w
     () => check(dir, { baseRef: "no/such/ref" }),
     /--base no\/such\/ref resolves to no commit in this repository, and this shallow clone could not fetch it/
   );
+});
+
+test("a shallow clone fetches the one base commit the remote holds, and answers against it", async (t) => {
+  // The fetch fallback's own arm: the base is on the remote and not in the
+  // clone, so its sha comes off `ls-remote` and is fetched at depth one.
+  const dir = shallowClone(t, ({ write, commit, git }) => {
+    write("src/a.ts", clean(2));
+    commit("init");
+    git("branch", "base");
+    write("src/a.ts", clean(3));
+    commit("more");
+  });
+
+  const report = await check(dir, { baseRef: "origin/base" });
+
+  assert.equal(report.base.ref, "origin/base");
+  assert.match(report.base.sha, /^[0-9a-f]{40,64}$/);
 });
 
 test("a shallow clone with no base named still degrades rather than refusing", async (t) => {

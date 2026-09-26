@@ -385,10 +385,11 @@ test("a file the branch itself deleted is still missing, fork or no fork", async
 });
 
 test("a sha reaching a git argument is validated as a sha", () => {
-  for (const bad of ["", "HEAD", "main", "-", "--upload-pack=touch", "a".repeat(41), "A".repeat(40), null, 40]) {
+  for (const bad of ["", "HEAD", "main", "-", "--upload-pack=touch", "a".repeat(65), "A".repeat(40), null, 40]) {
     assert.equal(isSha(bad), false, String(bad));
   }
   assert.equal(isSha("a".repeat(40)), true);
+  assert.equal(isSha("a".repeat(64)), true, "a sha256 object name");
   assert.equal(isSha("0f1e2d3"), true);
 
   assert.throws(() => buildPin([], { sha: "HEAD" }), /not a sha/);

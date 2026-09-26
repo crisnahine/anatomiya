@@ -134,6 +134,12 @@ function gitEnv(env) {
   return {
     ...env,
     GIT_TERMINAL_PROMPT: "0",
+    // A partial clone fetches a missing object from its promisor on demand, so
+    // a read of a pinned blob reached the network and, with the remote gone,
+    // came back unread (F14). Missing is the answer here; the one fetch this
+    // tool makes on purpose, the check's shallow base, is an explicit `fetch`
+    // this does not touch.
+    GIT_NO_LAZY_FETCH: "1",
     // The transports git may use, which closes `ext::`. A repository shipped as
     // a tarball rather than cloned carries its own `.git/config`, and an
     // `ext::` remote URL is a shell command git runs to reach it: the check's
@@ -378,7 +384,9 @@ export function parsePorcelainRows(out) {
 // A sha reaches a git argument, so it is validated as a sha rather than trusted
 // as a string: a pin file is a repository-controlled input like any other.
 export function isSha(sha) {
-  return typeof sha === "string" && /^[0-9a-f]{7,40}$/.test(sha);
+  // Up to 64 digits: a repository made with `--object-format=sha256` names
+  // every object that way, and a 40-digit ceiling read its HEAD as none.
+  return typeof sha === "string" && /^[0-9a-f]{7,64}$/.test(sha);
 }
 
 // A ref name cannot begin with a dash. `rev-parse` takes revisions before any
