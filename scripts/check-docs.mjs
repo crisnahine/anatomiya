@@ -27,7 +27,9 @@ import { SEMVER } from "./validate.mjs";
 import { CAVEATS } from "../plugins/anatomiya/lib/check-report.mjs";
 import { pairingsFor } from "../plugins/anatomiya/lib/pairing.mjs";
 import { REGISTRY, rowsForLangs, rowsOfKind } from "../plugins/anatomiya/lib/registry.mjs";
-import { EXCLUDE_LINES } from "../plugins/anatomiya/lib/rules.mjs";
+import { EXCLUDE_LINES, PREFIX, RULES_DIR } from "../plugins/anatomiya/lib/rules.mjs";
+import { FACTS_PATH } from "../plugins/anatomiya/lib/facts.mjs";
+import { PIN_PATH } from "../plugins/anatomiya/lib/baseline.mjs";
 import { GATES } from "../plugins/anatomiya/lib/reduce.mjs";
 import { PARSE_OUTCOMES } from "../plugins/anatomiya/lib/parse.mjs";
 import { ELIGIBLE, REFUSED } from "../test/fixtures/counter-pins.mjs";
@@ -524,6 +526,15 @@ export function checkDocs() {
   // `git status` and a document that says the opposite.
   for (const line of EXCLUDE_LINES) {
     claim("README.md", read("README.md").includes(`'${line}'`), `does not tell a reader to exclude ${line}`);
+  }
+
+  // The `.worktreeinclude` a worktree Claude Code makes is copied from. The
+  // exclude above hides the pin along with the map, and a worktree is handed
+  // only what that file names: it once listed the map and not the pin, so a
+  // check in such a worktree read "no baseline pinned" and capped every finding
+  // at FIX, in a repository that had one.
+  for (const path of [`${RULES_DIR}/${PREFIX}*.md`, FACTS_PATH, PIN_PATH]) {
+    claim("README.md", read("README.md").includes(`\n**/${path}\n`), `does not have a worktree Claude Code makes copy ${path}`);
   }
 
   // --- the command surface ----------------------------------------------------
