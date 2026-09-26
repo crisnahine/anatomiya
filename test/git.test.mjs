@@ -3,11 +3,11 @@ import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 
 import { needsShebang } from "./platform.mjs";
 
-import { gitBuffered, gitStreamed, nameStatusReader, parsePorcelainRows, showBlob } from "../plugins/anatomiya/lib/git.mjs";
+import { gitBuffered, gitStreamed, headSha, isSha, nameStatusReader, parsePorcelainRows, showBlob } from "../plugins/anatomiya/lib/git.mjs";
 
 /** Every row a NUL-delimited name-status listing yields, read as a stream. */
 function nameStatusRows(out) {
@@ -515,4 +515,48 @@ test("a tree listing git would not produce is unknown, not empty", async (t) => 
   assert.equal(await filesAt(dir, "0".repeat(40)), null, "an unreadable commit answers nothing");
   assert.equal(await filesAt(dir, "not-a-sha"), null, "and so does a rev it will not take");
   assert.deepEqual([...(await filesAt(dir, "HEAD"))], ["a.ts"], "a real tree still answers");
+});
+
+test("a SHA-256 repository has a HEAD, and its blobs read", async (t) => {
+  // git names objects with 64 hex digits under `--object-format=sha256`. A
+  // 40-digit ceiling read that HEAD as none, so `pin` said the repository had
+  // no commit and every blob the check asked for came back unread.
+  const dir = scratch(t, "anatomiya-git-sha256-");
+  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" }).toString().trim();
+  git("init", "-q", "--object-format=sha256");
+  git("config", "user.email", "t@t.test");
+  git("config", "user.name", "T");
+  git("config", "commit.gpgsign", "false");
+  writeFileSync(join(dir, "a.ts"), "export const a = 1\n");
+  git("add", "-A");
+  git("commit", "-qm", "init");
+  const head = git("rev-parse", "HEAD");
+
+  assert.equal(head.length, 64);
+  assert.equal(await headSha(dir), head);
+  const blob = await showBlob(dir, head, "a.ts");
+  assert.equal(blob.ok, true);
+  assert.equal(blob.content.toString("utf8"), "export const a = 1\n");
+  assert.equal(isSha("a".repeat(65)), false, "and nothing longer than a sha");
+});
+
+test("a blob a partial clone does not hold is never fetched to answer a read", async (t) => {
+  // F14: a blobless clone fetches a missing object from its promisor on
+  // demand, so a scan reading pinned files reached the network, and with the
+  // remote gone every pinned blob came back unread.
+  const origin = repo(t);
+  origin.git("config", "uploadpack.allowFilter", "true");
+  writeFileSync(join(origin.dir, "b.ts"), "export const b = 2\n");
+  origin.git("add", "-A");
+  origin.git("commit", "-qm", "second");
+  const dir = scratch(t, "anatomiya-git-partial-");
+  execFileSync("git", ["clone", "-q", "--no-checkout", "--filter=blob:none", `file://${origin.dir}`, dir], { stdio: "pipe" });
+  const head = execFileSync("git", ["rev-parse", "HEAD"], { cwd: dir }).toString().trim();
+  const blobId = execFileSync("git", ["rev-parse", `${head}:b.ts`], { cwd: dir }).toString().trim();
+
+  const blob = await showBlob(dir, head, "b.ts");
+
+  assert.equal(blob.ok, false);
+  const present = spawnSync("git", ["cat-file", "-e", blobId], { cwd: dir, env: { ...process.env, GIT_NO_LAZY_FETCH: "1" } });
+  assert.notEqual(present.status, 0, "the object is still not in this clone");
 });
