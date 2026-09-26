@@ -15,6 +15,7 @@ import { join } from "node:path";
 import { addedRanges, pendingPaths } from "./check.mjs";
 import { encodePath } from "./encode.mjs";
 import { gitBuffered } from "./git.mjs";
+import { isPathTaken } from "./hook.mjs";
 import { MAX_FILE_BYTES } from "./limits.mjs";
 import { byCode } from "./paths.mjs";
 import { readHead, readTail } from "./rules.mjs";
@@ -85,6 +86,10 @@ export function reuseRecord(files) {
  * branch's.
  */
 export async function pendingChange(root, { since = null } = {}) {
+  // git names every path from the top of the checkout, which is where a scan
+  // writes its record. A record further down came with a copy of another
+  // project, and joined against it git's paths name files nobody changed.
+  if (!isPathTaken(join(root, ".git"))) return null;
   // Asked beside the status read rather than after it, so the hook still makes
   // two git reads in a row inside the time it declares.
   const [pending, busy] = await Promise.all([pendingPaths(root, { timeout: REUSE_GIT_MS }), unfinished(root)]);

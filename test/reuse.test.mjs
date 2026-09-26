@@ -176,6 +176,25 @@ test("a file's mark moves with its content, even where its lines do not, and no 
   assert.equal(markOf(first, "src/b.ts"), markOf(edited, "src/b.ts"));
 });
 
+test("a record copied below the checkout's root has no change to read", async (t) => {
+  // git names every path from the top of the checkout, and a scan writes its
+  // record there. One lower down came with a vendored copy of another project,
+  // and measured before this git's `src/y.ts` was read against it: the reason
+  // named that copy's unchanged `src/y.ts` and missed the edit beside it.
+  const { dir, git, write } = repo(t, { scanned: false });
+  write("src/y.ts", "export const y = 1;\n");
+  write("vendor/tpl/src/y.ts", "export const y = \"vendored\";\n");
+  write(`vendor/tpl/${FACTS_PATH}`, JSON.stringify({ schema: FACTS_SCHEMA, areas: [], layout: { tests: [], roots: [] } }));
+  git("add", "-A");
+  git("commit", "-qm", "vendor a scanned project");
+  write("vendor/tpl/src/a.ts", "export function vendorAdded() {}\n");
+  write("src/y.ts", "export const y = 1;\nexport function parentAdded() {}\n");
+  const tpl = join(dir, "vendor/tpl");
+
+  assert.equal(await pendingChange(tpl), null);
+  assert.deepEqual(await runReuse(tpl, stop(tpl, { transcript_path: begun(t) })), {});
+});
+
 test("a directory that is not a repository has no change to read", async (t) => {
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-reuse-nogit-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
