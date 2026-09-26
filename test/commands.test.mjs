@@ -347,6 +347,29 @@ test("a second pin measures itself against the first", async (t) => {
   assert.equal(summary.delta.addedFiles, 1);
 });
 
+test("a pin over no tracked source refuses, and counts the source still untracked", async (t) => {
+  // A young repository whose source was never committed pinned an empty
+  // population with exit 0 and "0 files enter": every area the first commit
+  // then made read postdates-baseline and stated nothing until somebody
+  // re-pinned, with no line anywhere saying why.
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-commands-empty-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
+  git("init", "-q");
+  git("config", "user.email", "t@t.test");
+  git("config", "user.name", "T");
+  writeFileSync(join(dir, "README.md"), "hi\n");
+  git("add", "-A");
+  git("commit", "-qm", "init");
+  mkdirSync(join(dir, "src"));
+  for (let i = 0; i < 4; i++) writeFileSync(join(dir, "src", `f${i}.ts`), `export const x${i} = ${i}\n`);
+
+  for (const dryRun of [true, false]) {
+    await assert.rejects(() => runPin(dir, { dryRun }), /nothing to pin: 4 source files in the working tree are untracked/, `dryRun ${dryRun}`);
+  }
+  assert.equal(existsSync(join(dir, PIN_PATH)), false);
+});
+
 test("a repository with no commit cannot be pinned", async (t) => {
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-commands-fresh-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
