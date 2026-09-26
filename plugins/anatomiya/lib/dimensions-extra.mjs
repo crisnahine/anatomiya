@@ -367,7 +367,10 @@ export const EXTRA_DIMENSIONS = [
     key: "function_style",
     tier: "syntactic",
     claim: "module-level functions are declared with function, not assigned as arrows",
-    counterClaim: "module-level functions are assigned as arrow consts, not declared with function",
+    // Says what the row counts on this side, and a `var` bound to a function
+    // expression counts here as much as an arrow const does. Naming arrows told
+    // an ES5 directory holding neither an arrow nor a const to bring in both.
+    counterClaim: "module-level functions are assigned to variables, not declared with function",
     precision: "precise",
     applicabilityPredicate: {
       sites: "a file declaring a function at module level, either as a declaration or as a binding initialised with one; a declaration carrying TypeScript overload signatures is not one, because an overload set has no arrow form",

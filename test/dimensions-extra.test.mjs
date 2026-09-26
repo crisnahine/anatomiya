@@ -40,6 +40,19 @@ test("a function expression assigned to a const is the same violation as an arro
   assert.deepEqual(r, { candidates: 1, conforming: 0 });
 });
 
+test("the inverse sentence names every form the row counts on that side", () => {
+  // `var f = function () {}` counts on the same side as an arrow const, so an
+  // ES5 directory holding no arrow and no const was told "module-level
+  // functions are assigned as arrow consts" at 80 of 80: a directive to bring
+  // in both, with a different `this`, to code that may target ES5.
+  for (const src of [`var f = function () {}`, `let f = () => {}`, `const f = () => {}`]) {
+    assert.deepEqual(counts("function_style", src), { candidates: 1, conforming: 0 }, src);
+  }
+  const { counterClaim } = dim("function_style");
+  assert.doesNotMatch(counterClaim, /arrow|const/, counterClaim);
+  assert.match(counterClaim, /not declared with function/, counterClaim);
+});
+
 test("a file declaring no functions contributes nothing", () => {
   assert.equal(hits("function_style", `export const limit = 10`).length, 0);
 });
