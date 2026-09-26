@@ -1216,6 +1216,24 @@ test("a staged but uncommitted file is examined the same as an unstaged one", as
   assert.equal(forKey(r, "swallowed_error").length, 2, JSON.stringify(r.findings));
 });
 
+test("a file added with intent-to-add is examined as the addition it is", async (t) => {
+  // `git add -N` puts the letter in the worktree column, ` A`, and only the
+  // index column was asked whether a file is new: read as a modification of a
+  // file the merge base never held, it was skipped with a false caveat.
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/a.ts", clean(2));
+    commit("init");
+    write("src/b.ts", swallow(2));
+    git("add", "-N", "src/b.ts");
+  });
+  facts(dir, { sha: sha(dir, "main") });
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assertExamined(r, "src/b.ts");
+  assert.equal(forKey(r, "swallowed_error").length, 2, JSON.stringify(r.findings));
+});
+
 test("a renamed file counts once, and under its own name", async (t) => {
   // `status --porcelain -z` writes a rename as two fields, the new path with a
   // status prefix and the old path bare. Reading the second as another status
