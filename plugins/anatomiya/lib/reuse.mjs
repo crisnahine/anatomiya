@@ -9,10 +9,12 @@
  * (`docs/research/one-line-that-finds-the-existing-function.md`).
  */
 import { createHash } from "node:crypto";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 
 import { addedRanges, pendingPaths } from "./check.mjs";
 import { encodePath } from "./encode.mjs";
+import { gitBuffered } from "./git.mjs";
 import { MAX_FILE_BYTES } from "./limits.mjs";
 import { byCode } from "./paths.mjs";
 import { readHead, readTail } from "./rules.mjs";
@@ -36,6 +38,11 @@ const MARKED_MOST = 200;
 // entry at the start.
 const TRANSCRIPT_MOST = 64 * 1024 * 1024;
 const TRANSCRIPT_HEAD = 64 * 1024;
+
+// What git leaves in its directory while a merge, a pick, a revert or a rebase
+// is unfinished. Until one ends, the tree against HEAD holds the other side's
+// work, and the reason tells the model to delete the copy it finds there.
+const UNFINISHED = ["MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD", "rebase-merge", "rebase-apply"];
 
 const MARKS_READ = new RegExp(`${REUSE_MARK} ((?:[0-9a-f]{12} ?)+)\\)`, "g");
 
@@ -73,11 +80,15 @@ export function reuseRecord(files) {
  * A file's mark is taken over its content rather than its line numbers, since
  * two different edits can land on the same lines, and per file, so an edit to
  * one file does not make every other one look new. `since` leaves out a file
- * last written before that moment, which is work the session did not do.
+ * last written before that moment, which is work the session did not do, and
+ * nothing is read while a merge or the like is unfinished, which is another
+ * branch's.
  */
 export async function pendingChange(root, { since = null } = {}) {
-  const pending = await pendingPaths(root, { timeout: REUSE_GIT_MS });
-  if (pending === null || pending.present.length === 0) return null;
+  // Asked beside the status read rather than after it, so the hook still makes
+  // two git reads in a row inside the time it declares.
+  const [pending, busy] = await Promise.all([pendingPaths(root, { timeout: REUSE_GIT_MS }), unfinished(root)]);
+  if (busy || pending === null || pending.present.length === 0) return null;
   const edited = pending.present.some((p) => p.status === "M");
   const ranges = edited ? await addedRanges(root, "HEAD", null, { timeout: REUSE_GIT_MS }) : new Map();
   if (ranges === null) return null;
@@ -97,6 +108,19 @@ export async function pendingChange(root, { since = null } = {}) {
     files.push({ path, mark, hunks });
   }
   return files.length > 0 ? files : null;
+}
+
+/**
+ * Whether a merge, a pick, a revert or a rebase is waiting to be finished here.
+ *
+ * A git directory nobody can name answers yes: the status read beside this one
+ * fails the same way, and either way nothing is asked.
+ */
+async function unfinished(root) {
+  const r = await gitBuffered(root, ["rev-parse", "--absolute-git-dir"], { timeout: REUSE_GIT_MS });
+  if (!r.ok) return true;
+  const gitdir = r.stdout.trim();
+  return UNFINISHED.some((name) => existsSync(join(gitdir, name)));
 }
 
 const lineCount = (text) => (text === "" ? 0 : text.split("\n").length - (text.endsWith("\n") ? 1 : 0));
