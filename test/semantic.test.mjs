@@ -138,6 +138,30 @@ test("a repository with no root tsconfig is judged on what resolved, not on the 
   }
 });
 
+test("a solution-style root tsconfig is read through the project it references", needsTs, async () => {
+  // Vite's react-ts scaffold: the root tsconfig.json builds nothing itself
+  // (`files: []`) and names tsconfig.app.json, which holds the `@/` alias. Read
+  // alone, the root handed the checker no alias, every import through it
+  // resolved to any, and the fixture this is cut from measured 77%, so every
+  // type-checked claim printed as counts only.
+  const dir = repo({
+    "tsconfig.json": `{"files":[],"references":[{"path":"./tsconfig.app.json"},{"path":"./tsconfig.node.json"}]}`,
+    "tsconfig.app.json": `{"compilerOptions":{"strict":true,"baseUrl":".","paths":{"@/*":["./src/*"]}},"include":["src"]}`,
+    "tsconfig.node.json": `{"compilerOptions":{"strict":true},"include":["vite.config.ts"]}`,
+    "src/lib/svc.ts": `export class Svc { names(): string[] { return [] } }`,
+    "src/view.ts": `import { Svc } from "@/lib/svc";\nconst s = new Svc();\nexport const n = s.names().map((x) => x.trim());`,
+  });
+  try {
+    const files = ["src/lib/svc.ts", "src/view.ts"].map((rel) => ({ rel, abs: join(dir, rel), lang: "js" }));
+    const r = await runSemantic(dir, files);
+    assert.equal(r.error, null);
+    assert.equal(r.typedResolutionRate, 1);
+    assert.equal(r.status, "ok");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("a repository with no root tsconfig whose types did not resolve says it had none", () => {
   // Under the floor the missing file is still the likeliest cause, so it keeps
   // its own name rather than the generic one a config that read cleanly gets.
