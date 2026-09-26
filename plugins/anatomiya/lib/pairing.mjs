@@ -257,12 +257,19 @@ export function pairingHits(corpus, pairing) {
  */
 export function applyPairings(parsed, corpus, langs) {
   const applied = new Set();
+  // A pairing this corpus does not answer leaves no answer behind either. The
+  // baseline reuses today's record for every producer unchanged since the pin,
+  // and today's record already carries today's answer, so where the pinned
+  // tree held no companion of the shape, specs written after the pin read as
+  // the baseline's own habit. The answer is a function of this corpus alone.
+  const unanswered = new Set(PAIRINGS.map((p) => p.key));
   for (const pairing of pairingsFor(langs)) {
     // Producers exist whatever the repository tests with: every Rails tree holds
     // app/models, so the RSpec row and the minitest row both find eligible files
     // and one can only ever read zero. One companion of that shape anywhere is
     // the evidence the habit exists at all.
     if (!usesCompanionShape(corpus, pairing)) continue;
+    unanswered.delete(pairing.key);
     applied.add(pairing.key);
     for (const [rel, hits] of pairingHits(corpus, pairing)) {
       const record = parsed.get(rel);
@@ -273,6 +280,15 @@ export function applyPairings(parsed, corpus, langs) {
       // nothing left to compare the branch against.
       parsed.set(rel, { ...record, hits: { ...record.hits, [pairing.key]: hits } });
     }
+  }
+  for (const [rel, record] of parsed) {
+    if (!record?.hits) continue;
+    const stale = Object.keys(record.hits).filter((k) => unanswered.has(k));
+    if (stale.length === 0) continue;
+    // Replaced rather than deleted from, for the reason above.
+    const hits = { ...record.hits };
+    for (const k of stale) delete hits[k];
+    parsed.set(rel, { ...record, hits });
   }
   return applied;
 }
