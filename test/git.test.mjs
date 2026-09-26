@@ -417,11 +417,15 @@ test("a git call cannot stop to ask for a credential", async (t) => {
   // A prompt on a terminal nobody is watching is a scan that never returns. The
   // environment refuses instead, which turns a hang into an exit code.
   const { dir } = repo(t);
+  // Compared with what it was rather than with absence: a CI runner or a
+  // sandbox can set the variable for every process, and the question is only
+  // whether this call changed it.
+  const before = process.env.GIT_TERMINAL_PROMPT;
 
   const r = await gitBuffered(dir, ["config", "--get", "core.askpass"], { env: process.env });
 
   assert.equal(typeof r.ok, "boolean");
-  assert.equal(process.env.GIT_TERMINAL_PROMPT, undefined, "the parent's environment is untouched");
+  assert.equal(process.env.GIT_TERMINAL_PROMPT, before, "the parent's environment is untouched");
 });
 
 /* --- the listings that grow with the repository are streamed (F6) --- */
