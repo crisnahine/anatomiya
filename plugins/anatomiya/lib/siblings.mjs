@@ -16,7 +16,8 @@
 
 import { posix } from "node:path";
 
-import { withoutExtension, byCode } from "./paths.mjs";
+import { SOURCE_OF } from "./companions.mjs";
+import { extOf, withoutExtension, byCode } from "./paths.mjs";
 
 /**
  * The packages a JSX area cannot be written without, so importing one says
@@ -96,11 +97,23 @@ const packageOf = (spec) => {
  * nothing rather than to whichever file sorted first. No `tsconfig` is read: the
  * aliases a repository points at its own root with are a short closed list, and
  * a wrong resolution here would credit one file with another's importers.
+ *
+ * A specifier written with an emitted extension names the TypeScript source it
+ * is emitted from, which is what Node16 and NodeNext require on every relative
+ * import: `../utils/format.js` is `format.ts`. Read off the same table the
+ * companions use, after the file spelled exactly, so a real `format.js` beside
+ * the source is still the one named.
  */
 export function specifierToFile(spec, importerRel, corpusRels) {
   if (spec.startsWith("./") || spec.startsWith("../") || spec === "." || spec === "..") {
     const at = posix.join(posix.dirname(importerRel), spec);
-    for (const candidate of [at, ...EXTENSIONS.map((e) => at + e), ...EXTENSIONS.map((e) => `${at}/index${e}`)]) {
+    const candidates = [
+      at,
+      ...emittedFrom(at),
+      ...EXTENSIONS.map((e) => at + e),
+      ...EXTENSIONS.map((e) => `${at}/index${e}`),
+    ];
+    for (const candidate of candidates) {
       if (corpusRels.has(candidate)) return candidate;
     }
     return null;
@@ -111,8 +124,19 @@ export function specifierToFile(spec, importerRel, corpusRels) {
   // A single segment is a bare package name (`react`) or too short to identify
   // a file, and both are somebody else's module.
   if (!tail.includes("/")) return null;
-  return tailIndex(corpusRels).get(`/${tail}`) ?? null;
+  const index = tailIndex(corpusRels);
+  const whole = index.get(`/${tail}`);
+  if (whole !== undefined) return whole;
+  // The index is keyed without extensions, so a tail that writes one is looked
+  // up by its stem, and the file found counts only where it is the one the tail
+  // spells or a source that emits it: `utils/parse.js` is not `parse.rb`.
+  const ext = extOf(tail);
+  const found = index.get(`/${withoutExtension(tail)}`) ?? null;
+  return found !== null && [ext, ...(SOURCE_OF[ext] ?? [])].includes(extOf(found)) ? found : null;
 }
+
+/** The TypeScript sources a path spelled with an emitted extension is compiled from. */
+const emittedFrom = (path) => (SOURCE_OF[extOf(path)] ?? []).map((ext) => withoutExtension(path) + ext);
 
 /**
  * Every path tail in the corpus, and the one file it names.
