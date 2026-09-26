@@ -20,6 +20,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- `pin` listed a staged, edited, deleted or conflicted file against a commit that did not hold it,
+  and every later scan closed that area as a population change for as long as the pin stood. It now
+  refuses while tracked files differ from HEAD, dry run included, and says to commit or stash first.
 - Ruby specs written after the pin could read as the baseline's own habit. The baseline reuses
   today's record for every file unchanged since the pin, and that record carried today's answer to
   "does this have its spec"; where the pinned tree had no spec of that shape, the answer stayed, and
