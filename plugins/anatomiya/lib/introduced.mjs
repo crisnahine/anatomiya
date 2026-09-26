@@ -261,13 +261,35 @@ function breakingSites(program, source, lang, keyPath, { polarity, frameworks, c
  * copies of the same site at the base absorb two at HEAD, and a third one
  * is new. The enclosing declaration's name is deliberately not part of the key,
  * because renaming a function does not introduce the site inside it.
+ *
+ * The name still picks which copies the base held. Absorbed in walk order, a
+ * copy added above an old one was taken for the old one, and the report sent
+ * the reader to code the branch never touched; in Ruby, where prism reports no
+ * offsets and every rescue in a file is one identity, that was any rescue added
+ * above a swallowing one. So a head copy whose declaration holds a base copy is
+ * matched to it first, and only what is left absorbs by count.
  */
 function absorb(head, base) {
   const remaining = new Map();
-  for (const f of base) remaining.set(f.fp, (remaining.get(f.fp) || 0) + 1);
+  const inPlace = new Map();
+  const at = (f) => `${f.fp}\0${f.where ?? ""}`;
+  for (const f of base) {
+    remaining.set(f.fp, (remaining.get(f.fp) || 0) + 1);
+    inPlace.set(at(f), (inPlace.get(at(f)) || 0) + 1);
+  }
+
+  const held = new Set();
+  for (const f of head) {
+    const left = inPlace.get(at(f)) || 0;
+    if (left === 0) continue;
+    inPlace.set(at(f), left - 1);
+    remaining.set(f.fp, remaining.get(f.fp) - 1);
+    held.add(f);
+  }
 
   const out = [];
   for (const f of head) {
+    if (held.has(f)) continue;
     const left = remaining.get(f.fp) || 0;
     if (left > 0) {
       remaining.set(f.fp, left - 1);
