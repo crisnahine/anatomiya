@@ -914,6 +914,32 @@ test("a hook a person installed by hand is not one an older version wrote", (t) 
   assert.deepEqual(settings(dir).hooks.PreToolUse[0].hooks[0].command, NOTICE_COMMAND);
 });
 
+test("a hook that runs this tool by a path of its own is somebody's working hook, not the old one", (t) => {
+  // What 0.2.4 through 0.2.6 wrote named `${CLAUDE_PLUGIN_ROOT}`, which nothing
+  // substitutes in a repository's settings, and that is the whole reason the
+  // sweep exists. Measured before this: an echo wired by hand to a clone's
+  // absolute path, which runs, and an `echo-stats` verb of somebody's own were
+  // both taken out, and the scan said this tool had written them.
+  const dir = mapped(t);
+  const theirs = {
+    hooks: {
+      PostToolUse: [
+        { matcher: "*", hooks: [{ type: "command", command: "node /home/me/src/anatomiya/plugins/anatomiya/bin/anatomiya.mjs echo", timeout: 5 }] },
+        { matcher: "Bash", hooks: [{ type: "command", command: "~/bin/my-anatomiya.mjs echo-stats" }] },
+        { matcher: "Edit", hooks: [{ type: "command", command: 'node "${CLAUDE_PLUGIN_ROOT}/bin/anatomiya.mjs" echo-stats' }] },
+      ],
+    },
+  };
+  mkdirSync(join(dir, ".claude"), { recursive: true });
+  writeFileSync(join(dir, SETTINGS_PATH), JSON.stringify(theirs, null, 2));
+
+  const plan = planRemoval(dir);
+  commitRemoval(dir, plan);
+
+  assert.equal(plan.changed, false);
+  assert.deepEqual(settings(dir), theirs);
+});
+
 test("settings this did not write are left exactly as they were", (t) => {
   const dir = mapped(t);
   const mine = {
@@ -964,14 +990,15 @@ test("taking it out twice is the same as taking it out once", (t) => {
   assert.equal(readFileSync(join(dir, SETTINGS_PATH), "utf8"), after, "byte-identical");
 });
 
-test("a command that names this tool is ours however it was spelled", (t) => {
+test("the command an older version wrote is ours however it quoted the path", (t) => {
   // The removal has to reach what an older version wrote, not only what this
-  // one would write, and the quoting around the path has changed once already.
+  // one would write. Every version that wrote one named the path through
+  // `${CLAUDE_PLUGIN_ROOT}`; a path spelled out is a hook somebody wired, and
+  // the case above keeps it.
   const dir = mapped(t);
   const spellings = [
     'node "${CLAUDE_PLUGIN_ROOT}/bin/anatomiya.mjs" echo',
     "node ${CLAUDE_PLUGIN_ROOT}/bin/anatomiya.mjs echo",
-    'node "/Users/somebody/.claude/plugins/cache/crisnahine/anatomiya/0.2.5/bin/anatomiya.mjs" echo',
   ];
   mkdirSync(join(dir, ".claude"), { recursive: true });
   writeFileSync(
