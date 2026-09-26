@@ -221,7 +221,11 @@ export const DIMENSIONS = [
         if (!isFunctionLike(n) || !n.async) return;
         let handled = false;
         walk(n.body, (m, mctx) => {
-          if (m.type !== "TryStatement") return;
+          // Only a catch handles anything. A try with just a finally re-throws
+          // once the cleanup runs, and lock, transaction and cleanup helpers
+          // are written that way everywhere: counted, they stated this claim
+          // at 80 of 80 over code that caught nothing.
+          if (m.type !== "TryStatement" || !m.handler) return;
           // The handler must belong to THIS function, not to an inner arrow or
           // a nested method that happens to sit inside its byte range.
           if (mctx.enclosing !== null) return;

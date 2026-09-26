@@ -143,6 +143,22 @@ test("a try directly in the async function counts", () => {
   assert.deepEqual(r, { candidates: 1, conforming: 1 });
 });
 
+test("a try with only a finally lets the failure through, so it handles nothing", () => {
+  // Lock, transaction and cleanup helpers are written as try/finally, which
+  // re-throws: 80 async functions none of which caught anything stated "async
+  // functions handle their own failures" at 80 of 80, a directive in the
+  // dangerous direction over code doing no handling at all.
+  assert.deepEqual(
+    counts("async_error_handling", `async function withLock() { try { await go() } finally { release() } }`),
+    { candidates: 1, conforming: 0 }
+  );
+  assert.deepEqual(
+    counts("async_error_handling", `async function f() { try { await go() } catch { log() } finally { release() } }`),
+    { candidates: 1, conforming: 1 },
+    "a catch beside the finally is still a handler"
+  );
+});
+
 // --- optional_chaining ---
 
 test("optional access on a known-optional binding is the conforming form", () => {
