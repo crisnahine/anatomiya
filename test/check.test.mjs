@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { needsPosixPaths, needsPosixSpecialFiles, needsUnreadableDirs } from "./platform.mjs";
+import { needsPathControl, needsPosixPaths, needsPosixSpecialFiles, needsShebang, needsUnreadableDirs } from "./platform.mjs";
 import fs, { mkdtempSync, mkdirSync, writeFileSync, readFileSync, realpathSync, symlinkSync, rmSync, existsSync } from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
@@ -947,6 +947,42 @@ test("a file that crashed the parser is named apart from one it merely rejected"
     r.caveats.some((c) => c.code === CAVEATS.HEAD_CRASHED),
     `and named by its own code: ${JSON.stringify(r.caveats)}`
   );
+});
+
+test("a prism too old to read is a missing parser to the check, not Ruby files that crashed", { ...needsShebang, ...needsPathControl }, async (t) => {
+  // Ruby 3.3 ships prism 0.19, and the child refuses it before reading a file.
+  // Charged per file, the check exited 0 with a "crashed the parser" note per
+  // Ruby file and no remedy; the flag is what makes the command refuse with one.
+  const bin = mkdtempSync(join(tmpdir(), "anatomiya-old-prism-"));
+  t.after(() => rmSync(bin, { recursive: true, force: true }));
+  writeFileSync(
+    join(bin, "ruby"),
+    `#!/bin/sh
+case "$*" in *Gem::Specification*) printf '[]'; exit 0 ;; esac
+cat >/dev/null
+printf '{"ready":true,"prism":"0.19.0"}\\n{"fatal":"prism 0.19.0 predates the field names this reads"}\\n'
+exit 1
+`,
+    { mode: 0o755 }
+  );
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("app/models/a.rb", "class A\nend\n");
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("app/models/b.rb", "class B\n  def x\n    go\n  rescue => e\n  end\nend\n");
+    commit("b");
+  });
+  facts(dir, { sha: sha(dir, "main"), path: "app/models", dimensions: [dim({ key: "rescue_uses_error" })] });
+  const path = process.env.PATH;
+  t.after(() => {
+    process.env.PATH = path;
+  });
+  process.env.PATH = `${bin}:${path}`;
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.match(String(r.parse.missingParser), /prism 0\.19\.0 predates/);
+  assert.deepEqual(r.parse.missingEngines, ["prism"]);
 });
 
 test("a file the parser rejected is named apart from one this tool could not read", async (t) => {
