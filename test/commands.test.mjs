@@ -919,7 +919,9 @@ test("the end-of-turn check reads a worktree's own change against its main check
   // sitting in the main checkout.
   const dir = await railsish(t);
   const wt = worktreeOf(t, dir);
-  const stop = (cwd) => ({ hook_event_name: "Stop", cwd });
+  // A session that began a minute ago, as every real stop names one.
+  const session = transcript(t, [{ type: "user", timestamp: new Date(Date.now() - 60 * 1000).toISOString(), message: { role: "user", content: "go" } }]);
+  const stop = (cwd) => ({ hook_event_name: "Stop", cwd, transcript_path: session });
 
   writeFileSync(join(dir, "app/services/g.rb"), "class G\nend\n");
   assert.deepEqual(await runReuse(wt, stop(wt)), {}, "a change only the main checkout holds");
