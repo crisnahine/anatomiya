@@ -1309,11 +1309,15 @@ object and exits 0, as it does on any failure.
 | `typescript` | node | it imports. Optional: only `--deep` needs it | the same install |
 
 `anatomiya setup` installs what node hosts, and only that. It runs
-`npm install --omit=dev --ignore-scripts --no-audit --no-fund` with `cwd` set to the plugin's own
-directory, resolved from the module rather than from `process.cwd()`, because every command runs
-inside somebody else's tree and installing there would put this tool's dependencies in it.
-`--ignore-scripts` is the load-bearing flag: without it a dependency's install script runs arbitrary
-code in the plugin directory. It is the only command that installs anything and the only one that
+`npm install --omit=dev --include=optional --ignore-scripts --no-audit --no-fund` with `cwd` set to
+the plugin's own directory, resolved from the module rather than from `process.cwd()`, because every
+command runs inside somebody else's tree and installing there would put this tool's dependencies in
+it. `--ignore-scripts` is the load-bearing flag: without it a dependency's install script runs
+arbitrary code in the plugin directory. `--include=optional` is there because the parser's native
+binding is an optional dependency of `oxc-parser`: an npm configured with `optional=false` left it
+out and answered "up to date". An exit of 0 is not taken at its word either: setup asks the
+node-hosted engines again, in a fresh node because a module that failed to load stays failed in the
+process that tried it, and fails naming any that still does not load. It is the only command that installs anything and the only one that
 reaches a package registry; `scan`, `check` and `pin` never call it. The only other outbound call
 anywhere here is the check's shallow-clone path, which is one `ls-remote` and one `fetch --depth=1`
 and nothing else (F5).

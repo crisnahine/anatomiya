@@ -158,7 +158,7 @@ finding a dependency missing: a scan that installed its own dependencies would m
 outbound call. What it runs is fixed:
 
 ```
-npm install --omit=dev --ignore-scripts --no-audit --no-fund
+npm install --omit=dev --include=optional --ignore-scripts --no-audit --no-fund
 ```
 
 with `cwd` set to the plugin's own directory rather than the repository being scanned, a 10 minute

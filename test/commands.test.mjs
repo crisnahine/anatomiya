@@ -518,13 +518,16 @@ test("a setup with the dependencies already installed runs nothing", needsEveryt
 
 test("a dry run answers the exact command and runs nothing", async () => {
   // `--ignore-scripts` is the load-bearing one: without it a dependency's
-  // install script runs arbitrary code in the plugin directory.
+  // install script runs arbitrary code in the plugin directory. And
+  // `--include=optional`, because oxc's native binding is an optional
+  // dependency: an npm configured with `optional=false` left it out, answered
+  // "up to date", and the parser never loaded.
   const { command, ran, ok, output } = await runSetup({ dryRun: true });
 
-  assert.deepEqual(command, ["npm", "install", "--omit=dev", "--ignore-scripts", "--no-audit", "--no-fund"]);
+  assert.deepEqual(command, ["npm", "install", "--omit=dev", "--include=optional", "--ignore-scripts", "--no-audit", "--no-fund"]);
   assert.equal(ran, false);
   assert.equal(ok, true);
-  assert.match(output, /would run npm install --omit=dev --ignore-scripts --no-audit --no-fund in /, output);
+  assert.match(output, /would run npm install --omit=dev --include=optional --ignore-scripts --no-audit --no-fund in /, output);
   assert.ok(output.includes(pluginRoot()), `and it says which directory that is: ${output}`);
 });
 
@@ -542,7 +545,7 @@ test("a setup on Windows refuses rather than spawning an npm it cannot start", a
   assert.equal(ok, false);
   assert.equal(ran, false);
   assert.deepEqual(needed, ["oxc", "flow-remove-types", "typescript"], "the copy has no node_modules, so there is something to install");
-  assert.match(output, /npm install --omit=dev --ignore-scripts --no-audit --no-fund/, output);
+  assert.match(output, /npm install --omit=dev --include=optional --ignore-scripts --no-audit --no-fund/, output);
   // Compared as the same directory rather than as the same string: node
   // resolves a module's own path, so `pluginRoot()` answers the realpath while
   // the fixture holds what `mkdtemp` returned. They share a suffix on macOS
