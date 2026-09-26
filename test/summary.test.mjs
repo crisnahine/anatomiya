@@ -312,6 +312,23 @@ test("an unreachable pin with no sha at all still says which commit it looked fo
   );
 });
 
+test("a pin on disk that will not load is named with why, never as no pin at all", () => {
+  // A pin that conflicted on a merge, or that a newer build wrote, printed
+  // UNPINNED and its "`anatomiya pin` accepts one", in a repository whose pin a
+  // human had committed.
+  const baseline = { status: "pin-unreadable", unreadable: "it is schema 2 and this build reads 1", sha: null, countsOnly: true, baseRef: null, drift: null };
+
+  const lines = scanLines(scanSummary(result({ baseline }), plan()));
+
+  assert.ok(
+    lines.includes(
+      "the pin on disk could not be read because it is schema 2 and this build reads 1, so claims are measured against the current tree and no finding can exceed FIX"
+    ),
+    lines.join("\n")
+  );
+  assert.ok(!lines.includes(UNPINNED));
+});
+
 /* --- the facts the summary is built from --- */
 
 const dim = (o = {}) => ({
@@ -361,7 +378,7 @@ test("the summary carries every fact the scan prints", () => {
     claims: { stated: 1, matchingDefault: 1, total: 3 },
     engines: { oxc: { version: "0.144.0" } },
     layoutLine: null,
-    baseline: { status: "unpinned", sha: null, drift: null, baseRef: null, countsOnly: true },
+    baseline: { status: "unpinned", sha: null, drift: null, baseRef: null, countsOnly: true, unreadable: null },
     // Absent and unchanged read the same here on purpose: the line this drives
     // is said once, when the settings actually moved. The refusal beside it is
     // the other outcome, and a scan that neither installed nor refused says

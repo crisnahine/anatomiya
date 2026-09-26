@@ -535,6 +535,26 @@ test("a map with no pin at all caps severity", async (t) => {
   assert.equal(hits[0].severity, "FIX");
 });
 
+test("a pin that will not load caps severity under its own reason, not as no pin", async (t) => {
+  // A committed pin that a merge left conflict markers in capped every finding
+  // with "no baseline pinned", in a repository that had one.
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/a.ts", clean(2));
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/a.ts", clean(2) + swallow(1));
+    commit("swallow");
+  });
+  facts(dir, { sha: null });
+  writeFileSync(join(dir, ".claude/anatomiya/baseline.json"), "<<<<<<< HEAD\n{}\n=======\n{}\n>>>>>>> other\n");
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.equal(r.stale, true);
+  assert.equal(r.staleReason, "the pin on disk could not be read because it does not parse as JSON");
+  assert.equal(forKey(r, "swallowed_error")[0].severity, "FIX");
+});
+
 test("a dimension a gate suppressed cannot demand anything", async (t) => {
   // The check may only enforce what the map stated. A suppressed dimension is
   // one the map explicitly declined to state.

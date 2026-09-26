@@ -261,6 +261,7 @@ export async function scan(cwd, { guards = null, deep = false } = {}) {
       baseRef: state.baseRef,
       baseRefReason: state.baseRefReason,
       drift: state.drift ? state.drift.total : null,
+      unreadable: state.unreadable,
     },
     // A truncated corpus suppresses every directive: counting over an
     // arbitrary subset and rendering it like a complete scan is worse than
