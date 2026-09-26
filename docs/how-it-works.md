@@ -1286,8 +1286,16 @@ because npm cannot install an interpreter and installing Ruby does not install a
 type checker is probed beside the engines and marked optional, since only `--deep` asks for it.
 `doctor` exits 0 whatever it found: a non-zero exit would read as a probe that could not run.
 
+The first row is the node the tool itself runs on. Nothing enforces a plugin's `engines` field, and
+Claude Code's own installer needs no Node, so the `node` on a user's `PATH` can be anything: on Node
+20 a scan died halfway with `Map.groupBy is not a function` while `doctor` called every engine ok.
+Every other verb now asks the same question before it does any work. Under the floor `scan`,
+`check`, `pin` and `setup` refuse with that row's sentence and exit 1, and a hook answers its empty
+object and exits 0, as it does on any failure.
+
 | Row | Host | Ready when | Remedy |
 |---|---|---|---|
+| `node` | the process itself | its version is 22.0.0 or newer, the floor both manifests declare in `engines` | install Node 22 or newer and put it first on `PATH` |
 | `oxc` | node | `oxc-parser` imports | `anatomiya setup` in the plugin directory |
 | `flow-remove-types` | node | it imports. A row of its own, and not an engine: it is `oxc`'s dialect stripper, and one absent costs a dialect where the other costs the run | the same install |
 | `prism` | the `ruby` interpreter | the interpreter's own prism, or the newest prism gem installed for it when its own is older, answers a version of 1.0.0 or newer | install Ruby 3.4 or newer, which ships prism 1.x, or run `gem install prism` on the Ruby you have, and put `ruby` on `PATH` |

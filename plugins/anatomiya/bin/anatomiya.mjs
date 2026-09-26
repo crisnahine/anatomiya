@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { runCheck, runDoctor, runEcho, runNotice, runPin, runReuse, runScan, runSetup } from "../lib/commands.mjs";
 import { readPayload, respond } from "../lib/hook.mjs";
+import { unsupportedNode } from "../lib/readiness.mjs";
 import { refreshRepository, runRefresh, WORKER_DEADLINE_MS } from "../lib/refresh.mjs";
 import { pinJson, pinLines, scanJson, scanLines } from "../lib/summary.mjs";
 import { formatReport, formatReportGithub, formatReportJson } from "../lib/check-report.mjs";
@@ -78,6 +79,9 @@ const COMMANDS = {
     path: false,
     dryRun: false,
     formats: ["text"],
+    // The one verb that runs on a node under the floor: saying so, with the
+    // fix, is its job, and its own row does.
+    anyNode: true,
     async run() {
       // Exit 0 whichever way it came out: what it found is the report, and a
       // non-zero exit would read as a probe that could not run.
@@ -266,10 +270,16 @@ if (opts.help) {
   console.log(USAGE);
 } else {
   try {
+    const spec = COMMANDS[opts.cmd];
+    // Before any work, and through the boundary below, so a hook answers its
+    // empty object and every other verb one sentence: on a node older than the
+    // manifests declare, a scan got as far as a builtin that node lacks and
+    // died there with a TypeError naming neither Node nor a fix.
+    const unsupported = spec.anyNode ? null : unsupportedNode();
+    if (unsupported !== null) throw new Error(unsupported);
     // Only the verbs that answer about a repository ask where this process is.
     // `doctor` and `setup` answer about this installation and take no path, so
     // a directory removed under them decides nothing they say.
-    const spec = COMMANDS[opts.cmd];
     const cwd = spec.path ? opts.path ?? sessionDir(spec.hook === true) : null;
     await spec.run(cwd, opts);
   } catch (err) {
