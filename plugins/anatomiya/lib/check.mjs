@@ -680,7 +680,7 @@ async function collect(root, { examined, areas, base, mode, added, fresh, caveat
     // the new path does not exist, and a path hash cannot tell a rename from a
     // delete plus an add. Only the head side is ever read from the tree, so no
     // edit of an agent's can move the base it is judged against.
-    if (mode === "compare" && file.from) baseWanted.set(file.from, { rel: file.from, lang });
+    if (mode === "compare" && file.from) baseWanted.set(file.from, { rel: file.from, lang: language(file.from) });
   }
 
   // The head tree is on disk while the base read runs and both are on disk
@@ -739,8 +739,11 @@ async function collect(root, { examined, areas, base, mode, added, fresh, caveat
       // The parser gets a copy rather than the live path, because the text every
       // offset here is resolved against is the copy this run read.
       entries.push({ rel: `head:${job.file.path}`, lang: job.lang, ...(job.abs ? { abs: job.abs } : { source: job.source }) });
+      // Under the path it had at the base, which is what picks the grammar: a
+      // `.ts` renamed to `.tsx` was parsed as TSX, where a generic arrow that
+      // is valid TypeScript is a syntax error, and the whole file was skipped.
       if (job.base !== null) {
-        entries.push({ rel: `base:${job.file.path}`, lang: job.lang, abs: job.baseAbs });
+        entries.push({ rel: `base:${job.file.from}`, lang: language(job.file.from), abs: job.baseAbs });
       }
     }
 
@@ -778,7 +781,7 @@ async function collect(root, { examined, areas, base, mode, added, fresh, caveat
       // The path the file had at the base, so a rename keeps every identity;
       // introduced.mjs says why the line never is one.
       const keyPath = job.file.from || path;
-      const baseParse = parsed.get(`base:${path}`);
+      const baseParse = job.base === null ? undefined : parsed.get(`base:${job.file.from}`);
       const baseUsable = !baseParse || (baseParse.ok && baseParse.program);
       // A base version that exists but will not parse is not an empty base
       // version. Treating it as one would charge the author with every site the
