@@ -57,12 +57,16 @@ const isNullLiteral = (node) => {
   return n && ((n.type === "Literal" && n.value === null && !n.regex) || n.type === "NullLiteral");
 };
 
+// `void 0` runs nothing and is the old spelling of undefined itself, but a
+// `void` over anything else is there to run it: `return void list.push(x)` is
+// `list.push(x); return` on one line, the guard clause a bare return already is,
+// and `() => void submit()` discards a promise rather than choosing a spelling.
 const isUndefined = (node) => {
   const n = value(node);
   return (
     n &&
     ((n.type === "Identifier" && n.name === "undefined") ||
-      (n.type === "UnaryExpression" && n.operator === "void"))
+      (n.type === "UnaryExpression" && n.operator === "void" && value(n.argument)?.type === "Literal"))
   );
 };
 
