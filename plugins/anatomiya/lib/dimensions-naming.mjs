@@ -21,6 +21,13 @@ export const CLASSES = ["camelCase", "PascalCase", "kebab-case", "snake_case"];
  * A single lowercase word (`index`, `utils`) matches every class at once, so it
  * votes for none of them: counting it as any one class would let a directory
  * full of single words state a convention no filename ever expressed.
+ *
+ * A word of capitals alone is not PascalCase either. `DEBUG` is the constant
+ * `MAX_DEBUG` is with one word fewer, and `GET` is a route handler whose name
+ * the framework decides; read as PascalCase, a Next.js `app/api` directory
+ * stated "functions are named PascalCase" and a constants module stated it of
+ * its exports. It spells the SCREAMING case none of the four classes is, the
+ * way `MAX_DEBUG` already does.
  */
 export function classifyWord(word) {
   if (/^[a-z0-9]+(-[a-z0-9]+)+$/.test(word)) return "kebab-case";
@@ -30,7 +37,7 @@ export function classifyWord(word) {
   // ambiguous `(?:[A-Z][a-zA-Z0-9]*)+` this replaces measured six seconds on
   // twenty-eight characters.
   if (/^[a-z][a-zA-Z0-9]*$/.test(word) && /[A-Z]/.test(word)) return "camelCase";
-  if (/^[A-Z][a-zA-Z0-9]*$/.test(word)) return "PascalCase";
+  if (/^[A-Z][a-zA-Z0-9]*$/.test(word) && /[a-z]/.test(word)) return "PascalCase";
   return null;
 }
 
