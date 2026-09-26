@@ -1,5 +1,5 @@
-import { mkdirSync, unlinkSync } from "node:fs";
-import { join } from "node:path";
+import { mkdirSync, realpathSync, statSync, unlinkSync } from "node:fs";
+import { dirname, join, relative, sep } from "node:path";
 import { renderArea, renderOverview, splitUncovered } from "./render.mjs";
 import { readFacts, writeFacts, atomic } from "./facts.mjs";
 import {
@@ -197,5 +197,26 @@ function resolveDirs(root) {
       `${STORE_DIR} resolves outside the repository, so nothing was written: this is a symlink in the working tree`
     );
   }
+  for (const dir of [rulesDir, storeDir]) refuseNonDirectory(root, dir);
   return { rulesDir, storeDir };
+}
+
+/**
+ * Refuse a map directory that a file already holds, or that sits under one.
+ *
+ * Resolving says where the directory is, not that it can be one there: a
+ * regular file at `.claude/rules` let a dry run print "would write 2 files"
+ * while the real scan died on a raw `EEXIST` out of `mkdir`, and a file at
+ * `.claude` did the same with `ENOTDIR`. The nearest thing that exists on the
+ * way down to the directory has to be a directory, and the path that is not is
+ * named, since it is the one to remove.
+ */
+function refuseNonDirectory(root, dir) {
+  for (let at = dir; ; at = dirname(at)) {
+    const stat = statSync(at, { throwIfNoEntry: false });
+    if (stat === undefined) continue;
+    if (stat.isDirectory()) return;
+    const name = relative(realpathSync(root), at).split(sep).join("/");
+    throw new Error(`${name} is not a directory, so the map could not be written: remove it and scan again`);
+  }
 }
