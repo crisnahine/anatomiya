@@ -467,6 +467,31 @@ test("re-pinning prints the population delta and nothing suggests it", async (t)
   }
 });
 
+test("a file that only moved to another area neither enters nor leaves the population", () => {
+  // One file added under a nested directory lifted it over the area floor, and
+  // the re-pin printed "3 files enter the baseline population, 2 leave it" with
+  // the two that moved listed as leaving. Both are still counted at the pin, in
+  // the new area, and a floor step re-partitions many areas at once, so the
+  // line a human reads before accepting a pin reported departures that never
+  // happened.
+  const sha = "a".repeat(40);
+  const oldPin = buildPin([area("src/services", ["src/services/a.ts", "src/services/sub/s1.ts", "src/services/sub/s2.ts"])], { sha });
+  const newPin = buildPin([
+    area("src/services", ["src/services/a.ts"]),
+    area("src/services/sub", ["src/services/sub/s1.ts", "src/services/sub/s2.ts", "src/services/sub/s3.ts"]),
+  ], { sha: "b".repeat(40) });
+
+  const delta = pinDelta(oldPin, newPin);
+  const printed = formatDelta(delta);
+
+  assert.equal(delta.addedFiles, 1);
+  assert.equal(delta.removedFiles, 0);
+  assert.match(printed, /^1 file enters the baseline population, 0 leave it, 2 files move between areas$/m, printed);
+  assert.match(printed, /^"src\/services"  \+0 -0, 2 moved out$/m, printed);
+  assert.match(printed, /^"src\/services\/sub" \(new area\)  \+1 -0, 2 moved in$/m, printed);
+  assert.doesNotMatch(printed, /^ {2}- /m, "nothing is listed as leaving");
+});
+
 // --- E6: drift is measured to the base ref, never to HEAD ---
 
 test("the branch's own changes are not map drift", async (t) => {
