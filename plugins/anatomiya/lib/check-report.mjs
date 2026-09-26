@@ -1,4 +1,4 @@
-import { encode, quotePath, sanitisePath } from "./encode.mjs";
+import { encode, quotePath } from "./encode.mjs";
 import { listSome, LISTED, RULES_DIR } from "./rules.mjs";
 
 /**
@@ -80,7 +80,7 @@ export const CAVEATS = Object.freeze({
 export function encodeReport(report) {
   return {
     ...report,
-    root: sanitisePath(report.root),
+    root: locator(report.root),
     base: { ...report.base, ref: report.base.ref == null ? null : encode(report.base.ref) },
     staleReason: report.staleReason == null ? null : encode(report.staleReason),
     changed: report.changed.map((row) => encodeRow(row)),
@@ -90,27 +90,45 @@ export function encodeReport(report) {
     caveats: report.caveats.map((c) => ({ code: c.code, message: encode(c.message) })),
     parse: { ...report.parse },
     semantic: { ...report.semantic },
-    foreign: report.foreign.map(sanitisePath),
-    unknown: report.unknown.map(sanitisePath),
-    rules: { ...report.rules, unreadable: report.rules.unreadable.map(sanitisePath) },
+    foreign: report.foreign.map(locator),
+    unknown: report.unknown.map(locator),
+    rules: { ...report.rules, unreadable: report.rules.unreadable.map(locator) },
   };
 }
 
-// Sanitised rather than quoted, so a writer with a field to put a path in is
+// Anything but letters, marks, numbers, punctuation, symbols and the plain
+// space: a control character or a newline breaks the line a path is written
+// on, and a bidi override or a zero-width joiner reorders or hides what it
+// says, and `JSON.stringify` escapes neither of the last two.
+const UNSAFE_IN_PATH = /[^\p{L}\p{M}\p{N}\p{P}\p{S} ]/gu;
+
+/**
+ * A path as the locator it is, with only the characters above refused.
+ *
+ * Not through the display encoder. Every writer here hands the path to
+ * something that opens the file: GitHub places an annotation by it, a JSON
+ * reader joins a finding back to it, the agent opens the one the text names.
+ * The encoder's cap and its script rule are for text a file loads, and here
+ * they ended a long monorepo path in `…` and put a placeholder in place of a
+ * Japanese directory, neither of which anything can open.
+ */
+const locator = (p) => String(p ?? "").replace(UNSAFE_IN_PATH, " ");
+
+// Neutralised rather than quoted, so a writer with a field to put a path in is
 // not handed one wrapped in the quoting the text line needs.
 function encodeRow(row) {
-  return { ...row, path: sanitisePath(row.path), from: row.from == null ? null : sanitisePath(row.from) };
+  return { ...row, path: locator(row.path), from: row.from == null ? null : locator(row.from) };
 }
 
 function encodeFinding(f) {
   return {
     ...f,
-    path: sanitisePath(f.path),
-    oldPath: f.oldPath == null ? null : sanitisePath(f.oldPath),
-    area: f.area == null ? null : sanitisePath(f.area),
+    path: locator(f.path),
+    oldPath: f.oldPath == null ? null : locator(f.oldPath),
+    area: f.area == null ? null : locator(f.area),
     where: f.where == null ? null : encode(f.where),
     reason: encode(f.reason),
-    companion: f.companion == null ? null : sanitisePath(f.companion),
+    companion: f.companion == null ? null : locator(f.companion),
     snippet: f.snippet == null ? null : encode(f.snippet, { max: SNIPPET_CHARS }),
   };
 }
