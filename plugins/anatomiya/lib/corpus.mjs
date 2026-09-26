@@ -1,4 +1,4 @@
-import { realpathSync } from "node:fs";
+import { lstatSync, realpathSync } from "node:fs";
 import { resolve, sep } from "node:path";
 
 import { gitBuffered, gitStreamed } from "./git.mjs";
@@ -398,6 +398,13 @@ function classify(root, rel, generatedRules) {
   if (drop) return { drop };
   const abs = safeResolve(root, rel);
   if (!abs) return { drop: "escaped" };
+  // A link is not source even where it stays inside the repository. What git
+  // tracks for one is its target's name, so reading through it counted every
+  // site of the target twice, and the baseline reused that parse for a path
+  // whose link had not changed since the pin: an edit to the target moved the
+  // pinned counts (E2). The target is counted where it is tracked, and a link
+  // out of the repository is refused above, so both go to the same count.
+  if (lstatSync(resolve(root, rel), { throwIfNoEntry: false })?.isSymbolicLink()) return { drop: "escaped" };
   // A file that is generated must not contribute evidence to a stated
   // directive, whichever directory it sits in: the marker is read only once
   // the cheaper string checks above have already let the path through.
