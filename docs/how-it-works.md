@@ -1174,8 +1174,11 @@ finding, MUST-FIX as an error, FIX as a warning and NIT as a notice, so a pull r
 one on the line it is about; then a warning per caveat carrying its code, one for a capped run, and
 one counting the rule files nobody here wrote, because counts alone are what a run with no map and no
 readable diff prints and that reads exactly like a branch that broke nothing. Every
-repository-controlled value goes through the encoder before any of the three sees it, and findings
-set the exit code in none of them.
+repository-controlled value is neutralised before any of the three sees it, and findings set the exit
+code in none of them. A path loses only what would break its line or reorder it, a control
+character, a newline, a bidi override or a zero-width joiner, and is otherwise the file's own path,
+however long and in whatever script, because each writer hands it to something that opens the file;
+everything else goes through the encoder.
 
 `--format json` carries the record's own version, so a reader can refuse a shape it does not know
 rather than read fields positionally. It is the rule `facts.json` enforces on disk (C10), offered
