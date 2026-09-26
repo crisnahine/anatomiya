@@ -7,7 +7,7 @@ import { olderThan } from "./version.mjs";
 import { ENGINES } from "./langs.mjs";
 import { execFile } from "node:child_process";
 import { tmpdir } from "node:os";
-import { isAbsolute } from "node:path";
+import { delimiter, isAbsolute } from "node:path";
 
 /**
  * Ruby files, parsed by prism, in the shape the reducer already consumes.
@@ -149,9 +149,17 @@ export function choosePrism(specs, floor) {
  * Exported because the readiness probe spawns the same interpreter to ask which
  * prism it would load, and a probe run under a different environment from the
  * parse answers about a different interpreter.
+ *
+ * `PATH` keeps its absolute entries only. The command is looked up on the
+ * child's own `PATH`, and an empty or relative entry is resolved against the
+ * child's working directory, which is the temp directory anyone can write:
+ * measured with the common trailing colon on a machine with no ruby, the
+ * listing, the probe and the parser each ran a `ruby` another local user had
+ * left in /tmp, as the person scanning.
  */
 export function rubyEnv(source = process.env) {
-  const env = { PATH: source.PATH ?? "", LANG: "C" };
+  const PATH = (source.PATH ?? "").split(delimiter).filter((dir) => isAbsolute(dir)).join(delimiter);
+  const env = { PATH, LANG: "C" };
   // Windows refuses to start a side-by-side assembly without a valid
   // %SystemRoot%, which a stripped environment does not carry, so the
   // interpreter never runs at all. Documented in Python's own subprocess

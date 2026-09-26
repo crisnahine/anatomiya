@@ -157,6 +157,21 @@ test("an interpreter without the library is present and still not ready", needsS
   assert.equal(row.reason, "prism is not installed for this ruby");
 });
 
+test("an interpreter that answers no version is not ready", needsShebang, async (t) => {
+  // Measured: a `ruby` that printed nothing and exited 0 was reported
+  // `prism  ok`, since a missing version is never older than the floor. An
+  // answer that holds no version says nothing about the library, and the
+  // scan it cleared then charged every Ruby file.
+  const env = stubInterpreter(t, "#!/bin/sh\nexit 0\n");
+
+  const [row] = await readiness({ engines: ["prism"], env });
+
+  assert.equal(row.present, true, "the interpreter ran");
+  assert.equal(row.version, null);
+  assert.equal(row.ok, false);
+  assert.equal(row.reason, "ruby answered no prism version");
+});
+
 test("a library older than the floor names both numbers", needsShebang, async (t) => {
   // prism 0.19 spells the fields the dimensions read differently: nothing
   // raises and every count comes back zero, which is the one failure a version
