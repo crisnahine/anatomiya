@@ -132,7 +132,14 @@ export async function runReuse(cwd, payload) {
   if (root === null) return {};
   const found = ownLayout(root);
   if (found === null) return {};
-  const change = await pendingChange(found.root, { since: sessionStart(payload.transcript_path) });
+  // Both halves of "once per change, and only this session's work" are read off
+  // the transcript: when the session began, and what it already asked. One that
+  // cannot be read says neither, so nothing is asked. Asking anyway blocked
+  // every turn, a question included, over a tree left dirty before the session,
+  // since no ask it made was ever recorded anywhere it could read back.
+  const since = sessionStart(payload.transcript_path);
+  if (since === null) return {};
+  const change = await pendingChange(found.root, { since });
   if (change === null) return {};
   const asked = askedMarks(payload.transcript_path);
   const fresh = change.filter((file) => !asked.has(file.mark));
