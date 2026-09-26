@@ -104,8 +104,35 @@ export function listPrism({ ruby = "ruby", env = process.env, timeoutMs = 10_000
  * answers.
  */
 export async function prismLoadArgs(options = {}) {
-  const chosen = choosePrism(await listPrism(options), ENGINES.prism.floor);
-  return chosen ? chosen.paths.flatMap((p) => ["-I", p]) : [];
+  let specs = await listPrism(options);
+  for (;;) {
+    const chosen = choosePrism(specs, ENGINES.prism.floor);
+    if (!chosen) return [];
+    const load = chosen.paths.flatMap((p) => ["-I", p]);
+    if ((await loadedVersion(load, options)) === chosen.version) return load;
+    // Listed is not loadable. A gem whose extension was built for another
+    // Ruby, which a shared GEM_HOME keeps after an upgrade, is one RubyGems
+    // itself skips, and handed to the parser it failed to load at all: doctor
+    // said prism was not installed and hid the default that does load. The
+    // next newest is asked instead, and the default answers when none loads.
+    specs = specs.filter((s) => s.paths !== chosen.paths);
+  }
+}
+
+/**
+ * The version a prism on these load paths answers when this interpreter
+ * requires it, or null when it does not load. The same question the readiness
+ * probe asks, bounded the way the listing is.
+ */
+function loadedVersion(load, { ruby = "ruby", env = process.env, timeoutMs = 10_000 } = {}) {
+  return new Promise((resolve) => {
+    execFile(
+      ruby,
+      ["--disable-gems", ...load, "-rprism", "-e", "print Prism::VERSION"],
+      { cwd: tmpdir(), env: rubyEnv(env), encoding: "utf8", timeout: timeoutMs, killSignal: "SIGKILL", maxBuffer: 64 * 1024 },
+      (err, stdout) => resolve(err ? null : stdout.trim())
+    );
+  });
 }
 
 /**

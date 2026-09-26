@@ -211,6 +211,30 @@ esac
   assert.equal(row.ok, true);
 });
 
+test("an installed prism that does not load for this ruby gives way to the one that does", needsShebang, async (t) => {
+  // Measured after a Ruby upgrade with a shared GEM_HOME: prism 1.9.0 was
+  // built for the old Ruby, RubyGems skipped it and loaded the default 0.19.0,
+  // and this put 1.9.0 on the load path anyway. Its extension was linked to
+  // the other libruby, so doctor said prism was not installed and hid the
+  // accurate answer, which is that the one that loads is under the floor.
+  const env = stubInterpreter(
+    t,
+    `#!/bin/sh
+case "$*" in
+  *Gem::Specification*) printf '[{"version":"0.19.0","default":true,"paths":["/old/lib"]},{"version":"1.9.0","default":false,"paths":["/new/lib","/new/ext"]}]' ;;
+  *"-I /new/lib"*) echo 'prism.so: linked to incompatible libruby.so.3.2 (LoadError)' >&2; exit 1 ;;
+  *) printf 0.19.0 ;;
+esac
+`
+  );
+
+  const [row] = await readiness({ engines: ["prism"], env });
+
+  assert.equal(row.version, "0.19.0");
+  assert.equal(row.ok, false);
+  assert.match(row.reason, /older than/, row.reason);
+});
+
 test("an interpreter that answers reports its version and the floor it is held to", needsRuby, async () => {
   const [row] = await readiness({ engines: ["prism"] });
 
