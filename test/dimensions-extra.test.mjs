@@ -984,3 +984,25 @@ test("a plain JavaScript file is not asked to prefer ?. over a ! it cannot write
   const ts = await parseFile(src, "src/a.ts", "js");
   assert.equal(ts.hits.non_null_assertion.length, 1, "a TypeScript file still answers it");
 });
+
+/* --- a void over an effect is a guard, not a spelling of undefined --- */
+
+test("a return that voids a call is the guard clause it abbreviates", () => {
+  // `return void missing.push(x)` is `missing.push(x); return` on one line,
+  // and the bare return is already not a site. Counted as an explicit
+  // undefined, three such exits made revision.mjs the one exception this
+  // repository's lib printed under "an absent value is returned as null".
+  for (const src of [
+    `function f(x) { if (!x) return void missing.push(x); return null }`,
+    `function f(x) { if (!x) return void (seen = x); return null }`,
+    `const f = (x) => { if (!x) return void notify(x); return null }`,
+  ]) {
+    assert.deepEqual(counts("absent_is_null", src), { candidates: 1, conforming: 1 }, src);
+  }
+  assert.equal(hits("absent_is_null", `const onClick = () => void submit()`).length, 0, "an arrow discarding a promise");
+  // `void 0` runs nothing and is the old spelling of undefined itself.
+  assert.deepEqual(counts("absent_is_null", `function f(x) { if (!x) return void 0; return null }`), {
+    candidates: 2,
+    conforming: 1,
+  });
+});
