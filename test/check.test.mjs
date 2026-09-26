@@ -139,7 +139,8 @@ function assertExamined(report, path) {
  *
  * The precedent rule reads `layout.roots`, which the hand-built `facts` helper
  * above never writes, so a fixture there proves nothing about the wiring: the
- * counts have to come off a scan of a real tree.
+ * counts have to come off a scan of a real tree. That tree is Ruby, so every
+ * case on it carries `needsRuby` and skips where the tool would refuse it.
  */
 async function railsish(t, { pin = true } = {}) {
   const dir = repo(t, ({ write, commit }) => {
@@ -152,7 +153,11 @@ async function railsish(t, { pin = true } = {}) {
     }
     commit("init");
   });
-  writeMap(await scan(dir), {});
+  // A scan that could not read the Ruby writes no map, and the rule then has
+  // nothing to answer from: the cases below expecting no finding passed on
+  // that alone, with no Ruby on the machine at all.
+  const plan = writeMap(await scan(dir), {});
+  assert.equal(plan.blind, false, "the scan read the Ruby tree and wrote a map");
   // Pinned as well as scanned: with no pin the map reads stale and every
   // finding caps at NIT, so an unpinned fixture proves nothing about severity.
   if (!pin) return dir;
@@ -161,7 +166,7 @@ async function railsish(t, { pin = true } = {}) {
   return dir;
 }
 
-test("a test added where its own siblings have none is a finding, and one added beside theirs is not", async (t) => {
+test("a test added where its own siblings have none is a finding, and one added beside theirs is not", needsRuby, async (t) => {
   // The whole of H38, read off a scan rather than a fixture: `spec/mailers/`
   // did not exist before the change, so every content rule finds the file
   // conforming with itself and only this one asks whether it belongs there.
@@ -184,7 +189,7 @@ test("a test added where its own siblings have none is a finding, and one added 
   assert.match(found[0].reason, /app\/mailers: 4 files, 0 with a namesake test/);
 });
 
-test("a test still sitting in the working tree is asked the same question as a committed one", async (t) => {
+test("a test still sitting in the working tree is asked the same question as a committed one", needsRuby, async (t) => {
   // The whole reason this reads the tree: the answer is wanted before the
   // commit, not after. An addition arrives from `git status` rather than from
   // the diff, and a relocation arrives from it spelled `M` with an `orig`,
@@ -205,7 +210,7 @@ test("a test still sitting in the working tree is asked the same question as a c
   assert.equal(byPath.get("spec/mailers/zeta_mailer_spec.rb").oldPath, "spec/services/zeta_spec.rb");
 });
 
-test("an unpinned repository still gets the finding at the ceiling its own header names", async (t) => {
+test("an unpinned repository still gets the finding at the ceiling its own header names", needsRuby, async (t) => {
   // What makes this rule cap is the comparison, since that is what says a file
   // arrived; a map with no pin caps at FIX like every other rule and does not
   // stop the diff saying `A`. Reading the two together printed a NIT saying the
@@ -225,7 +230,7 @@ test("an unpinned repository still gets the finding at the ceiling its own heade
   assert.doesNotMatch(found.reason, /could not establish/);
 });
 
-test("a change that invents a directory and fills it is not excused by its own first file", async (t) => {
+test("a change that invents a directory and fills it is not excused by its own first file", needsRuby, async (t) => {
   // What "already holds a test" means differs between the two callers. The
   // hook asks the disk, where nothing yet comes from the write it is about; a
   // check has to leave out everything the same change brought, or three of
@@ -247,7 +252,7 @@ test("a change that invents a directory and fills it is not excused by its own f
   for (const f of found) assert.match(f.reason, /^spec\/mailers holds no other test;/);
 });
 
-test("an index this cannot read is not a repository with no tests in it", async (t) => {
+test("an index this cannot read is not a repository with no tests in it", needsRuby, async (t) => {
   // C33 at this reader. What decides whether the finding prints is whether the
   // directory already holds a test, and a listing that failed answers neither
   // yes nor no: printed as no, the run states a fact it never read.
@@ -267,7 +272,7 @@ test("an index this cannot read is not a repository with no tests in it", async 
   assert.deepEqual(forKey(await check(dir, { baseRef: base }), "test_precedent"), []);
 });
 
-test("a file git does not track is not this repository's habit", async (t) => {
+test("a file git does not track is not this repository's habit", needsRuby, async (t) => {
   // The only read here that does not come through `git ls-files`, so it was the
   // only one counting build output and scratch files. One ignored
   // `scratch_spec.rb` in the directory silenced the rule for every file in it.
@@ -292,7 +297,7 @@ test("a file git does not track is not this repository's habit", async (t) => {
   ]);
 });
 
-test("a test landing beside one that was already there is following it", async (t) => {
+test("a test landing beside one that was already there is following it", needsRuby, async (t) => {
   // Issue 120 asked for both halves: "a test file in a directory holding no
   // other test file, in a repository whose sibling ratio for that kind is 0 of
   // N". The root's ratio alone flagged a spec that had a sibling right there.
@@ -311,7 +316,7 @@ test("a test landing beside one that was already there is following it", async (
   assert.deepEqual(forKey(await check(dir, { baseRef: base }), "test_precedent"), []);
 });
 
-test("a test moved into a directory with no precedent is the same deviation as one written there", async (t) => {
+test("a test moved into a directory with no precedent is the same deviation as one written there", needsRuby, async (t) => {
   // git reports a relocation as `R`, so a rule reading only `A` let the move
   // past while refusing the identical file written fresh.
   const dir = await railsish(t);
