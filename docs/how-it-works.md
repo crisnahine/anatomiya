@@ -1260,7 +1260,7 @@ type checker is probed beside the engines and marked optional, since only `--dee
 |---|---|---|---|
 | `oxc` | node | `oxc-parser` imports | `anatomiya setup` in the plugin directory |
 | `flow-remove-types` | node | it imports. A row of its own, and not an engine: it is `oxc`'s dialect stripper, and one absent costs a dialect where the other costs the run | the same install |
-| `prism` | the `ruby` interpreter | `ruby -rprism` answers a version of 1.0.0 or newer | install Ruby 3.4 or newer, which ships prism 1.x, and put `ruby` on `PATH` |
+| `prism` | the `ruby` interpreter | the interpreter's own prism, or the newest prism gem installed for it when its own is older, answers a version of 1.0.0 or newer | install Ruby 3.4 or newer, which ships prism 1.x, or run `gem install prism` on the Ruby you have, and put `ruby` on `PATH` |
 | `typescript` | node | it imports. Optional: only `--deep` needs it | the same install |
 
 `anatomiya setup` installs what node hosts, and only that. It runs

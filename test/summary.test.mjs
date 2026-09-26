@@ -263,7 +263,7 @@ test("a run blind to a language names the engine behind it and what to do", () =
 
   assert.deepEqual(lines.slice(-2), [
     "read no ruby file at all, so nothing was written and the previous map was left alone",
-    "prism reported no version: install Ruby 3.4 or newer, which ships prism 1.x, and put ruby on PATH",
+    "prism reported no version: install Ruby 3.4 or newer, which ships prism 1.x, or run gem install prism on the Ruby you have, and put ruby on PATH",
   ]);
 });
 

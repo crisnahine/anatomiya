@@ -3,6 +3,11 @@ import { collectHits } from "./walk.mjs";
 import { rubyFacets } from "./facets.mjs";
 import { guardsOver, MAX_FILE_BYTES } from "./limits.mjs";
 import { firstLine } from "./encode.mjs";
+import { olderThan } from "./version.mjs";
+import { ENGINES } from "./langs.mjs";
+import { execFile } from "node:child_process";
+import { tmpdir } from "node:os";
+import { isAbsolute } from "node:path";
 
 /**
  * Ruby files, parsed by prism, in the shape the reducer already consumes.
@@ -37,6 +42,101 @@ export const RUBY_GUARDS = {
   maxLineBytes: 64 * 1024 * 1024,
   stderrBytes: 8 * 1024,
 };
+
+// Every prism this interpreter holds, default or installed, by version and the
+// directories that load it. Asked of RubyGems' own records and never of prism,
+// so no gem's code runs and an interpreter whose prism is too old still answers.
+const LIST_PRISM = `require "json"
+print JSON.generate(Gem::Specification.find_all_by_name("prism").map { |s|
+  { "version" => s.version.to_s, "default" => s.default_gem?, "paths" => s.full_require_paths }
+})`;
+
+/**
+ * The environment the listing runs under: the parser's scrub, plus the few
+ * variables that say where gems are installed.
+ *
+ * `GEM_HOME` and `GEM_PATH` are where rvm and chruby install every gem,
+ * `gem install prism` included, so a listing without them misses the one the
+ * remedy just installed. They only name directories to read records from; the
+ * parser still runs without them and with gems disabled, and `RUBYOPT` and
+ * `RUBYLIB`, which inject code, stay dropped here too. `HOME` and
+ * `USERPROFILE` locate a `--user-install`.
+ */
+function gemEnv(source) {
+  const env = rubyEnv(source);
+  for (const k of ["GEM_HOME", "GEM_PATH", "HOME", "USERPROFILE"]) {
+    if (source[k]) env[k] = source[k];
+  }
+  return env;
+}
+
+/**
+ * List the prism gems an interpreter holds. `null` when it could not say:
+ * absent, too slow, or an answer of any other shape, each of which leaves the
+ * interpreter's own default to answer for itself.
+ *
+ * Buffered and bounded like the readiness probe's version question, outside the
+ * repository and with no shell, since it points an interpreter at whatever
+ * `PATH` names.
+ */
+export function listPrism({ ruby = "ruby", env = process.env, timeoutMs = 10_000 } = {}) {
+  return new Promise((resolve) => {
+    execFile(
+      ruby,
+      ["-e", LIST_PRISM],
+      { cwd: tmpdir(), env: gemEnv(env), encoding: "utf8", timeout: timeoutMs, killSignal: "SIGKILL", maxBuffer: 64 * 1024 },
+      (err, stdout) => {
+        if (err) return resolve(null);
+        try {
+          resolve(JSON.parse(stdout));
+        } catch {
+          resolve(null);
+        }
+      }
+    );
+  });
+}
+
+/**
+ * The arguments that put the chosen prism on the load path, for every child
+ * that loads prism: the parser and the readiness probe answer about the same
+ * library only if they are handed the same one. Empty when the default
+ * answers.
+ */
+export async function prismLoadArgs(options = {}) {
+  const chosen = choosePrism(await listPrism(options), ENGINES.prism.floor);
+  return chosen ? chosen.paths.flatMap((p) => ["-I", p]) : [];
+}
+
+/**
+ * Which installed prism the parser loads, off a listing of every one this
+ * interpreter holds: `null` to load the interpreter's own default, or the one
+ * to put on the load path instead.
+ *
+ * The default wins whenever it is past the floor, so an interpreter that ships
+ * a prism this reads loads exactly what it always did. Under the floor, the
+ * newest installed prism past it answers instead: Ruby 3.3 ships prism 0.19,
+ * and `gem install prism` puts a 1.x beside it on any Ruby from 2.7, which the
+ * parser could not see because it runs with gems disabled.
+ *
+ * A path that is not absolute, or that argv could read as a flag, is not a
+ * path this hands to an interpreter (F5), and a listing of any other shape
+ * adds nothing rather than something it made up.
+ */
+export function choosePrism(specs, floor) {
+  if (!Array.isArray(specs)) return null;
+  const usable = specs.filter(
+    (s) =>
+      s && typeof s.version === "string" && Array.isArray(s.paths) && s.paths.length > 0
+      && s.paths.every((p) => typeof p === "string" && isAbsolute(p) && !p.startsWith("-"))
+      && !olderThan(s.version, floor)
+  );
+  if (usable.some((s) => s.default === true)) return null;
+  const installed = usable.filter((s) => s.default !== true);
+  if (installed.length === 0) return null;
+  const newest = installed.reduce((a, b) => (olderThan(a.version, b.version) ? b : a));
+  return { version: newest.version, paths: newest.paths };
+}
 
 /**
  * The parser process loads nothing but the standard library.
@@ -200,6 +300,7 @@ export async function parseRuby(
 
   const seen = new Set();
   const unanswered = () => queued.filter((f) => !seen.has(f.rel));
+  const load = await prismLoadArgs({ ruby });
 
   // Resolves true when one of our own timers did the killing, which is the only
   // ending a second child could answer differently.
@@ -210,7 +311,7 @@ export async function parseRuby(
         sup = guardedChild({
           kind: "spawn",
           command: ruby,
-          args: ["--disable-gems", "-e", rubyScript],
+          args: ["--disable-gems", ...load, "-e", rubyScript],
           env: rubyEnv(),
           stdio: ["pipe", "pipe", "pipe"],
           stderrBytes: guards.stderrBytes,
