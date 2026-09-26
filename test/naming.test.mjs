@@ -1159,6 +1159,28 @@ test("an ordinary function in a JSX file is still judged", async () => {
   assert.deepEqual(h.map((x) => x.where), ["fetchAll"]);
 });
 
+test("a component made by forwardRef, memo or styled is excluded like a plain one", async () => {
+  // Measured on a components directory of 45 plain components and one
+  // `forwardRef` field: the map stated "exported names are camelCase" 90 of 91
+  // with the field as its exception, and the check asked for a new
+  // `TextInput = forwardRef(...)` to be renamed `textInput`, a host tag. The
+  // binding's initialiser is a call, not a function, so the plain-component
+  // exclusion never saw the function it was handed.
+  const h = await astHits("exported_symbol_case", `
+    import React, { forwardRef, memo } from "react";
+    import styled from "styled-components";
+    export const TextInput = forwardRef((props, ref) => <input ref={ref} {...props} />);
+    export const Card = memo(function Card() { return <div />; });
+    export const Row = React.memo(forwardRef((props, ref) => <tr ref={ref} />));
+    export const Title = styled.h1\`font-size: 2em;\`;
+    export const Link = styled(Anchor).attrs({ rel: "noopener" })\`color: red;\`;
+    export const useStore = create((set) => ({ count: 0 }));
+    export const inputVariants = { size: "sm" };
+  `);
+
+  assert.deepEqual(h.map((x) => x.where), ["useStore", "inputVariants"]);
+});
+
 /* --- a directory of components and a directory of helpers hold different conventions (#64) --- */
 
 test("a naming row learns over one kind of file, and leaves the other kind unjudged", async () => {

@@ -9,7 +9,7 @@
  * imports this file.
  */
 import { walk, isFunctionLike } from "./walk.mjs";
-import { jsxElementNames, yieldsJsx } from "./dimensions-jsx.mjs";
+import { jsxElementNames, makesComponent, yieldsJsx } from "./dimensions-jsx.mjs";
 import { fileStem } from "./dimensions-capability.mjs";
 import { encode } from "./encode.mjs";
 
@@ -251,6 +251,7 @@ function exportedSites(program) {
           name: decl.id.name,
           population,
           fn: decl.init && isFunctionLike(decl.init) ? decl.init : null,
+          init: decl.init ?? null,
         });
       }
     } else if (d?.id?.name) {
@@ -334,18 +335,20 @@ export const NAMING_AST = [
     splitBy: splitByJsx,
     precision: "precise",
     applicabilityPredicate: {
-      sites: "an export statement declaring a function, or a variable not bound to a class expression, under a name that spells a naming class; an anonymous default export carries no name, and a renaming specifier is not resolved to a declaration, so neither is a site; an exported function whose body yields JSX, or whose name this file renders as an element, is a component whose name JSX decides and is not a site",
+      sites: "an export statement declaring a function, or a variable not bound to a class expression, under a name that spells a naming class; an anonymous default export carries no name, and a renaming specifier is not resolved to a declaration, so neither is a site; an exported function whose body yields JSX, a variable bound to a call handed such a function or to a styled template, and a name this file renders as an element, are components whose name JSX decides and are not sites",
       blind: null,
     },
     langs: ["js", "jsx"],
     run(program, add) {
       // The same rule its sibling row reads: a component's name is JSX's to
       // decide. Excluding it on one row and not the other left the same
-      // declaration asked for a lowercase name by the other sentence.
+      // declaration asked for a lowercase name by the other sentence. Only
+      // this row binds a name to a call, so only this row meets a component a
+      // `forwardRef`, a `memo` or a `styled` template made.
       const rendered = jsxElementNames(program);
       for (const s of exportedSites(program)) {
         if (s.population !== "value") continue;
-        if (rendered.has(s.name) || yieldsJsx(s.fn)) continue;
+        if (rendered.has(s.name) || yieldsJsx(s.fn) || makesComponent(s.init)) continue;
         const cls = classifyWord(s.name);
         if (cls) add({ node: s.node, conforming: false, where: s.name, class: cls });
       }

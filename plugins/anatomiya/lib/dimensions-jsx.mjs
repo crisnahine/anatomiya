@@ -200,6 +200,53 @@ export function yieldsJsx(fn) {
   return handed.some(isElement);
 }
 
+/**
+ * Whether a binding's initialiser makes a component without being a function
+ * itself: a call handed a function that yields JSX, or a `styled` template.
+ *
+ * `export const Field = forwardRef((props, ref) => <input />)` is a component
+ * exactly as a plain function is, and its initialiser is a call, so the plain
+ * rule never saw the function it was handed. Measured on a components directory
+ * of 45 plain components and one `forwardRef` field: "exported names are
+ * camelCase" 90 of 91 with the field as its exception, and the check asked for
+ * a new one to be named `textInput`, which is a host tag.
+ *
+ * The wrapper is not read by name. `forwardRef`, `memo`, `observer` and every
+ * other higher-order component hand back a component made from the one they
+ * were given, and `memo(forwardRef(...))` is the ordinary nesting, so calls are
+ * descended through to the function they were handed. A call handed a function
+ * that yields anything else is the helper it is named as: `create((set) => ({}))`
+ * builds a store. `styled` is the one name read, because it is the binding
+ * every styled library exports under that name, and what its template or call
+ * makes is an element type: `styled.h1`, `styled(Anchor)` and
+ * `styled(Anchor).attrs({})` all root there.
+ */
+export function makesComponent(init) {
+  const work = [init];
+  while (work.length) {
+    const v = value(work.pop());
+    if (!v) continue;
+    if (isFunctionLike(v)) {
+      if (yieldsJsx(v)) return true;
+      continue;
+    }
+    if (v.type !== "CallExpression" && v.type !== "TaggedTemplateExpression") continue;
+    if (rootsAtStyled(v.type === "CallExpression" ? v.callee : v.tag)) return true;
+    if (v.type === "CallExpression") work.push(...v.arguments);
+  }
+  return false;
+}
+
+// `styled.h1`, `styled("div")` and `styled(Anchor).attrs({})` reach the one
+// binding through members and calls, whichever order they are written in.
+function rootsAtStyled(node) {
+  let n = value(node);
+  while (n && (n.type === "MemberExpression" || n.type === "CallExpression")) {
+    n = value(n.type === "MemberExpression" ? n.object : n.callee);
+  }
+  return n?.type === "Identifier" && n.name === "styled";
+}
+
 // The shapes a returned element arrives in, peeled iteratively: a chain of
 // ternaries nests one level per operand and a generated file reaches thousands.
 function isElement(node) {
