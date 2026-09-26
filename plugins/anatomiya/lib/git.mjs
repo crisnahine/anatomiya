@@ -92,6 +92,9 @@ const FLAGS = new Set([
   "--absolute-git-dir",
   "--untracked-files=no",
   "--is-ancestor",
+  // Whether a merge has left the index with a path per stage, which `pin`
+  // refuses to record (`commands.mjs`).
+  "--unmerged",
 ]);
 
 // `--format=<pattern>` carries a pattern this tool composes; the value is not
