@@ -560,6 +560,11 @@ export const EXTRA_DIMENSIONS = [
         "a ! standing alone, or heading a read the grammar refuses ?. on: a write target, a new callee, a tagged tag",
       blind: "a value narrowed by an if is a third form neither count sees",
     },
+    // `o!.a` is a SyntaxError in a plain .js or .mjs file, so there every `?.`
+    // is a conforming site with no counter-site possible: this repository's own
+    // lib stated the row at 190 of 190 without a line of TypeScript in it. Such
+    // a file leaves the denominator, the trade `explicit_return_type` makes.
+    needsTypeSyntax: true,
     langs: ["js", "jsx"],
     run(program, add) {
       walk(program, (n, ctx) => {
