@@ -9,6 +9,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- Ruby before 3.4 could not be used at all. Ruby 3.3 ships `prism` 0.19, which the parser refuses
+  because it spells the fields the dimensions read differently, and `gem install prism` did not
+  help: the parser runs with gems disabled and only ever saw the default. It now asks which prism
+  gems the interpreter holds and, when the default is older than 1.0, loads the newest installed
+  one past it, so `gem install prism` is the whole remedy on any Ruby from 2.7. `doctor` reports the
+  prism that will actually parse, and says to run `gem install prism` as well as to upgrade Ruby.
+  An interpreter whose own prism is new enough loads exactly what it did before.
+
 - `pin` wrote `baseline.json` through a `.claude` symlinked out of the repository, which a clone can
   carry as a tracked link, and every later `scan` and `check` read the pinned population from
   there. The map and its record already refused such a link. The pin now resolves the same way:
