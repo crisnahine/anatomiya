@@ -1,6 +1,6 @@
-import { constants } from "node:fs";
+import { constants, lstatSync } from "node:fs";
 import { open } from "node:fs/promises";
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
 
 import { parseAll } from "./parse.mjs";
 import { dimensionsFor } from "./dimensions.mjs";
@@ -162,7 +162,7 @@ export async function check(cwd, { baseRef = null } = {}) {
   // than dropped.
   const dropOf = corpusDrop(root);
   const examined = withPendingEdits(changed.filter((c) => isCorpusPath(c.path)), pending)
-    .filter((c) => dropOf(c.path) !== "generated");
+    .filter((c) => dropOf(c.path) !== "generated" && !isLink(root, c.path));
   const fromTree = examined.filter((c) => c.tree).length;
   if (fromTree) {
     caveat(
@@ -1400,6 +1400,23 @@ function withPendingEdits(rows, { present, deleted }) {
       : { status, path, from, tree: true });
   }
   return [...byPath.values()];
+}
+
+/**
+ * Whether a changed path is a symbolic link where it stands.
+ *
+ * A link is not source: its target is counted where it is tracked. Committed,
+ * its blob is the link's own text, which was parsed and named as syntax the
+ * parser rejected; in the tree the target was read through it and its sites
+ * charged a second time under the link's name. Asked of the tree, which after
+ * the pending edits are folded in is where every examined row stands.
+ */
+function isLink(root, path) {
+  try {
+    return lstatSync(join(root, path)).isSymbolicLink();
+  } catch {
+    return false;
+  }
 }
 
 /**
