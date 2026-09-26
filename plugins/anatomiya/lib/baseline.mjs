@@ -103,18 +103,23 @@ export function writePin(root, pin) {
 export function pinDelta(oldPin, newPin) {
   const before = oldPin ? indexAreas(oldPin) : new Map();
   const after = indexAreas(newPin);
+  // Entering and leaving are asked of the whole population, never of one area.
+  // A file that crossed from one area to another is still counted at the pin,
+  // and summed per area it read as one file entering and one leaving: a floor
+  // step that re-partitions a repository reported every file it moved as a
+  // departure, on the line a human reads before accepting the pin.
+  const was = populationOf(before);
+  const is = populationOf(after);
 
   const areas = [];
   for (const [path, next] of after) {
     const prev = before.get(path);
-    const added = [...next.files].filter((f) => !prev || !prev.files.has(f)).sort();
-    const removed = prev ? [...prev.files].filter((f) => !next.files.has(f)).sort() : [];
-    if (!prev || added.length || removed.length) {
-      areas.push({ path, added, removed, isNew: !prev });
-    }
+    const arrived = [...next.files].filter((f) => !prev || !prev.files.has(f));
+    const departed = prev ? [...prev.files].filter((f) => !next.files.has(f)) : [];
+    if (!prev || arrived.length || departed.length) areas.push(split(path, arrived, departed, { isNew: !prev }));
   }
   for (const [path, prev] of before) {
-    if (!after.has(path)) areas.push({ path, added: [], removed: [...prev.files].sort(), gone: true });
+    if (!after.has(path)) areas.push(split(path, [], [...prev.files], { gone: true }));
   }
 
   areas.sort((a, b) => byCode(a.path, b.path));
@@ -122,9 +127,27 @@ export function pinDelta(oldPin, newPin) {
     from: oldPin ? oldPin.sha : null,
     to: newPin.sha,
     areas,
-    addedFiles: areas.reduce((s, a) => s + a.added.length, 0),
-    removedFiles: areas.reduce((s, a) => s + a.removed.length, 0),
+    addedFiles: [...is].filter((f) => !was.has(f)).length,
+    removedFiles: [...was].filter((f) => !is.has(f)).length,
+    movedFiles: new Set(areas.flatMap((a) => a.movedIn)).size,
   };
+
+  function split(path, arrived, departed, tag) {
+    return {
+      path,
+      added: arrived.filter((f) => !was.has(f)).sort(),
+      removed: departed.filter((f) => !is.has(f)).sort(),
+      movedIn: arrived.filter((f) => was.has(f)).sort(),
+      movedOut: departed.filter((f) => is.has(f)).sort(),
+      ...tag,
+    };
+  }
+}
+
+function populationOf(areas) {
+  const all = new Set();
+  for (const a of areas.values()) for (const f of a.files) all.add(f);
+  return all;
 }
 
 /**
@@ -142,7 +165,8 @@ export function formatDelta(delta) {
     // left "1 file enter ... 1 leave it" on the line a human reads before
     // accepting a population.
     `${plural(delta.addedFiles, "file")} ${delta.addedFiles === 1 ? "enters" : "enter"} the baseline population, ` +
-      `${delta.removedFiles} ${delta.removedFiles === 1 ? "leaves" : "leave"} it`,
+      `${delta.removedFiles} ${delta.removedFiles === 1 ? "leaves" : "leave"} it` +
+      (delta.movedFiles ? `, ${plural(delta.movedFiles, "file")} ${delta.movedFiles === 1 ? "moves" : "move"} between areas` : ""),
   ];
   // A first pin has nothing to compare against, so every area is new by
   // arithmetic and a line per directory says the same thing once per directory.
@@ -156,7 +180,13 @@ export function formatDelta(delta) {
   lines.push("");
   for (const a of delta.areas) {
     const tag = a.isNew ? " (new area)" : a.gone ? " (area gone)" : "";
-    lines.push(`${encodePath(a.path)}${tag}  +${a.added.length} -${a.removed.length}`);
+    // A move is said as a count beside the area rather than listed under it,
+    // where only the files that left the population go.
+    const moved = [
+      a.movedIn?.length ? `${a.movedIn.length} moved in` : null,
+      a.movedOut?.length ? `${a.movedOut.length} moved out` : null,
+    ].filter(Boolean);
+    lines.push(`${encodePath(a.path)}${tag}  +${a.added.length} -${a.removed.length}${moved.map((m) => `, ${m}`).join("")}`);
     for (const f of a.removed.slice(0, 5)) lines.push(`  - ${encodePath(f)}`);
     if (a.removed.length > 5) lines.push(`  - and ${a.removed.length - 5} more`);
   }

@@ -588,6 +588,25 @@ test("the pin record neutralises the paths only it prints", () => {
   }
 });
 
+test("the pin record neutralises the paths a move names as well", () => {
+  // A file that only changed area is carried in lists of its own, and those
+  // come out of the same repository-controlled pin as the added list.
+  const sha = "abcdef1234567890abcdef1234567890abcdef12";
+  const previous = buildPin([{ id: "a", path: "lib", files: [{ rel: "lib/a.js" }, { rel: "lib/su‮b/b.js" }] }], { sha });
+  const next = buildPin([
+    { id: "a", path: "lib", files: [{ rel: "lib/a.js" }] },
+    { id: "b", path: "lib/su‮b", files: [{ rel: "lib/su‮b/b.js" }] },
+  ], { sha });
+  const delta = pinDelta(previous, next);
+
+  const s = JSON.parse(pinJson(pinSummary({ previous, next, delta, path: PIN_PATH, dryRun: true })));
+
+  assert.equal(s.delta.movedFiles, 1);
+  const moved = s.delta.areas.flatMap((a) => [...a.movedIn, ...a.movedOut]);
+  assert.equal(moved.length, 2, "the file is named on both sides of the move");
+  for (const value of moved) assert.doesNotMatch(value, CF, value);
+});
+
 /* --- a tier that ran badly reaches the terminal too (#72) --- */
 
 test("a degraded semantic tier is on the summary, not only in the map", () => {
