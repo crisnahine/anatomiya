@@ -7,6 +7,7 @@ import { pathToFileURL } from "node:url";
 import { execFileSync } from "node:child_process";
 
 import { needsShebang } from "./platform.mjs";
+import { needsRuby } from "./ruby-available.mjs";
 import { compact, delivered, filler, transcript } from "./transcript.mjs";
 import { installWithoutDependencies } from "./plugin-install.mjs";
 import { addWorktree, scratch } from "./git-worktrees.mjs";
@@ -493,7 +494,13 @@ test("setup is the only command that runs npm, so a scan, a check and a pin inst
 
 // --- what a hook is answered with ---------------------------------------------
 
-/** A scanned repository with mailers nobody tests and services everybody does. */
+/**
+ * A scanned repository with mailers nobody tests and services everybody does.
+ *
+ * Ruby, so the scan it runs refuses without a prism the tool reads, and every
+ * case built on it carries `needsRuby`: ungated, all of them failed on the
+ * missing interpreter rather than on anything a hook does.
+ */
 async function railsish(t) {
   const dir = mkdtempSync(join(realpathSync(tmpdir()), "anatomiya-hookcmd-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
@@ -740,7 +747,7 @@ test("a path too long to name a place does not cost the turn its map", async (t)
   assert.match(runEcho(join(parent, "alpha"), read).hookSpecificOutput.additionalContext, /src\/core: 6 \.js/);
 });
 
-test("the notice answers for a test going where its kind of file has none", async (t) => {
+test("the notice answers for a test going where its kind of file has none", needsRuby, async (t) => {
   const dir = await railsish(t);
 
   const out = runNotice(dir, write(dir, "spec/mailers/cim_share_mailer_spec.rb"));
@@ -751,7 +758,7 @@ test("the notice answers for a test going where its kind of file has none", asyn
   assert.equal(out.hookSpecificOutput.permissionDecision, undefined, "it informs and never refuses");
 });
 
-test("the notice answers with an empty object for everything it cannot decide", async (t) => {
+test("the notice answers with an empty object for everything it cannot decide", needsRuby, async (t) => {
   const dir = await railsish(t);
   const spec = join(dir, "spec/mailers/cim_share_mailer_spec.rb");
 
@@ -781,7 +788,7 @@ test("a repository nobody has scanned is answered with an empty object by both h
 /** A linked worktree of a checkout, which carries none of its untracked `.claude/`. */
 const worktreeOf = (t, dir) => addWorktree(dir, join(scratch(t), "wt"));
 
-test("a linked worktree with no map of its own is answered from its main checkout, and says so", async (t) => {
+test("a linked worktree with no map of its own is answered from its main checkout, and says so", needsRuby, async (t) => {
   // Measured on a front end whose `.claude/` is git-ignored: every linked
   // worktree had no map, so both hooks answered `{}` there, and the sessions
   // doing the work in one wrote tests into `__tests__` directories the map
@@ -800,7 +807,7 @@ test("a linked worktree with no map of its own is answered from its main checkou
   assert.doesNotMatch(echoed, /Counted from this repository's own code/);
 });
 
-test("a borrowed layout is judged against the worktree's own files, not the main checkout's", async (t) => {
+test("a borrowed layout is judged against the worktree's own files, not the main checkout's", needsRuby, async (t) => {
   // The counts come from the main checkout; what sits on disk is this branch's.
   // A spec this worktree already holds is precedent here, and one only the main
   // checkout holds is not.
@@ -816,7 +823,7 @@ test("a borrowed layout is judged against the worktree's own files, not the main
   assert.deepEqual(runNotice(wt, write(wt, "spec/mailers/cim_share_mailer_spec.rb")), {});
 });
 
-test("the end-of-turn check reads a worktree's own change against its main checkout's record", async (t) => {
+test("the end-of-turn check reads a worktree's own change against its main checkout's record", needsRuby, async (t) => {
   // The third hook gates on the same record, so a worktree used to end every
   // turn unchecked. The change it asks about is the worktree's, never one
   // sitting in the main checkout.
@@ -834,7 +841,7 @@ test("the end-of-turn check reads a worktree's own change against its main check
   assert.doesNotMatch(out.reason, /app\/services\/g\.rb/);
 });
 
-test("a worktree that was scanned answers with its own map, not its main checkout's", async (t) => {
+test("a worktree that was scanned answers with its own map, not its main checkout's", needsRuby, async (t) => {
   const dir = await railsish(t);
   const wt = worktreeOf(t, dir);
   await runScan(wt, {});
@@ -845,7 +852,7 @@ test("a worktree that was scanned answers with its own map, not its main checkou
   assert.doesNotMatch(runNotice(wt, write(wt, "spec/mailers/cim_share_mailer_spec.rb")).hookSpecificOutput.additionalContext, /main checkout/);
 });
 
-test("both hooks answer a payload when this process has no working directory", async (t) => {
+test("both hooks answer a payload when this process has no working directory", needsRuby, async (t) => {
   // `process.cwd()` refuses with ENOENT once the directory a session started in
   // is unlinked, which `git worktree remove` does under a session sitting in
   // one. The entry point hands that value in, so the base has to be allowed to
@@ -875,7 +882,7 @@ test("a payload that names no place, with no working directory either, is silenc
   assert.deepEqual(runNotice(undefined, { hook_event_name: "PreToolUse", tool_name: "Write", tool_input: { file_path: "spec/x_spec.rb" } }), {});
 });
 
-test("the echo hands back the map it was asked for, and nothing without an event", async (t) => {
+test("the echo hands back the map it was asked for, and nothing without an event", needsRuby, async (t) => {
   const dir = await railsish(t);
 
   assert.deepEqual(runEcho(dir, {}), {}, "no event name");
@@ -884,7 +891,7 @@ test("the echo hands back the map it was asked for, and nothing without an event
   assert.match(out.hookSpecificOutput.additionalContext, /<repository-map delivered="/);
 });
 
-test("the echo says nothing when this context window already holds the same map", async (t) => {
+test("the echo says nothing when this context window already holds the same map", needsRuby, async (t) => {
   const dir = await railsish(t);
   const first = runEcho(dir, { hook_event_name: "PostToolUse" }).hookSpecificOutput.additionalContext;
   const path = transcript(t, [{ type: "user", message: { content: "go" } }, delivered(first)]);
@@ -892,7 +899,7 @@ test("the echo says nothing when this context window already holds the same map"
   assert.deepEqual(runEcho(dir, { hook_event_name: "PostToolUse", transcript_path: path }), {});
 });
 
-test("the echo delivers again once a compaction follows the last delivery", async (t) => {
+test("the echo delivers again once a compaction follows the last delivery", needsRuby, async (t) => {
   const dir = await railsish(t);
   const first = runEcho(dir, { hook_event_name: "PostToolUse" }).hookSpecificOutput.additionalContext;
   const path = transcript(t, [delivered(first), compact()]);
@@ -900,7 +907,7 @@ test("the echo delivers again once a compaction follows the last delivery", asyn
   assert.match(runEcho(dir, { hook_event_name: "PostToolUse", transcript_path: path }).hookSpecificOutput.additionalContext, /<repository-map /);
 });
 
-test("the echo delivers a map that differs from the one the window holds", async (t) => {
+test("the echo delivers a map that differs from the one the window holds", needsRuby, async (t) => {
   const dir = await railsish(t);
   const older = runEcho(dir, { hook_event_name: "PostToolUse" }).hookSpecificOutput.additionalContext.replace(/digest="[0-9a-f]{12}"/, `digest="${"0".repeat(12)}"`);
   const path = transcript(t, [delivered(older)]);
@@ -908,7 +915,7 @@ test("the echo delivers a map that differs from the one the window holds", async
   assert.match(runEcho(dir, { hook_event_name: "PostToolUse", transcript_path: path }).hookSpecificOutput.additionalContext, /<repository-map /);
 });
 
-test("the echo holds a delivery 200 KiB back and delivers again past 256 KiB", async (t) => {
+test("the echo holds a delivery 200 KiB back and delivers again past 256 KiB", needsRuby, async (t) => {
   const dir = await railsish(t);
   const first = runEcho(dir, { hook_event_name: "PostToolUse" }).hookSpecificOutput.additionalContext;
   const after = (bytes) => transcript(t, [delivered(first), filler(bytes)]);
@@ -917,7 +924,7 @@ test("the echo holds a delivery 200 KiB back and delivers again past 256 KiB", a
   assert.match(runEcho(dir, { hook_event_name: "PostToolUse", transcript_path: after(256 * 1024) }).hookSpecificOutput.additionalContext, /<repository-map /);
 });
 
-test("a re-scan that changes the map on disk is delivered on the next call", async (t) => {
+test("a re-scan that changes the map on disk is delivered on the next call", needsRuby, async (t) => {
   const dir = await railsish(t);
   const first = runEcho(dir, { hook_event_name: "PostToolUse" }).hookSpecificOutput.additionalContext;
   const path = transcript(t, [delivered(first)]);
@@ -927,7 +934,7 @@ test("a re-scan that changes the map on disk is delivered on the next call", asy
   assert.match(runEcho(dir, { hook_event_name: "PostToolUse", transcript_path: path }).hookSpecificOutput.additionalContext, /One more line/);
 });
 
-test("the echo delivers when the transcript names nothing it can read, and ignores a copy that is not its own delivery", async (t) => {
+test("the echo delivers when the transcript names nothing it can read, and ignores a copy that is not its own delivery", needsRuby, async (t) => {
   const dir = await railsish(t);
   const first = runEcho(dir, { hook_event_name: "PostToolUse" }).hookSpecificOutput.additionalContext;
   const quoted = { type: "user", message: { content: [{ type: "tool_result", content: first }] } };
@@ -939,7 +946,7 @@ test("the echo delivers when the transcript names nothing it can read, and ignor
   assert.match(runEcho(dir, { hook_event_name: "PostToolUse", transcript_path: path }).hookSpecificOutput.additionalContext, /<repository-map /, "a tool result quoting the map is not a delivery");
 });
 
-test("a subagent's echo is answered from its own transcript, never from the session's", async (t) => {
+test("a subagent's echo is answered from its own transcript, never from the session's", needsRuby, async (t) => {
   const dir = await railsish(t);
   const first = runEcho(dir, { hook_event_name: "PostToolUse" }).hookSpecificOutput.additionalContext;
   const session = transcript(t, [delivered(first)]);
@@ -959,7 +966,7 @@ test("a subagent's echo is answered from its own transcript, never from the sess
   );
 });
 
-test("a workflow stage's echo is answered from its transcript under the workflow's run", async (t) => {
+test("a workflow stage's echo is answered from its transcript under the workflow's run", needsRuby, async (t) => {
   const dir = await railsish(t);
   const first = runEcho(dir, { hook_event_name: "PostToolUse" }).hookSpecificOutput.additionalContext;
   const session = transcript(t, []);
@@ -972,7 +979,7 @@ test("a workflow stage's echo is answered from its transcript under the workflow
   assert.deepEqual(runEcho(dir, stage), {});
 });
 
-test("a subagent's window is found whatever case the session transcript's extension is in", async (t) => {
+test("a subagent's window is found whatever case the session transcript's extension is in", needsRuby, async (t) => {
   const dir = await railsish(t);
   const first = runEcho(dir, { hook_event_name: "PostToolUse" }).hookSpecificOutput.additionalContext;
   const session = transcript(t, []).replace(/\.jsonl$/, ".JSONL");
@@ -983,7 +990,7 @@ test("a subagent's window is found whatever case the session transcript's extens
   assert.deepEqual(runEcho(dir, { hook_event_name: "PostToolUse", transcript_path: session, agent_id: "b1c2" }), {});
 });
 
-test("the echo holds a delivery made after a compaction, and reads a null agent_id as the main thread", async (t) => {
+test("the echo holds a delivery made after a compaction, and reads a null agent_id as the main thread", needsRuby, async (t) => {
   const dir = await railsish(t);
   const first = runEcho(dir, { hook_event_name: "PostToolUse" }).hookSpecificOutput.additionalContext;
   const path = transcript(t, [compact(), delivered(first)]);
@@ -992,7 +999,7 @@ test("the echo holds a delivery made after a compaction, and reads a null agent_
   assert.deepEqual(runEcho(dir, { hook_event_name: "PostToolUse", transcript_path: path, agent_id: null }), {});
 });
 
-test("a rewrite that changes only the frontmatter is not a new map", async (t) => {
+test("a rewrite that changes only the frontmatter is not a new map", needsRuby, async (t) => {
   const dir = await railsish(t);
   const first = runEcho(dir, { hook_event_name: "PostToolUse" }).hookSpecificOutput.additionalContext;
   const path = transcript(t, [delivered(first)]);
