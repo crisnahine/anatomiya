@@ -7,6 +7,7 @@
  * older record was copied into two modules, and the reader never looked at the
  * version at all.
  */
+import { randomBytes } from "node:crypto";
 import { mkdirSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 
@@ -301,8 +302,14 @@ function withOlderFields(parsed) {
  * directory it had already created.
  */
 export function atomic(path, body) {
-  const tmp = `${path}.tmp-${process.pid}`;
-  writeFileSync(tmp, body);
+  // Unpredictable, and created exclusively: `wx` is O_CREAT|O_EXCL, which
+  // refuses any entry already there, a planted link included, and never follows
+  // one. The name was `<path>.tmp-<pid>`, opened with a plain write, so a
+  // repository shipping that name as a tracked symlink had the map's bytes
+  // written wherever it pointed. The directories were resolved (F2); this
+  // leaf was not. `rename` then replaces the destination entry itself.
+  const tmp = `${path}.tmp-${process.pid}-${randomBytes(8).toString("hex")}`;
+  writeFileSync(tmp, body, { flag: "wx" });
   try {
     renameSync(tmp, path);
   } catch (err) {

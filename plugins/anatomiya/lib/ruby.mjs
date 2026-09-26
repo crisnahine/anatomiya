@@ -451,6 +451,11 @@ function take(out, seen, line, dimensions, attempt) {
   }
   if (msg && msg.fatal) {
     out.error = String(msg.fatal);
+    // The script refuses before it reads a file, and only over the library it
+    // loaded: every Ruby file at once, which is an install to fix rather than a
+    // repository full of files that crash. The same flag an absent interpreter
+    // sets, so the scan and the check name the remedy instead of exiting 0.
+    out.missingParser = out.error;
     return;
   }
   if (!msg || typeof msg.rel !== "string") return;

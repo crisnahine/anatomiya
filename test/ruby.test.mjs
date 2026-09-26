@@ -98,6 +98,31 @@ esac
   assert.equal(out.version, "1.9.0");
 });
 
+test("a prism too old to read is a missing parser, never a repository of crashed files", needsShebang, async (t) => {
+  // The child refuses a 0.x prism with a fatal line before reading any file.
+  // Charged per file, that read as "every Ruby file crashed the parser" with
+  // exit 0 and no remedy, and withheld the whole map; the scan and the check
+  // name the remedy only for a missing parser.
+  const bin = mkdtempSync(join(tmpdir(), "anatomiya-ruby-old-"));
+  t.after(() => rmSync(bin, { recursive: true, force: true }));
+  writeFileSync(
+    join(bin, "ruby"),
+    `#!/bin/sh
+case "$*" in *Gem::Specification*) printf '[]'; exit 0 ;; esac
+cat >/dev/null
+printf '{"ready":true,"prism":"0.19.0"}\\n{"fatal":"prism 0.19.0 predates the field names this reads"}\\n'
+exit 1
+`,
+    { mode: 0o755 }
+  );
+  const file = join(bin, "a.rb");
+  writeFileSync(file, "class A\nend\n");
+
+  const out = await parseRuby([{ rel: "a.rb", abs: file }], { ruby: join(bin, "ruby") });
+
+  assert.match(String(out.missingParser), /prism 0\.19\.0 predates/);
+});
+
 test("a mistyped size override refuses loudly instead of dying inside the child", async () => {
   // Ungated: the refusal happens before any interpreter is spawned. `null` is
   // the sharp half, because `Number(null)` is a finite zero and interpolated
