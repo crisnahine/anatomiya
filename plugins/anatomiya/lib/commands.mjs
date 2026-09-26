@@ -8,7 +8,7 @@ import { writeMap } from "./write.mjs";
 import { check } from "./check.mjs";
 import { collect, gitRoot } from "./corpus.mjs";
 import { discover } from "./areas.mjs";
-import { buildPin, loadPin, writePin, pinDelta, PIN_PATH } from "./baseline.mjs";
+import { buildPin, loadPin, writePin, pinDelta, pinTarget, PIN_PATH } from "./baseline.mjs";
 import { headSha } from "./git.mjs";
 import { NODE_PROBE_IDS, PROBE_IDS, installProblem, pluginRoot, probeName, readiness, readinessLines, remedyFor } from "./readiness.mjs";
 import { pinSummary, scanSummary } from "./summary.mjs";
@@ -152,6 +152,9 @@ export async function runPin(cwd, { dryRun = false } = {}) {
   const root = await gitRoot(cwd);
   const sha = await headSha(root);
   if (!sha) throw new Error("no commit to pin: this repository has no HEAD");
+  // Refused by the half that plans, so a dry run cannot answer with a clean
+  // delta for a write that would land outside the repository.
+  pinTarget(root);
 
   const { files, truncated } = await collect(root);
   // No repository size truncates the corpus any more, so this cannot fire from

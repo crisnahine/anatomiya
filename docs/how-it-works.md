@@ -801,8 +801,11 @@ link, so lexical containment is not containment: a tracked `.claude -> ../victim
 and so present in every clone, had the map and `facts.json` written into a directory the repository
 does not own, that directory's filenames named in the always-loaded overview, and one of its
 `anatomiya-*.md` files removed by the next scan. One link at `.claude` escapes with both
-directories, so both are checked. The scan fails closed; the check reports it as a caveat, because
-refusing a branch at review time is the blocking behaviour this design rejects.
+directories, so both are checked. The pin is held to the same rule on both sides: `pin` refuses a
+store that resolves outside, a dry run included, and a pin read through such a link is no pin, so a
+directory the repository does not own never decides the population the gates read. The scan fails
+closed; the check reports it as a caveat, because refusing a branch at review time is the blocking
+behaviour this design rejects.
 
 Files in there are read by their head, one megabyte at most, and only when the opened handle is a
 regular file. The ownership test is a regex anchored at byte zero, so the rest was never the

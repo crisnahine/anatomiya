@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { needsPosixPaths, needsPosixSpecialFiles } from "./platform.mjs";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, rmSync, existsSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync, spawnSync } from "node:child_process";
@@ -296,6 +296,48 @@ test("a pin file that will not load drops to counts-only, never to a smaller pop
     assert.equal(state.countsOnly, true);
     assert.equal(baselinePopulation(state, area("src/a", ["src/a/x.ts"])).directive, false);
   }
+});
+
+test("a .claude symlinked outside the repository refuses the pin write", async (t) => {
+  // F2 for the pin. The scan and the facts record resolve their directory
+  // component by component, and the pin joined it: a tracked
+  // `.claude -> ../victim` (git mode 120000, so it survives a clone) had
+  // `anatomiya pin` write baseline.json into a directory the repository does
+  // not own.
+  let sha;
+  const dir = repo(t, (d, { write, commit }) => {
+    write("src/a/x.ts", CONFORMING);
+    sha = commit("init");
+  });
+  const outside = mkdtempSync(join(tmpdir(), "anatomiya-outside-"));
+  t.after(() => rmSync(outside, { recursive: true, force: true }));
+  symlinkSync(outside, join(dir, ".claude"));
+
+  const pin = buildPin([area("src/a", ["src/a/x.ts"])], { sha });
+  assert.throws(() => writePin(dir, pin), /outside the repository/);
+  assert.deepEqual(readdirSync(outside), [], "nothing was written through the link");
+});
+
+test("a pin read through a .claude symlinked outside the repository is no pin", async (t) => {
+  // The read side of the same rule. The pin decides which population every gate
+  // reads, so a record sitting in a directory the repository does not own must
+  // not get to decide what the branch is judged against. Counts-only, the same
+  // answer an unreadable pin gets.
+  let sha;
+  const dir = repo(t, (d, { write, commit }) => {
+    write("src/a/x.ts", CONFORMING);
+    sha = commit("init");
+  });
+  const outside = mkdtempSync(join(tmpdir(), "anatomiya-outside-"));
+  t.after(() => rmSync(outside, { recursive: true, force: true }));
+  const planted = buildPin([area("src/a", ["src/a/x.ts"])], { sha });
+  mkdirSync(join(outside, "anatomiya"), { recursive: true });
+  writeFileSync(join(outside, "anatomiya", "baseline.json"), JSON.stringify(planted));
+  symlinkSync(outside, join(dir, ".claude"));
+
+  assert.equal(loadPin(dir), null);
+  const state = await resolve(dir, { baseRef: "main" });
+  assert.equal(state.status, "unpinned");
 });
 
 test("a sha reaching a git argument is validated as a sha", () => {
