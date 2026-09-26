@@ -905,6 +905,44 @@ test("every asset format is still imported by its full name and is not a site", 
   assert.equal(hits("import_extension", `import s from "./Button.module.scss"`).length, 0, "the last suffix decides");
 });
 
+/* --- a decorated signature's types are emitted as values --- */
+
+test("a type the decorator metadata emits is a value read, so its import is not type-only", () => {
+  // Under emitDecoratorMetadata the compiler writes a decorated constructor's
+  // parameter types into `design:paramtypes` as values, and a decorated
+  // member's into `design:type` and `design:returntype`. With `import type`
+  // that emit becomes `Object` and Nest cannot resolve the dependency, so the
+  // check's FIX compiled cleanly and failed only at runtime, and the map named
+  // the correct DI imports as the directory's exceptions.
+  for (const src of [
+    `import { Repo } from "./r";\n@Injectable()\nexport class S { constructor(private readonly repo: Repo) {} }`,
+    `import { Repo } from "./r";\nexport class S { constructor(@Inject(T) repo: Repo) {} }`,
+    `import { Repo } from "./r";\n@Injectable()\nexport class S { constructor(repo: Repo | null) {} }`,
+    `import { Name } from "./n";\nexport class E { @Column() name: Name }`,
+    `import { Id } from "./i";\nexport class C { @Get() find(id: Id) {} }`,
+    `import { Out } from "./o";\nexport class C { @Get() find(): Out { return null as any } }`,
+    `import { G } from "./g";\nexport class C { @Dec() get g(): G { return null as any } }`,
+    `import * as ns from "./ns";\n@Injectable()\nexport class S { constructor(q: ns.Q) {} }`,
+  ]) {
+    assert.equal(hits("type_only_import", src).length, 0, src);
+  }
+});
+
+test("a type the decorator metadata does not emit is still a site", () => {
+  // Only the serialised reference is emitted: a generic's argument, an array's
+  // element and a union of two types become `Promise`, `Array` and `Object`,
+  // and an undecorated class or member emits nothing at all.
+  for (const src of [
+    `import { Out } from "./o";\nexport class C { @Get() find(): Promise<Out> { return null as any } }`,
+    `import { Item } from "./i";\n@Injectable()\nexport class S { constructor(items: Item[]) {} }`,
+    `import { A } from "./a";\n@Injectable()\nexport class S { constructor(x: A | string) {} }`,
+    `import { Repo } from "./r";\nexport class S { constructor(repo: Repo) {} }`,
+    `import { Repo } from "./r";\nexport class S { @Get() find() {} helper(repo: Repo) {} }`,
+  ]) {
+    assert.deepEqual(counts("type_only_import", src), { candidates: 1, conforming: 0 }, src);
+  }
+});
+
 test("a TypeScript module extension is carried as much as a JavaScript one", () => {
   // Once an unknown suffix counts, `.mts` and `.cts` would read as extensionless
   // unless the row knows them for the source extensions they are.
