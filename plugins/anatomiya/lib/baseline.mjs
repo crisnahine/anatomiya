@@ -297,6 +297,7 @@ export async function resolve(root, { pin = loadPin(root), baseRef = null } = {}
   // the base moved it and its bytes there differ from the pin's, which is both
   // ranges at once.
   const moved = base.ok ? await driftRange(root, pin.sha, base.sha) : null;
+  const sinceFork = await laterOnBase(root, pin);
 
   return state({
     status: "ok",
@@ -308,7 +309,30 @@ export async function resolve(root, { pin = loadPin(root), baseRef = null } = {}
     baseRefReason: base.ok ? null : base.reason,
     renames: identity ? identity.renames : new Map(),
     drift: moved ? driftIn(areas, moved.changed) : null,
+    sinceFork,
   });
+}
+
+/**
+ * Pinned paths this branch never held: the base added them after the commit
+ * the branch and the pin share.
+ *
+ * The pin follows the default branch, so a feature branch cut before it sits
+ * behind it, and every file the base added since is absent at HEAD without the
+ * branch having removed anything. Read as missing, each one closed its whole
+ * area as a population change on a branch that deleted nothing. A path the
+ * branch did hold at the fork and no longer holds is still missing. Empty when
+ * the pin is in HEAD's history, and when git will not say, which is the
+ * direction that suppresses rather than states.
+ */
+async function laterOnBase(root, pin) {
+  const fork = await mergeBase(root, pin.sha, "HEAD");
+  if (!fork.found || fork.sha === pin.sha) return new Set();
+  const atFork = await filesAt(root, fork.sha);
+  if (!atFork) return new Set();
+  const later = new Set();
+  for (const a of pin.areas) for (const rel of a.files) if (!atFork.has(rel)) later.add(rel);
+  return later;
 }
 
 /** The paths the base moved since the pin and the shared commit both, or null. */
@@ -337,6 +361,7 @@ function state(o) {
     baseRefReason: o.baseRefReason ?? null,
     renames: o.renames ?? new Map(),
     drift: o.drift ?? null,
+    sinceFork: o.sinceFork ?? new Set(),
   };
 }
 
@@ -370,7 +395,9 @@ function driftIn(areas, changed) {
  *                       directories are where agents write most, and there the
  *                       baseline would be the agent's own output at 100%.
  *   population-change   a pinned file is no longer in this area (E1). Reported,
- *                       and suppressed until a human re-pins.
+ *                       and suppressed until the pin moves. A file the base
+ *                       added after this branch forked was never in it, and is
+ *                       not counted as gone.
  */
 export function baselinePopulation(state, area) {
   if (state.countsOnly) {
@@ -394,7 +421,9 @@ export function baselinePopulation(state, area) {
     };
   }
 
-  const missing = [...matched.files].filter((p) => !currentByBaselinePath.has(p)).sort();
+  const missing = [...matched.files]
+    .filter((p) => !currentByBaselinePath.has(p) && !state.sinceFork.has(p))
+    .sort();
   const added = [...currentByBaselinePath]
     .filter(([baselinePath]) => !matched.files.has(baselinePath))
     .map(([, current]) => current)
