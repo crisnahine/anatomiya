@@ -651,7 +651,24 @@ test("the echo says the code outranks it, because a stale map is the failure it 
   const dir = mapped(t);
   const out = echoContext(dir, {});
   assert.match(out, /the code is right and the map is stale/);
-  assert.match(out, /anatomiya scan/);
+});
+
+test("the remedy the echo names is a command this plugin ships", (t) => {
+  // It is the one thing a model reading a stale map is told to do. Measured
+  // before this: every echo said to run `anatomiya scan .`, which nothing
+  // installs, so following it ended in "command not found", and a model can
+  // read that as the tool not being installed at all.
+  const dir = committed(t);
+  const wt = addWorktree(dir, join(dir, ".claude", "worktrees", "w"));
+
+  for (const [what, out] of [["its own map", echoContext(dir, {})], ["a borrowed map", echoContext(wt, {})]]) {
+    const commands = [...out.matchAll(/`\/anatomiya:([\w-]+)`/g)].map((m) => m[1]);
+    assert.ok(commands.length > 0, `${what} names a command: ${out}`);
+    for (const name of commands) {
+      assert.ok(existsSync(join(ANATOMIYA, "commands", `${name}.md`)), `${what}: /anatomiya:${name}`);
+    }
+    assert.doesNotMatch(out, /`anatomiya /, `${what} names no binary that is not installed`);
+  }
 });
 
 // --- what it writes ----------------------------------------------------------
