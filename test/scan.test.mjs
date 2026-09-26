@@ -739,8 +739,10 @@ test("a degraded checker suppresses its own claims across a real scan", async (t
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
   mkdirSync(join(dir, "src"), { recursive: true });
-  // No tsconfig, so the tier is degraded by rule, and chains the checker could
-  // not resolve either way.
+  // A tsconfig that does not parse, so the tier is degraded by rule whatever
+  // resolved. A missing one no longer is: the checker runs on its defaults
+  // there and the rate decides.
+  writeFileSync(join(dir, "tsconfig.json"), "{ this is not json");
   for (let i = 0; i < 14; i++) {
     writeFileSync(
       join(dir, "src", `f${i}.ts`),
