@@ -108,7 +108,7 @@ function isBoundary(at) {
  */
 function ownMap(from) {
   const hit = walkUp(from, (at) => readOwned(join(at, RULES_DIR, OVERVIEW_FILE)));
-  return hit && { map: hit.found, from: hit.from };
+  return hit && { map: hit.found, root: hit.at, from: hit.from };
 }
 
 /**
@@ -459,11 +459,15 @@ export function echoContext(root, { now = new Date(), transcript = null } = {}) 
 
   // The remedy is the plugin's own command, which is the one spelling a model
   // can run: the binary is `anatomiya.mjs` under a directory only the plugin
-  // loader knows, and a bare `anatomiya` is on nobody's PATH.
+  // loader knows, and a bare `anatomiya` is on nobody's PATH. Both stamps name
+  // where the counts came from, because a call about another checkout's file
+  // is answered from that checkout's map (H40), and a session holding two
+  // maps that each said only "this repository" could not tell them apart. The
+  // digest stays the body's: two maps with one body state the same things.
   const stamp =
     found.from === null
       ? [
-          "Counted from this repository's own code and re-read just now.",
+          `Counted from this repository's own code at ${found.root} and re-read just now.`,
           "Where this and the code disagree, the code is right and the map is stale:",
           "run `/anatomiya:scan` rather than believing this.",
         ]

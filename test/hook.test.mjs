@@ -297,6 +297,20 @@ test("the echoed map is stamped with the moment it was read", (t) => {
   assert.match(out, /digest="b8a8e138c072"/);
 });
 
+test("the echoed map names the checkout it was counted from", (t) => {
+  // A call about a file in another checkout is answered from that checkout's
+  // map, on purpose (H40), so one session can hold two. Measured before this:
+  // both stamps said "this repository's own code" and nothing else, so the
+  // model could not tell which conventions were about which code.
+  const dir = mapped(t);
+  mkdirSync(join(dir, "src"));
+
+  for (const at of [dir, join(dir, "src")]) {
+    const out = echoContext(at, {});
+    assert.ok(out.includes(`Counted from this repository's own code at ${realpathSync.native(dir)} and re-read just now.`), out);
+  }
+});
+
 test("the map is found from anywhere inside the repository, not only from its root", (t) => {
   // A hook fires with the session's own working directory, which is wherever
   // the model happens to be, and the map is written once at the root. Joining
