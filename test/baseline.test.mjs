@@ -340,6 +340,50 @@ test("a pin read through a .claude symlinked outside the repository is no pin", 
   assert.equal(state.status, "unpinned");
 });
 
+test("a branch forked before the pin does not read the base's later files as missing", async (t) => {
+  // The pin follows the default branch, so a feature branch cut before it
+  // never held the files the base added since. Counting them as gone closed
+  // every area the base touched, on a branch that deleted nothing.
+  let pinSha;
+  const dir = repo(t, (d, { git, write, commit }) => {
+    for (const n of ["a", "b", "c", "d"]) write(`src/a/${n}.ts`, CONFORMING);
+    commit("fork point");
+    git("branch", "feature");
+    write("src/a/e.ts", CONFORMING);
+    pinSha = commit("the base moves on");
+    git("checkout", "-q", "feature");
+  });
+  writePin(dir, buildPin([area("src/a", ["src/a/a.ts", "src/a/b.ts", "src/a/c.ts", "src/a/d.ts", "src/a/e.ts"])], { sha: pinSha }));
+
+  const state = await resolve(dir, { baseRef: "main" });
+  const population = baselinePopulation(state, area("src/a", ["src/a/a.ts", "src/a/b.ts", "src/a/c.ts", "src/a/d.ts"]));
+
+  assert.deepEqual(population.missing, []);
+  assert.equal(population.status, "ok");
+  assert.equal(population.directive, true);
+});
+
+test("a file the branch itself deleted is still missing, fork or no fork", async (t) => {
+  let pinSha;
+  const dir = repo(t, (d, { git, write, commit }) => {
+    for (const n of ["a", "b", "c", "d"]) write(`src/a/${n}.ts`, CONFORMING);
+    commit("fork point");
+    git("branch", "feature");
+    write("src/a/e.ts", CONFORMING);
+    pinSha = commit("the base moves on");
+    git("checkout", "-q", "feature");
+    git("rm", "-q", "src/a/d.ts");
+    commit("the branch deletes one");
+  });
+  writePin(dir, buildPin([area("src/a", ["src/a/a.ts", "src/a/b.ts", "src/a/c.ts", "src/a/d.ts", "src/a/e.ts"])], { sha: pinSha }));
+
+  const state = await resolve(dir, { baseRef: "main" });
+  const population = baselinePopulation(state, area("src/a", ["src/a/a.ts", "src/a/b.ts", "src/a/c.ts"]));
+
+  assert.deepEqual(population.missing, ["src/a/d.ts"]);
+  assert.equal(population.status, "population-change");
+});
+
 test("a sha reaching a git argument is validated as a sha", () => {
   for (const bad of ["", "HEAD", "main", "-", "--upload-pack=touch", "a".repeat(41), "A".repeat(40), null, 40]) {
     assert.equal(isSha(bad), false, String(bad));
