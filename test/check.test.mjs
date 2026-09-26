@@ -1767,6 +1767,25 @@ test("a file renamed but not committed is judged against its old path", async (t
   );
 });
 
+test("a move not yet committed is still a move where the user's config turns rename detection off", async (t) => {
+  // `diff.renames=false` is a known speed setting for large repositories, and
+  // `status` follows it: the move listed as a deletion and an addition, and
+  // the three sites that came with the file were charged to whoever moved it.
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/legacy.ts", swallow(3));
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    git("config", "diff.renames", "false");
+    git("mv", "src/legacy.ts", "src/moved.ts");
+  });
+  facts(dir, { sha: sha(dir, "main") });
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assertExamined(r, "src/moved.ts");
+  assert.deepEqual(forKey(r, "swallowed_error"), [], JSON.stringify(r.findings));
+});
+
 // `--porcelain` defaults to `-unormal`, which collapses an untracked directory
 // to one entry ending in `/`. That path is not source, so it was dropped, and
 // a new service directory checked before its first commit read clean.
