@@ -637,8 +637,15 @@ export const EXTRA_DIMENSIONS = [
       // in the order it is walked.
       const comments = [...(extra.comments || [])].sort((a, b) => b.end - a.end);
       const source = extra.source || "";
+      // A decorator list written above `export` belongs to the class, and the
+      // parser starts the export at the keyword after it, so measured from
+      // there the gap held `@Injectable()` and every documented NestJS or
+      // Angular class read as undocumented. TypeScript and JSDoc attach the
+      // comment above the decorators to the class, so the declaration begins at
+      // whichever comes first.
+      const top = (n) => Math.min(n.start, ...(n.declaration?.decorators || []).map((d) => d.start));
       const site = (n, name) =>
-        add({ node: n, conforming: attachedAbove(comments, n.start, source), where: name ?? null });
+        add({ node: n, conforming: attachedAbove(comments, top(n), source), where: name ?? null });
       walk(program, (n) => {
         if (n.type === "ExportNamedDeclaration" && n.declaration) {
           const d = n.declaration;
