@@ -9,7 +9,8 @@ import { check } from "./check.mjs";
 import { collect, gitRoot } from "./corpus.mjs";
 import { discover } from "./areas.mjs";
 import { buildPin, loadPin, writePin, pinDelta, pinTarget, PIN_PATH } from "./baseline.mjs";
-import { headSha } from "./git.mjs";
+import { gitBuffered, headSha } from "./git.mjs";
+import { firstLine } from "./encode.mjs";
 import { NODE_PROBE_IDS, PROBE_IDS, installProblem, pluginRoot, probeName, readiness, readinessLines, remedyFor } from "./readiness.mjs";
 import { pinSummary, scanSummary } from "./summary.mjs";
 import { aboutDir, echoContext, holdsTestIn, inCheckout, isPathTaken, ownLayout, removeStaleHook, targetIn, windowOf } from "./hook.mjs";
@@ -155,6 +156,18 @@ export async function runPin(cwd, { dryRun = false } = {}) {
   // Refused by the half that plans, so a dry run cannot answer with a clean
   // delta for a write that would land outside the repository.
   pinTarget(root);
+  // The pin records HEAD and the file list each area holds, and that list is
+  // read from the index and the working tree. A staged, edited, deleted or
+  // unmerged tracked file is listed against a commit that does not hold it,
+  // and every scan after reads that area as a population change for as long
+  // as the pin stands. This tool's own output under `.claude/` is left out: a
+  // repository that commits its map rewrites it on every scan, and it is never
+  // part of the population.
+  const dirty = await gitBuffered(root, ["status", "--porcelain", "--untracked-files=no", "-z", "--", ".", ":(exclude).claude"]);
+  if (!dirty.ok) throw new Error(`could not read whether the working tree matches HEAD: ${firstLine(dirty.error ?? "")}`);
+  if (dirty.stdout.length > 0) {
+    throw new Error("tracked files differ from HEAD, and a pin records HEAD: commit or stash them first, then pin");
+  }
 
   const { files, truncated } = await collect(root);
   // No repository size truncates the corpus any more, so this cannot fire from
