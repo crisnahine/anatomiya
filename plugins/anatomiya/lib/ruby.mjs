@@ -222,8 +222,13 @@ def conv(v)
   end
 end
 
+# No nesting cap. A node is one to three JSON levels, and the default of 100
+# charged a 98-branch elsif chain as a file that could not be parsed, though
+# prism found no error in it. conv runs out of stack near 2,000 levels, well
+# before the encoder would, and that is rescued as the file exhausting the
+# parser.
 def emit(h)
-  $stdout.write(JSON.generate(h))
+  $stdout.write(JSON.generate(h, max_nesting: false))
   $stdout.write("\\n")
 end
 
