@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { needsPosixPaths, needsShebang } from "./platform.mjs";
+import { needsPosixPaths, needsShebang, needsTmpdirVariable } from "./platform.mjs";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -283,6 +283,41 @@ test("a worker that dies before answering reports what it printed", async (t) =>
     assert.match(r.error, /nonsense-flag/, "the worker's own words reach the caller");
   } finally {
     await pool.close();
+  }
+});
+
+test("a worker that cannot be forked fails the pool with its reason, not an unhandled error", needsTmpdirVariable, async (t) => {
+  // A fork that never starts emits 'error' and never 'exit', and the pool
+  // listened for 'exit' only: a per-session TMPDIR that had been cleaned up
+  // took `scan` down with Node's own "Unhandled 'error' event" stack and exit
+  // 1, where a worker dying before it answers was already the one-line
+  // "parser worker will not start". EAGAIN at a process limit and EMFILE are
+  // the same event with a different code; a missing cwd is the one a test
+  // can reach.
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-nofork-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  writeFileSync(join(dir, "a.ts"), "export const x = 1\n");
+
+  const was = process.env.TMPDIR;
+  process.env.TMPDIR = join(dir, "gone");
+  try {
+    const pool = createPool({ size: 2 });
+    try {
+      const r = await pool.parse({ rel: "a.ts", abs: join(dir, "a.ts"), lang: "js" });
+      assert.equal(r.ok, false);
+      assert.match(r.error, /^parser worker will not start: .*ENOENT/);
+      // No parser ever answered, which is the crash A13 reads as a blind run.
+      // Charged as unreadable instead, the scan went on to write an overview
+      // of zero areas and remove every correct area file beside it.
+      assert.equal(r.crashed, true);
+      const later = await pool.parse({ rel: "a.ts", abs: join(dir, "a.ts"), lang: "js" });
+      assert.equal(later.crashed, true, "a file asked for after the pool broke is charged the same way");
+    } finally {
+      await pool.close();
+    }
+  } finally {
+    if (was === undefined) delete process.env.TMPDIR;
+    else process.env.TMPDIR = was;
   }
 });
 
