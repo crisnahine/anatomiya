@@ -3513,6 +3513,26 @@ test("a file that gains JSX on the branch does not have its whole base side skip
   );
 });
 
+test("a .ts file renamed to .tsx is parsed at the merge base as the .ts it was", async (t) => {
+  // The base was parsed under the head path's grammar, and a generic arrow is
+  // valid TypeScript and a syntax error in TSX: the whole file was skipped as
+  // one that "did not parse at the merge base", its new violation with it.
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/util.ts", `export const identity = <T>(x: T): T => x;\n` + clean(2));
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    git("mv", "src/util.ts", "src/util.tsx");
+    write("src/util.tsx", `export const identity = <T,>(x: T): T => x;\n` + clean(2) + swallow(1));
+    commit("to tsx");
+  });
+  facts(dir, { sha: sha(dir, "main") });
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assertExamined(r, "src/util.tsx");
+  assert.deepEqual(forKey(r, "swallowed_error").map((f) => [f.path, f.line]), [["src/util.tsx", 4]]);
+});
+
 test("the sentence the check quotes is the one the map printed", async (t) => {
   // The map names the kind a narrowed row was learned over. The check built its
   // own text from the registry template and quoted the unqualified sentence,
