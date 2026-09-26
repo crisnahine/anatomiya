@@ -33,7 +33,8 @@ Needs Node 22 or newer: on an older one `/anatomiya:doctor` names the version it
 other command refuses with the same sentence before it does any work. Ruby dimensions also want
 `ruby` on `PATH` with `prism` 1.x: Ruby 3.4 or newer ships it, and on an older Ruby (2.7 or newer)
 `gem install prism` adds it, which the parser then loads in place of the older default. That
-`ruby` is whichever answers first on `PATH`, started outside the repository and without the
+`ruby` is whichever answers first in `PATH`'s absolute directories (an empty or relative entry
+would resolve against the shared temp directory), started outside the repository and without the
 variables a version manager selects by, so a `.ruby-version` or `.tool-versions` in the repository,
 or a version `rbenv shell` chose, is not what picks it: an rbenv shim answers with its global Ruby.
 A version file is the repository's to write, and asdf reads a `path:` version in one as a directory

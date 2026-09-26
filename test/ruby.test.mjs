@@ -137,6 +137,43 @@ test("a version file in the repository chooses no interpreter: the listing, the 
   for (const at of starts) assert.equal(at, realpathSync(tmpdir()), `a Ruby child started in ${at}`);
 });
 
+test("a ruby planted in the temp directory never answers for an empty PATH entry", needsShebang, async (t) => {
+  // Measured with the common trailing-colon PATH on a machine with no ruby:
+  // the listing, the probe and the parser each ran a `ruby` another local
+  // user had left in /tmp, as the person scanning. An empty or relative PATH
+  // entry is resolved against the child's working directory, and every Ruby
+  // child starts in the temp directory, which anyone can write. The stub
+  // stands in for the planted one and logs that it ran.
+  const shared = mkdtempSync(join(tmpdir(), "anatomiya-ruby-shared-"));
+  t.after(() => rmSync(shared, { recursive: true, force: true }));
+  const log = join(shared, "planted-ran");
+  writeFileSync(join(shared, "ruby"), `#!/bin/sh\necho "$*" >> '${log}'\ncat >/dev/null\nexit 1\n`, { mode: 0o755 });
+  const empty = mkdtempSync(join(tmpdir(), "anatomiya-ruby-nobin-"));
+  t.after(() => rmSync(empty, { recursive: true, force: true }));
+  const file = join(empty, "a.rb");
+  writeFileSync(file, "class A\nend\n");
+  const saved = { PATH: process.env.PATH, TMPDIR: process.env.TMPDIR };
+  t.after(() => {
+    for (const [k, v] of Object.entries(saved)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+  });
+  process.env.TMPDIR = shared;
+  process.env.PATH = `${empty}:`;
+
+  const [row] = await readiness({ engines: ["prism"], env: { PATH: `${empty}:` } });
+  const out = await parseRuby([{ rel: "a.rb", abs: file }]);
+
+  let ran = "";
+  try {
+    ran = readFileSync(log, "utf8");
+  } catch {}
+  assert.equal(ran, "", `the planted ruby ran:\n${ran}`);
+  assert.equal(row.reason, "ruby is not on PATH");
+  assert.ok(out.missingParser, "and the parser says no interpreter answered");
+});
+
 test("a prism too old to read is a missing parser, never a repository of crashed files", needsShebang, async (t) => {
   // The child refuses a 0.x prism with a fatal line before reading any file.
   // Charged per file, that read as "every Ruby file crashed the parser" with

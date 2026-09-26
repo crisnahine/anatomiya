@@ -219,7 +219,10 @@ parsed as it arrives. Buffering it through `execFile` threw `RangeError: Invalid
 inside Node's own exit handler, with `maxBuffer` set far above the output size, and no error was
 attributable to any file. Paths arrive on stdin as NUL-delimited pairs, never in argv. The Ruby
 process runs with `--disable-gems` and with `RUBYOPT`, `RUBYLIB` and `GEM_HOME` dropped, because
-each of those can inject a `-r` into a process about to be pointed at repository files. The timeout
+each of those can inject a `-r` into a process about to be pointed at repository files. Its `PATH`
+keeps only absolute entries: the command is looked up on the child's own `PATH`, and an empty or
+relative entry resolves against its working directory, the temp directory, where another local
+user's `ruby` ran as the person scanning on a machine with a trailing colon and no Ruby. The timeout
 is 15s of **silence** rather than a whole-run limit, because a large repository legitimately runs
 for minutes and what a hung parse looks like is silence; behind it sits a wall clock sized to the
 number of files handed over, since a child that answers one file every fourteen seconds keeps the

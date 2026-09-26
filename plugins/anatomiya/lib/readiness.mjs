@@ -394,6 +394,13 @@ async function probeInterpreter(engine, { timeoutMs, env }) {
     return row(engine, { present: true, reason });
   }
   const version = stdout.trim();
+  // An answer holding no version says nothing about the library, and a missing
+  // version is never older than the floor: a `ruby` that printed nothing and
+  // exited 0 was reported ok, and the scan it cleared charged every file. A
+  // prerelease suffix is still a version, so only the leading number is asked.
+  if (!/^\d+(\.\d+)*/.test(version)) {
+    return row(engine, { present: true, reason: `${engine.command} answered no ${engine.id} version` });
+  }
   if (olderThan(version, engine.floor)) {
     return row(engine, {
       present: true,
