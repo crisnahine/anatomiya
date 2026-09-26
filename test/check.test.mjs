@@ -3766,6 +3766,27 @@ test("a claim the owning area's own globs never deliver here is capped", async (
   assert.match(found[0].reason, /which this directory sits inside/);
 });
 
+test("a file the area's globs miss by its type is capped for its type, not for a directory above it", async (t) => {
+  // The cap is right: the area file is never delivered to a `.tsx`. The reason
+  // said the file was "counted in src, which this directory sits inside" of a
+  // file sitting in src itself, and hid that the globs do not cover the type.
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/one.ts", clean(2));
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/view.tsx", swallow(1));
+    commit("add");
+  });
+  facts(dir, { sha: sha(dir, "main") });
+
+  const r = await check(dir, { baseRef: "main" });
+  const found = forKey(r, "swallowed_error");
+
+  assert.deepEqual(found.map((f) => [f.severity, f.reason]), [
+    ["FIX", "the area file for src does not reach .tsx files, so this claim was never delivered here"],
+  ]);
+});
+
 test("an obligation is capped on a path the area's globs never deliver to, like every other finding", async (t) => {
   // The cap reached the tree rows and the filename rows and not the third
   // producer, so one file could draw a FIX for its name and a MUST-FIX for its

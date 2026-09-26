@@ -852,7 +852,8 @@ async function collect(root, { examined, areas, base, mode, added, fresh, caveat
                 { dim, fresh, dropped: area ? droppedIn.get(area.path)?.has(f.dimension) === true : false }
               ),
               away,
-              area
+              area,
+              path
             );
         findings.push({
           severity: verdict.severity,
@@ -956,7 +957,8 @@ async function addPairingFindings(root, findings, { examined, areas, fresh, cave
           { dim, fresh, dropped: area ? droppedIn?.get(area.path)?.has(pairing.key) === true : false }
         ),
         area && !globsReach(area.globs, path),
-        area
+        area,
+        path
       );
       findings.push({
         severity: verdict.severity,
@@ -989,9 +991,18 @@ const CORPUS_ROWS = rowsOfKind("corpus");
  * every other verdict left alone. MUST-FIX means the map told this file's
  * author and they are the first to break it; here the map did not tell.
  */
-function cappedAway(verdict, away, area) {
+function cappedAway(verdict, away, area, path) {
   if (!away || verdict.severity !== "MUST-FIX") return verdict;
-  return { severity: "FIX", reason: `counted in ${area.path}, which this directory sits inside` };
+  // Which of the two the globs missed, asked by moving the file's own name up
+  // to the area's directory: reached there, the directory is what they do not
+  // cover; missed there too, the name is. One sentence for both told a `.tsx`
+  // sitting in the area's own directory that it sat inside that directory.
+  const name = path.slice(path.lastIndexOf("/") + 1);
+  if (globsReach(area.globs, area.path === "." ? name : `${area.path}/${name}`)) {
+    return { severity: "FIX", reason: `counted in ${area.path}, which this directory sits inside` };
+  }
+  const type = name.lastIndexOf(".") > 0 ? `${name.slice(name.lastIndexOf("."))} files` : name;
+  return { severity: "FIX", reason: `the area file for ${area.path} does not reach ${type}, so this claim was never delivered here` };
 }
 
 /**
@@ -1039,7 +1050,7 @@ function filenameFinding(row, job, area, fresh, { dropped = false, facets = null
   const away = !from && !globsReach(area.globs, path);
   const verdict = from
     ? { severity: "FIX", reason: `counted in ${from}, which this directory sits inside` }
-    : cappedAway(severityFor({ path, oldPath }, { dim: nameDim, fresh, dropped }), away, area);
+    : cappedAway(severityFor({ path, oldPath }, { dim: nameDim, fresh, dropped }), away, area, path);
   return {
     severity: verdict.severity,
     reason: verdict.reason,
