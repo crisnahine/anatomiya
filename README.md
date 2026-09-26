@@ -39,8 +39,10 @@ or a version `rbenv shell` chose, is not what picks it: an rbenv shim answers wi
 A version file is the repository's to write, and asdf reads a `path:` version in one as a directory
 to run the interpreter out of, so letting it choose would let the repository run a binary of its
 own. To parse with another Ruby, make it the global one or put its `bin` first on `PATH`;
-`/anatomiya:doctor` reports the prism the chosen one holds. Linux, macOS and Windows run the suite
-and an end-to-end scan, pin and check on every commit.
+`/anatomiya:doctor` reports the prism the chosen one holds. Without one, the Ruby files go uncounted
+and every other language is still mapped: the map and the scan say so and name the remedy, and an
+area holding Ruby keeps what the last scan that could read it wrote. Linux, macOS and Windows run
+the suite and an end-to-end scan, pin and check on every commit.
 
 The Node has to answer to `node` on the `PATH` Claude Code runs hooks with, and Claude Code's own
 installer does not provide one. The hooks run `node` by name through a shell, so on a machine with

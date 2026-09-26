@@ -16,6 +16,7 @@ import { pinLines, scanLines } from "../plugins/anatomiya/lib/summary.mjs";
 import { PIN_PATH } from "../plugins/anatomiya/lib/baseline.mjs";
 import { PROBE_IDS, pluginRoot } from "../plugins/anatomiya/lib/readiness.mjs";
 import { OVERVIEW_FILE } from "../plugins/anatomiya/lib/rules.mjs";
+import { CAVEATS } from "../plugins/anatomiya/lib/check-report.mjs";
 import { loadTypeScript } from "../plugins/anatomiya/lib/semantic.mjs";
 
 const RULES = join(".claude", "rules");
@@ -54,13 +55,45 @@ function repoWithBranch(t) {
   return dir;
 }
 
-/** The same repository with one Ruby file in it, so the scan needs an interpreter as well as a parser. */
-function repoWithRuby(t) {
-  const dir = repo(t);
-  writeFileSync(join(dir, "src", "a.rb"), "class A\n  def b\n    1\n  end\nend\n");
+/**
+ * A TypeScript repository whose only Ruby is the Gemfile at its root, the shape
+ * the React Native template ships: CocoaPods reads it, and nothing in the
+ * repository is written in Ruby.
+ */
+function repoWithGemfile(t) {
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-commands-gemfile-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+  for (const sub of ["utils", "components"]) mkdirSync(join(dir, "src", sub), { recursive: true });
+  for (let i = 0; i < 6; i++) {
+    writeFileSync(join(dir, "src", "utils", `u${i}.ts`), `export function f${i}(a: number) {\n  try { return a + 1 } catch (e) { throw e }\n}\n`);
+    writeFileSync(join(dir, "src", "components", `C${i}.tsx`), `export const C${i} = () => <div className="x">hi</div>\n`);
+  }
+  writeFileSync(join(dir, "Gemfile"), 'source "https://rubygems.org"\ngem "cocoapods", "~> 1.13"\n');
   const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
+  git("init", "-q", "-b", "main");
+  git("config", "user.email", "t@t.test");
+  git("config", "user.name", "T");
   git("add", "-A");
-  git("commit", "-qm", "ruby");
+  git("commit", "-qm", "init");
+  return dir;
+}
+
+/** A repository written in Ruby and nothing else, so no file of it can be read without an interpreter. */
+function repoOnlyRuby(t) {
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-commands-ruby-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+  mkdirSync(join(dir, "app", "models"), { recursive: true });
+  for (let i = 0; i < 8; i++) {
+    writeFileSync(join(dir, "app", "models", `m${i}.rb`), `class M${i}\n  def b\n    1\n  end\nend\n`);
+  }
+  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
+  git("init", "-q");
+  git("config", "user.email", "t@t.test");
+  git("config", "user.name", "T");
+  git("add", "-A");
+  git("commit", "-qm", "init");
   return dir;
 }
 
@@ -266,8 +299,10 @@ test("a scan with no interpreter is told to install Ruby, never to run npm", nee
   // Measured on a Ruby repository with no `ruby` on PATH: the scan exited 1
   // with `spawn ruby ENOENT` and then "run `npm install --omit=dev` in the
   // plugin directory". npm cannot install an interpreter, and the one remedy
-  // printed was the only one that could not work.
-  const dir = repoWithRuby(t);
+  // printed was the only one that could not work. Refused only where no
+  // other language was there to read: every file here is Ruby, so a map would
+  // be an empty one.
+  const dir = repoOnlyRuby(t);
   const path = process.env.PATH;
   t.after(() => {
     process.env.PATH = path;
@@ -283,6 +318,60 @@ test("a scan with no interpreter is told to install Ruby, never to run npm", nee
       return true;
     }
   );
+});
+
+test("a TypeScript repository with a Gemfile still gets its map when ruby is missing", needsShebang, async (t) => {
+  // Measured on the React Native template's shape, twelve .ts and .tsx files
+  // and the Gemfile CocoaPods reads, on a machine with no ruby: the scan
+  // exited 1 on `spawn ruby ENOENT` and wrote nothing, and the background
+  // refresh failed the same way every session, so a repository written in
+  // TypeScript got no map at all. An engine missing for one language costs
+  // that language's files, and the map and the summary both say which and
+  // what to do about it.
+  const dir = repoWithGemfile(t);
+  const path = process.env.PATH;
+  t.after(() => {
+    process.env.PATH = path;
+  });
+  process.env.PATH = withoutRuby(t);
+
+  const { plan, summary } = await runScan(dir);
+
+  assert.equal(plan.write.filter((name) => name !== OVERVIEW_FILE).length, 2, plan.write.join(", "));
+  for (const name of plan.write) assert.ok(existsSync(join(dir, RULES, name)), `${name} is on disk`);
+  const lines = scanLines(summary);
+  assert.ok(lines.some((l) => /read no ruby file/.test(l)), lines.join("\n"));
+  assert.ok(lines.some((l) => /install Ruby 3\.4 or newer/.test(l)), lines.join("\n"));
+  const overview = readFileSync(join(dir, RULES, OVERVIEW_FILE), "utf8");
+  assert.match(overview, /no ruby file was read\b.*install Ruby 3\.4 or newer/, overview);
+});
+
+test("a check of a change to a Gemfile and a .ts file checks the .ts file when ruby is missing", needsShebang, async (t) => {
+  // The same machine and the same repository: a branch that added a Gemfile
+  // line beside a TypeScript file exited 1 on `spawn ruby ENOENT`, so the
+  // TypeScript change went unchecked because one file of another language
+  // could not be read. The Gemfile is named as not checked, with the remedy.
+  const dir = repoWithGemfile(t);
+  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
+  git("checkout", "-q", "-b", "feat");
+  writeFileSync(join(dir, "Gemfile"), 'source "https://rubygems.org"\ngem "cocoapods", "~> 1.13"\ngem "fastlane"\n');
+  writeFileSync(join(dir, "src", "utils", "u7.ts"), "export function g(a: number) {\n  try { return a } catch (e) { }\n}\n");
+  git("add", "-A");
+  git("commit", "-qm", "feat");
+  const path = process.env.PATH;
+  t.after(() => {
+    process.env.PATH = path;
+  });
+  process.env.PATH = withoutRuby(t);
+
+  const { report } = await runCheck(dir, { baseRef: "main" });
+
+  const said = report.caveats.map((c) => c.message).join("\n");
+  assert.ok(!report.caveats.some((c) => c.message.includes("u7.ts")), `the TypeScript file was checked:\n${said}`);
+  assert.ok(report.caveats.some((c) => c.message.startsWith("Gemfile ")), `the Gemfile is named as unchecked:\n${said}`);
+  const missing = report.caveats.find((c) => c.code === CAVEATS.ENGINE_MISSING);
+  assert.ok(missing, `and the missing engine is named:\n${said}`);
+  assert.match(missing.message, /install Ruby 3\.4 or newer.*then check again$/, "with its remedy");
 });
 
 test("a pin writes the baseline and answers with the delta it accepted", async (t) => {

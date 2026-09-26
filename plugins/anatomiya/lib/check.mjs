@@ -21,6 +21,7 @@ import { droppedDirectives, unexaminedPhrase } from "./render.mjs";
 import { auditRules, knownNames, readHead, resolveInside, RULES_DIR } from "./rules.mjs";
 import { FACTS_PATH, readFacts, statedSide } from "./facts.mjs";
 import { MAX_FILE_BYTES } from "./limits.mjs";
+import { remedyFor } from "./readiness.mjs";
 import { resolve as resolveBaseline } from "./baseline.mjs";
 import { pairingsFor, pairingViolations } from "./pairing.mjs";
 import { isTestPath, precedentFindings } from "./precedent.mjs";
@@ -878,6 +879,13 @@ async function collect(root, { examined, areas, base, mode, added, fresh, caveat
     // read that. Without it a Flow file reads as a broken file.
     if (missingStripper) {
       caveat(caveats, CAVEATS.STRIPPER_MISSING, MISSING_STRIPPER);
+    }
+    // An engine that is not installed is every file of its languages at once.
+    // Each of those carries a caveat of its own above, and none says why or
+    // what to do: a check that examined files of another language now goes on
+    // for them rather than refusing over this (B40), so it says so once.
+    if (missingParser) {
+      caveat(caveats, CAVEATS.ENGINE_MISSING, `${missingParser}: ${remedyFor(missingEngines[0])}, then check again`);
     }
 
     return { findings, missingParser, missingEngines };

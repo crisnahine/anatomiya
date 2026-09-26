@@ -283,6 +283,25 @@ test("a run blind to two languages names both", () => {
   );
 });
 
+test("a run that read one language and not another says which, why, and writes the rest", () => {
+  // The other half of a blind run (B40): a TypeScript repository with one
+  // Gemfile on a machine without Ruby. The map is written, so the write line
+  // stays, and the language it read none of is named with the engine's remedy
+  // beside how many area files were left as the last scan wrote them.
+  const lines = scanLines(summary({ uncounted: ["ruby"], held: 2, engines: { prism: { version: null } } }));
+
+  const at = lines.indexOf(
+    "read no ruby file at all, so none was counted and 2 areas holding one were left as the last scan wrote them"
+  );
+  assert.ok(at !== -1, lines.join("\n"));
+  assert.equal(
+    lines[at + 1],
+    "prism reported no version: install Ruby 3.4 or newer, which ships prism 1.x, or run gem install prism on the Ruby you have, and put ruby on PATH"
+  );
+  assert.ok(lines.includes("wrote 5 files"), "the rest of the map was written");
+  assert.ok(!lines.some((l) => l.includes("nothing was written")), lines.join("\n"));
+});
+
 test("the baseline line says which population the gates read", () => {
   const line = (baseline) => scanLines(summary({ baseline }))[2];
 
@@ -363,6 +382,8 @@ const plan = (o = {}) => ({
   uncovered: 0,
   orphaned: 0,
   unreadable: [],
+  held: [],
+  blind: false,
   ...o,
 });
 
@@ -402,6 +423,8 @@ test("the summary carries every fact the scan prints", () => {
     removed: 0,
     wrote: 2,
     blind: [],
+    uncounted: [],
+    held: 0,
     dryRun: false,
   });
 });

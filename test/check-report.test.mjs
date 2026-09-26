@@ -161,10 +161,10 @@ test("no caveat reaches the report without a code", () => {
   // Any first argument, not the literal `caveats`: a helper that spells the
   // list some other way would otherwise be invisible to this count.
   const named = [...src.matchAll(/(?<!function )\bcaveat\(\s*\w+,\s*([^,]+),/g)].map((m) => m[1].trim());
-  // A count rather than a floor. 26 codes over 24 sites: one site takes two
+  // A count rather than a floor. 27 codes over 25 sites: one site takes two
   // from its caller, one reads four off the parse, and `no-merge-base` and
   // `head-oversize` are each reached from two of them.
-  assert.equal(named.length, 24, `${named.length} coded caveat sites, so the count moved`);
+  assert.equal(named.length, 25, `${named.length} coded caveat sites, so the count moved`);
   for (const name of named) {
     // Never a literal. Beside `CAVEATS.X` two sites read the table through
     // something else: `code`, which an unread corpus takes from its caller

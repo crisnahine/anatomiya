@@ -1,5 +1,6 @@
 import { encode, encodePath } from "./encode.mjs";
-import { MISSING_STRIPPER } from "./langs.mjs";
+import { engineOf, MISSING_STRIPPER } from "./langs.mjs";
+import { whyUnread } from "./readiness.mjs";
 import { kindsLine, plural, renderLayout } from "./render-layout.mjs";
 import { statedSide } from "./facts.mjs";
 import { globText } from "./areas.mjs";
@@ -757,6 +758,11 @@ function overviewTail(result, files) {
   // read, so a count that moves with machine load may not reach it (A5). The
   // summary prints all four, and the summary is not cached.
   for (const line of unexaminedLines(result.parse, { stable: true })) lines.push(`- ${line}`);
+  // A language this run read no file of, where it read another (B40). Nothing
+  // above counts it, since a crash is left off this file, and the areas holding
+  // one are the last scan's. This file is what a background refresh leaves for
+  // anyone to read, so it says which language, why, and what to do.
+  for (const line of unreadLines(result.parse)) lines.push(`- ${line}`);
   // Only when it ran and only when it ran badly. A clean tier is the tier
   // working, and the always-loaded file is paid for on every turn.
   const degraded = degradedSemanticSentence(result.semantic);
@@ -765,6 +771,18 @@ function overviewTail(result, files) {
   const generatedCount = result.areas.filter((a) => a.dimensions.length > 0).length + 1;
   lines.push("", `Generated files: ${generatedCount} under ${RULES_DIR}/${PREFIX}*.md`);
   return lines;
+}
+
+/**
+ * One line per engine that read no file of its languages, naming them and why.
+ * Empty on a run that read every language it holds.
+ */
+function unreadLines(parse) {
+  const langs = parse?.unreadable ?? [];
+  return [...new Set(langs.map(engineOf))].map((id) => {
+    const of = langs.filter((l) => engineOf(l) === id);
+    return `no ${of.join(" or ")} file was read: ${whyUnread(id, parse.engines)}`;
+  });
 }
 
 /**

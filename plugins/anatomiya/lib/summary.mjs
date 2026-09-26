@@ -3,7 +3,7 @@ import { layoutSummary, plural } from "./render-layout.mjs";
 import { statedSide } from "./facts.mjs";
 import { encode, encodePath, sanitisePath } from "./encode.mjs";
 import { engineOf } from "./langs.mjs";
-import { remedyFor } from "./readiness.mjs";
+import { whyUnread } from "./readiness.mjs";
 import { listSome, LISTED, RULES_DIR, SETTINGS_PATH } from "./rules.mjs";
 import { formatDelta } from "./baseline.mjs";
 
@@ -100,7 +100,12 @@ export function scanSummary(result, plan, { dryRun = false, hook = null } = {}) 
     },
     removed: plan.remove.length,
     wrote: plan.write.length,
-    blind: plan.unreadable,
+    // A language read no file of is one of two facts, told apart by whether
+    // anything else was read: `blind` is a run that wrote nothing at all, and
+    // `uncounted` is one that wrote the rest and left `held` area files alone.
+    blind: plan.blind ? plan.unreadable : [],
+    uncounted: plan.blind ? [] : plan.unreadable,
+    held: plan.held.length,
     dryRun,
   };
 }
@@ -169,8 +174,18 @@ export function scanLines(s) {
     lines.push(
       `read no ${s.blind.join(" or ")} file at all, so nothing was written and the previous map was left alone`
     );
-    lines.push(...blindLines(s));
+    lines.push(...blindLines(s.blind, s.engines));
     return lines;
+  }
+  // A language this run read none of, where it read another: the rest of the
+  // map is written, and the areas holding the unread one are the last scan's.
+  // Said before the count, which would otherwise read as the whole repository.
+  if (s.uncounted?.length) {
+    const held = s.held
+      ? ` and ${plural(s.held, "area")} holding one ${s.held === 1 ? "was" : "were"} left as the last scan wrote ${s.held === 1 ? "it" : "them"}`
+      : "";
+    lines.push(`read no ${s.uncounted.join(" or ")} file at all, so none was counted${held}`);
+    lines.push(...blindLines(s.uncounted, s.engines));
   }
   lines.push(s.dryRun ? `would write ${plural(s.wrote, "file")}` : `wrote ${plural(s.wrote, "file")}`);
   if (s.hookRemoved) lines.push(hookRemoved(s.dryRun));
@@ -221,23 +236,13 @@ function enginesLine(engines) {
 }
 
 /**
- * Why a run went blind, in the engine's own terms.
- *
- * One sentence used to cover every cause, and it guessed the likeliest: a
- * missing interpreter. Measured with ruby on PATH and no prism, that sentence
- * was wrong and there was no version anywhere on screen to say so. An engine
- * that reported a version ran, so the files are what failed; one that reported
- * none is the install, and its own remedy is the next move. A summary carrying
- * no probe at all keeps the old sentence, which is all it can honestly say.
+ * Why a run read no file of these languages, in each engine's own terms
+ * (`whyUnread`). A summary carrying no probe at all keeps the old sentence,
+ * which is all it can honestly say.
  */
-function blindLines(s) {
-  if (!s.engines) return ["this is usually a missing interpreter rather than a repository that changed"];
-  return [...new Set(s.blind.map(engineOf))].map((id) => {
-    const version = s.engines[id]?.version ?? null;
-    return version
-      ? `${id} ${version} ran and answered for none of them`
-      : `${id} reported no version: ${remedyFor(id)}`;
-  });
+function blindLines(langs, engines) {
+  if (!engines) return ["this is usually a missing interpreter rather than a repository that changed"];
+  return [...new Set(langs.map(engineOf))].map((id) => whyUnread(id, engines));
 }
 
 /**

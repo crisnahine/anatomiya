@@ -293,6 +293,27 @@ test("a language whose parser could not run at all is named", async (t) => {
   assert.deepEqual(result.parse.unreadable, ["jsx"], "no jsx file was readable, and the parser never answered");
 });
 
+test("an area holding a file of a language no file of which was read is held, not described", async (t) => {
+  // Decided per language (B40): described from the half of its files that
+  // answered, the area's file would be written over with claims this run had
+  // no way to measure. It is handed to the writer to leave as it is, while a
+  // directory of the language that was read is described as usual.
+  const dir = repo(t, (d, { git, write }) => {
+    for (let i = 0; i < 6; i++) write(`src/m${i}.ts`, moduleSource(i));
+    write("src/bomb.jsx", "const x = " + "[".repeat(60_000) + "1" + "]".repeat(60_000) + "\n");
+    for (let i = 0; i < 6; i++) write(`lib/n${i}.ts`, moduleSource(10 + i));
+    git("add", "-A");
+    git("commit", "-qm", "init");
+  });
+
+  const result = await scan(dir);
+
+  assert.deepEqual(result.parse.unreadable, ["jsx"]);
+  assert.deepEqual(result.held.map((a) => a.path), ["src"]);
+  assert.deepEqual(result.areas.map((a) => a.path), ["lib"], "the directory that was read is still described");
+  assert.equal(result.readNothing, false);
+});
+
 test("one file with a syntax error is not a language this run went blind on", async (t) => {
   // Measured: six healthy .ts files and one broken .jsx froze the entire map,
   // wrote nothing, and told the reader a interpreter was missing. jsx is its

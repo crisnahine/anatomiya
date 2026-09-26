@@ -199,6 +199,36 @@ test("a scan that could not read a whole language removes nothing", () => {
   rmSync(dir, { recursive: true, force: true });
 });
 
+test("a run that read one language and not the other writes the first and leaves the other's areas as they were", () => {
+  // Measured: a TypeScript repository with one Gemfile, on a machine with no
+  // ruby, got no map at all, because a run blind to any language wrote
+  // nothing. Decided per language instead: the areas holding a file of the
+  // language this run read none of are left byte-identical and stay in the
+  // record the check reads, and everything else is written as usual.
+  const dir = workspace();
+  const models = area("app/models");
+  const services = area("app/services");
+  writeMap(result(dir, [models, services]));
+  const modelsBefore = readFileSync(join(rules(dir), areaFilename(models)), "utf8");
+  const heldRecord = readFacts(dir).areas.find((a) => a.id === models.id);
+
+  const partial = result(dir, [area("app/services", [dim({ conforming: 22, exceptions: [] })])]);
+  partial.parse = { ...partial.parse, unreadable: ["ruby"] };
+  partial.held = [{ id: models.id, path: models.path, fileCount: models.fileCount }];
+  partial.readNothing = false;
+  const plan = writeMap(partial);
+
+  assert.equal(plan.blind, false, "something was read, so something is written");
+  assert.deepEqual(plan.write.sort(), [areaFilename(services), "anatomiya-overview.md"].sort());
+  assert.deepEqual(plan.remove, [], "the area this run could not read is not removed as gone");
+  assert.equal(readFileSync(join(rules(dir), areaFilename(models)), "utf8"), modelsBefore, "nor rewritten");
+  assert.match(readFileSync(join(rules(dir), areaFilename(services)), "utf8"), /22 of 22/, "while the rest is");
+  // The check reads the record rather than the map, and a record that dropped
+  // the area would leave its file loading with nothing on disk deriving it.
+  assert.deepEqual(readFacts(dir).areas.find((a) => a.id === models.id), heldRecord, "and its record is carried over");
+  rmSync(dir, { recursive: true, force: true });
+});
+
 test("a blind run creates no directory either", () => {
   // Both `mkdir`s ran before the blind check, so a container with no ruby left
   // an empty `.claude/rules` and an empty `.claude/anatomiya` behind on every

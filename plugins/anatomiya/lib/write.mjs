@@ -1,7 +1,8 @@
 import { mkdirSync, realpathSync, statSync, unlinkSync } from "node:fs";
 import { dirname, join, relative, sep } from "node:path";
 import { renderArea, renderOverview, splitUncovered } from "./render.mjs";
-import { readFacts, writeFacts, atomic } from "./facts.mjs";
+import { FACTS_SCHEMA, readFacts, writeFacts, atomic } from "./facts.mjs";
+import { byCode } from "./paths.mjs";
 import {
   RULES_DIR,
   STORE_DIR,
@@ -34,25 +35,53 @@ export function planMap(result) {
   resolveDirs(result.root);
 
   const withDirectives = result.areas.filter((a) => a.dimensions.length > 0);
-  const uncovered = result.corpus.files - result.areas.reduce((s, a) => s + a.fileCount, 0);
+
+  // A run that read no file of a language cannot describe what that language
+  // holds, so it does not write over a run that could. Every file of it is
+  // charged as a failure, every area holding one counts nothing and would be
+  // removed as gone. `env -i PATH=/usr/bin:/bin` on a Rails repository is the
+  // whole of it: three correct area files deleted in the same run that reports
+  // it could not read one.
+  //
+  // Decided per language (B40). The scan holds every area that has a file of
+  // such a language in it, and those are neither written nor removed, while
+  // everything else is written as usual: a TypeScript repository with one
+  // Gemfile got no map at all on a machine without Ruby. Only a run that read
+  // no file of any language writes nothing, since the overview would then be
+  // rewritten from nothing beside area files that still load. A result that
+  // does not say which areas its unread language touched cannot be written in
+  // part, so it is blind whole. A repository holding none of a language is not
+  // blind to it, so an empty corpus still writes and still cleans up.
+  const unreadable = result.parse.unreadable || [];
+  const blind = unreadable.length > 0 && (result.held === undefined || result.readNothing === true);
+  const held = blind ? [] : result.held ?? [];
+  const heldNames = new Set(held.map(areaFilename));
+
+  // The facts on disk are the third fact ownership needs, and the record a held
+  // area's file was derived from. Read before the new record replaces them, and
+  // `null` when there is no record to read, which makes nothing removable.
+  const previous = readFacts(result.root).facts;
+  // A held area keeps the record its file was rendered from, or the check reads
+  // a map without it and the file loads with nothing on disk deriving it. Only
+  // from a record of this build's own shape: an older one read into this one
+  // would be stamped with a schema it was not written under.
+  const carried =
+    previous?.schema === FACTS_SCHEMA
+      ? previous.areas.filter((a) => a && Array.isArray(a.dimensions) && heldNames.has(areaFilename(a)))
+      : [];
+  const described = carried.length
+    ? { ...result, areas: [...result.areas, ...carried].sort((a, b) => byCode(a.path, b.path)) }
+    : result;
+
+  // A held area whose record was carried still describes its files, so they
+  // are not uncovered. One with no record to carry describes nothing this run.
+  const carriedIds = new Set(carried.map((a) => a.id));
+  const heldCovered = held.filter((a) => carriedIds.has(a.id)).reduce((s, a) => s + a.fileCount, 0);
+  const uncovered = result.corpus.files - result.areas.reduce((s, a) => s + a.fileCount, 0) - heldCovered;
   // Of those, the ones discovery found nowhere to put. The remainder sit in an
   // area that was discovered and then dropped for counting nothing, which is a
   // parse failure or a language with no dimension, not a directory too small.
   const { orphaned } = splitUncovered(uncovered, result.corpus.orphaned ?? uncovered);
-
-  // A run that read no file of a language cannot describe this repository, so it
-  // does not write over a run that could. Every file of that language is charged
-  // as a failure, every area it held counts nothing and would be removed as
-  // gone, and the overview would be rewritten to claim zero areas beside area
-  // files that still load. `env -i PATH=/usr/bin:/bin` on a Rails repository is
-  // the whole of it: three correct area files deleted in the same run that
-  // reports it could not read one.
-  //
-  // Nothing rather than a subset, which is what a truncated corpus already gets.
-  // A repository holding none of a language is not blind to it, so an empty
-  // corpus still writes and still cleans up.
-  const unreadable = result.parse.unreadable || [];
-  const blind = unreadable.length > 0;
 
   // The names first, then the audit, then the bodies: what this run is about to
   // write decides which of the files already there are stale, and the overview
@@ -65,9 +94,7 @@ export function planMap(result) {
   }
   const planned = new Set(names);
 
-  // The third fact ownership needs. Read before the new record replaces it,
-  // and `null` when there is no record to read, which makes nothing removable.
-  const audit = auditRules(result.root, knownNames(readFacts(result.root).facts));
+  const audit = auditRules(result.root, knownNames(previous));
   // A name we are about to write that is a directory, or a fifo, or anything
   // else `readdir` reports and `rename` refuses. `anatomiya-overview.md` is a
   // fixed name, so a repository can ship a directory called that and every scan
@@ -83,8 +110,9 @@ export function planMap(result) {
   }
 
   // Ours, and this run is not rewriting it, so its area is gone or states
-  // nothing now. Everything else in the directory is left where it is.
-  const stale = blind ? [] : audit.ours.filter((f) => !planned.has(f));
+  // nothing now, unless it is held, which is this run not knowing. Everything
+  // else in the directory is left where it is.
+  const stale = blind ? [] : audit.ours.filter((f) => !planned.has(f) && !heldNames.has(f));
   // Our prefix and our key, but no map on disk names it: an older build wrote
   // it, or the store was deleted. It still loads, so it is reported; it is not
   // removed, because two of the three facts is not ownership.
@@ -112,7 +140,7 @@ export function planMap(result) {
       unknown: [...unknown].sort(),
       unreadable: [...unreadableRules].sort(),
     };
-    bodies.set(OVERVIEW_FILE, renderOverview(result, { uncovered, orphaned, others }));
+    bodies.set(OVERVIEW_FILE, renderOverview(described, { uncovered, orphaned, others }));
     for (const a of withDirectives) bodies.set(areaFilename(a), renderArea(a));
   }
 
@@ -127,12 +155,15 @@ export function planMap(result) {
     uncovered,
     orphaned,
     unreadable,
+    // The area files left as the last scan that could read them wrote them.
+    held: carried.map(areaFilename),
     bodies,
     blind,
     root: result.root,
-    // The scan itself, because the facts record is derived from the whole of it
-    // and the committer is handed a plan rather than a scan.
-    result,
+    // The scan itself, with any held area's carried record beside the ones it
+    // measured, because the facts record is derived from the whole of it and
+    // the committer is handed a plan rather than a scan.
+    result: described,
   };
 }
 

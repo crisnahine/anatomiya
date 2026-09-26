@@ -156,10 +156,17 @@ hand back a tree, oxc to an almost empty one and prism to one holding nodes nobo
 counting either moves the denominator without moving the code. So a parse reporting errors answers
 `ok: false` and contributes no sites, which is what every other unexamined file already gets.
 
-Where a language's parser answered for **no** file at all, the scan writes nothing and removes
-nothing, and creates no `.claude` directory it would have written into. A blind run's areas all count
-nothing and would otherwise be deleted as gone. A syntax error is not that: the parser ran and
-answered.
+Where a language's parser answered for **no** file at all, that language is decided on its own. An
+area holding any file of it is held: its file is neither rewritten nor removed, and its record is
+carried into the new facts, because the run cannot say what it holds and its areas would otherwise
+count nothing and be deleted as gone. Everything else is written, and the summary and the overview
+name the language, why none of it was read, and the remedy. An engine that is not installed is the
+same case, so a TypeScript repository whose only Ruby is a Gemfile still gets its map on a machine
+with no Ruby. Only a run that read no file of any language writes nothing and removes nothing, and
+creates no `.claude` directory it would have written into; where a missing engine is the reason, the
+scan refuses with that engine's remedy instead. The check draws the same line: it names the files it
+could not read and the engine's remedy, and refuses only a change with nothing else in it to read. A
+syntax error is none of this: the parser ran and answered.
 
 Why a run went blind is asked of the engine rather than guessed. An engine that reported a version
 ran, so the files are what failed; one that reported none is the install, and its line carries that
@@ -1190,7 +1197,7 @@ the same reason.
 A caveat is why a run could not answer in full. The sentence is what a human reads; the code is what
 anything else reads, because with prose alone "the diff could not be read" and "one file was read
 from the working tree" are told apart by a substring match on wording nobody promised to keep. There
-are 26. Most appear at most once in a run; the ones that repeat are named under the table.
+are 27. Most appear at most once in a run; the ones that repeat are named under the table.
 
 | Code | What it means |
 |---|---|
@@ -1216,6 +1223,7 @@ are 26. Most appear at most once in a run; the ones that repeat are named under 
 | `head-unparsed` | a file went unread at the head side for none of the three above: this tool or the filesystem could not produce it |
 | `base-unparsed` | a file did not parse at the merge base, so it was skipped |
 | `stripper-missing` | `flow-remove-types` is not installed, so a file written in Flow is rejected rather than read |
+| `engine-missing` | a parser engine is not installed, so no file of its languages was checked; the message names it and its remedy, and a change with nothing else to read refuses instead |
 | `obligations-unchecked` | the file list at HEAD could not be read, so no file-to-file obligation was checked |
 | `rules-escaped` | `.claude/rules/` resolves outside the repository, so nothing there was examined |
 | `rules-unlisted` | `.claude/rules/` could not be listed |
