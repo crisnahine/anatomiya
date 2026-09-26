@@ -20,6 +20,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- A repository using SHA-256 object names could not be pinned (`pin` said it had no commit) and
+  `check` could read none of its files. Object names of up to 64 digits are accepted now.
+- On a partial clone, reading a pinned file fetched it from the remote, which nothing here may do
+  unasked, and with the remote gone every pinned file came back unread. Missing objects are now
+  reported missing instead of fetched.
 - `pin` listed a staged, edited, deleted or conflicted file against a commit that did not hold it,
   and every later scan closed that area as a population change for as long as the pin stood. It now
   refuses while tracked files differ from HEAD, dry run included, and says to commit or stash first.
