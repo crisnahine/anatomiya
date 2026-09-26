@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { needsPosixPaths, needsShebang } from "./platform.mjs";
 import { needsRuby, needsRubyInterpreter } from "./ruby-available.mjs";
-import { mkdirSync, mkdtempSync, writeFileSync, readFileSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -10,6 +10,7 @@ import { choosePrism, listPrism, parseRuby, RUBY_GUARDS } from "../plugins/anato
 import { walkRuby, constName, bodyOf, site, args } from "../plugins/anatomiya/lib/ruby-walk.mjs";
 import { RUBY_DIMENSIONS } from "../plugins/anatomiya/lib/dimensions-ruby.mjs";
 import { siteIdentity } from "../plugins/anatomiya/lib/introduced.mjs";
+import { readiness } from "../plugins/anatomiya/lib/readiness.mjs";
 
 const dir = mkdtempSync(join(tmpdir(), "anatomiya-ruby-"));
 process.on("exit", () => rmSync(dir, { recursive: true, force: true }));
@@ -96,6 +97,44 @@ esac
   const out = await parseRuby([{ rel: "a.rb", abs: file }], { ruby: join(bin, "ruby") });
 
   assert.equal(out.version, "1.9.0");
+});
+
+test("a version file in the repository chooses no interpreter: the listing, the probe and the parser all start outside it", needsShebang, async (t) => {
+  // A version manager's shim picks its Ruby from the directory it starts in,
+  // and a version file is the repository's to write: asdf reads a `path:`
+  // version in `.tool-versions` as a directory to run the interpreter out of,
+  // so resolving there would let the repository name a binary inside itself.
+  // Every Ruby child starts in the temp directory instead, which is also what
+  // keeps the three of them on one interpreter. The stub logs where it started,
+  // spelled into its own body because the environment it gets is only PATH.
+  const bin = mkdtempSync(join(tmpdir(), "anatomiya-ruby-where-"));
+  t.after(() => rmSync(bin, { recursive: true, force: true }));
+  const log = join(bin, "started-in");
+  writeFileSync(join(bin, "ruby"), `#!/bin/sh\npwd >> '${log}'\ncat >/dev/null\nexit 1\n`, { mode: 0o755 });
+  const repo = mkdtempSync(join(tmpdir(), "anatomiya-ruby-pinned-"));
+  t.after(() => rmSync(repo, { recursive: true, force: true }));
+  writeFileSync(join(repo, ".ruby-version"), "3.4.9\n");
+  writeFileSync(join(repo, ".tool-versions"), "ruby path:./vendor/ruby\n");
+  writeFileSync(join(repo, "a.rb"), "class A\nend\n");
+  const path = process.env.PATH;
+  const cwd = process.cwd();
+  t.after(() => {
+    process.env.PATH = path;
+    process.chdir(cwd);
+  });
+  // The session sits in the repository, which is where a hook or a command
+  // runs from, so a child that inherited the working directory would start there.
+  process.chdir(repo);
+  process.env.PATH = bin;
+
+  await readiness({ engines: ["prism"], env: { PATH: bin } });
+  await parseRuby([{ rel: "a.rb", abs: join(repo, "a.rb") }], { ruby: join(bin, "ruby") });
+
+  const starts = readFileSync(log, "utf8").trim().split("\n");
+  // The listing and the version question for the probe, the listing and the
+  // stream for the parser.
+  assert.equal(starts.length, 4, starts.join("\n"));
+  for (const at of starts) assert.equal(at, realpathSync(tmpdir()), `a Ruby child started in ${at}`);
 });
 
 test("a prism too old to read is a missing parser, never a repository of crashed files", needsShebang, async (t) => {

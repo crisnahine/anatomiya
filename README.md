@@ -32,8 +32,15 @@ and out of how many.
 Needs Node 22 or newer: on an older one `/anatomiya:doctor` names the version it found, and every
 other command refuses with the same sentence before it does any work. Ruby dimensions also want
 `ruby` on `PATH` with `prism` 1.x: Ruby 3.4 or newer ships it, and on an older Ruby (2.7 or newer)
-`gem install prism` adds it, which the parser then loads in place of the older default. Linux,
-macOS and Windows run the suite and an end-to-end scan, pin and check on every commit.
+`gem install prism` adds it, which the parser then loads in place of the older default. That
+`ruby` is whichever answers first on `PATH`, started outside the repository and without the
+variables a version manager selects by, so a `.ruby-version` or `.tool-versions` in the repository,
+or a version `rbenv shell` chose, is not what picks it: an rbenv shim answers with its global Ruby.
+A version file is the repository's to write, and asdf reads a `path:` version in one as a directory
+to run the interpreter out of, so letting it choose would let the repository run a binary of its
+own. To parse with another Ruby, make it the global one or put its `bin` first on `PATH`;
+`/anatomiya:doctor` reports the prism the chosen one holds. Linux, macOS and Windows run the suite
+and an end-to-end scan, pin and check on every commit.
 
 ```
 /plugin marketplace add crisnahine/anatomiya
