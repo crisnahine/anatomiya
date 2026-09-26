@@ -21,9 +21,12 @@ const RESTART = "a session already running still holds the old map; restart to p
 
 // Said once, on the run that does it, because it is a change to a file somebody
 // else may also be editing. It cannot repeat: the second scan finds nothing to
-// take out and says nothing.
-const HOOK_REMOVED =
-  `${SETTINGS_PATH} carried a re-delivery hook this tool wrote and Claude Code refuses; it was taken out`;
+// take out and says nothing. A dry run touches nothing, so it says what the
+// scan would do, the way its other lines do.
+const hookRemoved = (dryRun) =>
+  dryRun
+    ? `${SETTINGS_PATH} carries a re-delivery hook this tool wrote and Claude Code refuses; it would be taken out`
+    : `${SETTINGS_PATH} carried a re-delivery hook this tool wrote and Claude Code refuses; it was taken out`;
 
 // The shape of the two records below, so a reader older than one refuses it
 // rather than reading fields that moved. Same rule the facts record carries.
@@ -170,7 +173,7 @@ export function scanLines(s) {
     return lines;
   }
   lines.push(s.dryRun ? `would write ${plural(s.wrote, "file")}` : `wrote ${plural(s.wrote, "file")}`);
-  if (s.hookRemoved) lines.push(HOOK_REMOVED);
+  if (s.hookRemoved) lines.push(hookRemoved(s.dryRun));
   if (s.hookRefused) lines.push(`the map is written, and ${s.hookRefused}`);
   if (!s.dryRun) lines.push(RESTART);
   return lines;
