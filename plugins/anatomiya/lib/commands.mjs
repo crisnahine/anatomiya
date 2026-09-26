@@ -6,13 +6,14 @@ import { scan } from "./scan.mjs";
 import { loadTypeScript, notInstalledMessage } from "./semantic.mjs";
 import { writeMap } from "./write.mjs";
 import { check } from "./check.mjs";
-import { collect, gitRoot } from "./corpus.mjs";
+import { collect, countUntrackedSource, gitRoot } from "./corpus.mjs";
 import { discover } from "./areas.mjs";
 import { buildPin, loadPin, writePin, pinDelta, pinTarget, PIN_PATH } from "./baseline.mjs";
 import { gitBuffered, headSha } from "./git.mjs";
 import { firstLine } from "./encode.mjs";
 import { NODE_PROBE_IDS, PROBE_IDS, installProblem, pluginRoot, probeName, readiness, readinessLines, remedyFor } from "./readiness.mjs";
 import { pinSummary, scanSummary } from "./summary.mjs";
+import { untrackedSentence } from "./render.mjs";
 import { aboutDir, echoContext, holdsTestIn, inCheckout, isPathTaken, ownLayout, removeStaleHook, targetIn, windowOf } from "./hook.mjs";
 import { isTestPath, noticeFor } from "./precedent.mjs";
 import { askedMarks, continuedByReuse, pendingChange, reuseReason, reuseRecord, sessionStart } from "./reuse.mjs";
@@ -174,6 +175,18 @@ export async function runPin(cwd, { dryRun = false } = {}) {
   // `collect`. It stays because a pin must describe a whole population, and the
   // flag is the one thing that says whether this one is.
   if (truncated) throw new Error("only part of the corpus was read, so this would pin a partial population");
+  // An empty population is not a smaller baseline, it is one that makes every
+  // area written after it postdate it, so nothing is stated anywhere until a
+  // human pins again. The usual cause is source nobody has committed yet, and
+  // the scan counts that in the same state, so the refusal counts it too.
+  if (files.length === 0) {
+    const untracked = await countUntrackedSource(root);
+    throw new Error(
+      untracked
+        ? `nothing to pin: ${untrackedSentence(untracked)}; commit them, then pin`
+        : "nothing to pin: this repository tracks no source file"
+    );
+  }
 
   const next = buildPin(discover(files), { sha, corpus: files.length });
   const previous = loadPin(root);
