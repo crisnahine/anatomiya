@@ -20,6 +20,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- Ruby specs written after the pin could read as the baseline's own habit. The baseline reuses
+  today's record for every file unchanged since the pin, and that record carried today's answer to
+  "does this have its spec"; where the pinned tree had no spec of that shape, the answer stayed, and
+  a branch was held to a convention its own agent had just started. The answer is now worked out
+  over the pinned tree alone.
 - A scan could write outside the repository through a symlink planted where its temporary file
   went. Each file was written to `<name>.tmp-<pid>` beside its destination with a write that
   follows a link, so a repository shipping that name as a tracked symlink had the map's bytes
