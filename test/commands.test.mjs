@@ -605,19 +605,34 @@ test("a setup with the dependencies already installed runs nothing", needsEveryt
   assert.match(output, /^nothing to install: oxc \d/, output);
 });
 
-test("a dry run answers the exact command and runs nothing", async () => {
+test("a dry run answers the exact command and runs nothing", async (t) => {
   // `--ignore-scripts` is the load-bearing one: without it a dependency's
   // install script runs arbitrary code in the plugin directory. And
   // `--include=optional`, because oxc's native binding is an optional
   // dependency: an npm configured with `optional=false` left it out, answered
-  // "up to date", and the parser never loaded.
-  const { command, ran, ok, output } = await runSetup({ dryRun: true });
+  // "up to date", and the parser never loaded. Asked of a copy with nothing
+  // installed, since a dry run with nothing to do names no command to run.
+  const home = installWithoutDependencies(t);
+  const { runSetup: fromCopy } = await import(pathToFileURL(join(home, "lib", "commands.mjs")).href);
+
+  const { command, ran, ok, output } = await fromCopy({ dryRun: true });
 
   assert.deepEqual(command, ["npm", "install", "--omit=dev", "--include=optional", "--ignore-scripts", "--no-audit", "--no-fund"]);
   assert.equal(ran, false);
   assert.equal(ok, true);
   assert.match(output, /would run npm install --omit=dev --include=optional --ignore-scripts --no-audit --no-fund in /, output);
-  assert.ok(output.includes(pluginRoot()), `and it says which directory that is: ${output}`);
+  assert.ok(output.includes(realpathSync(home)), `and it says which directory that is: ${output}`);
+});
+
+test("a dry run with nothing to install says so and names no command", needsEverything, async () => {
+  // Measured: "nothing to install: oxc 0.x, ..." and then "would run npm
+  // install ...", two lines that contradict each other about the same install.
+  const { ran, ok, output } = await runSetup({ dryRun: true });
+
+  assert.equal(ran, false);
+  assert.equal(ok, true);
+  assert.match(output, /^nothing to install: oxc \d/, output);
+  assert.doesNotMatch(output, /would run/, output);
 });
 
 test("a setup on Windows refuses rather than spawning an npm it cannot start", async (t) => {
@@ -644,14 +659,15 @@ test("a setup on Windows refuses rather than spawning an npm it cannot start", a
 
 test("a Windows machine with everything installed is told that, not the refusal", needsEverything, async () => {
   // The refusal sits after the two short-circuits: it is about an install that
-  // has to happen, and a dry run's own line is the by-hand instruction.
+  // has to happen, and a dry run with nothing to install has nothing to hand over.
   const done = await runSetup({ platform: "win32" });
   const dry = await runSetup({ platform: "win32", dryRun: true });
 
   assert.equal(done.ok, true);
   assert.match(done.output, /^nothing to install: oxc \d/, done.output);
   assert.equal(dry.ok, true);
-  assert.match(dry.output, /would run npm install --omit=dev/, dry.output);
+  assert.match(dry.output, /^nothing to install: oxc \d/, dry.output);
+  assert.doesNotMatch(dry.output, /would run/, dry.output);
 });
 
 /**

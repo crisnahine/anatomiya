@@ -74,6 +74,31 @@ test("the listing names a prism installed in a gem path, by version and absolute
   assert.deepEqual(planted.paths, [join(gems, "gems", "prism-1.99.0", "lib")]);
 });
 
+test("the listing finds a --user-install under XDG_DATA_HOME", needsRubyInterpreter, async (t) => {
+  // RubyGems puts a user install under $XDG_DATA_HOME/gem when ~/.gem does not
+  // exist, and a listing that dropped the variable looked under
+  // ~/.local/share instead: `gem install --user-install prism` was installed
+  // and invisible, and doctor went on naming the remedy just run.
+  const home = mkdtempSync(join(tmpdir(), "anatomiya-home-"));
+  t.after(() => rmSync(home, { recursive: true, force: true }));
+  const api = execFileSync("ruby", ["-e", 'print RbConfig::CONFIG["ruby_version"]'], { encoding: "utf8" });
+  const gems = join(home, "xdg", "gem", "ruby", api);
+  mkdirSync(join(gems, "specifications"), { recursive: true });
+  mkdirSync(join(gems, "gems", "prism-1.98.0", "lib"), { recursive: true });
+  writeFileSync(
+    join(gems, "specifications", "prism-1.98.0.gemspec"),
+    'Gem::Specification.new do |s|\n  s.name = "prism"\n  s.version = "1.98.0"\n  s.summary = "planted"\n  s.authors = ["t"]\n  s.files = []\n  s.require_paths = ["lib"]\nend\n'
+  );
+  const env = { ...process.env, HOME: home, XDG_DATA_HOME: join(home, "xdg") };
+  delete env.GEM_HOME;
+  delete env.GEM_PATH;
+
+  const specs = await listPrism({ env });
+
+  assert.ok(Array.isArray(specs), "the listing answered");
+  assert.ok(specs.some((s) => s.version === "1.98.0"), JSON.stringify(specs));
+});
+
 test("the listing loads no installed gem's library, so a newer json cannot silence it", needsRubyInterpreter, async (t) => {
   // With RubyGems enabled, `require "json"` activated the newest installed
   // json gem; one that raised (or merely printed) cost every prism choice.
@@ -174,9 +199,10 @@ test("a version file in the repository chooses no interpreter: the listing, the 
   await parseRuby([{ rel: "a.rb", abs: join(repo, "a.rb") }], { ruby: join(bin, "ruby") });
 
   const starts = readFileSync(log, "utf8").trim().split("\n");
-  // The listing and the version question for the probe, the listing and the
-  // stream for the parser.
-  assert.equal(starts.length, 4, starts.join("\n"));
+  // The listing and the version question for the probe, then, since the stub
+  // fails that, the bare run that tells a broken interpreter from a missing
+  // library; the listing and the stream for the parser.
+  assert.equal(starts.length, 5, starts.join("\n"));
   for (const at of starts) assert.equal(at, realpathSync(tmpdir()), `a Ruby child started in ${at}`);
 });
 
@@ -684,6 +710,53 @@ class A3::B3::E
   include Concern
 end
 `,
+  infinite_float: `
+INF = 1e400
+`,
+  binary_string: `# encoding: ascii-8bit
+MAGIC = "\\xff"
+`,
+  index_assign_keyword: `
+a[0, k: 1] = 2
+`,
+  same_short_name: `
+class A::Worker
+end
+
+class B::Worker
+  include Concern
+end
+`,
+  singleton_include: `
+class Settings
+  class << self
+    include Enumerable
+  end
+end
+`,
+  sidekiq_singleton_include: `
+class NotAWorker
+  class << self
+    include Sidekiq::Worker
+  end
+
+  def perform(a, b, c)
+  end
+end
+`,
+  rescue_global_error: `
+begin
+  a
+rescue
+  log($!)
+end
+
+begin
+  b
+rescue
+  log($ERROR_INFO)
+end
+`,
   compact_superclass: `
 module Api
   module V1
@@ -850,6 +923,27 @@ test("a Ruby with no prism at all is a missing parser, not a file that crashed i
   assert.match(out.error, /prism/);
 });
 
+test("a literal JSON cannot spell is still a file that parsed", needsRuby, () => {
+  // `1e400` is Infinity and a binary-encoded "\xff" is not UTF-8, and either one
+  // raised JSON::GeneratorError in the encoder: a file prism read without a
+  // single error was reported as unread. Neither value is anything a
+  // dimension reads, so each is dropped from the tree rather than the file.
+  for (const name of ["infinite_float", "binary_string"]) {
+    const file = programs.get(name);
+    assert.equal(file.ok, true, `${name}: ${file.error}`);
+  }
+});
+
+test("the grammar is the interpreter's own, not prism's newest", needsRuby, () => {
+  // Keywords in an index assignment are an error from Ruby 3.4 and valid
+  // before it, and prism parses as the newest Ruby it knows unless told
+  // otherwise: on Ruby 3.3 the file read as a syntax error Ruby itself accepts.
+  const ruby = execFileSync("ruby", ["-e", "print RUBY_VERSION"], { encoding: "utf8" });
+  const [major, minor] = ruby.split(".").map(Number);
+  const file = programs.get("index_assign_keyword");
+  assert.equal(file.ok, major < 3 || (major === 3 && minor < 4), JSON.stringify({ ruby, error: file.error }));
+});
+
 test("silence past the idle window ends the run and charges what never answered", needsRuby, async () => {
   const out = await parseRuby([{ rel: "a.rb", abs: join(dir, "rescue_none.rb") }], {
     guards: { ...RUBY_GUARDS, idleMs: 1 },
@@ -958,6 +1052,13 @@ test("a rescue bound to an instance variable uses the error by reading it", need
   // `rescue => @error` binds the caught error exactly as `rescue => e` does,
   // and only the local read was looked for, so the use read as a swallow.
   assert.deepEqual(counts("rescue_uses_error", "rescue_ivar_binding"), { candidates: 2, conforming: 1 });
+});
+
+test("a bare rescue that reads $! uses the error it caught", needsRuby, () => {
+  // `rescue; log($!)` hands the caught error on as surely as `rescue => e;
+  // log(e)`, and with nothing bound it read as a swallow. `$ERROR_INFO` is the
+  // English library's name for the same variable.
+  assert.deepEqual(counts("rescue_uses_error", "rescue_global_error"), { candidates: 2, conforming: 2 });
 });
 
 test("fail re-raises exactly as raise does", needsRuby, () => {
@@ -1380,6 +1481,13 @@ test("a Sidekiq perform is not a keyword_params site, whichever side of it the i
   assert.deepEqual(hits("keyword_params", "sidekiq_include_below"), []);
 });
 
+test("the Sidekiq mixin included into the singleton class does not make the class a worker", needsRuby, () => {
+  // `class << self; include Sidekiq::Worker; end` mixes into the metaclass, so
+  // the class's own `perform` is not what Sidekiq calls, and it was dropped as
+  // a keyword_params site on the strength of an include that never reached it.
+  assert.deepEqual(hits("keyword_params", "sidekiq_singleton_include").map((h) => h.where), ["perform"]);
+});
+
 test("an ActiveJob perform is still a site, because ActiveJob carries keywords through", needsRuby, () => {
   // Gated on the mixin rather than on the name: `perform` is an ordinary
   // method name and ActiveJob does pass keywords.
@@ -1553,6 +1661,23 @@ test("a learned-class hit carries the scope its bare names resolve in", needsRub
   const [base] = hits("class_base", "compact_superclass").filter((h) => h.class);
   assert.equal(base.self, "Api::V1::QboController");
   assert.deepEqual(base.nesting, [], "the compact form resolves its superclass at the top level");
+});
+
+test("two classes sharing a short name are two bodies, whichever holds the include", needsRuby, () => {
+  // Named by the last segment, `class A::Worker` and `class B::Worker` were both
+  // `Worker`, so B's include read as A's declaration elsewhere in the file and
+  // A's forgotten include was never a site.
+  const h = hits("module_include", "same_short_name");
+  assert.equal(h.length, 2);
+  assert.deepEqual(h.filter((x) => x.class).map((x) => x.class), ["Concern"]);
+  assert.ok(h.some((x) => x.where === "A::Worker" && !x.class), "A::Worker includes nothing and is a site");
+});
+
+test("an include inside class << self is not an include into the class", needsRuby, () => {
+  // It mixes into the metaclass, which is `extend` by another spelling: the
+  // class declared a mixin, but not one its instances carry, so it is neither
+  // a vote for the module nor a class that forgot one.
+  assert.deepEqual(hits("module_include", "singleton_include"), []);
 });
 
 test("the Ruby site and argument readers live in the leaf both registries import", () => {

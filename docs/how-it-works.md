@@ -155,6 +155,9 @@ was over the size cap. The second is new in this shape. Both parsers recover fro
 hand back a tree, oxc to an almost empty one and prism to one holding nodes nobody wrote, and
 counting either moves the denominator without moving the code. So a parse reporting errors answers
 `ok: false` and contributes no sites, which is what every other unexamined file already gets.
+prism is asked to parse as the interpreter it runs on (as 3.3, its oldest grammar, on an older
+one), because by default it parses as the newest Ruby it knows, and `a[0, k: 1] = 2`, valid until
+3.4, read as a syntax error on Ruby 3.3.
 
 Where a language's parser answered for **no** file at all, that language is decided on its own. An
 area holding any file of it is held: its file is neither rewritten nor removed, and its record is
@@ -459,7 +462,8 @@ Each side counts the authors of the files carrying its own sites, so a person wh
 the habit is not a second author of it, and a stated line names the authors of the side it states.
 
 Authors come from one `git log -M --no-merges --name-status` pass, unioning rename chains, and
-`-M100%` where `remote.origin.promisor` is set. `-M` scores similarity, which needs blob content a
+`-M100%` on a partial clone (`extensions.partialClone` set, or any remote's `promisor` flag, not
+only `origin`'s). `-M` scores similarity, which needs blob content a
 `--filter=blob:none` clone does not hold, so it fetches from the promisor one round trip at a time:
 33 of 35 measured clones could not answer at all. `-M100%` matches on blob OID, which the trees
 already carry, and loses only rename-with-edit. Never
@@ -1364,7 +1368,7 @@ object and exits 0, as it does on any failure.
 | `node` | the process itself | its version is 22.0.0 or newer, the floor both manifests declare in `engines` | install Node 22 or newer and put it first on `PATH` |
 | `oxc` | node | `oxc-parser` imports | `anatomiya setup` in the plugin directory |
 | `flow-remove-types` | node | it imports. A row of its own, and not an engine: it is `oxc`'s dialect stripper, and one absent costs a dialect where the other costs the run | the same install |
-| `prism` | the `ruby` interpreter | the interpreter's own prism, or the newest prism gem installed for it when its own is older, answers a version of 1.0.0 or newer | install Ruby 3.4 or newer, which ships prism 1.x, or run `gem install prism` on the Ruby you have, and put `ruby` on `PATH` |
+| `prism` | the `ruby` interpreter | the interpreter's own prism, or the newest prism gem installed for it when its own is older, answers a version of 1.0.0 or newer. A `ruby` that cannot run `ruby -e 1` at all (an rbenv shim with no version selected exits 127) is reported with its own first line of stderr, not as a missing prism | install Ruby 3.4 or newer, which ships prism 1.x, or run `gem install prism` on the Ruby you have, and put `ruby` on `PATH`; for a `ruby` that does not run, make `ruby -e 1` run first |
 | `typescript` | node | it imports. Optional: only `--deep` needs it | the same install |
 
 `anatomiya setup` installs what node hosts, and only that. It runs

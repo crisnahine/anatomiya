@@ -380,6 +380,30 @@ class Sql < ActiveRecord::Migration[7.2]
 end
 `,
 
+  sql_line_comment_dml: `
+class Fix < ActiveRecord::Migration[7.2]
+  def up
+    execute "-- fix\\nUPDATE t SET a = 1"
+  end
+end
+`,
+
+  sql_block_comment_dml: `
+class Fix2 < ActiveRecord::Migration[7.2]
+  def up
+    execute "/* x */ DELETE FROM t"
+  end
+end
+`,
+
+  sql_merge: `
+class Fix3 < ActiveRecord::Migration[7.2]
+  def up
+    execute "MERGE INTO t USING s ON t.id = s.id"
+  end
+end
+`,
+
   sql_ddl: `
 class Ddl < ActiveRecord::Migration[7.2]
   def up
@@ -723,6 +747,15 @@ test("an execute is classified by its SQL verb, through a squiggly heredoc and a
   // that rewrite rows.
   assert.deepEqual(counts("migration_schema_only", "sql_update"), { candidates: 1, conforming: 0 });
   assert.deepEqual(counts("migration_schema_only", "sql_ddl"), { candidates: 1, conforming: 1 });
+});
+
+test("a leading SQL comment does not hide the verb, and MERGE rewrites rows", needsRuby, () => {
+  // The verb test was anchored at the start of the string, so `-- fix` or
+  // `/* x */` ahead of an UPDATE read as DDL, and `MERGE INTO` was not a verb
+  // at all: each migration rewriting rows was stated as leaving data alone.
+  for (const name of ["sql_line_comment_dml", "sql_block_comment_dml", "sql_merge"]) {
+    assert.deepEqual(counts("migration_schema_only", name), { candidates: 1, conforming: 0 }, name);
+  }
 });
 
 test("a constant assigned in the migration is not an application model", needsRuby, () => {

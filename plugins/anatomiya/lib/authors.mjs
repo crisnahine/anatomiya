@@ -184,10 +184,23 @@ async function shallowHistory(root) {
  * `-M100%` matches renames by blob OID, which the trees already carry, so it
  * answers offline. It loses rename-with-edit, which is why it is used only
  * where `-M` cannot work rather than everywhere.
+ *
+ * Any remote can be the promisor, not only `origin`: `git clone -o upstream
+ * --filter=blob:none` marks `remote.upstream.promisor`, and a check of origin
+ * alone took that clone for a full one and read no history at all. A clone
+ * sets `extensions.partialClone` to its promisor's name, so that answers first;
+ * each remote's own flag covers a promisor added after the clone.
  */
 async function isPartialClone(root) {
-  const r = await gitBuffered(root, ["config", "--get", "remote.origin.promisor"]);
-  return r.ok && r.stdout.trim() === "true";
+  const ext = await gitBuffered(root, ["config", "--get", "extensions.partialClone"]);
+  if (ext.ok && ext.stdout.trim() !== "") return true;
+  const remotes = await gitBuffered(root, ["remote"]);
+  if (!remotes.ok) return false;
+  for (const name of remotes.stdout.split("\n").map((l) => l.trim()).filter(Boolean)) {
+    const r = await gitBuffered(root, ["config", "--get", `remote.${name}.promisor`]);
+    if (r.ok && /^(true|yes|on|1)$/i.test(r.stdout.trim())) return true;
+  }
+  return false;
 }
 
 /**
@@ -206,7 +219,9 @@ async function logStream(root, onField) {
     // argument after it can be read as an option. `%aE` is the address after
     // the repository's .mailmap, so a person the repository has already said
     // is one person under two addresses is counted once.
-    ["log", partial ? "-M100%" : "-M", "--no-merges", "--name-status", "-z", `--format=${SEP}%aE`, "--"],
+    // `log.showRoot=false` prints no diff for a root commit, so every file the
+    // first commit added would carry no author: forced back on, as git ships it.
+    ["-c", "log.showRoot=true", "log", partial ? "-M100%" : "-M", "--no-merges", "--name-status", "-z", `--format=${SEP}%aE`, "--"],
     onField,
     {
       // `--format` leaves the final record unterminated, so a remainder at exit

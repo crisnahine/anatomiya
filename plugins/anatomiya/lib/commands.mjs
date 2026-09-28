@@ -304,8 +304,10 @@ export async function runSetup({ dryRun = false, platform = process.platform } =
       ? `nothing to install: ${rows.map((r) => `${probeName(r)} ${r.version ?? "no version"}`).join(", ")}`
       : `not installed: ${needed.join(", ")}`;
 
-  if (dryRun) return answer(root, needed, { output: `${state}\nwould run ${where}` });
+  // With nothing needed there is no install to describe: "nothing to install"
+  // followed by "would run npm install" contradicted itself about one install.
   if (needed.length === 0) return answer(root, needed, { output: state });
+  if (dryRun) return answer(root, needed, { output: `${state}\nwould run ${where}` });
 
   // npm ships as `npm.cmd` on Windows, and a spawn resolves an extension-less
   // name against `.com` and `.exe` only, so the attempt answers ENOENT on a

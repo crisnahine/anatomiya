@@ -309,7 +309,7 @@ export function readinessLines(rows, { installSaid = false } = {}) {
 }
 
 /** One row, so every probe answers the same shape whatever it looked at. */
-function row(engine, { extra = null, present, version = null, ok = false, reason = null }) {
+function row(engine, { extra = null, present, version = null, ok = false, reason = null, remedy = null }) {
   return {
     engine: engine.id,
     extra,
@@ -318,7 +318,7 @@ function row(engine, { extra = null, present, version = null, ok = false, reason
     floor: engine.floor ?? null,
     ok,
     reason: reason ?? engine.note ?? null,
-    remedy: remedyFor(engine.id),
+    remedy: remedy ?? remedyFor(engine.id),
   };
 }
 
@@ -392,10 +392,23 @@ async function probeInterpreter(engine, { timeoutMs, env }) {
   if (err) {
     // A child our own timer killed answered nothing, which is not the same as
     // answering that the library is absent.
-    const reason = err.killed
-      ? `${engine.command} did not answer within ${timeoutMs}ms`
-      : `${engine.id} is not installed for this ${engine.command}`;
-    return row(engine, { present: true, reason });
+    if (err.killed) {
+      return row(engine, { present: true, reason: `${engine.command} did not answer within ${timeoutMs}ms` });
+    }
+    // Nor is an interpreter that cannot run anything. Measured with rbenv and no
+    // global version: the shim exits 127 with "rbenv: ruby: command not found",
+    // and this said prism was not installed, whose remedy fails the same way.
+    // Asked apart, with nothing loaded, so its failure is the interpreter's.
+    const bare = await ask(engine.command, ["--disable-gems", "-e", "1"], { timeoutMs, env });
+    if (bare.err && !bare.err.killed && !absentInterpreter(bare.err)) {
+      const said = firstLine(bare.stderr) || `exit ${bare.err.code}`;
+      return row(engine, {
+        present: true,
+        reason: `${engine.command} does not run: ${said}`,
+        remedy: `make \`${engine.command} -e 1\` run first (with a version manager, select an installed version), then check again`,
+      });
+    }
+    return row(engine, { present: true, reason: `${engine.id} is not installed for this ${engine.command}` });
   }
   const version = stdout.trim();
   // An answer holding no version says nothing about the library, and a missing

@@ -65,11 +65,14 @@ print JSON.generate(Gem::Specification.find_all_by_name("prism").map { |s|
  * remedy just installed. They only name directories to read records from; the
  * parser still runs without them and with gems disabled, and `RUBYOPT` and
  * `RUBYLIB`, which inject code, stay dropped here too. `HOME` and
- * `USERPROFILE` locate a `--user-install`.
+ * `USERPROFILE` locate a `--user-install`, and so does `XDG_DATA_HOME`:
+ * RubyGems puts one under `$XDG_DATA_HOME/gem` when `~/.gem` does not exist,
+ * and without it the listing looked under `~/.local/share` and missed the
+ * prism the remedy had just installed.
  */
 function gemEnv(source) {
   const env = rubyEnv(source);
-  for (const k of ["GEM_HOME", "GEM_PATH", "HOME", "USERPROFILE"]) {
+  for (const k of ["GEM_HOME", "GEM_PATH", "HOME", "USERPROFILE", "XDG_DATA_HOME"]) {
     if (source[k]) env[k] = source[k];
   }
   return env;
@@ -266,9 +269,23 @@ def conv(v)
     h
   when Array then v.map { |x| conv(x) }.compact
   when Symbol then v.to_s
-  when String then (v.length > STR_CAP ? v[0, STR_CAP] : v).scrub("")
-  when Integer, Float, true, false then v
+  when String then utf8(v.length > STR_CAP ? v[0, STR_CAP] : v)
+  # \`1e400\` is Infinity, which JSON cannot spell: the encoder raised and a file
+  # prism read cleanly was reported unread. No dimension reads a float's value.
+  when Float then v.finite? ? v : nil
+  when Integer, true, false then v
   end
+end
+
+# A string as JSON can carry it. \`# encoding: ascii-8bit\` makes "\\xff" a
+# binary string, which scrub leaves alone and the encoder refused, dropping the
+# whole file; its bytes are read as UTF-8 and whatever is not is removed.
+def utf8(v)
+  return v.scrub("") if v.encoding == Encoding::UTF_8
+  return v.dup.force_encoding("UTF-8").scrub("") if v.encoding == Encoding::BINARY
+  v.encode("UTF-8", invalid: :replace, undef: :replace, replace: "")
+rescue EncodingError
+  v.dup.force_encoding("UTF-8").scrub("")
 end
 
 # No nesting cap. A node is one to three JSON levels, and the default of 100
@@ -294,6 +311,20 @@ if Prism::VERSION.split(".").first.to_i < 1
   exit 1
 end
 
+# prism parses as the newest Ruby it knows unless told otherwise, and this runs
+# on the repository's own interpreter: on Ruby 3.3, \`a[0, k: 1] = 2\`, which
+# Ruby accepts and 3.4 made an error, counted as a syntax error and the file
+# went unread. An interpreter older than the oldest grammar prism carries (3.3)
+# is read with that one, the nearest it has; one newer than prism knows, or a
+# prism that takes no version, parses as it always did.
+PARSE_OPTIONS = begin
+  want = (RUBY_VERSION.split(".").map(&:to_i) <=> [3, 3]) < 0 ? "3.3.0" : RUBY_VERSION
+  Prism.parse("", version: want)
+  { version: want }
+rescue ArgumentError, TypeError
+  {}
+end
+
 data = $stdin.read.to_s.force_encoding("UTF-8")
 data.split("\\0").each_slice(2) do |rel, abs|
   next if rel.nil? || rel.empty? || abs.nil? || abs.empty?
@@ -303,7 +334,7 @@ data.split("\\0").each_slice(2) do |rel, abs|
       next
     end
     src = File.read(abs, encoding: "UTF-8")
-    r = Prism.parse(src)
+    r = Prism.parse(src, **PARSE_OPTIONS)
     # prism recovers past a syntax error and hands back a tree holding nodes
     # nobody wrote. Counting it moves the denominator without moving the code,
     # so the file is reported unread, the way an over-cap file already is.
