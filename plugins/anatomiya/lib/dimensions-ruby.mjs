@@ -354,7 +354,7 @@ export const RUBY_DIMENSIONS = [
     counterClaim: null, // same as logger_over_puts: no wrapper means the question is never asked
     precision: "partial",
     applicabilityPredicate: {
-      sites: "a Ruby file calling Net::HTTP or URI.open, or making a verb-shaped call (get, post, put, patch, delete, head, request, call, perform, execute, fetch) through a constant or variable named client, http, api, request or fetcher; the file whose own stem is nothing but that vocabulary is the client itself and is not a site",
+      sites: "a Ruby file calling Net::HTTP, RestClient, HTTPClient, HTTParty, Faraday, Excon, Typhoeus, HTTP, HTTPX or URI.open, or making a verb-shaped call (get, post, put, patch, delete, head, request, call, perform, execute, fetch) through a constant or variable named client, http, api, request or fetcher; the file whose own stem is nothing but that vocabulary is the client itself and is not a site",
       blind: "a client behind another name or a non-verb method is not seen, and a model that happens to be called Client with a verb-named scope still counts",
     },
     langs: ["ruby"],
@@ -364,7 +364,7 @@ export const RUBY_DIMENSIONS = [
       walkRuby(ast, (n, ctx) => {
         if (n.t !== "call") return;
         const recv = constName(n.receiver);
-        if (recv === "Net::HTTP" || (recv && recv.startsWith("Net::HTTP::"))) {
+        if (recv && directHttp(recv)) {
           return add({ node: site(n), conforming: false, where: where(ctx) });
         }
         if (recv === "URI" && n.name === "open") {
@@ -536,6 +536,17 @@ export const RUBY_DIMENSIONS = [
 ];
 
 const LOG_DIRECT = /^(puts|print|p|pp|warn)$/;
+
+/**
+ * The HTTP libraries a wrapper wraps, the way axios is on the JS side. A
+ * closed table rather than a name test, because `RestClient` and `HTTPClient`
+ * carry the client vocabulary in their own names: forty files calling
+ * RestClient.get read as routing through a repository client that did not
+ * exist, and flagged the one Net::HTTP call as the deviation.
+ */
+const HTTP_LIBRARIES = ["Net::HTTP", "RestClient", "HTTPClient", "HTTParty", "Faraday", "Excon", "Typhoeus", "HTTP", "HTTPX"];
+
+const directHttp = (recv) => HTTP_LIBRARIES.some((lib) => recv === lib || recv.startsWith(`${lib}::`));
 const HTTP_VERB = /^(get|post|put|patch|delete|head|request|call|perform|execute|fetch)$/;
 
 /** A receiver that is a logger: `logger.info`, `Rails.logger.warn`, `@logger.debug`. */
