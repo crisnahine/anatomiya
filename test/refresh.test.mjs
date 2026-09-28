@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 
 import { runPin, runScan } from "../plugins/anatomiya/lib/commands.mjs";
 import { loadPin, PIN_PATH } from "../plugins/anatomiya/lib/baseline.mjs";
@@ -1173,4 +1173,50 @@ test("a failed refresh keeps its retry clock when only what the pin decided chan
   const after = JSON.parse(readFileSync(state, "utf8"));
   assert.equal(after.held.reason, "not-fetched");
   assert.equal(after.at, earlier, "the failure's retry clock is not reset");
+});
+
+/* --- the reftable backend, run on a git that has it --- */
+
+// Git 2.45 and later can create a reftable repository; an older git answers
+// this with an error, and the test says why it skipped.
+function reftableGit() {
+  const r = spawnSync("git", ["init", "-q", "--ref-format=reftable", join(tmpdir(), `anatomiya-rt-probe-${process.pid}`)], { stdio: "pipe" });
+  rmSync(join(tmpdir(), `anatomiya-rt-probe-${process.pid}`), { recursive: true, force: true });
+  return r.status === 0;
+}
+
+test("a reftable clone pins its tip, follows a teammate's fetch, and holds its own push", { skip: !reftableGit() && "git here cannot create a reftable repository" }, async (t) => {
+  // Measured on git 2.51: a reftable clone writes `refs/remotes/origin/main`
+  // an entry with an empty message, which the files backend does not write,
+  // and read as a commit made here it held the pin on every reftable clone.
+  const origin = realpathSync(mkdtempSync(join(tmpdir(), "anatomiya-rt-origin-")));
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "anatomiya-rt-clone-")));
+  t.after(() => {
+    rmSync(origin, { recursive: true, force: true });
+    rmSync(dir, { recursive: true, force: true });
+  });
+  init(origin);
+  git(origin, "config", "receive.denyCurrentBranch", "updateInstead");
+  source(origin, "src", 8);
+  commit(origin, "init");
+  rmSync(dir, { recursive: true, force: true });
+  execFileSync("git", ["clone", "-q", "--ref-format=reftable", origin, dir], { stdio: "pipe" });
+  git(dir, "config", "user.email", "me@clone.test");
+  git(dir, "config", "user.name", "Me");
+  exclude(dir);
+  await runScan(dir);
+
+  assert.equal((await refreshRepository(dir)).pinned, true, "the clone's tip");
+  source(origin, "lib/t1", 8);
+  commit(origin, "a teammate's commit");
+  git(dir, "pull", "-q", "--ff-only");
+  assert.equal((await refreshRepository(dir)).pinned, true, "a teammate's fetched commit");
+  const fetched = loadPin(dir).sha;
+  source(dir, "lib/agent", 8);
+  commit(dir, "mine");
+  git(dir, "-c", "push.negotiate=false", "push", "-q", "origin", "HEAD:main");
+  const r = await refreshRepository(dir);
+  assert.equal(r.pinned, false);
+  assert.equal(r.held.reason, "not-fetched");
+  assert.equal(loadPin(dir).sha, fetched);
 });

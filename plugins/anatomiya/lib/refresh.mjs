@@ -408,9 +408,15 @@ async function madeHereOnLine(root, from, to) {
   let found = null;
   try {
     const me = await committerEmail(root);
-    await gitStreamed(root, ["log", "-g", "--all", "-z", "--format=%H %gs"], (entry) => {
-      const space = entry.indexOf(" ");
-      if (space > 0 && !CREATES_NOTHING.test(entry.slice(space + 1))) made.add(entry.slice(0, space));
+    // Each entry with the ref it belongs to. A remote-tracking ref's entries are
+    // never where a commit is created (a fetch, a push, a clone or a hand
+    // write moves it); read as one, the entry a reftable clone writes there
+    // with an empty message held the pin on every reftable clone (git 2.51).
+    await gitStreamed(root, ["log", "-g", "--all", "-z", "--format=%H %gD %gs"], (entry) => {
+      const [sha, selector = ""] = entry.split(" ", 2);
+      if (!sha || selector.startsWith("refs/remotes/")) return;
+      const message = entry.slice(sha.length + selector.length + 2);
+      if (!CREATES_NOTHING.test(message)) made.add(sha);
     }, { terminated: false });
     if (made.size === 0 && me === null) return null;
     await gitStreamed(root, ["log", "--first-parent", "-z", "--format=%H %ce", from ? `${from}..${to}` : to], (record) => {

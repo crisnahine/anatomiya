@@ -1,0 +1,67 @@
+name: dependabot-lock
+
+# A Dependabot bump of a runtime dependency moves the root lockfile, and the
+# plugin's own lockfile is derived from it (`scripts/plugin-lock.mjs`), so ci's
+# `plugin-lock --check` fails on every such pull request until somebody runs
+# `npm run lock:plugin` on the branch. This does it: on a Dependabot pull request
+# only, it regenerates the plugin lockfile with the same script, pushes it to the
+# Dependabot branch when it changed, and starts ci on the new commit.
+#
+# Why ci is started by hand: a push made with this workflow's token starts no
+# workflow run, so without it the pull request would keep the failed check of
+# the commit before. `workflow_dispatch` is the event such a token may start.
+#
+# What runs: this repository's own script, at the pull request's head, which a
+# Dependabot branch changes only in its lockfiles. The script runs
+# `npm install --package-lock-only --ignore-scripts`, which installs nothing and
+# runs no package's code.
+
+on:
+  pull_request:
+    paths:
+      - package.json
+      - package-lock.json
+
+permissions:
+  contents: read
+
+jobs:
+  lock:
+    # Dependabot's own pull requests on this repository, never a fork's and
+    # never anybody else's.
+    if: >-
+      github.event.pull_request.user.login == 'dependabot[bot]' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      actions: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          persist-credentials: true
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+
+      - name: Regenerate the plugin lockfile
+        run: node scripts/plugin-lock.mjs
+
+      - name: Push it when it changed, and start ci on the new commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: |
+          if git diff --quiet -- plugins/anatomiya/package-lock.json; then
+            echo "the plugin lockfile already matches the root lockfile"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add plugins/anatomiya/package-lock.json
+          git commit -m "Regenerate the plugin lockfile from the root lockfile"
+          git push origin "HEAD:refs/heads/${HEAD_REF}"
+          gh workflow run ci.yml --ref "${HEAD_REF}"

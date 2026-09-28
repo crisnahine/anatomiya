@@ -4,6 +4,9 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Started by dependabot-lock.yml on the commit it pushes, since a push made
+  # with a workflow's token starts no run of its own.
+  workflow_dispatch:
 
 # Read is all any job here needs. No job writes to the repository, posts a
 # comment, or touches a package registry.

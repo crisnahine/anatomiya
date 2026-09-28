@@ -881,8 +881,8 @@ so the paths come back from the hook itself, every time, since the list is one l
 hook to answer replaces it (`docs/research/when-a-hook-can-refresh-the-map.md`).
 
 Where there is no reflog to watch, something else every move rewrites stands in: on the reftable
-backend `reftable/tables.list`, which each ref update rewrites (so git's reftable format documents
-it; git 2.43 here cannot create a reftable repository, so this one is not measured), and in a files
+backend `reftable/tables.list`, which each ref update rewrites (measured on git 2.51: a commit
+replaces the file, and no `logs/` exists at all), and in a files
 repository created without a reflog the index, which a commit, a pull, a checkout and a reset all
 write. The index is the last resort, since a plain `git status` rewrites it too and each one then
 costs a worker that finds the stamp unchanged. `FileChanged` is matched on exactly those basenames

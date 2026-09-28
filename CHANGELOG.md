@@ -28,6 +28,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- On git's reftable backend the automatic pin never followed: a reftable clone writes the remote-tracking
+  ref an entry with no message, which read as a commit made in this clone. Remote-tracking refs'
+  entries are no longer read as commits made here. Verified on git 2.51, where the whole suite passes.
+- A Dependabot bump of a runtime dependency no longer fails ci until somebody regenerates the plugin's
+  lockfile: `.github/workflows/dependabot-lock.yml` regenerates it on the Dependabot branch, pushes it,
+  and starts ci on the new commit.
 - The automatic pin could still accept this clone's own commit once its reflog record was gone: a
   worktree removed with its branch (how Claude Code's worktrees end), or entries expired by `gc`.
   A commit whose committer is this clone's own identity is now held too. A commit subject starting
