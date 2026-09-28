@@ -44,7 +44,9 @@ after `oxc-parser` has already rejected a `.js`, `.jsx`, `.mjs` or `.cjs` file. 
 file's text in memory and nothing is written back to disk. Ruby files go through `prism`, which is a default gem,
 in a child started as `ruby --disable-gems -e <script>` with `RUBYOPT`, `RUBYLIB` and `GEM_HOME`
 dropped from its environment, because each of those can inject a `-r` into a process about to be
-pointed at repository files. The parser child gets `PATH` and `LANG` and nothing else, plus, where
+pointed at repository files. The parser child gets `PATH` and `LANG` and nothing else (on Windows
+also `SystemRoot`, `SYSTEMROOT`, `COMSPEC` and `windir` where set, without which the interpreter
+does not start), plus, where
 the interpreter's own `prism` is too old, `-I` load paths to an installed one (below): absolute
 directories RubyGems recorded, never read from the repository.
 
@@ -125,10 +127,11 @@ what gets read, so the check and the read cannot disagree.
 Anyone can put a file there. A clone can ship one, and a rule file with no `paths` key loads into
 every session from the moment of clone, before any scan runs, in this tool's house style.
 
-anatomiya cannot stop that. What it does instead is name it. The generated overview enumerates every
-file the tool wrote, and a scan reports every other `.md` file it finds in `.claude/rules/` as
+anatomiya cannot stop that. What it does instead is name it. The generated overview names the `.md`
+files in `.claude/rules/` the tool did not write, and a scan and a check report them too, as
 unattributed context. Deletion needs all three signals at once: the `anatomiya-` filename prefix, the
-`generator: anatomiya` frontmatter key, and being known to `facts.json` from this scan. A file with
+`generator: anatomiya` frontmatter key, and being named by the `facts.json` already on disk, read
+before this scan's record replaces it. A file with
 the prefix that the tool did not write is reported, never removed.
 
 If you clone an unfamiliar repository, read `.claude/rules/` before you start a session. That is true
@@ -138,7 +141,7 @@ whether or not you use this tool.
 
 `oxc` can take an uncatchable `SIGSEGV` from inside `parseSync` at sufficient nesting depth. A worker
 thread does not contain that, and no static pre-screen predicts it, so parsing runs in a pool of
-child processes, one file per message. Per file guards: 4 MB size cap, 5s timeout, 1 GB RSS killed
+child processes, one file per message. Per file guards: 1 MB size cap, 5s timeout, 1 GB RSS killed
 after a 250ms grace. A poison file costs one file and about a millisecond of respawn, not the run.
 The Ruby side streams instead of buffering, with a 15s idle timeout, because silence is what a hung
 parse looks like.
@@ -229,9 +232,8 @@ Say the quiet part plainly.
 
 These are real and they are tracked in `DECISIONS.md`.
 
-- **F5 is partial.** The buffered git reads in `plugins/anatomiya/lib/baseline.mjs` and `plugins/anatomiya/lib/check.mjs` now go through
-  one runner in `plugins/anatomiya/lib/git.mjs`, which carries the timeout and the byte cap; `plugins/anatomiya/lib/corpus.mjs` still
-  runs `git rev-parse` through its own. The `--`
+- **F5 is partial.** Every git call now goes through one of the two runners in
+  `plugins/anatomiya/lib/git.mjs`, buffered and streamed, and both carry the timeout and a byte bound. The `--`
   separator is still not applied at every call site. Paths do not currently appear as bare
   positional arguments anywhere, which is what makes today's code hold, but that is a property of
   the current call sites rather than an enforced invariant.
@@ -275,5 +277,5 @@ There is no bug bounty.
 
 ## Supported versions
 
-anatomiya is 0.1.1 and pre-1.0. Fixes land on the main branch and there are no backports to older
+anatomiya is pre-1.0. Fixes land on the main branch and there are no backports to older
 tags. Run from main if you care about this.

@@ -53,7 +53,7 @@ jobs:
           ruby-version: "3.4"
 
       # One leg REQUIRES Ruby. Skipping everywhere is how half the tool goes
-      # untested in silence: the six Ruby dimensions, the prism child, and the
+      # untested in silence: the Ruby dimensions, the prism child, and the
       # Rails data dimensions all live behind this check, and a runner image
       # that drops Ruby would take them all out with a green tick.
       - name: Check the Ruby parser
@@ -119,14 +119,16 @@ jobs:
 
       # One run, and every floor read off its record rather than off the total
       # node prints. A floor over a whole scope says nothing about one file
-      # inside it: the second plugin's `hook-io.mjs` sat under the branch floor
-      # both when the aggregate spanned the whole suite and when it was scoped
-      # to that plugin alone, because what an aggregate hides is proportional to
-      # how much larger the rest of the scope is. Measured on the whole tree, 13
-      # of 151 files sit under their own floor with the total clearing, and the
-      # largest module in the plugin's `lib/` could have lost every covered line
-      # unnoticed. The second plugin's five files and that `lib/`'s 51 are each
-      # now, and the run states which file missed.
+      # inside it: a second plugin this marketplace once listed had a
+      # `hook-io.mjs` under the branch floor both when the aggregate spanned the
+      # whole suite and when it was scoped to that plugin alone, because what an
+      # aggregate hides is proportional to how much larger the rest of the scope
+      # is. Measured on the whole tree then, 13 of 151 files sat under their own
+      # floor with the total clearing, and the largest module in the plugin's
+      # `lib/` could have lost every covered line unnoticed. Each file in the
+      # plugin's `lib/` is held to a floor of its own now, but for the one
+      # `scripts/coverage.mjs` names and says why, and the run states which
+      # file missed.
       - name: Measure and enforce
         shell: bash
         run: |
@@ -412,7 +414,7 @@ jobs:
           '
 
       # The Ruby tier has no smoke coverage otherwise: the JS repository above
-      # exercises none of prism, the six Ruby dimensions, or the Rails data
+      # exercises none of prism, the Ruby dimensions, or the Rails data
       # dimensions over db/schema.rb and db/migrate.
       # The runner image ships no prism, so the Ruby tier would skip everywhere
       # and half the tool would go untested behind a green tick. 3.4, not 3.3:

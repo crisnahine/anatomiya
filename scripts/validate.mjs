@@ -229,11 +229,13 @@ export function validate(root) {
       if (HOOKS_REQUIRED.has(entry.name)) read.add(entry.name);
       const hooks = hookProblems(root, pluginRoot, readJson, { required: HOOKS_REQUIRED.has(entry.name), at: hooksPathsIn(own, pluginRoot) });
       problems.push(...hooks);
-      // Hooks are one of the five, so what can be asked of every plugin is that
-      // something is there to load. Not asked of a plugin whose declaration was
-      // just reported missing: that is the same absence said a second way.
+      // Hooks are one of the kinds in `LOADABLE`, so what can be asked of every
+      // plugin is that something is there to load. Not asked of a plugin whose
+      // declaration was just reported missing: that is the same absence said a
+      // second way. The kinds are read off the list, which once grew past the
+      // five this sentence spelled by hand.
       if (hooks.length === 0 && installsNothing(pluginRoot, own)) {
-        problems.push(`marketplace.json entry ${entry.name} installs as nothing: no hooks, commands, agents, skills or mcpServers`);
+        problems.push(`marketplace.json entry ${entry.name} installs as nothing: no ${LOADABLE_KEYS.slice(0, -1).join(", ")} or ${LOADABLE_KEYS.at(-1)}`);
       }
     }
 
@@ -402,10 +404,10 @@ export function pluginPaths(text) {
 }
 
 /**
- * The five kinds of thing a plugin can install: the manifest key that names
+ * The kinds of thing a plugin can install: the manifest key that names
  * one, and where the loader looks when the manifest does not.
  *
- * One list, because `declaredPathProblems` walked its own copy of the same five
+ * One list, because `declaredPathProblems` walked its own copy of the same
  * keys and `scripts/shipped.mjs` reads this one for the same reason: three
  * hand-kept copies of one fact is the shape this repository keeps writing tests
  * against.
@@ -436,9 +438,9 @@ const LOADABLE_KEYS = LOADABLE.map(([key]) => key);
  * Whether a plugin would install with a name, a version and no behaviour.
  *
  * Hooks cannot be required of every plugin, since a commands-only one is a
- * perfectly good plugin, so the question is whether any of the five is there at
+ * perfectly good plugin, so the question is whether any of these kinds is there at
  * all. It is asked because the hook check answers nothing when the declaration
- * is simply absent: the second plugin here is its two hooks, and deleting the
+ * is simply absent: a second plugin this marketplace once listed was its two hooks, and deleting the
  * file that declares them left every gate green.
  */
 function installsNothing(pluginRoot, manifest) {

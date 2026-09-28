@@ -588,6 +588,20 @@ test("a tracked copy with nothing wrong still passes, so the sweep is not failin
   assert.equal(status, 0, output);
 });
 
+// A tracked file removed from the working tree and not yet staged is still in
+// git's list, and reading it threw a stack in place of the gate's answer.
+test("a tracked document deleted from the working tree is passed over, not read", needsCheckout, (t) => {
+  const dir = repoCopyTracked(t);
+  writeFileSync(join(dir, "docs", "gone.md"), "A note.\n");
+  execFileSync("git", ["add", "docs/gone.md"], { cwd: dir });
+  rmSync(join(dir, "docs", "gone.md"));
+
+  const { status, output } = check(dir);
+
+  assert.equal(status, 0, output);
+  assert.doesNotMatch(output, /ENOENT|at readFileSync/);
+});
+
 test("a document carrying the path of the machine it was written on is failed", needsCheckout, (t) => {
   const dir = repoCopyTracked(t);
   const path = join(dir, "docs", "why.md");

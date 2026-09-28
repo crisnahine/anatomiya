@@ -20,7 +20,7 @@ path and a newline split turns one hostile filename into two corpus entries.
 | Source extensions | `.ts .mts .cts .tsx .js .jsx .mjs .cjs .rb .rake .gemspec .jbuilder` |
 | Source filenames | `Rakefile`, `Gemfile`, `config.ru`, matched whole so a `Gemfile.lock` is not one |
 | Denied outright | `.git/`, `.env*`, `*.pem *.key *.p12 *.pfx *.jks *.keystore`, `.claude/settings.local.json`, `id_rsa`, `id_ed25519`, `.netrc`, `.npmrc` |
-| Excluded directories | `node_modules`, `vendor`, `.yarn`, `fixtures`, `__fixtures__`, `__snapshots__`, `test_cases`, `testdata`, `test-data`, `golden`, `goldens`, `__mocks__`, `mocks`, `dist`, `build`, `coverage`, `.next`. Not `examples`: 8,967 paths in a 35-repository corpus match it and much of that is maintained code |
+| Excluded directories | `node_modules`, `vendor`, `.yarn`, `fixture`, `fixtures` and any `<word>_fixture(s)`, `__fixtures__`, `snapshot`, `snapshots`, `__snapshots__`, `test_cases`, `testdata`, `test-data`, `golden`, `goldens` and their `-test(s)` or `_test(s)` compounds (`golden-test`), `__mocks__`, `mocks`, `cases` and a camelCase word ending in `Cases` (`configCases`), `dist`, `coverage`, `.next`, and `build` unless a `src` directory sits above it. Not `examples`: 8,967 paths in a 35-repository corpus match it and much of that is maintained code |
 | Caps | none on the repository; 1 MB per file, which skips a bundle or a compiled file and says so. Measured across 35 repositories, no hand-written source exceeds 850 KB, and every file between 1 and 4 MB sat at the parse timeout boundary, flipping between crashed and parsed with machine load |
 
 Fixture and vendor directories are excluded because that code is deliberately unidiomatic. In one
@@ -65,8 +65,8 @@ real area rather than being folded away.
 
 The repository root is never a fold target. Everything that reaches the root has nothing in common,
 and a claim computed over that describes no code anyone works on. Files with nowhere to go are
-reported as uncovered in the overview instead. On a 2,468 file repository that was 196 files, about
-8%. Expect a larger share on a tree with many small leaf directories, and much less on a flat one.
+reported as uncovered in the overview instead. On the 2,468 file repository the README's overview
+comes from, that was about 8% of its files (the README prints the count). Expect a larger share on a tree with many small leaf directories, and much less on a flat one.
 
 Above the ceiling the smallest areas fold into the nearest ancestor that is itself an area, smallest
 first, until the count fits. Where no ancestor is an area, which happens whenever a directory holds
@@ -259,8 +259,8 @@ The ratio is `conforming / candidates`. Counting conforming files instead of con
 measured flipping 10 of 39 verdicts, in both directions: it hid real conventions and it manufactured
 false ones.
 
-`applicability` is rendered beside the area's file count on every stated line, because that is the
-only thing a human can audit a predicate with. A wrongly narrow predicate produces a ratio of 1.0
+`applicability` is rendered beside the eligible files, the area's files in the dimension's languages
+that it could read, on every stated line, because that is the only thing a human can audit a predicate with. A wrongly narrow predicate produces a ratio of 1.0
 over a small candidate set and reads as a strong convention; `12 of 12 sites across 3 of 20 files`
 reads as what it is.
 
@@ -515,7 +515,7 @@ one `git cat-file` process per file, which measured 6.9s against 1.4s to parse t
 a repository where nothing had changed. A rename is treated as changed, because the two paths are
 two different files as far as the corpus map is concerned.
 
-Four conditions stop a directive before any gate is consulted:
+Five conditions stop a directive before any gate is consulted:
 
 | Condition | Meaning |
 |---|---|
@@ -959,12 +959,12 @@ root, which is never a root itself except on a repository that is one flat direc
 | Rule | Value |
 |---|---|
 | floor | a directory needs `max(3, ceil(0.01 * N))` files cumulatively, `N` the corpus size |
-| descend instead of printing | the name is `src`, `lib`, `app`, `packages` or `source`, or one child holds 80% of the directory's files |
+| descend instead of printing | the name is `src`, `lib`, `app`, `apps`, `packages` or `source`, or one child holds 80% of the directory's files |
 | files sitting in a descended directory itself | their own candidate, printed as `lib (files at this level)` |
 | a descent that earns no line at all | the directory itself, over everything under it |
 | budget | 7 lines, sorted by source files, then total files, then path |
 
-Five shell names, because those are the directory names that say nothing about what is in them;
+Six shell names, because those are the directory names that say nothing about what is in them;
 anything else is a name worth printing. The 80% rule is what makes a Ruby gem's `lib/<gem>` read as
 the gem. rubocop prints `lib/rubocop (files at this level): 45 .rb` beside `lib/rubocop/cop`, which
 is why a descended directory's own files are a candidate of their own. webpack's `lib` is 652 files
@@ -1303,8 +1303,8 @@ Roughly, in order of how much they move the number of stated claims:
   import will state very little, and so will a shallow clone: the bar cannot be lowered on a window,
   so a `--depth=1` CI checkout states nothing and prints every claim as a count.
 - **Actual consistency.** The ratio gate is 0.90. Anything your team is 80% consistent about will
-  print as counts, not as a claim. On the example repository, 671 of the 834 suppressed slots failed
-  on ratio.
+  print as counts, not as a claim. On the example repository, the ratio gate is the one most of the
+  slots that did not state failed.
 - **Language.** JavaScript, TypeScript and Ruby only.
 - **Repository size.** No cap. A 2,468 file repository takes about 1.8 seconds against a pinned
   baseline, a 5,477 file Ruby repository about 6.2, and a synthetic 100,000 file repository about

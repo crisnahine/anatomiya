@@ -23,7 +23,7 @@ session does it again. The research behind this failure class is collected in
 conventions rarely reach the model, and when they do, prose rules decay while counted facts hold.
 
 anatomiya is the denominator the agent lacked. Before it writes a test, the always-loaded overview
-already says `102 Cypress specs under cypress/integration; 7 vitest under src`. Before it edits a
+already says `102 of 103 Cypress specs under cypress/integration; 7 vitest under src`. Before it edits a
 file, the directory's own numbers are in context: which style the siblings use, how consistently,
 and out of how many.
 
@@ -113,8 +113,11 @@ a `.worktreeinclude` at the repository root copies the map and the pin in when t
 **/.claude/anatomiya/baseline.json
 ```
 
-The pin is the third line because the exclude above hides it along with the map, and a worktree
-without it checks as if nothing had been pinned: every finding capped at FIX. That copy is a snapshot
+The pin is the third line because the exclude above hides it along with the map, so the copied map
+arrives with the pin it was checked against. A linked worktree with no pin of its own reads its main
+checkout's, but only where that checkout can be named: a repository whose git directory is not the
+checkout's own `.git` (moved out with `--separate-git-dir`) names none, and without the copied pin
+its worktree checks as if nothing had been pinned. That copy is a snapshot
 of the main checkout taken at that moment, with nothing saying so, where the hooks' borrowed map
 carries its source. `docs/research/why-a-worktree-got-no-map.md` has the sources for both.
 
@@ -299,7 +302,7 @@ are the point.
 | 67 | conforming | sites that match the pattern |
 | 74 | candidates | sites in this area where the construct appears at all |
 | 70 | applicability | files holding at least one candidate |
-| 122 | file count | source files in the area |
+| 122 | eligible files | files in the area written in the dimension's languages, less any whose syntax it could not read |
 
 The first pair says how consistent the habit is. The second says how much of the area the claim can
 speak for at all. Both are needed, because a predicate that only recognises 3 of 20 files will

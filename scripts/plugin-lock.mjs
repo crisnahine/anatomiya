@@ -166,6 +166,15 @@ function refuse(message) {
 }
 
 function main() {
+  // An option this does not know is a typo, and stepping over it made
+  // `--chek` run the write the gate exists to keep off the lockfile. Asked
+  // before the platform answer below, the way `shipped.mjs` asks it, because a
+  // typo is a typo on every platform.
+  const typo = process.argv.slice(2).find((arg) => arg.startsWith("-") && arg !== "--check");
+  if (typo !== undefined) {
+    console.error(`${process.env.GITHUB_ACTIONS === "true" ? "::error::" : ""}unknown option: ${typo}\nusage: node scripts/plugin-lock.mjs [--check] [marketplaceRoot]`);
+    process.exit(2);
+  }
   const check = process.argv.includes("--check");
   if (!RUNNABLE) {
     // Said for the write as well as the check, because every refusal in here
