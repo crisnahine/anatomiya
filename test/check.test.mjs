@@ -4484,8 +4484,14 @@ test("a blobless partial clone reads the merge base from its promisor rather tha
   run(origin, "-c", "user.email=t@t.test", "-c", "user.name=T", "commit", "-qm", "init");
   run(origin, "checkout", "-q", "-b", "feat");
   writeFileSync(join(origin, "src", "f0.ts"), "export const f0 = (a: number) => {\n  return a;\n};\n");
+  // A rename too: detecting it reads the base side of both paths, and a diff
+  // refused that read failed whole, so nothing at all was examined.
+  run(origin, "mv", "src/f1.ts", "src/g1.ts");
+  writeFileSync(join(origin, "src", "g1.ts"), "export function f1(a: number): number {\n  // renamed, and edited\n  return a;\n}\n");
   run(origin, "-c", "user.email=t@t.test", "-c", "user.name=T", "commit", "-qam", "feat");
   run(origin, "checkout", "-q", "main");
+  writeFileSync(join(origin, "src", "f2.ts"), "export function f2(a: number): number {\n  return a + 1;\n}\n");
+  run(origin, "-c", "user.email=t@t.test", "-c", "user.name=T", "commit", "-qam", "main moves on");
 
   const dir = scratch(t, "anatomiya-check-partial-");
   execFileSync("git", ["clone", "-q", "--no-checkout", "--filter=blob:none", `file://${origin}`, dir], { stdio: "pipe" });
@@ -4494,6 +4500,6 @@ test("a blobless partial clone reads the merge base from its promisor rather tha
 
   const report = await check(dir, { baseRef: "origin/main" });
 
-  assert.ok(!notes(report).some((n) => /at the merge base/.test(n)), notes(report).join("\n"));
+  assert.ok(!notes(report).some((n) => /at the merge base|could not be read/.test(n)), notes(report).join("\n"));
   assert.ok(report.findings.some((f) => f.path === "src/f0.ts"), "the changed file was judged against its base");
 });

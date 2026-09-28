@@ -300,9 +300,14 @@ async function followPin(root, pin) {
 }
 
 // A reflog entry that records a commit this clone created: a commit, amend or
-// merge commit, a pick, a revert, a patch applied, a rebase's rewrite. A
-// fast-forward creates nothing and is not one of them.
-const MADE_HERE = /^(commit|cherry-pick|revert|am|rebase|pull --rebase)\b|^merge [^:]*: Merge made/;
+// merge commit, a pick, a revert, a patch applied, a step of a rebase that
+// rewrote one, a merge commit made by `merge` or `pull`. A rebase's step is
+// named by whatever ran it (`rebase (pick)`, `pull -q origin main (pick)`, with
+// `pull.rebase` set), so the step is read and not the command. A rebase's
+// `(start)` and `(finish)` name the commit it moved onto, which is upstream's,
+// and a fast-forward creates nothing; counting either stalled the pin on every
+// rebase onto the remote.
+const MADE_HERE = /^(commit|cherry-pick|revert|am)\b|\((pick|reword|edit|squash|fixup|continue)\): |: Merge made /;
 
 /**
  * Whether a commit this clone created sits on the first-parent line the pin

@@ -218,7 +218,7 @@ export function gitStreamed(
   root,
   args,
   onField,
-  { terminated = true, timeout = GIT.timeoutMs, env = process.env, maxFieldBytes = GIT.maxBytes } = {}
+  { terminated = true, timeout = GIT.timeoutMs, env = process.env, maxFieldBytes = GIT.maxBytes, lazyFetch = false } = {}
 ) {
   return new Promise((fulfil, reject) => {
     const refused = refuse(args);
@@ -228,7 +228,7 @@ export function gitStreamed(
       cwd: root,
       stdio: ["ignore", "pipe", "pipe"],
       timeout,
-      env: gitEnv(env),
+      env: gitEnv(env, { lazyFetch }),
     });
     let rest = Buffer.alloc(0);
     let stderr = "";
