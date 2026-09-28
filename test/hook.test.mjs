@@ -1588,3 +1588,18 @@ test("a transcript line is a compaction, the texts of a hook delivery, or nothin
   assert.equal(echoEvent(line({ type: "user", message: { content: "ls" } })), null);
   assert.equal(echoEvent(line({ type: "user", attachment: { type: "hook_additional_context", content: ["a"] } })), null, "only an attachment entry");
 });
+
+test("a backslash in a POSIX filename is part of the name, not a separator", { skip: sep === "\\" }, (t) => {
+  const dir = mapped(t);
+  assert.equal(targetIn({ tool_name: "Write", tool_input: { file_path: join(dir, "spec\\new_spec.rb") } }, dir, dir), "spec\\new_spec.rb");
+});
+
+test("an overview reached through a tracked link to another checkout is not this repository's map", { skip: process.platform === "win32" }, (t) => {
+  const other = mapped(t);
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-hook-linked-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  mkdirSync(join(dir, ".claude"));
+  symlinkSync(join(other, ".claude", "rules"), join(dir, ".claude", "rules"));
+
+  assert.equal(echoContext(dir, {}), null);
+});

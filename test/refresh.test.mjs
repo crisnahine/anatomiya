@@ -68,8 +68,10 @@ async function cloned(t) {
   commit(origin, "init");
   rmSync(dir, { recursive: true, force: true });
   execFileSync("git", ["clone", "-q", origin, dir], { stdio: "pipe" });
-  git(dir, "config", "user.email", "t@t.test");
-  git(dir, "config", "user.name", "T");
+  // Somebody other than the teammate committing on the remote, as in any team:
+  // the pin reads who made a commit as well as the reflog.
+  git(dir, "config", "user.email", "me@clone.test");
+  git(dir, "config", "user.name", "Me");
   git(dir, "config", "commit.gpgsign", "false");
   exclude(dir);
   await runScan(dir);
@@ -826,6 +828,7 @@ test("a checkout whose git files cannot be named is refreshed, but no watch list
   // The watch list is shared by every hook, and an empty one clears them all.
   const dir = await scanned(t);
   renameSync(join(dir, ".git"), join(dir, ".git-away"));
+  writeFileSync(join(dir, ".git"), "not a gitdir line\n");
   const { started, start } = recorder();
 
   assert.deepEqual(runRefresh(dir, { hook_event_name: "SessionStart", cwd: dir }, { start }), {});
@@ -1036,4 +1039,138 @@ test("a clone that kept no reflog is held, and the line says git kept no record 
   const said = runRefresh(dir, { hook_event_name: "SessionStart", cwd: dir }, { start }).systemMessage;
   assert.match(said, /git kept no record/);
   assert.doesNotMatch(said, /moved by this clone/);
+});
+
+/* --- a commit made here whose record is misleading or gone --- */
+
+// This clone's commit, pushed straight onto the remote's default branch by URL
+// and fetched back, with a teammate's commit on top: the case every test below
+// arranges differently, and each must hold.
+async function pushedAndBuiltOn(t, make) {
+  const { origin, dir } = await cloned(t);
+  await refreshRepository(dir);
+  const first = loadPin(dir).sha;
+  git(origin, "config", "receive.denyCurrentBranch", "updateInstead");
+  make(dir, origin);
+  source(origin, "lib/t2", 8);
+  commit(origin, "a teammate's commit on top");
+  git(dir, "fetch", "-q");
+  git(dir, "merge", "-q", "--ff-only", "origin/main");
+  return { dir, first };
+}
+
+test("a pick whose subject begins like a fast-forward is still a commit made here", async (t) => {
+  const { dir, first } = await pushedAndBuiltOn(t, (dir, origin) => {
+    git(dir, "checkout", "-q", "-b", "fix");
+    source(dir, "lib/lock", 8);
+    commit(dir, "Fast-forward the lockfile");
+    git(dir, "checkout", "-q", "main");
+    execFileSync("git", ["cherry-pick", "fix"], { cwd: dir, stdio: "pipe", env: { ...process.env, GIT_COMMITTER_DATE: "2030-01-01T00:00:00Z" } });
+    git(dir, "branch", "-q", "-D", "fix");
+    git(dir, "-c", "push.negotiate=false", "push", "-q", origin, "HEAD:main");
+  });
+  assert.equal((await refreshRepository(dir)).pinned, false);
+  assert.equal(loadPin(dir).sha, first);
+});
+
+test("a merge of a branch named with parentheses is still a merge commit made here", async (t) => {
+  const { dir, first } = await pushedAndBuiltOn(t, (dir, origin) => {
+    git(dir, "checkout", "-q", "-b", "wip(start)");
+    source(dir, "lib/wip", 8);
+    commit(dir, "work in progress");
+    git(dir, "checkout", "-q", "main");
+    git(dir, "merge", "-q", "--no-ff", "-m", "merge it", "wip(start)");
+    git(dir, "-c", "push.negotiate=false", "push", "-q", origin, "HEAD:main");
+  });
+  assert.equal((await refreshRepository(dir)).pinned, false);
+  assert.equal(loadPin(dir).sha, first);
+});
+
+test("a commit from a linked worktree since removed, its branch deleted, is still this clone's own", async (t) => {
+  // Claude Code's own worktrees end this way: the worktree's HEAD log goes
+  // with it, and the branch's with the branch.
+  const { dir, first } = await pushedAndBuiltOn(t, (dir, origin) => {
+    const wt = realpathSync(mkdtempSync(join(tmpdir(), "anatomiya-refresh-gone-")));
+    rmSync(wt, { recursive: true, force: true });
+    git(dir, "worktree", "add", "-q", "-b", "feat2", wt, "main");
+    source(wt, "lib/agent", 8);
+    commit(wt, "agent work in a worktree");
+    git(wt, "-c", "push.negotiate=false", "push", "-q", origin, "feat2:main");
+    git(dir, "worktree", "remove", "--force", wt);
+    git(dir, "branch", "-q", "-D", "feat2");
+  });
+  assert.equal((await refreshRepository(dir)).pinned, false);
+  assert.equal(loadPin(dir).sha, first);
+});
+
+test("a commit made here is still held after its reflog entries expire", async (t) => {
+  const { dir, first } = await pushedAndBuiltOn(t, (dir, origin) => {
+    source(dir, "lib/agent", 8);
+    commit(dir, "mine");
+    git(dir, "-c", "push.negotiate=false", "push", "-q", origin, "HEAD:main");
+    git(dir, "reflog", "expire", "--expire=now", "--all");
+  });
+  assert.equal((await refreshRepository(dir)).pinned, false);
+  assert.equal(loadPin(dir).sha, first);
+});
+
+test("a record below its checkout's root refreshes nothing, and nothing is written at the root", async (t) => {
+  // A copied project's `.claude/` inside a repository that never opted in.
+  const dir = await scanned(t);
+  const outer = realpathSync(mkdtempSync(join(tmpdir(), "anatomiya-refresh-outer-")));
+  t.after(() => rmSync(outer, { recursive: true, force: true }));
+  init(outer);
+  source(outer, "src", 8);
+  commit(outer, "init");
+  mkdirSync(join(outer, "sub"));
+  execFileSync("cp", ["-R", join(dir, ".claude"), join(outer, "sub", ".claude")]);
+  const { started, start } = recorder();
+
+  assert.deepEqual(runRefresh(join(outer, "sub"), { hook_event_name: "SessionStart", cwd: join(outer, "sub") }, { start }), {});
+  assert.deepEqual(started, []);
+  assert.equal((await refreshRepository(join(outer, "sub"))).reason, "outside");
+  assert.equal(existsSync(join(outer, ".claude")), false);
+});
+
+test("the index changing after a first commit moved the watch still refreshes, and names the watch again", async (t) => {
+  // Scanned before any commit, the watch names the index; the first commit
+  // writes `logs/HEAD` and the watch moves there.
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "anatomiya-refresh-first-")));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  init(dir);
+  source(dir, "src", 8);
+  git(dir, "add", "-A");
+  await runScan(dir);
+  const { started, start } = recorder();
+  assert.equal(runRefresh(dir, { hook_event_name: "SessionStart", cwd: dir }, { start }).hookSpecificOutput.watchPaths[0], join(dir, ".git", "index"));
+  git(dir, "commit", "-qm", "first");
+
+  const out = runRefresh(dir, { hook_event_name: "FileChanged", cwd: dir, file_path: join(dir, ".git", "index") }, { start });
+
+  assert.equal(started.length, 2, "the change is ours, and a worker starts");
+  assert.deepEqual(out.hookSpecificOutput.watchPaths, [join(dir, ".git", "logs", "HEAD"), join(dir, ".git", "HEAD")]);
+});
+
+test("a failed refresh keeps its retry clock when only what the pin decided changes", async (t) => {
+  // Pin at the clone's tip, a local commit, a failed refresh; then a push makes
+  // the tip this clone's own, so the hold changes while the stamp does not.
+  const { origin, dir } = await cloned(t);
+  await refreshRepository(dir);
+  source(dir, "lib/agent", 8);
+  commit(dir, "local");
+  const fail = async () => { throw new Error("boom"); };
+  assert.equal((await refreshRepository(dir, { scan: fail })).reason, "failed");
+  const state = join(dir, REFRESH_STATE);
+  const earlier = new Date(Date.now() - 25 * 60 * 1000).toISOString();
+  writeFileSync(state, JSON.stringify({ ...JSON.parse(readFileSync(state, "utf8")), at: earlier }));
+  git(origin, "config", "receive.denyCurrentBranch", "updateInstead");
+  git(dir, "-c", "push.negotiate=false", "push", "-q", "origin", "HEAD:main");
+
+  const r = await refreshRepository(dir, { scan: fail });
+
+  assert.equal(r.reason, "failed-before");
+  assert.equal(r.held.reason, "not-fetched");
+  const after = JSON.parse(readFileSync(state, "utf8"));
+  assert.equal(after.held.reason, "not-fetched");
+  assert.equal(after.at, earlier, "the failure's retry clock is not reset");
 });

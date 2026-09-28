@@ -266,6 +266,14 @@ function parseArgs(argv) {
   return opts;
 }
 
+// A reader that stops early (`check | head`) closes the pipe, and the next
+// write failed with an unhandled EPIPE and a stack trace. Output nobody reads
+// any more is not a failure of the command.
+process.stdout.on("error", (err) => {
+  if (err?.code === "EPIPE") process.exit(process.exitCode ?? 0);
+  throw err;
+});
+
 const opts = parseArgs(process.argv.slice(2));
 if (opts.help) {
   // Returned rather than exited from: a write to a pipe is asynchronous once it
