@@ -299,15 +299,17 @@ async function followPin(root, pin) {
   }
 }
 
-// A reflog entry that records a commit this clone created: a commit, amend or
-// merge commit, a pick, a revert, a patch applied, a step of a rebase that
-// rewrote one, a merge commit made by `merge` or `pull`. A rebase's step is
-// named by whatever ran it (`rebase (pick)`, `pull -q origin main (pick)`, with
-// `pull.rebase` set), so the step is read and not the command. A rebase's
-// `(start)` and `(finish)` name the commit it moved onto, which is upstream's,
-// and a fast-forward creates nothing; counting either stalled the pin on every
-// rebase onto the remote.
-const MADE_HERE = /^(commit|cherry-pick|revert|am)\b|\((pick|reword|edit|squash|fixup|continue)\): |: Merge made /;
+// The reflog entries that create no commit: a clone, a checkout, a reset, a
+// branch made or renamed, anything a fetch wrote, a fast-forward, and a
+// rebase's bookkeeping (`(start)` and `(finish)` name the upstream commit it
+// moved onto). Every other entry names a commit this clone made, whatever
+// wrote it. Read this way round because git prefixes a rebase's steps with
+// the command that ran it (`pull -q --rebase (pick)`, or `pull (pick)` with
+// `pull.rebase` set), and a list of what creates commits missed each new
+// spelling and pinned the rebased commit; an entry nobody listed here now
+// holds the pin rather than letting it through.
+const CREATES_NOTHING =
+  /^(clone|checkout|reset|branch|fetch|initial pull)\b|^(pull|merge)\b[^:]*: (fast-forward|storing head|forced-update)\b|\((start|finish|abort|reset|label|update-refs)\): /i;
 
 /**
  * Whether a commit this clone created sits on the first-parent line the pin
@@ -321,17 +323,26 @@ const MADE_HERE = /^(commit|cherry-pick|revert|am)\b|\((pick|reword|edit|squash|
  * the one this does not see. Anything git could not answer counts as made here.
  */
 async function madeHereOnLine(root, from, to) {
-  const log = await gitBuffered(root, ["log", "-g", "--all", "--format=%H %gs"]);
-  if (!log.ok) return true;
+  // Both walks grow with the repository, a first pin's with its whole history,
+  // so they stream (F6); `-z` ends each record with a NUL and leaves the last
+  // unterminated.
   const made = new Set();
-  for (const line of log.stdout.split("\n")) {
-    const space = line.indexOf(" ");
-    if (space > 0 && MADE_HERE.test(line.slice(space + 1))) made.add(line.slice(0, space));
+  let line = false;
+  try {
+    await gitStreamed(root, ["log", "-g", "--all", "-z", "--format=%H %gs"], (entry) => {
+      const space = entry.indexOf(" ");
+      if (space > 0 && !CREATES_NOTHING.test(entry.slice(space + 1))) made.add(entry.slice(0, space));
+    }, { terminated: false });
+    if (made.size === 0) return false;
+    await gitStreamed(root, ["log", "--first-parent", "-z", "--format=%H", from ? `${from}..${to}` : to], (sha) => {
+      if (!made.has(sha.trim())) return true;
+      line = true;
+      return false;
+    }, { terminated: false });
+  } catch {
+    return true;
   }
-  if (made.size === 0) return false;
-  const line = await gitBuffered(root, ["rev-list", "--first-parent", from ? `${from}..${to}` : to]);
-  if (!line.ok) return true;
-  return line.stdout.split("\n").some((sha) => made.has(sha.trim()));
+  return line;
 }
 
 /**

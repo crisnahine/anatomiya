@@ -458,7 +458,7 @@ export function echoContext(root, { now = new Date(), transcript = null } = {}) 
   // A failed refresh changes what the delivery says, so a window holding the
   // healthy map hears it again. Only the flag is read: the error text is the
   // repository's own and never reaches the context.
-  const failed = refreshFailed(found.root);
+  const failed = refreshFailed(found.from ?? found.root);
   if (failed) hash.update("\0refresh-failed");
   const digest = hash.digest("hex").slice(0, 12);
   if (heldIn(transcript, digest)) return null;

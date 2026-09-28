@@ -29,7 +29,10 @@ const WORD_BREAK = /[^\p{L}\p{M}]+/u;
 
 // Anything but letters, marks, numbers, punctuation, symbols and the plain
 // space, which covers Cc, Cf, Co, Cs and Zl/Zp. A lone surrogate is a code
-// point under the `u` flag, so it matches here too.
+// point under the `u` flag, so it matches here too. A control character or a
+// newline breaks the line a value is written on, and a bidi override or a
+// zero-width joiner reorders or hides what it says; `JSON.stringify` escapes
+// neither of the last two.
 const UNPRINTABLE = /[^\p{L}\p{M}\p{N}\p{P}\p{S} ]/gu;
 
 const STRUCTURAL = [
@@ -48,7 +51,7 @@ const BLOCK_MARKER = /^(?:[#>*+-]+|\d+[.)])\s*/;
 const GRAPHEMES = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 
 /** Strip anything that is not printable, then collapse runs of spaces. */
-function printableOnly(s) {
+export function printableOnly(s) {
   return s.replace(UNPRINTABLE, " ").replace(/ {2,}/g, " ").trim();
 }
 
@@ -142,21 +145,17 @@ export function firstLine(text) {
   return line ? line.trim().slice(0, 200) : "";
 }
 
-// Anything but letters, marks, numbers, punctuation, symbols and the plain
-// space: a control character or a newline breaks the line a path is written
-// on, and a bidi override or a zero-width joiner reorders or hides what it
-// says, and `JSON.stringify` escapes neither of the last two.
-export const UNSAFE_IN_PATH = /[^\p{L}\p{M}\p{N}\p{P}\p{S} ]/gu;
-
 /**
- * A path as the locator it is, with only the characters above refused.
+ * A path as the locator it is, with only the unprintable characters refused,
+ * one for one, so nothing else about it moves.
  *
  * Not through the display encoder. Every writer that uses it hands the path to
  * something that opens the file: GitHub places an annotation by it, a JSON
  * reader joins a finding back to it, the agent opens the one the text names,
  * and the echo names the checkout a map was counted in, whose area files are
- * read there. The encoder's cap and its script rule are for text a file loads, and here
- * they ended a long monorepo path in `…` and put a placeholder in place of a
- * Japanese directory, neither of which anything can open.
+ * read there. The encoder's cap and its script rule are for text a file
+ * loads, and here they ended a long monorepo path in `…` and put a
+ * placeholder in place of a Japanese directory, neither of which anything can
+ * open.
  */
-export const locator = (p) => String(p ?? "").replace(UNSAFE_IN_PATH, " ");
+export const locator = (p) => String(p ?? "").replace(UNPRINTABLE, " ");

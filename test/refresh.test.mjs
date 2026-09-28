@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
@@ -8,7 +8,8 @@ import { execFileSync } from "node:child_process";
 import { runPin, runScan } from "../plugins/anatomiya/lib/commands.mjs";
 import { loadPin, PIN_PATH } from "../plugins/anatomiya/lib/baseline.mjs";
 import { EXCLUDE_LINES, REFRESH_STATE } from "../plugins/anatomiya/lib/rules.mjs";
-import { refreshRepository, runRefresh } from "../plugins/anatomiya/lib/refresh.mjs";
+import { movedByRemote, noteScan, refreshRepository, runRefresh } from "../plugins/anatomiya/lib/refresh.mjs";
+import { collect } from "../plugins/anatomiya/lib/corpus.mjs";
 
 const OVERVIEW = join(".claude", "rules", "anatomiya-overview.md");
 
@@ -270,7 +271,6 @@ test("a scan a person runs clears a failed refresh, and the next refresh has not
   // The echo tells the session to run `/anatomiya:scan` after a failed
   // refresh; the warning then outlived the scan it asked for, and the first
   // refresh after any manual scan rescanned the whole repository again.
-  const { noteScan } = await import("../plugins/anatomiya/lib/refresh.mjs");
   const dir = await scanned(t);
   source(dir, "lib/services", 8);
   commit(dir, "a second area");
@@ -287,7 +287,6 @@ test("a scan a person runs clears a failed refresh, and the next refresh has not
 });
 
 test("a manual scan keeps what the last automatic pin accepted", async (t) => {
-  const { noteScan } = await import("../plugins/anatomiya/lib/refresh.mjs");
   const { dir } = await cloned(t);
   await refreshRepository(dir);
   const pinned = JSON.parse(readFileSync(join(dir, REFRESH_STATE), "utf8")).pinned;
@@ -521,6 +520,53 @@ test("a local commit rebased by `git pull` and pushed is not pinned once a teamm
   assert.equal(loadPin(dir).sha, first);
 });
 
+test("however this clone made a commit, pushing it straight onto the default branch never pins it", async (t) => {
+  // Each way git writes a commit here names it differently in the reflog.
+  const side = (dir) => {
+    git(dir, "checkout", "-q", "-b", "side");
+    source(dir, "lib/side", 8);
+    commit(dir, "on a side branch");
+    git(dir, "checkout", "-q", "main");
+  };
+  const ways = {
+    "pull -q --rebase": (dir, origin) => {
+      source(dir, "lib/agent", 8);
+      commit(dir, "local");
+      source(origin, "lib/t1", 8);
+      commit(origin, "a teammate's commit");
+      git(dir, "pull", "-q", "--rebase");
+    },
+    "cherry-pick": (dir) => {
+      side(dir);
+      git(dir, "cherry-pick", "side");
+    },
+    revert: (dir) => git(dir, "revert", "--no-edit", "HEAD"),
+    am: (dir) => {
+      side(dir);
+      const patch = execFileSync("git", ["format-patch", "-1", "--stdout", "side"], { cwd: dir });
+      execFileSync("git", ["am", "-q"], { cwd: dir, input: patch, stdio: ["pipe", "pipe", "pipe"] });
+    },
+    "merge commit": (dir) => {
+      side(dir);
+      git(dir, "merge", "-q", "--no-ff", "-m", "merged here", "side");
+    },
+  };
+  for (const [way, make] of Object.entries(ways)) {
+    const { origin, dir } = await cloned(t);
+    await refreshRepository(dir);
+    const first = loadPin(dir).sha;
+    git(origin, "config", "receive.denyCurrentBranch", "updateInstead");
+    make(dir, origin);
+    git(dir, "-c", "push.negotiate=false", "push", "-q", "origin", "HEAD:main");
+    source(origin, "lib/t2", 8);
+    commit(origin, "a teammate's commit on top");
+    git(dir, "pull", "-q", "--ff-only");
+
+    assert.equal((await refreshRepository(dir)).pinned, false, way);
+    assert.equal(loadPin(dir).sha, first, way);
+  }
+});
+
 test("rebasing onto the remote with nothing of this clone's own still lets the pin follow", async (t) => {
   // `rebase (start)` and `rebase (finish)` name the upstream commit the rebase
   // moved onto, which this clone did not make; counting them stalled the pin.
@@ -697,7 +743,6 @@ test("the newest reflog entry is read however long the reflog has grown", async 
 /* --- guards each pinned on their own --- */
 
 test("a reflog message counts as the remote's only for a fetch or pull that named neither a path nor a destination", async () => {
-  const { movedByRemote } = await import("../plugins/anatomiya/lib/refresh.mjs");
   for (const ok of ["fetch -q: fast-forward", "fetch origin: fast-forward", "pull --no-rebase: fast-forward", "fetch: forced-update"]) {
     assert.equal(movedByRemote(ok), true, ok);
   }
@@ -716,7 +761,6 @@ test("a reflog message counts as the remote's only for a fetch or pull that name
 test("a checkout whose git files cannot be named is refreshed, but no watch list replaces anybody's", async (t) => {
   // The watch list is shared by every hook, and an empty one clears them all.
   const dir = await scanned(t);
-  const { renameSync } = await import("node:fs");
   renameSync(join(dir, ".git"), join(dir, ".git-away"));
   const { started, start } = recorder();
 
@@ -725,7 +769,6 @@ test("a checkout whose git files cannot be named is refreshed, but no watch list
 });
 
 test("a new pin is a reason to rescan, since the map's drift is measured against it", async (t) => {
-  const { runPin } = await import("../plugins/anatomiya/lib/commands.mjs");
   const dir = await scanned(t);
   await refreshRepository(dir);
   assert.equal((await refreshRepository(dir)).reason, "current");
@@ -744,4 +787,70 @@ test("a lock older than any scan runs is taken over even when its process is ali
 
   writeFileSync(join(dir, ".claude", "anatomiya", "refresh.lock"), JSON.stringify({ pid: process.pid, at: Date.now() }));
   assert.equal((await refreshRepository(dir)).reason, "busy", "a fresh lock of a live process is respected");
+});
+
+/* --- a tip this clone did not make, but nobody reviewed either --- */
+
+// A teammate's branch on the remote, unmerged: not the clone's own work, so the
+// check for commits made here says nothing, and the other guards must.
+async function withTeammateBranch(t) {
+  const { origin, dir } = await cloned(t);
+  await refreshRepository(dir);
+  const first = loadPin(dir).sha;
+  git(origin, "checkout", "-q", "-b", "feature");
+  source(origin, "lib/unreviewed", 8);
+  commit(origin, "a teammate's unmerged work");
+  git(origin, "checkout", "-q", "main");
+  return { origin, dir, first };
+}
+
+test("a checkout sitting on a teammate's unmerged branch is not the default branch's tip", async (t) => {
+  const { dir, first } = await withTeammateBranch(t);
+  git(dir, "fetch", "-q");
+  git(dir, "checkout", "-q", "--detach", "origin/feature");
+
+  assert.equal((await refreshRepository(dir)).pinned, false);
+  assert.equal(loadPin(dir).sha, first);
+});
+
+test("a teammate's branch fetched into the default branch's tracking ref is not followed", async (t) => {
+  const { dir, first } = await withTeammateBranch(t);
+  git(dir, "fetch", "-q", "origin", "feature:refs/remotes/origin/main");
+  git(dir, "reset", "-q", "--hard", "origin/main");
+
+  assert.equal((await refreshRepository(dir)).pinned, false);
+  assert.equal(loadPin(dir).sha, first);
+});
+
+test("the same fetch in a clone that keeps no reflog is not followed either", async (t) => {
+  const { dir, first } = await withTeammateBranch(t);
+  git(dir, "config", "core.logAllRefUpdates", "false");
+  git(dir, "fetch", "-q", "origin", "feature:refs/remotes/origin/main");
+  git(dir, "reset", "-q", "--hard", "origin/main");
+
+  assert.equal((await refreshRepository(dir)).pinned, false);
+  assert.equal(loadPin(dir).sha, first);
+});
+
+test("a commit or a staged file landing while the pin reads the index is refused, not pinned", async (t) => {
+  // The list comes from the index and takes seconds on a large repository;
+  // the checks made before it said nothing about what arrived during it.
+  const { dir } = await cloned(t);
+  const during = (act) => async (root) => {
+    const read = await collect(root);
+    act();
+    return read;
+  };
+
+  await assert.rejects(
+    runPin(dir, { collectFiles: during(() => { source(dir, "lib/agent", 8); commit(dir, "meanwhile"); }) }),
+    /HEAD moved/
+  );
+  assert.equal(existsSync(join(dir, PIN_PATH)), false);
+
+  await assert.rejects(
+    runPin(dir, { collectFiles: during(() => { writeFileSync(join(dir, "src", "f0.ts"), "export const changed = 1;\n"); git(dir, "add", "src/f0.ts"); }) }),
+    /tracked files differ/
+  );
+  assert.equal(existsSync(join(dir, PIN_PATH)), false);
 });
