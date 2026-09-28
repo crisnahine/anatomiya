@@ -1396,7 +1396,7 @@ test("a narrowed row divides by the population it narrowed to, not by the whole 
   // on every mixed directory, which is exactly the failure C3 and C4 exist to
   // stop. Same rule a stripped file already gets one line up.
   const { reduceArea } = reduce;
-  const components = Array.from({ length: 8 }, (_, i) => `src/C${i}.tsx`);
+  const components = Array.from({ length: 8 }, (_, i) => `src/Card${i}.tsx`);
   const helpers = Array.from({ length: 3 }, (_, i) => `src/h${i}.ts`);
   const rels = [...components, ...helpers];
   const area = { langs: ["jsx", "js"], files: rels.map((rel) => ({ rel, lang: rel.endsWith("x") ? "jsx" : "js" })) };
