@@ -152,9 +152,9 @@ function check(dir) {
   }
 }
 
-/** The one count in `docs/how-it-works.md` this phrasing states, raised by one. */
-function bumpCount(dir, phrasing) {
-  const path = join(dir, "docs", "how-it-works.md");
+/** The one count a document states in this phrasing, raised by one. The walkthrough unless named. */
+function bumpCount(dir, phrasing, rel = "docs/how-it-works.md") {
+  const path = join(dir, ...rel.split("/"));
   const text = readFileSync(path, "utf8");
   const stated = text.match(phrasing);
   assert.ok(stated, `the walkthrough states no count matching ${phrasing}`);
@@ -184,6 +184,30 @@ test("a registry key with no model-defaults entry is named, with the seeder as i
   assert.equal(status, 1);
   assert.match(output, /swallowed_error/);
   assert.match(output, /npm run defaults:seed/);
+});
+
+test("the README's share of the dimension total is read against the registry", (t) => {
+  // "One of the 57 needs the type checker" survived a 58th row: the gate read
+  // "N dimensions" and nothing else, so a count spelled any other way drifted.
+  const dir = repoCopy(t);
+  const wrong = bumpCount(dir, /One of the (\d+)/, "README.md");
+
+  const { status, output } = check(dir);
+
+  assert.equal(status, 1);
+  assert.match(output, new RegExp(wrong));
+});
+
+test("the JSX total the walkthrough explains is read against the registry", (t) => {
+  // "The five JSX rows make the JSX total 32 rather than 27" stayed put while
+  // a JavaScript row took both numbers up by one.
+  const dir = repoCopy(t);
+  const wrong = bumpCount(dir, /JSX total (\d+) rather than \d+/);
+
+  const { status, output } = check(dir);
+
+  assert.equal(status, 1);
+  assert.match(output, new RegExp(wrong));
 });
 
 test("a shipping count in the walkthrough the registry does not hold fails", (t) => {

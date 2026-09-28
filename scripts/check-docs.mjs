@@ -423,6 +423,19 @@ export function checkDocs() {
     for (const m of text.matchAll(/plus the (\w+) type-checked rows?/g)) {
       claim(rel, counted(m[1]) === typeChecked, `says "${m[1]} type-checked", the registry holds ${typeChecked}`);
     }
+    // The total spelled as a share of itself, and the JavaScript and JSX totals
+    // spelled as the gap between them. Both drifted while every phrasing above
+    // held, because nothing read them.
+    for (const m of text.matchAll(/One\s+of\s+the\s+(\d+)\b/g)) {
+      claim(rel, Number(m[1]) === total, `says "One of the ${m[1]}", the registry holds ${total}`);
+    }
+    for (const m of text.matchAll(/JSX\s+total\s+(\d+)\s+rather\s+than\s+(\d+)/g)) {
+      claim(
+        rel,
+        Number(m[1]) === jsx && Number(m[2]) === js,
+        `says "JSX total ${m[1]} rather than ${m[2]}", the registry holds ${jsx} and ${js}`
+      );
+    }
   }
 
   // A dimension either states its inverse or records that it may not. An absent

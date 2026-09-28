@@ -4,6 +4,8 @@ import assert from "node:assert/strict";
 import { pinJson, pinLines, pinSummary, scanJson, scanLines, scanSummary, SUMMARY_SCHEMA } from "../plugins/anatomiya/lib/summary.mjs";
 import { buildPin, pinDelta, PIN_PATH } from "../plugins/anatomiya/lib/baseline.mjs";
 import { truncatedHistoryLine } from "../plugins/anatomiya/lib/render.mjs";
+import { layoutSummary } from "../plugins/anatomiya/lib/render-layout.mjs";
+import { readFileSync } from "node:fs";
 
 const RUNNING_SESSION = "a running session gets the new overview on its next prompt or tool call, and a new session, a compaction or /clear loads the whole map";
 const UNPINNED =
@@ -42,6 +44,44 @@ test("a scan with nothing to report prints the head, the claims, the baseline an
     "wrote 5 files",
     RUNNING_SESSION,
   ]);
+});
+
+test("the README's sample run is the lines a scan prints for that run", () => {
+  // A new user compares a first run with this block, and scan.md has the agent
+  // report these lines. The block kept a baseline and an orphan line in
+  // wording the CLI had stopped printing, and none of the engines, layout or
+  // running-session lines it had started printing, and no gate read it. The
+  // run's own facts go through the printer, so a wording change fails here
+  // until the README says it too. Measured: excalidraw at 438d898, first run.
+  const readme = readFileSync(new URL("../README.md", import.meta.url), "utf8");
+  const section = readme.slice(readme.indexOf("## What it prints"));
+  const block = /```\r?\n([\s\S]*?)\r?\n```/.exec(section)[1].split(/\r?\n/);
+
+  const areas = Array.from({ length: 38 }, (_, i) => ({
+    imports: i < 14 ? ["x"] : [],
+    reused: i < 18 ? ["y"] : [],
+  }));
+  const layout = {
+    roots: Array.from({ length: 7 }, () => ({})),
+    more: { roots: 3 },
+    tests: [
+      { runner: "test files", root: "packages", files: 98, under: 96 },
+      { runner: "vitest", root: "packages/excalidraw", files: 43, under: 35 },
+    ],
+  };
+  const run = summary({
+    files: 693,
+    areas: 38,
+    durationMs: 3409,
+    root: "/Users/me/code/excalidraw",
+    claims: { stated: 87, matchingDefault: 48, total: 716 },
+    engines: { oxc: { version: "0.149.0" } },
+    layoutLine: layoutSummary(layout, areas),
+    orphaned: 15,
+    wrote: 39,
+  });
+
+  assert.deepEqual(block, scanLines(run));
 });
 
 test("the counts on the summary read at one", () => {
