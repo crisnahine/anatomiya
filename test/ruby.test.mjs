@@ -275,6 +275,25 @@ const SRC = {
       other.e
     end
   `,
+  rescue_ivar_binding: `
+    begin
+      a
+    rescue => @error
+      report(@error)
+    end
+    begin
+      b
+    rescue => @error
+      nil
+    end
+  `,
+  rescue_fail: `
+    begin
+      a
+    rescue ActiveRecord::RecordNotFound
+      fail Wrapped
+    end
+  `,
   rescue_none: `
     def go
       work
@@ -341,6 +360,14 @@ const SRC = {
     class Charge
       def call
         raise ArgumentError, "no"
+      end
+    end
+  `,
+  service_fails: `
+    class CreateOrder
+      def call(params)
+        fail ArgumentError, "missing" unless params[:id]
+        Result.success
       end
     end
   `,
@@ -889,6 +916,18 @@ test("a method that happens to be named like the binding is not a use of it", ne
   assert.equal(r.conforming, 0, "other.e reads a method, not the caught error");
 });
 
+test("a rescue bound to an instance variable uses the error by reading it", needsRuby, () => {
+  // `rescue => @error` binds the caught error exactly as `rescue => e` does,
+  // and only the local read was looked for, so the use read as a swallow.
+  assert.deepEqual(counts("rescue_uses_error", "rescue_ivar_binding"), { candidates: 2, conforming: 1 });
+});
+
+test("fail re-raises exactly as raise does", needsRuby, () => {
+  // Kernel#fail is raise's alias, and the "fail to signal, raise to re-raise"
+  // style spells half its raises with it.
+  assert.deepEqual(counts("rescue_uses_error", "rescue_fail"), { candidates: 1, conforming: 1 });
+});
+
 test("a file with no rescue contributes nothing", needsRuby, () => {
   assert.equal(hits("rescue_uses_error", "rescue_none").length, 0);
 });
@@ -948,6 +987,13 @@ test("an entry point that raises is a violation and one that returns conforms", 
     candidates: 1,
     conforming: 1,
   });
+});
+
+test("an entry point that fails is raising, whichever alias it spells", needsRuby, () => {
+  // Measured: `fail ArgumentError` in a call method counted as returning its
+  // failure, which inflates the claim side of the row in exactly the
+  // codebases that prefer fail for signalling.
+  assert.deepEqual(counts("service_result_shape", "service_fails"), { candidates: 1, conforming: 0 });
 });
 
 test("a raise inside a rescue translates someone else's error and is not counted", needsRuby, () => {

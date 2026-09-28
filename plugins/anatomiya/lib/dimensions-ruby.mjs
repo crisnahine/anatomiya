@@ -138,7 +138,7 @@ export const RUBY_DIMENSIONS = [
         if (n.t !== "rescue") return;
         const name = n.reference && n.reference.name;
         const stmts = n.statements;
-        const handled = !isEmpty(stmts) && (readsLocal(stmts, name) || reraises(stmts));
+        const handled = !isEmpty(stmts) && (readsBinding(stmts, name) || reraises(stmts));
         add({ node: site(n), conforming: handled, where: where(ctx) });
       });
     },
@@ -228,7 +228,7 @@ export const RUBY_DIMENSIONS = [
         if (n.name === "perform" && sidekiq.has(ctx.cls)) return;
         let raises = false;
         walkRuby(n.body, (m, mctx) => {
-          if (m.t !== "call" || m.name !== "raise" || m.receiver) return;
+          if (m.t !== "call" || !RAISE.test(m.name) || m.receiver) return;
           // A raise inside a rescue is a translation of someone else's error,
           // not this method's choice about how it reports failure.
           if (mctx.ancestors.some((a) => a.t === "rescue")) return;
@@ -540,6 +540,9 @@ export const RUBY_DIMENSIONS = [
 ];
 
 const LOG_DIRECT = /^(puts|print|p|pp|warn)$/;
+// Kernel#fail is raise under another name, and the "fail to signal, raise to
+// re-raise" style spells half its raises with it.
+const RAISE = /^(raise|fail)$/;
 
 /**
  * The HTTP libraries a wrapper wraps, the way axios is on the JS side. A
@@ -588,11 +591,16 @@ function isEmpty(stmts) {
   return bodyOf(stmts).length === 0;
 }
 
-function readsLocal(stmts, name) {
+/**
+ * Whether the rescue body reads what the clause bound. `rescue => @error`
+ * binds the error as surely as `rescue => e`, and an instance variable's name
+ * keeps its `@`, so the two reads cannot be mistaken for each other.
+ */
+function readsBinding(stmts, name) {
   if (!name) return false;
   let used = false;
   walkRuby(stmts, (n) => {
-    if (n.t === "local_variable_read" && n.name === name) used = true;
+    if ((n.t === "local_variable_read" || n.t === "instance_variable_read") && n.name === name) used = true;
   });
   return used;
 }
@@ -600,7 +608,7 @@ function readsLocal(stmts, name) {
 function reraises(stmts) {
   let found = false;
   walkRuby(stmts, (n) => {
-    if (n.t === "call" && n.name === "raise" && !n.receiver) found = true;
+    if (n.t === "call" && RAISE.test(n.name) && !n.receiver) found = true;
   });
   return found;
 }
