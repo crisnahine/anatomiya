@@ -46,7 +46,7 @@ function commit(dir, message) {
 
 /** A committed repository with one area, already scanned: a map of its own. */
 async function scanned(t) {
-  const dir = realpathSync(mkdtempSync(join(tmpdir(), "anatomiya-refresh-")));
+  const dir = realpathSync.native(mkdtempSync(join(tmpdir(), "anatomiya-refresh-")));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   init(dir);
   source(dir, "src", 8);
@@ -57,8 +57,8 @@ async function scanned(t) {
 
 /** A clone of a repository with a remote default branch, scanned, sitting on its tip. */
 async function cloned(t) {
-  const origin = realpathSync(mkdtempSync(join(tmpdir(), "anatomiya-refresh-origin-")));
-  const dir = realpathSync(mkdtempSync(join(tmpdir(), "anatomiya-refresh-clone-")));
+  const origin = realpathSync.native(mkdtempSync(join(tmpdir(), "anatomiya-refresh-origin-")));
+  const dir = realpathSync.native(mkdtempSync(join(tmpdir(), "anatomiya-refresh-clone-")));
   t.after(() => {
     rmSync(origin, { recursive: true, force: true });
     rmSync(dir, { recursive: true, force: true });
@@ -88,7 +88,7 @@ function recorder() {
 test("a directory with no map of its own is answered with nothing, and nothing is started", async (t) => {
   // A plugin hook runs in every session for every directory, so its scoping is
   // its own (A24): a repository nobody scanned is never scanned behind its back.
-  const dir = realpathSync(mkdtempSync(join(tmpdir(), "anatomiya-refresh-none-")));
+  const dir = realpathSync.native(mkdtempSync(join(tmpdir(), "anatomiya-refresh-none-")));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   init(dir);
   source(dir, "src", 8);
@@ -136,7 +136,7 @@ test("a linked worktree with no map of its own is not refreshed through its main
   // The hooks read the main checkout's map there, labelled as borrowed. A scan
   // run for it would write a map of the worktree's own, which nobody asked for.
   const dir = await scanned(t);
-  const wt = join(realpathSync(mkdtempSync(join(tmpdir(), "anatomiya-refresh-wt-"))), "wt");
+  const wt = join(realpathSync.native(mkdtempSync(join(tmpdir(), "anatomiya-refresh-wt-"))), "wt");
   t.after(() => rmSync(join(wt, ".."), { recursive: true, force: true }));
   git(dir, "worktree", "add", "-q", wt);
   const { started, start } = recorder();
@@ -147,7 +147,7 @@ test("a linked worktree with no map of its own is not refreshed through its main
 
 test("a linked worktree with a map of its own watches its own HEAD", async (t) => {
   const dir = await scanned(t);
-  const wt = join(realpathSync(mkdtempSync(join(tmpdir(), "anatomiya-refresh-wt-"))), "wt");
+  const wt = join(realpathSync.native(mkdtempSync(join(tmpdir(), "anatomiya-refresh-wt-"))), "wt");
   t.after(() => rmSync(join(wt, ".."), { recursive: true, force: true }));
   git(dir, "worktree", "add", "-q", wt);
   await runScan(wt);
@@ -943,7 +943,7 @@ test("a repository with no reflog is watched through its index, and reftable thr
 test("a linked worktree on reftable watches the shared table list", async (t) => {
   const { watchTargets } = await import("../plugins/anatomiya/lib/refresh.mjs");
   const dir = await scanned(t);
-  const wt = realpathSync(mkdtempSync(join(tmpdir(), "anatomiya-refresh-wt-")));
+  const wt = realpathSync.native(mkdtempSync(join(tmpdir(), "anatomiya-refresh-wt-")));
   rmSync(wt, { recursive: true, force: true });
   t.after(() => rmSync(wt, { recursive: true, force: true }));
   git(dir, "worktree", "add", "-q", "--detach", wt);
@@ -1090,7 +1090,7 @@ test("a commit from a linked worktree since removed, its branch deleted, is stil
   // Claude Code's own worktrees end this way: the worktree's HEAD log goes
   // with it, and the branch's with the branch.
   const { dir, first } = await pushedAndBuiltOn(t, (dir, origin) => {
-    const wt = realpathSync(mkdtempSync(join(tmpdir(), "anatomiya-refresh-gone-")));
+    const wt = realpathSync.native(mkdtempSync(join(tmpdir(), "anatomiya-refresh-gone-")));
     rmSync(wt, { recursive: true, force: true });
     git(dir, "worktree", "add", "-q", "-b", "feat2", wt, "main");
     source(wt, "lib/agent", 8);
@@ -1117,7 +1117,7 @@ test("a commit made here is still held after its reflog entries expire", async (
 test("a record below its checkout's root refreshes nothing, and nothing is written at the root", async (t) => {
   // A copied project's `.claude/` inside a repository that never opted in.
   const dir = await scanned(t);
-  const outer = realpathSync(mkdtempSync(join(tmpdir(), "anatomiya-refresh-outer-")));
+  const outer = realpathSync.native(mkdtempSync(join(tmpdir(), "anatomiya-refresh-outer-")));
   t.after(() => rmSync(outer, { recursive: true, force: true }));
   init(outer);
   source(outer, "src", 8);
@@ -1135,7 +1135,7 @@ test("a record below its checkout's root refreshes nothing, and nothing is writt
 test("the index changing after a first commit moved the watch still refreshes, and names the watch again", async (t) => {
   // Scanned before any commit, the watch names the index; the first commit
   // writes `logs/HEAD` and the watch moves there.
-  const dir = realpathSync(mkdtempSync(join(tmpdir(), "anatomiya-refresh-first-")));
+  const dir = realpathSync.native(mkdtempSync(join(tmpdir(), "anatomiya-refresh-first-")));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   init(dir);
   source(dir, "src", 8);
@@ -1189,8 +1189,8 @@ test("a reftable clone pins its tip, follows a teammate's fetch, and holds its o
   // Measured on git 2.51: a reftable clone writes `refs/remotes/origin/main`
   // an entry with an empty message, which the files backend does not write,
   // and read as a commit made here it held the pin on every reftable clone.
-  const origin = realpathSync(mkdtempSync(join(tmpdir(), "anatomiya-rt-origin-")));
-  const dir = realpathSync(mkdtempSync(join(tmpdir(), "anatomiya-rt-clone-")));
+  const origin = realpathSync.native(mkdtempSync(join(tmpdir(), "anatomiya-rt-origin-")));
+  const dir = realpathSync.native(mkdtempSync(join(tmpdir(), "anatomiya-rt-clone-")));
   t.after(() => {
     rmSync(origin, { recursive: true, force: true });
     rmSync(dir, { recursive: true, force: true });

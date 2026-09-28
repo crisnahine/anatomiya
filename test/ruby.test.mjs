@@ -56,9 +56,7 @@ test("a listing that is not the shape asked for adds nothing rather than a path 
 test("the listing names a prism installed in a gem path, by version and absolute load path", needsRubyInterpreter, async (t) => {
   // Asked of RubyGems rather than of prism, so it answers on any interpreter,
   // including one whose own prism is the 0.x this cannot read.
-  // RubyGems names the path it resolved, and macOS's temp directory sits under
-  // the /var -> /private/var link.
-  const gems = realpathSync(mkdtempSync(join(tmpdir(), "anatomiya-gems-")));
+  const gems = mkdtempSync(join(tmpdir(), "anatomiya-gems-"));
   t.after(() => rmSync(gems, { recursive: true, force: true }));
   mkdirSync(join(gems, "specifications"), { recursive: true });
   mkdirSync(join(gems, "gems", "prism-1.99.0", "lib"), { recursive: true });
@@ -73,7 +71,11 @@ test("the listing names a prism installed in a gem path, by version and absolute
   const planted = specs.find((s) => s.version === "1.99.0");
   assert.ok(planted, JSON.stringify(specs));
   assert.equal(planted.default, false);
-  assert.deepEqual(planted.paths, [join(gems, "gems", "prism-1.99.0", "lib")]);
+  // RubyGems names the path in its own spelling: resolved through macOS's
+  // /var -> /private/var link, and with forward slashes and an 8.3 short name
+  // on Windows. Both sides are resolved so only the directory is compared.
+  assert.equal(planted.paths.length, 1, JSON.stringify(planted.paths));
+  assert.equal(realpathSync.native(planted.paths[0]), realpathSync.native(join(gems, "gems", "prism-1.99.0", "lib")));
 });
 
 test("the listing finds a --user-install under XDG_DATA_HOME", needsRubyInterpreter, async (t) => {
