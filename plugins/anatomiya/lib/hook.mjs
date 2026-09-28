@@ -484,10 +484,16 @@ export function echoContext(root, { now = new Date(), transcript = null } = {}) 
           "run `/anatomiya:scan` in this worktree for its own counts.",
         ];
 
+  // Where the map is borrowed, the refresh that failed is the main checkout's,
+  // and a scan here would build this worktree a map of its own instead.
   if (failed) {
     stamp.push(
-      "The last automatic refresh of this map failed, so it may be behind the code:",
-      "run `/anatomiya:scan` to rebuild it and see why."
+      found.from === null
+        ? "The last automatic refresh of this map failed, so it may be behind the code:"
+        : "The last automatic refresh of this map failed in the main checkout, so it may be behind the code:",
+      found.from === null
+        ? "run `/anatomiya:scan` to rebuild it and see why."
+        : "run `/anatomiya:scan` in the main checkout to rebuild it and see why."
     );
   }
 

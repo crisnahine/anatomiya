@@ -453,7 +453,9 @@ test("a linked worktree reading its main checkout's map hears that checkout's re
   mkdirSync(join(dir, ".claude", "anatomiya"), { recursive: true });
   writeFileSync(join(dir, ".claude", "anatomiya", "refresh.json"), JSON.stringify({ stamp: "x", ok: false, error: "e", at: "t" }));
 
-  assert.match(echoContext(wt, {}), /automatic refresh of this map failed/);
+  const out = echoContext(wt, {});
+  assert.match(out, /automatic refresh of this map failed in the main checkout/);
+  assert.match(out, /run `\/anatomiya:scan` in the main checkout/, "a scan here would build the worktree its own map");
 });
 
 test("a linked worktree with no map of its own is handed its main checkout's, named as such", (t) => {
