@@ -3114,6 +3114,32 @@ test("the two names that match every class are still not sites", async (t) => {
   assert.deepEqual(forKey(report, "file_naming_case"), []);
 });
 
+test("a route file whose name the router dictates is not told to rename itself", async (t) => {
+  // Measured on a Next.js `src/pages` stating kebab-case at 40 of 40: a new
+  // `[id].tsx` and `_document.tsx` were each reported "files here are named
+  // kebab-case", and the only fix that finding offers breaks the dynamic route
+  // or drops the special file. An underscore on a multi-word stem is still the
+  // omission C23 counts, so `_tmpProbe.ts` stays a finding beside them.
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/pages/user-profile.tsx", `export default function P() {\n  return <main />;\n}\n`);
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/pages/[id].tsx", `export default function Post() {\n  return <main />;\n}\n`);
+    write("src/pages/[...slug].tsx", `export default function All() {\n  return <main />;\n}\n`);
+    write("src/pages/_document.tsx", `export default function Doc() {\n  return <html />;\n}\n`);
+    write("src/pages/$postId.tsx", `export default function R() {\n  return <main />;\n}\n`);
+    write("src/pages/+page.ts", `export const load = 1;\n`);
+    write("src/pages/_tmpProbe.ts", `export const c = 3;\n`);
+    commit("add");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    dimensions: [dim({ key: "file_naming_case", learned: "kebab-case" })],
+  });
+  const report = await check(dir);
+  assert.deepEqual(forKey(report, "file_naming_case").map((f) => f.path), ["src/pages/_tmpProbe.ts"]);
+});
+
 /* --- an explicit base that names nothing is a refusal (#51) --- */
 
 test("an explicit base that resolves nowhere is refused, with the ref echoed back", async (t) => {

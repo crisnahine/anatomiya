@@ -140,10 +140,22 @@ const spellsEveryClass = (word) => /^[a-z0-9]+$/.test(word);
  * would flag `Button.test.tsx`, `index.stories.tsx` and `foo.module.ts`, which
  * are correct names in every JavaScript repository, so the suffix habit stays
  * unjudged.
+ *
+ * A name a router reads is not a site either, because it is not the author's
+ * to class: `[id].tsx`, `$postId.tsx`, `+page.ts` and `(lang).tsx` carry
+ * characters no class spells and every file router gives meaning to, and
+ * `_app.tsx`, `_document.tsx`, `_index.tsx` and `__root.tsx` are one word under
+ * the underscore Next.js, Remix and TanStack mark special files with. Measured
+ * on a new Next.js page, each was reported "files here are named kebab-case",
+ * and the only fix that offers breaks the route or drops the special file. The
+ * underscore is read off a single word only: `_tmp_probe.rb` and
+ * `_tmpProbe.ts` are the C23 omission on a stem that does spell a class
+ * underneath, and a router's special file is never named that way.
  */
 export function namesASite(rel) {
   const word = stemWord(rel);
-  return word !== null && !spellsEveryClass(word);
+  if (word === null || spellsEveryClass(word)) return false;
+  return !/[[\]$+()@]/.test(word) && !/^_+[a-z0-9]+$/.test(word);
 }
 
 /**
@@ -179,7 +191,7 @@ export const NAMING_CORPUS = [
     splitBy: splitByJsx,
     precision: "precise",
     applicabilityPredicate: {
-      sites: "a file whose stem does not match every naming class at once; a single lowercase word and a bare filename do match them all and are not sites. A stem spelling none of the four is a site the scan does not classify and the check counts against a stated claim",
+      sites: "a file whose stem does not match every naming class at once; a single lowercase word and a bare filename do match them all and are not sites, and neither is a name a file router reads (`[id]`, `$param`, `+page`, or one word under a leading underscore such as `_app`). A stem spelling none of the four is a site the scan does not classify and the check counts against a stated claim",
       blind: null,
     },
     langs: ["js", "jsx", "ruby"],

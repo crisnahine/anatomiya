@@ -1010,6 +1010,27 @@ test("namesASite separates a name that matches every class from one that matches
   assert.equal(namesASite("src/index.stories.tsx"), false, "only the stem is read, and it is one word");
 });
 
+test("a name spelled in a router's syntax is not a site for the filename claim", async () => {
+  // Next.js `[id].tsx` and `_document.tsx`, Remix `$postId.tsx` and `_index.tsx`,
+  // SvelteKit `+page.ts`: the router reads these characters, so the name is not
+  // the author's to class and renaming it breaks the route. Measured as two
+  // MUST-FIX-shaped findings on one new Next.js page. An underscore on a stem
+  // that is more than one word still spells no class, which C23 counts.
+  const { namesASite } = await import("../plugins/anatomiya/lib/dimensions-naming.mjs");
+
+  for (const rel of [
+    "src/pages/[id].tsx", "src/pages/[...slug].tsx", "src/pages/[[...slug]].tsx",
+    "src/pages/_app.tsx", "src/pages/_document.tsx", "app/routes/_index.tsx",
+    "app/routes/_auth.login.tsx", "src/routes/__root.tsx",
+    "app/routes/$postId.tsx", "app/routes/$.tsx", "app/routes/($lang).about.tsx",
+    "src/routes/+page.svelte", "src/routes/+layout.server.ts", "app/@modal.tsx",
+  ]) {
+    assert.equal(namesASite(rel), false, rel);
+  }
+  assert.equal(namesASite("src/_tmpProbe.ts"), true, "an underscore on a camelCase stem");
+  assert.equal(namesASite("app/models/_tmp_probe.rb"), true, "and on a snake_case one");
+});
+
 test("a name that spells no class does not vote for one", async () => {
   // The scan side is unchanged: a stem that classifies to null was never
   // counted into the area's own totals, and counting it now would move every
