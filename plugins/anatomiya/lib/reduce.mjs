@@ -3,7 +3,7 @@ import { pairingsFor } from "./pairing.mjs";
 import { claimFor } from "./dimensions-naming.mjs";
 import { rowsOfKind } from "./registry.mjs";
 import { dirCount } from "./areas.mjs";
-import { holdsTypeSyntax, language } from "./langs.mjs";
+import { holdsTypeSyntax, language, spokenIn } from "./langs.mjs";
 import { defaultSideFor, defaultClassFor } from "./model-defaults.mjs";
 
 export const GATES = {
@@ -133,16 +133,25 @@ export function reduceArea(area, parsed, { frameworks, tier = "syntactic", capab
   // list is what the parse worker runs and a pairing has no program to run
   // against. Both kinds produce the same hit shape, so the fold is blind to the
   // difference; only the companion count asks which kind this is.
+  const langByRel = new Map((area.files || []).map((f) => [f.rel, f.lang]));
+  // The area's languages are its extensions, and a `.js` component speaks JSX
+  // its extension does not say, so the tree rows are chosen for what the
+  // records read rather than for the names alone: an area written wholly in
+  // `.js` otherwise held no JSX row to fold the worker's hits into.
+  const spoken = new Set(area.langs);
+  for (const file of parsed) {
+    if (!wasRead(file)) continue;
+    for (const l of spokenIn(langByRel.get(file.rel) ?? language(file.rel), file.facets)) spoken.add(l);
+  }
   const dims = [
     // `rows` governs the tree pool alone; the two lists below are added for the
     // area's languages whatever it holds.
-    ...dimensionsFor(area.langs, { frameworks, tier, capabilities, rows }),
+    ...dimensionsFor([...spoken], { frameworks, tier, capabilities, rows }),
     ...pairingsFor(area.langs),
     // Corpus rows ask about filenames, so they have no program to run against
     // and no worker hit to read; the fold builds their sites itself below.
     ...rowsOfKind("corpus").filter((d) => d.langs.some((l) => area.langs.includes(l))),
   ];
-  const langByRel = new Map((area.files || []).map((f) => [f.rel, f.lang]));
   // The records themselves, for the rows whose population depends on what kind
   // of file a site sits in rather than on the site alone.
   const byRel = new Map(parsed.map((f) => [f.rel, f]));
@@ -199,8 +208,10 @@ export function reduceArea(area, parsed, { frameworks, tier = "syntactic", capab
     // "10 of 10 sites across 10 of 20 files" over a directory where the other
     // ten were never asked. A plain JavaScript file cannot carry a type
     // annotation at all, which is the same argument one step further back.
+    // A `.js` file is one a JSX row could speak about exactly where its tree
+    // holds JSX, and a `.js` helper beside it stays out as a `.ts` one does.
     const eligible = (e) =>
-      dim.langs.includes(e.lang) &&
+      spokenIn(e.lang, e.facets).some((l) => dim.langs.includes(l)) &&
       !(e.stripped && dim.blindWhenStripped) &&
       !(dim.needsTypeSyntax && !holdsTypeSyntax(e.rel, e.facets));
     let langFileCount = examined.filter(eligible).length;
@@ -217,7 +228,7 @@ export function reduceArea(area, parsed, { frameworks, tier = "syntactic", capab
       }
       if (!file.hits) continue;
       const lang = langByRel.get(file.rel);
-      if (lang !== undefined && !dim.langs.includes(lang)) continue;
+      if (lang !== undefined && !spokenIn(lang, file.facets).some((l) => dim.langs.includes(l))) continue;
       // Counted where the file was parsed, so no tree crosses a process
       // boundary to be walked again on this one core. A dimension that threw
       // there dropped its own key for this file and left the rest standing.

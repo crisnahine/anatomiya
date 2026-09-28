@@ -10,7 +10,9 @@ import { walk, isFunctionLike, declName, value, boundNames } from "./walk.mjs";
  * that area's .tsx/.jsx files. One measured repository holds 1,638 .tsx among
  * 2,356 files: declaring both languages measures every JSX claim against the
  * .ts files it can never speak about and suppresses all five as narrow
- * predicates.
+ * predicates. A `.js` file whose tree holds JSX speaks `jsx` too
+ * (`spokenIn` in `langs.mjs`), so a component written in `.js` is asked
+ * these rows and a `.js` helper beside it is not.
  *
  * Every claim here was kept for measured spread across four React
  * repositories, not for how cleanly it detects. Each spans at least 0.66

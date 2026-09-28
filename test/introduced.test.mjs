@@ -86,6 +86,16 @@ test("a line shift introduces nothing, and the same file against no base introdu
   assert.match(one.fp, /^[0-9a-f]{16}$/);
 });
 
+test("a component written in a .js file is judged by the JSX rows its area states", () => {
+  // The check picked rows by extension alone, so a `.js` component adding an
+  // inline handler under a stated "handlers are named" passed unseen while the
+  // same line in `.jsx` was a finding. The head's tree is what says JSX.
+  const src = `const A = () => <B onClick={() => save(1)} />;`;
+  // Parsed under the tsx grammar, which is what `grammarFor` hands a `.js` file.
+  const found = judge({ path: "src/a.js", lang: "js", head: revision(src, { file: "f.tsx", jsx: true }) });
+  assert.deepEqual(found.map((f) => f.text), ["onClick"]);
+});
+
 test("an edit inside a pre-existing inline handler is not a new site", () => {
   const a = revision(`const A = () => <B onClick={() => save(1)} />;`);
   const b = revision(`const A = () => <B onClick={() => save(2)} />;`);

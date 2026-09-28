@@ -14,7 +14,7 @@ import { dimensionsFor } from "./dimensions.mjs";
 import { collectHits } from "./walk.mjs";
 import { jsFacets } from "./facets.mjs";
 import { rawTransferAllowed } from "./limits.mjs";
-import { ENGINES, grammarFor, holdsTypeSyntax, mayHoldFlow, mayBeCommonJS } from "./langs.mjs";
+import { ENGINES, grammarFor, holdsTypeSyntax, mayHoldFlow, mayBeCommonJS, spokenIn } from "./langs.mjs";
 
 let parseSync = null;
 let stripFlow = null;
@@ -232,8 +232,10 @@ export async function parseFile(source, rel, lang, { withProgram = false, stripp
   // denominator: a file nobody asked is not a file that declined. Same trade
   // `blindWhenStripped` makes one line over. The extension answers it for the
   // typed half of the family and the tree answers it for Flow, where a `.js`
-  // file carries the annotation the extension says it cannot.
-  const dims = dimensionsFor([lang]).filter(
+  // file carries the annotation the extension says it cannot. The JSX rows are
+  // chosen off the tree the same way, since a `.js` component holds JSX its
+  // extension says nothing about.
+  const dims = dimensionsFor(spokenIn(lang, facets)).filter(
     (d) => (!stripped || !d.blindWhenStripped) && (holdsTypeSyntax(rel, facets) || !d.needsTypeSyntax)
   );
 
