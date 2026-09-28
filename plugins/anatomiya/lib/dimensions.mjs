@@ -47,10 +47,44 @@ function usesParam(body, names) {
     if (parent && (parent.type === "Property" || parent.type === "ObjectProperty") &&
         parent.key === n && !parent.computed) return;
     if (parent && parent.type === "MemberExpression" && parent.property === n && !parent.computed) return;
+    // A nested scope binding the same name hides the caught one:
+    // `catch (e) { items.forEach((e) => log(e)) }` logs each item and drops
+    // the error, and read by name it counted as handling it. The catch body
+    // itself cannot rebind its own parameter with let or const, so only the
+    // scopes below it are asked.
+    if (ctx.ancestors.some((a) => a !== body && scopeBinds(a, n.name))) return;
     used = true;
   });
   return used;
 }
+
+const paramNames = (fn) =>
+  (fn.params || []).flatMap((p) => boundNames(p.type === "TSParameterProperty" ? p.parameter : p));
+
+const lexical = (decl) => decl && decl.type === "VariableDeclaration" && decl.kind !== "var";
+
+/** Whether this node opens a scope that binds `name` for everything beneath it. */
+function scopeBinds(node, name) {
+  if (isFunctionLike(node)) {
+    return paramNames(node).includes(name) || (node.type === "FunctionExpression" && node.id?.name === name);
+  }
+  if (node.type === "CatchClause") return boundNames(node.param).includes(name);
+  if (node.type === "ForStatement") return lexical(node.init) && declared(node.init, name);
+  if (node.type === "ForOfStatement" || node.type === "ForInStatement") {
+    return lexical(node.left) && declared(node.left, name);
+  }
+  if (node.type === "BlockStatement" || node.type === "StaticBlock") {
+    return (node.body || []).some((s) => {
+      // A `var` belongs to the function around it, and one written straight
+      // into a catch body assigns the caught binding rather than hiding it.
+      if (s.type === "VariableDeclaration") return lexical(s) && declared(s, name);
+      return (s.type === "FunctionDeclaration" || s.type === "ClassDeclaration") && s.id?.name === name;
+    });
+  }
+  return false;
+}
+
+const declared = (decl, name) => (decl.declarations || []).some((d) => boundNames(d.id).includes(name));
 
 /**
  * Every name this program assigns to, anywhere in it.
@@ -160,7 +194,7 @@ export const DIMENSIONS = [
     counterClaim: null, // the inverse is mutable module state, which no repository chose on purpose
     precision: "precise",
     applicabilityPredicate: {
-      sites: "a file holding a variable declaration at module level, outside any loop; a let or var is one only where const was available, meaning every declarator is initialised and no name it binds is assigned or declared a second time anywhere in the file",
+      sites: "a file holding a variable declaration at module level, outside any loop and other than a using or await using; a let or var is one only where const was available, meaning every declarator is initialised and no name it binds is assigned or declared a second time anywhere in the file",
       blind: null,
     },
     langs: ["js", "jsx"],
@@ -181,6 +215,10 @@ export const DIMENSIONS = [
         // the module.
         if (n.declare) return;
         if (ctx.ancestors.some((a) => a.type === "TSModuleDeclaration")) return;
+        // `using r = open()` and `await using` dispose r when the module's
+        // evaluation ends. The binding is already immutable, and the `const`
+        // the violation asked for keeps it while dropping the disposal.
+        if (n.kind === "using" || n.kind === "await using") return;
         sites.push(n);
         for (const d of n.declarations || []) {
           for (const name of boundNames(d.id)) bindings.set(name, (bindings.get(name) ?? 0) + 1);

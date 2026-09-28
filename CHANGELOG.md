@@ -40,6 +40,25 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - A backslash in a POSIX filename was read as a directory separator by the pre-write notice.
 - A failed refresh's half-hour retry clock restarted whenever what the pin decided changed.
 - `check | head` and the like no longer end with an EPIPE stack trace.
+- `type_only_import` no longer asks for `import type React` in a file holding JSX, which the classic
+  runtime compiles to `React.createElement`; a `@jsx` or `@jsxFrag` pragma's factory counts the same.
+- `module_state_const` no longer asks for `const` in place of `using` or `await using`, which would
+  drop the disposal.
+- `import_extension` no longer counts imports of PDFs, web manifests, templates, message catalogues,
+  3D models, SQL, shaders, videos, `.proto`, `.jsonc`, `.coffee` or `.es6` files, or `./dir/..`, as
+  source imports missing their extension, and reads `./x.JS` as carrying one.
+- `function_style` no longer counts the implementation of a default-exported overload set.
+- `explicit_return_type` no longer flags an overload implementation whose signatures all declare a
+  return type.
+- `hook_per_module` counts a default-exported hook.
+- `assertion_style` counts `expect.soft(x)` and `expect.poll(fn)` as expect assertions.
+- `iterate_with_for_of` no longer counts `_.forEach(obj, fn)`, `React.Children.forEach`,
+  `async.forEach` or any other library forEach that takes the collection as an argument.
+- `doc_comment_style` no longer reads a TODO, FIXME, XXX or HACK note, or a license header, above an
+  export as its doc comment.
+- `swallowed_error` no longer reads `catch (e) { items.forEach((e) => log(e)) }` as using the caught
+  error: a nested binding of the same name hides it.
+
 - A repository created without a reflog, or on git's reftable backend, refreshed only on a checkout:
   nothing appended to the `logs/HEAD` the hook watched. It now watches the index there, or the
   reftable table list, so a commit or a pull refreshes the map as it does everywhere else.

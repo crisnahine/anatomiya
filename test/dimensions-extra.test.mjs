@@ -1006,3 +1006,142 @@ test("a return that voids a call is the guard clause it abbreviates", () => {
     conforming: 1,
   });
 });
+
+/* --- classic-runtime JSX reads its factory as a value --- */
+
+const withExtras = (key, src) => {
+  const { program, comments } = parseSync("f.tsx", src, { sourceType: "module" });
+  const out = [];
+  dim(key).run(program, (h) => out.push(h), { comments, source: src });
+  return out;
+};
+
+test("a JSX file reads React as a value, so its import is not type-only", () => {
+  // Under the classic runtime `<div/>` compiles to `React.createElement`, so a
+  // file whose only written use of React is `React.PropsWithChildren` still
+  // reads it, and `import type React` there is TS1361 under --jsx react.
+  const src = `import React from "react";\nexport function A(p: React.PropsWithChildren) { return <div>{p.children}</div> }`;
+  assert.equal(withExtras("type_only_import", src).length, 0);
+  const frag = `import React from "react";\nexport function A(p: React.PropsWithChildren) { return <>{p.children}</> }`;
+  assert.equal(withExtras("type_only_import", frag).length, 0, "a fragment compiles to React.Fragment");
+  // Without JSX nothing reads it, and it is still a site.
+  const plain = `import React from "react";\nexport function A(p: React.PropsWithChildren) { return null }`;
+  assert.deepEqual(withExtras("type_only_import", plain).map((h) => h.conforming), [false]);
+});
+
+test("a @jsx or @jsxFrag pragma names the factory JSX reads", () => {
+  for (const src of [
+    `/** @jsx h */\nimport { h } from "preact";\nlet t: typeof h;\nexport const A = () => <div/>`,
+    `/** @jsx preact.h */\nimport * as preact from "preact";\nlet t: preact.VNode;\nexport const A = () => <div/>`,
+    `/** @jsxFrag Frag */\nimport { Frag } from "./f";\nlet t: Frag;\nexport const A = () => <></>`,
+  ]) {
+    assert.equal(withExtras("type_only_import", src).length, 0, src);
+  }
+});
+
+/* --- an asset is any format a bundler is handed whole --- */
+
+test("the rest of the formats a bundler is handed whole are not sites either", () => {
+  // Each read as an extensionless source import, so `import doc from
+  // "./manual.pdf"` was a violation asking for a `.js` nothing resolves.
+  for (const ext of [
+    "pdf", "webmanifest", "jsonc", "hbs", "ejs", "po", "properties", "glb", "gltf", "sql",
+    "frag", "vert", "mov", "proto", "coffee", "es6",
+  ]) {
+    assert.equal(hits("import_extension", `import a from "./asset.${ext}"`).length, 0, ext);
+  }
+});
+
+test("a source extension conforms whatever its case", () => {
+  assert.deepEqual(counts("import_extension", `import a from "./x.JS"\nimport b from "./y.Ts"`), {
+    candidates: 2,
+    conforming: 2,
+  });
+});
+
+test("a specifier ending in . or .. names a directory", () => {
+  for (const spec of ["./dir/..", "./dir/.", "../..", "./."]) {
+    assert.equal(hits("import_extension", `import a from "${spec}"`).length, 0, spec);
+  }
+});
+
+/* --- a default export is an overload set too --- */
+
+test("a default-exported overload set is not a function-style site", () => {
+  const src = `export default function f(a: string): string;\nexport default function f(a: any) { return a }`;
+  assert.deepEqual(counts("function_style", src), { candidates: 0, conforming: 0 });
+});
+
+test("an overload implementation whose signatures all declare a return type conforms", () => {
+  // The signatures are the boundary a caller sees: the implementation's own
+  // signature is not callable from outside, so asking it for a type asks for a
+  // line no caller reads.
+  for (const src of [
+    `export function f(a: string): string;\nexport function f(a: number): number;\nexport function f(a: any) { return a }`,
+    `export default function f(a: string): string;\nexport default function f(a: any) { return a }`,
+  ]) {
+    const h = hits("explicit_return_type", src).filter((x) => x.node.type === "FunctionDeclaration");
+    assert.deepEqual(h.map((x) => x.conforming), [true], src);
+  }
+  const partly = `export function f(a: string): string;\nexport function f(a: number);\nexport function f(a: any) { return a }`;
+  const h = hits("explicit_return_type", partly).filter((x) => x.node.type === "FunctionDeclaration");
+  assert.deepEqual(h.map((x) => x.conforming), [false], "one unannotated signature leaves the boundary untyped");
+});
+
+test("a default-exported hook is a hook the module exports", () => {
+  assert.deepEqual(counts("hook_per_module", `export function useA() {}\nexport default function useB() {}`), {
+    candidates: 1,
+    conforming: 0,
+  });
+  assert.deepEqual(counts("hook_per_module", `const useB = () => 1\nexport default useB`), {
+    candidates: 1,
+    conforming: 1,
+  });
+  assert.equal(hits("hook_per_module", `export default function Page() {}`).length, 0);
+});
+
+test("expect.soft and expect.poll are expect sites, and the matchers hanging off expect are not", () => {
+  assert.deepEqual(counts("assertion_style", `expect.soft(x).toBe(1)\nexpect.poll(fn).toBe(1)`), {
+    candidates: 2,
+    conforming: 2,
+  });
+  assert.equal(
+    hits("assertion_style", `expect.any(Number)\nexpect.assertions(1)\nexpect.extend({})\nexpect.objectContaining({})`).length,
+    0
+  );
+});
+
+test("a forEach on a library namespace or with a collection argument is not an array's", () => {
+  for (const src of [
+    `_.forEach(obj, fn)`,
+    `lodash.forEach(obj, fn)`,
+    `React.Children.forEach(children, fn)`,
+    `async.forEach(items, fn, done)`,
+    `$.forEach(items, fn)`,
+    `store.forEach(items, fn)`,
+  ]) {
+    assert.equal(hits("iterate_with_for_of", src).length, 0, src);
+  }
+  // `thisArg` is the array method's own second parameter.
+  assert.equal(hits("iterate_with_for_of", `items.forEach(function (x) { this.use(x) }, ctx)`).length, 1);
+  assert.equal(hits("iterate_with_for_of", `items.forEach(use)`).length, 1);
+});
+
+test("a TODO or a license header above an export is not its doc comment", () => {
+  for (const src of [
+    `// TODO: split this\nexport function a() {}`,
+    `/* FIXME later */\nexport function a() {}`,
+    `// HACK around x\nexport function a() {}`,
+    `/*! Copyright 2024 Acme */\nexport function a() {}`,
+    `// SPDX-License-Identifier: MIT\nexport function a() {}`,
+    `/**\n * @license MIT\n */\nexport function a() {}`,
+  ]) {
+    assert.deepEqual(docHits(src).map((x) => x.conforming), [false], src);
+  }
+  // A doc comment under a license header still attaches.
+  assert.deepEqual(
+    docHits(`// SPDX-License-Identifier: MIT\n/** what a does */\nexport function a() {}`).map((x) => x.conforming),
+    [true]
+  );
+  assert.deepEqual(docHits(`/** what a does */\nexport function a() {}`).map((x) => x.conforming), [true]);
+});

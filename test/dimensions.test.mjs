@@ -969,3 +969,30 @@ test("the newest declared fields are held to shape at load, each refused by name
     assertDeclaredFields([{ ...learned, groupedSites: true, noneClaim: "n", learnedFromSource: true, splitBy: () => "a", splitClaim: { a: "x <style>", b: "y <style>" } }])
   );
 });
+
+/* --- a using declaration is disposal, not module state --- */
+
+test("a using declaration is not a module_state_const site", () => {
+  // `using r = open()` disposes r when the module's evaluation ends, and a
+  // `const` in its place keeps the binding and drops the disposal.
+  assert.equal(hits("module_state_const", `using r = open()`).length, 0);
+  assert.equal(hits("module_state_const", `await using r = open()`).length, 0);
+});
+
+/* --- a shadowed catch binding is not the caught error --- */
+
+test("a nested binding of the same name does not use the caught error", () => {
+  for (const src of [
+    `try { a() } catch (e) { items.forEach((e) => log(e)) }`,
+    `try { a() } catch (e) { items.forEach(function (e) { log(e) }) }`,
+    `try { a() } catch (e) { function f(e) { log(e) } f(1) }`,
+    `try { a() } catch (e) { { const e = 1; log(e) } }`,
+  ]) {
+    assert.deepEqual(counts("swallowed_error", src), { candidates: 1, conforming: 0 }, src);
+  }
+  // A nested function that does not rebind it still reads the caught one.
+  assert.deepEqual(counts("swallowed_error", `try { a() } catch (e) { items.forEach((x) => log(e, x)) }`), {
+    candidates: 1,
+    conforming: 1,
+  });
+});

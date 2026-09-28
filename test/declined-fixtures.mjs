@@ -35,9 +35,15 @@ export const JS_DECLINED = {
   },
   import_extension: {
     // `./utils` is counted and non-conforming: it names a file and omits the
-    // extension. Only `.`, `..` and a trailing slash are the directory case,
-    // which is why the clause spells them out.
-    declined: ['import a from "./a.css";', 'import a from ".";', 'import a from "./dir/";'],
+    // extension. Only `.`, `..` and a trailing slash, `/.` or `/..` are the
+    // directory case, which is why the clause spells them out.
+    declined: [
+      'import a from "./a.css";',
+      'import a from ".";',
+      'import a from "./dir/";',
+      'import a from "./dir/..";',
+      'import a from "./old.coffee";',
+    ],
     counted: 'import a from "./utils";',
   },
   extends_base: {
