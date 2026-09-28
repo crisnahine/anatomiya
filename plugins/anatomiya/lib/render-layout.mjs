@@ -275,7 +275,7 @@ function foldLine(roots, files, floor) {
 const LAYOUT_FRAME = 3;
 
 /**
- * Where this repository keeps its files, in at most fifteen lines and inside
+ * Where this repository keeps its files, in at most sixteen lines and inside
  * whatever `budget` the rest of the overview leaves.
  *
  * It sits above the area listing because a directory that already holds 504
