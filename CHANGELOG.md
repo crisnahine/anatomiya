@@ -17,13 +17,23 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - The map keeps itself current. After the first `scan` in a checkout, a background refresh rescans
   at the start of every session and whenever HEAD moves, and only when the commit, the tracked
   files, the pin or the plugin version changed. The hook returns at once and the scan runs detached.
-  It leaves alone a checkout with no map of its own, a map committed to the repository, a `--deep`
-  map, and a repository mid-merge or mid-rebase, and keeps the previous map when a rescan fails.
+  It leaves alone a checkout with no map of its own, a map committed to the repository, and a
+  repository mid-merge or mid-rebase, and keeps the previous map when a rescan fails. A refresh that
+  failed is said once in the delivered map, with `/anatomiya:scan` as the way to see why.
 - The pin follows the remote default branch: when the checkout sits on the tip of `origin`'s default
   branch with nothing uncommitted, the refresh moves the pin forward to it. A feature branch, an
-  unpushed commit, an edited or staged file, and a repository with no remote never pin.
+  unpushed commit, a tip this clone pushed itself, an edited or staged file, a repository with no
+  remote, and a clone that keeps no reflog never pin.
 
 ### Fixed
+
+- A repository whose directories are named in Russian, Greek, Japanese or any one script got no area
+  and an overview of `<path with mixed scripts>` placeholders. Only a word that mixes look-alike
+  alphabets (`раyments`, a Cyrillic `а` in a Latin word) is refused now.
+- Listing the installed `prism` gems no longer loads the newest installed `json` gem, whose failure
+  silently kept an older Ruby on its too-old default parser.
+- Two refresh workers started within milliseconds of each other could both run: the lock file was
+  created empty and filled in after, and the second read the empty one as abandoned.
 
 - In an Angular or NestJS repository, the environment, logging and network conventions stopped
   seeing a wrapper named the way those frameworks name files (`./config.service`, `./env.constants`):

@@ -839,7 +839,7 @@ commit subjects, branch names, and matched source text. Allowlist, not
 denylist. It normalises to NFKC, keeps only printable codepoints (which drops Cc, Cf, Co, Cs, Zl and
 Zp, and so catches bidi overrides and zero-width joiners that an ASCII control filter and
 `JSON.stringify` both miss), strips markdown structure (`---`, comment delimiters, backticks, table
-pipes), rejects mixed-script paths as probable homoglyphs, caps on grapheme clusters before quoting,
+pipes), rejects a word mixing Latin, Cyrillic or Greek letters as a probable homoglyph (a name wholly in one script, any script, is kept), caps on grapheme clusters before quoting,
 and emits paths JSON-quoted.
 
 The claim text is the one rendered string that does not go through it, because it is this tool's own
@@ -877,9 +877,12 @@ the first of `origin/HEAD`, `origin/main` or `origin/master` that resolves, with
 edited or staged, and never onto a commit older than the pin (E11). A branch cut before the pin
 reads the pinned files the base added after the fork as never held rather than as missing (E12).
 
-Two more conditions keep a pin honest when nobody is watching it. The tip is followed only when git
-recorded its last move as a fetch or a pull, or recorded none, which is a fresh clone: a push from
-this clone and a ref written by hand are this clone's own work, and a session can do both. And the
+Two more conditions keep a pin honest when nobody is watching it. The tip is followed only when `git
+reflog` records its last move as a fetch or a pull that took its refspecs from the remote's
+configuration, or records none and the main checkout's first move was the clone onto that same
+commit: a push from this clone, a ref written by hand and a fetch that names its own source or
+destination are this clone's own work, and a session can do all three. Asking git rather than
+reading `logs/` works on the reftable backend too, and a clone that keeps no reflog never pins. And the
 pin is taken at the commit that was judged, or not at all. What each automatic pin accepted is
 written to `refresh.json`. A map built with `--deep` is rebuilt with the checker, a map or pin the
 repository commits is left alone, and a failed rescan is retried after half an hour. `FileChanged`

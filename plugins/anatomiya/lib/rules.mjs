@@ -43,6 +43,8 @@ export const realpathOf = (p) => realpathOrNull(p) ?? resolve(p);
 
 export const RULES_DIR = ".claude/rules";
 export const STORE_DIR = ".claude/anatomiya";
+/** What the refresh worker last did, relative to the repository root. */
+export const REFRESH_STATE = `${STORE_DIR}/refresh.json`;
 // The one write outside the two above (A25). Here rather than beside the hook
 // that writes it, because this module is where every path a scan touches is
 // spelled, and the exclude line below has to be the same string.

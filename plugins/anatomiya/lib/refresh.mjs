@@ -33,10 +33,10 @@ import { atomic, FACTS_PATH, readFacts, readRecord } from "./facts.mjs";
 import { BASE_REFS, gitBuffered, gitStreamed, headSha, UNFINISHED_OPERATIONS } from "./git.mjs";
 import { ownLayout } from "./hook.mjs";
 import { pluginRoot } from "./readiness.mjs";
-import { OVERVIEW_FILE, readHead, readTail, resolveInside, RULES_DIR, STORE_DIR } from "./rules.mjs";
+import { OVERVIEW_FILE, readHead, REFRESH_STATE, resolveInside, RULES_DIR, STORE_DIR } from "./rules.mjs";
 
-/** What the worker last did, relative to the repository root. */
-export const REFRESH_STATE = `${STORE_DIR}/refresh.json`;
+// In rules.mjs beside the store, since the echo reads it too.
+export { REFRESH_STATE };
 const LOCK_FILE = "refresh.lock";
 
 // A worker holds the lock for one scan, and the largest measured takes about
@@ -256,10 +256,10 @@ async function followPin(root, pin) {
   // session can run `git push` or `git update-ref` itself, and a pin that
   // followed either accepted the agent's own commits as the population every
   // gate reads. Git records how the remote-tracking ref last moved, and only a
-  // fetch or a pull brought commits the remote already held; a fresh clone
-  // writes no entry at all. Pushed work joins the pin once the remote moves
+  // fetch or a pull brought commits the remote already held, and a ref with
+  // no record counts only as the clone that brought it. Pushed work joins the pin once the remote moves
   // past it and a fetch brings that back.
-  if (!(await fetchedHere(root, tip.ref))) return null;
+  if (!(await fetchedHere(root, tip.ref, tip.sha))) return null;
   const current = loadPin(root);
   if (current?.sha === head) return null;
   if (current) {
@@ -299,22 +299,47 @@ async function remoteTip(root) {
   return null;
 }
 
-/** Whether the remote-tracking ref last moved because a fetch or a pull moved it. */
-async function fetchedHere(root, ref) {
+/**
+ * Whether the remote-tracking ref last moved because a fetch or a pull moved it.
+ *
+ * Asked through `git reflog`, which reads every ref backend: the files backend
+ * keeps `logs/refs/...`, reftable keeps none, and reading the file had a
+ * reftable clone, or one with `core.logAllRefUpdates=false`, follow its own
+ * push. A clone writes no entry for the branch it brought, so an empty reflog
+ * is the remote's only where the main checkout's first move was that clone,
+ * onto this same commit; anything else with no record is refused.
+ */
+async function fetchedHere(root, ref, sha) {
   const full = await gitBuffered(root, ["rev-parse", "--symbolic-full-name", ref]);
-  const common = await gitBuffered(root, ["rev-parse", "--git-common-dir"]);
   const name = full.ok ? full.stdout.trim() : "";
-  if (!common.ok || !name.startsWith("refs/remotes/")) return false;
-  // No reflog is the ref as the clone wrote it; every later move adds an entry.
-  const path = join(resolve(root, common.stdout.trim()), "logs", name);
-  if (!existsSync(path)) return true;
-  // The newest entry is the last line, and a reflog kept for years runs to
-  // megabytes, so the tail is read rather than the head; 64 KiB holds hundreds
-  // of entries, and only the last whole one is judged.
-  const tail = readTail(path, 64 * 1024);
-  if (tail === null) return false;
-  const last = tail.trimEnd().split("\n").pop() ?? "";
-  return /^(fetch|pull)\b/.test(last.split("\t")[1] ?? "");
+  if (!name.startsWith("refs/remotes/")) return false;
+  const last = await gitBuffered(root, ["reflog", "show", "-n1", "--format=%gs", name]);
+  if (!last.ok) return false;
+  const message = last.stdout.trim();
+  return message === "" ? clonedOnto(root, sha) : movedByRemote(message);
+}
+
+/** Whether the main checkout's oldest reflog entry is the clone that checked out `sha`. */
+async function clonedOnto(root, sha) {
+  const log = await gitBuffered(root, ["reflog", "show", "--format=%H %gs", "main-worktree/HEAD"]);
+  if (!log.ok) return false;
+  const first = log.stdout.trimEnd().split("\n").pop() ?? "";
+  return first.startsWith(`${sha} clone: `);
+}
+
+/**
+ * Whether a reflog message is a fetch or pull that took its refspecs from the
+ * remote's configuration. Git logs the command line (`fetch -q . HEAD:refs/
+ * remotes/origin/main: fast-forward`), and one that names a path or writes
+ * through an explicit `src:dst` put whatever it named into the tracking ref:
+ * a local commit, or another repository's. Those are refused. What stays open
+ * is a remote reconfigured to point somewhere else, which is the repository's
+ * own setting (E11).
+ */
+function movedByRemote(message) {
+  const words = message.replace(/: [^:]*$/, "").split(" ");
+  if (!/^(fetch|pull)$/.test(words[0])) return false;
+  return !words.slice(1).some((w) => !w.startsWith("-") && (w.includes(":") || /^[./~]/.test(w)));
 }
 
 /**
@@ -352,9 +377,7 @@ function writeState(store, { stamp, ok, error, pinned = null }) {
 function acquire(path) {
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      const fd = openSync(path, "wx");
-      writeSync(fd, JSON.stringify({ pid: process.pid, at: Date.now(), nonce: randomBytes(8).toString("hex") }));
-      closeSync(fd);
+      create(path, JSON.stringify({ pid: process.pid, at: Date.now(), nonce: randomBytes(8).toString("hex") }));
       return path;
     } catch (err) {
       if (err?.code !== "EEXIST") return null;
@@ -379,6 +402,41 @@ function acquire(path) {
     }
   }
   return null;
+}
+
+/**
+ * The lock file, appearing whole or not at all. Opened with `wx` and filled in
+ * after, it was empty for a moment; a second worker reading it then (a checkout
+ * rewrites `HEAD` and `logs/HEAD` within milliseconds) found nothing parsable,
+ * judged it abandoned and took it over, and two scans ran at once. The content
+ * is written beside it and linked into place, which fails with EEXIST exactly
+ * as `wx` does. A filesystem with no hard links takes the `wx` path.
+ */
+function create(path, content) {
+  const temp = `${path}.new-${process.pid}-${randomBytes(8).toString("hex")}`;
+  const fd = openSync(temp, "wx");
+  try {
+    writeSync(fd, content);
+  } finally {
+    closeSync(fd);
+  }
+  try {
+    linkSync(temp, path);
+  } catch (err) {
+    if (err?.code === "EEXIST") throw err;
+    const direct = openSync(path, "wx");
+    try {
+      writeSync(direct, content);
+    } finally {
+      closeSync(direct);
+    }
+  } finally {
+    try {
+      unlinkSync(temp);
+    } catch {
+      // Already gone; nothing of ours is left.
+    }
+  }
 }
 
 function contentOf(path) {

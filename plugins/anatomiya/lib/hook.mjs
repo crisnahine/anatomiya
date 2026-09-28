@@ -23,7 +23,7 @@ import { createHash } from "node:crypto";
 import { existsSync, lstatSync, readdirSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
-import { HEAD_BYTES, isOwned, OVERVIEW_FILE, RULES_DIR, SETTINGS_PATH, readHead, readTail, realpathOrNull, resolveInside } from "./rules.mjs";
+import { HEAD_BYTES, isOwned, OVERVIEW_FILE, REFRESH_STATE, RULES_DIR, SETTINGS_PATH, readHead, readTail, realpathOrNull, resolveInside } from "./rules.mjs";
 import { FACTS_PATH, readRecord, schemaProblem } from "./facts.mjs";
 import { mainCheckoutOf } from "./worktree.mjs";
 
@@ -454,6 +454,11 @@ export function echoContext(root, { now = new Date(), transcript = null } = {}) 
   // scanned after it borrowed hears its own stamp even when the body matches.
   const hash = createHash("sha256").update(body);
   if (found.from !== null) hash.update(`\0${found.from}`);
+  // A failed refresh changes what the delivery says, so a window holding the
+  // healthy map hears it again. Only the flag is read: the error text is the
+  // repository's own and never reaches the context.
+  const failed = refreshFailed(found.root);
+  if (failed) hash.update("\0refresh-failed");
   const digest = hash.digest("hex").slice(0, 12);
   if (heldIn(transcript, digest)) return null;
 
@@ -478,6 +483,13 @@ export function echoContext(root, { now = new Date(), transcript = null } = {}) 
           "run `/anatomiya:scan` in this worktree for its own counts.",
         ];
 
+  if (failed) {
+    stamp.push(
+      "The last automatic refresh of this map failed, so it may be behind the code:",
+      "run `/anatomiya:scan` to rebuild it and see why."
+    );
+  }
+
   return [
     `<repository-map delivered="${now.toISOString()}" digest="${digest}">`,
     ...stamp,
@@ -485,6 +497,16 @@ export function echoContext(root, { now = new Date(), transcript = null } = {}) 
     body,
     "</repository-map>",
   ].join("\n");
+}
+
+/**
+ * Whether the refresh worker's last run in this checkout failed. The state is
+ * read through F2's containment like every other store read, and anything but
+ * an explicit `ok: false` reads as no failure.
+ */
+function refreshFailed(root) {
+  const path = resolveInside(root, REFRESH_STATE);
+  return path !== null && readRecord(path).record?.ok === false;
 }
 
 /**

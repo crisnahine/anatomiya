@@ -14,9 +14,18 @@ const MAX = 200;
 // that carries a line number and a claim beside it.
 const PATH_MAX = 120;
 
-// Scripts we accept in a path or an identifier. A path mixing Latin and
-// Cyrillic is almost always a homoglyph attack rather than a real filename.
-const LATIN = /^[\p{Script=Latin}\p{Script=Common}\p{Script=Inherited}]*$/u;
+// The alphabets whose letters share shapes. A word (a run of letters between
+// separators, dots and digits) spelled in two of them is the homoglyph F3
+// refuses (`раyments`, a Cyrillic `а` in a Latin word); a word in one of them,
+// or in any other script, is a name somebody
+// wrote in their own language, and refusing those left a repository written in
+// Russian, Greek or Japanese with a placeholder in its overview and no area.
+const LOOKALIKE = [/\p{Script=Latin}/u, /\p{Script=Cyrillic}/u, /\p{Script=Greek}/u];
+
+const mixesLookalikes = (word) => LOOKALIKE.filter((re) => re.test(word)).length > 1;
+
+// `форма.ts` is two words: the name in Cyrillic and the extension in Latin.
+const WORD_BREAK = /[^\p{L}\p{M}]+/u;
 
 // Anything but letters, marks, numbers, punctuation, symbols and the plain
 // space, which covers Cc, Cf, Co, Cs and Zl/Zp. A lone surrogate is a code
@@ -92,7 +101,7 @@ export function sanitisePath(p) {
   const s = neutralise(p);
   // A rejected path leaks none of itself, so the marker is the whole value and
   // the cap has nothing to do.
-  if (s && !LATIN.test(s)) return `<path with mixed scripts, ${[...s].length} chars>`;
+  if (s && s.split(WORD_BREAK).some(mixesLookalikes)) return `<path with mixed scripts, ${[...s].length} chars>`;
   return capGraphemes(s, PATH_MAX);
 }
 
