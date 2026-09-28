@@ -231,6 +231,47 @@ test("gitRoot returns the top level from a subdirectory", async (t) => {
   assert.equal(realpathSync(fromRoot), fromRoot, "already resolved, so no caller has to");
 });
 
+test("a file inside a repository picks the repository it is in", async (t) => {
+  // The usage says a path picks the repository it is in. A file was handed to
+  // git as a working directory, which cannot be one, and the spawn failure was
+  // reported as `not a git repository` about a file git tracks.
+  const dir = repo(t, (d, { git, write }) => {
+    write("src/a.ts");
+    git("add", "-A");
+    git("commit", "-qm", "init");
+  });
+
+  assert.equal(await gitRoot(join(dir, "src", "a.ts")), await gitRoot(dir));
+});
+
+test("a path that does not exist is named as missing, not as a bad repository", async (t) => {
+  // Measured: `check does-not-exist` said `not a git repository`, which sends
+  // the reader to `git init` for what is a typo.
+  const missing = join(tmp(t), "does-not-exist");
+
+  await assert.rejects(() => gitRoot(missing), (err) => {
+    assert.match(err.message, /^no such directory: /);
+    assert.doesNotMatch(err.message, /not a git repository/);
+    return true;
+  });
+});
+
+test("a repository git refuses to read is reported in git's own words", async (t) => {
+  // Dubious ownership is the case that matters, a checkout owned by another uid
+  // in a container, and every such refusal read `not a git repository`, which
+  // hides the safe.directory fix git itself names. Ownership cannot be staged
+  // without root, so this uses another refusal of the same shape: a repository
+  // format this git does not read.
+  const dir = repo(t, (d, { git }) => git("config", "core.repositoryformatversion", "99"));
+
+  await assert.rejects(() => gitRoot(dir), (err) => {
+    assert.match(err.message, /repo version/i, "git's own reason is in the message");
+    assert.doesNotMatch(err.message, /^not a git repository/);
+    assert.doesNotMatch(err.message, /Command failed/, "git's words, not the spawn wrapper's");
+    return true;
+  });
+});
+
 test("fixture and vendor directories are excluded", () => {
   assert.equal(isExcludedDir("test/fixtures/weird/a.ts"), true);
   assert.equal(isExcludedDir("src/__fixtures__/a.ts"), true);
