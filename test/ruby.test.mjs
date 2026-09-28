@@ -317,6 +317,20 @@ const SRC = {
       end
     end
   `,
+  model_commit_callbacks: `
+    class Welcome < ApplicationRecord
+      after_create_commit :send_welcome
+    end
+    class Mirror < ApplicationRecord
+      after_update_commit :sync
+    end
+    class Archive < ApplicationRecord
+      after_destroy_commit :purge
+    end
+    class Index < ApplicationRecord
+      after_save_commit :reindex
+    end
+  `,
   model_none: `
     class PlainService
       before_save :normalise
@@ -892,6 +906,14 @@ test("a callback name called inside a method is not a registration", needsRuby, 
 
 test("a class that is not a model contributes nothing", needsRuby, () => {
   assert.equal(hits("model_callbacks", "model_none").length, 0);
+});
+
+test("the after_*_commit shorthands register lifecycle callbacks like any other", needsRuby, () => {
+  // Measured: forty models each registering after_create_commit and
+  // after_update_commit read as 40 of 40 keeping behaviour out of callbacks.
+  // These four are how Rails 5 and 6 recommend spelling a commit callback, so
+  // the row stated its claim in exactly the wrong direction on modern apps.
+  assert.deepEqual(counts("model_callbacks", "model_commit_callbacks"), { candidates: 4, conforming: 0 });
 });
 
 // --- service_result_shape ---

@@ -13,8 +13,11 @@ import { CAPABILITY_WORDS, implementsCapability, stemWords } from "./dimensions-
  * for "models inherit from ApplicationRecord" or "workers define perform".
  */
 
+// The `after_*_commit` shorthands are `after_commit` with an `on:` filled in,
+// and they are how Rails 5 and 6 recommend spelling it. Without them a model
+// directory built on them read as keeping behaviour out of callbacks entirely.
 const CALLBACK =
-  /^(before|after|around)_(validation|save|create|update|destroy|commit|rollback|touch|initialize|find)$/;
+  /^((before|after|around)_(validation|save|create|update|destroy|commit|rollback|touch|initialize|find)|after_(create|update|destroy|save)_commit)$/;
 const ENTRY = /^(call|perform|execute|run)$/;
 const SIDEKIQ_JOB = /^Sidekiq::(Worker|Job)$/;
 // The reads and the constructions that go through the application zone. Without
