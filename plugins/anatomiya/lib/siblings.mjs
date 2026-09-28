@@ -194,14 +194,31 @@ export function mostImported(areaRels, allRecords, corpusRels) {
   const rows = [];
   for (const file of areaRels) {
     for (const [name, who] of byFile.get(file) ?? []) {
+      // A namespace import names no export, so it is no name to look for: it
+      // printed as an empty entry, "most imported from here:  (5 files)".
+      if (name === "*") continue;
       let importers = 0;
       for (const rel of who) if (!areaRels.has(rel)) importers++;
-      if (importers >= MIN_IMPORTERS) rows.push({ name, file, importers });
+      if (importers >= MIN_IMPORTERS) rows.push({ name: rowName(name, file), file, importers });
     }
   }
   return rows
     .sort((a, b) => b.importers - a.importers || byCode(a.name, b.name) || byCode(a.file, b.file))
     .slice(0, 5);
+}
+
+/**
+ * What a row is called. A default import, and a `require` bound whole, is
+ * `default` on every module, so five areas each read "default (5)" and none of
+ * them said which file it was: the module's own name is what an importer
+ * writes, and an index file is imported by its directory's.
+ */
+function rowName(name, file) {
+  if (name !== "default") return name;
+  const path = withoutExtension(file);
+  const segments = path.split("/");
+  const stem = segments.length > 1 && segments.at(-1) === "index" ? segments.at(-2) : segments.at(-1);
+  return `${stem} (default)`;
 }
 
 /**

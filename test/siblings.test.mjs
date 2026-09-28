@@ -184,8 +184,11 @@ test("the names other files import from here are ranked by how many import them"
   ]);
 });
 
-test("a default import counts under default and a namespace import under *", () => {
-  const rels = corpus("src/utils/user.ts");
+test("a default import is named for its module and a namespace import is no name at all", () => {
+  // Ranked as export names, these printed "most imported from here:  (5
+  // files), default (5)" on an area file: `*` encodes to nothing a reader can
+  // look for, and `default` says nothing about which module it came out of.
+  const rels = corpus("src/utils/user.ts", "src/ui/Button/index.tsx");
   const records = new Map();
   for (let i = 0; i < 3; i++) {
     records.set(`src/a${i}.ts`, record(`src/a${i}.ts`, [{ module: "~/utils/user", names: ["default"] }]));
@@ -193,10 +196,14 @@ test("a default import counts under default and a namespace import under *", () 
   for (let i = 0; i < 3; i++) {
     records.set(`src/b${i}.ts`, record(`src/b${i}.ts`, [{ module: "~/utils/user", names: ["*"] }]));
   }
+  for (let i = 0; i < 4; i++) {
+    records.set(`src/c${i}.ts`, record(`src/c${i}.ts`, [{ module: "~/ui/Button", names: ["default"] }]));
+  }
 
-  assert.deepEqual(mostImported(new Set(["src/utils/user.ts"]), records, rels), [
-    { name: "*", file: "src/utils/user.ts", importers: 3 },
-    { name: "default", file: "src/utils/user.ts", importers: 3 },
+  assert.deepEqual(mostImported(new Set(["src/utils/user.ts", "src/ui/Button/index.tsx"]), records, rels), [
+    // An index file is imported by its directory's name, so that is its name.
+    { name: "Button (default)", file: "src/ui/Button/index.tsx", importers: 4 },
+    { name: "user (default)", file: "src/utils/user.ts", importers: 3 },
   ]);
 });
 

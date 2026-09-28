@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { needsPosixPaths, needsPosixSpecialFiles, needsSymlinks } from "./platform.mjs";
-import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, rmSync, realpathSync } from "node:fs";
+import { chmodSync, mkdtempSync, mkdirSync, writeFileSync, symlinkSync, rmSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, isAbsolute, sep } from "node:path";
 import { execFileSync } from "node:child_process";
@@ -192,7 +192,7 @@ test("a repository with no commits yields an empty corpus, not an error", async 
 
   assert.deepEqual(files, []);
   assert.equal(truncated, false);
-  assert.deepEqual(dropped, { denied: 0, excluded: 0, escaped: 0, notSource: 0, generated: 0 });
+  assert.deepEqual(dropped, { denied: 0, excluded: 0, escaped: 0, notSource: 0, generated: 0, unreadable: 0 });
 });
 
 test("staged-but-never-committed files are corpus, because git lists them", async (t) => {
@@ -748,6 +748,39 @@ test("directories with no area above them fold into their parent, not into nothi
   assert.ok(areas.some((a) => a.path === "src"), "the created host is the real parent directory");
 });
 
+test("a host the ceiling creates is folded in size order, not after every larger area", () => {
+  // Measured before the fix: the three-file host `x/y` was appended to the end
+  // of the queue, so `m` with ten files was folded to nothing first and the
+  // map kept a three-file area while ten files went uncovered.
+  const paths = [
+    ...Array.from({ length: 3 }, (_, i) => `x/y/v/f${i}.ts`),
+    ...Array.from({ length: 10 }, (_, i) => `m/f${i}.ts`),
+    ...Array.from({ length: 20 }, (_, i) => `n/f${i}.ts`),
+    ...Array.from({ length: 30 }, (_, i) => `o/f${i}.ts`),
+  ];
+  const areas = discover(fakeFiles(paths), { minFiles: 3, maxAreas: 3 });
+
+  assert.deepEqual(areas.map((a) => a.path), ["m", "n", "o"]);
+  assert.equal(areas.orphaned.length, 3, "the smallest files are the ones left uncovered");
+});
+
+test("a host that grows by a fold waits its turn at its new size", () => {
+  // `a` absorbs `a/b` and holds seven files, more than `c`, so `c` is the next
+  // fold. Kept at the place its four files had earned, `a` was folded next and
+  // all seven went uncovered where six had to.
+  const paths = [
+    ...Array.from({ length: 3 }, (_, i) => `a/b/f${i}.ts`),
+    ...Array.from({ length: 4 }, (_, i) => `a/f${i}.ts`),
+    ...Array.from({ length: 6 }, (_, i) => `c/f${i}.ts`),
+    ...Array.from({ length: 7 }, (_, i) => `d/f${i}.ts`),
+    ...Array.from({ length: 50 }, (_, i) => `e/f${i}.ts`),
+  ];
+  const areas = discover(fakeFiles(paths), { minFiles: 3, maxAreas: 3 });
+
+  assert.deepEqual(areas.map((a) => [a.path, a.fileCount]), [["a", 7], ["d", 7], ["e", 50]]);
+  assert.equal(areas.orphaned.length, 6);
+});
+
 test("a file whose only home would be the repository root is uncovered, not bucketed", () => {
   // The rule the fold above must not break: a root area is everything that
   // failed to find a home, and a claim over it describes no code anyone owns.
@@ -1199,4 +1232,123 @@ test("a tracked path that is a fifo in the working tree is dropped, not handed t
 
   assert.deepEqual(files.map((f) => f.rel), ["src/a.ts"]);
   assert.equal(dropped.escaped, 1);
+});
+
+test("a path git lists once per merge stage is one corpus entry", async (t) => {
+  // During an unresolved merge `ls-files` prints a conflicted path once per
+  // stage it holds, two or three times, and each line was counted: a scan run
+  // mid-merge doubled or tripled every conflicted file's sites.
+  const dir = repo(t, (d, { git, write }) => {
+    write("src/a.ts", "export const a = 1\n");
+    write("src/b.ts", "export const b = 1\n");
+    git("add", "-A");
+    git("commit", "-qm", "base");
+    git("checkout", "-qb", "side");
+    write("src/a.ts", "export const a = 2\n");
+    git("commit", "-qam", "side");
+    git("checkout", "-q", "-");
+    write("src/a.ts", "export const a = 3\n");
+    git("commit", "-qam", "main");
+    try {
+      git("merge", "-q", "side");
+    } catch {
+      // The conflict is the point.
+    }
+  });
+  const listed = execFileSync("git", ["ls-files", "-z"], { cwd: dir }).toString().split("\0");
+  assert.ok(listed.filter((r) => r === "src/a.ts").length > 1, "the fixture holds an unmerged path");
+
+  const { files } = await collect(dir);
+  assert.deepEqual(files.map((f) => f.rel).sort(), ["src/a.ts", "src/b.ts"]);
+});
+
+/**
+ * What `git check-attr` itself answers for each path, so the reader is judged
+ * against git rather than against a restatement of git's rules.
+ */
+function gitSaysGenerated(dir, rels) {
+  const out = execFileSync("git", ["check-attr", "-z", "linguist-generated", "--", ...rels], { cwd: dir }).toString();
+  const f = out.split("\0");
+  const said = new Map();
+  for (let i = 0; i + 2 < f.length; i += 3) said.set(f[i], f[i + 2] === "set" || f[i + 2] === "true");
+  return said;
+}
+
+test("gitattributes patterns anchor and float the way git's own matching does", async (t) => {
+  // Measured against the reader before this: `/gen/**` matched nothing, since
+  // no corpus path carries a leading slash, and `schema.ts` matched only the
+  // root file, where git matches a slashless pattern at any depth.
+  const rels = [
+    "gen/a.ts",
+    "src/gen/a.ts",
+    "schema.ts",
+    "src/db/schema.ts",
+    "api/client.ts",
+    "src/api/client.ts",
+    "root.ts",
+    "src/root.ts",
+    "top.pb.ts",
+    "top/x.pb.ts",
+    "out/deep.ts",
+    "out/nested/deep.ts",
+    "src/a.ts",
+  ];
+  const dir = repo(t, (d, { git, write }) => {
+    write(".gitattributes", [
+      "/gen/** linguist-generated",
+      "schema.ts linguist-generated",
+      "api/client.ts linguist-generated",
+      "/root.ts linguist-generated",
+      "/*.pb.ts linguist-generated",
+      // A bare directory name sets nothing on the files under it in git.
+      "out linguist-generated",
+    ].join("\n") + "\n");
+    for (const rel of rels) write(rel, "export const x = 1\n");
+    git("add", "-A");
+    git("commit", "-qm", "init");
+  });
+
+  const said = gitSaysGenerated(dir, rels);
+  const kept = new Set((await collect(dir)).files.map((f) => f.rel));
+  for (const rel of rels) {
+    assert.equal(!kept.has(rel), said.get(rel), `${rel}: git says generated is ${said.get(rel)}`);
+  }
+  // Not vacuous: git answers both ways over this table.
+  assert.ok([...said.values()].includes(true) && [...said.values()].includes(false));
+});
+
+test("a file in a directory the scan cannot enter is counted as unreadable, not as escaped", needsPosixPaths, async (t) => {
+  // Charged to `escaped` it vanished with no word said: that is the symlink
+  // and fifo bucket, and nothing prints it.
+  if (process.getuid?.() === 0) return t.skip("root reads through any mode");
+  const dir = repo(t, (d, { git, write }) => {
+    write("src/a.ts");
+    write("locked/b.ts");
+    git("add", "-A");
+    git("commit", "-qm", "init");
+  });
+  chmodSync(join(dir, "locked"), 0o000);
+  t.after(() => chmodSync(join(dir, "locked"), 0o755));
+
+  const { files, dropped } = await collect(dir);
+  assert.deepEqual(files.map((f) => f.rel), ["src/a.ts"]);
+  assert.equal(dropped.unreadable, 1);
+  assert.equal(dropped.escaped, 0);
+});
+
+test("a tracked name that is not UTF-8 is counted as unreadable rather than vanishing", needsPosixPaths, async (t) => {
+  // Decoded to U+FFFD the name no longer names the file on disk, so realpath
+  // failed and it was charged as escaped and never mentioned.
+  const dir = repo(t, (d, { git, write }) => {
+    write("src/a.ts");
+    const name = Buffer.concat([Buffer.from(join(d, "src") + "/"), Buffer.from([0x66, 0xff, 0x2e, 0x74, 0x73])]);
+    writeFileSync(name, "export const x = 1\n");
+    git("add", "-A");
+    git("commit", "-qm", "init");
+  });
+
+  const { files, dropped } = await collect(dir);
+  assert.deepEqual(files.map((f) => f.rel), ["src/a.ts"]);
+  assert.equal(dropped.unreadable, 1);
+  assert.equal(dropped.escaped, 0);
 });

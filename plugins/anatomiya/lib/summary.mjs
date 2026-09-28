@@ -78,6 +78,11 @@ export function scanSummary(result, plan, { dryRun = false, hook = null } = {}) 
     // number printed beside "N files crashed the parser" invited exactly the
     // reading the overview line was fixed to stop.
     barren: plan.uncovered - plan.orphaned,
+    // Tracked files the working tree would not resolve: under a directory the
+    // scan may not enter, deleted since the commit, or named in bytes that are
+    // not UTF-8. They sat in the escaped count, which nothing prints, and left
+    // the scan without a word. Zero from a record written before the count.
+    unreadFiles: result.corpus.dropped?.unreadable ?? 0,
     unexamined: unexaminedLines(result.parse),
     // What a tier that ran badly cost, in the overview's own words. `--deep`
     // added 110 slots that all read zero on a measured repository and the
@@ -152,6 +157,9 @@ export function scanLines(s) {
     lines.push("only part of the corpus was read, so every directive is suppressed and only counts print");
   if (s.orphaned > 0) lines.push(`${plural(s.orphaned, "file")} in no area: ${ORPHAN_CAUSES}`);
   if (s.barren > 0) lines.push(`${plural(s.barren, "file")} in a directory nothing was counted in`);
+  if (s.unreadFiles > 0) {
+    lines.push(`${plural(s.unreadFiles, "file")} could not be read, so nothing in ${s.unreadFiles === 1 ? "it was" : "them was"} counted`);
+  }
   lines.push(...s.unexamined);
   // Its first line, encoded, the way `--format json` already carried it: the
   // stderr runs to several lines, and each one after the first printed as a
