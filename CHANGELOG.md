@@ -34,6 +34,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - A Dependabot bump of a runtime dependency no longer fails ci until somebody regenerates the plugin's
   lockfile: `.github/workflows/dependabot-lock.yml` regenerates it on the Dependabot branch, pushes it,
   and starts ci on the new commit.
+- A repository's own `.git/config` can no longer make a read run a command: its filter drivers,
+  ssh command, credential helpers, askpass, `git://` proxy, alternate-refs command, upload-pack and
+  signature program, and those of its submodules, are replaced for every git call, while your own
+  global settings for the same keys keep working.
 - The automatic pin could still accept this clone's own commit once its reflog record was gone: a
   worktree removed with its branch (how Claude Code's worktrees end), or entries expired by `gc`.
   A commit whose committer is this clone's own identity is now held too. A commit subject starting

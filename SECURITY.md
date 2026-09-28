@@ -207,6 +207,30 @@ call here sets `core.fsmonitor=false` and `core.hooksPath` to the null device th
 `GIT_CONFIG_COUNT` environment entries, which every subcommand honours and no config file can
 override (`git.mjs` `gitEnv`). Entries a caller already carries in `GIT_CONFIG_COUNT` are kept, and
 these are appended after them. `GIT_ALLOW_PROTOCOL` closes `ext::` remote URLs the same way.
+`log.showSignature` is turned off, since with it on every `log` runs the repository's `gpg.program`,
+and `fetch.recurseSubmodules` too, since a recursing fetch runs git inside a submodule under the
+submodule's own config.
+
+The rest of the commands that config can name are the repository's to spell, so no fixed entry
+closes them: `filter.<name>.clean`, `.smudge` and `.process`, which a `status` or a `diff` runs on a
+file its `.gitattributes` routes through the driver, and on the check's fetch `core.sshCommand`,
+`credential.helper` and `credential.<url>.helper`, `core.askPass` (run even with terminal prompts
+refused), `core.gitProxy`, `core.alternateRefsCommand` and `remote.<name>.uploadpack`. Once per
+repository per process, one `git config --show-scope --get-regexp` reads which of them the
+repository's own files (`local` and `worktree` scope) set, which runs none of them, and each is
+replaced for every git call on that repository: a filter by the user's own value for the same key
+or by none, with `required` off so git reads the file as its bytes; the ssh command, the askpass and
+the alternate-refs command by the user's own value, or by `ssh` (or `GIT_SSH`), none and `true`; the
+credential helper list emptied and refilled with the user's own helpers. Three are first-match-wins
+in git and cannot be replaced by a later entry: an upload-pack is named on the `fetch` and
+`ls-remote` command line instead, a repository naming its own `core.gitProxy` has the `git://`
+transport closed, and a `status` or a `diff` passes `--ignore-submodules=dirty`, so git never runs
+inside a submodule to ask whether it is dirty, under a config whose filter names this process never
+read, and a `submodule.<name>.ignore` the repository sets cannot ask it to. A submodule whose commit
+moved is still reported. A config git will not read refuses the call rather than making it with
+nothing replaced. Measured on git 2.43 and 2.51, each against a control that shows plain git
+running the same command (`test/git.test.mjs`). The cost: a repository that installed Git LFS with
+`git lfs install --local` and not globally reads an LFS file whose stat moved as changed.
 
 `anatomiya doctor` spawns the other one, `ruby`, to ask which version of `prism` that interpreter
 ships. It runs under the same scrub the Ruby parser child gets, with `RUBYOPT`, `RUBYLIB` and
@@ -271,11 +295,6 @@ These are real and they are tracked in `DECISIONS.md`.
 - **F7 holds, with one reachable cause.** Reading only part of the corpus sets `truncated`, and every
   directive is then suppressed with the gate `corpus-truncated`, tested end to end. No repository
   size can set it; what can is the Ruby stream's per-line guard.
-- **A repository's filter drivers still run.** `core.fsmonitor` and hooks are turned off for every
-  git call, but a `filter.<name>.clean` command in a tarball's `.git/config`, named by a
-  `.gitattributes` entry, is run by `git status` on a file whose stat moved. The driver's name is
-  the repository's choice, so no fixed config entry closes it. `core.sshCommand` is likewise left
-  alone, because the user's own global config legitimately sets it for the check's one fetch.
 - **Subprocess environment is not scrubbed everywhere.** The Ruby child gets a minimal environment.
   The git calls inherit yours, and so does `npm` under `setup`, deliberately: its registry, proxy
   and credential configuration lives there and an install without them reaches the wrong place or
