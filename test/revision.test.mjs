@@ -212,11 +212,15 @@ test("two paths that differ only in case are written where neither overwrites th
   // and one of the two was parsed with the other's contents. Simulated here by
   // asking that no two destinations fold to the same name.
   let sha;
-  const dir = repo(t, (d, { write, commit }) => {
-    write("src/Foo.ts", "export const which = 'upper'\n");
-    write("src/foo.ts", "export const which = 'lower'\n");
-    write("SRC/FOO.ts", "export const which = 'shouting'\n");
-    sha = commit("first");
+  const dir = repo(t, (d, { git }) => {
+    // Staged through the index, since a case-insensitive working tree holds
+    // only one of the three and the commit would too.
+    for (const [rel, which] of [["src/Foo.ts", "upper"], ["src/foo.ts", "lower"], ["SRC/FOO.ts", "shouting"]]) {
+      const blob = execFileSync("git", ["hash-object", "-w", "--stdin"], { cwd: d, input: `export const which = '${which}'\n` }).toString().trim();
+      git("update-index", "--add", "--cacheinfo", `100644,${blob},${rel}`);
+    }
+    git("commit", "-qm", "first");
+    sha = git("rev-parse", "HEAD").trim();
   });
 
   const out = await readAtRevision(dir, sha, [{ rel: "src/Foo.ts" }, { rel: "src/foo.ts" }, { rel: "SRC/FOO.ts" }]);
