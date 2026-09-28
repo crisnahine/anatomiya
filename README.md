@@ -150,9 +150,12 @@ previous map, and tries again after half an hour or once the checkout moves.
 The pin follows the same way, but only onto commits the team has already accepted: when the
 checkout sits exactly on the tip of `origin`'s default branch with nothing uncommitted, and that tip
 arrived by a plain fetch or pull rather than by a push from this clone, a ref written by hand or a
-fetch naming its own source, the pin moves forward to it. A feature branch, a commit the remote has not seen, a tip this clone pushed
-itself, an edited or staged file, a repository with no remote, and a clone that keeps no reflog never pin; code you push joins the
-pin once the remote moves past it and a pull brings that back. Each automatic pin records what it
+fetch naming its own source, the pin moves forward to it. A feature branch, a commit the remote has not seen, an edited or staged
+file, a repository with no remote, and a clone that keeps no reflog never pin. Nor does a commit this
+clone made that sits on the default branch's own line, however it got there (`git push`, a push by
+URL, a teammate's commit on top): that is work pushed straight to the shared branch, which nobody
+reviewed. A branch you push and merge through a pull request's merge commit is pinned once pulled,
+since the merge is its review; accepting a direct push is `/anatomiya:pin`, by hand. Each automatic pin records what it
 accepted (the commits and the files that entered and left) in `.claude/anatomiya/refresh.json`. In a
 fork workflow, where `origin` is your own fork, its default branch is what the pin follows, so review
 there is what makes it accepted. `/anatomiya:pin` is still there for a repository with no remote, or
@@ -170,7 +173,7 @@ React and TypeScript repository, on a 4-CPU Linux container, with the root path 
 engines: oxc 0.149.0
 87 of 716 claims stated, 48 match the model default, the rest print as counts
 layout: 7 roots, 3 folded, tests: 96 of 98 test files under packages, 35 of 43 vitest under packages/excalidraw; roster lines: 14 areas with imports, 18 with reuse
-no baseline pinned: claims are measured against the current tree, and no finding can exceed FIX. One is pinned on its own when this checkout sits on the tip of origin's default branch with nothing uncommitted, or `/anatomiya:pin` takes one by hand
+no baseline pinned: claims are measured against the current tree, and no finding can exceed FIX. Inside Claude Code the plugin's background refresh pins one when this checkout sits on the tip of origin's default branch with nothing uncommitted, or `/anatomiya:pin` takes one by hand
 15 files in no area: too few per directory
 wrote 39 files
 a running session gets the new overview on its next prompt or tool call, and a new session, a compaction or /clear loads the whole map

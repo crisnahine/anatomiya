@@ -830,6 +830,26 @@ test("a parser too old for these field names reports rather than counting zero",
   assert.equal(out.results[0].crashed, true, "the file is charged, not silently dropped");
 });
 
+test("a Ruby with no prism at all is a missing parser, not a file that crashed it", needsRubyInterpreter, async (t) => {
+  // Ruby 2.7 to 3.2 before `gem install prism`: the script's own require
+  // raised before it could say why, so every file read as crashing the parser,
+  // check reported nothing found and scan wrote nothing, with no remedy.
+  const bin = mkdtempSync(join(tmpdir(), "anatomiya-ruby-noprism-"));
+  t.after(() => rmSync(bin, { recursive: true, force: true }));
+  writeFileSync(join(bin, "prism.rb"), 'raise LoadError, "cannot load such file -- prism"\n');
+  const stub = join(bin, "ruby");
+  writeFileSync(
+    stub,
+    `#!/bin/sh\nfor a; do shift; case "$a" in -I*) ;; *) set -- "$@" "$a";; esac; done\nexec ruby -I '${bin}' "$@"\n`,
+    { mode: 0o755 }
+  );
+
+  const out = await parseRuby([{ rel: "a.rb", abs: join(dir, "rescue_none.rb") }], { ruby: stub });
+
+  assert.equal(out.results[0].missingParser, true, JSON.stringify(out.results[0]));
+  assert.match(out.error, /prism/);
+});
+
 test("silence past the idle window ends the run and charges what never answered", needsRuby, async () => {
   const out = await parseRuby([{ rel: "a.rb", abs: join(dir, "rescue_none.rb") }], {
     guards: { ...RUBY_GUARDS, idleMs: 1 },

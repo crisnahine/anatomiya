@@ -96,6 +96,11 @@ const FLAGS = new Set([
   // refresh can tell a tip this clone pushed from one a fetch brought.
   "--symbolic-full-name",
   "-n1",
+  // Every reflog, and the first-parent line a pin would move along, so a
+  // commit this clone made is never pinned because a fetch brought it back.
+  "-g",
+  "--all",
+  "--first-parent",
   // Whether a merge has left the index with a path per stage, which `pin`
   // refuses to record (`commands.mjs`).
   "--unmerged",
@@ -476,13 +481,6 @@ export async function mergeBase(root, a, b) {
 }
 
 /**
- * The refs a base is looked for in, in order. `origin/HEAD` names the remote's
- * default branch, which is what a change is actually reviewed against.
- *
- * `@{upstream}` is deliberately absent: a pushed feature branch tracks itself,
- * and the merge base of HEAD with itself is HEAD.
- */
-/**
  * What git leaves in its directory while an operation is unfinished. The tree
  * then holds a state that exists only until the operation completes: the other
  * side's work mid-merge, a commit a bisect is visiting, an index being written.
@@ -493,6 +491,13 @@ export const UNFINISHED_OPERATIONS = Object.freeze([
   "MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD", "BISECT_LOG", "rebase-merge", "rebase-apply", "index.lock",
 ]);
 
+/**
+ * The refs a base is looked for in, in order. `origin/HEAD` names the remote's
+ * default branch, which is what a change is actually reviewed against.
+ *
+ * `@{upstream}` is deliberately absent: a pushed feature branch tracks itself,
+ * and the merge base of HEAD with itself is HEAD.
+ */
 export const BASE_REFS = ["origin/HEAD", "origin/main", "origin/master", "main", "master"];
 
 /**

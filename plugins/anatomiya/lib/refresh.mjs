@@ -257,8 +257,8 @@ async function followPin(root, pin) {
   // followed either accepted the agent's own commits as the population every
   // gate reads. Git records how the remote-tracking ref last moved, and only a
   // fetch or a pull brought commits the remote already held, and a ref with
-  // no record counts only as the clone that brought it. Pushed work joins the pin once the remote moves
-  // past it and a fetch brings that back.
+  // no record counts only as the clone that brought it. A commit this clone
+  // made is refused below however it reached the remote.
   if (!(await fetchedHere(root, tip.ref, tip.sha))) return null;
   const current = loadPin(root);
   if (current?.sha === head) return null;
@@ -268,6 +268,7 @@ async function followPin(root, pin) {
     const newer = await gitBuffered(root, ["merge-base", "--is-ancestor", head, current.sha]);
     if (newer.ok) return null;
   }
+  if (await madeHereOnLine(root, current?.sha ?? null, head)) return null;
   // A staged or edited tracked file is refused by `pin` itself, the one rule for
   // what a pin may record, and so is HEAD having moved since it was judged here.
   // A refusal is simply no pin.
@@ -279,6 +280,36 @@ async function followPin(root, pin) {
   } catch {
     return null;
   }
+}
+
+// A reflog entry that records a commit this clone created: a commit, amend or
+// merge commit, a pick, a revert, a patch applied, a rebase's rewrite. A
+// fast-forward creates nothing and is not one of them.
+const MADE_HERE = /^(commit|cherry-pick|revert|am|rebase|pull --rebase)\b|^merge [^:]*: Merge made/;
+
+/**
+ * Whether a commit this clone created sits on the first-parent line the pin
+ * would move along. A fetched tip is not enough: `git push <url>` moves no
+ * tracking ref, so the fetch after it is ordinary, and brings this clone's own
+ * commit back as if the team had. The line is first-parent only because that is
+ * what a direct push writes; a branch merged on the remote with a merge commit
+ * sits behind its second parent, the merge being its review, and counting it
+ * stalled the pin for every merge-commit workflow. Branch reflogs are shared by
+ * every worktree, and a commit made on a detached HEAD in a linked worktree is
+ * the one this does not see. Anything git could not answer counts as made here.
+ */
+async function madeHereOnLine(root, from, to) {
+  const log = await gitBuffered(root, ["log", "-g", "--all", "--format=%H %gs"]);
+  if (!log.ok) return true;
+  const made = new Set();
+  for (const line of log.stdout.split("\n")) {
+    const space = line.indexOf(" ");
+    if (space > 0 && MADE_HERE.test(line.slice(space + 1))) made.add(line.slice(0, space));
+  }
+  if (made.size === 0) return false;
+  const line = await gitBuffered(root, ["rev-list", "--first-parent", from ? `${from}..${to}` : to]);
+  if (!line.ok) return true;
+  return line.stdout.split("\n").some((sha) => made.has(sha.trim()));
 }
 
 /**

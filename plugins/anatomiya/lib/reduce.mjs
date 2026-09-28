@@ -473,24 +473,6 @@ export function sameConstant(written, learned, nesting) {
 }
 
 /**
- * Whether this site is the very class the area learned.
- *
- * `class ApplicationRecord < ApplicationRecord` is a NameError, so the base
- * itself can never conform to the row it defines, and the map printed the
- * absurdity: app/models states "classes here inherit ApplicationRecord" and
- * listed `application_record.rb` among its own exceptions.
- *
- * The name has to match exactly. A suffix match was tried and refused on
- * measurement: it exempts any class whose qualified name merely ends in the
- * learned one, including `Api::V1::Admin::BaseController` under a learned
- * `BaseController`, and it fires even where that class names an explicit and
- * different superclass, which the "a base cannot inherit itself" argument
- * cannot justify. Deciding between the two needs Ruby's own constant lookup,
- * which nothing here does. The cost of exactness is that a base written inside
- * a namespace and inherited by its bare name keeps its exception line in the
- * map, which is a cosmetic wart rather than a hole in what is enforced.
- */
-/**
  * The superclass each class in the area names, by its qualified name.
  *
  * A row sees one file at a time, so `class Admin < User` cannot know that
@@ -527,6 +509,24 @@ function reachesThrough(base, learned, parents) {
   return false;
 }
 
+/**
+ * Whether this site is the very class the area learned.
+ *
+ * `class ApplicationRecord < ApplicationRecord` is a NameError, so the base
+ * itself can never conform to the row it defines, and the map printed the
+ * absurdity: app/models states "classes here inherit ApplicationRecord" and
+ * listed `application_record.rb` among its own exceptions.
+ *
+ * The name has to match exactly. A suffix match was tried and refused on
+ * measurement: it exempts any class whose qualified name merely ends in the
+ * learned one, including `Api::V1::Admin::BaseController` under a learned
+ * `BaseController`, and it fires even where that class names an explicit and
+ * different superclass, which the "a base cannot inherit itself" argument
+ * cannot justify. Deciding between the two needs Ruby's own constant lookup,
+ * which nothing here does. The cost of exactness is that a base written inside
+ * a namespace and inherited by its bare name keeps its exception line in the
+ * map, which is a cosmetic wart rather than a hole in what is enforced.
+ */
 export const isLearnedItself = (hit, learned) =>
   typeof learned === "string" && typeof hit.self === "string" && hit.self === learned;
 

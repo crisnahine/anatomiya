@@ -9,7 +9,7 @@ import { readFileSync } from "node:fs";
 
 const RUNNING_SESSION = "a running session gets the new overview on its next prompt or tool call, and a new session, a compaction or /clear loads the whole map";
 const UNPINNED =
-  "no baseline pinned: claims are measured against the current tree, and no finding can exceed FIX. One is pinned on its own when this checkout sits on the tip of origin's default branch with nothing uncommitted, or `/anatomiya:pin` takes one by hand";
+  "no baseline pinned: claims are measured against the current tree, and no finding can exceed FIX. Inside Claude Code the plugin's background refresh pins one when this checkout sits on the tip of origin's default branch with nothing uncommitted, or `/anatomiya:pin` takes one by hand";
 
 /** A summary with every count at rest, so a case names only what it changes. */
 const summary = (o = {}) => ({
@@ -542,7 +542,7 @@ test("a pin prints the delta it accepted, then what it wrote", () => {
     "1 area enters it",
     "",
     "wrote .claude/anatomiya/baseline.json",
-    "run `anatomiya scan` to measure the map against it",
+    "run `/anatomiya:scan` to measure the map against it",
     RUNNING_SESSION,
   ]);
 });

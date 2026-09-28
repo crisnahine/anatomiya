@@ -374,7 +374,7 @@ test("the hook the plugin declares starts a real worker that brings the map up t
   assert.equal(existsSync(join(dir, ".claude", "anatomiya", "refresh.lock")), false);
 });
 
-test("a tip this clone pushed itself is not pinned until the remote moves past it", async (t) => {
+test("a tip this clone pushed itself is not pinned, even once the remote moves past it", async (t) => {
   // Pushed is not reviewed: a session can run `git push` itself, and a pin
   // that followed that tip accepted the agent's own commits as the population
   // every gate reads (E5). Git records how the remote-tracking ref moved, and
@@ -390,11 +390,14 @@ test("a tip this clone pushed itself is not pinned until the remote moves past i
   assert.equal((await refreshRepository(dir)).pinned, false);
   assert.equal(loadPin(dir).sha, first);
 
+  // A teammate's commit on top reviews nothing beneath it: the pushed commit
+  // is still on the line the pin would move along. Accepting it is a person's
+  // call, and `pin` is how they make it.
   source(origin, "lib/merged", 8);
-  commit(origin, "a teammate's merge");
+  commit(origin, "a teammate's commit");
   git(dir, "pull", "-q", "--no-rebase");
-  assert.equal((await refreshRepository(dir)).pinned, true, "a fetched tip is the team's");
-  assert.equal(loadPin(dir).sha, git(dir, "rev-parse", "HEAD"));
+  assert.equal((await refreshRepository(dir)).pinned, false, "the agent's commit is still beneath the tip");
+  assert.equal(loadPin(dir).sha, first);
 });
 
 test("a push is not followed where git keeps no reflog for the remote ref", async (t) => {
@@ -412,6 +415,40 @@ test("a push is not followed where git keeps no reflog for the remote ref", asyn
 
   assert.equal((await refreshRepository(dir)).pinned, false);
   assert.equal(loadPin(dir).sha, first);
+});
+
+test("a commit this clone made is not pinned when it reached the remote's first-parent line another way", async (t) => {
+  // `git push <url>` moves no tracking ref, so the fetch after it is an
+  // ordinary fetch; the commit it brings back is still this clone's own,
+  // unreviewed work, written straight onto the shared branch.
+  const { origin, dir } = await cloned(t);
+  await refreshRepository(dir);
+  const first = loadPin(dir).sha;
+  git(origin, "config", "receive.denyCurrentBranch", "updateInstead");
+  source(dir, "lib/agent", 8);
+  commit(dir, "the agent's own work");
+  git(dir, "-c", "push.negotiate=false", "push", "-q", origin, "HEAD:main");
+  git(dir, "fetch", "-q");
+
+  assert.equal((await refreshRepository(dir)).pinned, false);
+  assert.equal(loadPin(dir).sha, first);
+});
+
+test("a branch this clone made, merged on the remote with a merge commit, is pinned once pulled", async (t) => {
+  // The merge is the review; the branch's own commits sit behind its second
+  // parent, and refusing them stalled the pin for every merge-commit workflow.
+  const { origin, dir } = await cloned(t);
+  await refreshRepository(dir);
+  git(dir, "checkout", "-q", "-b", "feature");
+  source(dir, "lib/feature", 8);
+  commit(dir, "reviewed in a pull request");
+  git(dir, "-c", "push.negotiate=false", "push", "-q", "origin", "feature");
+  git(dir, "checkout", "-q", "main");
+  git(origin, "merge", "-q", "--no-ff", "-m", "Merge pull request", "feature");
+  git(dir, "pull", "-q", "--no-rebase");
+
+  assert.equal((await refreshRepository(dir)).pinned, true);
+  assert.equal(loadPin(dir).sha, git(dir, "rev-parse", "HEAD"));
 });
 
 test("the pin never moves backwards when the remote is rewound", async (t) => {

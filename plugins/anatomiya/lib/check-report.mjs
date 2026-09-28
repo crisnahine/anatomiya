@@ -1,4 +1,4 @@
-import { encode, quotePath } from "./encode.mjs";
+import { encode, locator, quotePath, UNSAFE_IN_PATH } from "./encode.mjs";
 import { listSome, LISTED, RULES_DIR } from "./rules.mjs";
 
 /**
@@ -100,23 +100,6 @@ export function encodeReport(report) {
   };
 }
 
-// Anything but letters, marks, numbers, punctuation, symbols and the plain
-// space: a control character or a newline breaks the line a path is written
-// on, and a bidi override or a zero-width joiner reorders or hides what it
-// says, and `JSON.stringify` escapes neither of the last two.
-const UNSAFE_IN_PATH = /[^\p{L}\p{M}\p{N}\p{P}\p{S} ]/gu;
-
-/**
- * A path as the locator it is, with only the characters above refused.
- *
- * Not through the display encoder. Every writer here hands the path to
- * something that opens the file: GitHub places an annotation by it, a JSON
- * reader joins a finding back to it, the agent opens the one the text names.
- * The encoder's cap and its script rule are for text a file loads, and here
- * they ended a long monorepo path in `…` and put a placeholder in place of a
- * Japanese directory, neither of which anything can open.
- */
-const locator = (p) => String(p ?? "").replace(UNSAFE_IN_PATH, " ");
 
 const GRAPHEMES = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 

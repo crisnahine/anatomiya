@@ -22,11 +22,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   failed is said once in the delivered map, with `/anatomiya:scan` as the way to see why.
 - The pin follows the remote default branch: when the checkout sits on the tip of `origin`'s default
   branch with nothing uncommitted, the refresh moves the pin forward to it. A feature branch, an
-  unpushed commit, a tip this clone pushed itself, an edited or staged file, a repository with no
-  remote, and a clone that keeps no reflog never pin.
+  unpushed commit, a commit this clone pushed straight onto the default branch (however it got
+  there), an edited or staged file, a repository with no remote, and a clone that keeps no reflog
+  never pin. A branch merged through a pull request's merge commit is pinned once pulled.
 
 ### Fixed
 
+- On a Ruby with no `prism` at all (2.7 to 3.2 before `gem install prism`), `check` reported nothing
+  found and `scan` wrote nothing, with no remedy: every file read as crashing the parser. Both now
+  refuse with the Ruby remedy, as they do when `ruby` is absent.
+- The checkout path the delivered map names can no longer carry a newline or a bidi override into
+  the session's context.
 - A repository whose directories are named in Russian, Greek, Japanese or any one script got no area
   and an overview of `<path with mixed scripts>` placeholders. Only a word that mixes look-alike
   alphabets (`раyments`, a Cyrillic `а` in a Latin word) is refused now.
