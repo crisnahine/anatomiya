@@ -1,4 +1,4 @@
-import { dirname } from "node:path";
+import { dirname } from "node:path/posix";
 import { createHash } from "node:crypto";
 // The registry's own table, or the glob delivers to less than the counts were
 // taken over. Listing an extension the repository does not use matches nothing

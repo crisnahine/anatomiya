@@ -172,6 +172,22 @@ test("an untouched copy of this repository passes", (t) => {
   assert.match(output, /docs match the code/);
 });
 
+test("the worktree recipe is read line by line, so a CRLF checkout passes and a missing line still fails", (t) => {
+  // Git on Windows checks the README out with CRLF endings, where a search for
+  // "\n**/path\n" matched none of the three lines.
+  const dir = repoCopy(t);
+  const path = join(dir, "README.md");
+  const crlf = readFileSync(path, "utf8").replace(/\r?\n/g, "\r\n");
+  writeFileSync(path, crlf);
+  const clean = check(dir);
+  assert.equal(clean.status, 0, clean.output);
+
+  writeFileSync(path, crlf.replace("**/.claude/anatomiya/baseline.json\r\n", ""));
+  const missing = check(dir);
+  assert.equal(missing.status, 1);
+  assert.match(missing.output, /does not have a worktree Claude Code makes copy \.claude\/anatomiya\/baseline\.json/);
+});
+
 test("a registry key with no model-defaults entry is named, with the seeder as its remedy", (t) => {
   const dir = repoCopy(t);
   const path = join(dir, REL.anatomiya, "lib", "model-defaults.json");

@@ -550,9 +550,11 @@ export function checkDocs() {
   // only what that file names. A linked worktree with no pin reads its main
   // checkout's (baseline.mjs `readPin`), but only where `mainCheckoutOf` can
   // name that checkout, so the pin line is what keeps the copied map beside
-  // the pin it was checked against everywhere else.
+  // the pin it was checked against everywhere else. Read as lines, since git on
+  // Windows checks the README out with CRLF endings.
+  const readmeLines = new Set(read("README.md").split(/\r?\n/));
   for (const path of [`${RULES_DIR}/${PREFIX}*.md`, FACTS_PATH, PIN_PATH]) {
-    claim("README.md", read("README.md").includes(`\n**/${path}\n`), `does not have a worktree Claude Code makes copy ${path}`);
+    claim("README.md", readmeLines.has(`**/${path}`), `does not have a worktree Claude Code makes copy ${path}`);
   }
 
   // --- the command surface ----------------------------------------------------
