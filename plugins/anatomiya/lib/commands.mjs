@@ -162,6 +162,9 @@ export async function runReuse(cwd, payload) {
  * A separate command, and it answers with the delta and no recommendation: the
  * moment a re-pin looks most warranted is the moment the agent's own output is
  * largest, and a suggestion there launders it.
+ *
+ * `collectFiles` is a seam for tests, which land a commit while the list is
+ * read.
  */
 export async function runPin(cwd, { dryRun = false, expect = null, collectFiles = collect } = {}) {
   const root = await gitRoot(cwd);
@@ -221,9 +224,9 @@ export async function runPin(cwd, { dryRun = false, expect = null, collectFiles 
 async function refuseUnlikeHead(root) {
   // A staged, edited, deleted or unmerged tracked file is listed against a
   // commit that does not hold it, and every scan after reads that area as a
-  // population change for as long as the pin stands. This tool's own output under `.claude/` is left out: a
-  // repository that commits its map rewrites it on every scan, and it is never
-  // part of the population.
+  // population change for as long as the pin stands. This tool's own output
+  // under `.claude/` is left out: a repository that commits its map rewrites it
+  // on every scan, and it is never part of the population.
   const dirty = await gitBuffered(root, ["status", "--porcelain", "--untracked-files=no", "-z", "--", ".", ":(exclude).claude"]);
   if (!dirty.ok) throw new Error(`could not read whether the working tree matches HEAD: ${firstLine(dirty.error ?? "")}`);
   if (dirty.stdout.length > 0) {
@@ -239,7 +242,6 @@ async function refuseUnlikeHead(root) {
   if (unmerged.stdout.length > 0) {
     throw new Error("the index holds unmerged paths, and a pin records HEAD: finish or abort the merge first, then pin");
   }
-
 }
 
 /** Answer the branch against the map on disk. */
