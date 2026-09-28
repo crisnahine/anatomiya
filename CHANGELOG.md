@@ -28,6 +28,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- Git LFS installed for one repository only (`git lfs install --local`) keeps working: the standard
+  `git-lfs` filter commands are the one repository-configured command left to run, since they run
+  the user's own installed `git-lfs`.
 - On git's reftable backend the automatic pin never followed: a reftable clone writes the remote-tracking
   ref an entry with no message, which read as a commit made in this clone. Remote-tracking refs'
   entries are no longer read as commits made here. Verified on git 2.51, where the whole suite passes.

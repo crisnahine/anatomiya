@@ -253,8 +253,19 @@ function parseScopedConfig(out) {
  * repository, the upload-pack to name on the command line, and whether the
  * `git://` transport is closed for this repository.
  */
+// The exact commands `git lfs install --local` writes. They run the user's own
+// installed `git-lfs`, found on their PATH, and not a script the repository
+// ships; replaced, every LFS file whose stat moved read as changed and `pin`
+// refused a clean tree. Anything else under the `lfs` name is the repository's.
+const STANDARD_LFS = new Map([
+  ["filter.lfs.clean", new Set(["git-lfs clean -- %f"])],
+  ["filter.lfs.smudge", new Set(["git-lfs smudge -- %f", "git-lfs smudge --skip -- %f"])],
+  ["filter.lfs.process", new Set(["git-lfs filter-process", "git-lfs filter-process --skip"])],
+]);
+const isStandardLfs = (e) => STANDARD_LFS.get(e.key)?.has(String(e.value ?? "").trim()) === true;
+
 function replacementsFor(entries, env) {
-  const ours = entries.filter((e) => REPOSITORY_SCOPES.has(e.scope));
+  const ours = entries.filter((e) => REPOSITORY_SCOPES.has(e.scope) && !isStandardLfs(e));
   if (ours.length === 0) return NO_REPOSITORY_COMMANDS;
   const theirs = entries.filter((e) => !REPOSITORY_SCOPES.has(e.scope));
   // Last one wins for every single-valued key here, as git reads them.
@@ -343,7 +354,6 @@ function repositoryCommands(root, env, timeout) {
     env: gitEnv(env),
   }).then(
     ({ stdout }) => replacementsFor(parseScopedConfig(stdout), env),
-    // Exit 1 is no key matched.
     // Exit 1 is no key matched. Anything else is kept as what went wrong, so
     // the call it stopped can say so.
     (err) => {

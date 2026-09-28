@@ -692,6 +692,52 @@ test("a repository's filter drivers never run on a read", needsShebang, async (t
   assert.equal(proc.ran(), true, "and so is the process driver");
 });
 
+test("Git LFS installed for this repository alone still runs, and nothing else under its name does", needsShebang, async (t) => {
+  // `git lfs install --local` writes the standard commands into `.git/config`.
+  // They run the user's own installed `git-lfs`, not a script the repository
+  // ships, and replacing them made every LFS file whose stat moved read as
+  // changed, so `pin` refused a clean tree.
+  const { dir, git } = repo(t);
+  const bin = scratch(t, "anatomiya-git-lfs-bin-");
+  const marker = join(bin, "ran-lfs");
+  writeFileSync(join(bin, "git-lfs"), `#!/bin/sh\ntouch '${marker}'\ncat\n`);
+  chmodSync(join(bin, "git-lfs"), 0o755);
+  writeFileSync(join(dir, ".gitattributes"), "*.bin filter=lfs diff=lfs merge=lfs -text\n");
+  writeFileSync(join(dir, "a.bin"), "payload\n");
+  git("add", "-A");
+  git("commit", "-qm", "lfs");
+  // The stand-in speaks no long-running protocol, so the standard clean and
+  // smudge commands stand for all three; `filter-process` is exempted the same.
+  git("config", "filter.lfs.clean", "git-lfs clean -- %f");
+  git("config", "filter.lfs.smudge", "git-lfs smudge -- %f");
+  git("config", "filter.lfs.required", "true");
+  const env = plainEnv({ PATH: `${bin}:${process.env.PATH}` });
+
+  touchBack(join(dir, "a.bin"));
+  const r = await gitBuffered(dir, ["status", "--porcelain", "-z"], { env });
+  assert.equal(r.ok, true, r.error);
+  assert.equal(existsSync(marker), true, "the user's own git-lfs ran");
+  assert.equal(r.stdout, "", "and a file whose stat alone moved is not an edit");
+
+  // The same filter name with a command of the repository's own is not LFS.
+  // Another repository, since a process reads each one's config once.
+  const other = repo(t);
+  writeFileSync(join(other.dir, ".gitattributes"), "*.bin filter=lfs -text\n");
+  writeFileSync(join(other.dir, "a.bin"), "payload\n");
+  other.git("add", "-A");
+  other.git("commit", "-qm", "lfs");
+  const evil = tripwire(bin, "evil", "cat");
+  other.git("config", "filter.lfs.clean", `${evil.path} clean -- %f`);
+  other.git("config", "filter.lfs.required", "true");
+  touchBack(join(other.dir, "a.bin"));
+  await gitBuffered(other.dir, ["status", "--porcelain", "-z"], { env });
+  assert.equal(evil.ran(), false, "a command under the lfs name that is not git-lfs's own never runs");
+  // The read above refreshed the index's stat, so move it again for the control.
+  touchBack(join(other.dir, "a.bin"));
+  spawnSync("git", ["status", "--porcelain"], { cwd: other.dir, env });
+  assert.equal(evil.ran(), true, "and plain git would have run it");
+});
+
 test("a submodule's filter driver never runs through the superproject's status", needsShebang, async (t) => {
   // Status asks every populated submodule whether it is dirty by running git
   // inside it, under the submodule's own config, which the tarball also ships
