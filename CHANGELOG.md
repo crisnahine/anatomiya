@@ -154,6 +154,159 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   carry as a tracked link, and every later `scan` and `check` read the pinned population from
   there. The map and its record already refused such a link. The pin now resolves the same way:
   `pin` refuses it, a dry run included, and a pin read through it is treated as no pin.
+- Under an address-space limit (`ulimit -v`, as on some shared and CI hosts) or strict overcommit,
+  every JavaScript and TypeScript file came back unreadable, and the scan wrote an overview of zero
+  areas and removed every correct area file. The parser's fast transfer reserves 6 GiB before it
+  reads anything; refused, it now parses the same tree the plain way.
+- A parser worker that could not be forked, under a `TMPDIR` that had been cleaned up, at a
+  process limit or out of file descriptors, took `scan` down with Node's "Unhandled 'error' event"
+  stack. It now fails as a parser that never started, and that run writes nothing and removes
+  nothing, where a parser worker that would not start used to leave the scan removing every area file.
+- `scan --deep` on a repository with no root `tsconfig.json`, such as an Nx-style monorepo with
+  `tsconfig.base.json` and one config per package, printed every type-checked claim as counts only
+  beside "100% of type lookups resolved". The checker runs on the compiler's defaults there and is
+  judged by what resolved.
+- `scan --deep` on Vite's react-ts layout, whose root `tsconfig.json` builds nothing and names
+  `tsconfig.app.json`, ran the checker without the `@/` alias and resolved 77%, so every
+  type-checked claim printed as counts only. A root like that is read through the project it names
+  first.
+- `setup` reported success when npm answered "up to date" and the parser still did not load, as it
+  does with `optional=false` in npm's config, which leaves out oxc's native binding, and `doctor`
+  kept sending the user back to `setup`. `setup` now installs optional dependencies whatever npm's
+  config says, asks the engines again afterwards, and fails naming any that still does not load.
+- A `typescript` 4.x in a `node_modules` above the plugin, such as one in the home directory, read
+  as `ok` in `doctor` and `nothing to install` in `setup`, while `scan --deep` refused it as not
+  installed. `doctor` now says `--deep` needs 5.x, and `setup` installs it.
+- The parser's memory ceiling stood down without a word where `ps` is not installed, as in
+  `node:*-slim` images, and `scan .` could run a `ps` committed to the scanned repository when
+  `PATH` held an empty entry. Linux reads worker memory from `/proc`, and elsewhere the guard runs
+  `/bin/ps`.
+- A TypeScript repository with one Gemfile or Rakefile (the React Native template ships one) got no
+  map at all on a machine without a usable Ruby: `scan` exited 1 on `spawn ruby ENOENT`, or wrote
+  nothing under a Ruby with no prism, and `check` refused a branch that touched the Gemfile beside a
+  `.ts` file. A language no file of which was read now costs only its own files. The rest of the map
+  is written, an area holding that language keeps what the last scan that could read it wrote, and
+  the summary, the overview and a new `engine-missing` check caveat name the language, why, and the
+  remedy. Only a run that read nothing at all still writes nothing.
+- With an empty or relative entry in `PATH` (a trailing colon is the common one) and no Ruby
+  installed, `doctor`, `scan` and the background refresh ran a `ruby` any other local user had left
+  in the shared temp directory, as the person scanning. Ruby is now looked up in `PATH`'s absolute
+  directories only, and a probe that answered no version is no longer reported as ok.
+- A Ruby file holding a long `elsif` chain, method chain or `+` expression, about 98 deep, was
+  reported as a file that could not be parsed though prism found no error in it: its tree ran past
+  the JSON encoder's default nesting cap of 100 on the way out of the parser. It is read now.
+- After a Ruby upgrade that kept the old gem directory, a prism built for the old Ruby was put on the
+  load path, failed to load, and `doctor` said prism was not installed. A listed prism is now proved
+  to load before the parser is handed it, and otherwise the next one that loads answers, which is
+  the accurate "older than 1.0.0" when only the default does.
+- A route file whose name a framework's router decides (`[id].tsx`, `[...slug].tsx`, `_app.tsx`,
+  `_document.tsx`, `$postId.tsx`, `+page.ts`) is no longer a site for `file_naming_case`, so `check`
+  stops telling the agent to rename a Next.js, Remix or SvelteKit route to kebab-case. An underscore
+  on a stem of more than one word (`_tmpProbe.ts`) is still counted.
+- A React component kept in a `.js` file now gets the JSX rows. Before, the scan labelled the file
+  "(JSX)" but stated none of the five JSX conventions for it, and `check` enforced none. A `.js`
+  file with no JSX stays out of those rows' denominator, the same as a `.ts` file.
+- Ruby models that register `after_create_commit`, `after_update_commit`, `after_destroy_commit` or
+  `after_save_commit` count as registering lifecycle callbacks. Before, a model directory built on
+  them read "models keep behaviour out of lifecycle callbacks", the wrong way round.
+- Direct calls to Ruby HTTP gems (RestClient, HTTPClient, HTTParty, Faraday, Excon, Typhoeus, HTTP,
+  HTTPX) count as bypassing the repository's own client, the way Net::HTTP already did. Before,
+  RestClient and HTTPClient counted as the repository's own client because of their names.
+- `Time.local`, `Time.parse` and `Time.at` count against reading time through the application zone,
+  as the `Time.zone` forms already counted for it. Before, a directory using both halves stated a
+  perfect convention.
+- `fail` counts as raising, both for a service entry point and for a rescue that re-raises, and a
+  rescue that binds the error to an instance variable and reads it counts as using the error.
+- A second author whose only file broke a habit counted as the habit's second pair of hands, so one
+  person's practice was stated as the directory's convention with "2 authors" beside it. Each side
+  of a claim now counts the authors of the files carrying its own sites.
+- One person committing under two addresses that the repository's `.mailmap` already maps to one
+  identity, or under one address typed in two cases, counted as two authors and cleared the author
+  gate alone. Authors are now read through `.mailmap` and compared without case.
+- `scan` and `pin` ended by telling you to restart a running session, and `/anatomiya:scan` and
+  `/anatomiya:pin` had the agent pass that on, although a running session gets a changed overview on
+  its next prompt or tool call. The line and the command files now say so, and say that a new
+  session, a compaction or `/clear` loads the whole map.
+- The README said a solo repository states very little because a habit needs a second author. With
+  one author in the whole history the bar is one, and every claim that clears the other gates is
+  stated as that author's practice. The README now says so.
+- The README's sample run showed a baseline line and an orphan line in wording `scan` no longer
+  prints, and none of the engines, layout or running-session lines it does. It is now a fresh run on
+  a public repository and is checked against the printer. Two counts in the docs that had drifted
+  (the dimension total and the JSX total) are now checked too.
+- A misspelled verb or a refused option in a command file passed every gate and would have failed
+  every run of that command. `check:docs` now parses each documented invocation with the CLI's own
+  argument rules.
+- Every command that takes a path said `not a git repository` whatever went wrong: for a file inside
+  a repository, a path that does not exist, a machine with no git on PATH, and a checkout git refused
+  to read (dubious ownership in a container). A file now picks the repository it is in, and the
+  others say `no such directory`, `git is not on PATH`, or git's own words, `safe.directory` fix
+  included.
+- The end-of-turn reuse check never ran on a turn that committed what it wrote, because it read only
+  the working tree against HEAD. The commits a turn makes after its last checkout, pull or reset are
+  now read from the reflog and checked with what it left uncommitted, with no file written and
+  nothing asked twice.
+- `check` snippets dropped `|` and backticks, so the finding `defaults are taken with ??, not ||`
+  quoted its own site as `x.n 0` and a union type lost its bar. A snippet now shows the code as
+  written, with only line breaks and bidi or zero-width characters refused.
+- `npm test` failed four permission-denial cases when run as root, the default in most containers.
+  They now skip with the reason, since root reads past every mode bit and the denial cannot happen.
+- A class documented above its decorators, the way NestJS writes `/** doc */ @Injectable() export
+  class`, read as undocumented, so a directory of documented services stated "exported functions
+  carry no doc comment" and `check` flagged a documented function added beside them. A doc comment
+  above the decorators now belongs to the class, as TypeScript and JSDoc attach it.
+- An extensionless import of a file with a dotted stem (`./user.service`, `./app.module`,
+  `../dto/create-user.dto`) was read as an asset import and left out of `import_extension`, so a
+  directory where a third of the relative imports carried `.js` stated "relative imports carry the
+  file extension" at 40 of 40, and `check` never flagged the missing `.js` that Node16 and NodeNext
+  refuse. Only stylesheets, images, fonts, media, data and the other formats a bundler is handed by
+  full name are assets now, and any other relative import counts.
+- The constructor parameter types of a decorated class, such as a NestJS service, counted as imports
+  used only as types, so the map named correct dependency-injection imports as exceptions and
+  `check` asked a new `@Injectable()` service for `import type`, which compiles and leaves Nest
+  unable to resolve the dependency at runtime. A type that decorator metadata emits as a value is
+  now read as a value.
+- An async function whose only `try` had a `finally` and no `catch` counted as handling its own
+  failures, so a directory of lock and cleanup helpers that caught nothing stated "async functions
+  handle their own failures" as a directive. Only a `try` with a `catch` counts now.
+- A directory of ES5 `var name = function () {}` module functions was told "module-level functions
+  are assigned as arrow consts, not declared with function", a directive to bring in arrows and
+  `const` it held neither of. The sentence now says what the row counts: "module-level functions are
+  assigned to variables, not declared with function".
+- A plain JavaScript repository that uses `?.` stated "possibly-absent values are read with ?., not
+  asserted with !", though `!` is a syntax error outside TypeScript and `check` could never enforce
+  it. A `.js` or `.mjs` file is now left out of `non_null_assertion`, as it already was out of the
+  other rows that need type syntax.
+- `return void f()`, which runs the call and returns, counted as returning `undefined` for an absent
+  value, so it was named as the exception to "an absent value is returned as null, not undefined"
+  and `check` would have asked for a `return null` that changes nothing. Only `void` over a literal,
+  the old `void 0`, counts now.
+- A name of capitals alone read as PascalCase. A Next.js `app/api` directory of routes exporting
+  `GET` and `POST` stated "functions are named PascalCase" and `check` asked for its one camelCase
+  helper to be renamed, and a constants module of `export const DEBUG` stated "exported names are
+  PascalCase". A word of capitals alone now spells no case, and `URLParser` still reads as
+  PascalCase.
+- A stylesheet named for settings (`./SettingsPanel.module.css`) was taken for the repository's own
+  config module, so a directory of components importing their CSS modules stated "environment reads
+  go through the repository's own config module, not process.env" in a repository holding no config
+  module. Only an import of a source module can stand for the repository's own config, logger or
+  HTTP client now. A stylesheet, a JSON file or an image cannot.
+- A component exported through `forwardRef`, `memo` or `styled` voted in `exported_symbol_case` as a
+  plain export, so a components directory stated "exported names are camelCase" with its one
+  `forwardRef` field as the exception, and `check` asked for a new `TextInput = forwardRef(...)` to
+  be renamed `textInput`. Such a component is left out of the vote, as a plain component already
+  was.
+- A Ruby model inheriting another model of its directory (`class Admin < User`, single-table
+  inheritance) was the exception to "models inherit ApplicationRecord", and `check` told the agent
+  to break the hierarchy. A class whose chain of parents, through the classes its area declares,
+  reaches the learned base now conforms, in the map and in the check.
+- On a machine with no `node` on `PATH`, which Claude Code's own installer does not need, every hook
+  failed with `node: not found` on every prompt and tool call, and nothing said why. The README now
+  states that the hooks need `node` on `PATH` and what its absence looks like.
+- With no pin, `scan` ended by saying "`anatomiya pin` accepts one", a command nothing installs, and
+  said nothing of the pin the background refresh takes. It now says a pin is taken on its own when
+  the checkout sits on the tip of origin's default branch with nothing uncommitted, and names
+  `/anatomiya:pin` for one by hand.
 
 ## [0.10.2] - 2026-09-24
 
