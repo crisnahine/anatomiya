@@ -316,3 +316,16 @@ export function assertRegistry(langs) {
 }
 
 assertRegistry(LANGUAGES);
+
+// The formats a bundler or a runtime is handed by their full name. A closed
+// list rather than "any dotted suffix", because a dotted suffix is just as
+// often part of a source file's stem: Angular and NestJS name every file
+// `user.service.ts` or `app.module.ts`, and `*.types.ts` and `*.config.ts` are
+// everywhere. Read as an asset, `./user.service` left the row, and a directory
+// writing 40 of its 120 relative imports with `.js` stated the claim at 40 of
+// 40 while the check never flagged the `.js` node16 and nodenext require.
+// Shared by every row that has to tell a source import from an asset one
+// (`import_extension`, and the capability rows' wrapper bindings), so the two
+// cannot drift apart again.
+export const ASSET_IMPORT =
+  /\.(css|scss|sass|less|styl|pcss|svg|png|jpe?g|gif|webp|avif|ico|bmp|woff2?|ttf|otf|eot|mp3|mp4|webm|wav|ogg|json5?|ya?ml|toml|csv|txt|xml|html|mdx?|vue|svelte|astro|graphql|gql|wasm|node|glsl|wgsl)$/i;

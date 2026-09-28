@@ -482,6 +482,17 @@ export async function mergeBase(root, a, b) {
  * `@{upstream}` is deliberately absent: a pushed feature branch tracks itself,
  * and the merge base of HEAD with itself is HEAD.
  */
+/**
+ * What git leaves in its directory while an operation is unfinished. The tree
+ * then holds a state that exists only until the operation completes: the other
+ * side's work mid-merge, a commit a bisect is visiting, an index being written.
+ * One list, because the refresh and the end-of-turn check each kept their own
+ * and the two had already drifted apart.
+ */
+export const UNFINISHED_OPERATIONS = Object.freeze([
+  "MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD", "BISECT_LOG", "rebase-merge", "rebase-apply", "index.lock",
+]);
+
 export const BASE_REFS = ["origin/HEAD", "origin/main", "origin/master", "main", "master"];
 
 /**

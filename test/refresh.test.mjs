@@ -475,3 +475,18 @@ test("a rescan that failed is tried again once enough time has passed", async (t
 
   assert.equal((await refreshRepository(dir)).reason, "scanned");
 });
+
+test("the newest reflog entry is read however long the reflog has grown", async (t) => {
+  // A remote-tracking reflog kept for years runs to megabytes, and reading its
+  // head judged an entry from long ago, or half of one, as the latest move.
+  const { origin, dir } = await cloned(t);
+  await refreshRepository(dir);
+  source(origin, "lib/merged", 8);
+  commit(origin, "a teammate's merge");
+  git(dir, "pull", "-q", "--no-rebase");
+  const log = join(dir, ".git", "logs", "refs", "remotes", "origin", "main");
+  const old = `${"0".repeat(40)} ${"1".repeat(40)} T <t@t> 1 +0000\tupdate by push\n`.repeat(Math.ceil((1.5 * 1024 * 1024) / 100));
+  writeFileSync(log, old + readFileSync(log, "utf8"));
+
+  assert.equal((await refreshRepository(dir)).pinned, true);
+});

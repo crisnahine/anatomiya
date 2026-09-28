@@ -98,6 +98,13 @@ export function listPrism({ ruby = "ruby", env = process.env, timeoutMs = 10_000
 }
 
 /**
+ * The argv that asks an interpreter which prism the given load path loads: one
+ * spelling, for the load check here and the readiness probe, which asked the
+ * same question with a copy of its own.
+ */
+export const prismVersionArgs = (load) => ["--disable-gems", ...load, "-rprism", "-e", "print Prism::VERSION"];
+
+/**
  * The arguments that put the chosen prism on the load path, for every child
  * that loads prism: the parser and the readiness probe answer about the same
  * library only if they are handed the same one. Empty when the default
@@ -128,7 +135,7 @@ function loadedVersion(load, { ruby = "ruby", env = process.env, timeoutMs = 10_
   return new Promise((resolve) => {
     execFile(
       ruby,
-      ["--disable-gems", ...load, "-rprism", "-e", "print Prism::VERSION"],
+      prismVersionArgs(load),
       { cwd: tmpdir(), env: rubyEnv(env), encoding: "utf8", timeout: timeoutMs, killSignal: "SIGKILL", maxBuffer: 64 * 1024 },
       (err, stdout) => resolve(err ? null : stdout.trim())
     );
