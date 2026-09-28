@@ -186,6 +186,28 @@ test("a registry key with no model-defaults entry is named, with the seeder as i
   assert.match(output, /npm run defaults:seed/);
 });
 
+test("a command file that spells an invocation the CLI refuses fails", (t) => {
+  // The command files are the only interface an agent uses, and the CLI
+  // refuses an unknown verb or an option its verb does not take with exit 2.
+  // A misspelled verb and a flag moved to the wrong verb both passed every
+  // gate here and would have broken every /anatomiya:check.
+  const dir = repoCopy(t);
+  const path = join(dir, REL.anatomiya, "commands", "check.md");
+  const body = readFileSync(path, "utf8");
+  assert.ok(body.includes('bin/anatomiya.mjs" check .'), "check.md spells the invocation this case breaks");
+  writeFileSync(path, body.replace('bin/anatomiya.mjs" check .', 'bin/anatomiya.mjs" chek .'));
+
+  const typo = check(dir);
+  assert.equal(typo.status, 1);
+  assert.match(typo.output, /commands\/check\.md: .*chek/);
+
+  writeFileSync(path, body.replace('bin/anatomiya.mjs" check .', 'bin/anatomiya.mjs" check . --deep'));
+
+  const flag = check(dir);
+  assert.equal(flag.status, 1);
+  assert.match(flag.output, /commands\/check\.md: .*check \. --deep/);
+});
+
 test("the README's share of the dimension total is read against the registry", (t) => {
   // "One of the 57 needs the type checker" survived a 58th row: the gate read
   // "N dimensions" and nothing else, so a count spelled any other way drifted.

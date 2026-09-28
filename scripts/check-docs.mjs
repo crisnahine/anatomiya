@@ -341,6 +341,7 @@ export const READS = [
   "package.json",
   `${REL.anatomiya}/package.json`,
   `${REL.anatomiya}/bin/anatomiya.mjs`,
+  `${REL.anatomiya}/commands`,
   "docs/how-it-works.md",
   "docs/why.md",
   "docs/dimension-intake.md",
@@ -572,6 +573,41 @@ export function checkDocs() {
   const readme = read("README.md");
   for (const cmd of unique) {
     claim("README.md", readme.includes(`/anatomiya:${cmd}`), `does not mention /anatomiya:${cmd}`);
+  }
+
+  // Every invocation the documents spell, parsed by the CLI's own argument
+  // rules. A file existing for each verb said nothing about what the file tells
+  // the agent to run, so a misspelled verb or a flag its verb refuses shipped
+  // green and broke every run of that command. `--help` last is the dry
+  // validator: the parser refuses a bad verb or option before it reaches it,
+  // and answers with the usage, writing nothing, once everything before it
+  // parsed.
+  const INVOCATION = /node "\$\{CLAUDE_PLUGIN_ROOT\}\/bin\/anatomiya\.mjs"([^`\n]*)/g;
+  const commandDocs = readdirSync(join(root, REL.anatomiya, "commands"))
+    .filter((f) => f.endsWith(".md"))
+    .map((f) => `${REL.anatomiya}/commands/${f}`);
+  const topDocs = readdirSync(join(root, "docs"))
+    .filter((f) => f.endsWith(".md"))
+    .map((f) => `docs/${f}`);
+  const parsed = new Map();
+  for (const rel of ["README.md", ...topDocs, ...commandDocs]) {
+    for (const m of read(rel).matchAll(INVOCATION)) {
+      const args = m[1].trim().split(/\s+/).filter(Boolean);
+      const key = args.join(" ");
+      if (!parsed.has(key)) {
+        try {
+          execFileSync(process.execPath, [join(root, `${REL.anatomiya}/bin/anatomiya.mjs`), ...args, "--help"], {
+            encoding: "utf8",
+            stdio: "pipe",
+          });
+          parsed.set(key, null);
+        } catch (err) {
+          parsed.set(key, String(err.stderr || err.message).split("\n")[0]);
+        }
+      }
+      const refused = parsed.get(key);
+      claim(rel, refused === null, `runs "anatomiya.mjs ${key}", which the CLI refuses: ${refused}`);
+    }
   }
 
   // --- the glossary -----------------------------------------------------------
