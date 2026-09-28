@@ -352,7 +352,7 @@ in `check`.
 | `class_base` | precise | ruby | classes here inherit `<style>`, learned |
 | `module_include` | precise | ruby | classes here include `<style>`, learned |
 
-The five JSX rows are the ones that make the JSX total 32 rather than 27: a `.tsx` or `.jsx` file is
+The five JSX rows are the ones that make the JSX total 33 rather than 28: a `.tsx` or `.jsx` file is
 counted by every `js` dimension as well as these. The five migration rows are Rails and count as
 Ruby, which is what takes Ruby from 11 to 16.
 

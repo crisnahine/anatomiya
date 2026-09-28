@@ -154,20 +154,25 @@ default branch added since as missing.
 
 ## What it prints
 
-A real run against a 2,468 file React and TypeScript repository, on a laptop:
+A first run against [excalidraw](https://github.com/excalidraw/excalidraw) at `438d898`, a public
+React and TypeScript repository, on a 4-CPU Linux container, with the root path shortened:
 
 ```
-2468 files, 127 areas, 1568ms, root /Users/me/code/app
-114 of 1507 claims stated, the rest print as counts
-baseline 67dacc6c, 0 files changed since origin/HEAD
-205 files in no area
-wrote 128 files
+693 files, 38 areas, 3409ms, root /Users/me/code/excalidraw
+engines: oxc 0.149.0
+87 of 716 claims stated, 48 match the model default, the rest print as counts
+layout: 7 roots, 3 folded, tests: 96 of 98 test files under packages, 35 of 43 vitest under packages/excalidraw; roster lines: 14 areas with imports, 18 with reuse
+no baseline pinned: claims are measured against the current tree, and no finding can exceed FIX. `anatomiya pin` accepts one
+15 files in no area: too few per directory
+wrote 39 files
+a running session gets the new overview on its next prompt or tool call, and a new session, a compaction or /clear loads the whole map
 ```
 
 ### The overview, loaded on every turn
 
 `.claude/rules/anatomiya-overview.md` has no `paths` key, so it is in context before the agent
-reads or writes anything. Trimmed from its 127 area lines:
+reads or writes anything. This one and the area file below are from a 2,468 file React and
+TypeScript repository, trimmed from its 127 area lines:
 
 ```markdown
 ---
@@ -382,15 +387,15 @@ writes blocks a commit, a push, or a merge, and `check` reports rather than fail
 already enforces a rule, the map restating it is waste, not defence in depth.
 
 **JavaScript, TypeScript and Ruby, nothing else.** A Python, Go or Rust repository gets an overview
-with a layout section and no claims in it. One of the 57 needs the type checker and is the only
+with a layout section and no claims in it. One of the 58 needs the type checker and is the only
 thing `scan --deep` adds: `a call chain stays inside one type`. It is off by default because the
 checker was measured about 26x slower than the parse and whole-program, so it cannot be narrowed to
 the files you changed; `--deep` needs the optional `typescript` dependency and the scanned
 repository's own dependencies on disk, and says on the map when the checker answered badly.
 
 **Small directories are not covered.** A directory needs `clamp(round(sqrt(N) / 6), 3, 8)` source
-files to be an area. On the example above, 205 of 2,468 files sat in no area, and the overview says
-so on every scan. The 9 file-to-file obligations are the newest part: a repository that keeps its
+files to be an area. On the excalidraw run above, 15 of 693 files sat in no area, and 205 of 2,468
+on the repository the overview comes from, and the overview says so on every scan. The 9 file-to-file obligations are the newest part: a repository that keeps its
 companions somewhere unusual scores zero against a habit it plainly has, which is why the count of
 companions found elsewhere prints beside the ratio.
 
