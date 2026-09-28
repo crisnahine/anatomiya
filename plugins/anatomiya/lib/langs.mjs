@@ -326,6 +326,12 @@ assertRegistry(LANGUAGES);
 // 40 while the check never flagged the `.js` node16 and nodenext require.
 // Shared by every row that has to tell a source import from an asset one
 // (`import_extension`, and the capability rows' wrapper bindings), so the two
-// cannot drift apart again.
-export const ASSET_IMPORT =
-  /\.(css|scss|sass|less|styl|pcss|svg|png|jpe?g|gif|webp|avif|ico|bmp|woff2?|ttf|otf|eot|mp3|mp4|webm|wav|ogg|json5?|ya?ml|toml|csv|txt|xml|html|mdx?|vue|svelte|astro|graphql|gql|wasm|node|glsl|wgsl)$/i;
+// cannot drift apart again. The second line is formats a loader plugin hands
+// over whole (documents, templates, message catalogues, 3D models, shaders,
+// schemas): each read as a source import missing its `.js`, so a directory
+// importing `./manual.pdf` beside `./a.js` was told it broke its own rule.
+export const ASSET_IMPORT = new RegExp(
+  "\\.(css|scss|sass|less|styl|pcss|svg|png|jpe?g|gif|webp|avif|ico|bmp|woff2?|ttf|otf|eot|mp3|mp4|webm|wav|ogg|json[5c]?|ya?ml|toml|csv|txt|xml|html|mdx?|vue|svelte|astro|graphql|gql|wasm|node|glsl|wgsl" +
+    "|pdf|webmanifest|hbs|ejs|po|properties|glb|gltf|sql|frag|vert|mov|proto)$",
+  "i"
+);
