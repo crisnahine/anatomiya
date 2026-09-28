@@ -56,7 +56,9 @@ test("a listing that is not the shape asked for adds nothing rather than a path 
 test("the listing names a prism installed in a gem path, by version and absolute load path", needsRubyInterpreter, async (t) => {
   // Asked of RubyGems rather than of prism, so it answers on any interpreter,
   // including one whose own prism is the 0.x this cannot read.
-  const gems = mkdtempSync(join(tmpdir(), "anatomiya-gems-"));
+  // RubyGems names the path it resolved, and macOS's temp directory sits under
+  // the /var -> /private/var link.
+  const gems = realpathSync(mkdtempSync(join(tmpdir(), "anatomiya-gems-")));
   t.after(() => rmSync(gems, { recursive: true, force: true }));
   mkdirSync(join(gems, "specifications"), { recursive: true });
   mkdirSync(join(gems, "gems", "prism-1.99.0", "lib"), { recursive: true });

@@ -1328,9 +1328,15 @@ test("a file in a directory the scan cannot enter is counted as unreadable, not 
     git("commit", "-qm", "init");
   });
   chmodSync(join(dir, "locked"), 0o000);
-  t.after(() => chmodSync(join(dir, "locked"), 0o755));
 
-  const { files, dropped } = await collect(dir);
+  // Restored here rather than in an `after`: the fixture registers its own
+  // removal first, and a directory nobody may read cannot be removed.
+  let files, dropped;
+  try {
+    ({ files, dropped } = await collect(dir));
+  } finally {
+    chmodSync(join(dir, "locked"), 0o755);
+  }
   assert.deepEqual(files.map((f) => f.rel), ["src/a.ts"]);
   assert.equal(dropped.unreadable, 1);
   assert.equal(dropped.escaped, 0);
@@ -1341,9 +1347,18 @@ test("a tracked name that is not UTF-8 is counted as unreadable rather than vani
   // failed and it was charged as escaped and never mentioned.
   const dir = repo(t, (d, { git, write }) => {
     write("src/a.ts");
-    const name = Buffer.concat([Buffer.from(join(d, "src") + "/"), Buffer.from([0x66, 0xff, 0x2e, 0x74, 0x73])]);
-    writeFileSync(name, "export const x = 1\n");
+    const rel = Buffer.concat([Buffer.from("src/"), Buffer.from([0x66, 0xff, 0x2e, 0x74, 0x73])]);
+    // APFS refuses the name with EILSEQ, so there the index alone holds it, as
+    // a clone made on Linux would.
+    try {
+      writeFileSync(Buffer.concat([Buffer.from(d + "/"), rel]), "export const x = 1\n");
+    } catch (e) {
+      if (e.code !== "EILSEQ") throw e;
+    }
     git("add", "-A");
+    const blob = execFileSync("git", ["hash-object", "-w", "--stdin"], { cwd: d, input: "export const x = 1\n" }).toString().trim();
+    const entry = Buffer.concat([Buffer.from(`100644 ${blob}\t`), rel, Buffer.from([0])]);
+    execFileSync("git", ["update-index", "-z", "--index-info"], { cwd: d, input: entry });
     git("commit", "-qm", "init");
   });
 
