@@ -40,6 +40,7 @@ export const CAVEATS = Object.freeze({
   SHALLOW_NO_HISTORY: "shallow-no-history",
   SHALLOW_UNFETCHED: "shallow-unfetched",
   DIFF_UNREADABLE: "diff-unreadable",
+  RENAMES_SKIPPED: "renames-skipped",
   ADDED_RANGES_UNREADABLE: "added-ranges-unreadable",
   PENDING_UNLISTED: "pending-unlisted",
   PENDING_UNJUDGED: "pending-unjudged",

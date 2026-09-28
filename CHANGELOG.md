@@ -105,6 +105,23 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - A Ruby file holding `1e400` or a binary-encoded string is parsed instead of reported unread.
 - prism parses with the grammar of the Ruby it runs on, so code that Ruby accepts (such as
   `a[0, k: 1] = 2` before 3.4) is no longer reported as a syntax error.
+- `check` on a shallow clone that already holds the base branch (`--no-single-branch`, or a
+  `fetch --depth=1 origin main`) finds the base its merge commit names, and otherwise says to fetch
+  the history, rather than examining nothing.
+- `check` on a shallow clone finds a remote default branch named something other than main or master.
+- `check --base` refuses `HEAD~0`, and a branch's own name on a branch with commits of its own,
+  rather than comparing the branch with itself and reporting it clean.
+- `check` reports a companion moved in the working tree to a name it does not count, such as
+  `thing_spec.rb.bak`, as missing, as it already did once the move was committed.
+- `check` no longer reports a test renamed within its own directory as a test with no precedent.
+- `check` judges a file holding tens of thousands of sites in seconds rather than half a minute.
+- `check` reports a site added above a renamed function where it was added, not on the renamed one.
+- `check`'s header and `base.sha` name the base branch's own tip; `base.mergeBase` is the fork point.
+- `check` skips a submodule whose path looks like a source file rather than naming it unreadable.
+- `check` reads the base side of two files whose paths differ only in case as two files on a
+  case-insensitive filesystem, rather than one overwriting the other.
+- `check` treats a branch's moves as moves past git's default rename limit, and says so
+  (`renames-skipped`) past its own, rather than charging moved code as new.
 - A repository created without a reflog, or on git's reftable backend, refreshed only on a checkout:
   nothing appended to the `logs/HEAD` the hook watched. It now watches the index there, or the
   reftable table list, so a commit or a pull refreshes the map as it does everywhere else.

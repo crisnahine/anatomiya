@@ -205,3 +205,30 @@ test("the files come back in code-unit order, not the host's locale", async (t) 
   t.after(out.dispose);
   assert.deepEqual(out.files.map((f) => f.rel), ["B.js", "a.js", "ä.js"]);
 });
+
+test("two paths that differ only in case are written where neither overwrites the other", async (t) => {
+  // On a case-insensitive filesystem `src/Foo.ts` and `src/foo.ts` are one
+  // file in the temporary tree, so the second blob written replaced the first
+  // and one of the two was parsed with the other's contents. Simulated here by
+  // asking that no two destinations fold to the same name.
+  let sha;
+  const dir = repo(t, (d, { write, commit }) => {
+    write("src/Foo.ts", "export const which = 'upper'\n");
+    write("src/foo.ts", "export const which = 'lower'\n");
+    write("SRC/FOO.ts", "export const which = 'shouting'\n");
+    sha = commit("first");
+  });
+
+  const out = await readAtRevision(dir, sha, [{ rel: "src/Foo.ts" }, { rel: "src/foo.ts" }, { rel: "SRC/FOO.ts" }]);
+  t.after(out.dispose);
+
+  const want = { "src/Foo.ts": "upper", "src/foo.ts": "lower", "SRC/FOO.ts": "shouting" };
+  assert.equal(out.files.length, 3);
+  for (const f of out.files) {
+    assert.equal(readFileSync(f.abs, "utf8"), `export const which = '${want[f.rel]}'\n`, f.rel);
+    assert.ok(f.abs.endsWith("FOO.ts") || f.abs.endsWith("Foo.ts") || f.abs.endsWith("foo.ts"), "the name, and the extension that picks the grammar, stay");
+  }
+  assert.equal(new Set(out.files.map((f) => f.abs.toLowerCase())).size, 3, out.files.map((f) => f.abs).join("\n"));
+  // The first asked keeps the plain path, which is where every other file sits.
+  assert.equal(out.files.find((f) => f.rel === "src/Foo.ts").abs, join(out.dir, "src", "Foo.ts"));
+});

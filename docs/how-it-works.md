@@ -1201,14 +1201,26 @@ keeps an agent's own edits from moving the population it is judged against (E2).
 
 Base ref resolution tries `origin/HEAD`, `origin/main`, `origin/master`, `main`, `master`, in that
 order, or whatever `--base` names. `@{upstream}` is deliberately absent: a pushed feature branch
-tracks itself, and the merge base with itself is HEAD. On a shallow clone the base commit is fetched
-with `--depth=1`, which costs about 3.65s and 12 MB; `--unshallow` measured 56s and 305 MB and
-`--deepen=500` measured the same, so bounded deepening is not offered. A depth-1 clone grafts HEAD as
-a root, so `merge-base` cannot answer there even with the base fetched, but HEAD's commit still
-names its parents, and a base that is one of them is the merge base: that is the pull request's
-merge ref the default `actions/checkout` fetches. When there is still no merge base, the check
-degrades to lines added since the oldest commit the clone holds and says so, and at depth one that
-commit is HEAD, so nothing is examined and the caveat names the fix, `fetch-depth: 0`.
+tracks itself, and the merge base with itself is HEAD. A `--base` that names this branch's own tip is
+refused like `HEAD` is: an expression such as `HEAD~0`, and the branch's own name wherever the base
+the check would pick unasked is somewhere else. Another branch at the same commit, or the commit by
+its id, is still a base, and is what a branch holding only uncommitted work is checked against. On a
+shallow clone the base commit is fetched with `--depth=1`, which costs about 3.65s and 12 MB;
+`--unshallow` measured 56s and 305 MB and `--deepen=500` measured the same, so bounded deepening is
+not offered. `origin/HEAD` is asked of the remote as its own `HEAD`, so a default branch named
+anything is found. A depth-1 clone grafts HEAD as a root, so `merge-base` cannot answer there even
+with the base fetched, but HEAD's commit still names its parents, and a base that is one of them is
+the merge base: that is the pull request's merge ref the default `actions/checkout` fetches. The
+same rescue is asked of a base the shallow clone already holds, as a `--no-single-branch` clone or a
+`fetch --depth=1 origin main` leaves it. When there is still no merge base, the check degrades to
+lines added since the oldest commit the clone holds and says so, and at depth one that commit is
+HEAD, so nothing is examined and the caveat names the fix, `fetch-depth: 0`. The report's
+`base.sha` is the base ref's own tip and `base.mergeBase` the fork point the diff is taken from.
+
+The diff and the pending listing set their own rename limit, 7,000, where git's diff default is
+1,000: past the limit git lists each move as a deletion and an addition, and every site that came
+with a moved file was charged to whoever moved it. A branch past even that is said, as
+`renames-skipped`. A submodule is left out of both, since a gitlink is a commit rather than a file.
 
 One rule here is not a dimension and does not come from the registry. `test_precedent` asks whether a
 test the change added has any precedent in the source root it covers, rather than whether its contents
@@ -1264,7 +1276,7 @@ the same reason.
 A caveat is why a run could not answer in full. The sentence is what a human reads; the code is what
 anything else reads, because with prose alone "the diff could not be read" and "one file was read
 from the working tree" are told apart by a substring match on wording nobody promised to keep. There
-are 27. Most appear at most once in a run; the ones that repeat are named under the table.
+are 28. Most appear at most once in a run; the ones that repeat are named under the table.
 
 | Code | What it means |
 |---|---|
@@ -1276,6 +1288,7 @@ are 27. Most appear at most once in a run; the ones that repeat are named under 
 | `shallow-no-history` | shallow clone: the base commit is present and shares no held history with HEAD |
 | `shallow-unfetched` | shallow clone and the base commit could not be fetched |
 | `diff-unreadable` | the diff against the base could not be read, so no file was examined |
+| `renames-skipped` | the branch moves more files than git will pair up at the rename limit the check sets, 7,000, so a file moved and edited may be judged as new |
 | `added-ranges-unreadable` | in the degraded mode, the added-line ranges could not be read, so nothing was attributed to this branch |
 | `pending-unlisted` | the working tree's pending edits could not be listed, so only committed content was read |
 | `pending-unjudged` | files carry uncommitted edits and there was no base to judge them against |
@@ -1304,7 +1317,8 @@ file, and so can `head-unreadable`, `base-unreadable` and `base-unparsed`.
 `no-merge-base` is the one code that can appear twice in one run. Resolving the base emits it when a
 candidate ref resolves and has no fork point with HEAD, and the run then falls to the added-lines
 mode, which emits it again to say what that mode does and does not answer. Where no ref resolved at
-all, the first is `no-base-ref` and `no-merge-base` appears once.
+all, the first is `no-base-ref` and `no-merge-base` appears once, and on a shallow clone the first is
+`shallow-no-history`, which names the fetch that would answer.
 
 ## 9. Predicting your own result
 

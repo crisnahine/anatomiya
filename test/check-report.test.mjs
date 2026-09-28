@@ -161,10 +161,10 @@ test("no caveat reaches the report without a code", () => {
   // Any first argument, not the literal `caveats`: a helper that spells the
   // list some other way would otherwise be invisible to this count.
   const named = [...src.matchAll(/(?<!function )\bcaveat\(\s*\w+,\s*([^,]+),/g)].map((m) => m[1].trim());
-  // A count rather than a floor. 27 codes over 25 sites: one site takes two
+  // A count rather than a floor. 28 codes over 26 sites: one site takes two
   // from its caller, one reads four off the parse, and `no-merge-base` and
   // `head-oversize` are each reached from two of them.
-  assert.equal(named.length, 25, `${named.length} coded caveat sites, so the count moved`);
+  assert.equal(named.length, 26, `${named.length} coded caveat sites, so the count moved`);
   for (const name of named) {
     // Never a literal. Beside `CAVEATS.X` two sites read the table through
     // something else: `code`, which an unread corpus takes from its caller
@@ -183,7 +183,7 @@ test("no caveat reaches the report without a code", () => {
   }
 });
 
-test("a code no case names is one of the three nobody could force cheaply", () => {
+test("a code no case names is one of the four nobody could force cheaply", () => {
   // The two checks above catch a code nothing spells and a code nothing
   // declares. Neither catches a code spelled at the wrong site: exchanging
   // `frameworks-unknown` and `capabilities-unknown` was green across every
@@ -198,6 +198,9 @@ test("a code no case names is one of the three nobody could force cheaply", () =
   // `--base` now gets made the shallow arm worth reaching: a depth-1 clone of a
   // `file://` origin is one `git clone` away, and `SHALLOW_NO_HISTORY` left it
   // on the same clone once that caveat named the fetch that fixes it.
+  // `RENAMES_SKIPPED` needs a branch past the rename limit the check sets for
+  // itself, 7,000 additions against 7,000 deletions; the test git applies is
+  // pinned in `check.test.mjs` through `renamesSkipped` at a limit of one.
   const dir = dirname(fileURLToPath(import.meta.url));
   const suites = readdirSync(dir)
     .filter((f) => f.endsWith(".test.mjs"))
@@ -207,6 +210,7 @@ test("a code no case names is one of the three nobody could force cheaply", () =
   const unheld = Object.keys(CAVEATS).filter((name) => !new RegExp(`CAVEATS\\.${name}\\b`).test(suites));
 
   assert.deepEqual(unheld, [
+    "RENAMES_SKIPPED",
     "ADDED_RANGES_UNREADABLE",
     "OBLIGATIONS_UNCHECKED",
     "RULES_UNREADABLE",
