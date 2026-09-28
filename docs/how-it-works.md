@@ -1252,10 +1252,10 @@ Roughly, in order of how much they move the number of stated claims:
   400 files gives you one area and one set of claims. A directory under the floor, which is 3 in a
   small repository and 8 from about 2,000 files up, folds into its nearest ancestor that clears it,
   and folds into nothing at all if no ancestor does.
-- **Git history.** The author gate needs 2 distinct authors on the files carrying the conforming
-  matches. A young repository, a solo repository, or a squashed import will state very little, and
-  so will a shallow clone: the bar cannot be lowered on a window, so a `--depth=1` CI checkout
-  states nothing and prints every claim as a count.
+- **Git history.** The author gate needs 2 distinct authors on the files carrying the stated
+  side's matches, or 1 where the whole history has one author. A young team repository or a squashed
+  import will state very little, and so will a shallow clone: the bar cannot be lowered on a window,
+  so a `--depth=1` CI checkout states nothing and prints every claim as a count.
 - **Actual consistency.** The ratio gate is 0.90. Anything your team is 80% consistent about will
   print as counts, not as a claim. On the example repository, 671 of the 834 suppressed slots failed
   on ratio.

@@ -395,9 +395,11 @@ companions somewhere unusual scores zero against a habit it plainly has, which i
 companions found elsewhere prints beside the ratio.
 
 **Who gets the most out of it**: repositories where a meaningful share of pull requests are
-agent-authored, with many directories and mechanical per-file obligations. A solo repository with
-no shared habit to count states very little, by design: one person's habit still needs the author
-gate's second opinion. The full numbers and their caveats are in [docs/why.md](docs/why.md).
+agent-authored, with many directories and mechanical per-file obligations. A solo repository is not
+held back by the author gate: where the whole history has one author there is no second opinion to
+wait for, so every claim that clears the other gates is stated, and the overview says it is that
+author's practice. A team repository still needs two authors behind a habit before stating it. The
+full numbers and their caveats are in [docs/why.md](docs/why.md).
 
 ## Learn more
 
