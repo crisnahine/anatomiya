@@ -486,6 +486,40 @@ test("two Windows drives have no relative path between them, and that is not con
   assert.equal(within("D:\\other\\a.ts"), false);
 });
 
+test("a directory whose name starts with two dots is inside, not above", (t) => {
+  // `rel.startsWith("..")` read `..base/tsconfig.json` as a step above the
+  // root, so an `extends` into a directory of that name was refused as
+  // escaped and the whole tier degraded. Only `..` as a whole segment climbs.
+  assert.equal(within("..base/tsconfig.json"), true);
+  assert.equal(within("..base\\tsconfig.json"), true);
+  assert.equal(within(".."), false);
+  assert.equal(within("..\\a.ts"), false);
+  const dir = tree(t);
+  mkdirSync(join(dir, "..base"));
+  writeFileSync(join(dir, "..base", "a.ts"), "export const a = 1;\n");
+  assert.equal(insideRoot(dir, join(dir, "..base", "a.ts")), true);
+  assert.equal(insideRoot(dir, join(dir, "..")), false);
+});
+
+test("a root tsconfig that is a link out of the repository is refused, not followed", { skip: needsTs.skip || needsSymlinks.skip }, () => {
+  // The root config was read with the host's own readFile, before anything
+  // confined it, so a committed `tsconfig.json` linking to a file outside the
+  // repository was opened and its options handed to the checker.
+  const away = repo({ "tsconfig.json": `{"compilerOptions":{"strict":true}}` });
+  const dir = repo({ "a.ts": "export const a = 1;\n" });
+  try {
+    symlinkSync(join(away, "tsconfig.json"), join(dir, "tsconfig.json"));
+    const r = readConfig(ts, dir);
+    assert.equal(r.status, "degraded");
+    assert.equal(r.reason, "config-escaped");
+    assert.notEqual(r.options.strict, true, "nothing the outside file says reaches the checker");
+    assert.equal(r.options.noEmit, true, "and the forced options still hold");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+    rmSync(away, { recursive: true, force: true });
+  }
+});
+
 test("containment folds case on Windows and nowhere else", () => {
   // Its filesystem is case-insensitive, so one file reached through two
   // spellings is one file there and two here.

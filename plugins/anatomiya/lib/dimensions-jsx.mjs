@@ -222,21 +222,80 @@ export function yieldsJsx(fn) {
  * every styled library exports under that name, and what its template or call
  * makes is an element type: `styled.h1`, `styled(Anchor)` and
  * `styled(Anchor).attrs({})` all root there.
+ *
+ * A wrapper handed a name rather than a function, `forwardRef(ButtonInner)` or
+ * `memo(CardImpl)`, is handed the function this file bound under that name at
+ * module level, which is read the same way: without it both exports voted as
+ * PascalCase values and a helper directory asked for them in camelCase. `lazy`
+ * and `dynamic` are the other names read: the function they are handed yields
+ * an `import()`, never JSX, so nothing about it shows the component it loads,
+ * and `lazy(() => import("./Settings"))` is how React and Next.js spell one.
  */
-export function makesComponent(init) {
+export function makesComponent(init, program = null) {
+  let fns = null;
+  const seen = new Set();
   const work = [init];
   while (work.length) {
-    const v = value(work.pop());
-    if (!v) continue;
+    let v = value(work.pop());
+    if (!v || seen.has(v)) continue;
+    seen.add(v);
+    if (v.type === "Identifier" && program) {
+      fns ??= moduleFunctions(program);
+      v = fns.get(v.name);
+      if (!v || seen.has(v)) continue;
+      seen.add(v);
+    }
     if (isFunctionLike(v)) {
       if (yieldsJsx(v)) return true;
       continue;
     }
     if (v.type !== "CallExpression" && v.type !== "TaggedTemplateExpression") continue;
     if (rootsAtStyled(v.type === "CallExpression" ? v.callee : v.tag)) return true;
+    if (v.type === "CallExpression" && LAZY.test(calleeName(v.callee) ?? "") && loadsModule(v.arguments[0])) {
+      return true;
+    }
     if (v.type === "CallExpression") work.push(...v.arguments);
   }
   return false;
+}
+
+const LAZY = /^(lazy|dynamic)$/;
+
+// The functions this file binds by name at module level: a declaration, or a
+// variable bound to a function, exported or not.
+function moduleFunctions(program) {
+  const fns = new Map();
+  for (const st of program.body || []) {
+    const d = st.type === "ExportNamedDeclaration" || st.type === "ExportDefaultDeclaration" ? st.declaration : st;
+    if (!d) continue;
+    if (d.type === "FunctionDeclaration" && d.id?.name) fns.set(d.id.name, d);
+    if (d.type !== "VariableDeclaration") continue;
+    for (const decl of d.declarations || []) {
+      if (decl.id?.type === "Identifier" && decl.init && isFunctionLike(value(decl.init))) {
+        fns.set(decl.id.name, value(decl.init));
+      }
+    }
+  }
+  return fns;
+}
+
+// `() => import("./X")`, or a `.then` on it that picks a named export: the
+// value handed out roots at a dynamic import through members and calls.
+function loadsModule(arg) {
+  const fn = value(arg);
+  if (!fn || !isFunctionLike(fn) || !fn.body) return false;
+  const handed = fn.body.type === "BlockStatement" ? [] : [fn.body];
+  walk(fn.body, (n, c) => {
+    if (c.fn || !n.argument) return;
+    if (n.type === "ReturnStatement") handed.push(n.argument);
+  });
+  return handed.some((h) => {
+    let n = value(h);
+    while (n && (n.type === "MemberExpression" || n.type === "CallExpression" || n.type === "AwaitExpression")) {
+      n = value(n.type === "MemberExpression" ? n.object : n.type === "CallExpression" ? n.callee : n.argument);
+    }
+    return n?.type === "ImportExpression";
+  });
 }
 
 // `styled.h1`, `styled("div")` and `styled(Anchor).attrs({})` reach the one
@@ -503,10 +562,21 @@ export const JSX_DIMENSIONS = [
         const where = declName(ctx.fn);
         // Innermost visible binding wins: module level, or a function this site
         // sits inside. A binding in a sibling component is not visible here.
-        const seen = bound.filter(
-          (b) => b.name === e.name && (b.scope === null || ctx.ancestors.includes(b.scope))
-        );
-        const hit = seen.length ? seen[seen.length - 1] : null;
+        // Innermost by scope depth, not by walk order: a nested component's
+        // binding is walked before a same-named one its parent declares further
+        // down, and taking the last seen scored the child's useCallback as the
+        // parent's plain arrow.
+        let hit = null;
+        let depth = -2;
+        for (const b of bound) {
+          if (b.name !== e.name) continue;
+          const d = b.scope === null ? -1 : ctx.ancestors.indexOf(b.scope);
+          if (b.scope !== null && d < 0) continue;
+          if (d >= depth) {
+            hit = b;
+            depth = d;
+          }
+        }
         if (!hit) return;
         if (hit.memo) add({ node: n.name, conforming: true, where });
         else add({ node: n.name, conforming: false, where });

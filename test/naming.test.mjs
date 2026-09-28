@@ -620,6 +620,42 @@ test("prefixClass answers for a name that can say, and says nothing for one that
   assert.equal(prefixClass("TEFLogonStep"), null);
 });
 
+test("prefixClass does not read an acronym's first letter as a prefix", async () => {
+  // `OAuthToken` voted `O`, `ETag` voted `E` and `IDs` voted `I`: a capital,
+  // a capital, a lower-case letter is the prefix shape and also how every
+  // mixed-case acronym opens. An area of `IDs`, `IPv4Address` and `ETagCache`
+  // beside plain names voted an `I` prefix nobody wrote. Only a prefix letter
+  // the rows are about votes, and not where the first two capitals open a
+  // known acronym; either way the name reads both ways and votes for neither.
+  const { prefixClass } = await import("../plugins/anatomiya/lib/dimensions-naming.mjs");
+  for (const name of ["OAuthToken", "ETag", "IDs", "IPv4Address", "IOs", "UIs", "XMatrix"]) {
+    assert.equal(prefixClass(name), null, name);
+  }
+  assert.equal(prefixClass("IFoo"), "I");
+  assert.equal(prefixClass("TProps"), "T");
+  assert.equal(prefixClass("EStatus"), "E");
+  assert.equal(prefixClass("IDocument"), "I", "a prefix on a word that merely starts with D is still a prefix");
+  assert.equal(prefixClass("Token"), "none");
+});
+
+test("a lowercase name outside ASCII spells every class, and a mixed one spells its class", async () => {
+  // `café.ts` classified to nothing and was not a single lowercase word to an
+  // ASCII-only test, so the check counted it as a stem spelling no class
+  // against a stated claim: every accented Spanish or French filename was a
+  // finding the author could not fix.
+  const { classifyWord, namesASite, classifyBasename } = await import("../plugins/anatomiya/lib/dimensions-naming.mjs");
+  assert.equal(classifyWord("café"), null);
+  assert.equal(namesASite("src/café.ts"), false);
+  assert.equal(namesASite("src/_menú.tsx"), false, "a router's special file under an accented word");
+  assert.equal(classifyWord("caféBar"), "camelCase");
+  assert.equal(classifyWord("ÜberCard"), "PascalCase");
+  assert.equal(classifyWord("résumé-card"), "kebab-case");
+  assert.equal(classifyWord("résumé_card"), "snake_case");
+  assert.equal(classifyBasename("src/résuméCard.ts"), "camelCase");
+  assert.equal(namesASite("src/résuméCard.ts"), true);
+  assert.equal(classifyWord("ÉTÉ"), null, "capitals alone still spell no class");
+});
+
 /* --- the base a class names --- */
 
 test("extends_base votes with the superclass as it is written", async () => {
@@ -1200,6 +1236,32 @@ test("a component made by forwardRef, memo or styled is excluded like a plain on
   `);
 
   assert.deepEqual(h.map((x) => x.where), ["useStore", "inputVariants"]);
+});
+
+test("a wrapper handed a named component, and a lazy import, make a component too", async () => {
+  // `forwardRef(ButtonInner)` hands the wrapper an identifier rather than a
+  // function, and `lazy(() => import("./Settings"))` hands it a function that
+  // yields a module rather than JSX, so both exports were voted as PascalCase
+  // values and a directory of camelCase helpers asked for them to be renamed
+  // `button` and `settingsPage`, host tags. The identifier resolves to the
+  // function this file bound under that name; a lazy or dynamic import is read
+  // by name, because the function it is handed never shows the JSX.
+  const h = await astHits("exported_symbol_case", `
+    import React, { forwardRef, memo, lazy } from "react";
+    import dynamic from "next/dynamic";
+    function ButtonInner(props, ref) { return <button ref={ref} {...props} />; }
+    const CardImpl = () => <div />;
+    const makeStore = () => ({});
+    export const Button = forwardRef(ButtonInner);
+    export const Card = memo(CardImpl);
+    export const SettingsPage = lazy(() => import("./Settings"));
+    export const Chart = React.lazy(() => import("./Chart").then((m) => ({ default: m.Chart })));
+    export const Map = dynamic(() => import("./Map"), { ssr: false });
+    export const useStore = create(makeStore);
+    export const loadAll = lazyLoad(() => import("./all"));
+  `);
+
+  assert.deepEqual(h.map((x) => x.where), ["useStore", "loadAll"]);
 });
 
 /* --- a directory of components and a directory of helpers hold different conventions (#64) --- */

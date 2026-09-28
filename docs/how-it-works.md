@@ -178,7 +178,8 @@ screen said so.
 |---|---|---|
 | File size | 1 MB | checked with `stat` before the file is dispatched |
 | Wall time | 5s | `SIGKILL` from the parent |
-| Resident memory | 1 GB | polled every 25ms via `ps`, starting 250ms after the file goes in flight |
+| Resident memory | 1 GB | polled every 25ms, starting 250ms after the file goes in flight: read from `/proc/<pid>/status` on Linux, from `/bin/ps` on macOS and the BSDs, and not enforced on Windows, where the wall clock is what stops a runaway parse |
+| Worker start | 20s | `SIGKILL` from the parent for a worker that has not said ready; five such workers fail the pool, and its queued files are charged as crashed |
 
 Pool size is `min(8, cpus - 1)`. The memory grace period exists so a normal parse never pays for the
 polling.
@@ -357,8 +358,10 @@ counted by every `js` dimension as well as these. The five migration rows are Ra
 Ruby, which is what takes Ruby from 11 to 16.
 
 The three `route_` rows ask whether a cross-cutting concern goes through the repository's own
-module. The wrapper is learned per file from its relative imports, by filename vocabulary (log,
-logger, logging; client, http, api, request, fetcher; config, env, settings), and the direct forms
+module. The wrapper is learned per file from its relative imports whose filename, up to its first
+dot, is nothing but the vocabulary (log, logger, logging; client, http, api, request, fetcher;
+config, env, settings), so `./apiClient` and `./HTTPClient` are wrappers and `./settingsSlice` is
+not, and the direct forms
 are a closed table (console calls, fetch and axios, process.env reads). Each row is offered only where at
 least three examined files already route through a wrapper (C14), so a repository that logs to
 the console on purpose, or one holding a config.ts nobody imports, never carries a line that can
@@ -397,7 +400,10 @@ before a second capital, where
 `IComment` votes `I` and `Comment` votes for no prefix at all. A name opening on three or more
 capitals reads both ways, `IOStream` being an acronym and `IEFLogon` being `I` on the `EFLogon` in
 the directory of the same name, so it votes for neither and is not a site; nor does a name that is
-nothing but two capitals, `IO` being the same two readings with nothing to separate them. The first three learn a
+nothing but two capitals, `IO` being the same two readings with nothing to separate them. Only `I`,
+`T` and `E` vote as a prefix, and not where the name opens on a mixed-case acronym ending with its
+word (`IDs`, `IPv4`, `ETag`): `OAuthToken` would otherwise vote `O`, so any other capital-capital-lower
+opening votes for neither too. The first three learn a
 name out of the repository's own source, so it goes through the encoder where the sentence is
 filled rather than at each place the sentence is rendered. The last two can learn an absence, which
 renders as `interfaces carry no prefix` rather than being filled into the template, and which is

@@ -436,6 +436,25 @@ test("a handler is scored against the binding its own component made", () => {
     "each is judged by its own binding, not by whichever was seen first");
 });
 
+test("a handler is scored against the innermost binding, not the last one walked", () => {
+  // The walk meets a nested component's binding before a same-named binding
+  // its parent declares further down, and the last one seen won: the child's
+  // memoised handler was scored as the parent's plain arrow.
+  const h = hits("handler_memoised", `
+    function Parent() {
+      function Child() {
+        const onSave = useCallback(() => {}, [])
+        return <Button onSave={onSave} />
+      }
+      const onSave = () => {}
+      return <Child onSave={onSave} />
+    }
+  `);
+
+  assert.deepEqual(h.map((x) => x.conforming), [true, false],
+    "the child's site reads its own useCallback, the parent's its own arrow");
+});
+
 test("a handler that arrived as a prop is nobody's decision here", () => {
   // Counting it makes the number grow with how many handlers a component
   // receives rather than how many it creates.

@@ -42,7 +42,7 @@ export const FORCED_OPTIONS = {
 export function insideRoot(root, abs) {
   const rel = relative(resolve(root), resolve(abs));
   if (rel === "") return true;
-  if (rel.startsWith("..") || isAbsolute(rel)) return false;
+  if (climbs(rel) || isAbsolute(rel)) return false;
   // Lexical containment costs nothing and is not containment: resolve()
   // normalises ".." and follows no link, and the checker's own reads do.
   return resolveInside(root, rel.split(/[\\/]/).join("/")) !== null;
@@ -97,7 +97,19 @@ export function contains(base, p, platform = process.platform) {
  * not, on the one platform B18 singles out for special handling.
  */
 export const within = (rel) =>
-  rel === "" || (!rel.startsWith("..") && !posix.isAbsolute(rel) && !win32.isAbsolute(rel));
+  rel === "" || (!climbs(rel) && !posix.isAbsolute(rel) && !win32.isAbsolute(rel));
+
+/**
+ * Whether a `relative()` answer starts by stepping above its base.
+ *
+ * `..` as a whole first segment, not as a prefix: `startsWith("..")` read a
+ * directory named `..base` as outside the root, so an `extends` into it was
+ * refused as escaped and the whole tier degraded over a file it could read.
+ * Either separator, because `relative` answers in the platform's own.
+ */
+function climbs(rel) {
+  return rel === ".." || rel.startsWith("../") || rel.startsWith("..\\");
+}
 
 /**
  * A path in the form TypeScript compares against.
@@ -128,6 +140,12 @@ export function readConfig(ts, root) {
       configPath: null,
     };
   }
+
+  // The root config is a path the repository writes like any `extends`, and it
+  // was read with the host's own readFile before anything confined it: a
+  // committed `tsconfig.json` linking out of the tree was opened and its
+  // options handed to the checker. Links followed, as every other read here.
+  if (!insideRoot(root, configPath)) return degraded(ts, "config-escaped");
 
   const { config, references } = readOne(ts, root, configPath);
   if (references.length === 0) return config;

@@ -286,6 +286,36 @@ test("a worker that dies before answering reports what it printed", async (t) =>
   }
 });
 
+test("a worker that starts and never says ready is killed on a clock, and the pool fails rather than hangs", async (t) => {
+  // A queued file is handed only to a worker that said ready, and nothing
+  // timed the wait: a worker stalled in its own startup (a native binding
+  // blocked on a network filesystem, a preload that never settles) left every
+  // file queued and the scan waiting forever. The stall is reached through
+  // `execArgv`: a preload whose top-level await never settles, with a timer
+  // holding the process open, is a worker that started and never answers.
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-noready-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  writeFileSync(join(dir, "a.ts"), "export const x = 1\n");
+  const stall = "data:text/javascript,setInterval(()=>{},1e6);await new Promise(()=>{})";
+
+  const pool = createPool({ size: 1, execArgv: ["--import", stall], guards: { readyTimeoutMs: 300 } });
+  try {
+    const started = Date.now();
+    const r = await pool.parse({ rel: "a.ts", abs: join(dir, "a.ts"), lang: "js" });
+    assert.equal(r.ok, false);
+    assert.equal(r.crashed, true, "no parser answered, which is the crash A13 reads as a blind run");
+    assert.match(r.error, /^parser worker will not start: no ready answer in 300ms/);
+    assert.ok(Date.now() - started < 10_000, "bounded by the ready clock times the stillborn limit");
+  } finally {
+    await pool.close();
+  }
+});
+
+test("the ready clock is a guard with a default", () => {
+  assert.equal(typeof GUARDS.readyTimeoutMs, "number");
+  assert.ok(GUARDS.readyTimeoutMs >= 10_000, "a cold native binding on a slow disk is not a stalled worker");
+});
+
 test("a worker that cannot be forked fails the pool with its reason, not an unhandled error", needsTmpdirVariable, async (t) => {
   // A fork that never starts emits 'error' and never 'exit', and the pool
   // listened for 'exit' only: a per-session TMPDIR that had been cleaned up

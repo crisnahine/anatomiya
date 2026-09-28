@@ -22,6 +22,14 @@ export const GUARDS = {
   // read of a handful of pids takes.
   psTimeoutMs: 1_000,
   psMaxBytes: 64 * 1024,
+  // A file is handed only to a worker that said ready, and nothing timed the
+  // wait for it: a worker stalled in its own startup (a native binding blocked
+  // on a network filesystem, a preload that never settles) left every file
+  // queued and the scan waiting forever. Past this it is killed and counts as
+  // a worker that died before it answered. Generous, because a cold native
+  // binding on a slow disk is slow rather than stalled, and the per-file clock
+  // does not start until the worker is ready.
+  readyTimeoutMs: 20_000,
 };
 
 // A worker that dies before it ever answers is a broken install, not a poison
@@ -73,8 +81,18 @@ export function createPool({ size, withProgram = false, execArgv = [], guards = 
     const child = sup.child;
     const w = { sup, child, job: null, timer: null, started: 0, ready: false };
 
+    // The ready clock: a worker still silent past it takes the stillborn path
+    // below, so a pool no worker ever becomes ready in fails its queued files
+    // as crashed rather than holding them.
+    const readyTimer = setTimeout(() => {
+      if (!w.ready) w.sup.kill("ready timeout");
+    }, limits.readyTimeoutMs);
+    readyTimer.unref?.();
+    child.once("exit", () => clearTimeout(readyTimer));
+
     child.on("message", (msg) => {
       if (msg && msg.ready) {
+        clearTimeout(readyTimer);
         w.ready = true;
         if (msg.engine) versions[msg.engine] = msg.version ?? null;
         return release(w);
@@ -129,7 +147,9 @@ export function createPool({ size, withProgram = false, execArgv = [], guards = 
       if (closed) return;
       if (!w.ready && ++stillborn >= MAX_STILLBORN) {
         // A fork that never ran printed nothing, so the reason is the spawn's.
-        const why = firstLine(w.sup.stderr()) || firstLine(cause?.message);
+        // One the ready clock killed may have printed nothing either.
+        const stalled = w.sup.killedBy() === "ready timeout" ? `no ready answer in ${limits.readyTimeoutMs}ms` : null;
+        const why = stalled || firstLine(w.sup.stderr()) || firstLine(cause?.message);
         return fail([`parser worker will not start`, why].filter(Boolean).join(": "));
       }
       spawn();

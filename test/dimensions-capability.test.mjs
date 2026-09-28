@@ -235,3 +235,56 @@ test("implementsCapability asks every word of the stem, and only the stem", asyn
   assert.equal(implementsCapability(null, "env"), false, "a row handed no path answers as before");
   assert.equal(implementsCapability("src/config.ts", "nosuch"), false, "and an unknown capability lends nothing");
 });
+
+/* --- a wrapper is a module named nothing but the vocabulary --- */
+
+test("an import whose stem merely mentions the vocabulary is not the wrapper", () => {
+  // Measured on a Redux store: src/store/settingsSlice.ts is dispatched from
+  // six files (`settingsSlice.actions.setTheme(...)`), and one word of the stem
+  // said settings, so every dispatch counted as a conforming environment read
+  // and route_env read 12 of 13 over a repository whose one real config access
+  // was a process.env read in api.ts. The same rule implementsCapability asks:
+  // every word of the imported stem.
+  const r = counts("route_env", `
+    import { settingsSlice } from "./settingsSlice";
+    import { parseRequest } from "./request-utils";
+    import { ApiError } from "./api-errors";
+    dispatch(settingsSlice.actions.setTheme("dark"));
+    const t = settingsSlice.name;
+    const u = process.env.API_URL;
+  `);
+  assert.deepEqual(r, { candidates: 1, conforming: 0 }, "only the process.env read is a site");
+  const n = counts("route_network", `
+    import { parseRequest } from "./request-utils";
+    import { ApiError } from "./api-errors";
+    parseRequest(x);
+    throw new ApiError("x");
+    await fetch("/x");
+  `);
+  assert.deepEqual(n, { candidates: 1, conforming: 0 });
+});
+
+test("stemWords keeps an acronym whole", () => {
+  // `HTTPClient` split letter by letter into h,t,t,p,client, so neither
+  // src/lib/HTTPClient.ts nor src/API.ts was the implementing module and an
+  // import of "./API" was not a wrapper.
+  assert.deepEqual(stemWords("HTTPClient"), ["http", "client"]);
+  assert.deepEqual(stemWords("API"), ["api"]);
+  assert.deepEqual(stemWords("APIClient"), ["api", "client"]);
+  assert.deepEqual(stemWords("getHTTPResponse"), ["get", "http", "response"]);
+  assert.deepEqual(stemWords("oauth2Client"), ["oauth2", "client"]);
+});
+
+test("an acronym-named client is the implementing module and its import the wrapper", async () => {
+  const { implementsCapability } = await import("../plugins/anatomiya/lib/dimensions-capability.mjs");
+  for (const rel of ["src/API.ts", "src/APIClient.ts", "src/lib/HTTPClient.ts"]) {
+    assert.equal(implementsCapability(rel, "network"), true, rel);
+  }
+  const r = counts("route_network", `
+    import API from "./API";
+    import { HTTPClient } from "../lib/HTTPClient";
+    await API.get("/x");
+    await HTTPClient.post("/y");
+  `);
+  assert.deepEqual(r, { candidates: 2, conforming: 2 });
+});
