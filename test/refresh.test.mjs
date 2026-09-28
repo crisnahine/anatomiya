@@ -7,8 +7,8 @@ import { execFileSync } from "node:child_process";
 
 import { runPin, runScan } from "../plugins/anatomiya/lib/commands.mjs";
 import { loadPin, PIN_PATH } from "../plugins/anatomiya/lib/baseline.mjs";
-import { EXCLUDE_LINES } from "../plugins/anatomiya/lib/rules.mjs";
-import { refreshRepository, runRefresh, REFRESH_STATE } from "../plugins/anatomiya/lib/refresh.mjs";
+import { EXCLUDE_LINES, REFRESH_STATE } from "../plugins/anatomiya/lib/rules.mjs";
+import { refreshRepository, runRefresh } from "../plugins/anatomiya/lib/refresh.mjs";
 
 const OVERVIEW = join(".claude", "rules", "anatomiya-overview.md");
 
@@ -266,6 +266,38 @@ test("a rescan that fails keeps the previous map, and the same state is not trie
   assert.equal(scans, 1);
 });
 
+test("a scan a person runs clears a failed refresh, and the next refresh has nothing to redo", async (t) => {
+  // The echo tells the session to run `/anatomiya:scan` after a failed
+  // refresh; the warning then outlived the scan it asked for, and the first
+  // refresh after any manual scan rescanned the whole repository again.
+  const { noteScan } = await import("../plugins/anatomiya/lib/refresh.mjs");
+  const dir = await scanned(t);
+  source(dir, "lib/services", 8);
+  commit(dir, "a second area");
+  await refreshRepository(dir, { scan: async () => { throw new Error("boom"); } });
+
+  await runScan(dir);
+  await noteScan(dir);
+
+  const state = JSON.parse(readFileSync(join(dir, REFRESH_STATE), "utf8"));
+  assert.equal(state.ok, true);
+  let scans = 0;
+  assert.equal((await refreshRepository(dir, { scan: async () => { scans++; } })).reason, "current");
+  assert.equal(scans, 0);
+});
+
+test("a manual scan keeps what the last automatic pin accepted", async (t) => {
+  const { noteScan } = await import("../plugins/anatomiya/lib/refresh.mjs");
+  const { dir } = await cloned(t);
+  await refreshRepository(dir);
+  const pinned = JSON.parse(readFileSync(join(dir, REFRESH_STATE), "utf8")).pinned;
+  assert.ok(pinned);
+
+  await noteScan(dir);
+
+  assert.deepEqual(JSON.parse(readFileSync(join(dir, REFRESH_STATE), "utf8")).pinned, pinned);
+});
+
 /* --- the pin: moved only onto what the remote default branch already holds --- */
 
 test("the pin follows the remote default branch when the checkout sits on its tip with nothing uncommitted", async (t) => {
@@ -434,6 +466,23 @@ test("a commit this clone made is not pinned when it reached the remote's first-
   assert.equal(loadPin(dir).sha, first);
 });
 
+test("a pushed commit is not pinned after the tracking ref is deleted and fetched again", async (t) => {
+  // Deleting the ref erases how it last moved, and the fetch that recreates it
+  // is ordinary. The commit is still this clone's own.
+  const { origin, dir } = await cloned(t);
+  await refreshRepository(dir);
+  const first = loadPin(dir).sha;
+  git(origin, "config", "receive.denyCurrentBranch", "updateInstead");
+  source(dir, "lib/agent", 8);
+  commit(dir, "the agent's own work");
+  git(dir, "-c", "push.negotiate=false", "push", "-q", "origin", "HEAD:main");
+  git(dir, "update-ref", "-d", "refs/remotes/origin/main");
+  git(dir, "fetch", "-q", "origin");
+
+  assert.equal((await refreshRepository(dir)).pinned, false);
+  assert.equal(loadPin(dir).sha, first);
+});
+
 test("a branch this clone made, merged on the remote with a merge commit, is pinned once pulled", async (t) => {
   // The merge is the review; the branch's own commits sit behind its second
   // parent, and refusing them stalled the pin for every merge-commit workflow.
@@ -589,4 +638,56 @@ test("the newest reflog entry is read however long the reflog has grown", async 
   writeFileSync(log, old + readFileSync(log, "utf8"));
 
   assert.equal((await refreshRepository(dir)).pinned, true);
+});
+
+/* --- guards each pinned on their own --- */
+
+test("a reflog message counts as the remote's only for a fetch or pull that named neither a path nor a destination", async () => {
+  const { movedByRemote } = await import("../plugins/anatomiya/lib/refresh.mjs");
+  for (const ok of ["fetch -q: fast-forward", "fetch origin: fast-forward", "pull --no-rebase: fast-forward", "fetch: forced-update"]) {
+    assert.equal(movedByRemote(ok), true, ok);
+  }
+  for (const refused of [
+    "update by push",
+    "fetch origin pushed-branch:refs/remotes/origin/main: fast-forward", // a destination, from the real remote
+    "fetch ../elsewhere: fast-forward", // a path, with no destination named
+    "fetch ~/copy: fast-forward",
+    "fetch -q . HEAD:refs/remotes/origin/main: fast-forward",
+    "reset: moving to HEAD~1",
+  ]) {
+    assert.equal(movedByRemote(refused), false, refused);
+  }
+});
+
+test("a checkout whose git files cannot be named is refreshed, but no watch list replaces anybody's", async (t) => {
+  // The watch list is shared by every hook, and an empty one clears them all.
+  const dir = await scanned(t);
+  const { renameSync } = await import("node:fs");
+  renameSync(join(dir, ".git"), join(dir, ".git-away"));
+  const { started, start } = recorder();
+
+  assert.deepEqual(runRefresh(dir, { hook_event_name: "SessionStart", cwd: dir }, { start }), {});
+  assert.deepEqual(started, [dir]);
+});
+
+test("a new pin is a reason to rescan, since the map's drift is measured against it", async (t) => {
+  const { runPin } = await import("../plugins/anatomiya/lib/commands.mjs");
+  const dir = await scanned(t);
+  await refreshRepository(dir);
+  assert.equal((await refreshRepository(dir)).reason, "current");
+
+  await runPin(dir);
+
+  assert.equal((await refreshRepository(dir)).reason, "scanned");
+});
+
+test("a lock older than any scan runs is taken over even when its process is alive", async (t) => {
+  // A pid is reused; a lock that outlived the worker's own deadline is not a
+  // worker still running.
+  const dir = await scanned(t);
+  writeFileSync(join(dir, ".claude", "anatomiya", "refresh.lock"), JSON.stringify({ pid: process.pid, at: Date.now() - 31 * 60 * 1000 }));
+  assert.notEqual((await refreshRepository(dir)).reason, "busy");
+
+  writeFileSync(join(dir, ".claude", "anatomiya", "refresh.lock"), JSON.stringify({ pid: process.pid, at: Date.now() }));
+  assert.equal((await refreshRepository(dir)).reason, "busy", "a fresh lock of a live process is respected");
 });

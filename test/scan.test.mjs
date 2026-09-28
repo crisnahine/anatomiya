@@ -294,7 +294,7 @@ test("a language whose parser could not run at all is named", async (t) => {
 });
 
 test("an area holding a file of a language no file of which was read is held, not described", async (t) => {
-  // Decided per language (B40): described from the half of its files that
+  // Decided per language (B41): described from the half of its files that
   // answered, the area's file would be written over with claims this run had
   // no way to measure. It is handed to the writer to leave as it is, while a
   // directory of the language that was read is described as usual.

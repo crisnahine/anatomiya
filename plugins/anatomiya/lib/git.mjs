@@ -86,8 +86,9 @@ const FLAGS = new Set([
   "--dst-prefix=b/",
   "--verify",
   // What the refresh worker asks (`refresh.mjs`): the index with its modes and
-  // blob ids for the stamp, where this checkout's git directory is, whether
-  // tracked files carry edits, and whether a pin is newer than HEAD.
+  // blob ids for the stamp, where this checkout's git directory is, and whether
+  // a pin is newer than HEAD; and what `pin` asks (`commands.mjs`): whether
+  // tracked files carry edits.
   "-s",
   "--absolute-git-dir",
   "--untracked-files=no",
@@ -142,16 +143,18 @@ function refuse(args) {
  * mtime moved without its content reads as dirty, and the check would report
  * uncommitted edits nobody made.
  */
-function gitEnv(env) {
+function gitEnv(env, { lazyFetch = false } = {}) {
   return {
     ...env,
     GIT_TERMINAL_PROMPT: "0",
     // A partial clone fetches a missing object from its promisor on demand, so
     // a read of a pinned blob reached the network and, with the remote gone,
-    // came back unread (F14). Missing is the answer here; the one fetch this
-    // tool makes on purpose, the check's shallow base, is an explicit `fetch`
-    // this does not touch.
-    GIT_NO_LAZY_FETCH: "1",
+    // came back unread (F14). Missing is the answer here, except where the
+    // caller asks otherwise: the check's read of the merge base, whose blobs a
+    // blobless clone never held, and without which every changed file was
+    // skipped (F5). The other fetch this tool makes on purpose, the check's
+    // shallow base, is an explicit `fetch` this does not touch.
+    ...(lazyFetch ? {} : { GIT_NO_LAZY_FETCH: "1" }),
     // The transports git may use, which closes `ext::`. A repository shipped as
     // a tarball rather than cloned carries its own `.git/config`, and an
     // `ext::` remote URL is a shell command git runs to reach it: the check's
@@ -172,7 +175,7 @@ function gitEnv(env) {
 export async function gitBuffered(
   root,
   args,
-  { encoding = "utf8", maxBytes = GIT.maxBytes, timeout = GIT.timeoutMs, env = process.env } = {}
+  { encoding = "utf8", maxBytes = GIT.maxBytes, timeout = GIT.timeoutMs, env = process.env, lazyFetch = false } = {}
 ) {
   const refused = refuse(args);
   if (refused) {
@@ -190,7 +193,7 @@ export async function gitBuffered(
       encoding,
       maxBuffer: maxBytes,
       timeout,
-      env: gitEnv(env),
+      env: gitEnv(env, { lazyFetch }),
     });
     return { ok: true, code: 0, oversize: false, stdout, error: null };
   } catch (err) {
@@ -453,11 +456,12 @@ export async function headSha(root) {
  * The clock is the caller's. The scan and the check do not agree about how long
  * to wait on a stalled git, and this is the check's most frequent call.
  */
-export async function showBlob(root, sha, path, { timeout, env } = {}) {
+export async function showBlob(root, sha, path, { timeout, env, lazyFetch = false } = {}) {
   if (!isSha(sha)) return { ok: false, reason: "bad sha" };
   const r = await gitBuffered(root, ["cat-file", "blob", `${sha}:${path}`], {
     encoding: "buffer",
     maxBytes: MAX_FILE_BYTES,
+    lazyFetch,
     ...(timeout === undefined ? {} : { timeout }),
     ...(env === undefined ? {} : { env }),
   });

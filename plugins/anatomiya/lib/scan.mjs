@@ -112,7 +112,7 @@ export async function scan(cwd, { guards = null, deep = false } = {}) {
   const { layout, kinds } = roster({ files, others, records: head.records, truncated });
 
   // A language this run read no file of is decided on its own, not for the
-  // whole repository (B40). An area holding any file of it is held: this run
+  // whole repository (B41). An area holding any file of it is held: this run
   // cannot say what that area holds, so the writer leaves its file as the last
   // run that could wrote it. Every other area is described as usual. A mixed
   // area is held rather than described from half its files, because

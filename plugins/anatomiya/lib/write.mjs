@@ -43,7 +43,7 @@ export function planMap(result) {
   // whole of it: three correct area files deleted in the same run that reports
   // it could not read one.
   //
-  // Decided per language (B40). The scan holds every area that has a file of
+  // Decided per language (B41). The scan holds every area that has a file of
   // such a language in it, and those are neither written nor removed, while
   // everything else is written as usual: a TypeScript repository with one
   // Gemfile got no map at all on a machine without Ruby. Only a run that read

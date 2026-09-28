@@ -41,7 +41,6 @@ const MARKED_MOST = 200;
 const TRANSCRIPT_MOST = 64 * 1024 * 1024;
 const TRANSCRIPT_HEAD = 64 * 1024;
 
-
 // A turn's commits are the last lines of the reflog, and one kept for years
 // runs to megabytes.
 const REFLOG_TAIL = 256 * 1024;

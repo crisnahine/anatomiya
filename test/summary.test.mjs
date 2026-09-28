@@ -324,7 +324,7 @@ test("a run blind to two languages names both", () => {
 });
 
 test("a run that read one language and not another says which, why, and writes the rest", () => {
-  // The other half of a blind run (B40): a TypeScript repository with one
+  // The other half of a blind run (B41): a TypeScript repository with one
   // Gemfile on a machine without Ruby. The map is written, so the write line
   // stays, and the language it read none of is named with the engine's remedy
   // beside how many area files were left as the last scan wrote them.

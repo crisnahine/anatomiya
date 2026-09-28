@@ -39,7 +39,7 @@ export async function runScan(cwd, { dryRun = false, deep = false } = {}) {
   // language costs that language's files and the scan goes on for the rest:
   // refusing here gave a TypeScript repository with one Gemfile no map at all
   // on every machine without Ruby, and the summary and the map say which
-  // language went unread and what to do about it (B40).
+  // language went unread and what to do about it (B41).
   if (result.parse.missingParser && result.readNothing) throw notInstalled(result.parse, "scan");
 
   const plan = writeMap(result, { dryRun });
@@ -237,7 +237,7 @@ export async function runCheck(cwd, { baseRef = null } = {}) {
   if (missingParser) {
     // The scan's rule, for the same reason: a change that touched a Gemfile
     // beside a TypeScript file went unchecked because one file of another
-    // language could not be read (B40). Refused only where every file this
+    // language could not be read (B41). Refused only where every file this
     // change examined needed the missing engine, since a report of no findings
     // there reads as a check that ran (B13). Otherwise each unread file carries
     // its own caveat, and one more says which engine and what to do.

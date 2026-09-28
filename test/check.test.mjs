@@ -674,7 +674,7 @@ test("a worktree with no map of its own is pointed at its main checkout's", asyn
 
   assert.ok(said, "still no map here");
   assert.ok(said.message.endsWith(`Its main checkout has one: ${realpathSync.native(dir)}`), said.message);
-  assert.match(said.message, /run `anatomiya scan \.` here/);
+  assert.match(said.message, /run `\/anatomiya:scan` here/);
 });
 
 test("the way out of a mapless worktree, and where it leads, survive the report's length cap", async (t) => {
@@ -698,7 +698,7 @@ test("the way out of a mapless worktree, and where it leads, survive the report'
   // backslashes arrive escaped.
   const noMap = JSON.parse(formatReportJson(r)).caveats.find((c) => c.code === CAVEATS.NO_MAP).message;
   for (const rendered of [formatReport(r), noMap]) {
-    assert.match(rendered, /run `?anatomiya scan \.`? here/);
+    assert.match(rendered, /run `?\/anatomiya:scan`? here/);
     assert.ok(rendered.includes(main), "and the checkout it names is there whole");
   }
 
@@ -711,7 +711,7 @@ test("the way out of a mapless worktree, and where it leads, survive the report'
   git(deep, "commit", "-qm", "init");
   await writeMap(await scan(deep), {});
   const far = await check(addWorktree(deep, join(parent, "far"), "work"), { baseRef: "main" });
-  assert.match(formatReport(far), /run `?anatomiya scan \.`? here\. Its main checkout has one: /);
+  assert.match(formatReport(far), /run `?\/anatomiya:scan`? here\. Its main checkout has one: /);
 });
 
 test("no map on disk enforces nothing and says so", async (t) => {
@@ -4465,4 +4465,35 @@ test("a changed path that is now a fifo is skipped, not opened and waited on", n
   // The whole sentence rather than the prefix, like the other two: which of
   // the three places was looked in is the only thing the three of them say.
   assert.ok(JSON.parse(run.stdout || "[]").includes("could not read src/f1.js in the working tree"), run.stdout + run.stderr);
+});
+
+test("a blobless partial clone reads the merge base from its promisor rather than skipping every changed file", async (t) => {
+  // F14 keeps every other read off the network, and the check's merge-base
+  // read went with it: a clone that checked out its branch without ever
+  // holding the base's blobs skipped each changed file as unreadable at the
+  // base, and reported nothing.
+  const { runScan } = await import("../plugins/anatomiya/lib/commands.mjs");
+  const origin = scratch(t, "anatomiya-check-promisor-");
+  const run = (cwd, ...args) => execFileSync("git", args, { cwd, stdio: "pipe" }).toString().trim();
+  run(origin, "init", "-q", "-b", "main");
+  run(origin, "config", "uploadpack.allowFilter", "true");
+  run(origin, "config", "uploadpack.allowAnySHA1InWant", "true");
+  mkdirSync(join(origin, "src"));
+  for (let i = 0; i < 8; i++) writeFileSync(join(origin, "src", `f${i}.ts`), `export function f${i}(a: number): number {\n  return a;\n}\n`);
+  run(origin, "add", "-A");
+  run(origin, "-c", "user.email=t@t.test", "-c", "user.name=T", "commit", "-qm", "init");
+  run(origin, "checkout", "-q", "-b", "feat");
+  writeFileSync(join(origin, "src", "f0.ts"), "export const f0 = (a: number) => {\n  return a;\n};\n");
+  run(origin, "-c", "user.email=t@t.test", "-c", "user.name=T", "commit", "-qam", "feat");
+  run(origin, "checkout", "-q", "main");
+
+  const dir = scratch(t, "anatomiya-check-partial-");
+  execFileSync("git", ["clone", "-q", "--no-checkout", "--filter=blob:none", `file://${origin}`, dir], { stdio: "pipe" });
+  run(dir, "checkout", "-q", "feat");
+  await runScan(dir);
+
+  const report = await check(dir, { baseRef: "origin/main" });
+
+  assert.ok(!notes(report).some((n) => /at the merge base/.test(n)), notes(report).join("\n"));
+  assert.ok(report.findings.some((f) => f.path === "src/f0.ts"), "the changed file was judged against its base");
 });
