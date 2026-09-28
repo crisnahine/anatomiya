@@ -59,6 +59,22 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - `swallowed_error` no longer reads `catch (e) { items.forEach((e) => log(e)) }` as using the caught
   error: a nested binding of the same name hides it.
 
+- An import whose name merely contains a routing word (`./settingsSlice`, `./request-utils`,
+  `./api-errors`) is no longer taken for the repository's config module or client, so every access
+  through it stops counting as a routed read.
+- `API.ts`, `APIClient.ts` and `HTTPClient.ts` are recognised as the repository's client: an
+  acronym in a filename is one word, not one word per letter.
+- An export made by `forwardRef(ButtonInner)`, `memo(CardImpl)`, `lazy(() => import(...))` or
+  `dynamic(() => import(...))` is a component, and is no longer asked to follow the helpers' naming.
+- `handler_memoised` judges a handler by the innermost binding of its name, not the last one read.
+- A lowercase filename with an accent (`café.ts`) is no longer reported as spelling no naming class,
+  and `OAuthToken`, `ETag` and `IDs` no longer vote for an `O`, `E` or `I` type-name prefix.
+- With `--deep`, `.js` files are read by the type checker, so `law_of_demeter` no longer counts them
+  in its denominator while never looking at them.
+- A tsconfig `extends` into a directory whose name starts with two dots (`..base/`) is no longer
+  refused as leaving the repository, and a root `tsconfig.json` linking out of it is refused.
+- A parser worker that starts and never says it is ready is killed after 20 seconds, and a pool no
+  worker becomes ready in reports its files as crashed rather than waiting forever.
 - A repository created without a reflog, or on git's reftable backend, refreshed only on a checkout:
   nothing appended to the `logs/HEAD` the hook watched. It now watches the index there, or the
   reftable table list, so a commit or a pull refreshes the map as it does everywhere else.

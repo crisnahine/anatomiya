@@ -32,9 +32,17 @@ export async function runJob(job, send, { load = loadTypeScript } = {}) {
     const { ts } = loaded;
 
     const config = readConfig(ts, job.root);
-    const host = confinedCompilerHost(ts, job.root, config.options);
+    // The scan hands this job every js and jsx file and law_of_demeter's
+    // denominator counts them all, but without allowJs the program never held
+    // a .js file: six .ts beside six .js measured applicability 6 over a
+    // langFileCount of 12, so the row read as narrow over files it never saw.
+    // Held rather than checked: checkJs off, so a .js file lends its types and
+    // is never charged a diagnostic. `maxNodeModuleJsDepth` stays at its 0, so
+    // a dependency's JavaScript is still not read.
+    const options = { ...config.options, allowJs: true, checkJs: false };
+    const host = confinedCompilerHost(ts, job.root, options);
     const rootNames = job.files.map((f) => f.abs);
-    const program = ts.createProgram({ rootNames, options: config.options, host });
+    const program = ts.createProgram({ rootNames, options, host });
     const checker = program.getTypeChecker();
 
     const resolution = measureResolution(ts, program, checker, job.files);

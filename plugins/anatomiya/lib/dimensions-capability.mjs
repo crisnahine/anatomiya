@@ -3,7 +3,7 @@
  * repository's own module or straight at the platform.
  *
  * The wrapper is learned per file from its imports: a relative import whose
- * filename stem carries the category's vocabulary is the repository's own
+ * filename stem is nothing but the category's vocabulary is the repository's own
  * module for that concern. The direct forms are a closed table. A repository
  * that has not adopted a wrapper is never asked the question at all: the
  * reducer offers a row only where at least three files already route through
@@ -12,11 +12,18 @@
 import { walk, declName } from "./walk.mjs";
 import { ASSET_IMPORT } from "./langs.mjs";
 
-/** A stem's words: delimiters and camel humps both split. */
+/**
+ * A stem's words: delimiters and camel humps both split, and an acronym stays
+ * one word. Splitting before every capital read `HTTPClient` as h,t,t,p,client
+ * and `API` as a,p,i, so src/API.ts, APIClient.ts and HTTPClient.ts were not
+ * the implementing module and `import API from "./API"` was not a wrapper. A
+ * hump is a lower-case letter or digit before a capital, or a capital before a
+ * capital that starts a lower-case word (`HTTP|Client`).
+ */
 export function stemWords(stem) {
   return stem
     .split(/[-_.]/)
-    .flatMap((w) => w.split(/(?=[A-Z])/))
+    .flatMap((w) => w.split(/(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])/))
     .map((w) => w.toLowerCase())
     .filter(Boolean);
 }
@@ -81,14 +88,25 @@ function namesAModule(spec) {
   return !spec.includes("?") && !ASSET_IMPORT.test(spec);
 }
 
-/** Local names bound by relative imports of a module whose stem carries the vocabulary. */
+/**
+ * Local names bound by relative imports of a module whose stem is nothing but
+ * the vocabulary: the `every` rule implementsCapability asks of the module
+ * itself. One word was enough here, and a Redux store's `./settingsSlice`,
+ * dispatched from six files, adopted the env capability: every
+ * `settingsSlice.actions.setTheme(...)` counted as a conforming environment
+ * read and route_env read 12 of 13 over a repository whose one config access
+ * was a process.env read. `./request-utils` and `./api-errors` were clients the
+ * same way. The stem ends at the first dot, so `./config.service` and
+ * `./env.constants` are still read as `config` and `env`.
+ */
 function wrapperBindings(program, words) {
   const names = new Set();
   walk(program, (n) => {
     if (n.type !== "ImportDeclaration") return;
     const spec = n.source?.value;
     if (typeof spec !== "string" || !spec.startsWith(".") || !namesAModule(spec)) return;
-    if (!stemWords(fileStem(spec)).some((w) => words.has(w))) return;
+    const parts = stemWords(fileStem(spec));
+    if (parts.length === 0 || !parts.every((w) => words.has(w))) return;
     for (const s of n.specifiers || []) if (s.local?.name) names.add(s.local.name);
   });
   return names;
@@ -119,7 +137,7 @@ export const CAPABILITY_DIMENSIONS = [
     counterClaim: null,
     precision: "partial",
     applicabilityPredicate: {
-      sites: "a file calling console, or calling through a binding imported from a relative module whose filename says log, logger or logging; the file whose own stem is nothing but that vocabulary implements the routing rather than following it and is not a site",
+      sites: "a file calling console, or calling through a binding imported from a relative module whose filename, up to its first dot, is nothing but log, logger or logging; the file whose own stem is nothing but that vocabulary implements the routing rather than following it and is not a site",
       notCounted:
         "a file whose every word, up to its first dot, is from log, logger, logging: it implements the routing",
       blind: "a logging call behind a helper with another name or a re-export is not seen, and a wrapper spelled as a directory module (logging/index.ts) is read by its stem and is still a site",
@@ -149,7 +167,7 @@ export const CAPABILITY_DIMENSIONS = [
     counterClaim: null,
     precision: "partial",
     applicabilityPredicate: {
-      sites: "a file calling fetch or an axios binding, or calling through a binding imported from a relative module whose filename says client, http, api, request or fetcher; the file whose own stem is nothing but that vocabulary implements the routing rather than following it and is not a site",
+      sites: "a file calling fetch or an axios binding, or calling through a binding imported from a relative module whose filename, up to its first dot, is nothing but client, http, api, request or fetcher; the file whose own stem is nothing but that vocabulary implements the routing rather than following it and is not a site",
       notCounted:
         "a file whose every word, up to its first dot, is from client, http, api, request, fetcher: it implements the routing",
       blind: "a shadowed fetch still counts, and a client behind another name is not seen",
@@ -182,7 +200,7 @@ export const CAPABILITY_DIMENSIONS = [
     counterClaim: null,
     precision: "partial",
     applicabilityPredicate: {
-      sites: "a file reading or destructuring properties off process.env, or reading off a binding imported from a relative module whose filename says config, env or settings; the file whose own stem is nothing but that vocabulary implements the routing rather than following it and is not a site",
+      sites: "a file reading or destructuring properties off process.env, or reading off a binding imported from a relative module whose filename, up to its first dot, is nothing but config, env or settings; the file whose own stem is nothing but that vocabulary implements the routing rather than following it and is not a site",
       notCounted:
         "a file whose every word, up to its first dot, is from config, env, settings: it implements the routing",
       blind: "an env read behind a helper, or destructured from process.env once and read as locals, is one site rather than each use",
