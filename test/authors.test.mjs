@@ -385,6 +385,31 @@ test("a window of history cannot lower the author bar, however few authors it ho
   assert.equal(truncated.gate, "authors");
 });
 
+test("one person under two addresses is one author", async (t) => {
+  // Work and personal addresses, or a GitHub noreply beside a real one, are
+  // routine. A repository that declares the two the same person in .mailmap,
+  // or that only differs in case, would otherwise hand one person's habit the
+  // second author the gate asks for.
+  const dir = repo(t, (d, { write, author, commit }) => {
+    author("alice@work.test");
+    write("src/a.ts", "export const a = 1\n");
+    commit("at work");
+    author("alice@home.test");
+    write("src/b.ts", "export const b = 1\n");
+    commit("at home");
+    author("Alice@Work.test");
+    write("src/c.ts", "export const c = 1\n");
+    commit("shouting");
+    write(".mailmap", "Alice <alice@work.test> <alice@home.test>\n");
+    commit("one person");
+  });
+
+  const map = await authorsByFile(dir);
+  const corpus = ["src/a.ts", "src/b.ts", "src/c.ts"].map((rel) => ({ rel }));
+
+  assert.equal(repoAuthorCount(corpus, map), 1);
+});
+
 test("a bot is not the second author", async () => {
   // A solo public repository with a dependency bot would otherwise read as a
   // two-person team and be blocked forever, which is the same misfire the

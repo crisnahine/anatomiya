@@ -91,7 +91,9 @@ export async function authorsByFile(root) {
     if (header !== -1) {
       const rest = field.slice(header + 1);
       const nl = rest.indexOf("\n");
-      email = (nl === -1 ? rest : rest.slice(0, nl)).trim();
+      // Case folded, because git's own mailmap matching ignores it and an
+      // address typed in capitals once is not a second person.
+      email = (nl === -1 ? rest : rest.slice(0, nl)).trim().toLowerCase();
       status = nl === -1 ? "" : rest.slice(nl + 1);
     }
     status = status.replace(/^\n+/, "");
@@ -201,8 +203,10 @@ async function logStream(root, onField) {
   return gitStreamed(
     root,
     // Nothing follows `--`, which is the rule for every git call here: no
-    // argument after it can be read as an option.
-    ["log", partial ? "-M100%" : "-M", "--no-merges", "--name-status", "-z", `--format=${SEP}%ae`, "--"],
+    // argument after it can be read as an option. `%aE` is the address after
+    // the repository's .mailmap, so a person the repository has already said
+    // is one person under two addresses is counted once.
+    ["log", partial ? "-M100%" : "-M", "--no-merges", "--name-status", "-z", `--format=${SEP}%aE`, "--"],
     onField,
     {
       // `--format` leaves the final record unterminated, so a remainder at exit
