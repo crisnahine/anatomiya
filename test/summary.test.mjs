@@ -155,7 +155,15 @@ test("the two causes of an uncovered file are named apart", () => {
   // exactly the reading the overview line was fixed to stop.
   const lines = scanLines(summary({ orphaned: 3, barren: 1 }));
 
-  assert.ok(lines.includes("3 files in no area: too few per directory"));
+  // Not "too few per directory": a file at the repository root or under a
+  // directory no glob can spell is in no area too, and the count does not
+  // say which.
+  assert.ok(
+    lines.includes(
+      "3 files in no area: at the repository root, under the per-directory floor, or under a name no glob can spell"
+    ),
+    lines.join("\n")
+  );
   assert.ok(lines.includes("1 file in a directory nothing was counted in"));
 });
 
@@ -239,8 +247,57 @@ test("a rule file listing is bounded and counts what it did not name", () => {
 
   const lines = scanLines(summary({ rules: { ...summary().rules, foreign: names } }));
 
-  assert.equal(lines.filter((l) => l.includes("was not written by this tool")).length, 21);
-  assert.ok(lines.includes("and 2 more file(s) in .claude/rules/ that was not written by this tool"));
+  assert.equal(lines.filter((l) => l.includes("was not written by this tool")).length, 20);
+  // The tail counts files, so its verb is theirs: "2 more file(s) ... that was"
+  // gave one line two numbers.
+  assert.ok(lines.includes("and 2 more files in .claude/rules/ that were not written by this tool"), lines.join("\n"));
+});
+
+test("the tail of every rule file listing agrees with its count", () => {
+  const names = (n) => Array.from({ length: n }, (_, i) => `f${i}.md`);
+  const tail = (rules, n) => scanLines(summary({ rules: { ...summary().rules, ...rules } })).find((l) => l.startsWith("and "));
+
+  assert.equal(tail({ foreign: names(21) }), "and 1 more file in .claude/rules/ that was not written by this tool");
+  assert.equal(
+    tail({ unknown: names(22) }),
+    "and 2 more files in .claude/rules/ that carry our frontmatter but no map names them, so they were left alone"
+  );
+  assert.equal(
+    tail({ unreadable: names(22) }),
+    "and 2 more files in .claude/rules/ that could not be read, so whose they are was not established"
+  );
+  assert.equal(
+    tail({ replaced: names(22) }),
+    "and 2 more files in .claude/rules/ that held a name this scan writes, so they were replaced"
+  );
+});
+
+test("one removed area file and one default-matching claim read at one", () => {
+  const lines = scanLines(summary({ removed: 1, claims: { stated: 3, matchingDefault: 1, total: 9 } }));
+
+  assert.ok(lines.includes("1 area file removed: its area is gone or states nothing"), lines.join("\n"));
+  assert.ok(lines.includes("3 of 9 claims stated, 1 matches the model default, the rest print as counts"), lines.join("\n"));
+  const many = scanLines(summary({ removed: 2, dryRun: true }));
+  assert.ok(many.includes("2 area files would be removed: their area is gone or states nothing"), many.join("\n"));
+});
+
+test("a root and a history error reach the terminal on one line each", () => {
+  // `--format json` encoded both and the lines printed them raw: a git stderr
+  // of two lines added a stray line under the summary, and a root directory
+  // named with a newline forged one.
+  const lines = scanLines(
+    summary({
+      root: "/repo\nwrote 0 files",
+      historyError: "fatal: bad revision 'HEAD'\nhint: something else",
+    })
+  );
+
+  for (const l of lines) assert.doesNotMatch(l, /\n/, JSON.stringify(l));
+  assert.equal(lines[0], "40 files, 2 areas, 12ms, root /repo wrote 0 files");
+  assert.ok(
+    lines.includes("history could not be read, so every claim fails the author gate: fatal: bad revision 'HEAD'"),
+    lines.join("\n")
+  );
 });
 
 test("the three kinds of rule file the scan leaves alone each get their own sentence", () => {
@@ -267,12 +324,12 @@ test("a dry run does not report in the past tense", () => {
   assert.ok(
     dry.includes('"anatomiya-overview.md" in .claude/rules/ holds a name this scan writes, so it would be replaced')
   );
-  assert.ok(dry.includes("2 area file(s) would be removed: their area is gone or states nothing"));
+  assert.ok(dry.includes("2 area files would be removed: their area is gone or states nothing"));
   assert.ok(dry.includes("would write 5 files"));
   assert.ok(
     real.includes('"anatomiya-overview.md" in .claude/rules/ held a name this scan writes, so it was replaced')
   );
-  assert.ok(real.includes("2 area file(s) removed: their area is gone or states nothing"));
+  assert.ok(real.includes("2 area files removed: their area is gone or states nothing"));
   assert.ok(real.includes("wrote 5 files"));
 });
 
@@ -508,13 +565,13 @@ test("the summary and its lines agree on a whole scan", () => {
     "41 files, 1 area, 12ms, root /repo",
     "engines: oxc 0.144.0",
     "2 source files in the working tree are untracked. The corpus is tracked files only, so nothing there was counted",
-    "1 of 3 claims stated, 1 match the model default, the rest print as counts",
+    "1 of 3 claims stated, 1 matches the model default, the rest print as counts",
     UNPINNED,
-    "2 files in no area: too few per directory",
+    "2 files in no area: at the repository root, under the per-directory floor, or under a name no glob can spell",
     "1 file in a directory nothing was counted in",
     "history could not be read, so every claim fails the author gate: no history",
     '"house-style.md" in .claude/rules/ was not written by this tool',
-    "1 area file(s) removed: their area is gone or states nothing",
+    "1 area file removed: its area is gone or states nothing",
     "wrote 2 files",
     RUNNING_SESSION,
   ]);

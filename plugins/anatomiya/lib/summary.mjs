@@ -1,7 +1,7 @@
-import { degradedSemanticSentence, truncatedHistoryLine, unexaminedLines, untrackedSentence } from "./render.mjs";
+import { degradedSemanticSentence, ORPHAN_CAUSES, truncatedHistoryLine, unexaminedLines, untrackedSentence } from "./render.mjs";
 import { layoutSummary, plural } from "./render-layout.mjs";
 import { statedSide } from "./facts.mjs";
-import { encode, encodePath, sanitisePath } from "./encode.mjs";
+import { encode, encodePath, firstLine, locator, sanitisePath } from "./encode.mjs";
 import { engineOf } from "./langs.mjs";
 import { whyUnread } from "./readiness.mjs";
 import { listSome, LISTED, RULES_DIR, SETTINGS_PATH } from "./rules.mjs";
@@ -124,7 +124,12 @@ export function scanLines(s) {
   // `scan ./packages/api` in a monorepo maps the monorepo. Areas, the pin and
   // the baseline are all repository-anchored, so that is the behaviour they
   // need and the line is what says so.
-  lines.push(`${plural(s.files, "file")}, ${plural(s.areas, "area")}, ${s.durationMs}ms, root ${s.root}`);
+  //
+  // As a locator, not raw: `--format json` sanitised it and this line did not,
+  // so a checkout directory named with a newline forged a line of its own. Not
+  // through the display encoder either, whose cap and script rule would print a
+  // root nobody can `cd` to.
+  lines.push(`${plural(s.files, "file")}, ${plural(s.areas, "area")}, ${s.durationMs}ms, root ${locator(s.root)}`);
   const engines = enginesLine(s.engines);
   if (engines) lines.push(engines);
   if (s.untracked)
@@ -133,7 +138,9 @@ export function scanLines(s) {
     );
   lines.push(
     `${s.claims.stated} of ${plural(s.claims.total, "claim")} stated` +
-      (s.claims.matchingDefault ? `, ${s.claims.matchingDefault} match the model default` : "") +
+      (s.claims.matchingDefault
+        ? `, ${s.claims.matchingDefault} ${s.claims.matchingDefault === 1 ? "matches" : "match"} the model default`
+        : "") +
       ", the rest print as counts"
   );
   // Beside the claims line, which is the count it explains: a tier that
@@ -143,35 +150,57 @@ export function scanLines(s) {
   lines.push(baselineLine(s.baseline));
   if (s.truncated)
     lines.push("only part of the corpus was read, so every directive is suppressed and only counts print");
-  if (s.orphaned > 0) lines.push(`${plural(s.orphaned, "file")} in no area: too few per directory`);
+  if (s.orphaned > 0) lines.push(`${plural(s.orphaned, "file")} in no area: ${ORPHAN_CAUSES}`);
   if (s.barren > 0) lines.push(`${plural(s.barren, "file")} in a directory nothing was counted in`);
   lines.push(...s.unexamined);
+  // Its first line, encoded, the way `--format json` already carried it: the
+  // stderr runs to several lines, and each one after the first printed as a
+  // line of the summary with nothing saying whose it was.
   if (s.historyError)
-    lines.push(`history could not be read, so every claim fails the author gate: ${s.historyError}`);
+    lines.push(`history could not be read, so every claim fails the author gate: ${encode(firstLine(s.historyError))}`);
   if (s.historyTruncated) lines.push(s.historyTruncated);
   // Named, not counted. The count was a number the reader then had to go and
   // resolve with `ls`, and the whole point of the line is that these files
   // reach the agent on every turn.
-  lines.push(...ruleFileLines(s.rules.foreign, "was not written by this tool"));
+  lines.push(...ruleFileLines(s.rules.foreign, "was not written by this tool", "were not written by this tool"));
   // This tool's own output, from a scan whose record is gone. Two of the three
   // facts ownership needs is not ownership, so it is left where it is.
-  lines.push(...ruleFileLines(s.rules.unknown, "carries our frontmatter but no map names it, so it was left alone"));
+  lines.push(
+    ...ruleFileLines(
+      s.rules.unknown,
+      "carries our frontmatter but no map names it, so it was left alone",
+      "carry our frontmatter but no map names them, so they were left alone"
+    )
+  );
   // Whose it is was never established, so neither sentence above is true of it.
-  lines.push(...ruleFileLines(s.rules.unreadable, "could not be read, so whose it is was not established"));
+  lines.push(
+    ...ruleFileLines(
+      s.rules.unreadable,
+      "could not be read, so whose it is was not established",
+      "could not be read, so whose they are was not established"
+    )
+  );
   if (!s.rules.listed) lines.push(`${RULES_DIR}/ could not be listed, so nothing in it was examined`);
   // A generated name is ours by construction, so this is not a refusal. It is
   // still the one case where a scan replaces a file somebody wrote by hand.
   lines.push(
     ...ruleFileLines(
       s.rules.replaced,
-      s.dryRun
-        ? "holds a name this scan writes, so it would be replaced"
-        : "held a name this scan writes, so it was replaced"
+      ...(s.dryRun
+        ? [
+            "holds a name this scan writes, so it would be replaced",
+            "hold a name this scan writes, so they would be replaced",
+          ]
+        : ["held a name this scan writes, so it was replaced", "held a name this scan writes, so they were replaced"])
     )
   );
   if (s.removed) {
     const what = s.dryRun ? "would be removed" : "removed";
-    lines.push(`${s.removed} area file(s) ${what}: their area is gone or states nothing`);
+    lines.push(
+      s.removed === 1
+        ? `1 area file ${what}: its area is gone or states nothing`
+        : `${s.removed} area files ${what}: their area is gone or states nothing`
+    );
   }
   // Nothing was written, and the reason is not "this repository has nothing in
   // it". Said before the count, because the count is 0 and reads as the first.
@@ -258,11 +287,17 @@ function blindLines(langs, engines) {
  * two raw lines, and `commands/scan.md` tells the agent to report the lines the
  * scanner printed, so a crafted filename could forge one. The cap is the same
  * trade the report and the overview make, for the same reason.
+ *
+ * `many` is the same sentence for the tail, which counts files and so takes
+ * their verb: "and 2 more file(s) ... that was not written" gave one line two
+ * numbers.
  */
-function ruleFileLines(names, what) {
+function ruleFileLines(names, one, many) {
   const { shown, rest } = listSome(names, LISTED.report);
-  const lines = shown.map((name) => `${encodePath(name)} in ${RULES_DIR}/ ${what}`);
-  if (rest) lines.push(`and ${rest} more file(s) in ${RULES_DIR}/ that ${what}`);
+  const lines = shown.map((name) => `${encodePath(name)} in ${RULES_DIR}/ ${one}`);
+  if (rest) {
+    lines.push(`and ${rest} more ${rest === 1 ? "file" : "files"} in ${RULES_DIR}/ that ${rest === 1 ? one : many}`);
+  }
   return lines;
 }
 

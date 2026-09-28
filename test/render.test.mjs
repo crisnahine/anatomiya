@@ -560,18 +560,18 @@ test("a file with no area and a file whose area counted nothing are different fa
   // three, and a synthetic Rails repo said it of two 40-file spec directories.
   const out = renderOverview(result(), { uncovered: 30, orphaned: 12 });
 
-  assert.match(out, /^- 12 source files sit in no area \(too few per directory\)$/m);
+  assert.match(out, /^- 12 source files sit in no area \(at the repository root, under the per-directory floor, or under a name no glob can spell\)$/m);
   assert.match(out, /^- 18 source files sit in a directory nothing was counted in$/m);
 });
 
 test("one cause states one line, not a zero beside it", () => {
   const all = renderOverview(result(), { uncovered: 9, orphaned: 9 });
-  assert.match(all, /^- 9 source files sit in no area \(too few per directory\)$/m);
+  assert.match(all, /^- 9 source files sit in no area \(at the repository root, under the per-directory floor, or under a name no glob can spell\)$/m);
   assert.ok(!/nothing was counted in/.test(all), "no second line when every uncovered file is an orphan");
 
   const none = renderOverview(result(), { uncovered: 9, orphaned: 0 });
   assert.match(none, /^- 9 source files sit in a directory nothing was counted in$/m);
-  assert.ok(!/too few per directory/.test(none), "and none the other way");
+  assert.ok(!/sit in no area/.test(none), "and none the other way");
 });
 
 test("the overview reports what the parser could not read", () => {
@@ -585,7 +585,7 @@ test("the overview reports what the parser could not read", () => {
     { uncovered: 12 }
   );
 
-  assert.match(out, /^- 12 source files sit in no area \(too few per directory\)$/m);
+  assert.match(out, /^- 12 source files sit in no area \(at the repository root, under the per-directory floor, or under a name no glob can spell\)$/m);
   assert.match(out, /^- 5 files could not be parsed$/m);
   // The parser answering "not valid syntax" is the repository's own code, and
   // the reader's next move is to go and look at those files.
@@ -1154,7 +1154,7 @@ test("the overview does not claim it failed to write its own output", () => {
 
   assert.match(out, /^Any other file there was not written by this tool:$/m);
   assert.match(out, /^- "house-style\.md"$/m);
-  assert.match(out, /^1 file here was written by an earlier scan and not listed in this map; this tool leaves them, so delete them by hand if unwanted\.$/m);
+  assert.match(out, /^1 file here was written by an earlier scan and not listed in this map; this tool leaves it, so delete it by hand if unwanted\.$/m);
   assert.doesNotMatch(out, /- "anatomiya-area-cafe\.md"/, "ours is counted, not named");
 });
 
@@ -2876,4 +2876,133 @@ test("a clause several rows share costs one line, not one line per row", () => {
   assert.equal((out.match(/^ {2}not counted:/gm) || []).length, 1, out);
   assert.match(out, /^claim model_spec$/m, "and every claim still prints");
   assert.match(out, /^claim controller_spec$/m);
+});
+
+// Directory names picomatch and minimatch read as extglobs, a group, or an escape.
+const EXTGLOB_DIRS = ["src/@(lib)", "src/x+(y)", "src/(ab)", "src/a\\b"];
+const extglobFiles = () =>
+  ["src", ...EXTGLOB_DIRS].flatMap((d) => Array.from({ length: 6 }, (_, i) => ({ rel: `${d}/m${i}.ts`, lang: "js" })));
+
+test("a directory named in extglob syntax folds like any other glob syntax", () => {
+  // `(`, `)` and `\` were missing from the fold's character class. picomatch
+  // and minimatch both read `@(lib)` and `x+(y)` as extglobs, `(ab)` as a
+  // group and `a\b` as an escaped `b`, so each of these became an area whose
+  // `paths` matched nothing or a different directory.
+  const areas = discover(extglobFiles());
+
+  assert.deepEqual(areas.map((a) => a.path), ["src"], "no area is rooted at an extglob-shaped directory");
+  for (const a of areas) {
+    for (const g of a.globs) assert.ok(!/[()\\]/.test(g.dir), `${a.path} names ${g.dir}`);
+    const delivered = renderedPaths(renderArea(area({ path: a.path, globs: a.globs })));
+    for (const f of a.files) {
+      let hit = false;
+      for (const p of delivered) if (globMatches(p.replace(/^!/, ""), f.rel)) hit = !p.startsWith("!");
+      assert.ok(hit, `${a.path}: ${f.rel} is reached by none of ${JSON.stringify(delivered)}`);
+    }
+  }
+});
+
+test("a directory named in extglob syntax is reached by picomatch too, where it is installed", async (t) => {
+  // The helper above does not implement extglobs, so it cannot see the bug on
+  // its own. picomatch is what Claude Code's matcher is built on.
+  let pm;
+  try {
+    pm = (await import("picomatch")).default;
+  } catch {
+    t.skip("picomatch is not installed");
+    return;
+  }
+  for (const a of discover(extglobFiles())) {
+    const delivered = renderedPaths(renderArea(area({ path: a.path, globs: a.globs })));
+    for (const f of a.files) {
+      let hit = false;
+      for (const p of delivered) if (pm(p.replace(/^!/, ""))(f.rel)) hit = !p.startsWith("!");
+      assert.ok(hit, `${a.path}: ${f.rel} is reached by none of ${JSON.stringify(delivered)}`);
+    }
+  }
+});
+
+test("a file in no area is not said to be there for having too few neighbours", () => {
+  // Discovery leaves a file without an area for three reasons: it sits at the
+  // repository root, which is never an area, its directory and every ancestor
+  // stay under the floor, or its directory's name is one no glob can spell.
+  // Only the second was ever the sentence: four .js files at the root beside a
+  // 3-file `src/` read "(too few per directory)" while the layout said "and 4
+  // files at the repository root", and six files in `[x]/` said it too.
+  const out = renderOverview(result(), { uncovered: 4, orphaned: 4 });
+
+  assert.doesNotMatch(out, /too few per directory/);
+  assert.match(
+    out,
+    /^- 4 source files sit in no area \(at the repository root, under the per-directory floor, or under a name no glob can spell\)$/m
+  );
+  const one = renderOverview(result(), { uncovered: 1, orphaned: 1 });
+  assert.match(one, /^- 1 source file sits in no area \(/m);
+});
+
+test("the tests line counts a level-only root over the level it counted", () => {
+  // `lib (files at this level)` counts only the files directly in `lib`, and
+  // the tests line spelled that denominator "under lib", which reads as the
+  // whole subtree beside `lib/sub: 0 of 4` two lines above it.
+  const lines = renderLayout(
+    clientLayout({
+      roots: [
+        root("lib (files at this level)", {
+          dir: "lib",
+          files: 4,
+          exts: [[".js", 4]],
+          companions: { with: 4, of: 4, root: null },
+        }),
+        root("lib/sub", { files: 4, exts: [[".js", 4]], companions: { with: 0, of: 4, root: null } }),
+      ],
+      more: { roots: 0, files: 0 },
+      tests: [{ runner: "vitest", root: "test", files: 4 }],
+      principles: [],
+    })
+  );
+
+  const tests = lines.find((l) => l.startsWith("- tests:"));
+  assert.match(tests, /; 4 of 4 \.js files under lib \(files at this level\) have a namesake test$/, tests);
+});
+
+test("a count of one agrees with its verb on every Not covered line", () => {
+  const out = renderOverview(
+    result({ corpus: { files: 90, truncated: false, dropped: { generated: 1 }, otherExts: [[".java", 1]] } }),
+    { uncovered: 0 }
+  );
+
+  assert.match(out, /^- 1 file holds a language this map does not read \(1 \.java\)$/m);
+  assert.match(out, /^- 1 file says a generator wrote it, so nothing here is counted from it$/m);
+});
+
+test("one foreign rule file the budget cannot name is one file", () => {
+  // Every other count in the overview goes through `plural`, and this one
+  // printed "1 other file(s) there were not written".
+  // The layout fills whatever the bound leaves, which is what leaves the
+  // foreign listing no room to name the file.
+  const out = renderOverview(result({ layout: clientLayout() }), {
+    uncovered: 30,
+    orphaned: 12,
+    others: { foreign: ["a.md"], unknown: ["anatomiya-area-cafe.md"], unreadable: ["b.md"] },
+  });
+  assert.ok(!out.includes("file(s)"), out);
+  assert.match(out, /^1 other file there was not written by this tool\.$/m, out);
+});
+
+test("a candidate count of one is one site", () => {
+  const stated = renderArea(area({ dimensions: [dim({ candidates: 1, conforming: 1, ratio: 1 })] }));
+  assert.match(stated, /^ {2}1 of 1 site across /m, stated);
+
+  const counts = renderArea(area({ dimensions: [dim({ candidates: 1, conforming: 0, ratio: 0, directive: false, gate: "ratio" })] }));
+  assert.match(counts, /no convention\. 0 of 1 site \(ratio\)$/m, counts);
+});
+
+test("an overview with no area says no directory made one, and claims nothing below", () => {
+  // `## Areas (0)` over two blank lines, and a one-author repository's
+  // "every claim below is that author's practice" over no claims at all.
+  const out = renderOverview(result({ areas: [], authors: { files: 9, error: null, repo: 1 } }), { uncovered: 0 });
+
+  assert.match(out, /^## Areas \(0\)\n\nNo directory became an area, so nothing here states a claim\.\n\n## Not covered$/m);
+  assert.doesNotMatch(out, /every claim below/);
+  assert.doesNotMatch(out, /\n\n\n/, "no run of blank lines");
 });

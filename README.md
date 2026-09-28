@@ -181,7 +181,7 @@ engines: oxc 0.149.0
 87 of 716 claims stated, 48 match the model default, the rest print as counts
 layout: 7 roots, 3 folded, tests: 96 of 98 test files under packages, 35 of 43 vitest under packages/excalidraw; roster lines: 14 areas with imports, 18 with reuse
 no baseline pinned: claims are measured against the current tree, and no finding can exceed FIX. Inside Claude Code the plugin's background refresh pins one when this checkout sits on the tip of origin's default branch with nothing uncommitted, or `/anatomiya:pin` takes one by hand
-15 files in no area: too few per directory
+15 files in no area: at the repository root, under the per-directory floor, or under a name no glob can spell
 wrote 39 files
 a running session gets the new overview on its next prompt or tool call, and a new session, a compaction or /clear loads the whole map
 ```
@@ -217,7 +217,7 @@ When a change is asked for, follow what this repository already does and carry i
 
 ## Not covered
 
-- 205 source files sit in no area (too few per directory)
+- 205 source files sit in no area (at the repository root, under the per-directory floor, or under a name no glob can spell)
 - memory, GC and I/O behaviour: runtime only, nothing static to count
 ```
 
@@ -274,7 +274,7 @@ exported functions declare their return type
   and 4 more
 
 catch blocks use the error they caught: no convention. 2 of 2 sites (evidence)
-failure is returned, not thrown: no convention. 0 of 1 sites (ratio)
+failure is returned, not thrown: no convention. 0 of 1 site (ratio)
 optional values are read with ?.: no convention. 5 of 96 sites (ratio)
 module-level functions are declared with function, not assigned as arrows: no convention. 3 of 132 sites (ratio)
 imports used only as types are marked import type: no convention. 2 of 71 sites (ratio)

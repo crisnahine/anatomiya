@@ -37,7 +37,7 @@ const SCAN = [
   "0 of 71 claims stated, the rest print as counts",
   "layout: 7 roots, 7 folded, tests: 100 rspec under spec; roster lines: 0 areas with imports, 0 with reuse",
   "baseline 4bd14f9f, 0 files changed since the pin (measured against origin/HEAD)",
-  "9 files in no area: too few per directory",
+  "9 files in no area: at the repository root, under the per-directory floor, or under a name no glob can spell",
   "wrote 33 files",
   "a running session gets the new overview on its next prompt or tool call, and a new session, a compaction or /clear loads the whole map",
   "",

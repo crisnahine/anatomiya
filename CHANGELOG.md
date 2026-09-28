@@ -75,6 +75,21 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   refused as leaving the repository, and a root `tsconfig.json` linking out of it is refused.
 - A parser worker that starts and never says it is ready is killed after 20 seconds, and a pool no
   worker becomes ready in reports its files as crashed rather than waiting forever.
+- A directory named `@(lib)`, `x+(y)`, `(ab)` or `a\b` no longer becomes an area whose `paths`
+  matches nothing or another directory: its files fold into the nearest ancestor, like other glob
+  syntax.
+- Files in no area are no longer all blamed on "too few per directory": the line names the three
+  causes, the repository root, the per-directory floor, and a directory name no glob can spell.
+- The overview's tests line names a root that counts only one level's files as
+  `lib (files at this level)`, not `lib`, which read as the whole subtree.
+- A count of one reads as one on the overview and the scan summary: `1 file holds`, `1 file says a
+  generator wrote it`, `this tool leaves it`, `0 of 1 site`, `1 matches the model default`,
+  `1 area file removed`, and no `file(s)` left on either.
+- The scan summary prints the repository root with unprintable characters replaced and only the
+  first line of an unreadable history's error, encoded, as `--format json` already did, so neither
+  can add a line of its own.
+- An overview with no area says no directory became one instead of a bare `## Areas (0)`, and a
+  one-author repository no longer says "every claim below" over no claims.
 - A repository created without a reflog, or on git's reftable backend, refreshed only on a checkout:
   nothing appended to the `logs/HEAD` the hook watched. It now watches the index there, or the
   reftable table list, so a commit or a pull refreshes the map as it does everywhere else.

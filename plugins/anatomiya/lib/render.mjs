@@ -63,6 +63,11 @@ function encodeGlob(g) {
 // line can only be a one-author repository read from a whole clone.
 const hands = (d) => (d.authors === 1 ? "1 author (the repository's only)" : `${d.authors} authors`);
 
+// The noun after "k of n" agrees with n, the count it is a denominator of: a
+// slot with one candidate printed "0 of 1 sites".
+const sitesOf = (n) => (n === 1 ? "site" : "sites");
+const filesOf = (n) => (n === 1 ? "file" : "files");
+
 // The author bar is a function of the repository now, so the name alone no
 // longer says what was asked for, and git failing is not a team of zero.
 const why = (d, gate) =>
@@ -169,6 +174,18 @@ export function splitUncovered(uncovered, orphaned) {
   const floorBound = Math.min(Math.max(0, orphaned), uncovered);
   return { orphaned: floorBound, barren: uncovered - floorBound };
 }
+
+/**
+ * Why discovery found nowhere to put a file, in one spelling for both surfaces.
+ *
+ * All three, because the record carries one count and not which cause each
+ * file met. "Too few per directory" was the whole sentence and it named only
+ * the floor: four .js files at the repository root beside a 3-file `src/` were
+ * reported as too few per directory while the layout said "and 4 files at the
+ * repository root", and six files in `[x]/` said it too, a directory that
+ * clears the floor and whose name no `paths` pattern can spell.
+ */
+export const ORPHAN_CAUSES = "at the repository root, under the per-directory floor, or under a name no glob can spell";
 
 /**
  * The causes that measure the machine rather than the tree.
@@ -356,7 +373,8 @@ function areaBlocks(area) {
       // gate divided by. The area's own count is a different number wherever
       // the area holds more than one language or a file nothing was read from,
       // and dividing by it retires the audit C3 exists to provide.
-      `  ${s.conforming} of ${d.candidates} sites across ${d.applicability} of ${d.langFileCount} files` +
+      `  ${s.conforming} of ${d.candidates} ${sitesOf(d.candidates)} across ` +
+        `${d.applicability} of ${d.langFileCount} ${filesOf(d.langFileCount)}` +
         declinedClause(d) +
         `, ${hands(d)}` +
         companionAudit(d) +
@@ -414,9 +432,9 @@ function areaBlocks(area) {
   for (const [d, s] of counts) {
     blocks.push([
       d.matchesDefault === true && s.states !== null
-        ? `${claimLine(s.claim)}: ${s.conforming} of ${d.candidates} sites (matches model default)`
+        ? `${claimLine(s.claim)}: ${s.conforming} of ${d.candidates} ${sitesOf(d.candidates)} (matches model default)`
         : `${claimLine(s.claim)}: no convention. ` +
-          `${s.conforming} of ${d.candidates} sites${companionAudit(d)} (${why(d, s.gate)})`,
+          `${s.conforming} of ${d.candidates} ${sitesOf(d.candidates)}${companionAudit(d)} (${why(d, s.gate)})`,
     ]);
     keys.push(s.states === null ? null : d.key);
     claims.push(s.states === null ? null : claimLine(s.claim));
@@ -643,7 +661,9 @@ export function renderOverview(result, files) {
   //
   // Not from a window: a `--depth=1` checkout holds one author whatever the
   // team is, and this sentence printed over a repository with fifteen.
-  if (result.authors && result.authors.repo === 1 && !result.authors.shallow) {
+  //
+  // Not over no areas, where there is no claim below for it to be about.
+  if (result.areas.length > 0 && result.authors && result.authors.repo === 1 && !result.authors.shallow) {
     head.push("This repository has one author, so every claim below is that author's practice.", "");
   }
 
@@ -680,7 +700,13 @@ export function renderOverview(result, files) {
   // lines past its bound.
   const room = Math.max(2, MAX_LINES - head.length - fixed.length);
   const others = otherFiles(files.others, Math.max(1, room - 1));
-  const listing = areaListing(result, Math.max(1, room - others.length));
+  // No area at all left the heading over two blank lines, which reads as a
+  // listing that failed to print rather than as a repository where no directory
+  // cleared the floor and kept a count. Why is not said here: the causes are the
+  // Not covered lines, and an empty repository has none of them.
+  const listing = result.areas.length
+    ? areaListing(result, Math.max(1, room - others.length))
+    : ["No directory became an area, so nothing here states a claim."];
 
   return [...head, ...listing, ...fixed, ...others].join("\n") + "\n";
 }
@@ -740,19 +766,25 @@ function overviewTail(result, files) {
   // means the caller knows of no second cause.
   const { orphaned, barren } = splitUncovered(files.uncovered, files.orphaned ?? files.uncovered);
   const source = (n) => `${n} source file${n === 1 ? "" : "s"} sit${n === 1 ? "s" : ""}`;
-  if (orphaned) lines.push(`- ${source(orphaned)} in no area (too few per directory)`);
+  if (orphaned) lines.push(`- ${source(orphaned)} in no area (${ORPHAN_CAUSES})`);
   if (barren) lines.push(`- ${source(barren)} in a directory nothing was counted in`);
   const unread = unreadLanguageFiles(result);
   if (unread.length) {
     const total = unread.reduce((n, [, count]) => n + count, 0);
     const named = unread.map(([ext, count]) => `${count} ${ext}`).join(", ");
-    lines.push(`- ${plural(total, "file")} hold a language this map does not read (${named})`);
+    lines.push(`- ${plural(total, "file")} ${total === 1 ? "holds" : "hold"} a language this map does not read (${named})`);
   }
   // Dropped in `collect`, before anything counts, so without this row nothing
   // anywhere says they exist: a reader who knows the directory is there sees a
   // map that has never heard of it.
   const generated = result.corpus?.dropped?.generated ?? 0;
-  if (generated) lines.push(`- ${plural(generated, "file")} say a generator wrote them, so nothing here is counted from them`);
+  if (generated) {
+    lines.push(
+      generated === 1
+        ? "- 1 file says a generator wrote it, so nothing here is counted from it"
+        : `- ${generated} files say a generator wrote them, so nothing here is counted from them`
+    );
+  }
   lines.push("- memory, GC and I/O behaviour: runtime only, nothing static to count");
   // Stable only: this file is read on every turn and is paid for on a cached
   // read, so a count that moves with machine load may not reach it (A5). The
@@ -864,6 +896,7 @@ export function degradedSemanticSentence(semantic) {
 const count = (xs, noun) => plural(xs.length, noun);
 const was = (xs) => (xs.length === 1 ? "was" : "were");
 const they = (xs) => (xs.length === 1 ? "it is" : "they are");
+const them = (xs) => (xs.length === 1 ? "it" : "them");
 
 function otherFiles(others, budget) {
   const { foreign = [], unknown = [], unreadable = [] } = others || {};
@@ -880,7 +913,7 @@ function otherFiles(others, budget) {
     // remove them, and the overview may not promise a fix it refuses to apply.
     lines.push(
       `${count(unknown, "file")} here ${was(unknown)} written by an earlier scan and ` +
-        "not listed in this map; this tool leaves them, so delete them by hand if unwanted."
+        `not listed in this map; this tool leaves ${them(unknown)}, so delete ${them(unknown)} by hand if unwanted.`
     );
   }
   if (unreadable.length) {
@@ -895,7 +928,7 @@ function otherFiles(others, budget) {
     lines.push(
       shown.length
         ? "Any other file there was not written by this tool:"
-        : `${foreign.length} other file(s) there were not written by this tool.`
+        : `${count(foreign, "other file")} there ${was(foreign)} not written by this tool.`
     );
     for (const name of shown) lines.push(`- ${encodePath(name)}`);
     if (shown.length && rest) lines.push(`- and ${rest} more`);

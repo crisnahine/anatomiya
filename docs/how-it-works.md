@@ -1099,7 +1099,10 @@ which is the clause failing at the only job it has. The
 trailing clause takes the first root printed that is not a test directory and has a namesake count,
 and nouns it with that root's top extension, so a repository whose tests are all feature-named
 end-to-end specs says out loud that `0 of 504 .tsx files have a namesake test`. That clause is what
-makes the line a denominator rather than a total.
+makes the line a denominator rather than a total. It names the population it counted over by the
+root's own label, so a root holding only the files at one level reads
+`under lib (files at this level)`: `under lib` read as the whole subtree beside a `lib/sub` line
+counting its own files apart.
 
 ### The two sentences
 
