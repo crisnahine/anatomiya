@@ -162,7 +162,7 @@ React and TypeScript repository, on a 4-CPU Linux container, with the root path 
 engines: oxc 0.149.0
 87 of 716 claims stated, 48 match the model default, the rest print as counts
 layout: 7 roots, 3 folded, tests: 96 of 98 test files under packages, 35 of 43 vitest under packages/excalidraw; roster lines: 14 areas with imports, 18 with reuse
-no baseline pinned: claims are measured against the current tree, and no finding can exceed FIX. `anatomiya pin` accepts one
+no baseline pinned: claims are measured against the current tree, and no finding can exceed FIX. One is pinned on its own when this checkout sits on the tip of origin's default branch with nothing uncommitted, or `/anatomiya:pin` takes one by hand
 15 files in no area: too few per directory
 wrote 39 files
 a running session gets the new overview on its next prompt or tool call, and a new session, a compaction or /clear loads the whole map
