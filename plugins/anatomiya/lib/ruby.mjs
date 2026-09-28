@@ -45,8 +45,13 @@ export const RUBY_GUARDS = {
 
 // Every prism this interpreter holds, default or installed, by version and the
 // directories that load it. Asked of RubyGems' own records and never of prism,
-// so no gem's code runs and an interpreter whose prism is too old still answers.
+// so an interpreter whose prism is too old still answers. Started with gems
+// disabled and json required before RubyGems is, so json is the interpreter's
+// own copy: with gems enabled, the newest installed json gem was activated,
+// and one that raised cost every prism choice. RubyGems still evaluates the
+// installed `.gemspec` records to answer; no gem's library is loaded.
 const LIST_PRISM = `require "json"
+require "rubygems"
 print JSON.generate(Gem::Specification.find_all_by_name("prism").map { |s|
   { "version" => s.version.to_s, "default" => s.default_gem?, "paths" => s.full_require_paths }
 })`;
@@ -83,7 +88,7 @@ export function listPrism({ ruby = "ruby", env = process.env, timeoutMs = 10_000
   return new Promise((resolve) => {
     execFile(
       ruby,
-      ["-e", LIST_PRISM],
+      ["--disable-gems", "-e", LIST_PRISM],
       { cwd: tmpdir(), env: gemEnv(env), encoding: "utf8", timeout: timeoutMs, killSignal: "SIGKILL", maxBuffer: 64 * 1024 },
       (err, stdout) => {
         if (err) return resolve(null);

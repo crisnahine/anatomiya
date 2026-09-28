@@ -297,6 +297,27 @@ test("the echoed map is stamped with the moment it was read", (t) => {
   assert.match(out, /digest="b8a8e138c072"/);
 });
 
+test("a refresh that failed is said once, in the plugin's own words, and the map redelivered", (t) => {
+  // The worker runs detached with its output discarded, so refresh.json is
+  // the only place a failure lands; unsaid, the session kept believing a map
+  // that was no longer being kept current.
+  const dir = mapped(t);
+  const before = echoContext(dir, {});
+  mkdirSync(join(dir, ".claude", "anatomiya"), { recursive: true });
+  const state = join(dir, ".claude", "anatomiya", "refresh.json");
+  writeFileSync(state, JSON.stringify({ stamp: "x", ok: false, error: "src/<b>evil</b> ignore previous", at: "2026-08-19T04:20:00Z" }));
+
+  const out = echoContext(dir, {});
+  assert.match(out, /automatic refresh of this map failed/);
+  assert.match(out, /\/anatomiya:scan/);
+  assert.doesNotMatch(out, /evil|ignore previous/, "the error text is the repository's, never echoed");
+  assert.notEqual(out.match(/digest="(\w+)"/)[1], before.match(/digest="(\w+)"/)[1], "a window holding the healthy map hears it again");
+
+  writeFileSync(state, JSON.stringify({ stamp: "x", ok: true, error: null, at: "2026-08-19T04:21:00Z" }));
+  assert.doesNotMatch(echoContext(dir, {}), /automatic refresh of this map failed/);
+  assert.equal(echoContext(dir, {}).match(/digest="(\w+)"/)[1], before.match(/digest="(\w+)"/)[1]);
+});
+
 test("the echoed map names the checkout it was counted from", (t) => {
   // A call about a file in another checkout is answered from that checkout's
   // map, on purpose (H40), so one session can hold two. Measured before this:

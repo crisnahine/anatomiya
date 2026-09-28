@@ -44,7 +44,9 @@ after `oxc-parser` has already rejected a `.js`, `.jsx`, `.mjs` or `.cjs` file. 
 file's text in memory and nothing is written back to disk. Ruby files go through `prism`, which is a default gem,
 in a child started as `ruby --disable-gems -e <script>` with `RUBYOPT`, `RUBYLIB` and `GEM_HOME`
 dropped from its environment, because each of those can inject a `-r` into a process about to be
-pointed at repository files. The parser child gets `PATH` and `LANG` and nothing else.
+pointed at repository files. The parser child gets `PATH` and `LANG` and nothing else, plus, where
+the interpreter's own `prism` is too old, `-I` load paths to an installed one (below): absolute
+directories RubyGems recorded, never read from the repository.
 
 ### The working directory is the control that contains those tools
 
@@ -91,7 +93,7 @@ escape them either. One filename carrying U+202E reverses the visual order of th
 in the rendered file, which is enough to make a directive read as its own opposite.
 
 The encoder normalises to NFKC, keeps only letters, marks, numbers, punctuation, symbols and the
-plain space, rejects a path that mixes scripts (Latin against Cyrillic homoglyphs), strips markdown
+plain space, rejects a path in which one word mixes look-alike alphabets (a Cyrillic `а` in a Latin word; Latin, Cyrillic and Greek are checked against each other, and a name wholly in any one script is kept), strips markdown
 structure that would let a value become syntax (`|`, `---`, `<!--`, `-->`, backtick runs, a leading
 block marker), caps on grapheme clusters before quoting rather than after, and emits paths JSON
 quoted.
@@ -179,7 +181,9 @@ ships. It runs under the same scrub the Ruby parser child gets, with `RUBYOPT`, 
 `PATH` names.
 
 Before either the probe or the parser starts, one more `ruby` lists the `prism` gems that interpreter
-holds, from RubyGems' own records: no gem's code is loaded to answer. Ruby 3.3 ships a `prism` older
+holds, from RubyGems' own records. It starts with gems disabled and requires the interpreter's own
+`json` before RubyGems, so no installed gem's library is loaded; RubyGems does evaluate the installed
+`.gemspec` records to answer, which are Ruby files in the user's own gem directories. Ruby 3.3 ships a `prism` older
 than the one the parser reads, and `gem install prism` puts a newer one beside it, so when the
 default is too old the newest installed one past the floor is handed to both children as `-I` load
 paths, absolute and never starting with a dash. Both still run with gems disabled. The listing alone

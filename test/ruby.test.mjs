@@ -74,6 +74,24 @@ test("the listing names a prism installed in a gem path, by version and absolute
   assert.deepEqual(planted.paths, [join(gems, "gems", "prism-1.99.0", "lib")]);
 });
 
+test("the listing loads no installed gem's library, so a newer json cannot silence it", needsRubyInterpreter, async (t) => {
+  // With RubyGems enabled, `require "json"` activated the newest installed
+  // json gem; one that raised (or merely printed) cost every prism choice.
+  const gems = mkdtempSync(join(tmpdir(), "anatomiya-gems-json-"));
+  t.after(() => rmSync(gems, { recursive: true, force: true }));
+  mkdirSync(join(gems, "specifications"), { recursive: true });
+  mkdirSync(join(gems, "gems", "json-99.0.0", "lib"), { recursive: true });
+  writeFileSync(join(gems, "gems", "json-99.0.0", "lib", "json.rb"), 'print "GEM CODE RAN"\nraise "planted json"\n');
+  writeFileSync(
+    join(gems, "specifications", "json-99.0.0.gemspec"),
+    'Gem::Specification.new do |s|\n  s.name = "json"\n  s.version = "99.0.0"\n  s.summary = "planted"\n  s.authors = ["t"]\n  s.files = ["lib/json.rb"]\n  s.require_paths = ["lib"]\nend\n'
+  );
+
+  const specs = await listPrism({ env: { ...process.env, GEM_PATH: gems, GEM_HOME: gems } });
+
+  assert.ok(Array.isArray(specs), "the listing still answers");
+});
+
 test("a listed prism that raises on load is never put on the load path", needsRubyInterpreter, async (t) => {
   // The listing is RubyGems' record, and a record says nothing about whether
   // the extension it names was built for this interpreter. A gem that raises

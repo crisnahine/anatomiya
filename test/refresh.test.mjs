@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 
-import { runScan } from "../plugins/anatomiya/lib/commands.mjs";
+import { runPin, runScan } from "../plugins/anatomiya/lib/commands.mjs";
 import { loadPin, PIN_PATH } from "../plugins/anatomiya/lib/baseline.mjs";
 import { EXCLUDE_LINES } from "../plugins/anatomiya/lib/rules.mjs";
 import { refreshRepository, runRefresh, REFRESH_STATE } from "../plugins/anatomiya/lib/refresh.mjs";
@@ -397,6 +397,51 @@ test("a tip this clone pushed itself is not pinned until the remote moves past i
   assert.equal(loadPin(dir).sha, git(dir, "rev-parse", "HEAD"));
 });
 
+test("a push is not followed where git keeps no reflog for the remote ref", async (t) => {
+  // With `core.logAllRefUpdates=false`, or on the reftable backend, no
+  // `logs/refs/remotes/...` file is ever written, and reading its absence as a
+  // fresh clone pinned the agent's own pushed commit.
+  const { origin, dir } = await cloned(t);
+  await refreshRepository(dir);
+  const first = loadPin(dir).sha;
+  git(origin, "config", "receive.denyCurrentBranch", "updateInstead");
+  git(dir, "config", "core.logAllRefUpdates", "false");
+  source(dir, "lib/agent", 8);
+  commit(dir, "the agent's own work");
+  git(dir, "-c", "push.negotiate=false", "push", "-q", "origin", "HEAD:main");
+
+  assert.equal((await refreshRepository(dir)).pinned, false);
+  assert.equal(loadPin(dir).sha, first);
+});
+
+test("the pin never moves backwards when the remote is rewound", async (t) => {
+  const { origin, dir } = await cloned(t);
+  source(origin, "lib/merged", 8);
+  commit(origin, "a teammate's merge");
+  git(dir, "pull", "-q", "--no-rebase");
+  assert.equal((await refreshRepository(dir)).pinned, true);
+  const later = loadPin(dir).sha;
+
+  git(origin, "reset", "-q", "--hard", "HEAD~1");
+  git(dir, "fetch", "-q");
+  git(dir, "reset", "-q", "--hard", "origin/main");
+
+  assert.equal((await refreshRepository(dir)).pinned, false);
+  assert.equal(loadPin(dir).sha, later);
+});
+
+test("a pin asked for one commit refuses to record another", async (t) => {
+  // The worker judges the tip, then pins; a checkout in between must not have
+  // the pin land on whatever HEAD became.
+  const { dir } = await cloned(t);
+  const judged = git(dir, "rev-parse", "HEAD");
+  source(dir, "lib/agent", 8);
+  commit(dir, "moved meanwhile");
+
+  await assert.rejects(runPin(dir, { expect: judged }), /HEAD moved/);
+  assert.equal(existsSync(join(dir, PIN_PATH)), false);
+});
+
 test("a pin the repository commits is never rewritten behind its back", async (t) => {
   // A committed pin can never name the commit that holds it, so following the
   // tip would rewrite a tracked file on every refresh and leave a change in
@@ -429,6 +474,24 @@ test("a remote-tracking ref moved by hand is not followed, only one a fetch move
 
   assert.equal((await refreshRepository(dir)).pinned, false);
   assert.equal(loadPin(dir).sha, first);
+});
+
+test("a fetch that names its own source or destination is not the remote moving", async (t) => {
+  // `git fetch . HEAD:refs/remotes/origin/main` is logged as a fetch, and so
+  // is one from a path on disk into the tracking ref: each put a local,
+  // unreviewed commit where the remote's tip is read. A fetch that takes its
+  // refspecs from the remote's configuration is the only one followed.
+  for (const args of [[".", "HEAD:refs/remotes/origin/main"], ["-f", "{dir}", "HEAD:refs/remotes/origin/main"]]) {
+    const { dir } = await cloned(t);
+    await refreshRepository(dir);
+    const first = loadPin(dir).sha;
+    source(dir, "lib/agent", 8);
+    commit(dir, "never pushed");
+    git(dir, "fetch", "-q", ...args.map((a) => a.replace("{dir}", dir)));
+
+    assert.equal((await refreshRepository(dir)).pinned, false, args.join(" "));
+    assert.equal(loadPin(dir).sha, first);
+  }
 });
 
 test("an automatic pin records what it accepted, for a person to read", async (t) => {

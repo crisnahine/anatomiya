@@ -29,8 +29,9 @@ and out of how many.
 
 ## Quick start
 
-Needs Node 22 or newer: on an older one `/anatomiya:doctor` names the version it found, and every
-other command refuses with the same sentence before it does any work. Ruby dimensions also want
+Needs Node 22 or newer: on an older one `/anatomiya:doctor` names the version it found, every
+other command refuses with the same sentence before it does any work, and the hooks answer with
+nothing, so the map is neither delivered nor refreshed but no session is interrupted. Ruby dimensions also want
 `ruby` on `PATH` with `prism` 1.x: Ruby 3.4 or newer ships it, and on an older Ruby (2.7 or newer)
 `gem install prism` adds it, which the parser then loads in place of the older default. That
 `ruby` is whichever answers first in `PATH`'s absolute directories (an empty or relative entry
@@ -148,9 +149,9 @@ previous map, and tries again after half an hour or once the checkout moves.
 
 The pin follows the same way, but only onto commits the team has already accepted: when the
 checkout sits exactly on the tip of `origin`'s default branch with nothing uncommitted, and that tip
-arrived by a fetch or a pull rather than by a push from this clone or a ref written by hand, the pin
-moves forward to it. A feature branch, a commit the remote has not seen, a tip this clone pushed
-itself, an edited or staged file, and a repository with no remote never pin; code you push joins the
+arrived by a plain fetch or pull rather than by a push from this clone, a ref written by hand or a
+fetch naming its own source, the pin moves forward to it. A feature branch, a commit the remote has not seen, a tip this clone pushed
+itself, an edited or staged file, a repository with no remote, and a clone that keeps no reflog never pin; code you push joins the
 pin once the remote moves past it and a pull brings that back. Each automatic pin records what it
 accepted (the commits and the files that entered and left) in `.claude/anatomiya/refresh.json`. In a
 fork workflow, where `origin` is your own fork, its default branch is what the pin follows, so review

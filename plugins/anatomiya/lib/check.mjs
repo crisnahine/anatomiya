@@ -1216,7 +1216,8 @@ async function staleness(root, facts, base, unreadable = null) {
   // Named by the commit this run resolved rather than by the ref's name: on a
   // shallow clone the base is fetched by sha and no ref names it, so reading
   // the name again capped every finding under "cannot resolve origin/main".
-  // Everywhere else the two resolve to the same fork point.
+  // Elsewhere that commit is already the fork point, whose own fork point with
+  // HEAD is itself, so the drift range is the one the name would have given.
   const state = await resolveBaseline(root, { baseRef: base.sha });
   if (state.status === "unpinned") return { reason: "no baseline pinned" };
   if (state.status === "pin-unreadable") return { reason: `the pin on disk could not be read because ${state.unreadable}` };

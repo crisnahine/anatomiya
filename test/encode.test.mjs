@@ -164,3 +164,21 @@ test("the HTML5 comment close --!> cannot survive, even inside an opened comment
   const out = encode("x<!--y--!>z");
   assert.ok(!/--!>|-->|<!--/.test(out), out);
 });
+
+test("a path written in one alphabet per segment is rendered as itself, whatever the alphabet", () => {
+  // F3 refuses a mixed-script path, the homoglyph that hides a Cyrillic `а` in
+  // `app`. Every non-Latin path was refused instead, so a repository written in
+  // Russian, Greek or Japanese got a placeholder in the overview and, since an
+  // area glob must spell its directory, no area at all.
+  for (const p of ["приложение/компоненты/форма.ts", "src/компоненты/Button.tsx", "src/工具/格式.ts", "λ/συνάρτηση.js", "アプリ/部品.tsx"]) {
+    assert.equal(sanitisePath(p), p, p);
+  }
+});
+
+test("a segment mixing look-alike alphabets is still refused", () => {
+  // Latin, Cyrillic and Greek share letter shapes, so one segment spelled in two
+  // of them reads as a name it is not.
+  for (const p of ["src/раyments.ts", "аpp/index.ts", "src/pαyments.ts"]) {
+    assert.match(sanitisePath(p), /^<path with mixed scripts, \d+ chars>$/, p);
+  }
+});

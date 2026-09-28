@@ -171,7 +171,7 @@ test("every delivered paths pattern reaches the files its area counted, whatever
   // the area file was written and could never attach, and nothing said so.
   const deep = "packages/organisation-management/billing-and-invoicing/subscription-lifecycle/payment-methods/credit-card-tokenisation/widgets/ch";
   const files = [
-    ...["src/компоненты", "src/служба", "src", deep, "packages/other"].flatMap((d) =>
+    ...["src/компоненты", "src/служба", "src/раyments", "src", deep, "packages/other"].flatMap((d) =>
       Array.from({ length: 6 }, (_, i) => ({ rel: `${d}/m${i}.ts`, lang: "js" }))
     ),
   ];
