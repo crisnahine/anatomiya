@@ -19,11 +19,11 @@ import { ANATOMIYA } from "../scripts/plugins.mjs";
  * Real git, because what the hook reads is the working tree against HEAD, and
  * a fixture cannot say which lines a change added.
  */
-function repo(t, { scanned = true, commit = true } = {}) {
+function repo(t, { scanned = true, commit = true, refFormat = null } = {}) {
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-reuse-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
-  git("init", "-q");
+  git("init", "-q", ...(refFormat ? [`--ref-format=${refFormat}`] : []));
   git("config", "user.email", "t@t.test");
   git("config", "user.name", "T");
   const write = (rel, body) => {
@@ -408,6 +408,30 @@ test("a turn that commits the source it added is still asked to check it", async
   assert.match(answer.reason, /src\/a\.ts:3-5[;.]/, "an edit the turn committed names the lines it added");
   assert.match(answer.reason, /src\/b\.ts:1-3/, "a file the turn created and committed");
   assert.match(answer.reason, /src\/c\.ts:1-3 \(new file\)/, "and what is still in the tree");
+});
+
+// Git 2.45 and later can create a reftable repository.
+const reftable = (() => {
+  const probe = join(tmpdir(), `anatomiya-reuse-rt-${process.pid}`);
+  const ok = spawnSync("git", ["init", "-q", "--ref-format=reftable", probe], { stdio: "pipe" }).status === 0;
+  rmSync(probe, { recursive: true, force: true });
+  return ok;
+})();
+
+test("a turn that commits everything is still asked about in a real reftable repository", { skip: !reftable && "git here cannot create a reftable repository" }, async (t) => {
+  // No stub: git 2.51 keeps no `logs/HEAD` here, and the turn's commits are
+  // read from `git log -g`.
+  const r = repo(t, { refFormat: "reftable" });
+  assert.equal(existsSync(join(r.dir, ".git", "logs", "HEAD")), false, "reftable keeps no reflog file");
+  const { session, commitAt } = turnAfterSetup(t);
+  r.write("src/b.ts", NEW_B);
+  r.git("add", "-A");
+  commitAt(r, "-m", "add b");
+
+  const answer = await runReuse(r.dir, stop(r.dir, { transcript_path: session }));
+
+  assert.equal(answer.decision, "block");
+  assert.match(answer.reason, /src\/b\.ts:1-3/);
 });
 
 test("a turn that commits everything is still asked about where the reflog is not a file", needsShebang, async (t) => {
