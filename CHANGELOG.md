@@ -7,6 +7,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-09-29
+
+The map keeps itself current. After the first `scan` in a checkout, a background refresh rescans at
+the start of every session and whenever HEAD moves, and the pin follows `origin`'s default branch when
+a fetch or a pull brought its tip and no commit it would accept was made in this clone. A repository's
+own `.git/config` can no longer make a read run a command. The rest is about a hundred fixes from a
+line review of `check`, the pin, the Ruby parser and the dimension rows.
+
 ### Added
 
 - A map built with `--deep` is kept current too, rebuilt with the type checker the way it was built.
@@ -3110,7 +3118,8 @@ which are partial; several listed there are not implemented yet.
 - No claim that this catches defects. Measured across ten repositories, 1 of 317 defect review
   comments was preventable by a conventions map.
 
-[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.10.2...HEAD
+[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.11.0...HEAD
+[0.11.0]: https://github.com/crisnahine/anatomiya/compare/v0.10.2...v0.11.0
 [0.10.2]: https://github.com/crisnahine/anatomiya/compare/v0.10.1...v0.10.2
 [0.10.1]: https://github.com/crisnahine/anatomiya/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/crisnahine/anatomiya/compare/v0.9.0...v0.10.0
