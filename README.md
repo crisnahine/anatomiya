@@ -139,14 +139,16 @@ it finds one, and leaves everything else in the file alone.
 ### Staying current
 
 After the first `/anatomiya:scan` in a checkout, you do not run it again. At the start of every
-session, and whenever HEAD moves (a checkout, a commit, a pull, a merge, a reset; in a repository
-created without a reflog, only a checkout), the plugin starts a background refresh that rescans only
-when something the map depends on changed: the commit, the tracked files, the pin, or this plugin's
-version. The hook returns at once and the scan runs detached, so nothing waits on it. A map built
-with `--deep` is rebuilt with the type checker, the way it was built. It leaves alone a checkout
-with no map of its own, a map or pin committed to the repository, and a repository in the middle of
-a merge or rebase. When a rescan fails it keeps the previous map, and tries again after half an hour
-or once the checkout moves.
+session, and whenever HEAD moves (a checkout, a commit, a pull, a merge, a reset), the plugin starts
+a background refresh that rescans only when something the map depends on changed: the commit, the
+tracked files, the pin, or this plugin's version. It watches the reflog, or, where there is none,
+the reftable backend's table list or the index, so a repository created without a reflog or on
+reftable refreshes on every move too. The hook returns at once and the scan runs detached, so
+nothing waits on it. A map built with `--deep` is rebuilt with the type checker, the way it was
+built. It leaves alone a checkout with no map of its own, a map or pin committed to the repository,
+and a repository in the middle of a merge or rebase. When a rescan fails it keeps the previous map,
+tries again after half an hour or once the checkout moves, and the delivered map says the refresh
+failed until one succeeds.
 
 The pin follows the same way, but only onto commits the team has already accepted: when the checkout
 sits exactly on the tip of `origin`'s default branch with nothing uncommitted, and that tip arrived
@@ -157,9 +159,12 @@ pin. Nor does a commit this clone made that sits on the default branch's own lin
 there (`git push`, a push by URL, a teammate's commit on top): that is work pushed straight to the
 shared branch, which nobody reviewed. A branch you push and merge through a pull request's merge
 commit is pinned once pulled, since the merge is its review; accepting a direct push is
-`/anatomiya:pin`, by hand. Each automatic pin records what it accepted (the commit it moved from and
-to, and how many files entered and left the population) in `.claude/anatomiya/refresh.json`. In a
-fork workflow, where `origin` is your own fork, its default branch is what the pin follows, so
+`/anatomiya:pin`, by hand. When the pin stops following for one of those reasons while the checkout
+sits on the tip, the next session starts with one line in your terminal saying why and at which
+commit; it is never put in the model's context, since the model is the author the pin exists to keep
+from accepting its own work. Each automatic pin records what it accepted (the commit it moved from
+and to, and how many files entered and left the population) in `.claude/anatomiya/refresh.json`. In
+a fork workflow, where `origin` is your own fork, its default branch is what the pin follows, so
 review there is what makes it accepted. `/anatomiya:pin` is still there for a repository with no
 remote, or to accept a population by hand. A branch cut before the pin does not read the files the
 default branch added since as missing, and a linked worktree with no pin of its own reads its main

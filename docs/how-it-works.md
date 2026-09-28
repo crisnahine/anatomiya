@@ -858,10 +858,13 @@ rewritten only when the branch changes. Plugin `FileChanged` matchers add nothin
 so the paths come back from the hook itself, every time, since the list is one list and the last
 hook to answer replaces it (`docs/research/when-a-hook-can-refresh-the-map.md`).
 
-In a repository created without a reflog (`core.logAllRefUpdates=false` from the start, where no
-`logs/HEAD` exists to append to) a commit or a pull on the same branch starts no refresh until the
-next checkout or session.
-`FileChanged` is matched on `HEAD`, and a change to any file this hook did not ask for answers
+Where there is no reflog to watch, something else every move rewrites stands in: on the reftable
+backend `reftable/tables.list`, which each ref update rewrites (so git's reftable format documents
+it; git 2.43 here cannot create a reftable repository, so this one is not measured), and in a files
+repository created without a reflog the index, which a commit, a pull, a checkout and a reset all
+write. The index is the last resort, since a plain `git status` rewrites it too and each one then
+costs a worker that finds the stamp unchanged. `FileChanged` is matched on exactly those basenames
+(`^(HEAD|index|tables\.list)$`), and a change to any file this hook did not ask for answers
 nothing, since answering it would replace somebody else's watch.
 
 The worker keeps its state beside `facts.json`. It takes an exclusive lock, stamps what a scan
@@ -900,6 +903,14 @@ And the pin is taken at the commit that was judged, or not at all: HEAD and the 
 again once the file list is read, since a commit or a `git add` landing while it was read would
 put files into a pin labelled with the commit judged before. What each automatic pin accepted is
 written to `refresh.json`.
+
+A pin that stops following while the checkout sits on the tip is held, and `refresh.json` says why
+(`held`: a commit made here, a tip this clone moved, a tip with no record of how it moved) and at
+which commit. The next `SessionStart` says so in one line of the terminal (`systemMessage`), built
+from fixed words and validated commit ids only. It never enters the model's context: the model is
+the author E5 keeps from accepting its own work, and a sentence there naming how to accept it is the
+suggestion E5 refuses. A lock is given back only while it is still the worker's own, so a takeover
+between three workers never frees a fourth.
 
 ## 7b. What lives where
 

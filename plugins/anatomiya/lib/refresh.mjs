@@ -90,9 +90,12 @@ export function runRefresh(cwd, payload, { start = startWorker } = {}) {
   // a worker for nothing and replace their watch with ours.
   if (event === "FileChanged" && !watchPaths.includes(resolve(String(payload.file_path ?? "")))) return {};
   start(own.root);
+  // Said once a session, to the person: a held pin never moves again on its own.
+  const notice = event === "SessionStart" ? holdNotice(own.root) : null;
+  const said = notice === null ? {} : { systemMessage: notice };
   // An empty list would replace every other hook's watches with nothing.
-  if (watchPaths.length === 0) return {};
-  return { hookSpecificOutput: { hookEventName: event, watchPaths } };
+  if (watchPaths.length === 0) return said;
+  return { ...said, hookSpecificOutput: { hookEventName: event, watchPaths } };
 }
 
 /**
@@ -100,12 +103,17 @@ export function runRefresh(cwd, payload, { start = startWorker } = {}) {
  * directory.
  *
  * The reflog is appended on every move, a commit, a merge, a pull or a reset
- * included; HEAD itself is rewritten only when the branch changes, and is named
- * too for a repository with the reflog turned off. The index is not watched: a
- * plain `git status` rewrites it. Read off the files rather than asked of git,
- * for the reason the map walk is (A24): this runs inside a hook.
+ * included; HEAD itself is rewritten only when the branch changes. Where there
+ * is no reflog to watch, something else that every move rewrites stands in:
+ * on the reftable backend `reftable/tables.list`, rewritten by every ref
+ * update, and in a files repository created without a reflog the index, which
+ * a commit, a pull, a checkout and a reset all write. The index is the last
+ * resort because a plain `git status` rewrites it too, and each of those then
+ * costs a worker that finds the stamp unchanged. Read off the files rather
+ * than asked of git, for the reason the map walk is (A24): this runs inside a
+ * hook. Every basename here is in the `FileChanged` matcher in `hooks.json`.
  */
-function watchTargets(root) {
+export function watchTargets(root) {
   const marker = join(root, ".git");
   const entry = readHead(marker, 4096);
   let gitdir = null;
@@ -115,7 +123,20 @@ function watchTargets(root) {
   } else if (entry.kind === "other" && existsSync(join(marker, "HEAD"))) {
     gitdir = marker;
   }
-  return gitdir === null ? [] : [join(gitdir, "logs", "HEAD"), join(gitdir, "HEAD")];
+  if (gitdir === null) return [];
+  const head = join(gitdir, "HEAD");
+  const common = commonDirOf(gitdir);
+  if (existsSync(join(common, "reftable"))) return [join(common, "reftable", "tables.list"), head];
+  const log = join(gitdir, "logs", "HEAD");
+  return [existsSync(log) ? log : join(gitdir, "index"), head];
+}
+
+/** The repository's shared git directory: a linked worktree's names it in `commondir`. */
+function commonDirOf(gitdir) {
+  const entry = readHead(join(gitdir, "commondir"), 4096);
+  const named = entry.kind === "file" ? entry.head.split("\n")[0].trim() : "";
+  if (!named) return gitdir;
+  return isAbsolute(named) ? named : resolve(gitdir, named);
 }
 
 /**
@@ -166,14 +187,19 @@ export async function refreshRepository(root, { scan = runScan, pin = runPin } =
   const lock = acquire(join(store, LOCK_FILE));
   if (!lock) return { reason: "busy", pinned: false };
   try {
-    const accepted = await followPin(root, pin);
+    const { accepted, held } = await followPin(root, pin);
     const pinned = accepted !== null;
     for (let pass = 0; pass < PASSES; pass++) {
       const stamp = await stampOf(root);
-      if (stamp === null) return { reason: "no-head", pinned };
+      if (stamp === null) return { reason: "no-head", pinned, held };
       const state = readRecord(join(store, basename(REFRESH_STATE))).record;
+      if (state?.stamp === stamp && (state.ok || !retryDue(state)) && sameHold(state.held, held)) {
+        return { reason: state.ok ? (pass === 0 ? "current" : "scanned") : "failed-before", pinned, held };
+      }
       if (state?.stamp === stamp && (state.ok || !retryDue(state))) {
-        return { reason: state.ok ? (pass === 0 ? "current" : "scanned") : "failed-before", pinned };
+        // Nothing to rescan; only what the pin decided is new.
+        writeState(store, { ...state, pinned: state.pinned ?? null, held });
+        return { reason: state.ok ? "current" : "failed-before", pinned, held };
       }
       try {
         await scan(root, { deep });
@@ -181,12 +207,12 @@ export async function refreshRepository(root, { scan = runScan, pin = runPin } =
         // The previous map stays: a scan that throws has written nothing
         // (A13), and one that would not run now will not run on the next
         // trigger either, until something about the checkout changes.
-        writeState(store, { stamp, ok: false, error: String(err?.message ?? err), pinned: accepted });
-        return { reason: "failed", pinned };
+        writeState(store, { stamp, ok: false, error: String(err?.message ?? err), pinned: accepted, held });
+        return { reason: "failed", pinned, held };
       }
-      writeState(store, { stamp, ok: true, error: null, pinned: accepted });
+      writeState(store, { stamp, ok: true, error: null, pinned: accepted, held });
     }
-    return { reason: "scanned", pinned };
+    return { reason: "scanned", pinned, held };
   } finally {
     release(lock);
   }
@@ -206,7 +232,7 @@ export async function noteScan(root) {
     const stamp = await stampOf(root);
     if (stamp === null) return;
     const previous = readRecord(join(store, basename(REFRESH_STATE))).record;
-    writeState(store, { stamp, ok: true, error: null, pinned: previous?.pinned ?? null });
+    writeState(store, { stamp, ok: true, error: null, pinned: previous?.pinned ?? null, held: previous?.held ?? null });
   } catch {
     // Nothing to record; the next refresh rescans, which is the old behaviour.
   }
@@ -265,10 +291,11 @@ function buildVersion() {
  * a clean tree makes byte-for-byte the commit.
  */
 async function followPin(root, pin) {
+  const none = { accepted: null, held: null };
   const head = await headSha(root);
-  if (!head) return null;
+  if (!head) return none;
   const tip = await remoteTip(root);
-  if (tip === null || tip.sha !== head) return null;
+  if (tip === null || tip.sha !== head) return none;
   // Pushed is not reviewed, and a ref written by hand is not the remote's. A
   // session can run `git push` or `git update-ref` itself, and a pin that
   // followed either accepted the agent's own commits as the population every
@@ -276,26 +303,35 @@ async function followPin(root, pin) {
   // fetch or a pull brought commits the remote already held, and a ref with
   // no record counts only as the clone that brought it. A commit this clone
   // made is refused below however it reached the remote.
-  if (!(await fetchedHere(root, tip.ref, tip.sha))) return null;
+  // From here the checkout sits on the tip, and a refusal is a hold a person
+  // should hear about: the pin stops following until somebody accepts the
+  // commit by hand, and nothing else would say why (`held`, read by the
+  // SessionStart hook for the person, never for the model).
   const current = loadPin(root);
-  if (current?.sha === head) return null;
+  if (current?.sha === head) return none;
+  const moved = await fetchedHere(root, tip.ref, tip.sha);
+  if (moved !== "fetched") return { accepted: null, held: { reason: moved === "no-record" ? "no-record" : "not-fetched", commit: head } };
   if (current) {
     // Newer than this checkout: the remote was rewound, or this clone is
     // behind the one that pinned. Either way the pin does not move backwards.
     const newer = await gitBuffered(root, ["merge-base", "--is-ancestor", head, current.sha]);
-    if (newer.ok) return null;
+    if (newer.ok) return none;
   }
-  if (await madeHereOnLine(root, current?.sha ?? null, head)) return null;
+  const made = await madeHereOnLine(root, current?.sha ?? null, head);
+  if (made !== null) return { accepted: null, held: { reason: "made-here", commit: made } };
   // A staged or edited tracked file is refused by `pin` itself, the one rule for
   // what a pin may record, and so is HEAD having moved since it was judged here.
-  // A refusal is simply no pin.
+  // A refusal is simply no pin: the tree is mid-edit, not held.
   try {
     const { delta } = await pin(root, { expect: head });
     // What was accepted, kept where a person can read it: the pin is taken with
     // nobody watching, so this is the one place its population delta is said.
-    return { from: current?.sha ?? null, to: head, addedFiles: delta.addedFiles, removedFiles: delta.removedFiles };
+    return {
+      accepted: { from: current?.sha ?? null, to: head, addedFiles: delta.addedFiles, removedFiles: delta.removedFiles },
+      held: null,
+    };
   } catch {
-    return null;
+    return none;
   }
 }
 
@@ -330,28 +366,31 @@ const CREATES_NOTHING = new RegExp(
  * stalled the pin for every merge-commit workflow. Branch reflogs are shared by
  * every worktree, and a commit made on a detached HEAD in a linked worktree is
  * the one this does not see. Anything git could not answer counts as made here.
+ *
+ * The commit found, so the hold can name it; `""` where git could not answer,
+ * and null where nothing on the line was made here.
  */
 async function madeHereOnLine(root, from, to) {
   // Both walks grow with the repository, a first pin's with its whole history,
   // so they stream (F6). `-z` separates records with a NUL, and whether git
   // also ends the last one is left open (`terminated: false`).
   const made = new Set();
-  let line = false;
+  let found = null;
   try {
     await gitStreamed(root, ["log", "-g", "--all", "-z", "--format=%H %gs"], (entry) => {
       const space = entry.indexOf(" ");
       if (space > 0 && !CREATES_NOTHING.test(entry.slice(space + 1))) made.add(entry.slice(0, space));
     }, { terminated: false });
-    if (made.size === 0) return false;
+    if (made.size === 0) return null;
     await gitStreamed(root, ["log", "--first-parent", "-z", "--format=%H", from ? `${from}..${to}` : to], (sha) => {
       if (!made.has(sha.trim())) return true;
-      line = true;
+      found = sha.trim();
       return false;
     }, { terminated: false });
   } catch {
-    return true;
+    return "";
   }
-  return line;
+  return found;
 }
 
 /**
@@ -373,7 +412,9 @@ async function remoteTip(root) {
 }
 
 /**
- * Whether the remote-tracking ref last moved because a fetch or a pull moved it.
+ * How the remote-tracking ref last moved: `fetched` by a fetch or a pull,
+ * `moved-here` by this clone (a push, a ref written by hand, a fetch naming its
+ * own source), or `no-record` where git kept none to tell by.
  *
  * Asked through `git reflog`, which reads every ref backend: the files backend
  * keeps `logs/refs/...`, reftable keeps none, and reading the file had a
@@ -385,11 +426,12 @@ async function remoteTip(root) {
 async function fetchedHere(root, ref, sha) {
   const full = await gitBuffered(root, ["rev-parse", "--symbolic-full-name", ref]);
   const name = full.ok ? full.stdout.trim() : "";
-  if (!name.startsWith("refs/remotes/")) return false;
+  if (!name.startsWith("refs/remotes/")) return "moved-here";
   const last = await gitBuffered(root, ["reflog", "show", "-n1", "--format=%gs", name]);
-  if (!last.ok) return false;
+  if (!last.ok) return "no-record";
   const message = last.stdout.trim();
-  return message === "" ? clonedOnto(root, sha) : movedByRemote(message);
+  if (message !== "") return movedByRemote(message) ? "fetched" : "moved-here";
+  return (await clonedOnto(root, sha)) ? "fetched" : "no-record";
 }
 
 /** Whether the main checkout's oldest reflog entry is the clone that checked out `sha`. */
@@ -432,9 +474,51 @@ async function gitBusy(root) {
   return UNFINISHED_OPERATIONS.some((name) => existsSync(join(gitdir, name)));
 }
 
-function writeState(store, { stamp, ok, error, pinned = null }) {
+function writeState(store, { stamp, ok, error, pinned = null, held = null }) {
   const at = new Date().toISOString();
-  atomic(join(store, basename(REFRESH_STATE)), JSON.stringify({ stamp, ok, error, at, ...(pinned ? { pinned } : {}) }, null, 2) + "\n");
+  const record = { stamp, ok, error, at, ...(pinned ? { pinned } : {}), ...(held ? { held } : {}) };
+  atomic(join(store, basename(REFRESH_STATE)), JSON.stringify(record, null, 2) + "\n");
+}
+
+const sameHold = (a, b) => (a?.reason ?? null) === (b?.reason ?? null) && (a?.commit ?? null) === (b?.commit ?? null);
+
+/**
+ * What the person hears at the start of a session when the pin has stopped
+ * following the remote, or null. For the terminal (`systemMessage`), never the
+ * model's context: the model is the author E5 keeps from accepting its own
+ * work, and a sentence in its context naming the way to accept it is the
+ * suggestion E5 refuses. Only fixed words and hex commit ids, validated here,
+ * since the record sits in a directory the repository could ship.
+ */
+export function holdNotice(root) {
+  const path = resolveInside(root, REFRESH_STATE);
+  if (path === null) return null;
+  const held = readRecord(path).record?.held;
+  const commit = typeof held?.commit === "string" && /^[0-9a-f]{7,64}$/.test(held.commit) ? held.commit.slice(0, 7) : null;
+  const pin = loadPin(root)?.sha;
+  const at = typeof pin === "string" && /^[0-9a-f]{7,64}$/.test(pin) ? ` at ${pin.slice(0, 7)}` : "";
+  if (held?.reason === "made-here") {
+    return (
+      `anatomiya: the baseline pin stays${at}: ${commit ? `commit ${commit}` : "a commit"} on origin's default branch ` +
+      "was made in this clone, and the automatic pin never accepts this clone's own work. " +
+      "Pinning it is a person's call, made with /anatomiya:pin."
+    );
+  }
+  if (held?.reason === "no-record") {
+    return (
+      `anatomiya: the baseline pin stays${at}: git kept no record of how origin's default branch last ` +
+      "moved in this clone (no reflog), so a fetch cannot be told from a push and the automatic pin does not follow it. " +
+      "Pinning it is a person's call, made with /anatomiya:pin."
+    );
+  }
+  if (held?.reason === "not-fetched") {
+    return (
+      `anatomiya: the baseline pin stays${at}: origin's default branch was last moved by this clone ` +
+      "(a push, or a ref written by hand), not by a fetch, so the automatic pin does not follow it. " +
+      "Pinning it is a person's call, made with /anatomiya:pin."
+    );
+  }
+  return null;
 }
 
 /**
@@ -449,9 +533,10 @@ function writeState(store, { stamp, ok, error, pinned = null }) {
  */
 function acquire(path) {
   for (let attempt = 0; attempt < 2; attempt++) {
+    const content = JSON.stringify({ pid: process.pid, at: Date.now(), nonce: randomBytes(8).toString("hex") });
     try {
-      create(path, JSON.stringify({ pid: process.pid, at: Date.now(), nonce: randomBytes(8).toString("hex") }));
-      return path;
+      create(path, content);
+      return { path, content };
     } catch (err) {
       if (err?.code !== "EEXIST") return null;
       const judged = contentOf(path);
@@ -468,10 +553,10 @@ function acquire(path) {
         } catch {
           // Somebody holds it already; either way it is not ours.
         }
-        release(aside);
+        remove(aside);
         return null;
       }
-      release(aside);
+      remove(aside);
     }
   }
   return null;
@@ -542,7 +627,17 @@ function alive(pid) {
   }
 }
 
-function release(path) {
+/**
+ * Give the lock back, but only while it is still this worker's. A takeover
+ * can leave the entry at the lock's path belonging to another worker (three
+ * interleaving over one stale lock), and unlinking by path then freed a live
+ * worker's lock for a fourth to take.
+ */
+function release(lock) {
+  if (contentOf(lock.path) === lock.content) remove(lock.path);
+}
+
+function remove(path) {
   try {
     unlinkSync(path);
   } catch {

@@ -28,6 +28,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- A repository created without a reflog, or on git's reftable backend, refreshed only on a checkout:
+  nothing appended to the `logs/HEAD` the hook watched. It now watches the index there, or the
+  reftable table list, so a commit or a pull refreshes the map as it does everywhere else.
+- When the automatic pin stops following (a commit made in this clone on the default branch, a tip
+  this clone pushed, a tip with no record of how it moved), the next session starts with one line in
+  the terminal saying so. It is recorded in `refresh.json` too, and never reaches the model.
+- The end-of-turn check asks git for the reflog where it is not a file (reftable), so a turn that
+  committed everything it wrote is still asked about there.
+- A refresh worker whose lock had been taken over no longer deletes the new holder's lock.
 - `pin` asks again, once the file list is read, whether HEAD and the tree still match: a commit or a
   `git add` landing while a large index was read put files into a pin labelled with the commit
   checked before.

@@ -410,6 +410,39 @@ test("a turn that commits the source it added is still asked to check it", async
   assert.match(answer.reason, /src\/c\.ts:1-3 \(new file\)/, "and what is still in the tree");
 });
 
+test("a turn that commits everything is still asked about where the reflog is not a file", needsShebang, async (t) => {
+  // The reftable backend keeps no `logs/HEAD`, and read off that file alone a
+  // turn that committed everything it wrote was never asked about. The stub
+  // stands in for a git whose reflog lives in reftable: the file is gone, and
+  // `log -g` answers what the real one recorded.
+  const r = repo(t);
+  const { session, commitAt } = turnAfterSetup(t);
+  r.write("src/b.ts", NEW_B);
+  r.git("add", "-A");
+  commitAt(r, "-m", "add b");
+  const real = execFileSync("sh", ["-c", "command -v git"]).toString().trim();
+  const recorded = execFileSync(real, ["log", "-g", "--max-count=256", "--date=unix", "--format=%H %gd %gs", "HEAD"], { cwd: r.dir });
+  const bin = mkdtempSync(join(tmpdir(), "anatomiya-reftable-git-"));
+  t.after(() => rmSync(bin, { recursive: true, force: true }));
+  writeFileSync(join(bin, "reflog.txt"), recorded);
+  writeFileSync(
+    join(bin, "git"),
+    `#!/bin/sh\nif [ "$1" = log ] && [ "$2" = -g ]; then cat '${join(bin, "reflog.txt")}'; exit 0; fi\nexec '${real}' "$@"\n`,
+    { mode: 0o755 }
+  );
+  rmSync(join(r.dir, ".git", "logs"), { recursive: true, force: true });
+  const path = process.env.PATH;
+  process.env.PATH = `${bin}:${path}`;
+  t.after(() => {
+    process.env.PATH = path;
+  });
+
+  const answer = await runReuse(r.dir, stop(r.dir, { transcript_path: session }));
+
+  assert.equal(answer.decision, "block");
+  assert.match(answer.reason, /src\/b\.ts:1-3/, "the file the turn created and committed");
+});
+
 test("what a turn commits after moving to another branch leaves that branch's own work alone", async (t) => {
   // A checkout, a pull or a reset inside the turn brings in commits nobody in
   // this session wrote. Only the commits made on top of the last such move are
