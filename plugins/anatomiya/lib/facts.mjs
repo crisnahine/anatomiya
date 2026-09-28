@@ -413,6 +413,10 @@ function dimensionRecord(d) {
     // population to one. Absent on an older record means "not narrowed", which
     // is what every scan before this did.
     ...(d.learnedKind === undefined ? {} : { learnedKind: d.learnedKind }),
+    // The area's classes that reach the learned base through a class it declares
+    // (single-table inheritance). Absent on an older record, which judged the
+    // learned base alone.
+    ...(Array.isArray(d.reaches) && d.reaches.length ? { reaches: d.reaches } : {}),
     // Only when true, the way `borrowed` is: an older record reads as unnarrowed
     // and gets the plain sentence, which is the one its own map printed.
     ...(d.narrowed === true ? { narrowed: true } : {}),
