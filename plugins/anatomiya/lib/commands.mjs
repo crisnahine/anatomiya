@@ -17,7 +17,7 @@ import { pinSummary, scanSummary } from "./summary.mjs";
 import { untrackedSentence } from "./render.mjs";
 import { aboutDir, echoContext, holdsTestIn, inCheckout, isPathTaken, ownLayout, removeStaleHook, targetIn, windowOf } from "./hook.mjs";
 import { isTestPath, noticeFor } from "./precedent.mjs";
-import { askedMarks, continuedByReuse, pendingChange, reuseReason, reuseRecord, sessionStart } from "./reuse.mjs";
+import { askedMarks, continuedByReuse, pendingChange, reuseReason, reuseRecord, sessionStart, turnStart } from "./reuse.mjs";
 
 /**
  * One entry per command: the whole recipe, composed once.
@@ -145,7 +145,7 @@ export async function runReuse(cwd, payload) {
   // since no ask it made was ever recorded anywhere it could read back.
   const since = sessionStart(payload.transcript_path);
   if (since === null) return {};
-  const change = await pendingChange(found.root, { since });
+  const change = await pendingChange(found.root, { since, turnStart: turnStart(payload.transcript_path) });
   if (change === null) return {};
   const asked = askedMarks(payload.transcript_path);
   const fresh = change.filter((file) => !asked.has(file.mark));

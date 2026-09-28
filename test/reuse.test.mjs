@@ -369,6 +369,86 @@ test("a file left changed from before this session began is not asked about", as
   assert.doesNotMatch(answer.reason, /src\/b\.ts/);
 });
 
+// A turn that began after everything `repo` committed, and a commit inside it.
+// The reflog keeps whole seconds, so the turn starts on a second boundary past
+// the setup's, and each commit is dated a second later than the one before.
+function turnAfterSetup(t) {
+  const began = Math.ceil(Date.now() / 1000) * 1000 + 1000;
+  let at = began / 1000;
+  const commitAt = ({ dir }, ...args) => {
+    at += 1;
+    execFileSync("git", ["commit", "-q", ...args], {
+      cwd: dir,
+      stdio: "pipe",
+      env: { ...process.env, GIT_COMMITTER_DATE: `@${at} +0000`, GIT_AUTHOR_DATE: `@${at} +0000` },
+    });
+  };
+  // A tool's result is written as a user entry too, stamped after the commits
+  // it reports, and it is not where the turn began.
+  const toolResult = { type: "user", timestamp: new Date(began + 60 * 1000).toISOString(), message: { role: "user", content: [{ type: "tool_result", tool_use_id: "t1", content: "done" }] } };
+  const session = transcript(t, [prompted(new Date(began - 60 * 1000)), prompted(new Date(began)), toolResult]);
+  return { session, commitAt };
+}
+
+test("a turn that commits the source it added is still asked to check it", async (t) => {
+  // Measured: the same new file asked about while it sat in the tree read `{}`
+  // once the turn committed it, since only the tree against HEAD was read. A
+  // turn told to "implement X and commit" never met the check.
+  const r = repo(t);
+  const { session, commitAt } = turnAfterSetup(t);
+  r.write("src/b.ts", NEW_B);
+  r.write("src/a.ts", "export const one = 1;\nexport const two = 2;\nexport function three() {\n  return 3;\n}\n");
+  r.git("add", "-A");
+  commitAt(r, "-m", "add b");
+  r.write("src/c.ts", "export function c() {\n  return 3;\n}\n");
+
+  const answer = await runReuse(r.dir, stop(r.dir, { transcript_path: session }));
+
+  assert.equal(answer.decision, "block");
+  assert.match(answer.reason, /src\/a\.ts:3-5[;.]/, "an edit the turn committed names the lines it added");
+  assert.match(answer.reason, /src\/b\.ts:1-3/, "a file the turn created and committed");
+  assert.match(answer.reason, /src\/c\.ts:1-3 \(new file\)/, "and what is still in the tree");
+});
+
+test("what a turn commits after moving to another branch leaves that branch's own work alone", async (t) => {
+  // A checkout, a pull or a reset inside the turn brings in commits nobody in
+  // this session wrote. Only the commits made on top of the last such move are
+  // this turn's, and diffing from before the move would name a teammate's
+  // functions as copies to delete.
+  const r = repo(t);
+  r.git("checkout", "-q", "-b", "mate");
+  r.write("src/dates.ts", "export function formatDate(d) {\n  return d.toISOString();\n}\n");
+  r.git("add", "-A");
+  r.git("commit", "-qm", "mate");
+  r.git("checkout", "-q", "-");
+  const { session, commitAt } = turnAfterSetup(t);
+  r.write("src/b.ts", NEW_B);
+  r.git("add", "-A");
+  commitAt(r, "-m", "before the move");
+  r.git("checkout", "-q", "mate");
+  r.write("src/c.ts", "export function c() {\n  return 3;\n}\n");
+  r.git("add", "-A");
+  commitAt(r, "-m", "after the move");
+
+  const answer = await runReuse(r.dir, stop(r.dir, { transcript_path: session }));
+
+  assert.match(answer.reason ?? "", /src\/c\.ts:1-3/);
+  assert.doesNotMatch(answer.reason, /src\/dates\.ts/, "the other branch's work");
+  assert.doesNotMatch(answer.reason, /src\/b\.ts/, "nor what the tree no longer holds");
+});
+
+test("what an earlier turn committed is not asked about again", async (t) => {
+  // The turn is what the hook answers for. A commit before this turn's prompt
+  // was that turn's to be asked about, at its own stop.
+  const r = repo(t);
+  r.write("src/b.ts", NEW_B);
+  r.git("add", "-A");
+  r.git("commit", "-qm", "an earlier turn");
+  const { session } = turnAfterSetup(t);
+
+  assert.deepEqual(await runReuse(r.dir, stop(r.dir, { transcript_path: session })), {});
+});
+
 test("a stop whose transcript cannot be read asks about nothing", async (t) => {
   // Both halves of "once per change, and only this session's work" are read
   // off the transcript: when the session began, and what it already asked.
