@@ -58,7 +58,6 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   export as its doc comment.
 - `swallowed_error` no longer reads `catch (e) { items.forEach((e) => log(e)) }` as using the caught
   error: a nested binding of the same name hides it.
-
 - An import whose name merely contains a routing word (`./settingsSlice`, `./request-utils`,
   `./api-errors`) is no longer taken for the repository's config module or client, so every access
   through it stops counting as a routed read.
