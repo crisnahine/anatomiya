@@ -406,7 +406,7 @@ function checkTestsLine(line, corpus, recordRoots, testFiles, byStem) {
   const top = topNamesakeRoot(recordRoots, corpus, testFiles, byStem);
   if (top) {
     const clause = clauses.shift();
-    const expected = namesakeClause({ ...top.companions, root: null }, `${top.exts[0][0]} file`, top.dir);
+    const expected = namesakeClause({ ...top.companions, root: null }, `${top.exts[0][0]} file`, top.dir && top.path);
     if (clause !== expected) fail(`tests line namesake clause: printed "${clause}", recount "${expected}"`);
   }
   if (clauses.length) fail(`tests line carries a clause the recount has no ground for: ${clauses[0]}`);

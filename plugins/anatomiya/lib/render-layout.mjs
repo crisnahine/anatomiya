@@ -215,7 +215,11 @@ function testsLineText(layout) {
 
   const top = layout.roots.find((r) => !r.testRoot && r.companions && r.exts.length > 0);
   if (top) {
-    parts.push(namesakeClause({ ...top.companions, root: null }, `${encode(top.exts[0][0])} file`, top.dir));
+    // Over the root's own label, not its directory: a `lib (files at this level)`
+    // root counts only the files directly in `lib`, and "4 of 4 .js files under
+    // lib" read as the whole subtree two lines below `lib/sub: 0 of 4`. The
+    // repository root as a root has an empty `dir` and no clause, as before.
+    parts.push(namesakeClause({ ...top.companions, root: null }, `${encode(top.exts[0][0])} file`, top.dir && top.path));
   }
   return `- tests: ${parts.join("; ")}`;
 }

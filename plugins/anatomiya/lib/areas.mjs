@@ -195,8 +195,13 @@ export function assertGlobSafe(g) {
  * silent. So a directory is spellable only where the encoder hands it back
  * unchanged, and one it would rewrite folds like glob syntax does; what reaches
  * the root with nowhere spellable to go is reported as uncovered.
+ *
+ * Glob syntax includes `(`, `)` and `\`: picomatch and minimatch both read
+ * `@(lib)` and `x+(y)` as extglobs, `(ab)` as a group and `a\b` as an escaped
+ * `b`, so each of those directories rooted an area whose `paths` matched
+ * nothing or a different directory. `+` and `@` only bite in front of a `(`.
  */
-const GLOB_SYNTAX = /[*?[\]{}!]/;
+const GLOB_SYNTAX = /[*?[\]{}!()\\]/;
 const spellable = (dir) =>
   dir === "." || (!dir.split("/").some((seg) => GLOB_SYNTAX.test(seg)) && sanitisePath(dir) === dir);
 
