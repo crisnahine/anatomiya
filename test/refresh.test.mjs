@@ -219,16 +219,29 @@ test("a map the repository tracks is never rewritten behind its back", async (t)
   assert.equal((await refreshRepository(dir)).reason, "tracked");
 });
 
-test("a map built with the type checker is left for a person to rebuild", async (t) => {
-  // The checker is about 26x slower and opt-in (B7), so an automatic scan would
-  // either run it unasked or replace its claims with a map that lacks them.
+test("a map built with the type checker is refreshed with the checker it was built with", async (t) => {
+  // Skipping it left `--deep` users running the scan by hand after every
+  // checkout, and rescanning without the checker would drop the claims it
+  // added. The mode the person chose is the mode it keeps (B7: never unasked).
   const dir = await scanned(t);
   const factsPath = join(dir, ".claude", "anatomiya", "facts.json");
   const facts = JSON.parse(readFileSync(factsPath, "utf8"));
   facts.semantic = { ...facts.semantic, ran: true };
   writeFileSync(factsPath, JSON.stringify(facts));
+  const calls = [];
+  const scan = async (root, options) => {
+    calls.push(options);
+  };
 
-  assert.equal((await refreshRepository(dir)).reason, "deep");
+  assert.equal((await refreshRepository(dir, { scan })).reason, "scanned");
+  assert.deepEqual(calls, [{ deep: true }]);
+});
+
+test("a map built without the checker is refreshed without it", async (t) => {
+  const dir = await scanned(t);
+  const calls = [];
+  await refreshRepository(dir, { scan: async (root, options) => calls.push(options) });
+  assert.deepEqual(calls, [{ deep: false }]);
 });
 
 test("a rescan that fails keeps the previous map, and the same state is not tried again", async (t) => {
@@ -332,10 +345,10 @@ test("the hook the plugin declares starts a real worker that brings the map up t
 
   for (const event of ["SessionStart", "FileChanged"]) {
     const [group] = declared.hooks[event];
-    // No matcher on either: a matcher on FileChanged would register a literal
-    // file of that name in the watch list and filter out the paths this hook
-    // registers itself.
-    assert.equal(group.matcher, undefined, event);
+    // Session start takes every source. FileChanged is matched on `HEAD`, the
+    // basename both watches share: a plugin's matcher adds nothing to the watch
+    // list, and without one the group ran for every other plugin's file.
+    assert.equal(group.matcher, event === "FileChanged" ? "HEAD" : undefined, event);
     assert.equal(group.hooks[0].command, 'node "${CLAUDE_PLUGIN_ROOT}/bin/anatomiya.mjs" refresh', event);
   }
 
@@ -359,4 +372,106 @@ test("the hook the plugin declares starts a real worker that brings the map up t
     await new Promise((r) => setTimeout(r, 100));
   }
   assert.equal(existsSync(join(dir, ".claude", "anatomiya", "refresh.lock")), false);
+});
+
+test("a tip this clone pushed itself is not pinned until the remote moves past it", async (t) => {
+  // Pushed is not reviewed: a session can run `git push` itself, and a pin
+  // that followed that tip accepted the agent's own commits as the population
+  // every gate reads (E5). Git records how the remote-tracking ref moved, and
+  // `update by push` is this clone's own work; a fetch or a pull is the team's.
+  const { origin, dir } = await cloned(t);
+  await refreshRepository(dir);
+  const first = loadPin(dir).sha;
+  git(origin, "config", "receive.denyCurrentBranch", "updateInstead");
+  source(dir, "lib/agent", 8);
+  commit(dir, "the agent's own work");
+  git(dir, "-c", "push.negotiate=false", "push", "-q", "origin", "HEAD:main");
+
+  assert.equal((await refreshRepository(dir)).pinned, false);
+  assert.equal(loadPin(dir).sha, first);
+
+  source(origin, "lib/merged", 8);
+  commit(origin, "a teammate's merge");
+  git(dir, "pull", "-q", "--no-rebase");
+  assert.equal((await refreshRepository(dir)).pinned, true, "a fetched tip is the team's");
+  assert.equal(loadPin(dir).sha, git(dir, "rev-parse", "HEAD"));
+});
+
+test("a pin the repository commits is never rewritten behind its back", async (t) => {
+  // A committed pin can never name the commit that holds it, so following the
+  // tip would rewrite a tracked file on every refresh and leave a change in
+  // `git status` nobody made, the state E11 says a pin is never taken from.
+  const { origin, dir } = await cloned(t);
+  await refreshRepository(dir);
+  git(dir, "add", "-f", PIN_PATH);
+  git(dir, "commit", "-qm", "commit the pin");
+  git(origin, "config", "receive.denyCurrentBranch", "updateInstead");
+  source(origin, "lib/merged", 8);
+  commit(origin, "a teammate's merge");
+  git(dir, "pull", "-q", "--no-rebase");
+  const before = readFileSync(join(dir, PIN_PATH), "utf8");
+
+  assert.equal((await refreshRepository(dir)).reason, "tracked");
+  assert.equal(readFileSync(join(dir, PIN_PATH), "utf8"), before);
+  assert.equal(git(dir, "status", "--porcelain", "--untracked-files=no"), "");
+});
+
+test("a remote-tracking ref moved by hand is not followed, only one a fetch moved", async (t) => {
+  // `git update-ref refs/remotes/origin/main HEAD` needs no network and no
+  // review, and moved the pin onto an unpushed commit. Only a move git records
+  // as a clone, a fetch or a pull is the remote's own.
+  const { dir } = await cloned(t);
+  await refreshRepository(dir);
+  const first = loadPin(dir).sha;
+  source(dir, "lib/agent", 8);
+  commit(dir, "never pushed");
+  git(dir, "update-ref", "refs/remotes/origin/main", "HEAD");
+
+  assert.equal((await refreshRepository(dir)).pinned, false);
+  assert.equal(loadPin(dir).sha, first);
+});
+
+test("an automatic pin records what it accepted, for a person to read", async (t) => {
+  const { origin, dir } = await cloned(t);
+  await refreshRepository(dir);
+  source(origin, "lib/merged", 8);
+  commit(origin, "a teammate's merge");
+  git(dir, "pull", "-q", "--no-rebase");
+
+  await refreshRepository(dir);
+
+  const state = JSON.parse(readFileSync(join(dir, REFRESH_STATE), "utf8"));
+  assert.equal(state.pinned.to, git(dir, "rev-parse", "HEAD"));
+  assert.equal(state.pinned.addedFiles, 8);
+  assert.equal(state.pinned.removedFiles, 0);
+});
+
+test("a changed file that is not one of this hook's watches starts nothing and replaces no watch", async (t) => {
+  // The watch list is one list: a FileChanged group with no matcher ran for
+  // another plugin's `.envrc`, and answering watchPaths there replaced that
+  // plugin's watch with ours.
+  const dir = await scanned(t);
+  const { started, start } = recorder();
+
+  assert.deepEqual(runRefresh(dir, { hook_event_name: "FileChanged", cwd: dir, file_path: join(dir, ".envrc"), event: "change" }, { start }), {});
+  assert.deepEqual(started, []);
+  const declared = JSON.parse(readFileSync(new URL("../plugins/anatomiya/hooks/hooks.json", import.meta.url), "utf8"));
+  assert.equal(declared.hooks.FileChanged[0].matcher, "HEAD", "matched on the basename both watches share");
+});
+
+test("a rescan that failed is tried again once enough time has passed", async (t) => {
+  // A failure can be the machine's rather than the checkout's: a temp directory
+  // removed under a worker, a fork refused under load. Held for ever against the
+  // same stamp, one bad moment stopped every refresh until the next commit.
+  const dir = await scanned(t);
+  source(dir, "lib/services", 8);
+  commit(dir, "a second area");
+  assert.equal((await refreshRepository(dir, { scan: async () => { throw new Error("EAGAIN"); } })).reason, "failed");
+  assert.equal((await refreshRepository(dir)).reason, "failed-before", "not straight away");
+
+  const statePath = join(dir, REFRESH_STATE);
+  const state = JSON.parse(readFileSync(statePath, "utf8"));
+  writeFileSync(statePath, JSON.stringify({ ...state, at: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString() }));
+
+  assert.equal((await refreshRepository(dir)).reason, "scanned");
 });

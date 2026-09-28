@@ -71,6 +71,7 @@
     ],
     "FileChanged": [
       {
+        "matcher": "HEAD",
         "hooks": [
           {
             "type": "command",

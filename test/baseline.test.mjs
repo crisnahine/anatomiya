@@ -1113,3 +1113,27 @@ test("a pin path holding a fifo reads as no pin, rather than waiting on it", nee
   assert.equal(run.status, 0, run.stderr);
   assert.equal(JSON.parse(run.stdout), null);
 });
+
+test("a linked worktree with no pin of its own reads its main checkout's, and its own once it has one", async (t) => {
+  // The pin names commits in the history every worktree shares, and a worktree
+  // is where a session goes to work: with no pin of its own, every finding there
+  // was capped at FIX in a repository that had one. The hooks already read the
+  // main checkout's map there; the pin follows the same rule.
+  let sha;
+  const dir = repo(t, (d, { write, commit }) => {
+    write("src/a/x.ts", CONFORMING);
+    sha = commit("init");
+  });
+  const main = buildPin([area("src/a", ["src/a/x.ts"])], { sha });
+  writePin(dir, main);
+  const wt = join(mkdtempSync(join(tmpdir(), "anatomiya-baseline-wt-")), "wt");
+  t.after(() => rmSync(join(wt, ".."), { recursive: true, force: true }));
+  execFileSync("git", ["worktree", "add", "-q", wt], { cwd: dir, stdio: "pipe" });
+
+  assert.deepEqual(loadPin(wt), main, "borrowed from the main checkout");
+
+  const own = buildPin([area("src/a", ["src/a/x.ts", "src/a/y.ts"])], { sha });
+  writePin(wt, own);
+  assert.deepEqual(loadPin(wt), own, "its own once written");
+  assert.deepEqual(loadPin(dir), main, "and the main checkout's is untouched");
+});

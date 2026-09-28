@@ -92,6 +92,10 @@ const FLAGS = new Set([
   "--absolute-git-dir",
   "--untracked-files=no",
   "--is-ancestor",
+  // Where a remote-tracking ref's reflog lives, and the ref's full name, so the
+  // refresh can tell a tip this clone pushed from one a fetch brought.
+  "--symbolic-full-name",
+  "--git-common-dir",
   // Whether a merge has left the index with a path per stage, which `pin`
   // refuses to record (`commands.mjs`).
   "--unmerged",

@@ -877,6 +877,15 @@ the first of `origin/HEAD`, `origin/main` or `origin/master` that resolves, with
 edited or staged, and never onto a commit older than the pin (E11). A branch cut before the pin
 reads the pinned files the base added after the fork as never held rather than as missing (E12).
 
+Two more conditions keep a pin honest when nobody is watching it. The tip is followed only when git
+recorded its last move as a fetch or a pull, or recorded none, which is a fresh clone: a push from
+this clone and a ref written by hand are this clone's own work, and a session can do both. And the
+pin is taken at the commit that was judged, or not at all. What each automatic pin accepted is
+written to `refresh.json`. A map built with `--deep` is rebuilt with the checker, a map or pin the
+repository commits is left alone, and a failed rescan is retried after half an hour. `FileChanged`
+is matched on `HEAD`, and a change to any file this hook did not ask for answers nothing, since
+answering it would replace somebody else's watch.
+
 ## 7b. What lives where
 
 The overview carries one more section, above the area listing: which directories this repository

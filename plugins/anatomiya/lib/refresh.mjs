@@ -18,19 +18,19 @@
  *
  * The scoping is the hook's own (A24): only a checkout that already holds a map
  * of its own is ever refreshed, so the first `/anatomiya:scan` is the opt-in and
- * nothing is created anywhere else. Everything it keeps lives in the store
+ * nothing is created anywhere else. Everything it keeps lives in `.claude/anatomiya/`
  * beside `facts.json`, which the README's exclude lines already cover.
  */
 import { spawn } from "node:child_process";
-import { createHash } from "node:crypto";
-import { closeSync, existsSync, openSync, readFileSync, unlinkSync, writeSync } from "node:fs";
+import { createHash, randomBytes } from "node:crypto";
+import { closeSync, existsSync, linkSync, openSync, readFileSync, renameSync, unlinkSync, writeSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, isAbsolute, join, resolve } from "node:path";
 
 import { loadPin, PIN_PATH } from "./baseline.mjs";
 import { runPin, runScan } from "./commands.mjs";
 import { atomic, FACTS_PATH, readFacts, readRecord } from "./facts.mjs";
-import { BASE_REFS, gitBuffered, headSha } from "./git.mjs";
+import { BASE_REFS, gitBuffered, gitStreamed, headSha } from "./git.mjs";
 import { ownLayout } from "./hook.mjs";
 import { pluginRoot } from "./readiness.mjs";
 import { OVERVIEW_FILE, readHead, resolveInside, RULES_DIR, STORE_DIR } from "./rules.mjs";
@@ -46,6 +46,18 @@ const LOCK_STALE_MS = 30 * 60 * 1000;
 
 /** The longest a worker may run before it gives up (F5: nothing here runs without a clock). */
 export const WORKER_DEADLINE_MS = 20 * 60 * 1000;
+
+// How long a failed rescan of an unchanged checkout waits before it is tried
+// again. A failure can be the machine's rather than the checkout's (a temp
+// directory removed under a worker, a fork refused under load), and held for
+// ever it stopped every refresh until the next commit; tried on every trigger
+// it paid a whole failing scan each time a watched file changed.
+const RETRY_MS = 30 * 60 * 1000;
+
+const retryDue = (state) => {
+  const at = Date.parse(state?.at ?? "");
+  return !Number.isFinite(at) || Date.now() - at > RETRY_MS;
+};
 
 // Rescans in one worker when HEAD keeps moving under it. A rebase landing
 // commit by commit is the case; the next change after that starts another.
@@ -78,8 +90,12 @@ export function runRefresh(cwd, payload, { start = startWorker } = {}) {
   const own = ownLayout(base);
   if (!own || own.from !== null) return {};
 
-  start(own.root);
   const watchPaths = watchTargets(own.root);
+  // The watch list is one list shared by every hook. A change to a file this
+  // hook did not ask for is somebody else's, and answering it would both start
+  // a worker for nothing and replace their watch with ours.
+  if (event === "FileChanged" && !watchPaths.includes(resolve(String(payload.file_path ?? "")))) return {};
+  start(own.root);
   // An empty list would replace every other hook's watches with nothing.
   if (watchPaths.length === 0) return {};
   return { hookSpecificOutput: { hookEventName: event, watchPaths } };
@@ -137,38 +153,44 @@ function startWorker(root) {
  * checkout, and say what it did.
  *
  * `reason` is one of: scanned, current, failed, failed-before, busy, git-busy,
- * tracked, deep, no-map, outside, no-head.
+ * tracked, no-map, outside, no-head.
  */
 export async function refreshRepository(root, { scan = runScan, pin = runPin } = {}) {
   const store = resolveInside(root, STORE_DIR);
   if (store === null) return { reason: "outside", pinned: false };
   const facts = readFacts(root).facts;
   if (!facts) return { reason: "no-map", pinned: false };
-  // The type checker is opt-in and about 26x slower (B7): rescanning without it
-  // drops the claims it added, and rescanning with it is a cost nobody asked for.
-  if (facts.semantic?.ran === true) return { reason: "deep", pinned: false };
+  // The type checker is opt-in and about 26x slower (B7), so a refresh keeps the
+  // mode the person chose: a map built with it is rebuilt with it, rather than
+  // skipped (which left it stale after every checkout) or rebuilt without it
+  // (which dropped the claims it added). A checker that is no longer installed
+  // fails the rescan, and the previous map stays.
+  const deep = facts.semantic?.ran === true;
   if (await mapTracked(root)) return { reason: "tracked", pinned: false };
   if (await gitBusy(root)) return { reason: "git-busy", pinned: false };
 
   const lock = acquire(join(store, LOCK_FILE));
   if (!lock) return { reason: "busy", pinned: false };
   try {
-    const pinned = await followPin(root, pin);
+    const accepted = await followPin(root, pin);
+    const pinned = accepted !== null;
     for (let pass = 0; pass < PASSES; pass++) {
       const stamp = await stampOf(root);
       if (stamp === null) return { reason: "no-head", pinned };
       const state = readRecord(join(store, basename(REFRESH_STATE))).record;
-      if (state?.stamp === stamp) return { reason: state.ok ? (pass === 0 ? "current" : "scanned") : "failed-before", pinned };
+      if (state?.stamp === stamp && (state.ok || !retryDue(state))) {
+        return { reason: state.ok ? (pass === 0 ? "current" : "scanned") : "failed-before", pinned };
+      }
       try {
-        await scan(root);
+        await scan(root, { deep });
       } catch (err) {
         // The previous map stays: a scan that throws has written nothing
         // (A13), and one that would not run now will not run on the next
         // trigger either, until something about the checkout changes.
-        writeState(store, { stamp, ok: false, error: String(err?.message ?? err) });
+        writeState(store, { stamp, ok: false, error: String(err?.message ?? err), pinned: accepted });
         return { reason: "failed", pinned };
       }
-      writeState(store, { stamp, ok: true, error: null });
+      writeState(store, { stamp, ok: true, error: null, pinned: accepted });
     }
     return { reason: "scanned", pinned };
   } finally {
@@ -185,19 +207,22 @@ export async function refreshRepository(root, { scan = runScan, pin = runPin } =
 async function stampOf(root) {
   const head = await headSha(root);
   if (!head) return null;
-  const index = await gitBuffered(root, ["ls-files", "-s", "-z"], { encoding: "buffer" });
-  if (!index.ok) return null;
-  const pinPath = resolveInside(root, PIN_PATH);
-  let pinBytes = "";
+  // Streamed into the hash: the index grows with the repository, and a buffered
+  // read gave up past its byte cap, which left the stamp null and the map never
+  // refreshed on the largest repositories (F6).
+  const hash = createHash("sha256").update(head).update("\0");
   try {
-    pinBytes = pinPath === null ? "" : readFileSync(pinPath);
+    await gitStreamed(root, ["ls-files", "-s", "-z"], (field) => {
+      hash.update(field);
+      hash.update("\0");
+    });
   } catch {
-    pinBytes = "";
+    return null;
   }
-  return createHash("sha256")
-    .update(head)
-    .update("\0")
-    .update(index.stdout)
+  // The pin that was read, not the file beside this checkout: a linked worktree
+  // reads its main checkout's, and a pin moving there changes this map too.
+  const pinBytes = JSON.stringify(loadPin(root));
+  return hash
     .update("\0")
     .update(pinBytes)
     .update("\0")
@@ -227,36 +252,78 @@ function buildVersion() {
  */
 async function followPin(root, pin) {
   const head = await headSha(root);
-  if (!head) return false;
-  let tip = null;
-  for (const ref of REMOTE_BASES) {
-    const r = await gitBuffered(root, ["rev-parse", "--verify", "--quiet", `${ref}^{commit}`]);
-    if (r.ok && r.stdout.trim()) {
-      tip = r.stdout.trim();
-      break;
-    }
-  }
-  if (tip !== head) return false;
-  const status = await gitBuffered(root, ["status", "--porcelain", "--untracked-files=no", "-z"]);
-  if (!status.ok || status.stdout.length > 0) return false;
+  if (!head) return null;
+  const tip = await remoteTip(root);
+  if (tip === null || tip.sha !== head) return null;
+  // Pushed is not reviewed, and a ref written by hand is not the remote's. A
+  // session can run `git push` or `git update-ref` itself, and a pin that
+  // followed either accepted the agent's own commits as the population every
+  // gate reads. Git records how the remote-tracking ref last moved, and only a
+  // fetch or a pull brought commits the remote already held; a fresh clone
+  // writes no entry at all. Pushed work joins the pin once the remote moves
+  // past it and a fetch brings that back.
+  if (!(await fetchedHere(root, tip.ref))) return null;
   const current = loadPin(root);
-  if (current?.sha === head) return false;
+  if (current?.sha === head) return null;
   if (current) {
     // Newer than this checkout: the remote was rewound, or this clone is
     // behind the one that pinned. Either way the pin does not move backwards.
     const newer = await gitBuffered(root, ["merge-base", "--is-ancestor", head, current.sha]);
-    if (newer.ok) return false;
+    if (newer.ok) return null;
   }
+  // A staged or edited tracked file is refused by `pin` itself, the one rule for
+  // what a pin may record, and so is HEAD having moved since it was judged here.
+  // A refusal is simply no pin.
   try {
-    await pin(root);
-    return true;
+    const { delta } = await pin(root, { expect: head });
+    // What was accepted, kept where a person can read it: the pin is taken with
+    // nobody watching, so this is the one place its population delta is said.
+    return { from: current?.sha ?? null, to: head, addedFiles: delta.addedFiles, removedFiles: delta.removedFiles };
   } catch {
-    return false;
+    return null;
   }
 }
 
+/**
+ * The remote default branch's tip and the ref it was read from: the first of
+ * `origin/HEAD`, `origin/main`, `origin/master` that resolves, or, in a clone
+ * whose only remote has another name, that remote's HEAD.
+ */
+async function remoteTip(root) {
+  const candidates = [...REMOTE_BASES];
+  const remotes = await gitBuffered(root, ["remote"]);
+  const names = remotes.ok ? remotes.stdout.split("\n").map((s) => s.trim()).filter(Boolean) : [];
+  if (names.length === 1 && names[0] !== "origin" && /^[A-Za-z0-9._-]+$/.test(names[0])) candidates.push(`${names[0]}/HEAD`);
+  for (const ref of candidates) {
+    const r = await gitBuffered(root, ["rev-parse", "--verify", "--quiet", `${ref}^{commit}`]);
+    const sha = r.ok ? r.stdout.trim() : "";
+    if (sha) return { sha, ref };
+  }
+  return null;
+}
+
+/** Whether the remote-tracking ref last moved because a fetch or a pull moved it. */
+async function fetchedHere(root, ref) {
+  const full = await gitBuffered(root, ["rev-parse", "--symbolic-full-name", ref]);
+  const common = await gitBuffered(root, ["rev-parse", "--git-common-dir"]);
+  const name = full.ok ? full.stdout.trim() : "";
+  if (!common.ok || !name.startsWith("refs/remotes/")) return false;
+  // No reflog is the ref as the clone wrote it; every later move adds an entry.
+  const path = join(resolve(root, common.stdout.trim()), "logs", name);
+  if (!existsSync(path)) return true;
+  const log = readHead(path, 1024 * 1024);
+  if (log.kind !== "file") return false;
+  const last = log.head.trimEnd().split("\n").pop() ?? "";
+  return /^(fetch|pull)\b/.test(last.split("\t")[1] ?? "");
+}
+
+/**
+ * Whether the repository commits what this tool writes. A committed map travels
+ * with every branch already, and a committed pin can never name the commit that
+ * holds it, so following either would leave a change in `git status` nobody made.
+ */
 async function mapTracked(root) {
-  const r = await gitBuffered(root, ["ls-files", "-z", "--", `${RULES_DIR}/${OVERVIEW_FILE}`, FACTS_PATH]);
+  const r = await gitBuffered(root, ["ls-files", "-z", "--", `${RULES_DIR}/${OVERVIEW_FILE}`, FACTS_PATH, PIN_PATH]);
   return r.ok && r.stdout.length > 0;
 }
 
@@ -267,41 +334,65 @@ async function gitBusy(root) {
   return IN_PROGRESS.some((name) => existsSync(join(gitdir, name)));
 }
 
-function writeState(store, { stamp, ok, error }) {
-  atomic(join(store, basename(REFRESH_STATE)), JSON.stringify({ stamp, ok, error }, null, 2) + "\n");
+function writeState(store, { stamp, ok, error, pinned = null }) {
+  const at = new Date().toISOString();
+  atomic(join(store, basename(REFRESH_STATE)), JSON.stringify({ stamp, ok, error, at, ...(pinned ? { pinned } : {}) }, null, 2) + "\n");
 }
 
 /**
  * Take the lock, or answer null when a live worker holds it.
  *
- * Created exclusively, so two workers started by two sessions cannot both
- * believe they hold it. One whose owner is gone, or which is older than any
- * scan runs, is taken over once.
+ * Created exclusively, so two workers cannot both create it. One whose owner is
+ * gone, or which is older than any scan runs, is taken over by renaming it
+ * aside rather than unlinking it: two workers that both judged it stale race
+ * for one rename of one entry, and only one of them gets it. A worker whose
+ * rename caught a lock somebody created after it judged the old one stale
+ * finds bytes it did not judge, and puts that lock back.
  */
 function acquire(path) {
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
       const fd = openSync(path, "wx");
-      writeSync(fd, JSON.stringify({ pid: process.pid, at: Date.now() }));
+      writeSync(fd, JSON.stringify({ pid: process.pid, at: Date.now(), nonce: randomBytes(8).toString("hex") }));
       closeSync(fd);
       return path;
     } catch (err) {
       if (err?.code !== "EEXIST") return null;
-      if (!stale(path)) return null;
+      const judged = contentOf(path);
+      if (!stale(judged)) return null;
+      const aside = `${path}.stale-${process.pid}-${randomBytes(8).toString("hex")}`;
       try {
-        unlinkSync(path);
+        renameSync(path, aside);
       } catch {
         return null;
       }
+      if (contentOf(aside) !== judged) {
+        try {
+          linkSync(aside, path);
+        } catch {
+          // Somebody holds it already; either way it is not ours.
+        }
+        release(aside);
+        return null;
+      }
+      release(aside);
     }
   }
   return null;
 }
 
-function stale(path) {
+function contentOf(path) {
+  try {
+    return readFileSync(path, "utf8");
+  } catch {
+    return null;
+  }
+}
+
+function stale(content) {
   let held;
   try {
-    held = JSON.parse(readFileSync(path, "utf8"));
+    held = JSON.parse(content);
   } catch {
     return true;
   }

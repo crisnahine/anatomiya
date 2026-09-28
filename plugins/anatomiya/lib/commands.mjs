@@ -163,10 +163,13 @@ export async function runReuse(cwd, payload) {
  * moment a re-pin looks most warranted is the moment the agent's own output is
  * largest, and a suggestion there launders it.
  */
-export async function runPin(cwd, { dryRun = false } = {}) {
+export async function runPin(cwd, { dryRun = false, expect = null } = {}) {
   const root = await gitRoot(cwd);
   const sha = await headSha(root);
   if (!sha) throw new Error("no commit to pin: this repository has no HEAD");
+  // The refresh judges a commit and then pins; a commit landing between the two
+  // would be pinned unjudged.
+  if (expect !== null && sha !== expect) throw new Error(`HEAD moved from ${expect} to ${sha} before the pin was taken`);
   // Refused by the half that plans, so a dry run cannot answer with a clean
   // delta for a write that would land outside the repository.
   pinTarget(root);

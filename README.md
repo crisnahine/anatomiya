@@ -118,12 +118,12 @@ of the main checkout taken at that moment, with nothing saying so, where the hoo
 carries its source. `docs/research/why-a-worktree-got-no-map.md` has the sources for both.
 
 The two exclude lines are everything a scan leaves behind. Four hooks are declared by the plugin, in its own
-`hooks/hooks.json`, so nothing is written into your settings. The first keeps the map current, and
-is described under [Staying current](#staying-current). One re-delivers the map after a turn or a
-tool call when the context window does not already hold that same map. The other runs before a `Write`,
-an `Edit` or a `NotebookEdit`, and speaks only for a path where a test is going into a directory whose
-kind of file has no test of its own anywhere: silent on every other write, which is nearly all of them.
-It informs and never refuses. The third runs when a turn ends, and only after a turn that added source
+`hooks/hooks.json`, so nothing is written into your settings. The refresh keeps the map current, and
+is described under [Staying current](#staying-current). The echo re-delivers the map after a turn or
+a tool call when the context window does not already hold that same map. The notice runs before a
+`Write`, an `Edit` or a `NotebookEdit`, and speaks only for a path where a test is going into a
+directory whose kind of file has no test of its own anywhere: silent on every other write, which is
+nearly all of them. It informs and never refuses. The reuse check runs when a turn ends, and only after a turn that added source
 code: it asks, once per change, for one subagent to look for an existing function the new code could
 call instead. `check` asks the same question of a whole branch, as `test_precedent`. Versions 0.2.4
 through 0.2.6 did write one into `.claude/settings.local.json`, where the plugin path it names is never
@@ -141,16 +141,23 @@ After the first `/anatomiya:scan` in a checkout, you do not run it again. At the
 session, and whenever HEAD moves (a checkout, a commit, a pull, a merge, a reset), the plugin starts
 a background refresh that rescans only when something the map depends on changed: the commit, the
 tracked files, the pin, or this plugin's version. The hook returns at once and the scan runs
-detached, so nothing waits on it. It leaves alone a checkout with no map of its own, a map committed
-to the repository, a map built with `--deep`, and a repository in the middle of a merge or rebase,
-and it keeps the previous map when a rescan fails.
+detached, so nothing waits on it. A map built with `--deep` is rebuilt with the type checker, the
+way it was built. It leaves alone a checkout with no map of its own, a map or pin committed to the
+repository, and a repository in the middle of a merge or rebase. When a rescan fails it keeps the
+previous map, and tries again after half an hour or once the checkout moves.
 
 The pin follows the same way, but only onto commits the team has already accepted: when the
-checkout sits exactly on the tip of `origin`'s default branch with nothing uncommitted, the pin moves
-forward to it. A feature branch, a commit the remote has not seen, an edited or staged file, and a
-repository with no remote never pin. `/anatomiya:pin` is still there for a repository with no
-remote, or to accept a population by hand. A branch cut before the pin does not read the files the
-default branch added since as missing.
+checkout sits exactly on the tip of `origin`'s default branch with nothing uncommitted, and that tip
+arrived by a fetch or a pull rather than by a push from this clone or a ref written by hand, the pin
+moves forward to it. A feature branch, a commit the remote has not seen, a tip this clone pushed
+itself, an edited or staged file, and a repository with no remote never pin; code you push joins the
+pin once the remote moves past it and a pull brings that back. Each automatic pin records what it
+accepted (the commits and the files that entered and left) in `.claude/anatomiya/refresh.json`. In a
+fork workflow, where `origin` is your own fork, its default branch is what the pin follows, so review
+there is what makes it accepted. `/anatomiya:pin` is still there for a repository with no remote, or
+to accept a population by hand. A branch cut before the pin does not read the files the default
+branch added since as missing, and a linked worktree with no pin of its own reads its main
+checkout's.
 
 ## What it prints
 
