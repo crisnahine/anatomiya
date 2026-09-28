@@ -374,6 +374,33 @@ test("a path with a newline or a leading dash survives the whole scan", needsPos
   assert.equal(dim.authors, 2, "git log attributed the odd paths too");
 });
 
+test("the author who wrote only the exception is not a second author of the habit", async (t) => {
+  // D4 counts authors over the files carrying the side being stated. Sixty
+  // files by one person hold every conforming site, and a second person wrote
+  // the one file that breaks the habit. Counted over every file with a site,
+  // the deviator became the second pair of hands the gate asks for, and the
+  // map stated one person's habit as the directory's convention.
+  const counterOnly = "let first = 1\nlet second = 2\nexport { first, second }\n";
+  const dir = repo(t, (d, { git, write, author }) => {
+    for (let i = 0; i < 60; i++) write(`src/m${i}.ts`, moduleSource(i));
+    git("add", "-A");
+    git("commit", "-qm", "init");
+    author("second@t.test");
+    write("src/zz.ts", counterOnly);
+    git("add", "-A");
+    git("commit", "-qm", "the exception");
+  });
+
+  const result = await scan(dir);
+  const dim = dimension(result, "src", "module_state_const");
+
+  assert.equal(result.authors.repo, 2, "the bar is two: this repository has two people in it");
+  assert.deepEqual({ candidates: dim.candidates, conforming: dim.conforming }, { candidates: 122, conforming: 120 });
+  assert.equal(dim.authors, 1, "only one person wrote a conforming site");
+  assert.equal(dim.directive, false);
+  assert.equal(dim.gate, "authors");
+});
+
 test("two scans of an unchanged repository agree", async (t) => {
   // This is what makes the overview's byte-stability claim reachable (A5).
   const dir = repo(t, (d, { git, write, author }) => {
@@ -532,7 +559,7 @@ test("a greenfield area does not state its inverse either", async (t) => {
   assert.equal(d.conforming, 0);
   assert.equal(d.counterRatio, 1);
   assert.ok(d.counterBound >= 0.9, `counter bound ${d.counterBound} clears the bar on its own`);
-  assert.equal(d.authors, 2);
+  assert.equal(d.counterAuthors, 2, "both people wrote the counter sites");
 
   assert.equal(d.states, null, "the inverse is blocked with the claim");
   assert.equal(d.directive, false);

@@ -618,6 +618,25 @@ test("a directory that only ever writes it() states the inverse of the test-call
   assert.equal(Number(d.effectiveFiles.toFixed(4)), 7.9176);
 });
 
+test("the inverse is held to the hands that wrote the inverse", () => {
+  // D4, on the counter side. Three people wrote this directory, and one of
+  // them wrote every it() call: the claim side's author count cannot vouch
+  // for a habit only the counter side's author holds.
+  const d = dim({
+    ...TEST_CALL,
+    ...spread([22, 15, 13, 9, 6, 6, 5, 5, 4, 3, 2, 2, 1, 1], Array(14).fill(0)),
+    applicability: 14, langFileCount: 14, files: paths(14),
+  });
+  const base = { repoAuthors: 3, areaFileCount: 14, areaDirCount: 1 };
+
+  const one = applyGates(d, ctx({ ...base, authors: 3, counterAuthors: 1 }));
+  assert.equal(one.states, null);
+  assert.equal(one.counterGate, "authors");
+
+  const two = applyGates(d, ctx({ ...base, authors: 0, counterAuthors: 2 }));
+  assert.equal(two.states, "counter", "and the claim side's missing hands do not close it");
+});
+
 test("the two sides can never both state, at any split of any sample size", () => {
   // There is no precedence rule to get wrong, and this proves the evaluation
   // order was never load-bearing. It also catches a counter ratio derived as

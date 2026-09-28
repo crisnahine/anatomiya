@@ -183,10 +183,14 @@ export async function scan(cwd, { guards = null, deep = false } = {}) {
 
     const gated = dims.map((d) => {
       const baselineDim = measuredArea.dims.find((b) => b.key === d.key) || null;
+      const source = baselineDim || d;
+      const toCurrent = baselineDim ? measuredArea.pinned.toCurrent : null;
       return verdictFor(d, {
         baselineDim,
         current,
-        authors: authorCount((baselineDim || d).files, authors, baselineDim ? measuredArea.pinned.toCurrent : null),
+        // Counted per side over the files carrying that side's sites (D4).
+        authors: authorCount(source.claimFiles, authors, toCurrent),
+        counterAuthors: authorCount(source.counterFiles, authors, toCurrent),
         repoAuthors,
         historyRead,
         shallow,
@@ -292,7 +296,7 @@ export async function scan(cwd, { guards = null, deep = false } = {}) {
   };
 }
 
-/** Distinct authors over the files carrying the counted sites (D4). */
+/** Distinct authors over the files carrying one side's sites (D4). */
 function authorCount(files = [], authors, toCurrent) {
   const who = new Set();
   for (const rel of files) {
