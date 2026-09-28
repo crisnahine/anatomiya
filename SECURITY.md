@@ -229,8 +229,11 @@ inside a submodule to ask whether it is dirty, under a config whose filter names
 read, and a `submodule.<name>.ignore` the repository sets cannot ask it to. A submodule whose commit
 moved is still reported. A config git will not read refuses the call rather than making it with
 nothing replaced. Measured on git 2.43 and 2.51, each against a control that shows plain git
-running the same command (`test/git.test.mjs`). The cost: a repository that installed Git LFS with
-`git lfs install --local` and not globally reads an LFS file whose stat moved as changed.
+running the same command (`test/git.test.mjs`). One set of values is left alone: the exact commands
+`git lfs install --local` writes (`git-lfs clean -- %f`, `git-lfs smudge -- %f`,
+`git-lfs filter-process`), which run the user's own installed `git-lfs` rather than a script the
+repository ships; replaced, every LFS file whose stat moved read as changed. Any other command under
+the `lfs` filter name is the repository's and is replaced like the rest.
 
 `anatomiya doctor` spawns the other one, `ruby`, to ask which version of `prism` that interpreter
 ships. It runs under the same scrub the Ruby parser child gets, with `RUBYOPT`, `RUBYLIB` and
