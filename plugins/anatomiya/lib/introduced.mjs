@@ -175,6 +175,8 @@ const isOmission = (hit) => hit.class === undefined || hit.class === null;
 function breakingSites(program, source, lang, keyPath, { polarity, frameworks, capabilities, rows, comments = [], stripped = false, rel = null, facets = null }) {
   const { sides, learned, kinds, qualified, stated, reaching = new Map() } = polarity;
   const out = [];
+  // One index of line starts per revision, built on the first site that asks.
+  const lines = lazyLines(source);
   // A tree that came back from the Flow retry has its annotations blanked, so
   // the dimensions whose question is the annotation would report a site
   // beside the line that satisfies it. The scan drops them for such a file and
@@ -206,17 +208,19 @@ function breakingSites(program, source, lang, keyPath, { polarity, frameworks, c
         : hit.conforming;
     const site = (hit) => {
       const node = hit.node || {};
-      return {
+      const found = {
         dimension: dim.key,
         claim: counter ? dim.counterClaim : dim.learnedClasses ? claimFor(dim, cls, qualified.get(dim.key)) : dim.claim,
         precision: dim.precision,
         where: hit.where || null,
-        line: located(node) ? lineAt(source, node.start) : node.line || 1,
+        line: located(node) ? lines().lineAt(node.start) : node.line || 1,
         text: sliceOf(node, source),
         // Through the exported spelling, so the identity every pin imports is
         // the one written here, at the cost of slicing the node twice.
         fp: siteIdentity(keyPath, dim.key, node, source),
       };
+      if (located(node)) contextOf.set(found, lines().around(node.start, node.end));
+      return found;
     };
     // A grouped row answers per enclosing body, so its hits are held until the
     // walk is over: one include out of two matching is the body conforming, and
@@ -276,23 +280,43 @@ function breakingSites(program, source, lang, keyPath, { polarity, frameworks, c
  * offsets and every rescue in a file is one identity, that was any rescue added
  * above a swallowing one. So a head copy whose declaration holds a base copy is
  * matched to it first, and only what is left absorbs by count.
+ *
+ * Between the two, the lines the site sits on. A function renamed below one
+ * added above it left neither copy's declaration matching the base's, and
+ * count absorbed the added one in walk order: the report named the renamed
+ * function's untouched line and said nothing about the line the branch wrote.
+ * The site's own text is the same in every copy, which is why the copies share
+ * an identity, but the lines around it are what the branch did or did not
+ * touch. Where those match too, the copies are alike and order is all there is.
  */
 function absorb(head, base) {
   const remaining = new Map();
-  const inPlace = new Map();
-  const at = (f) => `${f.fp}\0${f.where ?? ""}`;
-  for (const f of base) {
-    remaining.set(f.fp, (remaining.get(f.fp) || 0) + 1);
-    inPlace.set(at(f), (inPlace.get(at(f)) || 0) + 1);
-  }
+  for (const f of base) remaining.set(f.fp, (remaining.get(f.fp) || 0) + 1);
 
+  // A base copy one pass matched is spent for the next, or one copy could
+  // answer for two head sites and leave a copy nobody matched.
+  const spent = new Set();
   const held = new Set();
-  for (const f of head) {
-    const left = inPlace.get(at(f)) || 0;
-    if (left === 0) continue;
-    inPlace.set(at(f), left - 1);
-    remaining.set(f.fp, remaining.get(f.fp) - 1);
-    held.add(f);
+  for (const key of [
+    (f) => `${f.fp}\0${f.where ?? ""}`,
+    (f) => (contextOf.has(f) ? `${f.fp}\0${contextOf.get(f)}` : null),
+  ]) {
+    const copies = new Map();
+    for (const f of base) {
+      const k = key(f);
+      if (k === null || spent.has(f)) continue;
+      if (copies.has(k)) copies.get(k).push(f);
+      else copies.set(k, [f]);
+    }
+    for (const f of head) {
+      if (held.has(f)) continue;
+      const k = key(f);
+      const copy = k === null ? undefined : copies.get(k)?.shift();
+      if (!copy) continue;
+      spent.add(copy);
+      remaining.set(f.fp, remaining.get(f.fp) - 1);
+      held.add(f);
+    }
   }
 
   const out = [];
@@ -324,8 +348,44 @@ function fingerprint(path, key, kind, text) {
 
 const normalise = (s) => s.replace(/\s+/g, " ").trim();
 
-function lineAt(source, offset) {
-  let line = 1;
-  for (let i = 0; i < offset && i < source.length; i++) if (source[i] === "\n") line++;
-  return line;
+// The lines a located site sits on, normalised, which is what `absorb` tells
+// alike copies apart by. Beside the site rather than on it, so the record the
+// caller reads keeps the shape it had.
+const contextOf = new WeakMap();
+
+/**
+ * Where each line of one source starts, found once and searched by halving.
+ *
+ * Counted from the start of the file per site, the work grew with the square
+ * of the file: a 619 KB file holding 30,000 sites took 28 seconds. Built on
+ * the first call, so a revision with no site pays nothing.
+ */
+function lazyLines(source) {
+  let index = null;
+  return () => {
+    if (index) return index;
+    const starts = [0];
+    for (let i = source.indexOf("\n"); i !== -1; i = source.indexOf("\n", i + 1)) starts.push(i + 1);
+    // The line holding an offset: the last start at or before it. An offset
+    // past the end reads as the last line, as the count it replaces did.
+    const indexOf = (offset) => {
+      let lo = 0;
+      let hi = starts.length - 1;
+      while (lo < hi) {
+        const mid = (lo + hi + 1) >> 1;
+        if (starts[mid] <= offset) lo = mid;
+        else hi = mid - 1;
+      }
+      return lo;
+    };
+    index = {
+      lineAt: (offset) => indexOf(Math.min(offset, source.length)) + 1,
+      around: (start, end) => {
+        const last = indexOf(Math.max(start, end - 1));
+        const stop = last + 1 < starts.length ? starts[last + 1] : source.length;
+        return normalise(source.slice(starts[indexOf(start)], stop));
+      },
+    };
+    return index;
+  };
 }

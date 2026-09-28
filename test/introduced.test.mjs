@@ -148,6 +148,38 @@ test("renaming the function around a site still introduces nothing", () => {
   assert.deepEqual(only("swallowed_error", newlyIntroduced({ area: slot, path: "src/l.ts", lang: "js", head, base })), []);
 });
 
+test("a site added above a function that was renamed is the one reported, not the renamed one", () => {
+  // Neither copy's enclosing name matched the base's, so the two fell through
+  // to count, which absorbed in walk order: the report sent the reader to the
+  // renamed function's untouched line 5 and said nothing about line 2.
+  const slot = area(stated("swallowed_error"));
+  const base = revision(`export function before() {\n  try { old(); } catch (e) {}\n}\n`, { file: "f.ts" });
+  const head = revision(
+    `export function added() {\n  try { risky(); } catch (e) {}\n}\nexport function after() {\n  try { old(); } catch (e) {}\n}\n`,
+    { file: "f.ts" }
+  );
+
+  const found = only("swallowed_error", newlyIntroduced({ area: slot, path: "src/l.ts", lang: "js", head, base }));
+
+  assert.deepEqual(found.map((f) => [f.line, f.where]), [[2, "added"]]);
+});
+
+test("a file holding tens of thousands of sites is judged in time linear in its length", () => {
+  // Each site's line was counted from the start of the file, so the work grew
+  // with the square of the file: a 619 KB file of 30,000 sites took 28 seconds.
+  const n = 20000;
+  const src = Array.from({ length: n }, (_, i) => `try { g${i}(); } catch (e) {}`).join("\n") + "\n";
+  const head = revision(src, { file: "f.ts" });
+
+  const started = performance.now();
+  const found = only("swallowed_error", newlyIntroduced({ area: area(stated("swallowed_error")), path: "src/l.ts", lang: "js", head }));
+  const took = performance.now() - started;
+
+  assert.equal(found.length, n);
+  assert.deepEqual([found[0].line, found[n - 1].line], [1, n]);
+  assert.ok(took < 6000, `took ${Math.round(took)} ms`);
+});
+
 /* --- one polarity for both revisions --- */
 
 const functionStyle = rowByKey("function_style");

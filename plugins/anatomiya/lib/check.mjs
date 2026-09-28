@@ -136,6 +136,13 @@ export async function check(cwd, { baseRef = null } = {}) {
       `the diff against ${base.ref || from} could not be read, so no file was examined and this run found nothing it could look at`
     );
   }
+  if (renamesSkipped(diff.rows)) {
+    caveat(
+      caveats,
+      CAVEATS.RENAMES_SKIPPED,
+      "this branch moves more files than git will pair up, so a file moved and edited may be judged as new"
+    );
+  }
   const changed = diff.rows.filter((c) => c.status !== "D");
   // What the branch took away: no file to examine, and still a companion its
   // producer no longer has. The tree's own deletions join these below.
@@ -234,8 +241,11 @@ export async function check(cwd, { baseRef = null } = {}) {
   // What "already" means here is not what it means for the hook: a change that
   // invents a directory and fills it with four specs must not have three of
   // them excused by the first, so everything it brought is subtracted.
+  // A rename within its own directory arrives nowhere: the file was already
+  // there under another name. Counted as an arrival, it was also subtracted as
+  // one, and a directory whose only test had been renamed read as holding none.
   const arrived = examined
-    .filter((c) => c.status === "A" || (c.from && c.from !== c.path))
+    .filter((c) => c.status === "A" || (c.from && c.from !== c.path && dirname(c.from) !== dirname(c.path)))
     .map((c) => ({ path: c.path, oldPath: c.from === c.path ? null : c.from }));
   const brought = new Set(arrived.map((c) => c.path));
   // Answered from what git tracks rather than off the disk, which is the
@@ -349,6 +359,16 @@ export async function check(cwd, { baseRef = null } = {}) {
  */
 async function changedFiles(root, from) {
   const rows = [];
+  // The rename limit is set rather than inherited: past `diff.renameLimit`,
+  // 1000 by default, git skips inexact rename detection and lists each move as
+  // a deletion and an addition, and every site that came with a moved file was
+  // charged to whoever moved it. Measured with the limit at 1 and two edited
+  // moves: six findings on a branch that introduced none. Past this run's own
+  // limit the same skip is named rather than absorbed (`renamesSkipped`).
+  //
+  // Submodules are left out by git rather than filtered after: a gitlink at a
+  // source-like path has no blob to read, and the name-status listing carries
+  // no mode to tell it by.
   // Streamed: a branch off a distant base lists every path in the repository,
   // and that is the read `execFile` answers with an uncatchable `RangeError`.
   //
@@ -358,7 +378,10 @@ async function changedFiles(root, from) {
   try {
     await gitStreamed(
       root,
-      ["diff", "--find-renames", "-z", "--name-status", from, "HEAD"],
+      [
+        "-c", `diff.renameLimit=${RENAME_LIMIT}`,
+        "diff", "--find-renames", "--ignore-submodules=all", "-z", "--name-status", from, "HEAD",
+      ],
       nameStatusReader((row) => {
         rows.push(namedRow(row));
         return true;
@@ -372,6 +395,26 @@ async function changedFiles(root, from) {
     return { ok: false, rows: [] };
   }
   return { ok: true, rows };
+}
+
+// Git's own default for a merge, which it chose as the size an exhaustive
+// rename pass is still worth paying for; a diff's default is 1000. Past it the
+// check's clock bounds the cost, and a diff that runs out of it is reported as
+// unread rather than as a branch that changed nothing.
+const RENAME_LIMIT = 7000;
+
+/**
+ * Whether git will have skipped inexact rename detection on this diff.
+ *
+ * Git's own test, over what it left unpaired: it gives up when the additions
+ * times the deletions exceeds the limit squared, and whatever it skipped is
+ * still unpaired afterwards, so the rows it answered with are enough to ask.
+ * Git says so on stderr, which a streamed read that succeeded does not keep.
+ */
+export function renamesSkipped(rows, limit = RENAME_LIMIT) {
+  const added = rows.filter((r) => r.status === "A").length;
+  const deleted = rows.filter((r) => r.status === "D").length;
+  return added * deleted > limit * limit;
 }
 
 /**
@@ -424,6 +467,11 @@ async function storedOrCollected(root, facts, field, derive, caveats, code, refu
  * judge a branch against different commits. Only the shallow fetch is the
  * check's own.
  *
+ * `sha` is the base ref's own tip and `mergeBase` the fork point, on every
+ * path: a full clone used to report the fork point as `sha` and a shallow fetch
+ * the tip, so the header's `base main (3a5340c)` named a commit that was not
+ * main whenever main had moved on.
+ *
  * Measured: on a shallow clone `origin/main` does not exist at all, and after
  * fetching it `merge-base` exits 1 with empty stdout and no stderr, so the
  * empty string is the signal rather than the exit code. Fetching the single
@@ -434,6 +482,7 @@ async function storedOrCollected(root, facts, field, derive, caveats, code, refu
 async function resolveBase(root, baseRef, caveats) {
   const candidates = (baseRef ? [baseRef] : BASE_REFS).filter((c) => c && !c.startsWith("-"));
   const shallow = (await git(root, ["rev-parse", "--is-shallow-repository"])).out.trim() === "true";
+  const head = (await git(root, ["rev-parse", "--verify", "--quiet", "HEAD^{commit}"])).out.trim();
   // A ref somebody typed and a candidate this tool guessed are different
   // questions. The guessed list not resolving is a repository that keeps its
   // trunk somewhere else, which is what the added-lines degradation is for; a
@@ -442,23 +491,54 @@ async function resolveBase(root, baseRef, caveats) {
   // trust as "nothing to report".
   // A repository with no commits has no ref to mistype against, and answering
   // "nothing was examined" is the truth about it rather than a degradation.
-  const asked = baseRef !== null && (await git(root, ["rev-parse", "--verify", "--quiet", "HEAD"])).out.trim() !== "";
+  const asked = baseRef !== null && head !== "";
   // Asked before anything is fetched. A remote holding a branch literally named
   // `HEAD` would otherwise be fetched and used as the base, which is the one
   // thing E6 refuses, and the refusal would arrive as a story about fetching.
   if (asked && (baseRef === "HEAD" || baseRef === "@")) throw new Error(refusal(baseRef, shallow));
+  // Every other spelling of the same commit is refused by the commit it names,
+  // once it has one: `HEAD~0` or the branch's own name compared the branch with
+  // itself and printed a clean report at exit 0. Another branch at the same
+  // commit is still a base, and so is the commit named by its id: either is
+  // what a fresh branch holding only uncommitted work is checked against, and
+  // neither is a name for this branch. An expression that walks to HEAD's
+  // commit is a way of spelling HEAD and is refused. The branch's own name is
+  // refused where the base the check would pick unasked is somewhere else,
+  // which is a branch with commits of its own being compared with itself; on
+  // the trunk, with uncommitted work, it names the base the check would have
+  // picked anyway.
+  const ownTip = async (sha) => {
+    if (!asked || sha !== head || /^[0-9a-f]{4,64}$/i.test(baseRef)) return;
+    const named = (await git(root, ["rev-parse", "--symbolic-full-name", baseRef])).out.trim();
+    const own = (await git(root, ["rev-parse", "--symbolic-full-name", "HEAD"])).out.trim();
+    if (named !== "" && named !== own) return;
+    if (named === own) {
+      const unasked = await resolveBaseRef(root);
+      if (unasked.ok && unasked.sha === head) return;
+    }
+    throw new Error(refusal(baseRef, shallow, { own: true }));
+  };
 
+  // A shallow clone can hold the base ref and still reach no merge base: a
+  // `--no-single-branch` clone or a `fetch --depth=1 origin main` grafts both
+  // tips as roots. Taken as it stood, that went to the degraded modes without
+  // the parent rescue below, which only the fetch path asked.
+  let held = null;
   for (const c of candidates) {
     const r = await resolveBaseRef(root, c);
     if (!r.ok) continue;
-    if (!r.forkPoint) caveat(caveats, CAVEATS.NO_MERGE_BASE, `no merge base between ${c} and HEAD`);
-    return {
-      ref: c,
-      sha: r.sha,
-      mergeBase: r.forkPoint ? r.sha : null,
-      shallow,
-      boundary: r.forkPoint ? null : await boundary(root),
-    };
+    const tip = (await git(root, ["rev-parse", "--verify", "--quiet", `${c}^{commit}`])).out.trim() || r.sha;
+    await ownTip(tip);
+    const fork = r.forkPoint ? r.sha : shallow && (await recordedParents(root)).includes(tip) ? tip : null;
+    if (fork || !shallow) {
+      if (!fork) caveat(caveats, CAVEATS.NO_MERGE_BASE, `no merge base between ${c} and HEAD`);
+      return { ref: c, sha: tip, mergeBase: fork, shallow, boundary: fork ? null : await boundary(root) };
+    }
+    // The remote's tip may have moved past the one this clone holds, and the
+    // commit a pull request's merge names is the current one, so the fetch
+    // below is still worth asking before settling for no history.
+    held = { ref: c, sha: tip };
+    break;
   }
 
   if (shallow) {
@@ -474,17 +554,7 @@ async function resolveBase(root, baseRef, caveats) {
       // HEAD: on a pull request's merge ref, which is what the default CI
       // checkout holds, the first parent is the base branch's tip.
       const fork = mb.found ? mb.sha : (await recordedParents(root)).includes(remote) ? remote : null;
-      // Deepening until one appears is not offered (see above), so the way out
-      // is named instead: at depth one the oldest commit held is HEAD, and the
-      // run that follows examines nothing.
-      if (!fork) {
-        caveat(
-          caveats,
-          CAVEATS.SHALLOW_NO_HISTORY,
-          "shallow clone: the base commit is present but shares no held history with HEAD; " +
-            "fetch the history to compare (fetch-depth: 0 on actions/checkout)"
-        );
-      }
+      if (!fork) shallowNoHistory(caveats);
       return {
         ref: c,
         sha: remote,
@@ -492,6 +562,10 @@ async function resolveBase(root, baseRef, caveats) {
         shallow,
         boundary: fork ? null : await boundary(root),
       };
+    }
+    if (held) {
+      shallowNoHistory(caveats);
+      return { ...held, mergeBase: null, shallow, boundary: await boundary(root) };
     }
     if (asked) throw new Error(refusal(baseRef, shallow));
     caveat(caveats, CAVEATS.SHALLOW_UNFETCHED, "shallow clone and the base commit could not be fetched");
@@ -506,27 +580,52 @@ async function resolveBase(root, baseRef, caveats) {
 }
 
 /**
+ * Deepening until a merge base appears is not offered (see above), so the way
+ * out is named instead: at depth one the oldest commit held is HEAD, and the
+ * run that follows examines nothing.
+ */
+function shallowNoHistory(caveats) {
+  caveat(
+    caveats,
+    CAVEATS.SHALLOW_NO_HISTORY,
+    "shallow clone: the base commit is present but shares no held history with HEAD; " +
+      "fetch the history to compare (fetch-depth: 0 on actions/checkout)"
+  );
+}
+
+/**
  * Why a ref somebody typed cannot be the base, in the terms of what they typed.
  *
  * `HEAD` and `@` resolve locally in every repository that has a commit, so
  * reporting them as a base a shallow clone could not fetch names a cause that
  * is not the reason and a fix that would not work. They are refused for what
  * they are: this branch's own tip, over which the branch's own edits count as
- * map drift (E6).
+ * map drift (E6). So is any other spelling that resolves to the same commit.
  */
-function refusal(ref, shallow) {
-  if (ref === "HEAD" || ref === "@") {
+function refusal(ref, shallow, { own = false } = {}) {
+  if (own || ref === "HEAD" || ref === "@") {
     return `--base ${ref} names this branch's own tip, so there is nothing to compare against`;
   }
   const fetched = shallow ? ", and this shallow clone could not fetch it" : "";
   return `--base ${ref} resolves to no commit in this repository${fetched}`;
 }
 
+/**
+ * The commit the remote holds under a candidate's name. `origin/HEAD` is the
+ * remote's own `HEAD`, the symref naming its default branch: asked as
+ * `refs/heads/HEAD`, a branch no remote holds, a trunk named anything but main
+ * or master resolved no base at all. The listing is read by exact name,
+ * because `ls-remote` matches a pattern against the tail of every ref.
+ */
 async function remoteSha(root, ref) {
   const branch = ref.replace(/^origin\//, "");
-  const ls = await git(root, ["ls-remote", "origin", `refs/heads/${branch}`]);
-  const m = /^([0-9a-f]+)\s/.exec(ls.out.trim() + "\n");
-  return m && isSha(m[1]) ? m[1] : null;
+  const wanted = branch === "HEAD" ? "HEAD" : `refs/heads/${branch}`;
+  const ls = await git(root, ["ls-remote", "origin", wanted]);
+  for (const line of ls.out.split("\n")) {
+    const [sha, name] = line.split("\t");
+    if (name === wanted && isSha(sha)) return sha;
+  }
+  return null;
 }
 
 /**
@@ -558,7 +657,7 @@ async function boundary(root) {
 
 export async function addedRanges(root, from, to = "HEAD", { timeout } = {}) {
   const r = await git(root, [
-    "-c", "core.quotePath=false",
+    "-c", "core.quotePath=false", "-c", `diff.renameLimit=${RENAME_LIMIT}`,
     // A repository's own config can name a diff driver, a text conversion, a
     // colour or a prefix: a command git would run, or output this cannot read.
     "diff", "--no-ext-diff", "--no-textconv", "--no-color", "--src-prefix=a/", "--dst-prefix=b/",
@@ -1219,9 +1318,11 @@ async function staleness(root, facts, base, unreadable = null) {
   // Named by the commit this run resolved rather than by the ref's name: on a
   // shallow clone the base is fetched by sha and no ref names it, so reading
   // the name again capped every finding under "cannot resolve origin/main".
-  // Elsewhere that commit is already the fork point, whose own fork point with
-  // HEAD is itself, so the drift range is the one the name would have given.
-  const state = await resolveBaseline(root, { baseRef: base.sha });
+  // The fork point where there is one, handed over explicitly now that `sha` is
+  // the ref's tip: its own fork point with HEAD is itself, including on a
+  // depth-1 clone where `merge-base` cannot see it, so the drift range is the
+  // one the name would have given.
+  const state = await resolveBaseline(root, { baseRef: base.mergeBase ?? base.sha });
   if (state.status === "unpinned") return { reason: "no baseline pinned" };
   if (state.status === "pin-unreadable") return { reason: `the pin on disk could not be read because ${state.unreadable}` };
   if (state.status === "unreachable") return { reason: "the pinned baseline commit is unreachable" };
@@ -1317,10 +1418,21 @@ export async function pendingPaths(root, { timeout } = {}) {
   // diff asks with `--find-renames`: `status` follows `status.renames`, which
   // defaults to `diff.renames`, and a user who turned that off for speed had a
   // `git mv` read as a deletion and an addition, every site that came with the
-  // file charged to whoever moved it.
-  const r = await git(root, ["-c", "status.renames=true", "status", "--porcelain", "-uall", "-z"], GIT.checkMaxBytes, timeout);
+  // file charged to whoever moved it. The limit is the diff's, for the same
+  // reason, and a submodule is left out the way the diff leaves it out.
+  const r = await git(
+    root,
+    ["-c", "status.renames=true", "-c", `status.renameLimit=${RENAME_LIMIT}`, "status", "--porcelain", "-uall", "--ignore-submodules=all", "-z"],
+    GIT.checkMaxBytes,
+    timeout
+  );
   if (!r.ok) return null;
-  const rows = parsePorcelainRows(r.out).filter((row) => isCorpusPath(row.path));
+  // The old path of a move is read before the corpus filter, which asks about
+  // the new one: `git mv thing_spec.rb thing_spec.rb.bak` took the spec's own
+  // path out with the row, and a companion moved away in the tree still
+  // satisfied its producer, where the same move committed was reported.
+  const all = parsePorcelainRows(r.out);
+  const rows = all.filter((row) => isCorpusPath(row.path));
   const gone = (row) => row.x === "D" || row.y === "D";
   // Untracked, or added to the index: there is no committed version to compare
   // against, which is what an addition is. `git add -N` writes its letter in
@@ -1346,7 +1458,7 @@ export async function pendingPaths(root, { timeout } = {}) {
     // that path is taken from `orig` rather than from the status letters.
     deleted: [
       ...rows.filter(gone).map((row) => row.path),
-      ...rows.map((row) => row.orig).filter((path) => path !== null && isCorpusPath(path)),
+      ...all.map((row) => row.orig).filter((path) => path != null && isCorpusPath(path)),
     ],
   };
 }
@@ -1477,4 +1589,3 @@ function tally(findings) {
   for (const f of findings) counts[f.severity]++;
   return counts;
 }
-

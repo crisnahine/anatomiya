@@ -67,6 +67,9 @@ const FLAGS = new Set([
   "--depth=1",
   "--exclude-standard",
   "--find-renames",
+  // A submodule is a commit, not a file: the check listed one at a source-like
+  // path and reported it as a file it could not read at HEAD.
+  "--ignore-submodules=all",
   "--format",
   "--get",
   "--is-shallow-repository",

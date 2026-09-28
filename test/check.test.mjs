@@ -11,7 +11,7 @@ import { installWithoutStripper, FLOW_SOURCE } from "./no-stripper.mjs";
 import { addWorktree, git, scratch } from "./git-worktrees.mjs";
 
 import { needsRuby } from "./ruby-available.mjs";
-import { check, severityFor, unreadReason, unreadCode } from "../plugins/anatomiya/lib/check.mjs";
+import { check, renamesSkipped, severityFor, unreadReason, unreadCode } from "../plugins/anatomiya/lib/check.mjs";
 import { formatReport, formatReportJson, CAVEATS } from "../plugins/anatomiya/lib/check-report.mjs";
 import { scan } from "../plugins/anatomiya/lib/scan.mjs";
 import { writeMap } from "../plugins/anatomiya/lib/write.mjs";
@@ -4236,7 +4236,7 @@ test("a name spelling no class is an omission too, so it needs a stated claim", 
  * A depth-1 clone of a repository with history, which is what CI checks out,
  * or a window as deep as a case needs.
  */
-function shallowClone(t, build, { depth = 1 } = {}) {
+function shallowClone(t, build, { depth = 1, args = [] } = {}) {
   const outer = mkdtempSync(join(tmpdir(), "anatomiya-shallow-"));
   t.after(() => rmSync(outer, { recursive: true, force: true }));
   const origin = join(outer, "origin");
@@ -4261,7 +4261,7 @@ function shallowClone(t, build, { depth = 1 } = {}) {
   });
 
   const clone = join(outer, "clone");
-  execFileSync("git", ["clone", "-q", `--depth=${depth}`, `file://${origin}`, clone], { stdio: "pipe" });
+  execFileSync("git", ["clone", "-q", `--depth=${depth}`, ...args, `file://${origin}`, clone], { stdio: "pipe" });
   return clone;
 }
 
@@ -4327,7 +4327,7 @@ test("a shallow clone with no base named still degrades rather than refusing", a
  * first parent is the base branch's tip, and the clone holds neither parent.
  * The build leaves the branch under review as `feat`, off `main`.
  */
-function mergeRefCheckout(t, build) {
+function mergeRefCheckout(t, build, { trunk = "main" } = {}) {
   const outer = mkdtempSync(join(tmpdir(), "anatomiya-mergeref-"));
   t.after(() => rmSync(outer, { recursive: true, force: true }));
   const origin = join(outer, "origin");
@@ -4336,7 +4336,7 @@ function mergeRefCheckout(t, build) {
   git(origin, "init", "-q");
   git(origin, "config", "user.email", "t@t.test");
   git(origin, "config", "user.name", "T");
-  git(origin, "checkout", "-q", "-b", "main");
+  git(origin, "checkout", "-q", "-b", trunk);
   build({
     write: (rel, body) => {
       const abs = join(origin, rel);
@@ -4349,10 +4349,10 @@ function mergeRefCheckout(t, build) {
     },
     git: (...a) => git(origin, ...a),
   });
-  git(origin, "checkout", "-q", "--detach", "main");
+  git(origin, "checkout", "-q", "--detach", trunk);
   git(origin, "merge", "-q", "--no-ff", "feat", "-m", "Merge pull request #1");
   git(origin, "update-ref", "refs/pull/1/merge", "HEAD");
-  git(origin, "checkout", "-q", "main");
+  git(origin, "checkout", "-q", trunk);
 
   const clone = join(outer, "clone");
   mkdirSync(clone);
@@ -4360,7 +4360,7 @@ function mergeRefCheckout(t, build) {
   git(clone, "remote", "add", "origin", `file://${origin}`);
   git(clone, "fetch", "-q", "--no-tags", "--depth=1", "origin", "+refs/pull/1/merge:refs/remotes/pull/1/merge");
   git(clone, "checkout", "-q", "--force", "refs/remotes/pull/1/merge");
-  return { clone, base: execFileSync("git", ["rev-parse", "main"], { cwd: origin, encoding: "utf8" }).trim() };
+  return { clone, base: execFileSync("git", ["rev-parse", trunk], { cwd: origin, encoding: "utf8" }).trim() };
 }
 
 test("a base fetched into a shallow clone is the base its staleness is measured against", async (t) => {
@@ -4502,4 +4502,209 @@ test("a blobless partial clone reads the merge base from its promisor rather tha
 
   assert.ok(!notes(report).some((n) => /at the merge base|could not be read/.test(n)), notes(report).join("\n"));
   assert.ok(report.findings.some((f) => f.path === "src/f0.ts"), "the changed file was judged against its base");
+});
+
+test("a shallow clone that already holds the base ref still finds the base its merge commit names", async (t) => {
+  // `--no-single-branch` holds every branch at depth one, so `origin/main`
+  // resolves locally and the fetch path never ran: that path is the only one
+  // that asked HEAD's own commit for its parents, and the run examined nothing.
+  const dir = shallowClone(t, ({ write, commit, git }) => {
+    write("src/a.ts", clean(2));
+    commit("init");
+    git("checkout", "-q", "-b", "feat");
+    write("src/a.ts", clean(2) + swallow(1));
+    commit("swallow");
+    // The remote's own HEAD back on main, so `origin/HEAD` names main.
+    git("checkout", "-q", "main");
+  }, { args: ["--no-single-branch", "--branch", "feat"] });
+  const main = sha(dir, "origin/main");
+  facts(dir, { sha: main });
+
+  const r = await check(dir);
+
+  assert.equal(r.mode, "compare", JSON.stringify(notes(r)));
+  assert.equal(r.base.mergeBase, main);
+  assert.deepEqual(forKey(r, "swallowed_error").map((f) => [f.path, f.line]), [["src/a.ts", 3]]);
+});
+
+test("a shallow clone holding a base ref that shares no held history names the fetch that would", async (t) => {
+  const dir = shallowClone(t, ({ write, commit, git }) => {
+    write("src/a.ts", clean(2));
+    commit("init");
+    git("checkout", "-q", "-b", "feat");
+    write("src/a.ts", clean(2) + swallow(1));
+    commit("swallow");
+    write("src/a.ts", clean(2) + swallow(2));
+    commit("swallow again");
+    // The remote's own HEAD back on main, so `origin/HEAD` names main.
+    git("checkout", "-q", "main");
+  }, { args: ["--no-single-branch", "--branch", "feat"] });
+
+  const r = await check(dir);
+
+  assert.equal(r.mode, "none");
+  const said = r.caveats.find((c) => c.code === CAVEATS.SHALLOW_NO_HISTORY);
+  assert.match(said?.message ?? "", /fetch-depth: 0/, JSON.stringify(r.caveats));
+});
+
+test("a pull request checkout off a remote whose default branch is not main finds that branch", async (t) => {
+  // `origin/HEAD` was asked of the remote as `refs/heads/HEAD`, a branch no
+  // remote holds, so a trunk named anything but main or master resolved no base.
+  const { clone, base } = mergeRefCheckout(t, ({ write, commit, git }) => {
+    write("src/a.ts", clean(2));
+    commit("init");
+    git("checkout", "-q", "-b", "feat");
+    write("src/a.ts", clean(2) + swallow(1));
+    commit("swallow");
+  }, { trunk: "trunk" });
+  facts(clone, { sha: base });
+
+  const r = await check(clone);
+
+  assert.equal(r.base.ref, "origin/HEAD", JSON.stringify(notes(r)));
+  assert.equal(r.mode, "compare", JSON.stringify(notes(r)));
+  assert.equal(r.base.mergeBase, base);
+});
+
+test("a base spelled any way that names this branch's own tip is refused, not answered clean", async (t) => {
+  // Only the literal `HEAD` and `@` were refused. `HEAD~0` or the branch's own
+  // name is the same commit, and the run compared the branch with itself and
+  // printed a clean report at exit 0 (E6).
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/a.ts", clean(2));
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/a.ts", clean(2) + swallow(1));
+    commit("swallow");
+  });
+  facts(dir, { sha: sha(dir, "main") });
+
+  for (const ref of ["HEAD~0", "@~0", "work", "refs/heads/work", "work~0"]) {
+    await assert.rejects(
+      () => check(dir, { baseRef: ref }),
+      (err) => {
+        assert.match(err.message, /own tip/, err.message);
+        return true;
+      },
+      ref
+    );
+  }
+  // The control: another branch at the same commit, or the commit by its id,
+  // is what a branch holding only uncommitted work is checked against.
+  execFileSync("git", ["branch", "same"], { cwd: dir, stdio: "pipe" });
+  for (const ref of ["same", sha(dir)]) {
+    assert.equal((await check(dir, { baseRef: ref })).mode, "compare", ref);
+  }
+});
+
+test("a companion moved out of the corpus in the tree no longer satisfies the obligation", async (t) => {
+  // The rows were filtered by the corpus before their old paths were read, so
+  // a move to a name the corpus does not count took the old path with it:
+  // committed, the missing spec was reported, and uncommitted it was not.
+  const dir = pairedModels(t, ({ git }) => git("mv", "spec/models/thing_spec.rb", "spec/models/thing_spec.rb.bak"));
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.deepEqual(forKey(r, "model_spec").map((f) => f.path), ["app/models/thing.rb"]);
+});
+
+test("a test renamed within its own directory arrives nowhere new", needsRuby, async (t) => {
+  // The rename counted as the file arriving, and the directory's only test was
+  // the one that moved, so the directory read as holding none.
+  const dir = await railsish(t);
+  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
+  mkdirSync(join(dir, "spec/mailers"), { recursive: true });
+  writeFileSync(join(dir, "spec/mailers/admin_mailer_spec.rb"), "RSpec.describe Admin do\nend\n");
+  git("add", "-A");
+  git("commit", "-qm", "first spec");
+  const base = sha(dir);
+
+  git("mv", "spec/mailers/admin_mailer_spec.rb", "spec/mailers/admins_mailer_spec.rb");
+  git("commit", "-qm", "rename");
+
+  assert.deepEqual(forKey(await check(dir, { baseRef: base }), "test_precedent"), []);
+});
+
+test("the base named is the ref's own tip, and the fork point is the merge base beside it", async (t) => {
+  // On a full clone `sha` was the fork point and on a shallow fetch it was the
+  // remote tip, so the header's `base main (3a5340c)` named a commit that was
+  // not main whenever main had moved on.
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/a.ts", clean(2));
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/a.ts", clean(2) + swallow(1));
+    commit("swallow");
+    git("checkout", "-q", "main");
+    write("src/b.ts", clean(1));
+    commit("main moves on");
+    git("checkout", "-q", "work");
+  });
+  const fork = sha(dir, "main~1");
+  facts(dir, { sha: fork });
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.equal(r.base.sha, sha(dir, "main"));
+  assert.equal(r.base.mergeBase, fork);
+  assert.equal(r.staleReason, null);
+  assert.match(formatReport(r), new RegExp(`base main \\(${sha(dir, "main").slice(0, 7)}\\)`));
+});
+
+test("a submodule whose path looks like source is not read as a file", async (t) => {
+  // A gitlink has no blob at HEAD, so `src/lib/sub.ts` was reported as a file
+  // this run could not read.
+  const dir = repo(t, ({ dir: root, git, write, commit }) => {
+    write("src/a.ts", clean(2));
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    git("update-index", "--add", "--cacheinfo", `160000,${sha(root)},src/lib/sub.ts`);
+    git("commit", "-qm", "a submodule");
+    // Where a clone leaves a submodule nobody initialised: an empty directory.
+    // Missing altogether, the path reads as deleted in the tree and never
+    // reaches the read.
+    mkdirSync(join(root, "src/lib/sub.ts"), { recursive: true });
+  });
+  facts(dir, { sha: sha(dir, "main") });
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.equal(r.mode, "compare");
+  assert.deepEqual(notes(r).filter((n) => n.includes("sub.ts")), [], JSON.stringify(notes(r)));
+  assert.ok(!r.examined.some((c) => c.path === "src/lib/sub.ts"));
+});
+
+test("a branch past the configured rename limit still reads its moves as moves", async (t) => {
+  // Past `diff.renameLimit` git skips inexact rename detection and lists each
+  // move as a deletion and an addition, and every site that came with the file
+  // was charged to whoever moved it.
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/a.ts", swallow(3) + "// a\n");
+    write("src/b.ts", swallow(3) + "// b\n");
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    git("config", "diff.renameLimit", "1");
+    git("mv", "src/a.ts", "src/x.ts");
+    git("mv", "src/b.ts", "src/y.ts");
+    write("src/x.ts", swallow(3) + "// a, moved\n");
+    write("src/y.ts", swallow(3) + "// b, moved\n");
+    commit("move both");
+  });
+  facts(dir, { sha: sha(dir, "main") });
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.deepEqual(r.examined.map((c) => [c.path, c.from]), [["src/x.ts", "src/a.ts"], ["src/y.ts", "src/b.ts"]]);
+  assert.deepEqual(forKey(r, "swallowed_error"), []);
+});
+
+test("rename detection git skipped past the limit this run set is said, not charged silently", () => {
+  const rows = (adds, dels) => [
+    ...Array.from({ length: adds }, (_, i) => ({ status: "A", path: `n${i}.ts`, from: null })),
+    ...Array.from({ length: dels }, (_, i) => ({ status: "D", path: `o${i}.ts`, from: `o${i}.ts` })),
+    { status: "R", path: "r.ts", from: "q.ts" },
+  ];
+  assert.equal(renamesSkipped(rows(2, 2), 1), true);
+  assert.equal(renamesSkipped(rows(1, 1), 1), false);
+  assert.equal(renamesSkipped(rows(5, 0), 1), false, "nothing deleted is nothing to pair");
 });

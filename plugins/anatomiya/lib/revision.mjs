@@ -41,8 +41,9 @@ export async function readAtRevision(root, sha, files, { withSource = false, tim
   // The directory exists before anything that can fail, so a throw past this
   // point is one nobody disposes: the caller has no handle on it yet.
   try {
+    const placed = placements(dir, files);
     await pooled(files, READERS, async (f) => {
-      const abs = underTemp(dir, f?.rel);
+      const abs = placed.get(f) ?? null;
       if (!abs) return void missing.push({ rel: f?.rel ?? null, reason: "unsafe path" });
 
       const blob = await showBlob(root, sha, f.rel, bounds);
@@ -72,6 +73,34 @@ export async function readAtRevision(root, sha, files, { withSource = false, tim
   // and nothing downstream should read anything into it.
   out.sort((a, b) => byCode(a.rel, b.rel));
   return { dir, files: out, missing, dispose };
+}
+
+/**
+ * Where each file is written, decided before any is, in the order asked.
+ *
+ * At its own path under the temporary root, except where that path folds to
+ * one already taken: on a case-insensitive filesystem `src/Foo.ts` and
+ * `src/foo.ts` are one file there, and the second blob written replaced the
+ * first, so one of the two was parsed with the other's contents. A later one
+ * goes under a numbered directory of its own, with its path, and so its name
+ * and the extension that picks the grammar, kept whole beneath it. That
+ * directory sits under `.git`, a name git never tracks a path through, so no
+ * file asked for can have been meant to sit there.
+ */
+function placements(dir, files) {
+  const taken = new Set();
+  const placed = new Map();
+  for (const f of files) {
+    const rel = f?.rel;
+    if (typeof rel !== "string") continue;
+    let at = rel;
+    for (let n = 1; taken.has(at.toLowerCase()); n++) at = `.git/case/${n}/${rel}`;
+    taken.add(at.toLowerCase());
+    // The containment is asked of the path as it was given, so a rel that
+    // escapes is refused wherever a collision would have put it.
+    if (underTemp(dir, rel)) placed.set(f, underTemp(dir, at));
+  }
+  return placed;
 }
 
 // Lexical containment only. The destination is a directory this process just
