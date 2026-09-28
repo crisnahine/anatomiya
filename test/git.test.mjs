@@ -47,10 +47,10 @@ function scratch(t, prefix) {
   return dir;
 }
 
-function repo(t) {
+function repo(t, env) {
   const dir = scratch(t, "anatomiya-git-");
 
-  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
+  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe", env });
   git("init", "-q");
   git("config", "user.email", "t@t.test");
   git("config", "user.name", "T");
@@ -697,8 +697,12 @@ test("Git LFS installed for this repository alone still runs, and nothing else u
   // They run the user's own installed `git-lfs`, not a script the repository
   // ships, and replacing them made every LFS file whose stat moved read as
   // changed, so `pin` refused a clean tree.
-  const { dir, git } = repo(t);
   const bin = scratch(t, "anatomiya-git-lfs-bin-");
+  // A host that ran `git lfs install` (the macOS runners do) names the real
+  // `git-lfs filter-process` globally, which the stand-in cannot answer.
+  writeFileSync(join(bin, "gitconfig"), "");
+  const isolated = { GIT_CONFIG_GLOBAL: join(bin, "gitconfig"), GIT_CONFIG_NOSYSTEM: "1" };
+  const { dir, git } = repo(t, plainEnv(isolated));
   const marker = join(bin, "ran-lfs");
   writeFileSync(join(bin, "git-lfs"), `#!/bin/sh\ntouch '${marker}'\ncat\n`);
   chmodSync(join(bin, "git-lfs"), 0o755);
@@ -711,7 +715,7 @@ test("Git LFS installed for this repository alone still runs, and nothing else u
   git("config", "filter.lfs.clean", "git-lfs clean -- %f");
   git("config", "filter.lfs.smudge", "git-lfs smudge -- %f");
   git("config", "filter.lfs.required", "true");
-  const env = plainEnv({ PATH: `${bin}:${process.env.PATH}` });
+  const env = plainEnv({ ...isolated, PATH: `${bin}:${process.env.PATH}` });
 
   touchBack(join(dir, "a.bin"));
   const r = await gitBuffered(dir, ["status", "--porcelain", "-z"], { env });
@@ -721,7 +725,7 @@ test("Git LFS installed for this repository alone still runs, and nothing else u
 
   // The same filter name with a command of the repository's own is not LFS.
   // Another repository, since a process reads each one's config once.
-  const other = repo(t);
+  const other = repo(t, plainEnv(isolated));
   writeFileSync(join(other.dir, ".gitattributes"), "*.bin filter=lfs -text\n");
   writeFileSync(join(other.dir, "a.bin"), "payload\n");
   other.git("add", "-A");
