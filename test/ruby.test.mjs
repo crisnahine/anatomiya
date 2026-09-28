@@ -585,6 +585,13 @@ const SRC = {
       Time.zone.parse("2026-08-20")
     end
   `,
+  time_unzoned_built: `
+    def go
+      Time.local(2026, 8, 20)
+      Time.parse("2026-08-20")
+      Time.at(1_786_000_000)
+    end
+  `,
   service_rollback: `
     class Charge
       def call
@@ -1316,6 +1323,14 @@ test("a time built through the app zone conforms, however it is built", needsRub
   // Without this a repository that builds its times the right way reads as
   // having no conforming construction at all.
   assert.deepEqual(counts("zone_aware_time", "time_zone_built"), { candidates: 2, conforming: 2 });
+});
+
+test("a time built past the app zone is the violation its zoned twin conforms against", needsRuby, () => {
+  // Measured: twenty files calling Time.zone.parse and Time.zone.at beside
+  // twenty calling Time.parse and Time.at read as 40 of 40 through the
+  // application zone, on a row declared precise. Counting only the conforming
+  // half of a pair makes the claim unfalsifiable in the one place it bites.
+  assert.deepEqual(counts("zone_aware_time", "time_unzoned_built"), { candidates: 3, conforming: 0 });
 });
 
 /* --- service_result_shape does not read a rollback as a raised failure (#74c) --- */
