@@ -21,7 +21,7 @@ import { fileURLToPath } from "node:url";
 import { absentInterpreter } from "./child.mjs";
 import { firstLine } from "./encode.mjs";
 import { ENGINES } from "./langs.mjs";
-import { prismLoadArgs, rubyEnv } from "./ruby.mjs";
+import { prismLoadArgs, prismVersionArgs, rubyEnv } from "./ruby.mjs";
 import { loadTypeScript } from "./semantic.mjs";
 import { olderThan } from "./version.mjs";
 
@@ -86,7 +86,7 @@ export const NODE_PROBE_IDS = Object.freeze(PROBE_IDS.filter((id) => PROBES[id].
 // installs to ask: the same load path the parser is handed, so the answer is
 // about the library that will parse. The argv belongs to the engine rather than
 // to its interpreter, so a second one adds a row here instead of a branch below.
-const ASK_VERSION = { prism: (load) => ["--disable-gems", ...load, "-rprism", "-e", "print Prism::VERSION"] };
+const ASK_VERSION = { prism: prismVersionArgs };
 const LOAD_ARGS = { prism: prismLoadArgs };
 
 // The phrase the node remedy spells in the directory for. The table states it

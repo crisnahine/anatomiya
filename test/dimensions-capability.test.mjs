@@ -152,6 +152,23 @@ test("a stylesheet or a data file whose name says settings is not the config mod
   assert.deepEqual(r, { candidates: 1, conforming: 0 }, "only the process.env read is a site");
 });
 
+test("a config module named the Angular and NestJS way is still the config module", () => {
+  // `import_extension` learned that a dotted suffix is as often part of a
+  // source file's stem (`config.service.ts`, `env.constants.ts`) as an asset's
+  // extension; this row kept the old rule and dropped the wrapper those
+  // repositories route every environment read through. A `?raw` import is a
+  // string, not the module its name says.
+  const r = counts("route_env", `
+    import { cfg } from "./config.service";
+    import { env } from "./env.constants";
+    import raw from "./settings.ts?raw";
+    const a = cfg.apiUrl;
+    const b = env.port;
+    const c = raw.length;
+  `);
+  assert.deepEqual(r, { candidates: 2, conforming: 2 });
+});
+
 test("a destructuring read off process.env is a direct site per name", () => {
   const r = counts("route_env", `const { PORT, HOST } = process.env;`);
   assert.deepEqual(r, { candidates: 2, conforming: 0 });

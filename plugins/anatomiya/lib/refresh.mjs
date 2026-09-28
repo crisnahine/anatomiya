@@ -30,10 +30,10 @@ import { basename, isAbsolute, join, resolve } from "node:path";
 import { loadPin, PIN_PATH } from "./baseline.mjs";
 import { runPin, runScan } from "./commands.mjs";
 import { atomic, FACTS_PATH, readFacts, readRecord } from "./facts.mjs";
-import { BASE_REFS, gitBuffered, gitStreamed, headSha } from "./git.mjs";
+import { BASE_REFS, gitBuffered, gitStreamed, headSha, UNFINISHED_OPERATIONS } from "./git.mjs";
 import { ownLayout } from "./hook.mjs";
 import { pluginRoot } from "./readiness.mjs";
-import { OVERVIEW_FILE, readHead, resolveInside, RULES_DIR, STORE_DIR } from "./rules.mjs";
+import { OVERVIEW_FILE, readHead, readTail, resolveInside, RULES_DIR, STORE_DIR } from "./rules.mjs";
 
 /** What the worker last did, relative to the repository root. */
 export const REFRESH_STATE = `${STORE_DIR}/refresh.json`;
@@ -67,9 +67,6 @@ const PASSES = 3;
 // commits nobody else has seen, which is exactly what a pin must not accept.
 const REMOTE_BASES = BASE_REFS.filter((r) => r.startsWith("origin/"));
 
-// What git leaves in its directory while an operation is unfinished. A scan in
-// the middle of one counts a tree that exists only until it completes.
-const IN_PROGRESS = ["MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD", "BISECT_LOG", "rebase-merge", "rebase-apply", "index.lock"];
 
 const EVENTS = new Set(["SessionStart", "FileChanged"]);
 
@@ -311,9 +308,12 @@ async function fetchedHere(root, ref) {
   // No reflog is the ref as the clone wrote it; every later move adds an entry.
   const path = join(resolve(root, common.stdout.trim()), "logs", name);
   if (!existsSync(path)) return true;
-  const log = readHead(path, 1024 * 1024);
-  if (log.kind !== "file") return false;
-  const last = log.head.trimEnd().split("\n").pop() ?? "";
+  // The newest entry is the last line, and a reflog kept for years runs to
+  // megabytes, so the tail is read rather than the head; 64 KiB holds hundreds
+  // of entries, and only the last whole one is judged.
+  const tail = readTail(path, 64 * 1024);
+  if (tail === null) return false;
+  const last = tail.trimEnd().split("\n").pop() ?? "";
   return /^(fetch|pull)\b/.test(last.split("\t")[1] ?? "");
 }
 
@@ -331,7 +331,7 @@ async function gitBusy(root) {
   const r = await gitBuffered(root, ["rev-parse", "--absolute-git-dir"]);
   if (!r.ok) return true;
   const gitdir = r.stdout.trim();
-  return IN_PROGRESS.some((name) => existsSync(join(gitdir, name)));
+  return UNFINISHED_OPERATIONS.some((name) => existsSync(join(gitdir, name)));
 }
 
 function writeState(store, { stamp, ok, error, pinned = null }) {

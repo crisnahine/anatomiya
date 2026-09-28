@@ -15,7 +15,7 @@ import { join } from "node:path";
 import { addedRanges, pendingPaths } from "./check.mjs";
 import { isCorpusPath } from "./corpus.mjs";
 import { encodePath } from "./encode.mjs";
-import { gitBuffered } from "./git.mjs";
+import { gitBuffered, UNFINISHED_OPERATIONS } from "./git.mjs";
 import { isPathTaken } from "./hook.mjs";
 import { MAX_FILE_BYTES } from "./limits.mjs";
 import { byCode } from "./paths.mjs";
@@ -41,10 +41,6 @@ const MARKED_MOST = 200;
 const TRANSCRIPT_MOST = 64 * 1024 * 1024;
 const TRANSCRIPT_HEAD = 64 * 1024;
 
-// What git leaves in its directory while a merge, a pick, a revert or a rebase
-// is unfinished. Until one ends, the tree against HEAD holds the other side's
-// work, and the reason tells the model to delete the copy it finds there.
-const UNFINISHED = ["MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD", "rebase-merge", "rebase-apply"];
 
 // A turn's commits are the last lines of the reflog, and one kept for years
 // runs to megabytes.
@@ -110,7 +106,7 @@ export async function pendingChange(root, { since = null, turnStart = null } = {
   // Asked beside the status read rather than after it, so the hook still makes
   // two git reads in a row inside the time it declares.
   const [pending, gitdir] = await Promise.all([pendingPaths(root, { timeout: REUSE_GIT_MS }), gitDir(root)]);
-  if (gitdir === null || UNFINISHED.some((name) => existsSync(join(gitdir, name))) || pending === null) return null;
+  if (gitdir === null || UNFINISHED_OPERATIONS.some((name) => existsSync(join(gitdir, name))) || pending === null) return null;
   // One diff from before the turn's first commit to the tree reads what it
   // committed and what it left uncommitted together, so the reads in a row
   // stay two however many commits the turn made.

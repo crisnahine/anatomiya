@@ -25,6 +25,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- In an Angular or NestJS repository, the environment, logging and network conventions stopped
+  seeing a wrapper named the way those frameworks name files (`./config.service`, `./env.constants`):
+  any dotted suffix was read as an asset's extension. They now use the same list of asset formats as
+  the import-extension convention, so a source import is a source import in both.
 - The automatic pin could follow a remote-tracking ref this clone had moved itself, by `git push` or
   `git update-ref`, and so accept the agent's own commits as the population everything is judged
   against. It now follows a tip only when a fetch or a pull brought it, and never one HEAD moved away

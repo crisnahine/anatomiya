@@ -10,7 +10,7 @@
  * one (C14), so no map carries a line that can only ever read zero.
  */
 import { walk, declName } from "./walk.mjs";
-import { EXT_BY_LANG } from "./langs.mjs";
+import { ASSET_IMPORT } from "./langs.mjs";
 
 /** A stem's words: delimiters and camel humps both split. */
 export function stemWords(stem) {
@@ -60,10 +60,6 @@ export function implementsCapability(rel, capability) {
   return parts.length > 0 && parts.every((w) => words.has(w));
 }
 
-// The extensions a module these rows could be reading is written in: the
-// languages every row below declares, taken from the registry rather than
-// copied out of it.
-const MODULE_EXTS = new Set(["js", "jsx"].flatMap((id) => EXT_BY_LANG[id]));
 
 /**
  * Whether a relative specifier names a module, rather than a file a loader
@@ -75,15 +71,14 @@ const MODULE_EXTS = new Set(["js", "jsx"].flatMap((id) => EXT_BY_LANG[id]));
  * `styles.root`, and the map stated that environment reads go through a
  * config module the repository does not have. A stylesheet, a JSON table or an
  * image is imported by its full name and cannot read the environment, log or
- * call the network, so a specifier ending in any other extension is not a
- * wrapper, which is the line `import_extension` draws between a source import
- * and an asset one. A loader suffix is left on rather than cut: `?raw` and
+ * call the network, so a specifier naming an asset format is not a wrapper:
+ * the same `ASSET_IMPORT` list `import_extension` reads, because a dotted
+ * suffix is as often part of a source stem (`config.service`, `env.constants`)
+ * and a rule of its own here dropped exactly those wrappers. A loader suffix is left on rather than cut: `?raw` and
  * `?url` hand back a string, not the module the name says.
  */
 function namesAModule(spec) {
-  const name = spec.slice(spec.lastIndexOf("/") + 1);
-  const dot = name.lastIndexOf(".");
-  return dot <= 0 || MODULE_EXTS.has(name.slice(dot + 1));
+  return !spec.includes("?") && !ASSET_IMPORT.test(spec);
 }
 
 /** Local names bound by relative imports of a module whose stem carries the vocabulary. */
