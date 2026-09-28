@@ -5,7 +5,7 @@ import { pinJson, pinLines, pinSummary, scanJson, scanLines, scanSummary, SUMMAR
 import { buildPin, pinDelta, PIN_PATH } from "../plugins/anatomiya/lib/baseline.mjs";
 import { truncatedHistoryLine } from "../plugins/anatomiya/lib/render.mjs";
 
-const RESTART = "a session already running still holds the old map; restart to pick it up";
+const RUNNING_SESSION = "a running session gets the new overview on its next prompt or tool call, and a new session, a compaction or /clear loads the whole map";
 const UNPINNED =
   "no baseline pinned: claims are measured against the current tree, and no finding can exceed FIX. `anatomiya pin` accepts one";
 
@@ -40,7 +40,7 @@ test("a scan with nothing to report prints the head, the claims, the baseline an
     "3 of 9 claims stated, the rest print as counts",
     UNPINNED,
     "wrote 5 files",
-    RESTART,
+    RUNNING_SESSION,
   ]);
 });
 
@@ -236,10 +236,10 @@ test("a dry run does not report in the past tense", () => {
   assert.ok(real.includes("wrote 5 files"));
 });
 
-test("a dry run does not claim a session needs restarting", () => {
+test("a dry run does not tell a running session what it will get", () => {
   // Nothing was written, so there is nothing to pick up.
-  assert.ok(!scanLines(summary({ dryRun: true })).includes(RESTART));
-  assert.ok(scanLines(summary()).includes(RESTART));
+  assert.ok(!scanLines(summary({ dryRun: true })).includes(RUNNING_SESSION));
+  assert.ok(scanLines(summary()).includes(RUNNING_SESSION));
 });
 
 test("a run that read no file of a language says so and stops", () => {
@@ -252,7 +252,7 @@ test("a run that read no file of a language says so and stops", () => {
     "this is usually a missing interpreter rather than a repository that changed",
   ]);
   assert.ok(!lines.some((l) => /^(?:would write|wrote) /.test(l)), "no write line at all");
-  assert.ok(!lines.includes(RESTART));
+  assert.ok(!lines.includes(RUNNING_SESSION));
 });
 
 test("a run blind to a language names the engine behind it and what to do", () => {
@@ -476,7 +476,7 @@ test("the summary and its lines agree on a whole scan", () => {
     '"house-style.md" in .claude/rules/ was not written by this tool',
     "1 area file(s) removed: their area is gone or states nothing",
     "wrote 2 files",
-    RESTART,
+    RUNNING_SESSION,
   ]);
 });
 
@@ -503,7 +503,7 @@ test("a pin prints the delta it accepted, then what it wrote", () => {
     "",
     "wrote .claude/anatomiya/baseline.json",
     "run `anatomiya scan` to measure the map against it",
-    RESTART,
+    RUNNING_SESSION,
   ]);
 });
 
@@ -512,7 +512,7 @@ test("a pin that would write says so and sends nobody off to scan", () => {
   const s = pinSummary({ previous: null, next, delta: pinDelta(null, next), path: PIN_PATH, dryRun: true });
 
   assert.deepEqual(pinLines(s).slice(-2), ["", "would write .claude/anatomiya/baseline.json"]);
-  assert.ok(!pinLines(s).includes(RESTART));
+  assert.ok(!pinLines(s).includes(RUNNING_SESSION));
 });
 
 test("the pin summary carries the shas either side of the delta", () => {

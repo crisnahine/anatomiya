@@ -37,8 +37,9 @@ there. This command is for a repository with no remote, or for a user accepting 
    suppresses its automatic injection for the rest of the session, which turns the map off for the
    very session that just rebuilt it. Use `cat` or `head` through Bash if you need to show one.
 
-5. Tell the user that a session already running still holds the previous map. A rewritten context
-   file does not re-attach mid-session; a fresh session picks up the new one.
+5. Tell the user what reaches a session already running: it gets the new overview on its next
+   prompt or tool call. An area file it has already read keeps its old counts until the window is
+   rebuilt: a new session, a compaction or `/clear` loads the whole map.
 
 6. Never run this because a check reported findings, and never suggest it while a branch is under
    review. The pin says which files a human accepted as the population every claim is counted over.

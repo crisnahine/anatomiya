@@ -44,8 +44,9 @@ start of each session and whenever HEAD moves. Run this when the user asks for i
    suppresses its automatic injection for the rest of the session, which turns the map off for the
    very session that just built it. Use `cat` or `head` through Bash if you need to show one.
 
-4. Tell the user that a session already running still holds the previous map. A rewritten context
-   file does not re-attach mid-session; a fresh session picks up the new one.
+4. Tell the user what reaches a session already running: it gets the new overview on its next
+   prompt or tool call. An area file it has already read keeps its old counts until the window is
+   rebuilt: a new session, a compaction or `/clear` loads the whole map.
 
 If the scanner exits non-zero, show its output and stop. Do not guess at what it found.
 

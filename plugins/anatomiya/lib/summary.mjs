@@ -16,8 +16,13 @@ import { formatDelta } from "./baseline.mjs";
  * inside the printer that happens to emit it.
  */
 
-// Measured: a rewritten context file does not re-attach mid-session.
-const RESTART = "a session already running still holds the old map; restart to pick it up";
+// What a written map reaches. The echo hands a running session a changed
+// overview on its next prompt or tool call, by its digest (A92), so the
+// overview needs no restart. A rewritten context file the session already read
+// does not re-attach inside the window (A6), and a new session, a compaction or
+// /clear reads every file from disk.
+const RUNNING_SESSION =
+  "a running session gets the new overview on its next prompt or tool call, and a new session, a compaction or /clear loads the whole map";
 
 // Said once, on the run that does it, because it is a change to a file somebody
 // else may also be editing. It cannot repeat: the second scan finds nothing to
@@ -190,7 +195,7 @@ export function scanLines(s) {
   lines.push(s.dryRun ? `would write ${plural(s.wrote, "file")}` : `wrote ${plural(s.wrote, "file")}`);
   if (s.hookRemoved) lines.push(hookRemoved(s.dryRun));
   if (s.hookRefused) lines.push(`the map is written, and ${s.hookRefused}`);
-  if (!s.dryRun) lines.push(RESTART);
+  if (!s.dryRun) lines.push(RUNNING_SESSION);
   return lines;
 }
 
@@ -313,7 +318,7 @@ export function pinLines(s) {
   lines.push("run `anatomiya scan` to measure the map against it");
   // The scan that follows rewrites every context file. Said here too, because
   // the pin is where a human is told to go and run it.
-  lines.push(RESTART);
+  lines.push(RUNNING_SESSION);
   return lines;
 }
 
