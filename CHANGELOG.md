@@ -122,6 +122,19 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   case-insensitive filesystem, rather than one overwriting the other.
 - `check` treats a branch's moves as moves past git's default rename limit, and says so
   (`renames-skipped`) past its own, rather than charging moved code as new.
+- A scan run during an unresolved merge counted each conflicted file two or three times, once per
+  stage git lists it at. Each path now counts once.
+- A `.gitattributes` `linguist-generated` pattern with a leading slash (`/gen/**`) excluded nothing,
+  and one with no slash (`schema.ts`) matched only at the repository root. Both now match where git
+  matches them.
+- An area file's `most imported from here` line no longer lists a namespace import as an empty name,
+  and names a default import for its module (`user (default)`) rather than printing `default`.
+- A tracked file the scan could not read (a directory it may not enter, a name that is not UTF-8, a
+  file deleted since the commit) was left out without a word. The scan summary now says how many.
+- Folding areas to fit the area ceiling could leave a larger area's files uncovered while a smaller
+  area it had just created survived. Areas are now folded strictly smallest first.
+- A test file holding only table-driven cases (`test.each(...)(...)`, `describe.each(...)(...)`) lost
+  its runner label, and a minitest file written in the `describe`/`it` spec style was labelled RSpec.
 - A repository created without a reflog, or on git's reftable backend, refreshed only on a checkout:
   nothing appended to the `logs/HEAD` the hook watched. It now watches the index there, or the
   reftable table list, so a commit or a pull refreshes the map as it does everywhere else.

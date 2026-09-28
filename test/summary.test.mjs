@@ -174,6 +174,19 @@ test("the unexamined lines are printed as the renderer worded them", () => {
   assert.ok(lines.includes("1 file exceeded the size cap"));
 });
 
+test("tracked files the working tree would not hand over are counted aloud", () => {
+  // A file under a directory the scan may not enter, or one whose name is not
+  // UTF-8, used to be charged to the escaped bucket, which nothing prints.
+  const s = scanSummary(
+    result({ corpus: { files: 40, untracked: 0, truncated: false, dropped: { escaped: 3, unreadable: 2 } } }),
+    plan()
+  );
+  assert.equal(s.unreadFiles, 2);
+  assert.ok(scanLines(s).includes("2 files could not be read, so nothing in them was counted"));
+  assert.ok(scanLines(summary({ unreadFiles: 1 })).includes("1 file could not be read, so nothing in it was counted"));
+  assert.ok(!scanLines(summary()).some((l) => l.includes("could not be read")));
+});
+
 test("unread history is reported with the reason it could not be read", () => {
   assert.ok(
     scanLines(summary({ historyError: "git log failed" })).includes(
@@ -506,6 +519,7 @@ test("the summary carries every fact the scan prints", () => {
     truncated: false,
     orphaned: 0,
     barren: 0,
+    unreadFiles: 0,
     unexamined: [],
     // Null on a scan that never asked for the tier and on one where it ran
     // clean. Only a tier that ran badly has anything to say.

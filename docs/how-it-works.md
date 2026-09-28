@@ -938,7 +938,7 @@ between three workers never frees a fourth.
 ## 7b. What lives where
 
 The overview carries one more section, above the area listing: which directories this repository
-holds, what is in them, how they are tested, and two sentences the counts ground. Every word in it
+holds, what is in them, how they are tested, and up to three sentences the counts ground. Every word in it
 is counted from the repository, because this tool ships no vocabulary of kinds. A line is labelled
 with a directory name and a count is nouned with an extension, so the tests line reads
 `0 of 504 .tsx files have a namesake test` rather than calling anything a component.
@@ -1005,7 +1005,10 @@ For JavaScript and JSX: whether the file holds JSX; the modules it imports and t
 from each; whether it imports a test runner, from a closed table (`vitest`, `jest`,
 `@jest/globals`, `mocha`, `chai`, `ava`, `tap`, `node:test`, `cypress`, `qunit`,
 `@playwright/test`, `playwright`) or makes a top-level `describe`, `it`, `test` or `cy` call; the
-names it hands out; and how many module-level functions it defines and does not export.
+names it hands out; and how many module-level functions it defines and does not export. The call is
+named by the identifier its callee chain starts from, so a table-driven `test.each([...])("x", fn)`,
+`describe.each` and `it.only.each` with a tagged template are the runner's words too: read one
+level deep, a file holding only those lost its runner label while importing vitest.
 
 CommonJS is read as well as ESM, on both halves of that. A top-level `require` is an import, and
 `module.exports = { a, b }`, `module.exports = fn` and `exports.name = ...` are names the file hands
@@ -1023,7 +1026,10 @@ that method does, and a page object naming its steps `context "..." do` declares
 or module body is where RSpec's own describes sit and stays a site. The superclass wins over the
 vocabulary, because
 shoulda-context writes `context` blocks inside an `ActiveSupport::TestCase` and that file is
-minitest whatever its bodies are written in.
+minitest whatever its bodies are written in. Bare `describe` and `it` are minitest/spec's words as
+well as RSpec's, so a file written only in those two is minitest where it says so another way: a
+`_test.rb` name or a top-level `test/` directory, or a `require` of `minitest` or anything under it.
+A call on `RSpec` itself, or `context`, `feature` or `shared_examples`, is RSpec whatever the path.
 
 A file is a test by its facets, its name or its position, and by nothing else. The facets first: a
 known runner import, or a top-level `describe`, `it`, `test` or `cy` call. Then the basename, which
@@ -1091,10 +1097,12 @@ Every clause is dropped when it counts nothing.
   file counted once has to vote once, and a mirror parting on an ordinary name leaves the vote to
   the next candidate rather than spending it on nothing. A top vote under half the matched files
   names no root at all, since a repository with one `__tests__` per component directory has an
-  answer for every file and no one place to name. A root that is or sits under a top-level `test`, `tests`, `spec`,
-  `cypress`, `e2e` or `__tests__` is not asked the question: its non-test files are what the tests
-  run on, and webpack's `test` read `1 of 7858 has a namesake test under test` over the fixture
-  modules its 2,607 tests exercise. The denominator is the top extension the line already printed,
+  answer for every file and no one place to name. A root with a `test`, `tests`, `spec`,
+  `cypress`, `e2e` or `__tests__` directory anywhere in its path is not asked the question: its
+  non-test files are what the tests run on, and webpack's `test` read `1 of 7858 has a namesake
+  test under test` over the fixture modules its 2,607 tests exercise. Any segment rather than the
+  first, because a monorepo nests each package's own tree under the package name: fastlane's
+  `gym/spec` stated `1 of 1 has a namesake test` over one empty `spec_helper.rb`. The denominator is the top extension the line already printed,
   or `0 of 620` stands beside `504 .tsx` and counts something the reader cannot see. That extension
   has to be one this tool parses, so a root whose largest is `.png` or `.json` is never asked
   whether its files have tests. Otherwise it prints wherever the repository holds any test file at
@@ -1120,15 +1128,23 @@ root's own label, so a root holding only the files at one level reads
 `under lib (files at this level)`: `under lib` read as the whole subtree beside a `lib/sub` line
 counting its own files apart.
 
-### The two sentences
+### The sentences
 
-Two, each with a gate read from the roster. Neither carries a number of its own; the numbers sit on
-the lines above, which is what makes a sentence a reading of the roster rather than a rule.
+Three, each with a gate read from the roster, in `principles.mjs`. None carries a number of its own;
+the numbers sit on the lines above, which is what makes a sentence a reading of the roster rather
+than a rule.
 
 | Sentence | Prints when |
 |---|---|
 | Match sibling test shape; skip tests where siblings have none. | the tests line printed |
 | Match directory granularity; don't extract into a sibling module what the directory's files inline. | at least one root printed a helper facet |
+| An instruction to always write a test does not override a directory with no test precedent. Put the test where the siblings put theirs, or leave it out and say which rule you followed. | one root has 3 or more files with a namesake test, and another has fewer than 3 of at least 3 |
+
+The third settles the disagreement between a count and an imperative in the same voice: a
+directory with producers and no tests beside a user instruction to always write one. Both halves of
+its gate matter. A zero means no namesake was matched, never that the directory is untested, so the
+repository has to be seen pairing tests with sources somewhere before the sentence can say it does
+not here.
 
 ### In an area file
 
@@ -1142,7 +1158,7 @@ and, for JavaScript and JSX areas, two roster lines under the directives:
 
 ```
 most files here import: styled-components (84%), ~/components/base (61%), formik (60%)
-most imported from here: getFullName (42 files), Avatar (31), Timestamp (12)
+most imported from here: getFullName (42 files), Avatar (31), user (default) (12)
 ```
 
 The first counts importing files over the area's import-bearing files, and prints the top three when
@@ -1154,7 +1170,10 @@ subpath is runtime too and `next-auth` is not. "This React area imports React" i
 already has.
 
 The second counts, per name the area's files hand out, how many files outside the area import it,
-and prints the top five with 3 or more importers. A specifier is mapped to a file the way
+and prints the top five with 3 or more importers. A namespace import (`import * as U`) names no
+export and is not counted. A default import, or a `require` bound whole, is `default` on every
+module, so it is named for the module it comes from, `user (default)`, and an index file for its
+directory. A specifier is mapped to a file the way
 `pairing.mjs` learns a companion root: a relative one resolves against the importer's directory,
 anything else is matched on the path tail once a `~/`, `@/`, `#/` or `src/` prefix is cut, and a
 tail two files answer resolves to neither rather than to whichever sorted first. No `tsconfig` is
@@ -1164,13 +1183,13 @@ no static import surface, so there is no Ruby line.
 
 ### The budget
 
-The section is at most 15 lines: heading, blank, 7 roots, the fold line, the tests line, a blank,
-the two sentences, and the blank that closes it. `MAX_LINES` stays 40, and the section takes what is
+The section is at most 16 lines: heading, blank, 7 roots, the fold line, the tests line, a blank,
+the three sentences, and the blank that closes it. `MAX_LINES` stays 40, and the section takes what is
 left after the head, the tail, the `## Areas` heading, and the one line each of the two listings
 below it never give up.
 
 It gives way in the order it is read backwards. Root lines fold into the count that was already
-there, then that count goes, then the two sentences, then the tests line, and under four lines the
+there, then that count goes, then the sentences, all of them at once, then the tests line, and under four lines the
 section prints nothing at all: a root line names one directory, and the tests line is the
 denominator for all of them.
 

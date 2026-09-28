@@ -436,10 +436,12 @@ function capCount(areas, maxAreas) {
   const orphaned = [];
 
   while (byPath.size > maxAreas && order.length) {
-    // Re-read through byPath: an area that already absorbed a victim is a new
-    // object, and folding the stale one loses the files it absorbed.
-    const victim = byPath.get(order.shift().path);
-    if (!victim) continue;
+    // An entry is live only while it is the object byPath holds: a host that
+    // absorbed a victim is a new object queued again at its new size, and the
+    // entry it left behind is skipped rather than folded early, or folded as
+    // the stale object that loses the files it absorbed.
+    const victim = order.shift();
+    if (byPath.get(victim.path) !== victim) continue;
 
     // Fold into the nearest ancestor that is itself an area. Never into the
     // repository root: a root "area" is a bucket of everything that failed to
@@ -469,12 +471,33 @@ function capCount(areas, maxAreas) {
     // Creating a host is the one fold that does not shrink the map, so the new
     // area joins the queue: without it a tree of single-child directories walks
     // the queue to the end and returns more areas than the ceiling allows.
-    if (!host) order.push(merged);
+    //
+    // At its size, not at the end, and a host that grew moves to its new size
+    // too. Appended, a three-file host outlived every larger area: with a
+    // ceiling of three, `x/y/v` (3), `m` (10), `n` (20) and `o` (30) kept `x/y`
+    // and left m's ten files uncovered. Left where it was, a host that had just
+    // absorbed a child was folded at the size it had before.
+    requeue(order, merged);
   }
 
   const out = [...byPath.values()];
   out.orphaned = orphaned;
   return out;
+}
+
+// Put an area at its place in a queue kept smallest first, after any area of
+// the same size so a tie keeps the order the queue already gave it. Found by
+// halving rather than by scanning, since a large tree folds tens of thousands
+// of times; the entry a grown host leaves behind stays and is skipped live.
+function requeue(order, area) {
+  let lo = 0;
+  let hi = order.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (order[mid].fileCount <= area.fileCount) lo = mid + 1;
+    else hi = mid;
+  }
+  order.splice(lo, 0, area);
 }
 
 /**
