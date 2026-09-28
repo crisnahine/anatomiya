@@ -60,7 +60,6 @@ export function implementsCapability(rel, capability) {
   return parts.length > 0 && parts.every((w) => words.has(w));
 }
 
-
 /**
  * Whether a relative specifier names a module, rather than a file a loader
  * turns into a value.
@@ -74,8 +73,9 @@ export function implementsCapability(rel, capability) {
  * call the network, so a specifier naming an asset format is not a wrapper:
  * the same `ASSET_IMPORT` list `import_extension` reads, because a dotted
  * suffix is as often part of a source stem (`config.service`, `env.constants`)
- * and a rule of its own here dropped exactly those wrappers. A loader suffix is left on rather than cut: `?raw` and
- * `?url` hand back a string, not the module the name says.
+ * and a rule of its own here dropped exactly those wrappers. A loader suffix
+ * is left on rather than cut: `?raw` and `?url` hand back a string, not the
+ * module the name says.
  */
 function namesAModule(spec) {
   return !spec.includes("?") && !ASSET_IMPORT.test(spec);

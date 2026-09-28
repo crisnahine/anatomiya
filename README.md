@@ -156,7 +156,7 @@ clone made that sits on the default branch's own line, however it got there (`gi
 URL, a teammate's commit on top): that is work pushed straight to the shared branch, which nobody
 reviewed. A branch you push and merge through a pull request's merge commit is pinned once pulled,
 since the merge is its review; accepting a direct push is `/anatomiya:pin`, by hand. Each automatic pin records what it
-accepted (the commits and the files that entered and left) in `.claude/anatomiya/refresh.json`. In a
+accepted (the commit it moved from and to, and how many files entered and left the population) in `.claude/anatomiya/refresh.json`. In a
 fork workflow, where `origin` is your own fork, its default branch is what the pin follows, so review
 there is what makes it accepted. `/anatomiya:pin` is still there for a repository with no remote, or
 to accept a population by hand. A branch cut before the pin does not read the files the default

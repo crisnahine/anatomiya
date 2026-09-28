@@ -27,13 +27,13 @@ import { byCode } from "./paths.mjs";
 // How many `git cat-file` reads run at once.
 const READERS = 8;
 
-export async function readAtRevision(root, sha, files, { withSource = false, timeout } = {}) {
+export async function readAtRevision(root, sha, files, { withSource = false, timeout, lazyFetch = false } = {}) {
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-revision-"));
   // The size cap is the reader's own and no caller sets it: `showBlob` gives up
   // at exactly the size the parser skips at, so a blob refused here is one the
   // parse would have refused anyway. The clock is the caller's, because the
   // scan and the check disagree about how long to wait on a stalled git.
-  const bounds = timeout === undefined ? {} : { timeout };
+  const bounds = { ...(timeout === undefined ? {} : { timeout }), lazyFetch };
   const out = [];
   const missing = [];
   const dispose = () => rmSync(dir, { recursive: true, force: true });

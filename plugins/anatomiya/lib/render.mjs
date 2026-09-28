@@ -758,7 +758,7 @@ function overviewTail(result, files) {
   // read, so a count that moves with machine load may not reach it (A5). The
   // summary prints all four, and the summary is not cached.
   for (const line of unexaminedLines(result.parse, { stable: true })) lines.push(`- ${line}`);
-  // A language this run read no file of, where it read another (B40). Nothing
+  // A language this run read no file of, where it read another (B41). Nothing
   // above counts it, since a crash is left off this file, and the areas holding
   // one are the last scan's. This file is what a background refresh leaves for
   // anyone to read, so it says which language, why, and what to do.

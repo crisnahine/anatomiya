@@ -633,3 +633,31 @@ test("the replace never writes through a link planted where its temporary file g
     rmSync(outside, { recursive: true, force: true });
   }
 });
+
+test("a link planted at the exact temporary name is refused, not written through", async (t) => {
+  // The name is unpredictable, which the test above leans on; this one takes
+  // the prediction away and leaves `wx` alone to stand between the write and
+  // the link.
+  const crypto = (await import("node:crypto")).default;
+  const { syncBuiltinESMExports } = await import("node:module");
+  const real = crypto.randomBytes;
+  crypto.randomBytes = (n) => Buffer.alloc(n, 0xab);
+  syncBuiltinESMExports();
+  t.after(() => {
+    crypto.randomBytes = real;
+    syncBuiltinESMExports();
+  });
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-atomic-"));
+  const outside = mkdtempSync(join(tmpdir(), "anatomiya-atomic-outside-"));
+  t.after(() => {
+    rmSync(dir, { recursive: true, force: true });
+    rmSync(outside, { recursive: true, force: true });
+  });
+  const victim = join(outside, "victim.txt");
+  writeFileSync(victim, "untouched\n");
+  const target = join(dir, "facts.json");
+  symlinkSync(victim, `${target}.tmp-${process.pid}-${"ab".repeat(8)}`);
+
+  assert.throws(() => atomic(target, "{}\n"), /EEXIST/);
+  assert.equal(readFileSync(victim, "utf8"), "untouched\n");
+});

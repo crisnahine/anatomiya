@@ -2,7 +2,7 @@
 import { runCheck, runDoctor, runEcho, runNotice, runPin, runReuse, runScan, runSetup } from "../lib/commands.mjs";
 import { readPayload, respond } from "../lib/hook.mjs";
 import { unsupportedNode } from "../lib/readiness.mjs";
-import { refreshRepository, runRefresh, WORKER_DEADLINE_MS } from "../lib/refresh.mjs";
+import { noteScan, refreshRepository, runRefresh, WORKER_DEADLINE_MS } from "../lib/refresh.mjs";
 import { pinJson, pinLines, scanJson, scanLines } from "../lib/summary.mjs";
 import { formatReport, formatReportGithub, formatReportJson } from "../lib/check-report.mjs";
 
@@ -48,7 +48,10 @@ const COMMANDS = {
     dryRun: true,
     formats: ["text", "json"],
     async run(cwd, opts) {
-      const { summary } = await runScan(cwd, { dryRun: opts.dryRun, deep: opts.deep });
+      const { result, summary } = await runScan(cwd, { dryRun: opts.dryRun, deep: opts.deep });
+      // A scan run by hand is the refresh's answer too: it clears a failed
+      // refresh the echo is reporting, and the next refresh has nothing to redo.
+      if (!opts.dryRun) await noteScan(result.root);
       if (opts.format === "json") process.stdout.write(scanJson(summary));
       else console.log(scanLines(summary).join("\n"));
     },

@@ -5,8 +5,11 @@ description: Accept the current file population as the baseline the map is measu
 Pin the baseline, but only when the user asked for it.
 
 Where the repository has a remote, the pin already follows its default branch on its own: whenever
-the checkout sits on that branch's tip with nothing uncommitted, the background refresh moves the pin
-there. This command is for a repository with no remote, or for a user accepting a population by hand.
+the checkout sits on that branch's tip with nothing uncommitted, that tip arrived by an ordinary fetch
+or pull, and no commit this clone made sits on its line, the background refresh moves the pin there.
+It never follows a map or pin the repository commits. This command is for a repository with no
+remote, for a commit pushed straight to the default branch, or for a user accepting a population by
+hand.
 
 1. Run the pin. Use Bash, and use the plugin's own copy:
 

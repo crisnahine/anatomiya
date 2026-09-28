@@ -28,6 +28,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- On a blobless partial clone with the branch checked out directly, `check` skipped every changed
+  file as unreadable at the merge base and reported nothing. It now fetches those blobs from the
+  clone's own remote; every other read still refuses to reach the network.
+- A scan run by hand clears a failed automatic refresh, which the delivered map kept reporting, and
+  the next refresh no longer rescans a checkout that has not moved.
+- The one remedy still naming a bare `anatomiya scan .` (a worktree with no map) now names
+  `/anatomiya:scan`.
 - On a Ruby with no `prism` at all (2.7 to 3.2 before `gem install prism`), `check` reported nothing
   found and `scan` wrote nothing, with no remedy: every file read as crashing the parser. Both now
   refuse with the Ruby remedy, as they do when `ruby` is absent.

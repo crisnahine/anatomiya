@@ -82,7 +82,7 @@ function noMapMessage(root) {
   const record = main === null ? null : resolveInside(main, FACTS_PATH);
   // Read no bytes: whether a record is there is the question, and one can be 10MB.
   if (record === null || readHead(record, 0).kind !== "file") return said;
-  return `no map in this worktree, so nothing can be enforced; run \`anatomiya scan .\` here. Its main checkout has one: ${main}`;
+  return `no map in this worktree, so nothing can be enforced; run \`/anatomiya:scan\` here. Its main checkout has one: ${main}`;
 }
 
 const SEVERITY_ORDER = { "MUST-FIX": 0, FIX: 1, NIT: 2 };
@@ -700,7 +700,7 @@ async function collect(root, { examined, areas, base, mode, added, fresh, caveat
     // file at a time spawned a `cat-file` that waited on the one before it.
     atHead = await readAtRevision(root, head, [...headWanted.values()], REVISION_READ);
     atBase = mode === "compare"
-      ? await readAtRevision(root, base.mergeBase, [...baseWanted.values()], REVISION_READ)
+      ? await readAtRevision(root, base.mergeBase, [...baseWanted.values()], { ...REVISION_READ, lazyFetch: true })
       : null;
     const headBlobs = new Map(atHead.files.map((f) => [f.rel, f]));
     const baseBlobs = new Map((atBase?.files ?? []).map((f) => [f.rel, f]));
@@ -883,7 +883,7 @@ async function collect(root, { examined, areas, base, mode, added, fresh, caveat
     // An engine that is not installed is every file of its languages at once.
     // Each of those carries a caveat of its own above, and none says why or
     // what to do: a check that examined files of another language now goes on
-    // for them rather than refusing over this (B40), so it says so once.
+    // for them rather than refusing over this (B41), so it says so once.
     if (missingParser) {
       caveat(caveats, CAVEATS.ENGINE_MISSING, `${missingParser}: ${remedyFor(missingEngines[0])}, then check again`);
     }

@@ -147,9 +147,11 @@ This is availability, not confidentiality. A repository can still make a scan sl
 ### Subprocesses, and the one command that installs anything
 
 Every subprocess here runs through `execFile`, `spawn` or `fork` with an argument array and never a
-shell. Beyond the parser and checker children there are six: `git`, `ps` for the memory guard, the
-`ruby` the readiness probe asks for a version, the `ruby` asked which prism gems are installed, `npm`,
-and the refresh worker: the plugin's own `bin/anatomiya.mjs refresh-run <root>` under the `node`
+shell. Beyond the parser and checker children there are eight: `git`, `ps` for the memory guard
+(macOS and the BSDs; Linux reads `/proc`), the `ruby` the readiness probe asks for a version, the
+`ruby` asked which prism gems are installed, the `ruby` asked whether a listed prism loads before the
+parser is handed it, `npm`, the `node` that `setup` runs after npm to probe afresh, and the refresh
+worker: the plugin's own `bin/anatomiya.mjs refresh-run <root>` under the `node`
 already running, started by the `refresh` hook, detached, with every stdio closed, `cwd` outside the
 repository and a 20 minute clock. It runs only in a checkout that already holds a map of its own,
 and does what `scan` and `pin` do there, under the conditions `docs/how-it-works.md` states.
@@ -172,7 +174,11 @@ rather than take one, setup prints the command for you to run yourself.
 It is not the only outbound call in the tool, and this file will not claim it is. On a shallow clone
 the check runs `git ls-remote origin` and `git fetch --depth=1 origin <ref>` for the single base
 commit, because `merge-base` cannot answer without it and the alternative is reporting a branch
-against nothing (F5). That is the whole of it: no other command reaches anything, and the scan makes
+against nothing (F5). On a partial clone (`--filter=blob:none`) the check's read of the merge base
+lets git fetch the blobs of the changed files it does not hold from the clone's own promisor remote,
+because without them every changed file was skipped; every other git read, the scan's included,
+runs with `GIT_NO_LAZY_FETCH` and reads a missing object as missing (F14). That is the whole of it:
+no other command reaches anything, and the scan makes
 no outbound call at any point.
 
 `anatomiya doctor` spawns the other one, `ruby`, to ask which version of `prism` that interpreter

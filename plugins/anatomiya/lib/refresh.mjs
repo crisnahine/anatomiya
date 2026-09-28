@@ -35,8 +35,6 @@ import { ownLayout } from "./hook.mjs";
 import { pluginRoot } from "./readiness.mjs";
 import { OVERVIEW_FILE, readHead, REFRESH_STATE, resolveInside, RULES_DIR, STORE_DIR } from "./rules.mjs";
 
-// In rules.mjs beside the store, since the echo reads it too.
-export { REFRESH_STATE };
 const LOCK_FILE = "refresh.lock";
 
 // A worker holds the lock for one scan, and the largest measured takes about
@@ -66,7 +64,6 @@ const PASSES = 3;
 // The only remote-tracking refs a pin may follow. A local `main` can hold
 // commits nobody else has seen, which is exactly what a pin must not accept.
 const REMOTE_BASES = BASE_REFS.filter((r) => r.startsWith("origin/"));
-
 
 const EVENTS = new Set(["SessionStart", "FileChanged"]);
 
@@ -192,6 +189,26 @@ export async function refreshRepository(root, { scan = runScan, pin = runPin } =
     return { reason: "scanned", pinned };
   } finally {
     release(lock);
+  }
+}
+
+/**
+ * Record a scan somebody ran by hand as the refresh's own. The echo sends a
+ * session to `/anatomiya:scan` when a refresh failed, and without this the
+ * warning outlived the scan that answered it, and the next refresh rescanned a
+ * checkout that had not moved. What the last automatic pin accepted is kept.
+ * Never throws: the scan it follows has already succeeded.
+ */
+export async function noteScan(root) {
+  try {
+    const store = resolveInside(root, STORE_DIR);
+    if (store === null) return;
+    const stamp = await stampOf(root);
+    if (stamp === null) return;
+    const previous = readRecord(join(store, basename(REFRESH_STATE))).record;
+    writeState(store, { stamp, ok: true, error: null, pinned: previous?.pinned ?? null });
+  } catch {
+    // Nothing to record; the next refresh rescans, which is the old behaviour.
   }
 }
 
@@ -367,7 +384,7 @@ async function clonedOnto(root, sha) {
  * is a remote reconfigured to point somewhere else, which is the repository's
  * own setting (E11).
  */
-function movedByRemote(message) {
+export function movedByRemote(message) {
   const words = message.replace(/: [^:]*$/, "").split(" ");
   if (!/^(fetch|pull)$/.test(words[0])) return false;
   return !words.slice(1).some((w) => !w.startsWith("-") && (w.includes(":") || /^[./~]/.test(w)));
