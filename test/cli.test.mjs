@@ -619,10 +619,25 @@ test("doctor says nothing about the install where the packages are there", () =>
   assert.doesNotMatch(out, /nothing is installed/, out);
 });
 
-test("setup --dry-run prints the command and installs nothing", () => {
+test("setup --dry-run prints the command and installs nothing", (t) => {
+  // From an install with nothing beside it: a dry run with nothing to install
+  // names no command, since there is no install to describe. The npm on PATH
+  // fails loudly, so a dry run that reached it could not pass.
+  const install = installWithoutDependencies(t);
+  const bin = stubNpm(t, "#!/bin/sh\necho 'npm ran' >&2\nexit 1\n");
+
+  const { code, stdout } = runFrom(install, ["setup", "--dry-run"], bin);
+
+  assert.equal(code, 0, stdout);
+  assert.match(stdout, /^would run npm install --omit=dev --include=optional --ignore-scripts --no-audit --no-fund in /m, stdout);
+});
+
+test("setup --dry-run never says both that nothing is needed and what it would run", () => {
+  // Measured: "nothing to install: oxc 0.x, ..." then "would run npm install ...".
+  // Asked of this checkout, whichever of the two it is.
   const out = cli("setup", "--dry-run");
 
-  assert.match(out, /^would run npm install --omit=dev --include=optional --ignore-scripts --no-audit --no-fund in /m, out);
+  assert.notEqual(/^nothing to install: /m.test(out), /would run/.test(out), out);
 });
 
 test("setup runs npm in the plugin's own directory, with the arguments it printed", needsShebang, (t) => {

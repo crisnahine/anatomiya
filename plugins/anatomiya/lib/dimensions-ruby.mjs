@@ -98,6 +98,18 @@ function nestingOf(ctx, body = null) {
 }
 
 /**
+ * Whether a call sits in a `class << self` of its enclosing class or module.
+ *
+ * `ctx.cls` skips over the singleton class, so an `include` inside one read as
+ * an include into the class itself. It mixes into the metaclass instead, which
+ * is `extend` by another spelling: the class's instances never carry it.
+ */
+function inSingletonClass(ctx) {
+  const from = ctx.stack.lastIndexOf(ctx.cls);
+  return ctx.stack.slice(from + 1).some((x) => x.t === "singleton_class");
+}
+
+/**
  * The class bodies that directly include Sidekiq's worker mixin.
  *
  * Collected in a pass of its own because the include may sit below the def, and
@@ -113,7 +125,7 @@ function sidekiqBodies(ast) {
   const bodies = new Set();
   walkRuby(ast, (n, ctx) => {
     if (n.t !== "call" || n.receiver || n.name !== "include") return;
-    if (ctx.def || !ctx.cls) return;
+    if (ctx.def || !ctx.cls || inSingletonClass(ctx)) return;
     for (const arg of args(n)) {
       if (SIDEKIQ_JOB.test(constName(arg) || "")) bodies.add(ctx.cls);
     }
@@ -454,7 +466,7 @@ export const RUBY_DIMENSIONS = [
     counterClaim: null, // the other side is another module, which the learning already picks
     precision: "precise",
     applicabilityPredicate: {
-      sites: "a Ruby class or module body that includes something, counted once each, and a class body that includes nothing, names no superclass and is not nested inside another class, which is a site conforming to no module and is where the forgotten include is caught. A module including nothing is namespacing, a subclass may be handed the mixin by its base, and a class inside a class is that class's helper, so none of those three is a site. Nor is a body that prepends or extends a constant, which declared a mixin by another route, nor a reopening of a class that declares one elsewhere in the file. A call inside a method runs when the method does and is not a mixin the body declares",
+      sites: "a Ruby class or module body that includes something, counted once each, and a class body that includes nothing, names no superclass and is not nested inside another class, which is a site conforming to no module and is where the forgotten include is caught. A module including nothing is namespacing, a subclass may be handed the mixin by its base, and a class inside a class is that class's helper, so none of those three is a site. Nor is a body that prepends or extends a constant, or includes one inside `class << self`, which declared a mixin by another route, nor a reopening of a class that declares one elsewhere in the file. A call inside a method runs when the method does and is not a mixin the body declares",
       blind: null,
     },
     langs: ["ruby"],
@@ -466,17 +478,15 @@ export const RUBY_DIMENSIONS = [
       const bodies = new Map();
       // A short name is not an identity: `A::Worker` and `B::Worker` in one file
       // are two bodies, and told apart by `Worker` alone they fingerprint alike.
-      const qualify = (ctx, n) =>
-        [...ctx.stack.filter((x) => x.t === "class" || x.t === "module"), n]
-          .map((x) => x.name)
-          .filter(Boolean)
-          .join("::");
+      // prism's `name` is the last segment even of a compact path, so the path
+      // is read whole, as `qualifiedName` does: named `Worker`, B's include
+      // counted as A's declaration and A's missing one was never a site.
       walkRuby(ast, (n, ctx) => {
         if (n.t === "class" || n.t === "module") {
           // `ctx.cls` is the enclosing body, since the walk visits before it
           // pushes. A module namespaces what it holds; a class owns it.
           if (!bodies.has(n)) {
-            const name = qualify(ctx, n);
+            const name = qualifiedName(ctx, n);
             bodies.set(n, {
               node: n,
               name,
@@ -494,7 +504,9 @@ export const RUBY_DIMENSIONS = [
         if (n.name !== "include" && n.name !== "prepend" && n.name !== "extend") return;
         const body = ctx.def || !ctx.cls ? null : bodies.get(ctx.cls);
         if (!body) return;
-        if (n.name !== "include") {
+        // `class << self; include M; end` is `extend M`: a mixin declared, but
+        // not one the class's instances carry, so no vote for M.
+        if (n.name !== "include" || inSingletonClass(ctx)) {
           if (args(n).some((arg) => constName(arg))) body.declares = true;
           return;
         }
@@ -597,10 +609,12 @@ function isEmpty(stmts) {
  * keeps its `@`, so the two reads cannot be mistaken for each other.
  */
 function readsBinding(stmts, name) {
-  if (!name) return false;
   let used = false;
   walkRuby(stmts, (n) => {
-    if ((n.t === "local_variable_read" || n.t === "instance_variable_read") && n.name === name) used = true;
+    if (name && (n.t === "local_variable_read" || n.t === "instance_variable_read") && n.name === name) used = true;
+    // `$!` is the error being handled whether or not the clause bound it, so
+    // `rescue; log($!)` read as a swallow. `$ERROR_INFO` is English's name for it.
+    if (n.t === "global_variable_read" && (n.name === "$!" || n.name === "$ERROR_INFO")) used = true;
   });
   return used;
 }

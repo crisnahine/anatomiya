@@ -89,6 +89,22 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   can add a line of its own.
 - An overview with no area says no directory became one instead of a bare `## Areas (0)`, and a
   one-author repository no longer says "every claim below" over no claims.
+- A blobless clone whose remote is not named `origin` reads its history offline instead of
+  reporting it unread.
+- The author of the first commit counts even where `log.showRoot` is set to false.
+- `module_include` tells `class A::Worker` from `class B::Worker` in one file, so a forgotten
+  include in one is no longer hidden by the other's.
+- An `include` inside `class << self` is no longer counted as an include into the class, for
+  `module_include` and for the Sidekiq worker check.
+- A bare `rescue` that reads `$!` or `$ERROR_INFO` counts as using the error.
+- `doctor` reports a `ruby` that cannot run at all (an rbenv shim with no version selected) as the
+  interpreter's failure, with its own error, rather than as a missing prism.
+- A prism installed with `gem install --user-install` under `XDG_DATA_HOME` is found.
+- `setup --dry-run` with nothing to install no longer also prints an npm command it would run.
+- A migration's `execute` is read as data work when its SQL starts with a comment or is a `MERGE`.
+- A Ruby file holding `1e400` or a binary-encoded string is parsed instead of reported unread.
+- prism parses with the grammar of the Ruby it runs on, so code that Ruby accepts (such as
+  `a[0, k: 1] = 2` before 3.4) is no longer reported as a syntax error.
 - A repository created without a reflog, or on git's reftable backend, refreshed only on a checkout:
   nothing appended to the `logs/HEAD` the hook watched. It now watches the index there, or the
   reftable table list, so a commit or a pull refreshes the map as it does everywhere else.

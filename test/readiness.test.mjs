@@ -147,7 +147,11 @@ test("an interpreter that is not on PATH is absent, and carries the remedy that 
 test("an interpreter without the library is present and still not ready", needsShebang, async (t) => {
   // The measured second half: ruby 2.6 runs and ships no prism, so every Ruby
   // file was charged as a crash with nothing on screen naming the library.
-  const env = stubInterpreter(t, "#!/bin/sh\necho 'cannot load such file -- prism' >&2\nexit 1\n");
+  // The interpreter itself runs; only the require fails, as it does on 2.6.
+  const env = stubInterpreter(
+    t,
+    "#!/bin/sh\ncase \"$*\" in *-rprism*) echo 'cannot load such file -- prism' >&2; exit 1;; esac\nexit 0\n"
+  );
 
   const [row] = await readiness({ engines: ["prism"], env });
 
@@ -155,6 +159,21 @@ test("an interpreter without the library is present and still not ready", needsS
   assert.equal(row.version, null);
   assert.equal(row.ok, false);
   assert.equal(row.reason, "prism is not installed for this ruby");
+});
+
+test("an interpreter that does not run is not reported as a missing library", needsShebang, async (t) => {
+  // Measured with rbenv and no global version: the `ruby` shim is on PATH and
+  // exits 127 with "rbenv: ruby: command not found", and doctor said prism was
+  // not installed, whose remedy, `gem install prism`, fails the same way.
+  const env = stubInterpreter(t, "#!/bin/sh\necho 'rbenv: ruby: command not found' >&2\nexit 127\n");
+
+  const [row] = await readiness({ engines: ["prism"], env });
+
+  assert.equal(row.present, true, "something answers to the name");
+  assert.equal(row.ok, false);
+  assert.equal(row.reason, "ruby does not run: rbenv: ruby: command not found");
+  assert.doesNotMatch(row.remedy, /gem install/, "the library is not what is missing");
+  assert.match(row.remedy, /ruby -e 1/);
 });
 
 test("an interpreter that answers no version is not ready", needsShebang, async (t) => {

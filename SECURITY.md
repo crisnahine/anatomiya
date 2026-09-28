@@ -188,7 +188,9 @@ other command reaches anything, and the scan makes no outbound call at any point
 `anatomiya doctor` spawns the other one, `ruby`, to ask which version of `prism` that interpreter
 ships. It runs under the same scrub the Ruby parser child gets, with `RUBYOPT`, `RUBYLIB` and
 `GEM_HOME` dropped and `cwd` outside the repository, because it points an interpreter at whatever
-`PATH` names.
+`PATH` names. When that question fails, the same `ruby` is run once more under the same scrub as
+`ruby --disable-gems -e 1`, loading nothing, so an interpreter that cannot run at all is told apart
+from one missing prism.
 
 Before either the probe or the parser starts, one more `ruby` lists the `prism` gems that interpreter
 holds, from RubyGems' own records. It starts with gems disabled and requires the interpreter's own
@@ -197,9 +199,9 @@ holds, from RubyGems' own records. It starts with gems disabled and requires the
 than the one the parser reads, and `gem install prism` puts a newer one beside it, so when the
 default is too old the newest installed one past the floor is handed to both children as `-I` load
 paths, absolute and never starting with a dash. Both still run with gems disabled. The listing alone
-keeps `GEM_HOME`, `GEM_PATH`, `HOME` and `USERPROFILE`, which only say where gems are installed and
+keeps `GEM_HOME`, `GEM_PATH`, `HOME`, `USERPROFILE` and `XDG_DATA_HOME`, which only say where gems are installed and
 are where rvm, chruby and `--user-install` put them; `RUBYOPT` and `RUBYLIB`, which inject code, are
-dropped there too. It has the same `cwd`, a 10 second timeout and a 64 KB output bound, and any
+dropped there too. It has the same `cwd`, a 10 second timeout before a parse and the probe's own 5 seconds under `doctor`, and a 64 KB output bound, and any
 failure leaves the interpreter's own default to answer for itself.
 
 ## What this does not defend against
