@@ -275,7 +275,7 @@ function baselineLine(b) {
   if (b.status === "unreachable")
     return `the pinned commit ${b.sha ? b.sha.slice(0, 8) : "?"} is gone from this clone, so every claim dropped to counts`;
   // A pin is there and this build cannot read it. The unpinned line's pointer
-  // at `anatomiya pin` is left off: the file may be a conflict to resolve or a
+  // at `/anatomiya:pin` is left off: the file may be a conflict to resolve or a
   // newer build's, and nothing on the scan path suggests a re-pin (E5).
   if (b.status === "pin-unreadable")
     return `the pin on disk could not be read because ${b.unreadable}, so claims are measured against the current tree and no finding can exceed FIX`;

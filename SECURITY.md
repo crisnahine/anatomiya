@@ -79,7 +79,8 @@ The rules that came out of that:
 
 Where a path still has to reach git, it goes inside a revision argument after a validated sha
 (`git cat-file blob <sha>:<path>`), so it cannot present as an option. Shas are validated against
-`/^[0-9a-f]{7,40}$/` before use, because the pin file that carries them is a repository-controlled
+`/^[0-9a-f]{7,64}$/` before use (64 because a SHA-256 repository names its commits in 64 hex
+digits), because the pin file that carries them is a repository-controlled
 input like any other, and a ref is rejected if it starts with `-`.
 
 ### Everything rendered goes through one allowlist encoder

@@ -28,6 +28,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- `pin` asks again, once the file list is read, whether HEAD and the tree still match: a commit or a
+  `git add` landing while a large index was read put files into a pin labelled with the commit
+  checked before.
+- A linked worktree reading its main checkout's map now hears when that checkout's automatic refresh
+  failed.
 - On a blobless partial clone with the branch checked out directly, `check` skipped every changed
   file as unreadable at the merge base and reported nothing. It now fetches those blobs from the
   clone's own remote; every other read still refuses to reach the network.
@@ -47,7 +52,6 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   silently kept an older Ruby on its too-old default parser.
 - Two refresh workers started within milliseconds of each other could both run: the lock file was
   created empty and filled in after, and the second read the empty one as abandoned.
-
 - In an Angular or NestJS repository, the environment, logging and network conventions stopped
   seeing a wrapper named the way those frameworks name files (`./config.service`, `./env.constants`):
   any dotted suffix was read as an asset's extension. They now use the same list of asset formats as
@@ -185,7 +189,6 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   missing interpreter does, with the remedy.
 - A branch cut before the pin read every file the default branch added since as missing, and closed
   each area those files were in. Those files were never on the branch, and no longer count as gone.
-
 - Ruby before 3.4 could not be used at all. Ruby 3.3 ships `prism` 0.19, which the parser refuses
   because it spells the fields the dimensions read differently, and `gem install prism` did not
   help: the parser runs with gems disabled and only ever saw the default. It now asks which prism
@@ -193,7 +196,6 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   one past it, so `gem install prism` is the whole remedy on any Ruby from 2.7. `doctor` reports the
   prism that will actually parse, and says to run `gem install prism` as well as to upgrade Ruby.
   An interpreter whose own prism is new enough loads exactly what it did before.
-
 - `pin` wrote `baseline.json` through a `.claude` symlinked out of the repository, which a clone can
   carry as a tracked link, and every later `scan` and `check` read the pinned population from
   there. The map and its record already refused such a link. The pin now resolves the same way:

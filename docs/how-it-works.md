@@ -858,41 +858,45 @@ rewritten only when the branch changes. Plugin `FileChanged` matchers add nothin
 so the paths come back from the hook itself, every time, since the list is one list and the last
 hook to answer replaces it (`docs/research/when-a-hook-can-refresh-the-map.md`).
 
-The hook does no git work and returns at once. A `SessionStart` hook holds the session's first
-response until its pipes close, and Claude Code reads the always-loaded rules before its hooks
-finish, so a synchronous scan there would cost the whole scan and still miss the session it ran
-for. The worker is spawned with every stdio closed for the same reason: a child holding the hook's
-pipe keeps the hook pending with no timeout left to end it.
+In a repository that keeps no reflog (`core.logAllRefUpdates=false`) `logs/HEAD` is never written,
+so a commit or a pull on the same branch starts no refresh until the next checkout or session.
+`FileChanged` is matched on `HEAD`, and a change to any file this hook did not ask for answers
+nothing, since answering it would replace somebody else's watch.
 
 The worker keeps its state beside `facts.json`. It takes an exclusive lock, stamps what a scan
 depends on (HEAD, the index as `ls-files -s`, the pin's bytes, the plugin version), and rescans only
-when the stamp moved. It leaves alone a checkout with no map of its own (A24), a map the repository
-tracks, and a merge, rebase, cherry-pick, revert or bisect in progress, and rebuilds a map built
-with `--deep` with the checker. A scan that throws writes nothing, so the previous map stays; the
-same stamp is tried again only after half an hour, and the echo says the refresh failed until one
-succeeds. It has its own clock. A changed overview reaches a running session through the echo's digest, and
-an area file is read from disk the first time its directory is.
+when the stamp moved. It leaves alone a checkout with no map of its own (A24), a map or pin the
+repository tracks, and a merge, rebase, cherry-pick, revert or bisect in progress, and rebuilds a
+map built with `--deep` with the checker. A scan that throws writes nothing, so the previous map
+stays; the same stamp is tried again only after half an hour, and the echo says the refresh failed
+until a refresh or a scan run by hand succeeds. A scan run by hand records its stamp too, so the
+next refresh has nothing to redo. It has its own clock. A changed overview reaches a running session
+through the echo's digest, and an area file is read from disk the first time its directory is.
 
 The same worker moves the pin, and only onto what the remote default branch holds: HEAD equal to
 the first of `origin/HEAD`, `origin/main` or `origin/master` that resolves, with no tracked file
 edited or staged, and never onto a commit older than the pin (E11). A branch cut before the pin
 reads the pinned files the base added after the fork as never held rather than as missing (E12).
 
-Two more conditions keep a pin honest when nobody is watching it. The tip is followed only when `git
-reflog` records its last move as a fetch or a pull that took its refspecs from the remote's
+Three more conditions keep a pin honest when nobody is watching it. The tip is followed only when
+`git reflog` records its last move as a fetch or a pull that took its refspecs from the remote's
 configuration, or records none and the main checkout's first move was the clone onto that same
 commit: a push from this clone, a ref written by hand and a fetch that names its own source or
 destination are this clone's own work, and a session can do all three. Asking git rather than
-reading `logs/` works on the reftable backend too, and a clone that keeps no reflog never pins. A
-commit this clone made (its reflogs name it as a commit, merge commit, pick, revert, applied patch or
-a rebase step that rewrote it, whether `rebase` or `pull --rebase` ran it) never joins the pin while it sits on the first-parent line from the pin to the tip, however
-it reached the remote: a push by URL moves no tracking ref, and a teammate's commit on top reviews
-nothing beneath it. A branch merged on the remote with a merge commit sits behind the second parent
-and is pinned, the merge being its review. And the pin is taken at the commit that was judged, or not at all. What each automatic pin accepted is
-written to `refresh.json`. A map built with `--deep` is rebuilt with the checker, a map or pin the
-repository commits is left alone, and a failed rescan is retried after half an hour. `FileChanged`
-is matched on `HEAD`, and a change to any file this hook did not ask for answers nothing, since
-answering it would replace somebody else's watch.
+reading `logs/` works on the reftable backend too, and a clone that keeps no reflog never pins.
+
+A commit this clone made never joins the pin while it sits on the first-parent line from the pin to
+the tip, however it reached the remote: a push by URL moves no tracking ref, and a teammate's commit
+on top reviews nothing beneath it. Made here is every commit a reflog entry names except the
+entries that create none (a clone, a checkout, a reset, a branch, a fetch, a fast-forward, a
+rebase's start and finish), so a spelling git adds later holds the pin rather than slipping past.
+A branch merged on the remote with a merge commit sits behind the second parent and is pinned, the
+merge being its review.
+
+And the pin is taken at the commit that was judged, or not at all: HEAD and the tree are asked
+again once the file list is read, since a commit or a `git add` landing while it was read would
+put files into a pin labelled with the commit judged before. What each automatic pin accepted is
+written to `refresh.json`.
 
 ## 7b. What lives where
 

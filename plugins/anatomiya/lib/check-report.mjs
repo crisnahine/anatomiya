@@ -1,4 +1,4 @@
-import { encode, locator, quotePath, UNSAFE_IN_PATH } from "./encode.mjs";
+import { encode, locator, printableOnly, quotePath } from "./encode.mjs";
 import { listSome, LISTED, RULES_DIR } from "./rules.mjs";
 
 /**
@@ -114,7 +114,7 @@ const GRAPHEMES = new Intl.Segmenter(undefined, { granularity: "grapheme" });
  * clusters, so the cap never splits a surrogate pair.
  */
 function snippetOf(text) {
-  const s = String(text).replace(UNSAFE_IN_PATH, " ").replace(/ {2,}/g, " ").trim();
+  const s = printableOnly(String(text));
   const kept = [];
   for (const { segment } of GRAPHEMES.segment(s)) {
     if (kept.length >= SNIPPET_CHARS) return `${kept.join("")}…`;

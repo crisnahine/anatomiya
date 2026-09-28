@@ -163,7 +163,7 @@ export async function runReuse(cwd, payload) {
  * moment a re-pin looks most warranted is the moment the agent's own output is
  * largest, and a suggestion there launders it.
  */
-export async function runPin(cwd, { dryRun = false, expect = null } = {}) {
+export async function runPin(cwd, { dryRun = false, expect = null, collectFiles = collect } = {}) {
   const root = await gitRoot(cwd);
   const sha = await headSha(root);
   if (!sha) throw new Error("no commit to pin: this repository has no HEAD");
@@ -173,30 +173,14 @@ export async function runPin(cwd, { dryRun = false, expect = null } = {}) {
   // Refused by the half that plans, so a dry run cannot answer with a clean
   // delta for a write that would land outside the repository.
   pinTarget(root);
-  // The pin records HEAD and the file list each area holds, and that list is
-  // read from the index and the working tree. A staged, edited, deleted or
-  // unmerged tracked file is listed against a commit that does not hold it,
-  // and every scan after reads that area as a population change for as long
-  // as the pin stands. This tool's own output under `.claude/` is left out: a
-  // repository that commits its map rewrites it on every scan, and it is never
-  // part of the population.
-  const dirty = await gitBuffered(root, ["status", "--porcelain", "--untracked-files=no", "-z", "--", ".", ":(exclude).claude"]);
-  if (!dirty.ok) throw new Error(`could not read whether the working tree matches HEAD: ${firstLine(dirty.error ?? "")}`);
-  if (dirty.stdout.length > 0) {
-    throw new Error("tracked files differ from HEAD, and a pin records HEAD: commit or stash them first, then pin");
-  }
-  // Asked of the whole index, since the exclusion above is for this tool's
-  // output and a tracked source file under `.claude/` is corpus like any other.
-  // An unmerged path is listed once per stage, so a pin taken mid-merge holds
-  // it three times and a corpus larger than the tree, and the corpus fixes the
-  // area floor for every scan after.
-  const unmerged = await gitBuffered(root, ["ls-files", "--unmerged", "-z"]);
-  if (!unmerged.ok) throw new Error(`could not read whether the index holds unmerged paths: ${firstLine(unmerged.error ?? "")}`);
-  if (unmerged.stdout.length > 0) {
-    throw new Error("the index holds unmerged paths, and a pin records HEAD: finish or abort the merge first, then pin");
-  }
+  await refuseUnlikeHead(root);
 
-  const { files, truncated } = await collect(root);
+  const { files, truncated } = await collectFiles(root);
+  // Asked again once the list is read. It comes from the index, and reading it
+  // takes seconds on a large repository: a commit or a `git add` landing in
+  // that window put files into a pin labelled with the commit judged before.
+  if ((await headSha(root)) !== sha) throw new Error(`HEAD moved from ${sha} while the pin was being taken`);
+  await refuseUnlikeHead(root);
   // No repository size truncates the corpus any more, so this cannot fire from
   // `collect`. It stays because a pin must describe a whole population, and the
   // flag is the one thing that says whether this one is.
@@ -228,6 +212,34 @@ export async function runPin(cwd, { dryRun = false, expect = null } = {}) {
     previous,
     delta,
   };
+}
+
+/**
+ * Refuse a tree that is not HEAD's. The pin records HEAD and the file list each
+ * area holds, and that list is read from the index and the working tree.
+ */
+async function refuseUnlikeHead(root) {
+  // A staged, edited, deleted or unmerged tracked file is listed against a
+  // commit that does not hold it, and every scan after reads that area as a
+  // population change for as long as the pin stands. This tool's own output under `.claude/` is left out: a
+  // repository that commits its map rewrites it on every scan, and it is never
+  // part of the population.
+  const dirty = await gitBuffered(root, ["status", "--porcelain", "--untracked-files=no", "-z", "--", ".", ":(exclude).claude"]);
+  if (!dirty.ok) throw new Error(`could not read whether the working tree matches HEAD: ${firstLine(dirty.error ?? "")}`);
+  if (dirty.stdout.length > 0) {
+    throw new Error("tracked files differ from HEAD, and a pin records HEAD: commit or stash them first, then pin");
+  }
+  // Asked of the whole index, since the exclusion above is for this tool's
+  // output and a tracked source file under `.claude/` is corpus like any other.
+  // An unmerged path is listed once per stage, so a pin taken mid-merge holds
+  // it three times and a corpus larger than the tree, and the corpus fixes the
+  // area floor for every scan after.
+  const unmerged = await gitBuffered(root, ["ls-files", "--unmerged", "-z"]);
+  if (!unmerged.ok) throw new Error(`could not read whether the index holds unmerged paths: ${firstLine(unmerged.error ?? "")}`);
+  if (unmerged.stdout.length > 0) {
+    throw new Error("the index holds unmerged paths, and a pin records HEAD: finish or abort the merge first, then pin");
+  }
+
 }
 
 /** Answer the branch against the map on disk. */

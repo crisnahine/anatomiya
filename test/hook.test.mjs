@@ -445,6 +445,17 @@ function committed(t, layout = { tests: [], roots: [{ dir: "app", path: "app" }]
   return initWithCommit(dir);
 }
 
+test("a linked worktree reading its main checkout's map hears that checkout's refresh failed", (t) => {
+  // The worktree is never refreshed itself (A93); the map it reads is kept
+  // current, or not, by the main checkout's refresh.
+  const dir = committed(t);
+  const wt = addWorktree(dir, join(dir, ".claude", "worktrees", "w"));
+  mkdirSync(join(dir, ".claude", "anatomiya"), { recursive: true });
+  writeFileSync(join(dir, ".claude", "anatomiya", "refresh.json"), JSON.stringify({ stamp: "x", ok: false, error: "e", at: "t" }));
+
+  assert.match(echoContext(wt, {}), /automatic refresh of this map failed/);
+});
+
 test("a linked worktree with no map of its own is handed its main checkout's, named as such", (t) => {
   // Claude Code's own `.claude/worktrees/` layout, which v0.2.5 answered with
   // silence because the map was stamped as this code's own. Silence is what
