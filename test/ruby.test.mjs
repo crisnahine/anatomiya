@@ -435,6 +435,20 @@ const SRC = {
     end
   `,
 
+  http_gems: `
+    class Feed
+      def load(url)
+        RestClient.get(url, accept: :json)
+        RestClient::Request.execute(method: :get, url: url)
+        HTTPClient.new.get(url)
+        HTTParty.get(url)
+        Faraday.get(url)
+        HTTP.get(url)
+        GithubClient.get(url)
+      end
+    end
+  `,
+
   http_raw_block: `
     def fetch_all
       Net::HTTP.start(url) do |http|
@@ -1224,6 +1238,17 @@ test("an ActiveRecord-shaped call on a client-named constant is not an HTTP site
 test("a raw Net::HTTP block handle named http is not a conforming client", needsRuby, () => {
   assert.deepEqual(counts("http_through_client", "http_raw_block"), { candidates: 1, conforming: 0 },
     "only the Net::HTTP.start site counts, and it counts against");
+});
+
+test("an HTTP library's own constant is a direct call, not the repository's client", needsRuby, () => {
+  // Measured: forty files calling RestClient.get read as "HTTP goes through the
+  // repository's own client, 80 of 81", in a repository with no client at all,
+  // because RestClient and HTTPClient carry the vocabulary in their names. They
+  // are what a wrapper wraps, the way axios is on the JS side.
+  const h = hits("http_through_client", "http_gems");
+  assert.deepEqual(h.map((x) => [x.node.line, x.conforming]), [
+    [4, false], [5, false], [6, false], [7, false], [8, false], [9, false], [10, true],
+  ]);
 });
 
 /* --- class_base: Ruby refuses to raise a class that is not an Exception (#58) --- */
