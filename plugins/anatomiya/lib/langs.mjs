@@ -233,6 +233,23 @@ export const holdsTypeSyntax = (path, facets = null) =>
   CARRIES_TYPES.test(path) || facets?.typed === true;
 
 /**
+ * The languages a file's rows are chosen for: its own, and `jsx` as well where
+ * a `js` file's tree holds JSX.
+ *
+ * The same trade as `holdsTypeSyntax`, the other way round: the extension is
+ * the proxy and the tree is the fact. JSX is legal in a `.js` file and the
+ * grammar already reads it there, so the scan labelled such a file "(JSX)"
+ * and no JSX row ever ran on it. CRA-era apps, React Native and many Next.js
+ * projects keep every component in `.js`, and their maps stated none of the
+ * five JSX conventions while the check enforced none. A `.js` file holding no
+ * JSX stays out, which is what keeps the `.ts`-and-helpers dilution the JSX
+ * rows declare `jsx` alone for out of their denominator. No facets is the
+ * path's answer, the way it is for type syntax.
+ */
+export const spokenIn = (lang, facets = null) =>
+  lang === "js" && facets?.jsx === true ? ["js", "jsx"] : [lang];
+
+/**
  * A wrong declaration fails at import, never mid-scan. Each rule closes a way
  * a registry entry could silently mis-route files: two owners for one
  * extension, a scratch name another language claims, a grammar or dialect

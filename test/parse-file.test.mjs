@@ -174,3 +174,29 @@ test("a Flow file carries the annotation its extension says it cannot", async ()
   assert.equal(untyped.facets.typed, false);
   assert.equal(untyped.hits.explicit_return_type, undefined);
 });
+
+test("a React component in a .js file is asked the JSX rows, and a .js module holding none is not", async () => {
+  // The scan's own kinds line called these files "(JSX)" and no JSX row ever
+  // ran on them: the rows declare `jsx`, and a `.js` file is `js` by extension.
+  // CRA-era apps, React Native and many Next.js projects keep every component
+  // in `.js`, so their maps stated none of the five conventions. The tree is
+  // the answer here the way it is for Flow's annotations.
+  const component = [
+    "import React from 'react';",
+    "export function Comp(props) {",
+    "  const [n, setN] = React.useState(0);",
+    "  return <button onClick={() => setN(n + 1)} {...props}>x</button>;",
+    "}",
+  ].join("\n") + "\n";
+  const hook = "import React from 'react';\nexport function useCount() {\n  return React.useState(0);\n}\n";
+
+  const js = await parseFile(component, "src/Comp.js", "js");
+  const jsx = await parseFile(component, "src/Comp.jsx", "jsx");
+  for (const key of ["hook_call_style", "handler_is_named", "spread_on_component"]) {
+    assert.equal(js.hits[key]?.length, jsx.hits[key].length, key);
+  }
+
+  const module = await parseFile(hook, "src/useCount.js", "js");
+  assert.equal(module.facets.jsx, false);
+  assert.equal(module.hits.hook_call_style, undefined, "a file holding no JSX stays out of the row, as a .ts one does");
+});

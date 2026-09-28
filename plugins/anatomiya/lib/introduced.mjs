@@ -14,7 +14,7 @@ import { dimensionsFor } from "./dimensions.mjs";
 import { CLASSES, claimFor } from "./dimensions-naming.mjs";
 import { encode } from "./encode.mjs";
 import { statedSide } from "./facts.mjs";
-import { holdsTypeSyntax } from "./langs.mjs";
+import { holdsTypeSyntax, spokenIn } from "./langs.mjs";
 import { groupKey, isLearnedItself } from "./reduce.mjs";
 
 /**
@@ -175,7 +175,9 @@ function breakingSites(program, source, lang, keyPath, { polarity, frameworks, c
   // the dimensions whose question is the annotation would report a site
   // beside the line that satisfies it. The scan drops them for such a file and
   // this has to agree, or the map and the check disagree about the same file.
-  for (const dim of dimensionsFor([lang], { frameworks, capabilities, rows })) {
+  // The rows are the ones the scan ran on this file, JSX rows included where
+  // the head's tree holds JSX under a `.js` name.
+  for (const dim of dimensionsFor(spokenIn(lang, facets), { frameworks, capabilities, rows })) {
     if (stripped && dim.blindWhenStripped) continue;
     // A plain JavaScript file cannot carry a type annotation, so the scan left
     // it out of this row's population and the check has to leave it out of the
