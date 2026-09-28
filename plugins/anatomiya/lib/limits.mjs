@@ -62,7 +62,9 @@ export const rawTransferAllowed = (platform = process.platform) => platform !== 
 export function guardsOver(defaults, given, engine) {
   const merged = { ...defaults };
   for (const [name, value] of Object.entries(given ?? {})) {
-    if (!(name in defaults)) throw new TypeError(`${name} is not one of the ${engine} guards: ${Object.keys(defaults).join(", ")}`);
+    // Own keys only: `in` walks the prototype, so `toString` and `constructor`
+    // passed as guards and were merged over the bag.
+    if (!Object.hasOwn(defaults, name)) throw new TypeError(`${name} is not one of the ${engine} guards: ${Object.keys(defaults).join(", ")}`);
     if (value !== undefined) merged[name] = value;
   }
   return merged;

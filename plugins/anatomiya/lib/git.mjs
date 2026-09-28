@@ -17,6 +17,7 @@
  * caller may read output without.
  */
 import { execFile, spawn } from "node:child_process";
+import { devNull } from "node:os";
 import { promisify } from "node:util";
 
 import { MAX_FILE_BYTES } from "./limits.mjs";
@@ -165,7 +166,36 @@ function gitEnv(env, { lazyFetch = false } = {}) {
     // shallow path is the one place this tool talks to a remote at all, and it
     // reads that config to do it.
     GIT_ALLOW_PROTOCOL: "file:git:http:https:ssh",
+    // The same tarball's config can name commands git runs on a read. Measured:
+    // `core.fsmonitor` set to a script in `.git/config` ran on every `status`
+    // this tool made. Environment config is the one kind every subcommand
+    // honours and a repository cannot override, since it sits above every
+    // config file. The hooks go with it, because `fetch` runs
+    // `reference-transaction`, and nothing this tool runs is owed a hook.
+    ...withConfig(env, NEUTRAL_CONFIG),
   };
+}
+
+const NEUTRAL_CONFIG = [
+  ["core.fsmonitor", "false"],
+  ["core.hooksPath", devNull],
+];
+
+/**
+ * The `GIT_CONFIG_COUNT` entries a caller already carries, with these after
+ * them so that they win. Replacing the count instead dropped the caller's own,
+ * which is somebody else's `-c` for every git this process starts. A count git
+ * would refuse as bogus is read as none, since git would then refuse every call.
+ */
+function withConfig(env, entries) {
+  const given = String(env?.GIT_CONFIG_COUNT ?? "").trim();
+  const count = /^\d+$/.test(given) && Number.isSafeInteger(Number(given)) ? Number(given) : 0;
+  const out = { GIT_CONFIG_COUNT: String(count + entries.length) };
+  entries.forEach(([key, value], i) => {
+    out[`GIT_CONFIG_KEY_${count + i}`] = key;
+    out[`GIT_CONFIG_VALUE_${count + i}`] = value;
+  });
+  return out;
 }
 
 /**

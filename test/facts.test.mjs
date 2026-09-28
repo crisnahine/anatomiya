@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { execFileSync, spawnSync } from "node:child_process";
 import { needsPosixSpecialFiles } from "./platform.mjs";
@@ -660,4 +660,28 @@ test("a link planted at the exact temporary name is refused, not written through
 
   assert.throws(() => atomic(target, "{}\n"), /EEXIST/);
   assert.equal(readFileSync(victim, "utf8"), "untouched\n");
+  // And the entry it refused is left where it was: it is not this call's to remove.
+  assert.ok(lstatSync(`${target}.tmp-${process.pid}-${"ab".repeat(8)}`).isSymbolicLink());
+});
+
+test("a write that fails part way leaves no temporary file behind", async (t) => {
+  // ENOSPC arrives after the temporary file exists, and the write sat outside
+  // the cleanup, so a full disk left `facts.json.tmp-*` beside the map.
+  const fs = (await import("node:fs")).default;
+  const { syncBuiltinESMExports } = await import("node:module");
+  const real = fs.writeFileSync;
+  fs.writeFileSync = (file, body, ...rest) => {
+    real(file, String(body).slice(0, 1), ...rest);
+    throw Object.assign(new Error("ENOSPC: no space left on device, write"), { code: "ENOSPC" });
+  };
+  syncBuiltinESMExports();
+  t.after(() => {
+    fs.writeFileSync = real;
+    syncBuiltinESMExports();
+  });
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-atomic-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+  assert.throws(() => atomic(join(dir, "facts.json"), "{}\n"), /ENOSPC/);
+  assert.deepEqual(readdirSync(dir), []);
 });
