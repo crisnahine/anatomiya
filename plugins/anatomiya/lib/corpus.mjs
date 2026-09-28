@@ -1,5 +1,5 @@
-import { lstatSync, realpathSync } from "node:fs";
-import { resolve, sep } from "node:path";
+import { lstatSync, realpathSync, statSync } from "node:fs";
+import { dirname, resolve, sep } from "node:path";
 
 import { gitBuffered, gitStreamed } from "./git.mjs";
 import { EXT_BY_LANG, LANGUAGES, language } from "./langs.mjs";
@@ -310,9 +310,41 @@ export function safeResolve(root, relPath) {
 }
 
 export async function gitRoot(cwd) {
+  // Every failure used to read `not a git repository`, which names `git init`
+  // as the fix for a typo, a file, a missing git and a repository git refused.
+  // Each has a different fix, so each is told apart before or after the call.
+  //
+  // Asked first because a spawn in a directory that is not there fails with
+  // the same ENOENT as a git that is not there.
+  let dir = cwd;
+  let stat;
+  try {
+    stat = statSync(cwd);
+  } catch {
+    throw new Error(`no such directory: ${cwd}`);
+  }
+  // The usage promises that a path picks the repository it is in, and a file
+  // is in the repository its directory is in.
+  if (!stat.isDirectory()) dir = dirname(cwd);
+
   // One bounded answer, so it takes the buffered entry point (F5).
-  const r = await gitBuffered(cwd, ["rev-parse", "--show-toplevel"], { maxBytes: 1024 * 1024 });
-  if (!r.ok) throw new Error(`not a git repository: ${cwd}`, { cause: new Error(r.error) });
+  const r = await gitBuffered(dir, ["rev-parse", "--show-toplevel"], { maxBytes: 1024 * 1024 });
+  if (!r.ok) {
+    // The directory was just seen, so an ENOENT from the spawn is git itself.
+    if (/\bspawn\b.*\bENOENT\b/.test(r.error ?? "")) {
+      throw new Error("git is not on PATH, and every command reads the repository through it");
+    }
+    // Node heads the message with `Command failed: <argv>`; what follows is
+    // git's stderr. Kept whole up to a bound, because the line after git's
+    // first is where it names its own fix, as `safe.directory` for a checkout
+    // owned by another user.
+    const said = String(r.error ?? "").replace(/^Command failed:[^\n]*\n/, "").split("\n")
+      .map((l) => l.trim()).filter(Boolean).join(" ").slice(0, 400);
+    if (!said || /not a git repository/i.test(said)) {
+      throw new Error(`not a git repository: ${cwd}`, { cause: new Error(r.error) });
+    }
+    throw new Error(`git could not read the repository at ${cwd}: ${said}`);
+  }
 
   const root = r.stdout.trim();
   // Exit 0 with an empty line is possible; returning "" would resolve every

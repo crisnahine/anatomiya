@@ -315,6 +315,21 @@ test("a command that cannot run exits non-zero and says why without a stack trac
   assert.doesNotMatch(stderr, /\n\s+at /, "no stack trace");
 });
 
+test("a scan with no git on PATH says git is missing, not that the repository is", needsPathControl, (t) => {
+  // Measured: with PATH holding node and nothing else, a scan of a real
+  // repository said `not a git repository: .`, which names a fix that cannot
+  // work while the one that can, installing git, goes unsaid.
+  const repo = repoWithSource(t);
+  const empty = mkdtempSync(join(tmpdir(), "anatomiya-cli-nogit-"));
+  t.after(() => rmSync(empty, { recursive: true, force: true }));
+
+  const { code, stderr } = runFrom(ANATOMIYA, ["scan", repo, "--dry-run"], empty);
+
+  assert.equal(code, 1);
+  assert.match(stderr, /^anatomiya: git is not on PATH/, stderr);
+  assert.doesNotMatch(stderr, /not a git repository/);
+});
+
 test("two scans of unchanged source write byte-identical files", (t) => {
   // A5: the token economics only work on a cached read, so anything that moves
   // per commit destroys them. A timestamp, a duration, or a Map iterated in
