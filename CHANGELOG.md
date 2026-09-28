@@ -9,6 +9,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- A map built with `--deep` is kept current too, rebuilt with the type checker the way it was built.
+- A linked worktree with no pin of its own reads its main checkout's, so `check` there no longer caps
+  every finding at FIX in a repository that has a pin.
+- Each automatic pin records what it accepted in `.claude/anatomiya/refresh.json`: the commit it
+  moved from and to, and how many files entered and left the population.
 - The map keeps itself current. After the first `scan` in a checkout, a background refresh rescans
   at the start of every session and whenever HEAD moves, and only when the commit, the tracked
   files, the pin or the plugin version changed. The hook returns at once and the scan runs detached.
@@ -20,6 +25,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- The automatic pin could follow a remote-tracking ref this clone had moved itself, by `git push` or
+  `git update-ref`, and so accept the agent's own commits as the population everything is judged
+  against. It now follows a tip only when a fetch or a pull brought it, and never one HEAD moved away
+  from while it was being judged.
+- The background refresh rewrote a `baseline.json` the repository commits, leaving a change in
+  `git status` nobody made. A committed pin is now left alone like a committed map.
+- The refresh ran for any file another plugin had asked Claude Code to watch, and its answer
+  replaced that plugin's watch with its own. It now answers only for this checkout's `HEAD`.
+- A refresh that failed once, for a reason of the machine's rather than the checkout's, was not tried
+  again until the next commit. It is retried after half an hour.
+- On a very large repository the refresh never ran: the index it hashes was read whole and gave up
+  past 64 MB. It is streamed.
 - `check` examined nothing on the checkout `actions/checkout` makes for a pull request, one depth-1
   fetch of the merge ref, and printed 0 MUST-FIX, 0 FIX, 0 NIT on every pull request. A base that is
   one of the merge commit's own parents is now taken as the merge base, and a shallow clone that

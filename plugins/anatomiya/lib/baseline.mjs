@@ -14,6 +14,7 @@ import { applyPairings } from "./pairing.mjs";
 import { atomic, readRecord } from "./facts.mjs";
 import { byCode } from "./paths.mjs";
 import { readHead, resolveInside } from "./rules.mjs";
+import { mainCheckoutOf } from "./worktree.mjs";
 
 export const PIN_PATH = ".claude/anatomiya/baseline.json";
 export const PIN_SCHEMA = 1;
@@ -86,7 +87,15 @@ export function readPin(root) {
   const { record, oversize } = readRecord(path);
   if (oversize) return { pin: null, unreadable: "it is past the size this reads" };
   if (record === null) {
-    return { pin: null, unreadable: readHead(path, 0).kind === "file" ? "it does not parse as JSON" : null };
+    if (readHead(path, 0).kind === "file") return { pin: null, unreadable: "it does not parse as JSON" };
+    // No pin here at all. A linked worktree reads its main checkout's: the pin
+    // names commits in the history both share, the hooks already read that
+    // checkout's map there (A93), and without it every finding in the place a
+    // session goes to work was capped at FIX in a repository that had a pin.
+    // Only the absence falls through; a pin the worktree has, readable or not,
+    // is its own answer. `pin` there still writes the worktree's own.
+    const main = mainCheckoutOf(root);
+    return main === null ? { pin: null, unreadable: null } : readPin(main);
   }
   const why = pinProblem(record);
   return why === null ? { pin: record, unreadable: null } : { pin: null, unreadable: why };
