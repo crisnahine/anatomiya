@@ -39,7 +39,7 @@ const SCAN = [
   "baseline 4bd14f9f, 0 files changed since the pin (measured against origin/HEAD)",
   "9 files in no area: too few per directory",
   "wrote 33 files",
-  "a session already running still holds the old map; restart to pick it up",
+  "a running session gets the new overview on its next prompt or tool call, and a new session, a compaction or /clear loads the whole map",
   "",
 ].join("\n");
 

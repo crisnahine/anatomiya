@@ -367,13 +367,15 @@ test("the scan names the rule files it did not write, one per line (A4)", (t) =>
   assert.match(overview, /^- "house-style\.md"$/m);
 });
 
-test("a scan says the running session still holds the old map (A8)", (t) => {
-  // Measured: a rewritten context file does not re-attach mid-session.
+test("a scan says what reaches a session already running (A8)", (t) => {
+  // The echo hands a changed overview to a running session on its next prompt
+  // or tool call (A92), and a rewritten context file already read does not
+  // re-attach until a new session, a compaction or /clear (A6).
   const repo = repoWithSource(t);
 
   const out = anatomiya(repo, "scan");
 
-  assert.match(out, /^a session already running still holds the old map; restart to pick it up$/m);
+  assert.match(out, /^a running session gets the new overview on its next prompt or tool call, and a new session, a compaction or \/clear loads the whole map$/m);
 });
 
 test("a pin says it too, because it sends the reader off to scan (A8)", (t) => {
@@ -382,7 +384,7 @@ test("a pin says it too, because it sends the reader off to scan (A8)", (t) => {
   const out = anatomiya(repo, "pin");
 
   assert.match(out, /run `anatomiya scan` to measure the map against it/);
-  assert.match(out, /^a session already running still holds the old map; restart to pick it up$/m);
+  assert.match(out, /^a running session gets the new overview on its next prompt or tool call, and a new session, a compaction or \/clear loads the whole map$/m);
 });
 
 /* --- what the command files tell the agent (A7, A8) --- */
@@ -407,10 +409,15 @@ test("every command that reads the map forbids the Read tool on it (A7)", () => 
   assert.match(body, /`cat`/);
 });
 
-test("every command that rebuilds the map says a running session keeps the old one (A8)", () => {
+test("every command that rebuilds the map says what reaches a running session (A8)", () => {
+  // The agent relays this to the user, so it has to be the story the README
+  // tells: no restart for the overview, and a fresh window for the rest.
   for (const name of ["scan.md", "pin.md"]) {
     const body = readFileSync(join(ANATOMIYA, "commands", name), "utf8");
-    assert.match(body, /does not re-attach mid-session/, name);
+    // Whitespace-tolerant, so rewrapping the paragraph is not a failure.
+    assert.match(body, /next\s+prompt\s+or\s+tool\s+call/, name);
+    assert.match(body, /new\s+session,\s+a\s+compaction\s+or\s+`\/clear`/, name);
+    assert.doesNotMatch(body, /restart/i, name);
   }
 });
 

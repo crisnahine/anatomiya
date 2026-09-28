@@ -774,8 +774,9 @@ Three constraints shape the rendering:
   work on a cached read, so there is no timestamp, no duration, and no count that moves per commit.
 - **Each generated file stays under 40 lines.** A rewritten context file does not re-attach inside
   one context window, and the change notice truncates head and tail, so a long file loses its middle
-  in both copies. This is also why the scan prints a line telling you to restart: a compaction would
-  pick the new file up on its own, and no session can be told to compact. It is a bound the
+  in both copies. This is also why the scan prints a line saying what reaches a running session: the
+  overview on its next prompt or tool call, through the echo's digest, and an area file it already
+  read only once a new session, a compaction or `/clear` rebuilds the window. It is a bound the
   renderer holds rather than a hope about how many dimensions an area has: an area file drops its
   suppressed counts before its stated directives and says how many did not fit, and the overview's
   area listing gets whatever the rest of that file leaves. A stated directive the budget cannot
