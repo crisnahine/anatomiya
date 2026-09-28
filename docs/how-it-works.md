@@ -888,8 +888,10 @@ reading `logs/` works on the reftable backend too, and a clone that keeps no ref
 A commit this clone made never joins the pin while it sits on the first-parent line from the pin to
 the tip, however it reached the remote: a push by URL moves no tracking ref, and a teammate's commit
 on top reviews nothing beneath it. Made here is every commit a reflog entry names except the
-entries that create none (a clone, a checkout, a reset, a branch, a fetch, a fast-forward, a
-rebase's start and finish), so a spelling git adds later holds the pin rather than slipping past.
+entries that create none (a clone, a checkout, a reset, a branch, a fetch, a push, the remote's
+HEAD named, a fast-forward, a rebase's start and finish, each read from the command part of the
+entry and never from a commit's subject), so a spelling git adds later holds the pin rather than
+slipping past.
 A branch merged on the remote with a merge commit sits behind the second parent and is pinned, the
 merge being its review.
 

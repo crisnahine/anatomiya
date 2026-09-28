@@ -300,16 +300,25 @@ async function followPin(root, pin) {
 }
 
 // The reflog entries that create no commit: a clone, a checkout, a reset, a
-// branch made or renamed, anything a fetch wrote, a fast-forward, and a
-// rebase's bookkeeping (`(start)` and `(finish)` name the upstream commit it
+// branch made or renamed, anything a fetch wrote, a push (the commit it sent
+// was recorded where it was made, and one the remote sent first is not this
+// clone's), the remote's HEAD named or a remote renamed, a fast-forward, and
+// a rebase's bookkeeping (`(start)` and `(finish)` name the upstream commit it
 // moved onto). Every other entry names a commit this clone made, whatever
-// wrote it. Read this way round because git prefixes a rebase's steps with
-// the command that ran it (`pull -q --rebase (pick)`, or `pull (pick)` with
+// wrote it. Read this way round because git prefixes a rebase's steps with the
+// command that ran it (`pull -q --rebase (pick)`, or `pull (pick)` with
 // `pull.rebase` set), and a list of what creates commits missed each new
-// spelling and pinned the rebased commit; an entry nobody listed here now
-// holds the pin rather than letting it through.
-const CREATES_NOTHING =
-  /^(clone|checkout|reset|branch|fetch|initial pull)\b|^(pull|merge)\b[^:]*: (fast-forward|storing head|forced-update)\b|\((start|finish|abort|reset|label|update-refs)\): /i;
+// spelling and pinned the rebased commit; an entry nobody listed here holds the
+// pin rather than letting it through. The command is the part before the
+// first `: `, and a marker is only read there: `commit: feat(reset): ...` is a
+// commit whose subject has a scope, not a rebase's reset.
+const COMMAND = "(?:(?!: ).)*";
+const CREATES_NOTHING = new RegExp(
+  "^(clone|checkout|reset|branch|fetch|initial pull|update by push|remote set-head|remote: renamed)\\b" +
+    `|^(pull|merge|cherry-pick)\\b${COMMAND}: (fast-forward|storing head|forced-update)\\b` +
+    `|^${COMMAND}\\((start|finish|abort|reset|label|update-refs)\\): `,
+  "i"
+);
 
 /**
  * Whether a commit this clone created sits on the first-parent line the pin

@@ -567,6 +567,54 @@ test("however this clone made a commit, pushing it straight onto the default bra
   }
 });
 
+test("a commit whose subject names a scope like a rebase step's is still this clone's own", async (t) => {
+  // `feat(reset): ...` reads, unanchored, like a rebase's `(reset): ` step.
+  for (const subject of ["feat(reset): password reset flow", "fix(label): align", "chore(start): boot"]) {
+    const { origin, dir } = await cloned(t);
+    await refreshRepository(dir);
+    const first = loadPin(dir).sha;
+    git(origin, "config", "receive.denyCurrentBranch", "updateInstead");
+    source(dir, "lib/agent", 8);
+    commit(dir, subject);
+    git(dir, "-c", "push.negotiate=false", "push", "-q", origin, "HEAD:main");
+    source(origin, "lib/t2", 8);
+    commit(origin, "a teammate's commit on top");
+    git(dir, "pull", "-q", "--ff-only");
+
+    assert.equal((await refreshRepository(dir)).pinned, false, subject);
+    assert.equal(loadPin(dir).sha, first, subject);
+  }
+});
+
+test("pushing a commit the remote sent, or naming the remote's HEAD, makes nothing here", async (t) => {
+  // A branch pushed where it was cut, a deploy push, `remote set-head -a`:
+  // each writes a reflog entry for a commit this clone did not make, and
+  // counting it held the pin at that commit for good.
+  const ways = {
+    "a new branch pushed at the tip": (dir) => {
+      git(dir, "checkout", "-q", "-b", "feat");
+      git(dir, "-c", "push.negotiate=false", "push", "-q", "origin", "feat");
+      git(dir, "checkout", "-q", "main");
+    },
+    "a deploy push": (dir) => git(dir, "-c", "push.negotiate=false", "push", "-q", "origin", "main:production"),
+    "remote set-head": (dir) => git(dir, "remote", "set-head", "origin", "-a"),
+  };
+  for (const [way, act] of Object.entries(ways)) {
+    const { origin, dir } = await cloned(t);
+    await refreshRepository(dir);
+    source(origin, "lib/t1", 8);
+    commit(origin, "a teammate's commit");
+    git(dir, "pull", "-q", "--ff-only");
+    act(dir);
+    source(origin, "lib/t2", 8);
+    commit(origin, "another teammate's commit");
+    git(dir, "pull", "-q", "--ff-only");
+
+    assert.equal((await refreshRepository(dir)).pinned, true, way);
+    assert.equal(loadPin(dir).sha, git(dir, "rev-parse", "HEAD"), way);
+  }
+});
+
 test("rebasing onto the remote with nothing of this clone's own still lets the pin follow", async (t) => {
   // `rebase (start)` and `rebase (finish)` name the upstream commit the rebase
   // moved onto, which this clone did not make; counting them stalled the pin.
