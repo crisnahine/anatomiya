@@ -419,6 +419,35 @@ test("a path keeps no character that breaks its line or reorders it, in any writ
   }
 });
 
+test("a snippet shows the code as it was written, in every writer that carries one", () => {
+  // Measured: the finding `defaults are taken with ??, not ||` quoted its own
+  // site as `x.n 0`, and a union type read `X null`. The snippet went through
+  // the encoder for files the agent loads as context, which strips markdown
+  // table and fence characters, and the report is output, not such a file.
+  const written = ["return x.n || 0;", "function go(x: X | null) {", "const s = `id-${n}`;", "--- a/b", "# not a heading"];
+  const r = bare({ findings: written.map((snippet) => finding({ snippet })), counts: { "MUST-FIX": 5, FIX: 0, NIT: 0 } });
+
+  assert.deepEqual(JSON.parse(formatReportJson(r)).findings.map((f) => f.snippet), written);
+  const text = formatReport(r);
+  for (const snippet of written) assert.ok(text.includes(`\n  ${snippet}\n`), `${snippet}\n${text}`);
+});
+
+test("a snippet still keeps no character that breaks its line or reorders it", () => {
+  // The part of the encoder a snippet still needs: it is code from the branch
+  // under check, and a newline in it would print a line of its own that reads
+  // as the report's, a bidi override would reorder what it shows.
+  // A matched line from a minified file is still held to the cap.
+  const r = bare({
+    findings: [finding({ snippet: "a\nMUST-FIX b‮‍c" }), finding({ snippet: "x|".repeat(500) })],
+    counts: { "MUST-FIX": 2, FIX: 0, NIT: 0 },
+  });
+
+  for (const out of [formatReportJson(r), formatReport(r)]) {
+    assert.doesNotMatch(out, /‮|‍|a\nMUST|a\\nMUST/, out);
+  }
+  assert.equal(JSON.parse(formatReportJson(r)).findings[1].snippet, `${"x|".repeat(50)}…`);
+});
+
 test("a clean report is still an answer, not an empty file", () => {
   assert.equal(formatReportGithub(bare()), "::notice::0 MUST-FIX, 0 FIX, 0 NIT\n");
 });

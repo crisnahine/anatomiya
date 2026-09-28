@@ -118,6 +118,28 @@ const UNSAFE_IN_PATH = /[^\p{L}\p{M}\p{N}\p{P}\p{S} ]/gu;
  */
 const locator = (p) => String(p ?? "").replace(UNSAFE_IN_PATH, " ");
 
+const GRAPHEMES = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+
+/**
+ * A snippet as the code it quotes, with only what breaks or reorders its line
+ * refused, and capped.
+ *
+ * Not through the display encoder either. That one strips `|`, backticks and
+ * fence runs because a context file is markdown the agent loads, and this
+ * report is output: the finding `defaults are taken with ??, not ||` quoted its
+ * own site as `x.n 0`, and every union type lost its bar. Capped on grapheme
+ * clusters, so the cap never splits a surrogate pair.
+ */
+function snippetOf(text) {
+  const s = String(text).replace(UNSAFE_IN_PATH, " ").replace(/ {2,}/g, " ").trim();
+  const kept = [];
+  for (const { segment } of GRAPHEMES.segment(s)) {
+    if (kept.length >= SNIPPET_CHARS) return `${kept.join("")}…`;
+    kept.push(segment);
+  }
+  return kept.join("");
+}
+
 // Neutralised rather than quoted, so a writer with a field to put a path in is
 // not handed one wrapped in the quoting the text line needs.
 function encodeRow(row) {
@@ -133,7 +155,7 @@ function encodeFinding(f) {
     where: f.where == null ? null : encode(f.where),
     reason: encode(f.reason),
     companion: f.companion == null ? null : locator(f.companion),
-    snippet: f.snippet == null ? null : encode(f.snippet, { max: SNIPPET_CHARS }),
+    snippet: f.snippet == null ? null : snippetOf(f.snippet),
   };
 }
 
