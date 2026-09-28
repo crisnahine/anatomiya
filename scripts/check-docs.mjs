@@ -214,13 +214,16 @@ export function readGlossary(text) {
  * The working tree rather than the index: a file added and not staged is still
  * a file the prose may name, and a gate that reads the index answers about a
  * tree nobody has. Ignored files are left out, since a local working directory
- * is not part of what a reader is sent to.
+ * is not part of what a reader is sent to. The same reading leaves out a file
+ * still in the index but deleted from the tree: there is nothing there to read,
+ * and reading it threw a stack in place of the gate's answer.
  */
 function repositoryFiles() {
   try {
     return execFileSync("git", ["ls-files", "--cached", "--others", "--exclude-standard"], { cwd: root, encoding: "utf8" })
       .split("\n")
-      .filter(Boolean);
+      .filter(Boolean)
+      .filter((rel) => existsSync(join(root, rel)));
   } catch {
     return [];
   }
@@ -544,9 +547,10 @@ export function checkDocs() {
 
   // The `.worktreeinclude` a worktree Claude Code makes is copied from. The
   // exclude above hides the pin along with the map, and a worktree is handed
-  // only what that file names: it once listed the map and not the pin, so a
-  // check in such a worktree read "no baseline pinned" and capped every finding
-  // at FIX, in a repository that had one.
+  // only what that file names. A linked worktree with no pin reads its main
+  // checkout's (baseline.mjs `readPin`), but only where `mainCheckoutOf` can
+  // name that checkout, so the pin line is what keeps the copied map beside
+  // the pin it was checked against everywhere else.
   for (const path of [`${RULES_DIR}/${PREFIX}*.md`, FACTS_PATH, PIN_PATH]) {
     claim("README.md", read("README.md").includes(`\n**/${path}\n`), `does not have a worktree Claude Code makes copy ${path}`);
   }

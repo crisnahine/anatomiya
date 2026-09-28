@@ -150,7 +150,7 @@ test("a listed plugin that would install as nothing is a problem", (t) => {
   const dir = marketplace(t, { hooks: false });
 
   assert.deepEqual(validate(dir), [
-    "marketplace.json entry second installs as nothing: no hooks, commands, agents, skills or mcpServers",
+    "marketplace.json entry second installs as nothing: no hooks, commands, agents, skills, mcpServers, workflows, outputStyles or lspServers",
   ]);
 });
 
@@ -161,7 +161,7 @@ test("a declaration that parses and declares no hook installs nothing", (t) => {
   writeFileSync(join(dir, "plugins", "second", "hooks", "hooks.json"), JSON.stringify({ hooks: {} }));
 
   assert.deepEqual(validate(dir), [
-    "marketplace.json entry second installs as nothing: no hooks, commands, agents, skills or mcpServers",
+    "marketplace.json entry second installs as nothing: no hooks, commands, agents, skills, mcpServers, workflows, outputStyles or lspServers",
   ]);
 });
 
@@ -170,7 +170,7 @@ test("an event declared with an empty group installs nothing either", (t) => {
   writeFileSync(join(dir, "plugins", "second", "hooks", "hooks.json"), JSON.stringify({ hooks: { UserPromptSubmit: [{ hooks: [] }] } }));
 
   assert.deepEqual(validate(dir), [
-    "marketplace.json entry second installs as nothing: no hooks, commands, agents, skills or mcpServers",
+    "marketplace.json entry second installs as nothing: no hooks, commands, agents, skills, mcpServers, workflows, outputStyles or lspServers",
   ]);
 });
 
@@ -181,7 +181,7 @@ test("a manifest key that is present and empty names nothing", (t) => {
     const dir = marketplace(t, { hooks: false, second: { commands: empty } });
 
     assert.deepEqual(validate(dir), [
-      "marketplace.json entry second installs as nothing: no hooks, commands, agents, skills or mcpServers",
+      "marketplace.json entry second installs as nothing: no hooks, commands, agents, skills, mcpServers, workflows, outputStyles or lspServers",
     ], JSON.stringify(empty));
   }
 });
@@ -192,7 +192,7 @@ test("a commands directory holding only an empty directory installs nothing", (t
   mkdirSync(join(dir, "plugins", "second", "commands", "ops"), { recursive: true });
 
   assert.deepEqual(validate(dir), [
-    "marketplace.json entry second installs as nothing: no hooks, commands, agents, skills or mcpServers",
+    "marketplace.json entry second installs as nothing: no hooks, commands, agents, skills, mcpServers, workflows, outputStyles or lspServers",
   ]);
 });
 
@@ -206,7 +206,7 @@ test("a commands file with no bytes in it installs nothing, and one with bytes d
   writeFileSync(path, "");
 
   assert.deepEqual(validate(dir), [
-    "marketplace.json entry second installs as nothing: no hooks, commands, agents, skills or mcpServers",
+    "marketplace.json entry second installs as nothing: no hooks, commands, agents, skills, mcpServers, workflows, outputStyles or lspServers",
   ]);
 
   writeFileSync(path, "# go\n");
@@ -1089,7 +1089,7 @@ test("every plugin whose hooks are required is one the marketplace lists", (t) =
   // Two sentences and two causes: the marketplace no longer names the plugin
   // whose hooks are required, and the one it renamed to installs nothing.
   assert.deepEqual(validate(dir), [
-    "marketplace.json entry anatomiya-scanner installs as nothing: no hooks, commands, agents, skills or mcpServers",
+    "marketplace.json entry anatomiya-scanner installs as nothing: no hooks, commands, agents, skills, mcpServers, workflows, outputStyles or lspServers",
     "marketplace.json lists no usable plugin called anatomiya, whose hooks were never read as a result",
   ]);
 });

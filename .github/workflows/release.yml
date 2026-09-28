@@ -53,8 +53,8 @@ jobs:
           ruby-version: "3.4"
 
       # Required, not optional. Ruby is installed above, so a failure here is a
-      # real one, and a release that skipped the Ruby tier would ship eleven
-      # dimensions and a prism child that nothing verified.
+      # real one, and a release that skipped the Ruby tier would ship every
+      # Ruby dimension and a prism child that nothing verified.
       - name: Check the Ruby parser
         shell: bash
         run: |
@@ -65,8 +65,8 @@ jobs:
           echo "prism $version"
 
       # Every test, with no Ruby branch: the step above exits 1 when prism is
-      # missing, so by here it is there. ci has the branch because six of its
-      # legs may legitimately lack Ruby; a release may not.
+      # missing, so by here it is there. ci has the branch because every leg
+      # but one may legitimately lack Ruby; a release may not.
       - name: Run the suite
         shell: bash
         run: |

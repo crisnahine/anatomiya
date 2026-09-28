@@ -134,7 +134,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - The background refresh rewrote a `baseline.json` the repository commits, leaving a change in
   `git status` nobody made. A committed pin is now left alone like a committed map.
 - The refresh ran for any file another plugin had asked Claude Code to watch, and its answer
-  replaced that plugin's watch with its own. It now answers only for this checkout's `HEAD`.
+  replaced that plugin's watch with its own. It now answers only for the files that say this
+  checkout's `HEAD` moved: its reflog, or where there is none the index, or reftable's `tables.list`.
 - A refresh that failed once, for a reason of the machine's rather than the checkout's, was not tried
   again until the next commit. It is retried after half an hour.
 - On a very large repository the refresh never ran: the index it hashes was read whole and gave up

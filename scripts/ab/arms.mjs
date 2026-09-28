@@ -28,7 +28,7 @@ const run = promisify(execFile);
  * it is on a closed list, which is the F5 battery the scan runs behind. A
  * worktree needs `--detach` and `--force`, and widening that list would weaken
  * every call the scan makes to serve a harness that is not even shipped:
- * `scripts/` is outside both plugin roots. So the harness carries the same
+ * `scripts/` is outside the plugin root. So the harness carries the same
  * battery over its own shorter list instead.
  */
 const WORKTREE_FLAGS = new Set(["--detach", "--force"]);

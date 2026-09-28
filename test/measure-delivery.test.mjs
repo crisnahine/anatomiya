@@ -9,6 +9,11 @@ import {
   tableOf,
 } from "../scripts/measure-delivery.mjs";
 import { compact } from "./transcript.mjs";
+import { spawnSync } from "node:child_process";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const SCRIPT = join(dirname(fileURLToPath(import.meta.url)), "..", "scripts", "measure-delivery.mjs");
 
 const OVERVIEW = "/repo/.claude/rules/anatomiya-overview.md";
 const LIB = "/repo/.claude/rules/anatomiya-area-76b5a357.md";
@@ -122,4 +127,11 @@ test("the transcript directory is required and an unknown option is refused", ()
   assert.deepEqual(parseArgs(["dir", "--force"]), { dir: "dir", md: null, match: null, force: true });
   // A second directory was taken over the first without a word.
   assert.match(parseArgs(["one", "two"]).error, /one transcript directory/);
+});
+
+test("a store that is a file rather than a directory is refused with a line and exit 2", () => {
+  const run = spawnSync(process.execPath, [SCRIPT, SCRIPT], { encoding: "utf8" });
+  assert.equal(run.status, 2);
+  assert.match(run.stderr, /not a directory/);
+  assert.doesNotMatch(run.stderr, /ENOTDIR|at .*\.mjs:\d+/, "no stack trace");
 });
