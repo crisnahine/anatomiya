@@ -140,13 +140,13 @@ it finds one, and leaves everything else in the file alone.
 
 After the first `/anatomiya:scan` in a checkout, you do not run it again. At the start of every
 session, and whenever HEAD moves (a checkout, a commit, a pull, a merge, a reset; in a repository
-that keeps no reflog, only a checkout), the plugin starts
-a background refresh that rescans only when something the map depends on changed: the commit, the
-tracked files, the pin, or this plugin's version. The hook returns at once and the scan runs
-detached, so nothing waits on it. A map built with `--deep` is rebuilt with the type checker, the
-way it was built. It leaves alone a checkout with no map of its own, a map or pin committed to the
-repository, and a repository in the middle of a merge or rebase. When a rescan fails it keeps the
-previous map, and tries again after half an hour or once the checkout moves.
+created without a reflog, only a checkout), the plugin starts a background refresh that rescans only
+when something the map depends on changed: the commit, the tracked files, the pin, or this plugin's
+version. The hook returns at once and the scan runs detached, so nothing waits on it. A map built
+with `--deep` is rebuilt with the type checker, the way it was built. It leaves alone a checkout
+with no map of its own, a map or pin committed to the repository, and a repository in the middle of
+a merge or rebase. When a rescan fails it keeps the previous map, and tries again after half an hour
+or once the checkout moves.
 
 The pin follows the same way, but only onto commits the team has already accepted: when the checkout
 sits exactly on the tip of `origin`'s default branch with nothing uncommitted, and that tip arrived

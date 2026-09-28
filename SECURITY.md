@@ -176,12 +176,11 @@ It is not the only outbound call in the tool, and this file will not claim it is
 the check runs `git ls-remote origin` and `git fetch --depth=1 origin <ref>` for the single base
 commit, because `merge-base` cannot answer without it and the alternative is reporting a branch
 against nothing (F5). On a partial clone (`--filter=blob:none`) the check's read of the merge base
-and its diffs against it let git fetch the base's blobs of the changed paths it does not hold from
-the clone's own promisor remote, because without them every changed file was skipped, or the whole
-diff refused over one rename; every other git read, the scan's included,
-runs with `GIT_NO_LAZY_FETCH` and reads a missing object as missing (F14). That is the whole of it:
-no other command reaches anything, and the scan makes
-no outbound call at any point.
+and its diff of the changed files against it let git fetch the base's blobs of the changed paths it
+does not hold from the clone's own promisor remote, because without them every changed file was
+skipped, or the whole diff refused over one rename; every other git read, the scan's included, runs
+with `GIT_NO_LAZY_FETCH` and reads a missing object as missing (F14). That is the whole of it: no
+other command reaches anything, and the scan makes no outbound call at any point.
 
 `anatomiya doctor` spawns the other one, `ruby`, to ask which version of `prism` that interpreter
 ships. It runs under the same scrub the Ruby parser child gets, with `RUBYOPT`, `RUBYLIB` and

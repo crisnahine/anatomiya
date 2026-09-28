@@ -333,8 +333,8 @@ const CREATES_NOTHING = new RegExp(
  */
 async function madeHereOnLine(root, from, to) {
   // Both walks grow with the repository, a first pin's with its whole history,
-  // so they stream (F6); `-z` ends each record with a NUL and leaves the last
-  // unterminated.
+  // so they stream (F6). `-z` separates records with a NUL, and whether git
+  // also ends the last one is left open (`terminated: false`).
   const made = new Set();
   let line = false;
   try {

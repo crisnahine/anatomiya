@@ -511,7 +511,7 @@ test("a local commit rebased by `git pull` and pushed is not pinned once a teamm
   source(origin, "lib/t1", 8);
   commit(origin, "a teammate's first commit");
   git(dir, "-c", "pull.rebase=true", "pull", "-q");
-  git(dir, "-c", "push.negotiate=false", "push", "-q", "origin", "HEAD:main");
+  git(dir, "-c", "push.negotiate=false", "push", "-q", origin, "HEAD:main");
   source(origin, "lib/t2", 8);
   commit(origin, "a teammate's second commit");
   git(dir, "pull", "-q", "--ff-only");
@@ -522,6 +522,7 @@ test("a local commit rebased by `git pull` and pushed is not pinned once a teamm
 
 test("however this clone made a commit, pushing it straight onto the default branch never pins it", async (t) => {
   // Each way git writes a commit here names it differently in the reflog.
+  const LATER = { ...process.env, GIT_COMMITTER_DATE: "2030-01-01T00:00:00Z" };
   const side = (dir) => {
     git(dir, "checkout", "-q", "-b", "side");
     source(dir, "lib/side", 8);
@@ -536,15 +537,18 @@ test("however this clone made a commit, pushing it straight onto the default bra
       commit(origin, "a teammate's commit");
       git(dir, "pull", "-q", "--rebase");
     },
+    // Another second on the committer's clock, or the pick lands on the side
+    // commit's own parent at the same second and git makes the same sha, which
+    // the side branch's `commit:` entry already names.
     "cherry-pick": (dir) => {
       side(dir);
-      git(dir, "cherry-pick", "side");
+      execFileSync("git", ["cherry-pick", "side"], { cwd: dir, stdio: "pipe", env: LATER });
     },
     revert: (dir) => git(dir, "revert", "--no-edit", "HEAD"),
     am: (dir) => {
       side(dir);
       const patch = execFileSync("git", ["format-patch", "-1", "--stdout", "side"], { cwd: dir });
-      execFileSync("git", ["am", "-q"], { cwd: dir, input: patch, stdio: ["pipe", "pipe", "pipe"] });
+      execFileSync("git", ["am", "-q"], { cwd: dir, input: patch, stdio: ["pipe", "pipe", "pipe"], env: LATER });
     },
     "merge commit": (dir) => {
       side(dir);
@@ -557,7 +561,7 @@ test("however this clone made a commit, pushing it straight onto the default bra
     const first = loadPin(dir).sha;
     git(origin, "config", "receive.denyCurrentBranch", "updateInstead");
     make(dir, origin);
-    git(dir, "-c", "push.negotiate=false", "push", "-q", "origin", "HEAD:main");
+    git(dir, "-c", "push.negotiate=false", "push", "-q", origin, "HEAD:main");
     source(origin, "lib/t2", 8);
     commit(origin, "a teammate's commit on top");
     git(dir, "pull", "-q", "--ff-only");

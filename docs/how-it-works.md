@@ -858,8 +858,9 @@ rewritten only when the branch changes. Plugin `FileChanged` matchers add nothin
 so the paths come back from the hook itself, every time, since the list is one list and the last
 hook to answer replaces it (`docs/research/when-a-hook-can-refresh-the-map.md`).
 
-In a repository that keeps no reflog (`core.logAllRefUpdates=false`) `logs/HEAD` is never written,
-so a commit or a pull on the same branch starts no refresh until the next checkout or session.
+In a repository created without a reflog (`core.logAllRefUpdates=false` from the start, where no
+`logs/HEAD` exists to append to) a commit or a pull on the same branch starts no refresh until the
+next checkout or session.
 `FileChanged` is matched on `HEAD`, and a change to any file this hook did not ask for answers
 nothing, since answering it would replace somebody else's watch.
 
