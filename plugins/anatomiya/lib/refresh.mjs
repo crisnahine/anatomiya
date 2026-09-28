@@ -31,9 +31,9 @@ import { loadPin, PIN_PATH } from "./baseline.mjs";
 import { runPin, runScan } from "./commands.mjs";
 import { atomic, FACTS_PATH, readFacts, readRecord } from "./facts.mjs";
 import { BASE_REFS, gitBuffered, gitStreamed, headSha, UNFINISHED_OPERATIONS } from "./git.mjs";
-import { ownLayout } from "./hook.mjs";
+import { isPathTaken, ownLayout } from "./hook.mjs";
 import { pluginRoot } from "./readiness.mjs";
-import { OVERVIEW_FILE, readHead, REFRESH_STATE, resolveInside, RULES_DIR, STORE_DIR } from "./rules.mjs";
+import { OVERVIEW_FILE, readHead, realpathOf, REFRESH_STATE, resolveInside, RULES_DIR, STORE_DIR } from "./rules.mjs";
 
 const LOCK_FILE = "refresh.lock";
 
@@ -83,12 +83,20 @@ export function runRefresh(cwd, payload, { start = startWorker } = {}) {
   // nobody asked for.
   const own = ownLayout(base);
   if (!own || own.from !== null) return {};
+  // A record below its checkout's root came with a copy of another project; the
+  // scan it would start writes at the checkout's root, which never opted in
+  // (A24), and the end-of-turn check refuses the same record for the same reason.
+  if (!isPathTaken(join(own.root, ".git"))) return {};
 
   const watchPaths = watchTargets(own.root);
   // The watch list is one list shared by every hook. A change to a file this
   // hook did not ask for is somebody else's, and answering it would both start
-  // a worker for nothing and replace their watch with ours.
-  if (event === "FileChanged" && !watchPaths.includes(resolve(String(payload.file_path ?? "")))) return {};
+  // a worker for nothing and replace their watch with ours. Ours is any file
+  // the watch could name in this checkout's git directories, not only the ones
+  // it names now: a first commit writes `logs/HEAD`, which moves the watch off
+  // the index it named before, and refusing the index's change then left the
+  // session watching a file nothing would change again.
+  if (event === "FileChanged" && !ownWatch(own.root, resolve(String(payload.file_path ?? "")))) return {};
   start(own.root);
   // Said once a session, to the person: a held pin never moves again on its own.
   const notice = event === "SessionStart" ? holdNotice(own.root) : null;
@@ -114,21 +122,33 @@ export function runRefresh(cwd, payload, { start = startWorker } = {}) {
  * hook. Every basename here is in the `FileChanged` matcher in `hooks.json`.
  */
 export function watchTargets(root) {
-  const marker = join(root, ".git");
-  const entry = readHead(marker, 4096);
-  let gitdir = null;
-  if (entry.kind === "file") {
-    const pointed = /^gitdir: (.+)/.exec(entry.head.split("\n")[0])?.[1]?.trim();
-    if (pointed) gitdir = isAbsolute(pointed) ? pointed : resolve(root, pointed);
-  } else if (entry.kind === "other" && existsSync(join(marker, "HEAD"))) {
-    gitdir = marker;
-  }
+  const gitdir = gitDirOf(root);
   if (gitdir === null) return [];
   const head = join(gitdir, "HEAD");
   const common = commonDirOf(gitdir);
   if (existsSync(join(common, "reftable"))) return [join(common, "reftable", "tables.list"), head];
   const log = join(gitdir, "logs", "HEAD");
   return [existsSync(log) ? log : join(gitdir, "index"), head];
+}
+
+/** This checkout's own git directory, read off `.git` rather than asked of git. */
+function gitDirOf(root) {
+  const marker = join(root, ".git");
+  const entry = readHead(marker, 4096);
+  if (entry.kind === "file") {
+    const pointed = /^gitdir: (.+)/.exec(entry.head.split("\n")[0])?.[1]?.trim();
+    return pointed ? (isAbsolute(pointed) ? pointed : resolve(root, pointed)) : null;
+  }
+  return entry.kind === "other" && existsSync(join(marker, "HEAD")) ? marker : null;
+}
+
+/** Whether a changed file is one a watch of this checkout names, or could have named. */
+function ownWatch(root, changed) {
+  const gitdir = gitDirOf(root);
+  if (gitdir === null) return false;
+  const common = commonDirOf(gitdir);
+  const could = [join(gitdir, "HEAD"), join(gitdir, "logs", "HEAD"), join(gitdir, "index"), join(common, "reftable", "tables.list")];
+  return could.includes(changed);
 }
 
 /** The repository's shared git directory: a linked worktree's names it in `commondir`. */
@@ -173,6 +193,11 @@ function startWorker(root) {
 export async function refreshRepository(root, { scan = runScan, pin = runPin } = {}) {
   const store = resolveInside(root, STORE_DIR);
   if (store === null) return { reason: "outside", pinned: false };
+  // Only a checkout's own root: a scan resolves the root from wherever it is
+  // started and writes there, so a worker handed a directory below one scanned
+  // the enclosing checkout, which never opted in (A24).
+  const top = await gitBuffered(root, ["rev-parse", "--show-toplevel"]);
+  if (!top.ok || realpathOf(top.stdout.trim()) !== realpathOf(root)) return { reason: "outside", pinned: false };
   const facts = readFacts(root).facts;
   if (!facts) return { reason: "no-map", pinned: false };
   // The type checker is opt-in and about 26x slower (B7), so a refresh keeps the
@@ -198,6 +223,7 @@ export async function refreshRepository(root, { scan = runScan, pin = runPin } =
       }
       if (state?.stamp === stamp && (state.ok || !retryDue(state))) {
         // Nothing to rescan; only what the pin decided is new.
+        // The retry clock is the failure's, so it keeps its moment.
         writeState(store, { ...state, pinned: state.pinned ?? null, held });
         return { reason: state.ok ? "current" : "failed-before", pinned, held };
       }
@@ -345,14 +371,18 @@ async function followPin(root, pin) {
 // command that ran it (`pull -q --rebase (pick)`, or `pull (pick)` with
 // `pull.rebase` set), and a list of what creates commits missed each new
 // spelling and pinned the rebased commit; an entry nobody listed here holds the
-// pin rather than letting it through. The command is the part before the
-// first `: `, and a marker is only read there: `commit: feat(reset): ...` is a
-// commit whose subject has a scope, not a rebase's reset.
+// pin rather than letting it through. Each is matched as git writes the whole
+// entry, both ends anchored, because the rest of an entry is free text: a
+// fast-forward is the entire message after the command (a pick whose subject
+// begins "Fast-forward the lockfile" is a commit), and a rebase's bookkeeping
+// is read only after `rebase` or `pull`, never after a branch name git allows
+// parentheses in (`merge wip(start): Merge made ...` is a merge commit).
 const COMMAND = "(?:(?!: ).)*";
 const CREATES_NOTHING = new RegExp(
   "^(clone|checkout|reset|branch|fetch|initial pull|update by push|remote set-head|remote: renamed)\\b" +
-    `|^(pull|merge|cherry-pick)\\b${COMMAND}: (fast-forward|storing head|forced-update)\\b` +
-    `|^${COMMAND}\\((start|finish|abort|reset|label|update-refs)\\): `,
+    `|^(pull|merge)\\b${COMMAND}: (fast-forward|storing head|forced-update)$` +
+    "|^cherry-pick: fast-forward$" +
+    `|^(rebase|pull)\\b${COMMAND} \\((start|finish|abort|reset|label|update-refs)\\): `,
   "i"
 );
 
@@ -377,14 +407,16 @@ async function madeHereOnLine(root, from, to) {
   const made = new Set();
   let found = null;
   try {
+    const me = await committerEmail(root);
     await gitStreamed(root, ["log", "-g", "--all", "-z", "--format=%H %gs"], (entry) => {
       const space = entry.indexOf(" ");
       if (space > 0 && !CREATES_NOTHING.test(entry.slice(space + 1))) made.add(entry.slice(0, space));
     }, { terminated: false });
-    if (made.size === 0) return null;
-    await gitStreamed(root, ["log", "--first-parent", "-z", "--format=%H", from ? `${from}..${to}` : to], (sha) => {
-      if (!made.has(sha.trim())) return true;
-      found = sha.trim();
+    if (made.size === 0 && me === null) return null;
+    await gitStreamed(root, ["log", "--first-parent", "-z", "--format=%H %ce", from ? `${from}..${to}` : to], (record) => {
+      const [sha, email = ""] = record.trim().split(" ");
+      if (!made.has(sha) && (me === null || email.toLowerCase() !== me)) return true;
+      found = sha;
       return false;
     }, { terminated: false });
   } catch {
@@ -393,6 +425,22 @@ async function madeHereOnLine(root, from, to) {
   return found;
 }
 
+/**
+ * The address this clone commits as, lowercased, or null where git names none.
+ *
+ * The reflog forgets: removing a linked worktree drops its HEAD's log,
+ * deleting a branch drops the branch's, and `gc` expires every entry after 90
+ * days, and each of those let this clone's own commit pass as a teammate's
+ * once a fetch brought it back. The committer on the commit itself does not
+ * forget. A merge or a squash made on the remote carries the host's committer
+ * and still pins; a fast-forward merge on a host that keeps the author as
+ * committer holds, the safe direction.
+ */
+async function committerEmail(root) {
+  const r = await gitBuffered(root, ["var", "GIT_COMMITTER_IDENT"]);
+  const email = r.ok ? /<([^>]*)>/.exec(r.stdout)?.[1]?.trim().toLowerCase() : "";
+  return email ? email : null;
+}
 /**
  * The remote default branch's tip and the ref it was read from: the first of
  * `origin/HEAD`, `origin/main`, `origin/master` that resolves, or, in a clone
@@ -474,8 +522,7 @@ async function gitBusy(root) {
   return UNFINISHED_OPERATIONS.some((name) => existsSync(join(gitdir, name)));
 }
 
-function writeState(store, { stamp, ok, error, pinned = null, held = null }) {
-  const at = new Date().toISOString();
+function writeState(store, { stamp, ok, error, pinned = null, held = null, at = new Date().toISOString() }) {
   const record = { stamp, ok, error, at, ...(pinned ? { pinned } : {}), ...(held ? { held } : {}) };
   atomic(join(store, basename(REFRESH_STATE)), JSON.stringify(record, null, 2) + "\n");
 }

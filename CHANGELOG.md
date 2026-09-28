@@ -28,6 +28,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- The automatic pin could still accept this clone's own commit once its reflog record was gone: a
+  worktree removed with its branch (how Claude Code's worktrees end), or entries expired by `gc`.
+  A commit whose committer is this clone's own identity is now held too. A commit subject starting
+  "Fast-forward" or a branch named with parentheses no longer reads as a fast-forward or a rebase step.
+- A copied project's `.claude/` in a subdirectory made the refresh scan the enclosing repository,
+  which never opted in, and write a map at its root.
+- In a repository scanned before its first commit, the refresh stopped for the rest of the session
+  after that commit.
+- A tracked `.claude/rules` link to another checkout delivered that checkout's map as this one's.
+- A backslash in a POSIX filename was read as a directory separator by the pre-write notice.
+- A failed refresh's half-hour retry clock restarted whenever what the pin decided changed.
+- `check | head` and the like no longer end with an EPIPE stack trace.
 - A repository created without a reflog, or on git's reftable backend, refreshed only on a checkout:
   nothing appended to the `logs/HEAD` the hook watched. It now watches the index there, or the
   reftable table list, so a commit or a pull refreshes the map as it does everywhere else.

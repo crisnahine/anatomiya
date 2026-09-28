@@ -108,7 +108,13 @@ function isBoundary(at) {
  * the map above it is about the code there.
  */
 function ownMap(from) {
-  const hit = walkUp(from, (at) => readOwned(join(at, RULES_DIR, OVERVIEW_FILE)));
+  // Through F2's containment, as `ownLayout` reads the record: a tracked
+  // `.claude/rules` link to another checkout's rules delivered that map here,
+  // stamped as this repository's own.
+  const hit = walkUp(from, (at) => {
+    const path = resolveInside(at, `${RULES_DIR}/${OVERVIEW_FILE}`);
+    return path === null ? null : readOwned(path);
+  });
   return hit && { map: hit.found, root: hit.at, from: hit.from };
 }
 
@@ -422,7 +428,9 @@ export function targetIn(payload, root, from) {
   if (target.length > PATH_MOST) return null;
   const rel = relative(resolveLinks(resolve(root)), resolveLinks(target));
   if (!rel || rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel)) return null;
-  return rel.split("\\").join("/");
+  // Only where a backslash is the separator: on POSIX it is a legal filename
+  // character, and splitting on it named a different file.
+  return sep === "\\" ? rel.split("\\").join("/") : rel;
 }
 
 /**
