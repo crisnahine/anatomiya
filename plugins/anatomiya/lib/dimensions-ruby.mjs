@@ -289,7 +289,7 @@ export const RUBY_DIMENSIONS = [
     counterClaim: null,
     precision: "precise",
     applicabilityPredicate: {
-      sites: "a Ruby file calling Time.now, DateTime.now, Time.new, DateTime.new, Date.today, current on any of the three, or now, today, local, parse or at on Time.zone",
+      sites: "a Ruby file calling Time.now, DateTime.now, Time.new, DateTime.new, Date.today, Time.local, Time.parse, Time.at, current on any of the three, or now, today, local, parse or at on Time.zone",
       blind: null,
     },
     langs: ["ruby"],
@@ -303,7 +303,11 @@ export const RUBY_DIMENSIONS = [
           // so the application zone never reaches the value. Any arity: a bare
           // `Time.new` is `Time.now` under another name.
           const clock = recv === "Time" || recv === "DateTime";
-          if ((clock && (n.name === "now" || n.name === "new")) || (recv === "Date" && n.name === "today")) {
+          // `Time.local`, `Time.parse` and `Time.at` are the unzoned twins of
+          // the constructions counted as conforming on `Time.zone`. Counting
+          // one half of a pair made a directory of both read 40 of 40.
+          const unzoned = recv === "Time" && /^(local|parse|at)$/.test(n.name);
+          if ((clock && (n.name === "now" || n.name === "new")) || unzoned || (recv === "Date" && n.name === "today")) {
             return add({ node: site(n), conforming: false, where: where(ctx) });
           }
           if (/^(Time|Date|DateTime)$/.test(recv) && n.name === "current") {
