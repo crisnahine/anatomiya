@@ -185,7 +185,9 @@ export async function check(cwd, { baseRef = null } = {}) {
   // map on disk" above a note saying the map is a schema this build cannot
   // read. The first is false and points at the wrong fix.
   const stale = await staleness(root, facts, base, unreadable);
-  const added = mode === "added-lines" ? await addedRanges(root, from) : null;
+  // The check may fetch the base's blobs a partial clone lacks (F14); the Stop
+  // hook shares this diff and stays off the network.
+  const added = mode === "added-lines" ? await addedRanges(root, from, "HEAD", { lazyFetch: true }) : null;
   if (mode === "added-lines" && added === null) {
     caveat(
       caveats,
@@ -363,7 +365,10 @@ async function changedFiles(root, from) {
         rows.push(namedRow(row));
         return true;
       }),
-      { timeout: GIT.checkTimeoutMs, maxFieldBytes: GIT.checkMaxBytes }
+      // Rename detection reads the merge base's side of each added and deleted
+      // path, which a blobless clone never held; refused a fetch, the whole
+      // diff failed and nothing was examined (F14).
+      { timeout: GIT.checkTimeoutMs, maxFieldBytes: GIT.checkMaxBytes, lazyFetch: true }
     );
   } catch {
     return { ok: false, rows: [] };
@@ -553,7 +558,7 @@ async function boundary(root) {
   return first === head.out.trim() ? null : first;
 }
 
-export async function addedRanges(root, from, to = "HEAD", { timeout } = {}) {
+export async function addedRanges(root, from, to = "HEAD", { timeout, lazyFetch = false } = {}) {
   const r = await git(root, [
     "-c", "core.quotePath=false",
     // A repository's own config can name a diff driver, a text conversion, a
@@ -563,7 +568,7 @@ export async function addedRanges(root, from, to = "HEAD", { timeout } = {}) {
     // `null` reads the working tree, which is what a turn changed. The `--` keeps
     // a tracked file named like a revision from being read as one.
     ...(to === null ? [] : [to]), "--",
-  ], GIT.checkMaxBytes, timeout);
+  ], GIT.checkMaxBytes, timeout, { lazyFetch });
   // Same rule as `changedFiles` (F15): a diff git refused to produce reads as a
   // file with no added lines, which drops every finding in it. `null` says the
   // ranges are unknown; an empty map would say there are none.
@@ -1464,8 +1469,8 @@ async function treeSource(root, path) {
  * Every git call returns rather than throws. The check reports what it could
  * not determine; it does not refuse.
  */
-async function git(root, args, maxBytes = GIT.checkMaxBytes, timeout = GIT.checkTimeoutMs) {
-  const r = await gitBuffered(root, args, { maxBytes, timeout });
+async function git(root, args, maxBytes = GIT.checkMaxBytes, timeout = GIT.checkTimeoutMs, { lazyFetch = false } = {}) {
+  const r = await gitBuffered(root, args, { maxBytes, timeout, lazyFetch });
   return { ok: r.ok, out: r.stdout };
 }
 

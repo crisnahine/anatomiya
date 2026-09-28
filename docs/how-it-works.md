@@ -885,7 +885,7 @@ commit: a push from this clone, a ref written by hand and a fetch that names its
 destination are this clone's own work, and a session can do all three. Asking git rather than
 reading `logs/` works on the reftable backend too, and a clone that keeps no reflog never pins. A
 commit this clone made (its reflogs name it as a commit, merge commit, pick, revert, applied patch or
-rebase) never joins the pin while it sits on the first-parent line from the pin to the tip, however
+a rebase step that rewrote it, whether `rebase` or `pull --rebase` ran it) never joins the pin while it sits on the first-parent line from the pin to the tip, however
 it reached the remote: a push by URL moves no tracking ref, and a teammate's commit on top reviews
 nothing beneath it. A branch merged on the remote with a merge commit sits behind the second parent
 and is pinned, the merge being its review. And the pin is taken at the commit that was judged, or not at all. What each automatic pin accepted is

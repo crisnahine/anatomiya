@@ -500,6 +500,60 @@ test("a branch this clone made, merged on the remote with a merge commit, is pin
   assert.equal(loadPin(dir).sha, git(dir, "rev-parse", "HEAD"));
 });
 
+test("a local commit rebased by `git pull` and pushed is not pinned once a teammate builds on it", async (t) => {
+  // With pull.rebase the reflog names the rewritten commit `pull (pick): ...`,
+  // not `rebase (pick)`, and the sha that reaches the remote is that one.
+  const { origin, dir } = await cloned(t);
+  await refreshRepository(dir);
+  const first = loadPin(dir).sha;
+  git(origin, "config", "receive.denyCurrentBranch", "updateInstead");
+  source(dir, "lib/agent", 8);
+  commit(dir, "the agent's own work");
+  source(origin, "lib/t1", 8);
+  commit(origin, "a teammate's first commit");
+  git(dir, "-c", "pull.rebase=true", "pull", "-q");
+  git(dir, "-c", "push.negotiate=false", "push", "-q", "origin", "HEAD:main");
+  source(origin, "lib/t2", 8);
+  commit(origin, "a teammate's second commit");
+  git(dir, "pull", "-q", "--ff-only");
+
+  assert.equal((await refreshRepository(dir)).pinned, false);
+  assert.equal(loadPin(dir).sha, first);
+});
+
+test("rebasing onto the remote with nothing of this clone's own still lets the pin follow", async (t) => {
+  // `rebase (start)` and `rebase (finish)` name the upstream commit the rebase
+  // moved onto, which this clone did not make; counting them stalled the pin.
+  const { origin, dir } = await cloned(t);
+  await refreshRepository(dir);
+  source(origin, "lib/t1", 8);
+  commit(origin, "a teammate's commit");
+  git(dir, "fetch", "-q");
+  git(dir, "rebase", "-q", "origin/main");
+
+  assert.equal((await refreshRepository(dir)).pinned, true);
+  assert.equal(loadPin(dir).sha, git(dir, "rev-parse", "HEAD"));
+});
+
+test("a feature branch rebased before its merge-commit pull request is pinned once pulled", async (t) => {
+  const { origin, dir } = await cloned(t);
+  await refreshRepository(dir);
+  git(dir, "checkout", "-q", "-b", "feature");
+  source(dir, "lib/feature", 8);
+  commit(dir, "reviewed in a pull request");
+  source(origin, "lib/t1", 8);
+  commit(origin, "a teammate's commit meanwhile");
+  git(dir, "fetch", "-q");
+  git(dir, "rebase", "-q", "origin/main");
+  git(dir, "-c", "push.negotiate=false", "push", "-q", "origin", "feature");
+  git(origin, "merge", "-q", "--no-ff", "-m", "Merge pull request", "feature");
+  git(dir, "checkout", "-q", "main");
+  git(dir, "pull", "-q", "--no-rebase");
+
+  assert.equal((await refreshRepository(dir)).pinned, true);
+  assert.equal(loadPin(dir).sha, git(dir, "rev-parse", "HEAD"));
+});
+
 test("the pin never moves backwards when the remote is rewound", async (t) => {
   const { origin, dir } = await cloned(t);
   source(origin, "lib/merged", 8);
