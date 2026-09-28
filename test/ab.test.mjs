@@ -10,7 +10,7 @@ import { rankAreas } from "../scripts/ab/pick.mjs";
 import { scoreFile } from "../scripts/ab/score.mjs";
 import { readingFor } from "../scripts/ab/read.mjs";
 import { repoLabel } from "../scripts/ab/label.mjs";
-import { needsPathControl, needsShebang } from "./platform.mjs";
+import { needsPathControl, needsPosixPermissions, needsShebang } from "./platform.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -630,7 +630,7 @@ test("settings the flags already beat let the run through", async () => {
   assert.equal(conflictingSettings({ env: { PATH: "/usr/bin" } }, ENGINE), null, "and an env entry that names no engine is not one");
 });
 
-test("an arm whose settings cannot be removed fails the run instead of leaking a worktree", needsShebang, async (t) => {
+test("an arm whose settings cannot be removed fails the run instead of leaking a worktree", needsPosixPermissions, async (t) => {
   // unlinkSync throws on a read-only directory, and a throw between creating
   // the worktrees and returning their disposer left one registered in the
   // repository being measured.

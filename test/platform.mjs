@@ -55,10 +55,15 @@ export const needsWindows = WINDOWS
 
 // `chmod` on Windows moves the read-only attribute and nothing else, so a file
 // this test needs to be unreadable stays readable and the case proves the
-// opposite of what it says.
+// opposite of what it says. A superuser reads, lists and unlinks past every
+// mode bit, and a container or a CI image commonly runs as one: measured as
+// root, all four cases behind this guard failed while the code answered
+// correctly for a user the file really was readable to.
 export const needsPosixPermissions = WINDOWS
   ? { skip: "Windows chmod only toggles read-only, so a file cannot be made unreadable" }
-  : {};
+  : typeof process.getuid === "function" && process.getuid() === 0
+    ? { skip: "root reads, lists and unlinks past every mode bit, so the denial this needs cannot happen" }
+    : {};
 
 // A containment test joins with the platform separator, so a fixture spelled
 // `/corpus` is a relative Windows path under whatever drive the run is on and
