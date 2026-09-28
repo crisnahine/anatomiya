@@ -270,10 +270,15 @@ export function reduceArea(area, parsed, { frameworks, tier = "syntactic", capab
     // A learned-class dimension settles its side here: the plurality class is
     // the sentence, conforming follows it, and a tie is no slot at all.
     let learned;
+    let reaches = [];
     if (dim.learnedClasses) {
       const grouped = dim.groupedSites === true;
       learned = learnClass(perFile, { grouped });
       if (learned === null) continue;
+      const parents = grouped ? null : parentsIn(perFile);
+      // Kept for the check, which re-runs the predicate on the files a branch
+      // changed and never holds the rest of the area's classes.
+      reaches = parents ? [...parents.keys()].filter((c) => reachesThrough(c, learned, parents)).sort() : [];
       // New arrays, never mutation: the baseline map and the corpus map hold
       // the same record object for every file unchanged since the pin.
       for (const [rel, hits] of perFile) {
@@ -287,7 +292,12 @@ export function reduceArea(area, parsed, { frameworks, tier = "syntactic", capab
         }
         perFile.set(
           rel,
-          grouped ? groupSites(own, learned) : own.map((h) => ({ ...h, conforming: sameConstant(h.class, learned, h.nesting) }))
+          grouped
+            ? groupSites(own, learned)
+            : own.map((h) => ({
+                ...h,
+                conforming: sameConstant(h.class, learned, h.nesting) || reachesThrough(h.class, learned, parents),
+              }))
         );
       }
       if (perFile.size === 0) continue;
@@ -358,6 +368,9 @@ export function reduceArea(area, parsed, { frameworks, tier = "syntactic", capab
       // Which kind of file the class was learned over, so the check judges the
       // same population the map measured.
       ...(learnedKind === undefined ? {} : { learnedKind }),
+      // The area's own classes whose chain reaches the learned base, so the check
+      // agrees with the fold about a subclass of one of them. Only when there are any.
+      ...(reaches.length ? { reaches } : {}),
       // Whether the sentence names that kind. The check builds its own text
       // from the registry template, and without this it quoted the unqualified
       // sentence, the one that pools the excluded files back in.
@@ -477,6 +490,43 @@ export function sameConstant(written, learned, nesting) {
  * a namespace and inherited by its bare name keeps its exception line in the
  * map, which is a cosmetic wart rather than a hole in what is enforced.
  */
+/**
+ * The superclass each class in the area names, by its qualified name.
+ *
+ * A row sees one file at a time, so `class Admin < User` cannot know that
+ * `User < ApplicationRecord` sits two files over; the fold holds every class
+ * the area declares, which is the only place the chain can be followed.
+ */
+function parentsIn(perFile) {
+  const parents = new Map();
+  for (const hits of perFile.values()) {
+    for (const h of hits) {
+      if (typeof h.self === "string" && typeof h.class === "string" && !parents.has(h.self)) parents.set(h.self, h.class);
+    }
+  }
+  return parents;
+}
+
+/**
+ * Whether a base the area itself declares inherits the learned class, however
+ * many steps up. Single-table inheritance is the case: read against the
+ * learned base alone, `class Admin < User` was the one exception in "models
+ * inherit ApplicationRecord", and the check asked the agent to break the
+ * hierarchy to satisfy it. Names match exactly, for the reason
+ * `isLearnedItself` gives, and a cycle, a NameError in Ruby, ends here and
+ * conforms to nothing.
+ */
+function reachesThrough(base, learned, parents) {
+  if (!parents || typeof learned !== "string") return false;
+  const seen = new Set();
+  for (let at = base; typeof at === "string" && parents.has(at) && !seen.has(at); ) {
+    seen.add(at);
+    at = parents.get(at);
+    if (at === learned) return true;
+  }
+  return false;
+}
+
 export const isLearnedItself = (hit, learned) =>
   typeof learned === "string" && typeof hit.self === "string" && hit.self === learned;
 

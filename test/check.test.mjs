@@ -3526,6 +3526,35 @@ test("the class an area learned is not asked to inherit itself", needsRuby, asyn
   assert.deepEqual(forKey(report, "class_base"), [], JSON.stringify(forKey(report, "class_base")));
 });
 
+test("a new subclass of a class the map records as reaching the learned base is not a finding", needsRuby, async (t) => {
+  // Single-table inheritance: the fold counted `Admin < User` as conforming
+  // because User reaches ApplicationRecord, and the check has to agree, or a
+  // branch adding `class Guest < User` is told to break the hierarchy.
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("app/models/user.rb", "class User < ApplicationRecord\nend\n");
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("app/models/guest.rb", "class Guest < User\nend\n");
+    write("app/models/ledger.rb", "class Ledger < Struct\nend\n");
+    commit("add");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    areas: [{
+      id: "aaaaaaaa",
+      path: "app/models",
+      globs: [{ negated: false, dir: "app/models", tail: "**/*.rb" }],
+      fileCount: 8,
+      dimensions: [dim({ key: "class_base", learned: "ApplicationRecord", reaches: ["User"] })],
+    }],
+  });
+
+  const report = await check(dir);
+
+  const found = forKey(report, "class_base");
+  assert.deepEqual(found.map((f) => f.path), ["app/models/ledger.rb"], JSON.stringify(found));
+});
+
 /* --- an omission is only a finding where the map stated the claim (#54) --- */
 
 test("a body that includes nothing is not judged against a row the map did not state", needsRuby, async (t) => {

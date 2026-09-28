@@ -1427,6 +1427,61 @@ test("a narrowed row divides by the population it narrowed to, not by the whole 
   assert.equal(slot.langFileCount, 8, "the three helpers left both halves of the share, not one");
 });
 
+test("a subclass of a class the area already holds inherits the learned base through it", () => {
+  // Single-table inheritance: `class Admin < User` where `User < ApplicationRecord`
+  // sits in the same area. The dimension sees one file at a time, so the only
+  // place the chain can be followed is the fold, which holds every class the area
+  // declares. Read against the learned base alone, the subclass was the one
+  // exception in "models inherit ApplicationRecord", and the check asked the
+  // agent to break the hierarchy to satisfy it.
+  const { reduceArea } = reduce;
+  const models = Array.from({ length: 10 }, (_, i) => `app/models/m${i}.rb`);
+  const rels = [...models, "app/models/user.rb", "app/models/admin.rb", "app/models/staff.rb"];
+  const area = { langs: ["ruby"], files: rels.map((rel) => ({ rel, lang: "ruby" })) };
+  const site = (self, base) => ({ conforming: false, where: self, class: base, self, nesting: [] });
+  const bases = { "app/models/user.rb": ["User", "ApplicationRecord"], "app/models/admin.rb": ["Admin", "User"], "app/models/staff.rb": ["Staff", "Admin"] };
+  const parsed = rels.map((rel, i) => ({
+    rel,
+    ok: true,
+    hits: { class_base: [site(...(bases[rel] ?? [`M${i}`, "ApplicationRecord"]))] },
+  }));
+
+  const slot = reduceArea(area, parsed).find((d) => d.key === "class_base");
+
+  assert.equal(slot.learned, "ApplicationRecord");
+  assert.equal(slot.candidates, 13);
+  assert.equal(slot.conforming, 13, "Admin and Staff reach ApplicationRecord through User");
+  // Recorded for the check, which sees only the files a branch changed: every
+  // class here whose chain arrives at the base, since a new subclass of any of
+  // them is the same inheritance.
+  assert.deepEqual(slot.reaches, ["Admin", ...Array.from({ length: 10 }, (_, i) => `M${i}`), "Staff", "User"]);
+});
+
+test("a subclass of a class that does not reach the learned base is still the exception", () => {
+  const { reduceArea } = reduce;
+  const models = Array.from({ length: 10 }, (_, i) => `app/models/m${i}.rb`);
+  const rels = [...models, "app/models/report.rb", "app/models/sales.rb", "app/models/loop_a.rb", "app/models/loop_b.rb"];
+  const area = { langs: ["ruby"], files: rels.map((rel) => ({ rel, lang: "ruby" })) };
+  const site = (self, base) => ({ conforming: false, where: self, class: base, self, nesting: [] });
+  const bases = {
+    "app/models/report.rb": ["Report", "Struct"],
+    "app/models/sales.rb": ["Sales", "Report"],
+    // A cycle is a NameError in Ruby; here it must end, and conform to nothing.
+    "app/models/loop_a.rb": ["LoopA", "LoopB"],
+    "app/models/loop_b.rb": ["LoopB", "LoopA"],
+  };
+  const parsed = rels.map((rel, i) => ({
+    rel,
+    ok: true,
+    hits: { class_base: [site(...(bases[rel] ?? [`M${i}`, "ApplicationRecord"]))] },
+  }));
+
+  const slot = reduceArea(area, parsed).find((d) => d.key === "class_base");
+
+  assert.equal(slot.conforming, 10);
+  assert.equal(slot.candidates, 14);
+});
+
 test("a population that changed kind since the pin closes the slot the way a changed class does", () => {
   // The pinned counts answer a different sentence than today's when the class
   // moves, and equally when the class was learned over a different half of the

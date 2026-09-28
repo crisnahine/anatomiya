@@ -118,6 +118,9 @@ function sidesFor(area, ancestorsOf = () => []) {
   // to say "you should have written X", which is a directive, so it may only be
   // reported where the gates let the map say it.
   const stated = new Set();
+  // The area's classes the fold found reaching the learned base (STI), so a new
+  // subclass of one of them conforms here as it does in the map.
+  const reaching = new Map();
   const put = (d) => {
     if (sides.has(d.key)) return;
     sides.set(d.key, statedSide(d).side);
@@ -125,6 +128,7 @@ function sidesFor(area, ancestorsOf = () => []) {
     // The class the map measured is the only sentence a learned row may be
     // enforced as; a hit's own flag is a placeholder the reducer overwrites.
     if (typeof d.learned === "string") learned.set(d.key, d.learned);
+    if (Array.isArray(d.reaches)) reaching.set(d.key, new Set(d.reaches.filter((c) => typeof c === "string")));
     if (typeof d.learnedKind === "string") kinds.set(d.key, d.learnedKind);
     if (typeof d.learnedKind === "string" && d.narrowed === true) qualified.set(d.key, d.learnedKind);
   };
@@ -136,7 +140,7 @@ function sidesFor(area, ancestorsOf = () => []) {
   for (const up of ancestorsOf(area)) {
     for (const d of up.dimensions || []) if (statedSide(d).states !== null) put(d);
   }
-  return { sides, learned, kinds, qualified, stated };
+  return { sides, learned, kinds, qualified, stated, reaching };
 }
 
 /**
@@ -169,7 +173,7 @@ function enforceableClass(dim, cls) {
 const isOmission = (hit) => hit.class === undefined || hit.class === null;
 
 function breakingSites(program, source, lang, keyPath, { polarity, frameworks, capabilities, rows, comments = [], stripped = false, rel = null, facets = null }) {
-  const { sides, learned, kinds, qualified, stated } = polarity;
+  const { sides, learned, kinds, qualified, stated, reaching = new Map() } = polarity;
   const out = [];
   // A tree that came back from the Flow retry has its annotations blanked, so
   // the dimensions whose question is the annotation would report a site
@@ -197,7 +201,9 @@ function breakingSites(program, source, lang, keyPath, { polarity, frameworks, c
     // it reads as conforming here rather than as a finding. The fold drops it
     // from the population; the check re-runs the predicate and has to agree.
     const conformingOf = (hit) =>
-      dim.learnedClasses ? hit.class === cls || isLearnedItself(hit, cls) : hit.conforming;
+      dim.learnedClasses
+        ? hit.class === cls || isLearnedItself(hit, cls) || reaching.get(dim.key)?.has(hit.class) === true
+        : hit.conforming;
     const site = (hit) => {
       const node = hit.node || {};
       return {
