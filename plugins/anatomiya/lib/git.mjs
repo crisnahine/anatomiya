@@ -102,6 +102,10 @@ const FLAGS = new Set([
   "-g",
   "--all",
   "--first-parent",
+  // HEAD's recent moves with the second each happened, for the end-of-turn
+  // check on a repository whose reflog is not a file (`reuse.mjs`).
+  "--max-count=256",
+  "--date=unix",
   // Whether a merge has left the index with a path per stage, which `pin`
   // refuses to record (`commands.mjs`).
   "--unmerged",

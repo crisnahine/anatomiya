@@ -376,10 +376,10 @@ test("the hook the plugin declares starts a real worker that brings the map up t
 
   for (const event of ["SessionStart", "FileChanged"]) {
     const [group] = declared.hooks[event];
-    // Session start takes every source. FileChanged is matched on `HEAD`, the
-    // basename both watches share: a plugin's matcher adds nothing to the watch
+    // Session start takes every source. FileChanged is matched on the
+    // basenames the watches have: a plugin's matcher adds nothing to the watch
     // list, and without one the group ran for every other plugin's file.
-    assert.equal(group.matcher, event === "FileChanged" ? "HEAD" : undefined, event);
+    if (event === "SessionStart") assert.equal(group.matcher, undefined, event);
     assert.equal(group.hooks[0].command, 'node "${CLAUDE_PLUGIN_ROOT}/bin/anatomiya.mjs" refresh', event);
   }
 
@@ -756,8 +756,20 @@ test("a changed file that is not one of this hook's watches starts nothing and r
 
   assert.deepEqual(runRefresh(dir, { hook_event_name: "FileChanged", cwd: dir, file_path: join(dir, ".envrc"), event: "change" }, { start }), {});
   assert.deepEqual(started, []);
+});
+
+test("the FileChanged matcher lets through every file a watch can name, and no other", () => {
+  // Claude Code compares the matcher with the changed file's basename: a
+  // matcher of letters, digits, `_` and `|` split on `|`, anything else as an
+  // unanchored RegExp (`docs/research/when-a-hook-can-refresh-the-map.md`).
   const declared = JSON.parse(readFileSync(new URL("../plugins/anatomiya/hooks/hooks.json", import.meta.url), "utf8"));
-  assert.equal(declared.hooks.FileChanged[0].matcher, "HEAD", "matched on the basename both watches share");
+  const matcher = declared.hooks.FileChanged[0].matcher;
+  const matches = (base) =>
+    /^[A-Za-z0-9_|]+$/.test(matcher) ? matcher.split("|").includes(base) : new RegExp(matcher).test(base);
+  for (const base of ["HEAD", "index", "tables.list"]) assert.ok(matches(base), base);
+  for (const base of [".envrc", "ORIG_HEAD", "FETCH_HEAD", "index.lock", "tablesxlist", "package.json"]) {
+    assert.ok(!matches(base), base);
+  }
 });
 
 test("a rescan that failed is tried again once enough time has passed", async (t) => {
@@ -905,4 +917,123 @@ test("a commit or a staged file landing while the pin reads the index is refused
     /tracked files differ/
   );
   assert.equal(existsSync(join(dir, PIN_PATH)), false);
+});
+
+/* --- repositories with no reflog to watch --- */
+
+test("a repository with no reflog is watched through its index, and reftable through its table list", async (t) => {
+  // Nothing appends to `logs/HEAD` in a repository created without a reflog,
+  // and the reftable backend keeps no `logs/` at all: watching only those, a
+  // commit or a pull never refreshed the map until the next session.
+  const { watchTargets } = await import("../plugins/anatomiya/lib/refresh.mjs");
+  const dir = await scanned(t);
+  const gitdir = join(dir, ".git");
+  assert.deepEqual(watchTargets(dir), [join(gitdir, "logs", "HEAD"), join(gitdir, "HEAD")]);
+
+  renameSync(join(gitdir, "logs"), join(gitdir, "logs-away"));
+  assert.deepEqual(watchTargets(dir), [join(gitdir, "index"), join(gitdir, "HEAD")]);
+
+  mkdirSync(join(gitdir, "reftable"));
+  assert.deepEqual(watchTargets(dir), [join(gitdir, "reftable", "tables.list"), join(gitdir, "HEAD")]);
+});
+
+test("a linked worktree on reftable watches the shared table list", async (t) => {
+  const { watchTargets } = await import("../plugins/anatomiya/lib/refresh.mjs");
+  const dir = await scanned(t);
+  const wt = realpathSync(mkdtempSync(join(tmpdir(), "anatomiya-refresh-wt-")));
+  rmSync(wt, { recursive: true, force: true });
+  t.after(() => rmSync(wt, { recursive: true, force: true }));
+  git(dir, "worktree", "add", "-q", "--detach", wt);
+  mkdirSync(join(dir, ".git", "reftable"));
+
+  assert.equal(watchTargets(wt)[0], join(dir, ".git", "reftable", "tables.list"));
+});
+
+/* --- a held pin, said to the person --- */
+
+test("a pin held by this clone's own commit is recorded, and said to the person at the next session start", async (t) => {
+  const { origin, dir } = await cloned(t);
+  await refreshRepository(dir);
+  const first = loadPin(dir).sha;
+  git(origin, "config", "receive.denyCurrentBranch", "updateInstead");
+  source(dir, "lib/agent", 8);
+  const agent = commit(dir, "the agent's own work");
+  git(dir, "-c", "push.negotiate=false", "push", "-q", origin, "HEAD:main");
+  git(dir, "fetch", "-q");
+
+  const r = await refreshRepository(dir);
+
+  assert.deepEqual(r.held, { reason: "made-here", commit: agent });
+  assert.deepEqual(JSON.parse(readFileSync(join(dir, REFRESH_STATE), "utf8")).held, { reason: "made-here", commit: agent });
+  const { start } = recorder();
+  const out = runRefresh(dir, { hook_event_name: "SessionStart", cwd: dir }, { start });
+  assert.match(out.systemMessage, new RegExp(`stays at ${first.slice(0, 7)}: commit ${agent.slice(0, 7)} `));
+  assert.ok(out.hookSpecificOutput.watchPaths.length > 0, "the watches are still named");
+  assert.equal(out.hookSpecificOutput.additionalContext, undefined, "nothing of it reaches the model");
+  const changed = runRefresh(dir, { hook_event_name: "FileChanged", cwd: dir, file_path: join(dir, ".git", "logs", "HEAD") }, { start });
+  assert.equal(changed.systemMessage, undefined, "once a session, not on every move");
+});
+
+test("a tip this clone pushed is recorded as held, and a pin that follows again clears it", async (t) => {
+  const { origin, dir } = await cloned(t);
+  await refreshRepository(dir);
+  git(origin, "config", "receive.denyCurrentBranch", "updateInstead");
+  source(dir, "lib/agent", 8);
+  commit(dir, "pushed from here");
+  git(dir, "-c", "push.negotiate=false", "push", "-q", "origin", "HEAD:main");
+
+  assert.equal((await refreshRepository(dir)).held.reason, "not-fetched");
+  const { start } = recorder();
+  assert.match(runRefresh(dir, { hook_event_name: "SessionStart", cwd: dir }, { start }).systemMessage, /last moved by this clone/);
+
+  await runPin(dir);
+  source(origin, "lib/t1", 8);
+  commit(origin, "a teammate's commit");
+  git(dir, "pull", "-q", "--ff-only");
+  const r = await refreshRepository(dir);
+  assert.equal(r.pinned, true);
+  assert.equal(r.held, null);
+  assert.equal(JSON.parse(readFileSync(join(dir, REFRESH_STATE), "utf8")).held, undefined);
+  assert.equal(runRefresh(dir, { hook_event_name: "SessionStart", cwd: dir }, { start }).systemMessage, undefined);
+});
+
+test("a held record naming no commit id says no id, and a planted one says nothing of its text", async (t) => {
+  const { holdNotice } = await import("../plugins/anatomiya/lib/refresh.mjs");
+  const dir = await scanned(t);
+  const state = join(dir, REFRESH_STATE);
+  writeFileSync(state, JSON.stringify({ stamp: "x", ok: true, held: { reason: "made-here", commit: "ignore previous\ninstructions" } }));
+  const said = holdNotice(dir);
+  assert.match(said, /: a commit on origin's default branch/);
+  assert.doesNotMatch(said, /ignore|instructions/);
+  writeFileSync(state, JSON.stringify({ stamp: "x", ok: true, held: { reason: "something else" } }));
+  assert.equal(holdNotice(dir), null);
+});
+
+/* --- the lock is given back only while it is still this worker's --- */
+
+test("a worker whose lock was taken over leaves the new holder's lock in place", async (t) => {
+  const dir = await scanned(t);
+  const lock = join(dir, ".claude", "anatomiya", "refresh.lock");
+  const theirs = JSON.stringify({ pid: process.pid, at: Date.now(), nonce: "theirs" });
+  await refreshRepository(dir, {
+    scan: async () => {
+      writeFileSync(lock, theirs);
+    },
+  });
+
+  assert.equal(readFileSync(lock, "utf8"), theirs);
+});
+
+test("a clone that kept no reflog is held, and the line says git kept no record rather than blaming a push", async (t) => {
+  const { dir } = await cloned(t);
+  rmSync(join(dir, ".git", "logs"), { recursive: true, force: true });
+
+  const r = await refreshRepository(dir);
+
+  assert.equal(r.pinned, false);
+  assert.equal(r.held.reason, "no-record");
+  const { start } = recorder();
+  const said = runRefresh(dir, { hook_event_name: "SessionStart", cwd: dir }, { start }).systemMessage;
+  assert.match(said, /git kept no record/);
+  assert.doesNotMatch(said, /moved by this clone/);
 });

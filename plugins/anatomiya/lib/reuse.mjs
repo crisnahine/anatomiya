@@ -109,7 +109,7 @@ export async function pendingChange(root, { since = null, turnStart = null } = {
   // One diff from before the turn's first commit to the tree reads what it
   // committed and what it left uncommitted together, so the reads in a row
   // stay two however many commits the turn made.
-  const base = turnStart === null ? null : committedSince(gitdir, turnStart);
+  const base = turnStart === null ? null : await committedSince(root, gitdir, turnStart);
   if (pending.present.length === 0 && base === null) return null;
   const edited = base !== null || pending.present.some((p) => p.status === "M");
   const ranges = edited ? await addedRanges(root, base ?? "HEAD", null, { timeout: REUSE_GIT_MS }) : new Map();
@@ -159,21 +159,61 @@ async function gitDir(root) {
  * are its own, since each of those brings in work nobody in this session
  * wrote. A first commit has no parent to diff from and a merge commit holds
  * the other side's work, so either ends the run the way a move does.
+ *
+ * Read off the file where there is one, which costs no git read. The reftable
+ * backend keeps no `logs/`, and there the same entries are asked of git: read
+ * off the file alone, a turn that committed everything it wrote was never
+ * asked about on reftable.
  */
-function committedSince(gitdir, turnStart) {
-  const log = readTail(join(gitdir, "logs", "HEAD"), REFLOG_TAIL);
-  if (log === null) return null;
+async function committedSince(root, gitdir, turnStart) {
+  const entries = headMoves(gitdir) ?? (await headMovesFromGit(root));
+  if (entries === null) return null;
   let run = null;
-  for (const line of log.split("\n")) {
-    const entry = REFLOG_ENTRY.exec(line);
+  for (const { from, to, seconds, message } of entries) {
     // A second the reflog recorded is the turn's if any part of it is.
-    if (entry === null || (Number(entry[3]) + 1) * 1000 <= turnStart) continue;
-    const [, from, to, , message] = entry;
+    if ((seconds + 1) * 1000 <= turnStart) continue;
     if (!OWN_COMMIT.test(message)) run = null;
-    else if (run === null || run.to !== from) run = { from, to };
+    else if (from === null || run === null || run.to !== from) run = from === null ? null : { from, to };
     else run.to = to;
   }
   return run === null ? null : run.from;
+}
+
+/** HEAD's moves, oldest first, off `logs/HEAD`; null where there is no such file. */
+function headMoves(gitdir) {
+  const log = readTail(join(gitdir, "logs", "HEAD"), REFLOG_TAIL);
+  if (log === null) return null;
+  const moves = [];
+  for (const line of log.split("\n")) {
+    const entry = REFLOG_ENTRY.exec(line);
+    if (entry !== null) moves.push({ from: entry[1], to: entry[2], seconds: Number(entry[3]), message: entry[4] });
+  }
+  return moves;
+}
+
+// How far back git is asked, where there is no file to read the tail of. A
+// turn's commits are the newest entries.
+const REFLOG_ASKED = 256;
+
+/**
+ * The same moves asked of git, oldest first. Git names each entry's new commit
+ * and not the one it moved from, which is the entry before it; the oldest one
+ * asked has no such entry and cannot start a run.
+ */
+async function headMovesFromGit(root) {
+  const r = await gitBuffered(
+    root,
+    ["log", "-g", `--max-count=${REFLOG_ASKED}`, "--date=unix", "--format=%H %gd %gs", "HEAD"],
+    { timeout: REUSE_GIT_MS }
+  );
+  if (!r.ok) return null;
+  const moves = [];
+  for (const line of r.stdout.split("\n").reverse()) {
+    const entry = /^([0-9a-f]+) [^@]*@\{(\d+)\} (.*)$/.exec(line);
+    if (entry === null) continue;
+    moves.push({ from: moves.at(-1)?.to ?? null, to: entry[1], seconds: Number(entry[2]), message: entry[3] });
+  }
+  return moves;
 }
 
 const lineCount = (text) => (text === "" ? 0 : text.split("\n").length - (text.endsWith("\n") ? 1 : 0));
