@@ -96,10 +96,14 @@ escape them either. One filename carrying U+202E reverses the visual order of th
 in the rendered file, which is enough to make a directive read as its own opposite.
 
 The encoder normalises to NFKC, keeps only letters, marks, numbers, punctuation, symbols and the
-plain space, rejects a path in which one word mixes look-alike alphabets (a Cyrillic `а` in a Latin word; Latin, Cyrillic and Greek are checked against each other, and a name wholly in any one script is kept), strips markdown
+plain space, removes every other default-ignorable code point (variation selectors, the combining
+grapheme joiner, the Hangul fillers: marks and letters that render as nothing, which the allowlist
+alone kept and which carried a payload invisibly inside one grapheme), rejects a path in which one word mixes look-alike alphabets (a Cyrillic `а` in a Latin word; Latin, Cyrillic, Greek, Armenian and Cherokee are checked against each other, and a name wholly in any one script is kept), strips markdown
 structure that would let a value become syntax (`|`, `---`, `<!--`, `-->`, backtick runs, a leading
 block marker), caps on grapheme clusters before quoting rather than after, and emits paths JSON
-quoted.
+quoted. The cap bounds length as well as count: a grapheme keeps at most eight code points and a
+value at most four code units per grapheme of its cap, since one grapheme can hold any number of
+marks and five of them once came back as a million code units.
 
 Every repository-controlled value goes through it: paths, area names, author names and emails, commit
 subjects, branch names, and matched source text.
@@ -136,6 +140,18 @@ the prefix that the tool did not write is reported, never removed.
 
 If you clone an unfamiliar repository, read `.claude/rules/` before you start a session. That is true
 whether or not you use this tool.
+
+The two directories this tool writes, `.claude/rules` and `.claude/anatomiya`, are resolved component
+by component and must land inside the repository's own `.claude`, which must itself be a real
+directory rather than a link. Inside the repository is not enough: a committed
+`.claude/anatomiya -> ../.git/hooks` and `.claude/rules -> ../src` both resolve inside it, and a scan
+wrote `facts.json` into `.git/hooks` and the map into `src` while printing `.claude/...`. Any such
+link is refused by name before a dry run answers, and so is a store or record that the write could
+not get past (a file where a directory belongs, a directory at `facts.json` or `baseline.json`).
+A refusal names the path the repository spells, and says when it is a link, so it never points at
+the file a link resolves to. `facts.json` and `baseline.json` are read through the same resolution,
+their own name included, so a link at either leaf is not followed out of `.claude`; a write replaces
+such a link as an entry rather than writing through it.
 
 ### Parser crashes are contained by a process boundary
 
@@ -184,6 +200,13 @@ does not hold from the clone's own promisor remote, because without them every c
 skipped, or the whole diff refused over one rename; every other git read, the scan's included, runs
 with `GIT_NO_LAZY_FETCH` and reads a missing object as missing (F14). That is the whole of it: no
 other command reaches anything, and the scan makes no outbound call at any point.
+
+A repository shipped as a tarball rather than cloned carries its own `.git/config`, and some of its
+keys are commands git runs on a read. `core.fsmonitor` is the one a `git status` runs, so every git
+call here sets `core.fsmonitor=false` and `core.hooksPath` to the null device through
+`GIT_CONFIG_COUNT` environment entries, which every subcommand honours and no config file can
+override (`git.mjs` `gitEnv`). Entries a caller already carries in `GIT_CONFIG_COUNT` are kept, and
+these are appended after them. `GIT_ALLOW_PROTOCOL` closes `ext::` remote URLs the same way.
 
 `anatomiya doctor` spawns the other one, `ruby`, to ask which version of `prism` that interpreter
 ships. It runs under the same scrub the Ruby parser child gets, with `RUBYOPT`, `RUBYLIB` and
@@ -248,6 +271,11 @@ These are real and they are tracked in `DECISIONS.md`.
 - **F7 holds, with one reachable cause.** Reading only part of the corpus sets `truncated`, and every
   directive is then suppressed with the gate `corpus-truncated`, tested end to end. No repository
   size can set it; what can is the Ruby stream's per-line guard.
+- **A repository's filter drivers still run.** `core.fsmonitor` and hooks are turned off for every
+  git call, but a `filter.<name>.clean` command in a tarball's `.git/config`, named by a
+  `.gitattributes` entry, is run by `git status` on a file whose stat moved. The driver's name is
+  the repository's choice, so no fixed config entry closes it. `core.sshCommand` is likewise left
+  alone, because the user's own global config legitimately sets it for the check's one fetch.
 - **Subprocess environment is not scrubbed everywhere.** The Ruby child gets a minimal environment.
   The git calls inherit yours, and so does `npm` under `setup`, deliberately: its registry, proxy
   and credential configuration lives there and an install without them reaches the wrong place or

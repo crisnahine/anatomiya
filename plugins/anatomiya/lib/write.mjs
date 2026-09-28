@@ -1,7 +1,7 @@
-import { mkdirSync, realpathSync, statSync, unlinkSync } from "node:fs";
-import { dirname, join, relative, sep } from "node:path";
+import { mkdirSync, unlinkSync } from "node:fs";
+import { basename, join } from "node:path";
 import { renderArea, renderOverview, splitUncovered } from "./render.mjs";
-import { FACTS_SCHEMA, readFacts, writeFacts, atomic } from "./facts.mjs";
+import { FACTS_PATH, FACTS_SCHEMA, readFacts, writeFacts, atomic } from "./facts.mjs";
 import { byCode } from "./paths.mjs";
 import {
   RULES_DIR,
@@ -9,8 +9,11 @@ import {
   OVERVIEW_FILE,
   areaFilename,
   auditRules,
+  blockedOnTheWay,
   isGeneratedName,
   knownNames,
+  leafReplaceable,
+  outsideClaude,
   resolveInside,
   resolveRulesDir,
 } from "./rules.mjs";
@@ -32,7 +35,13 @@ export function planMap(result) {
   // Resolved before anything is rendered, and before a dry run answers: a plan
   // reporting a clean write that cannot happen is the one answer worse than the
   // failure.
-  resolveDirs(result.root);
+  const { storeDir } = resolveDirs(result.root);
+  // The record's own name, the one leaf here the map does not audit. A directory
+  // committed at it let a dry run say "would write" and the scan die on a raw
+  // `EISDIR` out of the rename.
+  if (!leafReplaceable(join(storeDir, basename(FACTS_PATH)))) {
+    throw new Error(`${FACTS_PATH} is not a file, so the map could not be written: remove it and scan again`);
+  }
 
   const withDirectives = result.areas.filter((a) => a.dimensions.length > 0);
 
@@ -67,7 +76,7 @@ export function planMap(result) {
   // would be stamped with a schema it was not written under.
   const carried =
     previous?.schema === FACTS_SCHEMA
-      ? previous.areas.filter((a) => a && Array.isArray(a.dimensions) && heldNames.has(areaFilename(a)))
+      ? previous.areas.filter((a) => isWholeArea(a) && heldNames.has(areaFilename(a)))
       : [];
   const described = carried.length
     ? { ...result, areas: [...result.areas, ...carried].sort((a, b) => byCode(a.path, b.path)) }
@@ -168,6 +177,39 @@ export function planMap(result) {
 }
 
 /**
+ * Whether a held area's record on disk is whole enough to carry.
+ *
+ * The record is committed, so it is the repository's to edit, and what a carried
+ * area goes through next is the overview's renderer and the record's own writer,
+ * both of which read every dimension. Only the array was checked, and
+ * `dimensions: [null]` took the scan down with "Cannot read properties of null
+ * (reading 'states')". An area that is not whole is not carried: it is then held
+ * with no record, which the overview already counts as uncovered.
+ */
+function isWholeArea(a) {
+  return isPlain(a)
+    && typeof a.id === "string"
+    && typeof a.path === "string"
+    && Number.isFinite(a.fileCount)
+    && Array.isArray(a.dimensions)
+    && a.dimensions.every(isWholeDimension);
+}
+
+function isWholeDimension(d) {
+  return isPlain(d)
+    && typeof d.key === "string"
+    && Number.isFinite(d.candidates)
+    && Number.isFinite(d.conforming)
+    && Array.isArray(d.exceptions)
+    && (d.states === undefined || d.states === null || d.states === "claim" || d.states === "counter")
+    && (d.counterClaim === undefined || typeof d.counterClaim === "string")
+    && (d.counterExceptions === undefined || Array.isArray(d.counterExceptions))
+    && (d.baseline === undefined || isPlain(d.baseline));
+}
+
+const isPlain = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
+
+/**
  * The filesystem half: the directories, the facts, the bodies, the removals.
  *
  * The invariant: no rendered file exists that is not derivable from the facts
@@ -218,17 +260,13 @@ export function commitMap(root, plan) {
 function resolveDirs(root) {
   const rulesDir = resolveRulesDir(root);
   if (rulesDir === null) {
-    throw new Error(
-      `${RULES_DIR} resolves outside the repository, so nothing was written: this is a symlink in the working tree`
-    );
+    throw new Error(`${outsideClaude(RULES_DIR)}, so nothing was written: this is a symlink in the working tree`);
   }
   const storeDir = resolveInside(root, STORE_DIR);
   if (storeDir === null) {
-    throw new Error(
-      `${STORE_DIR} resolves outside the repository, so nothing was written: this is a symlink in the working tree`
-    );
+    throw new Error(`${outsideClaude(STORE_DIR)}, so nothing was written: this is a symlink in the working tree`);
   }
-  for (const dir of [rulesDir, storeDir]) refuseNonDirectory(root, dir);
+  for (const rel of [RULES_DIR, STORE_DIR]) refuseNonDirectory(root, rel);
   return { rulesDir, storeDir };
 }
 
@@ -240,14 +278,14 @@ function resolveDirs(root) {
  * while the real scan died on a raw `EEXIST` out of `mkdir`, and a file at
  * `.claude` did the same with `ENOTDIR`. The nearest thing that exists on the
  * way down to the directory has to be a directory, and the path that is not is
- * named, since it is the one to remove.
+ * named by the repository's own spelling of it, since it is the one to remove.
+ * A link is named as one and the link is what goes: the resolved name was
+ * printed once, and `.claude/rules -> ../README.md` told the reader to remove
+ * the README.
  */
-function refuseNonDirectory(root, dir) {
-  for (let at = dir; ; at = dirname(at)) {
-    const stat = statSync(at, { throwIfNoEntry: false });
-    if (stat === undefined) continue;
-    if (stat.isDirectory()) return;
-    const name = relative(realpathSync(root), at).split(sep).join("/");
-    throw new Error(`${name} is not a directory, so the map could not be written: remove it and scan again`);
-  }
+function refuseNonDirectory(root, rel) {
+  const blocked = blockedOnTheWay(root, rel);
+  if (blocked === null) return;
+  const remedy = blocked.link ? "replace the link with a directory" : "remove it";
+  throw new Error(`${blocked.sentence}, so the map could not be written: ${remedy} and scan again`);
 }

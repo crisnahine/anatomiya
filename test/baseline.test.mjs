@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { execFileSync, spawnSync } from "node:child_process";
 
 import {
-  buildPin, loadPin, writePin, pinDelta, formatDelta,
+  buildPin, loadPin, readPin, writePin, pinDelta, pinTarget, formatDelta,
   baselinePopulation, measure, resolve, PIN_PATH,
 } from "../plugins/anatomiya/lib/baseline.mjs";
 import {
@@ -1136,4 +1136,110 @@ test("a linked worktree with no pin of its own reads its main checkout's, and it
   writePin(wt, own);
   assert.deepEqual(loadPin(wt), own, "its own once written");
   assert.deepEqual(loadPin(dir), main, "and the main checkout's is untouched");
+});
+
+/* --- where a pin can be written, said before one is planned (A19) --- */
+
+test("a pin that cannot be written there is refused by name, before a dry run answers", async (t) => {
+  // Measured: `pin --dry-run` said "would write" and `pin` then died on a raw
+  // ENOTDIR, EEXIST or EISDIR out of mkdir or the rename. `pinTarget` is what
+  // the dry run asks, so it refuses the shapes the write cannot get past.
+  let sha;
+  const dir = repo(t, (d, { write, commit }) => {
+    write("src/a/x.ts", CONFORMING);
+    sha = commit("init");
+  });
+  const pin = buildPin([area("src/a", ["src/a/x.ts"])], { sha });
+  const cases = [
+    [".claude", "file", ".claude is not a directory, so no pin is written there: remove it and pin again"],
+    [".claude/anatomiya", "file", ".claude/anatomiya is not a directory, so no pin is written there: remove it and pin again"],
+    [PIN_PATH, "dir", `${PIN_PATH} is not a file, so no pin is written there: remove it and pin again`],
+    [".claude/anatomiya", "link", ".claude/anatomiya is a link to .claude/notes.md, which is not a directory, so no pin is written there: replace the link with a directory and pin again"],
+  ];
+  for (const [at, shape, message] of cases) {
+    rmSync(join(dir, ".claude"), { recursive: true, force: true });
+    mkdirSync(join(dir, at, ".."), { recursive: true });
+    if (shape === "file") writeFileSync(join(dir, at), "occupied\n");
+    if (shape === "dir") mkdirSync(join(dir, at));
+    if (shape === "link") {
+      writeFileSync(join(dir, ".claude", "notes.md"), "notes\n");
+      symlinkSync("notes.md", join(dir, at));
+    }
+    assert.throws(() => pinTarget(dir), (err) => err.message === message, `${at} as a ${shape}`);
+    assert.throws(() => writePin(dir, pin), (err) => err.message === message, `${at} as a ${shape}, written`);
+  }
+});
+
+test("a pin store linked elsewhere in the repository is neither written nor read", async (t) => {
+  // Measured: a committed `.claude/anatomiya -> ../.git/hooks` had `pin` write
+  // baseline.json into .git/hooks while printing `.claude/anatomiya`. Inside the
+  // repository is not the rule; inside its own `.claude` is.
+  let sha;
+  const dir = repo(t, (d, { write, commit }) => {
+    write("src/a/x.ts", CONFORMING);
+    sha = commit("init");
+  });
+  const hooks = join(dir, ".git", "hooks");
+  const pin = buildPin([area("src/a", ["src/a/x.ts"])], { sha });
+  writeFileSync(join(hooks, "baseline.json"), JSON.stringify(pin));
+  const before = readdirSync(hooks).sort();
+  mkdirSync(join(dir, ".claude"), { recursive: true });
+  symlinkSync("../.git/hooks", join(dir, ".claude", "anatomiya"));
+
+  assert.throws(() => pinTarget(dir), /resolves outside the repository's own \.claude directory/);
+  assert.throws(() => writePin(dir, pin), /resolves outside the repository's own \.claude directory/);
+  assert.deepEqual(readdirSync(hooks).sort(), before);
+  assert.equal(loadPin(dir), null, "and the pin there is not this repository's");
+});
+
+test("a baseline.json linked out of the repository is no pin", async (t) => {
+  // The directory was resolved and the leaf was not: a committed
+  // `.claude/anatomiya/baseline.json -> /elsewhere/baseline.json` had readPin
+  // return the pin outside. A write replaces the link as an entry.
+  let sha;
+  const dir = repo(t, (d, { write, commit }) => {
+    write("src/a/x.ts", CONFORMING);
+    sha = commit("init");
+  });
+  const outside = mkdtempSync(join(tmpdir(), "anatomiya-outside-"));
+  t.after(() => rmSync(outside, { recursive: true, force: true }));
+  const planted = buildPin([area("src/a", ["src/a/x.ts"])], { sha });
+  writeFileSync(join(outside, "baseline.json"), JSON.stringify(planted));
+  mkdirSync(join(dir, ".claude", "anatomiya"), { recursive: true });
+  symlinkSync(join(outside, "baseline.json"), join(dir, PIN_PATH));
+
+  assert.deepEqual(readPin(dir), { pin: null, unreadable: null });
+
+  const own = buildPin([area("src/a", ["src/a/x.ts"])], { sha, corpus: 1 });
+  writePin(dir, own);
+  assert.deepEqual(loadPin(dir), own);
+  assert.deepEqual(JSON.parse(readFileSync(join(outside, "baseline.json"), "utf8")), planted, "untouched");
+});
+
+test("a pinned corpus size that is not a count of files is not a pin", async (t) => {
+  // Measured: `corpus: -5` made the area floor NaN, so every one-file directory
+  // became an area; a count smaller than the files the pin itself lists is one
+  // no scan wrote either.
+  let sha;
+  const dir = repo(t, (d, { write, commit }) => {
+    write("src/a/x.ts", CONFORMING);
+    write("src/a/y.ts", CONFORMING);
+    sha = commit("init");
+  });
+  const good = buildPin([area("src/a", ["src/a/x.ts", "src/a/y.ts"])], { sha, corpus: 2 });
+  mkdirSync(join(dir, ".claude", "anatomiya"), { recursive: true });
+  for (const corpus of [-5, 1.5, "41", null, 1, 2 ** 53]) {
+    writeFileSync(join(dir, PIN_PATH), JSON.stringify({ ...good, corpus }));
+    const read = readPin(dir);
+    assert.equal(read.pin, null, JSON.stringify(corpus));
+    assert.match(read.unreadable, /corpus/, JSON.stringify(corpus));
+  }
+  writeFileSync(join(dir, PIN_PATH), JSON.stringify(good));
+  assert.deepEqual(loadPin(dir), good);
+
+  // A pin handed in directly has not been through readPin, and its size is not
+  // carried either.
+  const state = await resolve(dir, { pin: { ...good, corpus: -5 }, baseRef: "main" });
+  assert.equal(state.partitionSize, null);
+  assert.deepEqual(buildPin([], { sha, corpus: -5 }).corpus, undefined);
 });

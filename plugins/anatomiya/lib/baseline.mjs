@@ -13,7 +13,7 @@ import { encodePath } from "./encode.mjs";
 import { applyPairings } from "./pairing.mjs";
 import { atomic, readRecord } from "./facts.mjs";
 import { byCode } from "./paths.mjs";
-import { readHead, resolveInside } from "./rules.mjs";
+import { blockedOnTheWay, leafReplaceable, outsideClaude, readHead, resolveInside } from "./rules.mjs";
 import { mainCheckoutOf } from "./worktree.mjs";
 
 export const PIN_PATH = ".claude/anatomiya/baseline.json";
@@ -39,7 +39,7 @@ export function buildPin(areas, { sha, corpus = null }) {
     // The corpus size the layout was resolved from. The area floor is a step
     // function of it, so without it one added file re-partitions the repository
     // and every area reads as a population change.
-    ...(Number.isFinite(corpus) ? { corpus } : {}),
+    ...(isCount(corpus) ? { corpus } : {}),
     areas: [...areas]
       .map((a) => ({ id: a.id, path: a.path, files: a.files.map((f) => f.rel).sort() }))
       .sort((a, b) => byCode(a.path, b.path)),
@@ -59,10 +59,24 @@ function pinFile(root) {
   return dir === null ? null : join(dir, basename(PIN_PATH));
 }
 
-/** The file a pin would be written to, refused before anything is planned (A19). */
+/**
+ * The file a pin would be written to, refused before anything is planned (A19).
+ *
+ * Every shape the write cannot get past is refused here, by name, because this
+ * is what a dry run asks: a file at `.claude` or at the store, or a directory at
+ * baseline.json, let `pin --dry-run` say "would write" and `pin` die on a raw
+ * `ENOTDIR`, `EEXIST` or `EISDIR`. A link at the leaf is not refused: the
+ * rename replaces the entry, and the read side refuses to follow it out.
+ */
 export function pinTarget(root) {
   const path = pinFile(root);
-  if (path === null) throw new Error(`${dirname(PIN_PATH)} resolves outside the repository, so no pin is written there`);
+  if (path === null) throw new Error(`${outsideClaude(dirname(PIN_PATH))}, so no pin is written there`);
+  const blocked = blockedOnTheWay(root, dirname(PIN_PATH));
+  if (blocked !== null) {
+    const remedy = blocked.link ? "replace the link with a directory" : "remove it";
+    throw new Error(`${blocked.sentence}, so no pin is written there: ${remedy} and pin again`);
+  }
+  if (!leafReplaceable(path)) throw new Error(`${PIN_PATH} is not a file, so no pin is written there: remove it and pin again`);
   return path;
 }
 
@@ -82,7 +96,12 @@ export function loadPin(root) {
 export function readPin(root) {
   // A pin outside the repository is no pin: the same counts-only answer an
   // unreadable one gets, never a population a directory we do not own chose.
-  const path = pinFile(root);
+  //
+  // The leaf is resolved as well as its directory. `atomic` replaces a link
+  // there as an entry, but a read follows it, and a committed
+  // `baseline.json -> /elsewhere/baseline.json` had this return the pin outside.
+  if (pinFile(root) === null) return { pin: null, unreadable: null };
+  const path = resolveInside(root, PIN_PATH);
   if (path === null) return { pin: null, unreadable: null };
   const { record, oversize } = readRecord(path);
   if (oversize) return { pin: null, unreadable: "it is past the size this reads" };
@@ -118,8 +137,19 @@ function pinProblem(pin) {
   // one a human accepted, which is the direction that manufactures claims.
   // Refusing the whole file drops to counts-only instead.
   if (!Array.isArray(pin.areas) || !pin.areas.every(isPinnedArea)) return "an area in it is not whole";
+  // The corpus size decides the area floor, so a value no scan could have
+  // written re-partitions the repository: `-5` took the floor to NaN and made
+  // every one-file directory an area. A count below the files the pin itself
+  // lists is one no scan wrote either.
+  if (pin.corpus !== undefined) {
+    const listed = new Set(pin.areas.flatMap((a) => a.files)).size;
+    if (!isCount(pin.corpus) || pin.corpus < listed) return "the corpus size it names is not a count of its files";
+  }
   return null;
 }
+
+/** A number of files: a non-negative safe integer, which NaN and -5 are not. */
+const isCount = (n) => Number.isSafeInteger(n) && n >= 0;
 
 function isPinnedArea(a) {
   return !!a
@@ -433,7 +463,9 @@ function state(o) {
     // of it, so a caller deriving it from today's file count re-partitions the
     // repository on one added file, and every area then reads as a population
     // change against a pin that knew the old partition.
-    partitionSize: Number.isFinite(o.partitionSize) ? o.partitionSize : null,
+    // A count or nothing: a pin handed in directly never went through
+    // `pinProblem`, and a negative size takes the floor's square root to NaN.
+    partitionSize: isCount(o.partitionSize) ? o.partitionSize : null,
     status: o.status,
     sha: o.sha ?? null,
     countsOnly: o.countsOnly,

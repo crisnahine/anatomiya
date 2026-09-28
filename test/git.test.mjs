@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync, spawnSync } from "node:child_process";
@@ -56,6 +56,38 @@ function repo(t) {
   git("commit", "-qm", "init");
   return { dir, git };
 }
+
+test("a repository's own config cannot make a status run a command", needsShebang, async (t) => {
+  // A repository shipped as a tarball carries its own `.git/config`, and
+  // `core.fsmonitor` there names a command `git status` runs. Measured: before
+  // the environment turned it off, a status through gitBuffered ran the script.
+  const { dir, git } = repo(t);
+  const marker = join(dir, "ran");
+  const hook = join(dir, "monitor.sh");
+  writeFileSync(hook, `#!/bin/sh\ntouch '${marker}'\n`);
+  chmodSync(hook, 0o755);
+  git("config", "core.fsmonitor", hook);
+  writeFileSync(join(dir, "a.ts"), "export const a = 2\n");
+
+  // Somebody else's command-line config reaches git beside ours.
+  const env = { ...process.env, GIT_CONFIG_COUNT: "1", GIT_CONFIG_KEY_0: "status.relativePaths", GIT_CONFIG_VALUE_0: "false" };
+  for (const run of [
+    () => gitBuffered(dir, ["status", "--porcelain"], { env }),
+    () => gitBuffered(dir, ["diff", "--name-only"], { env }),
+    () => gitStreamed(dir, ["status", "--porcelain", "-z"], () => {}, { env }),
+  ]) {
+    await run();
+    assert.equal(existsSync(marker), false, "the repository's monitor never ran");
+  }
+  const kept = await gitBuffered(dir, ["config", "status.relativePaths"], { env });
+  assert.equal(kept.stdout.trim(), "false", "and a caller's own config entries still arrive");
+  const off = await gitBuffered(dir, ["config", "core.fsmonitor"], { env });
+  assert.equal(off.stdout.trim(), "false");
+
+  // What the test is standing on: plain git runs it.
+  spawnSync("git", ["status", "--porcelain"], { cwd: dir });
+  assert.equal(existsSync(marker), true, "the monitor is one git would run");
+});
 
 test("a rename is one record carrying both of its paths", () => {
   // Three NUL fields where everything else has two. Splitting on NUL and

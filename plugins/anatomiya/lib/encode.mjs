@@ -20,7 +20,17 @@ const PATH_MAX = 120;
 // or in any other script, is a name somebody
 // wrote in their own language, and refusing those left a repository written in
 // Russian, Greek or Japanese with a placeholder in its overview and no area.
-const LOOKALIKE = [/\p{Script=Latin}/u, /\p{Script=Cyrillic}/u, /\p{Script=Greek}/u];
+//
+// Armenian and Cherokee are on the list for the same reason: `օ` (U+0585) is a
+// Latin `o` and `Ꭺ` (U+13AA) a Latin `A`, and `src/cօnfig.ts` rendered as the
+// file it is not.
+const LOOKALIKE = [
+  /\p{Script=Latin}/u,
+  /\p{Script=Cyrillic}/u,
+  /\p{Script=Greek}/u,
+  /\p{Script=Armenian}/u,
+  /\p{Script=Cherokee}/u,
+];
 
 const mixesLookalikes = (word) => LOOKALIKE.filter((re) => re.test(word)).length > 1;
 
@@ -34,6 +44,23 @@ const WORD_BREAK = /[^\p{L}\p{M}]+/u;
 // zero-width joiner reorders or hides what it says; `JSON.stringify` escapes
 // neither of the last two.
 const UNPRINTABLE = /[^\p{L}\p{M}\p{N}\p{P}\p{S} ]/gu;
+
+// What renders as nothing and is not a format character, so the allowlist above
+// keeps it: variation selectors (U+FE00-FE0F, U+E0100-E01EF) and the combining
+// grapheme joiner are marks, the Hangul fillers (U+115F, U+1160, U+3164,
+// U+FFA0) are letters. A payload of them rode invisibly inside one grapheme.
+// Removed outright rather than spaced: they sit inside a word, and a space
+// there would split it. The format characters among them keep becoming a
+// space, which is what they always did.
+const INVISIBLE = /[\p{Default_Ignorable_Code_Point}--\p{Cf}]/gv;
+
+// A grapheme holds any number of marks, so a cap on graphemes alone bounded
+// nothing: five of them came back as 1,000,001 code units. Eight code points is
+// a base and seven more, which is the longest conjunct a script writes
+// (Devanagari क्ष्म्य is seven), and the whole value is held to four code units
+// a grapheme on top of that.
+const CLUSTER_MOST = 8;
+const UNITS_PER_GRAPHEME = 4;
 
 const STRUCTURAL = [
   /-{3,}/g,      // a markdown rule or a frontmatter fence
@@ -63,11 +90,23 @@ export function printableOnly(s) {
  */
 function capGraphemes(s, max) {
   const out = [];
+  const budget = max * UNITS_PER_GRAPHEME;
+  let units = 0;
   for (const { segment } of GRAPHEMES.segment(s)) {
-    if (out.length >= max) return out.join("") + "…";
-    out.push(segment);
+    const kept = firstCodePoints(segment, CLUSTER_MOST);
+    if (out.length >= max || units + kept.length > budget) return out.join("") + "…";
+    out.push(kept);
+    units += kept.length;
+    if (kept.length < segment.length) return out.join("") + "…";
   }
   return out.join("");
+}
+
+/** The first `n` code points of a string, without spreading the whole of it. */
+function firstCodePoints(s, n) {
+  let at = 0;
+  for (let i = 0; i < n && at < s.length; i++) at += s.codePointAt(at) > 0xffff ? 2 : 1;
+  return s.slice(0, at);
 }
 
 /** Everything the encoder removes, before anything is capped or quoted. */
@@ -75,7 +114,7 @@ function neutralise(value) {
   // An absent value still has to come through, so it becomes the empty string
   // rather than returning early: a path is always quoted, empty or not.
   let s = value == null ? "" : String(value).normalize("NFKC");
-  s = printableOnly(s);
+  s = printableOnly(s.replace(INVISIBLE, ""));
   for (const re of STRUCTURAL) s = s.replace(re, " ");
   s = s.replace(/ {2,}/g, " ").trim();
 

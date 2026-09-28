@@ -799,18 +799,18 @@ test("a .claude/rules symlinked outside the repository refuses it too", () => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-test("a rules directory linked to a real directory inside the repository is fine", () => {
-  // Fail closed is not fail always. A repository may legitimately keep the
-  // directory behind a link of its own, and the resolved path is inside.
+test("a rules directory linked to a real directory inside .claude is fine", () => {
+  // Fail closed is not fail always. A repository may keep the directory behind
+  // a link of its own, and the resolved path is inside `.claude`. A link to
+  // anywhere else in the repository is refused: see the tests below.
   const dir = workspace();
-  mkdirSync(join(dir, ".claude"), { recursive: true });
-  mkdirSync(join(dir, "actual-rules"), { recursive: true });
-  symlinkSync(join(dir, "actual-rules"), join(dir, ".claude", "rules"));
+  mkdirSync(join(dir, ".claude", "actual-rules"), { recursive: true });
+  symlinkSync(join(dir, ".claude", "actual-rules"), join(dir, ".claude", "rules"));
 
   const plan = writeMap(result(dir, [area("src/services")]));
 
   assert.equal(plan.write.length, 2);
-  assert.ok(existsSync(join(dir, "actual-rules", "anatomiya-overview.md")));
+  assert.ok(existsSync(join(dir, ".claude", "actual-rules", "anatomiya-overview.md")));
   rmSync(dir, { recursive: true, force: true });
 });
 
@@ -1157,4 +1157,135 @@ test("the two spellings of an unresolvable path are the whole reason there are t
 
   assert.equal(realpathOrNull(missing), null);
   assert.equal(realpathOf(missing), resolve(missing));
+});
+
+/* --- the two map directories sit in the repository's own .claude (F2) --- */
+
+test("a map directory linked to a file is named by its own path, never by the file it points at", () => {
+  // Measured: a committed `.claude/rules -> ../README.md` made the refusal read
+  // "README.md is not a directory ... remove it and scan again", and an agent
+  // following that sentence deletes the README. The link is what is in the way.
+  const dir = workspace();
+  writeFileSync(join(dir, "README.md"), "# readme\n");
+  mkdirSync(join(dir, ".claude"), { recursive: true });
+  writeFileSync(join(dir, ".claude", "notes.md"), "notes\n");
+
+  symlinkSync("notes.md", join(dir, RULES));
+  for (const dryRun of [true, false]) {
+    assert.throws(
+      () => writeMap(result(dir, [area("src/services")]), { dryRun }),
+      (err) =>
+        err.message.startsWith(`${RULES} is a link to .claude/notes.md, which is not a directory`) &&
+        !/remove it/.test(err.message),
+      dryRun ? "dry run" : "real write"
+    );
+  }
+
+  rmSync(join(dir, RULES));
+  symlinkSync("../README.md", join(dir, RULES));
+  assert.throws(
+    () => writeMap(result(dir, [area("src/services")])),
+    (err) => err.message.startsWith(`${RULES} resolves outside`) && !/README/.test(err.message)
+  );
+  assert.equal(readFileSync(join(dir, "README.md"), "utf8"), "# readme\n");
+  assert.equal(readFileSync(join(dir, ".claude", "notes.md"), "utf8"), "notes\n");
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("map directories linked elsewhere inside the repository are refused, not written through", () => {
+  // Measured: with committed `.claude/anatomiya -> ../.git/hooks` and
+  // `.claude/rules -> ../src`, a scan wrote facts.json into .git/hooks and the
+  // map into src while printing `.claude/...`. Both resolve inside the
+  // repository, which is all containment asked; the directories are the ones
+  // under the repository's own `.claude`, and a link out of it is refused.
+  for (const [link, target] of [
+    [RULES, "../src"],
+    [STORE, "../.git/hooks"],
+    [".claude", "config"],
+  ]) {
+    const dir = workspace();
+    mkdirSync(join(dir, "src"), { recursive: true });
+    mkdirSync(join(dir, ".git", "hooks"), { recursive: true });
+    mkdirSync(join(dir, "config"), { recursive: true });
+    mkdirSync(join(dir, link, ".."), { recursive: true });
+    symlinkSync(target, join(dir, link));
+
+    for (const dryRun of [true, false]) {
+      assert.throws(
+        () => writeMap(result(dir, [area("src/services")]), { dryRun }),
+        /resolves outside the repository's own \.claude directory/,
+        `${link}, ${dryRun ? "dry run" : "real write"}`
+      );
+    }
+    assert.deepEqual(readdirSync(join(dir, "src")), [], `${link}: nothing in src`);
+    assert.deepEqual(readdirSync(join(dir, ".git", "hooks")), [], `${link}: nothing in .git/hooks`);
+    assert.deepEqual(readdirSync(join(dir, "config")), [], `${link}: nothing in config`);
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a directory where facts.json belongs is refused by name before a dry run answers", () => {
+  // Measured: a committed directory at .claude/anatomiya/facts.json let a dry
+  // run print "would write" and the real scan die on a raw EISDIR out of the
+  // rename.
+  const dir = workspace();
+  mkdirSync(join(dir, STORE, "facts.json"), { recursive: true });
+
+  for (const dryRun of [true, false]) {
+    assert.throws(
+      () => writeMap(result(dir, [area("src/services")]), { dryRun }),
+      (err) => err.message === `${STORE}/facts.json is not a file, so the map could not be written: remove it and scan again`,
+      dryRun ? "dry run" : "real write"
+    );
+  }
+  assert.equal(existsSync(join(dir, RULES)), false, "and nothing else was written");
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("a facts.json linked out of .claude is not read", () => {
+  // The directory was resolved and the leaf was not, so a committed
+  // `.claude/anatomiya/facts.json -> /elsewhere/facts.json` put a record outside
+  // the repository in charge of what a branch is judged against.
+  const dir = workspace();
+  const outside = mkdtempSync(join(tmpdir(), "anatomiya-outside-"));
+  writeFacts(outside, result(outside, [area("src/elsewhere")]));
+  mkdirSync(join(dir, STORE), { recursive: true });
+  symlinkSync(join(outside, STORE, "facts.json"), join(dir, STORE, "facts.json"));
+
+  const { facts, unreadable } = readFactsFrom(dir);
+
+  assert.equal(facts, null);
+  assert.match(unreadable, /resolves outside the repository/);
+  // A write still replaces the link rather than writing through it.
+  writeMap(result(dir, [area("src/services")]));
+  assert.deepEqual(readFactsFrom(outside).facts.areas.map((a) => a.path), ["src/elsewhere"]);
+  assert.deepEqual(readFactsFrom(dir).facts.areas.map((a) => a.path), ["src/services"]);
+  rmSync(outside, { recursive: true, force: true });
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("a held area whose committed record is malformed is dropped, not carried into a crash", () => {
+  // Measured: `dimensions: [null]` on a held area in a committed facts.json
+  // took the scan down with "Cannot read properties of null (reading
+  // 'states')". Only the array was checked, never what was in it.
+  const dir = workspace();
+  const models = area("app/models");
+  const services = area("app/services");
+  writeMap(result(dir, [models, services]));
+  const record = readFacts(dir);
+  const whole = record.areas.find((a) => a.id === models.id).dimensions[0];
+
+  for (const bad of [[null], [42], [[]], [{ key: "k" }], [{ ...whole, candidates: "x" }], [{ ...whole, exceptions: null }]]) {
+    const edited = { ...record, areas: record.areas.map((a) => (a.id === models.id ? { ...a, dimensions: bad } : a)) };
+    writeFileSync(join(dir, STORE, "facts.json"), JSON.stringify(edited));
+
+    const partial = result(dir, [area("app/services")]);
+    partial.parse = { ...partial.parse, unreadable: ["ruby"] };
+    partial.held = [{ id: models.id, path: models.path, fileCount: models.fileCount }];
+    partial.readNothing = false;
+
+    const plan = writeMap(partial, { dryRun: true });
+    assert.deepEqual(plan.held, [], JSON.stringify(bad));
+  }
+  rmSync(dir, { recursive: true, force: true });
 });

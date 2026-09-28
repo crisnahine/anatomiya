@@ -114,6 +114,31 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - The end-of-turn check asks git for the reflog where it is not a file (reftable), so a turn that
   committed everything it wrote is still asked about there.
 - A refresh worker whose lock had been taken over no longer deletes the new holder's lock.
+- A rule file opening with `---` and repeating `generator: anatomiya` without closing the fence took
+  seconds to recognise as not ours (50 s for a 1 MB overview, past the hook's timeout). It is now
+  read in one pass.
+- Variation selectors, the combining grapheme joiner and the Hangul fillers no longer ride invisibly
+  through the encoder, and a value capped at a few graphemes can no longer come out a million
+  characters long.
+- A path mixing Armenian or Cherokee letters into a Latin word (`src/cօnfig.ts`) is refused as a
+  look-alike, as Cyrillic and Greek already were.
+- `.claude/rules` or `.claude/anatomiya` linked anywhere outside the repository's own `.claude` (into
+  `src`, or into `.git/hooks`) is refused by `scan` and `pin` rather than written through, and a
+  `facts.json` or `baseline.json` linked out of the repository is no longer read.
+- A map directory linked to a file is refused by its own name, saying it is a link, rather than by
+  the name of the file it points at: `.claude/rules -> ../README.md` said to remove the README.
+- `pin --dry-run` and `scan --dry-run` refuse by name a store, pin or record the write could not get
+  past, where they said "would write" and the real run died on `ENOTDIR`, `EEXIST` or `EISDIR`.
+- A committed `facts.json` whose held area carried a malformed dimension took the scan down; such an
+  area is no longer carried.
+- A pin naming a corpus size that is not a count of its files (`-5`) is refused as unreadable,
+  instead of making every one-file directory an area.
+- A write that fails part way, on a full disk, no longer leaves its temporary file beside the map.
+- A guard named after an inherited property (`toString`) is refused like any other unknown guard.
+- A prerelease of an engine's floor version (`1.0.0.rc1`, `1.0.0-rc.1`) no longer counts as meeting
+  the floor.
+- A repository's own `.git/config` can no longer make the git reads run a command through
+  `core.fsmonitor` or a hook.
 - `pin` asks again, once the file list is read, whether HEAD and the tree still match: a commit or a
   `git add` landing while a large index was read put files into a pin labelled with the commit
   checked before.
