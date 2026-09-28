@@ -300,12 +300,19 @@ export function reduceArea(area, parsed, { frameworks, tier = "syntactic", capab
     // Only a dimension permitted to state its inverse carries the flipped list,
     // so a one-sided one costs no extra bytes on disk.
     const counterExceptions = dim.counterClaim ? [] : null;
+    // Which files carry each side, so the author gate asks who wrote the habit
+    // being stated. A person whose only file breaks the habit is not a second
+    // pair of hands holding it (D4).
+    const claimFiles = [];
+    const counterFiles = [];
 
     for (const [rel, hits] of perFile) {
       candidates += hits.length;
       const bad = hits.filter((h) => !h.conforming);
       conforming += hits.length - bad.length;
       elsewhere += hits.filter((h) => h.elsewhere).length;
+      if (bad.length < hits.length) claimFiles.push(rel);
+      if (bad.length) counterFiles.push(rel);
       if (bad.length) exceptions.push({ path: rel, count: bad.length });
       if (counterExceptions && bad.length < hits.length) {
         counterExceptions.push({ path: rel, count: hits.length - bad.length });
@@ -331,6 +338,8 @@ export function reduceArea(area, parsed, { frameworks, tier = "syntactic", capab
       // renderer prints this one only where there is something to disclose.
       ...(declined.size ? { declined: declined.size } : {}),
       files: [...perFile.keys()],
+      claimFiles,
+      counterFiles,
       ...spread(perFile, candidates),
       // The path breaks ties, so the three that print do not depend on
       // filesystem order between two scans of unchanged source (A5).
@@ -545,6 +554,9 @@ function spread(perFile, candidates) {
  */
 export function applyGates(dim, {
   authors,
+  // Who wrote the counter sites, where the caller counted them apart. A caller
+  // holding one count for both sides means the same people wrote both.
+  counterAuthors = authors,
   repoAuthors,
   historyRead = true,
   // What of the history was read, where it was not all of it. Absent means the
@@ -583,11 +595,12 @@ export function applyGates(dim, {
   const dimDirs = distinctDirs(files);
   const required = historyRead ? authorsRequired(repoAuthors, { shallow }) : null;
 
-  // The same battery, run once per side. Only the numerator moves: how many
-  // files the sites are spread over, how much of the area the construct
-  // reaches and who wrote it are facts about where the sites are, not about
-  // which way they point.
-  const judge = (k, topK, restK) => {
+  // The same battery, run once per side. The numerator moves, and so do the
+  // hands: how many files the sites are spread over and how much of the area
+  // the construct reaches are facts about where the sites are, but who wrote
+  // them is a fact about the side. One person's habit is not a convention, and
+  // the colleague whose only file breaks it does not make it two people's (D4).
+  const judge = (k, topK, restK, hands) => {
     const ratio = candidates ? k / candidates : 0;
     const bound = wilsonLower(k, candidates);
     const looRatio = looCandidates > 0 ? (k - topK) / looCandidates : 0;
@@ -620,7 +633,7 @@ export function applyGates(dim, {
       ["applicability", denominator > 0 && applicability >= minApplicable],
       // `historyRead &&` is load-bearing: git failing is a third state, and
       // `0 >= null` is true.
-      [historyRead ? "authors" : "history-unread", historyRead && authors >= required],
+      [historyRead ? "authors" : "history-unread", historyRead && hands >= required],
       // The directory gate is skipped where it cannot be satisfied. Applied
       // unconditionally it blocked 124 of 170 measured slots, because area
       // discovery finds leaf directories and a leaf directory holds one.
@@ -640,7 +653,7 @@ export function applyGates(dim, {
     };
   };
 
-  const claim = judge(conforming, top.conforming || 0, restConforming);
+  const claim = judge(conforming, top.conforming || 0, restConforming, authors);
   // The leave-one-out reuses the file with the most candidates rather than the
   // most counter sites. The counter only reaches this gate at 0.90, so no other
   // file's counter sites can exceed that file's by more than a tenth of the
@@ -648,7 +661,8 @@ export function applyGates(dim, {
   const counter = judge(
     candidates - conforming,
     (top.candidates || 0) - (top.conforming || 0),
-    restCandidates - restConforming
+    restCandidates - restConforming,
+    counterAuthors
   );
   // The hand-written sentence is the whole permission. A dimension whose
   // inverse would be a defect never gets one, so it never gets a second side.
@@ -765,6 +779,7 @@ export function verdictFor(
     truncated = false,
     current,
     authors,
+    counterAuthors = authors,
     repoAuthors,
     historyRead = true,
     // What of the history was read, where it was not all of it (D11).
@@ -794,6 +809,7 @@ export function verdictFor(
   const source = baselineDim || dim;
   const g = applyGates(source, {
     authors,
+    counterAuthors,
     repoAuthors,
     historyRead,
     shallow,
@@ -826,7 +842,11 @@ export function verdictFor(
     directive: blocked ? false : g.directive,
     gate: blocked || g.gate,
     counterGate: blocked || g.counterGate,
-    authors,
+    // The hands behind the side the line is about: the counter's where the
+    // counter is stated, the claim's everywhere else, because an unstated
+    // slot reports the claim's gate.
+    authors: states === "counter" ? counterAuthors : authors,
+    counterAuthors,
     baseline: baselineDim
       ? {
           candidates: baselineDim.candidates,
