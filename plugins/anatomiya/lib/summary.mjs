@@ -280,7 +280,7 @@ function baselineLine(b) {
   if (b.status === "pin-unreadable")
     return `the pin on disk could not be read because ${b.unreadable}, so claims are measured against the current tree and no finding can exceed FIX`;
   if (b.countsOnly)
-    return "no baseline pinned: claims are measured against the current tree, and no finding can exceed FIX. `anatomiya pin` accepts one";
+    return "no baseline pinned: claims are measured against the current tree, and no finding can exceed FIX. One is pinned on its own when this checkout sits on the tip of origin's default branch with nothing uncommitted, or `/anatomiya:pin` takes one by hand";
   const drift = b.drift === null ? "" : `, ${plural(b.drift, "file")} changed since the pin (measured against ${b.baseRef ? b.baseRef.ref : "the base"})`;
   return `baseline ${b.sha.slice(0, 8)}${drift}`;
 }
