@@ -300,7 +300,11 @@ export function readinessLines(rows, { installSaid = false } = {}) {
     // unless it is the optional checker, whose row is a note either way.
     if (r.ok) return `${name} ${found} ok${r.reason ? ` (${r.reason})` : ""}`;
     const said = installSaid && PROBES[r.engine]?.host === "node";
-    return said ? `${name} ${found}: ${r.reason}` : `${name} ${found}: ${r.reason}, ${r.remedy}`;
+    // A reason written to stand alone (the refusal every other verb prints)
+    // names the engine and version the row already leads with.
+    const lead = `${name} ${found} is `;
+    const reason = r.reason?.startsWith(lead) ? r.reason.slice(lead.length) : r.reason;
+    return said ? `${name} ${found}: ${reason}` : `${name} ${found}: ${reason}, ${r.remedy}`;
   });
 }
 

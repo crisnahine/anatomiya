@@ -234,8 +234,18 @@ const scriptFor = (maxBytes) => {
 };
 
 const script = (maxBytes) => `
-require "prism"
 require "json"
+
+# A Ruby with no prism at all (2.7 to 3.2 before \`gem install prism\`) raised
+# here, before anything could say why, and every file read as crashing the
+# parser: check found nothing and scan wrote nothing, with no remedy named.
+begin
+  require "prism"
+rescue LoadError
+  $stdout.write(JSON.generate({ "fatal" => "prism is not installed for this ruby" }))
+  $stdout.write("\\n")
+  exit 1
+end
 
 MAX_BYTES = ${maxBytes}
 SKIP = [:location, :node_id, :locals, :flags, :depth].freeze

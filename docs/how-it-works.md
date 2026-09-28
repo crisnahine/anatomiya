@@ -867,9 +867,10 @@ pipe keeps the hook pending with no timeout left to end it.
 The worker keeps its state beside `facts.json`. It takes an exclusive lock, stamps what a scan
 depends on (HEAD, the index as `ls-files -s`, the pin's bytes, the plugin version), and rescans only
 when the stamp moved. It leaves alone a checkout with no map of its own (A24), a map the repository
-tracks, a map built with `--deep`, and a merge, rebase, cherry-pick, revert or bisect in progress.
-A scan that throws writes nothing, so the previous map stays, and the same stamp is not tried again.
-It has its own clock. A changed overview reaches a running session through the echo's digest, and
+tracks, and a merge, rebase, cherry-pick, revert or bisect in progress, and rebuilds a map built
+with `--deep` with the checker. A scan that throws writes nothing, so the previous map stays; the
+same stamp is tried again only after half an hour, and the echo says the refresh failed until one
+succeeds. It has its own clock. A changed overview reaches a running session through the echo's digest, and
 an area file is read from disk the first time its directory is.
 
 The same worker moves the pin, and only onto what the remote default branch holds: HEAD equal to
@@ -882,8 +883,12 @@ reflog` records its last move as a fetch or a pull that took its refspecs from t
 configuration, or records none and the main checkout's first move was the clone onto that same
 commit: a push from this clone, a ref written by hand and a fetch that names its own source or
 destination are this clone's own work, and a session can do all three. Asking git rather than
-reading `logs/` works on the reftable backend too, and a clone that keeps no reflog never pins. And the
-pin is taken at the commit that was judged, or not at all. What each automatic pin accepted is
+reading `logs/` works on the reftable backend too, and a clone that keeps no reflog never pins. A
+commit this clone made (its reflogs name it as a commit, merge commit, pick, revert, applied patch or
+rebase) never joins the pin while it sits on the first-parent line from the pin to the tip, however
+it reached the remote: a push by URL moves no tracking ref, and a teammate's commit on top reviews
+nothing beneath it. A branch merged on the remote with a merge commit sits behind the second parent
+and is pinned, the merge being its review. And the pin is taken at the commit that was judged, or not at all. What each automatic pin accepted is
 written to `refresh.json`. A map built with `--deep` is rebuilt with the checker, a map or pin the
 repository commits is left alone, and a failed rescan is retried after half an hour. `FileChanged`
 is matched on `HEAD`, and a change to any file this hook did not ask for answers nothing, since

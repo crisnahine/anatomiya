@@ -521,7 +521,7 @@ test("doctor on a node under the floor says so with the fix, and still reports e
   const { code, stdout } = onOldNode(["doctor"]);
 
   assert.equal(code, 0);
-  assert.match(stdout, /^node 20\.20\.2: node 20\.20\.2 is older than the 22\.0\.0 this runs on, install Node 22 or newer/m, stdout);
+  assert.match(stdout, /^node 20\.20\.2: older than the 22\.0\.0 this runs on, install Node 22 or newer/m, stdout);
   assert.match(stdout, /^oxc /m, stdout);
   assert.match(stdout, /^prism /m, stdout);
 });

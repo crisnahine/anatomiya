@@ -398,7 +398,7 @@ test("a pin says it too, because it sends the reader off to scan (A8)", (t) => {
 
   const out = anatomiya(repo, "pin");
 
-  assert.match(out, /run `anatomiya scan` to measure the map against it/);
+  assert.match(out, /run `\/anatomiya:scan` to measure the map against it/);
   assert.match(out, /^a running session gets the new overview on its next prompt or tool call, and a new session, a compaction or \/clear loads the whole map$/m);
 });
 

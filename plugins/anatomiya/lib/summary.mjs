@@ -280,7 +280,7 @@ function baselineLine(b) {
   if (b.status === "pin-unreadable")
     return `the pin on disk could not be read because ${b.unreadable}, so claims are measured against the current tree and no finding can exceed FIX`;
   if (b.countsOnly)
-    return "no baseline pinned: claims are measured against the current tree, and no finding can exceed FIX. One is pinned on its own when this checkout sits on the tip of origin's default branch with nothing uncommitted, or `/anatomiya:pin` takes one by hand";
+    return "no baseline pinned: claims are measured against the current tree, and no finding can exceed FIX. Inside Claude Code the plugin's background refresh pins one when this checkout sits on the tip of origin's default branch with nothing uncommitted, or `/anatomiya:pin` takes one by hand";
   const drift = b.drift === null ? "" : `, ${plural(b.drift, "file")} changed since the pin (measured against ${b.baseRef ? b.baseRef.ref : "the base"})`;
   return `baseline ${b.sha.slice(0, 8)}${drift}`;
 }
@@ -315,7 +315,7 @@ export function pinLines(s) {
     return lines;
   }
   lines.push(`wrote ${s.path}`);
-  lines.push("run `anatomiya scan` to measure the map against it");
+  lines.push("run `/anatomiya:scan` to measure the map against it");
   // The scan that follows rewrites every context file. Said here too, because
   // the pin is where a human is told to go and run it.
   lines.push(RUNNING_SESSION);
