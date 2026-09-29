@@ -1,11 +1,11 @@
-import { lstatSync, realpathSync, statSync } from "node:fs";
+import { realpathSync, statSync } from "node:fs";
 import { dirname, resolve, sep } from "node:path";
 
 import { gitBuffered, gitStreamed } from "./git.mjs";
 import { EXT_BY_LANG, LANGUAGES, language } from "./langs.mjs";
 import { CAPABILITY_WORDS, fileStem, stemWords } from "./dimensions-capability.mjs";
 import { FRAMEWORKS } from "./frameworks.mjs";
-import { readHead } from "./rules.mjs";
+import { isLink, readHead } from "./rules.mjs";
 
 // Tracked files only. A working tree holds .env, master.key, an .npmrc with a
 // token and a .git/config with credentials in the remote URL; a filesystem walk
@@ -477,14 +477,14 @@ function classify(root, rel, generatedRules) {
   const { abs, why } = confine(root, rel);
   // A link whose target is gone fails realpath too, and a link is `escaped`
   // whatever it points at, so only a path that is not one reads as unreadable.
-  if (!abs) return { drop: why === "outside" || isLink(root, rel) ? "escaped" : "unreadable" };
+  if (!abs) return { drop: why === "outside" || isLink(resolve(root, rel)) ? "escaped" : "unreadable" };
   // A link is not source even where it stays inside the repository. What git
   // tracks for one is its target's name, so reading through it counted every
   // site of the target twice, and the baseline reused that parse for a path
   // whose link had not changed since the pin: an edit to the target moved the
   // pinned counts (E2). The target is counted where it is tracked, and a link
   // out of the repository is refused above, so both go to the same count.
-  if (lstatSync(resolve(root, rel), { throwIfNoEntry: false })?.isSymbolicLink()) return { drop: "escaped" };
+  if (isLink(resolve(root, rel))) return { drop: "escaped" };
   // A file that is generated must not contribute evidence to a stated
   // directive, whichever directory it sits in: the marker is read only once
   // the cheaper string checks above have already let the path through.
@@ -495,16 +495,6 @@ function classify(root, rel, generatedRules) {
   if (entry.kind === "other") return { drop: "escaped" };
   if (entry.kind === "file" && isGeneratedHead(entry.head)) return { drop: "generated" };
   return { abs };
-}
-
-// Whether the path is a symbolic link, false where even lstat is refused: a
-// directory this may not enter answers EACCES here as well as to realpath.
-function isLink(root, rel) {
-  try {
-    return lstatSync(resolve(root, rel), { throwIfNoEntry: false })?.isSymbolicLink() === true;
-  } catch {
-    return false;
-  }
 }
 
 /**

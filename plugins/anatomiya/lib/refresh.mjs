@@ -23,19 +23,24 @@
  */
 import { spawn } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
-import { closeSync, existsSync, linkSync, openSync, readFileSync, renameSync, unlinkSync, writeSync } from "node:fs";
+import { closeSync, existsSync, linkSync, lstatSync, openSync, readFileSync, renameSync, unlinkSync, writeSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, isAbsolute, join, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 
-import { loadPin, PIN_PATH } from "./baseline.mjs";
+import { loadPin } from "./baseline.mjs";
 import { runPin, runScan } from "./commands.mjs";
-import { atomic, FACTS_PATH, readFacts, readRecord } from "./facts.mjs";
-import { BASE_REFS, gitBuffered, gitStreamed, headSha, UNFINISHED_OPERATIONS } from "./git.mjs";
+import { atomic, readFacts, readRecord, writeTemp } from "./facts.mjs";
+import { BASE_REFS, commitAt, gitBuffered, gitStreamed, headSha, operationUnfinished, shaReachable } from "./git.mjs";
 import { isPathTaken, ownLayout } from "./hook.mjs";
 import { pluginRoot } from "./readiness.mjs";
 import { OVERVIEW_FILE, readHead, realpathOf, REFRESH_STATE, resolveInside, RULES_DIR, STORE_DIR } from "./rules.mjs";
+import { commonDirOf, gitDirOf } from "./worktree.mjs";
 
 const LOCK_FILE = "refresh.lock";
+
+// Left by a worker that found the lock taken, for the holder to read after it
+// lets go.
+const AGAIN_FILE = "refresh.again";
 
 // A worker holds the lock for one scan, and the largest measured takes about
 // two minutes. A lock older than this belongs to a worker that is not coming
@@ -66,6 +71,9 @@ const PASSES = 3;
 const REMOTE_BASES = BASE_REFS.filter((r) => r.startsWith("origin/"));
 
 const EVENTS = new Set(["SessionStart", "FileChanged"]);
+
+// A compaction or a clear inside a session the person already started.
+const QUIET_SOURCES = new Set(["compact", "clear"]);
 
 /**
  * The hook. One object back, and the worker started, or `{}` and nothing.
@@ -98,8 +106,9 @@ export function runRefresh(cwd, payload, { start = startWorker } = {}) {
   // session watching a file nothing would change again.
   if (event === "FileChanged" && !ownWatch(own.root, resolve(String(payload.file_path ?? "")))) return {};
   start(own.root);
-  // Said once a session, to the person: a held pin never moves again on its own.
-  const notice = event === "SessionStart" ? holdNotice(own.root) : null;
+  // Said to the person when they start or resume a session: a `made-here` hold
+  // never ends on its own.
+  const notice = event === "SessionStart" && !QUIET_SOURCES.has(payload.source) ? holdNotice(own.root) : null;
   const said = notice === null ? {} : { systemMessage: notice };
   // An empty list would replace every other hook's watches with nothing.
   if (watchPaths.length === 0) return said;
@@ -112,12 +121,13 @@ export function runRefresh(cwd, payload, { start = startWorker } = {}) {
  *
  * The reflog is appended on every move, a commit, a merge, a pull or a reset
  * included; HEAD itself is rewritten only when the branch changes. Where there
- * is no reflog to watch, something else that every move rewrites stands in:
- * on the reftable backend `reftable/tables.list`, rewritten by every ref
- * update, and in a files repository created without a reflog the index, which
- * a commit, a pull, a checkout and a reset all write. The index is the last
- * resort because a plain `git status` rewrites it too, and each of those then
- * costs a worker that finds the stamp unchanged. Read off the files rather
+ * is no reflog to watch, something else that every move rewrites stands in: on
+ * the reftable backend `reftable/tables.list`, rewritten by every ref update,
+ * with a linked worktree's own stack beside the shared one, since that is where
+ * its HEAD lives; and in a files repository created without a reflog the index,
+ * which a commit, a pull, a checkout and a reset all write. The index is the
+ * last resort because a plain `git status` rewrites it too, and each of those
+ * then costs a worker that finds the stamp unchanged. Read off the files rather
  * than asked of git, for the reason the map walk is (A24): this runs inside a
  * hook. Every basename here is in the `FileChanged` matcher in `hooks.json`.
  */
@@ -126,20 +136,13 @@ export function watchTargets(root) {
   if (gitdir === null) return [];
   const head = join(gitdir, "HEAD");
   const common = commonDirOf(gitdir);
-  if (existsSync(join(common, "reftable"))) return [join(common, "reftable", "tables.list"), head];
+  if (existsSync(join(common, "reftable"))) {
+    const lists = [join(common, "reftable", "tables.list")];
+    if (gitdir !== common && existsSync(join(gitdir, "reftable"))) lists.push(join(gitdir, "reftable", "tables.list"));
+    return [...lists, head];
+  }
   const log = join(gitdir, "logs", "HEAD");
   return [existsSync(log) ? log : join(gitdir, "index"), head];
-}
-
-/** This checkout's own git directory, read off `.git` rather than asked of git. */
-function gitDirOf(root) {
-  const marker = join(root, ".git");
-  const entry = readHead(marker, 4096);
-  if (entry.kind === "file") {
-    const pointed = /^gitdir: (.+)/.exec(entry.head.split("\n")[0])?.[1]?.trim();
-    return pointed ? (isAbsolute(pointed) ? pointed : resolve(root, pointed)) : null;
-  }
-  return entry.kind === "other" && existsSync(join(marker, "HEAD")) ? marker : null;
 }
 
 /** Whether a changed file is one a watch of this checkout names, or could have named. */
@@ -147,16 +150,14 @@ function ownWatch(root, changed) {
   const gitdir = gitDirOf(root);
   if (gitdir === null) return false;
   const common = commonDirOf(gitdir);
-  const could = [join(gitdir, "HEAD"), join(gitdir, "logs", "HEAD"), join(gitdir, "index"), join(common, "reftable", "tables.list")];
+  const could = [
+    join(gitdir, "HEAD"),
+    join(gitdir, "logs", "HEAD"),
+    join(gitdir, "index"),
+    join(gitdir, "reftable", "tables.list"),
+    join(common, "reftable", "tables.list"),
+  ];
   return could.includes(changed);
-}
-
-/** The repository's shared git directory: a linked worktree's names it in `commondir`. */
-function commonDirOf(gitdir) {
-  const entry = readHead(join(gitdir, "commondir"), 4096);
-  const named = entry.kind === "file" ? entry.head.split("\n")[0].trim() : "";
-  if (!named) return gitdir;
-  return isAbsolute(named) ? named : resolve(gitdir, named);
 }
 
 /**
@@ -209,39 +210,62 @@ export async function refreshRepository(root, { scan = runScan, pin = runPin } =
   if (await mapTracked(root)) return { reason: "tracked", pinned: false };
   if (await gitBusy(root)) return { reason: "git-busy", pinned: false };
 
-  const lock = acquire(join(store, LOCK_FILE));
-  if (!lock) return { reason: "busy", pinned: false };
-  try {
-    const { accepted, held } = await followPin(root, pin);
-    const pinned = accepted !== null;
-    for (let pass = 0; pass < PASSES; pass++) {
-      const stamp = await stampOf(root);
-      if (stamp === null) return { reason: "no-head", pinned, held };
-      const state = readRecord(join(store, basename(REFRESH_STATE))).record;
-      if (state?.stamp === stamp && (state.ok || !retryDue(state)) && sameHold(state.held, held)) {
-        return { reason: state.ok ? (pass === 0 ? "current" : "scanned") : "failed-before", pinned, held };
-      }
-      if (state?.stamp === stamp && (state.ok || !retryDue(state))) {
-        // Nothing to rescan; only what the pin decided is new.
-        // The retry clock is the failure's, so it keeps its moment.
-        writeState(store, { ...state, pinned: state.pinned ?? null, held });
-        return { reason: state.ok ? "current" : "failed-before", pinned, held };
-      }
-      try {
-        await scan(root, { deep });
-      } catch (err) {
-        // The previous map stays: a scan that throws has written nothing
-        // (A13), and one that would not run now will not run on the next
-        // trigger either, until something about the checkout changes.
-        writeState(store, { stamp, ok: false, error: String(err?.message ?? err), pinned: accepted, held });
-        return { reason: "failed", pinned, held };
-      }
-      writeState(store, { stamp, ok: true, error: null, pinned: accepted, held });
-    }
-    return { reason: "scanned", pinned, held };
-  } finally {
-    release(lock);
+  const lockPath = join(store, LOCK_FILE);
+  const again = join(store, AGAIN_FILE);
+  let lock = acquire(lockPath);
+  if (!lock) {
+    // The holder may be past its last look at HEAD. It reads this after letting
+    // go and runs again, so the move that started this worker is not lost.
+    leaveWord(again);
+    lock = acquire(lockPath);
+    if (!lock) return { reason: "busy", pinned: false };
   }
+  let result = null;
+  let pinned = false;
+  for (;;) {
+    let round;
+    try {
+      round = await passes(root, store, { scan, pin, deep });
+    } finally {
+      release(lock);
+    }
+    result = result !== null && round.reason === "current" ? { ...round, reason: result.reason } : round;
+    pinned ||= round.pinned;
+    if (!takeWord(again)) return { ...result, pinned };
+    lock = acquire(lockPath);
+    if (!lock) return { ...result, pinned };
+  }
+}
+
+/** Follow the pin, then rescan until HEAD holds still or the passes run out. */
+async function passes(root, store, { scan, pin, deep }) {
+  const { accepted, held } = await followPin(root, pin);
+  const pinned = accepted !== null;
+  for (let pass = 0; pass < PASSES; pass++) {
+    const stamp = await stampOf(root);
+    if (stamp === null) return { reason: "no-head", pinned, held };
+    const state = readRecord(join(store, basename(REFRESH_STATE))).record;
+    if (state?.stamp === stamp && (state.ok || !retryDue(state)) && sameHold(state.held, held)) {
+      return { reason: state.ok ? (pass === 0 ? "current" : "scanned") : "failed-before", pinned, held };
+    }
+    if (state?.stamp === stamp && (state.ok || !retryDue(state))) {
+      // Nothing to rescan; only what the pin decided is new.
+      // The retry clock is the failure's, so it keeps its moment.
+      writeState(store, { ...state, pinned: state.pinned ?? null, held });
+      return { reason: state.ok ? "current" : "failed-before", pinned, held };
+    }
+    try {
+      await scan(root, { deep });
+    } catch (err) {
+      // The previous map stays: a scan that throws has written nothing
+      // (A13), and one that would not run now will not run on the next
+      // trigger either, until something about the checkout changes.
+      writeState(store, { stamp, ok: false, error: String(err?.message ?? err), pinned: accepted, held });
+      return { reason: "failed", pinned, held };
+    }
+    writeState(store, { stamp, ok: true, error: null, pinned: accepted, held });
+  }
+  return { reason: "scanned", pinned, held };
 }
 
 /**
@@ -322,29 +346,28 @@ async function followPin(root, pin) {
   if (!head) return none;
   const tip = await remoteTip(root);
   if (tip === null || tip.sha !== head) return none;
-  // Pushed is not reviewed, and a ref written by hand is not the remote's. A
-  // session can run `git push` or `git update-ref` itself, and a pin that
-  // followed either accepted the agent's own commits as the population every
-  // gate reads. Git records how the remote-tracking ref last moved, and only a
-  // fetch or a pull brought commits the remote already held, and a ref with
-  // no record counts only as the clone that brought it. A commit this clone
-  // made is refused below however it reached the remote.
-  // From here the checkout sits on the tip, and a refusal is a hold a person
-  // should hear about: the pin stops following until somebody accepts the
-  // commit by hand, and nothing else would say why (`held`, read by the
-  // SessionStart hook for the person, never for the model).
+  // Pushed is not reviewed, and a ref written by hand is not the remote's: a
+  // session can `git push` or `git update-ref` itself. Only a fetch or a pull
+  // moves the tracking ref for the remote. From here the checkout sits on the
+  // tip, and a refusal is a hold the person hears about, never the model.
   const current = loadPin(root);
   if (current?.sha === head) return none;
+  // Each hold names the pin it held, so a pin taken by hand since ends it.
+  const hold = (reason, commit) => ({ accepted: null, held: { reason, commit, pin: current?.sha ?? null } });
   const moved = await fetchedHere(root, tip.ref, tip.sha);
-  if (moved !== "fetched") return { accepted: null, held: { reason: moved === "no-record" ? "no-record" : "not-fetched", commit: head } };
-  if (current) {
+  if (moved !== "fetched") return hold(moved === "no-record" ? "no-record" : "not-fetched", head);
+  // A pinned commit git no longer holds (its branch merged, deleted and
+  // collected) bounds nothing, and the line is read as for a first pin.
+  const from = current !== null && (await shaReachable(root, current.sha)) ? current.sha : null;
+  if (from !== null) {
     // Newer than this checkout: the remote was rewound, or this clone is
     // behind the one that pinned. Either way the pin does not move backwards.
-    const newer = await gitBuffered(root, ["merge-base", "--is-ancestor", head, current.sha]);
+    const newer = await gitBuffered(root, ["merge-base", "--is-ancestor", head, from]);
     if (newer.ok) return none;
   }
-  const made = await madeHereOnLine(root, current?.sha ?? null, head);
-  if (made !== null) return { accepted: null, held: { reason: "made-here", commit: made } };
+  const made = await madeHereOnLine(root, from, head);
+  if (made === "") return hold("unread", head);
+  if (made !== null) return hold("made-here", made);
   // A staged or edited tracked file is refused by `pin` itself, the one rule for
   // what a pin may record, and so is HEAD having moved since it was judged here.
   // A refusal is simply no pin: the tree is mid-edit, not held.
@@ -361,22 +384,10 @@ async function followPin(root, pin) {
   }
 }
 
-// The reflog entries that create no commit: a clone, a checkout, a reset, a
-// branch made or renamed, anything a fetch wrote, a push (the commit it sent
-// was recorded where it was made, and one the remote sent first is not this
-// clone's), the remote's HEAD named or a remote renamed, a fast-forward, and
-// a rebase's bookkeeping (`(start)` and `(finish)` name the upstream commit it
-// moved onto). Every other entry names a commit this clone made, whatever
-// wrote it. Read this way round because git prefixes a rebase's steps with the
-// command that ran it (`pull -q --rebase (pick)`, or `pull (pick)` with
-// `pull.rebase` set), and a list of what creates commits missed each new
-// spelling and pinned the rebased commit; an entry nobody listed here holds the
-// pin rather than letting it through. Each is matched as git writes the whole
-// entry, both ends anchored, because the rest of an entry is free text: a
-// fast-forward is the entire message after the command (a pick whose subject
-// begins "Fast-forward the lockfile" is a commit), and a rebase's bookkeeping
-// is read only after `rebase` or `pull`, never after a branch name git allows
-// parentheses in (`merge wip(start): Merge made ...` is a merge commit).
+// Reflog entries that create no commit; every other entry is a commit made
+// here, since a list of what creates commits missed each spelling git gives a
+// rebase's steps (`pull -q --rebase (pick)`). Both ends are anchored: a pick
+// subject "Fast-forward the lockfile" and a merge of `wip(start)` are commits.
 const COMMAND = "(?:(?!: ).)*";
 const CREATES_NOTHING = new RegExp(
   "^(clone|checkout|reset|branch|fetch|initial pull|update by push|remote set-head|remote: renamed)\\b" +
@@ -395,7 +406,8 @@ const CREATES_NOTHING = new RegExp(
  * sits behind its second parent, the merge being its review, and counting it
  * stalled the pin for every merge-commit workflow. Branch reflogs are shared by
  * every worktree, and a commit made on a detached HEAD in a linked worktree is
- * the one this does not see. Anything git could not answer counts as made here.
+ * the one this does not see. A walk git could not answer is left open, never
+ * read as a teammate's.
  *
  * The commit found, so the hold can name it; `""` where git could not answer,
  * and null where nothing on the line was made here.
@@ -408,6 +420,8 @@ async function madeHereOnLine(root, from, to) {
   let found = null;
   try {
     const me = await committerEmail(root);
+    // Past a pin, the pin bounds the line. A first pin reads the whole of it.
+    const since = from === null ? await clonedAt(root) : null;
     // Each entry with the ref it belongs to. A remote-tracking ref's entries are
     // never where a commit is created (a fetch, a push, a clone or a hand
     // write moves it); read as one, the entry a reftable clone writes there
@@ -419,9 +433,10 @@ async function madeHereOnLine(root, from, to) {
       if (!CREATES_NOTHING.test(message)) made.add(sha);
     }, { terminated: false });
     if (made.size === 0 && me === null) return null;
-    await gitStreamed(root, ["log", "--first-parent", "-z", "--format=%H %ce", from ? `${from}..${to}` : to], (record) => {
-      const [sha, email = ""] = record.trim().split(" ");
-      if (!made.has(sha) && (me === null || email.toLowerCase() !== me)) return true;
+    await gitStreamed(root, ["log", "--first-parent", "-z", "--format=%H %ct %ce", from ? `${from}..${to}` : to], (record) => {
+      const [sha, time, email = ""] = record.trim().split(" ");
+      const mine = me !== null && email.toLowerCase() === me && (since === null || Number(time) >= since);
+      if (!made.has(sha) && !mine) return true;
       found = sha;
       return false;
     }, { terminated: false });
@@ -432,7 +447,8 @@ async function madeHereOnLine(root, from, to) {
 }
 
 /**
- * The address this clone commits as, lowercased, or null where git names none.
+ * The address this clone commits as, lowercased, or null where git names none:
+ * git makes no commit without one, so there is nothing for this half to find.
  *
  * The reflog forgets: removing a linked worktree drops its HEAD's log,
  * deleting a branch drops the branch's, and `gc` expires every entry after 90
@@ -447,6 +463,30 @@ async function committerEmail(root) {
   const email = r.ok ? /<([^>]*)>/.exec(r.stdout)?.[1]?.trim().toLowerCase() : "";
   return email ? email : null;
 }
+
+/**
+ * The earliest moment this clone is known to exist, in seconds, or null where
+ * nothing says. The committer names who made a commit, not where: read over a
+ * first pin's whole line, one commit this person pushed from another machine
+ * years before held it for good. `description` is written when a clone is made
+ * and never again. The oldest reflog entry stands in where it is gone, and
+ * alone it let a commit through once `gc` expired every entry older than it.
+ */
+async function clonedAt(root) {
+  const times = [];
+  const gitdir = gitDirOf(root);
+  try {
+    if (gitdir !== null) times.push(Math.floor(lstatSync(join(commonDirOf(gitdir), "description")).mtimeMs / 1000));
+  } catch {
+    // No such file, which a clone made without templates leaves.
+  }
+  const log = await gitBuffered(root, ["reflog", "show", "--date=unix", "--format=%gd", "main-worktree/HEAD"]);
+  const oldest = log.ok ? (log.stdout.trimEnd().split("\n").pop() ?? "") : "";
+  const at = /@\{(\d+)\}$/.exec(oldest)?.[1];
+  if (at !== undefined) times.push(Number(at));
+  return times.length > 0 ? Math.min(...times) : null;
+}
+
 /**
  * The remote default branch's tip and the ref it was read from: the first of
  * `origin/HEAD`, `origin/main`, `origin/master` that resolves, or, in a clone
@@ -458,8 +498,7 @@ async function remoteTip(root) {
   const names = remotes.ok ? remotes.stdout.split("\n").map((s) => s.trim()).filter(Boolean) : [];
   if (names.length === 1 && names[0] !== "origin" && /^[A-Za-z0-9._-]+$/.test(names[0])) candidates.push(`${names[0]}/HEAD`);
   for (const ref of candidates) {
-    const r = await gitBuffered(root, ["rev-parse", "--verify", "--quiet", `${ref}^{commit}`]);
-    const sha = r.ok ? r.stdout.trim() : "";
+    const sha = await commitAt(root, ref);
     if (sha) return { sha, ref };
   }
   return null;
@@ -497,35 +536,41 @@ async function clonedOnto(root, sha) {
 }
 
 /**
- * Whether a reflog message is a fetch or pull that took its refspecs from the
- * remote's configuration. Git logs the command line (`fetch -q . HEAD:refs/
- * remotes/origin/main: fast-forward`), and one that names a path or writes
- * through an explicit `src:dst` put whatever it named into the tracking ref:
- * a local commit, or another repository's. Those are refused. What stays open
- * is a remote reconfigured to point somewhere else, which is the repository's
- * own setting (E11).
+ * Whether a reflog message is a fetch or pull that moved the tracking ref the
+ * way the remote's configuration maps it. Git logs the command line (`fetch -q
+ * . HEAD:refs/remotes/origin/main: fast-forward`), and one fetching from a path
+ * or a URL, or writing an explicit destination under the remote-tracking refs,
+ * put whatever it named into the tracking ref: a local commit, another
+ * repository's, or a teammate's unmerged branch. Those are refused. A local
+ * destination (`fetch origin main:main`) leaves the tracking ref to the
+ * configured mapping. What stays open is a remote reconfigured to point
+ * somewhere else, which is the repository's own setting (E11).
  */
 export function movedByRemote(message) {
   const words = message.replace(/: [^:]*$/, "").split(" ");
   if (!/^(fetch|pull)$/.test(words[0])) return false;
-  return !words.slice(1).some((w) => !w.startsWith("-") && (w.includes(":") || /^[./~]/.test(w)));
+  // `--refmap` replaces the configured mapping itself.
+  if (words.some((w) => w.startsWith("--refmap"))) return false;
+  const [repository, ...refspecs] = words.slice(1).filter((w) => !w.startsWith("-"));
+  if (repository !== undefined && (repository.includes(":") || /^[./~]/.test(repository))) return false;
+  // Git reads a destination spelled `remotes/...` as `refs/remotes/...`.
+  return !refspecs.some((r) => /^(refs\/)?remotes\//.test(r.slice(r.indexOf(":") + 1)));
 }
 
 /**
  * Whether the repository commits what this tool writes. A committed map travels
- * with every branch already, and a committed pin can never name the commit that
- * holds it, so following either would leave a change in `git status` nobody made.
+ * with every branch already, a committed pin can never name the commit that
+ * holds it, and the lock and the word are removed after use, so following any
+ * of them would leave a change in `git status` nobody made.
  */
 async function mapTracked(root) {
-  const r = await gitBuffered(root, ["ls-files", "-z", "--", `${RULES_DIR}/${OVERVIEW_FILE}`, FACTS_PATH, PIN_PATH]);
+  const r = await gitBuffered(root, ["ls-files", "-z", "--", `${RULES_DIR}/${OVERVIEW_FILE}`, STORE_DIR]);
   return r.ok && r.stdout.length > 0;
 }
 
 async function gitBusy(root) {
   const r = await gitBuffered(root, ["rev-parse", "--absolute-git-dir"]);
-  if (!r.ok) return true;
-  const gitdir = r.stdout.trim();
-  return UNFINISHED_OPERATIONS.some((name) => existsSync(join(gitdir, name)));
+  return !r.ok || operationUnfinished(r.stdout.trim());
 }
 
 function writeState(store, { stamp, ok, error, pinned = null, held = null, at = new Date().toISOString() }) {
@@ -533,7 +578,7 @@ function writeState(store, { stamp, ok, error, pinned = null, held = null, at = 
   atomic(join(store, basename(REFRESH_STATE)), JSON.stringify(record, null, 2) + "\n");
 }
 
-const sameHold = (a, b) => (a?.reason ?? null) === (b?.reason ?? null) && (a?.commit ?? null) === (b?.commit ?? null);
+const sameHold = (a, b) => ["reason", "commit", "pin"].every((key) => (a?.[key] ?? null) === (b?.[key] ?? null));
 
 /**
  * What the person hears at the start of a session when the pin has stopped
@@ -547,26 +592,35 @@ export function holdNotice(root) {
   const path = resolveInside(root, REFRESH_STATE);
   if (path === null) return null;
   const held = readRecord(path).record?.held;
+  const pin = loadPin(root)?.sha ?? null;
+  // A pin moved since the hold, by hand, has answered it.
+  if ((held?.pin ?? null) !== pin) return null;
   const commit = typeof held?.commit === "string" && /^[0-9a-f]{7,64}$/.test(held.commit) ? held.commit.slice(0, 7) : null;
-  const pin = loadPin(root)?.sha;
   const at = typeof pin === "string" && /^[0-9a-f]{7,64}$/.test(pin) ? ` at ${pin.slice(0, 7)}` : "";
   if (held?.reason === "made-here") {
     return (
-      `anatomiya: the baseline pin stays${at}: ${commit ? `commit ${commit}` : "a commit"} on origin's default branch ` +
+      `anatomiya: the pin stays${at}: ${commit ? `commit ${commit}` : "a commit"} on origin's default branch ` +
       "was made in this clone, and the automatic pin never accepts this clone's own work. " +
       "Pinning it is a person's call, made with /anatomiya:pin."
     );
   }
   if (held?.reason === "no-record") {
     return (
-      `anatomiya: the baseline pin stays${at}: git kept no record of how origin's default branch last ` +
+      `anatomiya: the pin stays${at}: git kept no record of how origin's default branch last ` +
       "moved in this clone (no reflog), so a fetch cannot be told from a push and the automatic pin does not follow it. " +
+      "Pinning it is a person's call, made with /anatomiya:pin."
+    );
+  }
+  if (held?.reason === "unread") {
+    return (
+      `anatomiya: the pin stays${at}: git could not say whether a commit on origin's default branch was made ` +
+      "in this clone, so the automatic pin does not follow it. " +
       "Pinning it is a person's call, made with /anatomiya:pin."
     );
   }
   if (held?.reason === "not-fetched") {
     return (
-      `anatomiya: the baseline pin stays${at}: origin's default branch was last moved by this clone ` +
+      `anatomiya: the pin stays${at}: origin's default branch was last moved by this clone ` +
       "(a push, or a ref written by hand), not by a fetch, so the automatic pin does not follow it. " +
       "Pinning it is a person's call, made with /anatomiya:pin."
     );
@@ -624,13 +678,7 @@ function acquire(path) {
  * as `wx` does. A filesystem with no hard links takes the `wx` path.
  */
 function create(path, content) {
-  const temp = `${path}.new-${process.pid}-${randomBytes(8).toString("hex")}`;
-  const fd = openSync(temp, "wx");
-  try {
-    writeSync(fd, content);
-  } finally {
-    closeSync(fd);
-  }
+  const temp = writeTemp(path, content);
   try {
     linkSync(temp, path);
   } catch (err) {
@@ -650,12 +698,11 @@ function create(path, content) {
   }
 }
 
+// Bounded and typed, since the directory can come with the repository: a lock
+// planted as a link to `/dev/zero` read whole never returned. Ours is under 100 bytes.
 function contentOf(path) {
-  try {
-    return readFileSync(path, "utf8");
-  } catch {
-    return null;
-  }
+  const entry = readHead(path, 256);
+  return entry.kind === "file" ? entry.head : null;
 }
 
 function stale(content) {
@@ -666,7 +713,9 @@ function stale(content) {
     return true;
   }
   if (!Number.isInteger(held?.pid) || !Number.isFinite(held?.at)) return true;
-  if (Date.now() - held.at > LOCK_STALE_MS) return true;
+  // A moment that has not come yet is no worker's on this machine.
+  const age = Date.now() - held.at;
+  if (age < 0 || age > LOCK_STALE_MS) return true;
   return !alive(held.pid);
 }
 
@@ -695,5 +744,23 @@ function remove(path) {
     unlinkSync(path);
   } catch {
     // Already gone is released.
+  }
+}
+
+// Exclusive, so a link planted at the path is never followed.
+function leaveWord(path) {
+  try {
+    closeSync(openSync(path, "wx"));
+  } catch {
+    // Already left, which says the same thing.
+  }
+}
+
+function takeWord(path) {
+  try {
+    unlinkSync(path);
+    return true;
+  } catch {
+    return false;
   }
 }

@@ -55,7 +55,7 @@ export const REFRESH_COMMAND = 'node "${CLAUDE_PLUGIN_ROOT}/bin/anatomiya.mjs" r
 // person installed by hand. Named through `${CLAUDE_PLUGIN_ROOT}` and ending at
 // the verb, because every one of them did, and that variable going unsubstituted
 // is what broke them: a hook a person wired to a clone's absolute path runs,
-// and `echo-stats` is somebody's own verb, and both used to go. A whole group
+// and `echo-stats` is somebody's own verb, and a looser match takes both. A whole group
 // goes at a time, so one sharing a group with the old entry still goes with it;
 // what that installer wrote was a group of its own, which is what keeps the
 // path narrow rather than closed.

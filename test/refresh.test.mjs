@@ -1,17 +1,20 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync, spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
 import { runPin, runScan } from "../plugins/anatomiya/lib/commands.mjs";
 import { loadPin, PIN_PATH } from "../plugins/anatomiya/lib/baseline.mjs";
 import { EXCLUDE_LINES, REFRESH_STATE } from "../plugins/anatomiya/lib/rules.mjs";
 import { movedByRemote, noteScan, refreshRepository, runRefresh } from "../plugins/anatomiya/lib/refresh.mjs";
 import { collect } from "../plugins/anatomiya/lib/corpus.mjs";
+import { needsSymlinks } from "./platform.mjs";
 
 const OVERVIEW = join(".claude", "rules", "anatomiya-overview.md");
+const BIN = fileURLToPath(new URL("../plugins/anatomiya/bin/anatomiya.mjs", import.meta.url));
 
 function git(dir, ...args) {
   return execFileSync("git", args, { cwd: dir, stdio: "pipe" }).toString().trim();
@@ -55,8 +58,11 @@ async function scanned(t) {
   return dir;
 }
 
-/** A clone of a repository with a remote default branch, scanned, sitting on its tip. */
-async function cloned(t) {
+/**
+ * A clone of a repository with a remote default branch, scanned, sitting on its
+ * tip. `before` shapes the remote's history before the clone is made.
+ */
+async function cloned(t, before = () => {}) {
   const origin = realpathSync.native(mkdtempSync(join(tmpdir(), "anatomiya-refresh-origin-")));
   const dir = realpathSync.native(mkdtempSync(join(tmpdir(), "anatomiya-refresh-clone-")));
   t.after(() => {
@@ -66,6 +72,7 @@ async function cloned(t) {
   init(origin);
   source(origin, "src", 8);
   commit(origin, "init");
+  before(origin);
   rmSync(dir, { recursive: true, force: true });
   execFileSync("git", ["clone", "-q", origin, dir], { stdio: "pipe" });
   // Somebody other than the teammate committing on the remote, as in any team:
@@ -220,6 +227,18 @@ test("a map the repository tracks is never rewritten behind its back", async (t)
   git(dir, "commit", "-qm", "commit the map");
 
   assert.equal((await refreshRepository(dir)).reason, "tracked");
+});
+
+test("a repository that commits any file of the refresh's own is never refreshed", async (t) => {
+  // The worker removes its lock and its word to the next worker, and removing
+  // a tracked file is an edit in `git status` nobody made, which `pin` refuses.
+  const dir = await scanned(t);
+  writeFileSync(join(dir, ".claude", "anatomiya", "refresh.again"), "");
+  git(dir, "add", "-f", join(".claude", "anatomiya", "refresh.again"));
+  git(dir, "commit", "-qm", "commit the word");
+
+  assert.equal((await refreshRepository(dir)).reason, "tracked");
+  assert.equal(existsSync(join(dir, ".claude", "anatomiya", "refresh.again")), true);
 });
 
 test("a map built with the type checker is refreshed with the checker it was built with", async (t) => {
@@ -809,12 +828,23 @@ test("the newest reflog entry is read however long the reflog has grown", async 
 /* --- guards each pinned on their own --- */
 
 test("a reflog message counts as the remote's only for a fetch or pull that named neither a path nor a destination", async () => {
-  for (const ok of ["fetch -q: fast-forward", "fetch origin: fast-forward", "pull --no-rebase: fast-forward", "fetch: forced-update"]) {
+  for (const ok of [
+    "fetch -q: fast-forward",
+    "fetch origin: fast-forward",
+    "pull --no-rebase: fast-forward",
+    "fetch: forced-update",
+    "fetch origin main:main: fast-forward", // a local destination; the tracking ref moved as configured
+    "fetch -q origin +main:main: forced-update",
+  ]) {
     assert.equal(movedByRemote(ok), true, ok);
   }
   for (const refused of [
     "update by push",
     "fetch origin pushed-branch:refs/remotes/origin/main: fast-forward", // a destination, from the real remote
+    "fetch origin +pushed-branch:refs/remotes/origin/main: forced-update",
+    "fetch origin pushed-branch:remotes/origin/main: fast-forward", // git reads this as refs/remotes/
+    "fetch https://example.test/r.git main:main: fast-forward", // a URL, not a configured remote
+    "fetch -q --refmap=+refs/heads/x:refs/remotes/origin/main origin x: fast-forward", // the mapping replaced
     "fetch ../elsewhere: fast-forward", // a path, with no destination named
     "fetch ~/copy: fast-forward",
     "fetch -q . HEAD:refs/remotes/origin/main: fast-forward",
@@ -854,6 +884,29 @@ test("a lock older than any scan runs is taken over even when its process is ali
 
   writeFileSync(join(dir, ".claude", "anatomiya", "refresh.lock"), JSON.stringify({ pid: process.pid, at: Date.now() }));
   assert.equal((await refreshRepository(dir)).reason, "busy", "a fresh lock of a live process is respected");
+});
+
+test("a lock stamped later than now is taken over, whatever process it names", async (t) => {
+  // No worker on this machine writes a moment that has not come yet; a lock
+  // that does was planted, and read as young it held every refresh for good.
+  const dir = await scanned(t);
+  writeFileSync(join(dir, ".claude", "anatomiya", "refresh.lock"), JSON.stringify({ pid: process.pid, at: Date.now() + 60 * 60 * 1000 }));
+
+  assert.notEqual((await refreshRepository(dir)).reason, "busy");
+});
+
+test("a lock that is a link to an endless file is taken over without being read", needsSymlinks, async (t) => {
+  // Read whole, `/dev/zero` never ends and the worker's clock never fires,
+  // since the read holds the only thread it would fire on. In a child with a
+  // clock of its own, so a hang fails the case instead of the run.
+  const dir = await scanned(t);
+  const lock = join(dir, ".claude", "anatomiya", "refresh.lock");
+  symlinkSync("/dev/zero", lock);
+  const r = spawnSync(process.execPath, [BIN, "refresh-run", dir], { stdio: "pipe", timeout: 60_000 });
+
+  assert.equal(r.signal, null, "the worker finished on its own");
+  assert.equal(r.status, 0, String(r.stderr));
+  assert.equal(existsSync(lock), false, "and the link is gone with the lock it stood for");
 });
 
 /* --- a tip this clone did not make, but nobody reviewed either --- */
@@ -952,6 +1005,25 @@ test("a linked worktree on reftable watches the shared table list", async (t) =>
   assert.equal(watchTargets(wt)[0], join(dir, ".git", "reftable", "tables.list"));
 });
 
+test("a linked worktree on reftable also watches its own table list, where its detached HEAD moves", async (t) => {
+  // Reftable keeps a linked worktree's HEAD and its log in the worktree's own
+  // stack, so a commit on a detached HEAD there rewrites nothing shared.
+  const { watchTargets } = await import("../plugins/anatomiya/lib/refresh.mjs");
+  const dir = await scanned(t);
+  const wt = join(realpathSync.native(mkdtempSync(join(tmpdir(), "anatomiya-refresh-wt-"))), "wt");
+  t.after(() => rmSync(join(wt, ".."), { recursive: true, force: true }));
+  git(dir, "worktree", "add", "-q", "--detach", wt);
+  await runScan(wt);
+  const own = join(dir, ".git", "worktrees", "wt");
+  mkdirSync(join(dir, ".git", "reftable"));
+  mkdirSync(join(own, "reftable"));
+  const { started, start } = recorder();
+
+  assert.ok(watchTargets(wt).includes(join(own, "reftable", "tables.list")), watchTargets(wt).join("\n"));
+  runRefresh(wt, { hook_event_name: "FileChanged", cwd: wt, file_path: join(own, "reftable", "tables.list") }, { start });
+  assert.deepEqual(started, [wt]);
+});
+
 /* --- a held pin, said to the person --- */
 
 test("a pin held by this clone's own commit is recorded, and said to the person at the next session start", async (t) => {
@@ -966,8 +1038,8 @@ test("a pin held by this clone's own commit is recorded, and said to the person 
 
   const r = await refreshRepository(dir);
 
-  assert.deepEqual(r.held, { reason: "made-here", commit: agent });
-  assert.deepEqual(JSON.parse(readFileSync(join(dir, REFRESH_STATE), "utf8")).held, { reason: "made-here", commit: agent });
+  assert.deepEqual(r.held, { reason: "made-here", commit: agent, pin: first });
+  assert.deepEqual(JSON.parse(readFileSync(join(dir, REFRESH_STATE), "utf8")).held, { reason: "made-here", commit: agent, pin: first });
   const { start } = recorder();
   const out = runRefresh(dir, { hook_event_name: "SessionStart", cwd: dir }, { start });
   assert.match(out.systemMessage, new RegExp(`stays at ${first.slice(0, 7)}: commit ${agent.slice(0, 7)} `));
@@ -975,6 +1047,11 @@ test("a pin held by this clone's own commit is recorded, and said to the person 
   assert.equal(out.hookSpecificOutput.additionalContext, undefined, "nothing of it reaches the model");
   const changed = runRefresh(dir, { hook_event_name: "FileChanged", cwd: dir, file_path: join(dir, ".git", "logs", "HEAD") }, { start });
   assert.equal(changed.systemMessage, undefined, "once a session, not on every move");
+  for (const source of ["compact", "clear"]) {
+    const again = runRefresh(dir, { hook_event_name: "SessionStart", source, cwd: dir }, { start });
+    assert.equal(again.systemMessage, undefined, `a ${source} inside the session says nothing again`);
+  }
+  assert.match(runRefresh(dir, { hook_event_name: "SessionStart", source: "resume", cwd: dir }, { start }).systemMessage, /stays at/);
 });
 
 test("a tip this clone pushed is recorded as held, and a pin that follows again clears it", async (t) => {
@@ -990,6 +1067,11 @@ test("a tip this clone pushed is recorded as held, and a pin that follows again 
   assert.match(runRefresh(dir, { hook_event_name: "SessionStart", cwd: dir }, { start }).systemMessage, /last moved by this clone/);
 
   await runPin(dir);
+  assert.equal(
+    runRefresh(dir, { hook_event_name: "SessionStart", cwd: dir }, { start }).systemMessage,
+    undefined,
+    "a pin taken by hand ends the hold before any worker runs"
+  );
   source(origin, "lib/t1", 8);
   commit(origin, "a teammate's commit");
   git(dir, "pull", "-q", "--ff-only");
@@ -1114,6 +1196,21 @@ test("a commit made here is still held after its reflog entries expire", async (
   assert.equal(loadPin(dir).sha, first);
 });
 
+test("a commit made here is held once its reflog entries are gone, however old its date", async (t) => {
+  // `gc` expires the oldest entries too, so the clone's own record starts later
+  // than its commits; past a pin, the pin is the bound and the date is not asked.
+  const { dir, first } = await pushedAndBuiltOn(t, (dir, origin) => {
+    source(dir, "lib/agent", 8);
+    git(dir, "add", "-A");
+    execFileSync("git", ["commit", "-qm", "mine, long ago"], { cwd: dir, stdio: "pipe", env: { ...process.env, GIT_COMMITTER_DATE: "2020-01-01T00:00:00Z" } });
+    git(dir, "-c", "push.negotiate=false", "push", "-q", origin, "HEAD:main");
+    git(dir, "reflog", "delete", "HEAD@{0}");
+    git(dir, "reflog", "delete", "main@{0}");
+  });
+  assert.equal((await refreshRepository(dir)).pinned, false);
+  assert.equal(loadPin(dir).sha, first);
+});
+
 test("a record below its checkout's root refreshes nothing, and nothing is written at the root", async (t) => {
   // A copied project's `.claude/` inside a repository that never opted in.
   const dir = await scanned(t);
@@ -1219,4 +1316,150 @@ test("a reftable clone pins its tip, follows a teammate's fetch, and holds its o
   assert.equal(r.pinned, false);
   assert.equal(r.held.reason, "not-fetched");
   assert.equal(loadPin(dir).sha, fetched);
+});
+
+/* --- a first pin, a pin git no longer holds, and a clone with no committer --- */
+
+test("a first pin is taken though this person committed to the default branch before the clone existed", async (t) => {
+  // A committer names who made a commit, not where. Read over the whole line,
+  // one commit pushed from another machine years ago held every first pin.
+  const { dir } = await cloned(t, (origin) => {
+    source(origin, "lib/mine", 8);
+    git(origin, "add", "-A");
+    execFileSync("git", ["commit", "-qm", "from my laptop"], {
+      cwd: origin,
+      stdio: "pipe",
+      env: { ...process.env, GIT_COMMITTER_EMAIL: "me@clone.test", GIT_COMMITTER_DATE: "2020-01-01T00:00:00Z" },
+    });
+    source(origin, "lib/t1", 8);
+    commit(origin, "a teammate's commit");
+  });
+
+  const r = await refreshRepository(dir);
+
+  assert.equal(r.pinned, true);
+  assert.equal(r.held, null);
+});
+
+test("a pin whose commit git no longer holds lets the pin follow the remote again", async (t) => {
+  // Pinned on a branch that was squash-merged, deleted and collected. The walk
+  // from a commit git does not hold failed, and the failure read as a commit
+  // made here, which held the pin for good and named no commit.
+  const { origin, dir } = await cloned(t);
+  git(dir, "checkout", "-q", "-b", "feat");
+  source(dir, "lib/feat", 8);
+  commit(dir, "feature");
+  await runPin(dir);
+  const gone = loadPin(dir).sha;
+  git(dir, "checkout", "-q", "main");
+  git(dir, "branch", "-q", "-D", "feat");
+  git(dir, "reflog", "expire", "--expire=now", "--all");
+  git(dir, "gc", "-q", "--prune=now");
+  assert.notEqual(spawnSync("git", ["cat-file", "-e", `${gone}^{commit}`], { cwd: dir }).status, 0, "the pinned commit is gone");
+  source(origin, "lib/t1", 8);
+  commit(origin, "a teammate's commit");
+  git(dir, "pull", "-q", "--ff-only");
+
+  const r = await refreshRepository(dir);
+
+  assert.equal(r.pinned, true);
+  assert.equal(r.held, null);
+});
+
+test("a clone git can name no committer for is judged by its reflog alone", async (t) => {
+  // A container with no git identity is common, and git makes no commit there
+  // without one, so there is nothing for the committer check to find.
+  const { dir } = await cloned(t);
+  const global = join(dir, ".git", "empty-global-config");
+  writeFileSync(global, "");
+  git(dir, "config", "--unset", "user.email");
+  git(dir, "config", "--unset", "user.name");
+  git(dir, "config", "user.useConfigOnly", "true");
+  const env = { ...process.env, GIT_CONFIG_GLOBAL: global, GIT_CONFIG_NOSYSTEM: "1" };
+  for (const name of ["EMAIL", "GIT_COMMITTER_EMAIL", "GIT_AUTHOR_EMAIL", "GIT_COMMITTER_NAME", "GIT_AUTHOR_NAME"]) delete env[name];
+
+  const r = spawnSync(process.execPath, [BIN, "refresh-run", dir], { env, stdio: "pipe", timeout: 60_000 });
+
+  assert.equal(r.status, 0, String(r.stderr));
+  assert.equal(existsSync(join(dir, PIN_PATH)), true, "the tip is pinned");
+  assert.equal(JSON.parse(readFileSync(join(dir, REFRESH_STATE), "utf8")).held, undefined);
+});
+
+test("a hold git could not answer says so, and never blames a commit made here", async (t) => {
+  const { holdNotice } = await import("../plugins/anatomiya/lib/refresh.mjs");
+  const dir = await scanned(t);
+  writeFileSync(join(dir, REFRESH_STATE), JSON.stringify({ stamp: "x", ok: true, held: { reason: "unread", commit: "a".repeat(40), pin: null } }));
+
+  const said = holdNotice(dir);
+
+  assert.match(said, /git could not say/);
+  assert.doesNotMatch(said, /never accepts this clone's own work/);
+});
+
+test("a first pin holds a commit made here though gc expired every reflog entry older than it", async (t) => {
+  // The oldest reflog entry left moves forward as `gc` expires the rest, and
+  // bounded by it alone, a commit made here before it passed as a teammate's.
+  const { origin, dir } = await cloned(t);
+  const day = 24 * 60 * 60;
+  const now = Math.floor(Date.now() / 1000);
+  utimesSync(join(dir, ".git", "description"), now - 200 * day, now - 200 * day);
+  git(origin, "config", "receive.denyCurrentBranch", "updateInstead");
+  source(dir, "lib/agent", 8);
+  git(dir, "add", "-A");
+  execFileSync("git", ["commit", "-qm", "mine"], { cwd: dir, stdio: "pipe", env: { ...process.env, GIT_COMMITTER_DATE: `@${now - 100 * day} +0000` } });
+  const mine = git(dir, "rev-parse", "HEAD");
+  git(dir, "-c", "push.negotiate=false", "push", "-q", "origin", "HEAD:main");
+  source(origin, "lib/t1", 8);
+  commit(origin, "a teammate's commit");
+  git(dir, "pull", "-q", "--ff-only");
+  // What gc leaves behind: no entry older than the newest.
+  for (const ref of ["HEAD", "main"]) {
+    while (git(dir, "reflog", "show", "--format=%H", ref).split("\n").length > 1) git(dir, "reflog", "delete", `${ref}@{1}`);
+  }
+
+  const r = await refreshRepository(dir);
+
+  assert.equal(r.pinned, false);
+  assert.deepEqual(r.held, { reason: "made-here", commit: mine, pin: null });
+});
+
+test("a fetch into a local branch is the remote moving, and the pin follows it", async (t) => {
+  // `git fetch origin main:main` names a destination, but a local one: the
+  // tracking ref moved as the remote's configuration maps it.
+  const { origin, dir } = await cloned(t);
+  await refreshRepository(dir);
+  source(origin, "lib/t1", 8);
+  const tip = commit(origin, "a teammate's commit");
+  git(dir, "checkout", "-q", "-b", "side");
+  git(dir, "fetch", "-q", "origin", "main:main");
+  git(dir, "checkout", "-q", "main");
+
+  const r = await refreshRepository(dir);
+
+  assert.equal(r.pinned, true);
+  assert.equal(loadPin(dir).sha, tip);
+});
+
+test("a move that lands while another worker holds the lock is scanned before that worker is done", async (t) => {
+  // Each move starts a worker. One that finds the lock taken and leaves with
+  // nothing said leaves a rebase landing faster than the scans a move behind.
+  const dir = await scanned(t);
+  let scans = 0;
+  const turnedAway = [];
+  const scan = async (root, opts) => {
+    scans++;
+    if (scans <= 3) {
+      source(dir, `lib/m${scans}`, 8);
+      commit(dir, `move ${scans}`);
+      turnedAway.push((await refreshRepository(dir)).reason);
+    }
+    await runScan(root, opts);
+  };
+
+  await refreshRepository(dir, { scan });
+
+  assert.deepEqual(turnedAway, ["busy", "busy", "busy"]);
+  let again = 0;
+  assert.equal((await refreshRepository(dir, { scan: async () => { again++; } })).reason, "current");
+  assert.equal(again, 0, "the last move was already scanned");
 });

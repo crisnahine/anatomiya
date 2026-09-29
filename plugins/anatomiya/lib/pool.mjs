@@ -352,8 +352,8 @@ export function rssOf(pids, limits = GUARDS, { platform = process.platform, ps =
 /**
  * Linux answers from the kernel's own table, with no subprocess and nothing
  * looked up on PATH. Slim images (node:*-slim, most devcontainers) ship no
- * procps, and there the `ps` this used to run was ENOENT on every poll,
- * swallowed: measured, three files a forced 1 MB ceiling killed with `ps`
+ * procps, and there a `ps` is ENOENT on every poll, and swallowed:
+ * measured, three files a forced 1 MB ceiling killed with `ps`
  * present all parsed with it absent, and nothing said the ceiling had stood
  * down. `VmRSS` is in kB, the unit `ps -o rss=` answers in.
  */

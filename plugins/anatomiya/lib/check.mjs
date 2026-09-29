@@ -1,6 +1,7 @@
-import { constants, lstatSync } from "node:fs";
+import { constants } from "node:fs";
 import { open } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
+import { dirname } from "node:path/posix";
 
 import { parseAll } from "./parse.mjs";
 import { dimensionsFor } from "./dimensions.mjs";
@@ -18,7 +19,7 @@ import {
 import { language, MISSING_STRIPPER } from "./langs.mjs";
 import { areaOwner, globsReach } from "./areas.mjs";
 import { droppedDirectives, unexaminedPhrase } from "./render.mjs";
-import { auditRules, knownNames, readHead, resolveInside, RULES_DIR } from "./rules.mjs";
+import { auditRules, isLink, knownNames, readHead, resolveInside, RULES_DIR } from "./rules.mjs";
 import { FACTS_PATH, readFacts, statedSide } from "./facts.mjs";
 import { MAX_FILE_BYTES } from "./limits.mjs";
 import { remedyFor } from "./readiness.mjs";
@@ -167,10 +168,13 @@ export async function check(cwd, { baseRef = null } = {}) {
   // rule: a regenerated client was a MUST-FIX per site in code nobody writes by
   // hand, judged against claims the map counted without it. The rule's other
   // refusals stay in, because a file this run could not read is named rather
-  // than dropped.
+  // than dropped. A symbolic link is not source either: its target is counted
+  // where it is tracked, and read through the link its sites were charged
+  // twice. Asked of the tree, where every examined row stands once the
+  // pending edits are folded in.
   const dropOf = corpusDrop(root);
   const examined = withPendingEdits(changed.filter((c) => isCorpusPath(c.path)), pending)
-    .filter((c) => dropOf(c.path) !== "generated" && !isLink(root, c.path));
+    .filter((c) => dropOf(c.path) !== "generated" && !isLink(join(root, c.path)));
   const fromTree = examined.filter((c) => c.tree).length;
   if (fromTree) {
     caveat(
@@ -753,7 +757,8 @@ async function trackedTests(root) {
   return found;
 }
 
-async function collect(root, { examined, areas, base, mode, added, fresh, caveats, frameworks, capabilities, pending, removed }) {
+async function collect(root, run) {
+  const { examined, areas, base, mode, added, fresh, caveats, frameworks, capabilities, pending } = run;
   const areaFor = areaIndex(areas);
   const ancestorsOf = ancestorsIndex(areas);
   // Which directives each area's file had no room to state, recomputed from the
@@ -976,7 +981,7 @@ async function collect(root, { examined, areas, base, mode, added, fresh, caveat
 
     }
 
-    await addPairingFindings(root, findings, { examined, areas, fresh, caveats, pending, removed, droppedIn });
+    await addPairingFindings(root, findings, run, droppedIn);
     // The scan says this on its own summary, and a check runs in CI where nobody
     // read that. Without it a Flow file reads as a broken file.
     if (missingStripper) {
@@ -1008,7 +1013,7 @@ async function collect(root, { examined, areas, base, mode, added, fresh, caveat
  * claim it could execute, reported clean, and said nothing about the one it
  * could not: the same shape as reporting clean for a file that was never read.
  */
-async function addPairingFindings(root, findings, { examined, areas, fresh, caveats, pending, removed, droppedIn }) {
+async function addPairingFindings(root, findings, { examined, areas, fresh, caveats, pending, removed }, droppedIn) {
   const areaFor = areaIndex(areas);
   const changed = examined.map((f) => f.path);
   // A removed companion asks its language's obligations too, or a branch that
@@ -1524,23 +1529,6 @@ function withPendingEdits(rows, { present, deleted }) {
       : { status, path, from, tree: true });
   }
   return [...byPath.values()];
-}
-
-/**
- * Whether a changed path is a symbolic link where it stands.
- *
- * A link is not source: its target is counted where it is tracked. Committed,
- * its blob is the link's own text, which was parsed and named as syntax the
- * parser rejected; in the tree the target was read through it and its sites
- * charged a second time under the link's name. Asked of the tree, which after
- * the pending edits are folded in is where every examined row stands.
- */
-function isLink(root, path) {
-  try {
-    return lstatSync(join(root, path)).isSymbolicLink();
-  } catch {
-    return false;
-  }
 }
 
 /**

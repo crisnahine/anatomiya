@@ -148,30 +148,33 @@ tracked files, the pin, or this plugin's version. It watches the reflog, or, whe
 the reftable backend's table list or the index, so a repository created without a reflog or on
 reftable refreshes on every move too. The hook returns at once and the scan runs detached, so
 nothing waits on it. A map built with `--deep` is rebuilt with the type checker, the way it was
-built. It leaves alone a checkout with no map of its own, a map or pin committed to the repository,
-and a repository in the middle of a merge or rebase. When a rescan fails it keeps the previous map,
-tries again after half an hour or once the checkout moves, and the delivered map says the refresh
-failed until one succeeds.
+built. It leaves alone a checkout with no map of its own, a map, pin or refresh file committed to
+the repository, and a repository in the middle of a merge or rebase. When a rescan fails it keeps
+the previous map, tries again after half an hour or once the checkout moves, and the delivered map
+says the refresh failed until one succeeds.
 
 The pin follows the same way, but only onto commits the team has already accepted: when the checkout
-sits exactly on the tip of `origin`'s default branch with nothing uncommitted, and that tip arrived
-by a plain fetch or pull rather than by a push from this clone, a ref written by hand or a fetch
-naming its own source, the pin moves forward to it. A feature branch, a commit the remote has not
+sits exactly on the tip of `origin`'s default branch (or, where a clone's only remote has another
+name, that remote's) with nothing uncommitted, and that tip arrived by a fetch or pull rather than
+by a push from this clone, a ref written by hand, or a fetch from a path or a URL or into a
+remote-tracking ref, the pin moves forward to it. A feature branch, a commit the remote has not
 seen, an edited or staged file, a repository with no remote, and a clone that keeps no reflog never
 pin. Nor does a commit this clone made that sits on the default branch's own line, however it got
 there (`git push`, a push by URL, a teammate's commit on top): that is work pushed straight to the
 shared branch, which nobody reviewed. A branch you push and merge through a pull request's merge
 commit is pinned once pulled, since the merge is its review; accepting a direct push is
-`/anatomiya:pin`, by hand. When the pin stops following for one of those reasons while the checkout
-sits on the tip, the next session starts with one line in your terminal saying why and at which
-commit; it is never put in the model's context, since the model is the author the pin exists to keep
-from accepting its own work. Each automatic pin records what it accepted (the commit it moved from
-and to, and how many files entered and left the population) in `.claude/anatomiya/refresh.json`. In
-a fork workflow, where `origin` is your own fork, its default branch is what the pin follows, so
-review there is what makes it accepted. `/anatomiya:pin` is still there for a repository with no
-remote, or to accept a population by hand. A branch cut before the pin does not read the files the
-default branch added since as missing, and a linked worktree with no pin of its own reads its main
-checkout's.
+`/anatomiya:pin`, by hand. A commit you pushed from another machine before this clone existed does
+not hold its first pin. When the pin stops following for one of those reasons while the checkout
+sits on the tip, or because git could not say, each session you start or resume opens with one line
+in your terminal saying why and at which commit, until a pin by hand, or a refresh that no longer
+holds it, ends it; it is never put in the model's context, since the model is the author the pin
+exists to keep from accepting its own work. Each automatic pin records what it accepted (the commit
+it moved from and to, and how many files entered and left the population) in
+`.claude/anatomiya/refresh.json`. In a fork workflow, where `origin` is your own fork, its default
+branch is what the pin follows, so review there is what makes it accepted. `/anatomiya:pin` is still
+there for a repository with no remote, or to accept a population by hand. A branch cut before the
+pin does not read the files the default branch added since as missing, and a linked worktree with no
+pin of its own reads its main checkout's.
 
 ## What it prints
 
@@ -432,7 +435,7 @@ full numbers and their caveats are in [docs/why.md](docs/why.md).
 - [docs/plugin-contract.md](docs/plugin-contract.md) is what Claude Code requires of a plugin and a
   marketplace, read against the documentation and the CLI itself, with a source per claim and the
   version it was true of.
-- [DECISIONS.md](DECISIONS.md) is the build contract: 226 numbered decisions, each with the
+- [DECISIONS.md](DECISIONS.md) is the build contract: 227 numbered decisions, each with the
   measurement or the review finding that forced it. Why a threshold is where it is, why the parser
   runs in child processes, why no hook carries the map on its own: that is the file.
 - [docs/why.md](docs/why.md) is the longer argument and the full numbers.

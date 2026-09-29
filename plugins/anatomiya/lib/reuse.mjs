@@ -9,13 +9,12 @@
  * (`docs/research/one-line-that-finds-the-existing-function.md`).
  */
 import { createHash } from "node:crypto";
-import { existsSync } from "node:fs";
 import { join } from "node:path";
 
 import { addedRanges, pendingPaths } from "./check.mjs";
 import { isCorpusPath } from "./corpus.mjs";
 import { encodePath } from "./encode.mjs";
-import { gitBuffered, UNFINISHED_OPERATIONS } from "./git.mjs";
+import { gitBuffered, operationUnfinished } from "./git.mjs";
 import { isPathTaken } from "./hook.mjs";
 import { MAX_FILE_BYTES } from "./limits.mjs";
 import { byCode } from "./paths.mjs";
@@ -105,7 +104,7 @@ export async function pendingChange(root, { since = null, turnStart = null } = {
   // Asked beside the status read rather than after it, so the hook still makes
   // two git reads in a row inside the time it declares.
   const [pending, gitdir] = await Promise.all([pendingPaths(root, { timeout: REUSE_GIT_MS }), gitDir(root)]);
-  if (gitdir === null || UNFINISHED_OPERATIONS.some((name) => existsSync(join(gitdir, name))) || pending === null) return null;
+  if (gitdir === null || operationUnfinished(gitdir) || pending === null) return null;
   // One diff from before the turn's first commit to the tree reads what it
   // committed and what it left uncommitted together, so the reads in a row
   // stay two however many commits the turn made.
