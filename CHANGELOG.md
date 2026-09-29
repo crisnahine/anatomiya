@@ -7,6 +7,33 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.11.1] - 2026-09-30
+
+The JavaScript parser moves to `oxc-parser` 0.151.0. Scanned under both parsers, 34 of the 35
+corpus repositories get the same rules files, and react gets one area with fewer count lines. The
+plugin lockfile a Dependabot branch regenerates now passes ci on Node 24, which it never did, and
+Dependabot stops proposing TypeScript 7.
+
+### Changed
+
+- `oxc-parser` 0.151.0 and `flow-remove-types` 2.333.0. Every corpus repository was scanned under
+  0.149.0 and 0.151.0. 34 of 35 get the same rules files, and their records differ only in the
+  engine version they name. In react, one Flow file,
+  `packages/scheduler/src/forks/SchedulerPostTask.js`, no longer parses as TypeScript: 0.151.0
+  refuses a return type on a constructor, as TypeScript does. It now goes through the Flow stripper
+  like react's other Flow files, the rows that cannot read a stripped file stop counting it, and its
+  area loses four count lines while a fifth drops from 4 sites to 1.
+- Dependabot no longer proposes a new major version of `typescript`. `--deep` needs major 5: 7 is the
+  Go port with no JS API, so the bump only switched the checker off. Dependabot had proposed it three
+  times.
+
+### Fixed
+
+- The plugin lockfile regenerated on a Dependabot branch now passes ci on Node 24 as well as Node 22.
+  npm 11 keeps a `libc` field that npm 10 drops, so the two wrote different lockfiles from one
+  Dependabot root lockfile. The field is left out of what npm is handed, and npm 10, 11 and 12 now
+  write the same file.
+
 ## [0.11.0] - 2026-09-30
 
 The map keeps itself current. After the first `scan` in a checkout, a background refresh rescans at
@@ -3144,7 +3171,8 @@ which are partial; several listed there are not implemented yet.
 - No claim that this catches defects. Measured across ten repositories, 1 of 317 defect review
   comments was preventable by a conventions map.
 
-[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.11.0...HEAD
+[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.11.1...HEAD
+[0.11.1]: https://github.com/crisnahine/anatomiya/compare/v0.11.0...v0.11.1
 [0.11.0]: https://github.com/crisnahine/anatomiya/compare/v0.10.2...v0.11.0
 [0.10.2]: https://github.com/crisnahine/anatomiya/compare/v0.10.1...v0.10.2
 [0.10.1]: https://github.com/crisnahine/anatomiya/compare/v0.10.0...v0.10.1
