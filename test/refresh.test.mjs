@@ -1375,8 +1375,13 @@ test("a clone git can name no committer for is judged by its reflog alone", asyn
   git(dir, "config", "--unset", "user.email");
   git(dir, "config", "--unset", "user.name");
   git(dir, "config", "user.useConfigOnly", "true");
-  const env = { ...process.env, GIT_CONFIG_GLOBAL: global, GIT_CONFIG_NOSYSTEM: "1" };
+  // The system config stays: on Windows it holds the `core.autocrlf` the clone
+  // was checked out under, and without it every file read as edited.
+  const env = { ...process.env, GIT_CONFIG_GLOBAL: global };
   for (const name of ["EMAIL", "GIT_COMMITTER_EMAIL", "GIT_AUTHOR_EMAIL", "GIT_COMMITTER_NAME", "GIT_AUTHOR_NAME"]) delete env[name];
+  if (spawnSync("git", ["var", "GIT_COMMITTER_IDENT"], { cwd: dir, env, stdio: "pipe" }).status === 0) {
+    return t.skip("this machine's system git config names a committer");
+  }
 
   const r = spawnSync(process.execPath, [BIN, "refresh-run", dir], { env, stdio: "pipe", timeout: 60_000 });
 
