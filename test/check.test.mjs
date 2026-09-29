@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { needsPosixPaths, needsPosixSpecialFiles, needsUnreadableDirs } from "./platform.mjs";
+import { needsPathControl, needsPosixPaths, needsPosixSpecialFiles, needsShebang, needsUnreadableDirs } from "./platform.mjs";
 import fs, { mkdtempSync, mkdirSync, writeFileSync, readFileSync, realpathSync, symlinkSync, rmSync, existsSync } from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
@@ -11,7 +11,7 @@ import { installWithoutStripper, FLOW_SOURCE } from "./no-stripper.mjs";
 import { addWorktree, git, scratch } from "./git-worktrees.mjs";
 
 import { needsRuby } from "./ruby-available.mjs";
-import { check, severityFor, unreadReason, unreadCode } from "../plugins/anatomiya/lib/check.mjs";
+import { check, renamesSkipped, severityFor, unreadReason, unreadCode } from "../plugins/anatomiya/lib/check.mjs";
 import { formatReport, formatReportJson, CAVEATS } from "../plugins/anatomiya/lib/check-report.mjs";
 import { scan } from "../plugins/anatomiya/lib/scan.mjs";
 import { writeMap } from "../plugins/anatomiya/lib/write.mjs";
@@ -139,7 +139,8 @@ function assertExamined(report, path) {
  *
  * The precedent rule reads `layout.roots`, which the hand-built `facts` helper
  * above never writes, so a fixture there proves nothing about the wiring: the
- * counts have to come off a scan of a real tree.
+ * counts have to come off a scan of a real tree. That tree is Ruby, so every
+ * case on it carries `needsRuby` and skips where the tool would refuse it.
  */
 async function railsish(t, { pin = true } = {}) {
   const dir = repo(t, ({ write, commit }) => {
@@ -152,7 +153,11 @@ async function railsish(t, { pin = true } = {}) {
     }
     commit("init");
   });
-  writeMap(await scan(dir), {});
+  // A scan that could not read the Ruby writes no map, and the rule then has
+  // nothing to answer from: the cases below expecting no finding passed on
+  // that alone, with no Ruby on the machine at all.
+  const plan = writeMap(await scan(dir), {});
+  assert.equal(plan.blind, false, "the scan read the Ruby tree and wrote a map");
   // Pinned as well as scanned: with no pin the map reads stale and every
   // finding caps at NIT, so an unpinned fixture proves nothing about severity.
   if (!pin) return dir;
@@ -161,7 +166,7 @@ async function railsish(t, { pin = true } = {}) {
   return dir;
 }
 
-test("a test added where its own siblings have none is a finding, and one added beside theirs is not", async (t) => {
+test("a test added where its own siblings have none is a finding, and one added beside theirs is not", needsRuby, async (t) => {
   // The whole of H38, read off a scan rather than a fixture: `spec/mailers/`
   // did not exist before the change, so every content rule finds the file
   // conforming with itself and only this one asks whether it belongs there.
@@ -184,7 +189,7 @@ test("a test added where its own siblings have none is a finding, and one added 
   assert.match(found[0].reason, /app\/mailers: 4 files, 0 with a namesake test/);
 });
 
-test("a test still sitting in the working tree is asked the same question as a committed one", async (t) => {
+test("a test still sitting in the working tree is asked the same question as a committed one", needsRuby, async (t) => {
   // The whole reason this reads the tree: the answer is wanted before the
   // commit, not after. An addition arrives from `git status` rather than from
   // the diff, and a relocation arrives from it spelled `M` with an `orig`,
@@ -205,7 +210,7 @@ test("a test still sitting in the working tree is asked the same question as a c
   assert.equal(byPath.get("spec/mailers/zeta_mailer_spec.rb").oldPath, "spec/services/zeta_spec.rb");
 });
 
-test("an unpinned repository still gets the finding at the ceiling its own header names", async (t) => {
+test("an unpinned repository still gets the finding at the ceiling its own header names", needsRuby, async (t) => {
   // What makes this rule cap is the comparison, since that is what says a file
   // arrived; a map with no pin caps at FIX like every other rule and does not
   // stop the diff saying `A`. Reading the two together printed a NIT saying the
@@ -225,7 +230,7 @@ test("an unpinned repository still gets the finding at the ceiling its own heade
   assert.doesNotMatch(found.reason, /could not establish/);
 });
 
-test("a change that invents a directory and fills it is not excused by its own first file", async (t) => {
+test("a change that invents a directory and fills it is not excused by its own first file", needsRuby, async (t) => {
   // What "already holds a test" means differs between the two callers. The
   // hook asks the disk, where nothing yet comes from the write it is about; a
   // check has to leave out everything the same change brought, or three of
@@ -247,7 +252,7 @@ test("a change that invents a directory and fills it is not excused by its own f
   for (const f of found) assert.match(f.reason, /^spec\/mailers holds no other test;/);
 });
 
-test("an index this cannot read is not a repository with no tests in it", async (t) => {
+test("an index this cannot read is not a repository with no tests in it", needsRuby, async (t) => {
   // C33 at this reader. What decides whether the finding prints is whether the
   // directory already holds a test, and a listing that failed answers neither
   // yes nor no: printed as no, the run states a fact it never read.
@@ -267,7 +272,7 @@ test("an index this cannot read is not a repository with no tests in it", async 
   assert.deepEqual(forKey(await check(dir, { baseRef: base }), "test_precedent"), []);
 });
 
-test("a file git does not track is not this repository's habit", async (t) => {
+test("a file git does not track is not this repository's habit", needsRuby, async (t) => {
   // The only read here that does not come through `git ls-files`, so it was the
   // only one counting build output and scratch files. One ignored
   // `scratch_spec.rb` in the directory silenced the rule for every file in it.
@@ -292,7 +297,7 @@ test("a file git does not track is not this repository's habit", async (t) => {
   ]);
 });
 
-test("a test landing beside one that was already there is following it", async (t) => {
+test("a test landing beside one that was already there is following it", needsRuby, async (t) => {
   // Issue 120 asked for both halves: "a test file in a directory holding no
   // other test file, in a repository whose sibling ratio for that kind is 0 of
   // N". The root's ratio alone flagged a spec that had a sibling right there.
@@ -311,7 +316,7 @@ test("a test landing beside one that was already there is following it", async (
   assert.deepEqual(forKey(await check(dir, { baseRef: base }), "test_precedent"), []);
 });
 
-test("a test moved into a directory with no precedent is the same deviation as one written there", async (t) => {
+test("a test moved into a directory with no precedent is the same deviation as one written there", needsRuby, async (t) => {
   // git reports a relocation as `R`, so a rule reading only `A` let the move
   // past while refusing the identical file written fresh.
   const dir = await railsish(t);
@@ -530,6 +535,26 @@ test("a map with no pin at all caps severity", async (t) => {
   assert.equal(hits[0].severity, "FIX");
 });
 
+test("a pin that will not load caps severity under its own reason, not as no pin", async (t) => {
+  // A committed pin that a merge left conflict markers in capped every finding
+  // with "no baseline pinned", in a repository that had one.
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/a.ts", clean(2));
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/a.ts", clean(2) + swallow(1));
+    commit("swallow");
+  });
+  facts(dir, { sha: null });
+  writeFileSync(join(dir, ".claude/anatomiya/baseline.json"), "<<<<<<< HEAD\n{}\n=======\n{}\n>>>>>>> other\n");
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.equal(r.stale, true);
+  assert.equal(r.staleReason, "the pin on disk could not be read because it does not parse as JSON");
+  assert.equal(forKey(r, "swallowed_error")[0].severity, "FIX");
+});
+
 test("a dimension a gate suppressed cannot demand anything", async (t) => {
   // The check may only enforce what the map stated. A suppressed dimension is
   // one the map explicitly declined to state.
@@ -649,7 +674,7 @@ test("a worktree with no map of its own is pointed at its main checkout's", asyn
 
   assert.ok(said, "still no map here");
   assert.ok(said.message.endsWith(`Its main checkout has one: ${realpathSync.native(dir)}`), said.message);
-  assert.match(said.message, /run `anatomiya scan \.` here/);
+  assert.match(said.message, /run `\/anatomiya:scan` here/);
 });
 
 test("the way out of a mapless worktree, and where it leads, survive the report's length cap", async (t) => {
@@ -673,7 +698,7 @@ test("the way out of a mapless worktree, and where it leads, survive the report'
   // backslashes arrive escaped.
   const noMap = JSON.parse(formatReportJson(r)).caveats.find((c) => c.code === CAVEATS.NO_MAP).message;
   for (const rendered of [formatReport(r), noMap]) {
-    assert.match(rendered, /run `?anatomiya scan \.`? here/);
+    assert.match(rendered, /run `?\/anatomiya:scan`? here/);
     assert.ok(rendered.includes(main), "and the checkout it names is there whole");
   }
 
@@ -686,7 +711,7 @@ test("the way out of a mapless worktree, and where it leads, survive the report'
   git(deep, "commit", "-qm", "init");
   await writeMap(await scan(deep), {});
   const far = await check(addWorktree(deep, join(parent, "far"), "work"), { baseRef: "main" });
-  assert.match(formatReport(far), /run `?anatomiya scan \.`? here\. Its main checkout has one: /);
+  assert.match(formatReport(far), /run `?\/anatomiya:scan`? here\. Its main checkout has one: /);
 });
 
 test("no map on disk enforces nothing and says so", async (t) => {
@@ -924,6 +949,42 @@ test("a file that crashed the parser is named apart from one it merely rejected"
   );
 });
 
+test("a prism too old to read is a missing parser to the check, not Ruby files that crashed", { ...needsShebang, ...needsPathControl }, async (t) => {
+  // Ruby 3.3 ships prism 0.19, and the child refuses it before reading a file.
+  // Charged per file, the check exited 0 with a "crashed the parser" note per
+  // Ruby file and no remedy; the flag is what makes the command refuse with one.
+  const bin = mkdtempSync(join(tmpdir(), "anatomiya-old-prism-"));
+  t.after(() => rmSync(bin, { recursive: true, force: true }));
+  writeFileSync(
+    join(bin, "ruby"),
+    `#!/bin/sh
+case "$*" in *Gem::Specification*) printf '[]'; exit 0 ;; esac
+cat >/dev/null
+printf '{"ready":true,"prism":"0.19.0"}\\n{"fatal":"prism 0.19.0 predates the field names this reads"}\\n'
+exit 1
+`,
+    { mode: 0o755 }
+  );
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("app/models/a.rb", "class A\nend\n");
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("app/models/b.rb", "class B\n  def x\n    go\n  rescue => e\n  end\nend\n");
+    commit("b");
+  });
+  facts(dir, { sha: sha(dir, "main"), path: "app/models", dimensions: [dim({ key: "rescue_uses_error" })] });
+  const path = process.env.PATH;
+  t.after(() => {
+    process.env.PATH = path;
+  });
+  process.env.PATH = `${bin}:${path}`;
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.match(String(r.parse.missingParser), /prism 0\.19\.0 predates/);
+  assert.deepEqual(r.parse.missingEngines, ["prism"]);
+});
+
 test("a file the parser rejected is named apart from one this tool could not read", async (t) => {
   // The scan names the two apart because the reader's next move differs: syntax
   // the parser rejected is the branch's own code to go and look at, a file that
@@ -1152,6 +1213,24 @@ test("a staged but uncommitted file is examined the same as an unstaged one", as
   const r = await check(dir, { baseRef: "main" });
 
   assert.deepEqual(r.examined.map((f) => f.path), ["src/b.ts"]);
+  assert.equal(forKey(r, "swallowed_error").length, 2, JSON.stringify(r.findings));
+});
+
+test("a file added with intent-to-add is examined as the addition it is", async (t) => {
+  // `git add -N` puts the letter in the worktree column, ` A`, and only the
+  // index column was asked whether a file is new: read as a modification of a
+  // file the merge base never held, it was skipped with a false caveat.
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/a.ts", clean(2));
+    commit("init");
+    write("src/b.ts", swallow(2));
+    git("add", "-N", "src/b.ts");
+  });
+  facts(dir, { sha: sha(dir, "main") });
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assertExamined(r, "src/b.ts");
   assert.equal(forKey(r, "swallowed_error").length, 2, JSON.stringify(r.findings));
 });
 
@@ -1531,6 +1610,53 @@ test("a producer the corpus excludes is not held to an obligation", needsRuby, a
   assert.deepEqual(forKey(await check(dir, {}), "rake_task_spec"), []);
 });
 
+test("a generated file the corpus leaves out is not judged against the map", async (t) => {
+  // The scan drops a file stamped as generated, or declared so in
+  // `.gitattributes`, and the check filtered by the path alone: a branch that
+  // regenerated a client got a MUST-FIX per site in code nobody writes by hand,
+  // against claims the map never counted it in.
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/a.ts", clean(2));
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/client.ts", "// @generated by openapi-generator. DO NOT EDIT.\n" + swallow(1));
+    write("src/proto/types.ts", swallow(1));
+    write(".gitattributes", "src/proto/** linguist-generated\n");
+    // The control: a hand-written file on the same branch is still judged.
+    write("src/mine.ts", swallow(1));
+    commit("regenerate");
+  });
+  facts(dir, { sha: sha(dir, "main") });
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.deepEqual(r.findings.map((f) => f.path), ["src/mine.ts"]);
+  assert.deepEqual(r.examined.map((f) => f.path), ["src/mine.ts"]);
+});
+
+test("a symlinked source file is neither parsed nor reported, committed or not", needsPosixPaths, async (t) => {
+  // A link is not source: its target is counted where it is tracked. Committed,
+  // the link's own text was parsed and named as syntax the parser rejected;
+  // uncommitted, the target was read through it and its sites charged again
+  // under the link's name. The same file answered two ways by commit state.
+  const dir = repo(t, ({ dir: root, git, write, commit }) => {
+    write("src/a.ts", clean(2));
+    write("lib/impl.ts", swallow(1));
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    symlinkSync("../lib/impl.ts", join(root, "src", "committed.ts"));
+    commit("link it");
+    symlinkSync("../lib/impl.ts", join(root, "src", "pending.ts"));
+  });
+  facts(dir, { sha: sha(dir, "main") });
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.deepEqual(r.examined.map((f) => f.path), []);
+  assert.deepEqual(r.findings, []);
+  assert.deepEqual(notes(r).filter((m) => /committed\.ts|pending\.ts/.test(m)), []);
+});
+
 test("a rules directory linked out of the repository is reported, not examined", async (t) => {
   // The scan refuses to write through such a link. The check has nothing to
   // refuse, so it says what it could not look at: a clean rules directory
@@ -1664,6 +1790,25 @@ test("a file renamed but not committed is judged against its old path", async (t
   );
 });
 
+test("a move not yet committed is still a move where the user's config turns rename detection off", async (t) => {
+  // `diff.renames=false` is a known speed setting for large repositories, and
+  // `status` follows it: the move listed as a deletion and an addition, and
+  // the three sites that came with the file were charged to whoever moved it.
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/legacy.ts", swallow(3));
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    git("config", "diff.renames", "false");
+    git("mv", "src/legacy.ts", "src/moved.ts");
+  });
+  facts(dir, { sha: sha(dir, "main") });
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assertExamined(r, "src/moved.ts");
+  assert.deepEqual(forKey(r, "swallowed_error"), [], JSON.stringify(r.findings));
+});
+
 // `--porcelain` defaults to `-unormal`, which collapses an untracked directory
 // to one entry ending in `/`. That path is not source, so it was dropped, and
 // a new service directory checked before its first commit read clean.
@@ -1780,12 +1925,36 @@ test("a pending file over the size cap is not read from the tree", async (t) => 
   const r = await check(dir, { baseRef: "main" });
 
   assert.deepEqual(forKey(r, "swallowed_error"), [], JSON.stringify(r.findings));
-  // The whole sentence rather than the prefix, like the other two: which of
-  // the three places was looked in is the only thing the three of them say.
   assert.ok(
-    notes(r).includes("could not read src/big.ts in the working tree"),
+    notes(r).includes("src/big.ts exceeded the size cap, so it was not checked"),
     `a file it refused to read is named, not silently dropped: ${JSON.stringify(r.caveats)}`
   );
+});
+
+test("a file past the size cap is named as past it, by its own code, committed or not", async (t) => {
+  // Both readers stop at the cap the parser skips at, so the parser's own
+  // "oversize" answer never arrived and every such file read as one that would
+  // not come back: git or disk trouble, where the documented code says a file
+  // nobody writes by hand.
+  const big = `${swallow(2)}\n// ${"x".repeat(1024 * 1024)}\n`;
+  const dir = repo(t, ({ dir: root, git, write, commit }) => {
+    write("src/a.ts", clean(2));
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/big.ts", big);
+    commit("over the cap");
+    writeFileSync(join(root, "src", "copy.ts"), big);
+  });
+  facts(dir, { sha: sha(dir, "main") });
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.deepEqual(
+    r.caveats.filter((c) => c.code === CAVEATS.HEAD_OVERSIZE).map((c) => c.message).sort(),
+    ["src/big.ts exceeded the size cap, so it was not checked", "src/copy.ts exceeded the size cap, so it was not checked"],
+    JSON.stringify(r.caveats)
+  );
+  assert.deepEqual(r.caveats.filter((c) => c.code === CAVEATS.HEAD_UNREADABLE), []);
 });
 
 // Both committed sides are read in one pass per revision, so which revision a
@@ -1793,19 +1962,24 @@ test("a pending file over the size cap is not read from the tree", async (t) => 
 // The three sentences say which of the three places was looked in, and an agent
 // reads them to know whether to fix the file or the run.
 test("a committed file that will not come back is named at HEAD", async (t) => {
-  const dir = repo(t, ({ git, write, commit }) => {
+  // Its object is gone from the store, which nothing but the blob read asks
+  // for: the diff lists an added path without opening it, and the tree copy
+  // is unchanged, so nothing is read from there.
+  const dir = repo(t, ({ dir: root, git, write, commit }) => {
     write("src/a.ts", clean(2));
     commit("init");
     git("checkout", "-q", "-b", "work");
-    write("src/big.ts", `${swallow(2)}\n// ${"x".repeat(1024 * 1024)}\n`);
-    commit("over the cap");
+    write("src/lost.ts", swallow(2));
+    commit("add it");
+    const blob = String(git("rev-parse", "HEAD:src/lost.ts")).trim();
+    rmSync(join(root, ".git", "objects", blob.slice(0, 2), blob.slice(2)));
   });
   facts(dir, { sha: sha(dir, "main") });
 
   const r = await check(dir, { baseRef: "main" });
 
   assert.deepEqual(forKey(r, "swallowed_error"), [], JSON.stringify(r.findings));
-  assert.ok(notes(r).includes("could not read src/big.ts at HEAD"), JSON.stringify(r.caveats));
+  assert.ok(notes(r).includes("could not read src/lost.ts at HEAD"), JSON.stringify(r.caveats));
   assert.ok(r.caveats.some((c) => c.code === CAVEATS.HEAD_UNREADABLE));
 });
 
@@ -1883,6 +2057,91 @@ test("a file deleted in the working tree is not examined", async (t) => {
 
   assert.deepEqual(r.examined.map((f) => f.path), []);
   assert.deepEqual(notes(r).filter((m) => /could not read/.test(m)), []);
+});
+
+test("a file the branch committed and then deleted in the tree is not judged", async (t) => {
+  // The committed diff still lists it, and its HEAD version was judged: a
+  // MUST-FIX on a file that no longer exists, in a run that says it answers
+  // for the work as it stands.
+  const dir = repo(t, ({ dir: root, git, write, commit }) => {
+    write("src/a.ts", clean(2));
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/b.ts", swallow(1));
+    commit("swallow");
+    rmSync(join(root, "src/b.ts"));
+  });
+  facts(dir, { sha: sha(dir, "main") });
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.deepEqual(r.findings, []);
+  assert.deepEqual(r.examined.map((f) => f.path), []);
+});
+
+test("a file the branch added and then moved in the tree is judged as an addition at its new path", async (t) => {
+  // The move's `from` names a path that exists at HEAD and not at the merge
+  // base, so the base read failed and the moved file, holding the only new
+  // violation, was skipped, while the path it left was judged from HEAD.
+  const dir = repo(t, ({ dir: root, git, write, commit }) => {
+    write("src/a.ts", clean(2));
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/b.ts", swallow(1));
+    commit("swallow");
+    git("mv", "src/b.ts", "src/c.ts");
+    writeFileSync(join(root, "src/c.ts"), clean(1) + "export function h() { try { x() } catch (e) { } }\n");
+  });
+  facts(dir, { sha: sha(dir, "main") });
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assertExamined(r, "src/c.ts");
+  assert.deepEqual(forKey(r, "swallowed_error").map((f) => [f.path, f.line]), [["src/c.ts", 2]]);
+});
+
+/** A model and its spec, twice, with the map stating the obligation. */
+function pairedModels(t, change) {
+  const dir = repo(t, ({ dir: root, git, write, commit }) => {
+    for (const n of ["thing", "other"]) {
+      write(`app/models/${n}.rb`, `class ${n}\nend\n`);
+      write(`spec/models/${n}_spec.rb`, `describe ${n} do\nend\n`);
+    }
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    change({ root, git, commit });
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    path: "app/models",
+    dimensions: [dim({ key: "model_spec", directive: true })],
+  });
+  return dir;
+}
+
+test("a branch that deletes a companion and leaves its producer alone breaks the obligation", async (t) => {
+  // Only producers the branch touched were asked, and a deletion is no file to
+  // examine, so dropping an inconvenient spec passed clean while a one-line
+  // edit to its model would have been flagged.
+  const dir = pairedModels(t, ({ git, commit }) => {
+    git("rm", "-q", "spec/models/thing_spec.rb");
+    commit("drop the spec");
+  });
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.deepEqual(
+    forKey(r, "model_spec").map((f) => [f.path, f.companion]),
+    [["app/models/thing.rb", "spec/models/thing_spec.rb"]]
+  );
+});
+
+test("a companion deleted in the tree breaks the obligation before it is committed", async (t) => {
+  const dir = pairedModels(t, ({ root }) => rmSync(join(root, "spec/models/thing_spec.rb")));
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.deepEqual(forKey(r, "model_spec").map((f) => f.path), ["app/models/thing.rb"]);
 });
 
 test("a producer whose companion the branch never wrote is still reported", async (t) => {
@@ -2855,6 +3114,32 @@ test("the two names that match every class are still not sites", async (t) => {
   assert.deepEqual(forKey(report, "file_naming_case"), []);
 });
 
+test("a route file whose name the router dictates is not told to rename itself", async (t) => {
+  // Measured on a Next.js `src/pages` stating kebab-case at 40 of 40: a new
+  // `[id].tsx` and `_document.tsx` were each reported "files here are named
+  // kebab-case", and the only fix that finding offers breaks the dynamic route
+  // or drops the special file. An underscore on a multi-word stem is still the
+  // omission C23 counts, so `_tmpProbe.ts` stays a finding beside them.
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/pages/user-profile.tsx", `export default function P() {\n  return <main />;\n}\n`);
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/pages/[id].tsx", `export default function Post() {\n  return <main />;\n}\n`);
+    write("src/pages/[...slug].tsx", `export default function All() {\n  return <main />;\n}\n`);
+    write("src/pages/_document.tsx", `export default function Doc() {\n  return <html />;\n}\n`);
+    write("src/pages/$postId.tsx", `export default function R() {\n  return <main />;\n}\n`);
+    write("src/pages/+page.ts", `export const load = 1;\n`);
+    write("src/pages/_tmpProbe.ts", `export const c = 3;\n`);
+    commit("add");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    dimensions: [dim({ key: "file_naming_case", learned: "kebab-case" })],
+  });
+  const report = await check(dir);
+  assert.deepEqual(forKey(report, "file_naming_case").map((f) => f.path), ["src/pages/_tmpProbe.ts"]);
+});
+
 /* --- an explicit base that names nothing is a refusal (#51) --- */
 
 test("an explicit base that resolves nowhere is refused, with the ref echoed back", async (t) => {
@@ -3241,6 +3526,35 @@ test("the class an area learned is not asked to inherit itself", needsRuby, asyn
   assert.deepEqual(forKey(report, "class_base"), [], JSON.stringify(forKey(report, "class_base")));
 });
 
+test("a new subclass of a class the map records as reaching the learned base is not a finding", needsRuby, async (t) => {
+  // Single-table inheritance: the fold counted `Admin < User` as conforming
+  // because User reaches ApplicationRecord, and the check has to agree, or a
+  // branch adding `class Guest < User` is told to break the hierarchy.
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("app/models/user.rb", "class User < ApplicationRecord\nend\n");
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("app/models/guest.rb", "class Guest < User\nend\n");
+    write("app/models/ledger.rb", "class Ledger < Struct\nend\n");
+    commit("add");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    areas: [{
+      id: "aaaaaaaa",
+      path: "app/models",
+      globs: [{ negated: false, dir: "app/models", tail: "**/*.rb" }],
+      fileCount: 8,
+      dimensions: [dim({ key: "class_base", learned: "ApplicationRecord", reaches: ["User"] })],
+    }],
+  });
+
+  const report = await check(dir);
+
+  const found = forKey(report, "class_base");
+  assert.deepEqual(found.map((f) => f.path), ["app/models/ledger.rb"], JSON.stringify(found));
+});
+
 /* --- an omission is only a finding where the map stated the claim (#54) --- */
 
 test("a body that includes nothing is not judged against a row the map did not state", needsRuby, async (t) => {
@@ -3423,6 +3737,26 @@ test("a file that gains JSX on the branch does not have its whole base side skip
   );
 });
 
+test("a .ts file renamed to .tsx is parsed at the merge base as the .ts it was", async (t) => {
+  // The base was parsed under the head path's grammar, and a generic arrow is
+  // valid TypeScript and a syntax error in TSX: the whole file was skipped as
+  // one that "did not parse at the merge base", its new violation with it.
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/util.ts", `export const identity = <T>(x: T): T => x;\n` + clean(2));
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    git("mv", "src/util.ts", "src/util.tsx");
+    write("src/util.tsx", `export const identity = <T,>(x: T): T => x;\n` + clean(2) + swallow(1));
+    commit("to tsx");
+  });
+  facts(dir, { sha: sha(dir, "main") });
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assertExamined(r, "src/util.tsx");
+  assert.deepEqual(forKey(r, "swallowed_error").map((f) => [f.path, f.line]), [["src/util.tsx", 4]]);
+});
+
 test("the sentence the check quotes is the one the map printed", async (t) => {
   // The map names the kind a narrowed row was learned over. The check built its
   // own text from the registry template and quoted the unqualified sentence,
@@ -3508,6 +3842,27 @@ test("a claim the owning area's own globs never deliver here is capped", async (
   assert.equal(found.length, 1, JSON.stringify(r.findings));
   assert.equal(found[0].severity, "FIX", JSON.stringify(found[0]));
   assert.match(found[0].reason, /which this directory sits inside/);
+});
+
+test("a file the area's globs miss by its type is capped for its type, not for a directory above it", async (t) => {
+  // The cap is right: the area file is never delivered to a `.tsx`. The reason
+  // said the file was "counted in src, which this directory sits inside" of a
+  // file sitting in src itself, and hid that the globs do not cover the type.
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/one.ts", clean(2));
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/view.tsx", swallow(1));
+    commit("add");
+  });
+  facts(dir, { sha: sha(dir, "main") });
+
+  const r = await check(dir, { baseRef: "main" });
+  const found = forKey(r, "swallowed_error");
+
+  assert.deepEqual(found.map((f) => [f.severity, f.reason]), [
+    ["FIX", "the area file for src does not reach .tsx files, so this claim was never delivered here"],
+  ]);
 });
 
 test("an obligation is capped on a path the area's globs never deliver to, like every other finding", async (t) => {
@@ -3877,8 +4232,11 @@ test("a name spelling no class is an omission too, so it needs a stated claim", 
 
 /* --- the shallow arm, which #51 was measured on --- */
 
-/** A depth-1 clone of a repository with history, which is what CI checks out. */
-function shallowClone(t, build) {
+/**
+ * A depth-1 clone of a repository with history, which is what CI checks out,
+ * or a window as deep as a case needs.
+ */
+function shallowClone(t, build, { depth = 1, args = [] } = {}) {
   const outer = mkdtempSync(join(tmpdir(), "anatomiya-shallow-"));
   t.after(() => rmSync(outer, { recursive: true, force: true }));
   const origin = join(outer, "origin");
@@ -3899,10 +4257,11 @@ function shallowClone(t, build) {
       git("add", "-A");
       git("commit", "-qm", m);
     },
+    git,
   });
 
   const clone = join(outer, "clone");
-  execFileSync("git", ["clone", "-q", "--depth=1", `file://${origin}`, clone], { stdio: "pipe" });
+  execFileSync("git", ["clone", "-q", `--depth=${depth}`, ...args, `file://${origin}`, clone], { stdio: "pipe" });
   return clone;
 }
 
@@ -3928,6 +4287,23 @@ test("a shallow clone refuses a base it cannot reach rather than reviewing the w
   );
 });
 
+test("a shallow clone fetches the one base commit the remote holds, and answers against it", async (t) => {
+  // The fetch fallback's own arm: the base is on the remote and not in the
+  // clone, so its sha comes off `ls-remote` and is fetched at depth one.
+  const dir = shallowClone(t, ({ write, commit, git }) => {
+    write("src/a.ts", clean(2));
+    commit("init");
+    git("branch", "base");
+    write("src/a.ts", clean(3));
+    commit("more");
+  });
+
+  const report = await check(dir, { baseRef: "origin/base" });
+
+  assert.equal(report.base.ref, "origin/base");
+  assert.match(report.base.sha, /^[0-9a-f]{40,64}$/);
+});
+
 test("a shallow clone with no base named still degrades rather than refusing", async (t) => {
   // The candidate list is this tool's own guess, and a clone that holds none of
   // them is an ordinary repository rather than a typo.
@@ -3943,6 +4319,112 @@ test("a shallow clone with no base named still degrades rather than refusing", a
   const r = await check(dir);
 
   assert.ok(codesOf(r).includes(CAVEATS.SHALLOW_UNFETCHED), JSON.stringify(codesOf(r)));
+});
+
+/**
+ * What `actions/checkout` does on a pull request: no clone, one depth-1 fetch
+ * of the merge ref the host built, and a detached checkout of it. The merge's
+ * first parent is the base branch's tip, and the clone holds neither parent.
+ * The build leaves the branch under review as `feat`, off `main`.
+ */
+function mergeRefCheckout(t, build, { trunk = "main" } = {}) {
+  const outer = mkdtempSync(join(tmpdir(), "anatomiya-mergeref-"));
+  t.after(() => rmSync(outer, { recursive: true, force: true }));
+  const origin = join(outer, "origin");
+  mkdirSync(origin, { recursive: true });
+  const git = (cwd, ...a) => execFileSync("git", a, { cwd, stdio: "pipe" });
+  git(origin, "init", "-q");
+  git(origin, "config", "user.email", "t@t.test");
+  git(origin, "config", "user.name", "T");
+  git(origin, "checkout", "-q", "-b", trunk);
+  build({
+    write: (rel, body) => {
+      const abs = join(origin, rel);
+      mkdirSync(dirname(abs), { recursive: true });
+      writeFileSync(abs, body);
+    },
+    commit: (m) => {
+      git(origin, "add", "-A");
+      git(origin, "commit", "-qm", m);
+    },
+    git: (...a) => git(origin, ...a),
+  });
+  git(origin, "checkout", "-q", "--detach", trunk);
+  git(origin, "merge", "-q", "--no-ff", "feat", "-m", "Merge pull request #1");
+  git(origin, "update-ref", "refs/pull/1/merge", "HEAD");
+  git(origin, "checkout", "-q", trunk);
+
+  const clone = join(outer, "clone");
+  mkdirSync(clone);
+  git(clone, "init", "-q");
+  git(clone, "remote", "add", "origin", `file://${origin}`);
+  git(clone, "fetch", "-q", "--no-tags", "--depth=1", "origin", "+refs/pull/1/merge:refs/remotes/pull/1/merge");
+  git(clone, "checkout", "-q", "--force", "refs/remotes/pull/1/merge");
+  return { clone, base: execFileSync("git", ["rev-parse", trunk], { cwd: origin, encoding: "utf8" }).trim() };
+}
+
+test("a base fetched into a shallow clone is the base its staleness is measured against", async (t) => {
+  // The fetch lands in FETCH_HEAD and makes no ref, and staleness re-resolved
+  // the base by its name: `origin/main` resolved nowhere, so every finding was
+  // capped at FIX under "cannot resolve origin/main", one line below a header
+  // naming origin/main as the base this run compared against.
+  const dir = shallowClone(t, ({ write, commit, git }) => {
+    write("src/a.ts", clean(2));
+    commit("init");
+    git("checkout", "-q", "-b", "feat");
+    write("src/a.ts", clean(2) + swallow(1));
+    commit("swallow");
+  }, { depth: 2 });
+  facts(dir, { sha: sha(dir, "HEAD~1") });
+
+  const r = await check(dir, { baseRef: "origin/main" });
+
+  assert.equal(r.mode, "compare", JSON.stringify(notes(r)));
+  assert.equal(r.staleReason, null);
+  assert.deepEqual(forKey(r, "swallowed_error").map((f) => f.severity), ["MUST-FIX"]);
+});
+
+test("a depth-1 pull request checkout is judged against the base its merge commit names", async (t) => {
+  // The default CI checkout. The base fetched off the remote is the merge
+  // commit's own first parent, which the commit records whatever the clone
+  // holds, and `merge-base` cannot see past the graft: the run examined
+  // nothing and printed 0 MUST-FIX, 0 FIX, 0 NIT on every pull request.
+  const { clone, base } = mergeRefCheckout(t, ({ write, commit, git }) => {
+    write("src/a.ts", clean(2));
+    commit("init");
+    git("checkout", "-q", "-b", "feat");
+    write("src/a.ts", clean(2) + swallow(1));
+    commit("swallow");
+  });
+  facts(clone, { sha: base });
+
+  const r = await check(clone);
+
+  assert.equal(r.mode, "compare", JSON.stringify(notes(r)));
+  assert.equal(r.base.mergeBase, base);
+  assert.deepEqual(forKey(r, "swallowed_error").map((f) => [f.path, f.line]), [["src/a.ts", 3]]);
+});
+
+test("a depth-1 checkout that still reaches no merge base names the fetch that would", async (t) => {
+  // A branch head two commits past its base: HEAD's parent is the branch's own
+  // first commit, so nothing the clone holds reaches the base. The run can
+  // only examine nothing, and a CI log saying so without the way out reads as
+  // this tool being unable to review pull requests at all.
+  const dir = shallowClone(t, ({ write, commit, git }) => {
+    write("src/a.ts", clean(2));
+    commit("init");
+    git("checkout", "-q", "-b", "feat");
+    write("src/a.ts", clean(2) + swallow(1));
+    commit("swallow");
+    write("src/a.ts", clean(2) + swallow(2));
+    commit("swallow again");
+  });
+
+  const r = await check(dir, { baseRef: "origin/main" });
+
+  assert.equal(r.mode, "none");
+  const said = r.caveats.find((c) => c.code === CAVEATS.SHALLOW_NO_HISTORY);
+  assert.match(said?.message ?? "", /fetch-depth: 0/, JSON.stringify(r.caveats));
 });
 
 test("findings of one severity order by code unit, not by the host's locale", async (t) => {
@@ -3975,10 +4457,254 @@ test("a changed path that is now a fifo is skipped, not opened and waited on", n
   execFileSync("mkfifo", [join(dir, "src/f1.js")]);
 
   const script = `import { check } from ${JSON.stringify(new URL("../plugins/anatomiya/lib/check.mjs", import.meta.url).href)};
-    await check(${JSON.stringify(dir)}, { baseRef: "main" });
-    process.stdout.write("answered");`;
+    const r = await check(${JSON.stringify(dir)}, { baseRef: "main" });
+    process.stdout.write(JSON.stringify(r.caveats.map((c) => c.message)));`;
   const run = spawnSync(process.execPath, ["--input-type=module", "-e", script], { encoding: "utf8", timeout: 8000 });
 
   assert.equal(run.signal, null, `still waiting on the fifo after 8 seconds: killed by ${run.signal}`);
-  assert.equal(run.stdout, "answered", run.stderr);
+  // The whole sentence rather than the prefix, like the other two: which of
+  // the three places was looked in is the only thing the three of them say.
+  assert.ok(JSON.parse(run.stdout || "[]").includes("could not read src/f1.js in the working tree"), run.stdout + run.stderr);
+});
+
+test("a blobless partial clone reads the merge base from its promisor rather than skipping every changed file", async (t) => {
+  // F14 keeps every other read off the network, and the check's merge-base
+  // read went with it: a clone that checked out its branch without ever
+  // holding the base's blobs skipped each changed file as unreadable at the
+  // base, and reported nothing.
+  const { runScan } = await import("../plugins/anatomiya/lib/commands.mjs");
+  const origin = scratch(t, "anatomiya-check-promisor-");
+  const run = (cwd, ...args) => execFileSync("git", args, { cwd, stdio: "pipe" }).toString().trim();
+  run(origin, "init", "-q", "-b", "main");
+  run(origin, "config", "uploadpack.allowFilter", "true");
+  run(origin, "config", "uploadpack.allowAnySHA1InWant", "true");
+  mkdirSync(join(origin, "src"));
+  for (let i = 0; i < 8; i++) writeFileSync(join(origin, "src", `f${i}.ts`), `export function f${i}(a: number): number {\n  return a;\n}\n`);
+  run(origin, "add", "-A");
+  run(origin, "-c", "user.email=t@t.test", "-c", "user.name=T", "commit", "-qm", "init");
+  run(origin, "checkout", "-q", "-b", "feat");
+  writeFileSync(join(origin, "src", "f0.ts"), "export const f0 = (a: number) => {\n  return a;\n};\n");
+  // A rename too: detecting it reads the base side of both paths, and a diff
+  // refused that read failed whole, so nothing at all was examined.
+  run(origin, "mv", "src/f1.ts", "src/g1.ts");
+  writeFileSync(join(origin, "src", "g1.ts"), "export function f1(a: number): number {\n  // renamed, and edited\n  return a;\n}\n");
+  run(origin, "-c", "user.email=t@t.test", "-c", "user.name=T", "commit", "-qam", "feat");
+  run(origin, "checkout", "-q", "main");
+  writeFileSync(join(origin, "src", "f2.ts"), "export function f2(a: number): number {\n  return a + 1;\n}\n");
+  run(origin, "-c", "user.email=t@t.test", "-c", "user.name=T", "commit", "-qam", "main moves on");
+
+  const dir = scratch(t, "anatomiya-check-partial-");
+  execFileSync("git", ["clone", "-q", "--no-checkout", "--filter=blob:none", `file://${origin}`, dir], { stdio: "pipe" });
+  run(dir, "checkout", "-q", "feat");
+  await runScan(dir);
+
+  const report = await check(dir, { baseRef: "origin/main" });
+
+  assert.ok(!notes(report).some((n) => /at the merge base|could not be read/.test(n)), notes(report).join("\n"));
+  assert.ok(report.findings.some((f) => f.path === "src/f0.ts"), "the changed file was judged against its base");
+});
+
+test("a shallow clone that already holds the base ref still finds the base its merge commit names", async (t) => {
+  // `--no-single-branch` holds every branch at depth one, so `origin/main`
+  // resolves locally and the fetch path never ran: that path is the only one
+  // that asked HEAD's own commit for its parents, and the run examined nothing.
+  const dir = shallowClone(t, ({ write, commit, git }) => {
+    write("src/a.ts", clean(2));
+    commit("init");
+    git("checkout", "-q", "-b", "feat");
+    write("src/a.ts", clean(2) + swallow(1));
+    commit("swallow");
+    // The remote's own HEAD back on main, so `origin/HEAD` names main.
+    git("checkout", "-q", "main");
+  }, { args: ["--no-single-branch", "--branch", "feat"] });
+  const main = sha(dir, "origin/main");
+  facts(dir, { sha: main });
+
+  const r = await check(dir);
+
+  assert.equal(r.mode, "compare", JSON.stringify(notes(r)));
+  assert.equal(r.base.mergeBase, main);
+  assert.deepEqual(forKey(r, "swallowed_error").map((f) => [f.path, f.line]), [["src/a.ts", 3]]);
+});
+
+test("a shallow clone holding a base ref that shares no held history names the fetch that would", async (t) => {
+  const dir = shallowClone(t, ({ write, commit, git }) => {
+    write("src/a.ts", clean(2));
+    commit("init");
+    git("checkout", "-q", "-b", "feat");
+    write("src/a.ts", clean(2) + swallow(1));
+    commit("swallow");
+    write("src/a.ts", clean(2) + swallow(2));
+    commit("swallow again");
+    // The remote's own HEAD back on main, so `origin/HEAD` names main.
+    git("checkout", "-q", "main");
+  }, { args: ["--no-single-branch", "--branch", "feat"] });
+
+  const r = await check(dir);
+
+  assert.equal(r.mode, "none");
+  const said = r.caveats.find((c) => c.code === CAVEATS.SHALLOW_NO_HISTORY);
+  assert.match(said?.message ?? "", /fetch-depth: 0/, JSON.stringify(r.caveats));
+});
+
+test("a pull request checkout off a remote whose default branch is not main finds that branch", async (t) => {
+  // `origin/HEAD` was asked of the remote as `refs/heads/HEAD`, a branch no
+  // remote holds, so a trunk named anything but main or master resolved no base.
+  const { clone, base } = mergeRefCheckout(t, ({ write, commit, git }) => {
+    write("src/a.ts", clean(2));
+    commit("init");
+    git("checkout", "-q", "-b", "feat");
+    write("src/a.ts", clean(2) + swallow(1));
+    commit("swallow");
+  }, { trunk: "trunk" });
+  facts(clone, { sha: base });
+
+  const r = await check(clone);
+
+  assert.equal(r.base.ref, "origin/HEAD", JSON.stringify(notes(r)));
+  assert.equal(r.mode, "compare", JSON.stringify(notes(r)));
+  assert.equal(r.base.mergeBase, base);
+});
+
+test("a base spelled any way that names this branch's own tip is refused, not answered clean", async (t) => {
+  // Only the literal `HEAD` and `@` were refused. `HEAD~0` or the branch's own
+  // name is the same commit, and the run compared the branch with itself and
+  // printed a clean report at exit 0 (E6).
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/a.ts", clean(2));
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/a.ts", clean(2) + swallow(1));
+    commit("swallow");
+  });
+  facts(dir, { sha: sha(dir, "main") });
+
+  for (const ref of ["HEAD~0", "@~0", "work", "refs/heads/work", "work~0"]) {
+    await assert.rejects(
+      () => check(dir, { baseRef: ref }),
+      (err) => {
+        assert.match(err.message, /own tip/, err.message);
+        return true;
+      },
+      ref
+    );
+  }
+  // The control: another branch at the same commit, or the commit by its id,
+  // is what a branch holding only uncommitted work is checked against.
+  execFileSync("git", ["branch", "same"], { cwd: dir, stdio: "pipe" });
+  for (const ref of ["same", sha(dir)]) {
+    assert.equal((await check(dir, { baseRef: ref })).mode, "compare", ref);
+  }
+});
+
+test("a companion moved out of the corpus in the tree no longer satisfies the obligation", async (t) => {
+  // The rows were filtered by the corpus before their old paths were read, so
+  // a move to a name the corpus does not count took the old path with it:
+  // committed, the missing spec was reported, and uncommitted it was not.
+  const dir = pairedModels(t, ({ git }) => git("mv", "spec/models/thing_spec.rb", "spec/models/thing_spec.rb.bak"));
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.deepEqual(forKey(r, "model_spec").map((f) => f.path), ["app/models/thing.rb"]);
+});
+
+test("a test renamed within its own directory arrives nowhere new", needsRuby, async (t) => {
+  // The rename counted as the file arriving, and the directory's only test was
+  // the one that moved, so the directory read as holding none.
+  const dir = await railsish(t);
+  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
+  mkdirSync(join(dir, "spec/mailers"), { recursive: true });
+  writeFileSync(join(dir, "spec/mailers/admin_mailer_spec.rb"), "RSpec.describe Admin do\nend\n");
+  git("add", "-A");
+  git("commit", "-qm", "first spec");
+  const base = sha(dir);
+
+  git("mv", "spec/mailers/admin_mailer_spec.rb", "spec/mailers/admins_mailer_spec.rb");
+  git("commit", "-qm", "rename");
+
+  assert.deepEqual(forKey(await check(dir, { baseRef: base }), "test_precedent"), []);
+});
+
+test("the base named is the ref's own tip, and the fork point is the merge base beside it", async (t) => {
+  // On a full clone `sha` was the fork point and on a shallow fetch it was the
+  // remote tip, so the header's `base main (3a5340c)` named a commit that was
+  // not main whenever main had moved on.
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/a.ts", clean(2));
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/a.ts", clean(2) + swallow(1));
+    commit("swallow");
+    git("checkout", "-q", "main");
+    write("src/b.ts", clean(1));
+    commit("main moves on");
+    git("checkout", "-q", "work");
+  });
+  const fork = sha(dir, "main~1");
+  facts(dir, { sha: fork });
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.equal(r.base.sha, sha(dir, "main"));
+  assert.equal(r.base.mergeBase, fork);
+  assert.equal(r.staleReason, null);
+  assert.match(formatReport(r), new RegExp(`base main \\(${sha(dir, "main").slice(0, 7)}\\)`));
+});
+
+test("a submodule whose path looks like source is not read as a file", async (t) => {
+  // A gitlink has no blob at HEAD, so `src/lib/sub.ts` was reported as a file
+  // this run could not read.
+  const dir = repo(t, ({ dir: root, git, write, commit }) => {
+    write("src/a.ts", clean(2));
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    git("update-index", "--add", "--cacheinfo", `160000,${sha(root)},src/lib/sub.ts`);
+    git("commit", "-qm", "a submodule");
+    // Where a clone leaves a submodule nobody initialised: an empty directory.
+    // Missing altogether, the path reads as deleted in the tree and never
+    // reaches the read.
+    mkdirSync(join(root, "src/lib/sub.ts"), { recursive: true });
+  });
+  facts(dir, { sha: sha(dir, "main") });
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.equal(r.mode, "compare");
+  assert.deepEqual(notes(r).filter((n) => n.includes("sub.ts")), [], JSON.stringify(notes(r)));
+  assert.ok(!r.examined.some((c) => c.path === "src/lib/sub.ts"));
+});
+
+test("a branch past the configured rename limit still reads its moves as moves", async (t) => {
+  // Past `diff.renameLimit` git skips inexact rename detection and lists each
+  // move as a deletion and an addition, and every site that came with the file
+  // was charged to whoever moved it.
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/a.ts", swallow(3) + "// a\n");
+    write("src/b.ts", swallow(3) + "// b\n");
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    git("config", "diff.renameLimit", "1");
+    git("mv", "src/a.ts", "src/x.ts");
+    git("mv", "src/b.ts", "src/y.ts");
+    write("src/x.ts", swallow(3) + "// a, moved\n");
+    write("src/y.ts", swallow(3) + "// b, moved\n");
+    commit("move both");
+  });
+  facts(dir, { sha: sha(dir, "main") });
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.deepEqual(r.examined.map((c) => [c.path, c.from]), [["src/x.ts", "src/a.ts"], ["src/y.ts", "src/b.ts"]]);
+  assert.deepEqual(forKey(r, "swallowed_error"), []);
+});
+
+test("rename detection git skipped past the limit this run set is said, not charged silently", () => {
+  const rows = (adds, dels) => [
+    ...Array.from({ length: adds }, (_, i) => ({ status: "A", path: `n${i}.ts`, from: null })),
+    ...Array.from({ length: dels }, (_, i) => ({ status: "D", path: `o${i}.ts`, from: `o${i}.ts` })),
+    { status: "R", path: "r.ts", from: "q.ts" },
+  ];
+  assert.equal(renamesSkipped(rows(2, 2), 1), true);
+  assert.equal(renamesSkipped(rows(1, 1), 1), false);
+  assert.equal(renamesSkipped(rows(5, 0), 1), false, "nothing deleted is nothing to pair");
 });

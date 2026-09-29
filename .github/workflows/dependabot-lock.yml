@@ -1,0 +1,58 @@
+name: dependabot-lock
+
+# A Dependabot bump moves the root lockfile, and ci's `plugin-lock --check` then
+# fails until somebody runs `npm run lock:plugin` on the branch. This runs it on
+# Dependabot's own pull requests, pushes the plugin lockfile when it changed, and
+# starts ci by hand, since a push made with this token starts no run. The script
+# runs `npm install --package-lock-only --ignore-scripts`: it installs nothing
+# and runs no package's code. (B45)
+
+on:
+  pull_request:
+    paths:
+      - package.json
+      - package-lock.json
+
+permissions:
+  contents: read
+
+jobs:
+  lock:
+    # Dependabot's own pull requests on this repository, never a fork's and
+    # never anybody else's.
+    if: >-
+      github.event.pull_request.user.login == 'dependabot[bot]' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      actions: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          persist-credentials: true
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+
+      - name: Regenerate the plugin lockfile
+        run: node scripts/plugin-lock.mjs
+
+      - name: Push it when it changed, and start ci on the new commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: |
+          if git diff --quiet -- plugins/anatomiya/package-lock.json; then
+            echo "the plugin lockfile already matches the root lockfile"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add plugins/anatomiya/package-lock.json
+          git commit -m "Regenerate the plugin lockfile from the root lockfile"
+          git push origin "HEAD:refs/heads/${HEAD_REF}"
+          gh workflow run ci.yml --ref "${HEAD_REF}"

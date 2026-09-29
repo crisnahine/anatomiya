@@ -43,6 +43,8 @@ export const realpathOf = (p) => realpathOrNull(p) ?? resolve(p);
 
 export const RULES_DIR = ".claude/rules";
 export const STORE_DIR = ".claude/anatomiya";
+/** What the refresh worker last did, relative to the repository root. */
+export const REFRESH_STATE = `${STORE_DIR}/refresh.json`;
 // The one write outside the two above (A25). Here rather than beside the hook
 // that writes it, because this module is where every path a scan touches is
 // spelled, and the exclude line below has to be the same string.
@@ -63,20 +65,50 @@ export function areaFilename(area) {
  * test, because a hand-written file can take that name.
  */
 export function isOwned(text) {
+  if (typeof text !== "string" || text === "") return false;
+  // By hand, a line at a time, and never past the head a reader takes. It was
+  // one regex whose lazy line group re-tried every line after every candidate
+  // key: a file opening with `---` and repeating `generator: anatomiya` with no
+  // closing fence took 24 s at 32,000 lines, and a 1 MB overview of that shape
+  // held the echo hook for 50,621 ms against its 5 s timeout. Each line is
+  // looked at once here.
+  //
   // Anchored to the start of the file, not to any line: a hand-written note with
   // a horizontal rule above a line reading `generator: anatomiya` is not
   // frontmatter, and matching it would put that file on the removal list.
   //
-  // The lines between the fences are any line that is not itself a fence, so the
-  // match cannot run through the closing one. Any-line-at-all read two blocks as
-  // a single long one, and a file opening with somebody else's `description:`
-  // block and carrying our key further down came back as ours: a file this tool
-  // would then remove.
-  const line = "(?:(?!---[ \\t]*\\r?\\n).*\\r?\\n)*?";
-  return new RegExp(
-    `^\\uFEFF?---[ \\t]*\\r?\\n${line}generator:[ \\t]*anatomiya[ \\t]*\\r?\\n${line}---[ \\t]*(?:\\r?\\n|$)`
-  ).test(text || "");
+  // The block ends at the first fence after the opening one. Reading on past it
+  // read two blocks as a single long one, and a file opening with somebody
+  // else's `description:` block and carrying our key further down came back as
+  // ours: a file this tool would then remove.
+  const end = Math.min(text.length, HEAD_BYTES);
+  let at = text.charCodeAt(0) === 0xfeff ? 1 : 0;
+  let opened = false;
+  let keyed = false;
+  while (at < end) {
+    const nl = text.indexOf("\n", at);
+    const last = nl === -1 || nl >= end;
+    const line = text.slice(at, last ? end : nl);
+    at = last ? end : nl + 1;
+    const bare = line.endsWith("\r") ? line.slice(0, -1) : line;
+    // A break the pattern would not cross is still one: `.` stopped at a lone
+    // carriage return and at the two Unicode separators, so a block holding one
+    // was never frontmatter.
+    if (/[\r\u2028\u2029]/.test(bare)) return false;
+    if (FENCE.test(bare)) {
+      if (opened) return keyed;
+      opened = true;
+      continue;
+    }
+    if (!opened) return false;
+    // The key line ends in a line break, as a key with a fence after it does.
+    if (!last && KEY.test(bare)) keyed = true;
+  }
+  return false;
 }
+
+const FENCE = /^---[ \t]*$/;
+const KEY = /^generator:[ \t]*anatomiya[ \t]*$/;
 
 /**
  * A name this tool may write, checked rather than assumed.
@@ -222,6 +254,11 @@ export function resolveInside(root, relPath) {
   }
 
   let at = base;
+  // What the rest of the walk has to stay inside. The repository, until the
+  // walk enters `.claude`, and from there `.claude` itself: measured, a
+  // committed `.claude/anatomiya -> ../.git/hooks` resolves inside the
+  // repository, and a scan wrote facts.json into .git/hooks.
+  let fence = base;
   for (let i = 0; i < parts.length; i++) {
     const next = join(at, parts[i]);
     let real;
@@ -235,13 +272,92 @@ export function resolveInside(root, relPath) {
       // parent that already resolved inside.
       return join(at, ...parts.slice(i));
     }
-    if (!contains(base, real)) return null;
+    if (!contains(fence, real)) {
+      // `.claude/rules` alone may lead elsewhere in the working tree, never into
+      // the git directory: calcom/cal.diy commits `.claude/rules ->
+      // ../agents/rules` to share one rules directory between agents, Claude
+      // Code reads it through the link, and refused, the scan wrote nothing.
+      const shared = i === 1 && `${parts[0]}/${parts[1]}` === RULES_DIR;
+      if (!shared || !contains(base, real) || contains(join(base, ".git"), real)) return null;
+      fence = real;
+    }
+    if (i === 0 && parts[0] === CLAUDE_DIR) {
+      // `.claude` itself is the repository's own directory or it is refused: a
+      // link to a directory elsewhere in the tree moves the fence with it.
+      if (real !== next) return null;
+      fence = real;
+    }
     at = real;
   }
   return at;
 }
 
-function isLink(path) {
+const CLAUDE_DIR = ".claude";
+
+/**
+ * The refusal a caller prints for a path `resolveInside` answered null for,
+ * which names the fence that path is held to.
+ */
+export const outsideClaude = (relPath) =>
+  relPath === RULES_DIR || relPath.startsWith(`${RULES_DIR}/`)
+    ? `${relPath} resolves where this tool does not write: outside the repository, into its git directory, or through a ${CLAUDE_DIR} that is a link`
+    : `${relPath} resolves outside the repository's own ${CLAUDE_DIR} directory`;
+
+/**
+ * The first thing on the way down to a directory under the repository that
+ * cannot hold it, as a sentence ending before the consequence, or null.
+ *
+ * Walked lexically, and named by the path the repository spells rather than
+ * where it resolves. The resolved name was the one printed, so a committed
+ * `.claude/rules -> ../README.md` read "README.md is not a directory ...
+ * remove it and scan again", and an agent following that sentence deletes the
+ * README. A link is said to be one, and what is to be removed is the link.
+ */
+export function blockedOnTheWay(root, relPath) {
+  const base = realpathOrNull(root) ?? resolve(root);
+  const parts = relPath.split("/");
+  for (let i = 1; i <= parts.length; i++) {
+    const name = parts.slice(0, i).join("/");
+    const at = join(base, ...parts.slice(0, i));
+    let entry;
+    try {
+      entry = lstatSync(at);
+    } catch {
+      // Nothing there, so the rest is created.
+      return null;
+    }
+    if (entry.isDirectory()) continue;
+    if (entry.isSymbolicLink()) {
+      const stat = statSync(at, { throwIfNoEntry: false });
+      if (stat?.isDirectory()) continue;
+      const real = realpathOrNull(at);
+      const to = real === null ? "nothing" : relative(base, real).split(sep).join("/") || ".";
+      return { name, link: true, sentence: `${name} is a link to ${to}, which is not a directory` };
+    }
+    return { name, link: false, sentence: `${name} is not a directory` };
+  }
+  return null;
+}
+
+/**
+ * Whether an atomic replace can put a file at this path: nothing is there, or a
+ * file, or a link, which the rename replaces as an entry. A directory is the
+ * shape the rename refuses, with a raw `EISDIR` after a dry run said it would
+ * write.
+ */
+export function leafReplaceable(path) {
+  try {
+    return !lstatSync(path).isDirectory();
+  } catch {
+    return true;
+  }
+}
+
+/**
+ * Whether the path is a symbolic link, false where even lstat is refused: a
+ * directory this may not enter answers EACCES here as well as to realpath.
+ */
+export function isLink(path) {
   try {
     return lstatSync(path).isSymbolicLink();
   } catch {
@@ -264,7 +380,7 @@ function contains(base, target) {
  * and it still answers false for a directory, a fifo and `/dev/zero`. Size is
  * the head cap's job.
  *
- * The ownership test is a regex anchored to byte zero and closed by the second
+ * The ownership test reads from byte zero and is closed by the second
  * fence, so nothing past the frontmatter was ever the question. Read whole, one
  * tracked symlink to a large blob took a scan's peak resident size to 1.2 GB,
  * and pointed at `/dev/zero` the read never returned at all.

@@ -40,6 +40,19 @@ test("a function expression assigned to a const is the same violation as an arro
   assert.deepEqual(r, { candidates: 1, conforming: 0 });
 });
 
+test("the inverse sentence names every form the row counts on that side", () => {
+  // `var f = function () {}` counts on the same side as an arrow const, so an
+  // ES5 directory holding no arrow and no const was told "module-level
+  // functions are assigned as arrow consts" at 80 of 80: a directive to bring
+  // in both, with a different `this`, to code that may target ES5.
+  for (const src of [`var f = function () {}`, `let f = () => {}`, `const f = () => {}`]) {
+    assert.deepEqual(counts("function_style", src), { candidates: 1, conforming: 0 }, src);
+  }
+  const { counterClaim } = dim("function_style");
+  assert.doesNotMatch(counterClaim, /arrow|const/, counterClaim);
+  assert.match(counterClaim, /not declared with function/, counterClaim);
+});
+
 test("a file declaring no functions contributes nothing", () => {
   assert.equal(hits("function_style", `export const limit = 10`).length, 0);
 });
@@ -843,4 +856,292 @@ test("a hook declared without a body is still the hook this module exports", () 
     counts("hook_per_module", `export declare function useThing(): number;\nexport const useOther = () => 1`),
     { candidates: 1, conforming: 0 }
   );
+});
+
+/* --- a decorator list belongs to the class it decorates --- */
+
+test("a doc comment above a decorator list documents the class it decorates", () => {
+  // The parser starts an exported class at `export`, after its decorators, so
+  // the gap to the comment held `@Injectable()` and read as text: forty
+  // documented NestJS services scanned as "code here explains itself", and the
+  // check then flagged a documented function added beside them. TypeScript and
+  // JSDoc attach a comment written above the decorators to the class.
+  for (const src of [
+    `/** what S does */\n@Injectable()\nexport class S {}`,
+    `/** what S does */\n@Component({ selector: "s" })\n@Other()\nexport default class S {}`,
+    `/** what S does */\n// eslint-disable-next-line max-classes-per-file\n@Injectable()\nexport class S {}`,
+    `/** what S does */\n@Injectable() // provided in root\nexport class S {}`,
+  ]) {
+    assert.deepEqual(docHits(src).map((x) => x.conforming), [true], src);
+  }
+  // Decorators alone document nothing, and another statement's trailing
+  // comment still does not reach past them.
+  assert.deepEqual(docHits(`@Injectable()\nexport class S {}`).map((x) => x.conforming), [false]);
+  assert.deepEqual(
+    docHits(`const x = 1 // note\n@Injectable()\nexport class S {}`).map((x) => x.conforming),
+    [false]
+  );
+});
+
+/* --- a dotted file stem is not an asset --- */
+
+test("a dotted file stem imported without its extension is a site, not an asset", () => {
+  // `./user.service` names `user.service.ts`. Angular and NestJS name every file
+  // that way, and `*.types.ts` and `*.config.ts` are everywhere, but any dotted
+  // suffix read as an asset's extension: a directory writing 40 of its 120
+  // relative imports with `.js` stated the claim at 40 of 40, and the check
+  // never flagged the missing `.js` that node16 and nodenext refuse (TS2835).
+  const r = counts("import_extension", `
+    import { UserService } from "./user.service"
+    import { AppModule } from "./app.module"
+    import type { Opts } from "../types/opts.types"
+    import { CreateUserDto } from "../dto/create-user.dto"
+    import { helper } from "./helper.js"
+  `);
+  assert.deepEqual(r, { candidates: 5, conforming: 1 });
+});
+
+test("every asset format is still imported by its full name and is not a site", () => {
+  // Written out rather than read from the table, so a format dropped from it
+  // fails here instead of turning every import of that format into a violation.
+  for (const ext of [
+    "css", "scss", "sass", "less", "styl", "pcss",
+    "svg", "png", "jpg", "jpeg", "gif", "webp", "avif", "ico", "bmp",
+    "woff", "woff2", "ttf", "otf", "eot",
+    "mp3", "mp4", "webm", "wav", "ogg",
+    "json", "json5", "yaml", "yml", "toml", "csv", "txt", "xml", "html", "md", "mdx",
+    "vue", "svelte", "astro", "graphql", "gql", "wasm", "node", "glsl", "wgsl",
+  ]) {
+    assert.equal(hits("import_extension", `import a from "./asset.${ext}"`).length, 0, ext);
+  }
+  assert.equal(hits("import_extension", `import a from "./Photo.JPG"`).length, 0, "the format, whatever its case");
+  assert.equal(hits("import_extension", `import s from "./Button.module.scss"`).length, 0, "the last suffix decides");
+});
+
+/* --- a decorated signature's types are emitted as values --- */
+
+test("a type the decorator metadata emits is a value read, so its import is not type-only", () => {
+  // Under emitDecoratorMetadata the compiler writes a decorated constructor's
+  // parameter types into `design:paramtypes` as values, and a decorated
+  // member's into `design:type` and `design:returntype`. With `import type`
+  // that emit becomes `Object` and Nest cannot resolve the dependency, so the
+  // check's FIX compiled cleanly and failed only at runtime, and the map named
+  // the correct DI imports as the directory's exceptions.
+  for (const src of [
+    `import { Repo } from "./r";\n@Injectable()\nexport class S { constructor(private readonly repo: Repo) {} }`,
+    `import { Repo } from "./r";\nexport class S { constructor(@Inject(T) repo: Repo) {} }`,
+    `import { Repo } from "./r";\n@Injectable()\nexport class S { constructor(repo: Repo | null) {} }`,
+    `import { Name } from "./n";\nexport class E { @Column() name: Name }`,
+    `import { Id } from "./i";\nexport class C { @Get() find(id: Id) {} }`,
+    `import { Out } from "./o";\nexport class C { @Get() find(): Out { return null as any } }`,
+    `import { G } from "./g";\nexport class C { @Dec() get g(): G { return null as any } }`,
+    `import * as ns from "./ns";\n@Injectable()\nexport class S { constructor(q: ns.Q) {} }`,
+  ]) {
+    assert.equal(hits("type_only_import", src).length, 0, src);
+  }
+});
+
+test("a type the decorator metadata does not emit is still a site", () => {
+  // Only the serialised reference is emitted: a generic's argument, an array's
+  // element and a union of two types become `Promise`, `Array` and `Object`,
+  // and an undecorated class or member emits nothing at all.
+  for (const src of [
+    `import { Out } from "./o";\nexport class C { @Get() find(): Promise<Out> { return null as any } }`,
+    `import { Item } from "./i";\n@Injectable()\nexport class S { constructor(items: Item[]) {} }`,
+    `import { A } from "./a";\n@Injectable()\nexport class S { constructor(x: A | string) {} }`,
+    `import { Repo } from "./r";\nexport class S { constructor(repo: Repo) {} }`,
+    `import { Repo } from "./r";\nexport class S { @Get() find() {} helper(repo: Repo) {} }`,
+  ]) {
+    assert.deepEqual(counts("type_only_import", src), { candidates: 1, conforming: 0 }, src);
+  }
+});
+
+test("a TypeScript module extension is carried as much as a JavaScript one", () => {
+  // Once an unknown suffix counts, `.mts` and `.cts` would read as extensionless
+  // unless the row knows them for the source extensions they are.
+  assert.deepEqual(counts("import_extension", `import a from "./a.mts"\nimport b from "./b.cts"`), {
+    candidates: 2,
+    conforming: 2,
+  });
+});
+
+/* --- a ! nobody can write is no counter-site --- */
+
+test("a plain JavaScript file is not asked to prefer ?. over a ! it cannot write", async () => {
+  // `o!.a` is a SyntaxError in a .js or .mjs file, so every ?. there was a
+  // conforming site with no possible counter-site: this repository's own lib,
+  // sixty .mjs files and no TypeScript, stated the row at 190 of 190, a
+  // language default holding a line of always-loaded context that the check
+  // could never enforce.
+  const { parseFile } = await import("../plugins/anatomiya/lib/parse-file.mjs");
+  const src = "export const pick = (o) => o?.a\n";
+
+  for (const [rel, lang] of [["src/a.js", "js"], ["src/a.mjs", "js"], ["src/a.cjs", "js"], ["src/a.jsx", "jsx"]]) {
+    const r = await parseFile(src, rel, lang);
+    assert.equal(r.ok, true, rel);
+    assert.equal(r.hits.non_null_assertion, undefined, rel);
+  }
+  const ts = await parseFile(src, "src/a.ts", "js");
+  assert.equal(ts.hits.non_null_assertion.length, 1, "a TypeScript file still answers it");
+});
+
+/* --- a void over an effect is a guard, not a spelling of undefined --- */
+
+test("a return that voids a call is the guard clause it abbreviates", () => {
+  // `return void missing.push(x)` is `missing.push(x); return` on one line,
+  // and the bare return is already not a site. Counted as an explicit
+  // undefined, three such exits made revision.mjs the one exception this
+  // repository's lib printed under "an absent value is returned as null".
+  for (const src of [
+    `function f(x) { if (!x) return void missing.push(x); return null }`,
+    `function f(x) { if (!x) return void (seen = x); return null }`,
+    `const f = (x) => { if (!x) return void notify(x); return null }`,
+  ]) {
+    assert.deepEqual(counts("absent_is_null", src), { candidates: 1, conforming: 1 }, src);
+  }
+  assert.equal(hits("absent_is_null", `const onClick = () => void submit()`).length, 0, "an arrow discarding a promise");
+  // `void 0` runs nothing and is the old spelling of undefined itself.
+  assert.deepEqual(counts("absent_is_null", `function f(x) { if (!x) return void 0; return null }`), {
+    candidates: 2,
+    conforming: 1,
+  });
+});
+
+/* --- classic-runtime JSX reads its factory as a value --- */
+
+const withExtras = (key, src) => {
+  const { program, comments } = parseSync("f.tsx", src, { sourceType: "module" });
+  const out = [];
+  dim(key).run(program, (h) => out.push(h), { comments, source: src });
+  return out;
+};
+
+test("a JSX file reads React as a value, so its import is not type-only", () => {
+  // Under the classic runtime `<div/>` compiles to `React.createElement`, so a
+  // file whose only written use of React is `React.PropsWithChildren` still
+  // reads it, and `import type React` there is TS1361 under --jsx react.
+  const src = `import React from "react";\nexport function A(p: React.PropsWithChildren) { return <div>{p.children}</div> }`;
+  assert.equal(withExtras("type_only_import", src).length, 0);
+  const frag = `import React from "react";\nexport function A(p: React.PropsWithChildren) { return <>{p.children}</> }`;
+  assert.equal(withExtras("type_only_import", frag).length, 0, "a fragment compiles to React.Fragment");
+  // Without JSX nothing reads it, and it is still a site.
+  const plain = `import React from "react";\nexport function A(p: React.PropsWithChildren) { return null }`;
+  assert.deepEqual(withExtras("type_only_import", plain).map((h) => h.conforming), [false]);
+});
+
+test("a @jsx or @jsxFrag pragma names the factory JSX reads", () => {
+  for (const src of [
+    `/** @jsx h */\nimport { h } from "preact";\nlet t: typeof h;\nexport const A = () => <div/>`,
+    `/** @jsx preact.h */\nimport * as preact from "preact";\nlet t: preact.VNode;\nexport const A = () => <div/>`,
+    `/** @jsxFrag Frag */\nimport { Frag } from "./f";\nlet t: Frag;\nexport const A = () => <></>`,
+  ]) {
+    assert.equal(withExtras("type_only_import", src).length, 0, src);
+  }
+});
+
+/* --- an asset is any format a bundler is handed whole --- */
+
+test("the rest of the formats a bundler is handed whole are not sites either", () => {
+  // Each read as an extensionless source import, so `import doc from
+  // "./manual.pdf"` was a violation asking for a `.js` nothing resolves.
+  for (const ext of [
+    "pdf", "webmanifest", "jsonc", "hbs", "ejs", "po", "properties", "glb", "gltf", "sql",
+    "frag", "vert", "mov", "proto", "coffee", "es6",
+  ]) {
+    assert.equal(hits("import_extension", `import a from "./asset.${ext}"`).length, 0, ext);
+  }
+});
+
+test("a source extension conforms whatever its case", () => {
+  assert.deepEqual(counts("import_extension", `import a from "./x.JS"\nimport b from "./y.Ts"`), {
+    candidates: 2,
+    conforming: 2,
+  });
+});
+
+test("a specifier ending in . or .. names a directory", () => {
+  for (const spec of ["./dir/..", "./dir/.", "../..", "./."]) {
+    assert.equal(hits("import_extension", `import a from "${spec}"`).length, 0, spec);
+  }
+});
+
+/* --- a default export is an overload set too --- */
+
+test("a default-exported overload set is not a function-style site", () => {
+  const src = `export default function f(a: string): string;\nexport default function f(a: any) { return a }`;
+  assert.deepEqual(counts("function_style", src), { candidates: 0, conforming: 0 });
+});
+
+test("an overload implementation whose signatures all declare a return type conforms", () => {
+  // The signatures are the boundary a caller sees: the implementation's own
+  // signature is not callable from outside, so asking it for a type asks for a
+  // line no caller reads.
+  for (const src of [
+    `export function f(a: string): string;\nexport function f(a: number): number;\nexport function f(a: any) { return a }`,
+    `export default function f(a: string): string;\nexport default function f(a: any) { return a }`,
+  ]) {
+    const h = hits("explicit_return_type", src).filter((x) => x.node.type === "FunctionDeclaration");
+    assert.deepEqual(h.map((x) => x.conforming), [true], src);
+  }
+  const partly = `export function f(a: string): string;\nexport function f(a: number);\nexport function f(a: any) { return a }`;
+  const h = hits("explicit_return_type", partly).filter((x) => x.node.type === "FunctionDeclaration");
+  assert.deepEqual(h.map((x) => x.conforming), [false], "one unannotated signature leaves the boundary untyped");
+});
+
+test("a default-exported hook is a hook the module exports", () => {
+  assert.deepEqual(counts("hook_per_module", `export function useA() {}\nexport default function useB() {}`), {
+    candidates: 1,
+    conforming: 0,
+  });
+  assert.deepEqual(counts("hook_per_module", `const useB = () => 1\nexport default useB`), {
+    candidates: 1,
+    conforming: 1,
+  });
+  assert.equal(hits("hook_per_module", `export default function Page() {}`).length, 0);
+});
+
+test("expect.soft and expect.poll are expect sites, and the matchers hanging off expect are not", () => {
+  assert.deepEqual(counts("assertion_style", `expect.soft(x).toBe(1)\nexpect.poll(fn).toBe(1)`), {
+    candidates: 2,
+    conforming: 2,
+  });
+  assert.equal(
+    hits("assertion_style", `expect.any(Number)\nexpect.assertions(1)\nexpect.extend({})\nexpect.objectContaining({})`).length,
+    0
+  );
+});
+
+test("a forEach on a library namespace or with a collection argument is not an array's", () => {
+  for (const src of [
+    `_.forEach(obj, fn)`,
+    `lodash.forEach(obj, fn)`,
+    `React.Children.forEach(children, fn)`,
+    `async.forEach(items, fn, done)`,
+    `$.forEach(items, fn)`,
+    `store.forEach(items, fn)`,
+  ]) {
+    assert.equal(hits("iterate_with_for_of", src).length, 0, src);
+  }
+  // `thisArg` is the array method's own second parameter.
+  assert.equal(hits("iterate_with_for_of", `items.forEach(function (x) { this.use(x) }, ctx)`).length, 1);
+  assert.equal(hits("iterate_with_for_of", `items.forEach(use)`).length, 1);
+});
+
+test("a TODO or a license header above an export is not its doc comment", () => {
+  for (const src of [
+    `// TODO: split this\nexport function a() {}`,
+    `/* FIXME later */\nexport function a() {}`,
+    `// HACK around x\nexport function a() {}`,
+    `/*! Copyright 2024 Acme */\nexport function a() {}`,
+    `// SPDX-License-Identifier: MIT\nexport function a() {}`,
+    `/**\n * @license MIT\n */\nexport function a() {}`,
+  ]) {
+    assert.deepEqual(docHits(src).map((x) => x.conforming), [false], src);
+  }
+  // A doc comment under a license header still attaches.
+  assert.deepEqual(
+    docHits(`// SPDX-License-Identifier: MIT\n/** what a does */\nexport function a() {}`).map((x) => x.conforming),
+    [true]
+  );
+  assert.deepEqual(docHits(`/** what a does */\nexport function a() {}`).map((x) => x.conforming), [true]);
 });

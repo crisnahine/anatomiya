@@ -13,8 +13,11 @@ import { CAPABILITY_WORDS, implementsCapability, stemWords } from "./dimensions-
  * for "models inherit from ApplicationRecord" or "workers define perform".
  */
 
+// The `after_*_commit` shorthands are `after_commit` with an `on:` filled in,
+// and they are how Rails 5 and 6 recommend spelling it. Without them a model
+// directory built on them read as keeping behaviour out of callbacks entirely.
 const CALLBACK =
-  /^(before|after|around)_(validation|save|create|update|destroy|commit|rollback|touch|initialize|find)$/;
+  /^((before|after|around)_(validation|save|create|update|destroy|commit|rollback|touch|initialize|find)|after_(create|update|destroy|save)_commit)$/;
 const ENTRY = /^(call|perform|execute|run)$/;
 const SIDEKIQ_JOB = /^Sidekiq::(Worker|Job)$/;
 // The reads and the constructions that go through the application zone. Without
@@ -95,6 +98,18 @@ function nestingOf(ctx, body = null) {
 }
 
 /**
+ * Whether a call sits in a `class << self` of its enclosing class or module.
+ *
+ * `ctx.cls` skips over the singleton class, so an `include` inside one read as
+ * an include into the class itself. It mixes into the metaclass instead, which
+ * is `extend` by another spelling: the class's instances never carry it.
+ */
+function inSingletonClass(ctx) {
+  const from = ctx.stack.lastIndexOf(ctx.cls);
+  return ctx.stack.slice(from + 1).some((x) => x.t === "singleton_class");
+}
+
+/**
  * The class bodies that directly include Sidekiq's worker mixin.
  *
  * Collected in a pass of its own because the include may sit below the def, and
@@ -110,7 +125,7 @@ function sidekiqBodies(ast) {
   const bodies = new Set();
   walkRuby(ast, (n, ctx) => {
     if (n.t !== "call" || n.receiver || n.name !== "include") return;
-    if (ctx.def || !ctx.cls) return;
+    if (ctx.def || !ctx.cls || inSingletonClass(ctx)) return;
     for (const arg of args(n)) {
       if (SIDEKIQ_JOB.test(constName(arg) || "")) bodies.add(ctx.cls);
     }
@@ -135,7 +150,7 @@ export const RUBY_DIMENSIONS = [
         if (n.t !== "rescue") return;
         const name = n.reference && n.reference.name;
         const stmts = n.statements;
-        const handled = !isEmpty(stmts) && (readsLocal(stmts, name) || reraises(stmts));
+        const handled = !isEmpty(stmts) && (readsBinding(stmts, name) || reraises(stmts));
         add({ node: site(n), conforming: handled, where: where(ctx) });
       });
     },
@@ -225,7 +240,7 @@ export const RUBY_DIMENSIONS = [
         if (n.name === "perform" && sidekiq.has(ctx.cls)) return;
         let raises = false;
         walkRuby(n.body, (m, mctx) => {
-          if (m.t !== "call" || m.name !== "raise" || m.receiver) return;
+          if (m.t !== "call" || !RAISE.test(m.name) || m.receiver) return;
           // A raise inside a rescue is a translation of someone else's error,
           // not this method's choice about how it reports failure.
           if (mctx.ancestors.some((a) => a.t === "rescue")) return;
@@ -286,7 +301,7 @@ export const RUBY_DIMENSIONS = [
     counterClaim: null,
     precision: "precise",
     applicabilityPredicate: {
-      sites: "a Ruby file calling Time.now, DateTime.now, Time.new, DateTime.new, Date.today, current on any of the three, or now, today, local, parse or at on Time.zone",
+      sites: "a Ruby file calling Time.now, DateTime.now, Time.new, DateTime.new, Date.today, Time.local, Time.parse, Time.at, current on any of the three, or now, today, local, parse or at on Time.zone",
       blind: null,
     },
     langs: ["ruby"],
@@ -300,7 +315,11 @@ export const RUBY_DIMENSIONS = [
           // so the application zone never reaches the value. Any arity: a bare
           // `Time.new` is `Time.now` under another name.
           const clock = recv === "Time" || recv === "DateTime";
-          if ((clock && (n.name === "now" || n.name === "new")) || (recv === "Date" && n.name === "today")) {
+          // `Time.local`, `Time.parse` and `Time.at` are the unzoned twins of
+          // the constructions counted as conforming on `Time.zone`. Counting
+          // one half of a pair made a directory of both read 40 of 40.
+          const unzoned = recv === "Time" && /^(local|parse|at)$/.test(n.name);
+          if ((clock && (n.name === "now" || n.name === "new")) || unzoned || (recv === "Date" && n.name === "today")) {
             return add({ node: site(n), conforming: false, where: where(ctx) });
           }
           if (/^(Time|Date|DateTime)$/.test(recv) && n.name === "current") {
@@ -351,7 +370,7 @@ export const RUBY_DIMENSIONS = [
     counterClaim: null, // same as logger_over_puts: no wrapper means the question is never asked
     precision: "partial",
     applicabilityPredicate: {
-      sites: "a Ruby file calling Net::HTTP or URI.open, or making a verb-shaped call (get, post, put, patch, delete, head, request, call, perform, execute, fetch) through a constant or variable named client, http, api, request or fetcher; the file whose own stem is nothing but that vocabulary is the client itself and is not a site",
+      sites: "a Ruby file calling Net::HTTP, RestClient, HTTPClient, HTTParty, Faraday, Excon, Typhoeus, HTTP, HTTPX or URI.open, or making a verb-shaped call (get, post, put, patch, delete, head, request, call, perform, execute, fetch) through a constant or variable named client, http, api, request or fetcher; the file whose own stem is nothing but that vocabulary is the client itself and is not a site",
       blind: "a client behind another name or a non-verb method is not seen, and a model that happens to be called Client with a verb-named scope still counts",
     },
     langs: ["ruby"],
@@ -361,7 +380,7 @@ export const RUBY_DIMENSIONS = [
       walkRuby(ast, (n, ctx) => {
         if (n.t !== "call") return;
         const recv = constName(n.receiver);
-        if (recv === "Net::HTTP" || (recv && recv.startsWith("Net::HTTP::"))) {
+        if (recv && directHttp(recv)) {
           return add({ node: site(n), conforming: false, where: where(ctx) });
         }
         if (recv === "URI" && n.name === "open") {
@@ -447,7 +466,7 @@ export const RUBY_DIMENSIONS = [
     counterClaim: null, // the other side is another module, which the learning already picks
     precision: "precise",
     applicabilityPredicate: {
-      sites: "a Ruby class or module body that includes something, counted once each, and a class body that includes nothing, names no superclass and is not nested inside another class, which is a site conforming to no module and is where the forgotten include is caught. A module including nothing is namespacing, a subclass may be handed the mixin by its base, and a class inside a class is that class's helper, so none of those three is a site. Nor is a body that prepends or extends a constant, which declared a mixin by another route, nor a reopening of a class that declares one elsewhere in the file. A call inside a method runs when the method does and is not a mixin the body declares",
+      sites: "a Ruby class or module body that includes something, counted once each, and a class body that includes nothing, names no superclass and is not nested inside another class, which is a site conforming to no module and is where the forgotten include is caught. A module including nothing is namespacing, a subclass may be handed the mixin by its base, and a class inside a class is that class's helper, so none of those three is a site. Nor is a body that prepends or extends a constant, or includes one inside `class << self`, which declared a mixin by another route, nor a reopening of a class that declares one elsewhere in the file. A call inside a method runs when the method does and is not a mixin the body declares",
       blind: null,
     },
     langs: ["ruby"],
@@ -459,17 +478,15 @@ export const RUBY_DIMENSIONS = [
       const bodies = new Map();
       // A short name is not an identity: `A::Worker` and `B::Worker` in one file
       // are two bodies, and told apart by `Worker` alone they fingerprint alike.
-      const qualify = (ctx, n) =>
-        [...ctx.stack.filter((x) => x.t === "class" || x.t === "module"), n]
-          .map((x) => x.name)
-          .filter(Boolean)
-          .join("::");
+      // prism's `name` is the last segment even of a compact path, so the path
+      // is read whole, as `qualifiedName` does: named `Worker`, B's include
+      // counted as A's declaration and A's missing one was never a site.
       walkRuby(ast, (n, ctx) => {
         if (n.t === "class" || n.t === "module") {
           // `ctx.cls` is the enclosing body, since the walk visits before it
           // pushes. A module namespaces what it holds; a class owns it.
           if (!bodies.has(n)) {
-            const name = qualify(ctx, n);
+            const name = qualifiedName(ctx, n);
             bodies.set(n, {
               node: n,
               name,
@@ -487,7 +504,9 @@ export const RUBY_DIMENSIONS = [
         if (n.name !== "include" && n.name !== "prepend" && n.name !== "extend") return;
         const body = ctx.def || !ctx.cls ? null : bodies.get(ctx.cls);
         if (!body) return;
-        if (n.name !== "include") {
+        // `class << self; include M; end` is `extend M`: a mixin declared, but
+        // not one the class's instances carry, so no vote for M.
+        if (n.name !== "include" || inSingletonClass(ctx)) {
           if (args(n).some((arg) => constName(arg))) body.declares = true;
           return;
         }
@@ -533,6 +552,20 @@ export const RUBY_DIMENSIONS = [
 ];
 
 const LOG_DIRECT = /^(puts|print|p|pp|warn)$/;
+// Kernel#fail is raise under another name, and the "fail to signal, raise to
+// re-raise" style spells half its raises with it.
+const RAISE = /^(raise|fail)$/;
+
+/**
+ * The HTTP libraries a wrapper wraps, the way axios is on the JS side. A
+ * closed table rather than a name test, because `RestClient` and `HTTPClient`
+ * carry the client vocabulary in their own names: forty files calling
+ * RestClient.get read as routing through a repository client that did not
+ * exist, and flagged the one Net::HTTP call as the deviation.
+ */
+const HTTP_LIBRARIES = ["Net::HTTP", "RestClient", "HTTPClient", "HTTParty", "Faraday", "Excon", "Typhoeus", "HTTP", "HTTPX"];
+
+const directHttp = (recv) => HTTP_LIBRARIES.some((lib) => recv === lib || recv.startsWith(`${lib}::`));
 const HTTP_VERB = /^(get|post|put|patch|delete|head|request|call|perform|execute|fetch)$/;
 
 /** A receiver that is a logger: `logger.info`, `Rails.logger.warn`, `@logger.debug`. */
@@ -570,11 +603,18 @@ function isEmpty(stmts) {
   return bodyOf(stmts).length === 0;
 }
 
-function readsLocal(stmts, name) {
-  if (!name) return false;
+/**
+ * Whether the rescue body reads what the clause bound. `rescue => @error`
+ * binds the error as surely as `rescue => e`, and an instance variable's name
+ * keeps its `@`, so the two reads cannot be mistaken for each other.
+ */
+function readsBinding(stmts, name) {
   let used = false;
   walkRuby(stmts, (n) => {
-    if (n.t === "local_variable_read" && n.name === name) used = true;
+    if (name && (n.t === "local_variable_read" || n.t === "instance_variable_read") && n.name === name) used = true;
+    // `$!` is the error being handled whether or not the clause bound it, so
+    // `rescue; log($!)` read as a swallow. `$ERROR_INFO` is English's name for it.
+    if (n.t === "global_variable_read" && (n.name === "$!" || n.name === "$ERROR_INFO")) used = true;
   });
   return used;
 }
@@ -582,7 +622,7 @@ function readsLocal(stmts, name) {
 function reraises(stmts) {
   let found = false;
   walkRuby(stmts, (n) => {
-    if (n.t === "call" && n.name === "raise" && !n.receiver) found = true;
+    if (n.t === "call" && RAISE.test(n.name) && !n.receiver) found = true;
   });
   return found;
 }

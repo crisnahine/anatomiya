@@ -2,10 +2,10 @@
 /**
  * Which plugin a tag releases, and the notes that go with it.
  *
- * The marketplace lists two plugins that answer to different upstreams and move
- * on their own versions. One tag namespace and one changelog served both, and
- * the dangerous shape was not a tag that failed: it was a bare
- * `v0.1.0`, which matched the second plugin's version, found no section of its
+ * The marketplace can list plugins that answer to different upstreams and move
+ * on their own versions; it once listed two. One tag namespace and one
+ * changelog served both, and the dangerous shape was not a tag that failed: it
+ * was a bare `v0.1.0`, which matched the second plugin's version, found no section of its
  * own, and released anatomiya's `0.1.0` notes instead, silently.
  *
  * A module rather than the shell it grew out of, because a release is the one

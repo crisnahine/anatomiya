@@ -1,8 +1,17 @@
 version: 2
 
-# Monthly and grouped. There are two runtime dependencies and three actions, so a
+# Monthly and grouped. There are two runtime dependencies and a handful of actions, so a
 # weekly ungrouped schedule would open more pull requests than there is work.
 updates:
+  # The root only, on purpose. `plugins/anatomiya/package-lock.json` is not
+  # resolved on its own: `scripts/plugin-lock.mjs` seeds it from this root
+  # lockfile and prunes it to what the plugin declares, so the two never pin
+  # different versions. An entry for `/plugins/anatomiya` would resolve that
+  # directory afresh, which is the drift `plugin-lock.mjs --check` refuses.
+  # A bump here that moves a runtime dependency is followed by
+  # `.github/workflows/dependabot-lock.yml`, which regenerates the plugin's
+  # lockfile with that same script on the Dependabot branch, pushes it, and
+  # starts ci on the new commit. ci itself still only reads the repository.
   - package-ecosystem: npm
     directory: "/"
     schedule:

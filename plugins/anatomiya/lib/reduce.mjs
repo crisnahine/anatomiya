@@ -3,7 +3,7 @@ import { pairingsFor } from "./pairing.mjs";
 import { claimFor } from "./dimensions-naming.mjs";
 import { rowsOfKind } from "./registry.mjs";
 import { dirCount } from "./areas.mjs";
-import { holdsTypeSyntax, language } from "./langs.mjs";
+import { holdsTypeSyntax, language, spokenIn } from "./langs.mjs";
 import { defaultSideFor, defaultClassFor } from "./model-defaults.mjs";
 
 export const GATES = {
@@ -133,16 +133,25 @@ export function reduceArea(area, parsed, { frameworks, tier = "syntactic", capab
   // list is what the parse worker runs and a pairing has no program to run
   // against. Both kinds produce the same hit shape, so the fold is blind to the
   // difference; only the companion count asks which kind this is.
+  const langByRel = new Map((area.files || []).map((f) => [f.rel, f.lang]));
+  // The area's languages are its extensions, and a `.js` component speaks JSX
+  // its extension does not say, so the tree rows are chosen for what the
+  // records read rather than for the names alone: an area written wholly in
+  // `.js` otherwise held no JSX row to fold the worker's hits into.
+  const spoken = new Set(area.langs);
+  for (const file of parsed) {
+    if (!wasRead(file)) continue;
+    for (const l of spokenIn(langByRel.get(file.rel) ?? language(file.rel), file.facets)) spoken.add(l);
+  }
   const dims = [
     // `rows` governs the tree pool alone; the two lists below are added for the
     // area's languages whatever it holds.
-    ...dimensionsFor(area.langs, { frameworks, tier, capabilities, rows }),
+    ...dimensionsFor([...spoken], { frameworks, tier, capabilities, rows }),
     ...pairingsFor(area.langs),
     // Corpus rows ask about filenames, so they have no program to run against
     // and no worker hit to read; the fold builds their sites itself below.
     ...rowsOfKind("corpus").filter((d) => d.langs.some((l) => area.langs.includes(l))),
   ];
-  const langByRel = new Map((area.files || []).map((f) => [f.rel, f.lang]));
   // The records themselves, for the rows whose population depends on what kind
   // of file a site sits in rather than on the site alone.
   const byRel = new Map(parsed.map((f) => [f.rel, f]));
@@ -199,8 +208,10 @@ export function reduceArea(area, parsed, { frameworks, tier = "syntactic", capab
     // "10 of 10 sites across 10 of 20 files" over a directory where the other
     // ten were never asked. A plain JavaScript file cannot carry a type
     // annotation at all, which is the same argument one step further back.
+    // A `.js` file is one a JSX row could speak about exactly where its tree
+    // holds JSX, and a `.js` helper beside it stays out as a `.ts` one does.
     const eligible = (e) =>
-      dim.langs.includes(e.lang) &&
+      spokenIn(e.lang, e.facets).some((l) => dim.langs.includes(l)) &&
       !(e.stripped && dim.blindWhenStripped) &&
       !(dim.needsTypeSyntax && !holdsTypeSyntax(e.rel, e.facets));
     let langFileCount = examined.filter(eligible).length;
@@ -217,7 +228,7 @@ export function reduceArea(area, parsed, { frameworks, tier = "syntactic", capab
       }
       if (!file.hits) continue;
       const lang = langByRel.get(file.rel);
-      if (lang !== undefined && !dim.langs.includes(lang)) continue;
+      if (lang !== undefined && !spokenIn(lang, file.facets).some((l) => dim.langs.includes(l))) continue;
       // Counted where the file was parsed, so no tree crosses a process
       // boundary to be walked again on this one core. A dimension that threw
       // there dropped its own key for this file and left the rest standing.
@@ -259,10 +270,15 @@ export function reduceArea(area, parsed, { frameworks, tier = "syntactic", capab
     // A learned-class dimension settles its side here: the plurality class is
     // the sentence, conforming follows it, and a tie is no slot at all.
     let learned;
+    let reaches = [];
     if (dim.learnedClasses) {
       const grouped = dim.groupedSites === true;
       learned = learnClass(perFile, { grouped });
       if (learned === null) continue;
+      const parents = grouped ? null : parentsIn(perFile);
+      // Kept for the check, which re-runs the predicate on the files a branch
+      // changed and never holds the rest of the area's classes.
+      reaches = parents ? [...parents.keys()].filter((c) => reachesThrough(c, learned, parents)).sort() : [];
       // New arrays, never mutation: the baseline map and the corpus map hold
       // the same record object for every file unchanged since the pin.
       for (const [rel, hits] of perFile) {
@@ -276,7 +292,12 @@ export function reduceArea(area, parsed, { frameworks, tier = "syntactic", capab
         }
         perFile.set(
           rel,
-          grouped ? groupSites(own, learned) : own.map((h) => ({ ...h, conforming: sameConstant(h.class, learned, h.nesting) }))
+          grouped
+            ? groupSites(own, learned)
+            : own.map((h) => ({
+                ...h,
+                conforming: sameConstant(h.class, learned, h.nesting) || reachesThrough(h.class, learned, parents),
+              }))
         );
       }
       if (perFile.size === 0) continue;
@@ -289,12 +310,19 @@ export function reduceArea(area, parsed, { frameworks, tier = "syntactic", capab
     // Only a dimension permitted to state its inverse carries the flipped list,
     // so a one-sided one costs no extra bytes on disk.
     const counterExceptions = dim.counterClaim ? [] : null;
+    // Which files carry each side, so the author gate asks who wrote the habit
+    // being stated. A person whose only file breaks the habit is not a second
+    // pair of hands holding it (D4).
+    const claimFiles = [];
+    const counterFiles = [];
 
     for (const [rel, hits] of perFile) {
       candidates += hits.length;
       const bad = hits.filter((h) => !h.conforming);
       conforming += hits.length - bad.length;
       elsewhere += hits.filter((h) => h.elsewhere).length;
+      if (bad.length < hits.length) claimFiles.push(rel);
+      if (bad.length) counterFiles.push(rel);
       if (bad.length) exceptions.push({ path: rel, count: bad.length });
       if (counterExceptions && bad.length < hits.length) {
         counterExceptions.push({ path: rel, count: hits.length - bad.length });
@@ -320,6 +348,8 @@ export function reduceArea(area, parsed, { frameworks, tier = "syntactic", capab
       // renderer prints this one only where there is something to disclose.
       ...(declined.size ? { declined: declined.size } : {}),
       files: [...perFile.keys()],
+      claimFiles,
+      counterFiles,
       ...spread(perFile, candidates),
       // The path breaks ties, so the three that print do not depend on
       // filesystem order between two scans of unchanged source (A5).
@@ -338,6 +368,9 @@ export function reduceArea(area, parsed, { frameworks, tier = "syntactic", capab
       // Which kind of file the class was learned over, so the check judges the
       // same population the map measured.
       ...(learnedKind === undefined ? {} : { learnedKind }),
+      // The area's own classes whose chain reaches the learned base, so the check
+      // agrees with the fold about a subclass of one of them. Only when there are any.
+      ...(reaches.length ? { reaches } : {}),
       // Whether the sentence names that kind. The check builds its own text
       // from the registry template, and without this it quoted the unqualified
       // sentence, the one that pools the excluded files back in.
@@ -440,6 +473,43 @@ export function sameConstant(written, learned, nesting) {
 }
 
 /**
+ * The superclass each class in the area names, by its qualified name.
+ *
+ * A row sees one file at a time, so `class Admin < User` cannot know that
+ * `User < ApplicationRecord` sits two files over; the fold holds every class
+ * the area declares, which is the only place the chain can be followed.
+ */
+function parentsIn(perFile) {
+  const parents = new Map();
+  for (const hits of perFile.values()) {
+    for (const h of hits) {
+      if (typeof h.self === "string" && typeof h.class === "string" && !parents.has(h.self)) parents.set(h.self, h.class);
+    }
+  }
+  return parents;
+}
+
+/**
+ * Whether a base the area itself declares inherits the learned class, however
+ * many steps up. Single-table inheritance is the case: read against the
+ * learned base alone, `class Admin < User` was the one exception in "models
+ * inherit ApplicationRecord", and the check asked the agent to break the
+ * hierarchy to satisfy it. Names match exactly, for the reason
+ * `isLearnedItself` gives, and a cycle, a NameError in Ruby, ends here and
+ * conforms to nothing.
+ */
+function reachesThrough(base, learned, parents) {
+  if (!parents || typeof learned !== "string") return false;
+  const seen = new Set();
+  for (let at = base; typeof at === "string" && parents.has(at) && !seen.has(at); ) {
+    seen.add(at);
+    at = parents.get(at);
+    if (at === learned) return true;
+  }
+  return false;
+}
+
+/**
  * Whether this site is the very class the area learned.
  *
  * `class ApplicationRecord < ApplicationRecord` is a NameError, so the base
@@ -534,6 +604,9 @@ function spread(perFile, candidates) {
  */
 export function applyGates(dim, {
   authors,
+  // Who wrote the counter sites, where the caller counted them apart. A caller
+  // holding one count for both sides means the same people wrote both.
+  counterAuthors = authors,
   repoAuthors,
   historyRead = true,
   // What of the history was read, where it was not all of it. Absent means the
@@ -572,11 +645,12 @@ export function applyGates(dim, {
   const dimDirs = distinctDirs(files);
   const required = historyRead ? authorsRequired(repoAuthors, { shallow }) : null;
 
-  // The same battery, run once per side. Only the numerator moves: how many
-  // files the sites are spread over, how much of the area the construct
-  // reaches and who wrote it are facts about where the sites are, not about
-  // which way they point.
-  const judge = (k, topK, restK) => {
+  // The same battery, run once per side. The numerator moves, and so do the
+  // hands: how many files the sites are spread over and how much of the area
+  // the construct reaches are facts about where the sites are, but who wrote
+  // them is a fact about the side. One person's habit is not a convention, and
+  // the colleague whose only file breaks it does not make it two people's (D4).
+  const judge = (k, topK, restK, hands) => {
     const ratio = candidates ? k / candidates : 0;
     const bound = wilsonLower(k, candidates);
     const looRatio = looCandidates > 0 ? (k - topK) / looCandidates : 0;
@@ -609,7 +683,7 @@ export function applyGates(dim, {
       ["applicability", denominator > 0 && applicability >= minApplicable],
       // `historyRead &&` is load-bearing: git failing is a third state, and
       // `0 >= null` is true.
-      [historyRead ? "authors" : "history-unread", historyRead && authors >= required],
+      [historyRead ? "authors" : "history-unread", historyRead && hands >= required],
       // The directory gate is skipped where it cannot be satisfied. Applied
       // unconditionally it blocked 124 of 170 measured slots, because area
       // discovery finds leaf directories and a leaf directory holds one.
@@ -629,7 +703,7 @@ export function applyGates(dim, {
     };
   };
 
-  const claim = judge(conforming, top.conforming || 0, restConforming);
+  const claim = judge(conforming, top.conforming || 0, restConforming, authors);
   // The leave-one-out reuses the file with the most candidates rather than the
   // most counter sites. The counter only reaches this gate at 0.90, so no other
   // file's counter sites can exceed that file's by more than a tenth of the
@@ -637,7 +711,8 @@ export function applyGates(dim, {
   const counter = judge(
     candidates - conforming,
     (top.candidates || 0) - (top.conforming || 0),
-    restCandidates - restConforming
+    restCandidates - restConforming,
+    counterAuthors
   );
   // The hand-written sentence is the whole permission. A dimension whose
   // inverse would be a defect never gets one, so it never gets a second side.
@@ -754,6 +829,7 @@ export function verdictFor(
     truncated = false,
     current,
     authors,
+    counterAuthors = authors,
     repoAuthors,
     historyRead = true,
     // What of the history was read, where it was not all of it (D11).
@@ -783,6 +859,7 @@ export function verdictFor(
   const source = baselineDim || dim;
   const g = applyGates(source, {
     authors,
+    counterAuthors,
     repoAuthors,
     historyRead,
     shallow,
@@ -815,7 +892,11 @@ export function verdictFor(
     directive: blocked ? false : g.directive,
     gate: blocked || g.gate,
     counterGate: blocked || g.counterGate,
-    authors,
+    // The hands behind the side the line is about: the counter's where the
+    // counter is stated, the claim's everywhere else, because an unstated
+    // slot reports the claim's gate.
+    authors: states === "counter" ? counterAuthors : authors,
+    counterAuthors,
     baseline: baselineDim
       ? {
           candidates: baselineDim.candidates,

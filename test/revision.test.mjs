@@ -205,3 +205,60 @@ test("the files come back in code-unit order, not the host's locale", async (t) 
   t.after(out.dispose);
   assert.deepEqual(out.files.map((f) => f.rel), ["B.js", "a.js", "ä.js"]);
 });
+
+test("two paths that differ only in case are written where neither overwrites the other", async (t) => {
+  // On a case-insensitive filesystem `src/Foo.ts` and `src/foo.ts` are one
+  // file in the temporary tree, so the second blob written replaced the first
+  // and one of the two was parsed with the other's contents. Simulated here by
+  // asking that no two destinations fold to the same name.
+  let sha;
+  const dir = repo(t, (d, { git }) => {
+    // Staged through the index, since a case-insensitive working tree holds
+    // only one of the three and the commit would too.
+    for (const [rel, which] of [["src/Foo.ts", "upper"], ["src/foo.ts", "lower"], ["SRC/FOO.ts", "shouting"]]) {
+      const blob = execFileSync("git", ["hash-object", "-w", "--stdin"], { cwd: d, input: `export const which = '${which}'\n` }).toString().trim();
+      git("update-index", "--add", "--cacheinfo", `100644,${blob},${rel}`);
+    }
+    git("commit", "-qm", "first");
+    sha = git("rev-parse", "HEAD").trim();
+  });
+
+  const out = await readAtRevision(dir, sha, [{ rel: "src/Foo.ts" }, { rel: "src/foo.ts" }, { rel: "SRC/FOO.ts" }]);
+  t.after(out.dispose);
+
+  const want = { "src/Foo.ts": "upper", "src/foo.ts": "lower", "SRC/FOO.ts": "shouting" };
+  assert.equal(out.files.length, 3);
+  for (const f of out.files) {
+    assert.equal(readFileSync(f.abs, "utf8"), `export const which = '${want[f.rel]}'\n`, f.rel);
+    assert.ok(f.abs.endsWith("FOO.ts") || f.abs.endsWith("Foo.ts") || f.abs.endsWith("foo.ts"), "the name, and the extension that picks the grammar, stay");
+  }
+  assert.equal(new Set(out.files.map((f) => f.abs.toLowerCase())).size, 3, out.files.map((f) => f.abs).join("\n"));
+  // The first asked keeps the plain path, which is where every other file sits.
+  assert.equal(out.files.find((f) => f.rel === "src/Foo.ts").abs, join(out.dir, "src", "Foo.ts"));
+});
+
+test("two paths that differ only in how their accents are encoded are written where neither overwrites the other", async (t) => {
+  // APFS also folds Unicode normalization, so `café.ts` composed and decomposed
+  // are one file there, as two cases are.
+  const composed = "src/caf\u00e9.ts";
+  const decomposed = "src/cafe\u0301.ts";
+  let sha;
+  const dir = repo(t, (d, { git }) => {
+    // Git on macOS composes every path it is handed unless told not to.
+    git("config", "core.precomposeUnicode", "false");
+    for (const [rel, which] of [[composed, "composed"], [decomposed, "decomposed"]]) {
+      const blob = execFileSync("git", ["hash-object", "-w", "--stdin"], { cwd: d, input: `export const which = '${which}'\n` }).toString().trim();
+      git("update-index", "--add", "--cacheinfo", `100644,${blob},${rel}`);
+    }
+    git("commit", "-qm", "first");
+    sha = git("rev-parse", "HEAD").trim();
+  });
+
+  const out = await readAtRevision(dir, sha, [{ rel: composed }, { rel: decomposed }]);
+  t.after(out.dispose);
+
+  const want = { [composed]: "composed", [decomposed]: "decomposed" };
+  assert.equal(out.files.length, 2);
+  for (const f of out.files) assert.equal(readFileSync(f.abs, "utf8"), `export const which = '${want[f.rel]}'\n`, f.rel);
+  assert.equal(new Set(out.files.map((f) => f.abs.normalize("NFC").toLowerCase())).size, 2);
+});

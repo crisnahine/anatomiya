@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 import { runCheck, runDoctor, runEcho, runNotice, runPin, runReuse, runScan, runSetup } from "../lib/commands.mjs";
 import { readPayload, respond } from "../lib/hook.mjs";
+import { unsupportedNode } from "../lib/readiness.mjs";
+import { noteScan, refreshRepository, runRefresh, WORKER_DEADLINE_MS } from "../lib/refresh.mjs";
 import { pinJson, pinLines, scanJson, scanLines } from "../lib/summary.mjs";
 import { formatReport, formatReportGithub, formatReportJson } from "../lib/check-report.mjs";
 
@@ -46,7 +48,10 @@ const COMMANDS = {
     dryRun: true,
     formats: ["text", "json"],
     async run(cwd, opts) {
-      const { summary } = await runScan(cwd, { dryRun: opts.dryRun, deep: opts.deep });
+      const { result, summary } = await runScan(cwd, { dryRun: opts.dryRun, deep: opts.deep });
+      // A scan run by hand is the refresh's answer too: it clears a failed
+      // refresh the echo is reporting, and the next refresh has nothing to redo.
+      if (!opts.dryRun) await noteScan(result.root);
       if (opts.format === "json") process.stdout.write(scanJson(summary));
       else console.log(scanLines(summary).join("\n"));
     },
@@ -77,6 +82,9 @@ const COMMANDS = {
     path: false,
     dryRun: false,
     formats: ["text"],
+    // The one verb that runs on a node under the floor: saying so, with the
+    // fix, is its job, and its own row does.
+    anyNode: true,
     async run() {
       // Exit 0 whichever way it came out: what it found is the report, and a
       // non-zero exit would read as a probe that could not run.
@@ -130,6 +138,29 @@ const COMMANDS = {
     async run(cwd) {
       // The same guarantee again, at the end of a turn.
       respond(await runReuse(cwd, await readPayload()));
+    },
+  },
+  refresh: {
+    path: true,
+    dryRun: false,
+    formats: ["json"],
+    hook: true,
+    async run(cwd) {
+      // At a session's start and whenever HEAD moves: names the git files to
+      // watch and starts the worker below, and returns before it does anything.
+      respond(runRefresh(cwd, await readPayload()));
+    },
+  },
+  // Not a hook and not for a person either: the detached worker `refresh`
+  // starts, with its stdio closed, so nothing reads what it would print. Its
+  // own clock ends it if a scan never does (F5).
+  "refresh-run": {
+    path: true,
+    dryRun: false,
+    formats: ["text"],
+    async run(cwd) {
+      setTimeout(() => process.exit(1), WORKER_DEADLINE_MS).unref();
+      await refreshRepository(cwd);
     },
   },
 };
@@ -235,6 +266,14 @@ function parseArgs(argv) {
   return opts;
 }
 
+// A reader that stops early (`check | head`) closes the pipe, and the next
+// write failed with an unhandled EPIPE and a stack trace. Output nobody reads
+// any more is not a failure of the command.
+process.stdout.on("error", (err) => {
+  if (err?.code === "EPIPE") process.exit(process.exitCode ?? 0);
+  throw err;
+});
+
 const opts = parseArgs(process.argv.slice(2));
 if (opts.help) {
   // Returned rather than exited from: a write to a pipe is asynchronous once it
@@ -242,10 +281,16 @@ if (opts.help) {
   console.log(USAGE);
 } else {
   try {
+    const spec = COMMANDS[opts.cmd];
+    // Before any work, and through the boundary below, so a hook answers its
+    // empty object and every other verb one sentence: on a node older than the
+    // manifests declare, a scan got as far as a builtin that node lacks and
+    // died there with a TypeError naming neither Node nor a fix.
+    const unsupported = spec.anyNode ? null : unsupportedNode();
+    if (unsupported !== null) throw new Error(unsupported);
     // Only the verbs that answer about a repository ask where this process is.
     // `doctor` and `setup` answer about this installation and take no path, so
     // a directory removed under them decides nothing they say.
-    const spec = COMMANDS[opts.cmd];
     const cwd = spec.path ? opts.path ?? sessionDir(spec.hook === true) : null;
     await spec.run(cwd, opts);
   } catch (err) {

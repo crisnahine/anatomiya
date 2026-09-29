@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { needsPosixPaths, needsShebang } from "./platform.mjs";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { needsPathControl, needsPosixPaths, needsShebang, needsTmpdirVariable } from "./platform.mjs";
+import { existsSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createPool, rssOf, GUARDS } from "../plugins/anatomiya/lib/pool.mjs";
@@ -286,24 +286,88 @@ test("a worker that dies before answering reports what it printed", async (t) =>
   }
 });
 
+test("a worker that starts and never says ready is killed on a clock, and the pool fails rather than hangs", async (t) => {
+  // A queued file is handed only to a worker that said ready, and nothing
+  // timed the wait: a worker stalled in its own startup (a native binding
+  // blocked on a network filesystem, a preload that never settles) left every
+  // file queued and the scan waiting forever. The stall is reached through
+  // `execArgv`: a preload whose top-level await never settles, with a timer
+  // holding the process open, is a worker that started and never answers.
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-noready-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  writeFileSync(join(dir, "a.ts"), "export const x = 1\n");
+  const stall = "data:text/javascript,setInterval(()=>{},1e6);await new Promise(()=>{})";
+
+  const pool = createPool({ size: 1, execArgv: ["--import", stall], guards: { readyTimeoutMs: 300 } });
+  try {
+    const started = Date.now();
+    const r = await pool.parse({ rel: "a.ts", abs: join(dir, "a.ts"), lang: "js" });
+    assert.equal(r.ok, false);
+    assert.equal(r.crashed, true, "no parser answered, which is the crash A13 reads as a blind run");
+    assert.match(r.error, /^parser worker will not start: no ready answer in 300ms/);
+    assert.ok(Date.now() - started < 10_000, "bounded by the ready clock times the stillborn limit");
+  } finally {
+    await pool.close();
+  }
+});
+
+test("the ready clock is a guard with a default", () => {
+  assert.equal(typeof GUARDS.readyTimeoutMs, "number");
+  assert.ok(GUARDS.readyTimeoutMs >= 10_000, "a cold native binding on a slow disk is not a stalled worker");
+});
+
+test("a worker that cannot be forked fails the pool with its reason, not an unhandled error", needsTmpdirVariable, async (t) => {
+  // A fork that never starts emits 'error' and never 'exit', and the pool
+  // listened for 'exit' only: a per-session TMPDIR that had been cleaned up
+  // took `scan` down with Node's own "Unhandled 'error' event" stack and exit
+  // 1, where a worker dying before it answers was already the one-line
+  // "parser worker will not start". EAGAIN at a process limit and EMFILE are
+  // the same event with a different code; a missing cwd is the one a test
+  // can reach.
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-nofork-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  writeFileSync(join(dir, "a.ts"), "export const x = 1\n");
+
+  const was = process.env.TMPDIR;
+  process.env.TMPDIR = join(dir, "gone");
+  try {
+    const pool = createPool({ size: 2 });
+    try {
+      const r = await pool.parse({ rel: "a.ts", abs: join(dir, "a.ts"), lang: "js" });
+      assert.equal(r.ok, false);
+      assert.match(r.error, /^parser worker will not start: .*ENOENT/);
+      // No parser ever answered, which is the crash A13 reads as a blind run.
+      // Charged as unreadable instead, the scan went on to write an overview
+      // of zero areas and remove every correct area file beside it.
+      assert.equal(r.crashed, true);
+      const later = await pool.parse({ rel: "a.ts", abs: join(dir, "a.ts"), lang: "js" });
+      assert.equal(later.crashed, true, "a file asked for after the pool broke is charged the same way");
+    } finally {
+      await pool.close();
+    }
+  } finally {
+    if (was === undefined) delete process.env.TMPDIR;
+    else process.env.TMPDIR = was;
+  }
+});
+
 test("a ps that will not return costs the poll its timeout, not the run", needsShebang, () => {
   // F5: every subprocess here carries a timeout, and this one runs through
   // `execFileSync`, which blocks the parent's event loop. Without the timeout
-  // the guard that exists to stop a runaway parse becomes the hang.
+  // the guard that exists to stop a runaway parse becomes the hang. Handed
+  // through the seam rather than PATH, which no longer decides which `ps`
+  // runs, and as a platform that polls with one, since Linux reads /proc.
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-ps-"));
   writeFileSync(join(dir, "ps"), "#!/bin/sh\nsleep 30\n", { mode: 0o755 });
-  const path = process.env.PATH;
-  process.env.PATH = `${dir}:${path}`;
 
   const started = Date.now();
   try {
-    const out = rssOf([process.pid]);
+    const out = rssOf([process.pid], GUARDS, { platform: "darwin", ps: join(dir, "ps") });
     const elapsed = Date.now() - started;
 
     assert.equal(out.size, 0, "a ps that answered nothing reports nothing");
     assert.ok(elapsed < 10_000, `waited ${elapsed}ms on a ps that never returns`);
   } finally {
-    process.env.PATH = path;
     rmSync(dir, { recursive: true, force: true });
   }
 });
@@ -323,4 +387,52 @@ test("the poll reads a live process's resident size", () => {
   const out = rssOf([process.pid]);
 
   assert.ok(out.get(process.pid) > 0, "this process has a resident size");
+});
+
+test("the poll reads a resident size on a machine with no ps on PATH", needsPathControl, () => {
+  // Slim images (node:*-slim and most devcontainers) ship no procps, and the
+  // guard shelled out to `ps` through PATH and swallowed the ENOENT: measured,
+  // three files a forced 1 MB ceiling killed with `ps` present all parsed with
+  // it absent, and nothing said the ceiling had stood down.
+  if (process.platform === "win32") return;
+  const path = process.env.PATH;
+  process.env.PATH = "";
+  try {
+    const out = rssOf([process.pid]);
+
+    assert.ok(out.get(process.pid) > 0, "this process has a resident size with nothing on PATH");
+  } finally {
+    process.env.PATH = path;
+  }
+});
+
+test("where the poll runs ps, it reads the same resident size", (t) => {
+  // macOS and the BSDs still take this path, and without this case it would
+  // run only on the one CI job that is not Linux.
+  if (process.platform === "win32" || !existsSync("/bin/ps")) return t.skip("no /bin/ps on this machine");
+
+  const out = rssOf([process.pid], GUARDS, { platform: "darwin" });
+
+  assert.ok(out.get(process.pid) > 0, "this process has a resident size");
+});
+
+test("a ps in the directory the scan runs from is never the one the guard runs", { ...needsPathControl, ...needsShebang }, (t) => {
+  // `scan .` runs from the repository, and an empty PATH entry is the current
+  // directory: measured, a `ps` committed to the scanned repository ran as the
+  // user, handed the workers' pids, while the guard polled.
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-planted-ps-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  writeFileSync(join(dir, "ps"), `#!/bin/sh\necho ran > ${JSON.stringify(join(dir, "RAN"))}\n`, { mode: 0o755 });
+  const path = process.env.PATH;
+  const cwd = process.cwd();
+  process.env.PATH = ":";
+  process.chdir(dir);
+  try {
+    rssOf([process.pid]);
+  } finally {
+    process.chdir(cwd);
+    process.env.PATH = path;
+  }
+
+  assert.equal(existsSync(join(dir, "RAN")), false, "the repository's own ps ran");
 });

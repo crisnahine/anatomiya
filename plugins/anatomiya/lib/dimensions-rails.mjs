@@ -27,8 +27,32 @@ const REFERENCE = /^(references|belongs_to)$/;
 const ADD_REFERENCE = /^(add_reference|add_belongs_to)$/;
 
 // SELECT is a read and is deliberately absent. WITH is here because a CTE can
-// wrap an UPDATE; it has never fired on measured source.
-const DML = /^(update|insert|delete|truncate|with)\b/i;
+// wrap an UPDATE; it has never fired on measured source. MERGE rewrites rows as
+// surely as UPDATE does, and was read as schema work while it was missing.
+const DML = /^(update|insert|delete|truncate|merge|with)\b/i;
+
+/**
+ * The SQL with its leading comments removed, so the verb test sees the verb.
+ *
+ * Anchored at the start, `-- backfill` or `/* x *\/` ahead of an UPDATE read as
+ * DDL and the migration was stated as leaving data alone. A comment the string
+ * cap cut off before it closed leaves nothing, which is unreadable rather than
+ * schema-only, as a heredoc truncated to whitespace already is.
+ */
+function sqlBody(sql) {
+  let s = sql.trimStart();
+  for (;;) {
+    if (s.startsWith("--")) {
+      const end = s.indexOf("\n");
+      s = end === -1 ? "" : s.slice(end + 1).trimStart();
+    } else if (s.startsWith("/*")) {
+      const end = s.indexOf("*/", 2);
+      s = end === -1 ? "" : s.slice(end + 2).trimStart();
+    } else {
+      return s;
+    }
+  }
+}
 
 export const COLUMN_TYPE = new Set([
   "string", "text", "integer", "bigint", "float", "decimal", "numeric", "datetime",
@@ -297,8 +321,9 @@ function dataWork(cls) {
       // A heredoc that keeps its indentation can truncate to whitespace at the
       // string cap, and defaulting that to schema-only would state the
       // convention over migrations that rewrite rows.
-      if (sql === null || sql.trimStart() === "") unreadable = true;
-      else if (DML.test(sql.trimStart())) touches = true;
+      const body = sql === null ? "" : sqlBody(sql);
+      if (body === "") unreadable = true;
+      else if (DML.test(body)) touches = true;
       return;
     }
     const recv = constName(m.receiver);

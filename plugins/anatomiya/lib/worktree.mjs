@@ -1,10 +1,30 @@
-/** Where a linked git worktree came from. */
+/** Where a linked git worktree came from, and where a checkout keeps its git files. */
+import { existsSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 
 import { readHead, realpathOrNull } from "./rules.mjs";
 
 /** How much of a pointer file is read: the longest path a filesystem opens. */
 const POINTER_MOST = 4096;
+
+/** The path a `.git` file points at, as spelled. Git reads the first line and nothing after it. */
+const pointed = (head) => /^gitdir: (.+)/.exec(head.split("\n")[0])?.[1]?.trim() || null;
+
+/** This checkout's own git directory, read off `.git` rather than asked of git. */
+export function gitDirOf(root) {
+  const marker = join(root, ".git");
+  const entry = readHead(marker, POINTER_MOST);
+  if (entry.kind === "other") return existsSync(join(marker, "HEAD")) ? marker : null;
+  const named = entry.kind === "file" ? pointed(entry.head) : null;
+  return named ? resolve(root, named) : null;
+}
+
+/** The repository's shared git directory: a linked worktree's names it in `commondir`. */
+export function commonDirOf(gitdir) {
+  const entry = readHead(join(gitdir, "commondir"), POINTER_MOST);
+  const named = entry.kind === "file" ? entry.head.split("\n")[0].trim() : "";
+  return named ? resolve(gitdir, named) : gitdir;
+}
 
 /**
  * The main checkout of the linked worktree rooted here, or null for anything else.
@@ -29,8 +49,7 @@ const POINTER_MOST = 4096;
 export function mainCheckoutOf(at) {
   const marker = join(at, ".git");
   const link = readHead(marker, POINTER_MOST);
-  // Git reads the first line and nothing after it.
-  const gitdir = link.kind === "file" ? /^gitdir: (.+)/.exec(link.head.split("\n")[0])?.[1]?.trim() : null;
+  const gitdir = link.kind === "file" ? pointed(link.head) : null;
   if (!gitdir) return null;
   // Both files inside are read against the registration as it was spelled,
   // which is what git does: through a link, `../..` lands somewhere else.

@@ -6,15 +6,18 @@ import { scan } from "./scan.mjs";
 import { loadTypeScript, notInstalledMessage } from "./semantic.mjs";
 import { writeMap } from "./write.mjs";
 import { check } from "./check.mjs";
-import { collect, gitRoot } from "./corpus.mjs";
+import { engineOf, language } from "./langs.mjs";
+import { collect, countUntrackedSource, gitRoot } from "./corpus.mjs";
 import { discover } from "./areas.mjs";
-import { buildPin, loadPin, writePin, pinDelta, PIN_PATH } from "./baseline.mjs";
-import { headSha } from "./git.mjs";
-import { NODE_PROBE_IDS, PROBE_IDS, installProblem, pluginRoot, probeName, readiness, readinessLines, remedyFor } from "./readiness.mjs";
+import { buildPin, readPin, writePin, pinDelta, pinTarget, PIN_PATH } from "./baseline.mjs";
+import { gitBuffered, headSha } from "./git.mjs";
+import { firstLine } from "./encode.mjs";
+import { NODE_PROBE_IDS, PROBE_IDS, installProblem, pluginRoot, probeName, readiness, readinessAfresh, readinessLines, remedyFor } from "./readiness.mjs";
 import { pinSummary, scanSummary } from "./summary.mjs";
+import { untrackedSentence } from "./render.mjs";
 import { aboutDir, echoContext, holdsTestIn, inCheckout, isPathTaken, ownLayout, removeStaleHook, targetIn, windowOf } from "./hook.mjs";
 import { isTestPath, noticeFor } from "./precedent.mjs";
-import { askedMarks, continuedByReuse, pendingChange, reuseReason, reuseRecord, sessionStart } from "./reuse.mjs";
+import { askedMarks, continuedByReuse, pendingChange, reuseReason, reuseRecord, sessionStart, turnStart } from "./reuse.mjs";
 
 /**
  * One entry per command: the whole recipe, composed once.
@@ -32,7 +35,12 @@ export async function runScan(cwd, { dryRun = false, deep = false } = {}) {
   if (deep && (await loadTypeScript()) === null) throw new Error(notInstalledMessage(remedyFor("typescript")));
 
   const result = await scan(cwd, { deep });
-  if (result.parse.missingParser) throw notInstalled(result.parse, "scan");
+  // Only where it left nothing to read (B13). An engine missing for one
+  // language costs that language's files and the scan goes on for the rest:
+  // refusing here gave a TypeScript repository with one Gemfile no map at all
+  // on every machine without Ruby, and the summary and the map say which
+  // language went unread and what to do about it (B41).
+  if (result.parse.missingParser && result.readNothing) throw notInstalled(result.parse, "scan");
 
   const plan = writeMap(result, { dryRun });
   // 0.2.4 through 0.2.6 installed the re-delivery hook into the repository's own
@@ -130,7 +138,14 @@ export async function runReuse(cwd, payload) {
   if (root === null) return {};
   const found = ownLayout(root);
   if (found === null) return {};
-  const change = await pendingChange(found.root, { since: sessionStart(payload.transcript_path) });
+  // Both halves of "once per change, and only this session's work" are read off
+  // the transcript: when the session began, and what it already asked. One that
+  // cannot be read says neither, so nothing is asked. Asking anyway blocked
+  // every turn, a question included, over a tree left dirty before the session,
+  // since no ask it made was ever recorded anywhere it could read back.
+  const since = sessionStart(payload.transcript_path);
+  if (since === null) return {};
+  const change = await pendingChange(found.root, { since, turnStart: turnStart(payload.transcript_path) });
   if (change === null) return {};
   const asked = askedMarks(payload.transcript_path);
   const fresh = change.filter((file) => !asked.has(file.mark));
@@ -147,30 +162,102 @@ export async function runReuse(cwd, payload) {
  * A separate command, and it answers with the delta and no recommendation: the
  * moment a re-pin looks most warranted is the moment the agent's own output is
  * largest, and a suggestion there launders it.
+ *
+ * `collectFiles` is a seam for tests, which land a commit while the list is
+ * read.
  */
-export async function runPin(cwd, { dryRun = false } = {}) {
+export async function runPin(cwd, { dryRun = false, expect = null, collectFiles = collect } = {}) {
   const root = await gitRoot(cwd);
   const sha = await headSha(root);
   if (!sha) throw new Error("no commit to pin: this repository has no HEAD");
+  // The refresh judges a commit and then pins; a commit landing between the two
+  // would be pinned unjudged.
+  if (expect !== null && sha !== expect) throw new Error(`HEAD moved from ${expect} to ${sha} before the pin was taken`);
+  // Refused by the half that plans, so a dry run cannot answer with a clean
+  // delta for a write that would land outside the repository.
+  pinTarget(root);
+  await refuseUnlikeHead(root);
 
-  const { files, truncated } = await collect(root);
+  const { files, truncated } = await collectFiles(root);
+  // Asked again once the list is read. It comes from the index, and reading it
+  // takes seconds on a large repository: a commit or a `git add` landing in
+  // that window put files into a pin labelled with the commit judged before.
+  if ((await headSha(root)) !== sha) throw new Error(`HEAD moved from ${sha} while the pin was being taken`);
+  await refuseUnlikeHead(root);
   // No repository size truncates the corpus any more, so this cannot fire from
   // `collect`. It stays because a pin must describe a whole population, and the
   // flag is the one thing that says whether this one is.
   if (truncated) throw new Error("only part of the corpus was read, so this would pin a partial population");
+  // An empty population is not a smaller baseline, it is one that makes every
+  // area written after it postdate it, so nothing is stated anywhere until a
+  // human pins again. The usual cause is source nobody has committed yet, and
+  // the scan counts that in the same state, so the refusal counts it too.
+  if (files.length === 0) {
+    const untracked = await countUntrackedSource(root);
+    throw new Error(
+      untracked
+        ? `nothing to pin: ${untrackedSentence(untracked)}; commit them, then pin`
+        : "nothing to pin: this repository tracks no source file"
+    );
+  }
 
   const next = buildPin(discover(files), { sha, corpus: files.length });
-  const previous = loadPin(root);
+  // A pin on disk this build cannot read is compared against as nothing, and
+  // replaced. Said, rather than printed as a first pin: it may be a conflict
+  // somebody meant to resolve, or a newer build's.
+  const { pin: previous, unreadable } = readPin(root);
   const delta = pinDelta(previous, next);
   if (!dryRun) writePin(root, next);
 
-  return { summary: pinSummary({ previous, next, delta, path: PIN_PATH, dryRun }), pin: next, previous, delta };
+  return {
+    summary: pinSummary({ previous, next, delta, path: PIN_PATH, dryRun, previousUnreadable: unreadable }),
+    pin: next,
+    previous,
+    delta,
+  };
+}
+
+/**
+ * Refuse a tree that is not HEAD's. The pin records HEAD and the file list each
+ * area holds, and that list is read from the index and the working tree.
+ */
+async function refuseUnlikeHead(root) {
+  // A staged, edited, deleted or unmerged tracked file is listed against a
+  // commit that does not hold it, and every scan after reads that area as a
+  // population change for as long as the pin stands. This tool's own output
+  // under `.claude/` is left out: a repository that commits its map rewrites it
+  // on every scan, and it is never part of the population.
+  const dirty = await gitBuffered(root, ["status", "--porcelain", "--untracked-files=no", "-z", "--", ".", ":(exclude).claude"]);
+  if (!dirty.ok) throw new Error(`could not read whether the working tree matches HEAD: ${firstLine(dirty.error ?? "")}`);
+  if (dirty.stdout.length > 0) {
+    throw new Error("tracked files differ from HEAD, and a pin records HEAD: commit or stash them first, then pin");
+  }
+  // Asked of the whole index, since the exclusion above is for this tool's
+  // output and a tracked source file under `.claude/` is corpus like any other.
+  // An unmerged path is listed once per stage, so a pin taken mid-merge holds
+  // it three times and a corpus larger than the tree, and the corpus fixes the
+  // area floor for every scan after.
+  const unmerged = await gitBuffered(root, ["ls-files", "--unmerged", "-z"]);
+  if (!unmerged.ok) throw new Error(`could not read whether the index holds unmerged paths: ${firstLine(unmerged.error ?? "")}`);
+  if (unmerged.stdout.length > 0) {
+    throw new Error("the index holds unmerged paths, and a pin records HEAD: finish or abort the merge first, then pin");
+  }
 }
 
 /** Answer the branch against the map on disk. */
 export async function runCheck(cwd, { baseRef = null } = {}) {
   const report = await check(cwd, { baseRef });
-  if (report.parse.missingParser) throw notInstalled(report.parse, "check");
+  const { missingParser, missingEngines } = report.parse;
+  if (missingParser) {
+    // The scan's rule, for the same reason: a change that touched a Gemfile
+    // beside a TypeScript file went unchecked because one file of another
+    // language could not be read (B41). Refused only where every file this
+    // change examined needed the missing engine, since a report of no findings
+    // there reads as a check that ran (B13). Otherwise each unread file carries
+    // its own caveat, and one more says which engine and what to do.
+    const readable = report.examined.some((c) => !missingEngines.includes(engineOf(language(c.path))));
+    if (!readable) throw notInstalled(report.parse, "check");
+  }
   return { report };
 }
 
@@ -207,15 +294,20 @@ export async function runDoctor() {
 export async function runSetup({ dryRun = false, platform = process.platform } = {}) {
   const root = pluginRoot();
   const rows = await readiness({ engines: NODE_PROBE_IDS });
-  const needed = rows.filter((r) => !r.present).map(probeName);
+  // Present and not ready is a copy resolving from somewhere other than this
+  // plugin's own install, one the tool will not use, and the install puts a
+  // usable one ahead of it.
+  const needed = rows.filter((r) => !r.present || !r.ok).map(probeName);
   const where = `${INSTALL.join(" ")} in ${root}`;
   const state =
     needed.length === 0
       ? `nothing to install: ${rows.map((r) => `${probeName(r)} ${r.version ?? "no version"}`).join(", ")}`
       : `not installed: ${needed.join(", ")}`;
 
-  if (dryRun) return answer(root, needed, { output: `${state}\nwould run ${where}` });
+  // With nothing needed there is no install to describe: "nothing to install"
+  // followed by "would run npm install" contradicted itself about one install.
   if (needed.length === 0) return answer(root, needed, { output: state });
+  if (dryRun) return answer(root, needed, { output: `${state}\nwould run ${where}` });
 
   // npm ships as `npm.cmd` on Windows, and a spawn resolves an extension-less
   // name against `.com` and `.exe` only, so the attempt answers ENOENT on a
@@ -239,7 +331,23 @@ export async function runSetup({ dryRun = false, platform = process.platform } =
   // spawn that never started says nothing at all, so its own error stands in.
   const how = err ? `${where} ${err.killed ? `did not finish within ${INSTALL_TIMEOUT_MS / 60_000} minutes` : "failed"}` : `ran ${where}`;
   const said = err ? stderr || stdout || err.message : stdout;
-  return answer(root, needed, { ran: true, ok: !err, output: [state, how, tail(said)].filter(Boolean).join("\n") });
+  const lines = [state, how, tail(said)].filter(Boolean);
+  if (err) return answer(root, needed, { ran: true, ok: false, output: lines.join("\n") });
+
+  // An exit of 0 says npm finished, not that anything loads. Measured with
+  // `npm_config_optional=false`: npm left out oxc's native binding, which is an
+  // optional dependency of the parser, answered "up to date", and setup
+  // reported success to a doctor that went on sending the user back to setup.
+  // So the engines are asked again, and one this run needs that still does not
+  // load fails the setup under its own row's reason.
+  // Asked of a fresh node: this process tried every engine before the install,
+  // and a module whose evaluation threw stays failed here whatever npm did.
+  const { rows: after, error } = await readinessAfresh({ engines: NODE_PROBE_IDS });
+  const still = [];
+  for (const r of after ?? []) if (!r.ok) still.push(`${probeName(r)} (${r.reason})`);
+  if (error) lines.push(`npm finished, and whether the engines load now could not be asked: ${error}`);
+  else if (still.length) lines.push(`npm finished, and still not loading: ${still.join(", ")}`);
+  return answer(root, needed, { ran: true, ok: !error && still.length === 0, output: lines.join("\n") });
 }
 
 /**
@@ -247,8 +355,14 @@ export async function runSetup({ dryRun = false, platform = process.platform } =
  *
  * `--ignore-scripts` is the load-bearing flag: without it a dependency's
  * install script runs arbitrary code in the plugin directory.
+ *
+ * `--include=optional` because the parser's native binding is an optional
+ * dependency of `oxc-parser`, one per platform, and so is the checker. npm
+ * reads `optional=false` or `omit=optional` from the user's own config, and
+ * under it the install answered "up to date" and left no parser that loads;
+ * an include wins over an omit of the same type, whoever set it.
  */
-const INSTALL = Object.freeze(["npm", "install", "--omit=dev", "--ignore-scripts", "--no-audit", "--no-fund"]);
+const INSTALL = Object.freeze(["npm", "install", "--omit=dev", "--include=optional", "--ignore-scripts", "--no-audit", "--no-fund"]);
 
 // A cold install of a native parser on a slow link is minutes, so this is a
 // bound on a hang rather than on a slow network.

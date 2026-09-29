@@ -161,9 +161,10 @@ test("no caveat reaches the report without a code", () => {
   // Any first argument, not the literal `caveats`: a helper that spells the
   // list some other way would otherwise be invisible to this count.
   const named = [...src.matchAll(/(?<!function )\bcaveat\(\s*\w+,\s*([^,]+),/g)].map((m) => m[1].trim());
-  // A count rather than a floor. 26 codes over 23 sites: one site takes two
-  // from its caller, and `no-merge-base` is reached from two of them.
-  assert.equal(named.length, 23, `${named.length} coded caveat sites, so the count moved`);
+  // A count rather than a floor. 28 codes over 26 sites: one site takes two
+  // from its caller, one reads four off the parse, and `no-merge-base` and
+  // `head-oversize` are each reached from two of them.
+  assert.equal(named.length, 26, `${named.length} coded caveat sites, so the count moved`);
   for (const name of named) {
     // Never a literal. Beside `CAVEATS.X` two sites read the table through
     // something else: `code`, which an unread corpus takes from its caller
@@ -182,7 +183,7 @@ test("no caveat reaches the report without a code", () => {
   }
 });
 
-test("a code no case names is one of the five nobody could force cheaply", () => {
+test("a code no case names is one of the four nobody could force cheaply", () => {
   // The two checks above catch a code nothing spells and a code nothing
   // declares. Neither catches a code spelled at the wrong site: exchanging
   // `frameworks-unknown` and `capabilities-unknown` was green across every
@@ -190,13 +191,16 @@ test("a code no case names is one of the five nobody could force cheaply", () =>
   // the code back, and this is the list of the ones no case does.
   //
   // Each needs a state a temporary repository cannot cheaply be put in: a
-  // shallow clone whose base commit is fetchable but shares no history; a
   // degraded-mode run whose added-line ranges fail while its diff succeeds; a
   // `ls-tree` of HEAD that fails while every other read works; and a rule file
   // the filesystem refuses to open, which is a permission bit a run as root
   // does not have. `SHALLOW_UNFETCHED` left this list when the refusal a typed
   // `--base` now gets made the shallow arm worth reaching: a depth-1 clone of a
-  // `file://` origin is one `git clone` away.
+  // `file://` origin is one `git clone` away, and `SHALLOW_NO_HISTORY` left it
+  // on the same clone once that caveat named the fetch that fixes it.
+  // `RENAMES_SKIPPED` needs a branch past the rename limit the check sets for
+  // itself, 7,000 additions against 7,000 deletions; the test git applies is
+  // pinned in `check.test.mjs` through `renamesSkipped` at a limit of one.
   const dir = dirname(fileURLToPath(import.meta.url));
   const suites = readdirSync(dir)
     .filter((f) => f.endsWith(".test.mjs"))
@@ -206,7 +210,7 @@ test("a code no case names is one of the five nobody could force cheaply", () =>
   const unheld = Object.keys(CAVEATS).filter((name) => !new RegExp(`CAVEATS\\.${name}\\b`).test(suites));
 
   assert.deepEqual(unheld, [
-    "SHALLOW_NO_HISTORY",
+    "RENAMES_SKIPPED",
     "ADDED_RANGES_UNREADABLE",
     "OBLIGATIONS_UNCHECKED",
     "RULES_UNREADABLE",
@@ -386,6 +390,66 @@ test("what a reader would take for grammar is escaped, and the percent first", (
     out.split("\n")[0],
     "::error file=src/a%2Cb.ts,line=12,title=a%2C b%3A 100%25%0D%0Anext::50%25 of sites"
   );
+});
+
+test("a finding's path is the file's own path in every writer, however long and in whatever script", () => {
+  // The display encoder capped a path at 120 graphemes and put a placeholder
+  // in place of any non-Latin one, and every writer went through it: GitHub
+  // could not place the annotation, a JSON reader could not join the finding
+  // back to a file, and the agent could not open the one the text named.
+  const long = `src/${"organisation-management/".repeat(5)}credit-card-tokenisation-service.ts`;
+  const kana = "src/日本/user-service.ts";
+  const r = bare({
+    findings: [finding({ path: long }), finding({ path: kana })],
+    counts: { "MUST-FIX": 2, FIX: 0, NIT: 0 },
+  });
+
+  assert.deepEqual(JSON.parse(formatReportJson(r)).findings.map((f) => f.path), [long, kana]);
+  const files = formatReportGithub(r).split("\n").slice(0, 2).map((l) => /file=([^,]*),/.exec(l)[1]);
+  assert.deepEqual(files, [long, kana]);
+  const text = formatReport(r);
+  assert.ok(text.includes(`"${long}":12`) && text.includes(`"${kana}":12`), text);
+});
+
+test("a path keeps no character that breaks its line or reorders it, in any writer", () => {
+  // The control the case above leaves standing: what the display encoder did
+  // for a path that is still the locator's job is refusing a newline, a
+  // control character, and a bidi override or zero-width joiner, none of
+  // which JSON.stringify escapes past the first two.
+  const r = bare({ findings: [finding({ path: "src/a\nb‮‍c.ts" })], counts: { "MUST-FIX": 1, FIX: 0, NIT: 0 } });
+
+  for (const out of [formatReportJson(r), formatReportGithub(r), formatReport(r)]) {
+    assert.doesNotMatch(out, /‮|‍|a\nb|a\\nb|a%0Ab/, out);
+  }
+});
+
+test("a snippet shows the code as it was written, in every writer that carries one", () => {
+  // Measured: the finding `defaults are taken with ??, not ||` quoted its own
+  // site as `x.n 0`, and a union type read `X null`. The snippet went through
+  // the encoder for files the agent loads as context, which strips markdown
+  // table and fence characters, and the report is output, not such a file.
+  const written = ["return x.n || 0;", "function go(x: X | null) {", "const s = `id-${n}`;", "--- a/b", "# not a heading"];
+  const r = bare({ findings: written.map((snippet) => finding({ snippet })), counts: { "MUST-FIX": 5, FIX: 0, NIT: 0 } });
+
+  assert.deepEqual(JSON.parse(formatReportJson(r)).findings.map((f) => f.snippet), written);
+  const text = formatReport(r);
+  for (const snippet of written) assert.ok(text.includes(`\n  ${snippet}\n`), `${snippet}\n${text}`);
+});
+
+test("a snippet still keeps no character that breaks its line or reorders it", () => {
+  // The part of the encoder a snippet still needs: it is code from the branch
+  // under check, and a newline in it would print a line of its own that reads
+  // as the report's, a bidi override would reorder what it shows.
+  // A matched line from a minified file is still held to the cap.
+  const r = bare({
+    findings: [finding({ snippet: "a\nMUST-FIX b‮‍c" }), finding({ snippet: "x|".repeat(500) })],
+    counts: { "MUST-FIX": 2, FIX: 0, NIT: 0 },
+  });
+
+  for (const out of [formatReportJson(r), formatReport(r)]) {
+    assert.doesNotMatch(out, /‮|‍|a\nMUST|a\\nMUST/, out);
+  }
+  assert.equal(JSON.parse(formatReportJson(r)).findings[1].snippet, `${"x|".repeat(50)}…`);
 });
 
 test("a clean report is still an answer, not an empty file", () => {

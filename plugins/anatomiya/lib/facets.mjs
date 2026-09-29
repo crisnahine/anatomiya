@@ -14,7 +14,7 @@
  * in. What is kept is this object, a few strings per file.
  */
 import { walk, isFunctionLike } from "./walk.mjs";
-import { walkRuby, constName } from "./ruby-walk.mjs";
+import { walkRuby, constName, args } from "./ruby-walk.mjs";
 import { MINITEST_NAME } from "./test-shape.mjs";
 
 /**
@@ -52,6 +52,27 @@ const stringValue = (n) =>
   n && (n.type === "Literal" || n.type === "StringLiteral") && typeof n.value === "string"
     ? n.value
     : null;
+
+/**
+ * The identifier a call chain starts from, or null where it starts anywhere
+ * else.
+ *
+ * A table-driven case calls what a call returned: `test.each([...])("x", fn)`
+ * has a CallExpression for its callee, `it.only.each` a MemberExpression on a
+ * MemberExpression, and the tagged-template form a TaggedTemplateExpression.
+ * Reading one level deep saw no name in any of them, so a file of nothing but
+ * `describe.each` cases lost its runner label while importing vitest.
+ */
+function calleeRoot(node) {
+  let n = node;
+  for (;;) {
+    if (n?.type === "Identifier") return n.name;
+    if (n?.type === "CallExpression") n = n.callee;
+    else if (n?.type === "MemberExpression") n = n.object;
+    else if (n?.type === "TaggedTemplateExpression") n = n.tag;
+    else return null;
+  }
+}
 
 /**
  * The left-hand side of a CommonJS export, or null for any other assignment.
@@ -190,8 +211,7 @@ export function jsFacets({ program, module: mod }) {
     if (!typed && TYPE_SYNTAX.test(n.type)) typed = true;
 
     if (n.type === "ExpressionStatement" && n.expression?.type === "CallExpression") {
-      const c = n.expression.callee;
-      const name = c?.type === "Identifier" ? c.name : c?.type === "MemberExpression" ? c.object?.name : null;
+      const name = calleeRoot(n.expression.callee);
       if (TEST_CALLS.has(name)) {
         declaresTest = true;
         if (ctx.enclosing === null) testCalls = true;
@@ -319,8 +339,26 @@ const minitestByPath = (rel) => {
   return path.split("/")[0] === "test";
 };
 
+// minitest/spec writes its cases in `describe` and `it` too, so those two
+// words alone do not name RSpec. The words RSpec has and minitest/spec does
+// not still do.
+const SPEC_DSL_SHARED = new Set(["describe", "it"]);
+
+// A `require` of minitest itself, `minitest/autorun` and `minitest/spec` among
+// them: what a spec-DSL file outside the test tree carries instead of a path.
+const requiresMinitest = (n) =>
+  n.t === "call" &&
+  !n.receiver &&
+  n.name === "require" &&
+  /^minitest(\/|$)/.test(args(n)[0]?.t === "string" ? (args(n)[0].unescaped ?? "") : "");
+
 export function rubyFacets(program, rel = "") {
   let rspec = false;
+  // RSpec's words other than the two minitest/spec shares, or a call made on
+  // `RSpec` itself: either names RSpec whatever the path says.
+  let rspecOnly = false;
+  let specDsl = false;
+  let minitestRequired = false;
   let minitest = false;
   let beaker = false;
   let testCalls = false;
@@ -353,9 +391,14 @@ export function rubyFacets(program, rel = "") {
         testCalls = true;
       } else if (bare) {
         testCalls = true;
-        if (RSPEC_CALLS.has(n.name)) rspec = true;
+        if (RSPEC_CALLS.has(n.name)) {
+          rspec = true;
+          if (n.receiver || !SPEC_DSL_SHARED.has(n.name)) rspecOnly = true;
+          else specDsl = true;
+        }
       }
     }
+    if (requiresMinitest(n)) minitestRequired = true;
     if (isMinitestClass(n)) minitest = true;
     // The method name alone says nothing, so the class it is in or the file it
     // is in has to say the rest.
@@ -366,6 +409,14 @@ export function rubyFacets(program, rel = "") {
       }
     }
   });
+
+  // Bare `describe` and `it` with nothing RSpec-only beside them are
+  // minitest/spec where the file says minitest some other way: by its path, as
+  // `test/models/user_test.rb` does, or by requiring minitest. Asked after the
+  // walk, since the require can sit anywhere above the first case.
+  if (specDsl && !rspecOnly && (minitestRequired || minitestByPath(rel))) {
+    minitest = true;
+  }
 
   // The superclass wins over the calls, because shoulda-context writes
   // `context` blocks inside an `ActiveSupport::TestCase` and that file is

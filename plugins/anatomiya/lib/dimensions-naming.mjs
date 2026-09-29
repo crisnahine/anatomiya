@@ -9,7 +9,7 @@
  * imports this file.
  */
 import { walk, isFunctionLike } from "./walk.mjs";
-import { jsxElementNames, yieldsJsx } from "./dimensions-jsx.mjs";
+import { jsxElementNames, makesComponent, yieldsJsx } from "./dimensions-jsx.mjs";
 import { fileStem } from "./dimensions-capability.mjs";
 import { encode } from "./encode.mjs";
 
@@ -21,16 +21,28 @@ export const CLASSES = ["camelCase", "PascalCase", "kebab-case", "snake_case"];
  * A single lowercase word (`index`, `utils`) matches every class at once, so it
  * votes for none of them: counting it as any one class would let a directory
  * full of single words state a convention no filename ever expressed.
+ *
+ * A word of capitals alone is not PascalCase either. `DEBUG` is the constant
+ * `MAX_DEBUG` is with one word fewer, and `GET` is a route handler whose name
+ * the framework decides; read as PascalCase, a Next.js `app/api` directory
+ * stated "functions are named PascalCase" and a constants module stated it of
+ * its exports. It spells the SCREAMING case none of the four classes is, the
+ * way `MAX_DEBUG` already does.
  */
 export function classifyWord(word) {
-  if (/^[a-z0-9]+(-[a-z0-9]+)+$/.test(word)) return "kebab-case";
-  if (/^[a-z0-9]+(_[a-z0-9]+)+$/.test(word)) return "snake_case";
+  if (/^[\p{Ll}\p{Lo}\d]+(-[\p{Ll}\p{Lo}\d]+)+$/u.test(word)) return "kebab-case";
+  if (/^[\p{Ll}\p{Lo}\d]+(_[\p{Ll}\p{Lo}\d]+)+$/u.test(word)) return "snake_case";
   // Every character class here is disjoint from its neighbour, so no run
   // splits two ways: an identifier is repository-controlled input, and the
   // ambiguous `(?:[A-Z][a-zA-Z0-9]*)+` this replaces measured six seconds on
   // twenty-eight characters.
-  if (/^[a-z][a-zA-Z0-9]*$/.test(word) && /[A-Z]/.test(word)) return "camelCase";
-  if (/^[A-Z][a-zA-Z0-9]*$/.test(word)) return "PascalCase";
+  //
+  // Letters by Unicode case, not ASCII range: `caféBar` spelled no class and
+  // `café` was not the single lowercase word it is (see `spellsEveryClass`).
+  // A letter with no case (`\p{Lo}`, a CJK name) sides with lower case, since
+  // it cannot make any two classes disagree.
+  if (/^\p{Ll}[\p{L}\d]*$/u.test(word) && /\p{Lu}/u.test(word)) return "camelCase";
+  if (/^\p{Lu}[\p{L}\d]*$/u.test(word) && /\p{Ll}/u.test(word)) return "PascalCase";
   return null;
 }
 
@@ -70,10 +82,25 @@ export function claimFor(dim, cls, kind) {
 export function prefixClass(name) {
   const s = name || "";
   const m = /^([A-Z])[A-Z][a-z]/.exec(s);
-  if (m) return m[1];
+  if (m) return PREFIX_LETTERS.has(m[1]) && !ACRONYM_OPENING.test(s) ? m[1] : null;
   if (/^[A-Z]{3,}/.test(s) || /^[A-Z]{2}$/.test(s)) return null;
   return "none";
 }
+
+/**
+ * The letters a type name is prefixed with, and the mixed-case acronyms that
+ * open on one of them. A capital, a capital and a lower-case letter is the
+ * prefix shape and also how every mixed-case acronym opens: `OAuthToken` voted
+ * `O`, `ETag` voted `E` and `IDs` voted `I`, so an area of `IDs`,
+ * `IPv4Address` and `ETagCache` beside plain names voted an `I` prefix nobody
+ * wrote. Only `I` (interfaces), `T` (type aliases) and `E` (the enum habit
+ * that leaks into both) are prefixes anyone writes; any other letter, and a
+ * known acronym on one of these three, reads both ways and votes for neither,
+ * which is the C35 rule for a name that cannot say. The acronym has to end
+ * where the word does, so `IDocument` is still `I` on `Document`.
+ */
+const PREFIX_LETTERS = new Set(["I", "T", "E"]);
+const ACRONYM_OPENING = /^(?:IDs|IPs|IPv\d*|IOs|ETags?|TVs)(?![a-z])/;
 
 /** A superclass's written name: `B`, or the dotted `React.Component`. */
 function superName(node) {
@@ -112,8 +139,12 @@ function stemWord(rel) {
  * A word that spells every naming class at once: one lowercase run with no
  * separator and no capital for the classes to disagree about. A digit run is
  * one too, which is the migration whose whole name is its timestamp.
+ *
+ * Lowercase by Unicode case: an ASCII range made `café.ts` a stem spelling no
+ * class, so every accented Spanish or French filename was a site the check
+ * counted against a stated claim and the author could not fix.
  */
-const spellsEveryClass = (word) => /^[a-z0-9]+$/.test(word);
+const spellsEveryClass = (word) => /^[\p{Ll}\p{Lo}\d]+$/u.test(word);
 
 /**
  * Whether a file's own name is a site for the filename claim, whether or not it
@@ -133,10 +164,22 @@ const spellsEveryClass = (word) => /^[a-z0-9]+$/.test(word);
  * would flag `Button.test.tsx`, `index.stories.tsx` and `foo.module.ts`, which
  * are correct names in every JavaScript repository, so the suffix habit stays
  * unjudged.
+ *
+ * A name a router reads is not a site either, because it is not the author's
+ * to class: `[id].tsx`, `$postId.tsx`, `+page.ts` and `(lang).tsx` carry
+ * characters no class spells and every file router gives meaning to, and
+ * `_app.tsx`, `_document.tsx`, `_index.tsx` and `__root.tsx` are one word under
+ * the underscore Next.js, Remix and TanStack mark special files with. Measured
+ * on a new Next.js page, each was reported "files here are named kebab-case",
+ * and the only fix that offers breaks the route or drops the special file. The
+ * underscore is read off a single word only: `_tmp_probe.rb` and
+ * `_tmpProbe.ts` are the C23 omission on a stem that does spell a class
+ * underneath, and a router's special file is never named that way.
  */
 export function namesASite(rel) {
   const word = stemWord(rel);
-  return word !== null && !spellsEveryClass(word);
+  if (word === null || spellsEveryClass(word)) return false;
+  return !/[[\]$+()@]/.test(word) && !/^_+[\p{Ll}\p{Lo}\d]+$/u.test(word);
 }
 
 /**
@@ -172,7 +215,7 @@ export const NAMING_CORPUS = [
     splitBy: splitByJsx,
     precision: "precise",
     applicabilityPredicate: {
-      sites: "a file whose stem does not match every naming class at once; a single lowercase word and a bare filename do match them all and are not sites. A stem spelling none of the four is a site the scan does not classify and the check counts against a stated claim",
+      sites: "a file whose stem does not match every naming class at once; a single lowercase word and a bare filename do match them all and are not sites, and neither is a name a file router reads (`[id]`, `$param`, `+page`, or one word under a leading underscore such as `_app`). A stem spelling none of the four is a site the scan does not classify and the check counts against a stated claim",
       blind: null,
     },
     langs: ["js", "jsx", "ruby"],
@@ -244,6 +287,7 @@ function exportedSites(program) {
           name: decl.id.name,
           population,
           fn: decl.init && isFunctionLike(decl.init) ? decl.init : null,
+          init: decl.init ?? null,
         });
       }
     } else if (d?.id?.name) {
@@ -327,18 +371,20 @@ export const NAMING_AST = [
     splitBy: splitByJsx,
     precision: "precise",
     applicabilityPredicate: {
-      sites: "an export statement declaring a function, or a variable not bound to a class expression, under a name that spells a naming class; an anonymous default export carries no name, and a renaming specifier is not resolved to a declaration, so neither is a site; an exported function whose body yields JSX, or whose name this file renders as an element, is a component whose name JSX decides and is not a site",
+      sites: "an export statement declaring a function, or a variable not bound to a class expression, under a name that spells a naming class; an anonymous default export carries no name, and a renaming specifier is not resolved to a declaration, so neither is a site; an exported function whose body yields JSX, a variable bound to a call handed such a function or the name of one this file binds, to a lazy or dynamic import, or to a styled template, and a name this file renders as an element, are components whose name JSX decides and are not sites",
       blind: null,
     },
     langs: ["js", "jsx"],
     run(program, add) {
       // The same rule its sibling row reads: a component's name is JSX's to
       // decide. Excluding it on one row and not the other left the same
-      // declaration asked for a lowercase name by the other sentence.
+      // declaration asked for a lowercase name by the other sentence. Only
+      // this row binds a name to a call, so only this row meets a component a
+      // `forwardRef`, a `memo` or a `styled` template made.
       const rendered = jsxElementNames(program);
       for (const s of exportedSites(program)) {
         if (s.population !== "value") continue;
-        if (rendered.has(s.name) || yieldsJsx(s.fn)) continue;
+        if (rendered.has(s.name) || yieldsJsx(s.fn) || makesComponent(s.init, program)) continue;
         const cls = classifyWord(s.name);
         if (cls) add({ node: s.node, conforming: false, where: s.name, class: cls });
       }
@@ -429,7 +475,7 @@ export const NAMING_AST = [
     precision: "precise",
     applicabilityPredicate: {
       sites:
-        "a TypeScript interface declaration outside any ambient module or namespace, whose name votes for its prefix letter or for carrying none. A name of two capitals, or one opening on three or more, votes for neither, since it reads as a prefix and as an acronym alike",
+        "a TypeScript interface declaration outside any ambient module or namespace, whose name votes for its prefix letter or for carrying none. A name of two capitals, one opening on three or more, one whose prefix-shaped capital is not I, T or E, or one opening on a known acronym (IDs, IPv4, ETag), votes for neither, since it reads as a prefix and as an acronym alike",
       blind: null,
     },
     langs: ["js", "jsx"],
@@ -460,7 +506,7 @@ export const NAMING_AST = [
     precision: "precise",
     applicabilityPredicate: {
       sites:
-        "a TypeScript type alias declaration, whose name votes for its prefix letter or for carrying none. A name of two capitals, or one opening on three or more, votes for neither, since it reads as a prefix and as an acronym alike",
+        "a TypeScript type alias declaration, whose name votes for its prefix letter or for carrying none. A name of two capitals, one opening on three or more, one whose prefix-shaped capital is not I, T or E, or one opening on a known acronym (IDs, IPv4, ETag), votes for neither, since it reads as a prefix and as an acronym alike",
       blind: null,
     },
     langs: ["js", "jsx"],

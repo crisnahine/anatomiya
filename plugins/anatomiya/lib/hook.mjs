@@ -23,7 +23,8 @@ import { createHash } from "node:crypto";
 import { existsSync, lstatSync, readdirSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
-import { HEAD_BYTES, isOwned, OVERVIEW_FILE, RULES_DIR, SETTINGS_PATH, readHead, readTail, realpathOrNull, resolveInside } from "./rules.mjs";
+import { HEAD_BYTES, isOwned, OVERVIEW_FILE, REFRESH_STATE, RULES_DIR, SETTINGS_PATH, readHead, readTail, realpathOrNull, resolveInside } from "./rules.mjs";
+import { locator } from "./encode.mjs";
 import { FACTS_PATH, readRecord, schemaProblem } from "./facts.mjs";
 import { mainCheckoutOf } from "./worktree.mjs";
 
@@ -43,16 +44,22 @@ export const NOTICE_COMMAND = 'node "${CLAUDE_PLUGIN_ROOT}/bin/anatomiya.mjs" no
 /** The end-of-turn half, declared on `Stop` and answering for what the turn added. */
 export const REUSE_COMMAND = 'node "${CLAUDE_PLUGIN_ROOT}/bin/anatomiya.mjs" reuse';
 
-// What an older version wrote, whichever way it spelled the path. The removal
-// has to reach every spelling that ever shipped rather than only the one this
-// build would write, and the quoting has already changed once.
+/** The session-start and HEAD-moved hook: starts the refresh worker (`refresh.mjs`). */
+export const REFRESH_COMMAND = 'node "${CLAUDE_PLUGIN_ROOT}/bin/anatomiya.mjs" refresh';
+
+// What an older version wrote, quoted or not. The removal has to reach every
+// spelling that ever shipped rather than only the one this build would write.
 // `echo` and no other verb, because the sweep may only take out what a version
 // of this tool put there: 0.2.4 through 0.2.6 wrote that one and nothing has
 // written a settings hook since, so matching `notice` here would delete one a
-// person installed by hand. A whole group goes at a time, so one sharing a
-// group with the old entry still goes with it; what that installer wrote was a
-// group of its own, which is what keeps the path narrow rather than closed.
-const isOurCommand = (command) => /anatomiya\.mjs"?\s+echo\b/.test(String(command ?? ""));
+// person installed by hand. Named through `${CLAUDE_PLUGIN_ROOT}` and ending at
+// the verb, because every one of them did, and that variable going unsubstituted
+// is what broke them: a hook a person wired to a clone's absolute path runs,
+// and `echo-stats` is somebody's own verb, and a looser match takes both. A whole group
+// goes at a time, so one sharing a group with the old entry still goes with it;
+// what that installer wrote was a group of its own, which is what keeps the
+// path narrow rather than closed.
+const isOurCommand = (command) => /\$\{CLAUDE_PLUGIN_ROOT\}\/bin\/anatomiya\.mjs"?\s+echo\s*$/.test(String(command ?? ""));
 
 /**
  * Whether anything is already at a path, a broken link and a path that cannot
@@ -101,8 +108,14 @@ function isBoundary(at) {
  * the map above it is about the code there.
  */
 function ownMap(from) {
-  const hit = walkUp(from, (at) => readOwned(join(at, RULES_DIR, OVERVIEW_FILE)));
-  return hit && { map: hit.found, from: hit.from };
+  // Through F2's containment, as `ownLayout` reads the record: a tracked
+  // `.claude/rules` link to another checkout's rules delivered that map here,
+  // stamped as this repository's own.
+  const hit = walkUp(from, (at) => {
+    const path = resolveInside(at, `${RULES_DIR}/${OVERVIEW_FILE}`);
+    return path === null ? null : readOwned(path);
+  });
+  return hit && { map: hit.found, root: hit.at, from: hit.from };
 }
 
 /**
@@ -415,7 +428,9 @@ export function targetIn(payload, root, from) {
   if (target.length > PATH_MOST) return null;
   const rel = relative(resolveLinks(resolve(root)), resolveLinks(target));
   if (!rel || rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel)) return null;
-  return rel.split("\\").join("/");
+  // Only where a backslash is the separator: on POSIX it is a legal filename
+  // character, and splitting on it named a different file.
+  return sep === "\\" ? rel.split("\\").join("/") : rel;
 }
 
 /**
@@ -448,22 +463,47 @@ export function echoContext(root, { now = new Date(), transcript = null } = {}) 
   // scanned after it borrowed hears its own stamp even when the body matches.
   const hash = createHash("sha256").update(body);
   if (found.from !== null) hash.update(`\0${found.from}`);
+  // A failed refresh changes what the delivery says, so a window holding the
+  // healthy map hears it again. Only the flag is read: the error text is the
+  // repository's own and never reaches the context.
+  const failed = refreshFailed(found.from ?? found.root);
+  if (failed) hash.update("\0refresh-failed");
   const digest = hash.digest("hex").slice(0, 12);
   if (heldIn(transcript, digest)) return null;
 
+  // The remedy is the plugin's own command, which is the one spelling a model
+  // can run: the binary is `anatomiya.mjs` under a directory only the plugin
+  // loader knows, and a bare `anatomiya` is on nobody's PATH. Both stamps name
+  // where the counts came from, because a call about another checkout's file
+  // is answered from that checkout's map (H40), and a session holding two
+  // maps that each said only "this repository" could not tell them apart. The
+  // digest stays the body's: two maps with one body state the same things.
   const stamp =
     found.from === null
       ? [
-          "Counted from this repository's own code and re-read just now.",
+          `Counted from this repository's own code at ${locator(found.root)} and re-read just now.`,
           "Where this and the code disagree, the code is right and the map is stale:",
-          "run `anatomiya scan .` rather than believing this.",
+          "run `/anatomiya:scan` rather than believing this.",
         ]
       : [
-          `Counted from this repository's main checkout at ${found.from}, not this worktree, and re-read just now.`,
-          `The area files it names are under ${join(found.from, RULES_DIR)}, not in this worktree, so read them there.`,
+          `Counted from this repository's main checkout at ${locator(found.from)}, not this worktree, and re-read just now.`,
+          `The area files it names are under ${locator(join(found.from, RULES_DIR))}, not in this worktree, so read them there.`,
           "Where this and the code here disagree, the code is right:",
-          "run `anatomiya scan .` in this worktree for its own counts.",
+          "run `/anatomiya:scan` in this worktree for its own counts.",
         ];
+
+  // Where the map is borrowed, the refresh that failed is the main checkout's,
+  // and a scan here would build this worktree a map of its own instead.
+  if (failed) {
+    stamp.push(
+      found.from === null
+        ? "The last automatic refresh of this map failed, so it may be behind the code:"
+        : "The last automatic refresh of this map failed in the main checkout, so it may be behind the code:",
+      found.from === null
+        ? "run `/anatomiya:scan` to rebuild it and see why."
+        : "run `/anatomiya:scan` in the main checkout to rebuild it and see why."
+    );
+  }
 
   return [
     `<repository-map delivered="${now.toISOString()}" digest="${digest}">`,
@@ -472,6 +512,16 @@ export function echoContext(root, { now = new Date(), transcript = null } = {}) 
     body,
     "</repository-map>",
   ].join("\n");
+}
+
+/**
+ * Whether the refresh worker's last run in this checkout failed. The state is
+ * read through F2's containment like every other store read, and anything but
+ * an explicit `ok: false` reads as no failure.
+ */
+function refreshFailed(root) {
+  const path = resolveInside(root, REFRESH_STATE);
+  return path !== null && readRecord(path).record?.ok === false;
 }
 
 /**

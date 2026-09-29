@@ -1,5 +1,6 @@
 import { optionalChain, walk, isFunctionLike, declName, value } from "./walk.mjs";
 import { calleeName, jsxElementNames } from "./dimensions-jsx.mjs";
+import { ASSET_IMPORT } from "./langs.mjs";
 
 /**
  * More dimensions, same contract as `dimensions.mjs`: one claim, three
@@ -25,8 +26,18 @@ import { calleeName, jsxElementNames } from "./dimensions-jsx.mjs";
  * one can never state its inverse, whatever the counts say.
  */
 
-const SOURCE_IMPORT = /\.(js|jsx|mjs|cjs|ts|tsx)$/;
-const ASSET_IMPORT = /\.[a-z0-9]+$/i;
+// Case-blind like `ASSET_IMPORT`: `./x.JS` carries its extension as much as
+// `./x.js` does, and read case-sensitively it was a violation of the claim.
+const SOURCE_IMPORT = /\.(js|jsx|mjs|cjs|ts|tsx|mts|cts)$/i;
+
+// A source a transpiler other than this row's languages reads. It is not an
+// asset, so the wrapper rows still see it, but it is not a TS or JS module the
+// claim could ask to carry `.js` either: `./legacy.coffee` read as `.coffee`
+// being a stem missing its extension.
+const FOREIGN_SOURCE = /\.(coffee|es6)$/i;
+
+// `.`, `..`, and anything ending `/`, `/.` or `/..` names a directory.
+const DIRECTORY_IMPORT = /(^|\/)\.{0,2}$/;
 
 const isDefaultValue = (node) => {
   const n = value(node);
@@ -48,12 +59,16 @@ const isNullLiteral = (node) => {
   return n && ((n.type === "Literal" && n.value === null && !n.regex) || n.type === "NullLiteral");
 };
 
+// `void 0` runs nothing and is the old spelling of undefined itself, but a
+// `void` over anything else is there to run it: `return void list.push(x)` is
+// `list.push(x); return` on one line, the guard clause a bare return already is,
+// and `() => void submit()` discards a promise rather than choosing a spelling.
 const isUndefined = (node) => {
   const n = value(node);
   return (
     n &&
     ((n.type === "Identifier" && n.name === "undefined") ||
-      (n.type === "UnaryExpression" && n.operator === "void"))
+      (n.type === "UnaryExpression" && n.operator === "void" && value(n.argument)?.type === "Literal"))
   );
 };
 
@@ -111,9 +126,10 @@ const inTypeContext = (ctx) => ctx.ancestors.some((a) => TYPE_CONTEXT.has(a.type
  * Names read as values anywhere in the file. An import is type-only when its
  * local name appears in type position and never here.
  */
-function valueReads(program) {
+function valueReads(program, comments) {
   const names = new Set();
   const elements = jsxElementNames(program);
+  for (const name of jsxFactoryReads(program, comments)) names.add(name);
   walk(program, (n, ctx) => {
     const parent = ctx.ancestors[ctx.ancestors.length - 1];
     if (!parent) return;
@@ -133,6 +149,111 @@ function valueReads(program) {
     if ((parent.type === "Property" || parent.type === "ObjectProperty") && parent.key === n && !parent.computed) return;
     if (parent.type === "MemberExpression" && parent.property === n && !parent.computed) return;
     names.add(n.name);
+  });
+  for (const name of metadataReads(program)) names.add(name);
+  return names;
+}
+
+// `@jsx h`, `@jsx preact.h`, `@jsxFrag Fragment`: the binding is the root of
+// the dotted name, which is what the compiled call reads.
+const JSX_PRAGMA = /@jsx(?:Frag)?\s+([A-Za-z_$][\w$]*)/g;
+
+/**
+ * Names the JSX in this file reads without spelling them.
+ *
+ * Under the classic runtime `<div/>` compiles to `React.createElement` and
+ * `<></>` to `React.Fragment`, so a component typed `React.PropsWithChildren`
+ * reads React as a value although no identifier in the tree says so, and
+ * `import type React` there is TS1361 under `--jsx react`. A pragma swaps the
+ * factory for the name it gives. Which runtime the tsconfig picks is invisible
+ * here, so React is read whenever the file holds JSX: under the automatic
+ * runtime that loses a site, where the other reading asks for a broken build.
+ */
+function jsxFactoryReads(program, comments) {
+  let holdsJsx = false;
+  walk(program, (n) => {
+    if (n.type === "JSXElement" || n.type === "JSXFragment") holdsJsx = true;
+  });
+  if (!holdsJsx) return [];
+  const names = ["React"];
+  for (const c of comments || []) {
+    for (const m of (c.value ?? "").matchAll(JSX_PRAGMA)) names.push(m[1]);
+  }
+  return names;
+}
+
+/**
+ * The name a decorator's emitted metadata reads for one annotation, or null.
+ *
+ * The compiler serialises only the reference at the top of the type: a
+ * generic's argument, an array's element and a union of two types become
+ * `Promise`, `Array` and `Object`, and name nothing that was imported. A union
+ * with null or undefined keeps its one reference unless strictNullChecks is on,
+ * which this tier cannot see, so it is read as that reference: the mistake it
+ * risks leaves a site uncounted, where the other one asks for a broken
+ * injection.
+ */
+function emittedName(annotation) {
+  let t = annotation && annotation.type === "TSTypeAnnotation" ? annotation.typeAnnotation : annotation;
+  while (t && t.type === "TSParenthesizedType") t = t.typeAnnotation;
+  if (!t) return null;
+  if (t.type === "TSUnionType" || t.type === "TSIntersectionType") {
+    const rest = t.types.filter((m) => m.type !== "TSNullKeyword" && m.type !== "TSUndefinedKeyword");
+    return rest.length === 1 ? emittedName(rest[0]) : null;
+  }
+  if (t.type !== "TSTypeReference") return null;
+  // `ns.Service` is emitted as a read of `ns`, the namespace import.
+  let name = t.typeName;
+  while (name && name.type === "TSQualifiedName") name = name.left;
+  return name && name.type === "Identifier" ? name.name : null;
+}
+
+const hasDecorators = (n) => !!n && (n.decorators || []).length > 0;
+
+// A parameter property carries its decorators on itself or on the binding
+// inside it, and a default moves the annotation onto the binding's left side.
+const paramDecorated = (p) => hasDecorators(p) || (p.type === "TSParameterProperty" && hasDecorators(p.parameter));
+const paramAnnotation = (p) => {
+  const q = p.type === "TSParameterProperty" ? p.parameter : p;
+  return q && q.type === "AssignmentPattern" ? q.left.typeAnnotation : q && q.typeAnnotation;
+};
+
+/**
+ * Names a decorated signature's metadata reads as values.
+ *
+ * Under emitDecoratorMetadata a class with a decorator on it, or on one of its
+ * constructor's parameters, writes that constructor's parameter types into
+ * `design:paramtypes`, and a decorated member writes its own into `design:type`,
+ * `design:paramtypes` and `design:returntype`, each as the value the name is
+ * bound to. That is how Nest and Angular find what to inject. `import type`
+ * turns the emit into `Object`, which compiles, and the injector then fails at
+ * runtime. Whether the option is on is a tsconfig question this tier cannot
+ * see, so a decorated signature is read as though it were: the row loses a
+ * site where it is off, rather than asking for a break where it is on.
+ */
+function metadataReads(program) {
+  const names = new Set();
+  const take = (annotation) => {
+    const name = emittedName(annotation);
+    if (name) names.add(name);
+  };
+  walk(program, (n) => {
+    if (n.type !== "ClassDeclaration" && n.type !== "ClassExpression") return;
+    for (const m of n.body.body) {
+      if (m.type === "MethodDefinition") {
+        const fn = m.value;
+        // An overload signature has no body and emits nothing: the metadata is
+        // read off the implementation.
+        if (!fn || !fn.body) continue;
+        const params = fn.params || [];
+        const owner = m.kind === "constructor" ? n : m;
+        if (!hasDecorators(owner) && !params.some(paramDecorated)) continue;
+        for (const p of params) take(paramAnnotation(p));
+        if (m.kind !== "constructor") take(fn.returnType);
+      } else if ((m.type === "PropertyDefinition" || m.type === "AccessorProperty") && hasDecorators(m)) {
+        take(m.typeAnnotation);
+      }
+    }
   });
   return names;
 }
@@ -170,25 +291,36 @@ function ownReturns(fn) {
  * agree on every legal program and this is the stricter of the two on the rest.
  */
 function overloadImplementations(program) {
-  const impls = new Set();
+  // Each implementation mapped to whether every signature before it declares a
+  // return type, which is the boundary a caller sees (`explicit_return_type`).
+  const impls = new Map();
   // Every statement list, not the program's alone: a function inside
   // `namespace N { }` or a block has no enclosing declaration either, so it is
   // a module-level site the exclusion has to reach.
   walk(program, (n) => {
     if (!Array.isArray(n.body)) return;
     let signature = null;
+    let typed = true;
     for (const s of n.body) {
-      const d = s && s.type === "ExportNamedDeclaration" && s.declaration ? s.declaration : s;
+      // `export default function f(): T;` is an overload set as much as a named
+      // one, and unwrapping only the named export left its implementation a
+      // function-style site with no arrow form.
+      const exported = s && (s.type === "ExportNamedDeclaration" || s.type === "ExportDefaultDeclaration");
+      const d = exported && s.declaration ? s.declaration : s;
       if (!d || typeof d.type !== "string") {
         signature = null;
         continue;
       }
       if (d.type === "TSDeclareFunction") {
-        signature = d.id?.name ?? null;
+        const name = d.id?.name ?? null;
+        if (name !== signature) typed = true;
+        signature = name;
+        typed = typed && !!d.returnType;
         continue;
       }
-      if (d.type === "FunctionDeclaration" && signature !== null && d.id?.name === signature) impls.add(d);
+      if (d.type === "FunctionDeclaration" && signature !== null && d.id?.name === signature) impls.set(d, typed);
       signature = null;
+      typed = true;
     }
   });
   return impls;
@@ -215,6 +347,29 @@ const isEffectCallback = (fn, ctx) => {
 const mixesWithNullish = (n) =>
   !!n && n.type === "LogicalExpression" && (n.operator === "||" || n.operator === "&&");
 
+// The namespaces whose `forEach` takes the collection as its first argument:
+// lodash and its `_`, Ramda, the async library, React's `Children`, jQuery.
+const LIBRARY_FOREACH = /^(_|lodash|R|async|Children|\$|jQuery)$/;
+
+/**
+ * Whether a `.forEach` call is the collection's own method.
+ *
+ * `_.forEach(obj, fn)` iterates `obj`, which may be a plain object `for...of`
+ * refuses, and `async.forEach(items, fn, done)` is a callback-style loop with a
+ * completion the claim's form has no place for. Both read as `.forEach` called
+ * on something. Past the named namespaces, a call whose first argument is not
+ * a function and which has a second is the library shape: an array's own
+ * `forEach(fn, thisArg)` takes the callback first. A named function handed
+ * with a `thisArg` reads the same way and is lost, which is the safe side.
+ */
+function isArrayForEach(call) {
+  const obj = call.callee.object;
+  const tail = obj?.type === "Identifier" ? obj.name : obj?.type === "MemberExpression" && !obj.computed ? obj.property?.name : null;
+  if (LIBRARY_FOREACH.test(tail ?? "") || LIBRARY_FOREACH.test(rootIdentifier(obj) ?? "")) return false;
+  const [first, second] = call.arguments || [];
+  return !(second && first && !isFunctionLike(value(first)));
+}
+
 // A React hook is named for the rule that governs it: the linter, the compiler
 // and every doc read `use` plus a capital as the marker.
 const HOOK_NAME = /^use[A-Z]/;
@@ -235,7 +390,7 @@ function exportedHooks(program) {
   // that a module exports one.
   const seen = new Set();
   for (const n of program.body) {
-    if (n.type !== "ExportNamedDeclaration") continue;
+    if (n.type !== "ExportNamedDeclaration" && n.type !== "ExportDefaultDeclaration") continue;
     const d = n.declaration;
     if (!d) continue;
     const take = (id) => {
@@ -243,7 +398,12 @@ function exportedHooks(program) {
       seen.add(id.name);
       out.push(id);
     };
-    if (d.type === "VariableDeclaration") {
+    // A default export is exported as much as a named one: `export default
+    // function useB` beside `export function useA` is two hooks in one module,
+    // and `export default useB` names a hook declared above it.
+    if (n.type === "ExportDefaultDeclaration" && d.type === "Identifier") {
+      take(d);
+    } else if (d.type === "VariableDeclaration") {
       for (const decl of d.declarations) take(decl.id);
     } else if (d.type === "FunctionDeclaration" || d.type === "TSDeclareFunction") {
       take(d.id);
@@ -262,7 +422,7 @@ export const EXTRA_DIMENSIONS = [
     counterClaim: null,
     precision: "partial",
     applicabilityPredicate: {
-      sites: "a file exporting at least one declaration whose name starts with use and a capital, counted by name so an overload set is one hook; the module is one site, whatever the count",
+      sites: "a file exporting at least one declaration whose name starts with use and a capital, by name or as its default, counted by name so an overload set is one hook; the module is one site, whatever the count",
       blind: "a hook re-exported through a specifier or a barrel is declared elsewhere and is not resolved to it, so a file that only re-exports several reads as exporting none",
     },
     langs: ["js", "jsx"],
@@ -281,7 +441,10 @@ export const EXTRA_DIMENSIONS = [
     key: "function_style",
     tier: "syntactic",
     claim: "module-level functions are declared with function, not assigned as arrows",
-    counterClaim: "module-level functions are assigned as arrow consts, not declared with function",
+    // Says what the row counts on this side, and a `var` bound to a function
+    // expression counts here as much as an arrow const does. Naming arrows told
+    // an ES5 directory holding neither an arrow nor a const to bring in both.
+    counterClaim: "module-level functions are assigned to variables, not declared with function",
     precision: "precise",
     applicabilityPredicate: {
       sites: "a file declaring a function at module level, either as a declaration or as a binding initialised with one; a declaration carrying TypeScript overload signatures is not one, because an overload set has no arrow form",
@@ -319,7 +482,7 @@ export const EXTRA_DIMENSIONS = [
     counterClaim: null,
     precision: "partial",
     applicabilityPredicate: {
-      sites: "a file holding an export whose declaration is a function, or a variable declarator initialised with one",
+      sites: "a file holding an export whose declaration is a function, or a variable declarator initialised with one; an overload implementation conforms when every signature before it declares a return type",
       blind: "a plain JavaScript file has no annotation to find, and a typed wrapper hides the one the function has",
     },
     // The whole question is the annotation, so a tree whose annotations were
@@ -333,6 +496,7 @@ export const EXTRA_DIMENSIONS = [
     needsTypeSyntax: true,
     langs: ["js", "jsx"],
     run(program, add) {
+      const overloads = overloadImplementations(program);
       walk(program, (n) => {
         if (n.type !== "ExportNamedDeclaration" && n.type !== "ExportDefaultDeclaration") return;
         const d = n.declaration;
@@ -340,7 +504,12 @@ export const EXTRA_DIMENSIONS = [
         // `export default () => 1` is as much a boundary as a named export, so
         // any function-like declaration counts, not only a declared one.
         if (isFunctionLike(d)) {
-          return add({ node: d, conforming: !!d.returnType, where: declName(d) });
+          // An overload set's boundary is its signatures: the implementation's
+          // own is not callable from outside, so once every signature declares
+          // its return type the set does, and flagging the implementation asked
+          // for a line no caller reads.
+          const typed = !!d.returnType || overloads.get(d) === true;
+          return add({ node: d, conforming: typed, where: declName(d) });
         }
         if (d.type !== "VariableDeclaration") return;
         for (const v of d.declarations || []) {
@@ -362,15 +531,15 @@ export const EXTRA_DIMENSIONS = [
     precision: "partial",
     applicabilityPredicate: {
       sites: "a file importing a name that appears in type position and is never read as a value",
-      blind: "a name used in both positions, or re-exported, is not decidable from this file alone. A JSX element name reads as a value, so a lowercase host tag puts its own name in the value set and an imported type spelled the same stops being a site",
+      blind: "a name used in both positions, or re-exported, is not decidable from this file alone. A JSX element name reads as a value, so a lowercase host tag puts its own name in the value set and an imported type spelled the same stops being a site. A file holding JSX reads React, or the factory a @jsx or @jsxFrag pragma names, as the classic runtime does, whether or not the tsconfig picks that runtime. A type a decorated signature names reads as a value, which its metadata emit is, whether or not the tsconfig turns that emit on",
     },
     // The whole question is the annotation, so a tree whose annotations were
     // blanked can only answer it wrongly. `parse-worker.mjs` drops this row for
     // such a file rather than counting a confident zero.
     blindWhenStripped: true,
     langs: ["js", "jsx"],
-    run(program, add) {
-      const values = valueReads(program);
+    run(program, add, extra = {}) {
+      const values = valueReads(program, extra.comments);
       const types = new Set();
       walk(program, (n, ctx) => {
         if (n.type === "Identifier" && inTypeContext(ctx)) types.add(n.name);
@@ -394,9 +563,9 @@ export const EXTRA_DIMENSIONS = [
     counterClaim: "relative imports are written without the file extension",
     precision: "precise",
     applicabilityPredicate: {
-      sites: "a file whose static import or re-export names a file through a relative specifier, once directory and asset specifiers are dropped. A dynamic import() is not a static one",
+      sites: "a file whose static import or re-export names a file through a relative specifier, once directory and asset specifiers are dropped. A directory specifier is . or .. or one ending in /, /. or /..; an asset is a stylesheet, image, font or other format a bundler is handed whole. A dynamic import() is not a static one",
       notCounted:
-        "a specifier that is . or .. or ends in /, one ending in any extension but js/jsx/mjs/cjs/ts/tsx, and a dynamic import()",
+        "a specifier naming a directory, an asset, or a .coffee or .es6 source, and a dynamic import()",
       blind: null,
     },
     // A type-only import is one of these sites, and the stripper deletes the
@@ -415,11 +584,13 @@ export const EXTRA_DIMENSIONS = [
         // source import missing its extension.
         const spec = src.replace(/[?#].*$/, "");
         // A directory specifier has no file name to carry an extension, so it
-        // cannot conform and is not a choice anyone made.
-        if (spec === "." || spec === ".." || spec.endsWith("/")) return;
+        // cannot conform and is not a choice anyone made. `./dir/..` is one
+        // as much as `../` is.
+        if (DIRECTORY_IMPORT.test(spec)) return;
         // A stylesheet or an image is always imported by its full name, so
-        // counting it would report an extension convention no one chose.
-        if (ASSET_IMPORT.test(spec) && !SOURCE_IMPORT.test(spec)) return;
+        // counting it would report an extension convention no one chose. Any
+        // other suffix is a stem the source file carries before its extension.
+        if (ASSET_IMPORT.test(spec) || FOREIGN_SOURCE.test(spec)) return;
         add({ node: n, conforming: SOURCE_IMPORT.test(spec), where: null });
       });
     },
@@ -470,6 +641,11 @@ export const EXTRA_DIMENSIONS = [
         "a ! standing alone, or heading a read the grammar refuses ?. on: a write target, a new callee, a tagged tag",
       blind: "a value narrowed by an if is a third form neither count sees",
     },
+    // `o!.a` is a SyntaxError in a plain .js or .mjs file, so there every `?.`
+    // is a conforming site with no counter-site possible: this repository's own
+    // lib stated the row at 190 of 190 without a line of TypeScript in it. Such
+    // a file leaves the denominator, the trade `explicit_return_type` makes.
+    needsTypeSyntax: true,
     langs: ["js", "jsx"],
     run(program, add) {
       walk(program, (n, ctx) => {
@@ -549,7 +725,7 @@ export const EXTRA_DIMENSIONS = [
     counterClaim: null,
     precision: "partial",
     applicabilityPredicate: {
-      sites: "a file holding a for...of statement or a .forEach called on something",
+      sites: "a file holding a for...of statement or a .forEach called on something, other than a library's forEach that takes the collection as an argument",
       blind: "an indexed for loop is a third form the claim does not name and neither count reaches, and whether a receiver can be iterated at all is a tsconfig question (target, downlevelIteration, whether lib includes DOM.Iterable) this tier cannot see: a NodeList under an ES5 target answers TS2495 to the for...of the claim asks for",
     },
     langs: ["js", "jsx"],
@@ -560,6 +736,7 @@ export const EXTRA_DIMENSIONS = [
         }
         if (n.type !== "CallExpression" || calleeName(n.callee) !== "forEach") return;
         if (n.callee.type !== "MemberExpression") return;
+        if (!isArrayForEach(n)) return;
         add({ node: n, conforming: false, where: declName(ctx.fn) });
       });
     },
@@ -596,7 +773,7 @@ export const EXTRA_DIMENSIONS = [
     counterClaim: "assertions are written with assert(), not expect()",
     precision: "partial",
     applicabilityPredicate: {
-      sites: "a file calling expect or assert, including a member chain rooted at assert",
+      sites: "a file calling expect, expect.soft, expect.poll or assert, including a member chain rooted at assert",
       blind: "an assertion behind a helper, or from a third library, carries neither name",
     },
     langs: ["js", "jsx"],
@@ -608,6 +785,17 @@ export const EXTRA_DIMENSIONS = [
           if (c.name === "expect") return add({ node: n, conforming: true, where: null });
           if (c.name === "assert") return add({ node: n, conforming: false, where: null });
           return;
+        }
+        // `expect.soft(x)` and `expect.poll(fn)` open an assertion the way
+        // `expect(x)` does. The other members off `expect` are matchers and
+        // setup (`expect.any`, `expect.assertions`, `expect.extend`), which
+        // assert nothing on their own and stay uncounted.
+        if (
+          c && c.type === "MemberExpression" && !c.computed &&
+          c.object?.type === "Identifier" && c.object.name === "expect" &&
+          /^(soft|poll)$/.test(c.property?.name ?? "")
+        ) {
+          return add({ node: n, conforming: true, where: null });
         }
         // `assert.strict.equal` is the same library two members deep.
         if (rootIdentifier(c) === "assert") add({ node: n, conforming: false, where: null });
@@ -627,7 +815,7 @@ export const EXTRA_DIMENSIONS = [
     counterClaim: "code here explains itself; exported functions carry no doc comment",
     precision: "partial",
     applicabilityPredicate: {
-      sites: "a file exporting a top-level function or class, by name, as a default, or as a function-valued const; a comment opening with a tool directive is not a doc comment on either side",
+      sites: "a file exporting a top-level function or class, by name, as a default, or as a function-valued const; a comment opening with a tool directive or a TODO, FIXME, XXX or HACK note, and a license or copyright header, is not a doc comment on either side",
       blind: "a doc comment on a re-export, or attached through a wrapper, is not seen",
     },
     langs: ["js", "jsx"],
@@ -637,8 +825,15 @@ export const EXTRA_DIMENSIONS = [
       // in the order it is walked.
       const comments = [...(extra.comments || [])].sort((a, b) => b.end - a.end);
       const source = extra.source || "";
+      // A decorator list written above `export` belongs to the class, and the
+      // parser starts the export at the keyword after it, so measured from
+      // there the gap held `@Injectable()` and every documented NestJS or
+      // Angular class read as undocumented. TypeScript and JSDoc attach the
+      // comment above the decorators to the class, so the declaration begins at
+      // whichever comes first.
+      const top = (n) => Math.min(n.start, ...(n.declaration?.decorators || []).map((d) => d.start));
       const site = (n, name) =>
-        add({ node: n, conforming: attachedAbove(comments, n.start, source), where: name ?? null });
+        add({ node: n, conforming: attachedAbove(comments, top(n), source), where: name ?? null });
       walk(program, (n) => {
         if (n.type === "ExportNamedDeclaration" && n.declaration) {
           const d = n.declaration;
@@ -670,7 +865,19 @@ export const EXTRA_DIMENSIONS = [
 const DIRECTIVE_COMMENT =
   /^\s*(?:\/\s*<reference\b|eslint-|@ts-(?:expect-error|ignore|nocheck)\b|prettier-ignore\b|biome-ignore\b|istanbul\s+ignore\b|[cv]8\s+ignore\b|#(?:end)?region\b)/;
 
-const isDirectiveComment = (c) => DIRECTIVE_COMMENT.test(c.value ?? "");
+// A work note and a license header sit above an export as often as a doc does
+// and document nothing about it: `// TODO: split this` over an undocumented
+// function read as its doc, and so did the `/*! Copyright */` header of a file
+// whose first statement is an export. A doc comment that opens on a license
+// line is a license header whatever follows, so the header test reads every
+// line and the work-note test only the first.
+const WORK_NOTE = /^[\s*]*(?:TODO|FIXME|XXX|HACK)\b/i;
+const LICENSE_HEADER = /^[\s*!]*(?:@license\b|@preserve\b|copyright\b|SPDX-License-Identifier:)/im;
+
+const isNotDocumentation = (c) => {
+  const text = c.value ?? "";
+  return DIRECTIVE_COMMENT.test(text) || WORK_NOTE.test(text) || LICENSE_HEADER.test(text);
+};
 
 /**
  * Whether a doc comment sits directly above this declaration.
@@ -689,7 +896,7 @@ function attachedAbove(comments, start, source) {
     if (!/^\s*$/.test(source.slice(c.end, edge))) return false;
     const lineStart = source.lastIndexOf("\n", c.start) + 1;
     if (!/^\s*$/.test(source.slice(lineStart, c.start))) return false;
-    if (!isDirectiveComment(c)) return true;
+    if (!isNotDocumentation(c)) return true;
     edge = c.start;
   }
   return false;

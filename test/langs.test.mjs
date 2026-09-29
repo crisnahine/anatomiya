@@ -195,3 +195,16 @@ test("holdsTypeSyntax takes either answer, the path's or the tree's", async () =
   assert.equal(holdsTypeSyntax("src/a.js"), false, "no facets is the path's answer");
   assert.equal(holdsTypeSyntax("src/a.js", null), false);
 });
+
+test("a .js file whose tree holds JSX speaks JSX too, and only then", async () => {
+  // JSX is legal in a `.js` file and the grammar already reads it there, so the
+  // extension alone left every component written in `.js` outside the rows
+  // that ask about JSX while the scan labelled the same file "(JSX)".
+  const { spokenIn } = await import("../plugins/anatomiya/lib/langs.mjs");
+
+  assert.deepEqual(spokenIn("js", { jsx: true }), ["js", "jsx"]);
+  assert.deepEqual(spokenIn("js", { jsx: false }), ["js"]);
+  assert.deepEqual(spokenIn("js", null), ["js"], "no facets is the path's answer");
+  assert.deepEqual(spokenIn("jsx", { jsx: false }), ["jsx"], "a .tsx file stays what its extension says");
+  assert.deepEqual(spokenIn("ruby", { jsx: true }), ["ruby"]);
+});

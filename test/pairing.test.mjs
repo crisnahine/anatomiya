@@ -145,6 +145,23 @@ test("applying pairings does not mutate the record it was handed", () => {
 
 
 
+test("a record reused from another corpus answers the obligation this corpus holds, or none", () => {
+  // The baseline reuses today's record for every producer unchanged since the
+  // pin, and today's record already carries today's pairing answer. Where the
+  // pinned tree held no companion of that shape, re-applying over it left
+  // today's answer in place, so specs added after the pin read as the
+  // baseline's own habit and the branch was held to it.
+  const today = { rel: "lib/tasks/a.rake", ok: true, hits: { rake_task_spec: [{ conforming: true, elsewhere: false }], other: [{ conforming: true }] } };
+  const parsed = new Map([["lib/tasks/a.rake", today]]);
+  const atPin = new Set(["lib/tasks/a.rake"]);
+
+  applyPairings(parsed, atPin, ["ruby"]);
+
+  assert.equal(parsed.get("lib/tasks/a.rake").hits.rake_task_spec, undefined);
+  assert.deepEqual(parsed.get("lib/tasks/a.rake").hits.other, [{ conforming: true }], "other hits survive");
+  assert.deepEqual(today.hits.rake_task_spec, [{ conforming: true, elsewhere: false }], "and today's record is not written to");
+});
+
 test("a dimension that is not a pairing carries no companion count at all", () => {
   // The fold stays blind to the difference: an absent key is absent, not zero,
   // so nothing renders a companion line for a syntax dimension.

@@ -1,10 +1,11 @@
-import { dirname } from "node:path";
+import { dirname } from "node:path/posix";
 import { createHash } from "node:crypto";
 // The registry's own table, or the glob delivers to less than the counts were
 // taken over. Listing an extension the repository does not use matches nothing
 // extra, so the list is the language's rather than the area's.
 import { EXT_BY_LANG, LANGUAGES } from "./langs.mjs";
 import { byCode } from "./paths.mjs";
+import { sanitisePath } from "./encode.mjs";
 
 export const AREA = {
   floor: [3, 8],        // a directory below the floor folds into its parent
@@ -185,9 +186,24 @@ export function assertGlobSafe(g) {
  * nothing at all. An area rooted there cannot be delivered either way, so it is
  * never rooted there: the files fold into an ancestor that can be spelled, whose
  * recursive tail still reaches them.
+ *
+ * The encoder is the other half of the same question. Every directory reaches
+ * the rendered glob through it (F4), and it rewrites what it cannot render
+ * safely rather than refusing it: a non-Latin name becomes a placeholder and a
+ * path past its cap ends in `…`. Measured: `src/компоненты` and a 129-character
+ * directory each got an area file whose `paths` could never match, written and
+ * silent. So a directory is spellable only where the encoder hands it back
+ * unchanged, and one it would rewrite folds like glob syntax does; what reaches
+ * the root with nowhere spellable to go is reported as uncovered.
+ *
+ * Glob syntax includes `(`, `)` and `\`: picomatch and minimatch both read
+ * `@(lib)` and `x+(y)` as extglobs, `(ab)` as a group and `a\b` as an escaped
+ * `b`, so each of those directories rooted an area whose `paths` matched
+ * nothing or a different directory. `+` and `@` only bite in front of a `(`.
  */
-const GLOB_SYNTAX = /[*?[\]{}!]/;
-const spellable = (dir) => dir === "." || !dir.split("/").some((seg) => GLOB_SYNTAX.test(seg));
+const GLOB_SYNTAX = /[*?[\]{}!()\\]/;
+const spellable = (dir) =>
+  dir === "." || (!dir.split("/").some((seg) => GLOB_SYNTAX.test(seg)) && sanitisePath(dir) === dir);
 
 /** Directory of a repository-relative file path, "." for the root. */
 function dirOf(rel) {
@@ -420,10 +436,12 @@ function capCount(areas, maxAreas) {
   const orphaned = [];
 
   while (byPath.size > maxAreas && order.length) {
-    // Re-read through byPath: an area that already absorbed a victim is a new
-    // object, and folding the stale one loses the files it absorbed.
-    const victim = byPath.get(order.shift().path);
-    if (!victim) continue;
+    // An entry is live only while it is the object byPath holds: a host that
+    // absorbed a victim is a new object queued again at its new size, and the
+    // entry it left behind is skipped rather than folded early, or folded as
+    // the stale object that loses the files it absorbed.
+    const victim = order.shift();
+    if (byPath.get(victim.path) !== victim) continue;
 
     // Fold into the nearest ancestor that is itself an area. Never into the
     // repository root: a root "area" is a bucket of everything that failed to
@@ -453,12 +471,33 @@ function capCount(areas, maxAreas) {
     // Creating a host is the one fold that does not shrink the map, so the new
     // area joins the queue: without it a tree of single-child directories walks
     // the queue to the end and returns more areas than the ceiling allows.
-    if (!host) order.push(merged);
+    //
+    // At its size, not at the end, and a host that grew moves to its new size
+    // too. Appended, a three-file host outlived every larger area: with a
+    // ceiling of three, `x/y/v` (3), `m` (10), `n` (20) and `o` (30) kept `x/y`
+    // and left m's ten files uncovered. Left where it was, a host that had just
+    // absorbed a child was folded at the size it had before.
+    requeue(order, merged);
   }
 
   const out = [...byPath.values()];
   out.orphaned = orphaned;
   return out;
+}
+
+// Put an area at its place in a queue kept smallest first, after any area of
+// the same size so a tie keeps the order the queue already gave it. Found by
+// halving rather than by scanning, since a large tree folds tens of thousands
+// of times; the entry a grown host leaves behind stays and is skipped live.
+function requeue(order, area) {
+  let lo = 0;
+  let hi = order.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (order[mid].fileCount <= area.fileCount) lo = mid + 1;
+    else hi = mid;
+  }
+  order.splice(lo, 0, area);
 }
 
 /**

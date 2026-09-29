@@ -25,14 +25,17 @@ const loaded = await loadTypeScript();
 const ts = loaded?.ts;
 const needsTs = { skip: ts ? false : "typescript is not installed" };
 
-test("a repository with no tsconfig is degraded, not broken", needsTs, () => {
+test("a repository with no tsconfig runs on the compiler's defaults and says it had none", needsTs, () => {
   const dir = repo({ "a.ts": "export const a = 1" });
   try {
     const r = readConfig(ts, dir);
-    assert.equal(r.status, "degraded");
+    // Not broken, and not degraded before anything was measured: `tsc` runs
+    // on these same defaults there, and the resolution rate decides.
+    assert.equal(r.status, "ok");
     assert.equal(r.reason, "no-tsconfig");
-    // Degraded still runs. Refusing would make every untyped repository silent.
+    // It still runs. Refusing would make every untyped repository silent.
     assert.equal(typeof r.options, "object");
+    assert.equal(r.options.noEmit, true, "the forced options hold on the defaults too");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -70,6 +73,36 @@ test("an extends pointing outside the repository is refused and reported", needs
     const r = readConfig(ts, dir);
     assert.equal(r.status, "degraded");
     assert.equal(r.reason, "extends-escaped");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a solution-style root's reference leaving the repository is refused and reported", needsTs, () => {
+  // The referenced project is a path the repository writes, the same as an
+  // `extends`, so it is read under the same confinement rather than opened.
+  const dir = repo({ "tsconfig.json": `{"files":[],"references":[{"path":"../../outside"}]}` });
+  try {
+    const r = readConfig(ts, dir);
+    assert.equal(r.status, "degraded");
+    assert.equal(r.reason, "reference-escaped");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a root that holds files of its own is read as itself, references or not", needsTs, () => {
+  // Only the shape that builds nothing itself hands its options over: a root
+  // with an include is a project, and its references are its dependencies.
+  const dir = repo({
+    "tsconfig.json": `{"compilerOptions":{"strict":true},"include":["src"],"references":[{"path":"./lib"}]}`,
+    "lib/tsconfig.json": `{"compilerOptions":{"strict":false,"jsx":"react-jsx"}}`,
+  });
+  try {
+    const r = readConfig(ts, dir);
+    assert.equal(r.status, "ok");
+    assert.equal(r.options.strict, true);
+    assert.equal(r.options.jsx, undefined);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -451,6 +484,40 @@ test("two Windows drives have no relative path between them, and that is not con
   assert.equal(within("../a.ts"), false);
   assert.equal(within("/etc/passwd"), false);
   assert.equal(within("D:\\other\\a.ts"), false);
+});
+
+test("a directory whose name starts with two dots is inside, not above", (t) => {
+  // `rel.startsWith("..")` read `..base/tsconfig.json` as a step above the
+  // root, so an `extends` into a directory of that name was refused as
+  // escaped and the whole tier degraded. Only `..` as a whole segment climbs.
+  assert.equal(within("..base/tsconfig.json"), true);
+  assert.equal(within("..base\\tsconfig.json"), true);
+  assert.equal(within(".."), false);
+  assert.equal(within("..\\a.ts"), false);
+  const dir = tree(t);
+  mkdirSync(join(dir, "..base"));
+  writeFileSync(join(dir, "..base", "a.ts"), "export const a = 1;\n");
+  assert.equal(insideRoot(dir, join(dir, "..base", "a.ts")), true);
+  assert.equal(insideRoot(dir, join(dir, "..")), false);
+});
+
+test("a root tsconfig that is a link out of the repository is refused, not followed", { skip: needsTs.skip || needsSymlinks.skip }, () => {
+  // The root config was read with the host's own readFile, before anything
+  // confined it, so a committed `tsconfig.json` linking to a file outside the
+  // repository was opened and its options handed to the checker.
+  const away = repo({ "tsconfig.json": `{"compilerOptions":{"strict":true}}` });
+  const dir = repo({ "a.ts": "export const a = 1;\n" });
+  try {
+    symlinkSync(join(away, "tsconfig.json"), join(dir, "tsconfig.json"));
+    const r = readConfig(ts, dir);
+    assert.equal(r.status, "degraded");
+    assert.equal(r.reason, "config-escaped");
+    assert.notEqual(r.options.strict, true, "nothing the outside file says reaches the checker");
+    assert.equal(r.options.noEmit, true, "and the forced options still hold");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+    rmSync(away, { recursive: true, force: true });
+  }
 });
 
 test("containment folds case on Windows and nowhere else", () => {

@@ -293,6 +293,27 @@ test("a language whose parser could not run at all is named", async (t) => {
   assert.deepEqual(result.parse.unreadable, ["jsx"], "no jsx file was readable, and the parser never answered");
 });
 
+test("an area holding a file of a language no file of which was read is held, not described", async (t) => {
+  // Decided per language (B41): described from the half of its files that
+  // answered, the area's file would be written over with claims this run had
+  // no way to measure. It is handed to the writer to leave as it is, while a
+  // directory of the language that was read is described as usual.
+  const dir = repo(t, (d, { git, write }) => {
+    for (let i = 0; i < 6; i++) write(`src/m${i}.ts`, moduleSource(i));
+    write("src/bomb.jsx", "const x = " + "[".repeat(60_000) + "1" + "]".repeat(60_000) + "\n");
+    for (let i = 0; i < 6; i++) write(`lib/n${i}.ts`, moduleSource(10 + i));
+    git("add", "-A");
+    git("commit", "-qm", "init");
+  });
+
+  const result = await scan(dir);
+
+  assert.deepEqual(result.parse.unreadable, ["jsx"]);
+  assert.deepEqual(result.held.map((a) => a.path), ["src"]);
+  assert.deepEqual(result.areas.map((a) => a.path), ["lib"], "the directory that was read is still described");
+  assert.equal(result.readNothing, false);
+});
+
 test("one file with a syntax error is not a language this run went blind on", async (t) => {
   // Measured: six healthy .ts files and one broken .jsx froze the entire map,
   // wrote nothing, and told the reader a interpreter was missing. jsx is its
@@ -351,6 +372,33 @@ test("a path with a newline or a leading dash survives the whole scan", needsPos
   const dim = dimension(result, "src", "module_state_const");
   for (const rel of odd) assert.ok(dim.files.includes(rel), `${JSON.stringify(rel)} was counted`);
   assert.equal(dim.authors, 2, "git log attributed the odd paths too");
+});
+
+test("the author who wrote only the exception is not a second author of the habit", async (t) => {
+  // D4 counts authors over the files carrying the side being stated. Sixty
+  // files by one person hold every conforming site, and a second person wrote
+  // the one file that breaks the habit. Counted over every file with a site,
+  // the deviator became the second pair of hands the gate asks for, and the
+  // map stated one person's habit as the directory's convention.
+  const counterOnly = "let first = 1\nlet second = 2\nexport { first, second }\n";
+  const dir = repo(t, (d, { git, write, author }) => {
+    for (let i = 0; i < 60; i++) write(`src/m${i}.ts`, moduleSource(i));
+    git("add", "-A");
+    git("commit", "-qm", "init");
+    author("second@t.test");
+    write("src/zz.ts", counterOnly);
+    git("add", "-A");
+    git("commit", "-qm", "the exception");
+  });
+
+  const result = await scan(dir);
+  const dim = dimension(result, "src", "module_state_const");
+
+  assert.equal(result.authors.repo, 2, "the bar is two: this repository has two people in it");
+  assert.deepEqual({ candidates: dim.candidates, conforming: dim.conforming }, { candidates: 122, conforming: 120 });
+  assert.equal(dim.authors, 1, "only one person wrote a conforming site");
+  assert.equal(dim.directive, false);
+  assert.equal(dim.gate, "authors");
 });
 
 test("two scans of an unchanged repository agree", async (t) => {
@@ -511,7 +559,7 @@ test("a greenfield area does not state its inverse either", async (t) => {
   assert.equal(d.conforming, 0);
   assert.equal(d.counterRatio, 1);
   assert.ok(d.counterBound >= 0.9, `counter bound ${d.counterBound} clears the bar on its own`);
-  assert.equal(d.authors, 2);
+  assert.equal(d.counterAuthors, 2, "both people wrote the counter sites");
 
   assert.equal(d.states, null, "the inverse is blocked with the claim");
   assert.equal(d.directive, false);
@@ -739,8 +787,10 @@ test("a degraded checker suppresses its own claims across a real scan", async (t
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
   mkdirSync(join(dir, "src"), { recursive: true });
-  // No tsconfig, so the tier is degraded by rule, and chains the checker could
-  // not resolve either way.
+  // A tsconfig that does not parse, so the tier is degraded by rule whatever
+  // resolved. A missing one no longer is: the checker runs on its defaults
+  // there and the rate decides.
+  writeFileSync(join(dir, "tsconfig.json"), "{ this is not json");
   for (let i = 0; i < 14; i++) {
     writeFileSync(
       join(dir, "src", `f${i}.ts`),

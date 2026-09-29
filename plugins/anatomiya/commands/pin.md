@@ -4,6 +4,13 @@ description: Accept the current file population as the baseline the map is measu
 
 Pin the baseline, but only when the user asked for it.
 
+Where the repository has a remote, the pin already follows its default branch on its own: whenever
+the checkout sits on that branch's tip with nothing uncommitted, that tip arrived by an ordinary fetch
+or pull, and no commit this clone made sits on its line, the background refresh moves the pin there.
+It never follows a map or pin the repository commits. This command is for a repository with no
+remote, for a commit pushed straight to the default branch, or for a user accepting a population by
+hand.
+
 1. Run the pin. Use Bash, and use the plugin's own copy:
 
    ```
@@ -13,10 +20,14 @@ Pin the baseline, but only when the user asked for it.
    Add `--dry-run` to print the delta and write nothing.
 
 2. Report what came back:
-   - the commit it pinned, and the previous one if there was a pin already
-   - how many files enter the baseline population and how many leave it
+   - the commit it pinned, and the previous one if there was a pin already. Where the pin on disk
+     could not be read, say that it was replaced and why: a merge conflict in it, or a newer build's
+     pin, is the user's to know about
+   - how many files enter the baseline population and how many leave it, and how many only moved
+     between areas
    - the areas it lists, and for each one the files that left. A file leaving is a file whose
-     claims are no longer counted at the baseline
+     claims are no longer counted at the baseline. A file that moved is still counted, in its new
+     area
 
 3. Then run the scan again. The pin decides which population the gates read, so the map on disk is
    still measured against the old one until it is rebuilt:
@@ -29,8 +40,9 @@ Pin the baseline, but only when the user asked for it.
    suppresses its automatic injection for the rest of the session, which turns the map off for the
    very session that just rebuilt it. Use `cat` or `head` through Bash if you need to show one.
 
-5. Tell the user that a session already running still holds the previous map. A rewritten context
-   file does not re-attach mid-session; a fresh session picks up the new one.
+5. Tell the user what reaches a session already running: it gets the new overview on its next
+   prompt or tool call. An area file it has already read keeps its old counts until the window is
+   rebuilt: a new session, a compaction or `/clear` loads the whole map.
 
 6. Never run this because a check reported findings, and never suggest it while a branch is under
    review. The pin says which files a human accepted as the population every claim is counted over.
@@ -40,5 +52,7 @@ Pin the baseline, but only when the user asked for it.
 Before the first pin the scan measures against the current working tree, and no check finding can
 exceed FIX. That is the weaker mode, not a broken one.
 
-If the pin exits non-zero, show its output and stop. A capped corpus refuses to pin, because a
+If the pin exits non-zero, show its output and stop. It refuses while tracked files differ from HEAD,
+since the pin records HEAD and the files it holds: tell the user to commit or stash them first, and
+do not do either yourself. A capped corpus refuses to pin, because a
 partial population recorded as the whole one is the one error this file cannot be recovered from.

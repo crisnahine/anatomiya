@@ -113,8 +113,9 @@ function importedPath(fromDir, specifier) {
 //
 // The source spellings are named rather than the extension dropped: dropping it
 // let one `./foo.js` answer `foo.json` and `foo.css` too, crediting a module
-// with a test that reads the table beside it.
-const SOURCE_OF = {
+// with a test that reads the table beside it. `siblings.mjs` reads the same
+// table, so the reuse roster and the companions agree on what a specifier names.
+export const SOURCE_OF = {
   ".js": [".ts", ".tsx"],
   ".jsx": [".tsx"],
   ".mjs": [".mts"],

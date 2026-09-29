@@ -196,6 +196,20 @@ test("a refusal reaches the runner as an annotation", needsSpawnableNpm, () => {
   assert.match(run.stderr, /^::error::/m, run.stderr);
 });
 
+// `--chek` was stepped over as an option nobody knew, so the typo of the gate
+// ran the write it exists to keep off the lockfile.
+test("an option this does not know is refused before anything is run or written", (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-plugin-lock-typo-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+  for (const typo of ["--chek", "-c", "--help"]) {
+    const run = spawnSync(process.execPath, [join(ROOT, "scripts", "plugin-lock.mjs"), typo, dir], { encoding: "utf8", timeout: 60_000 });
+
+    assert.equal(run.status, 2, `${typo}: ${run.stdout}${run.stderr}`);
+    assert.match(run.stderr, new RegExp(`unknown option: ${typo}`));
+  }
+});
+
 test("on Windows the gate says why it did not run, rather than failing on npm", () => {
   // npm ships there as a batch file with no `.exe`, a spawn resolves an
   // extension-less name against `.com` and `.exe` only, and running the batch

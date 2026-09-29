@@ -72,3 +72,27 @@ test("whatever the job throws on is one error message, not a dead channel", need
   assert.equal(out.length, 1);
   assert.match(out[0].error, /null/);
 });
+
+test("a .js file handed to the job is held by the program whatever the tsconfig says", needsTs, async () => {
+  // The scan hands the checker every js and jsx file, and law_of_demeter's
+  // denominator counts them all, but without allowJs the program never held a
+  // .js file: a repository of six .ts and six .js files measured applicability
+  // 6 over a langFileCount of 12, so the row read as narrow on files it never
+  // looked at. Held, not checked: checkJs stays off, so a .js file is read
+  // for its types and never charged a diagnostic.
+  const dir = repo({
+    "tsconfig.json": config,
+    "a.ts": `export const x = " a ".trim().toLowerCase();`,
+    "b.js": `export const y = " b ".trim().toLowerCase();`,
+  });
+  try {
+    const files = [{ rel: "a.ts", abs: join(dir, "a.ts") }, { rel: "b.js", abs: join(dir, "b.js") }];
+    const out = await sent({ root: dir, files });
+    assert.deepEqual(out.filter((m) => m.rel).map((m) => m.rel), ["a.ts", "b.js"]);
+    const b = out.find((m) => m.rel === "b.js");
+    assert.deepEqual(Object.keys(b.hits), ["law_of_demeter"]);
+    assert.deepEqual(out[0].resolution, { resolved: 4, total: 4 }, "the .js file's accesses are measured too");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
