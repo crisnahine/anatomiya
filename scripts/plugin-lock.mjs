@@ -70,15 +70,21 @@ const NESTED_UNDER = `${REL.anatomiya}/node_modules/`;
  * this plugin ships would stop being the version the suite runs on. Re-keyed to
  * this plugin's own root, where npm will look for it once the plugin is one,
  * and last, so it wins over the hoisted copy.
+ *
+ * One field is left off every entry: `libc`. npm 11 writes it when it resolves
+ * a package that declares one, as oxc's Linux bindings do, and keeps it from a
+ * seed that has it. npm 10 drops it. ci runs both, so a root lockfile npm 11
+ * wrote, which is what a Dependabot bump pushes, gave the two legs different
+ * files and one refused the other's. Left out of the seed, neither writes it.
  */
 export function seedFor(rootLock, manifest) {
   const packages = {};
   const nested = {};
-  for (const [path, entry] of Object.entries(rootLock.packages ?? {})) {
+  for (const [path, { libc, ...entry }] of Object.entries(rootLock.packages ?? {})) {
     // The link test comes first, because the nested entries below are applied
     // last and win: on the other branch only, a nested link replaced a real
     // resolution with a pointer at another workspace.
-    if (path === "" || entry?.link === true) continue;
+    if (path === "" || entry.link === true) continue;
     if (path.startsWith(NESTED_UNDER)) {
       nested[`node_modules/${path.slice(NESTED_UNDER.length)}`] = entry;
       continue;
