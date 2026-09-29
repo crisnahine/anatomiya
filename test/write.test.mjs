@@ -1185,22 +1185,22 @@ test("a map directory linked to a file is named by its own path, never by the fi
   symlinkSync("../README.md", join(dir, RULES));
   assert.throws(
     () => writeMap(result(dir, [area("src/services")])),
-    (err) => err.message.startsWith(`${RULES} resolves outside`) && !/README/.test(err.message)
+    (err) => err.message.startsWith(`${RULES} is a link to README.md, which is not a directory`) && !/remove it/.test(err.message)
   );
   assert.equal(readFileSync(join(dir, "README.md"), "utf8"), "# readme\n");
   assert.equal(readFileSync(join(dir, ".claude", "notes.md"), "utf8"), "notes\n");
   rmSync(dir, { recursive: true, force: true });
 });
 
-test("map directories linked elsewhere inside the repository are refused, not written through", () => {
-  // Measured: with committed `.claude/anatomiya -> ../.git/hooks` and
-  // `.claude/rules -> ../src`, a scan wrote facts.json into .git/hooks and the
-  // map into src while printing `.claude/...`. Both resolve inside the
-  // repository, which is all containment asked; the directories are the ones
-  // under the repository's own `.claude`, and a link out of it is refused.
+test("map directories linked where the tool must not write are refused, not written through", () => {
+  // Measured: with committed `.claude/anatomiya -> ../.git/hooks`, a scan wrote
+  // facts.json into .git/hooks while printing `.claude/...`. The store is held
+  // to the repository's own `.claude`, and the map to the working tree outside
+  // the git directory.
   for (const [link, target] of [
-    [RULES, "../src"],
+    [RULES, "../.git/hooks"],
     [STORE, "../.git/hooks"],
+    [STORE, "../config"],
     [".claude", "config"],
   ]) {
     const dir = workspace();
@@ -1213,7 +1213,7 @@ test("map directories linked elsewhere inside the repository are refused, not wr
     for (const dryRun of [true, false]) {
       assert.throws(
         () => writeMap(result(dir, [area("src/services")]), { dryRun }),
-        /resolves outside the repository's own \.claude directory/,
+        link === STORE ? /resolves outside the repository's own \.claude directory/ : /resolves where this tool does not write/,
         `${link}, ${dryRun ? "dry run" : "real write"}`
       );
     }
@@ -1222,6 +1222,26 @@ test("map directories linked elsewhere inside the repository are refused, not wr
     assert.deepEqual(readdirSync(join(dir, "config")), [], `${link}: nothing in config`);
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("a rules directory the repository shares between agents through a link is written through", () => {
+  // Measured on calcom/cal.diy: a committed `.claude/rules -> ../agents/rules`
+  // keeps one rules directory for every agent, and Claude Code reads it
+  // through the link. Refused, the scan wrote nothing at all there.
+  const dir = workspace();
+  mkdirSync(join(dir, "agents", "rules"), { recursive: true });
+  writeFileSync(join(dir, "agents", "rules", "house.md"), "# ours\n");
+  mkdirSync(join(dir, ".claude"), { recursive: true });
+  symlinkSync("../agents/rules", join(dir, RULES));
+
+  writeMap(result(dir, [area("src/services")]), { dryRun: true });
+  writeMap(result(dir, [area("src/services")]));
+
+  const written = readdirSync(join(dir, "agents", "rules"));
+  assert.ok(written.includes("anatomiya-overview.md"), written.join(", "));
+  assert.equal(readFileSync(join(dir, "agents", "rules", "house.md"), "utf8"), "# ours\n");
+  assert.equal(existsSync(join(dir, STORE, "facts.json")), true, "the store stays in the repository's own .claude");
+  rmSync(dir, { recursive: true, force: true });
 });
 
 test("a directory where facts.json belongs is refused by name before a dry run answers", () => {

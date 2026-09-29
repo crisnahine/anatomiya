@@ -197,9 +197,11 @@ line review of `check`, the pin, the Ruby parser and the dimension rows.
   characters long.
 - A path mixing Armenian or Cherokee letters into a Latin word (`src/cօnfig.ts`) is refused as a
   look-alike, as Cyrillic and Greek already were.
-- `.claude/rules` or `.claude/anatomiya` linked anywhere outside the repository's own `.claude` (into
-  `src`, or into `.git/hooks`) is refused by `scan` and `pin` rather than written through, and a
-  `facts.json` or `baseline.json` linked out of the repository is no longer read.
+- `.claude/anatomiya` linked anywhere outside the repository's own `.claude` (into `.git/hooks`, say),
+  and `.claude/rules` linked out of the repository or into its git directory, are refused by `scan`
+  and `pin` rather than written through, and a `facts.json` or `baseline.json` linked out of the
+  repository is no longer read. A `.claude/rules` linked to a shared rules directory elsewhere in the
+  repository (`.claude/rules -> ../agents/rules`) is still written through.
 - A map directory linked to a file is refused by its own name, saying it is a link, rather than by
   the name of the file it points at: `.claude/rules -> ../README.md` said to remove the README.
 - `pin --dry-run` and `scan --dry-run` refuse by name a store, pin or record the write could not get

@@ -255,11 +255,9 @@ export function resolveInside(root, relPath) {
 
   let at = base;
   // What the rest of the walk has to stay inside. The repository, until the
-  // walk enters `.claude`, and from there `.claude` itself: every path this
-  // tool writes lives under it, and inside the repository was not enough.
-  // Measured: committed `.claude/anatomiya -> ../.git/hooks` and
-  // `.claude/rules -> ../src` both resolve inside, so a scan wrote facts.json
-  // into .git/hooks and the map into src while printing `.claude/...`.
+  // walk enters `.claude`, and from there `.claude` itself: measured, a
+  // committed `.claude/anatomiya -> ../.git/hooks` resolves inside the
+  // repository, and a scan wrote facts.json into .git/hooks.
   let fence = base;
   for (let i = 0; i < parts.length; i++) {
     const next = join(at, parts[i]);
@@ -274,7 +272,15 @@ export function resolveInside(root, relPath) {
       // parent that already resolved inside.
       return join(at, ...parts.slice(i));
     }
-    if (!contains(fence, real)) return null;
+    if (!contains(fence, real)) {
+      // `.claude/rules` alone may lead elsewhere in the working tree, never into
+      // the git directory: calcom/cal.diy commits `.claude/rules ->
+      // ../agents/rules` to share one rules directory between agents, Claude
+      // Code reads it through the link, and refused, the scan wrote nothing.
+      const shared = i === 1 && `${parts[0]}/${parts[1]}` === RULES_DIR;
+      if (!shared || !contains(base, real) || contains(join(base, ".git"), real)) return null;
+      fence = real;
+    }
     if (i === 0 && parts[0] === CLAUDE_DIR) {
       // `.claude` itself is the repository's own directory or it is refused: a
       // link to a directory elsewhere in the tree moves the fence with it.
@@ -289,13 +295,13 @@ export function resolveInside(root, relPath) {
 const CLAUDE_DIR = ".claude";
 
 /**
- * The refusal a caller prints for a path `resolveInside` answered null for.
- *
- * One sentence, because the containment is now `.claude` and not the whole
- * repository, and the old "resolves outside the repository" was false about a
- * `.claude/rules -> ../src` that the refusal exists for.
+ * The refusal a caller prints for a path `resolveInside` answered null for,
+ * which names the fence that path is held to.
  */
-export const outsideClaude = (relPath) => `${relPath} resolves outside the repository's own ${CLAUDE_DIR} directory`;
+export const outsideClaude = (relPath) =>
+  relPath === RULES_DIR || relPath.startsWith(`${RULES_DIR}/`)
+    ? `${relPath} resolves where this tool does not write: outside the repository, into its git directory, or through a ${CLAUDE_DIR} that is a link`
+    : `${relPath} resolves outside the repository's own ${CLAUDE_DIR} directory`;
 
 /**
  * The first thing on the way down to a directory under the repository that
