@@ -17,6 +17,11 @@ updates:
     schedule:
       interval: monthly
     open-pull-requests-limit: 3
+    # `--deep` is held to typescript major 5 (B7): 7 is the Go port with no JS
+    # API, so a major bump only switches the checker off.
+    ignore:
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]
     groups:
       npm:
         patterns: ["*"]
