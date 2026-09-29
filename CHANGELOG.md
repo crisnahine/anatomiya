@@ -7,7 +7,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
-## [0.11.0] - 2026-09-29
+## [0.11.0] - 2026-09-30
 
 The map keeps itself current. After the first `scan` in a checkout, a background refresh rescans at
 the start of every session and whenever HEAD moves, and the pin follows `origin`'s default branch when
