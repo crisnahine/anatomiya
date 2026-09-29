@@ -7,6 +7,542 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-09-30
+
+The map keeps itself current. After the first `scan` in a checkout, a background refresh rescans at
+the start of every session and whenever HEAD moves, and the pin follows `origin`'s default branch when
+a fetch or a pull brought its tip and no commit it would accept was made in this clone. A repository's
+own `.git/config` can no longer make a read run a command. The rest is about a hundred fixes from a
+line review of `check`, the pin, the Ruby parser and the dimension rows.
+
+### Added
+
+- A map built with `--deep` is kept current too, rebuilt with the type checker the way it was built.
+- A linked worktree with no pin of its own reads its main checkout's, so `check` there no longer caps
+  every finding at FIX in a repository that has a pin.
+- Each automatic pin records what it accepted in `.claude/anatomiya/refresh.json`: the commit it
+  moved from and to, and how many files entered and left the population.
+- The map keeps itself current. After the first `scan` in a checkout, a background refresh rescans
+  at the start of every session and whenever HEAD moves, and only when the commit, the tracked
+  files, the pin or the plugin version changed. The hook returns at once and the scan runs detached.
+  It leaves alone a checkout with no map of its own, a map committed to the repository, and a
+  repository mid-merge or mid-rebase, and keeps the previous map when a rescan fails. A refresh that
+  failed is said once in the delivered map, with `/anatomiya:scan` as the way to see why.
+- The pin follows the remote default branch: when the checkout sits on the tip of `origin`'s default
+  branch with nothing uncommitted, the refresh moves the pin forward to it. A feature branch, an
+  unpushed commit, a commit this clone pushed straight onto the default branch (however it got
+  there), an edited or staged file, a repository with no remote, and a clone that keeps no reflog
+  never pin. A branch merged through a pull request's merge commit is pinned once pulled.
+
+### Fixed
+
+- Git LFS installed for one repository only (`git lfs install --local`) keeps working: the standard
+  `git-lfs` filter commands are the one repository-configured command left to run, since they run
+  the user's own installed `git-lfs`.
+- On git's reftable backend the automatic pin never followed: a reftable clone writes the remote-tracking
+  ref an entry with no message, which read as a commit made in this clone. Remote-tracking refs'
+  entries are no longer read as commits made here. Verified on git 2.51, where the whole suite passes.
+- A Dependabot bump of a runtime dependency no longer fails ci until somebody regenerates the plugin's
+  lockfile: `.github/workflows/dependabot-lock.yml` regenerates it on the Dependabot branch, pushes it,
+  and starts ci on the new commit.
+- A repository's own `.git/config` can no longer make a read run a command: its filter drivers,
+  ssh command, credential helpers, askpass, `git://` proxy, alternate-refs command, upload-pack and
+  signature program, and those of its submodules, are replaced for every git call, while your own
+  global settings for the same keys keep working.
+- A partial clone's lazy fetch, on `check`'s read of the merge base, still ran an upload-pack the
+  repository's own config named. For such a repository that fetch is not made, and the object reads
+  as missing.
+- A repository could still run a command through Git LFS, which reads the repository's config and
+  runs an extension or transfer command named there. A repository naming one gets no `git-lfs` at
+  all, your global filter included.
+- A lock file the repository shipped as a link to `/dev/zero` hung every refresh worker with its
+  memory growing, and one stamped in the future held every refresh. The lock is read bounded, and a
+  future stamp is stale.
+- The first automatic pin was held for good for anyone who had pushed straight to the default branch
+  from another machine before the clone existed, and a pin whose commit git had collected (a
+  squash-merged branch) held with a line blaming a commit made here. Both now pin.
+- `git fetch origin main:main` read as this clone moving the tracking ref, and held the pin, while
+  `git fetch --refmap=...` putting another branch into the tracking ref was followed.
+- A repository committing the refresh's lock, or any other file under `.claude/anatomiya/`, had it
+  removed by the refresh, and `pin` then refused the tree. Such a checkout is left alone.
+- A move landing while another refresh held the lock waited for the next move. The holder now runs
+  once more.
+- A linked worktree on reftable missed a commit on its detached HEAD until the next session.
+- `check` on macOS parsed one of two paths spelling an accented name two ways with the other's
+  contents.
+- The automatic pin could still accept this clone's own commit once its reflog record was gone: a
+  worktree removed with its branch (how Claude Code's worktrees end), or, past a pin, entries expired by `gc`.
+  A commit whose committer is this clone's own identity is now held too. A commit subject starting
+  "Fast-forward" or a branch named with parentheses no longer reads as a fast-forward or a rebase step.
+- A copied project's `.claude/` in a subdirectory made the refresh scan the enclosing repository,
+  which never opted in, and write a map at its root.
+- In a repository scanned before its first commit, the refresh stopped for the rest of the session
+  after that commit.
+- A tracked `.claude/rules` link to another checkout delivered that checkout's map as this one's.
+- A backslash in a POSIX filename was read as a directory separator by the pre-write notice.
+- A failed refresh's half-hour retry clock restarted whenever what the pin decided changed.
+- `check | head` and the like no longer end with an EPIPE stack trace.
+- `type_only_import` no longer asks for `import type React` in a file holding JSX, which the classic
+  runtime compiles to `React.createElement`; a `@jsx` or `@jsxFrag` pragma's factory counts the same.
+- `module_state_const` no longer asks for `const` in place of `using` or `await using`, which would
+  drop the disposal.
+- `import_extension` no longer counts imports of PDFs, web manifests, templates, message catalogues,
+  3D models, SQL, shaders, videos, `.proto`, `.jsonc`, `.coffee` or `.es6` files, or `./dir/..`, as
+  source imports missing their extension, and reads `./x.JS` as carrying one.
+- `function_style` no longer counts the implementation of a default-exported overload set.
+- `explicit_return_type` no longer flags an overload implementation whose signatures all declare a
+  return type.
+- `hook_per_module` counts a default-exported hook.
+- `assertion_style` counts `expect.soft(x)` and `expect.poll(fn)` as expect assertions.
+- `iterate_with_for_of` no longer counts `_.forEach(obj, fn)`, `React.Children.forEach`,
+  `async.forEach` or any other library forEach that takes the collection as an argument.
+- `doc_comment_style` no longer reads a TODO, FIXME, XXX or HACK note, or a license header, above an
+  export as its doc comment.
+- `swallowed_error` no longer reads `catch (e) { items.forEach((e) => log(e)) }` as using the caught
+  error: a nested binding of the same name hides it.
+- An import whose name merely contains a routing word (`./settingsSlice`, `./request-utils`,
+  `./api-errors`) is no longer taken for the repository's config module or client, so every access
+  through it stops counting as a routed read.
+- `API.ts`, `APIClient.ts` and `HTTPClient.ts` are recognised as the repository's client: an
+  acronym in a filename is one word, not one word per letter.
+- An export made by `forwardRef(ButtonInner)`, `memo(CardImpl)`, `lazy(() => import(...))` or
+  `dynamic(() => import(...))` is a component, and is no longer asked to follow the helpers' naming.
+- `handler_memoised` judges a handler by the innermost binding of its name, not the last one read.
+- A lowercase filename with an accent (`café.ts`) is no longer reported as spelling no naming class,
+  and `OAuthToken`, `ETag` and `IDs` no longer vote for an `O`, `E` or `I` type-name prefix.
+- With `--deep`, `.js` files are read by the type checker, so `law_of_demeter` no longer counts them
+  in its denominator while never looking at them.
+- A tsconfig `extends` into a directory whose name starts with two dots (`..base/`) is no longer
+  refused as leaving the repository, and a root `tsconfig.json` linking out of it is refused.
+- A parser worker that starts and never says it is ready is killed after 20 seconds, and a pool no
+  worker becomes ready in reports its files as crashed rather than waiting forever.
+- A directory named `@(lib)`, `x+(y)`, `(ab)` or `a\b` no longer becomes an area whose `paths`
+  matches nothing or another directory: its files fold into the nearest ancestor, like other glob
+  syntax.
+- Files in no area are no longer all blamed on "too few per directory": the line names the three
+  causes, the repository root, the per-directory floor, and a directory name no glob can spell.
+- The overview's tests line names a root that counts only one level's files as
+  `lib (files at this level)`, not `lib`, which read as the whole subtree.
+- A count of one reads as one on the overview and the scan summary: `1 file holds`, `1 file says a
+  generator wrote it`, `this tool leaves it`, `0 of 1 site`, `1 matches the model default`,
+  `1 area file removed`, and no `file(s)` left on either.
+- The scan summary prints the repository root with unprintable characters replaced and only the
+  first line of an unreadable history's error, encoded, as `--format json` already did, so neither
+  can add a line of its own.
+- An overview with no area says no directory became one instead of a bare `## Areas (0)`, and a
+  one-author repository no longer says "every claim below" over no claims.
+- A blobless clone whose remote is not named `origin` reads its history offline instead of
+  reporting it unread.
+- The author of the first commit counts even where `log.showRoot` is set to false.
+- `module_include` tells `class A::Worker` from `class B::Worker` in one file, so a forgotten
+  include in one is no longer hidden by the other's.
+- An `include` inside `class << self` is no longer counted as an include into the class, for
+  `module_include` and for the Sidekiq worker check.
+- A bare `rescue` that reads `$!` or `$ERROR_INFO` counts as using the error.
+- `doctor` reports a `ruby` that cannot run at all (an rbenv shim with no version selected) as the
+  interpreter's failure, with its own error, rather than as a missing prism.
+- A prism installed with `gem install --user-install` under `XDG_DATA_HOME` is found.
+- `setup --dry-run` with nothing to install no longer also prints an npm command it would run.
+- A migration's `execute` is read as data work when its SQL starts with a comment or is a `MERGE`.
+- A Ruby file holding `1e400` or a binary-encoded string is parsed instead of reported unread.
+- prism parses with the grammar of the Ruby it runs on, so code that Ruby accepts (such as
+  `a[0, k: 1] = 2` before 3.4) is no longer reported as a syntax error.
+- `check` on a shallow clone that already holds the base branch (`--no-single-branch`, or a
+  `fetch --depth=1 origin main`) finds the base its merge commit names, and otherwise says to fetch
+  the history, rather than examining nothing.
+- `check` on a shallow clone finds a remote default branch named something other than main or master.
+- `check --base` refuses `HEAD~0`, and a branch's own name on a branch with commits of its own,
+  rather than comparing the branch with itself and reporting it clean.
+- `check` reports a companion moved in the working tree to a name it does not count, such as
+  `thing_spec.rb.bak`, as missing, as it already did once the move was committed.
+- `check` no longer reports a test renamed within its own directory as a test with no precedent.
+- `check` judges a file holding tens of thousands of sites in seconds rather than half a minute.
+- `check` reports a site added above a renamed function where it was added, not on the renamed one.
+- `check`'s header and `base.sha` name the base branch's own tip; `base.mergeBase` is the fork point.
+- `check` skips a submodule whose path looks like a source file rather than naming it unreadable.
+- `check` reads the base side of two files whose paths differ only in case as two files on a
+  case-insensitive filesystem, rather than one overwriting the other.
+- `check` treats a branch's moves as moves past git's default rename limit, and says so
+  (`renames-skipped`) past its own, rather than charging moved code as new.
+- A scan run during an unresolved merge counted each conflicted file two or three times, once per
+  stage git lists it at. Each path now counts once.
+- A `.gitattributes` `linguist-generated` pattern with a leading slash (`/gen/**`) excluded nothing,
+  and one with no slash (`schema.ts`) matched only at the repository root. Both now match where git
+  matches them.
+- An area file's `most imported from here` line no longer lists a namespace import as an empty name,
+  and names a default import for its module (`user (default)`) rather than printing `default`.
+- A tracked file the scan could not read (a directory it may not enter, a name that is not UTF-8, a
+  file deleted since the commit) was left out without a word. The scan summary now says how many.
+- Folding areas to fit the area ceiling could leave a larger area's files uncovered while a smaller
+  area it had just created survived. Areas are now folded strictly smallest first.
+- A test file holding only table-driven cases (`test.each(...)(...)`, `describe.each(...)(...)`) lost
+  its runner label, and a minitest file written in the `describe`/`it` spec style was labelled RSpec.
+- A repository created without a reflog, or on git's reftable backend, refreshed only on a checkout:
+  nothing appended to the `logs/HEAD` the hook watched. It now watches the index there, or the
+  reftable table list, so a commit or a pull refreshes the map as it does everywhere else.
+- When the automatic pin stops following (a commit made in this clone on the default branch, a tip
+  this clone pushed, a tip with no record of how it moved, a question git could not answer), each
+  session you start or resume opens with one line in the terminal saying so, until a pin by hand, or
+  a refresh that no longer holds it, ends it; a compaction or a clear inside the session does not
+  repeat it. It is recorded in
+  `refresh.json` too, and never reaches the model.
+- The end-of-turn check asks git for the reflog where it is not a file (reftable), so a turn that
+  committed everything it wrote is still asked about there.
+- A refresh worker whose lock had been taken over no longer deletes the new holder's lock.
+- A rule file opening with `---` and repeating `generator: anatomiya` without closing the fence took
+  seconds to recognise as not ours (50 s for a 1 MB overview, past the hook's timeout). It is now
+  read in one pass.
+- Variation selectors, the combining grapheme joiner and the Hangul fillers no longer ride invisibly
+  through the encoder, and a value capped at a few graphemes can no longer come out a million
+  characters long.
+- A path mixing Armenian or Cherokee letters into a Latin word (`src/cօnfig.ts`) is refused as a
+  look-alike, as Cyrillic and Greek already were.
+- `.claude/anatomiya` linked anywhere outside the repository's own `.claude` (into `.git/hooks`, say),
+  and `.claude/rules` linked out of the repository or into its git directory, are refused by `scan`
+  and `pin` rather than written through, and a `facts.json` or `baseline.json` linked out of the
+  repository is no longer read. A `.claude/rules` linked to a shared rules directory elsewhere in the
+  repository (`.claude/rules -> ../agents/rules`) is still written through.
+- A map directory linked to a file is refused by its own name, saying it is a link, rather than by
+  the name of the file it points at: `.claude/rules -> ../README.md` said to remove the README.
+- `pin --dry-run` and `scan --dry-run` refuse by name a store, pin or record the write could not get
+  past, where they said "would write" and the real run died on `ENOTDIR`, `EEXIST` or `EISDIR`.
+- A committed `facts.json` whose held area carried a malformed dimension took the scan down; such an
+  area is no longer carried.
+- A pin naming a corpus size that is not a count of its files (`-5`) is refused as unreadable,
+  instead of making every one-file directory an area.
+- A write that fails part way, on a full disk, no longer leaves its temporary file beside the map.
+- A guard named after an inherited property (`toString`) is refused like any other unknown guard.
+- A prerelease of an engine's floor version (`1.0.0.rc1`, `1.0.0-rc.1`) no longer counts as meeting
+  the floor.
+- A repository's own `.git/config` can no longer make the git reads run a command through
+  `core.fsmonitor` or a hook.
+- `pin` asks again, once the file list is read, whether HEAD and the tree still match: a commit or a
+  `git add` landing while a large index was read put files into a pin labelled with the commit
+  checked before.
+- A linked worktree reading its main checkout's map now hears when that checkout's automatic refresh
+  failed.
+- On a blobless partial clone with the branch checked out directly, `check` skipped every changed
+  file as unreadable at the merge base and reported nothing. It now fetches those blobs from the
+  clone's own remote; every other read still refuses to reach the network.
+- A scan run by hand clears a failed automatic refresh, which the delivered map kept reporting, and
+  the next refresh no longer rescans a checkout that has not moved.
+- The one remedy still naming a bare `anatomiya scan .` (a worktree with no map) now names
+  `/anatomiya:scan`.
+- On a Ruby with no `prism` at all (2.7 to 3.2 before `gem install prism`), `check` reported nothing
+  found and `scan` wrote nothing, with no remedy: every file read as crashing the parser. Both now
+  refuse with the Ruby remedy, as they do when `ruby` is absent.
+- The checkout path the delivered map names can no longer carry a newline or a bidi override into
+  the session's context.
+- A repository whose directories are named in Russian, Greek, Japanese or any one script got no area
+  and an overview of `<path with mixed scripts>` placeholders. Only a word that mixes look-alike
+  alphabets (`раyments`, a Cyrillic `а` in a Latin word) is refused now.
+- Listing the installed `prism` gems no longer loads the newest installed `json` gem, whose failure
+  silently kept an older Ruby on its too-old default parser.
+- Two refresh workers started within milliseconds of each other could both run: the lock file was
+  created empty and filled in after, and the second read the empty one as abandoned.
+- In an Angular or NestJS repository, the environment, logging and network conventions stopped
+  seeing a wrapper named the way those frameworks name files (`./config.service`, `./env.constants`):
+  any dotted suffix was read as an asset's extension. They now use the same list of asset formats as
+  the import-extension convention, so a source import is a source import in both.
+- The automatic pin could follow a remote-tracking ref this clone had moved itself, by `git push` or
+  `git update-ref`, and so accept the agent's own commits as the population everything is judged
+  against. It now follows a tip only when a fetch or a pull brought it, and never one HEAD moved away
+  from while it was being judged.
+- The background refresh rewrote a `baseline.json` the repository commits, leaving a change in
+  `git status` nobody made. A committed pin is now left alone like a committed map.
+- The refresh ran for any file another plugin had asked Claude Code to watch, and its answer
+  replaced that plugin's watch with its own. It now answers only for the files that say this
+  checkout's `HEAD` moved: its reflog, or where there is none the index, or reftable's `tables.list`.
+- A refresh that failed once, for a reason of the machine's rather than the checkout's, was not tried
+  again until the next commit. It is retried after half an hour.
+- On a very large repository the refresh never ran: the index it hashes was read whole and gave up
+  past 64 MB. It is streamed.
+- `check` examined nothing on the checkout `actions/checkout` makes for a pull request, one depth-1
+  fetch of the merge ref, and printed 0 MUST-FIX, 0 FIX, 0 NIT on every pull request. A base that is
+  one of the merge commit's own parents is now taken as the merge base, and a shallow clone that
+  still reaches none says to fetch the history (`fetch-depth: 0`).
+- On a shallow clone where the base commit could be fetched, every finding was capped at FIX under
+  "cannot resolve origin/main", one line below a header naming origin/main as the base. Staleness is
+  now measured against the commit the run compared against.
+- A file the branch committed and then deleted before committing again got a MUST-FIX on a file
+  that no longer existed, and one moved with `git mv` was skipped with a false "could not read at
+  the merge base", its new violations with it. A path deleted or moved away in the tree is no longer
+  judged, and a move of a file the branch added is judged as the addition it is.
+- `check` judged generated files the map never counted (an `@generated` header, or
+  `linguist-generated` in `.gitattributes`), so a branch that regenerated a client got a MUST-FIX per
+  site in code nobody writes by hand. They are left out of the check the way the scan leaves them out.
+- With two identical sites in one file, a branch that added the new one above the old one was
+  reported at the old one: wrong line, wrong function, and an annotation on code the branch never
+  touched. Every Ruby rescue added above a swallowing one was misplaced this way.
+- A `.ts` file renamed to `.tsx`, or back, was skipped whole with a false "did not parse at the
+  merge base": its old version was parsed with the new name's grammar. It is parsed as the file it was.
+- Deleting a spec on a branch and leaving its model alone passed clean against a map stating "a
+  model ships with a spec", while a one-line edit to the model was flagged. A producer whose
+  companion the branch removed, committed or not, is now held to the obligation.
+- A new file staged with `git add -N` was skipped with a false "could not read at the merge base".
+  It is judged as the addition it is.
+- With `diff.renames` or `status.renames` turned off, an uncommitted `git mv` read as a deletion and
+  an addition, and every violation the moved file already held was reported at MUST-FIX against
+  whoever moved it. The check asks for rename detection itself.
+- A file over the 1 MiB cap was reported as one `check` could not read, under `head-unreadable`,
+  which points at git or the disk. It is named as past the size cap, under `head-oversize`.
+- A file its area's globs miss by type, such as a `.tsx` in an area of `.ts` files, was capped with
+  a reason naming a directory above the one it sits in. The reason names the type the area file
+  does not reach.
+- A symlinked source file answered two ways by commit state: committed, `check` parsed the link's
+  own text and blamed syntax the parser rejected; uncommitted, it charged the target's sites a second
+  time under the link's name. A link is left out of the check.
+- `check` rewrote the paths it reported, in every format: one over 120 characters came out ending
+  in `…`, and one in a non-Latin script as "<path with mixed scripts, N chars>", in the JSON record
+  and the GitHub `file=` property as well, so the annotation could not be placed and the file could
+  not be opened. A path is now the file's own, with only what breaks or reorders a line removed.
+- The end-of-turn check blocked every turn, a question included, when the session's transcript
+  could not be read, over files left changed before the session began, and it never stopped: what it
+  had already asked is read back from that transcript too. A stop with no readable transcript now
+  asks nothing.
+- Mid-merge, the end-of-turn check named the other branch's code as the turn's added functions and
+  asked for the copy to be deleted. It asks nothing while a merge, a cherry-pick, a revert or a rebase
+  is unfinished.
+- A scan took out any hook in `.claude/settings.local.json` whose command held `anatomiya.mjs` and
+  then `echo`, including an echo wired by hand to a clone's absolute path, which works, and somebody's
+  own `echo-stats`, and said this tool had written them. It now takes out only the
+  `${CLAUDE_PLUGIN_ROOT}` entry 0.2.4 through 0.2.6 wrote.
+- `scan --dry-run` said the old settings hook "was taken out" over a file it had not touched. It now
+  says the hook would be taken out.
+- The echoed map told the model to run `anatomiya scan .` when it looked stale, a command nothing
+  installs, so following it ended in "command not found". It now names `/anatomiya:scan`, in a
+  worktree too, and so does the README.
+- An echoed map said only that it was counted from "this repository", so a session reading files
+  in two checkouts held two maps it could not tell apart. It now names the checkout it was counted at.
+- In a vendored copy of a scanned project, whose record sits below the git root, the end-of-turn
+  check named an unchanged file and missed the real edit. It no longer reads a change against a
+  record that is not at its checkout's root.
+- A tracked symlink to a source file inside the repository was read as source. Every site in its
+  target counted twice. An uncommitted edit to the target also moved the pinned baseline the branch is
+  measured against, because the link itself had not changed since the pin. A symlink is now left out
+  of the map wherever it points, and its target is counted where it is tracked.
+- An area file for a directory with a non-Latin name, or with a path longer than 120 characters, was
+  written with a `paths` pattern that could never match it (`<path with mixed scripts, 14 chars>/**`,
+  `.../w…/**`), so its rules never loaded and nothing said so. Such a directory no longer gets an
+  area of its own. Its files join the nearest parent directory whose name can be written as is, and
+  are reported as uncovered where no such parent exists below the repository root.
+- In TypeScript written for Node16 or NodeNext, which puts `.js` on every relative import, every
+  area was missing its "Most imported from here" line, because `../utils/format.js` was never matched
+  to `format.ts`. Such an import now names the source it is compiled from, and so does an alias
+  like `@/utils/format.js`.
+- With a regular file at `.claude/rules`, `.claude` or `.claude/anatomiya`, `scan --dry-run` said it
+  would write the map, and the real `scan` then failed with a raw `EEXIST` or `ENOTDIR`. Both now
+  refuse, name the file in the way and say to remove it.
+- On Node 20 or 21, `scan` died halfway with `Map.groupBy is not a function`, which names neither
+  Node nor a fix, while `doctor` called every engine ok. Nothing enforces the Node 22 the plugin
+  declares, and Claude Code's own installer needs no Node, so the `node` on `PATH` can be any version.
+  `doctor` now starts with a row for the Node it runs on and the fix. Every other command refuses an
+  older Node with that sentence before it does any work, and the hooks answer nothing and exit 0.
+- A worktree Claude Code made from the README's `.worktreeinclude` got the map but not the pin, so
+  `check` there capped every finding at FIX with "no baseline pinned" in a repository that had one.
+  The recipe now copies `.claude/anatomiya/baseline.json` as well.
+- `pin` accepted an empty population with exit 0 when the source had never been committed, and every
+  area the first commit then made stated nothing until somebody pinned again. It now refuses, a dry
+  run included, and counts the untracked source the way the scan does.
+- A re-pin counted a file that only moved to another area as one file entering the population and
+  one leaving it, and listed it as leaving, so a floor step that re-partitioned a repository
+  reported departures that never happened. Entering and leaving are now counted over the whole
+  population, and a move is reported as a move beside the areas it crossed.
+- A pin that would not load, whether a merge left conflict markers in it or a newer build wrote it,
+  read as no pin: the scan and the check said "no baseline pinned" and `pin` printed a first pin over
+  it. Each now says the pin on disk could not be read and why, and `pin` says it is replacing it.
+  Claims still drop to counts, as before.
+- `pin` could still be taken mid-merge when the conflict was in a tracked source file under
+  `.claude/`, recording that file once per merge stage and a corpus larger than the tree. It now
+  refuses while any path in the index is unmerged.
+- A repository using SHA-256 object names could not be pinned (`pin` said it had no commit) and
+  `check` could read none of its files. Object names of up to 64 digits are accepted now.
+- On a partial clone, reading a pinned file fetched it from the remote, which nothing here may do
+  unasked, and with the remote gone every pinned file came back unread. Missing objects are now
+  reported missing instead of fetched.
+- `pin` listed a staged, edited, deleted or conflicted file against a commit that did not hold it,
+  and every later scan closed that area as a population change for as long as the pin stood. It now
+  refuses while tracked files differ from HEAD, dry run included, and says to commit or stash first.
+- Ruby specs written after the pin could read as the baseline's own habit. The baseline reuses
+  today's record for every file unchanged since the pin, and that record carried today's answer to
+  "does this have its spec"; where the pinned tree had no spec of that shape, the answer stayed, and
+  a branch was held to a convention its own agent had just started. The answer is now worked out
+  over the pinned tree alone.
+- A scan could write outside the repository through a symlink planted where its temporary file
+  went. Each file was written to `<name>.tmp-<pid>` beside its destination with a write that
+  follows a link, so a repository shipping that name as a tracked symlink had the map's bytes
+  written wherever it pointed. The temporary name is now unpredictable and created exclusively, which
+  refuses any entry already there.
+- A Ruby whose `prism` is too old read as every Ruby file crashing the parser: `scan` exited 0,
+  withheld the whole map, JavaScript areas included, and named no remedy. It now fails the way a
+  missing interpreter does, with the remedy.
+- A branch cut before the pin read every file the default branch added since as missing, and closed
+  each area those files were in. Those files were never on the branch, and no longer count as gone.
+- Ruby before 3.4 could not be used at all. Ruby 3.3 ships `prism` 0.19, which the parser refuses
+  because it spells the fields the dimensions read differently, and `gem install prism` did not
+  help: the parser runs with gems disabled and only ever saw the default. It now asks which prism
+  gems the interpreter holds and, when the default is older than 1.0, loads the newest installed
+  one past it, so `gem install prism` is the whole remedy on any Ruby from 2.7. `doctor` reports the
+  prism that will actually parse, and says to run `gem install prism` as well as to upgrade Ruby.
+  An interpreter whose own prism is new enough loads exactly what it did before.
+- `pin` wrote `baseline.json` through a `.claude` symlinked out of the repository, which a clone can
+  carry as a tracked link, and every later `scan` and `check` read the pinned population from
+  there. The map and its record already refused such a link. The pin now resolves the same way:
+  `pin` refuses it, a dry run included, and a pin read through it is treated as no pin.
+- Under an address-space limit (`ulimit -v`, as on some shared and CI hosts) or strict overcommit,
+  every JavaScript and TypeScript file came back unreadable, and the scan wrote an overview of zero
+  areas and removed every correct area file. The parser's fast transfer reserves 6 GiB before it
+  reads anything; refused, it now parses the same tree the plain way.
+- A parser worker that could not be forked, under a `TMPDIR` that had been cleaned up, at a
+  process limit or out of file descriptors, took `scan` down with Node's "Unhandled 'error' event"
+  stack. It now fails as a parser that never started, and that run writes nothing and removes
+  nothing, where a parser worker that would not start used to leave the scan removing every area file.
+- `scan --deep` on a repository with no root `tsconfig.json`, such as an Nx-style monorepo with
+  `tsconfig.base.json` and one config per package, printed every type-checked claim as counts only
+  beside "100% of type lookups resolved". The checker runs on the compiler's defaults there and is
+  judged by what resolved.
+- `scan --deep` on Vite's react-ts layout, whose root `tsconfig.json` builds nothing and names
+  `tsconfig.app.json`, ran the checker without the `@/` alias and resolved 77%, so every
+  type-checked claim printed as counts only. A root like that is read through the project it names
+  first.
+- `setup` reported success when npm answered "up to date" and the parser still did not load, as it
+  does with `optional=false` in npm's config, which leaves out oxc's native binding, and `doctor`
+  kept sending the user back to `setup`. `setup` now installs optional dependencies whatever npm's
+  config says, asks the engines again afterwards, and fails naming any that still does not load.
+- A `typescript` 4.x in a `node_modules` above the plugin, such as one in the home directory, read
+  as `ok` in `doctor` and `nothing to install` in `setup`, while `scan --deep` refused it as not
+  installed. `doctor` now says `--deep` needs 5.x, and `setup` installs it.
+- The parser's memory ceiling stood down without a word where `ps` is not installed, as in
+  `node:*-slim` images, and `scan .` could run a `ps` committed to the scanned repository when
+  `PATH` held an empty entry. Linux reads worker memory from `/proc`, and elsewhere the guard runs
+  `/bin/ps`.
+- A TypeScript repository with one Gemfile or Rakefile (the React Native template ships one) got no
+  map at all on a machine without a usable Ruby: `scan` exited 1 on `spawn ruby ENOENT`, or wrote
+  nothing under a Ruby with no prism, and `check` refused a branch that touched the Gemfile beside a
+  `.ts` file. A language no file of which was read now costs only its own files. The rest of the map
+  is written, an area holding that language keeps what the last scan that could read it wrote, and
+  the summary, the overview and a new `engine-missing` check caveat name the language, why, and the
+  remedy. Only a run that read nothing at all still writes nothing.
+- With an empty or relative entry in `PATH` (a trailing colon is the common one) and no Ruby
+  installed, `doctor`, `scan` and the background refresh ran a `ruby` any other local user had left
+  in the shared temp directory, as the person scanning. Ruby is now looked up in `PATH`'s absolute
+  directories only, and a probe that answered no version is no longer reported as ok.
+- A Ruby file holding a long `elsif` chain, method chain or `+` expression, about 98 deep, was
+  reported as a file that could not be parsed though prism found no error in it: its tree ran past
+  the JSON encoder's default nesting cap of 100 on the way out of the parser. It is read now.
+- After a Ruby upgrade that kept the old gem directory, a prism built for the old Ruby was put on the
+  load path, failed to load, and `doctor` said prism was not installed. A listed prism is now proved
+  to load before the parser is handed it, and otherwise the next one that loads answers, which is
+  the accurate "older than 1.0.0" when only the default does.
+- A route file whose name a framework's router decides (`[id].tsx`, `[...slug].tsx`, `_app.tsx`,
+  `_document.tsx`, `$postId.tsx`, `+page.ts`) is no longer a site for `file_naming_case`, so `check`
+  stops telling the agent to rename a Next.js, Remix or SvelteKit route to kebab-case. An underscore
+  on a stem of more than one word (`_tmpProbe.ts`) is still counted.
+- A React component kept in a `.js` file now gets the JSX rows. Before, the scan labelled the file
+  "(JSX)" but stated none of the five JSX conventions for it, and `check` enforced none. A `.js`
+  file with no JSX stays out of those rows' denominator, the same as a `.ts` file.
+- Ruby models that register `after_create_commit`, `after_update_commit`, `after_destroy_commit` or
+  `after_save_commit` count as registering lifecycle callbacks. Before, a model directory built on
+  them read "models keep behaviour out of lifecycle callbacks", the wrong way round.
+- Direct calls to Ruby HTTP gems (RestClient, HTTPClient, HTTParty, Faraday, Excon, Typhoeus, HTTP,
+  HTTPX) count as bypassing the repository's own client, the way Net::HTTP already did. Before,
+  RestClient and HTTPClient counted as the repository's own client because of their names.
+- `Time.local`, `Time.parse` and `Time.at` count against reading time through the application zone,
+  as the `Time.zone` forms already counted for it. Before, a directory using both halves stated a
+  perfect convention.
+- `fail` counts as raising, both for a service entry point and for a rescue that re-raises, and a
+  rescue that binds the error to an instance variable and reads it counts as using the error.
+- A second author whose only file broke a habit counted as the habit's second pair of hands, so one
+  person's practice was stated as the directory's convention with "2 authors" beside it. Each side
+  of a claim now counts the authors of the files carrying its own sites.
+- One person committing under two addresses that the repository's `.mailmap` already maps to one
+  identity, or under one address typed in two cases, counted as two authors and cleared the author
+  gate alone. Authors are now read through `.mailmap` and compared without case.
+- `scan` and `pin` ended by telling you to restart a running session, and `/anatomiya:scan` and
+  `/anatomiya:pin` had the agent pass that on, although a running session gets a changed overview on
+  its next prompt or tool call. The line and the command files now say so, and say that a new
+  session, a compaction or `/clear` loads the whole map.
+- The README said a solo repository states very little because a habit needs a second author. With
+  one author in the whole history the bar is one, and every claim that clears the other gates is
+  stated as that author's practice. The README now says so.
+- The README's sample run showed a baseline line and an orphan line in wording `scan` no longer
+  prints, and none of the engines, layout or running-session lines it does. It is now a fresh run on
+  a public repository and is checked against the printer. Two counts in the docs that had drifted
+  (the dimension total and the JSX total) are now checked too.
+- A misspelled verb or a refused option in a command file passed every gate and would have failed
+  every run of that command. `check:docs` now parses each documented invocation with the CLI's own
+  argument rules.
+- Every command that takes a path said `not a git repository` whatever went wrong: for a file inside
+  a repository, a path that does not exist, a machine with no git on PATH, and a checkout git refused
+  to read (dubious ownership in a container). A file now picks the repository it is in, and the
+  others say `no such directory`, `git is not on PATH`, or git's own words, `safe.directory` fix
+  included.
+- The end-of-turn reuse check never ran on a turn that committed what it wrote, because it read only
+  the working tree against HEAD. The commits a turn makes after its last checkout, pull or reset are
+  now read from the reflog and checked with what it left uncommitted, with no file written and
+  nothing asked twice.
+- `check` snippets dropped `|` and backticks, so the finding `defaults are taken with ??, not ||`
+  quoted its own site as `x.n 0` and a union type lost its bar. A snippet now shows the code as
+  written, with only line breaks and bidi or zero-width characters refused.
+- `npm test` failed four permission-denial cases when run as root, the default in most containers.
+  They now skip with the reason, since root reads past every mode bit and the denial cannot happen.
+- A class documented above its decorators, the way NestJS writes `/** doc */ @Injectable() export
+  class`, read as undocumented, so a directory of documented services stated "exported functions
+  carry no doc comment" and `check` flagged a documented function added beside them. A doc comment
+  above the decorators now belongs to the class, as TypeScript and JSDoc attach it.
+- An extensionless import of a file with a dotted stem (`./user.service`, `./app.module`,
+  `../dto/create-user.dto`) was read as an asset import and left out of `import_extension`, so a
+  directory where a third of the relative imports carried `.js` stated "relative imports carry the
+  file extension" at 40 of 40, and `check` never flagged the missing `.js` that Node16 and NodeNext
+  refuse. Only stylesheets, images, fonts, media, data and the other formats a bundler is handed by
+  full name are assets now, and any other relative import counts.
+- The constructor parameter types of a decorated class, such as a NestJS service, counted as imports
+  used only as types, so the map named correct dependency-injection imports as exceptions and
+  `check` asked a new `@Injectable()` service for `import type`, which compiles and leaves Nest
+  unable to resolve the dependency at runtime. A type that decorator metadata emits as a value is
+  now read as a value.
+- An async function whose only `try` had a `finally` and no `catch` counted as handling its own
+  failures, so a directory of lock and cleanup helpers that caught nothing stated "async functions
+  handle their own failures" as a directive. Only a `try` with a `catch` counts now.
+- A directory of ES5 `var name = function () {}` module functions was told "module-level functions
+  are assigned as arrow consts, not declared with function", a directive to bring in arrows and
+  `const` it held neither of. The sentence now says what the row counts: "module-level functions are
+  assigned to variables, not declared with function".
+- A plain JavaScript repository that uses `?.` stated "possibly-absent values are read with ?., not
+  asserted with !", though `!` is a syntax error outside TypeScript and `check` could never enforce
+  it. A `.js` or `.mjs` file is now left out of `non_null_assertion`, as it already was out of the
+  other rows that need type syntax.
+- `return void f()`, which runs the call and returns, counted as returning `undefined` for an absent
+  value, so it was named as the exception to "an absent value is returned as null, not undefined"
+  and `check` would have asked for a `return null` that changes nothing. Only `void` over a literal,
+  the old `void 0`, counts now.
+- A name of capitals alone read as PascalCase. A Next.js `app/api` directory of routes exporting
+  `GET` and `POST` stated "functions are named PascalCase" and `check` asked for its one camelCase
+  helper to be renamed, and a constants module of `export const DEBUG` stated "exported names are
+  PascalCase". A word of capitals alone now spells no case, and `URLParser` still reads as
+  PascalCase.
+- A stylesheet named for settings (`./SettingsPanel.module.css`) was taken for the repository's own
+  config module, so a directory of components importing their CSS modules stated "environment reads
+  go through the repository's own config module, not process.env" in a repository holding no config
+  module. Only an import of a source module can stand for the repository's own config, logger or
+  HTTP client now. A stylesheet, a JSON file or an image cannot.
+- A component exported through `forwardRef`, `memo` or `styled` voted in `exported_symbol_case` as a
+  plain export, so a components directory stated "exported names are camelCase" with its one
+  `forwardRef` field as the exception, and `check` asked for a new `TextInput = forwardRef(...)` to
+  be renamed `textInput`. Such a component is left out of the vote, as a plain component already
+  was.
+- A Ruby model inheriting another model of its directory (`class Admin < User`, single-table
+  inheritance) was the exception to "models inherit ApplicationRecord", and `check` told the agent
+  to break the hierarchy. A class whose chain of parents, through the classes its area declares,
+  reaches the learned base now conforms, in the map and in the check.
+- On a machine with no `node` on `PATH`, which Claude Code's own installer does not need, every hook
+  failed with `node: not found` on every prompt and tool call, and nothing said why. The README now
+  states that the hooks need `node` on `PATH` and what its absence looks like.
+- With no pin, `scan` ended by saying "`anatomiya pin` accepts one", a command nothing installs, and
+  said nothing of the pin the background refresh takes. It now says a pin is taken on its own when
+  the checkout sits on the tip of origin's default branch with nothing uncommitted, and names
+  `/anatomiya:pin` for one by hand.
+
 ## [0.10.2] - 2026-09-24
 
 Two machines could render two different maps of one repository, because the list the overview names
@@ -2608,7 +3144,8 @@ which are partial; several listed there are not implemented yet.
 - No claim that this catches defects. Measured across ten repositories, 1 of 317 defect review
   comments was preventable by a conventions map.
 
-[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.10.2...HEAD
+[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.11.0...HEAD
+[0.11.0]: https://github.com/crisnahine/anatomiya/compare/v0.10.2...v0.11.0
 [0.10.2]: https://github.com/crisnahine/anatomiya/compare/v0.10.1...v0.10.2
 [0.10.1]: https://github.com/crisnahine/anatomiya/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/crisnahine/anatomiya/compare/v0.9.0...v0.10.0

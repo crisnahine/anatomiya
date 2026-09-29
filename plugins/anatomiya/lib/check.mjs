@@ -1,6 +1,7 @@
 import { constants } from "node:fs";
 import { open } from "node:fs/promises";
-import { dirname } from "node:path";
+import { join } from "node:path";
+import { dirname } from "node:path/posix";
 
 import { parseAll } from "./parse.mjs";
 import { dimensionsFor } from "./dimensions.mjs";
@@ -9,6 +10,7 @@ import {
   collect as collectCorpus,
   frameworksIn,
   capabilitiesIn,
+  corpusDrop,
   gitRoot,
   isCorpusPath,
   safeResolve,
@@ -17,9 +19,10 @@ import {
 import { language, MISSING_STRIPPER } from "./langs.mjs";
 import { areaOwner, globsReach } from "./areas.mjs";
 import { droppedDirectives, unexaminedPhrase } from "./render.mjs";
-import { auditRules, knownNames, readHead, resolveInside, RULES_DIR } from "./rules.mjs";
+import { auditRules, isLink, knownNames, readHead, resolveInside, RULES_DIR } from "./rules.mjs";
 import { FACTS_PATH, readFacts, statedSide } from "./facts.mjs";
 import { MAX_FILE_BYTES } from "./limits.mjs";
+import { remedyFor } from "./readiness.mjs";
 import { resolve as resolveBaseline } from "./baseline.mjs";
 import { pairingsFor, pairingViolations } from "./pairing.mjs";
 import { isTestPath, precedentFindings } from "./precedent.mjs";
@@ -28,7 +31,7 @@ import { rowsOfKind } from "./registry.mjs";
 import { couldSignal } from "./frameworks.mjs";
 import {
   gitBuffered, gitStreamed, nameStatusReader, parsePorcelainRows, resolveBaseRef, mergeBase, filesAt,
-  headSha, BASE_REFS, GIT,
+  headSha, isSha, BASE_REFS, GIT,
 } from "./git.mjs";
 import { readAtRevision } from "./revision.mjs";
 import { CAVEATS } from "./check-report.mjs";
@@ -80,7 +83,7 @@ function noMapMessage(root) {
   const record = main === null ? null : resolveInside(main, FACTS_PATH);
   // Read no bytes: whether a record is there is the question, and one can be 10MB.
   if (record === null || readHead(record, 0).kind !== "file") return said;
-  return `no map in this worktree, so nothing can be enforced; run \`anatomiya scan .\` here. Its main checkout has one: ${main}`;
+  return `no map in this worktree, so nothing can be enforced; run \`/anatomiya:scan\` here. Its main checkout has one: ${main}`;
 }
 
 const SEVERITY_ORDER = { "MUST-FIX": 0, FIX: 1, NIT: 2 };
@@ -134,7 +137,18 @@ export async function check(cwd, { baseRef = null } = {}) {
       `the diff against ${base.ref || from} could not be read, so no file was examined and this run found nothing it could look at`
     );
   }
+  if (renamesSkipped(diff.rows)) {
+    caveat(
+      caveats,
+      CAVEATS.RENAMES_SKIPPED,
+      "this branch moves more files than git will pair up, so a file moved and edited may be judged as new"
+    );
+  }
   const changed = diff.rows.filter((c) => c.status !== "D");
+  // What the branch took away: no file to examine, and still a companion its
+  // producer no longer has. The tree's own deletions join these below.
+  const removed = diff.rows.filter((c) => c.status === "D").map((c) => c.path)
+    .concat(diff.rows.filter((c) => c.from && c.from !== c.path).map((c) => c.from));
 
   const status = await pendingPaths(root);
   if (status === null) {
@@ -150,7 +164,17 @@ export async function check(cwd, { baseRef = null } = {}) {
   // in an uncommitted file against an author who may not have written one.
   const pending = status !== null && mode === "compare" ? status : { present: [], deleted: [] };
   await resolvePendingBases(root, base.mergeBase, pending.present);
-  const examined = withPendingEdits(changed.filter((c) => isCorpusPath(c.path)), pending.present);
+  // Generated files leave with the path filter's rejects, by the corpus's own
+  // rule: a regenerated client was a MUST-FIX per site in code nobody writes by
+  // hand, judged against claims the map counted without it. The rule's other
+  // refusals stay in, because a file this run could not read is named rather
+  // than dropped. A symbolic link is not source either: its target is counted
+  // where it is tracked, and read through the link its sites were charged
+  // twice. Asked of the tree, where every examined row stands once the
+  // pending edits are folded in.
+  const dropOf = corpusDrop(root);
+  const examined = withPendingEdits(changed.filter((c) => isCorpusPath(c.path)), pending)
+    .filter((c) => dropOf(c.path) !== "generated" && !isLink(join(root, c.path)));
   const fromTree = examined.filter((c) => c.tree).length;
   if (fromTree) {
     caveat(
@@ -208,6 +232,7 @@ export async function check(cwd, { baseRef = null } = {}) {
     frameworks,
     capabilities,
     pending,
+    removed: new Set([...removed, ...pending.deleted]),
     // Only the two-run comparison establishes that a site is newly introduced,
     // so the degraded mode caps severity for the same reason a stale map does.
     fresh: !stale.reason && mode === "compare",
@@ -220,8 +245,11 @@ export async function check(cwd, { baseRef = null } = {}) {
   // What "already" means here is not what it means for the hook: a change that
   // invents a directory and fills it with four specs must not have three of
   // them excused by the first, so everything it brought is subtracted.
+  // A rename within its own directory arrives nowhere: the file was already
+  // there under another name. Counted as an arrival, it was also subtracted as
+  // one, and a directory whose only test had been renamed read as holding none.
   const arrived = examined
-    .filter((c) => c.status === "A" || (c.from && c.from !== c.path))
+    .filter((c) => c.status === "A" || (c.from && c.from !== c.path && dirname(c.from) !== dirname(c.path)))
     .map((c) => ({ path: c.path, oldPath: c.from === c.path ? null : c.from }));
   const brought = new Set(arrived.map((c) => c.path));
   // Answered from what git tracks rather than off the disk, which is the
@@ -322,14 +350,29 @@ export async function check(cwd, { baseRef = null } = {}) {
 /* --- the diff --- */
 
 /**
- * Three dots, never two.
+ * From the fork point, never from the base branch's tip.
  *
- * Two dots compares the endpoints, so the moment the base branch moves ahead
- * it lists files other people changed, as reverse deltas, and the check then
- * reports findings in code the author never touched.
+ * The tip compared against HEAD lists, the moment the base branch moves ahead,
+ * files other people changed, as reverse deltas, and the check then reports
+ * findings in code the author never touched.
+ *
+ * `from` is already the fork point, or the oldest commit HEAD reaches, so the
+ * two are compared directly. Spelled `from...HEAD`, git computes the merge
+ * base a second time, which on every clone answers `from` itself and on a
+ * depth-1 one, whose HEAD is grafted as a root, fails the whole diff.
  */
 async function changedFiles(root, from) {
   const rows = [];
+  // The rename limit is set rather than inherited: past `diff.renameLimit`,
+  // 1000 by default, git skips inexact rename detection and lists each move as
+  // a deletion and an addition, and every site that came with a moved file was
+  // charged to whoever moved it. Measured with the limit at 1 and two edited
+  // moves: six findings on a branch that introduced none. Past this run's own
+  // limit the same skip is named rather than absorbed (`renamesSkipped`).
+  //
+  // Submodules are left out by git rather than filtered after: a gitlink at a
+  // source-like path has no blob to read, and the name-status listing carries
+  // no mode to tell it by.
   // Streamed: a branch off a distant base lists every path in the repository,
   // and that is the read `execFile` answers with an uncatchable `RangeError`.
   //
@@ -339,17 +382,43 @@ async function changedFiles(root, from) {
   try {
     await gitStreamed(
       root,
-      ["diff", "--find-renames", "-z", "--name-status", `${from}...HEAD`],
+      [
+        "-c", `diff.renameLimit=${RENAME_LIMIT}`,
+        "diff", "--find-renames", "--ignore-submodules=all", "-z", "--name-status", from, "HEAD",
+      ],
       nameStatusReader((row) => {
         rows.push(namedRow(row));
         return true;
       }),
-      { timeout: GIT.checkTimeoutMs, maxFieldBytes: GIT.checkMaxBytes }
+      // Rename detection reads the merge base's side of each added and deleted
+      // path, which a blobless clone never held; refused a fetch, the whole
+      // diff failed and nothing was examined (F14).
+      { timeout: GIT.checkTimeoutMs, maxFieldBytes: GIT.checkMaxBytes, lazyFetch: true }
     );
   } catch {
     return { ok: false, rows: [] };
   }
   return { ok: true, rows };
+}
+
+// Git's own default for a merge, which it chose as the size an exhaustive
+// rename pass is still worth paying for; a diff's default is 1000. Past it the
+// check's clock bounds the cost, and a diff that runs out of it is reported as
+// unread rather than as a branch that changed nothing.
+const RENAME_LIMIT = 7000;
+
+/**
+ * Whether git will have skipped inexact rename detection on this diff.
+ *
+ * Git's own test, over what it left unpaired: it gives up when the additions
+ * times the deletions exceeds the limit squared, and whatever it skipped is
+ * still unpaired afterwards, so the rows it answered with are enough to ask.
+ * Git says so on stderr, which a streamed read that succeeded does not keep.
+ */
+export function renamesSkipped(rows, limit = RENAME_LIMIT) {
+  const added = rows.filter((r) => r.status === "A").length;
+  const deleted = rows.filter((r) => r.status === "D").length;
+  return added * deleted > limit * limit;
 }
 
 /**
@@ -402,6 +471,11 @@ async function storedOrCollected(root, facts, field, derive, caveats, code, refu
  * judge a branch against different commits. Only the shallow fetch is the
  * check's own.
  *
+ * `sha` is the base ref's own tip and `mergeBase` the fork point, on every
+ * path: a full clone used to report the fork point as `sha` and a shallow fetch
+ * the tip, so the header's `base main (3a5340c)` named a commit that was not
+ * main whenever main had moved on.
+ *
  * Measured: on a shallow clone `origin/main` does not exist at all, and after
  * fetching it `merge-base` exits 1 with empty stdout and no stderr, so the
  * empty string is the signal rather than the exit code. Fetching the single
@@ -412,6 +486,7 @@ async function storedOrCollected(root, facts, field, derive, caveats, code, refu
 async function resolveBase(root, baseRef, caveats) {
   const candidates = (baseRef ? [baseRef] : BASE_REFS).filter((c) => c && !c.startsWith("-"));
   const shallow = (await git(root, ["rev-parse", "--is-shallow-repository"])).out.trim() === "true";
+  const head = (await git(root, ["rev-parse", "--verify", "--quiet", "HEAD^{commit}"])).out.trim();
   // A ref somebody typed and a candidate this tool guessed are different
   // questions. The guessed list not resolving is a repository that keeps its
   // trunk somewhere else, which is what the added-lines degradation is for; a
@@ -420,23 +495,54 @@ async function resolveBase(root, baseRef, caveats) {
   // trust as "nothing to report".
   // A repository with no commits has no ref to mistype against, and answering
   // "nothing was examined" is the truth about it rather than a degradation.
-  const asked = baseRef !== null && (await git(root, ["rev-parse", "--verify", "--quiet", "HEAD"])).out.trim() !== "";
+  const asked = baseRef !== null && head !== "";
   // Asked before anything is fetched. A remote holding a branch literally named
   // `HEAD` would otherwise be fetched and used as the base, which is the one
   // thing E6 refuses, and the refusal would arrive as a story about fetching.
   if (asked && (baseRef === "HEAD" || baseRef === "@")) throw new Error(refusal(baseRef, shallow));
+  // Every other spelling of the same commit is refused by the commit it names,
+  // once it has one: `HEAD~0` or the branch's own name compared the branch with
+  // itself and printed a clean report at exit 0. Another branch at the same
+  // commit is still a base, and so is the commit named by its id: either is
+  // what a fresh branch holding only uncommitted work is checked against, and
+  // neither is a name for this branch. An expression that walks to HEAD's
+  // commit is a way of spelling HEAD and is refused. The branch's own name is
+  // refused where the base the check would pick unasked is somewhere else,
+  // which is a branch with commits of its own being compared with itself; on
+  // the trunk, with uncommitted work, it names the base the check would have
+  // picked anyway.
+  const ownTip = async (sha) => {
+    if (!asked || sha !== head || /^[0-9a-f]{4,64}$/i.test(baseRef)) return;
+    const named = (await git(root, ["rev-parse", "--symbolic-full-name", baseRef])).out.trim();
+    const own = (await git(root, ["rev-parse", "--symbolic-full-name", "HEAD"])).out.trim();
+    if (named !== "" && named !== own) return;
+    if (named === own) {
+      const unasked = await resolveBaseRef(root);
+      if (unasked.ok && unasked.sha === head) return;
+    }
+    throw new Error(refusal(baseRef, shallow, { own: true }));
+  };
 
+  // A shallow clone can hold the base ref and still reach no merge base: a
+  // `--no-single-branch` clone or a `fetch --depth=1 origin main` grafts both
+  // tips as roots. Taken as it stood, that went to the degraded modes without
+  // the parent rescue below, which only the fetch path asked.
+  let held = null;
   for (const c of candidates) {
     const r = await resolveBaseRef(root, c);
     if (!r.ok) continue;
-    if (!r.forkPoint) caveat(caveats, CAVEATS.NO_MERGE_BASE, `no merge base between ${c} and HEAD`);
-    return {
-      ref: c,
-      sha: r.sha,
-      mergeBase: r.forkPoint ? r.sha : null,
-      shallow,
-      boundary: r.forkPoint ? null : await boundary(root),
-    };
+    const tip = (await git(root, ["rev-parse", "--verify", "--quiet", `${c}^{commit}`])).out.trim() || r.sha;
+    await ownTip(tip);
+    const fork = r.forkPoint ? r.sha : shallow && (await recordedParents(root)).includes(tip) ? tip : null;
+    if (fork || !shallow) {
+      if (!fork) caveat(caveats, CAVEATS.NO_MERGE_BASE, `no merge base between ${c} and HEAD`);
+      return { ref: c, sha: tip, mergeBase: fork, shallow, boundary: fork ? null : await boundary(root) };
+    }
+    // The remote's tip may have moved past the one this clone holds, and the
+    // commit a pull request's merge names is the current one, so the fetch
+    // below is still worth asking before settling for no history.
+    held = { ref: c, sha: tip };
+    break;
   }
 
   if (shallow) {
@@ -446,20 +552,24 @@ async function resolveBase(root, baseRef, caveats) {
       const fetched = await git(root, ["fetch", "--depth=1", "origin", remote]);
       if (!fetched.ok) continue;
       const mb = await mergeBase(root, remote, "HEAD");
-      if (!mb.found) {
-        caveat(
-          caveats,
-          CAVEATS.SHALLOW_NO_HISTORY,
-          "shallow clone: the base commit is present but shares no held history with HEAD"
-        );
-      }
+      // A depth-1 checkout grafts HEAD as a root, so `merge-base` cannot see
+      // past it, not even to the commit just fetched. The commit object still
+      // records its parents, and a parent of HEAD is its own merge base with
+      // HEAD: on a pull request's merge ref, which is what the default CI
+      // checkout holds, the first parent is the base branch's tip.
+      const fork = mb.found ? mb.sha : (await recordedParents(root)).includes(remote) ? remote : null;
+      if (!fork) shallowNoHistory(caveats);
       return {
         ref: c,
         sha: remote,
-        mergeBase: mb.sha,
+        mergeBase: fork,
         shallow,
-        boundary: mb.found ? null : await boundary(root),
+        boundary: fork ? null : await boundary(root),
       };
+    }
+    if (held) {
+      shallowNoHistory(caveats);
+      return { ...held, mergeBase: null, shallow, boundary: await boundary(root) };
     }
     if (asked) throw new Error(refusal(baseRef, shallow));
     caveat(caveats, CAVEATS.SHALLOW_UNFETCHED, "shallow clone and the base commit could not be fetched");
@@ -474,27 +584,66 @@ async function resolveBase(root, baseRef, caveats) {
 }
 
 /**
+ * Deepening until a merge base appears is not offered (see above), so the way
+ * out is named instead: at depth one the oldest commit held is HEAD, and the
+ * run that follows examines nothing.
+ */
+function shallowNoHistory(caveats) {
+  caveat(
+    caveats,
+    CAVEATS.SHALLOW_NO_HISTORY,
+    "shallow clone: the base commit is present but shares no held history with HEAD; " +
+      "fetch the history to compare (fetch-depth: 0 on actions/checkout)"
+  );
+}
+
+/**
  * Why a ref somebody typed cannot be the base, in the terms of what they typed.
  *
  * `HEAD` and `@` resolve locally in every repository that has a commit, so
  * reporting them as a base a shallow clone could not fetch names a cause that
  * is not the reason and a fix that would not work. They are refused for what
  * they are: this branch's own tip, over which the branch's own edits count as
- * map drift (E6).
+ * map drift (E6). So is any other spelling that resolves to the same commit.
  */
-function refusal(ref, shallow) {
-  if (ref === "HEAD" || ref === "@") {
+function refusal(ref, shallow, { own = false } = {}) {
+  if (own || ref === "HEAD" || ref === "@") {
     return `--base ${ref} names this branch's own tip, so there is nothing to compare against`;
   }
   const fetched = shallow ? ", and this shallow clone could not fetch it" : "";
   return `--base ${ref} resolves to no commit in this repository${fetched}`;
 }
 
+/**
+ * The commit the remote holds under a candidate's name. `origin/HEAD` is the
+ * remote's own `HEAD`, the symref naming its default branch: asked as
+ * `refs/heads/HEAD`, a branch no remote holds, a trunk named anything but main
+ * or master resolved no base at all. The listing is read by exact name,
+ * because `ls-remote` matches a pattern against the tail of every ref.
+ */
 async function remoteSha(root, ref) {
   const branch = ref.replace(/^origin\//, "");
-  const ls = await git(root, ["ls-remote", "origin", `refs/heads/${branch}`]);
-  const m = /^([0-9a-f]{40})/.exec(ls.out.trim());
-  return m ? m[1] : null;
+  const wanted = branch === "HEAD" ? "HEAD" : `refs/heads/${branch}`;
+  const ls = await git(root, ["ls-remote", "origin", wanted]);
+  for (const line of ls.out.split("\n")) {
+    const [sha, name] = line.split("\t");
+    if (name === wanted && isSha(sha)) return sha;
+  }
+  return null;
+}
+
+/**
+ * The parents HEAD's own commit object names, whether or not the clone holds
+ * them. Read off the raw object, because every command that walks history
+ * reads a shallow clone's graft instead and answers that HEAD has none.
+ */
+async function recordedParents(root) {
+  const r = await git(root, ["cat-file", "commit", "HEAD"]);
+  if (!r.ok) return [];
+  // The header ends at the first blank line, and a message can hold a line
+  // that reads like one of its fields.
+  const header = r.out.split("\n\n")[0];
+  return [...header.matchAll(/^parent ([0-9a-f]+)$/gm)].map((m) => m[1]);
 }
 
 /**
@@ -512,7 +661,7 @@ async function boundary(root) {
 
 export async function addedRanges(root, from, to = "HEAD", { timeout } = {}) {
   const r = await git(root, [
-    "-c", "core.quotePath=false",
+    "-c", "core.quotePath=false", "-c", `diff.renameLimit=${RENAME_LIMIT}`,
     // A repository's own config can name a diff driver, a text conversion, a
     // colour or a prefix: a command git would run, or output this cannot read.
     "diff", "--no-ext-diff", "--no-textconv", "--no-color", "--src-prefix=a/", "--dst-prefix=b/",
@@ -608,7 +757,8 @@ async function trackedTests(root) {
   return found;
 }
 
-async function collect(root, { examined, areas, base, mode, added, fresh, caveats, frameworks, capabilities, pending }) {
+async function collect(root, run) {
+  const { examined, areas, base, mode, added, fresh, caveats, frameworks, capabilities, pending } = run;
   const areaFor = areaIndex(areas);
   const ancestorsOf = ancestorsIndex(areas);
   // Which directives each area's file had no room to state, recomputed from the
@@ -643,7 +793,7 @@ async function collect(root, { examined, areas, base, mode, added, fresh, caveat
     // the new path does not exist, and a path hash cannot tell a rename from a
     // delete plus an add. Only the head side is ever read from the tree, so no
     // edit of an agent's can move the base it is judged against.
-    if (mode === "compare" && file.from) baseWanted.set(file.from, { rel: file.from, lang });
+    if (mode === "compare" && file.from) baseWanted.set(file.from, { rel: file.from, lang: language(file.from) });
   }
 
   // The head tree is on disk while the base read runs and both are on disk
@@ -657,15 +807,28 @@ async function collect(root, { examined, areas, base, mode, added, fresh, caveat
     // file at a time spawned a `cat-file` that waited on the one before it.
     atHead = await readAtRevision(root, head, [...headWanted.values()], REVISION_READ);
     atBase = mode === "compare"
-      ? await readAtRevision(root, base.mergeBase, [...baseWanted.values()], REVISION_READ)
+      ? await readAtRevision(root, base.mergeBase, [...baseWanted.values()], { ...REVISION_READ, lazyFetch: true })
       : null;
     const headBlobs = new Map(atHead.files.map((f) => [f.rel, f]));
     const baseBlobs = new Map((atBase?.files ?? []).map((f) => [f.rel, f]));
+    const headOverCap = new Set(atHead.missing.filter((m) => m.reason === "over size cap").map((m) => m.rel));
 
     const jobs = [];
     for (const { file, lang } of claimed) {
       const atHeadBlob = headBlobs.get(file.path);
-      const source = file.tree ? await treeSource(root, file.path) : (atHeadBlob ? atHeadBlob.source : null);
+      const read = file.tree
+        ? await treeSource(root, file.path)
+        : { source: atHeadBlob ? atHeadBlob.source : null, oversize: headOverCap.has(file.path) };
+      const source = read.source;
+      // Past the cap is the parser's own cause, which it never gets to answer:
+      // both readers stop at the size it skips at. Named as one that would not
+      // come back, it read as git or disk trouble, where the cause is a file
+      // nobody writes by hand.
+      if (source === null && read.oversize) {
+        const past = { kind: "oversize" };
+        caveat(caveats, unreadCode(past), `${file.path} ${unreadReason(past)}, so it was not checked`);
+        continue;
+      }
       if (source === null) {
         // One code for both, because either way the head version is what this
         // run did not get; the sentence says which of the two it looked in.
@@ -702,8 +865,11 @@ async function collect(root, { examined, areas, base, mode, added, fresh, caveat
       // The parser gets a copy rather than the live path, because the text every
       // offset here is resolved against is the copy this run read.
       entries.push({ rel: `head:${job.file.path}`, lang: job.lang, ...(job.abs ? { abs: job.abs } : { source: job.source }) });
+      // Under the path it had at the base, which is what picks the grammar: a
+      // `.ts` renamed to `.tsx` was parsed as TSX, where a generic arrow that
+      // is valid TypeScript is a syntax error, and the whole file was skipped.
       if (job.base !== null) {
-        entries.push({ rel: `base:${job.file.path}`, lang: job.lang, abs: job.baseAbs });
+        entries.push({ rel: `base:${job.file.from}`, lang: language(job.file.from), abs: job.baseAbs });
       }
     }
 
@@ -741,7 +907,7 @@ async function collect(root, { examined, areas, base, mode, added, fresh, caveat
       // The path the file had at the base, so a rename keeps every identity;
       // introduced.mjs says why the line never is one.
       const keyPath = job.file.from || path;
-      const baseParse = parsed.get(`base:${path}`);
+      const baseParse = job.base === null ? undefined : parsed.get(`base:${job.file.from}`);
       const baseUsable = !baseParse || (baseParse.ok && baseParse.program);
       // A base version that exists but will not parse is not an empty base
       // version. Treating it as one would charge the author with every site the
@@ -794,7 +960,8 @@ async function collect(root, { examined, areas, base, mode, added, fresh, caveat
                 { dim, fresh, dropped: area ? droppedIn.get(area.path)?.has(f.dimension) === true : false }
               ),
               away,
-              area
+              area,
+              path
             );
         findings.push({
           severity: verdict.severity,
@@ -814,11 +981,18 @@ async function collect(root, { examined, areas, base, mode, added, fresh, caveat
 
     }
 
-    await addPairingFindings(root, findings, { examined, areas, fresh, caveats, pending, droppedIn });
+    await addPairingFindings(root, findings, run, droppedIn);
     // The scan says this on its own summary, and a check runs in CI where nobody
     // read that. Without it a Flow file reads as a broken file.
     if (missingStripper) {
       caveat(caveats, CAVEATS.STRIPPER_MISSING, MISSING_STRIPPER);
+    }
+    // An engine that is not installed is every file of its languages at once.
+    // Each of those carries a caveat of its own above, and none says why or
+    // what to do: a check that examined files of another language now goes on
+    // for them rather than refusing over this (B41), so it says so once.
+    if (missingParser) {
+      caveat(caveats, CAVEATS.ENGINE_MISSING, `${missingParser}: ${remedyFor(missingEngines[0])}, then check again`);
     }
 
     return { findings, missingParser, missingEngines };
@@ -839,10 +1013,12 @@ async function collect(root, { examined, areas, base, mode, added, fresh, caveat
  * claim it could execute, reported clean, and said nothing about the one it
  * could not: the same shape as reporting clean for a file that was never read.
  */
-async function addPairingFindings(root, findings, { examined, areas, fresh, caveats, pending, droppedIn }) {
+async function addPairingFindings(root, findings, { examined, areas, fresh, caveats, pending, removed }, droppedIn) {
   const areaFor = areaIndex(areas);
   const changed = examined.map((f) => f.path);
-  const langs = [...new Set(changed.map((p) => language(p)))];
+  // A removed companion asks its language's obligations too, or a branch that
+  // only deleted a spec asked none of them.
+  const langs = [...new Set([...changed, ...removed].map((p) => language(p)))];
   const pairings = pairingsFor(langs);
   if (pairings.length === 0) return;
 
@@ -880,7 +1056,7 @@ async function addPairingFindings(root, findings, { examined, areas, fresh, cave
   for (const row of pending?.present ?? []) asItStands.add(row.path);
 
   for (const pairing of pairings) {
-    for (const { path, companion } of pairingViolations(changed, asItStands, pairing)) {
+    for (const { path, companion } of pairingViolations(changed, asItStands, pairing, removed)) {
       const area = areaFor(path);
       const dim = area && (area.dimensions || []).find((d) => d.key === pairing.key);
       // Same rule as every other finding: the check enforces what the map
@@ -896,7 +1072,8 @@ async function addPairingFindings(root, findings, { examined, areas, fresh, cave
           { dim, fresh, dropped: area ? droppedIn?.get(area.path)?.has(pairing.key) === true : false }
         ),
         area && !globsReach(area.globs, path),
-        area
+        area,
+        path
       );
       findings.push({
         severity: verdict.severity,
@@ -929,9 +1106,18 @@ const CORPUS_ROWS = rowsOfKind("corpus");
  * every other verdict left alone. MUST-FIX means the map told this file's
  * author and they are the first to break it; here the map did not tell.
  */
-function cappedAway(verdict, away, area) {
+function cappedAway(verdict, away, area, path) {
   if (!away || verdict.severity !== "MUST-FIX") return verdict;
-  return { severity: "FIX", reason: `counted in ${area.path}, which this directory sits inside` };
+  // Which of the two the globs missed, asked by moving the file's own name up
+  // to the area's directory: reached there, the directory is what they do not
+  // cover; missed there too, the name is. One sentence for both told a `.tsx`
+  // sitting in the area's own directory that it sat inside that directory.
+  const name = path.slice(path.lastIndexOf("/") + 1);
+  if (globsReach(area.globs, area.path === "." ? name : `${area.path}/${name}`)) {
+    return { severity: "FIX", reason: `counted in ${area.path}, which this directory sits inside` };
+  }
+  const type = name.lastIndexOf(".") > 0 ? `${name.slice(name.lastIndexOf("."))} files` : name;
+  return { severity: "FIX", reason: `the area file for ${area.path} does not reach ${type}, so this claim was never delivered here` };
 }
 
 /**
@@ -979,7 +1165,7 @@ function filenameFinding(row, job, area, fresh, { dropped = false, facets = null
   const away = !from && !globsReach(area.globs, path);
   const verdict = from
     ? { severity: "FIX", reason: `counted in ${from}, which this directory sits inside` }
-    : cappedAway(severityFor({ path, oldPath }, { dim: nameDim, fresh, dropped }), away, area);
+    : cappedAway(severityFor({ path, oldPath }, { dim: nameDim, fresh, dropped }), away, area, path);
   return {
     severity: verdict.severity,
     reason: verdict.reason,
@@ -1133,8 +1319,17 @@ async function staleness(root, facts, base, unreadable = null) {
   // The pin, its reachability and the drift range all come from the baseline
   // module, so the check measures staleness against the same population and the
   // same base ref the scan pinned rather than a second reading of them.
-  const state = await resolveBaseline(root, { baseRef: base.ref });
+  //
+  // Named by the commit this run resolved rather than by the ref's name: on a
+  // shallow clone the base is fetched by sha and no ref names it, so reading
+  // the name again capped every finding under "cannot resolve origin/main".
+  // The fork point where there is one, handed over explicitly now that `sha` is
+  // the ref's tip: its own fork point with HEAD is itself, including on a
+  // depth-1 clone where `merge-base` cannot see it, so the drift range is the
+  // one the name would have given.
+  const state = await resolveBaseline(root, { baseRef: base.mergeBase ?? base.sha });
   if (state.status === "unpinned") return { reason: "no baseline pinned" };
+  if (state.status === "pin-unreadable") return { reason: `the pin on disk could not be read because ${state.unreadable}` };
   if (state.status === "unreachable") return { reason: "the pinned baseline commit is unreachable" };
   if (!state.drift) return { reason: state.baseRefReason || "drift could not be measured" };
 
@@ -1223,13 +1418,32 @@ export async function pendingPaths(root, { timeout } = {}) {
   // `-uall`, because the default collapses an untracked directory to a single
   // entry ending in `/`, which is not a source path and was dropped: a wholly
   // new directory checked before its first commit read clean.
-  const r = await git(root, ["status", "--porcelain", "-uall", "-z"], GIT.checkMaxBytes, timeout);
+  //
+  // Rename detection asked for rather than inherited, the way the committed
+  // diff asks with `--find-renames`: `status` follows `status.renames`, which
+  // defaults to `diff.renames`, and a user who turned that off for speed had a
+  // `git mv` read as a deletion and an addition, every site that came with the
+  // file charged to whoever moved it. The limit is the diff's, for the same
+  // reason, and a submodule is left out the way the diff leaves it out.
+  const r = await git(
+    root,
+    ["-c", "status.renames=true", "-c", `status.renameLimit=${RENAME_LIMIT}`, "status", "--porcelain", "-uall", "--ignore-submodules=all", "-z"],
+    GIT.checkMaxBytes,
+    timeout
+  );
   if (!r.ok) return null;
-  const rows = parsePorcelainRows(r.out).filter((row) => isCorpusPath(row.path));
+  // The old path of a move is read before the corpus filter, which asks about
+  // the new one: `git mv thing_spec.rb thing_spec.rb.bak` took the spec's own
+  // path out with the row, and a companion moved away in the tree still
+  // satisfied its producer, where the same move committed was reported.
+  const all = parsePorcelainRows(r.out);
+  const rows = all.filter((row) => isCorpusPath(row.path));
   const gone = (row) => row.x === "D" || row.y === "D";
   // Untracked, or added to the index: there is no committed version to compare
-  // against, which is what an addition is.
-  const isNew = (row) => row.x === "?" || row.x === "A";
+  // against, which is what an addition is. `git add -N` writes its letter in
+  // the tree column, ` A`, and read off the index column alone it was taken for
+  // an edit of a file the merge base never held and skipped.
+  const isNew = (row) => row.x === "?" || row.x === "A" || row.y === "A";
   return {
     present: rows
       .filter((row) => !gone(row))
@@ -1249,7 +1463,7 @@ export async function pendingPaths(root, { timeout } = {}) {
     // that path is taken from `orig` rather than from the status letters.
     deleted: [
       ...rows.filter(gone).map((row) => row.path),
-      ...rows.map((row) => row.orig).filter((path) => path !== null && isCorpusPath(path)),
+      ...all.map((row) => row.orig).filter((path) => path != null && isCorpusPath(path)),
     ],
   };
 }
@@ -1288,22 +1502,38 @@ async function resolvePendingBases(root, mergeBase, rows) {
  * path. A path only in the tree is a row of its own. Either way the row is
  * marked, because the head side of a marked row is read from disk and the run
  * is then not reproducible from git alone, which the report has to say.
+ *
+ * A path deleted in the tree leaves, the path a pending move left included:
+ * judged from HEAD it was a finding on a file that no longer exists.
  */
-function withPendingEdits(rows, pending) {
-  const byPath = new Map(rows.map((row) => [row.path, row]));
-  for (const { path, status, from } of pending) {
-    const row = byPath.get(path);
+function withPendingEdits(rows, { present, deleted }) {
+  const committed = new Map(rows.map((row) => [row.path, row]));
+  const gone = new Set(deleted);
+  const byPath = new Map(rows.filter((row) => !gone.has(row.path)).map((row) => [row.path, row]));
+  for (const { path, status, from } of present) {
+    const row = committed.get(path);
     // A row the diff already named keeps its own `from`: the diff resolved the
     // rename against the merge base, which is the comparison being made, and
     // `status` says nothing the diff has not already said better.
-    if (row) byPath.set(path, { ...row, tree: true });
-    else byPath.set(path, { status, path, from, tree: true });
+    if (row) {
+      byPath.set(path, { ...row, tree: true });
+      continue;
+    }
+    // A pending move names where the file sits at HEAD, and the diff says where
+    // that file was at the merge base, which is the side it is judged against.
+    // A move of a file the branch itself added is still an addition: read at
+    // its HEAD path, the base version was missing and the file was skipped.
+    const moved = from === null ? undefined : committed.get(from);
+    byPath.set(path, moved
+      ? { status: moved.from === null ? "A" : status, path, from: moved.from, tree: true }
+      : { status, path, from, tree: true });
   }
   return [...byPath.values()];
 }
 
 /**
- * One path as it stands on disk, or null.
+ * One path as it stands on disk, as `{ source, oversize }`, the source null
+ * where it was not read and `oversize` saying whether the cap was why.
  *
  * Resolved rather than joined. The scan refuses to write through a link out of
  * the repository, and this reads, so it refuses to read through one: the text
@@ -1311,8 +1541,9 @@ function withPendingEdits(rows, pending) {
  * enough to put a file from anywhere on the machine in it.
  */
 async function treeSource(root, path) {
+  const unread = { source: null, oversize: false };
   const abs = safeResolve(root, path);
-  if (abs === null) return null;
+  if (abs === null) return unread;
   // One handle, opened once and asked its own size: a path stat'd and then read
   // is two lookups of a name, and the file behind the name can be replaced
   // between them. The bound is the one the committed side reads under, because
@@ -1322,10 +1553,11 @@ async function treeSource(root, path) {
   try {
     handle = await open(abs, constants.O_RDONLY | (constants.O_NONBLOCK ?? 0));
     const info = await handle.stat();
-    if (!info.isFile() || info.size > MAX_FILE_BYTES) return null;
-    return await handle.readFile("utf8");
+    if (!info.isFile()) return unread;
+    if (info.size > MAX_FILE_BYTES) return { source: null, oversize: true };
+    return { source: await handle.readFile("utf8"), oversize: false };
   } catch {
-    return null;
+    return unread;
   } finally {
     await handle?.close();
   }
@@ -1345,4 +1577,3 @@ function tally(findings) {
   for (const f of findings) counts[f.severity]++;
   return counts;
 }
-

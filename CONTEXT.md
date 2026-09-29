@@ -189,8 +189,15 @@ _Avoid_: partial, incomplete, capped
 
 **Pin**:
 The commit, and the file list each area held at it, that a human accepted as the thing claims are measured
-against.
+against: by running `pin`, or by merging to the remote default branch, which the pin follows on its own.
 _Avoid_: snapshot, lockfile, baseline
+
+**Hold**:
+A pin that has stopped following the remote default branch while the checkout sits on its tip, because
+a commit on the way was made in this clone, the tip was not brought by a fetch, or git could not say.
+Said to the person in the terminal and never to the agent, and ended by a pin taken by hand or by a
+refresh that finds nothing holding it any more.
+_Avoid_: block, freeze, lock
 
 **Population**:
 One area's slice of the pin: the files it held at the pinned commit, followed through renames to the names
@@ -229,6 +236,12 @@ _Avoid_: index, summary, README
 **Area file**:
 A map file scoped to one area's glob, so it loads when a file in that area is read.
 _Avoid_: rule file, doc, context file
+
+**Refresh**:
+The rescan a detached worker runs on its own when HEAD, the tracked files, the pin or the plugin's
+version has moved since the last scan, in a checkout that already holds a map of its own. It follows the pin where it
+is safe to, and keeps the previous map when the rescan fails.
+_Avoid_: rebuild, sync, auto-scan
 
 **Main checkout**:
 The checkout a linked worktree was added from, the one whose `.git` directory holds the worktree's

@@ -12,7 +12,10 @@ import { createHash } from "node:crypto";
 import { join } from "node:path";
 
 import { addedRanges, pendingPaths } from "./check.mjs";
+import { isCorpusPath } from "./corpus.mjs";
 import { encodePath } from "./encode.mjs";
+import { gitBuffered, operationUnfinished } from "./git.mjs";
+import { isPathTaken } from "./hook.mjs";
 import { MAX_FILE_BYTES } from "./limits.mjs";
 import { byCode } from "./paths.mjs";
 import { readHead, readTail } from "./rules.mjs";
@@ -36,6 +39,17 @@ const MARKED_MOST = 200;
 // entry at the start.
 const TRANSCRIPT_MOST = 64 * 1024 * 1024;
 const TRANSCRIPT_HEAD = 64 * 1024;
+
+// A turn's commits are the last lines of the reflog, and one kept for years
+// runs to megabytes.
+const REFLOG_TAIL = 256 * 1024;
+
+// `<old> <new> <name> <email> <seconds> <zone>\t<message>`.
+const REFLOG_ENTRY = /^([0-9a-f]+) ([0-9a-f]+) .*> (\d+) [+-]\d{4}\t(.*)$/;
+
+// What `git commit` writes, and `--amend`, whose parent is the commit it
+// replaced. `commit (initial)` and `commit (merge)` are left out on purpose.
+const OWN_COMMIT = /^commit(?: \(amend\))?: /;
 
 const MARKS_READ = new RegExp(`${REUSE_MARK} ((?:[0-9a-f]{12} ?)+)\\)`, "g");
 
@@ -73,17 +87,40 @@ export function reuseRecord(files) {
  * A file's mark is taken over its content rather than its line numbers, since
  * two different edits can land on the same lines, and per file, so an edit to
  * one file does not make every other one look new. `since` leaves out a file
- * last written before that moment, which is work the session did not do.
+ * last written before that moment, which is work the session did not do, and
+ * nothing is read while a merge or the like is unfinished, which is another
+ * branch's.
+ *
+ * `turnStart` adds what this turn committed: a turn told to write and commit
+ * leaves the tree clean, and read against HEAD alone its work was never asked
+ * about. The commits are found in the reflog rather than in state this writes,
+ * since a marker file would be one more change `git status` reports (A91).
  */
-export async function pendingChange(root, { since = null } = {}) {
-  const pending = await pendingPaths(root, { timeout: REUSE_GIT_MS });
-  if (pending === null || pending.present.length === 0) return null;
-  const edited = pending.present.some((p) => p.status === "M");
-  const ranges = edited ? await addedRanges(root, "HEAD", null, { timeout: REUSE_GIT_MS }) : new Map();
+export async function pendingChange(root, { since = null, turnStart = null } = {}) {
+  // git names every path from the top of the checkout, which is where a scan
+  // writes its record. A record further down came with a copy of another
+  // project, and joined against it git's paths name files nobody changed.
+  if (!isPathTaken(join(root, ".git"))) return null;
+  // Asked beside the status read rather than after it, so the hook still makes
+  // two git reads in a row inside the time it declares.
+  const [pending, gitdir] = await Promise.all([pendingPaths(root, { timeout: REUSE_GIT_MS }), gitDir(root)]);
+  if (gitdir === null || operationUnfinished(gitdir) || pending === null) return null;
+  // One diff from before the turn's first commit to the tree reads what it
+  // committed and what it left uncommitted together, so the reads in a row
+  // stay two however many commits the turn made.
+  const base = turnStart === null ? null : await committedSince(root, gitdir, turnStart);
+  if (pending.present.length === 0 && base === null) return null;
+  const edited = base !== null || pending.present.some((p) => p.status === "M");
+  const ranges = edited ? await addedRanges(root, base ?? "HEAD", null, { timeout: REUSE_GIT_MS }) : new Map();
   if (ranges === null) return null;
 
+  // A committed file is in the diff and nowhere in the status, and reads as an
+  // edit: its hunks are the lines it added over the turn's base.
+  const listed = new Set(pending.present.map((p) => p.path));
+  const committed = [...ranges.keys()].filter((path) => !listed.has(path) && isCorpusPath(path));
+  const changed = [...pending.present, ...committed.map((path) => ({ path, status: "M" }))];
   const files = [];
-  for (const { path, status } of [...pending.present].sort((a, b) => byCode(a.path, b.path))) {
+  for (const { path, status } of changed.sort((a, b) => byCode(a.path, b.path))) {
     const entry = readHead(join(root, path), MAX_FILE_BYTES + 1);
     // Past the size the parser skips, or not a file: nothing this reads either.
     if (entry.kind !== "file" || entry.size > MAX_FILE_BYTES) continue;
@@ -97,6 +134,85 @@ export async function pendingChange(root, { since = null } = {}) {
     files.push({ path, mark, hunks });
   }
   return files.length > 0 ? files : null;
+}
+
+/**
+ * This checkout's git directory, or null where git will not name one.
+ *
+ * It says whether a merge, a pick, a revert or a rebase is waiting to be
+ * finished, and it holds the reflog. A git directory nobody can name asks
+ * nothing: the status read beside this one fails the same way.
+ */
+async function gitDir(root) {
+  const r = await gitBuffered(root, ["rev-parse", "--absolute-git-dir"], { timeout: REUSE_GIT_MS });
+  const dir = r.ok ? r.stdout.trim() : "";
+  return dir === "" ? null : dir;
+}
+
+/**
+ * The commit this turn's own commits were made on top of, or null where the
+ * turn committed nothing it can be charged with.
+ *
+ * `logs/HEAD` records every move of HEAD with the second it happened. Only the
+ * commits made after the turn's last checkout, pull, reset, merge or rebase
+ * are its own, since each of those brings in work nobody in this session
+ * wrote. A first commit has no parent to diff from and a merge commit holds
+ * the other side's work, so either ends the run the way a move does.
+ *
+ * Read off the file where there is one, which costs no git read. The reftable
+ * backend keeps no `logs/`, and there the same entries are asked of git: read
+ * off the file alone, a turn that committed everything it wrote was never
+ * asked about on reftable.
+ */
+async function committedSince(root, gitdir, turnStart) {
+  const entries = headMoves(gitdir) ?? (await headMovesFromGit(root));
+  if (entries === null) return null;
+  let run = null;
+  for (const { from, to, seconds, message } of entries) {
+    // A second the reflog recorded is the turn's if any part of it is.
+    if ((seconds + 1) * 1000 <= turnStart) continue;
+    if (!OWN_COMMIT.test(message)) run = null;
+    else if (from === null || run === null || run.to !== from) run = from === null ? null : { from, to };
+    else run.to = to;
+  }
+  return run === null ? null : run.from;
+}
+
+/** HEAD's moves, oldest first, off `logs/HEAD`; null where there is no such file. */
+function headMoves(gitdir) {
+  const log = readTail(join(gitdir, "logs", "HEAD"), REFLOG_TAIL);
+  if (log === null) return null;
+  const moves = [];
+  for (const line of log.split("\n")) {
+    const entry = REFLOG_ENTRY.exec(line);
+    if (entry !== null) moves.push({ from: entry[1], to: entry[2], seconds: Number(entry[3]), message: entry[4] });
+  }
+  return moves;
+}
+
+// How far back git is asked, where there is no file to read the tail of. A
+// turn's commits are the newest entries.
+const REFLOG_ASKED = 256;
+
+/**
+ * The same moves asked of git, oldest first. Git names each entry's new commit
+ * and not the one it moved from, which is the entry before it; the oldest one
+ * asked has no such entry and cannot start a run.
+ */
+async function headMovesFromGit(root) {
+  const r = await gitBuffered(
+    root,
+    ["log", "-g", `--max-count=${REFLOG_ASKED}`, "--date=unix", "--format=%H %gd %gs", "HEAD"],
+    { timeout: REUSE_GIT_MS }
+  );
+  if (!r.ok) return null;
+  const moves = [];
+  for (const line of r.stdout.split("\n").reverse()) {
+    const entry = /^([0-9a-f]+) [^@]*@\{(\d+)\} (.*)$/.exec(line);
+    if (entry === null) continue;
+    moves.push({ from: moves.at(-1)?.to ?? null, to: entry[1], seconds: Number(entry[2]), message: entry[3] });
+  }
+  return moves;
 }
 
 const lineCount = (text) => (text === "" ? 0 : text.split("\n").length - (text.endsWith("\n") ? 1 : 0));
@@ -115,6 +231,35 @@ export function sessionStart(transcriptPath) {
     const at = /"timestamp":"([^"]+)"/.exec(line);
     const ms = at ? Date.parse(at[1]) : NaN;
     if (Number.isFinite(ms)) return ms;
+  }
+  return null;
+}
+
+/**
+ * The moment this turn's prompt arrived, or null where the transcript names none.
+ *
+ * The last user entry that a person wrote: a tool's result and a hook's block
+ * reason are written as user entries too, and either would move the turn's
+ * start past the commits it made. Read from the end, so a long session parses
+ * only the lines after its last prompt.
+ */
+export function turnStart(transcriptPath) {
+  const tail = readTail(transcriptPath, TRANSCRIPT_MOST);
+  if (tail === null) return null;
+  const lines = tail.split("\n");
+  for (let i = lines.length - 1; i >= 0; i--) {
+    if (!lines[i].includes("\"user\"")) continue;
+    let entry;
+    try {
+      entry = JSON.parse(lines[i]);
+    } catch {
+      continue;
+    }
+    if (entry?.type !== "user" || entry.isMeta === true) continue;
+    const content = entry.message?.content;
+    if (Array.isArray(content) && content.some((part) => part?.type === "tool_result")) continue;
+    const ms = Date.parse(entry.timestamp);
+    return Number.isFinite(ms) ? ms : null;
   }
   return null;
 }

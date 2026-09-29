@@ -1,6 +1,6 @@
 /**
- * Whether the engines this tool parses with are installed, and what to do when
- * one is not.
+ * Whether the engines this tool parses with are installed, and the node it runs
+ * on new enough, and what to do when one is not.
  *
  * Three engines were detected three different ways and their remedies were
  * spelled at every printer that needed one, so a missing Ruby was answered with
@@ -19,8 +19,11 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { absentInterpreter } from "./child.mjs";
+import { firstLine } from "./encode.mjs";
 import { ENGINES } from "./langs.mjs";
-import { rubyEnv } from "./ruby.mjs";
+import { prismLoadArgs, prismVersionArgs, rubyEnv } from "./ruby.mjs";
+import { loadTypeScript } from "./semantic.mjs";
+import { olderThan } from "./version.mjs";
 
 /**
  * The type checker, probed beside the engines and deliberately not one of them.
@@ -38,12 +41,38 @@ const OPTIONAL = {
     optional: true,
     note: "optional: --deep needs it",
     remedy: ENGINES.oxc.remedy,
+    // The loader `--deep` refuses through, so the row answers what the flag
+    // will find. Imported and nothing more, a typescript 4.9.5 in a
+    // node_modules above the plugin read `ok` here and `nothing to install` in
+    // setup, and `--deep` refused it as not installed: the loader holds it to
+    // major 5, because 7 has no JS API and 4 is not what the tier measured.
+    usable: loadTypeScript,
+    unusable: "--deep needs typescript 5.x",
   },
 };
 
-const PROBES = { ...ENGINES, ...OPTIONAL };
+/**
+ * The node this process runs on, probed first and deliberately not an engine.
+ *
+ * Both manifests declare it in `engines`, and nothing enforces that for a
+ * plugin: Claude Code's own installer needs no Node, so the `node` on a user's
+ * PATH is whatever was there. Measured on Node 20.20.2: doctor called every
+ * engine ok, and the scan then died with `Map.groupBy is not a function`, which
+ * names neither Node nor a fix. The floor is the manifests' number, and a test
+ * holds the three together.
+ */
+const RUNTIME = {
+  node: {
+    id: "node",
+    host: "runtime",
+    floor: "22.0.0",
+    remedy: "install Node 22 or newer and put it first on PATH",
+  },
+};
 
-/** Everything a readiness report asks about: the engines, then the checker beside them. */
+const PROBES = { ...RUNTIME, ...ENGINES, ...OPTIONAL };
+
+/** Everything a readiness report asks about: the node it runs on, the engines, then the checker beside them. */
 export const PROBE_IDS = Object.freeze(Object.keys(PROBES));
 
 /**
@@ -53,10 +82,12 @@ export const PROBE_IDS = Object.freeze(Object.keys(PROBES));
  */
 export const NODE_PROBE_IDS = Object.freeze(PROBE_IDS.filter((id) => PROBES[id].host === "node"));
 
-// How to ask an interpreter-hosted engine for its version. The argv belongs to
-// the engine rather than to its interpreter, so a second one adds a row here
-// instead of a branch below.
-const ASK_VERSION = { prism: ["--disable-gems", "-rprism", "-e", "print Prism::VERSION"] };
+// How to ask an interpreter-hosted engine for its version, and which of its
+// installs to ask: the same load path the parser is handed, so the answer is
+// about the library that will parse. The argv belongs to the engine rather than
+// to its interpreter, so a second one adds a row here instead of a branch below.
+const ASK_VERSION = { prism: prismVersionArgs };
+const LOAD_ARGS = { prism: prismLoadArgs };
 
 // The phrase the node remedy spells in the directory for. The table states it
 // the way a person would read it aloud; a person following it needs the path.
@@ -97,25 +128,22 @@ export function remedyFor(engineId, root = pluginRoot()) {
 }
 
 /**
- * Whether a version is below a floor, by its numbers.
+ * Why an engine read no file of its language, in its own terms, from the
+ * versions a parse reported.
  *
- * Exported because a string compare is the wrong answer that looks right:
- * "1.10.0" sorts below "1.9.0" as text, and prism is already past its tenth
- * minor, so text would refuse the version this asks for.
+ * One sentence used to cover every cause, and it guessed the likeliest: a
+ * missing interpreter. Measured with ruby on PATH and no prism, that sentence
+ * was wrong and there was no version anywhere on screen to say so. An engine
+ * that reported a version ran, so the files are what failed; one that reported
+ * none is the install, and its own remedy is the next move. Here rather than
+ * with one printer, because the summary and the map both say it.
  */
-export function olderThan(version, floor) {
-  if (!version || !floor) return false;
-  const have = numbers(version);
-  const want = numbers(floor);
-  for (let i = 0; i < Math.max(have.length, want.length); i++) {
-    if ((have[i] ?? 0) !== (want[i] ?? 0)) return (have[i] ?? 0) < (want[i] ?? 0);
-  }
-  return false;
+export function whyUnread(engineId, engines, root = pluginRoot()) {
+  const version = engines?.[engineId]?.version ?? null;
+  return version
+    ? `${engineId} ${version} ran and answered for none of them`
+    : `${engineId} reported no version: ${remedyFor(engineId, root)}`;
 }
-
-// `||` rather than `??`: a part that is not a number parses to NaN, which is
-// not absent, and comparing against it answers false in both directions.
-const numbers = (v) => v.split(".").map((n) => Number.parseInt(n, 10) || 0);
 
 /**
  * Ask every named engine whether it is there, and answer one row each.
@@ -131,10 +159,65 @@ export async function readiness({ engines = Object.keys(ENGINES), timeoutMs = 5_
   const rows = [];
   for (const id of engines) {
     const engine = probeFor(id);
-    if (engine.host === "node") rows.push(...(await probeNode(engine)));
+    if (engine.host === "runtime") rows.push(probeRuntime(engine));
+    else if (engine.host === "node") rows.push(...(await probeNode(engine)));
     else rows.push(await probeInterpreter(engine, { timeoutMs, env }));
   }
   return rows;
+}
+
+/**
+ * The same rows, asked by a node that has never tried to load anything.
+ *
+ * A module whose evaluation threw stays failed for the life of the process
+ * that tried it. oxc-parser without its native binding is exactly that, so a
+ * process that probed, watched npm install the binding, and probed again read
+ * the parser as absent both times. Setup asks this after npm for that reason.
+ * The node that runs it is this one, and it runs from the plugin's own
+ * directory, as bounded as any other child here.
+ */
+export function readinessAfresh({ engines = NODE_PROBE_IDS, timeoutMs = 60_000 } = {}) {
+  const script = [
+    `const { readiness } = await import(${JSON.stringify(import.meta.url)});`,
+    `process.stdout.write(JSON.stringify(await readiness({ engines: ${JSON.stringify(engines)} })));`,
+  ].join("\n");
+  return new Promise((resolve) => {
+    execFile(
+      process.execPath,
+      ["--input-type=module", "-e", script],
+      { cwd: pluginRoot(), encoding: "utf8", timeout: timeoutMs, killSignal: "SIGKILL", maxBuffer: 1024 * 1024 },
+      (err, stdout, stderr) => {
+        if (err) return resolve({ rows: null, error: firstLine(stderr) || err.message });
+        try {
+          resolve({ rows: JSON.parse(stdout), error: null });
+        } catch {
+          resolve({ rows: null, error: "the probe answered something other than its rows" });
+        }
+      }
+    );
+  });
+}
+
+/**
+ * Why this node cannot run anything here, with the fix, or null where it can.
+ *
+ * Asked by the entry point before any verb that works, so a scan refuses in
+ * one sentence instead of dying halfway through on a builtin the old node
+ * lacks. Doctor is the one verb that runs anyway, and says the same thing on
+ * its row.
+ */
+export function unsupportedNode() {
+  const row = probeRuntime(RUNTIME.node);
+  return row.ok ? null : `${row.reason}, ${row.remedy}`;
+}
+
+/** The node this process runs on, held to its floor. */
+function probeRuntime(engine) {
+  const version = process.versions.node;
+  if (olderThan(version, engine.floor)) {
+    return row(engine, { present: true, version, reason: `${engine.id} ${version} is older than the ${engine.floor} this runs on` });
+  }
+  return row(engine, { present: true, version, ok: true });
 }
 
 /** What a row is called wherever one is printed: an extra by its module, an engine by its own name. */
@@ -217,12 +300,16 @@ export function readinessLines(rows, { installSaid = false } = {}) {
     // unless it is the optional checker, whose row is a note either way.
     if (r.ok) return `${name} ${found} ok${r.reason ? ` (${r.reason})` : ""}`;
     const said = installSaid && PROBES[r.engine]?.host === "node";
-    return said ? `${name} ${found}: ${r.reason}` : `${name} ${found}: ${r.reason}, ${r.remedy}`;
+    // A reason written to stand alone (the refusal every other verb prints)
+    // names the engine and version the row already leads with.
+    const lead = `${name} ${found} is `;
+    const reason = r.reason?.startsWith(lead) ? r.reason.slice(lead.length) : r.reason;
+    return said ? `${name} ${found}: ${reason}` : `${name} ${found}: ${reason}, ${r.remedy}`;
   });
 }
 
 /** One row, so every probe answers the same shape whatever it looked at. */
-function row(engine, { extra = null, present, version = null, ok = false, reason = null }) {
+function row(engine, { extra = null, present, version = null, ok = false, reason = null, remedy = null }) {
   return {
     engine: engine.id,
     extra,
@@ -231,7 +318,7 @@ function row(engine, { extra = null, present, version = null, ok = false, reason
     floor: engine.floor ?? null,
     ok,
     reason: reason ?? engine.note ?? null,
-    remedy: remedyFor(engine.id),
+    remedy: remedy ?? remedyFor(engine.id),
   };
 }
 
@@ -262,6 +349,13 @@ async function probeNode(engine) {
       );
       continue;
     }
+    // Present and not ready: installed where it resolves, and not a copy the
+    // one caller that wants it will take. Not optional in that case, since the
+    // flag it is for refuses it, and one install puts a usable one first.
+    if (extra === null && engine.usable && !(await engine.usable())) {
+      rows.push(row(engine, { extra, present: true, version: versionOf(module), reason: engine.unusable }));
+      continue;
+    }
     rows.push(row(engine, { extra, present: true, version: versionOf(module), ok: true }));
   }
   return rows;
@@ -290,19 +384,40 @@ function versionOf(module) {
  * under the floor parses without raising and counts every site as zero.
  */
 async function probeInterpreter(engine, { timeoutMs, env }) {
-  const { err, stdout } = await ask(engine.command, ASK_VERSION[engine.id], { timeoutMs, env });
+  const load = await LOAD_ARGS[engine.id]({ ruby: engine.command, env, timeoutMs });
+  const { err, stdout } = await ask(engine.command, ASK_VERSION[engine.id](load), { timeoutMs, env });
   if (absentInterpreter(err)) {
     return row(engine, { present: false, reason: `${engine.command} is not on PATH` });
   }
   if (err) {
     // A child our own timer killed answered nothing, which is not the same as
     // answering that the library is absent.
-    const reason = err.killed
-      ? `${engine.command} did not answer within ${timeoutMs}ms`
-      : `${engine.id} is not installed for this ${engine.command}`;
-    return row(engine, { present: true, reason });
+    if (err.killed) {
+      return row(engine, { present: true, reason: `${engine.command} did not answer within ${timeoutMs}ms` });
+    }
+    // Nor is an interpreter that cannot run anything. Measured with rbenv and no
+    // global version: the shim exits 127 with "rbenv: ruby: command not found",
+    // and this said prism was not installed, whose remedy fails the same way.
+    // Asked apart, with nothing loaded, so its failure is the interpreter's.
+    const bare = await ask(engine.command, ["--disable-gems", "-e", "1"], { timeoutMs, env });
+    if (bare.err && !bare.err.killed && !absentInterpreter(bare.err)) {
+      const said = firstLine(bare.stderr) || `exit ${bare.err.code}`;
+      return row(engine, {
+        present: true,
+        reason: `${engine.command} does not run: ${said}`,
+        remedy: `make \`${engine.command} -e 1\` run first (with a version manager, select an installed version), then check again`,
+      });
+    }
+    return row(engine, { present: true, reason: `${engine.id} is not installed for this ${engine.command}` });
   }
   const version = stdout.trim();
+  // An answer holding no version says nothing about the library, and a missing
+  // version is never older than the floor: a `ruby` that printed nothing and
+  // exited 0 was reported ok, and the scan it cleared charged every file. A
+  // prerelease suffix is still a version, so only the leading number is asked.
+  if (!/^\d+(\.\d+)*/.test(version)) {
+    return row(engine, { present: true, reason: `${engine.command} answered no ${engine.id} version` });
+  }
   if (olderThan(version, engine.floor)) {
     return row(engine, {
       present: true,

@@ -466,6 +466,47 @@ test("Beaker's `test_name` macro sets the runner", needsRuby, async (t) => {
   assert.equal(r.facets.testCalls, true);
 });
 
+test("a table-driven case is a case, whatever wraps the runner's word", async (t) => {
+  // `test.each([...])(...)` calls the result of a call, so the callee is a
+  // CallExpression and the old check read no name off it: a file of nothing
+  // but table-driven cases lost its vitest label and its test calls.
+  const dir = repo({
+    "each.test.ts": `import { test, expect } from "vitest"\ntest.each([[1, 1]])("adds %i", (a, b) => { expect(a).toBe(b) })\n`,
+    "describe-each.test.ts": `import { describe, it } from "vitest"\ndescribe.each([1, 2])("n %i", (n) => { it("x", () => {}) })\n`,
+    "tagged.test.ts": `import { it } from "@jest/globals"\nit.only.each\`a | b\n\${1} | \${1}\`("x", () => {})\n`,
+  });
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+  const rels = ["each.test.ts", "describe-each.test.ts", "tagged.test.ts"];
+  const { records } = await parseAll(list(dir, rels));
+
+  for (const [rel, runner] of [["each.test.ts", "vitest"], ["describe-each.test.ts", "vitest"], ["tagged.test.ts", "jest"]]) {
+    assert.equal(records.get(rel).facets.testRunner, runner, rel);
+    assert.equal(records.get(rel).facets.testCalls, true, rel);
+  }
+});
+
+test("minitest's spec DSL is minitest, not RSpec", needsRuby, async (t) => {
+  // `describe` and `it` are minitest/spec's words as well as RSpec's, and a
+  // `test/**/*_test.rb` written in them was labelled RSpec.
+  const dir = repo({
+    "test/models/user_test.rb": `require "test_helper"\n\ndescribe User do\n  it "has a name" do\n    _(User.new.name).must_be_nil\n  end\nend\n`,
+    "lib/checks/probe.rb": `require "minitest/autorun"\n\ndescribe Probe do\n  it "runs" do\n  end\nend\n`,
+    "spec/models/user_spec.rb": `describe User do\n  it "has a name" do\n  end\nend\n`,
+    "test/explicit_test.rb": `RSpec.describe Thing do\n  it "x" do\n  end\nend\n`,
+  });
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+  const rels = ["test/models/user_test.rb", "lib/checks/probe.rb", "spec/models/user_spec.rb", "test/explicit_test.rb"];
+  const { records } = await parseAll(list(dir, rels));
+
+  assert.equal(records.get("test/models/user_test.rb").facets.testRunner, "minitest", "the path says so");
+  assert.equal(records.get("lib/checks/probe.rb").facets.testRunner, "minitest", "the require says so");
+  assert.equal(records.get("spec/models/user_spec.rb").facets.testRunner, "rspec", "nothing says minitest");
+  assert.equal(records.get("test/explicit_test.rb").facets.testRunner, "rspec", "an explicit RSpec receiver wins over the path");
+  for (const rel of rels) assert.equal(records.get(rel).facets.testCalls, true, rel);
+});
+
 test("minitestByPath only trusts a top-level test tree", needsRuby, async (t) => {
   // Homebrew's whole app lives under Library/Homebrew, and a `def test_each`
   // three directories under ITS `test/` is an RSpec helper, not minitest.

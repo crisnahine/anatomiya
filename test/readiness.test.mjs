@@ -1,18 +1,20 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { execFileSync } from "node:child_process";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { execFileSync, spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { needsRuby } from "./ruby-available.mjs";
-import { needsShebang } from "./platform.mjs";
+import { needsShebang, needsSymlinks } from "./platform.mjs";
 import { installWithoutStripper } from "./no-stripper.mjs";
 import { installWithoutDependencies } from "./plugin-install.mjs";
-import { REL } from "../scripts/plugins.mjs";
+import { ANATOMIYA, BINARY, REL, ROOT, installed } from "../scripts/plugins.mjs";
 import { ENGINES } from "../plugins/anatomiya/lib/langs.mjs";
-import { installProblem, olderThan, pluginRoot, readiness, readinessLines, remedyFor } from "../plugins/anatomiya/lib/readiness.mjs";
+import { runScan } from "../plugins/anatomiya/lib/commands.mjs";
+import { installProblem, pluginRoot, readiness, readinessAfresh, readinessLines, remedyFor } from "../plugins/anatomiya/lib/readiness.mjs";
+import { olderThan } from "../plugins/anatomiya/lib/version.mjs";
 
 /** A directory on PATH holding one stub interpreter, so a probe meets a Ruby that is not this one. */
 function stubInterpreter(t, body) {
@@ -48,6 +50,13 @@ test("the interpreter engine's remedy names the interpreter and never npm", () =
 
   assert.match(remedy, /3\.4/);
   assert.doesNotMatch(remedy, /npm/);
+});
+
+test("an old prism's remedy names the gem, so an interpreter under 3.4 is not a dead end", () => {
+  // Ruby 3.3 ships prism 0.19, and upgrading an interpreter a project pins is
+  // not a command. `gem install prism` puts a 1.x beside it on any Ruby from
+  // 2.7, and the parser now loads it, so the remedy has to say so.
+  assert.match(remedyFor("prism"), /gem install prism/);
 });
 
 test("an engine nobody declares has no remedy to hand out", () => {
@@ -138,7 +147,11 @@ test("an interpreter that is not on PATH is absent, and carries the remedy that 
 test("an interpreter without the library is present and still not ready", needsShebang, async (t) => {
   // The measured second half: ruby 2.6 runs and ships no prism, so every Ruby
   // file was charged as a crash with nothing on screen naming the library.
-  const env = stubInterpreter(t, "#!/bin/sh\necho 'cannot load such file -- prism' >&2\nexit 1\n");
+  // The interpreter itself runs; only the require fails, as it does on 2.6.
+  const env = stubInterpreter(
+    t,
+    "#!/bin/sh\ncase \"$*\" in *-rprism*) echo 'cannot load such file -- prism' >&2; exit 1;; esac\nexit 0\n"
+  );
 
   const [row] = await readiness({ engines: ["prism"], env });
 
@@ -146,6 +159,36 @@ test("an interpreter without the library is present and still not ready", needsS
   assert.equal(row.version, null);
   assert.equal(row.ok, false);
   assert.equal(row.reason, "prism is not installed for this ruby");
+});
+
+test("an interpreter that does not run is not reported as a missing library", needsShebang, async (t) => {
+  // Measured with rbenv and no global version: the `ruby` shim is on PATH and
+  // exits 127 with "rbenv: ruby: command not found", and doctor said prism was
+  // not installed, whose remedy, `gem install prism`, fails the same way.
+  const env = stubInterpreter(t, "#!/bin/sh\necho 'rbenv: ruby: command not found' >&2\nexit 127\n");
+
+  const [row] = await readiness({ engines: ["prism"], env });
+
+  assert.equal(row.present, true, "something answers to the name");
+  assert.equal(row.ok, false);
+  assert.equal(row.reason, "ruby does not run: rbenv: ruby: command not found");
+  assert.doesNotMatch(row.remedy, /gem install/, "the library is not what is missing");
+  assert.match(row.remedy, /ruby -e 1/);
+});
+
+test("an interpreter that answers no version is not ready", needsShebang, async (t) => {
+  // Measured: a `ruby` that printed nothing and exited 0 was reported
+  // `prism  ok`, since a missing version is never older than the floor. An
+  // answer that holds no version says nothing about the library, and the
+  // scan it cleared then charged every Ruby file.
+  const env = stubInterpreter(t, "#!/bin/sh\nexit 0\n");
+
+  const [row] = await readiness({ engines: ["prism"], env });
+
+  assert.equal(row.present, true, "the interpreter ran");
+  assert.equal(row.version, null);
+  assert.equal(row.ok, false);
+  assert.equal(row.reason, "ruby answered no prism version");
 });
 
 test("a library older than the floor names both numbers", needsShebang, async (t) => {
@@ -164,6 +207,51 @@ test("a library older than the floor names both numbers", needsShebang, async (t
   // sanitiser that reads complete and is not.
   assert.match(row.reason, /0\.19\.0/);
   assert.ok(row.reason.includes(ENGINES.prism.floor), `${row.reason} names the floor`);
+});
+
+test("a prism installed beside a default under the floor is the one reported", needsShebang, async (t) => {
+  // Ruby 3.3 ships prism 0.19, and `gem install prism` puts a 1.x beside it.
+  // The probe asks with the same load path the parser is handed, so it reports
+  // the one that will parse rather than the default nobody will load.
+  const env = stubInterpreter(
+    t,
+    `#!/bin/sh
+case "$*" in
+  *Gem::Specification*) printf '[{"version":"0.19.0","default":true,"paths":["/old/lib"]},{"version":"1.9.0","default":false,"paths":["/new/lib","/new/ext"]}]' ;;
+  *"--disable-gems -I /new/lib -I /new/ext -rprism"*) printf 1.9.0 ;;
+  *) printf 0.19.0 ;;
+esac
+`
+  );
+
+  const [row] = await readiness({ engines: ["prism"], env });
+
+  assert.equal(row.version, "1.9.0");
+  assert.equal(row.ok, true);
+});
+
+test("an installed prism that does not load for this ruby gives way to the one that does", needsShebang, async (t) => {
+  // Measured after a Ruby upgrade with a shared GEM_HOME: prism 1.9.0 was
+  // built for the old Ruby, RubyGems skipped it and loaded the default 0.19.0,
+  // and this put 1.9.0 on the load path anyway. Its extension was linked to
+  // the other libruby, so doctor said prism was not installed and hid the
+  // accurate answer, which is that the one that loads is under the floor.
+  const env = stubInterpreter(
+    t,
+    `#!/bin/sh
+case "$*" in
+  *Gem::Specification*) printf '[{"version":"0.19.0","default":true,"paths":["/old/lib"]},{"version":"1.9.0","default":false,"paths":["/new/lib","/new/ext"]}]' ;;
+  *"-I /new/lib"*) echo 'prism.so: linked to incompatible libruby.so.3.2 (LoadError)' >&2; exit 1 ;;
+  *) printf 0.19.0 ;;
+esac
+`
+  );
+
+  const [row] = await readiness({ engines: ["prism"], env });
+
+  assert.equal(row.version, "0.19.0");
+  assert.equal(row.ok, false);
+  assert.match(row.reason, /older than/, row.reason);
 });
 
 test("an interpreter that answers reports its version and the floor it is held to", needsRuby, async () => {
@@ -193,6 +281,74 @@ test("the optional checker is never what makes a probe fail", async () => {
   assert.equal(row.engine, "typescript");
   assert.equal(row.ok, true);
   assert.match(row.reason, /--deep/, "and the row still says which flag wants it");
+});
+
+test("a checker --deep would refuse is not ok, and setup counts it as needed", (t) => {
+  // Measured with a typescript 4.9.5 in a node_modules above the plugin, the
+  // kind a home directory collects: doctor said `typescript 4.9.5 ok`, setup
+  // said `nothing to install`, and `scan --deep` refused it as not installed,
+  // because the loader holds it to major 5 and the probe only imported it.
+  // Probed out of process: module resolution is what is under test.
+  const above = mkdtempSync(join(tmpdir(), "anatomiya-oldts-"));
+  t.after(() => rmSync(above, { recursive: true, force: true }));
+  mkdirSync(join(above, "node_modules", "typescript"), { recursive: true });
+  writeFileSync(join(above, "node_modules", "typescript", "package.json"), `{"name":"typescript","version":"4.9.5","main":"index.js"}`);
+  writeFileSync(join(above, "node_modules", "typescript", "index.js"), `module.exports = { version: "4.9.5", createProgram() {} };`);
+  const home = join(above, "plugin");
+  for (const part of ["lib", "bin"]) cpSync(join(ROOT, REL.anatomiya, part), join(home, part), { recursive: true });
+  cpSync(join(ROOT, REL.anatomiya, "package.json"), join(home, "package.json"));
+  const script = `
+    const { readiness } = await import(${JSON.stringify(pathToFileURL(join(home, "lib", "readiness.mjs")).href)});
+    const { runSetup } = await import(${JSON.stringify(pathToFileURL(join(home, "lib", "commands.mjs")).href)});
+    const [row] = await readiness({ engines: ["typescript"] });
+    const { needed } = await runSetup({ dryRun: true });
+    process.stdout.write(JSON.stringify({ row, needed }));
+  `;
+
+  const { row, needed } = JSON.parse(execFileSync(process.execPath, ["--input-type=module", "-e", script], { encoding: "utf8" }));
+
+  assert.equal(row.version, "4.9.5");
+  assert.equal(row.ok, false);
+  assert.match(row.reason, /5\.x/, row.reason);
+  assert.ok(needed.includes("typescript"), `setup would install it: ${needed}`);
+});
+
+test("an engine fixed after a failed load reads as fixed only to a node that never tried it", needsSymlinks, (t) => {
+  // Measured with `npm_config_optional=false`: oxc-parser was there and its
+  // native binding was not, so loading it threw. A module whose evaluation
+  // threw stays failed for the life of the process that tried it, so setup,
+  // which probes before npm runs, would read an install that fixed it as still
+  // absent. The re-probe asks a fresh node, and this is why.
+  const home = mkdtempSync(join(tmpdir(), "anatomiya-afresh-"));
+  t.after(() => rmSync(home, { recursive: true, force: true }));
+  for (const part of ["lib", "bin"]) cpSync(join(ANATOMIYA, part), join(home, part), { recursive: true });
+  cpSync(join(ANATOMIYA, "package.json"), join(home, "package.json"));
+  // Copied rather than linked: a linked package resolves what it requires from
+  // where it really lives, and the binding is there.
+  for (const pkg of ["oxc-parser", "@oxc-project"]) cpSync(join(installed(), pkg), join(home, "node_modules", pkg), { recursive: true });
+  const script = `
+    import { symlinkSync } from "node:fs";
+    const { readiness, readinessAfresh } = await import(${JSON.stringify(pathToFileURL(join(home, "lib", "readiness.mjs")).href)});
+    const parser = (rows) => rows.find((r) => r.engine === "oxc" && r.extra === null).present;
+    const before = parser(await readiness({ engines: ["oxc"] }));
+    symlinkSync(${JSON.stringify(join(installed(), "@oxc-parser"))}, ${JSON.stringify(join(home, "node_modules", "@oxc-parser"))}, "dir");
+    const again = parser(await readiness({ engines: ["oxc"] }));
+    const fresh = parser((await readinessAfresh({ engines: ["oxc"] })).rows);
+    process.stdout.write(JSON.stringify({ before, again, fresh }));
+  `;
+
+  const seen = JSON.parse(execFileSync(process.execPath, ["--input-type=module", "-e", script], { encoding: "utf8" }));
+
+  assert.deepEqual(seen, { before: false, again: false, fresh: true });
+});
+
+test("a fresh probe answers what this process's own probe does", async () => {
+  // The same rows, so setup's verdict after npm reads like doctor's.
+  const here = await readiness({ engines: ["oxc", "typescript"] });
+  const { rows, error } = await readinessAfresh({ engines: ["oxc", "typescript"] });
+
+  assert.equal(error, null);
+  assert.deepEqual(rows, here);
 });
 
 test("the default probe asks every declared engine and nothing else", async () => {
@@ -313,4 +469,97 @@ test("an install that ran and stopped short is left to the rows that say which e
   t.after(() => rmSync(bare, { recursive: true, force: true }));
 
   assert.match(installProblem(absent, join(bare, "deep", "deeper")) ?? "", /nothing is installed/, "and a tree with none still answers");
+});
+
+// --- the node this runs on ----------------------------------------------------
+
+/**
+ * The binary, run on a node that reports itself as 20.20.2.
+ *
+ * Only the version is faked, because the floor is held against what
+ * `process.versions.node` says and a real Node 20 is not on every machine this
+ * suite runs on. Measured on a real one: doctor called every engine ok, and the
+ * scan died with `Map.groupBy is not a function`, which names neither Node nor
+ * a fix.
+ */
+const OLD_NODE = "20.20.2";
+function onOldNode(args, { input = "" } = {}) {
+  const pretend = `Object.defineProperty(process.versions, "node", { value: ${JSON.stringify(OLD_NODE)} })`;
+  const run = spawnSync(process.execPath, [`--import=data:text/javascript,${encodeURIComponent(pretend)}`, BINARY, ...args], {
+    encoding: "utf8",
+    input,
+  });
+  return { code: run.status, stdout: run.stdout, stderr: run.stderr };
+}
+
+/** A committed repository of plain source, scanned, so every hook has a map to answer from. */
+async function mapped(t) {
+  const dir = mkdtempSync(join(realpathSync(tmpdir()), "anatomiya-oldnode-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  mkdirSync(join(dir, "src"), { recursive: true });
+  for (const f of ["a", "b", "c", "d", "e", "f"]) writeFileSync(join(dir, "src", `${f}.js`), `export const ${f} = (x) => x\n`);
+  execFileSync("git", ["init", "-q"], { cwd: dir });
+  execFileSync("git", ["add", "-A"], { cwd: dir });
+  execFileSync("git", ["-c", "user.email=t@t.test", "-c", "user.name=T", "commit", "-qm", "init"], { cwd: dir });
+  await runScan(dir);
+  return dir;
+}
+
+test("the node this runs on is a row of its own, held to the floor the manifests declare", async () => {
+  const [row] = await readiness({ engines: ["node"] });
+
+  assert.equal(row.engine, "node");
+  assert.equal(row.version, process.versions.node);
+  assert.equal(row.ok, true, "the suite itself runs on a node past the floor");
+  // One number, and the one both manifests already state: a floor spelled
+  // twice is a floor that moves in one place.
+  for (const manifest of [join(ROOT, "package.json"), join(pluginRoot(), "package.json")]) {
+    const declared = JSON.parse(readFileSync(manifest, "utf8")).engines.node;
+    assert.equal(declared, `>=${row.floor.split(".")[0]}`, manifest);
+  }
+});
+
+test("a node under the floor is refused by every command that works, before any of them starts", (t) => {
+  // A directory that is no repository, so a command that got past the gate
+  // answers about the directory instead, and the case can tell the two apart.
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-oldnode-bare-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+  for (const args of [["scan", dir], ["scan", "--dry-run", dir], ["check", dir], ["pin", dir], ["setup", "--dry-run"], ["refresh-run", dir]]) {
+    const { code, stderr } = onOldNode(args);
+
+    assert.equal(code, 1, `${args.join(" ")} ran on node ${OLD_NODE}: ${stderr}`);
+    assert.match(stderr, /^anatomiya: node 20\.20\.2 is older than the 22\.0\.0 this runs on, install Node 22 or newer/, `${args.join(" ")}: ${stderr}`);
+    assert.doesNotMatch(stderr, /repository|groupBy|\n\s+at /, `${args.join(" ")} reached work it could not finish: ${stderr}`);
+  }
+});
+
+test("doctor on a node under the floor says so with the fix, and still reports every engine", () => {
+  // The one command that runs anyway: saying what is wrong is its whole job,
+  // and it exits 0 whatever it found.
+  const { code, stdout } = onOldNode(["doctor"]);
+
+  assert.equal(code, 0);
+  assert.match(stdout, /^node 20\.20\.2: older than the 22\.0\.0 this runs on, install Node 22 or newer/m, stdout);
+  assert.match(stdout, /^oxc /m, stdout);
+  assert.match(stdout, /^prism /m, stdout);
+});
+
+test("a hook on a node under the floor answers the empty object and exits 0", async (t) => {
+  // Answered from a mapped repository, so a hook that ran anyway would have
+  // handed the map back: the empty object here is the gate, not the fixture.
+  const dir = await mapped(t);
+  const payloads = {
+    echo: { hook_event_name: "UserPromptSubmit", cwd: dir },
+    notice: { hook_event_name: "PreToolUse", tool_name: "Write", tool_input: { file_path: join(dir, "src", "g.test.js") }, cwd: dir },
+    reuse: { hook_event_name: "Stop", cwd: dir },
+    refresh: { hook_event_name: "SessionStart", cwd: dir },
+  };
+
+  for (const [hook, payload] of Object.entries(payloads)) {
+    const { code, stdout, stderr } = onOldNode([hook, dir], { input: JSON.stringify(payload) });
+
+    assert.equal(code, 0, `${hook}: ${stderr}`);
+    assert.equal(stdout, "{}", hook);
+  }
 });

@@ -4,6 +4,9 @@ description: Scan this repository and write down what each directory already doe
 
 Run the scan and report what it found.
 
+After the first scan in a checkout the map keeps itself current: a background refresh rescans at the
+start of each session and whenever HEAD moves. Run this when the user asks for it, or to see the report.
+
 1. Run the scanner. Use Bash, and use the plugin's own copy:
 
    ```
@@ -27,6 +30,9 @@ Run the scan and report what it found.
    - what it could not cover: files in no area, files that crashed the parser, files that failed to
      parse, files over the per-file size cap, and history git could not read, which fails the author
      gate on every claim
+   - a language it read no file of, with the reason and the remedy on the line after it. The rest
+     of the map is still written, and the areas holding that language keep what the last scan that
+     could read it wrote
    - how many files it wrote, or would write, and how many area files it removed
    - every file in `.claude/rules/` this tool did not write, since those also reach the agent on
      every turn. The scanner names them one per line, and names separately any file carrying our
@@ -38,8 +44,9 @@ Run the scan and report what it found.
    suppresses its automatic injection for the rest of the session, which turns the map off for the
    very session that just built it. Use `cat` or `head` through Bash if you need to show one.
 
-4. Tell the user that a session already running still holds the previous map. A rewritten context
-   file does not re-attach mid-session; a fresh session picks up the new one.
+4. Tell the user what reaches a session already running: it gets the new overview on its next
+   prompt or tool call. An area file it has already read keeps its old counts until the window is
+   rebuilt: a new session, a compaction or `/clear` loads the whole map.
 
 If the scanner exits non-zero, show its output and stop. Do not guess at what it found.
 

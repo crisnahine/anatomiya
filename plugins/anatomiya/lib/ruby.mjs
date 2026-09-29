@@ -3,6 +3,11 @@ import { collectHits } from "./walk.mjs";
 import { rubyFacets } from "./facets.mjs";
 import { guardsOver, MAX_FILE_BYTES } from "./limits.mjs";
 import { firstLine } from "./encode.mjs";
+import { olderThan } from "./version.mjs";
+import { ENGINES } from "./langs.mjs";
+import { execFile } from "node:child_process";
+import { tmpdir } from "node:os";
+import { delimiter, isAbsolute } from "node:path";
 
 /**
  * Ruby files, parsed by prism, in the shape the reducer already consumes.
@@ -38,6 +43,143 @@ export const RUBY_GUARDS = {
   stderrBytes: 8 * 1024,
 };
 
+// Every prism this interpreter holds, default or installed, by version and the
+// directories that load it. Asked of RubyGems' own records and never of prism,
+// so an interpreter whose prism is too old still answers. Started with gems
+// disabled and json required before RubyGems is, so json is the interpreter's
+// own copy: with gems enabled, the newest installed json gem was activated,
+// and one that raised cost every prism choice. RubyGems still evaluates the
+// installed `.gemspec` records to answer; no gem's library is loaded.
+const LIST_PRISM = `require "json"
+require "rubygems"
+print JSON.generate(Gem::Specification.find_all_by_name("prism").map { |s|
+  { "version" => s.version.to_s, "default" => s.default_gem?, "paths" => s.full_require_paths }
+})`;
+
+/**
+ * The environment the listing runs under: the parser's scrub, plus the few
+ * variables that say where gems are installed.
+ *
+ * `GEM_HOME` and `GEM_PATH` are where rvm and chruby install every gem,
+ * `gem install prism` included, so a listing without them misses the one the
+ * remedy just installed. They only name directories to read records from; the
+ * parser still runs without them and with gems disabled, and `RUBYOPT` and
+ * `RUBYLIB`, which inject code, stay dropped here too. `HOME` and
+ * `USERPROFILE` locate a `--user-install`, and so does `XDG_DATA_HOME`:
+ * RubyGems puts one under `$XDG_DATA_HOME/gem` when `~/.gem` does not exist,
+ * and without it the listing looked under `~/.local/share` and missed the
+ * prism the remedy had just installed.
+ */
+function gemEnv(source) {
+  const env = rubyEnv(source);
+  for (const k of ["GEM_HOME", "GEM_PATH", "HOME", "USERPROFILE", "XDG_DATA_HOME"]) {
+    if (source[k]) env[k] = source[k];
+  }
+  return env;
+}
+
+/**
+ * List the prism gems an interpreter holds. `null` when it could not say:
+ * absent, too slow, or an answer of any other shape, each of which leaves the
+ * interpreter's own default to answer for itself.
+ *
+ * Buffered and bounded like the readiness probe's version question, outside the
+ * repository and with no shell, since it points an interpreter at whatever
+ * `PATH` names.
+ */
+export function listPrism({ ruby = "ruby", env = process.env, timeoutMs = 10_000 } = {}) {
+  return new Promise((resolve) => {
+    execFile(
+      ruby,
+      ["--disable-gems", "-e", LIST_PRISM],
+      { cwd: tmpdir(), env: gemEnv(env), encoding: "utf8", timeout: timeoutMs, killSignal: "SIGKILL", maxBuffer: 64 * 1024 },
+      (err, stdout) => {
+        if (err) return resolve(null);
+        try {
+          resolve(JSON.parse(stdout));
+        } catch {
+          resolve(null);
+        }
+      }
+    );
+  });
+}
+
+/**
+ * The argv that asks an interpreter which prism the given load path loads: one
+ * spelling, for the load check here and the readiness probe, which asked the
+ * same question with a copy of its own.
+ */
+export const prismVersionArgs = (load) => ["--disable-gems", ...load, "-rprism", "-e", "print Prism::VERSION"];
+
+/**
+ * The arguments that put the chosen prism on the load path, for every child
+ * that loads prism: the parser and the readiness probe answer about the same
+ * library only if they are handed the same one. Empty when the default
+ * answers.
+ */
+export async function prismLoadArgs(options = {}) {
+  let specs = await listPrism(options);
+  for (;;) {
+    const chosen = choosePrism(specs, ENGINES.prism.floor);
+    if (!chosen) return [];
+    const load = chosen.paths.flatMap((p) => ["-I", p]);
+    if ((await loadedVersion(load, options)) === chosen.version) return load;
+    // Listed is not loadable. A gem whose extension was built for another
+    // Ruby, which a shared GEM_HOME keeps after an upgrade, is one RubyGems
+    // itself skips, and handed to the parser it failed to load at all: doctor
+    // said prism was not installed and hid the default that does load. The
+    // next newest is asked instead, and the default answers when none loads.
+    specs = specs.filter((s) => s.paths !== chosen.paths);
+  }
+}
+
+/**
+ * The version a prism on these load paths answers when this interpreter
+ * requires it, or null when it does not load. The same question the readiness
+ * probe asks, bounded the way the listing is.
+ */
+function loadedVersion(load, { ruby = "ruby", env = process.env, timeoutMs = 10_000 } = {}) {
+  return new Promise((resolve) => {
+    execFile(
+      ruby,
+      prismVersionArgs(load),
+      { cwd: tmpdir(), env: rubyEnv(env), encoding: "utf8", timeout: timeoutMs, killSignal: "SIGKILL", maxBuffer: 64 * 1024 },
+      (err, stdout) => resolve(err ? null : stdout.trim())
+    );
+  });
+}
+
+/**
+ * Which installed prism the parser loads, off a listing of every one this
+ * interpreter holds: `null` to load the interpreter's own default, or the one
+ * to put on the load path instead.
+ *
+ * The default wins whenever it is past the floor, so an interpreter that ships
+ * a prism this reads loads exactly what it always did. Under the floor, the
+ * newest installed prism past it answers instead: Ruby 3.3 ships prism 0.19,
+ * and `gem install prism` puts a 1.x beside it on any Ruby from 2.7, which the
+ * parser could not see because it runs with gems disabled.
+ *
+ * A path that is not absolute, or that argv could read as a flag, is not a
+ * path this hands to an interpreter (F5), and a listing of any other shape
+ * adds nothing rather than something it made up.
+ */
+export function choosePrism(specs, floor) {
+  if (!Array.isArray(specs)) return null;
+  const usable = specs.filter(
+    (s) =>
+      s && typeof s.version === "string" && Array.isArray(s.paths) && s.paths.length > 0
+      && s.paths.every((p) => typeof p === "string" && isAbsolute(p) && !p.startsWith("-"))
+      && !olderThan(s.version, floor)
+  );
+  if (usable.some((s) => s.default === true)) return null;
+  const installed = usable.filter((s) => s.default !== true);
+  if (installed.length === 0) return null;
+  const newest = installed.reduce((a, b) => (olderThan(a.version, b.version) ? b : a));
+  return { version: newest.version, paths: newest.paths };
+}
+
 /**
  * The parser process loads nothing but the standard library.
  *
@@ -49,9 +191,17 @@ export const RUBY_GUARDS = {
  * Exported because the readiness probe spawns the same interpreter to ask which
  * prism it would load, and a probe run under a different environment from the
  * parse answers about a different interpreter.
+ *
+ * `PATH` keeps its absolute entries only. The command is looked up on the
+ * child's own `PATH`, and an empty or relative entry is resolved against the
+ * child's working directory, which is the temp directory anyone can write:
+ * measured with the common trailing colon on a machine with no ruby, the
+ * listing, the probe and the parser each ran a `ruby` another local user had
+ * left in /tmp, as the person scanning.
  */
 export function rubyEnv(source = process.env) {
-  const env = { PATH: source.PATH ?? "", LANG: "C" };
+  const PATH = (source.PATH ?? "").split(delimiter).filter((dir) => isAbsolute(dir)).join(delimiter);
+  const env = { PATH, LANG: "C" };
   // Windows refuses to start a side-by-side assembly without a valid
   // %SystemRoot%, which a stripped environment does not carry, so the
   // interpreter never runs at all. Documented in Python's own subprocess
@@ -87,8 +237,18 @@ const scriptFor = (maxBytes) => {
 };
 
 const script = (maxBytes) => `
-require "prism"
 require "json"
+
+# A Ruby with no prism at all (2.7 to 3.2 before \`gem install prism\`) raised
+# here, before anything could say why, and every file read as crashing the
+# parser: check found nothing and scan wrote nothing, with no remedy named.
+begin
+  require "prism"
+rescue LoadError
+  $stdout.write(JSON.generate({ "fatal" => "prism is not installed for this ruby" }))
+  $stdout.write("\\n")
+  exit 1
+end
 
 MAX_BYTES = ${maxBytes}
 SKIP = [:location, :node_id, :locals, :flags, :depth].freeze
@@ -109,13 +269,32 @@ def conv(v)
     h
   when Array then v.map { |x| conv(x) }.compact
   when Symbol then v.to_s
-  when String then (v.length > STR_CAP ? v[0, STR_CAP] : v).scrub("")
-  when Integer, Float, true, false then v
+  when String then utf8(v.length > STR_CAP ? v[0, STR_CAP] : v)
+  # \`1e400\` is Infinity, which JSON cannot spell: the encoder raised and a file
+  # prism read cleanly was reported unread. No dimension reads a float's value.
+  when Float then v.finite? ? v : nil
+  when Integer, true, false then v
   end
 end
 
+# A string as JSON can carry it. \`# encoding: ascii-8bit\` makes "\\xff" a
+# binary string, which scrub leaves alone and the encoder refused, dropping the
+# whole file; its bytes are read as UTF-8 and whatever is not is removed.
+def utf8(v)
+  return v.scrub("") if v.encoding == Encoding::UTF_8
+  return v.dup.force_encoding("UTF-8").scrub("") if v.encoding == Encoding::BINARY
+  v.encode("UTF-8", invalid: :replace, undef: :replace, replace: "")
+rescue EncodingError
+  v.dup.force_encoding("UTF-8").scrub("")
+end
+
+# No nesting cap. A node is one to three JSON levels, and the default of 100
+# charged a 98-branch elsif chain as a file that could not be parsed, though
+# prism found no error in it. conv runs out of stack near 2,000 levels, well
+# before the encoder would, and that is rescued as the file exhausting the
+# parser.
 def emit(h)
-  $stdout.write(JSON.generate(h))
+  $stdout.write(JSON.generate(h, max_nesting: false))
   $stdout.write("\\n")
 end
 
@@ -132,6 +311,20 @@ if Prism::VERSION.split(".").first.to_i < 1
   exit 1
 end
 
+# prism parses as the newest Ruby it knows unless told otherwise, and this runs
+# on the repository's own interpreter: on Ruby 3.3, \`a[0, k: 1] = 2\`, which
+# Ruby accepts and 3.4 made an error, counted as a syntax error and the file
+# went unread. An interpreter older than the oldest grammar prism carries (3.3)
+# is read with that one, the nearest it has; one newer than prism knows, or a
+# prism that takes no version, parses as it always did.
+PARSE_OPTIONS = begin
+  want = (RUBY_VERSION.split(".").map(&:to_i) <=> [3, 3]) < 0 ? "3.3.0" : RUBY_VERSION
+  Prism.parse("", version: want)
+  { version: want }
+rescue ArgumentError, TypeError
+  {}
+end
+
 data = $stdin.read.to_s.force_encoding("UTF-8")
 data.split("\\0").each_slice(2) do |rel, abs|
   next if rel.nil? || rel.empty? || abs.nil? || abs.empty?
@@ -141,7 +334,7 @@ data.split("\\0").each_slice(2) do |rel, abs|
       next
     end
     src = File.read(abs, encoding: "UTF-8")
-    r = Prism.parse(src)
+    r = Prism.parse(src, **PARSE_OPTIONS)
     # prism recovers past a syntax error and hands back a tree holding nodes
     # nobody wrote. Counting it moves the denominator without moving the code,
     # so the file is reported unread, the way an over-cap file already is.
@@ -200,6 +393,7 @@ export async function parseRuby(
 
   const seen = new Set();
   const unanswered = () => queued.filter((f) => !seen.has(f.rel));
+  const load = await prismLoadArgs({ ruby });
 
   // Resolves true when one of our own timers did the killing, which is the only
   // ending a second child could answer differently.
@@ -210,7 +404,7 @@ export async function parseRuby(
         sup = guardedChild({
           kind: "spawn",
           command: ruby,
-          args: ["--disable-gems", "-e", rubyScript],
+          args: ["--disable-gems", ...load, "-e", rubyScript],
           env: rubyEnv(),
           stdio: ["pipe", "pipe", "pipe"],
           stderrBytes: guards.stderrBytes,
@@ -350,6 +544,11 @@ function take(out, seen, line, dimensions, attempt) {
   }
   if (msg && msg.fatal) {
     out.error = String(msg.fatal);
+    // The script refuses before it reads a file, and only over the library it
+    // loaded: every Ruby file at once, which is an install to fix rather than a
+    // repository full of files that crash. The same flag an absent interpreter
+    // sets, so the scan and the check name the remedy instead of exiting 0.
+    out.missingParser = out.error;
     return;
   }
   if (!msg || typeof msg.rel !== "string") return;

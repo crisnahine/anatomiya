@@ -16,7 +16,7 @@
  * Read-only over the transcript store. Nothing is written except the `--md`
  * target, and only when asked for.
  */
-import { createReadStream, existsSync, readdirSync, writeFileSync } from "node:fs";
+import { createReadStream, existsSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { createInterface } from "node:readline";
 import { join, resolve } from "node:path";
 
@@ -196,6 +196,10 @@ async function main() {
   const dir = resolve(opts.dir);
   if (!existsSync(dir)) {
     console.error(`no transcript store at ${dir}\n\n${USAGE}`);
+    process.exit(2);
+  }
+  if (!statSync(dir).isDirectory()) {
+    console.error(`not a directory: ${dir}\n\n${USAGE}`);
     process.exit(2);
   }
   const md = opts.md === null ? null : resolve(opts.md);

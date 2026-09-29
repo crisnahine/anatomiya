@@ -26,7 +26,7 @@
  */
 export const ENGINES = Object.freeze({
   oxc:   { id: "oxc",   host: "node",        module: "oxc-parser",     extras: [{ module: "flow-remove-types", role: "stripper" }], remedy: "node bin/anatomiya.mjs setup in the plugin directory" },
-  prism: { id: "prism", host: "interpreter", command: "ruby",          floor: "1.0.0", remedy: "install Ruby 3.4 or newer, which ships prism 1.x, and put ruby on PATH" },
+  prism: { id: "prism", host: "interpreter", command: "ruby",          floor: "1.0.0", remedy: "install Ruby 3.4 or newer, which ships prism 1.x, or run gem install prism on the Ruby you have, and put ruby on PATH" },
 });
 
 const STRIPPER = ENGINES.oxc.extras.find((e) => e.role === "stripper");
@@ -233,6 +233,23 @@ export const holdsTypeSyntax = (path, facets = null) =>
   CARRIES_TYPES.test(path) || facets?.typed === true;
 
 /**
+ * The languages a file's rows are chosen for: its own, and `jsx` as well where
+ * a `js` file's tree holds JSX.
+ *
+ * The same trade as `holdsTypeSyntax`, the other way round: the extension is
+ * the proxy and the tree is the fact. JSX is legal in a `.js` file and the
+ * grammar already reads it there, so the scan labelled such a file "(JSX)"
+ * and no JSX row ever ran on it. CRA-era apps, React Native and many Next.js
+ * projects keep every component in `.js`, and their maps stated none of the
+ * five JSX conventions while the check enforced none. A `.js` file holding no
+ * JSX stays out, which is what keeps the `.ts`-and-helpers dilution the JSX
+ * rows declare `jsx` alone for out of their denominator. No facets is the
+ * path's answer, the way it is for type syntax.
+ */
+export const spokenIn = (lang, facets = null) =>
+  lang === "js" && facets?.jsx === true ? ["js", "jsx"] : [lang];
+
+/**
  * A wrong declaration fails at import, never mid-scan. Each rule closes a way
  * a registry entry could silently mis-route files: two owners for one
  * extension, a scratch name another language claims, a grammar or dialect
@@ -299,3 +316,22 @@ export function assertRegistry(langs) {
 }
 
 assertRegistry(LANGUAGES);
+
+// The formats a bundler or a runtime is handed by their full name. A closed
+// list rather than "any dotted suffix", because a dotted suffix is just as
+// often part of a source file's stem: Angular and NestJS name every file
+// `user.service.ts` or `app.module.ts`, and `*.types.ts` and `*.config.ts` are
+// everywhere. Read as an asset, `./user.service` left the row, and a directory
+// writing 40 of its 120 relative imports with `.js` stated the claim at 40 of
+// 40 while the check never flagged the `.js` node16 and nodenext require.
+// Shared by every row that has to tell a source import from an asset one
+// (`import_extension`, and the capability rows' wrapper bindings), so the two
+// cannot drift apart again. The second line is formats a loader plugin hands
+// over whole (documents, templates, message catalogues, 3D models, shaders,
+// schemas): each read as a source import missing its `.js`, so a directory
+// importing `./manual.pdf` beside `./a.js` was told it broke its own rule.
+export const ASSET_IMPORT = new RegExp(
+  "\\.(css|scss|sass|less|styl|pcss|svg|png|jpe?g|gif|webp|avif|ico|bmp|woff2?|ttf|otf|eot|mp3|mp4|webm|wav|ogg|json[5c]?|ya?ml|toml|csv|txt|xml|html|mdx?|vue|svelte|astro|graphql|gql|wasm|node|glsl|wgsl" +
+    "|pdf|webmanifest|hbs|ejs|po|properties|glb|gltf|sql|frag|vert|mov|proto)$",
+  "i"
+);

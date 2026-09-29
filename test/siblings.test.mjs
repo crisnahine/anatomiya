@@ -108,6 +108,34 @@ test("a relative specifier resolves against the importer's directory", () => {
   assert.equal(specifierToFile("./missing", "src/app.ts", rels), null);
 });
 
+test("a compiled specifier resolves to the TypeScript source it is emitted from", () => {
+  // TypeScript under Node16 and NodeNext requires the emitted extension on every
+  // relative import, so `../utils/format.js` is how a service names
+  // `src/utils/format.ts`. Measured: a repository written that way lost its
+  // "Most imported from here" line in every area, 1 with reuse against 0.
+  const rels = corpus("src/utils/format.ts", "src/ui/Button.tsx", "src/lib/esm.mts", "src/lib/cjs.cts", "src/app/main.ts");
+
+  assert.equal(specifierToFile("../utils/format.js", "src/app/main.ts", rels), "src/utils/format.ts");
+  assert.equal(specifierToFile("../ui/Button.js", "src/app/main.ts", rels), "src/ui/Button.tsx");
+  assert.equal(specifierToFile("../ui/Button.jsx", "src/app/main.ts", rels), "src/ui/Button.tsx");
+  assert.equal(specifierToFile("../lib/esm.mjs", "src/app/main.ts", rels), "src/lib/esm.mts");
+  assert.equal(specifierToFile("../lib/cjs.cjs", "src/app/main.ts", rels), "src/lib/cjs.cts");
+  assert.equal(specifierToFile("@/utils/format.js", "src/app/main.ts", rels), "src/utils/format.ts", "through an alias too");
+});
+
+test("a specifier with an extension names only the file it spells or the source that emits it", () => {
+  // The written file wins where it exists, and a `.js` is never emitted from an
+  // `.mts`, so dropping the extension outright would credit the wrong module
+  // with its importers.
+  const both = corpus("src/utils/format.ts", "src/utils/format.js");
+  assert.equal(specifierToFile("./format.js", "src/utils/x.ts", both), "src/utils/format.js");
+
+  const other = corpus("src/utils/format.mts", "src/utils/parse.rb");
+  assert.equal(specifierToFile("./format.js", "src/utils/x.ts", other), null);
+  assert.equal(specifierToFile("@/utils/format.js", "src/app.ts", other), null);
+  assert.equal(specifierToFile("@/utils/parse.js", "src/app.ts", other), null, "a tail is not any file sharing its stem");
+});
+
 test("an alias tail matches the file it names, and an ambiguous one matches nothing", () => {
   const rels = corpus("src/utils/user.ts", "src/components/Avatar.tsx");
 
@@ -156,8 +184,11 @@ test("the names other files import from here are ranked by how many import them"
   ]);
 });
 
-test("a default import counts under default and a namespace import under *", () => {
-  const rels = corpus("src/utils/user.ts");
+test("a default import is named for its module and a namespace import is no name at all", () => {
+  // Ranked as export names, these printed "most imported from here:  (5
+  // files), default (5)" on an area file: `*` encodes to nothing a reader can
+  // look for, and `default` says nothing about which module it came out of.
+  const rels = corpus("src/utils/user.ts", "src/ui/Button/index.tsx");
   const records = new Map();
   for (let i = 0; i < 3; i++) {
     records.set(`src/a${i}.ts`, record(`src/a${i}.ts`, [{ module: "~/utils/user", names: ["default"] }]));
@@ -165,10 +196,14 @@ test("a default import counts under default and a namespace import under *", () 
   for (let i = 0; i < 3; i++) {
     records.set(`src/b${i}.ts`, record(`src/b${i}.ts`, [{ module: "~/utils/user", names: ["*"] }]));
   }
+  for (let i = 0; i < 4; i++) {
+    records.set(`src/c${i}.ts`, record(`src/c${i}.ts`, [{ module: "~/ui/Button", names: ["default"] }]));
+  }
 
-  assert.deepEqual(mostImported(new Set(["src/utils/user.ts"]), records, rels), [
-    { name: "*", file: "src/utils/user.ts", importers: 3 },
-    { name: "default", file: "src/utils/user.ts", importers: 3 },
+  assert.deepEqual(mostImported(new Set(["src/utils/user.ts", "src/ui/Button/index.tsx"]), records, rels), [
+    // An index file is imported by its directory's name, so that is its name.
+    { name: "Button (default)", file: "src/ui/Button/index.tsx", importers: 4 },
+    { name: "user (default)", file: "src/utils/user.ts", importers: 3 },
   ]);
 });
 

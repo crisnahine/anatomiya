@@ -13,7 +13,8 @@ Run the check and report what it found.
    Add `--base <ref>` when the branch targets something other than the remote's default branch.
    Left alone it tries `origin/HEAD`, then `origin/main`, `origin/master`, `main`, `master`. A
    `--base` you named and that resolves to no commit is refused by name rather than fallen back
-   from, because a whole-branch review at exit 0 reads as a clean one.
+   from, because a whole-branch review at exit 0 reads as a clean one. So is one naming this
+   branch's own tip, such as `HEAD~0` or the branch's own name: there is nothing to compare against.
 
    Leave the format alone: `--format json` prints the same run as a record for a machine reader,
    and this report is read off the text.

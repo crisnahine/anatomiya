@@ -20,7 +20,7 @@ path and a newline split turns one hostile filename into two corpus entries.
 | Source extensions | `.ts .mts .cts .tsx .js .jsx .mjs .cjs .rb .rake .gemspec .jbuilder` |
 | Source filenames | `Rakefile`, `Gemfile`, `config.ru`, matched whole so a `Gemfile.lock` is not one |
 | Denied outright | `.git/`, `.env*`, `*.pem *.key *.p12 *.pfx *.jks *.keystore`, `.claude/settings.local.json`, `id_rsa`, `id_ed25519`, `.netrc`, `.npmrc` |
-| Excluded directories | `node_modules`, `vendor`, `.yarn`, `fixtures`, `__fixtures__`, `__snapshots__`, `test_cases`, `testdata`, `test-data`, `golden`, `goldens`, `__mocks__`, `mocks`, `dist`, `build`, `coverage`, `.next`. Not `examples`: 8,967 paths in a 35-repository corpus match it and much of that is maintained code |
+| Excluded directories | `node_modules`, `vendor`, `.yarn`, `fixture`, `fixtures` and any `<word>_fixture(s)`, `__fixtures__`, `snapshot`, `snapshots`, `__snapshots__`, `test_cases`, `testdata`, `test-data`, `golden`, `goldens` and their `-test(s)` or `_test(s)` compounds (`golden-test`), `__mocks__`, `mocks`, `cases` and a camelCase word ending in `Cases` (`configCases`), `dist`, `coverage`, `.next`, and `build` unless a `src` directory sits above it. Not `examples`: 8,967 paths in a 35-repository corpus match it and much of that is maintained code |
 | Caps | none on the repository; 1 MB per file, which skips a bundle or a compiled file and says so. Measured across 35 repositories, no hand-written source exceeds 850 KB, and every file between 1 and 4 MB sat at the parse timeout boundary, flipping between crashed and parsed with machine load |
 
 Fixture and vendor directories are excluded because that code is deliberately unidiomatic. In one
@@ -65,8 +65,8 @@ real area rather than being folded away.
 
 The repository root is never a fold target. Everything that reaches the root has nothing in common,
 and a claim computed over that describes no code anyone works on. Files with nowhere to go are
-reported as uncovered in the overview instead. On a 2,468 file repository that was 196 files, about
-8%. Expect a larger share on a tree with many small leaf directories, and much less on a flat one.
+reported as uncovered in the overview instead. On the 2,468 file repository the README's overview
+comes from, that was about 8% of its files (the README prints the count). Expect a larger share on a tree with many small leaf directories, and much less on a flat one.
 
 Above the ceiling the smallest areas fold into the nearest ancestor that is itself an area, smallest
 first, until the count fits. Where no ancestor is an area, which happens whenever a directory holds
@@ -155,11 +155,21 @@ was over the size cap. The second is new in this shape. Both parsers recover fro
 hand back a tree, oxc to an almost empty one and prism to one holding nodes nobody wrote, and
 counting either moves the denominator without moving the code. So a parse reporting errors answers
 `ok: false` and contributes no sites, which is what every other unexamined file already gets.
+prism is asked to parse as the interpreter it runs on (as 3.3, its oldest grammar, on an older
+one), because by default it parses as the newest Ruby it knows, and `a[0, k: 1] = 2`, valid until
+3.4, read as a syntax error on Ruby 3.3.
 
-Where a language's parser answered for **no** file at all, the scan writes nothing and removes
-nothing, and creates no `.claude` directory it would have written into. A blind run's areas all count
-nothing and would otherwise be deleted as gone. A syntax error is not that: the parser ran and
-answered.
+Where a language's parser answered for **no** file at all, that language is decided on its own. An
+area holding any file of it is held: its file is neither rewritten nor removed, and its record is
+carried into the new facts, because the run cannot say what it holds and its areas would otherwise
+count nothing and be deleted as gone. Everything else is written, and the summary and the overview
+name the language, why none of it was read, and the remedy. An engine that is not installed is the
+same case, so a TypeScript repository whose only Ruby is a Gemfile still gets its map on a machine
+with no Ruby. Only a run that read no file of any language writes nothing and removes nothing, and
+creates no `.claude` directory it would have written into; where a missing engine is the reason, the
+scan refuses with that engine's remedy instead. The check draws the same line: it names the files it
+could not read and the engine's remedy, and refuses only a change with nothing else in it to read. A
+syntax error is none of this: the parser ran and answered.
 
 Why a run went blind is asked of the engine rather than guessed. An engine that reported a version
 ran, so the files are what failed; one that reported none is the install, and its line carries that
@@ -171,7 +181,8 @@ screen said so.
 |---|---|---|
 | File size | 1 MB | checked with `stat` before the file is dispatched |
 | Wall time | 5s | `SIGKILL` from the parent |
-| Resident memory | 1 GB | polled every 25ms via `ps`, starting 250ms after the file goes in flight |
+| Resident memory | 1 GB | polled every 25ms, starting 250ms after the file goes in flight: read from `/proc/<pid>/status` on Linux, from `/bin/ps` on macOS and the BSDs, and not enforced on Windows, where the wall clock is what stops a runaway parse |
+| Worker start | 20s | `SIGKILL` from the parent for a worker that has not said ready; five such workers fail the pool, and its queued files are charged as crashed |
 
 Pool size is `min(8, cpus - 1)`. The memory grace period exists so a normal parse never pays for the
 polling.
@@ -212,7 +223,10 @@ parsed as it arrives. Buffering it through `execFile` threw `RangeError: Invalid
 inside Node's own exit handler, with `maxBuffer` set far above the output size, and no error was
 attributable to any file. Paths arrive on stdin as NUL-delimited pairs, never in argv. The Ruby
 process runs with `--disable-gems` and with `RUBYOPT`, `RUBYLIB` and `GEM_HOME` dropped, because
-each of those can inject a `-r` into a process about to be pointed at repository files. The timeout
+each of those can inject a `-r` into a process about to be pointed at repository files. Its `PATH`
+keeps only absolute entries: the command is looked up on the child's own `PATH`, and an empty or
+relative entry resolves against its working directory, the temp directory, where another local
+user's `ruby` ran as the person scanning on a machine with a trailing colon and no Ruby. The timeout
 is 15s of **silence** rather than a whole-run limit, because a large repository legitimately runs
 for minutes and what a hung parse looks like is silence; behind it sits a wall clock sized to the
 number of files handed over, since a child that answers one file every fourteen seconds keeps the
@@ -248,8 +262,8 @@ The ratio is `conforming / candidates`. Counting conforming files instead of con
 measured flipping 10 of 39 verdicts, in both directions: it hid real conventions and it manufactured
 false ones.
 
-`applicability` is rendered beside the area's file count on every stated line, because that is the
-only thing a human can audit a predicate with. A wrongly narrow predicate produces a ratio of 1.0
+`applicability` is rendered beside the eligible files, the area's files in the dimension's languages
+that it could read, on every stated line, because that is the only thing a human can audit a predicate with. A wrongly narrow predicate produces a ratio of 1.0
 over a small candidate set and reads as a strong convention; `12 of 12 sites across 3 of 20 files`
 reads as what it is.
 
@@ -342,13 +356,15 @@ in `check`.
 | `class_base` | precise | ruby | classes here inherit `<style>`, learned |
 | `module_include` | precise | ruby | classes here include `<style>`, learned |
 
-The five JSX rows are the ones that make the JSX total 32 rather than 27: a `.tsx` or `.jsx` file is
+The five JSX rows are the ones that make the JSX total 33 rather than 28: a `.tsx` or `.jsx` file is
 counted by every `js` dimension as well as these. The five migration rows are Rails and count as
 Ruby, which is what takes Ruby from 11 to 16.
 
 The three `route_` rows ask whether a cross-cutting concern goes through the repository's own
-module. The wrapper is learned per file from its relative imports, by filename vocabulary (log,
-logger, logging; client, http, api, request, fetcher; config, env, settings), and the direct forms
+module. The wrapper is learned per file from its relative imports whose filename, up to its first
+dot, is nothing but the vocabulary (log, logger, logging; client, http, api, request, fetcher;
+config, env, settings), so `./apiClient` and `./HTTPClient` are wrappers and `./settingsSlice` is
+not, and the direct forms
 are a closed table (console calls, fetch and axios, process.env reads). Each row is offered only where at
 least three examined files already route through a wrapper (C14), so a repository that logs to
 the console on purpose, or one holding a config.ts nobody imports, never carries a line that can
@@ -387,7 +403,10 @@ before a second capital, where
 `IComment` votes `I` and `Comment` votes for no prefix at all. A name opening on three or more
 capitals reads both ways, `IOStream` being an acronym and `IEFLogon` being `I` on the `EFLogon` in
 the directory of the same name, so it votes for neither and is not a site; nor does a name that is
-nothing but two capitals, `IO` being the same two readings with nothing to separate them. The first three learn a
+nothing but two capitals, `IO` being the same two readings with nothing to separate them. Only `I`,
+`T` and `E` vote as a prefix, and not where the name opens on a mixed-case acronym ending with its
+word (`IDs`, `IPv4`, `ETag`): `OAuthToken` would otherwise vote `O`, so any other capital-capital-lower
+opening votes for neither too. The first three learn a
 name out of the repository's own source, so it goes through the encoder where the sentence is
 filled rather than at each place the sentence is rendered. The last two can learn an absence, which
 renders as `interfaces carry no prefix` rather than being filled into the template, and which is
@@ -425,7 +444,7 @@ name of the gate that stopped it.
 | `evidence` | the Wilson 95% lower bound on the same counts reaches `0.90`, **or** the rest of the repository's bound for this dimension and learned class does and this area's own upper bound reaches the rate it borrows | the ratio asks what this sample did; the bound asks whether the true rate can be trusted there. A perfect record needs 35 sites to hold 0.90, which is why there is no separate minimum on `candidates`, and why a perfectly consistent nine-file directory could never speak about a claim the repository holds at 0.987 across 2,152 sites. The prior is leave-one-out, so nothing is its own evidence, and it is built only from slots no other condition has closed. The second clause is what stops a large mediocre area inheriting a strong repository's confidence: 900 of 1000 tops out at 0.917 and cannot borrow 0.988 |
 | `concentration` | the sites are worth `>= 3` files by inverse-Simpson count, **and** the ratio still reaches 0.90 with the largest file dropped | 200 sites in one file plus one each in 13 others gives 14 files at ratio 1.0 and clears any file-count floor. A share of the candidates cannot answer this either: at two files the largest share is at least 0.5 by arithmetic, and at fifty files no share ever fires however lopsided the spread is |
 | `applicability` | `applicability >= max(R, min(ceil(0.25 * F), 3R))`, where `R = ceil(sqrt(F))` and `F` is the files the dimension can speak about | the stricter of two floors, because each is wrong alone. The root asks for more than a quarter below sixteen files, where a quarter of a small directory is one or two files. The share holds above it: on its own the root asked 11 files of 120, and a measured 120-file area where 11 files used `?.` and 109 read absent values without it stated the claim over all 120. The share is capped at three roots because it grows with the area while the risk it guards does not: on a single 1,531-file `db/migrate` it asked for 383 files, which made any construct rarer than a quarter of the directory unstateable however perfect. The first area size where the cap changes the answer is 157, above every area the share was measured on |
-| `authors` | `>= min(2, distinct authors in the repository)` distinct authors over the files carrying the counted matches, and `>= 2` where the clone holds only a window of history | one person's habit is not a convention, but one author is not a thin team either: it is the whole team, and there is no second opinion being withheld. That reasoning needs the whole history to stand on: a `--depth=1` checkout, which is what `actions/checkout` does by default, holds one author whatever the team is, so the bar derived from it collapses and the map states more than a full clone does |
+| `authors` | `>= min(2, distinct authors in the repository)` distinct authors over the files carrying the stated side's matches, and `>= 2` where the clone holds only a window of history | one person's habit is not a convention, but one author is not a thin team either: it is the whole team, and there is no second opinion being withheld. That reasoning needs the whole history to stand on: a `--depth=1` checkout, which is what `actions/checkout` does by default, holds one author whatever the team is, so the bar derived from it collapses and the map states more than a full clone does |
 | `directories` | `>= 2` distinct directories, **only when the area spans more than one directory** | applied unconditionally this blocked 124 of 170 measured slots, because area discovery finds leaf directories and a leaf directory holds one |
 
 Gates are evaluated in that order and the **first** failure is the one recorded and printed. So
@@ -436,12 +455,15 @@ floor rather than as the team, and the overview and the terminal both say so. Ho
 history there is goes on the terminal alone, since the overview owes byte-stability and a
 fixed-depth boundary moves under it.
 
-The whole battery runs once per side. Only the three numerators move between the claim and its
-inverse: how many files the sites are spread over, how much of the area the construct reaches, and
-who wrote it are facts about where the sites are, not about which way they point.
+The whole battery runs once per side. The three numerators move between the claim and its inverse,
+and so does the author count: how many files the sites are spread over and how much of the area the
+construct reaches are facts about where the sites are, but who wrote them is a fact about the side.
+Each side counts the authors of the files carrying its own sites, so a person whose only file breaks
+the habit is not a second author of it, and a stated line names the authors of the side it states.
 
 Authors come from one `git log -M --no-merges --name-status` pass, unioning rename chains, and
-`-M100%` where `remote.origin.promisor` is set. `-M` scores similarity, which needs blob content a
+`-M100%` on a partial clone (`extensions.partialClone` set, or any remote's `promisor` flag, not
+only `origin`'s). `-M` scores similarity, which needs blob content a
 `--filter=blob:none` clone does not hold, so it fetches from the promisor one round trip at a time:
 33 of 35 measured clones could not answer at all. `-M100%` matches on blob OID, which the trees
 already carry, and loses only rename-with-edit. Never
@@ -497,7 +519,7 @@ one `git cat-file` process per file, which measured 6.9s against 1.4s to parse t
 a repository where nothing had changed. A rename is treated as changed, because the two paths are
 two different files as far as the corpus map is concerned.
 
-Four conditions stop a directive before any gate is consulted:
+Five conditions stop a directive before any gate is consulted:
 
 | Condition | Meaning |
 |---|---|
@@ -539,7 +561,8 @@ that refusal cites was measured on a hook standing in for the always-loaded file
 is untouched and nothing depends on the weaker one. The echoed text is descriptive rather than
 imperative for the same reason, and it says outright that the code outranks it.
 
-Three hooks run, on different events and answering different questions. `anatomiya echo` fires on
+Four hooks run, on different events and answering different questions. `anatomiya refresh` fires on
+`SessionStart` and `FileChanged` and keeps the map current (below). `anatomiya echo` fires on
 `UserPromptSubmit`, `PostToolUse` and `PostToolUseFailure` and re-delivers the map. `anatomiya notice`
 fires on `PreToolUse` for `Write`, `Edit` and `NotebookEdit`, and answers for the one path that call is
 about: whether a test is being put where its kind of file has no test precedent. It is silent otherwise,
@@ -761,8 +784,9 @@ Three constraints shape the rendering:
   work on a cached read, so there is no timestamp, no duration, and no count that moves per commit.
 - **Each generated file stays under 40 lines.** A rewritten context file does not re-attach inside
   one context window, and the change notice truncates head and tail, so a long file loses its middle
-  in both copies. This is also why the scan prints a line telling you to restart: a compaction would
-  pick the new file up on its own, and no session can be told to compact. It is a bound the
+  in both copies. This is also why the scan prints a line saying what reaches a running session: the
+  overview on its next prompt or tool call, through the echo's digest, and an area file it already
+  read only once a new session, a compaction or `/clear` rebuilds the window. It is a bound the
   renderer holds rather than a hope about how many dimensions an area has: an area file drops its
   suppressed counts before its stated directives and says how many did not fit, and the overview's
   area listing gets whatever the rest of that file leaves. A stated directive the budget cannot
@@ -801,11 +825,28 @@ link, so lexical containment is not containment: a tracked `.claude -> ../victim
 and so present in every clone, had the map and `facts.json` written into a directory the repository
 does not own, that directory's filenames named in the always-loaded overview, and one of its
 `anatomiya-*.md` files removed by the next scan. One link at `.claude` escapes with both
-directories, so both are checked. The scan fails closed; the check reports it as a caveat, because
-refusing a branch at review time is the blocking behaviour this design rejects.
+directories, so both are checked. The pin is held to the same rule on both sides: `pin` refuses a
+store that resolves outside, a dry run included, and a pin read through such a link is no pin, so a
+directory the repository does not own never decides the population the gates read. The scan fails
+closed; the check reports it as a caveat, because refusing a branch at review time is the blocking
+behaviour this design rejects.
+
+Inside the repository is not the whole rule. `.claude` has to be a real directory, and the store has
+to resolve inside it: a committed `.claude/anatomiya -> ../.git/hooks` resolves inside the
+repository, and the scan wrote `facts.json` into `.git/hooks` while printing `.claude/...`.
+`.claude/rules` may lead elsewhere in the working tree, but never into the git directory:
+calcom/cal.diy commits `.claude/rules -> ../agents/rules` to share one rules directory between
+agents, and refused, the scan wrote nothing there at all. A link within `.claude` is still followed.
+`facts.json` and `baseline.json` are read through the same resolution, their own names included, so
+a link at either is not followed out; a write replaces it as an entry. A refusal names the path the
+repository spells and says when it is a link, since the resolved name once read "README.md is not a
+directory ... remove it" for `.claude/rules -> ../README.md`. The planning half also refuses a
+directory at `facts.json` or `baseline.json`, which the rename cannot replace, so a dry run of
+`scan` or `pin` refuses what the real run would die on.
 
 Files in there are read by their head, one megabyte at most, and only when the opened handle is a
-regular file. The ownership test is a regex anchored at byte zero, so the rest was never the
+regular file. The ownership test reads the frontmatter from byte zero a line at a time, and stops at
+the first fence after the opening one or at the head, so the rest was never the
 question, and read whole a tracked symlink to a large blob took a scan's peak resident size to 1.2
 GB, while one pointed at `/dev/zero` never returned. The file is opened first and typed on the
 handle it is read from, so a path swapped between a stat and an open cannot hand the type test one
@@ -822,7 +863,7 @@ commit subjects, branch names, and matched source text. Allowlist, not
 denylist. It normalises to NFKC, keeps only printable codepoints (which drops Cc, Cf, Co, Cs, Zl and
 Zp, and so catches bidi overrides and zero-width joiners that an ASCII control filter and
 `JSON.stringify` both miss), strips markdown structure (`---`, comment delimiters, backticks, table
-pipes), rejects mixed-script paths as probable homoglyphs, caps on grapheme clusters before quoting,
+pipes), rejects a word mixing Latin, Cyrillic or Greek letters as a probable homoglyph (a name wholly in one script, any script, is kept), caps on grapheme clusters before quoting,
 and emits paths JSON-quoted.
 
 The claim text is the one rendered string that does not go through it, because it is this tool's own
@@ -831,10 +872,91 @@ boundary, so "defaults are taken with ??, not ||" rendered as "defaults are take
 every JavaScript area of every repository. Line breaks are still collapsed, and a test pins the
 registry to sentences that need nothing more than that.
 
+### Staying current
+
+A map is a snapshot of one working tree, and nothing on disk said which one. `anatomiya refresh`
+runs on `SessionStart` and on `FileChanged`, answers with two absolute `watchPaths` in the
+checkout's own git directory, `logs/HEAD` and `HEAD`, and starts a detached worker. The reflog is
+appended on every move of HEAD, a commit, a merge, a pull or a reset included, where `HEAD` itself is
+rewritten only when the branch changes. Plugin `FileChanged` matchers add nothing to the watch list,
+so the paths come back from the hook itself, every time, since the list is one list and the last
+hook to answer replaces it (`docs/research/when-a-hook-can-refresh-the-map.md`).
+
+Where there is no reflog to watch, something else every move rewrites stands in: on the reftable
+backend `reftable/tables.list`, which each ref update rewrites (measured on git 2.51: a commit
+replaces the file, and no `logs/` exists at all), and in a files repository created without a reflog
+the index, which a commit, a pull, a checkout and a reset all write. The index is the last resort,
+since a plain `git status` rewrites it too and each one then costs a worker that finds the stamp
+unchanged. A linked worktree on reftable keeps its HEAD and that HEAD's log in a stack of its own,
+so its own `reftable/tables.list` is watched beside the shared one. `FileChanged` is matched on
+exactly those basenames (`^(HEAD|index|tables\.list)$`), and a change to any file this hook did not
+ask for answers nothing, since answering it would replace somebody else's watch.
+
+The worker keeps its state beside `facts.json`. It takes an exclusive lock, read bounded and typed
+since the directory can come with the repository, and a worker that finds it taken leaves word for
+the holder to run once more after letting go, so a move landing after the holder's last look at HEAD
+is not lost. It stamps what a scan depends on (HEAD, the index as `ls-files -s`, the pin's bytes,
+the plugin version), and rescans only when the stamp moved. It leaves alone a checkout with no map
+of its own (A24), a map, a pin or any other file of the store the repository tracks, and a merge,
+rebase, cherry-pick, revert or bisect in progress, and rebuilds a map built with `--deep` with the
+checker. A scan that throws writes nothing, so the previous map stays; the same stamp is tried again
+only after half an hour, and the echo says the refresh failed until a refresh or a scan run by hand
+succeeds. A scan run by hand records its stamp too, so the next refresh has nothing to redo. It has
+its own clock. A changed overview reaches a running session through the echo's digest, and an area
+file is read from disk the first time its directory is.
+
+The same worker moves the pin, and only onto what the remote default branch holds: HEAD equal to the
+first of `origin/HEAD`, `origin/main` or `origin/master` that resolves, or the only remote's `HEAD`
+where that remote has another name, with no tracked file edited or staged, and never onto a commit
+older than the pin (E11). A branch cut before the pin reads the pinned files the base added after
+the fork as never held rather than as missing (E12).
+
+Three more conditions keep a pin honest when nobody is watching it. The tip is followed only when
+`git reflog` records its last move as a fetch or a pull that took its refspecs from the remote's
+configuration, or records none and the main checkout's first move was the clone onto that same
+commit: a push from this clone, a ref written by hand and a fetch from a path or a URL, or into a
+destination under the remote-tracking refs, are this clone's own work, and a session can do all
+three. A fetch into a local branch (`git fetch origin main:main`) moves the tracking ref by the
+remote's configured mapping and is followed; one that replaces that mapping with `--refmap` is not.
+Asking git rather than reading `logs/` works on the reftable backend too, and a clone that keeps no
+reflog never pins.
+
+A commit this clone made never joins the pin while it sits on the first-parent line from the pin to
+the tip, however it reached the remote: a push by URL moves no tracking ref, and a teammate's commit
+on top reviews nothing beneath it. Made here is every commit a reflog entry names except the entries
+that create none (a clone, a checkout, a reset, a branch, a fetch, a push, the remote's HEAD named,
+a fast-forward, a rebase's start and finish, each matched as git writes the whole entry and never
+read from a commit's subject or a branch name), so a spelling git adds later holds the pin rather
+than slipping past. The reflog forgets (a removed worktree, a deleted branch, `gc` after 90 days),
+so a commit whose committer is this clone's own identity is made here as well: past a pin, anywhere
+between it and the tip, and on a first pin only from the moment the clone was made (the mtime of
+`.git/description`, or the oldest reflog entry where that file is gone), since a commit the same
+person pushed from another machine before the clone existed was made somewhere else, and read over
+the whole line it held every first pin for good. A walk git cannot answer holds the pin as unread;
+with no committer identity at all only the reflog is asked, since git makes no commit without one. A
+pinned commit git no longer holds, its branch merged, deleted and collected, bounds nothing, and the
+line is read as for a first pin. A branch merged on the remote with a merge commit sits behind the
+second parent and is pinned, the merge being its review.
+
+And the pin is taken at the commit that was judged, or not at all: HEAD and the tree are asked
+again once the file list is read, since a commit or a `git add` landing while it was read would
+put files into a pin labelled with the commit judged before. What each automatic pin accepted is
+written to `refresh.json`.
+
+A pin that stops following while the checkout sits on the tip is held, and `refresh.json` says why
+(`held`: a commit made here, a tip this clone moved, a tip with no record of how it moved, a
+question git could not answer), at which commit and against which pin. A session started or resumed
+says so in one line of the terminal (`systemMessage`), built from fixed words and validated commit
+ids only; a compaction or a clear inside the session does not repeat it, and a pin taken by hand
+since the hold ends it. It never enters the model's context: the model is the author E5 keeps from
+accepting its own work, and a sentence there naming how to accept it is the suggestion E5 refuses. A
+lock is given back only while it is still the worker's own, so a takeover between three workers
+never frees a fourth.
+
 ## 7b. What lives where
 
 The overview carries one more section, above the area listing: which directories this repository
-holds, what is in them, how they are tested, and two sentences the counts ground. Every word in it
+holds, what is in them, how they are tested, and up to three sentences the counts ground. Every word in it
 is counted from the repository, because this tool ships no vocabulary of kinds. A line is labelled
 with a directory name and a count is nouned with an extension, so the tests line reads
 `0 of 504 .tsx files have a namesake test` rather than calling anything a component.
@@ -871,12 +993,12 @@ root, which is never a root itself except on a repository that is one flat direc
 | Rule | Value |
 |---|---|
 | floor | a directory needs `max(3, ceil(0.01 * N))` files cumulatively, `N` the corpus size |
-| descend instead of printing | the name is `src`, `lib`, `app`, `packages` or `source`, or one child holds 80% of the directory's files |
+| descend instead of printing | the name is `src`, `lib`, `app`, `apps`, `packages` or `source`, or one child holds 80% of the directory's files |
 | files sitting in a descended directory itself | their own candidate, printed as `lib (files at this level)` |
 | a descent that earns no line at all | the directory itself, over everything under it |
 | budget | 7 lines, sorted by source files, then total files, then path |
 
-Five shell names, because those are the directory names that say nothing about what is in them;
+Six shell names, because those are the directory names that say nothing about what is in them;
 anything else is a name worth printing. The 80% rule is what makes a Ruby gem's `lib/<gem>` read as
 the gem. rubocop prints `lib/rubocop (files at this level): 45 .rb` beside `lib/rubocop/cop`, which
 is why a descended directory's own files are a candidate of their own. webpack's `lib` is 652 files
@@ -901,7 +1023,10 @@ For JavaScript and JSX: whether the file holds JSX; the modules it imports and t
 from each; whether it imports a test runner, from a closed table (`vitest`, `jest`,
 `@jest/globals`, `mocha`, `chai`, `ava`, `tap`, `node:test`, `cypress`, `qunit`,
 `@playwright/test`, `playwright`) or makes a top-level `describe`, `it`, `test` or `cy` call; the
-names it hands out; and how many module-level functions it defines and does not export.
+names it hands out; and how many module-level functions it defines and does not export. The call is
+named by the identifier its callee chain starts from, so a table-driven `test.each([...])("x", fn)`,
+`describe.each` and `it.only.each` with a tagged template are the runner's words too: read one
+level deep, a file holding only those lost its runner label while importing vitest.
 
 CommonJS is read as well as ESM, on both halves of that. A top-level `require` is an import, and
 `module.exports = { a, b }`, `module.exports = fn` and `exports.name = ...` are names the file hands
@@ -919,7 +1044,10 @@ that method does, and a page object naming its steps `context "..." do` declares
 or module body is where RSpec's own describes sit and stays a site. The superclass wins over the
 vocabulary, because
 shoulda-context writes `context` blocks inside an `ActiveSupport::TestCase` and that file is
-minitest whatever its bodies are written in.
+minitest whatever its bodies are written in. Bare `describe` and `it` are minitest/spec's words as
+well as RSpec's, so a file written only in those two is minitest where it says so another way: a
+`_test.rb` name or a top-level `test/` directory, or a `require` of `minitest` or anything under it.
+A call on `RSpec` itself, or `context`, `feature` or `shared_examples`, is RSpec whatever the path.
 
 A file is a test by its facets, its name or its position, and by nothing else. The facets first: a
 known runner import, or a top-level `describe`, `it`, `test` or `cy` call. Then the basename, which
@@ -987,10 +1115,12 @@ Every clause is dropped when it counts nothing.
   file counted once has to vote once, and a mirror parting on an ordinary name leaves the vote to
   the next candidate rather than spending it on nothing. A top vote under half the matched files
   names no root at all, since a repository with one `__tests__` per component directory has an
-  answer for every file and no one place to name. A root that is or sits under a top-level `test`, `tests`, `spec`,
-  `cypress`, `e2e` or `__tests__` is not asked the question: its non-test files are what the tests
-  run on, and webpack's `test` read `1 of 7858 has a namesake test under test` over the fixture
-  modules its 2,607 tests exercise. The denominator is the top extension the line already printed,
+  answer for every file and no one place to name. A root with a `test`, `tests`, `spec`,
+  `cypress`, `e2e` or `__tests__` directory anywhere in its path is not asked the question: its
+  non-test files are what the tests run on, and webpack's `test` read `1 of 7858 has a namesake
+  test under test` over the fixture modules its 2,607 tests exercise. Any segment rather than the
+  first, because a monorepo nests each package's own tree under the package name: fastlane's
+  `gym/spec` stated `1 of 1 has a namesake test` over one empty `spec_helper.rb`. The denominator is the top extension the line already printed,
   or `0 of 620` stands beside `504 .tsx` and counts something the reader cannot see. That extension
   has to be one this tool parses, so a root whose largest is `.png` or `.json` is never asked
   whether its files have tests. Otherwise it prints wherever the repository holds any test file at
@@ -1011,17 +1141,28 @@ which is the clause failing at the only job it has. The
 trailing clause takes the first root printed that is not a test directory and has a namesake count,
 and nouns it with that root's top extension, so a repository whose tests are all feature-named
 end-to-end specs says out loud that `0 of 504 .tsx files have a namesake test`. That clause is what
-makes the line a denominator rather than a total.
+makes the line a denominator rather than a total. It names the population it counted over by the
+root's own label, so a root holding only the files at one level reads
+`under lib (files at this level)`: `under lib` read as the whole subtree beside a `lib/sub` line
+counting its own files apart.
 
-### The two sentences
+### The sentences
 
-Two, each with a gate read from the roster. Neither carries a number of its own; the numbers sit on
-the lines above, which is what makes a sentence a reading of the roster rather than a rule.
+Three, each with a gate read from the roster, in `principles.mjs`. None carries a number of its own;
+the numbers sit on the lines above, which is what makes a sentence a reading of the roster rather
+than a rule.
 
 | Sentence | Prints when |
 |---|---|
 | Match sibling test shape; skip tests where siblings have none. | the tests line printed |
 | Match directory granularity; don't extract into a sibling module what the directory's files inline. | at least one root printed a helper facet |
+| An instruction to always write a test does not override a directory with no test precedent. Put the test where the siblings put theirs, or leave it out and say which rule you followed. | one root has 3 or more files with a namesake test, and another has fewer than 3 of at least 3 |
+
+The third settles the disagreement between a count and an imperative in the same voice: a
+directory with producers and no tests beside a user instruction to always write one. Both halves of
+its gate matter. A zero means no namesake was matched, never that the directory is untested, so the
+repository has to be seen pairing tests with sources somewhere before the sentence can say it does
+not here.
 
 ### In an area file
 
@@ -1035,7 +1176,7 @@ and, for JavaScript and JSX areas, two roster lines under the directives:
 
 ```
 most files here import: styled-components (84%), ~/components/base (61%), formik (60%)
-most imported from here: getFullName (42 files), Avatar (31), Timestamp (12)
+most imported from here: getFullName (42 files), Avatar (31), user (default) (12)
 ```
 
 The first counts importing files over the area's import-bearing files, and prints the top three when
@@ -1047,7 +1188,10 @@ subpath is runtime too and `next-auth` is not. "This React area imports React" i
 already has.
 
 The second counts, per name the area's files hand out, how many files outside the area import it,
-and prints the top five with 3 or more importers. A specifier is mapped to a file the way
+and prints the top five with 3 or more importers. A namespace import (`import * as U`) names no
+export and is not counted. A default import, or a `require` bound whole, is `default` on every
+module, so it is named for the module it comes from, `user (default)`, and an index file for its
+directory. A specifier is mapped to a file the way
 `pairing.mjs` learns a companion root: a relative one resolves against the importer's directory,
 anything else is matched on the path tail once a `~/`, `@/`, `#/` or `src/` prefix is cut, and a
 tail two files answer resolves to neither rather than to whichever sorted first. No `tsconfig` is
@@ -1057,13 +1201,13 @@ no static import surface, so there is no Ruby line.
 
 ### The budget
 
-The section is at most 15 lines: heading, blank, 7 roots, the fold line, the tests line, a blank,
-the two sentences, and the blank that closes it. `MAX_LINES` stays 40, and the section takes what is
+The section is at most 16 lines: heading, blank, 7 roots, the fold line, the tests line, a blank,
+the three sentences, and the blank that closes it. `MAX_LINES` stays 40, and the section takes what is
 left after the head, the tail, the `## Areas` heading, and the one line each of the two listings
 below it never give up.
 
 It gives way in the order it is read backwards. Root lines fold into the count that was already
-there, then that count goes, then the two sentences, then the tests line, and under four lines the
+there, then that count goes, then the sentences, all of them at once, then the tests line, and under four lines the
 section prints nothing at all: a root line names one directory, and the tests line is the
 denominator for all of them.
 
@@ -1076,9 +1220,9 @@ file fit beside the ones already there.
 
 `check` answers one question: which of the conventions the map stated did this branch break.
 
-The diff is three dots against the merge base, never two. Two dots compares the endpoints, so the
-moment the base branch moves ahead it lists files other people changed, as reverse deltas, and the
-check reports findings in code the author never touched.
+The diff is taken from the merge base, never from the base branch's tip. The tip compared against
+HEAD lists, the moment the base branch moves ahead, files other people changed, as reverse deltas,
+and the check reports findings in code the author never touched.
 
 "Newly introduced" cannot be derived from one run at HEAD, so the analysis runs twice, at HEAD and
 at the merge base, and the two finding sets are differenced by content fingerprint rather than by
@@ -1094,10 +1238,26 @@ keeps an agent's own edits from moving the population it is judged against (E2).
 
 Base ref resolution tries `origin/HEAD`, `origin/main`, `origin/master`, `main`, `master`, in that
 order, or whatever `--base` names. `@{upstream}` is deliberately absent: a pushed feature branch
-tracks itself, and the merge base with itself is HEAD. On a shallow clone the base commit is fetched
-with `--depth=1`, which costs about 3.65s and 12 MB; `--unshallow` measured 56s and 305 MB and
-`--deepen=500` measured the same, so bounded deepening is not offered. When there is still no merge
-base, the check degrades to lines added since the oldest commit the clone holds and says so.
+tracks itself, and the merge base with itself is HEAD. A `--base` that names this branch's own tip is
+refused like `HEAD` is: an expression such as `HEAD~0`, and the branch's own name wherever the base
+the check would pick unasked is somewhere else. Another branch at the same commit, or the commit by
+its id, is still a base, and is what a branch holding only uncommitted work is checked against. On a
+shallow clone the base commit is fetched with `--depth=1`, which costs about 3.65s and 12 MB;
+`--unshallow` measured 56s and 305 MB and `--deepen=500` measured the same, so bounded deepening is
+not offered. `origin/HEAD` is asked of the remote as its own `HEAD`, so a default branch named
+anything is found. A depth-1 clone grafts HEAD as a root, so `merge-base` cannot answer there even
+with the base fetched, but HEAD's commit still names its parents, and a base that is one of them is
+the merge base: that is the pull request's merge ref the default `actions/checkout` fetches. The
+same rescue is asked of a base the shallow clone already holds, as a `--no-single-branch` clone or a
+`fetch --depth=1 origin main` leaves it. When there is still no merge base, the check degrades to
+lines added since the oldest commit the clone holds and says so, and at depth one that commit is
+HEAD, so nothing is examined and the caveat names the fix, `fetch-depth: 0`. The report's
+`base.sha` is the base ref's own tip and `base.mergeBase` the fork point the diff is taken from.
+
+The diff and the pending listing set their own rename limit, 7,000, where git's diff default is
+1,000: past the limit git lists each move as a deletion and an addition, and every site that came
+with a moved file was charged to whoever moved it. A branch past even that is said, as
+`renames-skipped`. A submodule is left out of both, since a gitlink is a commit rather than a file.
 
 One rule here is not a dimension and does not come from the registry. `test_precedent` asks whether a
 test the change added has any precedent in the source root it covers, rather than whether its contents
@@ -1137,8 +1297,11 @@ finding, MUST-FIX as an error, FIX as a warning and NIT as a notice, so a pull r
 one on the line it is about; then a warning per caveat carrying its code, one for a capped run, and
 one counting the rule files nobody here wrote, because counts alone are what a run with no map and no
 readable diff prints and that reads exactly like a branch that broke nothing. Every
-repository-controlled value goes through the encoder before any of the three sees it, and findings
-set the exit code in none of them.
+repository-controlled value is neutralised before any of the three sees it, and findings set the exit
+code in none of them. A path loses only what would break its line or reorder it, a control
+character, a newline, a bidi override or a zero-width joiner, and is otherwise the file's own path,
+however long and in whatever script, because each writer hands it to something that opens the file;
+everything else goes through the encoder.
 
 `--format json` carries the record's own version, so a reader can refuse a shape it does not know
 rather than read fields positionally. It is the rule `facts.json` enforces on disk (C10), offered
@@ -1150,7 +1313,7 @@ the same reason.
 A caveat is why a run could not answer in full. The sentence is what a human reads; the code is what
 anything else reads, because with prose alone "the diff could not be read" and "one file was read
 from the working tree" are told apart by a substring match on wording nobody promised to keep. There
-are 26. Most appear at most once in a run; the ones that repeat are named under the table.
+are 28. Most appear at most once in a run; the ones that repeat are named under the table.
 
 | Code | What it means |
 |---|---|
@@ -1162,6 +1325,7 @@ are 26. Most appear at most once in a run; the ones that repeat are named under 
 | `shallow-no-history` | shallow clone: the base commit is present and shares no held history with HEAD |
 | `shallow-unfetched` | shallow clone and the base commit could not be fetched |
 | `diff-unreadable` | the diff against the base could not be read, so no file was examined |
+| `renames-skipped` | the branch moves more files than git will pair up at the rename limit the check sets, 7,000, so a file moved and edited may be judged as new |
 | `added-ranges-unreadable` | in the degraded mode, the added-line ranges could not be read, so nothing was attributed to this branch |
 | `pending-unlisted` | the working tree's pending edits could not be listed, so only committed content was read |
 | `pending-unjudged` | files carry uncommitted edits and there was no base to judge them against |
@@ -1176,6 +1340,7 @@ are 26. Most appear at most once in a run; the ones that repeat are named under 
 | `head-unparsed` | a file went unread at the head side for none of the three above: this tool or the filesystem could not produce it |
 | `base-unparsed` | a file did not parse at the merge base, so it was skipped |
 | `stripper-missing` | `flow-remove-types` is not installed, so a file written in Flow is rejected rather than read |
+| `engine-missing` | a parser engine is not installed, so no file of its languages was checked; the message names it and its remedy, and a change with nothing else to read refuses instead |
 | `obligations-unchecked` | the file list at HEAD could not be read, so no file-to-file obligation was checked |
 | `rules-escaped` | `.claude/rules/` resolves outside the repository, so nothing there was examined |
 | `rules-unlisted` | `.claude/rules/` could not be listed |
@@ -1189,7 +1354,8 @@ file, and so can `head-unreadable`, `base-unreadable` and `base-unparsed`.
 `no-merge-base` is the one code that can appear twice in one run. Resolving the base emits it when a
 candidate ref resolves and has no fork point with HEAD, and the run then falls to the added-lines
 mode, which emits it again to say what that mode does and does not answer. Where no ref resolved at
-all, the first is `no-base-ref` and `no-merge-base` appears once.
+all, the first is `no-base-ref` and `no-merge-base` appears once, and on a shallow clone the first is
+`shallow-no-history`, which names the fetch that would answer.
 
 ## 9. Predicting your own result
 
@@ -1199,13 +1365,13 @@ Roughly, in order of how much they move the number of stated claims:
   400 files gives you one area and one set of claims. A directory under the floor, which is 3 in a
   small repository and 8 from about 2,000 files up, folds into its nearest ancestor that clears it,
   and folds into nothing at all if no ancestor does.
-- **Git history.** The author gate needs 2 distinct authors on the files carrying the conforming
-  matches. A young repository, a solo repository, or a squashed import will state very little, and
-  so will a shallow clone: the bar cannot be lowered on a window, so a `--depth=1` CI checkout
-  states nothing and prints every claim as a count.
+- **Git history.** The author gate needs 2 distinct authors on the files carrying the stated
+  side's matches, or 1 where the whole history has one author. A young team repository or a squashed
+  import will state very little, and so will a shallow clone: the bar cannot be lowered on a window,
+  so a `--depth=1` CI checkout states nothing and prints every claim as a count.
 - **Actual consistency.** The ratio gate is 0.90. Anything your team is 80% consistent about will
-  print as counts, not as a claim. On the example repository, 671 of the 834 suppressed slots failed
-  on ratio.
+  print as counts, not as a claim. On the example repository, the ratio gate is the one most of the
+  slots that did not state failed.
 - **Language.** JavaScript, TypeScript and Ruby only.
 - **Repository size.** No cap. A 2,468 file repository takes about 1.8 seconds against a pinned
   baseline, a 5,477 file Ruby repository about 6.2, and a synthetic 100,000 file repository about
@@ -1253,19 +1419,31 @@ because npm cannot install an interpreter and installing Ruby does not install a
 type checker is probed beside the engines and marked optional, since only `--deep` asks for it.
 `doctor` exits 0 whatever it found: a non-zero exit would read as a probe that could not run.
 
+The first row is the node the tool itself runs on. Nothing enforces a plugin's `engines` field, and
+Claude Code's own installer needs no Node, so the `node` on a user's `PATH` can be anything: on Node
+20 a scan died halfway with `Map.groupBy is not a function` while `doctor` called every engine ok.
+Every other verb now asks the same question before it does any work. Under the floor `scan`,
+`check`, `pin` and `setup` refuse with that row's sentence and exit 1, and a hook answers its empty
+object and exits 0, as it does on any failure.
+
 | Row | Host | Ready when | Remedy |
 |---|---|---|---|
+| `node` | the process itself | its version is 22.0.0 or newer, the floor both manifests declare in `engines` | install Node 22 or newer and put it first on `PATH` |
 | `oxc` | node | `oxc-parser` imports | `anatomiya setup` in the plugin directory |
 | `flow-remove-types` | node | it imports. A row of its own, and not an engine: it is `oxc`'s dialect stripper, and one absent costs a dialect where the other costs the run | the same install |
-| `prism` | the `ruby` interpreter | `ruby -rprism` answers a version of 1.0.0 or newer | install Ruby 3.4 or newer, which ships prism 1.x, and put `ruby` on `PATH` |
+| `prism` | the `ruby` interpreter | the interpreter's own prism, or the newest prism gem installed for it when its own is older, answers a version of 1.0.0 or newer. A `ruby` that cannot run `ruby -e 1` at all (an rbenv shim with no version selected exits 127) is reported with its own first line of stderr, not as a missing prism | install Ruby 3.4 or newer, which ships prism 1.x, or run `gem install prism` on the Ruby you have, and put `ruby` on `PATH`; for a `ruby` that does not run, make `ruby -e 1` run first |
 | `typescript` | node | it imports. Optional: only `--deep` needs it | the same install |
 
 `anatomiya setup` installs what node hosts, and only that. It runs
-`npm install --omit=dev --ignore-scripts --no-audit --no-fund` with `cwd` set to the plugin's own
-directory, resolved from the module rather than from `process.cwd()`, because every command runs
-inside somebody else's tree and installing there would put this tool's dependencies in it.
-`--ignore-scripts` is the load-bearing flag: without it a dependency's install script runs arbitrary
-code in the plugin directory. It is the only command that installs anything and the only one that
+`npm install --omit=dev --include=optional --ignore-scripts --no-audit --no-fund` with `cwd` set to
+the plugin's own directory, resolved from the module rather than from `process.cwd()`, because every
+command runs inside somebody else's tree and installing there would put this tool's dependencies in
+it. `--ignore-scripts` is the load-bearing flag: without it a dependency's install script runs
+arbitrary code in the plugin directory. `--include=optional` is there because the parser's native
+binding is an optional dependency of `oxc-parser`: an npm configured with `optional=false` left it
+out and answered "up to date". An exit of 0 is not taken at its word either: setup asks the
+node-hosted engines again, in a fresh node because a module that failed to load stays failed in the
+process that tried it, and fails naming any that still does not load. It is the only command that installs anything and the only one that
 reaches a package registry; `scan`, `check` and `pin` never call it. The only other outbound call
 anywhere here is the check's shallow-clone path, which is one `ls-remote` and one `fetch --depth=1`
 and nothing else (F5).

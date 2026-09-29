@@ -618,6 +618,25 @@ test("a directory that only ever writes it() states the inverse of the test-call
   assert.equal(Number(d.effectiveFiles.toFixed(4)), 7.9176);
 });
 
+test("the inverse is held to the hands that wrote the inverse", () => {
+  // D4, on the counter side. Three people wrote this directory, and one of
+  // them wrote every it() call: the claim side's author count cannot vouch
+  // for a habit only the counter side's author holds.
+  const d = dim({
+    ...TEST_CALL,
+    ...spread([22, 15, 13, 9, 6, 6, 5, 5, 4, 3, 2, 2, 1, 1], Array(14).fill(0)),
+    applicability: 14, langFileCount: 14, files: paths(14),
+  });
+  const base = { repoAuthors: 3, areaFileCount: 14, areaDirCount: 1 };
+
+  const one = applyGates(d, ctx({ ...base, authors: 3, counterAuthors: 1 }));
+  assert.equal(one.states, null);
+  assert.equal(one.counterGate, "authors");
+
+  const two = applyGates(d, ctx({ ...base, authors: 0, counterAuthors: 2 }));
+  assert.equal(two.states, "counter", "and the claim side's missing hands do not close it");
+});
+
 test("the two sides can never both state, at any split of any sample size", () => {
   // There is no precedence rule to get wrong, and this proves the evaluation
   // order was never load-bearing. It also catches a counter ratio derived as
@@ -1396,7 +1415,7 @@ test("a narrowed row divides by the population it narrowed to, not by the whole 
   // on every mixed directory, which is exactly the failure C3 and C4 exist to
   // stop. Same rule a stripped file already gets one line up.
   const { reduceArea } = reduce;
-  const components = Array.from({ length: 8 }, (_, i) => `src/C${i}.tsx`);
+  const components = Array.from({ length: 8 }, (_, i) => `src/Card${i}.tsx`);
   const helpers = Array.from({ length: 3 }, (_, i) => `src/h${i}.ts`);
   const rels = [...components, ...helpers];
   const area = { langs: ["jsx", "js"], files: rels.map((rel) => ({ rel, lang: rel.endsWith("x") ? "jsx" : "js" })) };
@@ -1406,6 +1425,61 @@ test("a narrowed row divides by the population it narrowed to, not by the whole 
 
   assert.equal(slot.applicability, 8);
   assert.equal(slot.langFileCount, 8, "the three helpers left both halves of the share, not one");
+});
+
+test("a subclass of a class the area already holds inherits the learned base through it", () => {
+  // Single-table inheritance: `class Admin < User` where `User < ApplicationRecord`
+  // sits in the same area. The dimension sees one file at a time, so the only
+  // place the chain can be followed is the fold, which holds every class the area
+  // declares. Read against the learned base alone, the subclass was the one
+  // exception in "models inherit ApplicationRecord", and the check asked the
+  // agent to break the hierarchy to satisfy it.
+  const { reduceArea } = reduce;
+  const models = Array.from({ length: 10 }, (_, i) => `app/models/m${i}.rb`);
+  const rels = [...models, "app/models/user.rb", "app/models/admin.rb", "app/models/staff.rb"];
+  const area = { langs: ["ruby"], files: rels.map((rel) => ({ rel, lang: "ruby" })) };
+  const site = (self, base) => ({ conforming: false, where: self, class: base, self, nesting: [] });
+  const bases = { "app/models/user.rb": ["User", "ApplicationRecord"], "app/models/admin.rb": ["Admin", "User"], "app/models/staff.rb": ["Staff", "Admin"] };
+  const parsed = rels.map((rel, i) => ({
+    rel,
+    ok: true,
+    hits: { class_base: [site(...(bases[rel] ?? [`M${i}`, "ApplicationRecord"]))] },
+  }));
+
+  const slot = reduceArea(area, parsed).find((d) => d.key === "class_base");
+
+  assert.equal(slot.learned, "ApplicationRecord");
+  assert.equal(slot.candidates, 13);
+  assert.equal(slot.conforming, 13, "Admin and Staff reach ApplicationRecord through User");
+  // Recorded for the check, which sees only the files a branch changed: every
+  // class here whose chain arrives at the base, since a new subclass of any of
+  // them is the same inheritance.
+  assert.deepEqual(slot.reaches, ["Admin", ...Array.from({ length: 10 }, (_, i) => `M${i}`), "Staff", "User"]);
+});
+
+test("a subclass of a class that does not reach the learned base is still the exception", () => {
+  const { reduceArea } = reduce;
+  const models = Array.from({ length: 10 }, (_, i) => `app/models/m${i}.rb`);
+  const rels = [...models, "app/models/report.rb", "app/models/sales.rb", "app/models/loop_a.rb", "app/models/loop_b.rb"];
+  const area = { langs: ["ruby"], files: rels.map((rel) => ({ rel, lang: "ruby" })) };
+  const site = (self, base) => ({ conforming: false, where: self, class: base, self, nesting: [] });
+  const bases = {
+    "app/models/report.rb": ["Report", "Struct"],
+    "app/models/sales.rb": ["Sales", "Report"],
+    // A cycle is a NameError in Ruby; here it must end, and conform to nothing.
+    "app/models/loop_a.rb": ["LoopA", "LoopB"],
+    "app/models/loop_b.rb": ["LoopB", "LoopA"],
+  };
+  const parsed = rels.map((rel, i) => ({
+    rel,
+    ok: true,
+    hits: { class_base: [site(...(bases[rel] ?? [`M${i}`, "ApplicationRecord"]))] },
+  }));
+
+  const slot = reduceArea(area, parsed).find((d) => d.key === "class_base");
+
+  assert.equal(slot.conforming, 10);
+  assert.equal(slot.candidates, 14);
 });
 
 test("a population that changed kind since the pin closes the slot the way a changed class does", () => {

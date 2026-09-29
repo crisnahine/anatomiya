@@ -97,7 +97,7 @@ not a claim that it is built: three rows below are marked where the two differ.
 | `oxc-parser` raised an uncatchable SIGSEGV from inside `parseSync` at nesting depth. A worker thread did not contain it, and no static pre-screen predicted it. The child-process pool also measured 8,463 to 10,563 files/sec against 3,058 in-process | Parsing runs in a pool of warm child processes | B2 |
 | `oxc` reports offsets in UTF-16 code units, `prism` in UTF-8 bytes, and 5.4% of real files are non-ASCII | Never index a disk buffer with a parser-reported offset; slice the same in-memory string the parser was handed | B5 |
 | Reading a context file with the Read tool permanently suppressed its automatic injection for that path, for the rest of the process | The plugin never opens its own output with Read; the commands use `cat` | A7 |
-| A rewritten context file does not re-attach inside one context window, and the change notice truncates head and tail, so a mid-file edit reaches the model in neither copy | Generated files stay short, and the scan prints a restart notice | A6, A8 |
+| A rewritten context file does not re-attach inside one context window, and the change notice truncates head and tail, so a mid-file edit reaches the model in neither copy | Generated files stay short, the echo hands a running session a changed overview on its next prompt or tool call, and the scan says what reaches that session | A6, A8, A92 |
 | A delivery is deduped against the context window, not latched for the session: over 12,500 sessions, 84 paths arrived twice, 46 of them with a compaction between. Of the twelve sessions that compacted after a delivery, nine took a path back | Nothing is built to re-deliver after a compaction, because the platform already does it; the gap that stands is the stretch between two rebuilds | A17 |
 | A fixed table of area roots put 41% of one real repository's source in no area, and split `scripts/lib` from its larger sibling `scripts/hooks` for no stateable reason | Any directory holding enough source is an area candidate | see `plugins/anatomiya/lib/areas.mjs` |
 | Scanning per area cost 3 to 4.4x for nothing | One whole-corpus pass, attributed to areas in the reducer | see `plugins/anatomiya/lib/scan.mjs` |
@@ -109,7 +109,7 @@ not a claim that it is built: three rows below are marked where the two differ.
 | `execFile` threw `RangeError: Invalid string length` from inside Node's own exit handler, with `maxBuffer` set far above the output size | Subprocess output is streamed, never buffered. **Partial:** every read that grows with the repository streams; the ones that ask for a single blob or ref still buffer | F6 |
 | 18 of 85 areas in one measured repository were fixture directories | Fixture, vendor, dist and build directories are excluded from the corpus | see `plugins/anatomiya/lib/corpus.mjs` |
 | Bidi controls and zero-width joiners are Unicode category Cf, so they pass an ASCII control filter, and `JSON.stringify` does not escape them either | One encoder, allowlist not denylist, applied to every repository-controlled value | F3, F4 |
-| A hook was measured being flagged as prompt injection | No hooks, at all | see `DECISIONS.md` |
+| A hook was measured being flagged as prompt injection | No hook is the delivery channel: the always-loaded file carries the map, and the hooks add recency, a write-time notice, a reuse check and a background refresh beside it | see `DECISIONS.md` (A24, A95) |
 
 The pattern across the table: nearly every replaced design was reasonable on paper, and lost to one
 cheap probe against a real repository.
@@ -155,8 +155,9 @@ producing nothing.
 
 ## What is deliberately absent
 
-- **No hooks.** Worst-trusted channel, highest complexity, and measured being flagged as prompt
-  injection.
+- **No hook as the delivery channel.** Worst-trusted channel, highest complexity, and measured being
+  flagged as prompt injection. The hooks that exist sit beside the always-loaded file rather than
+  instead of it.
 - **No MCP server.** There is nothing to expose.
 - **No skill.** It would spend resident context describing the tool instead of the repository.
 - **No health score or grade.** It changes nothing about the next line of code.
@@ -165,5 +166,5 @@ producing nothing.
 
 ## Further reading
 
-[`DECISIONS.md`](../DECISIONS.md) is the build contract: 219 numbered decisions with the finding
+[`DECISIONS.md`](../DECISIONS.md) is the build contract: 227 numbered decisions with the finding
 behind each. [`how-it-works.md`](how-it-works.md) is the mechanical walkthrough.

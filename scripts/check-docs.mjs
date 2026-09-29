@@ -27,7 +27,9 @@ import { SEMVER } from "./validate.mjs";
 import { CAVEATS } from "../plugins/anatomiya/lib/check-report.mjs";
 import { pairingsFor } from "../plugins/anatomiya/lib/pairing.mjs";
 import { REGISTRY, rowsForLangs, rowsOfKind } from "../plugins/anatomiya/lib/registry.mjs";
-import { EXCLUDE_LINES } from "../plugins/anatomiya/lib/rules.mjs";
+import { EXCLUDE_LINES, PREFIX, RULES_DIR } from "../plugins/anatomiya/lib/rules.mjs";
+import { FACTS_PATH } from "../plugins/anatomiya/lib/facts.mjs";
+import { PIN_PATH } from "../plugins/anatomiya/lib/baseline.mjs";
 import { GATES } from "../plugins/anatomiya/lib/reduce.mjs";
 import { PARSE_OUTCOMES } from "../plugins/anatomiya/lib/parse.mjs";
 import { ELIGIBLE, REFUSED } from "../test/fixtures/counter-pins.mjs";
@@ -212,13 +214,16 @@ export function readGlossary(text) {
  * The working tree rather than the index: a file added and not staged is still
  * a file the prose may name, and a gate that reads the index answers about a
  * tree nobody has. Ignored files are left out, since a local working directory
- * is not part of what a reader is sent to.
+ * is not part of what a reader is sent to. The same reading leaves out a file
+ * still in the index but deleted from the tree: there is nothing there to read,
+ * and reading it threw a stack in place of the gate's answer.
  */
 function repositoryFiles() {
   try {
     return execFileSync("git", ["ls-files", "--cached", "--others", "--exclude-standard"], { cwd: root, encoding: "utf8" })
       .split("\n")
-      .filter(Boolean);
+      .filter(Boolean)
+      .filter((rel) => existsSync(join(root, rel)));
   } catch {
     return [];
   }
@@ -339,6 +344,7 @@ export const READS = [
   "package.json",
   `${REL.anatomiya}/package.json`,
   `${REL.anatomiya}/bin/anatomiya.mjs`,
+  `${REL.anatomiya}/commands`,
   "docs/how-it-works.md",
   "docs/why.md",
   "docs/dimension-intake.md",
@@ -420,6 +426,19 @@ export function checkDocs() {
     }
     for (const m of text.matchAll(/plus the (\w+) type-checked rows?/g)) {
       claim(rel, counted(m[1]) === typeChecked, `says "${m[1]} type-checked", the registry holds ${typeChecked}`);
+    }
+    // The total spelled as a share of itself, and the JavaScript and JSX totals
+    // spelled as the gap between them. Both drifted while every phrasing above
+    // held, because nothing read them.
+    for (const m of text.matchAll(/One\s+of\s+the\s+(\d+)\b/g)) {
+      claim(rel, Number(m[1]) === total, `says "One of the ${m[1]}", the registry holds ${total}`);
+    }
+    for (const m of text.matchAll(/JSX\s+total\s+(\d+)\s+rather\s+than\s+(\d+)/g)) {
+      claim(
+        rel,
+        Number(m[1]) === jsx && Number(m[2]) === js,
+        `says "JSX total ${m[1]} rather than ${m[2]}", the registry holds ${jsx} and ${js}`
+      );
     }
   }
 
@@ -526,6 +545,18 @@ export function checkDocs() {
     claim("README.md", read("README.md").includes(`'${line}'`), `does not tell a reader to exclude ${line}`);
   }
 
+  // The `.worktreeinclude` a worktree Claude Code makes is copied from. The
+  // exclude above hides the pin along with the map, and a worktree is handed
+  // only what that file names. A linked worktree with no pin reads its main
+  // checkout's (baseline.mjs `readPin`), but only where `mainCheckoutOf` can
+  // name that checkout, so the pin line is what keeps the copied map beside
+  // the pin it was checked against everywhere else. Read as lines, since git on
+  // Windows checks the README out with CRLF endings.
+  const readmeLines = new Set(read("README.md").split(/\r?\n/));
+  for (const path of [`${RULES_DIR}/${PREFIX}*.md`, FACTS_PATH, PIN_PATH]) {
+    claim("README.md", readmeLines.has(`**/${path}`), `does not have a worktree Claude Code makes copy ${path}`);
+  }
+
   // --- the command surface ----------------------------------------------------
 
   const usage = execFileSync(process.execPath, [join(root, `${REL.anatomiya}/bin/anatomiya.mjs`), "--help"], {
@@ -548,6 +579,41 @@ export function checkDocs() {
   const readme = read("README.md");
   for (const cmd of unique) {
     claim("README.md", readme.includes(`/anatomiya:${cmd}`), `does not mention /anatomiya:${cmd}`);
+  }
+
+  // Every invocation the documents spell, parsed by the CLI's own argument
+  // rules. A file existing for each verb said nothing about what the file tells
+  // the agent to run, so a misspelled verb or a flag its verb refuses shipped
+  // green and broke every run of that command. `--help` last is the dry
+  // validator: the parser refuses a bad verb or option before it reaches it,
+  // and answers with the usage, writing nothing, once everything before it
+  // parsed.
+  const INVOCATION = /node "\$\{CLAUDE_PLUGIN_ROOT\}\/bin\/anatomiya\.mjs"([^`\n]*)/g;
+  const commandDocs = readdirSync(join(root, REL.anatomiya, "commands"))
+    .filter((f) => f.endsWith(".md"))
+    .map((f) => `${REL.anatomiya}/commands/${f}`);
+  const topDocs = readdirSync(join(root, "docs"))
+    .filter((f) => f.endsWith(".md"))
+    .map((f) => `docs/${f}`);
+  const parsed = new Map();
+  for (const rel of ["README.md", ...topDocs, ...commandDocs]) {
+    for (const m of read(rel).matchAll(INVOCATION)) {
+      const args = m[1].trim().split(/\s+/).filter(Boolean);
+      const key = args.join(" ");
+      if (!parsed.has(key)) {
+        try {
+          execFileSync(process.execPath, [join(root, `${REL.anatomiya}/bin/anatomiya.mjs`), ...args, "--help"], {
+            encoding: "utf8",
+            stdio: "pipe",
+          });
+          parsed.set(key, null);
+        } catch (err) {
+          parsed.set(key, String(err.stderr || err.message).split("\n")[0]);
+        }
+      }
+      const refused = parsed.get(key);
+      claim(rel, refused === null, `runs "anatomiya.mjs ${key}", which the CLI refuses: ${refused}`);
+    }
   }
 
   // --- the glossary -----------------------------------------------------------

@@ -1,18 +1,276 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { needsPosixPaths, needsShebang } from "./platform.mjs";
-import { needsRuby } from "./ruby-available.mjs";
-import { mkdtempSync, writeFileSync, readFileSync, rmSync } from "node:fs";
+import { needsRuby, needsRubyInterpreter } from "./ruby-available.mjs";
+import { mkdirSync, mkdtempSync, writeFileSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { parseRuby, RUBY_GUARDS } from "../plugins/anatomiya/lib/ruby.mjs";
+import { choosePrism, listPrism, parseRuby, prismLoadArgs, RUBY_GUARDS } from "../plugins/anatomiya/lib/ruby.mjs";
 import { walkRuby, constName, bodyOf, site, args } from "../plugins/anatomiya/lib/ruby-walk.mjs";
 import { RUBY_DIMENSIONS } from "../plugins/anatomiya/lib/dimensions-ruby.mjs";
 import { siteIdentity } from "../plugins/anatomiya/lib/introduced.mjs";
+import { readiness } from "../plugins/anatomiya/lib/readiness.mjs";
 
 const dir = mkdtempSync(join(tmpdir(), "anatomiya-ruby-"));
 process.on("exit", () => rmSync(dir, { recursive: true, force: true }));
+
+/* --- which prism the parser loads --- */
+
+// Ruby 3.3 ships prism 0.19 as its default gem, and 0.x spells the fields the
+// dimensions read differently. `gem install prism` puts a 1.x beside it on any
+// Ruby from 2.7, but the parser runs with gems disabled and saw only the
+// default, so the one remedy that fits in a command could not work.
+const spec = (version, { isDefault = false, paths = [`/gems/prism-${version}/lib`, `/ext/prism-${version}`] } = {}) =>
+  ({ version, default: isDefault, paths });
+
+test("a default prism at or past the floor is loaded as it always was, with nothing added", () => {
+  assert.deepEqual(choosePrism([spec("1.2.0", { isDefault: true }), spec("1.9.0")], "1.0.0"), null);
+});
+
+test("a default prism under the floor gives way to the newest installed one past it", () => {
+  const picked = choosePrism([spec("0.19.0", { isDefault: true }), spec("1.2.0"), spec("1.10.0"), spec("1.9.0")], "1.0.0");
+  assert.equal(picked.version, "1.10.0", "by its numbers: 1.10 is newer than 1.9");
+  assert.deepEqual(picked.paths, ["/gems/prism-1.10.0/lib", "/ext/prism-1.10.0"]);
+});
+
+test("nothing past the floor is nothing to add, and the default answers for itself", () => {
+  assert.equal(choosePrism([spec("0.19.0", { isDefault: true }), spec("0.30.0")], "1.0.0"), null);
+  assert.equal(choosePrism([], "1.0.0"), null);
+});
+
+test("a listing that is not the shape asked for adds nothing rather than a path it made up", () => {
+  for (const bad of [
+    null,
+    "1.9.0",
+    [{ version: "1.9.0", default: false, paths: ["relative/lib"] }],
+    [{ version: "1.9.0", default: false, paths: ["-e"] }],
+    [{ version: "1.9.0", default: false, paths: [] }],
+    [{ version: "1.9.0", default: false }],
+    [{ version: 1.9, default: false, paths: ["/gems/lib"] }],
+  ]) {
+    assert.equal(choosePrism(bad, "1.0.0"), null, JSON.stringify(bad));
+  }
+});
+
+test("the listing names a prism installed in a gem path, by version and absolute load path", needsRubyInterpreter, async (t) => {
+  // Asked of RubyGems rather than of prism, so it answers on any interpreter,
+  // including one whose own prism is the 0.x this cannot read.
+  const gems = mkdtempSync(join(tmpdir(), "anatomiya-gems-"));
+  t.after(() => rmSync(gems, { recursive: true, force: true }));
+  mkdirSync(join(gems, "specifications"), { recursive: true });
+  mkdirSync(join(gems, "gems", "prism-1.99.0", "lib"), { recursive: true });
+  writeFileSync(join(gems, "gems", "prism-1.99.0", "lib", "prism.rb"), "module Prism; VERSION = \"1.99.0\"; end\n");
+  writeFileSync(
+    join(gems, "specifications", "prism-1.99.0.gemspec"),
+    'Gem::Specification.new do |s|\n  s.name = "prism"\n  s.version = "1.99.0"\n  s.summary = "planted"\n  s.authors = ["t"]\n  s.files = ["lib/prism.rb"]\n  s.require_paths = ["lib"]\nend\n'
+  );
+
+  const specs = await listPrism({ env: { ...process.env, GEM_PATH: gems } });
+
+  const planted = specs.find((s) => s.version === "1.99.0");
+  assert.ok(planted, JSON.stringify(specs));
+  assert.equal(planted.default, false);
+  // RubyGems names the path in its own spelling: resolved through macOS's
+  // /var -> /private/var link, and with forward slashes and an 8.3 short name
+  // on Windows. Both sides are resolved so only the directory is compared.
+  assert.equal(planted.paths.length, 1, JSON.stringify(planted.paths));
+  assert.equal(realpathSync.native(planted.paths[0]), realpathSync.native(join(gems, "gems", "prism-1.99.0", "lib")));
+});
+
+test("the listing finds a --user-install under XDG_DATA_HOME", needsRubyInterpreter, async (t) => {
+  // RubyGems puts a user install under $XDG_DATA_HOME/gem when ~/.gem does not
+  // exist, and a listing that dropped the variable looked under
+  // ~/.local/share instead: `gem install --user-install prism` was installed
+  // and invisible, and doctor went on naming the remedy just run.
+  const home = mkdtempSync(join(tmpdir(), "anatomiya-home-"));
+  t.after(() => rmSync(home, { recursive: true, force: true }));
+  const api = execFileSync("ruby", ["-e", 'print RbConfig::CONFIG["ruby_version"]'], { encoding: "utf8" });
+  const gems = join(home, "xdg", "gem", "ruby", api);
+  mkdirSync(join(gems, "specifications"), { recursive: true });
+  mkdirSync(join(gems, "gems", "prism-1.98.0", "lib"), { recursive: true });
+  writeFileSync(
+    join(gems, "specifications", "prism-1.98.0.gemspec"),
+    'Gem::Specification.new do |s|\n  s.name = "prism"\n  s.version = "1.98.0"\n  s.summary = "planted"\n  s.authors = ["t"]\n  s.files = []\n  s.require_paths = ["lib"]\nend\n'
+  );
+  const env = { ...process.env, HOME: home, XDG_DATA_HOME: join(home, "xdg") };
+  delete env.GEM_HOME;
+  delete env.GEM_PATH;
+
+  const specs = await listPrism({ env });
+
+  assert.ok(Array.isArray(specs), "the listing answered");
+  assert.ok(specs.some((s) => s.version === "1.98.0"), JSON.stringify(specs));
+});
+
+test("the listing loads no installed gem's library, so a newer json cannot silence it", needsRubyInterpreter, async (t) => {
+  // With RubyGems enabled, `require "json"` activated the newest installed
+  // json gem; one that raised (or merely printed) cost every prism choice.
+  const gems = mkdtempSync(join(tmpdir(), "anatomiya-gems-json-"));
+  t.after(() => rmSync(gems, { recursive: true, force: true }));
+  mkdirSync(join(gems, "specifications"), { recursive: true });
+  mkdirSync(join(gems, "gems", "json-99.0.0", "lib"), { recursive: true });
+  writeFileSync(join(gems, "gems", "json-99.0.0", "lib", "json.rb"), 'print "GEM CODE RAN"\nraise "planted json"\n');
+  writeFileSync(
+    join(gems, "specifications", "json-99.0.0.gemspec"),
+    'Gem::Specification.new do |s|\n  s.name = "json"\n  s.version = "99.0.0"\n  s.summary = "planted"\n  s.authors = ["t"]\n  s.files = ["lib/json.rb"]\n  s.require_paths = ["lib"]\nend\n'
+  );
+
+  const specs = await listPrism({ env: { ...process.env, GEM_PATH: gems, GEM_HOME: gems } });
+
+  assert.ok(Array.isArray(specs), "the listing still answers");
+});
+
+test("a listed prism that raises on load is never put on the load path", needsRubyInterpreter, async (t) => {
+  // The listing is RubyGems' record, and a record says nothing about whether
+  // the extension it names was built for this interpreter. A gem that raises
+  // the way an extension linked to another libruby does is newest here, so
+  // the choice has to be proved to load before the parser is handed it.
+  const gems = mkdtempSync(join(tmpdir(), "anatomiya-gems-broken-"));
+  t.after(() => rmSync(gems, { recursive: true, force: true }));
+  mkdirSync(join(gems, "specifications"), { recursive: true });
+  mkdirSync(join(gems, "gems", "prism-1.99.0", "lib"), { recursive: true });
+  writeFileSync(join(gems, "gems", "prism-1.99.0", "lib", "prism.rb"), 'raise LoadError, "incompatible library version"\n');
+  writeFileSync(
+    join(gems, "specifications", "prism-1.99.0.gemspec"),
+    'Gem::Specification.new do |s|\n  s.name = "prism"\n  s.version = "1.99.0"\n  s.summary = "planted"\n  s.authors = ["t"]\n  s.files = ["lib/prism.rb"]\n  s.require_paths = ["lib"]\nend\n'
+  );
+  const env = { ...process.env, GEM_PATH: gems };
+  assert.ok((await listPrism({ env })).some((s) => s.version === "1.99.0"), "the broken one is listed");
+
+  const load = await prismLoadArgs({ env });
+
+  assert.ok(!load.some((p) => p.startsWith(gems)), `the broken prism was chosen: ${load.join(" ")}`);
+});
+
+test("the parser loads the prism the listing chose, and says which", needsShebang, async (t) => {
+  // A stub interpreter answers the ready line only for the load path the
+  // listing handed it, so the version the run reports is the proof of which
+  // prism parsed, off the same resolution the readiness probe uses. It also
+  // answers the version question on that path, which is how the choice is
+  // proved to load before the parser is handed it.
+  const bin = mkdtempSync(join(tmpdir(), "anatomiya-ruby-stub-"));
+  t.after(() => rmSync(bin, { recursive: true, force: true }));
+  writeFileSync(
+    join(bin, "ruby"),
+    `#!/bin/sh
+case "$*" in
+  *Gem::Specification*) printf '[{"version":"0.19.0","default":true,"paths":["/old/lib"]},{"version":"1.9.0","default":false,"paths":["/new/lib","/new/ext"]}]' ;;
+  *"--disable-gems -I /new/lib -I /new/ext -rprism"*) printf 1.9.0 ;;
+  *"--disable-gems -I /new/lib -I /new/ext -e"*) cat >/dev/null; printf '{"ready":true,"prism":"1.9.0"}\\n' ;;
+  *) cat >/dev/null; printf '{"ready":true,"prism":"0.19.0"}\\n{"fatal":"prism 0.19.0 predates the field names this reads"}\\n'; exit 1 ;;
+esac
+`,
+    { mode: 0o755 }
+  );
+  const file = join(bin, "a.rb");
+  writeFileSync(file, "class A\nend\n");
+
+  const out = await parseRuby([{ rel: "a.rb", abs: file }], { ruby: join(bin, "ruby") });
+
+  assert.equal(out.version, "1.9.0");
+});
+
+test("a version file in the repository chooses no interpreter: the listing, the probe and the parser all start outside it", needsShebang, async (t) => {
+  // A version manager's shim picks its Ruby from the directory it starts in,
+  // and a version file is the repository's to write: asdf reads a `path:`
+  // version in `.tool-versions` as a directory to run the interpreter out of,
+  // so resolving there would let the repository name a binary inside itself.
+  // Every Ruby child starts in the temp directory instead, which is also what
+  // keeps the three of them on one interpreter. The stub logs where it started,
+  // spelled into its own body because the environment it gets is only PATH.
+  const bin = mkdtempSync(join(tmpdir(), "anatomiya-ruby-where-"));
+  t.after(() => rmSync(bin, { recursive: true, force: true }));
+  const log = join(bin, "started-in");
+  writeFileSync(join(bin, "ruby"), `#!/bin/sh\npwd >> '${log}'\ncat >/dev/null\nexit 1\n`, { mode: 0o755 });
+  const repo = mkdtempSync(join(tmpdir(), "anatomiya-ruby-pinned-"));
+  t.after(() => rmSync(repo, { recursive: true, force: true }));
+  writeFileSync(join(repo, ".ruby-version"), "3.4.9\n");
+  writeFileSync(join(repo, ".tool-versions"), "ruby path:./vendor/ruby\n");
+  writeFileSync(join(repo, "a.rb"), "class A\nend\n");
+  const path = process.env.PATH;
+  const cwd = process.cwd();
+  t.after(() => {
+    process.env.PATH = path;
+    process.chdir(cwd);
+  });
+  // The session sits in the repository, which is where a hook or a command
+  // runs from, so a child that inherited the working directory would start there.
+  process.chdir(repo);
+  process.env.PATH = bin;
+
+  await readiness({ engines: ["prism"], env: { PATH: bin } });
+  await parseRuby([{ rel: "a.rb", abs: join(repo, "a.rb") }], { ruby: join(bin, "ruby") });
+
+  const starts = readFileSync(log, "utf8").trim().split("\n");
+  // The listing and the version question for the probe, then, since the stub
+  // fails that, the bare run that tells a broken interpreter from a missing
+  // library; the listing and the stream for the parser.
+  assert.equal(starts.length, 5, starts.join("\n"));
+  for (const at of starts) assert.equal(at, realpathSync(tmpdir()), `a Ruby child started in ${at}`);
+});
+
+test("a ruby planted in the temp directory never answers for an empty PATH entry", needsShebang, async (t) => {
+  // Measured with the common trailing-colon PATH on a machine with no ruby:
+  // the listing, the probe and the parser each ran a `ruby` another local
+  // user had left in /tmp, as the person scanning. An empty or relative PATH
+  // entry is resolved against the child's working directory, and every Ruby
+  // child starts in the temp directory, which anyone can write. The stub
+  // stands in for the planted one and logs that it ran.
+  const shared = mkdtempSync(join(tmpdir(), "anatomiya-ruby-shared-"));
+  t.after(() => rmSync(shared, { recursive: true, force: true }));
+  const log = join(shared, "planted-ran");
+  writeFileSync(join(shared, "ruby"), `#!/bin/sh\necho "$*" >> '${log}'\ncat >/dev/null\nexit 1\n`, { mode: 0o755 });
+  const empty = mkdtempSync(join(tmpdir(), "anatomiya-ruby-nobin-"));
+  t.after(() => rmSync(empty, { recursive: true, force: true }));
+  const file = join(empty, "a.rb");
+  writeFileSync(file, "class A\nend\n");
+  const saved = { PATH: process.env.PATH, TMPDIR: process.env.TMPDIR };
+  t.after(() => {
+    for (const [k, v] of Object.entries(saved)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+  });
+  process.env.TMPDIR = shared;
+  process.env.PATH = `${empty}:`;
+
+  const [row] = await readiness({ engines: ["prism"], env: { PATH: `${empty}:` } });
+  const out = await parseRuby([{ rel: "a.rb", abs: file }]);
+
+  let ran = "";
+  try {
+    ran = readFileSync(log, "utf8");
+  } catch {}
+  assert.equal(ran, "", `the planted ruby ran:\n${ran}`);
+  assert.equal(row.reason, "ruby is not on PATH");
+  assert.ok(out.missingParser, "and the parser says no interpreter answered");
+});
+
+test("a prism too old to read is a missing parser, never a repository of crashed files", needsShebang, async (t) => {
+  // The child refuses a 0.x prism with a fatal line before reading any file.
+  // Charged per file, that read as "every Ruby file crashed the parser" with
+  // exit 0 and no remedy, and withheld the whole map; the scan and the check
+  // name the remedy only for a missing parser.
+  const bin = mkdtempSync(join(tmpdir(), "anatomiya-ruby-old-"));
+  t.after(() => rmSync(bin, { recursive: true, force: true }));
+  writeFileSync(
+    join(bin, "ruby"),
+    `#!/bin/sh
+case "$*" in *Gem::Specification*) printf '[]'; exit 0 ;; esac
+cat >/dev/null
+printf '{"ready":true,"prism":"0.19.0"}\\n{"fatal":"prism 0.19.0 predates the field names this reads"}\\n'
+exit 1
+`,
+    { mode: 0o755 }
+  );
+  const file = join(bin, "a.rb");
+  writeFileSync(file, "class A\nend\n");
+
+  const out = await parseRuby([{ rel: "a.rb", abs: file }], { ruby: join(bin, "ruby") });
+
+  assert.match(String(out.missingParser), /prism 0\.19\.0 predates/);
+});
 
 test("a mistyped size override refuses loudly instead of dying inside the child", async () => {
   // Ungated: the refusal happens before any interpreter is spawned. `null` is
@@ -65,6 +323,25 @@ const SRC = {
       other.e
     end
   `,
+  rescue_ivar_binding: `
+    begin
+      a
+    rescue => @error
+      report(@error)
+    end
+    begin
+      b
+    rescue => @error
+      nil
+    end
+  `,
+  rescue_fail: `
+    begin
+      a
+    rescue ActiveRecord::RecordNotFound
+      fail Wrapped
+    end
+  `,
   rescue_none: `
     def go
       work
@@ -107,6 +384,20 @@ const SRC = {
       end
     end
   `,
+  model_commit_callbacks: `
+    class Welcome < ApplicationRecord
+      after_create_commit :send_welcome
+    end
+    class Mirror < ApplicationRecord
+      after_update_commit :sync
+    end
+    class Archive < ApplicationRecord
+      after_destroy_commit :purge
+    end
+    class Index < ApplicationRecord
+      after_save_commit :reindex
+    end
+  `,
   model_none: `
     class PlainService
       before_save :normalise
@@ -117,6 +408,14 @@ const SRC = {
     class Charge
       def call
         raise ArgumentError, "no"
+      end
+    end
+  `,
+  service_fails: `
+    class CreateOrder
+      def call(params)
+        fail ArgumentError, "missing" unless params[:id]
+        Result.success
       end
     end
   `,
@@ -207,6 +506,20 @@ const SRC = {
         URI.open("https://x")
         ApiClient.get("/x")
         client.post("/y")
+      end
+    end
+  `,
+
+  http_gems: `
+    class Feed
+      def load(url)
+        RestClient.get(url, accept: :json)
+        RestClient::Request.execute(method: :get, url: url)
+        HTTPClient.new.get(url)
+        HTTParty.get(url)
+        Faraday.get(url)
+        HTTP.get(url)
+        GithubClient.get(url)
       end
     end
   `,
@@ -347,6 +660,13 @@ const SRC = {
       Time.zone.parse("2026-08-20")
     end
   `,
+  time_unzoned_built: `
+    def go
+      Time.local(2026, 8, 20)
+      Time.parse("2026-08-20")
+      Time.at(1_786_000_000)
+    end
+  `,
   service_rollback: `
     class Charge
       def call
@@ -392,6 +712,53 @@ end
 
 class A3::B3::E
   include Concern
+end
+`,
+  infinite_float: `
+INF = 1e400
+`,
+  binary_string: `# encoding: ascii-8bit
+MAGIC = "\\xff"
+`,
+  index_assign_keyword: `
+a[0, k: 1] = 2
+`,
+  same_short_name: `
+class A::Worker
+end
+
+class B::Worker
+  include Concern
+end
+`,
+  singleton_include: `
+class Settings
+  class << self
+    include Enumerable
+  end
+end
+`,
+  sidekiq_singleton_include: `
+class NotAWorker
+  class << self
+    include Sidekiq::Worker
+  end
+
+  def perform(a, b, c)
+  end
+end
+`,
+  rescue_global_error: `
+begin
+  a
+rescue
+  log($!)
+end
+
+begin
+  b
+rescue
+  log($ERROR_INFO)
 end
 `,
   compact_superclass: `
@@ -476,6 +843,21 @@ test("a file over the size cap is skipped without a tree", needsRuby, async () =
   assert.equal(out.results[0].program, null);
 });
 
+test("a file prism parses cleanly is read however long its chain of branches", needsRuby, async () => {
+  // Measured: a 98-branch elsif chain, a 98-call method chain and a 98-term
+  // `+` expression each came back `JSON::NestingError` and were reported as
+  // files that could not be parsed, though prism found no error in any. The
+  // tree is one to three JSON levels per node, and the encoder's default cap
+  // is 100: a detail of how the answer is carried, charged to the repository.
+  const branches = Array.from({ length: 99 }, (_, i) => `  elsif x == ${i + 1}\n    :a${i + 1}\n`).join("");
+  const elsif = write("elsif_chain", `def kind(x)\n  if x == 0\n    :a0\n${branches}  end\nend\n`);
+  const chain = write("method_chain", `def q\n  Model${Array.from({ length: 98 }, (_, i) => `.m${i}`).join("")}\nend\n`);
+
+  const out = await parseRuby([elsif, chain]);
+
+  for (const r of out.results) assert.equal(r.ok, true, `${r.rel}: ${r.error}`);
+});
+
 test("one unreadable file costs that file, not the run", needsRuby, async () => {
   const out = await parseRuby([
     { rel: "gone.rb", abs: join(dir, "does-not-exist.rb") },
@@ -523,6 +905,47 @@ test("a parser too old for these field names reports rather than counting zero",
   const out = await parseRuby([{ rel: "a.rb", abs: join(dir, "rescue_none.rb") }], { ruby: stub });
   assert.match(out.error, /prism 0\.19\.0/);
   assert.equal(out.results[0].crashed, true, "the file is charged, not silently dropped");
+});
+
+test("a Ruby with no prism at all is a missing parser, not a file that crashed it", needsRubyInterpreter, async (t) => {
+  // Ruby 2.7 to 3.2 before `gem install prism`: the script's own require
+  // raised before it could say why, so every file read as crashing the parser,
+  // check reported nothing found and scan wrote nothing, with no remedy.
+  const bin = mkdtempSync(join(tmpdir(), "anatomiya-ruby-noprism-"));
+  t.after(() => rmSync(bin, { recursive: true, force: true }));
+  writeFileSync(join(bin, "prism.rb"), 'raise LoadError, "cannot load such file -- prism"\n');
+  const stub = join(bin, "ruby");
+  writeFileSync(
+    stub,
+    `#!/bin/sh\nfor a; do shift; case "$a" in -I*) ;; *) set -- "$@" "$a";; esac; done\nexec ruby -I '${bin}' "$@"\n`,
+    { mode: 0o755 }
+  );
+
+  const out = await parseRuby([{ rel: "a.rb", abs: join(dir, "rescue_none.rb") }], { ruby: stub });
+
+  assert.equal(out.results[0].missingParser, true, JSON.stringify(out.results[0]));
+  assert.match(out.error, /prism/);
+});
+
+test("a literal JSON cannot spell is still a file that parsed", needsRuby, () => {
+  // `1e400` is Infinity and a binary-encoded "\xff" is not UTF-8, and either one
+  // raised JSON::GeneratorError in the encoder: a file prism read without a
+  // single error was reported as unread. Neither value is anything a
+  // dimension reads, so each is dropped from the tree rather than the file.
+  for (const name of ["infinite_float", "binary_string"]) {
+    const file = programs.get(name);
+    assert.equal(file.ok, true, `${name}: ${file.error}`);
+  }
+});
+
+test("the grammar is the interpreter's own, not prism's newest", needsRuby, () => {
+  // Keywords in an index assignment are an error from Ruby 3.4 and valid
+  // before it, and prism parses as the newest Ruby it knows unless told
+  // otherwise: on Ruby 3.3 the file read as a syntax error Ruby itself accepts.
+  const ruby = execFileSync("ruby", ["-e", "print RUBY_VERSION"], { encoding: "utf8" });
+  const [major, minor] = ruby.split(".").map(Number);
+  const file = programs.get("index_assign_keyword");
+  assert.equal(file.ok, major < 3 || (major === 3 && minor < 4), JSON.stringify({ ruby, error: file.error }));
 });
 
 test("silence past the idle window ends the run and charges what never answered", needsRuby, async () => {
@@ -629,6 +1052,25 @@ test("a method that happens to be named like the binding is not a use of it", ne
   assert.equal(r.conforming, 0, "other.e reads a method, not the caught error");
 });
 
+test("a rescue bound to an instance variable uses the error by reading it", needsRuby, () => {
+  // `rescue => @error` binds the caught error exactly as `rescue => e` does,
+  // and only the local read was looked for, so the use read as a swallow.
+  assert.deepEqual(counts("rescue_uses_error", "rescue_ivar_binding"), { candidates: 2, conforming: 1 });
+});
+
+test("a bare rescue that reads $! uses the error it caught", needsRuby, () => {
+  // `rescue; log($!)` hands the caught error on as surely as `rescue => e;
+  // log(e)`, and with nothing bound it read as a swallow. `$ERROR_INFO` is the
+  // English library's name for the same variable.
+  assert.deepEqual(counts("rescue_uses_error", "rescue_global_error"), { candidates: 2, conforming: 2 });
+});
+
+test("fail re-raises exactly as raise does", needsRuby, () => {
+  // Kernel#fail is raise's alias, and the "fail to signal, raise to re-raise"
+  // style spells half its raises with it.
+  assert.deepEqual(counts("rescue_uses_error", "rescue_fail"), { candidates: 1, conforming: 1 });
+});
+
 test("a file with no rescue contributes nothing", needsRuby, () => {
   assert.equal(hits("rescue_uses_error", "rescue_none").length, 0);
 });
@@ -669,6 +1111,14 @@ test("a class that is not a model contributes nothing", needsRuby, () => {
   assert.equal(hits("model_callbacks", "model_none").length, 0);
 });
 
+test("the after_*_commit shorthands register lifecycle callbacks like any other", needsRuby, () => {
+  // Measured: forty models each registering after_create_commit and
+  // after_update_commit read as 40 of 40 keeping behaviour out of callbacks.
+  // These four are how Rails 5 and 6 recommend spelling a commit callback, so
+  // the row stated its claim in exactly the wrong direction on modern apps.
+  assert.deepEqual(counts("model_callbacks", "model_commit_callbacks"), { candidates: 4, conforming: 0 });
+});
+
 // --- service_result_shape ---
 
 test("an entry point that raises is a violation and one that returns conforms", needsRuby, () => {
@@ -680,6 +1130,13 @@ test("an entry point that raises is a violation and one that returns conforms", 
     candidates: 1,
     conforming: 1,
   });
+});
+
+test("an entry point that fails is raising, whichever alias it spells", needsRuby, () => {
+  // Measured: `fail ArgumentError` in a call method counted as returning its
+  // failure, which inflates the claim side of the row in exactly the
+  // codebases that prefer fail for signalling.
+  assert.deepEqual(counts("service_result_shape", "service_fails"), { candidates: 1, conforming: 0 });
 });
 
 test("a raise inside a rescue translates someone else's error and is not counted", needsRuby, () => {
@@ -794,6 +1251,9 @@ function retryStub(home, first, afterAnswers = []) {
   const script = [
     "#!/bin/sh",
     `if [ "$1" = "--warm" ]; then exit 0; fi`,
+    // The question of which prism to load is asked before any parse child,
+    // and is not one: it holds no default to replace, so nothing is added.
+    `case "$*" in *Gem::Specification*) printf '[]'; exit 0 ;; esac`,
     `n=$(cat '${home}/runs' 2>/dev/null || echo 0)`,
     `echo $((n + 1)) > '${home}/runs'`,
     `tr '\\0' '\\n' > '${home}/in.'$n`,
@@ -871,6 +1331,7 @@ test("a file the retry left unanswered is charged with what killed the first chi
     [
       "#!/bin/sh",
       `if [ "$1" = "--warm" ]; then exit 0; fi`,
+      `case "$*" in *Gem::Specification*) printf '[]'; exit 0 ;; esac`,
       `n=$(cat '${home}/runs' 2>/dev/null || echo 0)`,
       `echo $((n + 1)) > '${home}/runs'`,
       `tr '\\0' '\\n' > '${home}/in.'$n`,
@@ -896,7 +1357,14 @@ test("a child that died by itself is charged, not tried again", needsShebang, as
   // broken install or a fatal from the script, and a second child answers it
   // the same way at twice the cost.
   const home = mkdtempSync(join(dir, "no-retry-"));
-  const script = ["#!/bin/sh", `echo x >> '${home}/runs'`, "cat > /dev/null", "exit 1", ""].join("\n");
+  const script = [
+    "#!/bin/sh",
+    `case "$*" in *Gem::Specification*) printf '[]'; exit 0 ;; esac`,
+    `echo x >> '${home}/runs'`,
+    "cat > /dev/null",
+    "exit 1",
+    "",
+  ].join("\n");
   writeFileSync(join(home, "ruby"), script, { mode: 0o755 });
 
   const files = ["a.rb", "b.rb"].map((rel) => ({ rel, abs: join(dir, "rescue_none.rb") }));
@@ -968,6 +1436,17 @@ test("a raw Net::HTTP block handle named http is not a conforming client", needs
     "only the Net::HTTP.start site counts, and it counts against");
 });
 
+test("an HTTP library's own constant is a direct call, not the repository's client", needsRuby, () => {
+  // Measured: forty files calling RestClient.get read as "HTTP goes through the
+  // repository's own client, 80 of 81", in a repository with no client at all,
+  // because RestClient and HTTPClient carry the vocabulary in their names. They
+  // are what a wrapper wraps, the way axios is on the JS side.
+  const h = hits("http_through_client", "http_gems");
+  assert.deepEqual(h.map((x) => [x.node.line, x.conforming]), [
+    [4, false], [5, false], [6, false], [7, false], [8, false], [9, false], [10, true],
+  ]);
+});
+
 /* --- class_base: Ruby refuses to raise a class that is not an Exception (#58) --- */
 
 test("an exception subclass is not a class_base site", needsRuby, () => {
@@ -1006,6 +1485,13 @@ test("a Sidekiq perform is not a keyword_params site, whichever side of it the i
   assert.deepEqual(hits("keyword_params", "sidekiq_include_below"), []);
 });
 
+test("the Sidekiq mixin included into the singleton class does not make the class a worker", needsRuby, () => {
+  // `class << self; include Sidekiq::Worker; end` mixes into the metaclass, so
+  // the class's own `perform` is not what Sidekiq calls, and it was dropped as
+  // a keyword_params site on the strength of an include that never reached it.
+  assert.deepEqual(hits("keyword_params", "sidekiq_singleton_include").map((h) => h.where), ["perform"]);
+});
+
 test("an ActiveJob perform is still a site, because ActiveJob carries keywords through", needsRuby, () => {
   // Gated on the mixin rather than on the name: `perform` is an ordinary
   // method name and ActiveJob does pass keywords.
@@ -1033,6 +1519,14 @@ test("a time built through the app zone conforms, however it is built", needsRub
   // Without this a repository that builds its times the right way reads as
   // having no conforming construction at all.
   assert.deepEqual(counts("zone_aware_time", "time_zone_built"), { candidates: 2, conforming: 2 });
+});
+
+test("a time built past the app zone is the violation its zoned twin conforms against", needsRuby, () => {
+  // Measured: twenty files calling Time.zone.parse and Time.zone.at beside
+  // twenty calling Time.parse and Time.at read as 40 of 40 through the
+  // application zone, on a row declared precise. Counting only the conforming
+  // half of a pair makes the claim unfalsifiable in the one place it bites.
+  assert.deepEqual(counts("zone_aware_time", "time_unzoned_built"), { candidates: 3, conforming: 0 });
 });
 
 /* --- service_result_shape does not read a rollback as a raised failure (#74c) --- */
@@ -1171,6 +1665,23 @@ test("a learned-class hit carries the scope its bare names resolve in", needsRub
   const [base] = hits("class_base", "compact_superclass").filter((h) => h.class);
   assert.equal(base.self, "Api::V1::QboController");
   assert.deepEqual(base.nesting, [], "the compact form resolves its superclass at the top level");
+});
+
+test("two classes sharing a short name are two bodies, whichever holds the include", needsRuby, () => {
+  // Named by the last segment, `class A::Worker` and `class B::Worker` were both
+  // `Worker`, so B's include read as A's declaration elsewhere in the file and
+  // A's forgotten include was never a site.
+  const h = hits("module_include", "same_short_name");
+  assert.equal(h.length, 2);
+  assert.deepEqual(h.filter((x) => x.class).map((x) => x.class), ["Concern"]);
+  assert.ok(h.some((x) => x.where === "A::Worker" && !x.class), "A::Worker includes nothing and is a site");
+});
+
+test("an include inside class << self is not an include into the class", needsRuby, () => {
+  // It mixes into the metaclass, which is `extend` by another spelling: the
+  // class declared a mixin, but not one its instances carry, so it is neither
+  // a vote for the module nor a class that forgot one.
+  assert.deepEqual(hits("module_include", "singleton_include"), []);
 });
 
 test("the Ruby site and argument readers live in the leaf both registries import", () => {

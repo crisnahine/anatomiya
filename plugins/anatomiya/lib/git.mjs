@@ -17,6 +17,9 @@
  * caller may read output without.
  */
 import { execFile, spawn } from "node:child_process";
+import { existsSync } from "node:fs";
+import { devNull } from "node:os";
+import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 
 import { MAX_FILE_BYTES } from "./limits.mjs";
@@ -66,6 +69,9 @@ const FLAGS = new Set([
   "--depth=1",
   "--exclude-standard",
   "--find-renames",
+  // A submodule is a commit, not a file: the check listed one at a source-like
+  // path and reported it as a file it could not read at HEAD.
+  "--ignore-submodules=all",
   "--format",
   "--get",
   "--is-shallow-repository",
@@ -85,6 +91,35 @@ const FLAGS = new Set([
   "--src-prefix=a/",
   "--dst-prefix=b/",
   "--verify",
+  // What the refresh worker asks (`refresh.mjs`): the index with its modes and
+  // blob ids for the stamp, where this checkout's git directory is, and whether
+  // a pin is newer than HEAD; and what `pin` asks (`commands.mjs`): whether
+  // tracked files carry edits.
+  "-s",
+  "--absolute-git-dir",
+  "--untracked-files=no",
+  "--is-ancestor",
+  // A remote-tracking ref's full name and its newest reflog entry, so the
+  // refresh can tell a tip this clone pushed from one a fetch brought.
+  "--symbolic-full-name",
+  "-n1",
+  // Every reflog, and the first-parent line a pin would move along, so a
+  // commit this clone made is never pinned because a fetch brought it back.
+  "-g",
+  "--all",
+  "--first-parent",
+  // HEAD's recent moves with the second each happened, for the end-of-turn
+  // check on a repository whose reflog is not a file (`reuse.mjs`).
+  "--max-count=256",
+  "--date=unix",
+  // Whether a merge has left the index with a path per stage, which `pin`
+  // refuses to record (`commands.mjs`).
+  "--unmerged",
+  // The one read of a repository's own config that says which file each value
+  // came from, so the commands it names can be replaced (`repositoryCommands`).
+  "--show-scope",
+  "--null",
+  "--get-regexp",
 ]);
 
 // `--format=<pattern>` carries a pattern this tool composes; the value is not
@@ -123,17 +158,287 @@ function refuse(args) {
  * mtime moved without its content reads as dirty, and the check would report
  * uncommitted edits nobody made.
  */
-function gitEnv(env) {
+function gitEnv(env, { lazyFetch = false, repository = NO_REPOSITORY_COMMANDS } = {}) {
   return {
     ...env,
     GIT_TERMINAL_PROMPT: "0",
+    // A partial clone fetches a missing object from its promisor on demand, so
+    // a read of a pinned blob reached the network and, with the remote gone,
+    // came back unread (F14). Missing is the answer here, except where the
+    // caller asks otherwise: the check's read of the merge base, whose blobs a
+    // blobless clone never held, and without which every changed file was
+    // skipped (F5). The other fetch this tool makes on purpose, the check's
+    // shallow base, is an explicit `fetch` this does not touch.
+    ...(lazyFetch ? {} : { GIT_NO_LAZY_FETCH: "1" }),
     // The transports git may use, which closes `ext::`. A repository shipped as
     // a tarball rather than cloned carries its own `.git/config`, and an
     // `ext::` remote URL is a shell command git runs to reach it: the check's
     // shallow path is the one place this tool talks to a remote at all, and it
     // reads that config to do it.
-    GIT_ALLOW_PROTOCOL: "file:git:http:https:ssh",
+    //
+    // Without `git` for a repository that names its own `core.gitProxy`: that
+    // key is first-match-wins, so no entry after the repository's replaces it,
+    // and the transport is the only thing it is ever run for.
+    GIT_ALLOW_PROTOCOL: repository.noGitProtocol ? "file:http:https:ssh" : "file:git:http:https:ssh",
+    // The same tarball's config can name commands git runs on a read. Measured:
+    // `core.fsmonitor` set to a script in `.git/config` ran on every `status`
+    // this tool made. Environment config is the one kind every subcommand
+    // honours and a repository cannot override, since it sits above every
+    // config file. The hooks go with it, because `fetch` runs
+    // `reference-transaction`, and nothing this tool runs is owed a hook.
+    // After them, the replacements for the commands this repository's own
+    // config names (`repositoryCommands`).
+    ...withConfig(env, [...NEUTRAL_CONFIG, ...repository.config]),
   };
+}
+
+const NEUTRAL_CONFIG = [
+  ["core.fsmonitor", "false"],
+  ["core.hooksPath", devNull],
+  // Every `log` verifies each signed commit when this is on, whatever its
+  // format, with the `gpg.program` the same config names. Measured: a
+  // repository's program ran on a `log --format=%H`.
+  ["log.showSignature", "false"],
+  // A fetch that brings a commit moving a submodule fetches the submodule too,
+  // from inside it and under its own config, which this process never read.
+  // The check's fetch wants one commit of the superproject and nothing else.
+  ["fetch.recurseSubmodules", "false"],
+];
+
+/**
+ * The commands a repository's own config names, and what each is replaced with.
+ *
+ * A tarball carries its `.git/config`, and some keys there are commands git
+ * runs on a read: a filter driver on any `status` or `diff` that hashes a file
+ * its `.gitattributes` routes through it, and on the check's one fetch an ssh
+ * command, credential helpers, an askpass, a `git://` proxy and an
+ * alternate-refs command. The names under `filter.` are the repository's own
+ * choice, so no fixed entry closes them; they are read instead, once per
+ * repository per process, and only a value whose scope is `local` or
+ * `worktree` is replaced. What the user set globally or on a command line is
+ * what the replacement is, where there is one: their ssh wrapper, their
+ * credential helpers and their filter drivers keep working.
+ *
+ * Measured on git 2.43 and 2.51: an empty filter command is no filter, and git
+ * then reads the file as its bytes, provided the driver is not also marked
+ * `required`; an empty `core.askPass` is none; an empty `credential.helper`
+ * empties the list before it, so the helpers that are not the repository's
+ * are listed again after it. The config read itself runs none of them.
+ */
+const REPOSITORY_COMMANDS =
+  "^(filter\\..+\\.(clean|smudge|process)" +
+  "|core\\.(sshcommand|askpass|gitproxy|alternaterefscommand)" +
+  "|remote\\..+\\.uploadpack" +
+  "|lfs\\.(extension\\..+\\.(clean|smudge)|customtransfer\\..+\\.path|standalonetransferagent)" +
+  "|credential\\.(.+\\.)?helper)$";
+
+const NO_REPOSITORY_COMMANDS = Object.freeze({ config: [], uploadPack: null, noGitProtocol: false });
+
+const REPOSITORY_SCOPES = new Set(["local", "worktree"]);
+
+/** `scope\0key\nvalue\0` per entry, from `config --show-scope --null`. */
+function parseScopedConfig(out) {
+  const fields = String(out ?? "").split("\0");
+  const entries = [];
+  for (let i = 0; i + 1 < fields.length; i += 2) {
+    const [scope, pair] = [fields[i], fields[i + 1]];
+    const nl = pair.indexOf("\n");
+    // A key with no `=` has no value, which none of these keys can use.
+    if (nl === -1) continue;
+    entries.push({ scope, key: pair.slice(0, nl), value: pair.slice(nl + 1) });
+  }
+  return entries;
+}
+
+// The exact commands `git lfs install --local` writes. They run the user's own
+// installed `git-lfs`, found on their PATH, and not a script the repository
+// ships; replaced, every LFS file whose stat moved read as changed and `pin`
+// refused a clean tree. Anything else under the `lfs` name is the repository's.
+const STANDARD_LFS = new Map([
+  ["filter.lfs.clean", new Set(["git-lfs clean -- %f"])],
+  ["filter.lfs.smudge", new Set(["git-lfs smudge -- %f", "git-lfs smudge --skip -- %f"])],
+  ["filter.lfs.process", new Set(["git-lfs filter-process", "git-lfs filter-process --skip"])],
+]);
+const isStandardLfs = (e) => STANDARD_LFS.get(e.key)?.has(String(e.value ?? "").trim()) === true;
+
+/**
+ * The environment entries that replace what `entries` names from the
+ * repository, the upload-pack to name on the command line, and whether the
+ * `git://` transport is closed for this repository.
+ */
+function replacementsFor(entries, env) {
+  // git-lfs reads this config as well, and runs an extension or transfer
+  // command it names, so a repository naming one gets no git-lfs at all,
+  // whoever's filter would have started it.
+  const lfsCommand = entries.some((e) => REPOSITORY_SCOPES.has(e.scope) && e.key.startsWith("lfs."));
+  const ours = entries.filter((e) => REPOSITORY_SCOPES.has(e.scope) && (lfsCommand || !isStandardLfs(e)));
+  if (ours.length === 0) return NO_REPOSITORY_COMMANDS;
+  const theirs = entries.filter((e) => !REPOSITORY_SCOPES.has(e.scope));
+  // Last one wins for every single-valued key here, as git reads them.
+  const userValue = (key) => theirs.findLast((e) => e.key === key)?.value;
+  const config = [];
+  const done = new Set();
+  const replace = (key, value) => {
+    if (done.has(key)) return;
+    done.add(key);
+    config.push([key, value]);
+  };
+  let credentials = false;
+  let uploadPack = null;
+  let noGitProtocol = false;
+  if (lfsCommand) {
+    for (const kind of ["clean", "smudge", "process"]) replace(`filter.lfs.${kind}`, "");
+    replace("filter.lfs.required", "false");
+  }
+
+  for (const { key } of ours) {
+    const filter = /^filter\.(.+)\.(clean|smudge|process)$/.exec(key);
+    if (filter) {
+      const value = userValue(key);
+      replace(key, value ?? "");
+      // Required and empty is a failed filter, and git refuses the read.
+      if (value === undefined) replace(`filter.${filter[1]}.required`, "false");
+    } else if (key === "core.sshcommand") {
+      // With no value of the user's, what git would run without one: their
+      // `GIT_SSH`, which git runs without a shell, or `ssh`.
+      replace(key, userValue(key) ?? (env.GIT_SSH ? shellQuote(env.GIT_SSH) : "ssh"));
+    } else if (key === "core.askpass") {
+      replace(key, userValue(key) ?? "");
+    } else if (key === "core.alternaterefscommand") {
+      // No refs from the alternate, which only makes a fetch negotiate with
+      // fewer of the commits it already holds.
+      replace(key, userValue(key) ?? "true");
+    } else if (key === "core.gitproxy") {
+      noGitProtocol = env.GIT_PROXY_COMMAND === undefined;
+    } else if (/^remote\..+\.uploadpack$/.test(key)) {
+      // The first one configured wins, so an entry after the repository's is
+      // refused with "more than one uploadpack given" and the repository's
+      // runs. Only the command line outranks it.
+      uploadPack = "git-upload-pack";
+    } else if (/^credential\.(.+\.)?helper$/.test(key)) {
+      credentials = true;
+    }
+  }
+  if (credentials) {
+    config.push(["credential.helper", ""]);
+    for (const e of theirs) if (/^credential\.(.+\.)?helper$/.test(e.key)) config.push([e.key, e.value]);
+  }
+  return { config, uploadPack, noGitProtocol, theirs };
+}
+
+function shellQuote(s) {
+  return `'${String(s).replace(/'/g, "'\\''")}'`;
+}
+
+// Bounded, because a long-lived process can be handed any number of roots.
+const REPOSITORY_CACHE_MOST = 64;
+const repositoryCache = new Map();
+
+/**
+ * What decides which config a git sees besides the repository: where the
+ * global and system files are, the command-line entries, and which git.
+ */
+function configSources(env) {
+  return JSON.stringify(
+    Object.entries(env ?? {})
+      .filter(([k]) => k.startsWith("GIT_") || k === "HOME" || k === "XDG_CONFIG_HOME" || k === "PATH")
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+  );
+}
+
+/**
+ * The replacements for `root`, read once per repository and environment per
+ * process. `{ unread }` when git would not say, which the runners refuse the call
+ * over: a read that cannot tell which commands the repository names cannot
+ * promise none of them runs.
+ */
+function repositoryCommands(root, env, timeout) {
+  const key = `${resolve(root)}\0${configSources(env)}`;
+  const known = repositoryCache.get(key);
+  if (known) return known;
+  const asked = run("git", ["config", "--show-scope", "--null", "--get-regexp", REPOSITORY_COMMANDS], {
+    cwd: root,
+    encoding: "utf8",
+    maxBuffer: 1024 * 1024,
+    timeout,
+    env: gitEnv(env),
+  }).then(
+    ({ stdout }) => replacementsFor(parseScopedConfig(stdout), env),
+    // Exit 1 is no key matched. Anything else is kept as what went wrong, so
+    // the call it stopped can say so.
+    (err) => {
+      if (err && err.code === 1 && !err.killed) return NO_REPOSITORY_COMMANDS;
+      const how = err && (err.signal || err.code);
+      const said = String(err?.stderr || err?.message || "").trim().slice(0, STDERR_CAP);
+      return { unread: `git config exited ${how ?? "abnormally"}: ${said}` };
+    }
+  ).then((answer) => {
+    if (answer.unread) repositoryCache.delete(key);
+    return answer;
+  });
+  repositoryCache.set(key, asked);
+  if (repositoryCache.size > REPOSITORY_CACHE_MOST) repositoryCache.delete(repositoryCache.keys().next().value);
+  return asked;
+}
+
+/**
+ * The call as it is made: the caller's arguments with what this repository
+ * needs said on the command line, and the environment with its replacements.
+ *
+ * Two things only the command line can say. A `remote.<name>.uploadpack` is
+ * first-match-wins in config, so `fetch` and `ls-remote` name git's own. And a
+ * `status` or a `diff` of the working tree runs git inside every populated
+ * submodule to ask whether it is dirty, under the submodule's own config,
+ * whose filter drivers this process never read; `--ignore-submodules=dirty`
+ * still reports a submodule whose commit moved, and a caller's own
+ * `--ignore-submodules` comes after it and wins. It is also the only spelling
+ * that outranks a `submodule.<name>.ignore` in the repository's config.
+ * Inserted after the arguments `refuse` has passed, since they are this
+ * tool's own.
+ */
+async function prepared(root, args, env, { lazyFetch, timeout }) {
+  const repository = await repositoryCommands(root, env, timeout);
+  if (repository.unread) return { unread: repository.unread };
+  let at = 0;
+  while (args[at] === "-c") at += 2;
+  const sub = args[at];
+  const extra = [];
+  if (sub === "status" || sub === "diff") extra.push("--ignore-submodules=dirty");
+  if (repository.uploadPack && (sub === "fetch" || sub === "ls-remote")) {
+    const remote = args.slice(at + 1).find((a) => !a.startsWith("-"));
+    // The user's own, where they configured one: git would have used it,
+    // since theirs is read before the repository's.
+    const mine = repository.theirs?.find((e) => e.key === `remote.${remote}.uploadpack`)?.value;
+    extra.push(`--upload-pack=${mine ?? repository.uploadPack}`);
+  }
+  return {
+    args: extra.length ? [...args.slice(0, at + 1), ...extra, ...args.slice(at + 1)] : args,
+    // A lazy fetch is git's own child, reading the upload-pack from config with
+    // no command line of ours, so where the repository names one the object
+    // stays missing instead.
+    env: gitEnv(env, { lazyFetch: lazyFetch && !repository.uploadPack, repository }),
+  };
+}
+
+function unreadConfig(call) {
+  return `could not read which commands this repository's config names (${call.unread})`;
+}
+
+/**
+ * The `GIT_CONFIG_COUNT` entries a caller already carries, with these after
+ * them so that they win. Replacing the count instead dropped the caller's own,
+ * which is somebody else's `-c` for every git this process starts. A count git
+ * would refuse as bogus is read as none, since git would then refuse every call.
+ */
+function withConfig(env, entries) {
+  const given = String(env?.GIT_CONFIG_COUNT ?? "").trim();
+  const count = /^\d+$/.test(given) && Number.isSafeInteger(Number(given)) ? Number(given) : 0;
+  const out = { GIT_CONFIG_COUNT: String(count + entries.length) };
+  entries.forEach(([key, value], i) => {
+    out[`GIT_CONFIG_KEY_${count + i}`] = key;
+    out[`GIT_CONFIG_VALUE_${count + i}`] = value;
+  });
+  return out;
 }
 
 /**
@@ -147,7 +452,7 @@ function gitEnv(env) {
 export async function gitBuffered(
   root,
   args,
-  { encoding = "utf8", maxBytes = GIT.maxBytes, timeout = GIT.timeoutMs, env = process.env } = {}
+  { encoding = "utf8", maxBytes = GIT.maxBytes, timeout = GIT.timeoutMs, env = process.env, lazyFetch = false } = {}
 ) {
   const refused = refuse(args);
   if (refused) {
@@ -159,13 +464,17 @@ export async function gitBuffered(
       error: refused,
     };
   }
+  const call = await prepared(root, args, env, { lazyFetch, timeout });
+  if (call.unread) {
+    return { ok: false, code: null, oversize: false, stdout: encoding === "buffer" ? Buffer.alloc(0) : "", error: unreadConfig(call) };
+  }
   try {
-    const { stdout } = await run("git", args, {
+    const { stdout } = await run("git", call.args, {
       cwd: root,
       encoding,
       maxBuffer: maxBytes,
       timeout,
-      env: gitEnv(env),
+      env: call.env,
     });
     return { ok: true, code: 0, oversize: false, stdout, error: null };
   } catch (err) {
@@ -190,17 +499,18 @@ export function gitStreamed(
   root,
   args,
   onField,
-  { terminated = true, timeout = GIT.timeoutMs, env = process.env, maxFieldBytes = GIT.maxBytes } = {}
+  { terminated = true, timeout = GIT.timeoutMs, env = process.env, maxFieldBytes = GIT.maxBytes, lazyFetch = false } = {}
 ) {
-  return new Promise((fulfil, reject) => {
-    const refused = refuse(args);
-    if (refused) return reject(new Error(refused));
+  const refused = refuse(args);
+  if (refused) return Promise.reject(new Error(refused));
+  return prepared(root, args, env, { lazyFetch, timeout }).then((call) => new Promise((fulfil, reject) => {
+    if (call.unread) return reject(new Error(`git ${args[0]}: ${unreadConfig(call)}`));
 
-    const child = spawn("git", args, {
+    const child = spawn("git", call.args, {
       cwd: root,
       stdio: ["ignore", "pipe", "pipe"],
       timeout,
-      env: gitEnv(env),
+      env: call.env,
     });
     let rest = Buffer.alloc(0);
     let stderr = "";
@@ -284,7 +594,7 @@ export function gitStreamed(
       settled = true;
       fulfil();
     });
-  });
+  }));
 }
 
 /**
@@ -371,7 +681,9 @@ export function parsePorcelainRows(out) {
 // A sha reaches a git argument, so it is validated as a sha rather than trusted
 // as a string: a pin file is a repository-controlled input like any other.
 export function isSha(sha) {
-  return typeof sha === "string" && /^[0-9a-f]{7,40}$/.test(sha);
+  // Up to 64 digits: a repository made with `--object-format=sha256` names
+  // every object that way, and a 40-digit ceiling read its HEAD as none.
+  return typeof sha === "string" && /^[0-9a-f]{7,64}$/.test(sha);
 }
 
 // A ref name cannot begin with a dash. `rev-parse` takes revisions before any
@@ -401,7 +713,12 @@ export async function shaReachable(root, sha) {
  * branch moves and the population it named would move with it.
  */
 export async function headSha(root) {
-  const r = await gitBuffered(root, ["rev-parse", "--verify", "--quiet", "HEAD^{commit}"]);
+  return commitAt(root, "HEAD");
+}
+
+/** The commit `ref` names, or null where it names none. */
+export async function commitAt(root, ref) {
+  const r = await gitBuffered(root, ["rev-parse", "--verify", "--quiet", `${ref}^{commit}`]);
   const sha = r.ok ? r.stdout.trim() : "";
   return isSha(sha) ? sha : null;
 }
@@ -426,11 +743,12 @@ export async function headSha(root) {
  * The clock is the caller's. The scan and the check do not agree about how long
  * to wait on a stalled git, and this is the check's most frequent call.
  */
-export async function showBlob(root, sha, path, { timeout, env } = {}) {
+export async function showBlob(root, sha, path, { timeout, env, lazyFetch = false } = {}) {
   if (!isSha(sha)) return { ok: false, reason: "bad sha" };
   const r = await gitBuffered(root, ["cat-file", "blob", `${sha}:${path}`], {
     encoding: "buffer",
     maxBytes: MAX_FILE_BYTES,
+    lazyFetch,
     ...(timeout === undefined ? {} : { timeout }),
     ...(env === undefined ? {} : { env }),
   });
@@ -451,6 +769,21 @@ export async function mergeBase(root, a, b) {
     return { found: sha.length > 0, failed: false, sha: sha || null };
   }
   return { found: false, failed: r.code !== 1, sha: null };
+}
+
+const UNFINISHED_OPERATIONS = Object.freeze([
+  "MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD", "BISECT_LOG", "rebase-merge", "rebase-apply", "index.lock",
+]);
+
+/**
+ * Whether git has left an operation unfinished in `gitdir`. The tree then holds
+ * a state that exists only until the operation completes: the other side's work
+ * mid-merge, a commit a bisect is visiting, an index being written. One test,
+ * because the refresh and the end-of-turn check each kept their own and the two
+ * had already drifted apart.
+ */
+export function operationUnfinished(gitdir) {
+  return UNFINISHED_OPERATIONS.some((name) => existsSync(join(gitdir, name)));
 }
 
 /**
@@ -483,8 +816,7 @@ export async function resolveBaseRef(root, ref = null) {
 
   const tried = ref ? [ref] : BASE_REFS;
   for (const candidate of tried) {
-    const r = await gitBuffered(root, ["rev-parse", "--verify", "--quiet", `${candidate}^{commit}`]);
-    const sha = r.ok ? r.stdout.trim() : "";
+    const sha = await commitAt(root, candidate);
     if (!sha) continue;
 
     // The fork point, where one exists, so the branch's own commits sit outside

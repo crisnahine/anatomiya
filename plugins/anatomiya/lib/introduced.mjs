@@ -14,7 +14,7 @@ import { dimensionsFor } from "./dimensions.mjs";
 import { CLASSES, claimFor } from "./dimensions-naming.mjs";
 import { encode } from "./encode.mjs";
 import { statedSide } from "./facts.mjs";
-import { holdsTypeSyntax } from "./langs.mjs";
+import { holdsTypeSyntax, spokenIn } from "./langs.mjs";
 import { groupKey, isLearnedItself } from "./reduce.mjs";
 
 /**
@@ -118,6 +118,9 @@ function sidesFor(area, ancestorsOf = () => []) {
   // to say "you should have written X", which is a directive, so it may only be
   // reported where the gates let the map say it.
   const stated = new Set();
+  // The area's classes the fold found reaching the learned base (STI), so a new
+  // subclass of one of them conforms here as it does in the map.
+  const reaching = new Map();
   const put = (d) => {
     if (sides.has(d.key)) return;
     sides.set(d.key, statedSide(d).side);
@@ -125,6 +128,7 @@ function sidesFor(area, ancestorsOf = () => []) {
     // The class the map measured is the only sentence a learned row may be
     // enforced as; a hit's own flag is a placeholder the reducer overwrites.
     if (typeof d.learned === "string") learned.set(d.key, d.learned);
+    if (Array.isArray(d.reaches)) reaching.set(d.key, new Set(d.reaches.filter((c) => typeof c === "string")));
     if (typeof d.learnedKind === "string") kinds.set(d.key, d.learnedKind);
     if (typeof d.learnedKind === "string" && d.narrowed === true) qualified.set(d.key, d.learnedKind);
   };
@@ -136,7 +140,7 @@ function sidesFor(area, ancestorsOf = () => []) {
   for (const up of ancestorsOf(area)) {
     for (const d of up.dimensions || []) if (statedSide(d).states !== null) put(d);
   }
-  return { sides, learned, kinds, qualified, stated };
+  return { sides, learned, kinds, qualified, stated, reaching };
 }
 
 /**
@@ -169,13 +173,17 @@ function enforceableClass(dim, cls) {
 const isOmission = (hit) => hit.class === undefined || hit.class === null;
 
 function breakingSites(program, source, lang, keyPath, { polarity, frameworks, capabilities, rows, comments = [], stripped = false, rel = null, facets = null }) {
-  const { sides, learned, kinds, qualified, stated } = polarity;
+  const { sides, learned, kinds, qualified, stated, reaching = new Map() } = polarity;
   const out = [];
+  // One index of line starts per revision, built on the first site that asks.
+  const lines = lazyLines(source);
   // A tree that came back from the Flow retry has its annotations blanked, so
   // the dimensions whose question is the annotation would report a site
   // beside the line that satisfies it. The scan drops them for such a file and
   // this has to agree, or the map and the check disagree about the same file.
-  for (const dim of dimensionsFor([lang], { frameworks, capabilities, rows })) {
+  // The rows are the ones the scan ran on this file, JSX rows included where
+  // the head's tree holds JSX under a `.js` name.
+  for (const dim of dimensionsFor(spokenIn(lang, facets), { frameworks, capabilities, rows })) {
     if (stripped && dim.blindWhenStripped) continue;
     // A plain JavaScript file cannot carry a type annotation, so the scan left
     // it out of this row's population and the check has to leave it out of the
@@ -195,20 +203,24 @@ function breakingSites(program, source, lang, keyPath, { polarity, frameworks, c
     // it reads as conforming here rather than as a finding. The fold drops it
     // from the population; the check re-runs the predicate and has to agree.
     const conformingOf = (hit) =>
-      dim.learnedClasses ? hit.class === cls || isLearnedItself(hit, cls) : hit.conforming;
+      dim.learnedClasses
+        ? hit.class === cls || isLearnedItself(hit, cls) || reaching.get(dim.key)?.has(hit.class) === true
+        : hit.conforming;
     const site = (hit) => {
       const node = hit.node || {};
-      return {
+      const found = {
         dimension: dim.key,
         claim: counter ? dim.counterClaim : dim.learnedClasses ? claimFor(dim, cls, qualified.get(dim.key)) : dim.claim,
         precision: dim.precision,
         where: hit.where || null,
-        line: located(node) ? lineAt(source, node.start) : node.line || 1,
+        line: located(node) ? lines().lineAt(node.start) : node.line || 1,
         text: sliceOf(node, source),
         // Through the exported spelling, so the identity every pin imports is
         // the one written here, at the cost of slicing the node twice.
         fp: siteIdentity(keyPath, dim.key, node, source),
       };
+      if (located(node)) contextOf.set(found, lines().around(node.start, node.end));
+      return found;
     };
     // A grouped row answers per enclosing body, so its hits are held until the
     // walk is over: one include out of two matching is the body conforming, and
@@ -261,13 +273,55 @@ function breakingSites(program, source, lang, keyPath, { polarity, frameworks, c
  * copies of the same site at the base absorb two at HEAD, and a third one
  * is new. The enclosing declaration's name is deliberately not part of the key,
  * because renaming a function does not introduce the site inside it.
+ *
+ * The name still picks which copies the base held. Absorbed in walk order, a
+ * copy added above an old one was taken for the old one, and the report sent
+ * the reader to code the branch never touched; in Ruby, where prism reports no
+ * offsets and every rescue in a file is one identity, that was any rescue added
+ * above a swallowing one. So a head copy whose declaration holds a base copy is
+ * matched to it first, and only what is left absorbs by count.
+ *
+ * Between the two, the lines the site sits on. A function renamed below one
+ * added above it left neither copy's declaration matching the base's, and
+ * count absorbed the added one in walk order: the report named the renamed
+ * function's untouched line and said nothing about the line the branch wrote.
+ * The site's own text is the same in every copy, which is why the copies share
+ * an identity, but the lines around it are what the branch did or did not
+ * touch. Where those match too, the copies are alike and order is all there is.
  */
 function absorb(head, base) {
   const remaining = new Map();
   for (const f of base) remaining.set(f.fp, (remaining.get(f.fp) || 0) + 1);
 
+  // A base copy one pass matched is spent for the next, or one copy could
+  // answer for two head sites and leave a copy nobody matched.
+  const spent = new Set();
+  const held = new Set();
+  for (const key of [
+    (f) => `${f.fp}\0${f.where ?? ""}`,
+    (f) => (contextOf.has(f) ? `${f.fp}\0${contextOf.get(f)}` : null),
+  ]) {
+    const copies = new Map();
+    for (const f of base) {
+      const k = key(f);
+      if (k === null || spent.has(f)) continue;
+      if (copies.has(k)) copies.get(k).push(f);
+      else copies.set(k, [f]);
+    }
+    for (const f of head) {
+      if (held.has(f)) continue;
+      const k = key(f);
+      const copy = k === null ? undefined : copies.get(k)?.shift();
+      if (!copy) continue;
+      spent.add(copy);
+      remaining.set(f.fp, remaining.get(f.fp) - 1);
+      held.add(f);
+    }
+  }
+
   const out = [];
   for (const f of head) {
+    if (held.has(f)) continue;
     const left = remaining.get(f.fp) || 0;
     if (left > 0) {
       remaining.set(f.fp, left - 1);
@@ -294,8 +348,44 @@ function fingerprint(path, key, kind, text) {
 
 const normalise = (s) => s.replace(/\s+/g, " ").trim();
 
-function lineAt(source, offset) {
-  let line = 1;
-  for (let i = 0; i < offset && i < source.length; i++) if (source[i] === "\n") line++;
-  return line;
+// The lines a located site sits on, normalised, which is what `absorb` tells
+// alike copies apart by. Beside the site rather than on it, so the record the
+// caller reads keeps the shape it had.
+const contextOf = new WeakMap();
+
+/**
+ * Where each line of one source starts, found once and searched by halving.
+ *
+ * Counted from the start of the file per site, the work grew with the square
+ * of the file: a 619 KB file holding 30,000 sites took 28 seconds. Built on
+ * the first call, so a revision with no site pays nothing.
+ */
+function lazyLines(source) {
+  let index = null;
+  return () => {
+    if (index) return index;
+    const starts = [0];
+    for (let i = source.indexOf("\n"); i !== -1; i = source.indexOf("\n", i + 1)) starts.push(i + 1);
+    // The line holding an offset: the last start at or before it. An offset
+    // past the end reads as the last line, as the count it replaces did.
+    const indexOf = (offset) => {
+      let lo = 0;
+      let hi = starts.length - 1;
+      while (lo < hi) {
+        const mid = (lo + hi + 1) >> 1;
+        if (starts[mid] <= offset) lo = mid;
+        else hi = mid - 1;
+      }
+      return lo;
+    };
+    index = {
+      lineAt: (offset) => indexOf(Math.min(offset, source.length)) + 1,
+      around: (start, end) => {
+        const last = indexOf(Math.max(start, end - 1));
+        const stop = last + 1 < starts.length ? starts[last + 1] : source.length;
+        return normalise(source.slice(starts[indexOf(start)], stop));
+      },
+    };
+    return index;
+  };
 }

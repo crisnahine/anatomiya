@@ -315,6 +315,21 @@ test("a command that cannot run exits non-zero and says why without a stack trac
   assert.doesNotMatch(stderr, /\n\s+at /, "no stack trace");
 });
 
+test("a scan with no git on PATH says git is missing, not that the repository is", needsPathControl, (t) => {
+  // Measured: with PATH holding node and nothing else, a scan of a real
+  // repository said `not a git repository: .`, which names a fix that cannot
+  // work while the one that can, installing git, goes unsaid.
+  const repo = repoWithSource(t);
+  const empty = mkdtempSync(join(tmpdir(), "anatomiya-cli-nogit-"));
+  t.after(() => rmSync(empty, { recursive: true, force: true }));
+
+  const { code, stderr } = runFrom(ANATOMIYA, ["scan", repo, "--dry-run"], empty);
+
+  assert.equal(code, 1);
+  assert.match(stderr, /^anatomiya: git is not on PATH/, stderr);
+  assert.doesNotMatch(stderr, /not a git repository/);
+});
+
 test("two scans of unchanged source write byte-identical files", (t) => {
   // A5: the token economics only work on a cached read, so anything that moves
   // per commit destroys them. A timestamp, a duration, or a Map iterated in
@@ -367,13 +382,15 @@ test("the scan names the rule files it did not write, one per line (A4)", (t) =>
   assert.match(overview, /^- "house-style\.md"$/m);
 });
 
-test("a scan says the running session still holds the old map (A8)", (t) => {
-  // Measured: a rewritten context file does not re-attach mid-session.
+test("a scan says what reaches a session already running (A8)", (t) => {
+  // The echo hands a changed overview to a running session on its next prompt
+  // or tool call (A92), and a rewritten context file already read does not
+  // re-attach until a new session, a compaction or /clear (A6).
   const repo = repoWithSource(t);
 
   const out = anatomiya(repo, "scan");
 
-  assert.match(out, /^a session already running still holds the old map; restart to pick it up$/m);
+  assert.match(out, /^a running session gets the new overview on its next prompt or tool call, and a new session, a compaction or \/clear loads the whole map$/m);
 });
 
 test("a pin says it too, because it sends the reader off to scan (A8)", (t) => {
@@ -381,8 +398,8 @@ test("a pin says it too, because it sends the reader off to scan (A8)", (t) => {
 
   const out = anatomiya(repo, "pin");
 
-  assert.match(out, /run `anatomiya scan` to measure the map against it/);
-  assert.match(out, /^a session already running still holds the old map; restart to pick it up$/m);
+  assert.match(out, /run `\/anatomiya:scan` to measure the map against it/);
+  assert.match(out, /^a running session gets the new overview on its next prompt or tool call, and a new session, a compaction or \/clear loads the whole map$/m);
 });
 
 /* --- what the command files tell the agent (A7, A8) --- */
@@ -407,10 +424,15 @@ test("every command that reads the map forbids the Read tool on it (A7)", () => 
   assert.match(body, /`cat`/);
 });
 
-test("every command that rebuilds the map says a running session keeps the old one (A8)", () => {
+test("every command that rebuilds the map says what reaches a running session (A8)", () => {
+  // The agent relays this to the user, so it has to be the story the README
+  // tells: no restart for the overview, and a fresh window for the rest.
   for (const name of ["scan.md", "pin.md"]) {
     const body = readFileSync(join(ANATOMIYA, "commands", name), "utf8");
-    assert.match(body, /does not re-attach mid-session/, name);
+    // Whitespace-tolerant, so rewrapping the paragraph is not a failure.
+    assert.match(body, /next\s+prompt\s+or\s+tool\s+call/, name);
+    assert.match(body, /new\s+session,\s+a\s+compaction\s+or\s+`\/clear`/, name);
+    assert.doesNotMatch(body, /restart/i, name);
   }
 });
 
@@ -597,18 +619,38 @@ test("doctor says nothing about the install where the packages are there", () =>
   assert.doesNotMatch(out, /nothing is installed/, out);
 });
 
-test("setup --dry-run prints the command and installs nothing", () => {
+test("setup --dry-run prints the command and installs nothing", (t) => {
+  // From an install with nothing beside it: a dry run with nothing to install
+  // names no command, since there is no install to describe. The npm on PATH
+  // fails loudly, so a dry run that reached it could not pass.
+  const install = installWithoutDependencies(t);
+  const bin = stubNpm(t, "#!/bin/sh\necho 'npm ran' >&2\nexit 1\n");
+
+  const { code, stdout } = runFrom(install, ["setup", "--dry-run"], bin);
+
+  assert.equal(code, 0, stdout);
+  assert.match(stdout, /^would run npm install --omit=dev --include=optional --ignore-scripts --no-audit --no-fund in /m, stdout);
+});
+
+test("setup --dry-run never says both that nothing is needed and what it would run", () => {
+  // Measured: "nothing to install: oxc 0.x, ..." then "would run npm install ...".
+  // Asked of this checkout, whichever of the two it is.
   const out = cli("setup", "--dry-run");
 
-  assert.match(out, /^would run npm install --omit=dev --ignore-scripts --no-audit --no-fund in /m, out);
+  assert.notEqual(/^nothing to install: /m.test(out), /would run/.test(out), out);
 });
 
 test("setup runs npm in the plugin's own directory, with the arguments it printed", needsShebang, (t) => {
   // An install that did not run leaves the plugin's own code with nothing
   // beside it, which is the shape this command exists for. The stub stands in
   // for npm: a test that runs the real one is a test that reaches the network.
+  // It links this checkout's own packages in, by an absolute `ln` since the
+  // stub is all that is on PATH, because setup now asks the engines afterwards
+  // whether they load, and an npm that installed nothing is the failure the
+  // next case is about.
   const install = installWithoutDependencies(t);
-  const bin = stubNpm(t, "#!/bin/sh\nprintf '%s\\n' \"$@\" > npm-argv.txt\necho 'added 2 packages'\n");
+  const packages = join(ROOT, "node_modules");
+  const bin = stubNpm(t, `#!/bin/sh\nprintf '%s\\n' "$@" > npm-argv.txt\n/bin/ln -s ${JSON.stringify(packages)} node_modules\necho 'added 2 packages'\n`);
 
   const { code, stdout } = runFrom(install, ["setup"], bin);
 
@@ -617,7 +659,7 @@ test("setup runs npm in the plugin's own directory, with the arguments it printe
   assert.match(stdout, /added 2 packages/, "npm's own words come back");
   assert.deepEqual(
     readFileSync(join(install, "npm-argv.txt"), "utf8").trim().split("\n"),
-    ["install", "--omit=dev", "--ignore-scripts", "--no-audit", "--no-fund"],
+    ["install", "--omit=dev", "--include=optional", "--ignore-scripts", "--no-audit", "--no-fund"],
     "the argv is what it said it would be, and it ran in the plugin's own directory"
   );
 });
@@ -650,7 +692,7 @@ test("setup on Windows refuses, and prints the command to run by hand", needsWin
   }
 
   assert.equal(code, 2);
-  assert.match(stderr, /npm install --omit=dev --ignore-scripts --no-audit --no-fund/, stderr);
+  assert.match(stderr, /npm install --omit=dev --include=optional --ignore-scripts --no-audit --no-fund/, stderr);
   assert.ok(stderr.includes(install), `it names the directory to run it in: ${stderr}`);
 });
 
@@ -663,6 +705,23 @@ test("a setup whose npm failed exits non-zero and shows what npm said", needsShe
   assert.equal(code, 2);
   assert.match(stderr, /npm error code E404/, stderr);
   assert.match(stderr, /failed/, stderr);
+});
+
+test("a setup whose npm finished without the engine loading fails and names it", needsShebang, (t) => {
+  // Measured with `npm_config_optional=false`: oxc's native binding is an
+  // optional dependency, npm answered "up to date" and exit 0, setup printed
+  // `ran npm install ...` and exited 0, and doctor went on saying oxc was
+  // absent and to run setup. The stub stands for any npm that exits 0 and
+  // leaves the parser unloadable: success is what loads afterwards, not what
+  // npm's exit said.
+  const install = installWithoutDependencies(t);
+  const bin = stubNpm(t, "#!/bin/sh\necho 'up to date in 1ms'\n");
+
+  const { code, stdout, stderr } = runFrom(install, ["setup"], bin);
+
+  assert.equal(code, 2, stdout);
+  assert.match(stderr, /up to date in 1ms/, "npm's own words still come back");
+  assert.match(stderr, /^npm finished, and still not loading: oxc \(oxc-parser did not load\)/m, stderr);
 });
 
 test("doctor and setup refuse the arguments they have no use for", () => {

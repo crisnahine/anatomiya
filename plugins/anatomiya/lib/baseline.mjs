@@ -2,7 +2,7 @@ import {
   changedSinceWorktree, diffRange, filesAt, isSha, mergeBase, resolveBaseRef, shaReachable,
 } from "./git.mjs";
 import { mkdirSync } from "node:fs";
-import { join, dirname } from "node:path";
+import { basename, join, dirname } from "node:path";
 
 import { areaOwner, dirCount } from "./areas.mjs";
 import { langsIn } from "./corpus.mjs";
@@ -13,6 +13,8 @@ import { encodePath } from "./encode.mjs";
 import { applyPairings } from "./pairing.mjs";
 import { atomic, readRecord } from "./facts.mjs";
 import { byCode } from "./paths.mjs";
+import { blockedOnTheWay, leafReplaceable, outsideClaude, readHead, resolveInside } from "./rules.mjs";
+import { mainCheckoutOf } from "./worktree.mjs";
 
 export const PIN_PATH = ".claude/anatomiya/baseline.json";
 export const PIN_SCHEMA = 1;
@@ -37,22 +39,117 @@ export function buildPin(areas, { sha, corpus = null }) {
     // The corpus size the layout was resolved from. The area floor is a step
     // function of it, so without it one added file re-partitions the repository
     // and every area reads as a population change.
-    ...(Number.isFinite(corpus) ? { corpus } : {}),
+    ...(isCount(corpus) ? { corpus } : {}),
     areas: [...areas]
       .map((a) => ({ id: a.id, path: a.path, files: a.files.map((f) => f.rel).sort() }))
       .sort((a, b) => byCode(a.path, b.path)),
   };
 }
 
+/**
+ * Where the pin lives, resolved rather than joined: the containment the map and
+ * the facts record already carry (F2). `join` normalises `..` and follows no
+ * link, so a tracked `.claude -> ../victim` (git mode 120000, which survives a
+ * clone) had `pin` write baseline.json into a directory the repository does not
+ * own, and had every later scan and check read its population from there.
+ * `null` is a store outside the repository.
+ */
+function pinFile(root) {
+  const dir = resolveInside(root, dirname(PIN_PATH));
+  return dir === null ? null : join(dir, basename(PIN_PATH));
+}
+
+/**
+ * The file a pin would be written to, refused before anything is planned (A19).
+ *
+ * Every shape the write cannot get past is refused here, by name, because this
+ * is what a dry run asks: a file at `.claude` or at the store, or a directory at
+ * baseline.json, let `pin --dry-run` say "would write" and `pin` die on a raw
+ * `ENOTDIR`, `EEXIST` or `EISDIR`. A link at the leaf is not refused: the
+ * rename replaces the entry, and the read side refuses to follow it out.
+ */
+export function pinTarget(root) {
+  const path = pinFile(root);
+  if (path === null) throw new Error(`${outsideClaude(dirname(PIN_PATH))}, so no pin is written there`);
+  const blocked = blockedOnTheWay(root, dirname(PIN_PATH));
+  if (blocked !== null) {
+    const remedy = blocked.link ? "replace the link with a directory" : "remove it";
+    throw new Error(`${blocked.sentence}, so no pin is written there: ${remedy} and pin again`);
+  }
+  if (!leafReplaceable(path)) throw new Error(`${PIN_PATH} is not a file, so no pin is written there: remove it and pin again`);
+  return path;
+}
+
 export function loadPin(root) {
-  const pin = readRecord(join(root, PIN_PATH)).record;
-  if (!pin || pin.schema !== PIN_SCHEMA || !isSha(pin.sha) || !Array.isArray(pin.areas)) return null;
+  return readPin(root).pin;
+}
+
+/**
+ * The pin on disk, or why the file there is not one this build can read.
+ *
+ * Both halves, because a file that will not load and no file at all get the
+ * same counts-only answer and need different sentences: a committed pin that
+ * conflicted on a merge, or one a newer build wrote, printed "no baseline
+ * pinned" in a repository that had one, and `pin` then overwrote it as if it
+ * were the first.
+ */
+export function readPin(root) {
+  // A pin outside the repository is no pin: the same counts-only answer an
+  // unreadable one gets, never a population a directory we do not own chose.
+  //
+  // The leaf is resolved as well as its directory. `atomic` replaces a link
+  // there as an entry, but a read follows it, and a committed
+  // `baseline.json -> /elsewhere/baseline.json` had this return the pin outside.
+  if (pinFile(root) === null) return { pin: null, unreadable: null };
+  const path = resolveInside(root, PIN_PATH);
+  if (path === null) return { pin: null, unreadable: null };
+  const { record, oversize } = readRecord(path);
+  if (oversize) return { pin: null, unreadable: "it is past the size this reads" };
+  if (record === null) {
+    if (readHead(path, 0).kind === "file") return { pin: null, unreadable: "it does not parse as JSON" };
+    // No pin here at all. A linked worktree reads its main checkout's: the pin
+    // names commits in the history both share, the hooks already read that
+    // checkout's map there (A93), and without it every finding in the place a
+    // session goes to work was capped at FIX in a repository that had a pin.
+    // Only the absence falls through; a pin the worktree has, readable or not,
+    // is its own answer. `pin` there still writes the worktree's own.
+    const main = mainCheckoutOf(root);
+    return main === null ? { pin: null, unreadable: null } : readPin(main);
+  }
+  const why = pinProblem(record);
+  return why === null ? { pin: record, unreadable: null } : { pin: null, unreadable: why };
+}
+
+/**
+ * Why a parsed record is not a pin this build reads, or null.
+ *
+ * Only this module's own words go into the answer, never a value out of the
+ * file, which the repository controls and every caller prints.
+ */
+function pinProblem(pin) {
+  if (!pin || typeof pin !== "object" || Array.isArray(pin)) return "it is not a pin";
+  if (pin.schema !== PIN_SCHEMA) {
+    const found = Number.isInteger(pin.schema) ? `it is schema ${pin.schema}` : "it names no schema this reads";
+    return `${found} and this build reads ${PIN_SCHEMA}`;
+  }
+  if (!isSha(pin.sha)) return "the commit it names is not a sha";
   // A half-shaped area is a pin that reads as a smaller population than the
   // one a human accepted, which is the direction that manufactures claims.
   // Refusing the whole file drops to counts-only instead.
-  if (!pin.areas.every(isPinnedArea)) return null;
-  return pin;
+  if (!Array.isArray(pin.areas) || !pin.areas.every(isPinnedArea)) return "an area in it is not whole";
+  // The corpus size decides the area floor, so a value no scan could have
+  // written re-partitions the repository: `-5` took the floor to NaN and made
+  // every one-file directory an area. A count below the files the pin itself
+  // lists is one no scan wrote either.
+  if (pin.corpus !== undefined) {
+    const listed = new Set(pin.areas.flatMap((a) => a.files)).size;
+    if (!isCount(pin.corpus) || pin.corpus < listed) return "the corpus size it names is not a count of its files";
+  }
+  return null;
 }
+
+/** A number of files: a non-negative safe integer, which NaN and -5 are not. */
+const isCount = (n) => Number.isSafeInteger(n) && n >= 0;
 
 function isPinnedArea(a) {
   return !!a
@@ -61,7 +158,7 @@ function isPinnedArea(a) {
 }
 
 export function writePin(root, pin) {
-  const path = join(root, PIN_PATH);
+  const path = pinTarget(root);
   mkdirSync(dirname(path), { recursive: true });
   atomic(path, JSON.stringify(pin, null, 2) + "\n");
   return path;
@@ -78,18 +175,23 @@ export function writePin(root, pin) {
 export function pinDelta(oldPin, newPin) {
   const before = oldPin ? indexAreas(oldPin) : new Map();
   const after = indexAreas(newPin);
+  // Entering and leaving are asked of the whole population, never of one area.
+  // A file that crossed from one area to another is still counted at the pin,
+  // and summed per area it read as one file entering and one leaving: a floor
+  // step that re-partitions a repository reported every file it moved as a
+  // departure, on the line a human reads before accepting the pin.
+  const was = populationOf(before);
+  const is = populationOf(after);
 
   const areas = [];
   for (const [path, next] of after) {
     const prev = before.get(path);
-    const added = [...next.files].filter((f) => !prev || !prev.files.has(f)).sort();
-    const removed = prev ? [...prev.files].filter((f) => !next.files.has(f)).sort() : [];
-    if (!prev || added.length || removed.length) {
-      areas.push({ path, added, removed, isNew: !prev });
-    }
+    const arrived = [...next.files].filter((f) => !prev || !prev.files.has(f));
+    const departed = prev ? [...prev.files].filter((f) => !next.files.has(f)) : [];
+    if (!prev || arrived.length || departed.length) areas.push(split(path, arrived, departed, { isNew: !prev }));
   }
   for (const [path, prev] of before) {
-    if (!after.has(path)) areas.push({ path, added: [], removed: [...prev.files].sort(), gone: true });
+    if (!after.has(path)) areas.push(split(path, [], [...prev.files], { gone: true }));
   }
 
   areas.sort((a, b) => byCode(a.path, b.path));
@@ -97,9 +199,27 @@ export function pinDelta(oldPin, newPin) {
     from: oldPin ? oldPin.sha : null,
     to: newPin.sha,
     areas,
-    addedFiles: areas.reduce((s, a) => s + a.added.length, 0),
-    removedFiles: areas.reduce((s, a) => s + a.removed.length, 0),
+    addedFiles: [...is].filter((f) => !was.has(f)).length,
+    removedFiles: [...was].filter((f) => !is.has(f)).length,
+    movedFiles: new Set(areas.flatMap((a) => a.movedIn)).size,
   };
+
+  function split(path, arrived, departed, tag) {
+    return {
+      path,
+      added: arrived.filter((f) => !was.has(f)).sort(),
+      removed: departed.filter((f) => !is.has(f)).sort(),
+      movedIn: arrived.filter((f) => was.has(f)).sort(),
+      movedOut: departed.filter((f) => is.has(f)).sort(),
+      ...tag,
+    };
+  }
+}
+
+function populationOf(areas) {
+  const all = new Set();
+  for (const a of areas.values()) for (const f of a.files) all.add(f);
+  return all;
 }
 
 /**
@@ -117,7 +237,8 @@ export function formatDelta(delta) {
     // left "1 file enter ... 1 leave it" on the line a human reads before
     // accepting a population.
     `${plural(delta.addedFiles, "file")} ${delta.addedFiles === 1 ? "enters" : "enter"} the baseline population, ` +
-      `${delta.removedFiles} ${delta.removedFiles === 1 ? "leaves" : "leave"} it`,
+      `${delta.removedFiles} ${delta.removedFiles === 1 ? "leaves" : "leave"} it` +
+      (delta.movedFiles ? `, ${plural(delta.movedFiles, "file")} ${delta.movedFiles === 1 ? "moves" : "move"} between areas` : ""),
   ];
   // A first pin has nothing to compare against, so every area is new by
   // arithmetic and a line per directory says the same thing once per directory.
@@ -131,7 +252,13 @@ export function formatDelta(delta) {
   lines.push("");
   for (const a of delta.areas) {
     const tag = a.isNew ? " (new area)" : a.gone ? " (area gone)" : "";
-    lines.push(`${encodePath(a.path)}${tag}  +${a.added.length} -${a.removed.length}`);
+    // A move is said as a count beside the area rather than listed under it,
+    // where only the files that left the population go.
+    const moved = [
+      a.movedIn?.length ? `${a.movedIn.length} moved in` : null,
+      a.movedOut?.length ? `${a.movedOut.length} moved out` : null,
+    ].filter(Boolean);
+    lines.push(`${encodePath(a.path)}${tag}  +${a.added.length} -${a.removed.length}${moved.map((m) => `, ${m}`).join("")}`);
     for (const f of a.removed.slice(0, 5)) lines.push(`  - ${encodePath(f)}`);
     if (a.removed.length > 5) lines.push(`  - and ${a.removed.length - 5} more`);
   }
@@ -228,16 +355,25 @@ function areaBlock(state, population, baseline) {
  * module's own, so the order these must be called in stays inside the module
  * rather than in a caller.
  *
- * `countsOnly` is the hard stop: no pin, or a pinned sha this repository can no
- * longer reach, and every directive drops to counts (E3).
+ * `countsOnly` is the hard stop: no pin, a pin this build cannot read, or a
+ * pinned sha this repository can no longer reach, and every directive drops to
+ * counts (E3).
  *
  * `partitionSize` is the corpus size the pin was taken over. The area floor is a
  * step function of it, so a caller deriving it from today's file count
  * re-partitions the repository on one added file, and every area then reads as
  * a population change against a pin that knew the old partition.
  */
-export async function resolve(root, { pin = loadPin(root), baseRef = null } = {}) {
-  // A pin handed in directly has not been through `loadPin`, and an area list
+export async function resolve(root, { pin, baseRef = null } = {}) {
+  // Read here unless handed in. A pin on disk that will not load drops to
+  // counts like no pin at all, and carries why, so nothing prints "no baseline
+  // pinned" over a pin a human committed.
+  if (pin === undefined) {
+    const read = readPin(root);
+    if (read.unreadable !== null) return state({ status: "pin-unreadable", countsOnly: true, unreadable: read.unreadable });
+    pin = read.pin;
+  }
+  // A pin handed in directly has not been through `readPin`, and an area list
   // this cannot index is not a smaller baseline, it is no baseline.
   if (!pin || !Array.isArray(pin.areas) || !pin.areas.every(isPinnedArea)) {
     return state({ status: "unpinned", countsOnly: true });
@@ -272,6 +408,7 @@ export async function resolve(root, { pin = loadPin(root), baseRef = null } = {}
   // the base moved it and its bytes there differ from the pin's, which is both
   // ranges at once.
   const moved = base.ok ? await driftRange(root, pin.sha, base.sha) : null;
+  const sinceFork = await laterOnBase(root, pin);
 
   return state({
     status: "ok",
@@ -283,7 +420,30 @@ export async function resolve(root, { pin = loadPin(root), baseRef = null } = {}
     baseRefReason: base.ok ? null : base.reason,
     renames: identity ? identity.renames : new Map(),
     drift: moved ? driftIn(areas, moved.changed) : null,
+    sinceFork,
   });
+}
+
+/**
+ * Pinned paths this branch never held: the base added them after the commit
+ * the branch and the pin share.
+ *
+ * The pin follows the default branch, so a feature branch cut before it sits
+ * behind it, and every file the base added since is absent at HEAD without the
+ * branch having removed anything. Read as missing, each one closed its whole
+ * area as a population change on a branch that deleted nothing. A path the
+ * branch did hold at the fork and no longer holds is still missing. Empty when
+ * the pin is in HEAD's history, and when git will not say, which is the
+ * direction that suppresses rather than states.
+ */
+async function laterOnBase(root, pin) {
+  const fork = await mergeBase(root, pin.sha, "HEAD");
+  if (!fork.found || fork.sha === pin.sha) return new Set();
+  const atFork = await filesAt(root, fork.sha);
+  if (!atFork) return new Set();
+  const later = new Set();
+  for (const a of pin.areas) for (const rel of a.files) if (!atFork.has(rel)) later.add(rel);
+  return later;
 }
 
 /** The paths the base moved since the pin and the shared commit both, or null. */
@@ -303,7 +463,9 @@ function state(o) {
     // of it, so a caller deriving it from today's file count re-partitions the
     // repository on one added file, and every area then reads as a population
     // change against a pin that knew the old partition.
-    partitionSize: Number.isFinite(o.partitionSize) ? o.partitionSize : null,
+    // A count or nothing: a pin handed in directly never went through
+    // `pinProblem`, and a negative size takes the floor's square root to NaN.
+    partitionSize: isCount(o.partitionSize) ? o.partitionSize : null,
     status: o.status,
     sha: o.sha ?? null,
     countsOnly: o.countsOnly,
@@ -312,6 +474,8 @@ function state(o) {
     baseRefReason: o.baseRefReason ?? null,
     renames: o.renames ?? new Map(),
     drift: o.drift ?? null,
+    sinceFork: o.sinceFork ?? new Set(),
+    unreadable: o.unreadable ?? null,
   };
 }
 
@@ -345,7 +509,9 @@ function driftIn(areas, changed) {
  *                       directories are where agents write most, and there the
  *                       baseline would be the agent's own output at 100%.
  *   population-change   a pinned file is no longer in this area (E1). Reported,
- *                       and suppressed until a human re-pins.
+ *                       and suppressed until the pin moves. A file the base
+ *                       added after this branch forked was never in it, and is
+ *                       not counted as gone.
  */
 export function baselinePopulation(state, area) {
   if (state.countsOnly) {
@@ -369,7 +535,9 @@ export function baselinePopulation(state, area) {
     };
   }
 
-  const missing = [...matched.files].filter((p) => !currentByBaselinePath.has(p)).sort();
+  const missing = [...matched.files]
+    .filter((p) => !currentByBaselinePath.has(p) && !state.sinceFork.has(p))
+    .sort();
   const added = [...currentByBaselinePath]
     .filter(([baselinePath]) => !matched.files.has(baselinePath))
     .map(([, current]) => current)

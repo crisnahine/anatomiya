@@ -436,6 +436,25 @@ test("a handler is scored against the binding its own component made", () => {
     "each is judged by its own binding, not by whichever was seen first");
 });
 
+test("a handler is scored against the innermost binding, not the last one walked", () => {
+  // The walk meets a nested component's binding before a same-named binding
+  // its parent declares further down, and the last one seen won: the child's
+  // memoised handler was scored as the parent's plain arrow.
+  const h = hits("handler_memoised", `
+    function Parent() {
+      function Child() {
+        const onSave = useCallback(() => {}, [])
+        return <Button onSave={onSave} />
+      }
+      const onSave = () => {}
+      return <Child onSave={onSave} />
+    }
+  `);
+
+  assert.deepEqual(h.map((x) => x.conforming), [true, false],
+    "the child's site reads its own useCallback, the parent's its own arrow");
+});
+
 test("a handler that arrived as a prop is nobody's decision here", () => {
   // Counting it makes the number grow with how many handlers a component
   // receives rather than how many it creates.
@@ -628,4 +647,28 @@ test("the callee reader answers a name or null, never undefined, and there is on
   assert.equal(calleeName(null), null);
   const extra = readFileSync(new URL("../plugins/anatomiya/lib/dimensions-extra.mjs", import.meta.url), "utf8");
   assert.doesNotMatch(extra, /function calleeName|const calleeName/, "the second copy is gone");
+});
+
+test("an area of .js components counts the JSX rows over the files that hold JSX", async () => {
+  // The fold chose the area's rows off its extensions, so an area written
+  // wholly in `.js` never held a JSX row at all. The denominator is the files
+  // that hold JSX: a `.js` helper beside the components can no more speak
+  // about a handler than a `.ts` one, and counting it is the dilution the
+  // `jsx`-only langs above were declared to stop.
+  const { reduceArea } = await import("../plugins/anatomiya/lib/reduce.mjs");
+  const comps = Array.from({ length: 6 }, (_, i) => `src/Comp${i}.js`);
+  const rels = [...comps, "src/format-date.js", "src/api-client.js"];
+  const area = { langs: ["js"], files: rels.map((rel) => ({ rel, lang: "js" })) };
+  const parsed = rels.map((rel) => ({
+    rel,
+    ok: true,
+    facets: { jsx: comps.includes(rel) },
+    hits: comps.includes(rel) ? { handler_is_named: [{ conforming: false }] } : {},
+  }));
+
+  const slot = reduceArea(area, parsed).find((d) => d.key === "handler_is_named");
+
+  assert.ok(slot, "the area holds the row");
+  assert.equal(slot.candidates, 6);
+  assert.equal(slot.langFileCount, 6, "the two helpers are not files the row could speak about");
 });

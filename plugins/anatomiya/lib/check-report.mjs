@@ -1,4 +1,4 @@
-import { encode, quotePath, sanitisePath } from "./encode.mjs";
+import { encode, locator, printableOnly, quotePath } from "./encode.mjs";
 import { listSome, LISTED, RULES_DIR } from "./rules.mjs";
 
 /**
@@ -40,6 +40,7 @@ export const CAVEATS = Object.freeze({
   SHALLOW_NO_HISTORY: "shallow-no-history",
   SHALLOW_UNFETCHED: "shallow-unfetched",
   DIFF_UNREADABLE: "diff-unreadable",
+  RENAMES_SKIPPED: "renames-skipped",
   ADDED_RANGES_UNREADABLE: "added-ranges-unreadable",
   PENDING_UNLISTED: "pending-unlisted",
   PENDING_UNJUDGED: "pending-unjudged",
@@ -57,6 +58,10 @@ export const CAVEATS = Object.freeze({
   HEAD_UNPARSED: "head-unparsed",
   BASE_UNPARSED: "base-unparsed",
   STRIPPER_MISSING: "stripper-missing",
+  // An engine that is not installed, said once with its remedy beside the one
+  // caveat per file it could not read. Only a check that still examined files
+  // of another language says it: one with nothing else to read refuses.
+  ENGINE_MISSING: "engine-missing",
   OBLIGATIONS_UNCHECKED: "obligations-unchecked",
   RULES_ESCAPED: "rules-escaped",
   RULES_UNLISTED: "rules-unlisted",
@@ -80,7 +85,7 @@ export const CAVEATS = Object.freeze({
 export function encodeReport(report) {
   return {
     ...report,
-    root: sanitisePath(report.root),
+    root: locator(report.root),
     base: { ...report.base, ref: report.base.ref == null ? null : encode(report.base.ref) },
     staleReason: report.staleReason == null ? null : encode(report.staleReason),
     changed: report.changed.map((row) => encodeRow(row)),
@@ -90,28 +95,51 @@ export function encodeReport(report) {
     caveats: report.caveats.map((c) => ({ code: c.code, message: encode(c.message) })),
     parse: { ...report.parse },
     semantic: { ...report.semantic },
-    foreign: report.foreign.map(sanitisePath),
-    unknown: report.unknown.map(sanitisePath),
-    rules: { ...report.rules, unreadable: report.rules.unreadable.map(sanitisePath) },
+    foreign: report.foreign.map(locator),
+    unknown: report.unknown.map(locator),
+    rules: { ...report.rules, unreadable: report.rules.unreadable.map(locator) },
   };
 }
 
-// Sanitised rather than quoted, so a writer with a field to put a path in is
+
+const GRAPHEMES = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+
+/**
+ * A snippet as the code it quotes, with only what breaks or reorders its line
+ * refused, and capped.
+ *
+ * Not through the display encoder either. That one strips `|`, backticks and
+ * fence runs because a context file is markdown the agent loads, and this
+ * report is output: the finding `defaults are taken with ??, not ||` quoted its
+ * own site as `x.n 0`, and every union type lost its bar. Capped on grapheme
+ * clusters, so the cap never splits a surrogate pair.
+ */
+function snippetOf(text) {
+  const s = printableOnly(String(text));
+  const kept = [];
+  for (const { segment } of GRAPHEMES.segment(s)) {
+    if (kept.length >= SNIPPET_CHARS) return `${kept.join("")}…`;
+    kept.push(segment);
+  }
+  return kept.join("");
+}
+
+// Neutralised rather than quoted, so a writer with a field to put a path in is
 // not handed one wrapped in the quoting the text line needs.
 function encodeRow(row) {
-  return { ...row, path: sanitisePath(row.path), from: row.from == null ? null : sanitisePath(row.from) };
+  return { ...row, path: locator(row.path), from: row.from == null ? null : locator(row.from) };
 }
 
 function encodeFinding(f) {
   return {
     ...f,
-    path: sanitisePath(f.path),
-    oldPath: f.oldPath == null ? null : sanitisePath(f.oldPath),
-    area: f.area == null ? null : sanitisePath(f.area),
+    path: locator(f.path),
+    oldPath: f.oldPath == null ? null : locator(f.oldPath),
+    area: f.area == null ? null : locator(f.area),
     where: f.where == null ? null : encode(f.where),
     reason: encode(f.reason),
-    companion: f.companion == null ? null : sanitisePath(f.companion),
-    snippet: f.snippet == null ? null : encode(f.snippet, { max: SNIPPET_CHARS }),
+    companion: f.companion == null ? null : locator(f.companion),
+    snippet: f.snippet == null ? null : snippetOf(f.snippet),
   };
 }
 

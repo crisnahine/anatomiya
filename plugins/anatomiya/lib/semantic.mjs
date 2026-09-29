@@ -77,9 +77,10 @@ export function classifySemantic({ config, resolution }) {
   }
   // A corpus with no property access anywhere is a small or a plain-JS one, and
   // reading that as a broken config would degrade every repository that has
-  // nothing for the checker to resolve.
+  // nothing for the checker to resolve. A config that read with a note of its
+  // own, which is a root with no tsconfig at all, gives that note as the cause.
   if (rate !== null && rate < RESOLUTION_FLOOR) {
-    return { status: "degraded", reason: "low-resolution", typedResolutionRate: rate };
+    return { status: "degraded", reason: config?.reason ?? "low-resolution", typedResolutionRate: rate };
   }
   return { status: "ok", reason: null, typedResolutionRate: rate };
 }

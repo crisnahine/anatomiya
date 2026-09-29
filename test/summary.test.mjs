@@ -4,10 +4,12 @@ import assert from "node:assert/strict";
 import { pinJson, pinLines, pinSummary, scanJson, scanLines, scanSummary, SUMMARY_SCHEMA } from "../plugins/anatomiya/lib/summary.mjs";
 import { buildPin, pinDelta, PIN_PATH } from "../plugins/anatomiya/lib/baseline.mjs";
 import { truncatedHistoryLine } from "../plugins/anatomiya/lib/render.mjs";
+import { layoutSummary } from "../plugins/anatomiya/lib/render-layout.mjs";
+import { readFileSync } from "node:fs";
 
-const RESTART = "a session already running still holds the old map; restart to pick it up";
+const RUNNING_SESSION = "a running session gets the new overview on its next prompt or tool call, and a new session, a compaction or /clear loads the whole map";
 const UNPINNED =
-  "no baseline pinned: claims are measured against the current tree, and no finding can exceed FIX. `anatomiya pin` accepts one";
+  "no baseline pinned: claims are measured against the current tree, and no finding can exceed FIX. Inside Claude Code the plugin's background refresh pins one when this checkout sits on the tip of origin's default branch with nothing uncommitted, or `/anatomiya:pin` takes one by hand";
 
 /** A summary with every count at rest, so a case names only what it changes. */
 const summary = (o = {}) => ({
@@ -40,8 +42,46 @@ test("a scan with nothing to report prints the head, the claims, the baseline an
     "3 of 9 claims stated, the rest print as counts",
     UNPINNED,
     "wrote 5 files",
-    RESTART,
+    RUNNING_SESSION,
   ]);
+});
+
+test("the README's sample run is the lines a scan prints for that run", () => {
+  // A new user compares a first run with this block, and scan.md has the agent
+  // report these lines. The block kept a baseline and an orphan line in
+  // wording the CLI had stopped printing, and none of the engines, layout or
+  // running-session lines it had started printing, and no gate read it. The
+  // run's own facts go through the printer, so a wording change fails here
+  // until the README says it too. Measured: excalidraw at 438d898, first run.
+  const readme = readFileSync(new URL("../README.md", import.meta.url), "utf8");
+  const section = readme.slice(readme.indexOf("## What it prints"));
+  const block = /```\r?\n([\s\S]*?)\r?\n```/.exec(section)[1].split(/\r?\n/);
+
+  const areas = Array.from({ length: 38 }, (_, i) => ({
+    imports: i < 14 ? ["x"] : [],
+    reused: i < 18 ? ["y"] : [],
+  }));
+  const layout = {
+    roots: Array.from({ length: 7 }, () => ({})),
+    more: { roots: 3 },
+    tests: [
+      { runner: "test files", root: "packages", files: 98, under: 96 },
+      { runner: "vitest", root: "packages/excalidraw", files: 43, under: 35 },
+    ],
+  };
+  const run = summary({
+    files: 693,
+    areas: 38,
+    durationMs: 3409,
+    root: "/Users/me/code/excalidraw",
+    claims: { stated: 87, matchingDefault: 48, total: 716 },
+    engines: { oxc: { version: "0.149.0" } },
+    layoutLine: layoutSummary(layout, areas),
+    orphaned: 15,
+    wrote: 39,
+  });
+
+  assert.deepEqual(block, scanLines(run));
 });
 
 test("the counts on the summary read at one", () => {
@@ -115,7 +155,15 @@ test("the two causes of an uncovered file are named apart", () => {
   // exactly the reading the overview line was fixed to stop.
   const lines = scanLines(summary({ orphaned: 3, barren: 1 }));
 
-  assert.ok(lines.includes("3 files in no area: too few per directory"));
+  // Not "too few per directory": a file at the repository root or under a
+  // directory no glob can spell is in no area too, and the count does not
+  // say which.
+  assert.ok(
+    lines.includes(
+      "3 files in no area: at the repository root, under the per-directory floor, or under a name no glob can spell"
+    ),
+    lines.join("\n")
+  );
   assert.ok(lines.includes("1 file in a directory nothing was counted in"));
 });
 
@@ -124,6 +172,19 @@ test("the unexamined lines are printed as the renderer worded them", () => {
 
   assert.ok(lines.includes("2 files crashed the parser"));
   assert.ok(lines.includes("1 file exceeded the size cap"));
+});
+
+test("tracked files the working tree would not hand over are counted aloud", () => {
+  // A file under a directory the scan may not enter, or one whose name is not
+  // UTF-8, used to be charged to the escaped bucket, which nothing prints.
+  const s = scanSummary(
+    result({ corpus: { files: 40, untracked: 0, truncated: false, dropped: { escaped: 3, unreadable: 2 } } }),
+    plan()
+  );
+  assert.equal(s.unreadFiles, 2);
+  assert.ok(scanLines(s).includes("2 files could not be read, so nothing in them was counted"));
+  assert.ok(scanLines(summary({ unreadFiles: 1 })).includes("1 file could not be read, so nothing in it was counted"));
+  assert.ok(!scanLines(summary()).some((l) => l.includes("could not be read")));
 });
 
 test("unread history is reported with the reason it could not be read", () => {
@@ -199,8 +260,57 @@ test("a rule file listing is bounded and counts what it did not name", () => {
 
   const lines = scanLines(summary({ rules: { ...summary().rules, foreign: names } }));
 
-  assert.equal(lines.filter((l) => l.includes("was not written by this tool")).length, 21);
-  assert.ok(lines.includes("and 2 more file(s) in .claude/rules/ that was not written by this tool"));
+  assert.equal(lines.filter((l) => l.includes("was not written by this tool")).length, 20);
+  // The tail counts files, so its verb is theirs: "2 more file(s) ... that was"
+  // gave one line two numbers.
+  assert.ok(lines.includes("and 2 more files in .claude/rules/ that were not written by this tool"), lines.join("\n"));
+});
+
+test("the tail of every rule file listing agrees with its count", () => {
+  const names = (n) => Array.from({ length: n }, (_, i) => `f${i}.md`);
+  const tail = (rules, n) => scanLines(summary({ rules: { ...summary().rules, ...rules } })).find((l) => l.startsWith("and "));
+
+  assert.equal(tail({ foreign: names(21) }), "and 1 more file in .claude/rules/ that was not written by this tool");
+  assert.equal(
+    tail({ unknown: names(22) }),
+    "and 2 more files in .claude/rules/ that carry our frontmatter but no map names them, so they were left alone"
+  );
+  assert.equal(
+    tail({ unreadable: names(22) }),
+    "and 2 more files in .claude/rules/ that could not be read, so whose they are was not established"
+  );
+  assert.equal(
+    tail({ replaced: names(22) }),
+    "and 2 more files in .claude/rules/ that held a name this scan writes, so they were replaced"
+  );
+});
+
+test("one removed area file and one default-matching claim read at one", () => {
+  const lines = scanLines(summary({ removed: 1, claims: { stated: 3, matchingDefault: 1, total: 9 } }));
+
+  assert.ok(lines.includes("1 area file removed: its area is gone or states nothing"), lines.join("\n"));
+  assert.ok(lines.includes("3 of 9 claims stated, 1 matches the model default, the rest print as counts"), lines.join("\n"));
+  const many = scanLines(summary({ removed: 2, dryRun: true }));
+  assert.ok(many.includes("2 area files would be removed: their area is gone or states nothing"), many.join("\n"));
+});
+
+test("a root and a history error reach the terminal on one line each", () => {
+  // `--format json` encoded both and the lines printed them raw: a git stderr
+  // of two lines added a stray line under the summary, and a root directory
+  // named with a newline forged one.
+  const lines = scanLines(
+    summary({
+      root: "/repo\nwrote 0 files",
+      historyError: "fatal: bad revision 'HEAD'\nhint: something else",
+    })
+  );
+
+  for (const l of lines) assert.doesNotMatch(l, /\n/, JSON.stringify(l));
+  assert.equal(lines[0], "40 files, 2 areas, 12ms, root /repo wrote 0 files");
+  assert.ok(
+    lines.includes("history could not be read, so every claim fails the author gate: fatal: bad revision 'HEAD'"),
+    lines.join("\n")
+  );
 });
 
 test("the three kinds of rule file the scan leaves alone each get their own sentence", () => {
@@ -227,19 +337,19 @@ test("a dry run does not report in the past tense", () => {
   assert.ok(
     dry.includes('"anatomiya-overview.md" in .claude/rules/ holds a name this scan writes, so it would be replaced')
   );
-  assert.ok(dry.includes("2 area file(s) would be removed: their area is gone or states nothing"));
+  assert.ok(dry.includes("2 area files would be removed: their area is gone or states nothing"));
   assert.ok(dry.includes("would write 5 files"));
   assert.ok(
     real.includes('"anatomiya-overview.md" in .claude/rules/ held a name this scan writes, so it was replaced')
   );
-  assert.ok(real.includes("2 area file(s) removed: their area is gone or states nothing"));
+  assert.ok(real.includes("2 area files removed: their area is gone or states nothing"));
   assert.ok(real.includes("wrote 5 files"));
 });
 
-test("a dry run does not claim a session needs restarting", () => {
+test("a dry run does not tell a running session what it will get", () => {
   // Nothing was written, so there is nothing to pick up.
-  assert.ok(!scanLines(summary({ dryRun: true })).includes(RESTART));
-  assert.ok(scanLines(summary()).includes(RESTART));
+  assert.ok(!scanLines(summary({ dryRun: true })).includes(RUNNING_SESSION));
+  assert.ok(scanLines(summary()).includes(RUNNING_SESSION));
 });
 
 test("a run that read no file of a language says so and stops", () => {
@@ -252,7 +362,7 @@ test("a run that read no file of a language says so and stops", () => {
     "this is usually a missing interpreter rather than a repository that changed",
   ]);
   assert.ok(!lines.some((l) => /^(?:would write|wrote) /.test(l)), "no write line at all");
-  assert.ok(!lines.includes(RESTART));
+  assert.ok(!lines.includes(RUNNING_SESSION));
 });
 
 test("a run blind to a language names the engine behind it and what to do", () => {
@@ -263,7 +373,7 @@ test("a run blind to a language names the engine behind it and what to do", () =
 
   assert.deepEqual(lines.slice(-2), [
     "read no ruby file at all, so nothing was written and the previous map was left alone",
-    "prism reported no version: install Ruby 3.4 or newer, which ships prism 1.x, and put ruby on PATH",
+    "prism reported no version: install Ruby 3.4 or newer, which ships prism 1.x, or run gem install prism on the Ruby you have, and put ruby on PATH",
   ]);
 });
 
@@ -281,6 +391,25 @@ test("a run blind to two languages names both", () => {
       "read no js or ruby file at all, so nothing was written and the previous map was left alone"
     )
   );
+});
+
+test("a run that read one language and not another says which, why, and writes the rest", () => {
+  // The other half of a blind run (B41): a TypeScript repository with one
+  // Gemfile on a machine without Ruby. The map is written, so the write line
+  // stays, and the language it read none of is named with the engine's remedy
+  // beside how many area files were left as the last scan wrote them.
+  const lines = scanLines(summary({ uncounted: ["ruby"], held: 2, engines: { prism: { version: null } } }));
+
+  const at = lines.indexOf(
+    "read no ruby file at all, so none was counted and 2 areas holding one were left as the last scan wrote them"
+  );
+  assert.ok(at !== -1, lines.join("\n"));
+  assert.equal(
+    lines[at + 1],
+    "prism reported no version: install Ruby 3.4 or newer, which ships prism 1.x, or run gem install prism on the Ruby you have, and put ruby on PATH"
+  );
+  assert.ok(lines.includes("wrote 5 files"), "the rest of the map was written");
+  assert.ok(!lines.some((l) => l.includes("nothing was written")), lines.join("\n"));
 });
 
 test("the baseline line says which population the gates read", () => {
@@ -310,6 +439,23 @@ test("an unreachable pin with no sha at all still says which commit it looked fo
     scanLines(summary({ baseline: { status: "unreachable", sha: null, drift: null, baseRef: null, countsOnly: false } }))[2],
     "the pinned commit ? is gone from this clone, so every claim dropped to counts"
   );
+});
+
+test("a pin on disk that will not load is named with why, never as no pin at all", () => {
+  // A pin that conflicted on a merge, or that a newer build wrote, printed
+  // UNPINNED and its "`anatomiya pin` accepts one", in a repository whose pin a
+  // human had committed.
+  const baseline = { status: "pin-unreadable", unreadable: "it is schema 2 and this build reads 1", sha: null, countsOnly: true, baseRef: null, drift: null };
+
+  const lines = scanLines(scanSummary(result({ baseline }), plan()));
+
+  assert.ok(
+    lines.includes(
+      "the pin on disk could not be read because it is schema 2 and this build reads 1, so claims are measured against the current tree and no finding can exceed FIX"
+    ),
+    lines.join("\n")
+  );
+  assert.ok(!lines.includes(UNPINNED));
 });
 
 /* --- the facts the summary is built from --- */
@@ -346,6 +492,8 @@ const plan = (o = {}) => ({
   uncovered: 0,
   orphaned: 0,
   unreadable: [],
+  held: [],
+  blind: false,
   ...o,
 });
 
@@ -361,7 +509,7 @@ test("the summary carries every fact the scan prints", () => {
     claims: { stated: 1, matchingDefault: 1, total: 3 },
     engines: { oxc: { version: "0.144.0" } },
     layoutLine: null,
-    baseline: { status: "unpinned", sha: null, drift: null, baseRef: null, countsOnly: true },
+    baseline: { status: "unpinned", sha: null, drift: null, baseRef: null, countsOnly: true, unreadable: null },
     // Absent and unchanged read the same here on purpose: the line this drives
     // is said once, when the settings actually moved. The refusal beside it is
     // the other outcome, and a scan that neither installed nor refused says
@@ -371,6 +519,7 @@ test("the summary carries every fact the scan prints", () => {
     truncated: false,
     orphaned: 0,
     barren: 0,
+    unreadFiles: 0,
     unexamined: [],
     // Null on a scan that never asked for the tier and on one where it ran
     // clean. Only a tier that ran badly has anything to say.
@@ -385,6 +534,8 @@ test("the summary carries every fact the scan prints", () => {
     removed: 0,
     wrote: 2,
     blind: [],
+    uncounted: [],
+    held: 0,
     dryRun: false,
   });
 });
@@ -428,15 +579,15 @@ test("the summary and its lines agree on a whole scan", () => {
     "41 files, 1 area, 12ms, root /repo",
     "engines: oxc 0.144.0",
     "2 source files in the working tree are untracked. The corpus is tracked files only, so nothing there was counted",
-    "1 of 3 claims stated, 1 match the model default, the rest print as counts",
+    "1 of 3 claims stated, 1 matches the model default, the rest print as counts",
     UNPINNED,
-    "2 files in no area: too few per directory",
+    "2 files in no area: at the repository root, under the per-directory floor, or under a name no glob can spell",
     "1 file in a directory nothing was counted in",
     "history could not be read, so every claim fails the author gate: no history",
     '"house-style.md" in .claude/rules/ was not written by this tool',
-    "1 area file(s) removed: their area is gone or states nothing",
+    "1 area file removed: its area is gone or states nothing",
     "wrote 2 files",
-    RESTART,
+    RUNNING_SESSION,
   ]);
 });
 
@@ -462,8 +613,8 @@ test("a pin prints the delta it accepted, then what it wrote", () => {
     "1 area enters it",
     "",
     "wrote .claude/anatomiya/baseline.json",
-    "run `anatomiya scan` to measure the map against it",
-    RESTART,
+    "run `/anatomiya:scan` to measure the map against it",
+    RUNNING_SESSION,
   ]);
 });
 
@@ -472,7 +623,7 @@ test("a pin that would write says so and sends nobody off to scan", () => {
   const s = pinSummary({ previous: null, next, delta: pinDelta(null, next), path: PIN_PATH, dryRun: true });
 
   assert.deepEqual(pinLines(s).slice(-2), ["", "would write .claude/anatomiya/baseline.json"]);
-  assert.ok(!pinLines(s).includes(RESTART));
+  assert.ok(!pinLines(s).includes(RUNNING_SESSION));
 });
 
 test("the pin summary carries the shas either side of the delta", () => {
@@ -586,6 +737,25 @@ test("the pin record neutralises the paths only it prints", () => {
   for (const a of s.delta.areas) {
     for (const value of [a.path, ...a.added, ...a.removed]) assert.doesNotMatch(value, CF, value);
   }
+});
+
+test("the pin record neutralises the paths a move names as well", () => {
+  // A file that only changed area is carried in lists of its own, and those
+  // come out of the same repository-controlled pin as the added list.
+  const sha = "abcdef1234567890abcdef1234567890abcdef12";
+  const previous = buildPin([{ id: "a", path: "lib", files: [{ rel: "lib/a.js" }, { rel: "lib/su‮b/b.js" }] }], { sha });
+  const next = buildPin([
+    { id: "a", path: "lib", files: [{ rel: "lib/a.js" }] },
+    { id: "b", path: "lib/su‮b", files: [{ rel: "lib/su‮b/b.js" }] },
+  ], { sha });
+  const delta = pinDelta(previous, next);
+
+  const s = JSON.parse(pinJson(pinSummary({ previous, next, delta, path: PIN_PATH, dryRun: true })));
+
+  assert.equal(s.delta.movedFiles, 1);
+  const moved = s.delta.areas.flatMap((a) => [...a.movedIn, ...a.movedOut]);
+  assert.equal(moved.length, 2, "the file is named on both sides of the move");
+  for (const value of moved) assert.doesNotMatch(value, CF, value);
 });
 
 /* --- a tier that ran badly reaches the terminal too (#72) --- */

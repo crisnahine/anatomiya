@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { statSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { cpus } from "node:os";
 
 import { guardedChild, retryOnce } from "./child.mjs";
@@ -22,6 +22,14 @@ export const GUARDS = {
   // read of a handful of pids takes.
   psTimeoutMs: 1_000,
   psMaxBytes: 64 * 1024,
+  // A file is handed only to a worker that said ready, and nothing timed the
+  // wait for it: a worker stalled in its own startup (a native binding blocked
+  // on a network filesystem, a preload that never settles) left every file
+  // queued and the scan waiting forever. Past this it is killed and counts as
+  // a worker that died before it answered. Generous, because a cold native
+  // binding on a slow disk is slow rather than stalled, and the per-file clock
+  // does not start until the worker is ready.
+  readyTimeoutMs: 20_000,
 };
 
 // A worker that dies before it ever answers is a broken install, not a poison
@@ -73,8 +81,18 @@ export function createPool({ size, withProgram = false, execArgv = [], guards = 
     const child = sup.child;
     const w = { sup, child, job: null, timer: null, started: 0, ready: false };
 
+    // The ready clock: a worker still silent past it takes the stillborn path
+    // below, so a pool no worker ever becomes ready in fails its queued files
+    // as crashed rather than holding them.
+    const readyTimer = setTimeout(() => {
+      if (!w.ready) w.sup.kill("ready timeout");
+    }, limits.readyTimeoutMs);
+    readyTimer.unref?.();
+    child.once("exit", () => clearTimeout(readyTimer));
+
     child.on("message", (msg) => {
       if (msg && msg.ready) {
+        clearTimeout(readyTimer);
         w.ready = true;
         if (msg.engine) versions[msg.engine] = msg.version ?? null;
         return release(w);
@@ -92,7 +110,21 @@ export function createPool({ size, withProgram = false, execArgv = [], guards = 
     // next moves the unexamined count in the always-loaded overview (A5). A
     // worker over the RSS ceiling, or one that died by itself, is a poison file
     // and gets the one attempt.
-    child.on("exit", (code, signal) => {
+    child.on("exit", (code, signal) => died(code, signal));
+
+    // A fork that never started emits this and never 'exit': a cwd that is
+    // gone, which a cleaned-up per-session TMPDIR makes of every child, or
+    // EAGAIN at a process limit, or EMFILE. Unlistened it is an uncaught
+    // exception and the scan dies on Node's own stack; listened and ignored,
+    // the worker is never replaced and a queued file waits forever. It is a
+    // worker that died before it answered, so it takes that path. A child that
+    // did start answers here only for a kill or a send that failed, and its own
+    // 'exit' still says how it ended.
+    child.on("error", (err) => {
+      if (child.pid === undefined) died(null, null, err);
+    });
+
+    function died(code, signal, cause = null) {
       const timedOut = w.sup.killedBy() === "timeout";
       if (w.job && timedOut && !closed && retryOnce(w.job)) {
         const job = w.job;
@@ -114,10 +146,14 @@ export function createPool({ size, withProgram = false, execArgv = [], guards = 
       drop(idle, w);
       if (closed) return;
       if (!w.ready && ++stillborn >= MAX_STILLBORN) {
-        return fail([`parser worker will not start`, firstLine(w.sup.stderr())].filter(Boolean).join(": "));
+        // A fork that never ran printed nothing, so the reason is the spawn's.
+        // One the ready clock killed may have printed nothing either.
+        const stalled = w.sup.killedBy() === "ready timeout" ? `no ready answer in ${limits.readyTimeoutMs}ms` : null;
+        const why = stalled || firstLine(w.sup.stderr()) || firstLine(cause?.message);
+        return fail([`parser worker will not start`, why].filter(Boolean).join(": "));
       }
       spawn();
-    });
+    }
 
     workers.push(w);
     return w;
@@ -128,9 +164,17 @@ export function createPool({ size, withProgram = false, execArgv = [], guards = 
     if (i >= 0) list.splice(i, 1);
   }
 
+  // A pool no worker will start in never answered for any file, which is a
+  // crash on every file of the language: the condition A13 reads as a blind
+  // run. Charged as unreadable, the scan went on to remove every correct area
+  // file and write an overview of zero areas.
   function fail(reason) {
     broken = reason;
-    for (const job of queue.splice(0)) job.resolve({ rel: job.file.rel, ok: false, error: reason });
+    for (const job of queue.splice(0)) job.resolve(neverAnswered(job.file.rel));
+  }
+
+  function neverAnswered(rel) {
+    return { rel, ok: false, error: broken, crashed: true };
   }
 
   function finish(w, msg, dead = false) {
@@ -208,7 +252,7 @@ export function createPool({ size, withProgram = false, execArgv = [], guards = 
   function parse(file) {
     return new Promise((resolve) => {
       if (closed) return resolve({ rel: file.rel, ok: false, error: "pool closed" });
-      if (broken) return resolve({ rel: file.rel, ok: false, error: broken });
+      if (broken) return resolve(neverAnswered(file.rel));
 
       let bytes = 0;
       try {
@@ -231,7 +275,7 @@ export function createPool({ size, withProgram = false, execArgv = [], guards = 
     if (closed) return;
     closed = true;
     stopRssPoll();
-    fail("pool closed");
+    for (const job of queue.splice(0)) job.resolve({ rel: job.file.rel, ok: false, error: "pool closed" });
     idle.length = 0;
 
     await Promise.all(
@@ -259,28 +303,36 @@ export function defaultPoolSize() {
   return Math.max(1, Math.min(8, cpus().length - 1));
 }
 
+// Absolute, never looked up. `scan .` runs from the repository, and an empty
+// PATH entry is the current directory, so `ps` by name ran whatever the
+// repository had committed under that name, as the user, while the guard
+// polled. macOS and the BSDs keep it here.
+const PS = "/bin/ps";
+
 /**
  * Resident size per pid, and the one subprocess this module runs that is not a
- * worker.
+ * worker, where it runs one at all.
  *
  * Exported because it is the guard's own guard: `execFileSync` blocks the
  * parent's event loop, so a `ps` that never returns is the memory guard
  * becoming the hang it exists to prevent, and the only way to show that the
- * timeout holds is to hand it a `ps` that stalls.
+ * timeout holds is to hand it a `ps` that stalls. `platform` and `ps` are that
+ * seam: on Linux the poll never reaches a `ps`.
  */
-export function rssOf(pids, limits = GUARDS) {
+export function rssOf(pids, limits = GUARDS, { platform = process.platform, ps = PS } = {}) {
   // No `ps` on Windows, and the usual replacement is on its way out: `wmic` is
   // removed in Windows 11 25H2 and gone entirely in the next feature update,
   // which is what `pidusage` still shells out to. Rather than ship an untested
   // `tasklist` parser, the guard stands down there and the five-second timeout
   // is what catches a runaway parse.
-  if (process.platform === "win32") return new Map();
+  if (platform === "win32") return new Map();
+  if (platform === "linux") return rssFromProc(pids);
 
   // ps is the portable way to read another process's resident size without a
   // native dependency.
   const out = new Map();
   try {
-    const stdout = execFileSync("ps", ["-o", "pid=,rss=", "-p", pids.join(",")], {
+    const stdout = execFileSync(ps, ["-o", "pid=,rss=", "-p", pids.join(",")], {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "ignore"],
       timeout: limits.psTimeoutMs,
@@ -293,6 +345,27 @@ export function rssOf(pids, limits = GUARDS) {
     }
   } catch {
     /* the process is gone, or there is no ps; the exit handler takes it */
+  }
+  return out;
+}
+
+/**
+ * Linux answers from the kernel's own table, with no subprocess and nothing
+ * looked up on PATH. Slim images (node:*-slim, most devcontainers) ship no
+ * procps, and there a `ps` is ENOENT on every poll, and swallowed:
+ * measured, three files a forced 1 MB ceiling killed with `ps`
+ * present all parsed with it absent, and nothing said the ceiling had stood
+ * down. `VmRSS` is in kB, the unit `ps -o rss=` answers in.
+ */
+function rssFromProc(pids) {
+  const out = new Map();
+  for (const pid of pids) {
+    try {
+      const kb = /^VmRSS:\s+(\d+) kB$/m.exec(readFileSync(`/proc/${pid}/status`, "utf8"))?.[1];
+      if (kb) out.set(pid, Number(kb) * 1024);
+    } catch {
+      /* gone between the poll and the read; the exit handler takes it */
+    }
   }
   return out;
 }

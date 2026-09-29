@@ -1,11 +1,11 @@
-import { realpathSync } from "node:fs";
-import { resolve, sep } from "node:path";
+import { realpathSync, statSync } from "node:fs";
+import { dirname, resolve, sep } from "node:path";
 
 import { gitBuffered, gitStreamed } from "./git.mjs";
 import { EXT_BY_LANG, LANGUAGES, language } from "./langs.mjs";
 import { CAPABILITY_WORDS, fileStem, stemWords } from "./dimensions-capability.mjs";
 import { FRAMEWORKS } from "./frameworks.mjs";
-import { readHead } from "./rules.mjs";
+import { isLink, readHead } from "./rules.mjs";
 
 // Tracked files only. A working tree holds .env, master.key, an .npmrc with a
 // token and a .git/config with credentials in the remote URL; a filesystem walk
@@ -184,7 +184,8 @@ function isGeneratedHead(prefix) {
  * Read once per corpus rather than once per file: the file deciding this is
  * small and the corpus asking it is not. Three pattern shapes, the ones a
  * `linguist-generated` line actually uses: `dir/**` for a subtree, `*.ext` for
- * an extension, and a bare path for one file. Not gitignore's full grammar,
+ * an extension, and a bare path for one file, each placed where git places it
+ * (see `attrPatternToRegExp`). Not gitignore's full grammar,
  * and only the root file: a pattern outside those three, or one declared by a
  * nested `.gitattributes`, is not read rather than guessed at.
  */
@@ -208,16 +209,32 @@ function generatedAttrRules(root) {
 
 const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
+// Git's own placement rules, which are gitignore's: a leading `/` anchors the
+// pattern at the root and is not part of any path, a pattern holding a slash
+// anywhere else is anchored too, and a slashless one matches the basename at
+// any depth. Measured against `git check-attr`, the reader before this matched
+// `/gen/**` against nothing (no listed path starts with a slash) and matched
+// `schema.ts` only at the root, where git sets it on `src/db/schema.ts` too.
+//
+// A pattern naming a directory sets nothing on the files under it: attributes
+// are not inherited the way ignores are, so `out linguist-generated` leaves
+// `out/deep.ts` alone and only `out/**` reaches into it.
 function attrPatternToRegExp(pattern) {
   const wild = /[*?[\]]/;
-  if (pattern.endsWith("/**") && !wild.test(pattern.slice(0, -3))) {
-    return new RegExp(`^${escapeRe(pattern.slice(0, -3))}(/|$)`);
+  const rooted = pattern.startsWith("/");
+  const body = rooted ? pattern.slice(1) : pattern;
+  // A trailing slash matches only a directory, and no listed path is one.
+  if (!body || body.endsWith("/")) return null;
+  if (body.endsWith("/**") && !wild.test(body.slice(0, -3))) {
+    return new RegExp(`^${escapeRe(body.slice(0, -3))}/`);
   }
-  if (pattern.startsWith("*.") && !wild.test(pattern.slice(2))) {
-    return new RegExp(`${escapeRe(pattern.slice(1))}$`);
+  const floats = !rooted && !body.includes("/");
+  const start = floats ? "(^|/)" : "^";
+  if (body.startsWith("*.") && !wild.test(body.slice(2)) && !body.includes("/")) {
+    return new RegExp(`${start}[^/]*${escapeRe(body.slice(1))}$`);
   }
-  if (wild.test(pattern)) return null;
-  return new RegExp(`^${escapeRe(pattern)}(/|$)`);
+  if (wild.test(body)) return null;
+  return new RegExp(`${start}${escapeRe(body)}$`);
 }
 
 // Later lines win, the same resolution git itself applies: a directory rule
@@ -294,25 +311,71 @@ export function capabilitiesIn(files) {
  * the caller reads what was actually checked rather than the unresolved one.
  */
 export function safeResolve(root, relPath) {
+  return confine(root, relPath).abs ?? null;
+}
+
+/**
+ * `safeResolve`, saying why it refused: `outside` for a path that leaves the
+ * repository, `unreadable` for one the filesystem would not resolve at all.
+ *
+ * The corpus needs the two apart. A file under a directory it may not enter,
+ * a tracked file deleted from the working tree, and a name that is not UTF-8
+ * (decoded to U+FFFD, it no longer names the file on disk) all failed realpath
+ * and were charged as escaped, the bucket nothing prints, so they left the
+ * scan without a word said.
+ */
+function confine(root, relPath) {
   const absRoot = resolve(root);
   const full = resolve(absRoot, relPath);
-  if (full !== absRoot && !full.startsWith(absRoot + sep)) return null;
+  if (full !== absRoot && !full.startsWith(absRoot + sep)) return { why: "outside" };
 
   let realRoot, realFull;
   try {
     realRoot = realpathSync(absRoot);
     realFull = realpathSync(full);
   } catch {
-    return null;
+    return { why: "unreadable" };
   }
-  if (realFull !== realRoot && !realFull.startsWith(realRoot + sep)) return null;
-  return realFull;
+  if (realFull !== realRoot && !realFull.startsWith(realRoot + sep)) return { why: "outside" };
+  return { abs: realFull };
 }
 
 export async function gitRoot(cwd) {
+  // Every failure used to read `not a git repository`, which names `git init`
+  // as the fix for a typo, a file, a missing git and a repository git refused.
+  // Each has a different fix, so each is told apart before or after the call.
+  //
+  // Asked first because a spawn in a directory that is not there fails with
+  // the same ENOENT as a git that is not there.
+  let dir = cwd;
+  let stat;
+  try {
+    stat = statSync(cwd);
+  } catch {
+    throw new Error(`no such directory: ${cwd}`);
+  }
+  // The usage promises that a path picks the repository it is in, and a file
+  // is in the repository its directory is in.
+  if (!stat.isDirectory()) dir = dirname(cwd);
+
   // One bounded answer, so it takes the buffered entry point (F5).
-  const r = await gitBuffered(cwd, ["rev-parse", "--show-toplevel"], { maxBytes: 1024 * 1024 });
-  if (!r.ok) throw new Error(`not a git repository: ${cwd}`, { cause: new Error(r.error) });
+  const r = await gitBuffered(dir, ["rev-parse", "--show-toplevel"], { maxBytes: 1024 * 1024 });
+  if (!r.ok) {
+    // The directory was just seen, so an ENOENT from the spawn is git itself.
+    if (/\bspawn\b.*\bENOENT\b/.test(r.error ?? "")) {
+      throw new Error("git is not on PATH, and every command reads the repository through it");
+    }
+    // Node heads the message with `Command failed: <argv>`; what follows is
+    // git's stderr. Kept whole up to a bound, because the line after git's
+    // first is where it names its own fix, as `safe.directory` for a checkout
+    // owned by another user.
+    const said = String(r.error ?? "").replace(/^Command failed:[^\n]*\n/, "").split("\n")
+      .map((l) => l.trim()).filter(Boolean).join(" ").slice(0, 400);
+    if (!said || /not a git repository/i.test(said)) {
+      throw new Error(`not a git repository: ${cwd}`, { cause: new Error(r.error) });
+    }
+    throw new Error(`git could not read the repository at ${cwd}: ${said}`);
+  }
 
   const root = r.stdout.trim();
   // Exit 0 with an empty line is possible; returning "" would resolve every
@@ -331,8 +394,10 @@ export async function gitRoot(cwd) {
 
 /**
  * The corpus: tracked source files, deny-listed paths removed. A symlink, a
- * path escaping the repository, one that is gone and one that is not a regular
- * file are dropped together, as `escaped`.
+ * path escaping the repository and one that is not a regular file are dropped
+ * together, as `escaped`. One the filesystem will not resolve (gone from the
+ * working tree, under a directory this may not enter, or a name that is not
+ * UTF-8) is `unreadable`, which the summary states as a count.
  *
  * `git ls-files -z` is NUL-delimited because git permits newlines in paths, and
  * a newline-split here would turn one hostile filename into two corpus entries.
@@ -343,7 +408,7 @@ export async function gitRoot(cwd) {
  * Node's own exit handler where no caller can catch it.
  */
 export async function collect(root) {
-  const dropped = { denied: 0, excluded: 0, escaped: 0, notSource: 0, generated: 0 };
+  const dropped = { denied: 0, excluded: 0, escaped: 0, notSource: 0, generated: 0, unreadable: 0 };
   const files = [];
   const others = [];
   const generatedRules = generatedAttrRules(root);
@@ -386,6 +451,19 @@ export async function countUntrackedSource(root) {
 }
 
 /**
+ * Which rule refuses one path, asked of the working tree the way `collect`
+ * asks it, or null where the corpus would count it.
+ *
+ * For a caller holding a few paths rather than a listing: the check judges the
+ * files a branch changed, and one the corpus leaves out is one the map never
+ * counted. `.gitattributes` is read once, when the question is built.
+ */
+export function corpusDrop(root) {
+  const generatedRules = generatedAttrRules(root);
+  return (rel) => classify(root, rel, generatedRules).drop ?? null;
+}
+
+/**
  * Whether a listed path is corpus, and if not, which rule refused it.
  *
  * One classifier for both listings: the corpus and the untracked count are the
@@ -396,8 +474,17 @@ export async function countUntrackedSource(root) {
 function classify(root, rel, generatedRules) {
   const drop = pathDrop(rel);
   if (drop) return { drop };
-  const abs = safeResolve(root, rel);
-  if (!abs) return { drop: "escaped" };
+  const { abs, why } = confine(root, rel);
+  // A link whose target is gone fails realpath too, and a link is `escaped`
+  // whatever it points at, so only a path that is not one reads as unreadable.
+  if (!abs) return { drop: why === "outside" || isLink(resolve(root, rel)) ? "escaped" : "unreadable" };
+  // A link is not source even where it stays inside the repository. What git
+  // tracks for one is its target's name, so reading through it counted every
+  // site of the target twice, and the baseline reused that parse for a path
+  // whose link had not changed since the pin: an edit to the target moved the
+  // pinned counts (E2). The target is counted where it is tracked, and a link
+  // out of the repository is refused above, so both go to the same count.
+  if (isLink(resolve(root, rel))) return { drop: "escaped" };
   // A file that is generated must not contribute evidence to a stated
   // directive, whichever directory it sits in: the marker is read only once
   // the cheaper string checks above have already let the path through.
@@ -421,10 +508,19 @@ function classify(root, rel, generatedRules) {
  * a delimiter.
  */
 export function lsFiles(root, onEntry, extra = []) {
+  // During an unresolved merge git lists a conflicted path once per stage it
+  // holds, two or three times over, and every caller counted each line: a scan
+  // run mid-merge tripled that file's sites. A set rather than `--deduplicate`,
+  // which older gits lack, and rather than comparing neighbours, which leans on
+  // an ordering nothing here asks git for.
+  const seen = new Set();
   // An empty field is a delimiter run rather than a listed path, and the caller
   // classifies paths.
   return gitStreamed(root, ["ls-files", "-z", ...extra, "--"], (rel) => {
-    if (rel) onEntry(rel);
+    if (rel && !seen.has(rel)) {
+      seen.add(rel);
+      onEntry(rel);
+    }
     return true;
   });
 }

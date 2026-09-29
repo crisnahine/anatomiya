@@ -408,6 +408,26 @@ test("an export declared inside an ambient module is not a top-level site", asyn
   }
 });
 
+test("an all-capitals name is a constant or a route handler, and votes for no class", async () => {
+  // Measured on a Next.js `app/api` directory of 41 route files: `GET` and
+  // `POST` voted PascalCase, the area stated "functions are named PascalCase"
+  // 81 of 82, and the check asked for the one camelCase helper to be renamed.
+  // A constants directory of `export const DEBUG = 3` stated "exported names
+  // are PascalCase" 40 of 40. `MAX_DEBUG` already spells no class, and `DEBUG`
+  // is the same constant with one word fewer.
+  const src = `
+    export async function GET() {}
+    export async function POST() {}
+    export const DEBUG = 3;
+    export const MAX_DEBUG = 3;
+    export function normalizeQuery() {}
+  `;
+  for (const key of ["function_naming_case", "exported_symbol_case"]) {
+    const h = await astHits(key, src);
+    assert.deepEqual(h.map((x) => [x.where, x.class]), [["normalizeQuery", "camelCase"]], key);
+  }
+});
+
 test("the naming AST rows are reachable from the registry", async () => {
   const { dimensionsFor } = await import("../plugins/anatomiya/lib/dimensions.mjs");
   const keys = dimensionsFor(["js"]).map((d) => d.key);
@@ -576,7 +596,10 @@ test("classifyWord answers a long uppercase run followed by a non-word in linear
   assert.equal(classifyWord("v2Client"), "camelCase");
   assert.equal(classifyWord("FooBar"), "PascalCase");
   assert.equal(classifyWord("foo"), null);
-  assert.equal(classifyWord("FOO"), "PascalCase");
+  // Capitals alone are a constant, the SCREAMING case `FOO_BAR` already
+  // spells, and a capital run inside a word is still an acronym in it.
+  assert.equal(classifyWord("FOO"), null);
+  assert.equal(classifyWord("URLParser"), "PascalCase");
 });
 
 /* --- the class a declared type name's prefix votes for --- */
@@ -595,6 +618,42 @@ test("prefixClass answers for a name that can say, and says nothing for one that
   assert.equal(prefixClass("IOStream"), null, "and neither can a three-letter one");
   assert.equal(prefixClass("IEFLogon"), null);
   assert.equal(prefixClass("TEFLogonStep"), null);
+});
+
+test("prefixClass does not read an acronym's first letter as a prefix", async () => {
+  // `OAuthToken` voted `O`, `ETag` voted `E` and `IDs` voted `I`: a capital,
+  // a capital, a lower-case letter is the prefix shape and also how every
+  // mixed-case acronym opens. An area of `IDs`, `IPv4Address` and `ETagCache`
+  // beside plain names voted an `I` prefix nobody wrote. Only a prefix letter
+  // the rows are about votes, and not where the first two capitals open a
+  // known acronym; either way the name reads both ways and votes for neither.
+  const { prefixClass } = await import("../plugins/anatomiya/lib/dimensions-naming.mjs");
+  for (const name of ["OAuthToken", "ETag", "IDs", "IPv4Address", "IOs", "UIs", "XMatrix"]) {
+    assert.equal(prefixClass(name), null, name);
+  }
+  assert.equal(prefixClass("IFoo"), "I");
+  assert.equal(prefixClass("TProps"), "T");
+  assert.equal(prefixClass("EStatus"), "E");
+  assert.equal(prefixClass("IDocument"), "I", "a prefix on a word that merely starts with D is still a prefix");
+  assert.equal(prefixClass("Token"), "none");
+});
+
+test("a lowercase name outside ASCII spells every class, and a mixed one spells its class", async () => {
+  // `café.ts` classified to nothing and was not a single lowercase word to an
+  // ASCII-only test, so the check counted it as a stem spelling no class
+  // against a stated claim: every accented Spanish or French filename was a
+  // finding the author could not fix.
+  const { classifyWord, namesASite, classifyBasename } = await import("../plugins/anatomiya/lib/dimensions-naming.mjs");
+  assert.equal(classifyWord("café"), null);
+  assert.equal(namesASite("src/café.ts"), false);
+  assert.equal(namesASite("src/_menú.tsx"), false, "a router's special file under an accented word");
+  assert.equal(classifyWord("caféBar"), "camelCase");
+  assert.equal(classifyWord("ÜberCard"), "PascalCase");
+  assert.equal(classifyWord("résumé-card"), "kebab-case");
+  assert.equal(classifyWord("résumé_card"), "snake_case");
+  assert.equal(classifyBasename("src/résuméCard.ts"), "camelCase");
+  assert.equal(namesASite("src/résuméCard.ts"), true);
+  assert.equal(classifyWord("ÉTÉ"), null, "capitals alone still spell no class");
 });
 
 /* --- the base a class names --- */
@@ -987,6 +1046,27 @@ test("namesASite separates a name that matches every class from one that matches
   assert.equal(namesASite("src/index.stories.tsx"), false, "only the stem is read, and it is one word");
 });
 
+test("a name spelled in a router's syntax is not a site for the filename claim", async () => {
+  // Next.js `[id].tsx` and `_document.tsx`, Remix `$postId.tsx` and `_index.tsx`,
+  // SvelteKit `+page.ts`: the router reads these characters, so the name is not
+  // the author's to class and renaming it breaks the route. Measured as two
+  // MUST-FIX-shaped findings on one new Next.js page. An underscore on a stem
+  // that is more than one word still spells no class, which C23 counts.
+  const { namesASite } = await import("../plugins/anatomiya/lib/dimensions-naming.mjs");
+
+  for (const rel of [
+    "src/pages/[id].tsx", "src/pages/[...slug].tsx", "src/pages/[[...slug]].tsx",
+    "src/pages/_app.tsx", "src/pages/_document.tsx", "app/routes/_index.tsx",
+    "app/routes/_auth.login.tsx", "src/routes/__root.tsx",
+    "app/routes/$postId.tsx", "app/routes/$.tsx", "app/routes/($lang).about.tsx",
+    "src/routes/+page.svelte", "src/routes/+layout.server.ts", "app/@modal.tsx",
+  ]) {
+    assert.equal(namesASite(rel), false, rel);
+  }
+  assert.equal(namesASite("src/_tmpProbe.ts"), true, "an underscore on a camelCase stem");
+  assert.equal(namesASite("app/models/_tmp_probe.rb"), true, "and on a snake_case one");
+});
+
 test("a name that spells no class does not vote for one", async () => {
   // The scan side is unchanged: a stem that classifies to null was never
   // counted into the area's own totals, and counting it now would move every
@@ -1134,6 +1214,54 @@ test("an ordinary function in a JSX file is still judged", async () => {
   `);
 
   assert.deepEqual(h.map((x) => x.where), ["fetchAll"]);
+});
+
+test("a component made by forwardRef, memo or styled is excluded like a plain one", async () => {
+  // Measured on a components directory of 45 plain components and one
+  // `forwardRef` field: the map stated "exported names are camelCase" 90 of 91
+  // with the field as its exception, and the check asked for a new
+  // `TextInput = forwardRef(...)` to be renamed `textInput`, a host tag. The
+  // binding's initialiser is a call, not a function, so the plain-component
+  // exclusion never saw the function it was handed.
+  const h = await astHits("exported_symbol_case", `
+    import React, { forwardRef, memo } from "react";
+    import styled from "styled-components";
+    export const TextInput = forwardRef((props, ref) => <input ref={ref} {...props} />);
+    export const Card = memo(function Card() { return <div />; });
+    export const Row = React.memo(forwardRef((props, ref) => <tr ref={ref} />));
+    export const Title = styled.h1\`font-size: 2em;\`;
+    export const Link = styled(Anchor).attrs({ rel: "noopener" })\`color: red;\`;
+    export const useStore = create((set) => ({ count: 0 }));
+    export const inputVariants = { size: "sm" };
+  `);
+
+  assert.deepEqual(h.map((x) => x.where), ["useStore", "inputVariants"]);
+});
+
+test("a wrapper handed a named component, and a lazy import, make a component too", async () => {
+  // `forwardRef(ButtonInner)` hands the wrapper an identifier rather than a
+  // function, and `lazy(() => import("./Settings"))` hands it a function that
+  // yields a module rather than JSX, so both exports were voted as PascalCase
+  // values and a directory of camelCase helpers asked for them to be renamed
+  // `button` and `settingsPage`, host tags. The identifier resolves to the
+  // function this file bound under that name; a lazy or dynamic import is read
+  // by name, because the function it is handed never shows the JSX.
+  const h = await astHits("exported_symbol_case", `
+    import React, { forwardRef, memo, lazy } from "react";
+    import dynamic from "next/dynamic";
+    function ButtonInner(props, ref) { return <button ref={ref} {...props} />; }
+    const CardImpl = () => <div />;
+    const makeStore = () => ({});
+    export const Button = forwardRef(ButtonInner);
+    export const Card = memo(CardImpl);
+    export const SettingsPage = lazy(() => import("./Settings"));
+    export const Chart = React.lazy(() => import("./Chart").then((m) => ({ default: m.Chart })));
+    export const Map = dynamic(() => import("./Map"), { ssr: false });
+    export const useStore = create(makeStore);
+    export const loadAll = lazyLoad(() => import("./all"));
+  `);
+
+  assert.deepEqual(h.map((x) => x.where), ["useStore", "loadAll"]);
 });
 
 /* --- a directory of components and a directory of helpers hold different conventions (#64) --- */

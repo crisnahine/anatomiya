@@ -1,9 +1,9 @@
-import { degradedSemanticSentence, truncatedHistoryLine, unexaminedLines, untrackedSentence } from "./render.mjs";
+import { degradedSemanticSentence, ORPHAN_CAUSES, truncatedHistoryLine, unexaminedLines, untrackedSentence } from "./render.mjs";
 import { layoutSummary, plural } from "./render-layout.mjs";
 import { statedSide } from "./facts.mjs";
-import { encode, encodePath, sanitisePath } from "./encode.mjs";
+import { encode, encodePath, firstLine, locator, sanitisePath } from "./encode.mjs";
 import { engineOf } from "./langs.mjs";
-import { remedyFor } from "./readiness.mjs";
+import { whyUnread } from "./readiness.mjs";
 import { listSome, LISTED, RULES_DIR, SETTINGS_PATH } from "./rules.mjs";
 import { formatDelta } from "./baseline.mjs";
 
@@ -16,14 +16,22 @@ import { formatDelta } from "./baseline.mjs";
  * inside the printer that happens to emit it.
  */
 
-// Measured: a rewritten context file does not re-attach mid-session.
-const RESTART = "a session already running still holds the old map; restart to pick it up";
+// What a written map reaches. The echo hands a running session a changed
+// overview on its next prompt or tool call, by its digest (A92), so the
+// overview needs no restart. A rewritten context file the session already read
+// does not re-attach inside the window (A6), and a new session, a compaction or
+// /clear reads every file from disk.
+const RUNNING_SESSION =
+  "a running session gets the new overview on its next prompt or tool call, and a new session, a compaction or /clear loads the whole map";
 
 // Said once, on the run that does it, because it is a change to a file somebody
 // else may also be editing. It cannot repeat: the second scan finds nothing to
-// take out and says nothing.
-const HOOK_REMOVED =
-  `${SETTINGS_PATH} carried a re-delivery hook this tool wrote and Claude Code refuses; it was taken out`;
+// take out and says nothing. A dry run touches nothing, so it says what the
+// scan would do, the way its other lines do.
+const hookRemoved = (dryRun) =>
+  dryRun
+    ? `${SETTINGS_PATH} carries a re-delivery hook this tool wrote and Claude Code refuses; it would be taken out`
+    : `${SETTINGS_PATH} carried a re-delivery hook this tool wrote and Claude Code refuses; it was taken out`;
 
 // The shape of the two records below, so a reader older than one refuses it
 // rather than reading fields that moved. Same rule the facts record carries.
@@ -57,6 +65,8 @@ export function scanSummary(result, plan, { dryRun = false, hook = null } = {}) 
       drift: result.baseline.drift,
       baseRef: result.baseline.baseRef,
       countsOnly: result.baseline.countsOnly,
+      // Why a pin on disk would not load, which is not the same line as no pin.
+      unreadable: result.baseline.unreadable ?? null,
     },
     hookRemoved: hook?.removed === true,
     // The reason the install did not happen, where there is one: a settings file
@@ -68,6 +78,11 @@ export function scanSummary(result, plan, { dryRun = false, hook = null } = {}) 
     // number printed beside "N files crashed the parser" invited exactly the
     // reading the overview line was fixed to stop.
     barren: plan.uncovered - plan.orphaned,
+    // Tracked files the working tree would not resolve: under a directory the
+    // scan may not enter, deleted since the commit, or named in bytes that are
+    // not UTF-8. They sat in the escaped count, which nothing prints, and left
+    // the scan without a word. Zero from a record written before the count.
+    unreadFiles: result.corpus.dropped?.unreadable ?? 0,
     unexamined: unexaminedLines(result.parse),
     // What a tier that ran badly cost, in the overview's own words. `--deep`
     // added 110 slots that all read zero on a measured repository and the
@@ -95,7 +110,12 @@ export function scanSummary(result, plan, { dryRun = false, hook = null } = {}) 
     },
     removed: plan.remove.length,
     wrote: plan.write.length,
-    blind: plan.unreadable,
+    // A language read no file of is one of two facts, told apart by whether
+    // anything else was read: `blind` is a run that wrote nothing at all, and
+    // `uncounted` is one that wrote the rest and left `held` area files alone.
+    blind: plan.blind ? plan.unreadable : [],
+    uncounted: plan.blind ? [] : plan.unreadable,
+    held: plan.held.length,
     dryRun,
   };
 }
@@ -109,7 +129,12 @@ export function scanLines(s) {
   // `scan ./packages/api` in a monorepo maps the monorepo. Areas, the pin and
   // the baseline are all repository-anchored, so that is the behaviour they
   // need and the line is what says so.
-  lines.push(`${plural(s.files, "file")}, ${plural(s.areas, "area")}, ${s.durationMs}ms, root ${s.root}`);
+  //
+  // As a locator, not raw: `--format json` sanitised it and this line did not,
+  // so a checkout directory named with a newline forged a line of its own. Not
+  // through the display encoder either, whose cap and script rule would print a
+  // root nobody can `cd` to.
+  lines.push(`${plural(s.files, "file")}, ${plural(s.areas, "area")}, ${s.durationMs}ms, root ${locator(s.root)}`);
   const engines = enginesLine(s.engines);
   if (engines) lines.push(engines);
   if (s.untracked)
@@ -118,7 +143,9 @@ export function scanLines(s) {
     );
   lines.push(
     `${s.claims.stated} of ${plural(s.claims.total, "claim")} stated` +
-      (s.claims.matchingDefault ? `, ${s.claims.matchingDefault} match the model default` : "") +
+      (s.claims.matchingDefault
+        ? `, ${s.claims.matchingDefault} ${s.claims.matchingDefault === 1 ? "matches" : "match"} the model default`
+        : "") +
       ", the rest print as counts"
   );
   // Beside the claims line, which is the count it explains: a tier that
@@ -128,35 +155,60 @@ export function scanLines(s) {
   lines.push(baselineLine(s.baseline));
   if (s.truncated)
     lines.push("only part of the corpus was read, so every directive is suppressed and only counts print");
-  if (s.orphaned > 0) lines.push(`${plural(s.orphaned, "file")} in no area: too few per directory`);
+  if (s.orphaned > 0) lines.push(`${plural(s.orphaned, "file")} in no area: ${ORPHAN_CAUSES}`);
   if (s.barren > 0) lines.push(`${plural(s.barren, "file")} in a directory nothing was counted in`);
+  if (s.unreadFiles > 0) {
+    lines.push(`${plural(s.unreadFiles, "file")} could not be read, so nothing in ${s.unreadFiles === 1 ? "it was" : "them was"} counted`);
+  }
   lines.push(...s.unexamined);
+  // Its first line, encoded, the way `--format json` already carried it: the
+  // stderr runs to several lines, and each one after the first printed as a
+  // line of the summary with nothing saying whose it was.
   if (s.historyError)
-    lines.push(`history could not be read, so every claim fails the author gate: ${s.historyError}`);
+    lines.push(`history could not be read, so every claim fails the author gate: ${encode(firstLine(s.historyError))}`);
   if (s.historyTruncated) lines.push(s.historyTruncated);
   // Named, not counted. The count was a number the reader then had to go and
   // resolve with `ls`, and the whole point of the line is that these files
   // reach the agent on every turn.
-  lines.push(...ruleFileLines(s.rules.foreign, "was not written by this tool"));
+  lines.push(...ruleFileLines(s.rules.foreign, "was not written by this tool", "were not written by this tool"));
   // This tool's own output, from a scan whose record is gone. Two of the three
   // facts ownership needs is not ownership, so it is left where it is.
-  lines.push(...ruleFileLines(s.rules.unknown, "carries our frontmatter but no map names it, so it was left alone"));
+  lines.push(
+    ...ruleFileLines(
+      s.rules.unknown,
+      "carries our frontmatter but no map names it, so it was left alone",
+      "carry our frontmatter but no map names them, so they were left alone"
+    )
+  );
   // Whose it is was never established, so neither sentence above is true of it.
-  lines.push(...ruleFileLines(s.rules.unreadable, "could not be read, so whose it is was not established"));
+  lines.push(
+    ...ruleFileLines(
+      s.rules.unreadable,
+      "could not be read, so whose it is was not established",
+      "could not be read, so whose they are was not established"
+    )
+  );
   if (!s.rules.listed) lines.push(`${RULES_DIR}/ could not be listed, so nothing in it was examined`);
   // A generated name is ours by construction, so this is not a refusal. It is
   // still the one case where a scan replaces a file somebody wrote by hand.
   lines.push(
     ...ruleFileLines(
       s.rules.replaced,
-      s.dryRun
-        ? "holds a name this scan writes, so it would be replaced"
-        : "held a name this scan writes, so it was replaced"
+      ...(s.dryRun
+        ? [
+            "holds a name this scan writes, so it would be replaced",
+            "hold a name this scan writes, so they would be replaced",
+          ]
+        : ["held a name this scan writes, so it was replaced", "held a name this scan writes, so they were replaced"])
     )
   );
   if (s.removed) {
     const what = s.dryRun ? "would be removed" : "removed";
-    lines.push(`${s.removed} area file(s) ${what}: their area is gone or states nothing`);
+    lines.push(
+      s.removed === 1
+        ? `1 area file ${what}: its area is gone or states nothing`
+        : `${s.removed} area files ${what}: their area is gone or states nothing`
+    );
   }
   // Nothing was written, and the reason is not "this repository has nothing in
   // it". Said before the count, because the count is 0 and reads as the first.
@@ -164,13 +216,23 @@ export function scanLines(s) {
     lines.push(
       `read no ${s.blind.join(" or ")} file at all, so nothing was written and the previous map was left alone`
     );
-    lines.push(...blindLines(s));
+    lines.push(...blindLines(s.blind, s.engines));
     return lines;
   }
+  // A language this run read none of, where it read another: the rest of the
+  // map is written, and the areas holding the unread one are the last scan's.
+  // Said before the count, which would otherwise read as the whole repository.
+  if (s.uncounted?.length) {
+    const held = s.held
+      ? ` and ${plural(s.held, "area")} holding one ${s.held === 1 ? "was" : "were"} left as the last scan wrote ${s.held === 1 ? "it" : "them"}`
+      : "";
+    lines.push(`read no ${s.uncounted.join(" or ")} file at all, so none was counted${held}`);
+    lines.push(...blindLines(s.uncounted, s.engines));
+  }
   lines.push(s.dryRun ? `would write ${plural(s.wrote, "file")}` : `wrote ${plural(s.wrote, "file")}`);
-  if (s.hookRemoved) lines.push(HOOK_REMOVED);
+  if (s.hookRemoved) lines.push(hookRemoved(s.dryRun));
   if (s.hookRefused) lines.push(`the map is written, and ${s.hookRefused}`);
-  if (!s.dryRun) lines.push(RESTART);
+  if (!s.dryRun) lines.push(RUNNING_SESSION);
   return lines;
 }
 
@@ -216,23 +278,13 @@ function enginesLine(engines) {
 }
 
 /**
- * Why a run went blind, in the engine's own terms.
- *
- * One sentence used to cover every cause, and it guessed the likeliest: a
- * missing interpreter. Measured with ruby on PATH and no prism, that sentence
- * was wrong and there was no version anywhere on screen to say so. An engine
- * that reported a version ran, so the files are what failed; one that reported
- * none is the install, and its own remedy is the next move. A summary carrying
- * no probe at all keeps the old sentence, which is all it can honestly say.
+ * Why a run read no file of these languages, in each engine's own terms
+ * (`whyUnread`). A summary carrying no probe at all keeps the old sentence,
+ * which is all it can honestly say.
  */
-function blindLines(s) {
-  if (!s.engines) return ["this is usually a missing interpreter rather than a repository that changed"];
-  return [...new Set(s.blind.map(engineOf))].map((id) => {
-    const version = s.engines[id]?.version ?? null;
-    return version
-      ? `${id} ${version} ran and answered for none of them`
-      : `${id} reported no version: ${remedyFor(id)}`;
-  });
+function blindLines(langs, engines) {
+  if (!engines) return ["this is usually a missing interpreter rather than a repository that changed"];
+  return [...new Set(langs.map(engineOf))].map((id) => whyUnread(id, engines));
 }
 
 /**
@@ -243,11 +295,17 @@ function blindLines(s) {
  * two raw lines, and `commands/scan.md` tells the agent to report the lines the
  * scanner printed, so a crafted filename could forge one. The cap is the same
  * trade the report and the overview make, for the same reason.
+ *
+ * `many` is the same sentence for the tail, which counts files and so takes
+ * their verb: "and 2 more file(s) ... that was not written" gave one line two
+ * numbers.
  */
-function ruleFileLines(names, what) {
+function ruleFileLines(names, one, many) {
   const { shown, rest } = listSome(names, LISTED.report);
-  const lines = shown.map((name) => `${encodePath(name)} in ${RULES_DIR}/ ${what}`);
-  if (rest) lines.push(`and ${rest} more file(s) in ${RULES_DIR}/ that ${what}`);
+  const lines = shown.map((name) => `${encodePath(name)} in ${RULES_DIR}/ ${one}`);
+  if (rest) {
+    lines.push(`and ${rest} more ${rest === 1 ? "file" : "files"} in ${RULES_DIR}/ that ${rest === 1 ? one : many}`);
+  }
   return lines;
 }
 
@@ -259,17 +317,25 @@ function ruleFileLines(names, what) {
 function baselineLine(b) {
   if (b.status === "unreachable")
     return `the pinned commit ${b.sha ? b.sha.slice(0, 8) : "?"} is gone from this clone, so every claim dropped to counts`;
+  // A pin is there and this build cannot read it. The unpinned line's pointer
+  // at `/anatomiya:pin` is left off: the file may be a conflict to resolve or a
+  // newer build's, and nothing on the scan path suggests a re-pin (E5).
+  if (b.status === "pin-unreadable")
+    return `the pin on disk could not be read because ${b.unreadable}, so claims are measured against the current tree and no finding can exceed FIX`;
   if (b.countsOnly)
-    return "no baseline pinned: claims are measured against the current tree, and no finding can exceed FIX. `anatomiya pin` accepts one";
+    return "no baseline pinned: claims are measured against the current tree, and no finding can exceed FIX. Inside Claude Code the plugin's background refresh pins one when this checkout sits on the tip of origin's default branch with nothing uncommitted, or `/anatomiya:pin` takes one by hand";
   const drift = b.drift === null ? "" : `, ${plural(b.drift, "file")} changed since the pin (measured against ${b.baseRef ? b.baseRef.ref : "the base"})`;
   return `baseline ${b.sha.slice(0, 8)}${drift}`;
 }
 
 /** What a pin accepted, and where it put it. */
-export function pinSummary({ previous, next, delta, path, dryRun = false }) {
+export function pinSummary({ previous, next, delta, path, dryRun = false, previousUnreadable = null }) {
   return {
     sha: next.sha,
     previousSha: previous ? previous.sha : null,
+    // Why the pin on disk would not load, where there was one: the delta then
+    // counts from nothing, which reads exactly like a first pin.
+    previousUnreadable,
     areas: next.areas.length,
     delta,
     path,
@@ -279,16 +345,23 @@ export function pinSummary({ previous, next, delta, path, dryRun = false }) {
 
 /** The pin summary as the lines the CLI prints. Facts only, no recommendation. */
 export function pinLines(s) {
-  const lines = [...formatDelta(s.delta).split("\n"), ""];
+  const lines = formatDelta(s.delta).split("\n");
+  if (s.previousUnreadable) {
+    lines.push(
+      `the pin on disk could not be read because ${s.previousUnreadable}, so nothing was compared against it ` +
+        `and this ${s.dryRun ? "would replace" : "replaced"} it`
+    );
+  }
+  lines.push("");
   if (s.dryRun) {
     lines.push(`would write ${s.path}`);
     return lines;
   }
   lines.push(`wrote ${s.path}`);
-  lines.push("run `anatomiya scan` to measure the map against it");
+  lines.push("run `/anatomiya:scan` to measure the map against it");
   // The scan that follows rewrites every context file. Said here too, because
   // the pin is where a human is told to go and run it.
-  lines.push(RESTART);
+  lines.push(RUNNING_SESSION);
   return lines;
 }
 
@@ -313,6 +386,8 @@ function encodePin(s) {
         path: sanitisePath(a.path),
         added: a.added.map(sanitisePath),
         removed: a.removed.map(sanitisePath),
+        movedIn: a.movedIn.map(sanitisePath),
+        movedOut: a.movedOut.map(sanitisePath),
       })),
     },
   };

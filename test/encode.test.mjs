@@ -164,3 +164,68 @@ test("the HTML5 comment close --!> cannot survive, even inside an opened comment
   const out = encode("x<!--y--!>z");
   assert.ok(!/--!>|-->|<!--/.test(out), out);
 });
+
+test("a path written in one alphabet per segment is rendered as itself, whatever the alphabet", () => {
+  // F3 refuses a mixed-script path, the homoglyph that hides a Cyrillic `а` in
+  // `app`. Every non-Latin path was refused instead, so a repository written in
+  // Russian, Greek or Japanese got a placeholder in the overview and, since an
+  // area glob must spell its directory, no area at all.
+  for (const p of ["приложение/компоненты/форма.ts", "src/компоненты/Button.tsx", "src/工具/格式.ts", "λ/συνάρτηση.js", "アプリ/部品.tsx"]) {
+    assert.equal(sanitisePath(p), p, p);
+  }
+});
+
+// Built from code points, so what each case holds is legible in the source.
+const cp = (...points) => String.fromCodePoint(...points);
+
+test("default-ignorable code points do not ride through inside a grapheme", () => {
+  // Measured: variation selectors, the combining grapheme joiner and the Hangul
+  // fillers are marks and letters rather than format characters, so the
+  // allowlist kept them, and a payload of them rode invisibly inside one
+  // grapheme of an otherwise ordinary value.
+  const hidden = [0xfe00, 0xfe0f, 0xe0100, 0xe01ef, 0x034f, 0x3164, 0x1160, 0x115f, 0xffa0, 0x180b, 0x17b4];
+  for (const p of hidden) {
+    const value = `ab${cp(p)}${cp(p)}c`;
+    assert.equal(encode(value), "abc", `U+${p.toString(16)}`);
+    assert.equal(encodePath(`src/${value}.ts`), '"src/abc.ts"', `U+${p.toString(16)} in a path`);
+  }
+  // A letter with a combining mark is not one of them, and keeps its mark.
+  assert.equal(encode(`q${cp(0x301)}`), `q${cp(0x301)}`);
+});
+
+test("the cap bounds the length, not only the count of graphemes", () => {
+  // Measured: one grapheme can hold any number of marks, so a cap of five
+  // graphemes returned 1,000,001 code units for "x" and half a million marks.
+  const started = performance.now();
+  for (const mark of [0xe0101, 0x301, 0x5b0]) {
+    const huge = "x" + cp(mark).repeat(500_000);
+    assert.ok(encode(huge, { max: 5 }).length <= 5 * 8, `U+${mark.toString(16)}`);
+    assert.ok(encodePath(`src/${huge}.ts`).length <= 4 * 120 + 2, `U+${mark.toString(16)} in a path`);
+  }
+  assert.ok(performance.now() - started < 5000);
+  // A stack of marks is cut to what a script writes, and marked as cut.
+  assert.equal(encode("x" + cp(0x301).repeat(20)), "x" + cp(0x301).repeat(7) + "…");
+  // A conjunct a script does write is left whole.
+  const conjunct = cp(0x915, 0x94d, 0x937, 0x94d, 0x92e, 0x94d, 0x92f);
+  assert.equal(encode(conjunct), conjunct);
+});
+
+test("Armenian and Cherokee letters are look-alikes too", () => {
+  // Armenian `օ` is Latin `o`, Cherokee `Ꭺ` is Latin `A`: one of them in a Latin
+  // word is the same homoglyph the Cyrillic `а` is.
+  for (const p of [`src/c${cp(0x585)}nfig.ts`, `src/${cp(0x13aa)}dmin.ts`]) {
+    assert.match(sanitisePath(p), /^<path with mixed scripts, \d+ chars>$/, p);
+  }
+  // A word written in either alphabet alone is somebody's own language.
+  for (const p of [`src/${cp(0x562, 0x561, 0x580, 0x565, 0x582)}.ts`, `src/${cp(0x13a0, 0x13c2, 0x13a8)}.ts`]) {
+    assert.equal(sanitisePath(p), p, p);
+  }
+});
+
+test("a segment mixing look-alike alphabets is still refused", () => {
+  // Latin, Cyrillic and Greek share letter shapes, so one segment spelled in two
+  // of them reads as a name it is not.
+  for (const p of ["src/раyments.ts", "аpp/index.ts", "src/pαyments.ts"]) {
+    assert.match(sanitisePath(p), /^<path with mixed scripts, \d+ chars>$/, p);
+  }
+});

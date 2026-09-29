@@ -23,14 +23,15 @@ ways: a first line where nothing was installed at all, and an engine line where 
 3. Report what came back: what was not installed, the command it ran, the directory it ran in, and
    what npm said. Nothing is installed into the repository being scanned. It takes no path.
 
-4. Then run `/anatomiya:doctor` to see what answers now. A zero exit says npm succeeded, not that
-   every engine is ready: npm cannot install Ruby, so an interpreter line stays whatever it was.
+4. Then run `/anatomiya:doctor` to see what answers now. A zero exit says npm succeeded and every
+   engine npm provides loads afterwards, not that every engine is ready: npm cannot install Ruby, so
+   an interpreter line stays whatever it was.
 
 5. **Do not open the generated files with the Read tool.** Reading a context file permanently
    suppresses its automatic injection for the rest of the session. Use `cat` or `head` through
    Bash if you need to show one.
 
-If setup exits non-zero, show its output and stop. It says which of the three happened: this is
+If setup exits non-zero, show its output and stop. It says which of the four happened: this is
 Windows, where npm is a batch file and nothing here spawns a shell, so the printed command is for
-the user to run themselves; npm was not found at all; or npm ran and failed, and that one carries
-npm's own words.
+the user to run themselves; npm was not found at all; npm ran and failed, and that one carries npm's
+own words; or npm finished and an engine it provides still does not load, and that one names it.

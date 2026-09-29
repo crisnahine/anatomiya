@@ -86,6 +86,16 @@ test("a line shift introduces nothing, and the same file against no base introdu
   assert.match(one.fp, /^[0-9a-f]{16}$/);
 });
 
+test("a component written in a .js file is judged by the JSX rows its area states", () => {
+  // The check picked rows by extension alone, so a `.js` component adding an
+  // inline handler under a stated "handlers are named" passed unseen while the
+  // same line in `.jsx` was a finding. The head's tree is what says JSX.
+  const src = `const A = () => <B onClick={() => save(1)} />;`;
+  // Parsed under the tsx grammar, which is what `grammarFor` hands a `.js` file.
+  const found = judge({ path: "src/a.js", lang: "js", head: revision(src, { file: "f.tsx", jsx: true }) });
+  assert.deepEqual(found.map((f) => f.text), ["onClick"]);
+});
+
 test("an edit inside a pre-existing inline handler is not a new site", () => {
   const a = revision(`const A = () => <B onClick={() => save(1)} />;`);
   const b = revision(`const A = () => <B onClick={() => save(2)} />;`);
@@ -110,6 +120,64 @@ test("identical sites are told apart by count: two at the base absorb two at the
   assert.equal(judge({ head: three, base: two }).length, 1);
   assert.equal(judge({ head: three, base: one }).length, 2);
   assert.deepEqual(judge({ head: two, base: three }), []);
+});
+
+test("a site added above an identical one is reported where it was added, not where the base held one", () => {
+  // Count alone absorbed the first site in walk order, which was the new one,
+  // and reported the one the base already held: the line, the function and the
+  // annotation all pointed at code the branch never touched.
+  const slot = area(stated("swallowed_error"));
+  const base = revision(`export class L {\n  legacy() {\n    try { old(); } catch (e) {}\n  }\n}\n`, { file: "f.ts" });
+  const head = revision(
+    `export class L {\n  brandNew() {\n    try { risky(); } catch (e) {}\n  }\n  legacy() {\n    try { old(); } catch (e) {}\n  }\n}\n`,
+    { file: "f.ts" }
+  );
+
+  const found = only("swallowed_error", newlyIntroduced({ area: slot, path: "src/l.ts", lang: "js", head, base }));
+
+  assert.deepEqual(found.map((f) => [f.line, f.where]), [[3, "brandNew"]]);
+});
+
+test("renaming the function around a site still introduces nothing", () => {
+  // The control for the case above: the enclosing name picks which of a
+  // group's copies is which, and is never what makes a site new.
+  const slot = area(stated("swallowed_error"));
+  const base = revision(`export function before() {\n  try { old(); } catch (e) {}\n}\n`, { file: "f.ts" });
+  const head = revision(`export function after() {\n  try { old(); } catch (e) {}\n}\n`, { file: "f.ts" });
+
+  assert.deepEqual(only("swallowed_error", newlyIntroduced({ area: slot, path: "src/l.ts", lang: "js", head, base })), []);
+});
+
+test("a site added above a function that was renamed is the one reported, not the renamed one", () => {
+  // Neither copy's enclosing name matched the base's, so the two fell through
+  // to count, which absorbed in walk order: the report sent the reader to the
+  // renamed function's untouched line 5 and said nothing about line 2.
+  const slot = area(stated("swallowed_error"));
+  const base = revision(`export function before() {\n  try { old(); } catch (e) {}\n}\n`, { file: "f.ts" });
+  const head = revision(
+    `export function added() {\n  try { risky(); } catch (e) {}\n}\nexport function after() {\n  try { old(); } catch (e) {}\n}\n`,
+    { file: "f.ts" }
+  );
+
+  const found = only("swallowed_error", newlyIntroduced({ area: slot, path: "src/l.ts", lang: "js", head, base }));
+
+  assert.deepEqual(found.map((f) => [f.line, f.where]), [[2, "added"]]);
+});
+
+test("a file holding tens of thousands of sites is judged in time linear in its length", () => {
+  // Each site's line was counted from the start of the file, so the work grew
+  // with the square of the file: a 619 KB file of 30,000 sites took 28 seconds.
+  const n = 20000;
+  const src = Array.from({ length: n }, (_, i) => `try { g${i}(); } catch (e) {}`).join("\n") + "\n";
+  const head = revision(src, { file: "f.ts" });
+
+  const started = performance.now();
+  const found = only("swallowed_error", newlyIntroduced({ area: area(stated("swallowed_error")), path: "src/l.ts", lang: "js", head }));
+  const took = performance.now() - started;
+
+  assert.equal(found.length, n);
+  assert.deepEqual([found[0].line, found[n - 1].line], [1, n]);
+  assert.ok(took < 6000, `took ${Math.round(took)} ms`);
 });
 
 /* --- one polarity for both revisions --- */
@@ -225,6 +293,19 @@ test("a grouped row is judged per body, and a body's identity survives its inclu
   assert.deepEqual(ask(swapped, base), []);
   const [charged] = ask(grown, base);
   assert.equal(charged.fp, bodyIdentity("app/w.rb", "module_include", [{ class: "Foo" }, { class: "Bar" }, { class: "Enumerable" }]), "the body's identity is its sorted constants");
+});
+
+test("a Ruby rescue added above one the base held is the one reported", needsRuby, async (t) => {
+  // prism reports no offsets, so every rescue in a file is one identity and
+  // any added above an existing swallowing one was reported at the old one.
+  const slot = area(stated("rescue_uses_error"));
+  const body = (name) => `  def ${name}\n    go\n  rescue StandardError => e\n    nil\n  end\n`;
+  const base = await rubyRevision(t, `class W\n${body("legacy")}end\n`);
+  const head = await rubyRevision(t, `class W\n${body("brand_new")}${body("legacy")}end\n`);
+
+  const found = only("rescue_uses_error", newlyIntroduced({ area: slot, path: "app/w.rb", lang: "ruby", head, base }));
+
+  assert.deepEqual(found.map((f) => f.where), ["brand_new"]);
 });
 
 test("an omission is reported only where the map stated the claim", needsRuby, async (t) => {

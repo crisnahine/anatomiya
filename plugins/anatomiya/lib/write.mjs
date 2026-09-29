@@ -1,15 +1,19 @@
 import { mkdirSync, unlinkSync } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { renderArea, renderOverview, splitUncovered } from "./render.mjs";
-import { readFacts, writeFacts, atomic } from "./facts.mjs";
+import { FACTS_PATH, FACTS_SCHEMA, readFacts, writeFacts, atomic } from "./facts.mjs";
+import { byCode } from "./paths.mjs";
 import {
   RULES_DIR,
   STORE_DIR,
   OVERVIEW_FILE,
   areaFilename,
   auditRules,
+  blockedOnTheWay,
   isGeneratedName,
   knownNames,
+  leafReplaceable,
+  outsideClaude,
   resolveInside,
   resolveRulesDir,
 } from "./rules.mjs";
@@ -31,28 +35,62 @@ export function planMap(result) {
   // Resolved before anything is rendered, and before a dry run answers: a plan
   // reporting a clean write that cannot happen is the one answer worse than the
   // failure.
-  resolveDirs(result.root);
+  const { storeDir } = resolveDirs(result.root);
+  // The record's own name, the one leaf here the map does not audit. A directory
+  // committed at it let a dry run say "would write" and the scan die on a raw
+  // `EISDIR` out of the rename.
+  if (!leafReplaceable(join(storeDir, basename(FACTS_PATH)))) {
+    throw new Error(`${FACTS_PATH} is not a file, so the map could not be written: remove it and scan again`);
+  }
 
   const withDirectives = result.areas.filter((a) => a.dimensions.length > 0);
-  const uncovered = result.corpus.files - result.areas.reduce((s, a) => s + a.fileCount, 0);
+
+  // A run that read no file of a language cannot describe what that language
+  // holds, so it does not write over a run that could. Every file of it is
+  // charged as a failure, every area holding one counts nothing and would be
+  // removed as gone. `env -i PATH=/usr/bin:/bin` on a Rails repository is the
+  // whole of it: three correct area files deleted in the same run that reports
+  // it could not read one.
+  //
+  // Decided per language (B41). The scan holds every area that has a file of
+  // such a language in it, and those are neither written nor removed, while
+  // everything else is written as usual: a TypeScript repository with one
+  // Gemfile got no map at all on a machine without Ruby. Only a run that read
+  // no file of any language writes nothing, since the overview would then be
+  // rewritten from nothing beside area files that still load. A result that
+  // does not say which areas its unread language touched cannot be written in
+  // part, so it is blind whole. A repository holding none of a language is not
+  // blind to it, so an empty corpus still writes and still cleans up.
+  const unreadable = result.parse.unreadable || [];
+  const blind = unreadable.length > 0 && (result.held === undefined || result.readNothing === true);
+  const held = blind ? [] : result.held ?? [];
+  const heldNames = new Set(held.map(areaFilename));
+
+  // The facts on disk are the third fact ownership needs, and the record a held
+  // area's file was derived from. Read before the new record replaces them, and
+  // `null` when there is no record to read, which makes nothing removable.
+  const previous = readFacts(result.root).facts;
+  // A held area keeps the record its file was rendered from, or the check reads
+  // a map without it and the file loads with nothing on disk deriving it. Only
+  // from a record of this build's own shape: an older one read into this one
+  // would be stamped with a schema it was not written under.
+  const carried =
+    previous?.schema === FACTS_SCHEMA
+      ? previous.areas.filter((a) => isWholeArea(a) && heldNames.has(areaFilename(a)))
+      : [];
+  const described = carried.length
+    ? { ...result, areas: [...result.areas, ...carried].sort((a, b) => byCode(a.path, b.path)) }
+    : result;
+
+  // A held area whose record was carried still describes its files, so they
+  // are not uncovered. One with no record to carry describes nothing this run.
+  const carriedIds = new Set(carried.map((a) => a.id));
+  const heldCovered = held.filter((a) => carriedIds.has(a.id)).reduce((s, a) => s + a.fileCount, 0);
+  const uncovered = result.corpus.files - result.areas.reduce((s, a) => s + a.fileCount, 0) - heldCovered;
   // Of those, the ones discovery found nowhere to put. The remainder sit in an
   // area that was discovered and then dropped for counting nothing, which is a
   // parse failure or a language with no dimension, not a directory too small.
   const { orphaned } = splitUncovered(uncovered, result.corpus.orphaned ?? uncovered);
-
-  // A run that read no file of a language cannot describe this repository, so it
-  // does not write over a run that could. Every file of that language is charged
-  // as a failure, every area it held counts nothing and would be removed as
-  // gone, and the overview would be rewritten to claim zero areas beside area
-  // files that still load. `env -i PATH=/usr/bin:/bin` on a Rails repository is
-  // the whole of it: three correct area files deleted in the same run that
-  // reports it could not read one.
-  //
-  // Nothing rather than a subset, which is what a truncated corpus already gets.
-  // A repository holding none of a language is not blind to it, so an empty
-  // corpus still writes and still cleans up.
-  const unreadable = result.parse.unreadable || [];
-  const blind = unreadable.length > 0;
 
   // The names first, then the audit, then the bodies: what this run is about to
   // write decides which of the files already there are stale, and the overview
@@ -65,9 +103,7 @@ export function planMap(result) {
   }
   const planned = new Set(names);
 
-  // The third fact ownership needs. Read before the new record replaces it,
-  // and `null` when there is no record to read, which makes nothing removable.
-  const audit = auditRules(result.root, knownNames(readFacts(result.root).facts));
+  const audit = auditRules(result.root, knownNames(previous));
   // A name we are about to write that is a directory, or a fifo, or anything
   // else `readdir` reports and `rename` refuses. `anatomiya-overview.md` is a
   // fixed name, so a repository can ship a directory called that and every scan
@@ -83,8 +119,9 @@ export function planMap(result) {
   }
 
   // Ours, and this run is not rewriting it, so its area is gone or states
-  // nothing now. Everything else in the directory is left where it is.
-  const stale = blind ? [] : audit.ours.filter((f) => !planned.has(f));
+  // nothing now, unless it is held, which is this run not knowing. Everything
+  // else in the directory is left where it is.
+  const stale = blind ? [] : audit.ours.filter((f) => !planned.has(f) && !heldNames.has(f));
   // Our prefix and our key, but no map on disk names it: an older build wrote
   // it, or the store was deleted. It still loads, so it is reported; it is not
   // removed, because two of the three facts is not ownership.
@@ -112,7 +149,7 @@ export function planMap(result) {
       unknown: [...unknown].sort(),
       unreadable: [...unreadableRules].sort(),
     };
-    bodies.set(OVERVIEW_FILE, renderOverview(result, { uncovered, orphaned, others }));
+    bodies.set(OVERVIEW_FILE, renderOverview(described, { uncovered, orphaned, others }));
     for (const a of withDirectives) bodies.set(areaFilename(a), renderArea(a));
   }
 
@@ -127,14 +164,50 @@ export function planMap(result) {
     uncovered,
     orphaned,
     unreadable,
+    // The area files left as the last scan that could read them wrote them.
+    held: carried.map(areaFilename),
     bodies,
     blind,
     root: result.root,
-    // The scan itself, because the facts record is derived from the whole of it
-    // and the committer is handed a plan rather than a scan.
-    result,
+    // The scan itself, with any held area's carried record beside the ones it
+    // measured, because the facts record is derived from the whole of it and
+    // the committer is handed a plan rather than a scan.
+    result: described,
   };
 }
+
+/**
+ * Whether a held area's record on disk is whole enough to carry.
+ *
+ * The record is committed, so it is the repository's to edit, and what a carried
+ * area goes through next is the overview's renderer and the record's own writer,
+ * both of which read every dimension. Only the array was checked, and
+ * `dimensions: [null]` took the scan down with "Cannot read properties of null
+ * (reading 'states')". An area that is not whole is not carried: it is then held
+ * with no record, which the overview already counts as uncovered.
+ */
+function isWholeArea(a) {
+  return isPlain(a)
+    && typeof a.id === "string"
+    && typeof a.path === "string"
+    && Number.isFinite(a.fileCount)
+    && Array.isArray(a.dimensions)
+    && a.dimensions.every(isWholeDimension);
+}
+
+function isWholeDimension(d) {
+  return isPlain(d)
+    && typeof d.key === "string"
+    && Number.isFinite(d.candidates)
+    && Number.isFinite(d.conforming)
+    && Array.isArray(d.exceptions)
+    && (d.states === undefined || d.states === null || d.states === "claim" || d.states === "counter")
+    && (d.counterClaim === undefined || typeof d.counterClaim === "string")
+    && (d.counterExceptions === undefined || Array.isArray(d.counterExceptions))
+    && (d.baseline === undefined || isPlain(d.baseline));
+}
+
+const isPlain = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
 
 /**
  * The filesystem half: the directories, the facts, the bodies, the removals.
@@ -187,15 +260,32 @@ export function commitMap(root, plan) {
 function resolveDirs(root) {
   const rulesDir = resolveRulesDir(root);
   if (rulesDir === null) {
-    throw new Error(
-      `${RULES_DIR} resolves outside the repository, so nothing was written: this is a symlink in the working tree`
-    );
+    throw new Error(`${outsideClaude(RULES_DIR)}, so nothing was written: this is a symlink in the working tree`);
   }
   const storeDir = resolveInside(root, STORE_DIR);
   if (storeDir === null) {
-    throw new Error(
-      `${STORE_DIR} resolves outside the repository, so nothing was written: this is a symlink in the working tree`
-    );
+    throw new Error(`${outsideClaude(STORE_DIR)}, so nothing was written: this is a symlink in the working tree`);
   }
+  for (const rel of [RULES_DIR, STORE_DIR]) refuseNonDirectory(root, rel);
   return { rulesDir, storeDir };
+}
+
+/**
+ * Refuse a map directory that a file already holds, or that sits under one.
+ *
+ * Resolving says where the directory is, not that it can be one there: a
+ * regular file at `.claude/rules` let a dry run print "would write 2 files"
+ * while the real scan died on a raw `EEXIST` out of `mkdir`, and a file at
+ * `.claude` did the same with `ENOTDIR`. The nearest thing that exists on the
+ * way down to the directory has to be a directory, and the path that is not is
+ * named by the repository's own spelling of it, since it is the one to remove.
+ * A link is named as one and the link is what goes: the resolved name was
+ * printed once, and `.claude/rules -> ../README.md` told the reader to remove
+ * the README.
+ */
+function refuseNonDirectory(root, rel) {
+  const blocked = blockedOnTheWay(root, rel);
+  if (blocked === null) return;
+  const remedy = blocked.link ? "replace the link with a directory" : "remove it";
+  throw new Error(`${blocked.sentence}, so the map could not be written: ${remedy} and scan again`);
 }

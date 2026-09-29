@@ -257,12 +257,19 @@ export function pairingHits(corpus, pairing) {
  */
 export function applyPairings(parsed, corpus, langs) {
   const applied = new Set();
+  // A pairing this corpus does not answer leaves no answer behind either. The
+  // baseline reuses today's record for every producer unchanged since the pin,
+  // and today's record already carries today's answer, so where the pinned
+  // tree held no companion of the shape, specs written after the pin read as
+  // the baseline's own habit. The answer is a function of this corpus alone.
+  const unanswered = new Set(PAIRINGS.map((p) => p.key));
   for (const pairing of pairingsFor(langs)) {
     // Producers exist whatever the repository tests with: every Rails tree holds
     // app/models, so the RSpec row and the minitest row both find eligible files
     // and one can only ever read zero. One companion of that shape anywhere is
     // the evidence the habit exists at all.
     if (!usesCompanionShape(corpus, pairing)) continue;
+    unanswered.delete(pairing.key);
     applied.add(pairing.key);
     for (const [rel, hits] of pairingHits(corpus, pairing)) {
       const record = parsed.get(rel);
@@ -274,6 +281,15 @@ export function applyPairings(parsed, corpus, langs) {
       parsed.set(rel, { ...record, hits: { ...record.hits, [pairing.key]: hits } });
     }
   }
+  for (const [rel, record] of parsed) {
+    if (!record?.hits) continue;
+    const stale = Object.keys(record.hits).filter((k) => unanswered.has(k));
+    if (stale.length === 0) continue;
+    // Replaced rather than deleted from, for the reason above.
+    const hits = { ...record.hits };
+    for (const k of stale) delete hits[k];
+    parsed.set(rel, { ...record, hits });
+  }
   return applied;
 }
 
@@ -281,20 +297,30 @@ export function applyPairings(parsed, corpus, langs) {
  * Producers this branch touched whose companion is not in the tree.
  *
  * Only files the branch touched: an obligation the repository has carried for
- * years is what the map counts, not a finding against this diff.
+ * years is what the map counts, not a finding against this diff. A producer
+ * whose companion the branch removed is one it touched, through the other
+ * file: deleting an inconvenient spec passed clean while a one-line edit to
+ * its model was flagged. `removed` is every path the branch took away.
  */
-export function pairingViolations(changed, corpus, pairing) {
+export function pairingViolations(changed, corpus, pairing, removed = new Set()) {
   const packages = packagedPairings(corpus, pairing);
-  const out = [];
-  for (const path of changed) {
+  // The first package whose shape the path has decides, as the scan's own
+  // count does.
+  const owed = (path) => {
     for (const { from, root, suffixes } of packages) {
       const companion = companionOf(path, { ...pairing, from }, root);
-      if (companion === null) continue;
-      if (!companionsOf(path, { ...pairing, from }, root, suffixes).some((c) => corpus.has(c))) {
-        out.push({ path, companion });
-      }
-      break;
+      if (companion !== null) return { companion, any: companionsOf(path, { ...pairing, from }, root, suffixes) };
     }
+    return null;
+  };
+  const producers = new Set(changed);
+  if (removed.size) {
+    for (const path of corpus) if (owed(path)?.any.some((c) => removed.has(c))) producers.add(path);
+  }
+  const out = [];
+  for (const path of producers) {
+    const owes = owed(path);
+    if (owes && !owes.any.some((c) => corpus.has(c))) out.push({ path, companion: owes.companion });
   }
   return out;
 }

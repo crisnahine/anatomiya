@@ -143,6 +143,22 @@ test("a try directly in the async function counts", () => {
   assert.deepEqual(r, { candidates: 1, conforming: 1 });
 });
 
+test("a try with only a finally lets the failure through, so it handles nothing", () => {
+  // Lock, transaction and cleanup helpers are written as try/finally, which
+  // re-throws: 80 async functions none of which caught anything stated "async
+  // functions handle their own failures" at 80 of 80, a directive in the
+  // dangerous direction over code doing no handling at all.
+  assert.deepEqual(
+    counts("async_error_handling", `async function withLock() { try { await go() } finally { release() } }`),
+    { candidates: 1, conforming: 0 }
+  );
+  assert.deepEqual(
+    counts("async_error_handling", `async function f() { try { await go() } catch { log() } finally { release() } }`),
+    { candidates: 1, conforming: 1 },
+    "a catch beside the finally is still a handler"
+  );
+});
+
 // --- optional_chaining ---
 
 test("optional access on a known-optional binding is the conforming form", () => {
@@ -952,4 +968,31 @@ test("the newest declared fields are held to shape at load, each refused by name
   assert.doesNotThrow(() =>
     assertDeclaredFields([{ ...learned, groupedSites: true, noneClaim: "n", learnedFromSource: true, splitBy: () => "a", splitClaim: { a: "x <style>", b: "y <style>" } }])
   );
+});
+
+/* --- a using declaration is disposal, not module state --- */
+
+test("a using declaration is not a module_state_const site", () => {
+  // `using r = open()` disposes r when the module's evaluation ends, and a
+  // `const` in its place keeps the binding and drops the disposal.
+  assert.equal(hits("module_state_const", `using r = open()`).length, 0);
+  assert.equal(hits("module_state_const", `await using r = open()`).length, 0);
+});
+
+/* --- a shadowed catch binding is not the caught error --- */
+
+test("a nested binding of the same name does not use the caught error", () => {
+  for (const src of [
+    `try { a() } catch (e) { items.forEach((e) => log(e)) }`,
+    `try { a() } catch (e) { items.forEach(function (e) { log(e) }) }`,
+    `try { a() } catch (e) { function f(e) { log(e) } f(1) }`,
+    `try { a() } catch (e) { { const e = 1; log(e) } }`,
+  ]) {
+    assert.deepEqual(counts("swallowed_error", src), { candidates: 1, conforming: 0 }, src);
+  }
+  // A nested function that does not rebind it still reads the caught one.
+  assert.deepEqual(counts("swallowed_error", `try { a() } catch (e) { items.forEach((x) => log(e, x)) }`), {
+    candidates: 1,
+    conforming: 1,
+  });
 });

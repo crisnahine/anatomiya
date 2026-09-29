@@ -152,9 +152,9 @@ function check(dir) {
   }
 }
 
-/** The one count in `docs/how-it-works.md` this phrasing states, raised by one. */
-function bumpCount(dir, phrasing) {
-  const path = join(dir, "docs", "how-it-works.md");
+/** The one count a document states in this phrasing, raised by one. The walkthrough unless named. */
+function bumpCount(dir, phrasing, rel = "docs/how-it-works.md") {
+  const path = join(dir, ...rel.split("/"));
   const text = readFileSync(path, "utf8");
   const stated = text.match(phrasing);
   assert.ok(stated, `the walkthrough states no count matching ${phrasing}`);
@@ -172,6 +172,22 @@ test("an untouched copy of this repository passes", (t) => {
   assert.match(output, /docs match the code/);
 });
 
+test("the worktree recipe is read line by line, so a CRLF checkout passes and a missing line still fails", (t) => {
+  // Git on Windows checks the README out with CRLF endings, where a search for
+  // "\n**/path\n" matched none of the three lines.
+  const dir = repoCopy(t);
+  const path = join(dir, "README.md");
+  const crlf = readFileSync(path, "utf8").replace(/\r?\n/g, "\r\n");
+  writeFileSync(path, crlf);
+  const clean = check(dir);
+  assert.equal(clean.status, 0, clean.output);
+
+  writeFileSync(path, crlf.replace("**/.claude/anatomiya/baseline.json\r\n", ""));
+  const missing = check(dir);
+  assert.equal(missing.status, 1);
+  assert.match(missing.output, /does not have a worktree Claude Code makes copy \.claude\/anatomiya\/baseline\.json/);
+});
+
 test("a registry key with no model-defaults entry is named, with the seeder as its remedy", (t) => {
   const dir = repoCopy(t);
   const path = join(dir, REL.anatomiya, "lib", "model-defaults.json");
@@ -184,6 +200,52 @@ test("a registry key with no model-defaults entry is named, with the seeder as i
   assert.equal(status, 1);
   assert.match(output, /swallowed_error/);
   assert.match(output, /npm run defaults:seed/);
+});
+
+test("a command file that spells an invocation the CLI refuses fails", (t) => {
+  // The command files are the only interface an agent uses, and the CLI
+  // refuses an unknown verb or an option its verb does not take with exit 2.
+  // A misspelled verb and a flag moved to the wrong verb both passed every
+  // gate here and would have broken every /anatomiya:check.
+  const dir = repoCopy(t);
+  const path = join(dir, REL.anatomiya, "commands", "check.md");
+  const body = readFileSync(path, "utf8");
+  assert.ok(body.includes('bin/anatomiya.mjs" check .'), "check.md spells the invocation this case breaks");
+  writeFileSync(path, body.replace('bin/anatomiya.mjs" check .', 'bin/anatomiya.mjs" chek .'));
+
+  const typo = check(dir);
+  assert.equal(typo.status, 1);
+  assert.match(typo.output, /commands\/check\.md: .*chek/);
+
+  writeFileSync(path, body.replace('bin/anatomiya.mjs" check .', 'bin/anatomiya.mjs" check . --deep'));
+
+  const flag = check(dir);
+  assert.equal(flag.status, 1);
+  assert.match(flag.output, /commands\/check\.md: .*check \. --deep/);
+});
+
+test("the README's share of the dimension total is read against the registry", (t) => {
+  // "One of the 57 needs the type checker" survived a 58th row: the gate read
+  // "N dimensions" and nothing else, so a count spelled any other way drifted.
+  const dir = repoCopy(t);
+  const wrong = bumpCount(dir, /One of the (\d+)/, "README.md");
+
+  const { status, output } = check(dir);
+
+  assert.equal(status, 1);
+  assert.match(output, new RegExp(wrong));
+});
+
+test("the JSX total the walkthrough explains is read against the registry", (t) => {
+  // "The five JSX rows make the JSX total 32 rather than 27" stayed put while
+  // a JavaScript row took both numbers up by one.
+  const dir = repoCopy(t);
+  const wrong = bumpCount(dir, /JSX total (\d+) rather than \d+/);
+
+  const { status, output } = check(dir);
+
+  assert.equal(status, 1);
+  assert.match(output, new RegExp(wrong));
 });
 
 test("a shipping count in the walkthrough the registry does not hold fails", (t) => {
@@ -540,6 +602,20 @@ test("a tracked copy with nothing wrong still passes, so the sweep is not failin
   const { status, output } = check(repoCopyTracked(t));
 
   assert.equal(status, 0, output);
+});
+
+// A tracked file removed from the working tree and not yet staged is still in
+// git's list, and reading it threw a stack in place of the gate's answer.
+test("a tracked document deleted from the working tree is passed over, not read", needsCheckout, (t) => {
+  const dir = repoCopyTracked(t);
+  writeFileSync(join(dir, "docs", "gone.md"), "A note.\n");
+  execFileSync("git", ["add", "docs/gone.md"], { cwd: dir });
+  rmSync(join(dir, "docs", "gone.md"));
+
+  const { status, output } = check(dir);
+
+  assert.equal(status, 0, output);
+  assert.doesNotMatch(output, /ENOENT|at readFileSync/);
 });
 
 test("a document carrying the path of the machine it was written on is failed", needsCheckout, (t) => {

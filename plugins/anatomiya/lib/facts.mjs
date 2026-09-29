@@ -7,10 +7,11 @@
  * older record was copied into two modules, and the reader never looked at the
  * version at all.
  */
-import { mkdirSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { randomBytes } from "node:crypto";
+import { closeSync, mkdirSync, openSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 
-import { readHead, resolveInside } from "./rules.mjs";
+import { outsideClaude, readHead, resolveInside } from "./rules.mjs";
 import { wilsonLower } from "./reduce.mjs";
 
 export const FACTS_PATH = ".claude/anatomiya/facts.json";
@@ -230,14 +231,18 @@ export function readFacts(root) {
   // enforced claim, every area assignment and every severity in the check, so
   // reading it through a link out of the repository lets a directory the
   // repository does not own decide what the branch is judged against.
+  //
+  // The leaf too, not only its directory: `atomic` replaces a link there as an
+  // entry, but a read follows it, and a committed
+  // `.claude/anatomiya/facts.json -> /elsewhere/facts.json` handed the check
+  // another directory's areas.
   const dir = resolveInside(root, dirname(FACTS_PATH));
-  if (dir === null) {
-    return {
-      facts: null,
-      unreadable: `${dirname(FACTS_PATH)} resolves outside the repository, so no map was read from it`,
-    };
+  const path = dir === null ? null : resolveInside(root, FACTS_PATH);
+  if (path === null) {
+    const which = dir === null ? dirname(FACTS_PATH) : FACTS_PATH;
+    return { facts: null, unreadable: `${outsideClaude(which)}, so no map was read from it` };
   }
-  const { record: parsed, oversize } = readRecord(join(dir, basename(FACTS_PATH)));
+  const { record: parsed, oversize } = readRecord(path);
   if (oversize) {
     return { facts: null, unreadable: `the map on disk is past the ${RECORD_MOST / 2 ** 20} MB this reads, so nothing was enforced from it` };
   }
@@ -301,9 +306,9 @@ function withOlderFields(parsed) {
  * directory it had already created.
  */
 export function atomic(path, body) {
-  const tmp = `${path}.tmp-${process.pid}`;
-  writeFileSync(tmp, body);
+  const tmp = writeTemp(path, body);
   try {
+    // Replaces the destination entry itself, never what a link there names.
     renameSync(tmp, path);
   } catch (err) {
     try {
@@ -311,6 +316,36 @@ export function atomic(path, body) {
     } catch {}
     throw err;
   }
+}
+
+/** `body` in a new file beside `path`, whole, and that file's path. */
+export function writeTemp(path, body) {
+  // Unpredictable, and created exclusively: `wx` is O_CREAT|O_EXCL, which
+  // refuses any entry already there, a planted link included, and never follows
+  // one. The name was `<path>.tmp-<pid>`, opened with a plain write, so a
+  // repository shipping that name as a tracked symlink had the map's bytes
+  // written wherever it pointed. The directories were resolved (F2); this
+  // leaf was not.
+  const tmp = `${path}.tmp-${process.pid}-${randomBytes(8).toString("hex")}`;
+  // Created on its own, and written inside the cleanup: a write that fails part
+  // way, on a full disk, has already made the temp file, and ENOSPC out of a
+  // single `writeFileSync` before the `try` left it beside the map. A create
+  // that fails made nothing, so there is nothing of this call's to remove, and
+  // an entry already at that name is somebody else's.
+  const fd = openSync(tmp, "wx");
+  try {
+    try {
+      writeFileSync(fd, body);
+    } finally {
+      closeSync(fd);
+    }
+  } catch (err) {
+    try {
+      unlinkSync(tmp);
+    } catch {}
+    throw err;
+  }
+  return tmp;
 }
 
 /**
@@ -325,7 +360,7 @@ export function writeFacts(root, result) {
   // the repository does not own, beside the map it is the record of.
   const dir = resolveInside(root, dirname(FACTS_PATH));
   if (dir === null) {
-    throw new Error(`${dirname(FACTS_PATH)} resolves outside the repository, so the facts were not written`);
+    throw new Error(`${outsideClaude(dirname(FACTS_PATH))}, so the facts were not written`);
   }
   mkdirSync(dir, { recursive: true });
   atomic(join(dir, basename(FACTS_PATH)), JSON.stringify(factsRecord(result), null, 2) + "\n");
@@ -406,6 +441,10 @@ function dimensionRecord(d) {
     // population to one. Absent on an older record means "not narrowed", which
     // is what every scan before this did.
     ...(d.learnedKind === undefined ? {} : { learnedKind: d.learnedKind }),
+    // The area's classes that reach the learned base through a class it declares
+    // (single-table inheritance). Absent on an older record, which judged the
+    // learned base alone.
+    ...(Array.isArray(d.reaches) && d.reaches.length ? { reaches: d.reaches } : {}),
     // Only when true, the way `borrowed` is: an older record reads as unnarrowed
     // and gets the plain sentence, which is the one its own map printed.
     ...(d.narrowed === true ? { narrowed: true } : {}),

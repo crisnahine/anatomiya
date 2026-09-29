@@ -7,14 +7,16 @@ import { pathToFileURL } from "node:url";
 import { execFileSync } from "node:child_process";
 
 import { needsShebang } from "./platform.mjs";
+import { needsRuby } from "./ruby-available.mjs";
 import { compact, delivered, filler, transcript } from "./transcript.mjs";
 import { installWithoutDependencies } from "./plugin-install.mjs";
 import { addWorktree, scratch } from "./git-worktrees.mjs";
 import { runCheck, runDoctor, runEcho, runNotice, runPin, runReuse, runScan, runSetup } from "../plugins/anatomiya/lib/commands.mjs";
-import { scanLines } from "../plugins/anatomiya/lib/summary.mjs";
+import { pinLines, scanLines } from "../plugins/anatomiya/lib/summary.mjs";
 import { PIN_PATH } from "../plugins/anatomiya/lib/baseline.mjs";
 import { PROBE_IDS, pluginRoot } from "../plugins/anatomiya/lib/readiness.mjs";
 import { OVERVIEW_FILE } from "../plugins/anatomiya/lib/rules.mjs";
+import { CAVEATS } from "../plugins/anatomiya/lib/check-report.mjs";
 import { loadTypeScript } from "../plugins/anatomiya/lib/semantic.mjs";
 
 const RULES = join(".claude", "rules");
@@ -53,13 +55,45 @@ function repoWithBranch(t) {
   return dir;
 }
 
-/** The same repository with one Ruby file in it, so the scan needs an interpreter as well as a parser. */
-function repoWithRuby(t) {
-  const dir = repo(t);
-  writeFileSync(join(dir, "src", "a.rb"), "class A\n  def b\n    1\n  end\nend\n");
+/**
+ * A TypeScript repository whose only Ruby is the Gemfile at its root, the shape
+ * the React Native template ships: CocoaPods reads it, and nothing in the
+ * repository is written in Ruby.
+ */
+function repoWithGemfile(t) {
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-commands-gemfile-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+  for (const sub of ["utils", "components"]) mkdirSync(join(dir, "src", sub), { recursive: true });
+  for (let i = 0; i < 6; i++) {
+    writeFileSync(join(dir, "src", "utils", `u${i}.ts`), `export function f${i}(a: number) {\n  try { return a + 1 } catch (e) { throw e }\n}\n`);
+    writeFileSync(join(dir, "src", "components", `C${i}.tsx`), `export const C${i} = () => <div className="x">hi</div>\n`);
+  }
+  writeFileSync(join(dir, "Gemfile"), 'source "https://rubygems.org"\ngem "cocoapods", "~> 1.13"\n');
   const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
+  git("init", "-q", "-b", "main");
+  git("config", "user.email", "t@t.test");
+  git("config", "user.name", "T");
   git("add", "-A");
-  git("commit", "-qm", "ruby");
+  git("commit", "-qm", "init");
+  return dir;
+}
+
+/** A repository written in Ruby and nothing else, so no file of it can be read without an interpreter. */
+function repoOnlyRuby(t) {
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-commands-ruby-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+
+  mkdirSync(join(dir, "app", "models"), { recursive: true });
+  for (let i = 0; i < 8; i++) {
+    writeFileSync(join(dir, "app", "models", `m${i}.rb`), `class M${i}\n  def b\n    1\n  end\nend\n`);
+  }
+  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
+  git("init", "-q");
+  git("config", "user.email", "t@t.test");
+  git("config", "user.name", "T");
+  git("add", "-A");
+  git("commit", "-qm", "init");
   return dir;
 }
 
@@ -147,6 +181,22 @@ test("a scan takes out the hook an older version wrote, and says so once", async
   assert.ok(scanLines(first).some((l) => l.includes("taken out")), "and printed");
   assert.equal(existsSync(settings), false, "the file held nothing else");
   assert.equal(second.hookRemoved, false, "nothing left to take out");
+});
+
+test("a dry run says the old hook would be taken out, and leaves it where it is", async (t) => {
+  // A dry run is the plan without the write, and this line said the write had
+  // happened: measured before this, `scan --dry-run` printed "it was taken
+  // out" over a settings file it had not touched.
+  const dir = repo(t);
+  mkdirSync(join(dir, ".claude"), { recursive: true });
+  const settings = join(dir, ".claude", "settings.local.json");
+  writeFileSync(settings, JSON.stringify(OLD_HOOK_SETTINGS));
+
+  const lines = scanLines((await runScan(dir, { dryRun: true })).summary);
+
+  assert.ok(lines.some((l) => l.endsWith("it would be taken out")), lines.join("\n"));
+  assert.ok(!lines.some((l) => l.includes("was taken out")), lines.join("\n"));
+  assert.equal(readFileSync(settings, "utf8"), JSON.stringify(OLD_HOOK_SETTINGS), "and it is still there");
 });
 
 test("two scans over unchanged source say the same thing", async (t) => {
@@ -249,8 +299,10 @@ test("a scan with no interpreter is told to install Ruby, never to run npm", nee
   // Measured on a Ruby repository with no `ruby` on PATH: the scan exited 1
   // with `spawn ruby ENOENT` and then "run `npm install --omit=dev` in the
   // plugin directory". npm cannot install an interpreter, and the one remedy
-  // printed was the only one that could not work.
-  const dir = repoWithRuby(t);
+  // printed was the only one that could not work. Refused only where no
+  // other language was there to read: every file here is Ruby, so a map would
+  // be an empty one.
+  const dir = repoOnlyRuby(t);
   const path = process.env.PATH;
   t.after(() => {
     process.env.PATH = path;
@@ -266,6 +318,60 @@ test("a scan with no interpreter is told to install Ruby, never to run npm", nee
       return true;
     }
   );
+});
+
+test("a TypeScript repository with a Gemfile still gets its map when ruby is missing", needsShebang, async (t) => {
+  // Measured on the React Native template's shape, twelve .ts and .tsx files
+  // and the Gemfile CocoaPods reads, on a machine with no ruby: the scan
+  // exited 1 on `spawn ruby ENOENT` and wrote nothing, and the background
+  // refresh failed the same way every session, so a repository written in
+  // TypeScript got no map at all. An engine missing for one language costs
+  // that language's files, and the map and the summary both say which and
+  // what to do about it.
+  const dir = repoWithGemfile(t);
+  const path = process.env.PATH;
+  t.after(() => {
+    process.env.PATH = path;
+  });
+  process.env.PATH = withoutRuby(t);
+
+  const { plan, summary } = await runScan(dir);
+
+  assert.equal(plan.write.filter((name) => name !== OVERVIEW_FILE).length, 2, plan.write.join(", "));
+  for (const name of plan.write) assert.ok(existsSync(join(dir, RULES, name)), `${name} is on disk`);
+  const lines = scanLines(summary);
+  assert.ok(lines.some((l) => /read no ruby file/.test(l)), lines.join("\n"));
+  assert.ok(lines.some((l) => /install Ruby 3\.4 or newer/.test(l)), lines.join("\n"));
+  const overview = readFileSync(join(dir, RULES, OVERVIEW_FILE), "utf8");
+  assert.match(overview, /no ruby file was read\b.*install Ruby 3\.4 or newer/, overview);
+});
+
+test("a check of a change to a Gemfile and a .ts file checks the .ts file when ruby is missing", needsShebang, async (t) => {
+  // The same machine and the same repository: a branch that added a Gemfile
+  // line beside a TypeScript file exited 1 on `spawn ruby ENOENT`, so the
+  // TypeScript change went unchecked because one file of another language
+  // could not be read. The Gemfile is named as not checked, with the remedy.
+  const dir = repoWithGemfile(t);
+  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
+  git("checkout", "-q", "-b", "feat");
+  writeFileSync(join(dir, "Gemfile"), 'source "https://rubygems.org"\ngem "cocoapods", "~> 1.13"\ngem "fastlane"\n');
+  writeFileSync(join(dir, "src", "utils", "u7.ts"), "export function g(a: number) {\n  try { return a } catch (e) { }\n}\n");
+  git("add", "-A");
+  git("commit", "-qm", "feat");
+  const path = process.env.PATH;
+  t.after(() => {
+    process.env.PATH = path;
+  });
+  process.env.PATH = withoutRuby(t);
+
+  const { report } = await runCheck(dir, { baseRef: "main" });
+
+  const said = report.caveats.map((c) => c.message).join("\n");
+  assert.ok(!report.caveats.some((c) => c.message.includes("u7.ts")), `the TypeScript file was checked:\n${said}`);
+  assert.ok(report.caveats.some((c) => c.message.startsWith("Gemfile ")), `the Gemfile is named as unchecked:\n${said}`);
+  const missing = report.caveats.find((c) => c.code === CAVEATS.ENGINE_MISSING);
+  assert.ok(missing, `and the missing engine is named:\n${said}`);
+  assert.match(missing.message, /install Ruby 3\.4 or newer.*then check again$/, "with its remedy");
 });
 
 test("a pin writes the baseline and answers with the delta it accepted", async (t) => {
@@ -290,6 +396,74 @@ test("a dry-run pin writes nothing", async (t) => {
   assert.equal(summary.dryRun, true);
 });
 
+test("a pin whose store is linked outside the repository refuses, dry run included", async (t) => {
+  // The refusal belongs to the half that plans (A19), or a dry run answers with
+  // a clean delta for a write that lands in `../victim` the moment one is asked
+  // for.
+  const dir = repo(t);
+  const outside = mkdtempSync(join(tmpdir(), "anatomiya-outside-"));
+  t.after(() => rmSync(outside, { recursive: true, force: true }));
+  symlinkSync(outside, join(dir, ".claude"));
+
+  for (const dryRun of [true, false]) {
+    await assert.rejects(() => runPin(dir, { dryRun }), /outside the repository/, `dryRun ${dryRun}`);
+  }
+  assert.deepEqual(readdirSync(outside), [], "nothing was written through the link");
+});
+
+test("a pin refuses a tree that differs from the commit it would record", async (t) => {
+  // The pin records HEAD's sha and its file list came from the index and the
+  // working tree: a staged file, an intent-to-add or an uncommitted edit was
+  // listed against a commit that does not hold it, and every scan after read
+  // that area as a population change for as long as the pin stood.
+  const dir = repo(t);
+  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
+  const cases = [
+    ["a staged file", () => { writeFileSync(join(dir, "src", "new.ts"), "export const n = 1\n"); git("add", "src/new.ts"); }],
+    ["an edited file", () => writeFileSync(join(dir, "src", "f0.ts"), "export const a0 = 2\n")],
+  ];
+  for (const [name, dirty] of cases) {
+    dirty();
+    for (const dryRun of [true, false]) {
+      await assert.rejects(() => runPin(dir, { dryRun }), /commit or stash/, `${name}, dryRun ${dryRun}`);
+    }
+    assert.equal(existsSync(join(dir, PIN_PATH)), false, name);
+    git("reset", "-q", "--hard");
+    git("clean", "-qfd", "src");
+  }
+  // Untracked files are not in the corpus, so they are not a difference.
+  writeFileSync(join(dir, "notes.txt"), "scratch\n");
+  await runPin(dir);
+  assert.ok(existsSync(join(dir, PIN_PATH)));
+});
+
+test("a pin refuses while a merge has left a path unmerged, under .claude/ as well", async (t) => {
+  // `ls-files` lists an unmerged path once per stage, so a pin taken mid-merge
+  // recorded the file three times and a corpus two larger than the tree, and
+  // the corpus fixes the area floor for every scan after. The dirty check
+  // caught a conflict in src/ and let one through under .claude/, which it
+  // leaves out for this tool's own output: a tracked source file there made
+  // an area of one file listed three times.
+  const dir = repo(t);
+  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
+  mkdirSync(join(dir, ".claude", "hooks"), { recursive: true });
+  writeFileSync(join(dir, ".claude", "hooks", "h.mjs"), "export const h = 1\n");
+  git("add", "-A");
+  git("commit", "-qm", "hook");
+  git("checkout", "-q", "-b", "other");
+  writeFileSync(join(dir, ".claude", "hooks", "h.mjs"), "export const h = 2\n");
+  git("commit", "-qam", "other");
+  git("checkout", "-q", "-");
+  writeFileSync(join(dir, ".claude", "hooks", "h.mjs"), "export const h = 3\n");
+  git("commit", "-qam", "here");
+  assert.throws(() => git("merge", "-q", "other"), "the merge conflicts");
+
+  for (const dryRun of [true, false]) {
+    await assert.rejects(() => runPin(dir, { dryRun }), /unmerged paths, and a pin records HEAD/, `dryRun ${dryRun}`);
+  }
+  assert.equal(existsSync(join(dir, PIN_PATH)), false);
+});
+
 test("a second pin measures itself against the first", async (t) => {
   const dir = repo(t);
   await runPin(dir);
@@ -303,6 +477,69 @@ test("a second pin measures itself against the first", async (t) => {
   assert.ok(previous, "the pin already on disk was read");
   assert.equal(summary.previousSha, previous.sha);
   assert.equal(summary.delta.addedFiles, 1);
+});
+
+test("a pin over no tracked source refuses, and counts the source still untracked", async (t) => {
+  // A young repository whose source was never committed pinned an empty
+  // population with exit 0 and "0 files enter": every area the first commit
+  // then made read postdates-baseline and stated nothing until somebody
+  // re-pinned, with no line anywhere saying why.
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-commands-empty-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
+  git("init", "-q");
+  git("config", "user.email", "t@t.test");
+  git("config", "user.name", "T");
+  writeFileSync(join(dir, "README.md"), "hi\n");
+  git("add", "-A");
+  git("commit", "-qm", "init");
+  mkdirSync(join(dir, "src"));
+  for (let i = 0; i < 4; i++) writeFileSync(join(dir, "src", `f${i}.ts`), `export const x${i} = ${i}\n`);
+
+  for (const dryRun of [true, false]) {
+    await assert.rejects(() => runPin(dir, { dryRun }), /nothing to pin: 4 source files in the working tree are untracked/, `dryRun ${dryRun}`);
+  }
+  assert.equal(existsSync(join(dir, PIN_PATH)), false);
+});
+
+test("a scan over a pin that conflicted on a merge says the pin would not load", async (t) => {
+  // The pin is committed, so a merge can leave markers in it. The scan printed
+  // "no baseline pinned" and pointed at `anatomiya pin`, over a pin a human had
+  // accepted and a conflict nobody had been told about.
+  const dir = repo(t);
+  await runPin(dir);
+  const path = join(dir, PIN_PATH);
+  const text = readFileSync(path, "utf8");
+  writeFileSync(path, `<<<<<<< HEAD\n${text}=======\n${text}>>>>>>> other\n`);
+
+  const { summary } = await runScan(dir, { dryRun: true });
+  const lines = scanLines(summary);
+
+  assert.ok(lines.some((l) => l.startsWith("the pin on disk could not be read because it does not parse as JSON")), lines.join("\n"));
+});
+
+test("a pin over one this build cannot read says it is replacing it, not pinning for the first time", async (t) => {
+  // A pin a newer build wrote read as no pin at all, so the delta printed
+  // "baseline pinned at", the first pin's wording, and the write replaced the
+  // newer file with nothing on screen saying there had been one.
+  const dir = repo(t);
+  await runPin(dir);
+  const path = join(dir, PIN_PATH);
+  writeFileSync(path, JSON.stringify({ ...JSON.parse(readFileSync(path, "utf8")), schema: 2 }));
+
+  for (const [dryRun, verb] of [[true, "would replace"], [false, "replaced"]]) {
+    const { summary } = await runPin(dir, { dryRun });
+    assert.ok(
+      pinLines(summary).includes(
+        `the pin on disk could not be read because it is schema 2 and this build reads 1, so nothing was compared against it and this ${verb} it`
+      ),
+      pinLines(summary).join("\n")
+    );
+    if (dryRun) continue;
+    // Pinned over, the file reads again, and the next pin compares against it.
+    const { summary: again } = await runPin(dir, { dryRun: true });
+    assert.equal(again.previousUnreadable, null);
+  }
 });
 
 test("a repository with no commit cannot be pinned", async (t) => {
@@ -368,16 +605,34 @@ test("a setup with the dependencies already installed runs nothing", needsEveryt
   assert.match(output, /^nothing to install: oxc \d/, output);
 });
 
-test("a dry run answers the exact command and runs nothing", async () => {
+test("a dry run answers the exact command and runs nothing", async (t) => {
   // `--ignore-scripts` is the load-bearing one: without it a dependency's
-  // install script runs arbitrary code in the plugin directory.
-  const { command, ran, ok, output } = await runSetup({ dryRun: true });
+  // install script runs arbitrary code in the plugin directory. And
+  // `--include=optional`, because oxc's native binding is an optional
+  // dependency: an npm configured with `optional=false` left it out, answered
+  // "up to date", and the parser never loaded. Asked of a copy with nothing
+  // installed, since a dry run with nothing to do names no command to run.
+  const home = installWithoutDependencies(t);
+  const { runSetup: fromCopy } = await import(pathToFileURL(join(home, "lib", "commands.mjs")).href);
 
-  assert.deepEqual(command, ["npm", "install", "--omit=dev", "--ignore-scripts", "--no-audit", "--no-fund"]);
+  const { command, ran, ok, output } = await fromCopy({ dryRun: true });
+
+  assert.deepEqual(command, ["npm", "install", "--omit=dev", "--include=optional", "--ignore-scripts", "--no-audit", "--no-fund"]);
   assert.equal(ran, false);
   assert.equal(ok, true);
-  assert.match(output, /would run npm install --omit=dev --ignore-scripts --no-audit --no-fund in /, output);
-  assert.ok(output.includes(pluginRoot()), `and it says which directory that is: ${output}`);
+  assert.match(output, /would run npm install --omit=dev --include=optional --ignore-scripts --no-audit --no-fund in /, output);
+  assert.ok(output.includes(realpathSync(home)), `and it says which directory that is: ${output}`);
+});
+
+test("a dry run with nothing to install says so and names no command", needsEverything, async () => {
+  // Measured: "nothing to install: oxc 0.x, ..." and then "would run npm
+  // install ...", two lines that contradict each other about the same install.
+  const { ran, ok, output } = await runSetup({ dryRun: true });
+
+  assert.equal(ran, false);
+  assert.equal(ok, true);
+  assert.match(output, /^nothing to install: oxc \d/, output);
+  assert.doesNotMatch(output, /would run/, output);
 });
 
 test("a setup on Windows refuses rather than spawning an npm it cannot start", async (t) => {
@@ -394,7 +649,7 @@ test("a setup on Windows refuses rather than spawning an npm it cannot start", a
   assert.equal(ok, false);
   assert.equal(ran, false);
   assert.deepEqual(needed, ["oxc", "flow-remove-types", "typescript"], "the copy has no node_modules, so there is something to install");
-  assert.match(output, /npm install --omit=dev --ignore-scripts --no-audit --no-fund/, output);
+  assert.match(output, /npm install --omit=dev --include=optional --ignore-scripts --no-audit --no-fund/, output);
   // Compared as the same directory rather than as the same string: node
   // resolves a module's own path, so `pluginRoot()` answers the realpath while
   // the fixture holds what `mkdtemp` returned. They share a suffix on macOS
@@ -404,14 +659,15 @@ test("a setup on Windows refuses rather than spawning an npm it cannot start", a
 
 test("a Windows machine with everything installed is told that, not the refusal", needsEverything, async () => {
   // The refusal sits after the two short-circuits: it is about an install that
-  // has to happen, and a dry run's own line is the by-hand instruction.
+  // has to happen, and a dry run with nothing to install has nothing to hand over.
   const done = await runSetup({ platform: "win32" });
   const dry = await runSetup({ platform: "win32", dryRun: true });
 
   assert.equal(done.ok, true);
   assert.match(done.output, /^nothing to install: oxc \d/, done.output);
   assert.equal(dry.ok, true);
-  assert.match(dry.output, /would run npm install --omit=dev/, dry.output);
+  assert.match(dry.output, /^nothing to install: oxc \d/, dry.output);
+  assert.doesNotMatch(dry.output, /would run/, dry.output);
 });
 
 /**
@@ -452,7 +708,13 @@ test("setup is the only command that runs npm, so a scan, a check and a pin inst
 
 // --- what a hook is answered with ---------------------------------------------
 
-/** A scanned repository with mailers nobody tests and services everybody does. */
+/**
+ * A scanned repository with mailers nobody tests and services everybody does.
+ *
+ * Ruby, so the scan it runs refuses without a prism the tool reads, and every
+ * case built on it carries `needsRuby`: ungated, all of them failed on the
+ * missing interpreter rather than on anything a hook does.
+ */
 async function railsish(t) {
   const dir = mkdtempSync(join(realpathSync(tmpdir()), "anatomiya-hookcmd-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
@@ -699,7 +961,7 @@ test("a path too long to name a place does not cost the turn its map", async (t)
   assert.match(runEcho(join(parent, "alpha"), read).hookSpecificOutput.additionalContext, /src\/core: 6 \.js/);
 });
 
-test("the notice answers for a test going where its kind of file has none", async (t) => {
+test("the notice answers for a test going where its kind of file has none", needsRuby, async (t) => {
   const dir = await railsish(t);
 
   const out = runNotice(dir, write(dir, "spec/mailers/cim_share_mailer_spec.rb"));
@@ -710,7 +972,7 @@ test("the notice answers for a test going where its kind of file has none", asyn
   assert.equal(out.hookSpecificOutput.permissionDecision, undefined, "it informs and never refuses");
 });
 
-test("the notice answers with an empty object for everything it cannot decide", async (t) => {
+test("the notice answers with an empty object for everything it cannot decide", needsRuby, async (t) => {
   const dir = await railsish(t);
   const spec = join(dir, "spec/mailers/cim_share_mailer_spec.rb");
 
@@ -740,7 +1002,7 @@ test("a repository nobody has scanned is answered with an empty object by both h
 /** A linked worktree of a checkout, which carries none of its untracked `.claude/`. */
 const worktreeOf = (t, dir) => addWorktree(dir, join(scratch(t), "wt"));
 
-test("a linked worktree with no map of its own is answered from its main checkout, and says so", async (t) => {
+test("a linked worktree with no map of its own is answered from its main checkout, and says so", needsRuby, async (t) => {
   // Measured on a front end whose `.claude/` is git-ignored: every linked
   // worktree had no map, so both hooks answered `{}` there, and the sessions
   // doing the work in one wrote tests into `__tests__` directories the map
@@ -759,7 +1021,7 @@ test("a linked worktree with no map of its own is answered from its main checkou
   assert.doesNotMatch(echoed, /Counted from this repository's own code/);
 });
 
-test("a borrowed layout is judged against the worktree's own files, not the main checkout's", async (t) => {
+test("a borrowed layout is judged against the worktree's own files, not the main checkout's", needsRuby, async (t) => {
   // The counts come from the main checkout; what sits on disk is this branch's.
   // A spec this worktree already holds is precedent here, and one only the main
   // checkout holds is not.
@@ -775,13 +1037,15 @@ test("a borrowed layout is judged against the worktree's own files, not the main
   assert.deepEqual(runNotice(wt, write(wt, "spec/mailers/cim_share_mailer_spec.rb")), {});
 });
 
-test("the end-of-turn check reads a worktree's own change against its main checkout's record", async (t) => {
+test("the end-of-turn check reads a worktree's own change against its main checkout's record", needsRuby, async (t) => {
   // The third hook gates on the same record, so a worktree used to end every
   // turn unchecked. The change it asks about is the worktree's, never one
   // sitting in the main checkout.
   const dir = await railsish(t);
   const wt = worktreeOf(t, dir);
-  const stop = (cwd) => ({ hook_event_name: "Stop", cwd });
+  // A session that began a minute ago, as every real stop names one.
+  const session = transcript(t, [{ type: "user", timestamp: new Date(Date.now() - 60 * 1000).toISOString(), message: { role: "user", content: "go" } }]);
+  const stop = (cwd) => ({ hook_event_name: "Stop", cwd, transcript_path: session });
 
   writeFileSync(join(dir, "app/services/g.rb"), "class G\nend\n");
   assert.deepEqual(await runReuse(wt, stop(wt)), {}, "a change only the main checkout holds");
@@ -793,7 +1057,7 @@ test("the end-of-turn check reads a worktree's own change against its main check
   assert.doesNotMatch(out.reason, /app\/services\/g\.rb/);
 });
 
-test("a worktree that was scanned answers with its own map, not its main checkout's", async (t) => {
+test("a worktree that was scanned answers with its own map, not its main checkout's", needsRuby, async (t) => {
   const dir = await railsish(t);
   const wt = worktreeOf(t, dir);
   await runScan(wt, {});
@@ -804,7 +1068,7 @@ test("a worktree that was scanned answers with its own map, not its main checkou
   assert.doesNotMatch(runNotice(wt, write(wt, "spec/mailers/cim_share_mailer_spec.rb")).hookSpecificOutput.additionalContext, /main checkout/);
 });
 
-test("both hooks answer a payload when this process has no working directory", async (t) => {
+test("both hooks answer a payload when this process has no working directory", needsRuby, async (t) => {
   // `process.cwd()` refuses with ENOENT once the directory a session started in
   // is unlinked, which `git worktree remove` does under a session sitting in
   // one. The entry point hands that value in, so the base has to be allowed to
@@ -834,7 +1098,7 @@ test("a payload that names no place, with no working directory either, is silenc
   assert.deepEqual(runNotice(undefined, { hook_event_name: "PreToolUse", tool_name: "Write", tool_input: { file_path: "spec/x_spec.rb" } }), {});
 });
 
-test("the echo hands back the map it was asked for, and nothing without an event", async (t) => {
+test("the echo hands back the map it was asked for, and nothing without an event", needsRuby, async (t) => {
   const dir = await railsish(t);
 
   assert.deepEqual(runEcho(dir, {}), {}, "no event name");
@@ -843,7 +1107,7 @@ test("the echo hands back the map it was asked for, and nothing without an event
   assert.match(out.hookSpecificOutput.additionalContext, /<repository-map delivered="/);
 });
 
-test("the echo says nothing when this context window already holds the same map", async (t) => {
+test("the echo says nothing when this context window already holds the same map", needsRuby, async (t) => {
   const dir = await railsish(t);
   const first = runEcho(dir, { hook_event_name: "PostToolUse" }).hookSpecificOutput.additionalContext;
   const path = transcript(t, [{ type: "user", message: { content: "go" } }, delivered(first)]);
@@ -851,7 +1115,7 @@ test("the echo says nothing when this context window already holds the same map"
   assert.deepEqual(runEcho(dir, { hook_event_name: "PostToolUse", transcript_path: path }), {});
 });
 
-test("the echo delivers again once a compaction follows the last delivery", async (t) => {
+test("the echo delivers again once a compaction follows the last delivery", needsRuby, async (t) => {
   const dir = await railsish(t);
   const first = runEcho(dir, { hook_event_name: "PostToolUse" }).hookSpecificOutput.additionalContext;
   const path = transcript(t, [delivered(first), compact()]);
@@ -859,7 +1123,7 @@ test("the echo delivers again once a compaction follows the last delivery", asyn
   assert.match(runEcho(dir, { hook_event_name: "PostToolUse", transcript_path: path }).hookSpecificOutput.additionalContext, /<repository-map /);
 });
 
-test("the echo delivers a map that differs from the one the window holds", async (t) => {
+test("the echo delivers a map that differs from the one the window holds", needsRuby, async (t) => {
   const dir = await railsish(t);
   const older = runEcho(dir, { hook_event_name: "PostToolUse" }).hookSpecificOutput.additionalContext.replace(/digest="[0-9a-f]{12}"/, `digest="${"0".repeat(12)}"`);
   const path = transcript(t, [delivered(older)]);
@@ -867,7 +1131,7 @@ test("the echo delivers a map that differs from the one the window holds", async
   assert.match(runEcho(dir, { hook_event_name: "PostToolUse", transcript_path: path }).hookSpecificOutput.additionalContext, /<repository-map /);
 });
 
-test("the echo holds a delivery 200 KiB back and delivers again past 256 KiB", async (t) => {
+test("the echo holds a delivery 200 KiB back and delivers again past 256 KiB", needsRuby, async (t) => {
   const dir = await railsish(t);
   const first = runEcho(dir, { hook_event_name: "PostToolUse" }).hookSpecificOutput.additionalContext;
   const after = (bytes) => transcript(t, [delivered(first), filler(bytes)]);
@@ -876,7 +1140,7 @@ test("the echo holds a delivery 200 KiB back and delivers again past 256 KiB", a
   assert.match(runEcho(dir, { hook_event_name: "PostToolUse", transcript_path: after(256 * 1024) }).hookSpecificOutput.additionalContext, /<repository-map /);
 });
 
-test("a re-scan that changes the map on disk is delivered on the next call", async (t) => {
+test("a re-scan that changes the map on disk is delivered on the next call", needsRuby, async (t) => {
   const dir = await railsish(t);
   const first = runEcho(dir, { hook_event_name: "PostToolUse" }).hookSpecificOutput.additionalContext;
   const path = transcript(t, [delivered(first)]);
@@ -886,7 +1150,7 @@ test("a re-scan that changes the map on disk is delivered on the next call", asy
   assert.match(runEcho(dir, { hook_event_name: "PostToolUse", transcript_path: path }).hookSpecificOutput.additionalContext, /One more line/);
 });
 
-test("the echo delivers when the transcript names nothing it can read, and ignores a copy that is not its own delivery", async (t) => {
+test("the echo delivers when the transcript names nothing it can read, and ignores a copy that is not its own delivery", needsRuby, async (t) => {
   const dir = await railsish(t);
   const first = runEcho(dir, { hook_event_name: "PostToolUse" }).hookSpecificOutput.additionalContext;
   const quoted = { type: "user", message: { content: [{ type: "tool_result", content: first }] } };
@@ -898,7 +1162,7 @@ test("the echo delivers when the transcript names nothing it can read, and ignor
   assert.match(runEcho(dir, { hook_event_name: "PostToolUse", transcript_path: path }).hookSpecificOutput.additionalContext, /<repository-map /, "a tool result quoting the map is not a delivery");
 });
 
-test("a subagent's echo is answered from its own transcript, never from the session's", async (t) => {
+test("a subagent's echo is answered from its own transcript, never from the session's", needsRuby, async (t) => {
   const dir = await railsish(t);
   const first = runEcho(dir, { hook_event_name: "PostToolUse" }).hookSpecificOutput.additionalContext;
   const session = transcript(t, [delivered(first)]);
@@ -918,7 +1182,7 @@ test("a subagent's echo is answered from its own transcript, never from the sess
   );
 });
 
-test("a workflow stage's echo is answered from its transcript under the workflow's run", async (t) => {
+test("a workflow stage's echo is answered from its transcript under the workflow's run", needsRuby, async (t) => {
   const dir = await railsish(t);
   const first = runEcho(dir, { hook_event_name: "PostToolUse" }).hookSpecificOutput.additionalContext;
   const session = transcript(t, []);
@@ -931,7 +1195,7 @@ test("a workflow stage's echo is answered from its transcript under the workflow
   assert.deepEqual(runEcho(dir, stage), {});
 });
 
-test("a subagent's window is found whatever case the session transcript's extension is in", async (t) => {
+test("a subagent's window is found whatever case the session transcript's extension is in", needsRuby, async (t) => {
   const dir = await railsish(t);
   const first = runEcho(dir, { hook_event_name: "PostToolUse" }).hookSpecificOutput.additionalContext;
   const session = transcript(t, []).replace(/\.jsonl$/, ".JSONL");
@@ -942,7 +1206,7 @@ test("a subagent's window is found whatever case the session transcript's extens
   assert.deepEqual(runEcho(dir, { hook_event_name: "PostToolUse", transcript_path: session, agent_id: "b1c2" }), {});
 });
 
-test("the echo holds a delivery made after a compaction, and reads a null agent_id as the main thread", async (t) => {
+test("the echo holds a delivery made after a compaction, and reads a null agent_id as the main thread", needsRuby, async (t) => {
   const dir = await railsish(t);
   const first = runEcho(dir, { hook_event_name: "PostToolUse" }).hookSpecificOutput.additionalContext;
   const path = transcript(t, [compact(), delivered(first)]);
@@ -951,7 +1215,7 @@ test("the echo holds a delivery made after a compaction, and reads a null agent_
   assert.deepEqual(runEcho(dir, { hook_event_name: "PostToolUse", transcript_path: path, agent_id: null }), {});
 });
 
-test("a rewrite that changes only the frontmatter is not a new map", async (t) => {
+test("a rewrite that changes only the frontmatter is not a new map", needsRuby, async (t) => {
   const dir = await railsish(t);
   const first = runEcho(dir, { hook_event_name: "PostToolUse" }).hookSpecificOutput.additionalContext;
   const path = transcript(t, [delivered(first)]);

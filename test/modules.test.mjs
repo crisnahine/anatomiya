@@ -240,7 +240,7 @@ test("the bounded git reads stay on the buffered runner", () => {
   // bounded by what they are, and streaming them buys nothing.
   const git = bodies("git.mjs");
 
-  for (const name of ["showBlob", "headSha", "mergeBase", "shaReachable"]) {
+  for (const name of ["showBlob", "commitAt", "mergeBase", "shaReachable"]) {
     assert.match(git.get(name), /gitBuffered\(/, `${name} left the runner it belongs on`);
   }
 });

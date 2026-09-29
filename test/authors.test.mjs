@@ -196,6 +196,54 @@ test("a blobless clone answers without reaching for the network", async (t) => {
   assert.deepEqual(sorted(map.get("src/b.ts")), ["second@t.test"]);
 });
 
+test("a blobless clone whose remote is not called origin still answers offline", async (t) => {
+  // `git clone -o upstream --filter=blob:none` writes `remote.upstream.promisor`,
+  // and a check of `remote.origin.promisor` alone took it for a full clone: plain
+  // `-M` with lazy fetch off, a missing blob, and "history could not be read".
+  const origin = repo(t, (d, { git, write, author, commit }) => {
+    git("config", "uploadpack.allowFilter", "true");
+    write("src/a.ts", "export const a = 1\nexport const b = 2\n");
+    commit("one");
+    author("second@t.test");
+    git("mv", "src/a.ts", "src/b.ts");
+    write("src/b.ts", "export const a = 1\nexport const b = 2\nexport const c = 3\n");
+    commit("rename and edit, which only inexact detection follows");
+  });
+  const parent = mkdtempSync(join(tmpdir(), "anatomiya-partial-"));
+  const clone = join(parent, "clone");
+  t.after(() => {
+    rmSync(parent, { recursive: true, force: true });
+    rmSync(origin, { recursive: true, force: true });
+  });
+  execFileSync("git", ["clone", "-q", "-o", "upstream", "--filter=blob:none", `file://${origin}`, clone], {
+    stdio: "pipe",
+  });
+  rmSync(origin, { recursive: true, force: true });
+
+  const map = await authorsByFile(clone);
+
+  assert.equal(map.error, undefined, `history must read offline: ${map.error}`);
+  assert.deepEqual(sorted(map.get("src/b.ts")), ["second@t.test"]);
+});
+
+test("the root commit's author counts whatever log.showRoot says", async (t) => {
+  // With `log.showRoot=false` git prints no diff for a root commit, so every file
+  // it added had no name-status line and its author was never recorded: a
+  // one-commit repository read as having no authors at all.
+  const dir = repo(t, (d, { git, write, author, commit }) => {
+    git("config", "log.showRoot", "false");
+    write("src/a.ts", "export const a = 1\n");
+    commit("root");
+    author("second@t.test");
+    write("src/a.ts", "export const a = 2\n");
+    commit("touch");
+  });
+
+  const map = await authorsByFile(dir);
+
+  assert.deepEqual(sorted(map.get("src/a.ts")), ["first@t.test", "second@t.test"]);
+});
+
 test("a repository with no commits yields an empty map instead of losing the scan", async (t) => {
   const dir = repo(t, () => {});
 
@@ -383,6 +431,31 @@ test("a window of history cannot lower the author bar, however few authors it ho
   assert.equal(truncated.authorsRequired, 2);
   assert.equal(truncated.directive, false);
   assert.equal(truncated.gate, "authors");
+});
+
+test("one person under two addresses is one author", async (t) => {
+  // Work and personal addresses, or a GitHub noreply beside a real one, are
+  // routine. A repository that declares the two the same person in .mailmap,
+  // or that only differs in case, would otherwise hand one person's habit the
+  // second author the gate asks for.
+  const dir = repo(t, (d, { write, author, commit }) => {
+    author("alice@work.test");
+    write("src/a.ts", "export const a = 1\n");
+    commit("at work");
+    author("alice@home.test");
+    write("src/b.ts", "export const b = 1\n");
+    commit("at home");
+    author("Alice@Work.test");
+    write("src/c.ts", "export const c = 1\n");
+    commit("shouting");
+    write(".mailmap", "Alice <alice@work.test> <alice@home.test>\n");
+    commit("one person");
+  });
+
+  const map = await authorsByFile(dir);
+  const corpus = ["src/a.ts", "src/b.ts", "src/c.ts"].map((rel) => ({ rel }));
+
+  assert.equal(repoAuthorCount(corpus, map), 1);
 });
 
 test("a bot is not the second author", async () => {
