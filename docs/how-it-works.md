@@ -831,16 +831,18 @@ directory the repository does not own never decides the population the gates rea
 closed; the check reports it as a caveat, because refusing a branch at review time is the blocking
 behaviour this design rejects.
 
-Inside the repository is not the whole rule. `.claude` has to be a real directory, and both
-directories have to resolve inside it: committed `.claude/anatomiya -> ../.git/hooks` and
-`.claude/rules -> ../src` resolve inside the repository, and the scan wrote `facts.json` into
-`.git/hooks` and the map into `src` while printing `.claude/...`. A link within `.claude` is still
-followed. `facts.json` and `baseline.json` are read through the same resolution, their own names
-included, so a link at either is not followed out; a write replaces it as an entry. A refusal names
-the path the repository spells and says when it is a link, since the resolved name once read
-"README.md is not a directory ... remove it" for `.claude/rules -> ../README.md`. The planning half
-also refuses a directory at `facts.json` or `baseline.json`, which the rename cannot replace, so a
-dry run of `scan` or `pin` refuses what the real run would die on.
+Inside the repository is not the whole rule. `.claude` has to be a real directory, and the store has
+to resolve inside it: a committed `.claude/anatomiya -> ../.git/hooks` resolves inside the
+repository, and the scan wrote `facts.json` into `.git/hooks` while printing `.claude/...`.
+`.claude/rules` may lead elsewhere in the working tree, but never into the git directory:
+calcom/cal.diy commits `.claude/rules -> ../agents/rules` to share one rules directory between
+agents, and refused, the scan wrote nothing there at all. A link within `.claude` is still followed.
+`facts.json` and `baseline.json` are read through the same resolution, their own names included, so
+a link at either is not followed out; a write replaces it as an entry. A refusal names the path the
+repository spells and says when it is a link, since the resolved name once read "README.md is not a
+directory ... remove it" for `.claude/rules -> ../README.md`. The planning half also refuses a
+directory at `facts.json` or `baseline.json`, which the rename cannot replace, so a dry run of
+`scan` or `pin` refuses what the real run would die on.
 
 Files in there are read by their head, one megabyte at most, and only when the opened handle is a
 regular file. The ownership test reads the frontmatter from byte zero a line at a time, and stops at

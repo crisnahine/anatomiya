@@ -141,17 +141,20 @@ the prefix that the tool did not write is reported, never removed.
 If you clone an unfamiliar repository, read `.claude/rules/` before you start a session. That is true
 whether or not you use this tool.
 
-The two directories this tool writes, `.claude/rules` and `.claude/anatomiya`, are resolved component
-by component and must land inside the repository's own `.claude`, which must itself be a real
-directory rather than a link. Inside the repository is not enough: a committed
-`.claude/anatomiya -> ../.git/hooks` and `.claude/rules -> ../src` both resolve inside it, and a scan
-wrote `facts.json` into `.git/hooks` and the map into `src` while printing `.claude/...`. Any such
-link is refused by name before a dry run answers, and so is a store or record that the write could
-not get past (a file where a directory belongs, a directory at `facts.json` or `baseline.json`).
-A refusal names the path the repository spells, and says when it is a link, so it never points at
-the file a link resolves to. `facts.json` and `baseline.json` are read through the same resolution,
-their own name included, so a link at either leaf is not followed out of `.claude`; a write replaces
-such a link as an entry rather than writing through it.
+The two directories this tool writes, `.claude/rules` and `.claude/anatomiya`, are resolved
+component by component. `.claude` must be a real directory rather than a link, and the store must
+land inside it: inside the repository is not enough, since a committed
+`.claude/anatomiya -> ../.git/hooks` resolves inside it and a scan wrote `facts.json` into
+`.git/hooks`. `.claude/rules` may lead elsewhere in the working tree, never out of the repository or
+into its git directory: a repository sharing one rules directory between agents
+(`.claude/rules -> ../agents/rules`) is read through that link by Claude Code too, and the files
+written there are only this tool's own `anatomiya-*.md`. Any other link is refused by name before a
+dry run answers, and so is a store or record that the write could not get past (a file where a
+directory belongs, a directory at `facts.json` or `baseline.json`). A refusal names the path the
+repository spells, and says when it is a link, so it never points at the file a link resolves to.
+`facts.json` and `baseline.json` are read through the same resolution, their own name included, so a
+link at either leaf is not followed out of `.claude`; a write replaces such a link as an entry
+rather than writing through it.
 
 ### Parser crashes are contained by a process boundary
 
