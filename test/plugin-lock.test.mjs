@@ -110,6 +110,31 @@ test("a package whose name begins with the workspace directory's is not a worksp
   assert.equal(seed.packages["node_modules/@plugins/scoped"].version, "2.0.0");
 });
 
+test("the seed carries no libc, hoisted or nested, and keeps the rest of the entry", () => {
+  // npm 11 keeps a `libc` it is handed and npm 10 drops it, so a seed carrying
+  // one gave the Node 22 and Node 24 legs two different lockfiles.
+  const binding = { version: "0.151.0", os: ["linux"], cpu: ["x64"], libc: ["glibc"], optional: true };
+  const root = {
+    lockfileVersion: 3,
+    packages: {
+      "": { name: "crisnahine" },
+      "node_modules/@oxc-parser/binding-linux-x64-gnu": binding,
+      [`${REL.anatomiya}/node_modules/@oxc-parser/binding-linux-x64-musl`]: { ...binding, libc: ["musl"] },
+    },
+  };
+
+  const seed = seedFor(root, MANIFEST);
+
+  for (const name of ["binding-linux-x64-gnu", "binding-linux-x64-musl"]) {
+    const entry = seed.packages[`node_modules/@oxc-parser/${name}`];
+    assert.equal(entry.libc, undefined, name);
+    assert.deepEqual(entry.os, ["linux"], name);
+    assert.deepEqual(entry.cpu, ["x64"], name);
+    assert.equal(entry.optional, true, name);
+  }
+  assert.deepEqual(binding.libc, ["glibc"], "the root lockfile it read is left as it was");
+});
+
 test("the seed states the plugin's own name and version, not the marketplace's", () => {
   const seed = seedFor({ lockfileVersion: 3, packages: { "": { name: "crisnahine" } } }, MANIFEST);
 
