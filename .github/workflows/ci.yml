@@ -51,7 +51,7 @@ jobs:
       # runner image ships no prism of its own, so without this the Ruby tier
       # would skip on every leg and half the tool would go untested behind a
       # green tick.
-      - uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1.321.0
+      - uses: ruby/setup-ruby@14594264cd68ce8a2345dd349bc3d138a4ef85c8 # v1.327.0
         with:
           ruby-version: "3.4"
 
@@ -114,7 +114,7 @@ jobs:
           node-version: "22"
           cache: npm
 
-      - uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1.321.0
+      - uses: ruby/setup-ruby@14594264cd68ce8a2345dd349bc3d138a4ef85c8 # v1.327.0
         with:
           ruby-version: "3.4"
 
@@ -424,7 +424,7 @@ jobs:
       # 3.3 ships prism 0.19, which the parser child rejects by version because
       # a rescue chain and a constant path are spelled differently there and
       # every count would silently come back zero.
-      - uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1.321.0
+      - uses: ruby/setup-ruby@14594264cd68ce8a2345dd349bc3d138a4ef85c8 # v1.327.0
         with:
           ruby-version: "3.4"
 
