@@ -17,8 +17,9 @@
  * caller may read output without.
  */
 import { execFile, spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import { devNull } from "node:os";
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 
 import { MAX_FILE_BYTES } from "./limits.mjs";
@@ -228,6 +229,7 @@ const REPOSITORY_COMMANDS =
   "^(filter\\..+\\.(clean|smudge|process)" +
   "|core\\.(sshcommand|askpass|gitproxy|alternaterefscommand)" +
   "|remote\\..+\\.uploadpack" +
+  "|lfs\\.(extension\\..+\\.(clean|smudge)|customtransfer\\..+\\.path|standalonetransferagent)" +
   "|credential\\.(.+\\.)?helper)$";
 
 const NO_REPOSITORY_COMMANDS = Object.freeze({ config: [], uploadPack: null, noGitProtocol: false });
@@ -248,11 +250,6 @@ function parseScopedConfig(out) {
   return entries;
 }
 
-/**
- * The environment entries that replace what `entries` names from the
- * repository, the upload-pack to name on the command line, and whether the
- * `git://` transport is closed for this repository.
- */
 // The exact commands `git lfs install --local` writes. They run the user's own
 // installed `git-lfs`, found on their PATH, and not a script the repository
 // ships; replaced, every LFS file whose stat moved read as changed and `pin`
@@ -264,8 +261,17 @@ const STANDARD_LFS = new Map([
 ]);
 const isStandardLfs = (e) => STANDARD_LFS.get(e.key)?.has(String(e.value ?? "").trim()) === true;
 
+/**
+ * The environment entries that replace what `entries` names from the
+ * repository, the upload-pack to name on the command line, and whether the
+ * `git://` transport is closed for this repository.
+ */
 function replacementsFor(entries, env) {
-  const ours = entries.filter((e) => REPOSITORY_SCOPES.has(e.scope) && !isStandardLfs(e));
+  // git-lfs reads this config as well, and runs an extension or transfer
+  // command it names, so a repository naming one gets no git-lfs at all,
+  // whoever's filter would have started it.
+  const lfsCommand = entries.some((e) => REPOSITORY_SCOPES.has(e.scope) && e.key.startsWith("lfs."));
+  const ours = entries.filter((e) => REPOSITORY_SCOPES.has(e.scope) && (lfsCommand || !isStandardLfs(e)));
   if (ours.length === 0) return NO_REPOSITORY_COMMANDS;
   const theirs = entries.filter((e) => !REPOSITORY_SCOPES.has(e.scope));
   // Last one wins for every single-valued key here, as git reads them.
@@ -280,6 +286,10 @@ function replacementsFor(entries, env) {
   let credentials = false;
   let uploadPack = null;
   let noGitProtocol = false;
+  if (lfsCommand) {
+    for (const kind of ["clean", "smudge", "process"]) replace(`filter.lfs.${kind}`, "");
+    replace("filter.lfs.required", "false");
+  }
 
   for (const { key } of ours) {
     const filter = /^filter\.(.+)\.(clean|smudge|process)$/.exec(key);
@@ -403,7 +413,10 @@ async function prepared(root, args, env, { lazyFetch, timeout }) {
   }
   return {
     args: extra.length ? [...args.slice(0, at + 1), ...extra, ...args.slice(at + 1)] : args,
-    env: gitEnv(env, { lazyFetch, repository }),
+    // A lazy fetch is git's own child, reading the upload-pack from config with
+    // no command line of ours, so where the repository names one the object
+    // stays missing instead.
+    env: gitEnv(env, { lazyFetch: lazyFetch && !repository.uploadPack, repository }),
   };
 }
 
@@ -700,7 +713,12 @@ export async function shaReachable(root, sha) {
  * branch moves and the population it named would move with it.
  */
 export async function headSha(root) {
-  const r = await gitBuffered(root, ["rev-parse", "--verify", "--quiet", "HEAD^{commit}"]);
+  return commitAt(root, "HEAD");
+}
+
+/** The commit `ref` names, or null where it names none. */
+export async function commitAt(root, ref) {
+  const r = await gitBuffered(root, ["rev-parse", "--verify", "--quiet", `${ref}^{commit}`]);
   const sha = r.ok ? r.stdout.trim() : "";
   return isSha(sha) ? sha : null;
 }
@@ -753,16 +771,20 @@ export async function mergeBase(root, a, b) {
   return { found: false, failed: r.code !== 1, sha: null };
 }
 
-/**
- * What git leaves in its directory while an operation is unfinished. The tree
- * then holds a state that exists only until the operation completes: the other
- * side's work mid-merge, a commit a bisect is visiting, an index being written.
- * One list, because the refresh and the end-of-turn check each kept their own
- * and the two had already drifted apart.
- */
-export const UNFINISHED_OPERATIONS = Object.freeze([
+const UNFINISHED_OPERATIONS = Object.freeze([
   "MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD", "BISECT_LOG", "rebase-merge", "rebase-apply", "index.lock",
 ]);
+
+/**
+ * Whether git has left an operation unfinished in `gitdir`. The tree then holds
+ * a state that exists only until the operation completes: the other side's work
+ * mid-merge, a commit a bisect is visiting, an index being written. One test,
+ * because the refresh and the end-of-turn check each kept their own and the two
+ * had already drifted apart.
+ */
+export function operationUnfinished(gitdir) {
+  return UNFINISHED_OPERATIONS.some((name) => existsSync(join(gitdir, name)));
+}
 
 /**
  * The refs a base is looked for in, in order. `origin/HEAD` names the remote's
@@ -794,8 +816,7 @@ export async function resolveBaseRef(root, ref = null) {
 
   const tried = ref ? [ref] : BASE_REFS;
   for (const candidate of tried) {
-    const r = await gitBuffered(root, ["rev-parse", "--verify", "--quiet", `${candidate}^{commit}`]);
-    const sha = r.ok ? r.stdout.trim() : "";
+    const sha = await commitAt(root, candidate);
     if (!sha) continue;
 
     // The fork point, where one exists, so the branch's own commits sit outside

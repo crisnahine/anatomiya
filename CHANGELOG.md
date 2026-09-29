@@ -49,8 +49,29 @@ line review of `check`, the pin, the Ruby parser and the dimension rows.
   ssh command, credential helpers, askpass, `git://` proxy, alternate-refs command, upload-pack and
   signature program, and those of its submodules, are replaced for every git call, while your own
   global settings for the same keys keep working.
+- A partial clone's lazy fetch, on `check`'s read of the merge base, still ran an upload-pack the
+  repository's own config named. For such a repository that fetch is not made, and the object reads
+  as missing.
+- A repository could still run a command through Git LFS, which reads the repository's config and
+  runs an extension or transfer command named there. A repository naming one gets no `git-lfs` at
+  all, your global filter included.
+- A lock file the repository shipped as a link to `/dev/zero` hung every refresh worker with its
+  memory growing, and one stamped in the future held every refresh. The lock is read bounded, and a
+  future stamp is stale.
+- The first automatic pin was held for good for anyone who had pushed straight to the default branch
+  from another machine before the clone existed, and a pin whose commit git had collected (a
+  squash-merged branch) held with a line blaming a commit made here. Both now pin.
+- `git fetch origin main:main` read as this clone moving the tracking ref, and held the pin, while
+  `git fetch --refmap=...` putting another branch into the tracking ref was followed.
+- A repository committing the refresh's lock, or any other file under `.claude/anatomiya/`, had it
+  removed by the refresh, and `pin` then refused the tree. Such a checkout is left alone.
+- A move landing while another refresh held the lock waited for the next move. The holder now runs
+  once more.
+- A linked worktree on reftable missed a commit on its detached HEAD until the next session.
+- `check` on macOS parsed one of two paths spelling an accented name two ways with the other's
+  contents.
 - The automatic pin could still accept this clone's own commit once its reflog record was gone: a
-  worktree removed with its branch (how Claude Code's worktrees end), or entries expired by `gc`.
+  worktree removed with its branch (how Claude Code's worktrees end), or, past a pin, entries expired by `gc`.
   A commit whose committer is this clone's own identity is now held too. A commit subject starting
   "Fast-forward" or a branch named with parentheses no longer reads as a fast-forward or a rebase step.
 - A copied project's `.claude/` in a subdirectory made the refresh scan the enclosing repository,
@@ -160,8 +181,11 @@ line review of `check`, the pin, the Ruby parser and the dimension rows.
   nothing appended to the `logs/HEAD` the hook watched. It now watches the index there, or the
   reftable table list, so a commit or a pull refreshes the map as it does everywhere else.
 - When the automatic pin stops following (a commit made in this clone on the default branch, a tip
-  this clone pushed, a tip with no record of how it moved), the next session starts with one line in
-  the terminal saying so. It is recorded in `refresh.json` too, and never reaches the model.
+  this clone pushed, a tip with no record of how it moved, a question git could not answer), each
+  session you start or resume opens with one line in the terminal saying so, until a pin by hand, or
+  a refresh that no longer holds it, ends it; a compaction or a clear inside the session does not
+  repeat it. It is recorded in
+  `refresh.json` too, and never reaches the model.
 - The end-of-turn check asks git for the reflog where it is not a file (reftable), so a turn that
   committed everything it wrote is still asked about there.
 - A refresh worker whose lock had been taken over no longer deletes the new holder's lock.

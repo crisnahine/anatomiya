@@ -236,3 +236,29 @@ test("two paths that differ only in case are written where neither overwrites th
   // The first asked keeps the plain path, which is where every other file sits.
   assert.equal(out.files.find((f) => f.rel === "src/Foo.ts").abs, join(out.dir, "src", "Foo.ts"));
 });
+
+test("two paths that differ only in how their accents are encoded are written where neither overwrites the other", async (t) => {
+  // APFS also folds Unicode normalization, so `café.ts` composed and decomposed
+  // are one file there, as two cases are.
+  const composed = "src/caf\u00e9.ts";
+  const decomposed = "src/cafe\u0301.ts";
+  let sha;
+  const dir = repo(t, (d, { git }) => {
+    // Git on macOS composes every path it is handed unless told not to.
+    git("config", "core.precomposeUnicode", "false");
+    for (const [rel, which] of [[composed, "composed"], [decomposed, "decomposed"]]) {
+      const blob = execFileSync("git", ["hash-object", "-w", "--stdin"], { cwd: d, input: `export const which = '${which}'\n` }).toString().trim();
+      git("update-index", "--add", "--cacheinfo", `100644,${blob},${rel}`);
+    }
+    git("commit", "-qm", "first");
+    sha = git("rev-parse", "HEAD").trim();
+  });
+
+  const out = await readAtRevision(dir, sha, [{ rel: composed }, { rel: decomposed }]);
+  t.after(out.dispose);
+
+  const want = { [composed]: "composed", [decomposed]: "decomposed" };
+  assert.equal(out.files.length, 2);
+  for (const f of out.files) assert.equal(readFileSync(f.abs, "utf8"), `export const which = '${want[f.rel]}'\n`, f.rel);
+  assert.equal(new Set(out.files.map((f) => f.abs.normalize("NFC").toLowerCase())).size, 2);
+});

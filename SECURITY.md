@@ -198,8 +198,11 @@ against nothing (F5). On a partial clone (`--filter=blob:none`) the check's read
 and its diff of the changed files against it let git fetch the base's blobs of the changed paths it
 does not hold from the clone's own promisor remote, because without them every changed file was
 skipped, or the whole diff refused over one rename; every other git read, the scan's included, runs
-with `GIT_NO_LAZY_FETCH` and reads a missing object as missing (F14). That is the whole of it: no
-other command reaches anything, and the scan makes no outbound call at any point.
+with `GIT_NO_LAZY_FETCH` and reads a missing object as missing (F14). A repository that names its
+own `remote.<name>.uploadpack` gets no lazy fetch at all: that fetch is git's own child, which reads
+the upload-pack from config with no command line of ours to outrank it, so the object reads as
+missing there too. That is the whole of it: no other command reaches anything, and the scan makes no
+outbound call at any point.
 
 A repository shipped as a tarball rather than cloned carries its own `.git/config`, and some of its
 keys are commands git runs on a read. `core.fsmonitor` is the one a `git status` runs, so every git
@@ -218,22 +221,31 @@ file its `.gitattributes` routes through the driver, and on the check's fetch `c
 refused), `core.gitProxy`, `core.alternateRefsCommand` and `remote.<name>.uploadpack`. Once per
 repository per process, one `git config --show-scope --get-regexp` reads which of them the
 repository's own files (`local` and `worktree` scope) set, which runs none of them, and each is
-replaced for every git call on that repository: a filter by the user's own value for the same key
-or by none, with `required` off so git reads the file as its bytes; the ssh command, the askpass and
+replaced for every git call on that repository: a filter by the user's own value for the same key or
+by none, with `required` off so git reads the file as its bytes; the ssh command, the askpass and
 the alternate-refs command by the user's own value, or by `ssh` (or `GIT_SSH`), none and `true`; the
-credential helper list emptied and refilled with the user's own helpers. Three are first-match-wins
-in git and cannot be replaced by a later entry: an upload-pack is named on the `fetch` and
-`ls-remote` command line instead, a repository naming its own `core.gitProxy` has the `git://`
-transport closed, and a `status` or a `diff` passes `--ignore-submodules=dirty`, so git never runs
-inside a submodule to ask whether it is dirty, under a config whose filter names this process never
-read, and a `submodule.<name>.ignore` the repository sets cannot ask it to. A submodule whose commit
-moved is still reported. A config git will not read refuses the call rather than making it with
-nothing replaced. Measured on git 2.43 and 2.51, each against a control that shows plain git
-running the same command (`test/git.test.mjs`). One set of values is left alone: the exact commands
-`git lfs install --local` writes (`git-lfs clean -- %f`, `git-lfs smudge -- %f`,
+credential helper list emptied and refilled with the user's own helpers. A value you set in the
+repository's own config yourself is replaced too, since nothing tells it from one a tarball shipped:
+a per-repository `core.sshCommand` or credential helper goes unused on the check's shallow fetch,
+and set in your global config, or in a file an `includeIf` there names, it is used. Three are
+first-match-wins in git and cannot be replaced by a later entry: an upload-pack is named on the
+`fetch` and `ls-remote` command line instead, a repository naming its own `core.gitProxy` has the
+`git://` transport closed, and a `status` or a `diff` passes `--ignore-submodules=dirty`, so git
+never runs inside a submodule to ask whether it is dirty, under a config whose filter names this
+process never read, and a `submodule.<name>.ignore` the repository sets cannot ask it to. A
+submodule whose commit moved is still reported. A config git will not read refuses the call rather
+than making it with nothing replaced. Measured on git 2.43 and 2.51, each against a control that
+shows plain git running the same command (`test/git.test.mjs`). One set of values is left alone: the
+exact commands `git lfs install --local` writes (`git-lfs clean -- %f`, `git-lfs smudge -- %f`,
 `git-lfs filter-process`), which run the user's own installed `git-lfs` rather than a script the
 repository ships; replaced, every LFS file whose stat moved read as changed. Any other command under
-the `lfs` filter name is the repository's and is replaced like the rest.
+the `lfs` filter name is the repository's and is replaced like the rest. git-lfs reads the
+repository's config as well, and runs an `lfs.extension.<name>.clean` or `.smudge` command, a custom
+transfer's `path` or a standalone transfer agent named there, so a repository naming any of them
+gets no git-lfs at all: the `lfs` filter is emptied whoever set it, your global one included. A
+standalone agent or custom transfer you set up in the repository's own config is emptied with it, so
+set it in your global config. As with plain git, `filter.lfs.required` set on a machine with no
+`git-lfs` installed fails every read that hashes an LFS file, `pin` and `check` included.
 
 `anatomiya doctor` spawns the other one, `ruby`, to ask which version of `prism` that interpreter
 ships. It runs under the same scrub the Ruby parser child gets, with `RUBYOPT`, `RUBYLIB` and

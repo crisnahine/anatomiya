@@ -347,7 +347,11 @@ export function leafReplaceable(path) {
   }
 }
 
-function isLink(path) {
+/**
+ * Whether the path is a symbolic link, false where even lstat is refused: a
+ * directory this may not enter answers EACCES here as well as to realpath.
+ */
+export function isLink(path) {
   try {
     return lstatSync(path).isSymbolicLink();
   } catch {

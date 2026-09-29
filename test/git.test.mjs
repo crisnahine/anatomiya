@@ -742,6 +742,45 @@ test("Git LFS installed for this repository alone still runs, and nothing else u
   assert.equal(evil.ran(), true, "and plain git would have run it");
 });
 
+test("a repository that names a command for Git LFS to run keeps git-lfs from running at all", needsShebang, async (t) => {
+  // git-lfs reads the repository's config too, and runs an `lfs.extension` clean
+  // command on every clean it does. The standard filter, local or the user's
+  // global one, is then the door to the repository's command.
+  const bin = scratch(t, "anatomiya-git-lfs-bin-");
+  const marker = join(bin, "ran-lfs");
+  writeFileSync(join(bin, "git-lfs"), `#!/bin/sh\ntouch '${marker}'\ncat\n`);
+  chmodSync(join(bin, "git-lfs"), 0o755);
+  const extension = tripwire(bin, "extension", "cat");
+  const cases = [
+    ["filter.lfs.clean", "git-lfs clean -- %f"],
+    ["lfs.extension.x.clean", `${extension.path} %f`],
+    ["lfs.customtransfer.x.path", extension.path],
+    ["lfs.standalonetransferagent", "x"],
+  ];
+  for (const [key, value] of cases.slice(1)) {
+    for (const where of ["local", "global"]) {
+      const global = join(bin, `gitconfig-${where}-${key}`);
+      writeFileSync(global, "");
+      const isolated = { GIT_CONFIG_GLOBAL: global, GIT_CONFIG_NOSYSTEM: "1" };
+      const { dir, git } = repo(t, plainEnv(isolated));
+      writeFileSync(join(dir, ".gitattributes"), "*.bin filter=lfs -text\n");
+      writeFileSync(join(dir, "a.bin"), "payload\n");
+      git("add", "-A");
+      git("commit", "-qm", "lfs");
+      if (where === "local") git("config", ...cases[0]);
+      else writeFileSync(global, "[filter \"lfs\"]\n\tclean = git-lfs clean -- %f\n\trequired = true\n");
+      git("config", key, value);
+      rmSync(marker, { force: true });
+      touchBack(join(dir, "a.bin"));
+
+      const r = await gitBuffered(dir, ["status", "--porcelain", "-z"], { env: plainEnv({ ...isolated, PATH: `${bin}:${process.env.PATH}` }) });
+
+      assert.equal(r.ok, true, r.error);
+      assert.equal(existsSync(marker), false, `git-lfs never ran beside ${key} (${where} filter)`);
+    }
+  }
+});
+
 test("a submodule's filter driver never runs through the superproject's status", needsShebang, async (t) => {
   // Status asks every populated submodule whether it is dirty by running git
   // inside it, under the submodule's own config, which the tarball also ships
@@ -815,6 +854,28 @@ test("the check's shallow fetch never runs the upload-pack a repository names", 
 
   spawnSync("git", ["ls-remote", "origin"], { cwd: dir });
   assert.equal(pack.ran(), true, "the repository's upload-pack is one git would run");
+});
+
+test("a partial clone's lazy fetch never runs the upload-pack a repository names", needsShebang, async (t) => {
+  // The fetch a lazy read starts is git's own child, which reads the upload-pack
+  // from config with no command line of ours to outrank the repository's.
+  const origin = repo(t);
+  origin.git("config", "uploadpack.allowFilter", "true");
+  writeFileSync(join(origin.dir, "b.ts"), "export const b = 2\n");
+  origin.git("add", "-A");
+  origin.git("commit", "-qm", "second");
+  const dir = scratch(t, "anatomiya-git-partial-");
+  execFileSync("git", ["clone", "-q", "--no-checkout", "--filter=blob:none", `file://${origin.dir}`, dir], { stdio: "pipe" });
+  const pack = tripwire(scratch(t, "anatomiya-git-trip-"), "uploadpack", 'exec git-upload-pack "$@"');
+  execFileSync("git", ["config", "remote.origin.uploadpack", pack.path], { cwd: dir });
+  const head = execFileSync("git", ["rev-parse", "HEAD"], { cwd: dir }).toString().trim();
+
+  const r = await gitBuffered(dir, ["cat-file", "blob", `${head}:b.ts`], { lazyFetch: true });
+
+  assert.equal(pack.ran(), false, "the repository's upload-pack never ran");
+  assert.equal(r.ok, false, "the blob stays missing, as it would with no remote");
+  spawnSync("git", ["cat-file", "blob", `${head}:b.ts`], { cwd: dir });
+  assert.equal(pack.ran(), true, "the lazy fetch runs it in plain git");
 });
 
 test("the check's shallow fetch never runs the ssh command a repository names", needsShebang, async (t) => {

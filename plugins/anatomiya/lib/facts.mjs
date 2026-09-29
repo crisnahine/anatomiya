@@ -306,37 +306,46 @@ function withOlderFields(parsed) {
  * directory it had already created.
  */
 export function atomic(path, body) {
+  const tmp = writeTemp(path, body);
+  try {
+    // Replaces the destination entry itself, never what a link there names.
+    renameSync(tmp, path);
+  } catch (err) {
+    try {
+      unlinkSync(tmp);
+    } catch {}
+    throw err;
+  }
+}
+
+/** `body` in a new file beside `path`, whole, and that file's path. */
+export function writeTemp(path, body) {
   // Unpredictable, and created exclusively: `wx` is O_CREAT|O_EXCL, which
   // refuses any entry already there, a planted link included, and never follows
   // one. The name was `<path>.tmp-<pid>`, opened with a plain write, so a
   // repository shipping that name as a tracked symlink had the map's bytes
   // written wherever it pointed. The directories were resolved (F2); this
-  // leaf was not. `rename` then replaces the destination entry itself.
+  // leaf was not.
   const tmp = `${path}.tmp-${process.pid}-${randomBytes(8).toString("hex")}`;
-  //
   // Created on its own, and written inside the cleanup: a write that fails part
   // way, on a full disk, has already made the temp file, and ENOSPC out of a
   // single `writeFileSync` before the `try` left it beside the map. A create
   // that fails made nothing, so there is nothing of this call's to remove, and
   // an entry already at that name is somebody else's.
   const fd = openSync(tmp, "wx");
-  let open = true;
   try {
-    writeFileSync(fd, body);
-    closeSync(fd);
-    open = false;
-    renameSync(tmp, path);
-  } catch (err) {
-    if (open) {
-      try {
-        closeSync(fd);
-      } catch {}
+    try {
+      writeFileSync(fd, body);
+    } finally {
+      closeSync(fd);
     }
+  } catch (err) {
     try {
       unlinkSync(tmp);
     } catch {}
     throw err;
   }
+  return tmp;
 }
 
 /**

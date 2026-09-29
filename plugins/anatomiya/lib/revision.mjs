@@ -80,7 +80,8 @@ export async function readAtRevision(root, sha, files, { withSource = false, tim
  *
  * At its own path under the temporary root, except where that path folds to
  * one already taken: on a case-insensitive filesystem `src/Foo.ts` and
- * `src/foo.ts` are one file there, and the second blob written replaced the
+ * `src/foo.ts` are one file there, as a composed and a decomposed `é` are on
+ * APFS, and the second blob written replaced the
  * first, so one of the two was parsed with the other's contents. A later one
  * goes under a numbered directory of its own, with its path, and so its name
  * and the extension that picks the grammar, kept whole beneath it. That
@@ -90,12 +91,13 @@ export async function readAtRevision(root, sha, files, { withSource = false, tim
 function placements(dir, files) {
   const taken = new Set();
   const placed = new Map();
+  const folded = (path) => path.normalize("NFC").toLowerCase();
   for (const f of files) {
     const rel = f?.rel;
     if (typeof rel !== "string") continue;
     let at = rel;
-    for (let n = 1; taken.has(at.toLowerCase()); n++) at = `.git/case/${n}/${rel}`;
-    taken.add(at.toLowerCase());
+    for (let n = 1; taken.has(folded(at)); n++) at = `.git/case/${n}/${rel}`;
+    taken.add(folded(at));
     // The containment is asked of the path as it was given, so a rel that
     // escapes is refused wherever a collision would have put it.
     if (underTemp(dir, rel)) placed.set(f, underTemp(dir, at));
