@@ -271,7 +271,8 @@ function resolveDirs(root) {
 }
 
 /**
- * Refuse a map directory that a file already holds, or that sits under one.
+ * Refuse a map directory that a file already holds, that sits under one, or
+ * that this process cannot write.
  *
  * Resolving says where the directory is, not that it can be one there: a
  * regular file at `.claude/rules` let a dry run print "would write 2 files"
@@ -286,6 +287,5 @@ function resolveDirs(root) {
 function refuseNonDirectory(root, rel) {
   const blocked = blockedOnTheWay(root, rel);
   if (blocked === null) return;
-  const remedy = blocked.link ? "replace the link with a directory" : "remove it";
-  throw new Error(`${blocked.sentence}, so the map could not be written: ${remedy} and scan again`);
+  throw new Error(`${blocked.sentence}, so the map could not be written: ${blocked.remedy} and scan again`);
 }
