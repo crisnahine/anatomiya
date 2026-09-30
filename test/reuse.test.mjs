@@ -150,11 +150,14 @@ test("a migration or a schema dump has nothing to check", async (t) => {
 
 test("a file whose added lines define nothing callable has nothing to check", async (t) => {
   // No function was added, so there is no copy of one to find and delete.
-  const { dir, write } = repo(t);
+  const { dir, git, write } = repo(t);
+  write("app/models/m.rb", "class M < ApplicationRecord\nend\n");
+  git("add", "-A");
+  git("commit", "-qm", "model");
   write("app/models/consts.rb", "FOO = 1\nBAR = 2\n");
   write("app/models/m.rb", "class M < ApplicationRecord\n  has_many :items\n  validates :name, presence: true\nend\n");
   write("Gemfile", "source \"https://rubygems.org\"\ngem \"rails\"\n");
-  write("src/config.ts", "import { x } from './x';\nexport type Id = string;\nexport interface P { id: Id }\nexport const LIMITS = { max: 3, min: foo(1) };\nif (x) {\n  run(x);\n}\n");
+  write("src/config.ts", "import { x } from './x';\nexport type Id = string;\nexport interface P { id: Id }\nexport const LIMITS = { max: 3, min: 1 };\n");
   write("src/a.ts", "export const one = 1;\nexport const three = 3;\nexport const two = 2;\n");
 
   assert.equal(await pendingChange(dir), null);
@@ -210,6 +213,45 @@ test("every way a file can add something callable is still checked", async (t) =
   assert.deepEqual(
     (await pendingChange(dir)).map((f) => f.path),
     [...Object.keys(ruby).map((n) => `lib/${n}.rb`), ...Object.keys(js).map((n) => `src/${n}.ts`), ...Object.keys(heads), "src/view.jsx"].sort()
+  );
+});
+
+test("a definition written in a shape no line pattern names is still checked", async (t) => {
+  // Each one was silenced by a per-line pattern, so the rule asks on any token
+  // a definition could start with or hold, and over-asks rather than misses.
+  const { dir, git, write } = repo(t);
+  write("src/f1.js", "export function f1(a) {\n  return a;\n}\n");
+  write("src/c1.jsx", "export function C1() {\n  return <div />;\n}\n");
+  write("src/g1.ts", "class G {\n  total(a: number)\n  {\n    return a;\n  }\n}\n");
+  write("src/h1.ts", "class H {\n  total(\n    a: number,\n  ) {\n    return a;\n  }\n}\n");
+  git("add", "-A");
+  git("commit", "-qm", "base");
+  const created = {
+    "src/o.js": "module.exports = { double(a) { return a * 2 }, triple(a) { return a * 3 } };\n",
+    "src/o.ts": "export const api = { get(id) { return db.find(id) }, list() { return db.all() } };\n",
+    "src/o.jsx": "export default { data() { return {} }, render(h) { return h('p') } };\n",
+    "src/nf.js": 'const f = new Function("a", "b", "return a + b");\n',
+    "lib/bag.rb": "class Bag\n  extend Forwardable\n  def_delegators :@items, :size, :each, :first\nend\n",
+    "lib/shout.rb": "def_delegator :label, :upcase, :shout\n",
+    "lib/cfg.rb": "module Cfg\n  mattr_accessor :timeout\nend\n",
+    "lib/level.rb": "cattr_reader :level\n",
+    "lib/handler.rb": "class_attribute :handler\n",
+    "lib/oops.rb": "class Oops < StandardError; end\n",
+    "lib/hooks.rb": "before_save do\n  1\nend\n",
+    "lib/each.rb": "DOUBLED = ITEMS.map { |i| i * 2 }\n",
+    "lib/arrow.rb": "F = ->(x) { x }\n",
+    "lib/reflect.rb": "HANDLER = instance_method(:call)\n",
+  };
+  for (const [path, body] of Object.entries(created)) write(path, body);
+  write("src/f1.js", "export function f1(a) {\n  return a;\n}\nexport const m = {\n  sum(a, b = defaults(),\n  c) {\n    return a + b + c;\n  },\n};\n");
+  write("src/c1.jsx", "export function C1() {\n  return <div />;\n}\nexport const kit = { Badge(p) { return <b>{p.n}</b> } };\n");
+  // Only the head line of an Allman method changed; its brace is on the next line.
+  write("src/g1.ts", "class G {\n  sum(a: number)\n  {\n    return a;\n  }\n}\n");
+  write("src/h1.ts", "class H {\n  sum(\n    a: number,\n  ) {\n    return a;\n  }\n}\n");
+
+  assert.deepEqual(
+    ((await pendingChange(dir)) ?? []).map((f) => f.path),
+    [...Object.keys(created), "src/c1.jsx", "src/f1.js", "src/g1.ts", "src/h1.ts"].sort()
   );
 });
 
