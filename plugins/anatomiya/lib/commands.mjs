@@ -8,7 +8,7 @@ import { deepRefusal } from "./semantic.mjs";
 import { writeMap } from "./write.mjs";
 import { check } from "./check.mjs";
 import { engineOf, language } from "./langs.mjs";
-import { collect, countUntrackedSource, gitRoot, isCorpusPath, lsFiles } from "./corpus.mjs";
+import { collect, corpusByName, countUntrackedSource, gitRoot, lsFiles } from "./corpus.mjs";
 import { discover } from "./areas.mjs";
 import { buildPin, readPin, writePin, pinDelta, pinTarget, PIN_PATH } from "./baseline.mjs";
 import { gitBuffered, headSha } from "./git.mjs";
@@ -270,8 +270,8 @@ async function refuseUnlikeHead(root) {
   const merging = (await gitBuffered(root, ["rev-parse", "--verify", "--quiet", "MERGE_HEAD"])).ok;
   const inMerge = "a merge is in progress, and a pin records HEAD: finish or abort the merge first, then pin";
   if (unmerged.stdout.length > 0) {
-    // A rebase, a cherry-pick or a stash pop leaves them too, with no merge to abort.
-    throw new Error(merging ? inMerge : "the index holds unmerged paths, and a pin records HEAD: resolve them, or abort the rebase or cherry-pick that left them, then pin");
+    // A rebase, cherry-pick, revert, am or stash pop leaves them too, with no merge to abort.
+    throw new Error(merging ? inMerge : "the index holds unmerged paths, and a pin records HEAD: resolve them, or abort the operation that left them, then pin");
   }
   // A staged, edited or deleted tracked file is listed against a commit that
   // does not hold it, and every scan after reads that area as a population
@@ -291,10 +291,11 @@ async function refuseUnlikeHead(root) {
 
 /** How many skip-worktree paths the corpus would count the working tree does not hold. */
 async function absentSkipWorktree(root) {
+  const byName = corpusByName(root);
   let n = 0;
   await lsFiles(root, (entry) => {
     const rel = entry.slice(2);
-    if (entry.startsWith("S ") && isCorpusPath(rel) && !lstatSync(join(root, rel), { throwIfNoEntry: false })) n++;
+    if (entry.startsWith("S ") && byName(rel) && !lstatSync(join(root, rel), { throwIfNoEntry: false })) n++;
   }, ["-t"]);
   return n;
 }
