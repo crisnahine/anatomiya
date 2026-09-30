@@ -4890,6 +4890,31 @@ test("a branch whose name spells like a commit id is still refused as its own ba
   }
 });
 
+test("the branch's own name in another case is refused where the filesystem folds case", async (t) => {
+  // The loose ref file opens under any case, so `FEAT` resolved to this tip as
+  // `refs/heads/FEAT`, a name that is not HEAD's, and read as another branch.
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/a.ts", clean(2));
+    commit("init");
+    git("checkout", "-q", "-b", "feat");
+    write("src/a.ts", clean(2) + swallow(1));
+    commit("swallow");
+  });
+  facts(dir, { sha: sha(dir, "main") });
+  try {
+    execFileSync("git", ["rev-parse", "--verify", "--quiet", "FEAT"], { cwd: dir, stdio: "pipe" });
+  } catch {
+    return t.skip("this filesystem tells FEAT from feat");
+  }
+
+  await assert.rejects(() => check(dir, { baseRef: "FEAT" }), /--base FEAT names this branch's own tip/);
+  // A second branch at the same tip whose name only case tells apart is a
+  // real ref, and stays a base.
+  execFileSync("git", ["pack-refs", "--all"], { cwd: dir, stdio: "pipe" });
+  execFileSync("git", ["update-ref", "refs/heads/Feat", "HEAD"], { cwd: dir, stdio: "pipe" });
+  assert.equal((await check(dir, { baseRef: "refs/heads/Feat" })).mode, "compare");
+});
+
 test("a base name a tag and a branch both hold is refused, naming both", async (t) => {
   // git picks the tag and warns, and the warning never reached the report: one
   // pick compared against the wrong commit in silence, the other blamed the
