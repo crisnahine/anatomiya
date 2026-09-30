@@ -460,7 +460,7 @@ const TIERS = ["syntactic", "semantic"];
 /**
  * Two values, and a row carrying neither does not ship.
  *
- * A semantic row needs a checker, which is opt-in and 26x the cost. A row that
+ * A semantic row needs a checker, which is opt-in and about 3x a plain scan. A row that
  * forgets the field, or spells it `"Syntactic"`, would be offered to the parse
  * worker, run against a program with no checker in it, and answer nothing on
  * every file forever. Checked at load for the same reason precision is: the
