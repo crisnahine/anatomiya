@@ -199,9 +199,9 @@ function isGeneratedHead(prefix) {
  * and only the root file: a pattern outside those three, or one declared by a
  * nested `.gitattributes`, is not read rather than guessed at.
  */
-async function generatedAttrRules(root, { index = true } = {}) {
+async function generatedAttrRules(root, { timeout } = {}) {
   const rules = [];
-  for (const line of (await rootAttributes(root, index)).split("\n")) {
+  for (const line of (await rootAttributes(root, timeout)).split("\n")) {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith("#")) continue;
     const [pattern, ...attrs] = trimmed.split(/\s+/);
@@ -217,14 +217,15 @@ async function generatedAttrRules(root, { index = true } = {}) {
 /**
  * The root `.gitattributes`, from the index where the index marks it
  * skip-worktree or assume-unchanged: git then counts whatever the tree holds
- * there, a sparse checkout's absence included, as no change.
+ * there, a sparse checkout's absence included, as no change. Both reads start
+ * together, so asking costs one git read in a row, not two.
  */
-async function rootAttributes(root, index) {
-  const listed = index ? await gitBuffered(root, ["ls-files", "-v", "-z", "--", ".gitattributes"]) : null;
-  if (listed?.ok && /^[a-zS] /.test(listed.stdout)) {
-    const blob = await gitBuffered(root, ["cat-file", "blob", ":.gitattributes"]);
-    if (blob.ok) return blob.stdout.slice(0, ATTR_FILE_BYTES);
-  }
+async function rootAttributes(root, timeout) {
+  const [listed, blob] = await Promise.all([
+    gitBuffered(root, ["ls-files", "-v", "-z", "--", ".gitattributes"], { timeout }),
+    gitBuffered(root, ["cat-file", "blob", ":.gitattributes"], { timeout }),
+  ]);
+  if (listed.ok && blob.ok && /^[a-zS] /.test(listed.stdout)) return blob.stdout.slice(0, ATTR_FILE_BYTES);
   const abs = safeResolve(root, ".gitattributes");
   const file = abs ? readHead(abs, ATTR_FILE_BYTES) : null;
   return file?.kind === "file" ? file.head : "";
@@ -536,11 +537,10 @@ export async function countUntrackedSource(root) {
  *
  * For a caller holding a few paths rather than a listing: the check judges the
  * files a branch changed, and one the corpus leaves out is one the map never
- * counted. `.gitattributes` is read once, when the question is built, and with
- * `index: false` from the tree alone, which costs no git read.
+ * counted. `.gitattributes` is read once, when the question is built.
  */
-export async function corpusDrop(root, { index = true } = {}) {
-  const generatedRules = await generatedAttrRules(root, { index });
+export async function corpusDrop(root, { timeout } = {}) {
+  const generatedRules = await generatedAttrRules(root, { timeout });
   return (rel) => classify(root, rel, generatedRules).drop ?? null;
 }
 
