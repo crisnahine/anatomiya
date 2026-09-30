@@ -282,11 +282,11 @@ test("the rendered report has not moved", async (t) => {
       "note: 1 file(s) were read from the working tree rather than from a commit, so this run answers for the work as it stands\n" +
       "\n" +
       'FIX  "src/a.ts":3  catch blocks use the error they caught\n' +
-      "  f0: capped by this run: stale map or no merge base\n" +
+      "  f0: capped by this run: no baseline pinned\n" +
       "  catch (e) { }\n" +
       "\n" +
       'FIX  "src/b.ts":1  catch blocks use the error they caught\n' +
-      "  f0: capped by this run: stale map or no merge base\n" +
+      "  f0: capped by this run: no baseline pinned\n" +
       "  catch (e) { }\n" +
       "\n" +
       "1 file(s) in .claude/rules this tool did not write:\n" +
@@ -305,6 +305,7 @@ const bare = (o = {}) => ({
   stale: false,
   staleReason: null,
   changed: [],
+  removed: [],
   examined: [],
   findings: [],
   counts: { "MUST-FIX": 0, FIX: 0, NIT: 0 },
@@ -464,6 +465,21 @@ test("a base ref that is the empty string is no ref at all", () => {
   const out = formatReport(bare({ base: { ref: "", sha: null, mergeBase: null, shallow: false } }));
 
   assert.equal(out.split("\n")[0], "base none, 0 changed files, compare");
+});
+
+test("a file the branch deleted is counted in the header and listed in the record", () => {
+  // Deletions left the count, so a branch that only dropped a spec printed
+  // "0 changed files" above a MUST-FIX about the spec it dropped.
+  const r = bare({ removed: ["spec/controllers/c1_controller_spec.rb"] });
+
+  assert.equal(formatReport(r).split("\n")[0], "base main (aaaaaaa), 1 changed file (1 removed), 0 examined, compare");
+  assert.deepEqual(JSON.parse(formatReportJson(r)).removed, ["spec/controllers/c1_controller_spec.rb"]);
+  const mixed = bare({
+    changed: [{ status: "M", path: "src/a.ts", from: "src/a.ts" }],
+    examined: [{ status: "M", path: "src/a.ts", from: "src/a.ts" }],
+    removed: ["src/b.ts", "src/c.ts"],
+  });
+  assert.equal(formatReport(mixed).split("\n")[0], "base main (aaaaaaa), 3 changed files (2 removed), 1 examined, compare");
 });
 
 test("a caveat reaches the annotations carrying its code, so a degraded run cannot read as a clean one", () => {

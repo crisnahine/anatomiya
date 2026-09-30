@@ -1234,7 +1234,10 @@ checks, fixes, then commits, so the moment the findings are cheapest is the mome
 committed, and a check that answered `0 MUST-FIX` there was answering about a file it had not read.
 The run says how many files it read that way, because that many make it unreproducible from git
 alone. The base side never moves: it is read with `git cat-file` at the merge base, which is what
-keeps an agent's own edits from moving the population it is judged against (E2).
+keeps an agent's own edits from moving the population it is judged against (E2). A file the branch
+deleted has nothing to examine and can still owe a finding, as a dropped spec does, so the header
+counts it among the changed files, says how many were removed, and the record lists them as
+`removed`.
 
 Base ref resolution tries `origin/HEAD`, `origin/main`, `origin/master`, `main`, `master`, in that
 order, or whatever `--base` names. `@{upstream}` is deliberately absent: a pushed feature branch
@@ -1276,7 +1279,7 @@ Severity, in the order the checks are made:
 | Result | When |
 |---|---|
 | NIT | no convention counted here, or a gate suppressed the one that was |
-| FIX | the map is stale, or there was no merge base, or the predicate is partial, or the map already names this file as an exception, or no baseline population was recorded, or the Wilson bound on the baseline counts does not reach 0.90, or the baseline itself was not perfect |
+| FIX | the area file's 40-line budget dropped the claim's block: "the area file names this claim without its counts" where the notice still prints its sentence, "had no room to state this claim" where it does not; or the run is capped, "capped by this run:" and the cause, which is the stale reason the header prints or no merge base; or the predicate is partial; or the map already names this file as an exception; or no baseline population was recorded; or the claim was stated on the rest of the repository's bound rather than this area's own (D8); or the Wilson bound on the baseline counts does not reach 0.90; or the baseline itself was not perfect. Two caps sit outside that ladder (H24): a file whose area holds no slot for the claim is judged on the nearest enclosing area that states one, "counted in" that area, and a MUST-FIX on a path the owning area's globs never deliver to, such as a new subdirectory under a `dir/*.ext` area, drops to FIX, "counted in" the area or "does not reach" |
 | MUST-FIX | all baseline sites conform, so this branch is the first violation |
 
 Baseline counts come from the pinned population, never from the current one, or the agent's own
