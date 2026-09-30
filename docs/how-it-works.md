@@ -1306,7 +1306,9 @@ everything else goes through the encoder.
 `--format json` carries the record's own version, so a reader can refuse a shape it does not know
 rather than read fields positionally. It is the rule `facts.json` enforces on disk (C10), offered
 here to whatever reads the stdout; the scan's and the pin's records carry a version of their own for
-the same reason.
+the same reason. Their paths go out the same way the check's do: the scan's root and rule file
+names and the pin's area and file paths are whole, so the scan record's root is the one its text
+line prints and the one `check --format json` gives for the same checkout.
 
 ### The caveat codes
 

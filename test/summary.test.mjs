@@ -726,6 +726,31 @@ test("an ASCII scan record comes back from the writer unchanged", () => {
   assert.deepEqual(out.rules, s.rules);
 });
 
+test("the scan record carries the root and rule files whole, as the text line and check json do", () => {
+  // Paths a reader opens: a cap or the mixed-script placeholder leaves nothing to `cd` to.
+  const long = `/work/${"a".repeat(60)}/${"b".repeat(60)}/r`;
+  const mixed = "/work/раyments/r";
+  for (const root of [long, mixed]) {
+    const rules = { foreign: [`${"c".repeat(130)}.md`], unknown: ["раyments.md"], unreadable: [], listed: true, replaced: [] };
+    const s = summary({ root, rules });
+
+    const out = JSON.parse(scanJson(s));
+
+    assert.equal(out.root, root);
+    assert.ok(scanLines(s)[0].endsWith(`root ${out.root}`), "the text line and the record name one root");
+    assert.deepEqual(out.rules, rules);
+  }
+});
+
+test("the pin record carries a long file path whole", () => {
+  const dir = `lib/${"d".repeat(130)}`;
+  const next = pinFor([dir]);
+
+  const s = JSON.parse(pinJson(pinSummary({ previous: null, next, delta: pinDelta(null, next), path: PIN_PATH, dryRun: true })));
+
+  assert.deepEqual(s.delta.areas[0].added, [`${dir}/a.js`, `${dir}/b.js`]);
+});
+
 test("the pin record neutralises the paths only it prints", () => {
   // The added list is printed by this writer and by nothing else, so it has no
   // encoded counterpart anywhere: the line a human reads counts them.
