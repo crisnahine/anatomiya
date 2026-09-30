@@ -354,7 +354,7 @@ async function followPin(root, pin) {
   const current = loadPin(root);
   if (current?.sha === head) return none;
   // Each hold names the pin it held, so a pin taken by hand since ends it.
-  const hold = (reason, commit) => ({ accepted: null, held: { reason, commit, pin: current?.sha ?? null } });
+  const hold = (reason, commit, by = null) => ({ accepted: null, held: { reason, commit, pin: current?.sha ?? null, ...(by ? { by } : {}) } });
   const moved = await fetchedHere(root, tip.ref, tip.sha);
   if (moved !== "fetched") return hold(moved === "no-record" ? "no-record" : "not-fetched", head);
   // A pinned commit git no longer holds (its branch merged, deleted and
@@ -368,7 +368,7 @@ async function followPin(root, pin) {
   }
   const made = await madeHereOnLine(root, from, head);
   if (made === "") return hold("unread", head);
-  if (made !== null) return hold("made-here", made);
+  if (made !== null) return hold("made-here", made.commit, made.by);
   // A staged or edited tracked file is refused by `pin` itself, the one rule for
   // what a pin may record, and so is HEAD having moved since it was judged here.
   // A refusal is simply no pin: the tree is mid-edit, not held.
@@ -410,8 +410,9 @@ const CREATES_NOTHING = new RegExp(
  * the one this does not see. A walk git could not answer is left open, never
  * read as a teammate's.
  *
- * The commit found, so the hold can name it; `""` where git could not answer,
- * and null where nothing on the line was made here.
+ * The commit found and what matched it (`reflog` or `identity`), so the hold
+ * can say which; `""` where git could not answer, and null where nothing on
+ * the line was made here.
  */
 async function madeHereOnLine(root, from, to) {
   // Both walks grow with the repository, a first pin's with its whole history,
@@ -431,6 +432,8 @@ async function madeHereOnLine(root, from, to) {
       const [sha, selector = ""] = entry.split(" ", 2);
       if (!sha || selector.startsWith("refs/remotes/")) return;
       const message = entry.slice(sha.length + selector.length + 2);
+      // `git worktree add` logs the new HEAD with no message at all.
+      if (message === "" && /^worktrees\/[^/]+\/HEAD@\{/.test(selector)) return;
       if (!CREATES_NOTHING.test(message)) made.add(sha);
     }, { terminated: false });
     if (made.size === 0 && me === null) return null;
@@ -438,7 +441,7 @@ async function madeHereOnLine(root, from, to) {
       const [sha, time, email = ""] = record.trim().split(" ");
       const mine = me !== null && email.toLowerCase() === me && (since === null || Number(time) >= since);
       if (!made.has(sha) && !mine) return true;
-      found = sha;
+      found = { commit: sha, by: made.has(sha) ? "reflog" : "identity" };
       return false;
     }, { terminated: false });
   } catch {
@@ -579,7 +582,7 @@ function writeState(store, { stamp, ok, error, pinned = null, held = null, at = 
   atomic(join(store, basename(REFRESH_STATE)), JSON.stringify(record, null, 2) + "\n");
 }
 
-const sameHold = (a, b) => ["reason", "commit", "pin"].every((key) => (a?.[key] ?? null) === (b?.[key] ?? null));
+const sameHold = (a, b) => ["reason", "commit", "pin", "by"].every((key) => (a?.[key] ?? null) === (b?.[key] ?? null));
 
 /**
  * What the person hears at the start of a session when the pin has stopped
@@ -599,9 +602,13 @@ export function holdNotice(root) {
   const commit = typeof held?.commit === "string" && /^[0-9a-f]{7,64}$/.test(held.commit) ? held.commit.slice(0, 7) : null;
   const at = typeof pin === "string" && /^[0-9a-f]{7,64}$/.test(pin) ? ` at ${pin.slice(0, 7)}` : "";
   if (held?.reason === "made-here") {
+    // The committer names who made a commit, not where.
+    const how =
+      held.by === "identity"
+        ? "was committed under this clone's git identity, which the automatic pin reads as this clone's own work. "
+        : "was made in this clone, and the automatic pin never accepts this clone's own work. ";
     return (
-      `anatomiya: the pin stays${at}: ${commit ? `commit ${commit}` : "a commit"} on origin's default branch ` +
-      "was made in this clone, and the automatic pin never accepts this clone's own work. " +
+      `anatomiya: the pin stays${at}: ${commit ? `commit ${commit}` : "a commit"} on origin's default branch ${how}` +
       "Pinning it is a person's call, made with /anatomiya:pin."
     );
   }

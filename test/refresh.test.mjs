@@ -1060,11 +1060,11 @@ test("a pin held by this clone's own commit is recorded, and said to the person 
 
   const r = await refreshRepository(dir);
 
-  assert.deepEqual(r.held, { reason: "made-here", commit: agent, pin: first });
-  assert.deepEqual(JSON.parse(readFileSync(join(dir, REFRESH_STATE), "utf8")).held, { reason: "made-here", commit: agent, pin: first });
+  assert.deepEqual(r.held, { reason: "made-here", commit: agent, pin: first, by: "reflog" });
+  assert.deepEqual(JSON.parse(readFileSync(join(dir, REFRESH_STATE), "utf8")).held, { reason: "made-here", commit: agent, pin: first, by: "reflog" });
   const { start } = recorder();
   const out = runRefresh(dir, { hook_event_name: "SessionStart", cwd: dir }, { start });
-  assert.match(out.systemMessage, new RegExp(`stays at ${first.slice(0, 7)}: commit ${agent.slice(0, 7)} `));
+  assert.match(out.systemMessage, new RegExp(`stays at ${first.slice(0, 7)}: commit ${agent.slice(0, 7)} on origin's default branch was made in this clone,`));
   assert.ok(out.hookSpecificOutput.watchPaths.length > 0, "the watches are still named");
   assert.equal(out.hookSpecificOutput.additionalContext, undefined, "nothing of it reaches the model");
   const changed = runRefresh(dir, { hook_event_name: "FileChanged", cwd: dir, file_path: join(dir, ".git", "logs", "HEAD") }, { start });
@@ -1205,6 +1205,50 @@ test("a commit from a linked worktree since removed, its branch deleted, is stil
   });
   assert.equal((await refreshRepository(dir)).pinned, false);
   assert.equal(loadPin(dir).sha, first);
+});
+
+test("a worktree made on a teammate's commit creates nothing, and the pin follows that commit once pulled", async (t) => {
+  // `git worktree add` logs the new HEAD with an empty message, which read as a
+  // commit made here and held the pin for as long as the worktree stood.
+  const { origin, dir } = await cloned(t);
+  await refreshRepository(dir);
+  source(origin, "lib/t1", 8);
+  const teammate = commit(origin, "a teammate's commit");
+  git(dir, "fetch", "-q");
+  for (const args of [["--detach"], ["-b", "feat"]]) {
+    const wt = realpathSync.native(mkdtempSync(join(tmpdir(), "anatomiya-refresh-wt-")));
+    t.after(() => rmSync(wt, { recursive: true, force: true }));
+    rmSync(wt, { recursive: true, force: true });
+    git(dir, "worktree", "add", "-q", ...args, wt, "origin/main");
+  }
+  git(dir, "pull", "-q", "--ff-only");
+
+  const r = await refreshRepository(dir);
+
+  assert.equal(r.held, null);
+  assert.equal(r.pinned, true);
+  assert.equal(loadPin(dir).sha, teammate);
+});
+
+test("a hold found by the committer identity alone says so, and never that the commit was made in this clone", async (t) => {
+  // The same person pushing from another machine: nothing in this clone made
+  // the commit, and the notice sent them looking for a local one.
+  const { origin, dir } = await cloned(t);
+  await refreshRepository(dir);
+  const first = loadPin(dir).sha;
+  source(origin, "lib/laptop", 8);
+  git(origin, "add", "-A");
+  execFileSync("git", ["commit", "-qm", "from my laptop"], { cwd: origin, stdio: "pipe", env: { ...process.env, GIT_COMMITTER_EMAIL: "me@clone.test" } });
+  const laptop = git(origin, "rev-parse", "HEAD");
+  git(dir, "pull", "-q", "--ff-only");
+
+  const r = await refreshRepository(dir);
+
+  assert.deepEqual(r.held, { reason: "made-here", commit: laptop, pin: first, by: "identity" });
+  const { start } = recorder();
+  const said = runRefresh(dir, { hook_event_name: "SessionStart", cwd: dir }, { start }).systemMessage;
+  assert.match(said, new RegExp(`commit ${laptop.slice(0, 7)} on origin's default branch was committed under this clone's git identity`));
+  assert.doesNotMatch(said, /made in this clone/);
 });
 
 test("a commit made here is still held after its reflog entries expire", async (t) => {
@@ -1447,7 +1491,7 @@ test("a first pin holds a commit made here though gc expired every reflog entry 
   const r = await refreshRepository(dir);
 
   assert.equal(r.pinned, false);
-  assert.deepEqual(r.held, { reason: "made-here", commit: mine, pin: null });
+  assert.deepEqual(r.held, { reason: "made-here", commit: mine, pin: null, by: "identity" });
 });
 
 test("a fetch into a local branch is the remote moving, and the pin follows it", async (t) => {

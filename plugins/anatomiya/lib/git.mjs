@@ -115,6 +115,9 @@ const FLAGS = new Set([
   // Whether a merge has left the index with a path per stage, which `pin`
   // refuses to record (`commands.mjs`).
   "--unmerged",
+  // Each path tagged with its index state, so `pin` sees the skip-worktree
+  // paths a sparse checkout leaves out of the tree.
+  "-t",
   // The one read of a repository's own config that says which file each value
   // came from, so the commands it names can be replaced (`repositoryCommands`).
   "--show-scope",

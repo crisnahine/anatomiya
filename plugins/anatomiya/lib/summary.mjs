@@ -331,8 +331,11 @@ function baselineLine(b) {
 }
 
 /** What a pin accepted, and where it put it. */
-export function pinSummary({ previous, next, delta, path, dryRun = false, previousUnreadable = null }) {
+export function pinSummary({ root = null, previous, next, delta, path, dryRun = false, previousUnreadable = null }) {
   return {
+    // The scan's reason: a path argument or an inherited GIT_DIR picks the
+    // repository, and the store path alone never said which one was pinned.
+    root,
     sha: next.sha,
     previousSha: previous ? previous.sha : null,
     // Why the pin on disk would not load, where there was one: the delta then
@@ -355,11 +358,12 @@ export function pinLines(s) {
     );
   }
   lines.push("");
+  const where = s.root ? `${s.path}, root ${locator(s.root)}` : s.path;
   if (s.dryRun) {
-    lines.push(`would write ${s.path}`);
+    lines.push(`would write ${where}`);
     return lines;
   }
-  lines.push(`wrote ${s.path}`);
+  lines.push(`wrote ${where}`);
   lines.push("run `/anatomiya:scan` to measure the map against it");
   // The scan that follows rewrites every context file. Said here too, because
   // the pin is where a human is told to go and run it.
@@ -381,6 +385,7 @@ export function pinJson(s) {
 function encodePin(s) {
   return {
     ...s,
+    root: s.root === null ? null : sanitisePath(s.root),
     delta: {
       ...s.delta,
       areas: s.delta.areas.map((a) => ({

@@ -1179,7 +1179,8 @@ test("a rules directory that cannot be listed is not one holding nothing", needs
   // reported, never rendered as a clean one.
   const dir = workspace();
   writeMap(result(dir, [area("src/services")]));
-  chmodSync(rules(dir), 0o100);
+  // Writable, or the plan refuses the directory before listing it.
+  chmodSync(rules(dir), 0o300);
 
   const blind = writeMap(result(dir, [area("src/services")]), { dryRun: true });
   chmodSync(rules(dir), 0o755);
