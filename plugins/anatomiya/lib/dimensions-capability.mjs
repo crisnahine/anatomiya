@@ -28,6 +28,13 @@ export function stemWords(stem) {
     .filter(Boolean);
 }
 
+/** A name's words without a trailing version: `ApiClientV2` and `api_client_1` are clients. */
+export function nameWords(name) {
+  const words = stemWords(name);
+  while (words.length > 1 && /^v?\d+$/.test(words.at(-1))) words.pop();
+  return words;
+}
+
 export const CAPABILITY_WORDS = {
   logging: new Set(["log", "logger", "logging"]),
   network: new Set(["client", "http", "api", "request", "fetcher"]),
@@ -63,7 +70,7 @@ export function implementsCapability(rel, capability) {
   if (typeof rel !== "string") return false;
   const words = CAPABILITY_WORDS[capability];
   if (!words) return false;
-  const parts = stemWords(fileStem(rel));
+  const parts = nameWords(fileStem(rel));
   return parts.length > 0 && parts.every((w) => words.has(w));
 }
 
@@ -105,7 +112,7 @@ function wrapperBindings(program, words) {
     if (n.type !== "ImportDeclaration") return;
     const spec = n.source?.value;
     if (typeof spec !== "string" || !spec.startsWith(".") || !namesAModule(spec)) return;
-    const parts = stemWords(fileStem(spec));
+    const parts = nameWords(fileStem(spec));
     if (parts.length === 0 || !parts.every((w) => words.has(w))) return;
     for (const s of n.specifiers || []) if (s.local?.name) names.add(s.local.name);
   });
