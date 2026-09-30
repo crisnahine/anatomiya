@@ -244,6 +244,9 @@ directory above your checkouts.
   skip-worktree or assume-unchanged, a sparse checkout that leaves it out included. Before, a copy
   edited or deleted under one of those bits decided which files counted as `linguist-generated`, so
   generated directories could become areas.
+- The reuse Stop hook no longer asks about a `linguist-generated` file when a sparse checkout or
+  skip-worktree hides the root `.gitattributes` from the working tree. It reads the index copy the
+  way `check` does, beside its status read, so it still makes two git reads in a row.
 
 ### Changed
 
