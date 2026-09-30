@@ -229,6 +229,28 @@ test("a map the repository tracks is never rewritten behind its back", async (t)
   assert.equal((await refreshRepository(dir)).reason, "tracked");
 });
 
+test("a map committed through a linked rules directory is tracked too", needsSymlinks, async (t) => {
+  // calcom/cal.diy shares `.claude/rules -> ../agents/rules` between agents.
+  // Git matches no pathspec past a symlink, so the map it stores under
+  // `agents/rules/` read as untracked and every move of HEAD rewrote it.
+  const dir = realpathSync.native(mkdtempSync(join(tmpdir(), "anatomiya-refresh-")));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  init(dir);
+  source(dir, "src", 8);
+  mkdirSync(join(dir, "agents", "rules"), { recursive: true });
+  mkdirSync(join(dir, ".claude"));
+  symlinkSync(join("..", "agents", "rules"), join(dir, ".claude", "rules"));
+  commit(dir, "init");
+  await runScan(dir);
+  git(dir, "add", "-f", join("agents", "rules"));
+  git(dir, "commit", "-qm", "commit the map");
+  source(dir, "lib", 4);
+  commit(dir, "HEAD moves");
+
+  assert.equal((await refreshRepository(dir)).reason, "tracked");
+  assert.equal(git(dir, "status", "--porcelain", "--untracked-files=no"), "", "and the committed map is untouched");
+});
+
 test("a repository that commits any file of the refresh's own is never refreshed", async (t) => {
   // The worker removes its lock and its word to the next worker, and removing
   // a tracked file is an edit in `git status` nobody made, which `pin` refuses.

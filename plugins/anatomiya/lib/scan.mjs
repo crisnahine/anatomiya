@@ -44,7 +44,7 @@ export async function scan(cwd, { guards = null, deep = false } = {}) {
   const started = Date.now();
   const root = await gitRoot(cwd);
 
-  const { files, others, truncated: corpusTruncated, dropped } = await collect(root);
+  const { files, others, uncounted, truncated: corpusTruncated, dropped } = await collect(root);
   // An empty corpus with source on disk is a repository whose first commit has
   // not landed, not a repository with nothing in it. Which of the two it is
   // changes what every line below means, so it is asked before anything else.
@@ -56,7 +56,11 @@ export async function scan(cwd, { guards = null, deep = false } = {}) {
   // today's file count re-partitions the repository on one added file and every
   // area then reads as a population change against a pin that knew the old one.
   const partitionSize = state.partitionSize ?? files.length;
-  const areas = discover(files, { minFiles: areaFloor(partitionSize), maxAreas: areaCeiling(partitionSize) });
+  const areas = discover(files, {
+    minFiles: areaFloor(partitionSize),
+    maxAreas: areaCeiling(partitionSize),
+    uncounted,
+  });
 
   // A claim that belongs to a framework cannot be judged without knowing the
   // repository uses it, and one file never says. Read from the corpus, so a
