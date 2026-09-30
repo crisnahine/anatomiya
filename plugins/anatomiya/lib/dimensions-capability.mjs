@@ -28,6 +28,18 @@ export function stemWords(stem) {
     .filter(Boolean);
 }
 
+/**
+ * A name's words without its version words: `ApiClientV2`, `V2ApiClient` and
+ * `api_client_1` are clients. A bare number counts only at the end, since a
+ * leading one is a migration timestamp or a sequence (`20240901_settings`).
+ */
+export function nameWords(name) {
+  const words = stemWords(name);
+  const named = words.filter((w) => !/^v\d+$/.test(w));
+  while (named.length > 1 && /^\d+$/.test(named.at(-1))) named.pop();
+  return named.length > 0 ? named : words;
+}
+
 export const CAPABILITY_WORDS = {
   logging: new Set(["log", "logger", "logging"]),
   network: new Set(["client", "http", "api", "request", "fetcher"]),
@@ -63,7 +75,7 @@ export function implementsCapability(rel, capability) {
   if (typeof rel !== "string") return false;
   const words = CAPABILITY_WORDS[capability];
   if (!words) return false;
-  const parts = stemWords(fileStem(rel));
+  const parts = nameWords(fileStem(rel));
   return parts.length > 0 && parts.every((w) => words.has(w));
 }
 
@@ -105,7 +117,7 @@ function wrapperBindings(program, words) {
     if (n.type !== "ImportDeclaration") return;
     const spec = n.source?.value;
     if (typeof spec !== "string" || !spec.startsWith(".") || !namesAModule(spec)) return;
-    const parts = stemWords(fileStem(spec));
+    const parts = nameWords(fileStem(spec));
     if (parts.length === 0 || !parts.every((w) => words.has(w))) return;
     for (const s of n.specifiers || []) if (s.local?.name) names.add(s.local.name);
   });

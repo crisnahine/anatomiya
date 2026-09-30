@@ -310,6 +310,21 @@ const CHANGELOG = /(^|\/)CHANGELOG\.md$/;
 /** The heading a changelog keeps for the next change, spelled once. */
 const UNRELEASED = "## [Unreleased]";
 
+/** Whether a changelog defines the link its `## [label]` heading points at, read as Markdown reads it: outside a fence, any case. */
+const linkDefined = (text, label) => {
+  const want = `[${label}]: `.toLowerCase();
+  let fence = null;
+  for (const line of text.split(/\r?\n/)) {
+    const [, run, rest] = line.match(/^ {0,3}(`{3,}|~{3,})(.*)$/) ?? [];
+    if (fence) {
+      // Only a run of the opener's character, at least as long, then spaces or tabs, closes it.
+      if (run && run[0] === fence[0] && run.length >= fence.length && !/[^ \t]/.test(rest)) fence = null;
+    } else if (run && !(run[0] === "`" && rest.includes("`"))) fence = run;
+    else if (line.toLowerCase().startsWith(want)) return true;
+  }
+  return false;
+};
+
 /** The section a changelog's next release ships, or nothing where it has none. */
 const unreleased = (text) => {
   const start = text.indexOf(UNRELEASED);
@@ -345,6 +360,7 @@ export const READS = [
   `${REL.anatomiya}/package.json`,
   `${REL.anatomiya}/bin/anatomiya.mjs`,
   `${REL.anatomiya}/commands`,
+  `${REL.anatomiya}/lib/check.mjs`,
   "docs/how-it-works.md",
   "docs/why.md",
   "docs/dimension-intake.md",
@@ -535,6 +551,30 @@ export function checkDocs() {
     new RegExp(`There\\s+are ${codes.size}\\.`).test(caveatText),
     `does not say there are ${codes.size} caveat codes`
   );
+
+  // --- the severity reasons ---------------------------------------------------
+
+  // An agent relays a finding's reason line as fact, and the severity table is
+  // where a reader looks it up, so each row quotes every reason check prints at
+  // that severity. Read from the source because the reasons are built inline.
+  // A `${...}` in a reason is any placeholder the row spells, such as N or <area>.
+  const walkthroughLines = read("docs/how-it-works.md").split(/\r?\n/);
+  const reasons = read(`${REL.anatomiya}/lib/check.mjs`).matchAll(
+    /severity: "(NIT|FIX|MUST-FIX)",\s*reason: (?:"([^"]*)"|`([^`]*)`)/g
+  );
+  for (const [, severity, plain, template] of reasons) {
+    const reason = plain ?? template;
+    const row = walkthroughLines.find((line) => line.startsWith(`| ${severity} |`));
+    const quoted = reason
+      .split(/\$\{[^}]*\}/)
+      .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+      .join('[^"]+');
+    claim(
+      "docs/how-it-works.md",
+      row !== undefined && new RegExp(`"${quoted}"`).test(row),
+      `the severity table's ${severity} row does not quote the reason "${reason}"`
+    );
+  }
 
   // --- what a scan leaves in the working tree ---------------------------------
 
@@ -747,6 +787,7 @@ export function checkDocs() {
     claim(release.changelog, changelog !== null, "is missing, so there is nothing to release this plugin with");
     if (changelog !== null) {
       claim(release.changelog, changelog.includes(UNRELEASED), `has no ${UNRELEASED} heading to write the next change under`);
+      claim(release.changelog, linkDefined(changelog, "Unreleased"), `has no "[Unreleased]:" link definition, so its heading links nowhere`);
     }
     // `null` parses, and is not a manifest. Read as "did not parse" it said
     // nothing here and then threw on the summary line, which names no file.
@@ -767,6 +808,7 @@ export function checkDocs() {
     // section to it and the link under it dangles with nothing saying so.
     if (changelog !== null) {
       claim(release.changelog, changelog.includes(`## [${version}]`), `has no "## [${version}]" heading for the version its manifest states`);
+      claim(release.changelog, linkDefined(changelog, version), `has no "[${version}]:" link definition for the version its manifest states`);
     }
 
     // `notesFor` answers a missing changelog in its own wording, and the author

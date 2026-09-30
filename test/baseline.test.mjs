@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { needsPosixPaths, needsPosixSpecialFiles } from "./platform.mjs";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, rmSync, existsSync, symlinkSync } from "node:fs";
+import { needsPosixPaths, needsPosixPermissions, needsPosixSpecialFiles } from "./platform.mjs";
+import { chmodSync, mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, rmSync, existsSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync, spawnSync } from "node:child_process";
@@ -324,6 +324,21 @@ test("a pin on disk that will not load says why, rather than reading as no pin",
     assert.equal(state.countsOnly, true, name);
     assert.match(state.unreadable, why, name);
   }
+});
+
+test("a pin on disk that will not open says so, rather than reading as no pin", needsPosixPermissions, async (t) => {
+  let sha;
+  const dir = repo(t, (d, { write, commit }) => {
+    write("src/a/x.ts", CONFORMING);
+    sha = commit("init");
+  });
+  writePin(dir, buildPin([area("src/a", ["src/a/x.ts"])], { sha }));
+  chmodSync(join(dir, PIN_PATH), 0o000);
+
+  const state = await resolve(dir, { baseRef: "main" });
+
+  assert.equal(state.status, "pin-unreadable");
+  assert.match(state.unreadable, /could not be opened/);
 });
 
 test("a .claude symlinked outside the repository refuses the pin write", async (t) => {

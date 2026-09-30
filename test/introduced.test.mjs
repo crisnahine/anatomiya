@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { parseSync } from "oxc-parser";
 
 import { needsRuby } from "./ruby-available.mjs";
+import { doublingRatio, LINEAR } from "./growth.mjs";
 import { bodyIdentity, newlyIntroduced, siteIdentity } from "../plugins/anatomiya/lib/introduced.mjs";
 import { parseRuby } from "../plugins/anatomiya/lib/ruby.mjs";
 import { rowByKey } from "../plugins/anatomiya/lib/registry.mjs";
@@ -164,20 +165,166 @@ test("a site added above a function that was renamed is the one reported, not th
   assert.deepEqual(found.map((f) => [f.line, f.where]), [[2, "added"]]);
 });
 
-test("a file holding tens of thousands of sites is judged in time linear in its length", () => {
+test("an edit inside a function or class body is not a site on the declaration that holds it", () => {
+  // The three rows report the whole declaration, so a line added to its body
+  // gave the old site a new identity and the untouched declaration came back
+  // as one the branch introduced.
+  const slot = area(
+    stated("function_style", { states: "counter", counterClaim: "x" }),
+    stated("doc_comment_style", { states: "counter", counterClaim: "x" }),
+    stated("explicit_return_type")
+  );
+  const judged = (base, head) =>
+    newlyIntroduced({ area: slot, path: "src/a.ts", lang: "js", head: revision(head, { file: "f.ts" }), base: revision(base, { file: "f.ts" }) })
+      .filter((f) => slot.dimensions.some((d) => d.key === f.dimension))
+      .map((f) => `${f.dimension}@${f.line}`);
+
+  assert.deepEqual(
+    judged(`// why\nexport function f(a) {\n  return a\n}\n`, `// why\nexport function f(a) {\n  const b = 1\n  return a\n}\n`),
+    []
+  );
+  assert.deepEqual(
+    judged(`// why\nexport const g = (a) => {\n  return a\n}\n`, `// why\nexport const g = (a) => {\n  const b = 1\n  return a\n}\n`),
+    []
+  );
+  assert.deepEqual(
+    judged(`// why\nexport class C {\n  m() {\n    return 1\n  }\n}\n`, `// why\nexport class C {\n  m() {\n    return 2\n  }\n  n() {}\n}\n`),
+    []
+  );
+  assert.deepEqual(
+    judged(`// why\nexport function f(a) {\n  return a\n}\n`, `// why\nexport function f(a) {\n  return a\n}\nexport function h(a) {\n  return a\n}\n`),
+    ["function_style@5", "explicit_return_type@5"],
+    "a function the branch adds is still new"
+  );
+});
+
+test("an edited body beside a new one of the same shape is matched by the function around it", () => {
+  // Both callbacks share an identity once the body is out of it, so count
+  // alone would absorb the new one in walk order and report the edited one.
+  const slot = area(stated("iterate_with_for_of"));
+  const base = revision(`export function f() {\n  items.forEach((i) => {\n    a(i);\n  });\n}\n`, { file: "f.ts" });
+  const head = revision(
+    `export function g() {\n  items.forEach((i) => {\n    b(i);\n  });\n}\nexport function f() {\n  items.forEach((i) => {\n    a(i, 2);\n  });\n}\n`,
+    { file: "f.ts" }
+  );
+
+  const found = only("iterate_with_for_of", newlyIntroduced({ area: slot, path: "src/l.ts", lang: "js", head, base }));
+
+  assert.deepEqual(found.map((f) => [f.line, f.where]), [[2, "g"]]);
+
+  // In one function the name tells them apart no more than the identity does,
+  // so the untouched copy is found by its own text first.
+  const inOne = revision(
+    `export function f() {\n  items.forEach((i) => {\n    b(i);\n  });\n  items.forEach((i) => {\n    a(i);\n  });\n}\n`,
+    { file: "f.ts" }
+  );
+  const added = only("iterate_with_for_of", newlyIntroduced({ area: slot, path: "src/l.ts", lang: "js", head: inOne, base }));
+  assert.deepEqual(added.map((f) => [f.line, f.where]), [[2, "f"]]);
+});
+
+test("a row that judges the body aligns alike copies the way a line diff does", () => {
+  // With the body out of the identity every anonymous handler is one site, so
+  // which copy breaks has to be read off an alignment of all of them. `human`
+  // is what a reviewer reading both files would name. `limit` is the answer
+  // where only the names inside the bodies tell the readings apart: G1 and G4
+  // read as two copies edited in place, as a line diff reads them.
+  const caught = (call) => `try { await ${call}() } catch (e) { res.end() }`;
+  const then = (...bodies) => bodies.map((b) => `p.then(async (r) => {\n  ${b}\n})\n`).join("");
+  const handlers = (a, b) => `app.get("/a", async (req, res) => {\n  ${a}\n})\napp.get("/b", async (req, res) => {\n  ${b}\n})\n`;
+  const routes = (...pairs) => pairs.map(([p, b]) => `app.get("${p}", async (req, res) => {\n  ${b}\n})\n`).join("");
+  const catches = (a, b) => `try { x() } catch (e) { later(() => ${a}) }\ntry { y() } catch (e) { later(() => ${b}) }\n`;
+  const sync = (a, b) =>
+    `export async function sync() {\n  try {\n    await pull()\n  } catch (err) {\n    queue(() => ${a})\n  }\n  try {\n    await push()\n  } catch (err) {\n    queue(() => ${b})\n  }\n}\n`;
+  const top = (a, b) => `try {\n  x()\n} catch (e) {\n  later(() => ${a})\n}\ntry {\n  y()\n} catch (e) {\n  later(() => ${b})\n}\n`;
+  const multi = (...bodies) => bodies.map((b) => `try {\n  x()\n} catch (e) {\n  later(() => ${b})\n}\n`).join("");
+  const A = "async_error_handling";
+  const S = "swallowed_error";
+
+  const cases = [
+    // As many copies on both sides: each was edited in place.
+    ["the catch moved from /a to /b", A, handlers(caught("a"), "await b()"), handlers("await a()", caught("b")), [1]],
+    ["/a lost its catch and /b was edited", A, handlers(caught("a"), "await b()"), handlers("await a()", "await b(); log()"), [1]],
+    ["an edit inside /b alone", A, handlers(caught("a"), "await b()"), handlers(caught("a"), "await b(); log()"), []],
+    ["a catch that stopped reading its error inside a closure", S, catches("log(e)", "report()"), catches("log()", "report(e)"), [1]],
+    ["multi-line catches in one function", S, sync("log(err)", "retry()"), sync("log()", "retry(1)"), [4]],
+    ["multi-line catches that swap which one swallows", S, top("log(e)", "report()"), top("log()", "report(e)"), [3]],
+    ["the catch moved between same-opening handlers (T7)", A, then(caught("a"), "await b()"), then("await a()", caught("b")), [1]],
+    ["an edit inside the bare one alone", A, then(caught("a"), "await b()"), then(caught("a"), "await b(); log()"), []],
+    ["one removed above and one added below an edited one (E4)", A, then(caught("a"), "await b()"), then("await b(); log()", caught("c")), [], [1]],
+    // Copies on other routes open on other lines, so they are other groups.
+    ["other routes added around an edited one", A, routes(["/b", "await b()"]), routes(["/a", caught("a")], ["/b", "await b(); log()"], ["/c", caught("c")]), []],
+    ["one route removed above and one added below an edited one", A, routes(["/a", caught("a")], ["/b", "await b()"]), routes(["/b", "await b(); log()"], ["/c", caught("c")]), []],
+    ["the catch moved from /a to /b while /c was added", A, routes(["/a", caught("a")], ["/b", "await b()"]), routes(["/a", "await a()"], ["/b", caught("b")], ["/c", caught("c")]), [1]],
+    // A copy added or removed: an unchanged copy on both sides anchors, and
+    // between two anchors an edited copy has no known partner.
+    ["a caught handler added above an untouched caught one and an edited bare one", A, then(caught("a"), "await b()"), then(caught("x"), caught("a"), "await b(); log()"), []],
+    ["a new bare handler beside an untouched bare one", A, then("await a()"), then("await a()", "await b()"), [4]],
+    ["a new swallowing catch above an untouched reading one (S2)", S, multi("log(e)"), multi("report()", "log(e)"), [3]],
+    ["b lost its catch while a gained one and c was added above (F1)", A, then("await a()", caught("b")), then(caught("c"), caught("a"), "await b()"), [7]],
+    ["b lost its catch while a gained one and c was added below (F2)", A, then("await a()", caught("b")), then(caught("a"), "await b()", caught("c")), [4]],
+    ["b lost its catch while a gained one and c was removed (F3)", A, then("await a()", caught("b"), caught("c")), then(caught("a"), "await b()"), [4]],
+    ["b lost its catch while a gained one and c was added between (F5)", A, then("await a()", caught("b")), then(caught("a"), caught("c"), "await b()"), [7]],
+    ["bare a deleted and b lost its catch (F6)", A, then("await a()", caught("b")), then("await b()"), [1]],
+    ["bare a unchanged, b lost its catch, c added (F7)", A, then("await a()", caught("b")), then("await a()", "await b()", caught("c")), [4]],
+    ["the reading catch stopped reading and the swallowing one was deleted (S3)", S, multi("log(e)", "report()"), multi("log()"), [3]],
+    ["a fixed, b stopped reading, c added (S4)", S, multi("log()", "report(e)"), multi("log(e)", "report()", "keep(e)"), [8]],
+    ["a caught handler added above an edited bare one", A, then("await b()"), then(caught("a"), "await b(); log()"), [], [4]],
+    ["caught handlers added on both sides of an edited bare one (E1)", A, then("await b()"), then(caught("a"), "await b(); log()", caught("c")), [], [4]],
+    ["caught handlers removed from both sides of an edited bare one (E2)", A, then(caught("a"), "await b()", caught("c")), then("await b(); log()"), [], [1]],
+    ["a caught handler added above an edited bare one beside an untouched bare one (E3)", A, then("await b()", "await z()"), then(caught("a"), "await b(); log()", "await z()"), [], [4]],
+    ["a new bare handler above an edited bare one (E5)", A, then("await b()"), then("await n()", "await b(); log()"), [1], [1, 4]],
+    ["reading catches added on both sides of an edited swallowing one (S1)", S, multi("report()"), multi("log(e)", "report(1)", "log(e)"), [], [8]],
+    ["bare a deleted, b lost its catch, a caught one added below (G1)", A, then("await a()", caught("b")), then("await b()", caught("z")), [1], []],
+    ["the swallowing catch deleted, the reading one stopped reading, a reading one added below (G4)", S, multi("report()", "log(e)"), multi("log()", "keep(e)"), [3], []],
+    ["an unchanged file", A, then(caught("a"), "await b()", "await b()"), then(caught("a"), "await b()", "await b()"), []],
+  ];
+  const wrong = [];
+  for (const [name, key, base, head, human, limit] of cases) {
+    const found = only(key, newlyIntroduced({ area: area(stated(key)), path: "src/a.ts", lang: "js", head: revision(head, { file: "f.ts" }), base: revision(base, { file: "f.ts" }) }));
+    const lines = found.map((f) => f.line);
+    if (JSON.stringify(lines) !== JSON.stringify(limit ?? human)) wrong.push(`${name}: ${JSON.stringify(lines)}`);
+  }
+  assert.deepEqual(wrong, []);
+});
+
+test("a long file of many sites is judged in time linear in its length", () => {
   // Each site's line was counted from the start of the file, so the work grew
   // with the square of the file: a 619 KB file of 30,000 sites took 28 seconds.
-  const n = 20000;
-  const src = Array.from({ length: n }, (_, i) => `try { g${i}(); } catch (e) {}`).join("\n") + "\n";
-  const head = revision(src, { file: "f.ts" });
+  // The blank lines between sites make the file's length, not the per-site
+  // work, the cost that doubles.
+  const gap = 1000;
+  const judged = (n) => {
+    const src = Array.from({ length: n }, (_, i) => `try { g${i}(); } catch (e) {}` + "\n".repeat(gap)).join("");
+    const head = revision(src, { file: "f.ts" });
+    return () => only("swallowed_error", newlyIntroduced({ area: area(stated("swallowed_error")), path: "src/l.ts", lang: "js", head }));
+  };
 
-  const started = performance.now();
-  const found = only("swallowed_error", newlyIntroduced({ area: area(stated("swallowed_error")), path: "src/l.ts", lang: "js", head }));
-  const took = performance.now() - started;
+  const found = judged(500)();
+  assert.equal(found.length, 500);
+  assert.deepEqual([found[0].line, found[499].line], [1, 1 + 499 * gap]);
 
-  assert.equal(found.length, n);
-  assert.deepEqual([found[0].line, found[n - 1].line], [1, n]);
-  assert.ok(took < 6000, `took ${Math.round(took)} ms`);
+  const ratio = doublingRatio(judged, 500);
+  assert.ok(ratio < LINEAR, `twice the file took ${ratio.toFixed(2)} times as long`);
+});
+
+test("a long group of alike copies edited at both ends is aligned in time linear in its length", () => {
+  // With both ends edited nothing trims, and the alignment filled a table of
+  // every base copy against every head copy: 30,000 catches took 10 seconds
+  // and 1.2 GB.
+  const rows = [rowByKey("swallowed_error")];
+  const judged = (n) => {
+    const src = (first, last) =>
+      Array.from({ length: n }, (_, i) => `try {\n  x()\n} catch (e) {\n  later(() => ${i === 0 ? first : i === n - 1 ? last : `log${i}(e)`})\n}\n`).join("");
+    const base = revision(src("log0(e)", "keep(e)"), { file: "f.ts" });
+    const head = revision(src("log0()", "keep()"), { file: "f.ts" });
+    return () => newlyIntroduced({ area: area(stated("swallowed_error")), path: "src/l.ts", lang: "js", head, base, rows });
+  };
+
+  assert.deepEqual(judged(3000)().map((f) => f.line), [3, 5 * 3000 - 2]);
+
+  // Large enough that one collection pause cannot swing a side timed in tens of milliseconds.
+  const ratio = doublingRatio(judged, 8000, { rounds: 5 });
+  assert.ok(ratio < LINEAR, `twice the copies took ${ratio.toFixed(2)} times as long`);
 });
 
 /* --- one polarity for both revisions --- */
@@ -214,6 +361,17 @@ test("a slot the area does not hold is answered by the nearest ancestor that sta
   const found = only("function_style", newlyIntroduced({ area: child, ancestorsOf: () => [parent], path: "src/deep/a.ts", lang: "js", head, base: null }));
   assert.equal(found.length, 1, "the ancestor's counter side reaches the child");
   assert.equal(found[0].claim, functionStyle.counterClaim);
+});
+
+test("a map stating the counter side of a row that no longer has one enforces neither side", () => {
+  // Read as the claim, the map's own majority became the finding: every new
+  // site written the way the area said to write it.
+  const slot = area(stated("non_null_assertion", { states: "counter", counterClaim: "an older sentence" }));
+  const head = revision(`declare const a: string[] | null;\nexport const b = a!.length;\nexport const c = a?.length;`, { file: "f.ts" });
+  assert.equal(rowByKey("non_null_assertion").counterClaim, null);
+  assert.deepEqual(only("non_null_assertion", newlyIntroduced({ area: slot, path: "src/a.ts", lang: "js", head, base: null })), []);
+  const claim = area(stated("non_null_assertion"));
+  assert.equal(only("non_null_assertion", newlyIntroduced({ area: claim, path: "src/a.ts", lang: "js", head, base: null })).length, 1, "the claim side still finds it");
 });
 
 /* --- the two modes --- */
@@ -319,4 +477,18 @@ test("an omission is reported only where the map stated the claim", needsRuby, a
   const ask = (slot) => only("module_include", newlyIntroduced({ area: slot, path: "app/w.rb", lang: "ruby", head: src, base: null }));
   assert.equal(ask(said).length, 1);
   assert.deepEqual(ask(unsaid), []);
+});
+
+test("a base spelled relative to the nesting it is written in is the learned one, as the fold reads it", needsRuby, async (t) => {
+  // The fold resolves a bare constant against the site's nesting (C30), and
+  // compared as written the check flagged every class the map counted.
+  const relative = await rubyRevision(t, "module Api\n  module V1\n    class Qbo < BaseController\n    end\n  end\nend\n");
+  const elsewhere = await rubyRevision(t, "class Api::V1::Qbo < BaseController\nend\n");
+  const mixin = await rubyRevision(t, "module Api\n  class W\n    include Concern\n  end\nend\n");
+
+  const ask = (key, learned, head) =>
+    only(key, newlyIntroduced({ area: area(stated(key, { learned })), path: "app/w.rb", lang: "ruby", head, base: null }));
+  assert.deepEqual(ask("class_base", "Api::V1::BaseController", relative), []);
+  assert.equal(ask("class_base", "Api::V1::BaseController", elsewhere).length, 1, "at the top level the bare name is ::BaseController");
+  assert.deepEqual(ask("module_include", "Api::Concern", mixin), []);
 });

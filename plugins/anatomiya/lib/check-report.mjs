@@ -89,6 +89,7 @@ export function encodeReport(report) {
     base: { ...report.base, ref: report.base.ref == null ? null : encode(report.base.ref) },
     staleReason: report.staleReason == null ? null : encode(report.staleReason),
     changed: report.changed.map((row) => encodeRow(row)),
+    removed: report.removed.map(locator),
     examined: report.examined.map((row) => encodeRow(row)),
     findings: report.findings.map((f) => encodeFinding(f)),
     counts: { ...report.counts },
@@ -212,17 +213,20 @@ function renderText(report) {
   const lines = [];
   const { base, counts } = report;
   const at = base.sha ? ` (${base.sha.slice(0, 7)})` : "";
-  const n = report.changed.length;
+  const gone = report.removed.length;
+  const n = report.changed.length + gone;
   // Compared as sets, not as sizes. `examined` drops what is not source and
   // adds what only the working tree has, so two counts can agree while naming
   // different files, and the header then hides the file a finding is about.
   const same =
-    report.examined.length === n && report.examined.every((f, i) => f.path === report.changed[i]?.path);
+    !gone &&
+    report.examined.length === n &&
+    report.examined.every((f, i) => f.path === report.changed[i]?.path);
   const examined = same ? "" : `, ${report.examined.length} examined`;
   lines.push(
     // `||`, not `??`: an empty ref is no ref, and prints as none.
     `base ${base.ref || "none"}${at}, ` +
-      `${n} changed file${n === 1 ? "" : "s"}${examined}, ${report.mode}`
+      `${n} changed file${n === 1 ? "" : "s"}${gone ? ` (${gone} removed)` : ""}${examined}, ${report.mode}`
   );
   lines.push(`${counts["MUST-FIX"]} MUST-FIX, ${counts.FIX} FIX, ${counts.NIT} NIT`);
   if (report.stale) {

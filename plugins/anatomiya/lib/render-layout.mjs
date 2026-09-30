@@ -83,12 +83,13 @@ const namesakeVerb = (withTest) => (withTest === 1 ? "has" : "have");
  * The denominator is nouned on the tests line, which speaks for the whole
  * repository and has to say what it is counting, and bare on the two lines that
  * already named the directory. Only the root line names where the namesakes
- * are; the other two are about the files, not the place.
+ * are; the other two are about the files, not the place. Half the matches are
+ * enough to name it, so the count there prints where it is not all of them.
  *
  * Exported for the same reason `plural` is: the corpus harness reads this
  * clause back off the printed line, and its own copy of the verb went stale.
  */
-export const namesakeClause = ({ with: withTest, of, root }, noun = null, over = null) =>
+export const namesakeClause = ({ with: withTest, of, root, under }, noun = null, over = null) =>
   `${withTest} of ${noun === null ? of : plural(of, noun)}` +
   // Which directory the denominator was counted over. Only the tests line asks
   // for it: that line speaks for the whole repository, and `1046 of 1575 .rb
@@ -96,7 +97,7 @@ export const namesakeClause = ({ with: withTest, of, root }, noun = null, over =
   // alone.
   (over ? ` under ${pathText(over)}` : "") +
   ` ${namesakeVerb(withTest)} a namesake test` +
-  (root ? ` under ${pathText(root)}` : "");
+  (root ? `${under !== undefined && under !== withTest ? `, ${under}` : ""} under ${pathText(root)}` : "");
 
 // The leftover past the two printed extensions rides along with them, so a
 // root line and an area's kinds line spell "and N other" off one expression.
@@ -175,8 +176,10 @@ function rootLine(r) {
   if (r.companions) parts.push(namesakeClause(r.companions));
   if (r.helpers) {
     const { siblingModules, stems, inlineFiles } = r.helpers;
-    parts.push(`${plural(siblingModules, "sibling module")} named ${stems.map((s) => encode(s)).join("/")}`);
-    parts.push(`${plural(inlineFiles, "file")} inline${inlineFiles === 1 ? "s" : ""} a helper`);
+    const named = stems.length > 0 ? ` named ${stems.map((s) => encode(s)).join("/")}` : "";
+    parts.push(`${plural(siblingModules, "sibling module")}${named}`);
+    // Only the JSX files are asked, so they are the denominator.
+    parts.push(`${inlineFiles} of ${plural(r.jsx, "JSX file")} inline${inlineFiles === 1 ? "s" : ""} a helper`);
   }
   return `- ${pathText(r.path)}: ${parts.join("; ")}`;
 }
@@ -219,12 +222,18 @@ function testsLineText(layout) {
     // root counts only the files directly in `lib`, and "4 of 4 .js files under
     // lib" read as the whole subtree two lines below `lib/sub: 0 of 4`. The
     // repository root as a root has an empty `dir` and no clause, as before.
-    parts.push(namesakeClause({ ...top.companions, root: null }, `${encode(top.exts[0][0])} file`, top.dir && top.path));
+    const ext = top.companions.ext ?? top.exts[0][0];
+    parts.push(namesakeClause({ ...top.companions, root: null }, `${encode(ext)} file`, top.dir && top.path));
   }
   return `- tests: ${parts.join("; ")}`;
 }
 
 const directories = (n) => `${n} ${n === 1 ? "directory" : "directories"}`;
+
+// The roster's own threshold, named apart from the area floor that the Not
+// covered line calls "the per-directory floor": the two sat ten lines apart
+// under one word, and most files this clause counts do have an area.
+const TOO_SMALL = "too small for a line of their own";
 
 /**
  * The three populations that did not get a line of their own, each counted
@@ -251,12 +260,12 @@ function foldLine(roots, files, floor) {
     // No directory was folded, so the count is files the floor left behind and
     // "and 0 more directories" would be a number nobody can act on.
     if (files > 0) {
-      return `- and ${files} more ${files === 1 ? "file" : "files"} in directories under the floor`;
+      return `- and ${files} more ${files === 1 ? "file" : "files"} in directories ${TOO_SMALL}`;
     }
     return null;
   }
   const parts = [folded];
-  if (floor.files > 0) parts.push(`${plural(floor.files, "file")} in ${directories(floor.dirs)} under the floor`);
+  if (floor.files > 0) parts.push(`${plural(floor.files, "file")} in ${directories(floor.dirs)} ${TOO_SMALL}`);
   // The noun rides on the first clause that needs it, so a line that is only
   // this one still says what it counts.
   if (floor.root > 0) {

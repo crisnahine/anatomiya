@@ -124,7 +124,7 @@ async function runOxc(files, { engine, withProgram, guards }) {
     const results = await Promise.all(files.map((f) => pool.parse(f)));
     // Read after the parses, because the version arrives on a worker's ready
     // message and the first one to answer a file has already sent it.
-    return { results, truncated: false, version: pool.versions[engine] ?? null };
+    return { results, truncated: false, version: pool.versions[engine] ?? null, stalled: pool.stalled };
   } finally {
     await pool.close();
   }
@@ -144,7 +144,7 @@ async function runPrism(files, { withProgram, guards, frameworks }) {
     dimensions: withProgram ? [] : dimensionsFor(langs, { frameworks }),
     ...(guards ? { guards } : {}),
   });
-  return { results: out.results, truncated: out.truncated, version: out.version };
+  return { results: out.results, truncated: out.truncated, version: out.version, stalled: out.stalled };
 }
 
 // Engine name to host, the one table in the one module that may import both
@@ -245,8 +245,9 @@ async function run(files, { withProgram, guards, frameworks }) {
     });
     // Written for every engine that ran, whether or not it answered a version:
     // an engine that started and reported none is a different fact from one no
-    // file routed to, and only the first is an install to look at.
-    engines[engine] = { version: out.version ?? null };
+    // file routed to, and only the first is an install to look at. Unless our
+    // own clock stopped it first, which `stalled` says.
+    engines[engine] = { version: out.version ?? null, ...(out.stalled ? { stalled: out.stalled } : {}) };
     for (const r of out.results) take(engine, r);
     // A batch that hit its own caps answered for part of the corpus, which
     // carries the same whole-map suppression the file cap does.

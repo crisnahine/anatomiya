@@ -115,11 +115,19 @@ const FLAGS = new Set([
   // Whether a merge has left the index with a path per stage, which `pin`
   // refuses to record (`commands.mjs`).
   "--unmerged",
+  // Each path tagged with its index state, so `pin` sees the skip-worktree
+  // paths a sparse checkout leaves out of the tree.
+  "-t",
+  // The same with assume-unchanged in lowercase, so the corpus reads a root
+  // `.gitattributes` git treats as unchanged from the index (`corpus.mjs`).
+  "-v",
   // The one read of a repository's own config that says which file each value
   // came from, so the commands it names can be replaced (`repositoryCommands`).
   "--show-scope",
   "--null",
   "--get-regexp",
+  // Whether core.ignorecase folds case, as git itself parses the value.
+  "--type=bool",
 ]);
 
 // `--format=<pattern>` carries a pattern this tool composes; the value is not
@@ -159,8 +167,10 @@ function refuse(args) {
  * uncommitted edits nobody made.
  */
 function gitEnv(env, { lazyFetch = false, repository = NO_REPOSITORY_COMMANDS } = {}) {
+  // Each of these rewrites what every pathspec means, and the pathspecs here spell their own magic.
+  const { GIT_LITERAL_PATHSPECS, GIT_GLOB_PATHSPECS, GIT_NOGLOB_PATHSPECS, GIT_ICASE_PATHSPECS, ...rest } = env;
   return {
-    ...env,
+    ...rest,
     GIT_TERMINAL_PROMPT: "0",
     // A partial clone fetches a missing object from its promisor on demand, so
     // a read of a pinned blob reached the network and, with the remote gone,
@@ -489,6 +499,15 @@ export async function gitBuffered(
       error: message,
     };
   }
+}
+
+/**
+ * The magic a pathspec needs to match as this repository folds case: git keeps
+ * the index spelling and matches pathspecs case-sensitively even under core.ignorecase.
+ */
+export async function caseMagic(root) {
+  const r = await gitBuffered(root, ["config", "--type=bool", "--get", "core.ignorecase"]);
+  return r.ok && r.stdout.trim() === "true" ? "icase" : "";
 }
 
 /**

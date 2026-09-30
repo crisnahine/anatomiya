@@ -8,7 +8,7 @@
  * version at all.
  */
 import { randomBytes } from "node:crypto";
-import { closeSync, mkdirSync, openSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, openSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 
 import { outsideClaude, readHead, resolveInside } from "./rules.mjs";
@@ -103,7 +103,10 @@ export const FACTS_PATH = ".claude/anatomiya/facts.json";
 // read as a one-author repository. A record written before it carries the
 // summed count, which is what it printed, and says nothing about its clone,
 // which is what its scan knew.
-export const FACTS_SCHEMA = 18;
+// 19 stores `counterAuthors`. A slot shown on its counter side printed the
+// claim side's author count, because the record carried no other, and a held
+// area re-renders from the record. An older record prints what it printed.
+export const FACTS_SCHEMA = 19;
 
 /**
  * Which of a dimension's two sentences an area is about, with the counts and
@@ -150,6 +153,9 @@ export function statedSide(d) {
         exceptions: d.counterExceptions || [],
         more: d.moreCounterExceptions || 0,
         gate: d.counterGate,
+        // D4 counts authors per side. A record written before the counter's
+        // count was stored carries the one its map printed.
+        authors: d.counterAuthors ?? d.authors,
         borrowed: d.counterBorrowed === true,
       }
     : {
@@ -160,6 +166,7 @@ export function statedSide(d) {
         exceptions: d.exceptions || [],
         more: d.moreExceptions || 0,
         gate: d.gate,
+        authors: d.authors,
         // Whether the gates cleared this side on the rest of the repository's
         // record rather than on this area's own sample. The check caps a
         // borrowed claim below MUST-FIX, which is a statement about this
@@ -223,8 +230,9 @@ export function readRecord(path) {
  *
  * A version past this reader's is refused rather than read: fields move between
  * versions, and a record read against the wrong shape enforces a convention
- * nobody stated. Absent or malformed stays `null`, which is the ordinary case of
- * a repository nobody has scanned.
+ * nobody stated. Absent stays `null`, which is the ordinary case of a repository
+ * nobody has scanned. A file there that does not parse is a map nothing could
+ * use, a committed one that conflicted on a merge, and is said as one.
  */
 export function readFacts(root) {
   // The same containment the write side carries. This record drives every
@@ -246,7 +254,14 @@ export function readFacts(root) {
   if (oversize) {
     return { facts: null, unreadable: `the map on disk is past the ${RECORD_MOST / 2 ** 20} MB this reads, so nothing was enforced from it` };
   }
-  if (parsed === null) return { facts: null, unreadable: null };
+  if (parsed === null) {
+    const kind = readHead(path, 0).kind;
+    if (kind === "unreadable" && existsSync(path)) {
+      return { facts: null, unreadable: "the map on disk could not be opened, so nothing was enforced from it" };
+    }
+    if (kind !== "file") return { facts: null, unreadable: null };
+    return { facts: null, unreadable: "the map on disk does not parse as JSON, so nothing was enforced from it: scan again" };
+  }
   // A shape that is not a record at all is the ordinary case of a repository
   // nobody has scanned; a version this build has not heard of is not, and says
   // so. Both decided by the one rule every reader shares.
@@ -363,7 +378,12 @@ export function writeFacts(root, result) {
     throw new Error(`${outsideClaude(dirname(FACTS_PATH))}, so the facts were not written`);
   }
   mkdirSync(dir, { recursive: true });
-  atomic(join(dir, basename(FACTS_PATH)), JSON.stringify(factsRecord(result), null, 2) + "\n");
+  atomic(join(dir, basename(FACTS_PATH)), factsJson(result));
+}
+
+/** The record's bytes, for a writer that puts them on disk together with the map. */
+export function factsJson(result) {
+  return JSON.stringify(factsRecord(result), null, 2) + "\n";
 }
 
 function factsRecord(result) {
@@ -495,6 +515,7 @@ function counterFacts(d) {
     counterPriorBound: rounded(d.counterPriorBound),
     ...(d.counterBorrowed === true ? { counterBorrowed: true } : {}),
     counterGate: d.counterGate ?? null,
+    ...(d.counterAuthors === undefined ? {} : { counterAuthors: d.counterAuthors }),
     counterExceptions: d.counterExceptions || [],
     moreCounterExceptions: d.moreCounterExceptions ?? 0,
   };

@@ -27,6 +27,14 @@ test("defaultSideFor answers a side, and none reads as null", () => {
   }
 });
 
+test("only the two prefix rows carry a class nobody measured", () => {
+  // A class is read whatever the method says, so an unmeasured one filters the
+  // row like a measured one. The walkthrough names these two as the exception.
+  const handSet = [...MODEL_DEFAULTS].filter(([, e]) => e.class !== undefined && e.provenance.method !== "measured").map(([key]) => key);
+
+  assert.deepEqual(handSet.sort(), ["interface_prefix", "type_alias_prefix"]);
+});
+
 test("a measured entry answers its side", () => {
   const table = new Map([["nullish_default", entry({ default: "claim", provenance: { method: "measured", model: "m", date: "2026-08-16", samples: 40, sideCounts: { claim: 37, counter: 2, neither: 1 } } })]]);
   assertModelDefaults(table, new Set(["nullish_default"]));

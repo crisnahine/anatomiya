@@ -1,5 +1,5 @@
-import { realpathSync, statSync } from "node:fs";
-import { dirname, resolve, sep } from "node:path";
+import { readdirSync, realpathSync, statSync } from "node:fs";
+import { dirname, join, resolve, sep } from "node:path";
 
 import { gitBuffered, gitStreamed } from "./git.mjs";
 import { EXT_BY_LANG, LANGUAGES, language } from "./langs.mjs";
@@ -116,8 +116,34 @@ export function isExcludedDir(path) {
   return EXCLUDE_DIR.some((re) => re.test(path)) || isBuildOutput(path);
 }
 
+/** The shallowest directory on a path that the excluded-directory rules refuse, or null. */
+function excludedAt(path) {
+  const parts = path.split("/");
+  for (let i = 1; i < parts.length; i++) {
+    const dir = parts.slice(0, i).join("/");
+    if (isExcludedDir(dir)) return dir;
+  }
+  return null;
+}
+
 export function isSource(path) {
   return SOURCE.test(path) || BARE_FILENAME.test(path);
+}
+
+// Claude Code's `paths` matcher folds case as a non-unicode /i regex does, so
+// `*.rb` reaches `Legacy.RB`. oxc picks its grammar from the extension as
+// written, so such a file is left out rather than counted.
+const SOURCE_ANY_CASE = new RegExp(SOURCE.source, "i");
+const BARE_ANY_CASE = new RegExp(BARE_FILENAME.source, "i");
+
+/** The language a path is counted under, asked with its name's case folded. */
+function languageInAnyCase(path) {
+  if (isSource(path)) return language(path);
+  const ext = SOURCE_ANY_CASE.exec(path)?.[1];
+  if (ext) return language(`f.${ext.toLowerCase()}`);
+  const bare = BARE_ANY_CASE.exec(path)?.[2]?.toLowerCase();
+  const name = bare && LANGUAGES.flatMap((l) => l.filenames).find((n) => n.toLowerCase() === bare);
+  return name ? language(name) : null;
 }
 
 /**
@@ -189,12 +215,9 @@ function isGeneratedHead(prefix) {
  * and only the root file: a pattern outside those three, or one declared by a
  * nested `.gitattributes`, is not read rather than guessed at.
  */
-function generatedAttrRules(root) {
-  const abs = safeResolve(root, ".gitattributes");
-  if (!abs) return [];
+async function generatedAttrRules(root, { timeout } = {}) {
   const rules = [];
-  const file = readHead(abs, ATTR_FILE_BYTES);
-  for (const line of (file.kind === "file" ? file.head : "").split("\n")) {
+  for (const line of (await rootAttributes(root, timeout)).split("\n")) {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith("#")) continue;
     const [pattern, ...attrs] = trimmed.split(/\s+/);
@@ -205,6 +228,23 @@ function generatedAttrRules(root) {
     if (re) rules.push({ re, value: set });
   }
   return rules;
+}
+
+/**
+ * The root `.gitattributes`, from the index where the index marks it
+ * skip-worktree or assume-unchanged: git then counts whatever the tree holds
+ * there, a sparse checkout's absence included, as no change. Both reads start
+ * together, so asking costs one git read in a row, not two.
+ */
+async function rootAttributes(root, timeout) {
+  const [listed, blob] = await Promise.all([
+    gitBuffered(root, ["ls-files", "-v", "-z", "--", ".gitattributes"], { timeout }),
+    gitBuffered(root, ["cat-file", "blob", ":.gitattributes"], { timeout }),
+  ]);
+  if (listed.ok && blob.ok && /^[a-zS] /.test(listed.stdout)) return blob.stdout.slice(0, ATTR_FILE_BYTES);
+  const abs = safeResolve(root, ".gitattributes");
+  const file = abs ? readHead(abs, ATTR_FILE_BYTES) : null;
+  return file?.kind === "file" ? file.head : "";
 }
 
 const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -397,7 +437,8 @@ export async function gitRoot(cwd) {
  * path escaping the repository and one that is not a regular file are dropped
  * together, as `escaped`. One the filesystem will not resolve (gone from the
  * working tree, under a directory this may not enter, or a name that is not
- * UTF-8) is `unreadable`, which the summary states as a count.
+ * UTF-8) is `unreadable`, which the summary states as a count, and so is a
+ * second index entry for a file already read under a name that folds to it.
  *
  * `git ls-files -z` is NUL-delimited because git permits newlines in paths, and
  * a newline-split here would turn one hostile filename into two corpus entries.
@@ -411,21 +452,83 @@ export async function collect(root) {
   const dropped = { denied: 0, excluded: 0, escaped: 0, notSource: 0, generated: 0, unreadable: 0 };
   const files = [];
   const others = [];
-  const generatedRules = generatedAttrRules(root);
+  const uncounted = [];
+  const generatedRules = await generatedAttrRules(root);
+  // Where each folded name sits in `files`. Only a fold that collides is asked
+  // for file identity, so a stat per file is not the price of the rare case.
+  const byFold = new Map();
 
   await lsFiles(root, (rel) => {
     const { drop, abs } = classify(root, rel, generatedRules);
     // Non-source tracked files feed the roster this scan builds over every
     // tracked path, not just the parsed ones.
-    if (drop === "notSource") { dropped.notSource++; others.push({ rel }); return; }
+    const folded = drop === "notSource" || drop === "excluded" ? languageInAnyCase(rel) : null;
+    if (drop === "notSource") {
+      dropped.notSource++;
+      others.push({ rel });
+      if (folded) uncounted.push({ rel, lang: folded });
+      return;
+    }
+    // Left out as unidiomatic on purpose, so an area's glob has to cut it out.
+    if (drop === "excluded" && folded) uncounted.push({ rel, lang: folded, excludedAt: excludedAt(rel) });
+    if (drop === "generated") uncounted.push({ rel, lang: language(rel) });
     if (drop) { dropped[drop]++; return; }
-    files.push({ rel, abs, lang: language(rel) });
+    const file = { rel, abs, lang: language(rel) };
+    // Two index entries that differ only in case or Unicode form are one file
+    // on a filesystem that folds them, and both names read it: its sites counted
+    // twice and the other entry's blob, which the tree does not hold, not at all.
+    // The spelling on disk, directories included, is kept and the other is unread.
+    const fold = rel.normalize("NFC").toLowerCase();
+    const at = byFold.get(fold);
+    if (at !== undefined && sameFile(files[at].abs, abs)) {
+      dropped.unreadable++;
+      if (listedAs(root, rel) > listedAs(root, files[at].rel)) files[at] = file;
+      return;
+    }
+    if (at === undefined) byFold.set(fold, files.length);
+    files.push(file);
   });
 
-  // Kept in the shape callers already read. No repository size truncates the
-  // corpus now; the flag still travels because the Ruby stream can hit its
-  // per-line guard, and a partly-answered corpus must not state a convention.
-  return { files, others, truncated: false, dropped };
+  // Kept in the shape callers already read: listing the files never truncates
+  // the corpus. A parse that hits the Ruby per-line guard sets its own flag.
+  return { files, others, uncounted, truncated: false, dropped };
+}
+
+/** Whether two paths open one file. BigInt, since an NTFS file id passes 2^53. */
+function sameFile(a, b) {
+  try {
+    const x = statSync(a, { bigint: true });
+    const y = statSync(b, { bigint: true });
+    return x.dev === y.dev && x.ino === y.ino;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * How closely the directories on the way list this name: 2 byte for byte, 1 only
+ * up to Unicode form (macOS lists a decomposed name under git's composed one), 0 not at all.
+ */
+function listedAs(root, rel) {
+  let dir = root;
+  let rank = 2;
+  try {
+    for (const part of rel.split("/")) {
+      const names = readdirSync(dir);
+      if (names.includes(part)) {
+        dir = join(dir, part);
+        continue;
+      }
+      const nfc = part.normalize("NFC");
+      const found = names.find((n) => n.normalize("NFC") === nfc);
+      if (found === undefined) return 0;
+      rank = 1;
+      dir = join(dir, found);
+    }
+    return rank;
+  } catch {
+    return 0;
+  }
 }
 
 /**
@@ -443,7 +546,7 @@ export async function collect(root) {
  */
 export async function countUntrackedSource(root) {
   let n = 0;
-  const generatedRules = generatedAttrRules(root);
+  const generatedRules = await generatedAttrRules(root);
   await lsFiles(root, (rel) => {
     if (!classify(root, rel, generatedRules).drop) n++;
   }, ["--others", "--exclude-standard"]);
@@ -458,9 +561,18 @@ export async function countUntrackedSource(root) {
  * files a branch changed, and one the corpus leaves out is one the map never
  * counted. `.gitattributes` is read once, when the question is built.
  */
-export function corpusDrop(root) {
-  const generatedRules = generatedAttrRules(root);
+export async function corpusDrop(root, { timeout } = {}) {
+  const generatedRules = await generatedAttrRules(root, { timeout });
   return (rel) => classify(root, rel, generatedRules).drop ?? null;
+}
+
+/**
+ * Whether a path is one the corpus would count, asked of its name and the root
+ * `.gitattributes` without opening it: for a path the tree does not hold.
+ */
+export async function corpusByName(root) {
+  const generatedRules = await generatedAttrRules(root);
+  return (rel) => isCorpusPath(rel) && !isAttrGenerated(generatedRules, rel);
 }
 
 /**

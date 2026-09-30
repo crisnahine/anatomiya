@@ -152,6 +152,14 @@ function check(dir) {
   }
 }
 
+/** Rewrites a copied file read with LF endings, as a CRLF checkout has it too, and fails where the edit matched nothing. */
+function edit(path, change) {
+  const before = readFileSync(path, "utf8").replace(/\r\n/g, "\n");
+  const after = change(before);
+  assert.notEqual(after, before, `the edit to ${path} matched nothing`);
+  writeFileSync(path, after);
+}
+
 /** The one count a document states in this phrasing, raised by one. The walkthrough unless named. */
 function bumpCount(dir, phrasing, rel = "docs/how-it-works.md") {
   const path = join(dir, ...rel.split("/"));
@@ -321,6 +329,36 @@ test("a documented code the report can never emit fails too", (t) => {
   assert.match(output, /documents no-map-at-all, which is not a caveat code/);
 });
 
+test("a severity reason check prints that the walkthrough's table does not quote fails", (t) => {
+  // An agent relays the reason line as fact, and the table is where a reader
+  // looks it up, so a paraphrase there is a reason nobody can find.
+  const dir = repoCopy(t);
+  edit(join(dir, "docs", "how-it-works.md"), (text) =>
+    text.replace(/^\| FIX \|.*$/m, "| FIX | the area file had no room for it |")
+  );
+
+  const { status, output } = check(dir);
+
+  assert.equal(status, 1);
+  assert.match(output, /table's FIX row does not quote the reason "the area file had no room to state this claim"/);
+});
+
+test("a reason built from counts is read with the row's own placeholders, and a paraphrase of it still fails", (t) => {
+  const dir = repoCopy(t);
+  edit(join(dir, "docs", "how-it-works.md"), (text) =>
+    text.replace(
+      '"N of M baseline sites here, on a claim the rest of the repository carries"',
+      "stated on the repository's bound"
+    )
+  );
+
+  const { status, output } = check(dir);
+
+  assert.equal(status, 1);
+  assert.match(output, /FIX row does not quote the reason "\$\{base\.conforming\} of \$\{base\.candidates\} baseline sites here, on a claim the rest of the repository carries"/);
+  assert.doesNotMatch(output, /baseline sites is thin"/);
+});
+
 test("a decision row whose cells outnumber the header is named, with the escape as its remedy", (t) => {
   // GitHub drops every cell past the header count, silently, so an unescaped
   // `|` inside a code span takes the Status column off the end of the row. It
@@ -388,6 +426,76 @@ test("a changelog with no Unreleased heading is named", (t) => {
 
   assert.equal(status, 1);
   assert.match(output, /CHANGELOG\.md.*Unreleased/, output);
+});
+
+test("a changelog whose Unreleased link was replaced rather than kept is named", (t) => {
+  // A release renames the heading and puts an empty one back, so the link under
+  // it is retargeted and kept. Replaced, the heading it points at links nowhere.
+  const dir = repoCopy(t);
+  const path = join(dir, "CHANGELOG.md");
+  edit(path, (text) => text.replace(/^\[Unreleased\]: .*\n/m, ""));
+
+  const { status, output } = check(dir);
+
+  assert.equal(status, 1);
+  assert.match(output, /CHANGELOG\.md: has no "\[Unreleased\]:" link definition/, output);
+});
+
+test("a changelog with no link definition for the version its manifest states is named", (t) => {
+  const dir = repoCopy(t);
+  const path = join(dir, "CHANGELOG.md");
+  const version = JSON.parse(readFileSync(join(dir, REL.anatomiya, "package.json"), "utf8")).version;
+  const escaped = version.replace(/\./g, "\\.");
+  edit(path, (text) => text.replace(new RegExp(`^\\[${escaped}\\]: .*\\n`, "m"), ""));
+
+  const { status, output } = check(dir);
+
+  assert.equal(status, 1);
+  assert.match(output, new RegExp(`CHANGELOG\\.md: has no "\\[${escaped}\\]:" link definition`), output);
+});
+
+test("a link definition inside a code fence defines nothing", (t) => {
+  // Markdown renders a fenced line as text, so the heading still links nowhere.
+  // A fence closes only on a bare run of its own character at least as long, so
+  // the inner line of the last four leaves the fence open, a no-break space after it included. A CRLF checkout fences too.
+  const fences = [["```", "```"], ["~~~md", "~~~"], ["   ```", "```"], ["~~~", "```\n{line}\n~~~"], ["````", "```\n{line}\n````"], ["```", "```js\n{line}\n```"], ["```", "```\u00a0\n{line}\n```"], ["```", "```", "\r\n"]];
+  for (const [open, close, eol = "\n"] of fences) {
+    const dir = repoCopy(t);
+    const path = join(dir, "CHANGELOG.md");
+    edit(path, (text) => {
+      const line = text.match(/^\[Unreleased\]: .*$/m)[0];
+      const body = close.includes("{line}") ? close.replace("{line}", line) : line + "\n" + close;
+      assert.ok(text.includes(line + "\n"), "the definition to move is there");
+      return (text.replace(line + "\n", "") + `\n${open}\n${body}\n`).replace(/\n/g, eol);
+    });
+
+    const { status, output } = check(dir);
+
+    assert.equal(status, 1, `${open} fence: ${output}`);
+    assert.match(output, /CHANGELOG\.md: has no "\[Unreleased\]:" link definition/, output);
+  }
+});
+
+test("a line opening with an inline code span opens no fence", (t) => {
+  // A backtick fence's info string cannot hold a backtick, so this is a paragraph.
+  const dir = repoCopy(t);
+  const path = join(dir, "CHANGELOG.md");
+  edit(path, (text) => text.replace("## [Unreleased]\n", "## [Unreleased]\n\n```npm test``` now runs the docs check too.\n"));
+
+  const { output } = check(dir);
+
+  assert.doesNotMatch(output, /link definition/, output);
+});
+
+test("a link definition matches its heading whatever the label's case", (t) => {
+  // Markdown matches link labels case-insensitively, so `[unreleased]:` resolves.
+  const dir = repoCopy(t);
+  const path = join(dir, "CHANGELOG.md");
+  edit(path, (text) => text.replace(/^\[Unreleased\]: /m, "[unreleased]: "));
+
+  const { output } = check(dir);
+
+  assert.doesNotMatch(output, /link definition/, output);
 });
 
 test("a changelog with no section for the version names the file once, not twice", (t) => {

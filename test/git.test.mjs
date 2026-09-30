@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { chmodSync, cpSync, existsSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -10,7 +10,7 @@ import { promisify } from "node:util";
 import { needsShebang } from "./platform.mjs";
 
 import { check } from "../plugins/anatomiya/lib/check.mjs";
-import { changedSinceWorktree, gitBuffered, gitStreamed, headSha, isSha, nameStatusReader, parsePorcelainRows, showBlob } from "../plugins/anatomiya/lib/git.mjs";
+import { caseMagic, changedSinceWorktree, gitBuffered, gitStreamed, headSha, isSha, nameStatusReader, parsePorcelainRows, showBlob } from "../plugins/anatomiya/lib/git.mjs";
 
 /** Every row a NUL-delimited name-status listing yields, read as a stream. */
 function nameStatusRows(out) {
@@ -461,6 +461,21 @@ test("a git call cannot stop to ask for a credential", async (t) => {
 
   assert.equal(typeof r.ok, "boolean");
   assert.equal(process.env.GIT_TERMINAL_PROMPT, before, "the parent's environment is untouched");
+});
+
+test("the pathspecs this tool writes keep their magic whatever the caller's environment says", async (t) => {
+  // These variables switch pathspec magic off or on for every call, and the
+  // pin and the refresh build `:(exclude)`, `:(icase)` and globbed pathspecs of their own.
+  const { dir, git } = repo(t);
+  // Default mode lets `*` cross `/`; glob mode does not, so only a nested file shows it.
+  mkdirSync(join(dir, "src"));
+  writeFileSync(join(dir, "src", "b.ts"), "export const b = 1\n");
+  git("add", "-A");
+  for (const name of ["GIT_LITERAL_PATHSPECS", "GIT_GLOB_PATHSPECS", "GIT_NOGLOB_PATHSPECS", "GIT_ICASE_PATHSPECS"]) {
+    const env = { ...process.env, [name]: "1" };
+    assert.equal((await gitBuffered(dir, ["ls-files", "-z", "--", ":(icase)A.TS"], { env })).stdout, "a.ts\0", name);
+    assert.equal((await gitBuffered(dir, ["ls-files", "-z", "--", "*.ts", ":(exclude)A.ts"], { env })).stdout, "a.ts\0src/b.ts\0", name);
+  }
 });
 
 /* --- the listings that grow with the repository are streamed (F6) --- */
@@ -1071,4 +1086,16 @@ test("the repository's config is read once per repository, not once per call", n
   const calls = readFileSync(log, "utf8").trim().split("\n");
   assert.equal(calls.filter((c) => c === "config").length, 1, calls.join(","));
   assert.equal(calls.filter((c) => c === "rev-parse").length, 4);
+});
+
+test("a pathspec folds case exactly where the repository's git does", async (t) => {
+  const dir = scratch(t, "anatomiya-icase-");
+  execFileSync("git", ["init", "-q", dir]);
+  const set = (v) => execFileSync("git", ["config", "core.ignorecase", v], { cwd: dir });
+  set("yes");
+  assert.equal(await caseMagic(dir), "icase", "git's own bool spelling");
+  set("false");
+  assert.equal(await caseMagic(dir), "");
+  execFileSync("git", ["config", "--unset", "core.ignorecase"], { cwd: dir });
+  assert.equal(await caseMagic(dir), "");
 });

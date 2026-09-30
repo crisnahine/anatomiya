@@ -272,6 +272,31 @@ exit 1
   assert.match(String(out.missingParser), /prism 0\.19\.0 predates/);
 });
 
+test("a ruby our clock stopped before its ready line is a stall, not a missing install", needsShebang, async (t) => {
+  // No version came back, which alone reads as an install to fix. The idle
+  // window killed it both times, so what failed was the machine's time.
+  const bin = mkdtempSync(join(tmpdir(), "anatomiya-ruby-stall-"));
+  t.after(() => rmSync(bin, { recursive: true, force: true }));
+  writeFileSync(
+    join(bin, "ruby"),
+    `#!/bin/sh
+case "$*" in *Gem::Specification*) printf '[]'; exit 0 ;; esac
+cat >/dev/null
+exec sleep 30
+`,
+    { mode: 0o755 }
+  );
+  const file = join(bin, "a.rb");
+  writeFileSync(file, "class A\nend\n");
+
+  const out = await parseRuby([{ rel: "a.rb", abs: file }], { ruby: join(bin, "ruby"), guards: { idleMs: 200 } });
+
+  assert.equal(out.version, null);
+  assert.equal(out.stalled, "ruby went silent");
+  assert.equal(out.missingParser, null);
+  assert.equal(out.results[0].crashed, true);
+});
+
 test("a mistyped size override refuses loudly instead of dying inside the child", async () => {
   // Ungated: the refusal happens before any interpreter is spawned. `null` is
   // the sharp half, because `Number(null)` is a finite zero and interpolated
@@ -445,6 +470,43 @@ const SRC = {
       end
     end
   `,
+  service_bang: `
+    class CompleteTask < ActiveInteraction::Base
+      def execute
+        task.update!(status: "completed")
+      end
+    end
+    class Nested
+      def call
+        Other.run!(id: 1)
+      end
+    end
+    class Create
+      def self.call(attrs)
+        User.create!(attrs)
+      end
+    end
+  `,
+  service_bang_rescued: `
+    class Save
+      def call
+        user.save!
+      rescue ActiveRecord::RecordInvalid => e
+        errors.add(:base, e.message)
+      end
+    end
+    class Quiet
+      def call
+        user.update!(a: 1) rescue nil
+      end
+    end
+    class Merge
+      def execute
+        errors.merge!(other.errors)
+        name.strip!
+      end
+    end
+  `,
 
   params_positional: `
     def send_mail(to, from, subject)
@@ -499,6 +561,39 @@ const SRC = {
       end
     end
   `,
+  log_setters: `
+    Rails.application.configure do
+      config.logger.level = Logger::ERROR
+      config.logger.formatter = ::Logger::Formatter.new
+    end
+    Rails.logger.progname = "svc"
+    logger.debug? && compute
+  `,
+  log_outputs: `
+    def work
+      logger.error("x")
+      logger.fatal("x")
+      logger.unknown("x")
+      logger.add(1, "x")
+      logger.log(1, "x")
+      logger.tagged("a") { compute }
+      logger << "x"
+    end
+  `,
+  http_helpers: `
+    class Scrape
+      def go(msg)
+        raise HTTParty::Error.new(msg)
+        HTTParty::CookieHash.new
+        Faraday::TimeoutError.new("x")
+        Excon::Errors::SocketError.new
+        Faraday::ConnectionFailed.new("x")
+        RestClient::Exceptions::Timeout.new
+        Excon::Error::Timeout.new
+        Net::HTTP::Get.new(uri)
+      end
+    end
+  `,
   http_mixed: `
     class Sync
       def run
@@ -528,6 +623,30 @@ const SRC = {
     def fetch_all
       Net::HTTP.start(url) do |http|
         http.request(req)
+      end
+    end
+  `,
+  http_store: `
+    class Registration
+      def run(id)
+        OauthClientStore.fetch(id)
+        RequestStore.delete(:user)
+        client_options.fetch(:timeout)
+        request_params.delete(:id)
+        api_method_cache.fetch(id)
+        RefreshApiUserSecret.call(id)
+        tunes_request_client.get("/x")
+        http_client.post("/y")
+        GithubApi.get("/z")
+        fetcher.fetch(id)
+        redis_client.get(id)
+        cache_client.fetch(id)
+        Redis::Client.get(id)
+        HttpClientV2.get("/v")
+        api_client_v1.post("/v")
+        ApiV2.get("/v")
+        db_client.execute(sql)
+        PG::Client.execute(sql)
       end
     end
   `,
@@ -821,7 +940,7 @@ test("no files is an empty run, not a spawn", needsRuby, async () => {
   assert.deepEqual(out.results, []);
   // The results are the record: `parse.mjs` classifies every outcome off them,
   // and the three counters this once carried beside them had no reader.
-  assert.deepEqual(Object.keys(out).sort(), ["error", "missingParser", "results", "truncated", "version"]);
+  assert.deepEqual(Object.keys(out).sort(), ["error", "missingParser", "results", "stalled", "truncated", "version"]);
   assert.equal(out.version, null, "nothing was started, so nothing reported a version");
   assert.equal(out.error, null);
 });
@@ -868,11 +987,16 @@ test("one unreadable file costs that file, not the run", needsRuby, async () => 
   assert.equal(out.results.find((r) => r.rel === "here.rb").ok, true);
 });
 
-test("a path that would need argv quoting never reaches the parser", needsRuby, async () => {
-  const out = await parseRuby([{ rel: "-rsocket.rb", abs: join(dir, "-rsocket.rb") }]);
-  assert.equal(out.results[0].skipped, true);
-  assert.equal(out.results[0].ok, false);
-  assert.equal(out.version, null, "the interpreter never started, so the path never reached it");
+test("a path that reads like an option is parsed as a path", needsRuby, async () => {
+  // Paths travel on stdin, never in argv, so a leading dash is only a name.
+  // Skipping it was charged as a file over the size cap, and as an answer
+  // from an interpreter that never ran.
+  const abs = join(dir, "-rsocket.rb");
+  writeFileSync(abs, "def go\n  1\nend\n");
+  const out = await parseRuby([{ rel: "-rsocket.rb", abs }]);
+  assert.equal(out.results[0].ok, true, out.results[0].error);
+  assert.equal(out.results[0].skipped, undefined);
+  assert.ok(out.version, "the interpreter read it");
 });
 
 test("no ruby on the machine charges the files instead of losing them", needsRuby, async () => {
@@ -1150,6 +1274,30 @@ test("a method that is not an entry point contributes nothing", needsRuby, () =>
   assert.equal(hits("service_result_shape", "service_not_entry").length, 0);
 });
 
+test("an entry point that fails through a bang call raises, whatever it spells", needsRuby, () => {
+  // `update!`, `create!` and `run!` raise on failure. Read as having no raise
+  // keyword, 36 services failing through an unrescued update! stated the claim.
+  assert.deepEqual(counts("service_result_shape", "service_bang"), { candidates: 3, conforming: 0 });
+});
+
+test("a bang call its own rescue catches does not raise, and a bang that is not a failure is not one", needsRuby, () => {
+  assert.deepEqual(counts("service_result_shape", "service_bang_rescued"), { candidates: 3, conforming: 3 });
+});
+
+test("the claim says what the predicate measures, not that a failure is returned", () => {
+  // An entry point with no failure path conforms, so a sentence promising a
+  // returned failure was stated over code that returns none.
+  const row = dim("service_result_shape");
+  assert.doesNotMatch(row.claim, /return/);
+  assert.match(row.claim, /bang/);
+});
+
+test("the row states no inverse, because an entry point with no failure path is not a raise it skipped", () => {
+  // Stated over a directory of `update!` services, "raise on failure" gave a
+  // FIX to a pure service that has no failure to raise.
+  assert.equal(dim("service_result_shape").counterClaim, null);
+});
+
 // --- keyword_params ---
 
 test("three positional arguments is the violation and three keywords conform", needsRuby, () => {
@@ -1176,6 +1324,13 @@ test("Time.current, Time.zone.now and Date.current conform", needsRuby, () => {
 
 test("a chained read counts once, not once per link", needsRuby, () => {
   assert.deepEqual(counts("zone_aware_time", "time_chained"), { candidates: 1, conforming: 1 });
+});
+
+test("the claim covers the times it builds, not only the clock it reads", () => {
+  // Time.parse(value) and Time.zone.at(n) are sites and read no clock, so a
+  // sentence about "the current time" was quoted against lines that do neither.
+  assert.doesNotMatch(dim("zone_aware_time").claim, /current time/);
+  assert.match(dim("zone_aware_time").claim, /built/);
 });
 
 test("a file that never reads the clock contributes nothing", needsRuby, () => {
@@ -1423,12 +1578,37 @@ test("an instance-variable logger conforms too", needsRuby, () => {
   assert.deepEqual(counts("logger_over_puts", "log_wrapped"), { candidates: 1, conforming: 1 });
 });
 
+test("setting up a logger is not output through it", needsRuby, () => {
+  // `level=`, `formatter=` and `progname=` configure the logger and write
+  // nothing, and read as sites they made a config directory an adopter.
+  assert.deepEqual(hits("logger_over_puts", "log_setters"), []);
+});
+
+test("every output call a logger answers is a conforming site", needsRuby, () => {
+  assert.deepEqual(counts("logger_over_puts", "log_outputs"), { candidates: 7, conforming: 7 });
+});
+
+test("an HTTP library's error or cookie class is not a request", needsRuby, () => {
+  // Building an exception sends nothing. A request class under the library's
+  // namespace still does.
+  const h = hits("http_through_client", "http_helpers");
+  assert.deepEqual(h.map((x) => [x.node.line, x.conforming]), [[11, false]]);
+});
+
 test("Net::HTTP and URI.open are direct sites and client calls conform", needsRuby, () => {
   assert.deepEqual(counts("http_through_client", "http_mixed"), { candidates: 4, conforming: 2 });
 });
 
 test("an ActiveRecord-shaped call on a client-named constant is not an HTTP site", needsRuby, () => {
   assert.deepEqual(counts("http_through_client", "http_model"), { candidates: 1, conforming: 1 });
+});
+
+test("a receiver whose name only mentions the client vocabulary is not a client", needsRuby, () => {
+  // The last word is what the thing is: `OauthClientStore` is a store and
+  // `request_params` is a hash, so a repository fetching from them fourteen
+  // files over stated that HTTP goes through its own client with no HTTP in it.
+  const h = hits("http_through_client", "http_store");
+  assert.deepEqual(h.map((x) => [x.node.line, x.conforming]), [[10, true], [11, true], [12, true], [13, true], [17, true], [18, true], [19, true]]);
 });
 
 test("a raw Net::HTTP block handle named http is not a conforming client", needsRuby, () => {
@@ -1631,17 +1811,23 @@ test("the Ruby bridge hands a row the path it read, not just the tree", needsRub
   // in Ruby.
   const wrapper = write("zz_client", "class Client\n  def go\n    Net::HTTP.get(uri)\n  end\nend\n");
   const service = write("zz_payment_service", "class PaymentService\n  def go\n    Net::HTTP.get(uri)\n  end\nend\n");
+  const versioned = write("zz_api_client_v2", "class ApiClientV2\n  def go\n    Net::HTTP.get(uri)\n  end\nend\n");
+  const midVersion = write("zz_api_v2_client", "class ApiV2Client\n  def go\n    Net::HTTP.get(uri)\n  end\nend\n");
   const { RUBY_DIMENSIONS } = await import("../plugins/anatomiya/lib/dimensions-ruby.mjs");
   const { results } = await parseRuby(
     [
       { rel: "app/clients/client.rb", abs: wrapper.abs, lang: "ruby" },
       { rel: "app/services/payment_service.rb", abs: service.abs, lang: "ruby" },
+      { rel: "app/clients/api_client_v2.rb", abs: versioned.abs, lang: "ruby" },
+      { rel: "app/clients/api_v2_client.rb", abs: midVersion.abs, lang: "ruby" },
     ],
     { dimensions: RUBY_DIMENSIONS.filter((d) => d.key === "http_through_client") }
   );
   const at = (rel) => results.find((r) => r.rel === rel);
 
   assert.equal(at("app/clients/client.rb").hits.http_through_client, undefined, "the client implements the routing");
+  assert.equal(at("app/clients/api_client_v2.rb").hits.http_through_client, undefined, "a version is not what the file is");
+  assert.equal(at("app/clients/api_v2_client.rb").hits.http_through_client, undefined, "wherever the version sits");
   assert.equal(at("app/services/payment_service.rb").hits.http_through_client.length, 1);
 });
 

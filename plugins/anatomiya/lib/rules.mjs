@@ -14,8 +14,8 @@
  * is a filename anyone can type; the frontmatter alone is a file an older build
  * wrote and this one knows nothing about.
  */
-import { closeSync, constants, fstatSync, lstatSync, openSync, readSync, readdirSync, realpathSync, statSync } from "node:fs";
-import { join, relative, isAbsolute, resolve, sep } from "node:path";
+import { accessSync, closeSync, constants, fstatSync, lstatSync, openSync, readSync, readdirSync, realpathSync, statSync } from "node:fs";
+import { basename, dirname, join, relative, isAbsolute, resolve, sep } from "node:path";
 
 /**
  * A path resolved through every link and alias the OS keeps, or null where it
@@ -240,6 +240,31 @@ export function resolveRulesDir(root) {
   return resolveInside(root, RULES_DIR);
 }
 
+/**
+ * The rules directory as git spells it: `.claude/rules`, or where a
+ * `.claude/rules` link leads. Git matches no pathspec and no ignore pattern
+ * past a symlink, so a map written through the link is listed under the
+ * target only.
+ */
+export function trackedRulesDir(root) {
+  const real = resolveRulesDir(root);
+  const base = realpathOrNull(root);
+  if (base === null || real === null) return RULES_DIR;
+  // The native form spells the case on disk, as git does, where the plain form
+  // keeps the link text's: pathspecs match case-sensitively even under core.ignorecase.
+  const onDisk = nativeUpTo(real);
+  if (!onDisk.startsWith(base + sep)) return RULES_DIR;
+  return relative(base, onDisk).split(sep).join("/");
+}
+
+/** The native real path of the deepest part of `p` that exists, with the rest appended as written. */
+function nativeUpTo(p) {
+  const real = realpathOrNull(p);
+  if (real !== null) return real;
+  const parent = dirname(p);
+  return parent === p ? p : join(nativeUpTo(parent), basename(p));
+}
+
 export function resolveInside(root, relPath) {
   const parts = relPath.split("/");
   // Plain `realpathSync` on both sides here, not the native form
@@ -312,10 +337,15 @@ export const outsideClaude = (relPath) =>
  * `.claude/rules -> ../README.md` read "README.md is not a directory ...
  * remove it and scan again", and an agent following that sentence deletes the
  * README. A link is said to be one, and what is to be removed is the link.
+ *
+ * The nearest directory that exists must also be writable and searchable: the first write
+ * into it was a temp file's `open`, whose raw EACCES named a random temp path
+ * after a dry run had said "would write". A superuser passes, as it writes.
  */
 export function blockedOnTheWay(root, relPath) {
   const base = realpathOrNull(root) ?? resolve(root);
   const parts = relPath.split("/");
+  let nearest = { name: "the repository root", at: base };
   for (let i = 1; i <= parts.length; i++) {
     const name = parts.slice(0, i).join("/");
     const at = join(base, ...parts.slice(0, i));
@@ -323,18 +353,28 @@ export function blockedOnTheWay(root, relPath) {
     try {
       entry = lstatSync(at);
     } catch {
-      // Nothing there, so the rest is created.
-      return null;
+      // Nothing there, so the rest is created; or the directory above cannot be
+      // entered, which the check below names.
+      break;
     }
-    if (entry.isDirectory()) continue;
     if (entry.isSymbolicLink()) {
       const stat = statSync(at, { throwIfNoEntry: false });
-      if (stat?.isDirectory()) continue;
-      const real = realpathOrNull(at);
-      const to = real === null ? "nothing" : relative(base, real).split(sep).join("/") || ".";
-      return { name, link: true, sentence: `${name} is a link to ${to}, which is not a directory` };
+      if (!stat?.isDirectory()) {
+        const real = realpathOrNull(at);
+        const to = real === null ? "nothing" : relative(base, real).split(sep).join("/") || ".";
+        return { name, sentence: `${name} is a link to ${to}, which is not a directory`, remedy: "replace the link with a directory" };
+      }
+    } else if (!entry.isDirectory()) {
+      return { name, sentence: `${name} is not a directory`, remedy: "remove it" };
     }
-    return { name, link: false, sentence: `${name} is not a directory` };
+    nearest = { name, at };
+  }
+  for (const [mode, is] of [[constants.W_OK, "is not writable"], [constants.X_OK, "cannot be entered"]]) {
+    try {
+      accessSync(nearest.at, mode);
+    } catch {
+      return { name: nearest.name, sentence: `${nearest.name} ${is}`, remedy: "fix its permissions" };
+    }
   }
   return null;
 }

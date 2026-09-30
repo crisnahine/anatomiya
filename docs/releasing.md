@@ -20,7 +20,8 @@ on a release that already existed. Push the tag and let the workflow make the re
 - [ ] `npm test` passes locally.
 - [ ] `npm run check:docs` passes. It is the mechanical half of this list: for every plugin, the
       version agreement across its manifests and a changelog section for the version it carries,
-      plus an `## [Unreleased]` heading in each changelog. For anatomiya it also reads the dimension
+      plus an `## [Unreleased]` heading in each changelog and a link definition for it and for the
+      version the manifests carry. For anatomiya it also reads the dimension
       and decision-row counts in `README.md`, `docs/why.md` and `CONTRIBUTING.md`, the runtime
       dependency set in `README.md` and `SECURITY.md`, the gate table, the command list, and every
       shipped key having an intake row.
@@ -55,8 +56,9 @@ upstreams and are not meant to move together.
       shipped; running it here saves the round trip.
 - [ ] That plugin's changelog: rename `## [Unreleased]` to `## [x.y.z] - YYYY-MM-DD`, **and put an
       empty `## [Unreleased]` back above it**. `check:docs` reads that heading and fails without it.
-- [ ] The link refs at the bottom of that changelog: replace the `[Unreleased]` compare link with
-      `[x.y.z]: .../compare/<previous tag>...<this tag>`.
+- [ ] The link refs at the bottom of that changelog: keep `[Unreleased]` and retarget it to
+      `.../compare/<this tag>...HEAD`, then add `[x.y.z]: .../compare/<previous tag>...<this tag>`
+      under it. `check:docs` refuses a changelog missing either one.
 - [ ] A summary paragraph under the new heading. The release body is that section, unedited.
 - [ ] `node scripts/release.mjs <tag>` answers with the plugin, the version and a line count. That is
       the same call the workflow makes, so a tag it accepts here is a tag that will release.
@@ -85,3 +87,10 @@ upstreams and are not meant to move together.
 Branch protection lists the CI contexts a pull request has to clear, by name. A new job produces a
 new context, and until it is added to that list it runs without being able to block a merge. Adding
 one is a repository setting, not a file in here.
+
+The two supply-chain jobs in `.github/workflows/supply-chain.yml` are a deliberate split.
+`dependency review` is required: it compares against the base, so it fails only on what the pull
+request adds. `audit the installed tree` stays advisory: it audits the whole tree, so a new upstream
+advisory against a dependency already here would fail every pull request after it, including ones
+that touch no dependency. It still runs on every push to `main` and weekly, which is where a red
+audit gets seen. `openssf scorecard` never runs on a pull request, so it has no context to require.

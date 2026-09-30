@@ -1,10 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { needsPathControl, needsPosixPaths, needsShebang, needsTmpdirVariable } from "./platform.mjs";
-import { existsSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createPool, rssOf, GUARDS } from "../plugins/anatomiya/lib/pool.mjs";
+import { pathToFileURL } from "node:url";
 
 function file(dir, name, body) {
   const abs = join(dir, name);
@@ -42,8 +43,8 @@ test("a file that kills the parser costs one file, not the run", async () => {
     // longer be a test of process containment.
     assert.equal(rb.crashed, true, "the bomb died uncatchably, the process boundary caught it");
     // On a fast machine the bomb dies by itself (one attempt, poison); on a
-    // loaded runner the wall clock kills it first, and a timer kill is retried
-    // once by design. Which happened is in the error, so the pin follows it.
+    // loaded runner the wall clock kills it first, and a timer kill beside
+    // another parse is retried once by design. Which happened is in the error, so the pin follows it.
     if (rb.error.includes("timed out twice")) {
       assert.equal(rb.attempts, 2, "a wall-clock kill was retried once, then charged");
     } else {
@@ -57,14 +58,13 @@ test("a file that kills the parser costs one file, not the run", async () => {
   });
 });
 
-test("a parse the wall clock killed is tried again before it is charged", async () => {
-  // The flake A5 exists to stop: on a 35-repository run the same file was
-  // charged as crashed in one scan and parsed in the next, and the unexamined
-  // count moved the always-loaded overview. A 1ms guard kills every parse of a
-  // file this large, so what is under test is the second attempt, not the
-  // first one's timing: a tiny file here raced the timer against a warm
-  // worker's sub-millisecond parse, and on a runner whose timers fire coarse
-  // the parse occasionally won. The body stays under the size cap.
+test("a parse the wall clock killed while it ran alone is charged without a retry", async () => {
+  // The retry offers a parse with nothing beside it (B3). One that already had
+  // that and was killed would only spend the clock again: retries run one at a
+  // time, so each such file added its whole timeout to the scan. A 1ms guard
+  // kills every parse of a file this large, and a tiny file here raced the timer
+  // against a warm worker's sub-millisecond parse. The body stays under the
+  // size cap.
   const big = Array.from({ length: 30000 }, (_, i) => `export const s${i} = ${i}`).join("\n") + "\n";
 
   await withPool({ size: 1, guards: { timeoutMs: 1 } }, async (pool, dir) => {
@@ -72,9 +72,81 @@ test("a parse the wall clock killed is tried again before it is charged", async 
 
     assert.equal(r.ok, false);
     assert.equal(r.crashed, true, "a file the pool never read is charged, not dropped");
-    assert.equal(r.attempts, 2, "the timed-out file went back on the queue once");
-    assert.match(r.error, /twice/, "the error says the retry ran out too");
+    assert.equal(r.attempts, 1, "a parse that ran alone is not run alone again");
+    assert.match(r.error, /timed out/);
   });
+});
+
+function answered(log) {
+  if (!existsSync(log)) return 0;
+  return new Set(readFileSync(log, "utf8").split("\n").filter((l) => l.startsWith("end ")).map((l) => l.split(" ")[3])).size;
+}
+
+test("a parse the wall clock killed is retried alone, after the queue drains", async (t) => {
+  // The batch a killed parse died in was competing for the machine (B3), so
+  // its retry runs with no other parse in flight. Back on the end of the live
+  // queue, six near-cap files killed in one burst were retried side by side
+  // under load and all six were charged as crashed.
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-retry-alone-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const log = join(dir, "log");
+  const preload = join(dir, "preload.mjs");
+  // The first attempt at a `hang` file never returns, so the clock kills it;
+  // every other parse holds its worker a moment, so overlap has room to show.
+  writeFileSync(
+    preload,
+    `import { appendFileSync, existsSync, writeFileSync } from "node:fs";
+const LOG = ${JSON.stringify(log)};
+process.on("message", ({ rel }) => {
+  appendFileSync(LOG, "start " + rel + " " + Date.now() + "\\n");
+  if (rel.startsWith("hang") && !existsSync(LOG + "." + rel)) {
+    writeFileSync(LOG + "." + rel, "");
+    for (;;);
+  }
+  const end = Date.now() + 60;
+  while (Date.now() < end);
+});
+const send = process.send.bind(process);
+process.send = (msg, ...rest) => {
+  if (msg && msg.rel) appendFileSync(LOG, "end " + msg.rel + " " + Date.now() + " " + process.pid + "\\n");
+  return send(msg, ...rest);
+};
+`,
+  );
+  const files = ["hang1.ts", "hang2.ts", ...Array.from({ length: 6 }, (_, i) => `n${i}.ts`)].map((name) =>
+    file(dir, name, "export const x = 1\n"),
+  );
+
+  await withPool({ size: 2, execArgv: ["--import", pathToFileURL(preload).href], guards: { timeoutMs: 1_000 } }, async (pool) => {
+    // Both workers answer once first, so the two hang files start side by side:
+    // a kill that ran alone is charged without a retry.
+    for (let i = 0; answered(log) < 2 && i < 100; i++) {
+      await Promise.all([0, 1].map((k) => pool.parse(file(dir, `w${i}-${k}.ts`, "export const w = 1\n"))));
+    }
+    const results = await Promise.all(files.map((f) => pool.parse(f)));
+    for (const rel of ["hang1.ts", "hang2.ts"]) {
+      const r = results.find((x) => x.rel === rel);
+      assert.equal(r.ok, true, `${rel}: ${r.error}`);
+      assert.equal(r.attempts, 2, `${rel} was killed once and answered on its retry`);
+    }
+  });
+
+  // Each start paired with the end that follows it; a killed attempt has none.
+  const spans = [];
+  const open = new Map();
+  for (const line of readFileSync(log, "utf8").trim().split("\n")) {
+    const [what, rel, at] = line.split(" ");
+    if (what === "start") open.set(rel, { rel, from: Number(at) });
+    else spans.push({ ...open.get(rel), to: Number(at) });
+  }
+  const retries = spans.filter((s) => s.rel.startsWith("hang"));
+  assert.equal(retries.length, 2);
+  for (const r of retries) {
+    for (const s of spans) {
+      if (s === r) continue;
+      assert.ok(s.to <= r.from || s.from >= r.to, `${s.rel} ran beside the retry of ${r.rel}`);
+    }
+  }
 });
 
 test("a parse that answered is charged to one attempt", async () => {

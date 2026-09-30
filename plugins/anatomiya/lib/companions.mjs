@@ -521,5 +521,9 @@ export function namesakeCompanions(sourceFiles, testFiles, rootPath = "", byStem
   // the name is whatever that file happens to touch: react's one answered file
   // named a compiled fixture bundle. The counts stay, the place goes.
   const agreed = answered > 1 && top !== undefined && top[1] * 2 >= answered;
-  return { with: answered, of: sourceFiles.length, root: agreed ? top[0] || null : null };
+  const root = agreed ? top[0] || null : null;
+  // Half the matches name the place, so the count there travels with it the
+  // way a runner group's `under` does. Absent where every match sits there.
+  const under = root !== null && top[1] !== answered ? { under: top[1] } : {};
+  return { with: answered, of: sourceFiles.length, root, ...under };
 }

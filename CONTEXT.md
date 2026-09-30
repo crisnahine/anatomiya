@@ -58,8 +58,9 @@ _Avoid_: override, custom agent, subagent definition
 
 **Corpus**:
 Every tracked source file this repository will be counted over: what is left after the deny list, the
-excluded directories, paths that escape the repository or are not a regular file in the working tree, and
-files a generator wrote. The counts of where files live are taken over a wider set, every tracked file
+excluded directories, paths that escape the repository or are not a regular file in the working tree,
+files a generator wrote, and a second index entry for a file already counted under a name that differs
+only in case or Unicode form. The counts of where files live are taken over a wider set, every tracked file
 whether source or not.
 _Avoid_: codebase, file list, tree
 
@@ -194,7 +195,8 @@ _Avoid_: snapshot, lockfile, baseline
 
 **Hold**:
 A pin that has stopped following the remote default branch while the checkout sits on its tip, because
-a commit on the way was made in this clone, the tip was not brought by a fetch, or git could not say.
+a commit on the way was made in this clone or carries its committer identity, the tip was not brought
+by a fetch, or git could not say.
 Said to the person in the terminal and never to the agent, and ended by a pin taken by hand or by a
 refresh that finds nothing holding it any more.
 _Avoid_: block, freeze, lock
@@ -217,8 +219,8 @@ _Avoid_: churn, delta, divergence
 
 **Staleness**:
 The verdict that this run cannot tell a new site from an old one well enough to be trusted at full
-severity: drift past the threshold, or no map, no pin, no reachable base, an empty pinned population, or
-a truncated scan. It caps severity and never refuses to run.
+severity: drift past the threshold, or no map or one that could not be read, no pin, no reachable base,
+an empty pinned population, or a truncated scan. It caps severity and never refuses to run.
 _Avoid_: expiry, invalidation, rot
 
 ### What reaches the agent

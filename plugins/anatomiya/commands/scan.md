@@ -50,6 +50,10 @@ start of each session and whenever HEAD moves. Run this when the user asks for i
 
 If the scanner exits non-zero, show its output and stop. Do not guess at what it found.
 
+If the reason line says an engine was stopped by its own clock before it answered, the install is
+not the cause, so do not run setup. Say that the parser stalled on this machine and that a scan on a
+quieter machine, or with whatever blocked its startup removed, is the next move.
+
 If it says a parser engine is not installed, run the readiness probe:
 
 ```
@@ -63,7 +67,10 @@ cannot install an interpreter. Then run the scan again.
 
 ### The type checker
 
-`--deep` adds the TypeScript checker. It is off by default because it was measured about 26x
-slower than the parse and cannot be narrowed to the files that changed. It needs the optional
-`typescript` dependency and the repository's own dependencies installed; without them it says
-so on the map rather than printing a clean-looking count.
+`--deep` adds the TypeScript checker. It is off by default because a deep scan measured about 3x
+a plain one on a 3,800-file repository and it cannot be narrowed to the files that changed. It
+needs the optional `typescript` 5.x dependency and the repository's own dependencies installed on
+disk inside the repository: a `node_modules` linked in from outside it is not read, so it counts
+as not installed. Without them it says so on the map rather than printing a clean-looking count.
+The share of type lookups that resolved is taken over files in the areas the map describes, so a
+vendored bundle outside them does not lower it.

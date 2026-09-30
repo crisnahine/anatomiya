@@ -6,6 +6,7 @@
  * systems where the input is possible, and a test that cannot create its own
  * input proves nothing about the code either way.
  */
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -124,4 +125,23 @@ export const needsSymlinks = WINDOWS
 // Linux job, so what is lost here is coverage rather than the check.
 export const needsSpawnableNpm = WINDOWS
   ? { skip: "npm on Windows is a batch file, and running one needs a shell no command here may spawn" }
+  : {};
+
+// Asked of the temp directory the fixtures live in, since folding belongs to the
+// filesystem: APFS and NTFS fold case by default, ext4 and a case-sensitive
+// APFS volume do not.
+const folds = (() => {
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-fold-"));
+  try {
+    writeFileSync(join(dir, "a"), "");
+    return existsSync(join(dir, "A"));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+})();
+export const needsFoldingFilesystem = folds
+  ? {}
+  : { skip: "the temp directory is case-sensitive, so two names that differ in case are two files" };
+export const needsCaseSensitiveFilesystem = folds
+  ? { skip: "the temp directory folds case, so two names that differ in case cannot both be written" }
   : {};

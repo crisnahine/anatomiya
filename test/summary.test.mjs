@@ -234,6 +234,33 @@ test("the terminal builds its own truncation line from what the scan read", () =
   assert.equal(scanSummary(result(), plan()).historyTruncated, null, "and a whole clone says nothing");
 });
 
+test("the author-gate count is taken on the side the map prints", () => {
+  // A slot shown on its counter side prints the counter's gate, so counting the
+  // claim side's gate says fewer claims went to counts than the map shows.
+  const flipped = {
+    key: "function_style",
+    claim: "module-level functions are declared with function",
+    counterClaim: "module-level functions are assigned to variables",
+    candidates: 40,
+    conforming: 0,
+    directive: false,
+    states: null,
+    gate: "ratio",
+    counterGate: "authors",
+  };
+  const unflipped = { ...flipped, conforming: 40, gate: "evidence", counterGate: "authors" };
+  const s = scanSummary(
+    result({
+      areas: [{ path: "src", dimensions: [flipped, unflipped] }],
+      authors: { files: 9, error: null, repo: 1, shallow: { commits: 1, oldest: "2026-09-30T00:00:00Z" } },
+    }),
+    plan()
+  );
+
+  assert.equal(s.authorGated, 1);
+  assert.ok(s.historyTruncated.endsWith("and 1 claim print as counts on the author gate"), s.historyTruncated);
+});
+
 test("a history that could not be read at all says that, and not that it was a window", () => {
   // The shallow probe is a `rev-parse` and answers even where the log failed,
   // so both were true at once: the terminal said the gate held claims to counts
@@ -383,6 +410,17 @@ test("an engine that answered and still read nothing is not called a missing ins
   const lines = scanLines(summary({ blind: ["ruby"], wrote: 0, engines: { prism: { version: "1.5.2" } } }));
 
   assert.equal(lines.at(-1), "prism 1.5.2 ran and answered for none of them");
+});
+
+test("an engine its own clock stopped before it answered is not called a missing install", () => {
+  // doctor reported the parser installed; the workers stalled at startup. The
+  // setup remedy fixes nothing there, and the cause was never printed.
+  const lines = scanLines(
+    summary({ blind: ["js"], wrote: 0, engines: { oxc: { version: null, stalled: "no ready answer in 20000ms" } } })
+  );
+
+  assert.equal(lines.at(-1), "oxc was stopped by its own clock before it answered: no ready answer in 20000ms");
+  assert.ok(!lines.some((l) => l.includes("setup")), lines.join("\n"));
 });
 
 test("a run blind to two languages names both", () => {
@@ -726,6 +764,31 @@ test("an ASCII scan record comes back from the writer unchanged", () => {
   assert.deepEqual(out.rules, s.rules);
 });
 
+test("the scan record carries the root and rule files whole, as the text line and check json do", () => {
+  // Paths a reader opens: a cap or the mixed-script placeholder leaves nothing to `cd` to.
+  const long = `/work/${"a".repeat(60)}/${"b".repeat(60)}/r`;
+  const mixed = "/work/раyments/r";
+  for (const root of [long, mixed]) {
+    const rules = { foreign: [`${"c".repeat(130)}.md`], unknown: ["раyments.md"], unreadable: [], listed: true, replaced: [] };
+    const s = summary({ root, rules });
+
+    const out = JSON.parse(scanJson(s));
+
+    assert.equal(out.root, root);
+    assert.ok(scanLines(s)[0].endsWith(`root ${out.root}`), "the text line and the record name one root");
+    assert.deepEqual(out.rules, rules);
+  }
+});
+
+test("the pin record carries a long file path whole", () => {
+  const dir = `lib/${"d".repeat(130)}`;
+  const next = pinFor([dir]);
+
+  const s = JSON.parse(pinJson(pinSummary({ previous: null, next, delta: pinDelta(null, next), path: PIN_PATH, dryRun: true })));
+
+  assert.deepEqual(s.delta.areas[0].added, [`${dir}/a.js`, `${dir}/b.js`]);
+});
+
 test("the pin record neutralises the paths only it prints", () => {
   // The added list is printed by this writer and by nothing else, so it has no
   // encoded counterpart anywhere: the line a human reads counts them.
@@ -761,7 +824,7 @@ test("the pin record neutralises the paths a move names as well", () => {
 /* --- a tier that ran badly reaches the terminal too (#72) --- */
 
 test("a degraded semantic tier is on the summary, not only in the map", () => {
-  // `--deep` costs about 26x the parse. On a measured 2,486-file React
+  // `--deep` costs a few times a plain scan. On a measured 2,486-file React
   // repository it added 110 slots, every one of them read zero, and the summary
   // said nothing: the reader paid 24 seconds instead of 12 and had no way to
   // know the tier answered nothing. The map, `facts.json` and every area file

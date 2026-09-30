@@ -31,6 +31,13 @@ Every path is then confined to the repository: lexical containment first because
 then `realpath` on both sides because `resolve()` normalises `..` but never follows a symlink and
 `readFile` does. It fails closed, and the resolved path is what gets read, not the unresolved one.
 
+One file is read once however many index entries name it. A repository committed from Linux can hold
+`a.ts` and `A.ts`, or one name in NFC and NFD, and a filesystem that folds case or Unicode form
+checks out one file for both, so both names read it and its sites counted twice. Where two entries
+fold to one name and open one file, the spelling every directory on its path lists is kept, down to
+a directory's own case. A byte-for-byte listing beats one that matches only up to Unicode form, since
+macOS lists a decomposed name on disk under the composed one git records. The other is counted as unreadable, since the working tree does not hold that entry's own blob.
+
 A corpus that comes back empty is asked one more question: how many source files the working tree
 holds that are untracked, from a second `git ls-files --others --exclude-standard` through the same
 filters. It is the difference between a repository with nothing in it and one whose first commit has
@@ -94,6 +101,28 @@ foreign subtree, whichever is shorter. A foreign subtree is usually a deeper are
 files the ceiling left uncovered, since `capCount` can host an area at a directory whose own files
 were already orphaned. Measured on a 5,495-file Rails repository, 156 areas: 298 patterns in total,
 37 areas changed, 119 unchanged on the single recursive glob, 21 patterns in the largest list.
+
+The files the corpus left out are foreign too: tracked source under an excluded directory,
+generated files, and source whose extension or bare name is in another case (`Legacy.RB`), which
+Claude Code's matcher folds onto `*.rb` and the corpus does not count. The cover was built from the counted files alone, so a `fixtures/` or `test_cases/`
+inside an area read as part of a subtree it wholly owned, and its one recursive glob delivered the
+area's sentences to exactly the code G7 keeps out of the counts: angular's compliance area counted 8
+files and reached 2,017 under `test_cases`. The left-out files a pattern of the area could spell are
+walked as foreign files now. A generated file beside counted ones is cut out by its own name. An
+excluded directory is cut out by its name once, at any depth (`!src/comp/**/fixtures/**/*.ts`), since
+every file under that name is left out wherever it sits; prisma keeps a `_fixture/` beside each of 102
+tests, and one negation per directory made a 106-pattern list in a 40-line file. Where the name also
+sits on a counted file's path, as `build` can under `src`, the directory is cut out by its path
+instead. A left-out file never makes a subtree the area otherwise holds whole read as shared: the
+glob stays recursive and carries the negation, so a directory added under the area after the scan
+is still reached. Measured over all 35 corpus repositories, the areas reach 0 left-out files, down from 16,311 in 24 of
+them (8,512 on babel, 2,017 on angular, 1,707 on react), for 232 more patterns (12,237 to 12,469).
+
+A directory whose name holds glob syntax cannot root an area or be named by a pattern. That includes a
+comma: Claude Code splits each `paths` entry on the commas outside a brace before it expands braces
+and matches with gitignore rules, so `x,y/**/*.rb` reads as `x` and `y/**/*.rb`.
+That matcher also folds case, so a directory whose name differs from a sibling's only in case cannot
+root an area either: both fold into the parent, and `src/` and `Src/` at the root are reported as uncovered.
 
 The area id is the first 8 hex of `sha256(path)`, which is what makes `anatomiya-area-<id>.md` a
 stable filename across scans.
@@ -167,7 +196,9 @@ name the language, why none of it was read, and the remedy. An engine that is no
 same case, so a TypeScript repository whose only Ruby is a Gemfile still gets its map on a machine
 with no Ruby. Only a run that read no file of any language writes nothing and removes nothing, and
 creates no `.claude` directory it would have written into; where a missing engine is the reason, the
-scan refuses with that engine's remedy instead. The check draws the same line: it names the files it
+scan refuses with that engine's remedy instead. A file skipped for its size never reached the parser,
+so it counts neither way: one generated bundle beside a missing engine used to read as an answer,
+and the scan removed every area of that language. The check draws the same line: it names the files it
 could not read and the engine's remedy, and refuses only a change with nothing else in it to read. A
 syntax error is none of this: the parser ran and answered.
 
@@ -175,12 +206,14 @@ Why a run went blind is asked of the engine rather than guessed. An engine that 
 ran, so the files are what failed; one that reported none is the install, and its line carries that
 engine's own remedy. Guessing was measured wrong on a real machine: with `ruby` on `PATH` and no
 `prism`, one sentence naming a missing interpreter was the wrong answer, and no version anywhere on
-screen said so.
+screen said so. An engine this tool's own clock stopped before it could report a version is neither:
+parse workers that never said ready, or a Ruby child silent past its idle window on both attempts,
+are named with that cause and no install remedy, since `doctor` reports that install as fine.
 
 | Guard | Value | Enforced |
 |---|---|---|
 | File size | 1 MB | checked with `stat` before the file is dispatched |
-| Wall time | 5s | `SIGKILL` from the parent |
+| Wall time | 5s | `SIGKILL` from the parent; a file killed while other parses were in flight is retried once after the queue drains, with no other parse in flight, and one killed while it already ran alone is charged on that attempt, which is every kill in a one-worker pool (a one-file batch, or a machine with 2 or fewer CPUs) |
 | Resident memory | 1 GB | polled every 25ms, starting 250ms after the file goes in flight: read from `/proc/<pid>/status` on Linux, from `/bin/ps` on macOS and the BSDs, and not enforced on Windows, where the wall clock is what stops a runaway parse |
 | Worker start | 20s | `SIGKILL` from the parent for a worker that has not said ready; five such workers fail the pool, and its queued files are charged as crashed |
 
@@ -203,7 +236,10 @@ Two things the parser publishes are taken rather than reimplemented. It can hand
 from Rust without building it through a serialisation step, which measured 3.06x on the parse itself
 (279ms to 91ms over 1,200 files) and found the same 11,751 sites with a byte-identical JSON encoding;
 it is asked for through `rawTransferSupported()` rather than assumed, because the flag is still
-experimental upstream. And it publishes, for all 165 node types it emits, which properties hold
+experimental upstream. Its deserializer recurses in JavaScript and runs out of stack near 3,000
+operands in one expression, which a generated string table reaches, so a file that overflows it is
+parsed again with the plain transfer, that file only. A process refused the raw transfer's 6 GiB
+reservation drops it for every later file. And it publishes, for all 165 node types it emits, which properties hold
 children. The walk used to enumerate each node instead, which pushed every string and number onto
 its work stack too: 63% of a measured corpus was scalars pushed and discarded one iteration later.
 Reading the published table visits the same 630,000 nodes 2.5x faster, with `Object.keys` left as
@@ -235,8 +271,8 @@ idle timer happy and never ends.
 A child either of those timers killed is spawned once more, for the files that never answered and no
 others, and only what is still unanswered after that is charged. Both timers measure the machine
 rather than the files, and a file charged as crashed in one scan and parsed in the next moves the
-always-loaded overview, which is the same reason a JavaScript parse the pool's own clock killed goes
-back on the queue once. A child that exited on its own, a missing interpreter and a fatal from the
+always-loaded overview, which is the same reason a JavaScript parse the pool's own clock killed is
+tried once more, alone, after the queue drains, when it died beside other parses. A child that exited on its own, a missing interpreter and a fatal from the
 script are charged on the first attempt: a second child answers those the same way at twice the
 cost. Every record says which attempt answered it.
 
@@ -246,6 +282,21 @@ clocks and the kill. The numbers stay with the bridge that measured them and onl
 shared, because three hand-written copies of one battery had drifted into three stderr caps that
 each overshot by a chunk and one bridge holding a single re-armed timeout where the other two held
 an idle window and a wall clock.
+
+The checker builds one program over every JavaScript and TypeScript file, then measures the share
+of property accesses whose receiver resolved to a real type. Under 0.80 the tier is degraded and its
+claims print as counts only (B8). The share is taken over files in an area the map describes,
+because those are the only files a claim is counted over: one untyped minified bundle in no area
+took a repository whose own code resolved fully down to 3% and read as a broken tsconfig, and a
+directory of bundles that was discovered and then dropped for counting nothing did the same. Each
+file's share comes back on its own, so the scan sums it once the areas are folded. When no folded
+area holds a checked file, whether none was discovered, every one was dropped, or the areas left
+hold only Ruby, the rate is taken over the files in no area. Code at the root below the area floor
+is then still measured, and a machine with no Ruby, which holds the Ruby areas back, answers the
+same as one that reads them. With no checked file there either (a Ruby app beside a directory of
+bundles, or a repository holding nothing but dropped bundles) there is no rate and the tier stays
+ok. Files outside the areas are still in the program and still lend their types. A `node_modules` whose real path leaves the repository
+is not read (B9), so dependencies linked in from elsewhere resolve as absent ones do.
 
 ## 4. Dimensions and the three numbers
 
@@ -291,7 +342,9 @@ files here are named snake_case
 The filename row votes with a stem's class and the check enforces over the site, so a stem spelling none of
 the four is a site with no vote: it leaves the printed population while the check still measures a
 new file against the sentence. `across 1525 of 1532 files` cannot say that, because it mixes those
-sites with the files that are no site at all.
+sites with the files that are no site at all. A stem of capitals alone is that case in a module, the
+SCREAMING spelling of `DEBUG.ts`, and no site at all in a file that holds JSX, where React reads
+`SBA.jsx` holding `SBA` as the acronym component it is.
 
 It does not borrow the words `not counted`: those belong to the clause above, which names forms the
 predicate declines and the check therefore never enforces. These names are the opposite, still
@@ -331,10 +384,10 @@ in `check`.
 | `handler_memoised` | partial | jsx | a handler passed to a child is wrapped in `useCallback` |
 | `rescue_uses_error` | precise | ruby | rescue blocks use the error they caught |
 | `keyword_params` | precise | ruby | methods taking three or more arguments name them with keywords |
-| `zone_aware_time` | precise | ruby | the current time is read through the application time zone |
+| `zone_aware_time` | precise | ruby | times are read and built through the application time zone |
 | `record_lookup` | partial | ruby | a record that may be missing is fetched with `find_by` and checked, not fetched with one that raises |
 | `model_callbacks` | partial | ruby | models keep behaviour out of lifecycle callbacks |
-| `service_result_shape` | partial | ruby | service entry points return their failure instead of raising |
+| `service_result_shape` | partial | ruby | service entry points do not raise, directly or through a bang call like `update!` |
 | `migration_reversible` | partial | ruby | migrations declare `change`, not `up` and `down` |
 | `migration_schema_only` | partial | ruby | migrations change the schema and leave the data alone |
 | `column_null_declared` | partial | ruby | a column on a table the migration creates is declared `null: false` |
@@ -363,12 +416,18 @@ Ruby, which is what takes Ruby from 11 to 16.
 The three `route_` rows ask whether a cross-cutting concern goes through the repository's own
 module. The wrapper is learned per file from its relative imports whose filename, up to its first
 dot, is nothing but the vocabulary (log, logger, logging; client, http, api, request, fetcher;
-config, env, settings), so `./apiClient` and `./HTTPClient` are wrappers and `./settingsSlice` is
-not, and the direct forms
+config, env, settings), version words such as `v2` aside, so `./apiClient`, `./HTTPClient`,
+`./api-client-v2` and `./v2-api-client` are wrappers and `./settingsSlice` is not, and the direct forms
 are a closed table (console calls, fetch and axios, process.env reads). Each row is offered only where at
 least three examined files already route through a wrapper (C14), so a repository that logs to
 the console on purpose, or one holding a config.ts nobody imports, never carries a line that can
-only read zero.
+only read zero. The Ruby `http_through_client` row reads a verb-shaped call as going through the
+client when the receiver's name ends in that network vocabulary, since the last word is what the
+receiver is: `ApiClient.get`, `HttpClientV2.get` and `http_client.post` do, `OauthClientStore.fetch` and
+`request_params.delete` do not. A receiver naming a cache or a database (redis, cache, memcache,
+dalli, db, pg, mysql, mongo and a few more) talks to a store, so `redis_client.get` and
+`db_client.execute` do not either. The list is closed, so a store it does not name still reads as
+the client.
 
 A row marked "learned" carries a template rather than a fixed sentence. Its sites vote with the
 naming class they spell, the plurality class becomes the sentence, and a tie learns nothing and
@@ -397,7 +456,9 @@ body that mixes in nothing is a site as well, since the forgotten include is the
 actually happens; a module mixing in nothing is namespacing, a subclass may be handed the mixin by
 its base, and a class inside a class is that class's helper, so none of those three is a site.
 Nor is a body that prepends or extends a constant, or a reopening of a class that declares a mixin
-elsewhere in the file: both declared one by another route.
+elsewhere in the file: both declared one by another route. Sidekiq defines `Worker = Job`, so
+`Sidekiq::Worker` and `Sidekiq::Job` vote and conform as one module, in the map and in the check,
+and the claim names whichever spelling the directory writes more.
 `interface_prefix` and `type_alias_prefix` take the leading capital a declared type name carries
 before a second capital, where
 `IComment` votes `I` and `Comment` votes for no prefix at all. A name opening on three or more
@@ -411,6 +472,10 @@ name out of the repository's own source, so it goes through the encoder where th
 filled rather than at each place the sentence is rendered. The last two can learn an absence, which
 renders as `interfaces carry no prefix` rather than being filled into the template, and which is
 the model default, so a repository that prefixes nothing prints counts and a prefixed one states.
+A filled prefix takes the article its letter is read with, `an I prefix` and `a T prefix`. An
+interface that merges into a name declared elsewhere is not an `interface_prefix` site, since
+prefixing it stops the merge: one inside `declare global`, `declare module` or a namespace, and one
+at the top level of a declaration file with no import or export, which is global the same way.
 Whether a learned class may be enforced is asked of the row and not of the four classes, or the
 check would state all five in the map and enforce none of them.
 
@@ -442,7 +507,7 @@ name of the gate that stopped it.
 |---|---|---|
 | `ratio` | `conforming / candidates >= 0.90` | the gate that survived measurement elsewhere; an earlier spec loosened it to 0.80 with no argument |
 | `evidence` | the Wilson 95% lower bound on the same counts reaches `0.90`, **or** the rest of the repository's bound for this dimension and learned class does and this area's own upper bound reaches the rate it borrows | the ratio asks what this sample did; the bound asks whether the true rate can be trusted there. A perfect record needs 35 sites to hold 0.90, which is why there is no separate minimum on `candidates`, and why a perfectly consistent nine-file directory could never speak about a claim the repository holds at 0.987 across 2,152 sites. The prior is leave-one-out, so nothing is its own evidence, and it is built only from slots no other condition has closed. The second clause is what stops a large mediocre area inheriting a strong repository's confidence: 900 of 1000 tops out at 0.917 and cannot borrow 0.988 |
-| `concentration` | the sites are worth `>= 3` files by inverse-Simpson count, **and** the ratio still reaches 0.90 with the largest file dropped | 200 sites in one file plus one each in 13 others gives 14 files at ratio 1.0 and clears any file-count floor. A share of the candidates cannot answer this either: at two files the largest share is at least 0.5 by arithmetic, and at fifty files no share ever fires however lopsided the spread is |
+| `concentration` | the sites are worth `>= 3` files by inverse-Simpson count, **and** the ratio still reaches 0.90 with the largest file dropped; where files tie for the largest, the one dropped is the one worst for the side being judged, so a rename cannot move the verdict | 200 sites in one file plus one each in 13 others gives 14 files at ratio 1.0 and clears any file-count floor. Ten one-site files with one violator stated the claim when the violator sorted first and withheld it otherwise. A share of the candidates cannot answer this either: at two files the largest share is at least 0.5 by arithmetic, and at fifty files no share ever fires however lopsided the spread is |
 | `applicability` | `applicability >= max(R, min(ceil(0.25 * F), 3R))`, where `R = ceil(sqrt(F))` and `F` is the files the dimension can speak about | the stricter of two floors, because each is wrong alone. The root asks for more than a quarter below sixteen files, where a quarter of a small directory is one or two files. The share holds above it: on its own the root asked 11 files of 120, and a measured 120-file area where 11 files used `?.` and 109 read absent values without it stated the claim over all 120. The share is capped at three roots because it grows with the area while the risk it guards does not: on a single 1,531-file `db/migrate` it asked for 383 files, which made any construct rarer than a quarter of the directory unstateable however perfect. The first area size where the cap changes the answer is 157, above every area the share was measured on |
 | `authors` | `>= min(2, distinct authors in the repository)` distinct authors over the files carrying the stated side's matches, and `>= 2` where the clone holds only a window of history | one person's habit is not a convention, but one author is not a thin team either: it is the whole team, and there is no second opinion being withheld. That reasoning needs the whole history to stand on: a `--depth=1` checkout, which is what `actions/checkout` does by default, holds one author whatever the team is, so the bar derived from it collapses and the map states more than a full clone does |
 | `directories` | `>= 2` distinct directories, **only when the area spans more than one directory** | applied unconditionally this blocked 124 of 170 measured slots, because area discovery finds leaf directories and a leaf directory holds one |
@@ -459,7 +524,11 @@ The whole battery runs once per side. The three numerators move between the clai
 and so does the author count: how many files the sites are spread over and how much of the area the
 construct reaches are facts about where the sites are, but who wrote them is a fact about the side.
 Each side counts the authors of the files carrying its own sites, so a person whose only file breaks
-the habit is not a second author of it, and a stated line names the authors of the side it states.
+the habit is not a second author of it, and a line names the authors of the side it prints, stated
+or not. A slot no side states still prints the side most of its sites take, so its `(authors k of
+n)` is that side's count: `facts.json` stores `counterAuthors` beside `authors` for that. The
+terminal's count of claims held on the author gate reads the same side, or it named fewer than the
+map printed.
 
 Authors come from one `git log -M --no-merges --name-status` pass, unioning rename chains, and
 `-M100%` on a partial clone (`extensions.partialClone` set, or any remote's `promisor` flag, not
@@ -489,7 +558,10 @@ per entry, written by `scripts/measure-defaults.mjs` from the model's own output
 the same predicates the scan uses. A learned row's default is a class rather than a side:
 "functions are named camelCase" in JavaScript is exactly what the model writes anyway, so a
 learned class equal to the model's own renders as counts too. An unmeasured entry reads `none`
-and fails open: the dimension keeps stating.
+and fails open: the dimension keeps stating. That holds for the side. A class is read as written,
+whatever the provenance method says, and two seeded entries carry one set by hand:
+`interface_prefix` and `type_alias_prefix` hold the class `none`, since no prefix is what the model
+writes, so a repository that prefixes nothing prints counts for them though neither was measured.
 
 Each entry names the engine it was measured at, and two engines never merge into one tally. The 24
 measured entries shipped so far say `claude-opus-5` and name no effort, which is the engine the
@@ -596,11 +668,40 @@ session's transcript already holds is not named again. The stop right after the 
 records what the check left in a `systemMessage`, which the transcript keeps, so the check's own fix
 is not asked about on the next turn, and the hook writes nothing a later `git status` would report.
 
-All three are absent from the usage block and from `commands/` on purpose: no person runs them and no
+Some changed source holds nothing anybody would reuse, and is not asked about: a migration, whose name
+starts with a number right under a `migrate` or `migrations` directory or a `<name>_migrate` one such as
+Rails' `db/cache_migrate`, a schema dump (`db/schema.rb`
+or `db/<name>_schema.rb`), and whatever else the corpus refuses past the path, which is a generated
+file and a link, the same rule `check` applies to its changed files. Only the file right under the
+directory counts as a migration, because code nested deeper under a `migrations` segment was measured
+on the corpus as ordinary library code: angular's schematics, prisma's `core/migrations`,
+openproject's `db/migrate/tables`. A file whose every added line provably defines nothing callable is not asked
+about either, and such a hunk is not listed among the "added functions". The rule is an allowlist
+of line shapes rather than a parse, read over the whole file so a line inside a block comment or a
+literal spread over lines counts as part of it: a comment, an import, an `export ... from`, a
+`require`, a name bound to a literal (a number, a string with no interpolation, `true`, `false`,
+`null`, `undefined`, `nil`, a symbol, or an array or object holding only those), a member of such a
+literal, and a closing `}`, `]`, `)` or `end`. Every other line asks, so a shape nobody listed
+still asks, and a line longer than 400 characters asks unread. On the last 200 commits of ten
+corpus repositories it skipped 756 of 9,223 changed files, and a parser found no function, class,
+call, `new`, template or binding to anything but a literal starting on an added line of any of
+them (A91). An import that renames a function defined elsewhere is not asked about, and a `type`
+or `interface` is, at the cost of one search. The reason ends by telling a session with no
+subagent tool to run the search itself. The Stop payload carries no tool list, and without that sentence a headless run
+with no `Agent` tool answered the ask with "No such tool" and spent a turn on it.
+
+A Stop payload names no file, so a session started in the directory holding several checkouts, which
+has no map of its own, reads each mapped checkout directly below it instead, and names their files
+from where the session stands (`api/src/x.ts`). A file's mark is taken over its checkout and its path
+inside it, so a session that later moves into that checkout is not asked about it again, and the same
+file copied into a sibling checkout is.
+
+All four are absent from the usage block and from `commands/` on purpose: no person runs them and no
 agent should. Each reads the payload on stdin, answers with one JSON object, and answers `{}` and exits
 0 on every failure path, because a hook that exits non-zero interrupts the session it exists to help.
-All three walk up to find what they answer from, the rendered map for `echo` and the recorded counts
-for the other two, and all start from the place the tool call is about rather than from where the
+All four walk up to find what they answer from, the rendered map for `echo` and the recorded counts
+for the other three. `refresh` starts from the payload's working directory, since its events name no
+tool call. The other three start from the place the tool call is about rather than from where the
 session's shell happens to be. Measured on 2.1.251, five tools name that place: `Read`, `Write` and
 `Edit` under `file_path`, `NotebookEdit` under `notebook_path`, and `Glob` and `Grep` under `path`, which
 is a directory rather than a file on those two. Where the payload names none, `Bash` and `Agent` among
@@ -695,7 +796,8 @@ not substituted, and Claude Code refuses the hook by name on every prompt and ev
 the life of that session, which is what 0.2.4 through 0.2.6 shipped. A plugin hook runs in every
 session the plugin is installed for, with no way to scope it to one repository, so the scoping is
 the hook's own job: it walks up from the working directory for a map, and a session with none gets
-`{}`. That answer costs one node process and almost nothing else: three runs on one laptop put the median
+`{}`. The refresh and the end-of-turn check also look one level down when the walk up finds nothing,
+since their payloads name no file (below and above). That answer costs one node process and almost nothing else: three runs on one laptop put the median
 at 73ms, 104ms and 237ms, and which `node` is on `PATH` moves it more than anything the tool does. It is
 paid per turn and per tool call.
 
@@ -718,7 +820,13 @@ last 256 KiB of the session's transcript first and stays silent when that tail h
 same map with no compaction after it. Each map carries a `digest` of its body, so a re-scan is delivered
 on the next call, and a copy further back than the window is delivered again, about every 29k tokens of
 context in a typical session. A subagent or a workflow stage is answered from its own transcript.
-Anything the hook cannot read answers with a delivery, which is the old behaviour.
+Anything the hook cannot read answers with a delivery, which is the old behaviour. Parallel tool
+calls in one batch each run before any of the batch's deliveries is written, so none sees the
+others', and the worst case is one copy per call. Inside a mapped checkout the prompt has already
+delivered the map before the first batch, and the batch adds none. A session started one directory
+above the checkout has no map on the prompt, which names no file, so its first batch into that
+checkout reaches the worst case, once per context window and per map: measured on 2.1.285, five
+parallel reads gave four copies from the parent and one from inside the checkout.
 `scripts/measure-echo.mjs` replays the rule over a transcript store: on 3,502 local transcripts it kept
 7,857 of 65,977 deliveries. The measurements behind the rule are in
 `docs/research/what-a-repeated-hook-context-costs.md`. There is still no flag; this tool ships no
@@ -768,11 +876,19 @@ files they point at, say what the practice is, and this says to follow it and fi
 trigger clause because removing the equivalent scope guard is measured to move the out-of-scope rate
 by double digits;
 `docs/research/one-line-that-finishes-in-house-style.md` carries the sources (A42). All three are
-constant, so A5 holds.
+constant, so A5 holds. The line above them that says what a claim is also carries the key to every
+counts line: `"no convention" means the gate in parentheses stopped it, and its sites may still all
+agree`. Without it `no convention. 73 of 73 sites (applicability)` read as a denial of a habit every
+site follows, and the gates' meanings lived only in this file and the README. It shares that line
+rather than taking its own, so it costs the roster nothing on an overview at its bound.
 
 Writes are atomic: temp file in the same directory, then rename, so a crash never leaves half a
-context file. `.claude/anatomiya/facts.json` is written first and holds every count, gated or not,
-so no rendered file exists that is not derivable from facts on disk. It carries a schema version,
+context file. `.claude/anatomiya/facts.json` holds every count, gated or not, and the facts and
+the rendered files are replaced as one: every one is written to its temp file before any rename,
+the facts are renamed first and stale area files removed last, and a rename or removal that fails
+puts back what it had replaced. So no rendered file exists that is not derivable from facts on
+disk, and a scan that fails part way does not leave new facts beside the old map for `check` to
+call fresh. A process killed between two renames is the one window left. It carries a schema version,
 and the check refuses a version past the one it knows rather than reading the fields positionally:
 an older record is readable and is read, a newer one is a shape this build has never seen. A run that read no file of a
 language writes neither, for the same reason: keeping the rendered files while replacing the facts
@@ -836,13 +952,20 @@ to resolve inside it: a committed `.claude/anatomiya -> ../.git/hooks` resolves 
 repository, and the scan wrote `facts.json` into `.git/hooks` while printing `.claude/...`.
 `.claude/rules` may lead elsewhere in the working tree, but never into the git directory:
 calcom/cal.diy commits `.claude/rules -> ../agents/rules` to share one rules directory between
-agents, and refused, the scan wrote nothing there at all. A link within `.claude` is still followed.
+agents, and refused, the scan wrote nothing there at all. Git matches no pathspec past a symlink, so a
+map written through that link is tracked, ignored and changed only under the link's target. The
+refresh's tracked-map guard and the pin's clean-tree test read the map there (`trackedRulesDir`):
+spelled as `.claude/rules/...`, a map committed through the link read as untracked and every move of
+HEAD rewrote it. Where core.ignorecase is set, both pathspecs carry `icase`, since git keeps the
+index spelling and a directory renamed in case outside git is found under neither spelling otherwise.
+A link within `.claude` is still followed.
 `facts.json` and `baseline.json` are read through the same resolution, their own names included, so
 a link at either is not followed out; a write replaces it as an entry. A refusal names the path the
 repository spells and says when it is a link, since the resolved name once read "README.md is not a
 directory ... remove it" for `.claude/rules -> ../README.md`. The planning half also refuses a
-directory at `facts.json` or `baseline.json`, which the rename cannot replace, so a dry run of
-`scan` or `pin` refuses what the real run would die on.
+directory at `facts.json` or `baseline.json`, which the rename cannot replace, and a nearest existing
+directory on the way that this process cannot write, so a dry run of `scan` or `pin` refuses what the
+real run would die on, by the directory's name rather than a raw `EACCES` on a temp file.
 
 Files in there are read by their head, one megabyte at most, and only when the opened handle is a
 regular file. The ownership test reads the frontmatter from byte zero a line at a time, and stops at
@@ -905,6 +1028,17 @@ succeeds. A scan run by hand records its stamp too, so the next refresh has noth
 its own clock. A changed overview reaches a running session through the echo's digest, and an area
 file is read from disk the first time its directory is.
 
+A session started above its checkouts, the way a project split into sibling repositories is opened,
+has no map at its own directory, and neither `SessionStart` nor `FileChanged` names a path the walk
+could start from instead. Where the walk up finds nothing, the hook takes each checkout directly
+below that holds a map of its own: it starts a worker for each, names every one's watches in the one
+list, and on `FileChanged` starts only the checkout whose git directory the changed file is in. A
+`.claude` with no `.git` beside it, a checkout two levels down, and a linked worktree borrowing its
+main checkout's map are not taken, and a directory holding more than eight mapped checkouts side by
+side takes none: that is a shelf of projects rather than one project, and a worker each at every
+session start is nobody's request. A `cd` inside the session cannot move the watch, since
+`CwdChanged` reaches only hooks a settings file declares.
+
 The same worker moves the pin, and only onto what the remote default branch holds: HEAD equal to the
 first of `origin/HEAD`, `origin/main` or `origin/master` that resolves, or the only remote's `HEAD`
 where that remote has another name, with no tracked file edited or staged, and never onto a commit
@@ -925,7 +1059,9 @@ A commit this clone made never joins the pin while it sits on the first-parent l
 the tip, however it reached the remote: a push by URL moves no tracking ref, and a teammate's commit
 on top reviews nothing beneath it. Made here is every commit a reflog entry names except the entries
 that create none (a clone, a checkout, a reset, a branch, a fetch, a push, the remote's HEAD named,
-a fast-forward, a rebase's start and finish, each matched as git writes the whole entry and never
+a fast-forward, a rebase's start and finish, and the empty entry `git worktree add` writes on the new
+worktree's HEAD, which reads as plain `HEAD` from inside that worktree, each matched as git writes the
+whole entry and never
 read from a commit's subject or a branch name), so a spelling git adds later holds the pin rather
 than slipping past. The reflog forgets (a removed worktree, a deleted branch, `gc` after 90 days),
 so a commit whose committer is this clone's own identity is made here as well: past a pin, anywhere
@@ -945,10 +1081,14 @@ written to `refresh.json`.
 
 A pin that stops following while the checkout sits on the tip is held, and `refresh.json` says why
 (`held`: a commit made here, a tip this clone moved, a tip with no record of how it moved, a
-question git could not answer), at which commit and against which pin. A session started or resumed
-says so in one line of the terminal (`systemMessage`), built from fixed words and validated commit
+question git could not answer), at which commit and against which pin; a commit made here also says
+what matched it (`by`: `reflog`, or `identity` where only the committer did, and the line then says
+the commit carries this clone's git identity rather than that it was made in this clone). A session
+started or resumed says so in one line of the terminal (`systemMessage`), built from fixed words and validated commit
 ids only; a compaction or a clear inside the session does not repeat it, and a pin taken by hand
-since the hold ends it. It never enters the model's context: the model is the author E5 keeps from
+since the hold ends it. A session started above its checkouts gets one line per held checkout, each
+naming the checkout's directory as it is on disk, quoted, with only unprintable characters (controls, format characters, line and paragraph separators) replaced by a space, and saying to pin it from a session inside it, since
+`/anatomiya:pin` pins the checkout it runs in. It never enters the model's context: the model is the author E5 keeps from
 accepting its own work, and a sentence there naming how to accept it is the suggestion E5 refuses. A
 lock is given back only while it is still the worker's own, so a takeover between three workers
 never frees a fourth.
@@ -1007,8 +1147,10 @@ nothing, and the map listed `test` and `examples` and never webpack's source at 
 descent producing no root keeps the directory. A directory under the floor folds into the nearest
 root above it, or into the line that says what did not print. That line carries a clause per
 population rather than one number: `and N more directories holding M files`, then the files in
-directories that cleared no floor, then the files sitting at the repository root, which never took
-the floor test and is not a place either. Sorting by source files first is
+directories too small for a line of their own, then the files sitting at the repository root, which
+never took the roster's floor and is not a place either. The clause does not say "floor": the Not
+covered line calls the area floor "the per-directory floor", a different and smaller number, and most
+files this clause counts do sit in an area. Sorting by source files first is
 what keeps an asset or documentation directory from displacing code.
 
 The three numbers scale with the corpus and are tuned by measurement. That is the decision; the
@@ -1075,8 +1217,8 @@ Every clause is dropped when it counts nothing.
 ```
 - <root>: <n1> <ext1>[ (JSX)][, <n2> <ext2>][ and <k> other]
         [; <t> <Runner> specs[ under <sub>]]
-        [; <c> of <n> has|have a namesake test[ under <test root>]]
-        [; <m> sibling modules named <three stems>; <f> files inline a helper]
+        [; <c> of <n> has|have a namesake test[, <v>][ under <test root>]]
+        [; <m> sibling modules[ named <up to three stems>]; <f> of <j> JSX files inline a helper]
 ```
 
 - The top two extensions by count, then the rest as `and k other`. `(JSX)` marks the first of the
@@ -1115,7 +1257,10 @@ Every clause is dropped when it counts nothing.
   file counted once has to vote once, and a mirror parting on an ordinary name leaves the vote to
   the next candidate rather than spending it on nothing. A top vote under half the matched files
   names no root at all, since a repository with one `__tests__` per component directory has an
-  answer for every file and no one place to name. A root with a `test`, `tests`, `spec`,
+  answer for every file and no one place to name. Half is enough to name one, so where the top vote
+  is fewer than the matched files the count there prints before the name: `4 of 63 have a namesake
+  test, 3 under src/utils/__tests__`, the way a runner group prints `2 of 3 vitest specs under
+  __tests__`. A root with a `test`, `tests`, `spec`,
   `cypress`, `e2e` or `__tests__` directory anywhere in its path is not asked the question: its
   non-test files are what the tests run on, and webpack's `test` read `1 of 7858 has a namesake
   test under test` over the fixture modules its 2,607 tests exercise. Any segment rather than the
@@ -1127,8 +1272,13 @@ Every clause is dropped when it counts nothing.
   all, so `0 of 40 have a spec` is a line rather than a silence: that is the shape an obligation
   cannot carry, because it treats a missing companion as an absence rather than as a habit.
 - The helper facet, JavaScript and JSX roots only: how many non-test `.ts` and `.js` modules sit
-  beside the JSX files, the three commonest stems among them, and how many of the JSX files define
-  a module-level function they do not export. Both numbers print and no side is chosen.
+  beside the JSX files, the three commonest stems among them that appear more than once, and how
+  many of the JSX files define a module-level function they do not export, out of how many JSX
+  files there are. Both numbers print and no side is chosen. A stem that appears once is no habit,
+  and ranking unique names put the first three alphabetically on the line as the "commonest"; where
+  none repeats the clause is the count alone. The JSX count is the denominator because only the JSX
+  files are asked: `0 files inline a helper` over one component read as the whole of a `src/utils`
+  whose 30 modules all keep a private helper.
 
 ### The tests line
 
@@ -1139,7 +1289,8 @@ Not the prefix every one of them shares: one file kept outside the tree the rest
 strict prefix to nothing, and 28 of the 35 measured repositories printed at least one `under .`,
 which is the clause failing at the only job it has. The
 trailing clause takes the first root printed that is not a test directory and has a namesake count,
-and nouns it with that root's top extension, so a repository whose tests are all feature-named
+and nouns it with the extension that root's namesake count was taken over, which is not always its
+first: a root holding more screenshots than components counts the components. So a repository whose tests are all feature-named
 end-to-end specs says out loud that `0 of 504 .tsx files have a namesake test`. That clause is what
 makes the line a denominator rather than a total. It names the population it counted over by the
 root's own label, so a root holding only the files at one level reads
@@ -1193,7 +1344,8 @@ export and is not counted. A default import, or a `require` bound whole, is `def
 module, so it is named for the module it comes from, `user (default)`, and an index file for its
 directory. A specifier is mapped to a file the way
 `pairing.mjs` learns a companion root: a relative one resolves against the importer's directory,
-anything else is matched on the path tail once a `~/`, `@/`, `#/` or `src/` prefix is cut, and a
+one ending in `/` names a directory and resolves only through its `index`, the way Node and
+TypeScript read `./base/`, `./` and `../`, anything else is matched on the path tail once a `~/`, `@/`, `#/` or `src/` prefix is cut, and a
 tail two files answer resolves to neither rather than to whichever sorted first. No `tsconfig` is
 read. Only importers outside the area count: a directory importing its own files is how it is
 written, not who depends on it. This is the counted form of "check before creating", and Ruby has
@@ -1227,6 +1379,36 @@ and the check reports findings in code the author never touched.
 "Newly introduced" cannot be derived from one run at HEAD, so the analysis runs twice, at HEAD and
 at the merge base, and the two finding sets are differenced by content fingerprint rather than by
 position. That grammar is `plugins/anatomiya/lib/introduced.mjs`, one leaf the check alone imports.
+The fingerprint reads every function and class body inside the site as empty, because three rows
+report a whole declaration: a line added inside a function body is not a new `function_style`,
+`explicit_return_type` or `doc_comment_style` site on the declaration that holds it. An edit to the
+signature still is. Copies that share a fingerprint are matched by their own text first, then by the
+lines around them, then by the function they sit in, and only what is left is matched by count.
+Two rows judge what is inside the body, `async_error_handling` and `swallowed_error`, so for them a
+copy that stopped conforming shares its fingerprint with one that never did. Their copies, conforming
+or not, are aligned the way a line diff aligns lines, among the copies that open on the same line
+text in the same function. A copy whose whole text is unchanged anchors. Between two anchors, a run
+holding as many copies on each side was edited in place, so a copy there is new only where its
+partner conformed: a handler that lost its `catch` is not absorbed by another anonymous handler that
+never had one, even where both open on `p.then(async (r) => {` or `} catch (err) {`, and an edit
+inside a handler that already broke the rule is not new. A run where the branch added or removed a
+copy has no partner to read, so its copies are matched by their whole text, as they were before the
+body left the fingerprint. Only the names inside the bodies could say more, so an edited breaking copy
+next to an added or removed one is reported, and one copy removed above an edited one and another
+added below it reads as the `catch` moving between them. The same holds the other way: a bare handler
+deleted above one that lost its `catch`, with a caught one added below, reads as two edits in place,
+so the handler that lost its `catch` is not reported. Past about 2,000 copies a side in one group the
+alignment would cost quadratic time and memory, so there the copies are matched by their whole text.
+
+A learned row judges a site the way the fold counted it. A superclass or mixin written bare is
+resolved against the nesting it is written in, and a class whose chain of parents reaches the
+learned base conforms. The fold follows that chain through every class its area declares, and the
+check holds only the files the branch changed, so it reads the chain from two places: the map's
+`reaches`, for the classes it did not read, and the classes the branch's own changed files declare
+in the same area, which replace what the map recorded for them. The area is the one the pinned map
+draws, so a directory the branch adds inside it counts as part of it, even where a rescan would make
+it an area of its own. A subclass of a base the branch adds
+is not told to skip that base, and a subclass of a class the branch moved off the base is.
 
 The head side is read from the working tree wherever the tree differs from the commit, and a file
 that exists only in the tree is examined like any other file this branch added. An agent writes,
@@ -1234,14 +1416,25 @@ checks, fixes, then commits, so the moment the findings are cheapest is the mome
 committed, and a check that answered `0 MUST-FIX` there was answering about a file it had not read.
 The run says how many files it read that way, because that many make it unreproducible from git
 alone. The base side never moves: it is read with `git cat-file` at the merge base, which is what
-keeps an agent's own edits from moving the population it is judged against (E2).
+keeps an agent's own edits from moving the population it is judged against (E2). A file the branch
+deleted has nothing to examine and can still owe a finding, as a dropped spec does, so the header
+counts it among the changed files, says how many were removed, and the record lists them as
+`removed`, whether the deletion is committed or only in the working tree. A move's old path is not
+counted as removed, whatever the new name, and a deletion only in the working tree counts when HEAD
+holds the path, so a file added to the index (with `git add` or `git add -N`) and then deleted, which
+no commit ever held, is not one.
 
 Base ref resolution tries `origin/HEAD`, `origin/main`, `origin/master`, `main`, `master`, in that
 order, or whatever `--base` names. `@{upstream}` is deliberately absent: a pushed feature branch
 tracks itself, and the merge base with itself is HEAD. A `--base` that names this branch's own tip is
 refused like `HEAD` is: an expression such as `HEAD~0`, and the branch's own name wherever the base
 the check would pick unasked is somewhere else. Another branch at the same commit, or the commit by
-its id, is still a base, and is what a branch holding only uncommitted work is checked against. On a
+its id, is still a base, and is what a branch holding only uncommitted work is checked against. An id
+is a name git resolves to no ref, never a name that happens to be spelled in hex, so a branch called
+`7812` or `facade` is refused as its own base like any other, and so is `FEAT`, or `café` typed in
+NFD, on a filesystem that folds case or Unicode form, where it opens `feat`'s ref file under a name no ref holds. A name two refs hold, a tag and a
+branch both called `release`, is refused naming both: git picks the tag and says so only in a warning
+the check never sees. `refs/heads/release` names one. On a
 shallow clone the base commit is fetched with `--depth=1`, which costs about 3.65s and 12 MB;
 `--unshallow` measured 56s and 305 MB and `--deepen=500` measured the same, so bounded deepening is
 not offered. `origin/HEAD` is asked of the remote as its own `HEAD`, so a default branch named
@@ -1265,15 +1458,19 @@ match a claim, because a file that creates its own directory is the only member 
 itself every time. It carries the same finding shape as any other, `dimension: "test_precedent"` in the
 json, so a reader that filters by dimension sees it beside the counted rows; it is not in the dimension
 count the documentation checks, since nothing about it is measured per area. What it does and refuses to
-do is H38, and the sentence the map states beside it is H39.
+do is H38, and the sentence the map states beside it is H39. Its reason, which the `PreToolUse`
+notice prints too, gives the root's count in the tests line's words, `src/hooks: 0 of 5 .tsx files
+have a namesake test`: the count is over one extension, and a bare `5 files` read as the whole of a
+directory holding nine. A map written before the root recorded that extension says `0 of 5 files`
+unless the root holds only one, since its most common extension can be a screenshot.
 
 Severity, in the order the checks are made:
 
 | Result | When |
 |---|---|
-| NIT | no convention counted here, or a gate suppressed the one that was |
-| FIX | the map is stale, or there was no merge base, or the predicate is partial, or the map already names this file as an exception, or no baseline population was recorded, or the Wilson bound on the baseline counts does not reach 0.90, or the baseline itself was not perfect |
-| MUST-FIX | all baseline sites conform, so this branch is the first violation |
+| NIT | "no convention counted here", or a gate suppressed the one that was: "no convention stated here (GATE)", naming the gate |
+| FIX | the area file's 40-line budget dropped the claim's block: "the area file names this claim without its counts" where the notice still prints its sentence, "the area file had no room to state this claim" where it does not; or the run is capped, "capped by this run: CAUSE", where CAUSE is the stale reason the header prints or no merge base; or the predicate is partial, "partial predicate: some sites are not visible statically"; or "the map already names this file as an exception"; or "no baseline population recorded"; or the claim was stated on the rest of the repository's bound rather than this area's own (D8), "N of M baseline sites here, on a claim the rest of the repository carries"; or the Wilson bound on the baseline counts does not reach 0.90, "N of M baseline sites is thin"; or the baseline itself was not perfect, "N of M baseline sites conform". Two caps sit outside that ladder (H24): a file whose area holds no slot for the claim is judged on the nearest enclosing area that states one, "counted in AREA, which this directory sits inside", and a MUST-FIX on a path the owning area's globs never deliver to drops to FIX, with the same "counted in" reason where the globs miss the directory, such as a new subdirectory under a `dir/*.ext` area, and "the area file for AREA does not reach TYPE, so this claim was never delivered here" where they miss the file's name, TYPE being its extension as `.tsx files` or its whole name |
+| MUST-FIX | "all N baseline sites conform", so this branch is the first violation |
 
 Baseline counts come from the pinned population, never from the current one, or the agent's own
 accumulated output raises the bar it is judged against. Staleness caps severity rather than
@@ -1306,7 +1503,9 @@ everything else goes through the encoder.
 `--format json` carries the record's own version, so a reader can refuse a shape it does not know
 rather than read fields positionally. It is the rule `facts.json` enforces on disk (C10), offered
 here to whatever reads the stdout; the scan's and the pin's records carry a version of their own for
-the same reason.
+the same reason. Their paths go out the same way the check's do: the scan's root and rule file
+names and the pin's area and file paths are whole, so the scan record's root is the one its text
+line prints and the one `check --format json` gives for the same checkout.
 
 ### The caveat codes
 
@@ -1317,7 +1516,7 @@ are 28. Most appear at most once in a run; the ones that repeat are named under 
 
 | Code | What it means |
 |---|---|
-| `map-unreadable` | there is a map and none of it was used: the store resolves outside the repository, or its schema is past the one this build reads |
+| `map-unreadable` | there is a map and none of it was used: the store resolves outside the repository, the file will not open or does not parse as JSON (a committed one that conflicted on a merge), or its schema is past the one this build reads |
 | `no-map` | no map on disk, so nothing was stated and nothing can be enforced |
 | `no-base-ref` | none of the candidate base refs resolved |
 | `no-merge-base` | a base was found and shares no fork point with HEAD, so nothing can be called newly introduced |
@@ -1432,7 +1631,7 @@ object and exits 0, as it does on any failure.
 | `oxc` | node | `oxc-parser` imports | `anatomiya setup` in the plugin directory |
 | `flow-remove-types` | node | it imports. A row of its own, and not an engine: it is `oxc`'s dialect stripper, and one absent costs a dialect where the other costs the run | the same install |
 | `prism` | the `ruby` interpreter | the interpreter's own prism, or the newest prism gem installed for it when its own is older, answers a version of 1.0.0 or newer. A `ruby` that cannot run `ruby -e 1` at all (an rbenv shim with no version selected exits 127) is reported with its own first line of stderr, not as a missing prism | install Ruby 3.4 or newer, which ships prism 1.x, or run `gem install prism` on the Ruby you have, and put `ruby` on `PATH`; for a `ruby` that does not run, make `ruby -e 1` run first |
-| `typescript` | node | it imports. Optional: only `--deep` needs it | the same install |
+| `typescript` | node | it imports at major 5, the one the tier runs on. One of another major is reported by its version, and `scan --deep` refuses it with the same sentence rather than calling it absent. Optional: only `--deep` needs it | the same install |
 
 `anatomiya setup` installs what node hosts, and only that. It runs
 `npm install --omit=dev --include=optional --ignore-scripts --no-audit --no-fund` with `cwd` set to

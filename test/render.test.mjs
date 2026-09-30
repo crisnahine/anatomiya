@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   degradedSemanticSentence,
   droppedDirectives,
+  droppedSlots,
   renderArea,
   renderOverview,
   truncatedHistoryLine,
@@ -20,6 +21,7 @@ import { layoutFacts } from "../plugins/anatomiya/lib/layout.mjs";
 import { principleKeys } from "../plugins/anatomiya/lib/principles.mjs";
 import { discover, globEntry, globText } from "../plugins/anatomiya/lib/areas.mjs";
 import { REGISTRY } from "../plugins/anatomiya/lib/registry.mjs";
+import { claudeCodeReaches } from "./paths-reader.mjs";
 
 const dim = (o = {}) => ({
   key: "swallowed_error",
@@ -151,19 +153,6 @@ test("a bare-name glob under a directory keeps both halves", () => {
 const renderedPaths = (out) =>
   out.split("\n").slice(3, out.split("\n").indexOf("---", 1)).map((l) => JSON.parse(l.replace(/^ {2}- /, "")));
 
-/** The matcher's semantics: `*` stops at a slash, a `**` segment spans any depth including none. */
-function globMatches(pattern, rel) {
-  const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  let re = "^";
-  for (let i = 0; i < pattern.length; i++) {
-    if (pattern.startsWith("**/", i)) { re += "(?:[^/]*/)*"; i += 2; }
-    else if (pattern[i] === "*") re += "[^/]*";
-    else if (pattern[i] === "{") { const end = pattern.indexOf("}", i); re += `(?:${pattern.slice(i + 1, end).split(",").map(esc).join("|")})`; i = end; }
-    else re += esc(pattern[i]);
-  }
-  return new RegExp(`${re}$`, "u").test(rel);
-}
-
 test("every delivered paths pattern reaches the files its area counted, whatever the directory is spelled in", () => {
   // Measured: `src/компоненты` rendered as `<path with mixed scripts, 10 chars>/**`
   // and a 129-character directory as `.../w…/**`. The encoder that keeps a
@@ -179,11 +168,44 @@ test("every delivered paths pattern reaches the files its area counted, whatever
   for (const a of discover(files)) {
     const delivered = renderedPaths(renderArea(area({ path: a.path, globs: a.globs })));
     for (const f of a.files) {
-      let hit = false;
-      for (const p of delivered) if (globMatches(p.replace(/^!/, ""), f.rel)) hit = !p.startsWith("!");
-      assert.ok(hit, `${a.path}: ${f.rel} is reached by none of ${JSON.stringify(delivered)}`);
+      assert.ok(claudeCodeReaches(delivered, f.rel), `${a.path}: ${f.rel} is reached by none of ${JSON.stringify(delivered)}`);
     }
   }
+});
+
+test("a delivered paths list cuts out the fixture and generated files its area never counted", () => {
+  // Read back the way Claude Code reads it, so a file negation has to survive
+  // the encoder and the comma split as well as the matcher.
+  const files = ["src/comp", "src/comp/a", "src/comp/b"].flatMap((d) =>
+    Array.from({ length: 4 }, (_, i) => ({ rel: `${d}/c${i}.ts`, lang: "js" }))
+  );
+  const uncounted = [
+    ...["src/comp/Gen.ts", 'src/comp/say"hi.ts', "src/comp/gen/G.ts"].map((rel) => ({ rel, lang: "js" })),
+    ...["src/comp/a/fixtures/F.ts", "src/comp/b/fixtures/F.ts"].map((rel) => ({ rel, lang: "js", excludedAt: rel.slice(0, rel.lastIndexOf("/")) })),
+  ];
+  const [a] = discover(files, { uncounted, minFiles: 5 });
+  const delivered = renderedPaths(renderArea(area({ path: a.path, globs: a.globs })));
+
+  for (const f of files) assert.equal(claudeCodeReaches(delivered, f.rel), true, `${f.rel}: ${JSON.stringify(delivered)}`);
+  for (const f of uncounted) assert.equal(claudeCodeReaches(delivered, f.rel), false, `${f.rel}: ${JSON.stringify(delivered)}`);
+});
+
+test("a delivered paths list cuts out a source file spelled in another case", () => {
+  // The matcher folds case, so `*.rb` and `**/Rakefile` reach these, and the corpus never counted them.
+  const files = [
+    ...Array.from({ length: 6 }, (_, i) => ({ rel: `app/m${i}.rb`, lang: "ruby" })),
+    { rel: "app/Rakefile", lang: "ruby" },
+  ];
+  const uncounted = [
+    { rel: "app/Legacy.RB", lang: "ruby" },
+    { rel: "app/sub/RAKEFILE", lang: "ruby" },
+    { rel: "app/fixtures/F.Rb", lang: "ruby", excludedAt: "app/fixtures" },
+  ];
+  const [a] = discover(files, { uncounted, minFiles: 5 });
+  const delivered = renderedPaths(renderArea(area({ path: a.path, globs: a.globs })));
+
+  for (const f of files) assert.equal(claudeCodeReaches(delivered, f.rel), true, `${f.rel}: ${JSON.stringify(delivered)}`);
+  for (const f of uncounted) assert.equal(claudeCodeReaches(delivered, f.rel), false, `${f.rel}: ${JSON.stringify(delivered)}`);
 });
 
 test("author identity reaches a rendered file as a count, never as a name", () => {
@@ -327,6 +349,45 @@ test("a suppressed dimension still prints its counts and names the gate", () => 
   assert.match(out, /^failure is returned, not thrown: no convention\. 30 of 31 sites \(concentration\)$/m);
 });
 
+test("a partial dimension says so on its counts line too", () => {
+  // The counts line reads like the block form with less room, and a count over
+  // sites the parser cannot all see is the same fact on either.
+  const out = renderArea(
+    area({
+      dimensions: [
+        dim({ precision: "partial", states: "claim", matchesDefault: true, conforming: 22 }),
+        dim({ key: "error_shape", claim: "failure is returned, not thrown", precision: "partial",
+              directive: false, gate: "evidence", conforming: 4, candidates: 4 }),
+        dim({ key: "module_state_const", claim: "module-level bindings are const",
+              directive: false, gate: "evidence", conforming: 4, candidates: 4 }),
+      ],
+    })
+  );
+
+  assert.match(
+    out,
+    /^catch blocks use the error they caught: 22 of 22 sites \(matches model default\) {2}\(partial: some sites are not visible statically\)$/m
+  );
+  assert.match(
+    out,
+    /^failure is returned, not thrown: no convention\. 4 of 4 sites \(evidence\) {2}\(partial: some sites are not visible statically\)$/m
+  );
+  assert.match(out, /^module-level bindings are const: no convention\. 4 of 4 sites \(evidence\)$/m, "a precise one stays bare");
+});
+
+test("the overview says what a no convention line means", () => {
+  // The gate name in parentheses is the only reason printed, and "no convention.
+  // 73 of 73 sites" reads as a denial of a habit every site follows without it.
+  // On the line that says what a claim is, so it costs the bound no line.
+  const lines = renderOverview(result(), { uncovered: 30 }).split("\n");
+  const at = lines.indexOf(
+    'A claim states how many sites conform out of how many were eligible; "no convention" means the gate in parentheses stopped it, and its sites may still all agree.'
+  );
+
+  assert.ok(at > 0, "the sentence is in the overview");
+  assert.equal(lines[at - 1], "Facts counted from this repository's own code, per directory.");
+});
+
 test("a suppressed author gate says how many authors it wanted", () => {
   // "(authors)" was readable while the bar was the constant 2 and is not once
   // the bar is a function of the repository. An audit months later has to be
@@ -343,6 +404,23 @@ test("a suppressed author gate says how many authors it wanted", () => {
   );
 
   assert.match(out, /no convention\. 20 of 20 sites \(authors 1 of 2\)$/m);
+});
+
+test("an unstated slot shown on its counter side names the counter side's authors", () => {
+  // D4 counts authors per side. One person wrote every one of these 40 sites,
+  // and the line read "authors 0 of 2" off the claim side, which holds none.
+  const out = renderArea(
+    area({
+      dimensions: [
+        dim({ key: "function_style", claim: "module-level functions are declared with function",
+              counterClaim: "module-level functions are assigned to variables",
+              states: null, directive: false, conforming: 0, candidates: 40,
+              gate: "ratio", counterGate: "authors", authors: 0, counterAuthors: 1, authorsRequired: 2 }),
+      ],
+    })
+  );
+
+  assert.match(out, /^module-level functions are assigned to variables: no convention\. 40 of 40 sites \(authors 1 of 2\)$/m);
 });
 
 test("a gate that failed because git did not answer says so", () => {
@@ -1417,6 +1495,7 @@ const clientLayout = (o = {}) => ({
       files: 612,
       exts: [[".tsx", 504], [".ts", 65]],
       other: 43,
+      jsx: 504,
       jsxExt: ".tsx",
       tests: [{ runner: "vitest", files: 4, sub: "__tests__" }],
       companions: { with: 0, of: 504, root: null },
@@ -1459,7 +1538,7 @@ test("a root line says what the directory holds, its tests and its namesakes", (
   assert.equal(
     lines[3],
     "- src/components: 504 .tsx (JSX), 65 .ts and 43 other; 4 vitest specs under __tests__; " +
-      "0 of 504 have a namesake test; 60 sibling modules named types/schema/utils; 35 files inline a helper"
+      "0 of 504 have a namesake test; 60 sibling modules named types/schema/utils; 35 of 504 JSX files inline a helper"
   );
   assert.equal(lines[2], "- src/pages: 1003 .tsx (JSX), 188 .ts and 32 other");
   assert.equal(lines[4], "- src/queries: 314 .ts");
@@ -1476,6 +1555,57 @@ test("the tests line is the denominator the roster exists for", () => {
     "- tests: 102 Cypress specs under cypress/integration; 4 vitest under src; " +
       "0 of 504 .tsx files under src/components have a namesake test"
   );
+});
+
+test("the helper clause counts over the JSX files it asked, and names only stems that repeat", () => {
+  // `0 files inline a helper` over one component sat above 30 modules that all
+  // keep a private helper, and read as the whole directory.
+  const line = (helpers, jsx) =>
+    renderLayout({
+      ...clientLayout(),
+      roots: [root("src/utils", { files: 31, exts: [[".ts", 30], [".tsx", 1]], jsx, jsxExt: ".tsx", helpers })],
+      more: { roots: 0, files: 0 },
+      tests: [],
+    })[2];
+
+  assert.equal(
+    line({ siblingModules: 30, stems: [], inlineFiles: 0 }, 1),
+    "- src/utils: 30 .ts, 1 .tsx (JSX); 30 sibling modules; 0 of 1 JSX file inline a helper"
+  );
+  assert.equal(
+    line({ siblingModules: 30, stems: ["mapper"], inlineFiles: 1 }, 2),
+    "- src/utils: 30 .ts, 1 .tsx (JSX); 30 sibling modules named mapper; 1 of 2 JSX files inlines a helper"
+  );
+});
+
+test("a namesake root named by a majority prints how many sit there", () => {
+  const companions = { with: 4, of: 8, root: "src/utils/__tests__", under: 3 };
+
+  assert.equal(namesakeClause(companions), "4 of 8 have a namesake test, 3 under src/utils/__tests__");
+  assert.equal(
+    namesakeClause({ ...companions, under: undefined }),
+    "4 of 8 have a namesake test under src/utils/__tests__",
+    "a record with no count there has every match there"
+  );
+  assert.equal(namesakeClause({ ...companions, root: null }), "4 of 8 have a namesake test", "no place, no count");
+});
+
+test("the tests line nouns its namesake count with the extension it was counted over", () => {
+  // A root holding more screenshots than components counts its components, and
+  // the line named the screenshots.
+  const lines = renderLayout({
+    ...clientLayout(),
+    roots: [
+      root("src/site", {
+        files: 60,
+        exts: [[".png", 40], [".tsx", 20]],
+        companions: { with: 2, of: 20, root: null, ext: ".tsx" },
+      }),
+    ],
+    more: { roots: 0, files: 0 },
+  });
+
+  assert.ok(lines.some((l) => l.endsWith("; 2 of 20 .tsx files under src/site have a namesake test")), lines.join("\n"));
 });
 
 test("one file with a namesake takes the singular verb, on every line that prints the clause", () => {
@@ -1665,7 +1795,7 @@ test("leftovers below the floor are counted as files, not as directories", () =>
   // `and 0 more directories holding 12 files` says a number nobody can act on.
   const lines = renderLayout(clientLayout({ more: { roots: 0, files: 12 } }));
 
-  assert.ok(lines.includes("- and 12 more files in directories under the floor"), lines.join("\n"));
+  assert.ok(lines.includes("- and 12 more files in directories too small for a line of their own"), lines.join("\n"));
   assert.doesNotMatch(lines.join("\n"), /0 more directories/);
 });
 
@@ -1677,11 +1807,11 @@ test("a folded directory is not billed for the files under no directory at all",
 
   assert.equal(
     fold({ roots: 1, files: 3, floor: { dirs: 4, files: 4, root: 14 } }),
-    "- and 1 more directory holding 3 files, 4 files in 4 directories under the floor, and 14 at the repository root"
+    "- and 1 more directory holding 3 files, 4 files in 4 directories too small for a line of their own, and 14 at the repository root"
   );
   assert.equal(
     fold({ roots: 2, files: 3400, floor: { dirs: 26, files: 147, root: 0 } }),
-    "- and 2 more directories holding 3400 files and 147 files in 26 directories under the floor",
+    "- and 2 more directories holding 3400 files and 147 files in 26 directories too small for a line of their own",
     "two clauses join on a bare and; the comma series is for three"
   );
   assert.equal(
@@ -1715,7 +1845,7 @@ test("the line that says what did not print is reserved even when only the floor
 
   assert.match(
     squeezed({ roots: 0, files: 0, floor: { dirs: 3, files: 12, root: 0 } }),
-    /^- and .*12 files in 3 directories under the floor$/m
+    /^- and .*12 files in 3 directories too small for a line of their own$/m
   );
   assert.match(
     squeezed({ roots: 0, files: 0, floor: { dirs: 0, files: 0, root: 3 } }),
@@ -1727,7 +1857,7 @@ test("the line that says what did not print is reserved even when only the floor
 test("nothing folded away costs the roster a line", () => {
   const lines = renderLayout(clientLayout({ more: { roots: 0, files: 0 } }));
 
-  assert.doesNotMatch(lines.join("\n"), /more directories|under the floor/);
+  assert.doesNotMatch(lines.join("\n"), /more directories|too small for a line/);
 });
 
 const monorepoLayout = () => {
@@ -2094,6 +2224,7 @@ test("a count of one reads as one on every clause of a root line", () => {
         root("src/one", {
           files: 3,
           exts: [[".tsx", 3]],
+          jsx: 1,
           jsxExt: ".tsx",
           tests: [{ runner: "vitest", files: 1, sub: null }],
           companions: { with: 1, of: 1, root: null },
@@ -2108,7 +2239,7 @@ test("a count of one reads as one on every clause of a root line", () => {
 
   assert.equal(
     lines[2],
-    "- src/one: 3 .tsx (JSX); 1 vitest spec; 1 of 1 has a namesake test; 1 sibling module named types; 1 file inlines a helper"
+    "- src/one: 3 .tsx (JSX); 1 vitest spec; 1 of 1 has a namesake test; 1 sibling module named types; 1 of 1 JSX file inlines a helper"
   );
   assert.equal(lines[3], "- and 1 more directory holding 1 file");
 });
@@ -2424,6 +2555,27 @@ test("the directives an area file had no room for are recoverable from the recor
   for (let i = 0; i < 30; i++) {
     if (dropped.has(`k${i}`)) continue;
     assert.match(out, new RegExp(`^claim number ${i}$`, "m"), `k${i} was not reported dropped and is not in the file`);
+  }
+});
+
+test("a dropped slot is told apart by whether the file still names its sentence", () => {
+  // The check capped both the same way and said of both that the file had no
+  // room to state the claim, including the ones printed word for word under
+  // the notice.
+  const many = area({
+    dimensions: Array.from({ length: 30 }, (_, i) => dim({ key: `k${i}`, claim: `claim number ${i}` })),
+  });
+
+  const lines = renderArea(many).split("\n");
+  const slots = droppedSlots(many);
+  const kinds = new Set(slots.values());
+
+  assert.ok(kinds.has("named") && kinds.has("unnamed"), JSON.stringify([...slots]));
+  assert.deepEqual(new Set(slots.keys()), droppedDirectives(many));
+  for (const [key, kind] of slots) {
+    const sentence = `claim number ${key.slice(1)}`;
+    const printed = lines.some((l) => l.trim() === sentence);
+    assert.equal(printed, kind === "named", `${key} is ${kind}`);
   }
 });
 
@@ -2878,48 +3030,115 @@ test("a clause several rows share costs one line, not one line per row", () => {
   assert.match(out, /^claim controller_spec$/m);
 });
 
-// Directory names picomatch and minimatch read as extglobs, a group, or an escape.
-const EXTGLOB_DIRS = ["src/@(lib)", "src/x+(y)", "src/(ab)", "src/a\\b"];
-const extglobFiles = () =>
-  ["src", ...EXTGLOB_DIRS].flatMap((d) => Array.from({ length: 6 }, (_, i) => ({ rel: `${d}/m${i}.ts`, lang: "js" })));
-
 test("a directory named in extglob syntax folds like any other glob syntax", () => {
   // `(`, `)` and `\` were missing from the fold's character class. picomatch
   // and minimatch both read `@(lib)` and `x+(y)` as extglobs, `(ab)` as a
   // group and `a\b` as an escaped `b`, so each of these became an area whose
   // `paths` matched nothing or a different directory.
-  const areas = discover(extglobFiles());
+  const areas = discover(
+    ["src", "src/@(lib)", "src/x+(y)", "src/(ab)", "src/a\\b"].flatMap((d) =>
+      Array.from({ length: 6 }, (_, i) => ({ rel: `${d}/m${i}.ts`, lang: "js" }))
+    )
+  );
 
   assert.deepEqual(areas.map((a) => a.path), ["src"], "no area is rooted at an extglob-shaped directory");
   for (const a of areas) {
     for (const g of a.globs) assert.ok(!/[()\\]/.test(g.dir), `${a.path} names ${g.dir}`);
     const delivered = renderedPaths(renderArea(area({ path: a.path, globs: a.globs })));
     for (const f of a.files) {
-      let hit = false;
-      for (const p of delivered) if (globMatches(p.replace(/^!/, ""), f.rel)) hit = !p.startsWith("!");
-      assert.ok(hit, `${a.path}: ${f.rel} is reached by none of ${JSON.stringify(delivered)}`);
+      assert.ok(claudeCodeReaches(delivered, f.rel), `${a.path}: ${f.rel} is reached by none of ${JSON.stringify(delivered)}`);
     }
   }
 });
 
-test("a directory named in extglob syntax is reached by picomatch too, where it is installed", async (t) => {
-  // The helper above does not implement extglobs, so it cannot see the bug on
-  // its own. picomatch is what Claude Code's matcher is built on.
-  let pm;
-  try {
-    pm = (await import("picomatch")).default;
-  } catch {
-    t.skip("picomatch is not installed");
-    return;
+test("the paths reader agrees with Claude Code where gitignore rules part from a glob matcher", () => {
+  // A trailing `/**` is stripped before matching, and gitignore cannot re-include
+  // anything under an excluded directory, so this negation does nothing.
+  assert.equal(claudeCodeReaches(["app/**", "!app/x/**"], "app/x/f.ts"), true);
+  assert.equal(claudeCodeReaches(["app/**"], "app/y.ts"), true);
+  assert.equal(claudeCodeReaches(["src/**/*.ts"], "SRC/a.ts"), true, "the matcher is built with its defaults, which fold case");
+  // Windows cannot name a directory with a backslash, and ignore reads one as a separator there.
+  if (process.platform !== "win32") {
+    assert.equal(claudeCodeReaches(["a\\\\b/**/*.rb"], "a\\b/x.rb"), true, "a doubled backslash spells one");
+    assert.equal(claudeCodeReaches(["a\\b/**/*.rb"], "a\\b/x.rb"), false, "a single one escapes the next character");
   }
-  for (const a of discover(extglobFiles())) {
+  assert.equal(claudeCodeReaches(["**"], "src/a.ts"), false, "a list of nothing but `**` is not a paths list");
+});
+
+test("a directory with a comma in its name folds like glob syntax, since Claude Code splits paths on it", () => {
+  // `x,y/**/*.rb` reads as the two patterns `x` and `y/**/*.rb`: the area
+  // reached none of its own files, and every file under any `x` or `y`.
+  const files = ["src", "src/x,y", "x", "y"].flatMap((d) =>
+    Array.from({ length: 6 }, (_, i) => ({ rel: `${d}/m${i}.ts`, lang: "js" }))
+  );
+  const areas = discover(files);
+
+  assert.ok(!areas.some((a) => a.path.includes(",")), "no area is rooted at a directory with a comma");
+  for (const a of areas) {
+    for (const g of a.globs) assert.ok(!g.dir.includes(","), `${a.path} names ${g.dir}`);
     const delivered = renderedPaths(renderArea(area({ path: a.path, globs: a.globs })));
-    for (const f of a.files) {
-      let hit = false;
-      for (const p of delivered) if (pm(p.replace(/^!/, ""))(f.rel)) hit = !p.startsWith("!");
-      assert.ok(hit, `${a.path}: ${f.rel} is reached by none of ${JSON.stringify(delivered)}`);
+    const mine = new Set(a.files.map((f) => f.rel));
+    for (const f of files) {
+      assert.equal(claudeCodeReaches(delivered, f.rel), mine.has(f.rel), `${a.path} vs ${f.rel}: ${JSON.stringify(delivered)}`);
     }
   }
+});
+
+test("sibling directories that differ only in case fold, since Claude Code's matcher folds case", () => {
+  // `src/**` reached every file in `Src/`, and `app/views/**` every file in
+  // `app/Views/`. The NFC and NFD spellings of one name stay apart: the matcher
+  // compares code units, and the encoder already refuses the decomposed one.
+  const files = ["src", "Src", "app", "app/Views", "app/views", "lib", "lib/café", "lib/café"].flatMap((d) =>
+    Array.from({ length: 6 }, (_, i) => ({ rel: `${d}/m${i}.rb`, lang: "ruby" }))
+  );
+  const areas = discover(files, { minFiles: 5 });
+
+  assert.deepEqual(areas.map((a) => a.path), ["app", "lib", "lib/café"]);
+  for (const a of areas) {
+    const delivered = renderedPaths(renderArea(area({ path: a.path, globs: a.globs })));
+    const mine = new Set(a.files.map((f) => f.rel));
+    for (const f of files) {
+      assert.equal(claudeCodeReaches(delivered, f.rel), mine.has(f.rel), `${a.path} vs ${f.rel}: ${JSON.stringify(delivered)}`);
+    }
+  }
+});
+
+test("a left-out directory is not cut out by a name that a counted directory spells in another case", () => {
+  // `!pkg/**/build/**` folds case too, so it cut the counted `pkg/a/Build` out of its own area.
+  const files = ["pkg", "pkg/a/Build", "pkg/b"].flatMap((d) =>
+    Array.from({ length: 3 }, (_, i) => ({ rel: `${d}/m${i}.rb`, lang: "ruby" }))
+  );
+  const uncounted = ["pkg/b/build/g.rb", "pkg/c/build/g.rb"].map((rel) => ({ rel, lang: "ruby", excludedAt: rel.slice(0, rel.lastIndexOf("/")) }));
+  const [a] = discover(files, { uncounted, minFiles: 5 });
+  const delivered = renderedPaths(renderArea(area({ path: a.path, globs: a.globs })));
+
+  for (const f of files) assert.equal(claudeCodeReaches(delivered, f.rel), true, `${f.rel}: ${JSON.stringify(delivered)}`);
+  for (const f of uncounted) assert.equal(claudeCodeReaches(delivered, f.rel), false, `${f.rel}: ${JSON.stringify(delivered)}`);
+});
+
+test("a file cut out of one case twin stays cut after the pattern for the other", () => {
+  // `p/A/**`, `!p/A/Gen.rb`, `p/a/**`: last match wins, and `p/a/**` folds onto `p/A/Gen.rb`.
+  const files = ["p/A", "p/a", "p/z"].flatMap((d) =>
+    Array.from({ length: d === "p/z" ? 6 : 3 }, (_, i) => ({ rel: `${d}/m${i}.rb`, lang: "ruby" }))
+  );
+  const uncounted = [{ rel: "p/A/Gen.rb", lang: "ruby" }];
+  const a = discover(files, { uncounted, minFiles: 5 }).find((x) => x.path === "p");
+  const delivered = renderedPaths(renderArea(area({ path: a.path, globs: a.globs })));
+
+  for (const f of files) assert.equal(claudeCodeReaches(delivered, f.rel), f.rel.startsWith("p/z/") === false, `${f.rel}: ${JSON.stringify(delivered)}`);
+  assert.equal(claudeCodeReaches(delivered, "p/A/Gen.rb"), false, JSON.stringify(delivered));
+});
+
+test("an area keeps its own files over a cut whose name another case of them spells", () => {
+  // `!p/Build/**` for a left-out `p/Build/` cut the counted `p/build/` too. The
+  // left-out file cannot be cut without it, so it stays reached.
+  const files = ["p/build", "p/c1", "p/c2"].flatMap((d) =>
+    Array.from({ length: d === "p/build" ? 3 : 2 }, (_, i) => ({ rel: `${d}/m${i}.rb`, lang: "ruby" }))
+  );
+  const [a] = discover(files, { uncounted: [{ rel: "p/Build/g.rb", lang: "ruby" }], minFiles: 5 });
+  const delivered = renderedPaths(renderArea(area({ path: a.path, globs: a.globs })));
+
+  for (const f of files) assert.equal(claudeCodeReaches(delivered, f.rel), true, `${f.rel}: ${JSON.stringify(delivered)}`);
 });
 
 test("a file in no area is not said to be there for having too few neighbours", () => {
