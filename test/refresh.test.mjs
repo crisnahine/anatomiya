@@ -381,6 +381,29 @@ test("a link spelled in another case than the directory it names still finds the
   assert.equal(git(dir, "status", "--porcelain", "--untracked-files=no"), "", "and the committed map is untouched");
 });
 
+test("a directory renamed in case outside git still finds the map the index holds under the old case", needsSymlinks, async (t) => {
+  // The index keeps `Agents/Rules` after a rename git never saw, while the disk says `agents`.
+  const dir = realpathSync.native(mkdtempSync(join(tmpdir(), "anatomiya-refresh-")));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  mkdirSync(join(dir, "Agents", "Rules"), { recursive: true });
+  if (!existsSync(join(dir, "AGENTS"))) return t.skip("this filesystem is case-sensitive");
+  init(dir);
+  source(dir, "src", 8);
+  mkdirSync(join(dir, ".claude"));
+  symlinkSync(join("..", "Agents", "Rules"), join(dir, ".claude", "rules"));
+  commit(dir, "init");
+  await runScan(dir);
+  git(dir, "add", "-f", join("Agents", "Rules"));
+  git(dir, "commit", "-qm", "commit the map");
+  renameSync(join(dir, "Agents"), join(dir, "tmp"));
+  renameSync(join(dir, "tmp"), join(dir, "agents"));
+  source(dir, "lib", 4);
+  commit(dir, "HEAD moves");
+
+  assert.equal((await refreshRepository(dir)).reason, "tracked");
+  assert.equal(git(dir, "status", "--porcelain", "--untracked-files=no"), "", "and the committed map is untouched");
+});
+
 test("a repository that commits any file of the refresh's own is never refreshed", async (t) => {
   // The worker removes its lock and its word to the next worker, and removing
   // a tracked file is an edit in `git status` nobody made, which `pin` refuses.

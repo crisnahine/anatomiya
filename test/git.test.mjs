@@ -10,7 +10,7 @@ import { promisify } from "node:util";
 import { needsShebang } from "./platform.mjs";
 
 import { check } from "../plugins/anatomiya/lib/check.mjs";
-import { changedSinceWorktree, gitBuffered, gitStreamed, headSha, isSha, nameStatusReader, parsePorcelainRows, showBlob } from "../plugins/anatomiya/lib/git.mjs";
+import { caseMagic, changedSinceWorktree, gitBuffered, gitStreamed, headSha, isSha, nameStatusReader, parsePorcelainRows, showBlob } from "../plugins/anatomiya/lib/git.mjs";
 
 /** Every row a NUL-delimited name-status listing yields, read as a stream. */
 function nameStatusRows(out) {
@@ -1071,4 +1071,16 @@ test("the repository's config is read once per repository, not once per call", n
   const calls = readFileSync(log, "utf8").trim().split("\n");
   assert.equal(calls.filter((c) => c === "config").length, 1, calls.join(","));
   assert.equal(calls.filter((c) => c === "rev-parse").length, 4);
+});
+
+test("a pathspec folds case exactly where the repository's git does", async (t) => {
+  const dir = scratch(t, "anatomiya-icase-");
+  execFileSync("git", ["init", "-q", dir]);
+  const set = (v) => execFileSync("git", ["config", "core.ignorecase", v], { cwd: dir });
+  set("yes");
+  assert.equal(await caseMagic(dir), "icase", "git's own bool spelling");
+  set("false");
+  assert.equal(await caseMagic(dir), "");
+  execFileSync("git", ["config", "--unset", "core.ignorecase"], { cwd: dir });
+  assert.equal(await caseMagic(dir), "");
 });

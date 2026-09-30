@@ -123,6 +123,8 @@ const FLAGS = new Set([
   "--show-scope",
   "--null",
   "--get-regexp",
+  // Whether core.ignorecase folds case, as git itself parses the value.
+  "--type=bool",
 ]);
 
 // `--format=<pattern>` carries a pattern this tool composes; the value is not
@@ -492,6 +494,15 @@ export async function gitBuffered(
       error: message,
     };
   }
+}
+
+/**
+ * The magic a pathspec needs to match as this repository folds case: git keeps
+ * the index spelling and matches pathspecs case-sensitively even under core.ignorecase.
+ */
+export async function caseMagic(root) {
+  const r = await gitBuffered(root, ["config", "--type=bool", "--get", "core.ignorecase"]);
+  return r.ok && r.stdout.trim() === "true" ? "icase" : "";
 }
 
 /**
