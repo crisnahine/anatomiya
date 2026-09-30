@@ -163,6 +163,21 @@ test("every trial starts from the commit, the map in arm A and nothing in arm B"
   assert.equal(readFileSync(join(arms.a, ".claude", "rules", "anatomiya-area-x.md"), "utf8"), "# the map\n");
 });
 
+test("the harness resets both arms before every trial it runs", needsShebang, async (t) => {
+  // A stand-in for the model that writes the file only when it is not there,
+  // as the real one did: an arm carried over from the last trial writes nothing.
+  const { buildArms } = await import("../scripts/ab/arms.mjs");
+  const { runTrials } = await import("../scripts/ab.mjs");
+  const { repo, sha } = armSource(t);
+  const arms = await buildArms(repo, sha);
+  t.after(() => arms.dispose());
+  const stub = stubClaude(t, () => "[ -e src/New.ts ] || echo 'export const x = 1;' > src/New.ts\necho '{}'");
+
+  const trials = await runTrials(arms, "Create src/New.ts", { env: { PATH: stub.path } }, 3, () => {});
+
+  assert.deepEqual([...trials.a, ...trials.b].map((r) => r.wrote.map((f) => f.rel)), Array(6).fill(["src/New.ts"]));
+});
+
 test("neither arm is a linked worktree, so the hooks cannot hand arm B the main checkout's map", async (t) => {
   // Since the plugin answers a mapless linked worktree from its main checkout,
   // arm B built with `git worktree add` answered the probe with the map, and
@@ -458,6 +473,16 @@ test("a narrowed naming row scores only the kind of file it learned over", async
     "and the other rows split the same way"
   );
   assert.deepEqual(await scoreFile(helper, { key: "file_naming_case", learned: "PascalCase" }), { candidates: 1, conforming: 0, ratio: 0 }, "a row with no kind scores every file");
+});
+
+test("the harness scores both arms over the kind the target learned over", async () => {
+  const { scoreTrials } = await import("../scripts/ab.mjs");
+  const wrote = [{ rel: "src/currencyFormat.js", source: "export const currencyFormat = (n) => n;\n" }];
+  const target = { key: "file_naming_case", learned: "PascalCase", learnedKind: "jsx" };
+
+  const scored = await scoreTrials({ a: [{ ok: true, wrote }], b: [{ ok: true, wrote }] }, target, []);
+
+  assert.deepEqual([scored.a.filesScored, scored.b.filesScored], [0, 0], "a helper with no JSX says nothing about a JSX row");
 });
 
 test("the picker carries the kind a naming row learned over", () => {
@@ -1079,7 +1104,9 @@ test("the harness completes a run from an empty state and writes the document", 
   t.after(() => rmSync(dirname(out), { recursive: true, force: true }));
   const config = mkdtempSync(join(tmpdir(), "anatomiya-ab-config-"));
   t.after(() => rmSync(config, { recursive: true, force: true }));
-  writeFileSync(join(config, "settings.json"), "{}\n");
+  // An engine in the operator's own settings is no reason to refuse: a trial
+  // loads only the project and local sources, so it never reaches one.
+  writeFileSync(join(config, "settings.json"), '{"env":{"CLAUDE_CODE_EFFORT_LEVEL":"xhigh"}}\n');
   const task = join(config, "task.md");
   writeFileSync(task, "Write a new module under src/x that reads three defaults.\n");
 

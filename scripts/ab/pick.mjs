@@ -56,11 +56,8 @@ export function rankAreas(facts, { minCandidates = MIN_CANDIDATES } = {}) {
 
 /**
  * Why the best-ranked claim cannot be measured, naming the rule that refused
- * it, or null when it can.
- *
- * One fixed sentence served three refusals and was true of one: it said every
- * claim was at 1.00 for a best claim at 0.988, which a lower floor would have
- * measured.
+ * it, or null when it can. Only a claim at 1.00 is a ceiling; one under the
+ * floor is named with its numbers, since a lower --min-headroom measures it.
  */
 export function noHeadroom(best, { minHeadroom, key = null, area = null } = {}) {
   if (best && best.headroom >= minHeadroom) return null;
