@@ -589,6 +589,23 @@ test("an area's globs do not reach the fixture and generated files its counts le
   );
 });
 
+test("a left-out file inside an area keeps its glob recursive, so a new subdirectory is still reached", () => {
+  // Laid into the tree as foreign, one generated file made the area root read as
+  // shared, and the one-level positive shape won the tie.
+  const files = fakeFiles([
+    ...Array.from({ length: 8 }, (_, i) => `src/comp/c${i}.ts`),
+    ...Array.from({ length: 8 }, (_, i) => `src/other/o${i}.ts`),
+  ]);
+  for (const left of [["src/comp/Gen.ts"], ["src/comp/gen/G.ts"], ["src/comp/Gen.ts", "src/comp/gen/G.ts"]]) {
+    const [comp] = discover(files, { uncounted: fakeFiles(left) });
+    assert.equal(comp.path, "src/comp");
+    assert.equal(areaLib.globText(comp.globs[0]), "src/comp/**/*.{cjs,cts,js,mjs,mts,ts}", left.join());
+    assert.equal(matches(comp.globs, "src/comp/feature/New.ts"), true, left.join());
+    assert.equal(areaLib.globsReach(comp.globs, "src/comp/feature/New.ts"), true, left.join());
+    for (const rel of left) assert.equal(matches(comp.globs, rel), false, rel);
+  }
+});
+
 test("an excluded directory repeated under many directories is cut out by its name, once", () => {
   // prisma keeps a `_fixture/` beside every functional test: cut out one
   // directory at a time, a 111-file area needed 106 patterns, and an area file
