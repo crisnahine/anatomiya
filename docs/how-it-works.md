@@ -35,7 +35,8 @@ One file is read once however many index entries name it. A repository committed
 `a.ts` and `A.ts`, or one name in NFC and NFD, and a filesystem that folds case or Unicode form
 checks out one file for both, so both names read it and its sites counted twice. Where two entries
 fold to one name and open one file, the spelling every directory on its path lists is kept, down to
-a directory's own case, and the other is counted as unreadable, since the working tree does not hold that entry's own blob.
+a directory's own case. A byte-for-byte listing beats one that matches only up to Unicode form, since
+macOS lists a decomposed name on disk under the composed one git records. The other is counted as unreadable, since the working tree does not hold that entry's own blob.
 
 A corpus that comes back empty is asked one more question: how many source files the working tree
 holds that are untracked, from a second `git ls-files --others --exclude-standard` through the same
