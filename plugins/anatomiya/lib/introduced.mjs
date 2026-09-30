@@ -457,29 +457,36 @@ function runs(was, now) {
   while (hi < was.length - lo && hi < now.length - lo && same(was.length - 1 - hi, now.length - 1 - hi)) hi++;
   const m = was.length - hi;
   const n = now.length - hi;
-  // ponytail: quadratic in the copies the branch touched in one group; a Myers diff if that ever grows.
-  const L = Array.from({ length: m - lo + 1 }, () => new Uint32Array(n - lo + 1));
-  for (let i = m - 1; i >= lo; i--) {
-    for (let j = n - 1; j >= lo; j--) {
-      L[i - lo][j - lo] = same(i, j) ? L[i - lo + 1][j - lo + 1] + 1 : Math.max(L[i - lo + 1][j - lo], L[i - lo][j - lo + 1]);
-    }
-  }
   const out = [];
   for (let k = 0; k < lo; k++) out.push([[was[k]], [now[k]]]);
-  let gap = [[], []];
-  let i = lo;
-  let j = lo;
-  while (i < m || j < n) {
-    if (i < m && j < n && same(i, j) && L[i - lo][j - lo] === L[i - lo + 1][j - lo + 1] + 1) {
-      out.push(gap, [[was[i++]], [now[j++]]]);
-      gap = [[], []];
-    } else if (j >= n || (i < m && L[i - lo + 1][j - lo] >= L[i - lo][j - lo + 1])) gap[0].push(was[i++]);
-    else gap[1].push(now[j++]);
+  if ((m - lo) * (n - lo) > ALIGNED_CELLS) {
+    // Two one-sided runs have no partners, so the middle is matched by its whole text.
+    out.push([was.slice(lo, m), []], [[], now.slice(lo, n)]);
+  } else {
+    const L = Array.from({ length: m - lo + 1 }, () => new Uint32Array(n - lo + 1));
+    for (let i = m - 1; i >= lo; i--) {
+      for (let j = n - 1; j >= lo; j--) {
+        L[i - lo][j - lo] = same(i, j) ? L[i - lo + 1][j - lo + 1] + 1 : Math.max(L[i - lo + 1][j - lo], L[i - lo][j - lo + 1]);
+      }
+    }
+    let gap = [[], []];
+    let i = lo;
+    let j = lo;
+    while (i < m || j < n) {
+      if (i < m && j < n && same(i, j) && L[i - lo][j - lo] === L[i - lo + 1][j - lo + 1] + 1) {
+        out.push(gap, [[was[i++]], [now[j++]]]);
+        gap = [[], []];
+      } else if (j >= n || (i < m && L[i - lo + 1][j - lo] >= L[i - lo][j - lo + 1])) gap[0].push(was[i++]);
+      else gap[1].push(now[j++]);
+    }
+    out.push(gap);
   }
-  out.push(gap);
   for (let k = hi; k > 0; k--) out.push([[was[was.length - k]], [now[now.length - k]]]);
   return out;
 }
+
+// About 2,000 copies a side, 16 MB and tens of milliseconds; past it the table is quadratic.
+const ALIGNED_CELLS = 1 << 22;
 
 // What a grouped body declares, in one order whatever order it was written in.
 // A body that declares nothing has no constants to be told apart by, so it

@@ -1380,7 +1380,10 @@ inside a handler that already broke the rule is not new. A run where the branch 
 copy has no partner to read, so its copies are matched by their whole text, as they were before the
 body left the fingerprint. Only the names inside the bodies could say more, so an edited breaking copy
 next to an added or removed one is reported, and one copy removed above an edited one and another
-added below it reads as the `catch` moving between them. Neither ever hides a copy that newly breaks.
+added below it reads as the `catch` moving between them. The same holds the other way: a bare handler
+deleted above one that lost its `catch`, with a caught one added below, reads as two edits in place,
+so the handler that lost its `catch` is not reported. Past about 2,000 copies a side in one group the
+alignment would cost quadratic time and memory, so there the copies are matched by their whole text.
 
 A learned row judges a site the way the fold counted it. A superclass or mixin written bare is
 resolved against the nesting it is written in, and a class whose chain of parents reaches the
