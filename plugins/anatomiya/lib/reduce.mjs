@@ -573,14 +573,22 @@ function byCountThenPath(a, b) {
  * A share of the candidates cannot answer either question. At two files the
  * largest share is at least 0.5 by arithmetic, and at fifty files no share ever
  * fires however lopsided the distribution is.
+ *
+ * Files tying for the most sites leave the one worst for each side out:
+ * `conforming` is the most any of them holds and `leastConforming` the fewest.
+ * Taking whichever sorted first let a rename state a claim the counts withheld.
  */
 function spread(perFile, candidates) {
   let sumSq = 0;
-  let top = { candidates: 0, conforming: 0 };
+  let top = { candidates: 0, conforming: 0, leastConforming: 0 };
   for (const hits of perFile.values()) {
     sumSq += (hits.length / candidates) ** 2;
+    const conforming = hits.filter((h) => h.conforming).length;
     if (hits.length > top.candidates) {
-      top = { candidates: hits.length, conforming: hits.filter((h) => h.conforming).length };
+      top = { candidates: hits.length, conforming, leastConforming: conforming };
+    } else if (hits.length === top.candidates) {
+      top.conforming = Math.max(top.conforming, conforming);
+      top.leastConforming = Math.min(top.leastConforming, conforming);
     }
   }
   return { effectiveFiles: candidates && sumSq ? 1 / sumSq : 0, top };
@@ -707,10 +715,11 @@ export function applyGates(dim, {
   // The leave-one-out reuses the file with the most candidates rather than the
   // most counter sites. The counter only reaches this gate at 0.90, so no other
   // file's counter sites can exceed that file's by more than a tenth of the
-  // sample, which cannot move the ratio across 0.90 outside that band.
+  // sample, which cannot move the ratio across 0.90 outside that band. Among
+  // files tied for the most, it is the one holding the most counter sites.
   const counter = judge(
     candidates - conforming,
-    (top.candidates || 0) - (top.conforming || 0),
+    (top.candidates || 0) - (top.leastConforming ?? top.conforming ?? 0),
     restCandidates - restConforming,
     counterAuthors
   );
