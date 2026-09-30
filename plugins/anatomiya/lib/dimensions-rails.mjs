@@ -64,7 +64,8 @@ export const COLUMN_TYPE = new Set([
 /**
  * Constants a migration may name without touching data. Matched on the root
  * segment, so `ActiveRecord::Base.connection` and `Digest::MD5.hexdigest` are
- * covered by their first name. Anything outside it counts as a data touch,
+ * covered by their first name, except where `FRAMEWORK_MODELS` names the root
+ * of a set of models. Anything outside it counts as a data touch,
  * which over-counts violations and so suppresses a directive rather than
  * stating one.
  */
@@ -327,13 +328,93 @@ function dataWork(cls) {
       return;
     }
     const recv = constName(m.receiver);
-    if (!recv) return;
-    // A constant the migration assigned itself is an index name, not a model.
-    if (local.has(recv.split("::")[0]) || local.has(recv)) return;
-    if (!FRAMEWORK.has(recv.split("::")[0])) touches = true;
+    if (recv) {
+      if (isModel(recv, local)) touches = true;
+      return;
+    }
+    // `stale(User).find_each` reaches the model through a helper handed it.
+    // SCREAMING_CASE is a value rather than a class, and a raise names an error.
+    if (RAISE.test(m.name)) return;
+    for (const arg of args(m)) {
+      const name = constName(arg);
+      if (name && /[a-z]/.test(name.slice(name.lastIndexOf(":") + 1)) && isModel(name, local)) touches = true;
+    }
   });
 
   return { touches, unreadable };
+}
+
+const RAISE = /^(raise|fail)$/;
+
+// Blocks that spell each direction themselves, so what they hold is not
+// something `change` has to invert.
+const SPELLED = /^(reversible|up_only)$/;
+
+/**
+ * Whether the method Rails runs forward holds a command `change` cannot invert,
+ * in the form ActiveRecord's CommandRecorder refuses. Rails runs `change` and
+ * never `up` when a class defines both, so the caller names the one that runs.
+ * Options this tool cannot read decide nothing (C33).
+ */
+function holdsIrreversible(cls, forward) {
+  let found = false;
+  walkRuby(cls.body, (d, dctx) => {
+    if (d.t !== "def" || d.name !== forward || dctx.enclosing !== null || !ownDef(d)) return;
+    walkRuby(d.body, (c, ctx) => {
+      if (c.t !== "call" || ctx.ancestors.some((a) => a.t === "call" && !a.receiver && SPELLED.test(a.name))) return;
+      if (refused(c, ctx)) found = true;
+    });
+  });
+  return found;
+}
+
+function refused(c, ctx) {
+  if (c.name === "execute") return true;
+  if (c.receiver) {
+    if (!inColumnBlock(c, ctx, "change_table")) return false;
+    if (c.name === "change") return true;
+    return c.name === "remove" && lacks(c, "type");
+  }
+  const list = args(c);
+  const positional = list.filter((a) => a.t !== "hash" && a.t !== "keyword_hash").length;
+  switch (c.name) {
+    case "change_column":
+      return true;
+    case "remove_column":
+      return list.length <= 2;
+    case "remove_columns":
+      return lacks(c, "type");
+    case "drop_table":
+      return list.length === 1 && !c.block;
+    case "change_column_default":
+    case "change_column_comment":
+    case "change_table_comment":
+      return lacks(c, "from") || lacks(c, "to");
+    case "remove_index":
+      return positional < 2 && lacks(c, "column");
+    case "remove_foreign_key":
+      return positional < 2 && lacks(c, "to_table");
+    default:
+      return false;
+  }
+}
+
+/** Whether the trailing options can be read and do not carry this key. */
+function lacks(call, key) {
+  const opts = options(call);
+  return opts !== null && !opts.has(key);
+}
+
+// Framework roots whose scoped constants are models: ActiveStorage::Blob and
+// ActionText::RichText are tables, and a migration naming them rewrites rows.
+const FRAMEWORK_MODELS = new Set(["ActiveStorage", "ActionText"]);
+
+function isModel(name, local) {
+  const root = name.split("::")[0];
+  // A constant the migration assigned itself is an index name, not a model.
+  if (local.has(root) || local.has(name)) return false;
+  if (FRAMEWORK_MODELS.has(root)) return name !== root;
+  return !FRAMEWORK.has(root);
 }
 
 export const RAILS_DIMENSIONS = [
@@ -344,7 +425,7 @@ export const RAILS_DIMENSIONS = [
     counterClaim: null, // no measured spread across repositories yet, and a counter needs the same bar the claim does
     precision: "partial",
     applicabilityPredicate: {
-      sites: "a migration class defining at least one of change, up or down, unless it rewrites rows or carries an execute this tool could not read: those are answered by migration_schema_only, and change cannot invert either",
+      sites: "a migration class defining at least one of change, up or down, unless it rewrites rows or carries an execute this tool could not read: those are answered by migration_schema_only, and change cannot invert either. Nor is one whose change, or up where there is no change, holds a command change cannot invert outside a reversible or up_only block: an execute, a change_column, a remove_column with no type, a remove_columns with no type:, a drop_table with neither options nor a block, a change_column_default or comment change with no from: and to:, a remove_index with no column, a remove_foreign_key with no second table, or a t.change or untyped t.remove in a change_table block",
       blind: "a repository-local base class hides the migration from the superclass test",
     },
     langs: ["ruby"],
@@ -363,6 +444,9 @@ export const RAILS_DIMENSIONS = [
           defs.add(m.name);
         });
         if (!defs.has("change") && !defs.has("up") && !defs.has("down")) return;
+        // `change` has no spelling of a command Rails cannot invert, so a
+        // migration holding one cannot conform and its up/down is correct.
+        if (holdsIrreversible(cls, defs.has("change") ? "change" : "up")) return;
         // Defining both is a migration Rails cannot roll back, so it is a
         // violation rather than the good case.
         const reversible = defs.has("change") && !defs.has("up") && !defs.has("down");
