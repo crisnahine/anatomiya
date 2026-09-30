@@ -16,6 +16,7 @@ import { encode } from "./encode.mjs";
 import { statedSide } from "./facts.mjs";
 import { holdsTypeSyntax, spokenIn } from "./langs.mjs";
 import { groupKey, isLearnedItself } from "./reduce.mjs";
+import { isFunctionLike, walk } from "./walk.mjs";
 
 /**
  * The sites `head` holds that the branch introduced, judged against `base` or
@@ -71,14 +72,36 @@ export function newlyIntroduced({
  * parsed string, keyed under the path and the row. Never the line, since one
  * added import shifts every line below it. A parser that reports no offsets
  * leaves the node's own name as the identity.
+ *
+ * Every function and class body inside the node reads as `{}`: a row that
+ * reports a whole declaration would otherwise give it a new identity for any
+ * line added to its body, and the untouched declaration came back as new.
  */
 export function siteIdentity(keyPath, key, node, source) {
-  const text = sliceOf(node, source);
+  const text = located(node) ? normalise(withoutBodies(node, source)) : "";
   return fingerprint(keyPath, key, node.type, text || node.name || "");
 }
 
 /** Whether the parser reported offsets for a node; prism reports none (B5). */
 const located = (node) => typeof node.start === "number" && typeof node.end === "number";
+
+function withoutBodies(node, source) {
+  const bodies = [];
+  walk(node, (n) => {
+    if ((isFunctionLike(n) || n.type === "ClassDeclaration" || n.type === "ClassExpression") && n.body && located(n.body)) {
+      bodies.push(n.body);
+    }
+  });
+  let text = "";
+  let at = node.start;
+  // A body inside one already cut starts before `at` and is skipped.
+  for (const b of bodies.sort((x, y) => x.start - y.start)) {
+    if (b.start < at) continue;
+    text += `${source.slice(at, b.start)}{}`;
+    at = b.end;
+  }
+  return text + source.slice(at, node.end);
+}
 
 /**
  * The normalised slice of the parsed string under a node, or nothing where the
@@ -288,6 +311,11 @@ function breakingSites(program, source, lang, keyPath, { polarity, frameworks, c
  * The site's own text is the same in every copy, which is why the copies share
  * an identity, but the lines around it are what the branch did or did not
  * touch. Where those match too, the copies are alike and order is all there is.
+ *
+ * The identity leaves bodies out, so the first pass also asks for the site's
+ * own text, which is what the identity alone matched before. A copy whose body
+ * the branch edited matches neither of the first two and is taken by the name
+ * around it last, so a new copy of the same shape elsewhere is the one left.
  */
 function absorb(head, base) {
   const remaining = new Map();
@@ -298,8 +326,9 @@ function absorb(head, base) {
   const spent = new Set();
   const held = new Set();
   for (const key of [
-    (f) => `${f.fp}\0${f.where ?? ""}`,
+    (f) => `${f.fp}\0${f.where ?? ""}\0${f.text}`,
     (f) => (contextOf.has(f) ? `${f.fp}\0${contextOf.get(f)}` : null),
+    (f) => `${f.fp}\0${f.where ?? ""}`,
   ]) {
     const copies = new Map();
     for (const f of base) {

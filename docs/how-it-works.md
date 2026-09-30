@@ -1227,6 +1227,11 @@ and the check reports findings in code the author never touched.
 "Newly introduced" cannot be derived from one run at HEAD, so the analysis runs twice, at HEAD and
 at the merge base, and the two finding sets are differenced by content fingerprint rather than by
 position. That grammar is `plugins/anatomiya/lib/introduced.mjs`, one leaf the check alone imports.
+The fingerprint reads every function and class body inside the site as empty, because three rows
+report a whole declaration: a line added inside a function body is not a new `function_style`,
+`explicit_return_type` or `doc_comment_style` site on the declaration that holds it. An edit to the
+signature still is. Copies that share a fingerprint are matched by their own text first, then by the
+lines around them, then by the function they sit in, and only what is left is matched by count.
 
 The head side is read from the working tree wherever the tree differs from the commit, and a file
 that exists only in the tree is examined like any other file this branch added. An agent writes,
