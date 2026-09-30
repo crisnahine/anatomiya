@@ -204,9 +204,7 @@ export async function runPin(cwd, { dryRun = false, expect = null, collectFiles 
   // Paths outside a sparse checkout's cone are skip-worktree, so `git status`
   // is clean while the tree holds only part of HEAD. A file unreadable for any
   // other reason stays out of every scan as well, so it is no gap in the pin.
-  // A root `.gitattributes` outside the cone leaves nothing unreadable, but the
-  // generated rules it holds then decide nothing.
-  if (dropped?.unreadable > 0 || !lstatSync(join(root, ".gitattributes"), { throwIfNoEntry: false })) {
+  if (dropped?.unreadable > 0) {
     const outside = await absentSkipWorktree(root);
     if (outside > 0) {
       throw new Error(
@@ -292,16 +290,13 @@ async function refuseUnlikeHead(root) {
   }
 }
 
-/**
- * How many skip-worktree paths the working tree does not hold that decide the
- * population: corpus files, and the root `.gitattributes` the corpus reads.
- */
+/** How many skip-worktree corpus paths the working tree does not hold. */
 async function absentSkipWorktree(root) {
-  const byName = corpusByName(root);
+  const byName = await corpusByName(root);
   let n = 0;
   await lsFiles(root, (entry) => {
     const rel = entry.slice(2);
-    if (entry.startsWith("S ") && (rel === ".gitattributes" || byName(rel)) && !lstatSync(join(root, rel), { throwIfNoEntry: false })) n++;
+    if (entry.startsWith("S ") && byName(rel) && !lstatSync(join(root, rel), { throwIfNoEntry: false })) n++;
   }, ["-t"]);
   return n;
 }

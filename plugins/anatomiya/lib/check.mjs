@@ -172,7 +172,7 @@ export async function check(cwd, { baseRef = null } = {}) {
   // where it is tracked, and read through the link its sites were charged
   // twice. Asked of the tree, where every examined row stands once the
   // pending edits are folded in.
-  const dropOf = corpusDrop(root);
+  const dropOf = await corpusDrop(root);
   const examined = withPendingEdits(changed.filter((c) => isCorpusPath(c.path)), pending)
     .filter((c) => dropOf(c.path) !== "generated" && !isLink(join(root, c.path)));
   const fromTree = examined.filter((c) => c.tree).length;

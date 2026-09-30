@@ -662,26 +662,37 @@ test("a sparse checkout that leaves out only generated source still pins", async
   assert.equal(JSON.parse(readFileSync(join(dir, PIN_PATH), "utf8")).corpus, 8);
 });
 
-test("a sparse checkout that leaves out the root .gitattributes refuses the pin", async (t) => {
-  // Every source file is in the tree, so nothing is unreadable, but the rules
-  // marking gen/ generated are not: the pin counted gen/ as source under HEAD's sha.
-  const dir = repo(t);
-  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
-  mkdirSync(join(dir, "gen"));
-  for (let i = 0; i < 4; i++) writeFileSync(join(dir, "gen", `g${i}.ts`), `export const g${i} = ${i}\n`);
-  writeFileSync(join(dir, ".gitattributes"), "gen/** linguist-generated\n");
-  git("add", "-A");
-  git("commit", "-qm", "gen");
-  git("sparse-checkout", "set", "--no-cone", "/src/", "/gen/");
-  assert.equal(existsSync(join(dir, ".gitattributes")), false, "the fixture left .gitattributes out of the tree");
+test("a root .gitattributes the index hides from the tree is read from the index", async (t) => {
+  // Sparse, skip-worktree and assume-unchanged all make git treat the tree's
+  // copy as no change, so the population is the one a full checkout counts.
+  const cases = [
+    { name: "left out by a non-cone sparse checkout", attrs: "gen/** linguist-generated\n", corpus: 8,
+      hide: (git) => git("sparse-checkout", "set", "--no-cone", "/src/", "/gen/") },
+    { name: "left out, holding no generated rule", attrs: "* text=auto eol=lf\n", corpus: 12,
+      hide: (git) => git("sparse-checkout", "set", "--no-cone", "/src/", "/gen/") },
+    { name: "skip-worktree and edited", attrs: "gen/** linguist-generated\n", corpus: 8,
+      hide: (git, dir) => { git("update-index", "--skip-worktree", ".gitattributes"); writeFileSync(join(dir, ".gitattributes"), "x\n"); } },
+    { name: "assume-unchanged and deleted", attrs: "gen/** linguist-generated\n", corpus: 8,
+      hide: (git, dir) => { git("update-index", "--assume-unchanged", ".gitattributes"); rmSync(join(dir, ".gitattributes")); } },
+    { name: "assume-unchanged and edited", attrs: "gen/** linguist-generated\n", corpus: 8,
+      hide: (git, dir) => { git("update-index", "--assume-unchanged", ".gitattributes"); writeFileSync(join(dir, ".gitattributes"), "x\n"); } },
+  ];
+  for (const c of cases) {
+    const dir = repo(t);
+    const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
+    mkdirSync(join(dir, "gen"));
+    for (let i = 0; i < 4; i++) writeFileSync(join(dir, "gen", `g${i}.ts`), `export const g${i} = ${i}\n`);
+    writeFileSync(join(dir, ".gitattributes"), c.attrs);
+    git("add", "-A");
+    git("commit", "-qm", "gen");
+    c.hide(git, dir);
+    assert.equal(git("status", "--porcelain").length, 0, `${c.name}: git calls the tree clean`);
+    assert.notEqual(existsSync(join(dir, ".gitattributes")) && readFileSync(join(dir, ".gitattributes"), "utf8"), c.attrs, `${c.name}: the tree's copy differs`);
 
-  for (const dryRun of [true, false]) {
-    await assert.rejects(() => runPin(dir, { dryRun }), /^Error: 1 tracked file is outside this sparse checkout, and a pin records HEAD/, `dryRun ${dryRun}`);
+    assert.equal((await collect(dir)).files.length, c.corpus, `${c.name}: collect`);
+    await runPin(dir);
+    assert.equal(JSON.parse(readFileSync(join(dir, PIN_PATH), "utf8")).corpus, c.corpus, `${c.name}: pin`);
   }
-  assert.equal(existsSync(join(dir, PIN_PATH)), false);
-  git("sparse-checkout", "disable");
-  await runPin(dir);
-  assert.equal(JSON.parse(readFileSync(join(dir, PIN_PATH), "utf8")).corpus, 8);
 });
 
 test("a pin mid-merge says to finish the merge, not to stash what git will not stash", async (t) => {
