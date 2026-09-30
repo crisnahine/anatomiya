@@ -253,11 +253,31 @@ directory above your checkouts.
   `User.update_all`: charged by the schema-only row and left out of the reversibility row.
   `ActiveRecord::Base.connection`, `transaction` and the error classes still count as framework. No
   figure moves on the measured corpus.
-- The reuse Stop hook no longer asks about a changed file whose added lines define nothing callable
-  (constants, imports, markup, config, statements inside an existing method), and the reason lists
-  only the hunks that may define a function, method, class or lambda. On the last 200 commits of ten
-  corpus repositories it skips 4,609 of 9,223 changed files, and a parser found no callable on an
-  added line of any of them (#190).
+- The reuse Stop hook no longer asks about a changed file whose added lines hold no token a callable
+  definition could begin with or contain (constants, imports, markup, config), and the reason lists
+  only the hunks that may define one. On the last 200 commits of ten corpus repositories it skips
+  2,911 of 9,223 changed files, and a parser found no callable on an added line of any of them.
+- `migration_reversible` now refuses every command ActiveRecord 8.1's CommandRecorder cannot invert,
+  not just the first list: `add_enum_value`, and `drop_enum` or `drop_virtual_table` with no values.
+  It also refuses `remove_check_constraint`, `remove_exclusion_constraint` or
+  `remove_unique_constraint` with only a name, `rename_enum_value` without `from:` and `to:`, and
+  `add_unique_constraint` with `using_index:`. The `change_table` spellings of the refused commands
+  count too (`t.change_default`, `t.remove_index` and the rest). A correct up/down migration using
+  one of these no longer gets "migrations declare change, not up and down".
+- Both migration rows now read the same code: the methods Rails runs plus the migration's own
+  helpers they call, whether by name, through `self.`, `method(:x)` or `send(:x)`. So a
+  `change_column` inside a helper that `change` calls is no longer counted as reversible.
+- A model reaching a row rewrite as a keyword argument (`stale(model: User)`), a local (`klass =
+  User`) or a loop element (`[User, Account].each`) is now data work. So is a scoped ActiveRecord
+  constant receiving any of ActiveRecord's querying, persistence or counter-cache class methods, or
+  `new(...).save!`.
+- A directory whose name differs from a sibling's only in case no longer roots an area. Claude Code
+  matches `paths` with case folded, so `src/**` was also delivered to `Src/`. Both twins now fold
+  into their parent, and at the repository root they are reported as uncovered.
+- Area `paths` put every negation after every positive pattern. A negation that would also cut one
+  of the area's own files by case is dropped, so an area never loses its own files to a case-folded
+  cut.
+- `check` reads a file added in another case as delivered, the way Claude Code does.
 
 ### Changed
 
