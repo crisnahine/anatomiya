@@ -35,6 +35,9 @@ import { FRAMEWORK_NAMES } from "./frameworks.mjs";
 
 const isThrow = (n) => n.type === "ThrowStatement";
 const isCatch = (n) => n.type === "CatchClause";
+const CATCH = new Set(["CatchClause"]);
+const LOOPS = new Set(["ForStatement", "ForInStatement", "ForOfStatement", "WhileStatement", "DoWhileStatement"]);
+const NAMESPACE = new Set(["TSModuleDeclaration"]);
 
 function usesParam(body, names) {
   if (!names.length) return false;
@@ -175,7 +178,7 @@ export const DIMENSIONS = [
       walk(program, (n, ctx) => {
         if (!isThrow(n)) return;
         // A rethrow inside a catch is deliberate, not a policy violation.
-        const inCatch = ctx.ancestors.some((s) => s.type === "CatchClause");
+        const inCatch = ctx.within(CATCH);
         if (inCatch) return;
         add({ node: n, conforming: false, where: declName(ctx.fn) });
       });
@@ -210,13 +213,13 @@ export const DIMENSIONS = [
         // loop binding sits at module level by position and is not module
         // state, so it is excluded by its enclosing statement.
         if (ctx.enclosing !== null) return;
-        if (ctx.ancestors.some((s) => /^(For|While|DoWhile)/.test(s.type))) return;
+        if (ctx.within(LOOPS)) return;
         // `declare const x: number` binds nothing at run time, so it is not
         // state this claim is about either way, and a binding inside a
         // namespace or an ambient module is scoped to that block rather than to
         // the module.
         if (n.declare) return;
-        if (ctx.ancestors.some((a) => a.type === "TSModuleDeclaration")) return;
+        if (ctx.within(NAMESPACE)) return;
         // `using r = open()` and `await using` dispose r when the module's
         // evaluation ends. The binding is already immutable, and the `const`
         // the violation asked for keeps it while dropping the disposal.

@@ -120,7 +120,7 @@ const TYPE_CONTEXT = new Set([
   "TSClassImplements",
 ]);
 
-const inTypeContext = (ctx) => ctx.ancestors.some((a) => TYPE_CONTEXT.has(a.type));
+const inTypeContext = (ctx) => ctx.within(TYPE_CONTEXT);
 
 /**
  * Names read as values anywhere in the file. An import is type-only when its

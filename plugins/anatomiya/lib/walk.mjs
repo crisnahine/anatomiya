@@ -85,6 +85,7 @@ function bind(node) {
  *   ctx.enclosing innermost enclosing declaration, or null at module level
  *   ctx.fn        innermost enclosing function-like, or null
  *   ctx.cls       innermost enclosing class, or null
+ *   ctx.within    whether any ancestor's type is in the given set
  *
  * A null `enclosing` is how module-level state is identified, so it is a
  * meaningful value rather than a missing one.
@@ -95,6 +96,20 @@ function bind(node) {
 export function walk(program, visit) {
   const stack = [];
   const ancestors = [];
+  // Kept on enter and leave so no visitor rescans the ancestors per node: that
+  // made a 30,000-operand chain take 12 seconds.
+  const fns = [];
+  const classes = [];
+  // Counted from the first `within` on, so a walk that never asks pays nothing.
+  let open = null;
+  const within = (types) => {
+    if (open === null) {
+      open = new Map();
+      for (const a of ancestors) open.set(a.type, (open.get(a.type) ?? 0) + 1);
+    }
+    for (const t of types) if (open.get(t) > 0) return true;
+    return false;
+  };
   // Explicit work stack, not recursion: an expression chain nests one AST level
   // per operand and measured overflowing the JS stack between 3,000 and 4,000
   // of them. A generated file reaches that, and the RangeError lands in the
@@ -106,12 +121,16 @@ export function walk(program, visit) {
     const node = work.pop();
 
     if (node === LEAVE) {
-      ancestors.pop();
+      const left = ancestors.pop();
+      if (open !== null) open.set(left.type, open.get(left.type) - 1);
       continue;
     }
     if (node === LEAVE_DECL) {
-      ancestors.pop();
+      const left = ancestors.pop();
+      if (open !== null) open.set(left.type, open.get(left.type) - 1);
       stack.pop();
+      if (isFn(left)) fns.pop();
+      else if (isClass(left)) classes.pop();
       continue;
     }
     if (!node || typeof node !== "object") continue;
@@ -128,14 +147,20 @@ export function walk(program, visit) {
       stack,
       ancestors,
       enclosing: stack.length ? stack[stack.length - 1] : null,
-      fn: last(stack, isFn),
-      cls: last(stack, isClass),
+      fn: fns.length ? fns[fns.length - 1] : null,
+      cls: classes.length ? classes[classes.length - 1] : null,
+      within,
     };
 
     visit(node, ctx);
 
-    if (isDecl) stack.push(node);
+    if (isDecl) {
+      stack.push(node);
+      if (isFn(node)) fns.push(node);
+      else if (isClass(node)) classes.push(node);
+    }
     ancestors.push(node);
+    if (open !== null) open.set(node.type, (open.get(node.type) ?? 0) + 1);
     work.push(isDecl ? LEAVE_DECL : LEAVE);
 
     // The parser publishes, per node type, exactly which properties hold
@@ -170,11 +195,6 @@ const isFn = (n) =>
   n.type === "ArrowFunctionExpression";
 
 const isClass = (n) => n.type === "ClassDeclaration" || n.type === "ClassExpression";
-
-function last(stack, pred) {
-  for (let i = stack.length - 1; i >= 0; i--) if (pred(stack[i])) return stack[i];
-  return null;
-}
 
 export const isFunctionLike = isFn;
 
