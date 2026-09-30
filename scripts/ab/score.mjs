@@ -59,12 +59,14 @@ export async function scoreFile({ rel, source, lang }, { key, frameworks = [], l
  *
  * A trial that ended early is scored on whatever it wrote and counted apart:
  * the map arm's Stop hook spends turns the other arm does not, so dropping the
- * ones that hit the cap dropped them from one side.
+ * ones that hit the cap dropped them from one side. A trial that finished and
+ * wrote nothing is counted too, so each arm's attrition has a number.
  */
 export async function scoreArm(runs, { key, frameworks = [], learned = null, learnedKind = null } = {}) {
-  const out = { wroteSomething: 0, filesScored: 0, candidates: 0, conforming: 0, trialsWithAViolation: 0, endedEarly: 0 };
+  const out = { wroteSomething: 0, filesScored: 0, candidates: 0, conforming: 0, trialsWithAViolation: 0, endedEarly: 0, wroteNothing: 0 };
   for (const r of runs) {
     if (!r.ok) out.endedEarly++;
+    else if (!r.wrote.length) out.wroteNothing++;
     if (!r.wrote.length) continue;
     out.wroteSomething++;
     let violated = false;

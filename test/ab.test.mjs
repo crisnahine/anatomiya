@@ -178,6 +178,21 @@ test("the harness resets both arms before every trial it runs", needsShebang, as
   assert.deepEqual([...trials.a, ...trials.b].map((r) => r.wrote.map((f) => f.rel)), Array(6).fill(["src/New.ts"]));
 });
 
+test("a trial that finishes and writes nothing is logged with its answer as the reason", needsShebang, async (t) => {
+  // The only trace of such a trial was a lower "trials that wrote a file"
+  // count, while its answer said why.
+  const { runTrials } = await import("../scripts/ab.mjs");
+  const stub = stubClaude(t, () => `printf '%s' '{"result":"  The file already exists\\n\\tsecond line"}'`);
+  const arms = { a: stub.arm, b: stub.arm, reset: async () => {} };
+  const lines = [];
+
+  const trials = await runTrials(arms, "Create src/New.ts", { env: { PATH: stub.path } }, 1, (l) => lines.push(l));
+
+  const reason = 'answered "The file already exists"';
+  assert.deepEqual([trials.a[0].reason, trials.b[0].reason], [reason, reason]);
+  assert.deepEqual(lines, [`  trial 1 arm a: 0 file(s), wrote nothing: ${reason}`, `  trial 1 arm b: 0 file(s), wrote nothing: ${reason}`]);
+});
+
 test("neither arm is a linked worktree, so the hooks cannot hand arm B the main checkout's map", async (t) => {
   // Since the plugin answers a mapless linked worktree from its main checkout,
   // arm B built with `git worktree add` answered the probe with the map, and
@@ -292,6 +307,7 @@ test("an arm is summed by the predicate, and a trial that wrote nothing is not a
     conforming: 1,
     trialsWithAViolation: 2,
     endedEarly: 2,
+    wroteNothing: 1,
   });
 });
 
@@ -309,6 +325,7 @@ test("a trial that hit the turn cap is scored on the files it left, and counted"
     conforming: 1,
     trialsWithAViolation: 0,
     endedEarly: 1,
+    wroteNothing: 0,
   });
 });
 
@@ -998,8 +1015,8 @@ const RESULT = {
   label: "crisnahine/anatomiya",
   said: { a: "src/x 20 files", b: "NONE" },
   engine: { model: "claude-opus-5[1m]", effort: "medium", contextWindow: 1000000 },
-  a: { wroteSomething: 1, filesScored: 1, candidates: 10, conforming: 9, trialsWithAViolation: 1, endedEarly: 1 },
-  b: { wroteSomething: 2, filesScored: 0, candidates: 0, conforming: 0, trialsWithAViolation: 0, endedEarly: 0 },
+  a: { wroteSomething: 1, filesScored: 1, candidates: 10, conforming: 9, trialsWithAViolation: 1, endedEarly: 1, wroteNothing: 0 },
+  b: { wroteSomething: 1, filesScored: 0, candidates: 0, conforming: 0, trialsWithAViolation: 0, endedEarly: 0, wroteNothing: 1 },
 };
 
 test("the result document is rendered from the result, with both arms' numbers where a reader looks", async () => {
@@ -1018,8 +1035,9 @@ test("the result document is rendered from the result, with both arms' numbers w
     "| context window | 1000000 |",
     "| trials per arm | 2 |",
     'Injection: arm A answered "src/x 20 files", arm B answered "NONE".',
-    "| trials that wrote a file | 1/2 | 2/2 |",
+    "| trials that wrote a file | 1/2 | 1/2 |",
     "| trials cut short by the turn cap or an error | 1/2 | 0/2 |",
+    "| trials that finished and wrote nothing | 0/2 | 1/2 |",
     "| files scored | 1 | 0 |",
     "| sites conforming | 9 of 10 (0.900) | 0 of 0 (no sites) |",
     "| trials with a violating site | 1 | 0 |",
