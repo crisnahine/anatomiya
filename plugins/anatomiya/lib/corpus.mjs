@@ -1,5 +1,5 @@
 import { readdirSync, realpathSync, statSync } from "node:fs";
-import { basename, dirname, resolve, sep } from "node:path";
+import { dirname, join, resolve, sep } from "node:path";
 
 import { gitBuffered, gitStreamed } from "./git.mjs";
 import { EXT_BY_LANG, LANGUAGES, language } from "./langs.mjs";
@@ -441,21 +441,20 @@ export async function collect(root) {
     // Two index entries that differ only in case or Unicode form are one file
     // on a filesystem that folds them, and both names read it: its sites counted
     // twice and the other entry's blob, which the tree does not hold, not at all.
-    // The name the directory holds is kept and the other is unread.
+    // The spelling on disk, directories included, is kept and the other is unread.
     const fold = rel.normalize("NFC").toLowerCase();
     const at = byFold.get(fold);
     if (at !== undefined && sameFile(files[at].abs, abs)) {
       dropped.unreadable++;
-      if (!listedAs(files[at].abs) && listedAs(abs)) files[at] = file;
+      if (!listedAs(root, files[at].rel) && listedAs(root, rel)) files[at] = file;
       return;
     }
     if (at === undefined) byFold.set(fold, files.length);
     files.push(file);
   });
 
-  // Kept in the shape callers already read. No repository size truncates the
-  // corpus now; the flag still travels because the Ruby stream can hit its
-  // per-line guard, and a partly-answered corpus must not state a convention.
+  // Kept in the shape callers already read: listing the files never truncates
+  // the corpus. A parse that hits the Ruby per-line guard sets its own flag.
   return { files, others, uncounted, truncated: false, dropped };
 }
 
@@ -470,10 +469,15 @@ function sameFile(a, b) {
   }
 }
 
-/** Whether the directory lists this exact name, rather than one that folds to it. */
-function listedAs(abs) {
+/** Whether every directory on the way lists this exact name, rather than one that folds to it. */
+function listedAs(root, rel) {
+  let dir = root;
   try {
-    return readdirSync(dirname(abs)).includes(basename(abs));
+    for (const part of rel.split("/")) {
+      if (!readdirSync(dir).includes(part)) return false;
+      dir = join(dir, part);
+    }
+    return true;
   } catch {
     return false;
   }
