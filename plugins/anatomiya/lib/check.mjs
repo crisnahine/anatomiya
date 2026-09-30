@@ -162,7 +162,7 @@ export async function check(cwd, { baseRef = null } = {}) {
   // be called newly introduced, which is why the degraded modes report nothing
   // rather than everything, and reading the tree there would report every site
   // in an uncommitted file against an author who may not have written one.
-  const pending = status !== null && mode === "compare" ? status : { present: [], deleted: [], removed: [] };
+  const pending = status !== null && mode === "compare" ? await onlyInHead(root, status) : { present: [], deleted: [], removed: [] };
   await resolvePendingBases(root, base.mergeBase, pending.present);
   // Generated files leave with the path filter's rejects, by the corpus's own
   // rule: a regenerated client was a MUST-FIX per site in code nobody writes by
@@ -1511,18 +1511,6 @@ export async function pendingPaths(root, { timeout } = {}) {
   // the tree column, ` A`, and read off the index column alone it was taken for
   // an edit of a file the merge base never held and skipped.
   const isNew = (row) => row.x === "?" || row.x === "A" || row.y === "A";
-  // A deletion is of a path HEAD holds. HEAD is asked rather than the letters,
-  // which spell an index-only addition deleted again more than one way (`AD`,
-  // ` D` after `add -N`), and a file no commit held is no companion lost.
-  const deletions = [
-    ...rows.filter(gone).map((row) => row.path),
-    ...all.map((row) => row.orig).filter((path) => path != null && isCorpusPath(path)),
-  ];
-  const left = all.flatMap((row) => !gone(row) ? [] : [row.orig ?? row.path]);
-  const atHead = deletions.length + left.length === 0
-    ? null
-    : await filesAt(root, "HEAD", { timeout, maxFieldBytes: GIT.checkMaxBytes });
-  const inHead = (paths) => atHead === null ? paths : paths.filter((path) => atHead.has(path));
   return {
     present: rows
       .filter((row) => !gone(row))
@@ -1540,11 +1528,32 @@ export async function pendingPaths(root, { timeout } = {}) {
     // companion deleted in the tree is a companion this branch owes. A rename
     // is a deletion of the path it moved away from and says no `D` at all, so
     // that path is taken from `orig` rather than from the status letters.
-    deleted: inHead(deletions),
+    //
+    // Both are candidates until `onlyInHead` asks HEAD, which is left to the
+    // caller that reads them: the Stop hook reads neither and has two reads.
+    deleted: [
+      ...rows.filter(gone).map((row) => row.path),
+      ...all.map((row) => row.orig).filter((path) => path != null && isCorpusPath(path)),
+    ],
     // What left HEAD, for the report, read the way the committed diff reads it:
     // any path, and a move is no deletion.
-    removed: inHead(left),
+    removed: all.flatMap((row) => !gone(row) ? [] : [row.orig ?? row.path]),
   };
+}
+
+/**
+ * The pending deletions of paths HEAD holds.
+ *
+ * HEAD is asked rather than the letters, which spell an index-only addition
+ * deleted again more than one way (`AD`, ` D` after `add -N`), and a file no
+ * commit held is no companion lost. A listing git would not give keeps both.
+ */
+async function onlyInHead(root, pending) {
+  if (pending.deleted.length + pending.removed.length === 0) return pending;
+  const atHead = await filesAt(root, "HEAD", { timeout: GIT.checkTimeoutMs, maxFieldBytes: GIT.checkMaxBytes });
+  if (atHead === null) return pending;
+  const held = (paths) => paths.filter((path) => atHead.has(path));
+  return { ...pending, deleted: held(pending.deleted), removed: held(pending.removed) };
 }
 
 /**
