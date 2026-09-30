@@ -1511,6 +1511,18 @@ export async function pendingPaths(root, { timeout } = {}) {
   // the tree column, ` A`, and read off the index column alone it was taken for
   // an edit of a file the merge base never held and skipped.
   const isNew = (row) => row.x === "?" || row.x === "A" || row.y === "A";
+  // A deletion is of a path HEAD holds. HEAD is asked rather than the letters,
+  // which spell an index-only addition deleted again more than one way (`AD`,
+  // ` D` after `add -N`), and a file no commit held is no companion lost.
+  const deletions = [
+    ...rows.filter(gone).map((row) => row.path),
+    ...all.map((row) => row.orig).filter((path) => path != null && isCorpusPath(path)),
+  ];
+  const left = all.flatMap((row) => !gone(row) ? [] : [row.orig ?? row.path]);
+  const atHead = deletions.length + left.length === 0
+    ? null
+    : await filesAt(root, "HEAD", { timeout, maxFieldBytes: GIT.checkMaxBytes });
+  const inHead = (paths) => atHead === null ? paths : paths.filter((path) => atHead.has(path));
   return {
     present: rows
       .filter((row) => !gone(row))
@@ -1528,13 +1540,10 @@ export async function pendingPaths(root, { timeout } = {}) {
     // companion deleted in the tree is a companion this branch owes. A rename
     // is a deletion of the path it moved away from and says no `D` at all, so
     // that path is taken from `orig` rather than from the status letters.
-    deleted: [
-      ...rows.filter(gone).map((row) => row.path),
-      ...all.map((row) => row.orig).filter((path) => path != null && isCorpusPath(path)),
-    ],
+    deleted: inHead(deletions),
     // What left HEAD, for the report, read the way the committed diff reads it:
-    // any path, a move is no deletion, and an index-only addition never existed.
-    removed: all.flatMap((row) => !gone(row) ? [] : row.orig != null ? [row.orig] : row.x === "A" ? [] : [row.path]),
+    // any path, and a move is no deletion.
+    removed: inHead(left),
   };
 }
 

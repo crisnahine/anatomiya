@@ -1394,8 +1394,9 @@ keeps an agent's own edits from moving the population it is judged against (E2).
 deleted has nothing to examine and can still owe a finding, as a dropped spec does, so the header
 counts it among the changed files, says how many were removed, and the record lists them as
 `removed`, whether the deletion is committed or only in the working tree. A move's old path is not
-counted as removed, whatever the new name, and neither is a file added to the index and then deleted,
-which no commit ever held.
+counted as removed, whatever the new name, and a deletion only in the working tree counts when HEAD
+holds the path, so a file added to the index (with `git add` or `git add -N`) and then deleted, which
+no commit ever held, is not one.
 
 Base ref resolution tries `origin/HEAD`, `origin/main`, `origin/master`, `main`, `master`, in that
 order, or whatever `--base` names. `@{upstream}` is deliberately absent: a pushed feature branch
