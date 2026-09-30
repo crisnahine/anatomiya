@@ -507,6 +507,22 @@ test("a pin leaves out its map where the index spells the linked directory in an
   assert.ok(existsSync(join(dir, PIN_PATH)));
 });
 
+test("a pin leaves out its map where the index spells .claude in another case than the disk", async (t) => {
+  const dir = repo(t);
+  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
+  mkdirSync(join(dir, ".Claude"));
+  if (!existsSync(join(dir, ".CLAUDE"))) return t.skip("this filesystem is case-sensitive");
+  await runScan(dir);
+  git("add", "-f", join(".Claude", "rules"));
+  git("commit", "-qm", "commit the map");
+  renameSync(join(dir, ".Claude"), join(dir, "tmp"));
+  renameSync(join(dir, "tmp"), join(dir, ".claude"));
+  writeFileSync(join(dir, ".claude", "rules", OVERVIEW_FILE), "rewritten by a scan\n");
+
+  await runPin(dir);
+  assert.ok(existsSync(join(dir, PIN_PATH)));
+});
+
 test("a pin refuses while a merge has left a path unmerged, under .claude/ as well", async (t) => {
   // `ls-files` lists an unmerged path once per stage, so a pin taken mid-merge
   // recorded the file three times and a corpus two larger than the tree, and
