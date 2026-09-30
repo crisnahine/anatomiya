@@ -226,8 +226,8 @@ test("a row that judges the body aligns alike copies the way a line diff does", 
   // With the body out of the identity every anonymous handler is one site, so
   // which copy breaks has to be read off an alignment of all of them. `human`
   // is what a reviewer reading both files would name. `limit` is the answer
-  // where only the names inside the bodies tell the readings apart; each one
-  // is also what the full-text identity reported before the body left it.
+  // where only the names inside the bodies tell the readings apart: G1 and G4
+  // read as two copies edited in place, as a line diff reads them.
   const caught = (call) => `try { await ${call}() } catch (e) { res.end() }`;
   const then = (...bodies) => bodies.map((b) => `p.then(async (r) => {\n  ${b}\n})\n`).join("");
   const handlers = (a, b) => `app.get("/a", async (req, res) => {\n  ${a}\n})\napp.get("/b", async (req, res) => {\n  ${b}\n})\n`;
@@ -274,6 +274,8 @@ test("a row that judges the body aligns alike copies the way a line diff does", 
     ["a caught handler added above an edited bare one beside an untouched bare one (E3)", A, then("await b()", "await z()"), then(caught("a"), "await b(); log()", "await z()"), [], [4]],
     ["a new bare handler above an edited bare one (E5)", A, then("await b()"), then("await n()", "await b(); log()"), [1], [1, 4]],
     ["reading catches added on both sides of an edited swallowing one (S1)", S, multi("report()"), multi("log(e)", "report(1)", "log(e)"), [], [8]],
+    ["bare a deleted, b lost its catch, a caught one added below (G1)", A, then("await a()", caught("b")), then("await b()", caught("z")), [1], []],
+    ["the swallowing catch deleted, the reading one stopped reading, a reading one added below (G4)", S, multi("report()", "log(e)"), multi("log()", "keep(e)"), [3], []],
     ["an unchanged file", A, then(caught("a"), "await b()", "await b()"), then(caught("a"), "await b()", "await b()"), []],
   ];
   const wrong = [];
@@ -303,6 +305,25 @@ test("a long file of many sites is judged in time linear in its length", () => {
 
   const ratio = doublingRatio(judged, 500);
   assert.ok(ratio < LINEAR, `twice the file took ${ratio.toFixed(2)} times as long`);
+});
+
+test("a long group of alike copies edited at both ends is aligned in time linear in its length", () => {
+  // With both ends edited nothing trims, and the alignment filled a table of
+  // every base copy against every head copy: 30,000 catches took 10 seconds
+  // and 1.2 GB.
+  const rows = [rowByKey("swallowed_error")];
+  const judged = (n) => {
+    const src = (first, last) =>
+      Array.from({ length: n }, (_, i) => `try {\n  x()\n} catch (e) {\n  later(() => ${i === 0 ? first : i === n - 1 ? last : `log${i}(e)`})\n}\n`).join("");
+    const base = revision(src("log0(e)", "keep(e)"), { file: "f.ts" });
+    const head = revision(src("log0()", "keep()"), { file: "f.ts" });
+    return () => newlyIntroduced({ area: area(stated("swallowed_error")), path: "src/l.ts", lang: "js", head, base, rows });
+  };
+
+  assert.deepEqual(judged(3000)().map((f) => f.line), [3, 5 * 3000 - 2]);
+
+  const ratio = doublingRatio(judged, 3000);
+  assert.ok(ratio < LINEAR, `twice the copies took ${ratio.toFixed(2)} times as long`);
 });
 
 /* --- one polarity for both revisions --- */
