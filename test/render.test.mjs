@@ -21,6 +21,7 @@ import { layoutFacts } from "../plugins/anatomiya/lib/layout.mjs";
 import { principleKeys } from "../plugins/anatomiya/lib/principles.mjs";
 import { discover, globEntry, globText } from "../plugins/anatomiya/lib/areas.mjs";
 import { REGISTRY } from "../plugins/anatomiya/lib/registry.mjs";
+import { claudeCodeReaches } from "./paths-reader.mjs";
 
 const dim = (o = {}) => ({
   key: "swallowed_error",
@@ -152,28 +153,6 @@ test("a bare-name glob under a directory keeps both halves", () => {
 const renderedPaths = (out) =>
   out.split("\n").slice(3, out.split("\n").indexOf("---", 1)).map((l) => JSON.parse(l.replace(/^ {2}- /, "")));
 
-/**
- * The matcher's semantics: `*` stops at a slash, a `**` segment spans any depth including none.
- *
- * Only the syntax glob libraries read alike. picomatch and minimatch read `?`,
- * `[...]`, `(...)`, `\` and a brace range as syntax, where this would take them
- * as literal characters and agree with a pattern those libraries read another
- * way, so a pattern holding any of them is refused rather than matched.
- */
-function globMatches(pattern, rel) {
-  const beyond = /[?[\]()\\]|\{[^}]*\.\./.exec(pattern);
-  if (beyond) throw new Error(`${JSON.stringify(pattern)} holds ${JSON.stringify(beyond[0])}, which glob libraries read as syntax`);
-  const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  let re = "^";
-  for (let i = 0; i < pattern.length; i++) {
-    if (pattern.startsWith("**/", i)) { re += "(?:[^/]*/)*"; i += 2; }
-    else if (pattern[i] === "*") re += "[^/]*";
-    else if (pattern[i] === "{") { const end = pattern.indexOf("}", i); re += `(?:${pattern.slice(i + 1, end).split(",").map(esc).join("|")})`; i = end; }
-    else re += esc(pattern[i]);
-  }
-  return new RegExp(`${re}$`, "u").test(rel);
-}
-
 test("every delivered paths pattern reaches the files its area counted, whatever the directory is spelled in", () => {
   // Measured: `src/компоненты` rendered as `<path with mixed scripts, 10 chars>/**`
   // and a 129-character directory as `.../w…/**`. The encoder that keeps a
@@ -189,9 +168,7 @@ test("every delivered paths pattern reaches the files its area counted, whatever
   for (const a of discover(files)) {
     const delivered = renderedPaths(renderArea(area({ path: a.path, globs: a.globs })));
     for (const f of a.files) {
-      let hit = false;
-      for (const p of delivered) if (globMatches(p.replace(/^!/, ""), f.rel)) hit = !p.startsWith("!");
-      assert.ok(hit, `${a.path}: ${f.rel} is reached by none of ${JSON.stringify(delivered)}`);
+      assert.ok(claudeCodeReaches(delivered, f.rel), `${a.path}: ${f.rel} is reached by none of ${JSON.stringify(delivered)}`);
     }
   }
 });
@@ -3035,102 +3012,36 @@ test("a clause several rows share costs one line, not one line per row", () => {
   assert.match(out, /^claim controller_spec$/m);
 });
 
-// Directory names picomatch and minimatch read as extglobs, a group, or an escape.
-const EXTGLOB_DIRS = ["src/@(lib)", "src/x+(y)", "src/(ab)", "src/a\\b"];
-const extglobFiles = () =>
-  ["src", ...EXTGLOB_DIRS].flatMap((d) => Array.from({ length: 6 }, (_, i) => ({ rel: `${d}/m${i}.ts`, lang: "js" })));
-
 test("a directory named in extglob syntax folds like any other glob syntax", () => {
   // `(`, `)` and `\` were missing from the fold's character class. picomatch
   // and minimatch both read `@(lib)` and `x+(y)` as extglobs, `(ab)` as a
   // group and `a\b` as an escaped `b`, so each of these became an area whose
   // `paths` matched nothing or a different directory.
-  const areas = discover(extglobFiles());
+  const areas = discover(
+    ["src", "src/@(lib)", "src/x+(y)", "src/(ab)", "src/a\\b"].flatMap((d) =>
+      Array.from({ length: 6 }, (_, i) => ({ rel: `${d}/m${i}.ts`, lang: "js" }))
+    )
+  );
 
   assert.deepEqual(areas.map((a) => a.path), ["src"], "no area is rooted at an extglob-shaped directory");
   for (const a of areas) {
     for (const g of a.globs) assert.ok(!/[()\\]/.test(g.dir), `${a.path} names ${g.dir}`);
     const delivered = renderedPaths(renderArea(area({ path: a.path, globs: a.globs })));
     for (const f of a.files) {
-      let hit = false;
-      for (const p of delivered) if (globMatches(p.replace(/^!/, ""), f.rel)) hit = !p.startsWith("!");
-      assert.ok(hit, `${a.path}: ${f.rel} is reached by none of ${JSON.stringify(delivered)}`);
-    }
-  }
-});
-
-test("the matcher refuses a pattern it would read differently from a glob library", () => {
-  // It takes these characters literally, so without the refusal a rendered
-  // pattern spelling an extglob directory would reach it here and nothing in a
-  // real matcher.
-  for (const p of ["src/@(lib)/**", "src/x+(y)/**", "src/a\\b/**", "src/[ab]/**", "src/?/**", "src/{1..3}/**"]) {
-    assert.throws(() => globMatches(p, "src/lib/m0.ts"), /glob libraries read as syntax/, p);
-  }
-  assert.equal(globMatches("src/**/*.{ts,tsx}", "src/a/b.tsx"), true, "a brace list is read as every library reads it");
-  assert.equal(globMatches("packages/@scope/x/**", "packages/@scope/x/y.ts"), true, "and an `@` with no group after it is a name");
-});
-
-/**
- * Claude Code's reading of a `paths` list: every entry split on the commas
- * outside a brace, the first brace expanded until none is left, then gitignore
- * matching over the pieces, last match winning. A pattern with no slash but a
- * trailing one matches at any depth, and one that matches a directory matches
- * everything under it. `(` and `)` are literal to it. `\` is an escape it reads
- * differently from this model, which is safe only because no pattern spells one.
- */
-function claudeCodeReaches(patterns, rel) {
-  const split = (entry) => {
-    const out = [];
-    let cur = "";
-    let depth = 0;
-    for (const ch of entry) {
-      if (ch === "{") depth++;
-      if (ch === "}") depth--;
-      if (ch === "," && depth === 0) {
-        if (cur.trim()) out.push(cur.trim());
-        cur = "";
-      } else cur += ch;
-    }
-    if (cur.trim()) out.push(cur.trim());
-    return out;
-  };
-  const expand = (p) => {
-    const m = p.match(/^([^{]*)\{([^}]+)\}(.*)$/);
-    return m ? m[2].split(",").flatMap((x) => expand(m[1] + x.trim() + m[3])) : [p];
-  };
-  const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const toRe = (p) => {
-    let re = "";
-    for (let i = 0; i < p.length; i++) {
-      if (p.startsWith("**/", i)) { re += "(?:[^/]*/)*"; i += 2; }
-      else if (p[i] === "*") re += "[^/]*";
-      else re += esc(p[i]);
-    }
-    return new RegExp(`^${re}$`, "u");
-  };
-  const ancestry = rel.split("/").map((_, i, parts) => parts.slice(0, i + 1).join("/"));
-  let hit = false;
-  for (const piece of patterns.flatMap(split).flatMap(expand)) {
-    const negated = piece.startsWith("!");
-    let body = negated ? piece.slice(1) : piece;
-    body = body.replace(/\/$/, "");
-    if (!body.includes("/")) body = `**/${body}`;
-    const re = toRe(body.replace(/^\//, ""));
-    if (ancestry.some((p) => re.test(p))) hit = !negated;
-  }
-  return hit;
-}
-
-test("a directory named in extglob syntax is reached by Claude Code's own reading of paths", () => {
-  // The helper above does not implement extglobs, so it cannot see the bug on
-  // its own. Claude Code does not read `paths` through picomatch either: it
-  // splits, brace-expands and matches with gitignore rules.
-  for (const a of discover(extglobFiles())) {
-    const delivered = renderedPaths(renderArea(area({ path: a.path, globs: a.globs })));
-    for (const f of a.files) {
       assert.ok(claudeCodeReaches(delivered, f.rel), `${a.path}: ${f.rel} is reached by none of ${JSON.stringify(delivered)}`);
     }
   }
+});
+
+test("the paths reader agrees with Claude Code where gitignore rules part from a glob matcher", () => {
+  // A trailing `/**` is stripped before matching, and gitignore cannot re-include
+  // anything under an excluded directory, so this negation does nothing.
+  assert.equal(claudeCodeReaches(["app/**", "!app/x/**"], "app/x/f.ts"), true);
+  assert.equal(claudeCodeReaches(["app/**"], "app/y.ts"), true);
+  assert.equal(claudeCodeReaches(["src/**/*.ts"], "SRC/a.ts"), true, "the matcher is built with its defaults, which fold case");
+  assert.equal(claudeCodeReaches(["a\\\\b/**/*.rb"], "a\\b/x.rb"), true, "a doubled backslash spells one");
+  assert.equal(claudeCodeReaches(["a\\b/**/*.rb"], "a\\b/x.rb"), false, "a single one escapes the next character");
+  assert.equal(claudeCodeReaches(["**"], "src/a.ts"), false, "a list of nothing but `**` is not a paths list");
 });
 
 test("a directory with a comma in its name folds like glob syntax, since Claude Code splits paths on it", () => {
