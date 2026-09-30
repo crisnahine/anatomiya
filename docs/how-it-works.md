@@ -1362,9 +1362,11 @@ report a whole declaration: a line added inside a function body is not a new `fu
 signature still is. Copies that share a fingerprint are matched by their own text first, then by the
 lines around them, then by the function they sit in, and only what is left is matched by count.
 Two rows judge what is inside the body, `async_error_handling` and `swallowed_error`, so for them a
-copy that stopped conforming shares its fingerprint with one that never did. Their copies also have
-to open on the same line text to match, and are never matched by count: a handler that lost its
-`catch` is not absorbed by another anonymous handler in the same file that never had one.
+copy that stopped conforming shares its fingerprint with one that never did. Their copies are matched
+by their place among every copy, conforming or not, that opens on the same line text in the same
+function, counted from the top and then from the bottom, and are never matched by count: a handler
+that lost its `catch` is not absorbed by another anonymous handler in the same file that never had
+one, even where both open on `p.then(async (r) => {` or `} catch (err) {`.
 
 A learned row judges a site the way the fold counted it. A superclass or mixin written bare is
 resolved against the nesting it is written in, and a class whose chain of parents reaches the

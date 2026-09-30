@@ -275,13 +275,18 @@ function breakingSites(program, source, lang, keyPath, { polarity, frameworks, c
         fp: siteIdentity(keyPath, dim.key, node, source),
       };
       if (located(node)) contextOf.set(found, lines().around(node.start, node.end));
-      if (located(node) && dim.judgesBody) openingOf.set(found, lines().around(node.start, node.start));
+      if (ordinals.has(hit)) openingOf.set(found, ordinals.get(hit));
       return found;
     };
     // A grouped row answers per enclosing body, so its hits are held until the
     // walk is over: one include out of two matching is the body conforming, and
     // reporting per constant would charge the author twice for one class.
     const bodies = dim.groupedSites ? new Map() : null;
+    // A body-judging hit's place among every copy, conforming or not, that
+    // opens on the same line text in the same declaration. `all.count` is
+    // final once the walk is over.
+    const ordinals = new Map();
+    const openings = new Map();
     // A dimension that throws on this program loses its own findings for this
     // file. Both sides of the comparison run the same dimensions over the same
     // shapes, so a failure that is not symmetric can only lose a finding, never
@@ -293,6 +298,13 @@ function breakingSites(program, source, lang, keyPath, { polarity, frameworks, c
           if (bodies.has(key)) bodies.get(key).push(hit);
           else bodies.set(key, [hit]);
           return;
+        }
+        if (dim.judgesBody && located(hit.node)) {
+          const opening = lines().around(hit.node.start, hit.node.start);
+          const at = `${hit.where ?? ""}\0${opening}`;
+          if (!openings.has(at)) openings.set(at, { count: 0 });
+          const all = openings.get(at);
+          ordinals.set(hit, { opening, from: all.count++, all });
         }
         // On the counter side the conforming sites are the ones that break what
         // the map said. Enforcing `!conforming` there charges an author for
@@ -360,6 +372,8 @@ function chainOf(learned, reaching = new Set(), declared = new Map()) {
  * own text, which is what the identity alone matched before. A copy whose body
  * the branch edited matches neither of the first two and is taken by the name
  * around it last, so a new copy of the same shape elsewhere is the one left.
+ * A row that judges the body cannot be taken by the name alone, since which
+ * copy breaks is the question, so it is taken by its place among alike copies.
  */
 function absorb(head, base) {
   const remaining = new Map();
@@ -372,7 +386,8 @@ function absorb(head, base) {
   for (const key of [
     (f) => `${f.fp}\0${f.where ?? ""}\0${f.text}`,
     (f) => (contextOf.has(f) ? `${f.fp}\0${contextOf.get(f)}` : null),
-    (f) => `${f.fp}\0${f.where ?? ""}\0${openingOf.get(f) ?? ""}`,
+    (f) => ordinal(f, (o) => o.from) ?? `${f.fp}\0${f.where ?? ""}`,
+    (f) => ordinal(f, (o) => o.all.count - 1 - o.from),
   ]) {
     const copies = new Map();
     for (const f of base) {
@@ -426,10 +441,15 @@ const normalise = (s) => s.replace(/\s+/g, " ").trim();
 // caller reads keeps the shape it had.
 const contextOf = new WeakMap();
 
-// The line a body-judging site opens on. Its identity leaves out the body its
-// conformance is read from, so two anonymous copies are told apart by where
-// they sit, and are never paired by count alone.
+// The line a body-judging site opens on, and its place among every copy that
+// opens on the same text. Its identity leaves out the body its conformance is
+// read from, so two anonymous copies are told apart by which one they are,
+// counted from the top and then from the bottom, and never by count alone.
 const openingOf = new WeakMap();
+const ordinal = (f, place) => {
+  const o = openingOf.get(f);
+  return o ? `${f.fp}\0${f.where ?? ""}\0${o.opening}\0${place(o)}` : null;
+};
 
 /**
  * Where each line of one source starts, found once and searched by halving.

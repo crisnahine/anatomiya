@@ -246,6 +246,23 @@ test("a row that judges the body does not let one anonymous copy answer for anot
       newlyIntroduced({ area: area(stated("swallowed_error")), path: "src/a.ts", lang: "js", head: revision(head, { file: "f.ts" }), base: revision(base, { file: "f.ts" }) })
     ).map((f) => f.line);
   assert.deepEqual(swallowed(catches("log(e)", "report()"), catches("log()", "report(e)")), [1], "a catch that stopped reading its error inside a closure");
+
+  // Formatted over lines, every catch opens on the same `} catch (err) {`.
+  const sync = (a, b) =>
+    `export async function sync() {\n  try {\n    await pull()\n  } catch (err) {\n    queue(() => ${a})\n  }\n  try {\n    await push()\n  } catch (err) {\n    queue(() => ${b})\n  }\n}\n`;
+  assert.deepEqual(swallowed(sync("log(err)", "retry()"), sync("log()", "retry(1)")), [4], "multi-line catches in one function");
+  const top = (a, b) => `try {\n  x()\n} catch (e) {\n  later(() => ${a})\n}\ntry {\n  y()\n} catch (e) {\n  later(() => ${b})\n}\n`;
+  assert.deepEqual(swallowed(top("log(e)", "report()"), top("log()", "report(e)")), [3], "multi-line catches that swap which one swallows");
+
+  // Anonymous handlers that open on the same line text.
+  const thens = (a, b) => `p.then(async (r) => {\n  ${a}\n})\np.then(async (r) => {\n  ${b}\n})\n`;
+  assert.deepEqual(judged(thens(caught("a"), "await b()"), thens("await a()", caught("b"))), [1], "the catch moved between same-opening handlers");
+  assert.deepEqual(judged(thens(caught("a"), "await b()"), thens(caught("a"), "await b(); log()")), [], "an edit inside the bare one alone");
+  assert.deepEqual(
+    judged(`p.then(async (r) => {\n  await b()\n})\n`, thens(caught("a"), "await b(); log()")),
+    [],
+    "a caught handler added above an edited bare one"
+  );
 });
 
 test("a long file of many sites is judged in time linear in its length", () => {
