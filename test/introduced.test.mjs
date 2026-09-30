@@ -263,6 +263,24 @@ test("a row that judges the body does not let one anonymous copy answer for anot
     [],
     "a caught handler added above an edited bare one"
   );
+  const then = (...bodies) => bodies.map((b) => `p.then(async (r) => {\n  ${b}\n})\n`).join("");
+  assert.deepEqual(judged(then("await b()"), then(caught("a"), "await b(); log()", caught("c"))), [], "caught handlers added on both sides of an edited bare one");
+  assert.deepEqual(judged(then(caught("a"), "await b()", caught("c")), then("await b(); log()")), [], "caught handlers removed from both sides of an edited bare one");
+  // Nothing but the text tells this apart from the catch moving between two
+  // handlers, so it reads as that move.
+  assert.deepEqual(judged(then(caught("a"), "await b()"), then("await b(); log()", caught("c"))), [1], "one removed above and one added below");
+  const multi = (...bodies) => bodies.map((b) => `try {\n  x()\n} catch (e) {\n  later(() => ${b})\n}\n`).join("");
+  assert.deepEqual(swallowed(multi("report()"), multi("log(e)", "report(1)", "log(e)")), [], "reading catches added on both sides of an edited swallowing one");
+
+  // Handlers on other routes are not copies, so adding one moves nothing.
+  const routes = (...pairs) => pairs.map(([p, b]) => `app.get("${p}", async (req, res) => {\n  ${b}\n})\n`).join("");
+  assert.deepEqual(judged(routes(["/b", "await b()"]), routes(["/a", caught("a")], ["/b", "await b(); log()"], ["/c", caught("c")])), [], "other routes added around an edited one");
+  assert.deepEqual(judged(routes(["/a", caught("a")], ["/b", "await b()"]), routes(["/b", "await b(); log()"], ["/c", caught("c")])), [], "one route removed above and one added below an edited one");
+  assert.deepEqual(
+    judged(routes(["/a", caught("a")], ["/b", "await b()"]), routes(["/a", "await a()"], ["/b", caught("b")], ["/c", caught("c")])),
+    [1],
+    "the catch moved from /a to /b while /c was added"
+  );
 });
 
 test("a long file of many sites is judged in time linear in its length", () => {
