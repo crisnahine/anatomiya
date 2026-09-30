@@ -58,5 +58,5 @@ If the pin exits non-zero, show its output and stop, and relay the remedy it nam
 it yourself. It refuses while tracked files differ from HEAD, since the pin records HEAD and the files
 it holds (commit or stash them), mid-merge (finish or abort the merge), with unmerged paths left by a
 rebase, cherry-pick, revert, am or stash pop (resolve them, or abort what left them), and in a sparse
-checkout that leaves tracked source or the root `.gitattributes` out of the tree. A population that makes no area refuses too, since it would hold
+checkout that leaves tracked source out of the tree. A population that makes no area refuses too, since it would hold
 back every area made after it, and so does a store this process cannot write or enter.
