@@ -524,6 +524,39 @@ class SkipWalkthrough < ActiveRecord::Migration[7.0]
 end
 `,
 
+  activerecord_model_delete: `
+class DropStaleVersions < ActiveRecord::Migration[7.0]
+  def up
+    ActiveRecord::SchemaMigration.where(version: "20200101000000").delete_all
+  end
+
+  def down
+  end
+end
+`,
+  activerecord_metadata_delete: `
+class ResetEnvironment < ActiveRecord::Migration[7.0]
+  def up
+    ActiveRecord::InternalMetadata.delete_all
+  end
+
+  def down
+  end
+end
+`,
+  // The connection, a transaction and an error name ActiveRecord without a table.
+  activerecord_non_model: `
+class AddFlag < ActiveRecord::Migration[7.0]
+  def change
+    ActiveRecord::Base.transaction do
+      add_column :users, :flag, :boolean
+    end
+    ActiveRecord::Base.connection.schema_cache.clear!
+    ActiveRecord::Base.reset_column_information
+  end
+end
+`,
+
   // `revert` runs another migration backwards and a class-level include names
   // a helper module; neither names a model.
   revert_migration: `
@@ -1419,6 +1452,15 @@ test("a row rewrite through a framework model or a model handed to a helper is d
     assert.deepEqual(counts("migration_schema_only", name), { candidates: 1, conforming: 0 }, name);
     assert.deepEqual(hits("migration_reversible", name), [], name);
   }
+});
+
+test("a data call on a scoped ActiveRecord constant is data work, and the rest of ActiveRecord is not", needsRuby, () => {
+  for (const name of ["activerecord_model_delete", "activerecord_metadata_delete"]) {
+    assert.deepEqual(counts("migration_schema_only", name), { candidates: 1, conforming: 0 }, name);
+    assert.deepEqual(hits("migration_reversible", name), [], name);
+  }
+  assert.deepEqual(counts("migration_schema_only", "activerecord_non_model"), { candidates: 1, conforming: 1 });
+  assert.deepEqual(counts("migration_reversible", "activerecord_non_model"), { candidates: 1, conforming: 1 });
 });
 
 test("revert and a class-level include name no model", needsRuby, () => {
