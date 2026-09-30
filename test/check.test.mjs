@@ -3640,6 +3640,73 @@ test("a new subclass of a class the map records as reaching the learned base is 
   assert.deepEqual(found.map((f) => f.path), ["app/models/ledger.rb"], JSON.stringify(found));
 });
 
+test("a subclass of a base the branch adds in the same area conforms when that base reaches the learned one", needsRuby, async (t) => {
+  // The fold follows the chain through every class the area declares, and a
+  // base the branch adds is one of them; read off the pinned map alone, each
+  // subclass was told to skip the base the branch added on purpose.
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("app/models/user.rb", "class User < ApplicationRecord\nend\n");
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("app/models/blocks_base.rb", "class Slack::BlocksBase < ApplicationRecord\nend\n");
+    write("app/models/block_a.rb", "class Slack::BlockA < Slack::BlocksBase\nend\n");
+    write("app/models/deep.rb", "class Deep < Mid\nend\nclass Mid < Slack::BlocksBase\nend\n");
+    // A base outside the area is not one the fold follows.
+    write("lib/outside_base.rb", "class OutsideBase < ApplicationRecord\nend\n");
+    write("app/models/outside.rb", "class Outside < OutsideBase\nend\n");
+    commit("add");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    areas: [{
+      id: "aaaaaaaa",
+      path: "app/models",
+      globs: [{ negated: false, dir: "app/models", tail: "**/*.rb" }],
+      fileCount: 8,
+      dimensions: [dim({ key: "class_base", learned: "ApplicationRecord", reaches: ["User"] })],
+    }, {
+      id: "bbbbbbbb",
+      path: "lib",
+      globs: [{ negated: false, dir: "lib", tail: "**/*.rb" }],
+      fileCount: 8,
+      dimensions: [dim({ key: "class_base", learned: "ApplicationRecord" })],
+    }],
+  });
+
+  const report = await check(dir);
+
+  const found = forKey(report, "class_base");
+  assert.deepEqual(found.map((f) => f.path), ["app/models/outside.rb"], JSON.stringify(found));
+});
+
+test("a class the branch moves off the learned base no longer carries its subclasses", needsRuby, async (t) => {
+  // The pinned map says User reaches the base, and the branch says it does not
+  // any more; the branch's tree is the one being judged.
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("app/models/user.rb", "class User < ApplicationRecord\nend\n");
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("app/models/user.rb", "class User < Struct\nend\n");
+    write("app/models/guest.rb", "class Guest < User\nend\n");
+    commit("move");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    areas: [{
+      id: "aaaaaaaa",
+      path: "app/models",
+      globs: [{ negated: false, dir: "app/models", tail: "**/*.rb" }],
+      fileCount: 8,
+      dimensions: [dim({ key: "class_base", learned: "ApplicationRecord", reaches: ["User"] })],
+    }],
+  });
+
+  const report = await check(dir);
+
+  const found = forKey(report, "class_base");
+  assert.deepEqual(found.map((f) => f.path).sort(), ["app/models/guest.rb", "app/models/user.rb"], JSON.stringify(found));
+});
+
 /* --- an omission is only a finding where the map stated the claim (#54) --- */
 
 test("a body that includes nothing is not judged against a row the map did not state", needsRuby, async (t) => {

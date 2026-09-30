@@ -498,7 +498,7 @@ function parentsIn(perFile) {
  * `isLearnedItself` gives, and a cycle, a NameError in Ruby, ends here and
  * conforms to nothing.
  */
-function reachesThrough(base, learned, parents) {
+export function reachesThrough(base, learned, parents) {
   if (!parents || typeof learned !== "string") return false;
   const seen = new Set();
   for (let at = base; typeof at === "string" && parents.has(at) && !seen.has(at); ) {

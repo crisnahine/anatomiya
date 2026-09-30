@@ -165,6 +165,63 @@ test("a site added above a function that was renamed is the one reported, not th
   assert.deepEqual(found.map((f) => [f.line, f.where]), [[2, "added"]]);
 });
 
+test("an edit inside a function or class body is not a site on the declaration that holds it", () => {
+  // The three rows report the whole declaration, so a line added to its body
+  // gave the old site a new identity and the untouched declaration came back
+  // as one the branch introduced.
+  const slot = area(
+    stated("function_style", { states: "counter", counterClaim: "x" }),
+    stated("doc_comment_style", { states: "counter", counterClaim: "x" }),
+    stated("explicit_return_type")
+  );
+  const judged = (base, head) =>
+    newlyIntroduced({ area: slot, path: "src/a.ts", lang: "js", head: revision(head, { file: "f.ts" }), base: revision(base, { file: "f.ts" }) })
+      .filter((f) => slot.dimensions.some((d) => d.key === f.dimension))
+      .map((f) => `${f.dimension}@${f.line}`);
+
+  assert.deepEqual(
+    judged(`// why\nexport function f(a) {\n  return a\n}\n`, `// why\nexport function f(a) {\n  const b = 1\n  return a\n}\n`),
+    []
+  );
+  assert.deepEqual(
+    judged(`// why\nexport const g = (a) => {\n  return a\n}\n`, `// why\nexport const g = (a) => {\n  const b = 1\n  return a\n}\n`),
+    []
+  );
+  assert.deepEqual(
+    judged(`// why\nexport class C {\n  m() {\n    return 1\n  }\n}\n`, `// why\nexport class C {\n  m() {\n    return 2\n  }\n  n() {}\n}\n`),
+    []
+  );
+  assert.deepEqual(
+    judged(`// why\nexport function f(a) {\n  return a\n}\n`, `// why\nexport function f(a) {\n  return a\n}\nexport function h(a) {\n  return a\n}\n`),
+    ["function_style@5", "explicit_return_type@5"],
+    "a function the branch adds is still new"
+  );
+});
+
+test("an edited body beside a new one of the same shape is matched by the function around it", () => {
+  // Both callbacks share an identity once the body is out of it, so count
+  // alone would absorb the new one in walk order and report the edited one.
+  const slot = area(stated("iterate_with_for_of"));
+  const base = revision(`export function f() {\n  items.forEach((i) => {\n    a(i);\n  });\n}\n`, { file: "f.ts" });
+  const head = revision(
+    `export function g() {\n  items.forEach((i) => {\n    b(i);\n  });\n}\nexport function f() {\n  items.forEach((i) => {\n    a(i, 2);\n  });\n}\n`,
+    { file: "f.ts" }
+  );
+
+  const found = only("iterate_with_for_of", newlyIntroduced({ area: slot, path: "src/l.ts", lang: "js", head, base }));
+
+  assert.deepEqual(found.map((f) => [f.line, f.where]), [[2, "g"]]);
+
+  // In one function the name tells them apart no more than the identity does,
+  // so the untouched copy is found by its own text first.
+  const inOne = revision(
+    `export function f() {\n  items.forEach((i) => {\n    b(i);\n  });\n  items.forEach((i) => {\n    a(i);\n  });\n}\n`,
+    { file: "f.ts" }
+  );
+  const added = only("iterate_with_for_of", newlyIntroduced({ area: slot, path: "src/l.ts", lang: "js", head: inOne, base }));
+  assert.deepEqual(added.map((f) => [f.line, f.where]), [[2, "f"]]);
+});
+
 test("a long file of many sites is judged in time linear in its length", () => {
   // Each site's line was counted from the start of the file, so the work grew
   // with the square of the file: a 619 KB file of 30,000 sites took 28 seconds.
@@ -324,4 +381,18 @@ test("an omission is reported only where the map stated the claim", needsRuby, a
   const ask = (slot) => only("module_include", newlyIntroduced({ area: slot, path: "app/w.rb", lang: "ruby", head: src, base: null }));
   assert.equal(ask(said).length, 1);
   assert.deepEqual(ask(unsaid), []);
+});
+
+test("a base spelled relative to the nesting it is written in is the learned one, as the fold reads it", needsRuby, async (t) => {
+  // The fold resolves a bare constant against the site's nesting (C30), and
+  // compared as written the check flagged every class the map counted.
+  const relative = await rubyRevision(t, "module Api\n  module V1\n    class Qbo < BaseController\n    end\n  end\nend\n");
+  const elsewhere = await rubyRevision(t, "class Api::V1::Qbo < BaseController\nend\n");
+  const mixin = await rubyRevision(t, "module Api\n  class W\n    include Concern\n  end\nend\n");
+
+  const ask = (key, learned, head) =>
+    only(key, newlyIntroduced({ area: area(stated(key, { learned })), path: "app/w.rb", lang: "ruby", head, base: null }));
+  assert.deepEqual(ask("class_base", "Api::V1::BaseController", relative), []);
+  assert.equal(ask("class_base", "Api::V1::BaseController", elsewhere).length, 1, "at the top level the bare name is ::BaseController");
+  assert.deepEqual(ask("module_include", "Api::Concern", mixin), []);
 });
