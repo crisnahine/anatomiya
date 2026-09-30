@@ -1203,6 +1203,34 @@ test("the source an exclusion left out is listed, so a paths glob can cut it bac
   );
 });
 
+test("a source file whose extension or name is in another case is listed as left out", async (t) => {
+  // Claude Code's matcher folds case, so an area's `*.rb` reaches `Legacy.RB`,
+  // which the corpus does not count.
+  const dir = repo(t, (d, { git, write }) => {
+    write("app/a.rb", "class A\nend\n");
+    write("app/Legacy.RB", "class Legacy\nend\n");
+    write("app/RAKEFILE", "task :x\n");
+    write("lib/Old.JS", "export const x = 1\n");
+    write("lib/fixtures/F.TS", "export const f = 1\n");
+    write("lib/notes.TXT", "hi\n");
+    git("add", "-A");
+    git("commit", "-qm", "init");
+  });
+
+  const { files, uncounted } = await collect(dir);
+
+  assert.deepEqual(files.map((f) => f.rel), ["app/a.rb"]);
+  assert.deepEqual(
+    Object.fromEntries(uncounted.map((f) => [f.rel, [f.lang, f.excludedAt ?? null]])),
+    {
+      "app/Legacy.RB": ["ruby", null],
+      "app/RAKEFILE": ["ruby", null],
+      "lib/Old.JS": ["js", null],
+      "lib/fixtures/F.TS": ["js", "lib/fixtures"],
+    }
+  );
+});
+
 test("all three generated markers are read", async (t) => {
   // `DO NOT EDIT` alone was one of them and should never have been: it is an
   // ordinary operational warning, and a file carrying it was dropped from the
