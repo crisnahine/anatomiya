@@ -709,6 +709,15 @@ const KEPT = new Map([
   // CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY, is already in OVERRIDES, so no
   // trial reaches the call this bounds and the timeout decides nothing.
   ["CLAUDE_CODE_GATEWAY_MODEL_DISCOVERY_TIMEOUT_MS", "a deadline for a discovery call the scrubbed enable switch means no trial makes"],
+  // 2.1.285 reads it in one place, OR-ed with the pinned switch:
+  // `a.CLAUDE_CODE_NO_MODEL_FALLBACK===!0||a.CLAUDE_CODE_DISABLE_MODEL_ACCESS_FALLBACK===!0`.
+  ["CLAUDE_CODE_DISABLE_MODEL_ACCESS_FALLBACK", "a second name for turning fallback off, which PINS already turns off"],
+  // 2.1.285, `[3p-model-memory]`: the cache key for Bedrock and Vertex
+  // model-access probes returns early when it is set, so the probe runs again.
+  ["CLAUDE_CODE_SKIP_MODEL_ACCESS_MEMORY", "whether a saved third-party access probe is reused, not which model runs: with fallback pinned off no probe answer swaps it"],
+  // 2.1.285 stores CLAUDE_CODE_EFFORT_LEVEL as a 24-byte string-table entry,
+  // and the next entry's length byte is 0x5f, so the scan reads a trailing `_`.
+  ["CLAUDE_CODE_EFFORT_LEVEL_", "CLAUDE_CODE_EFFORT_LEVEL with the next string-table entry's length byte, not a name the build reads"],
   // CLAUDE_CODE_MODEL_CATALOG sat here through 2.1.252 as the off switch for a
   // catalog that was compared and logged. 2.1.257 installs the fetched catalog
   // in place of the compiled model list, so the switch is scrubbed with the URL
