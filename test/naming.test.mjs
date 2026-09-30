@@ -104,6 +104,20 @@ test("a class including two modules is one candidate, not one per constant", asy
   assert.deepEqual(slot.exceptions, []);
 });
 
+test("Sidekiq's two spellings of one module vote as one, stated in the spelling most bodies use", async () => {
+  // `Sidekiq::Worker = Sidekiq::Job`. Split, seven bodies including another
+  // module outvoted ten workers, and a worker was the exception.
+  const workers = [...Array(6).fill(["Sidekiq::Worker"]), ...Array(4).fill(["Sidekiq::Job"])];
+  const slot = await includeSlot([...workers, ...Array(7).fill(["Other"])]);
+  assert.equal(slot.learned, "Sidekiq::Worker");
+  assert.equal(slot.candidates, 17);
+  assert.equal(slot.conforming, 10);
+
+  const flipped = await includeSlot([...Array(3).fill(["Sidekiq::Worker"]), ...Array(8).fill(["Sidekiq::Job"])]);
+  assert.equal(flipped.learned, "Sidekiq::Job");
+  assert.equal(flipped.conforming, 11);
+});
+
 test("a row that is not grouped still counts one site per constant", async () => {
   const { reduceArea } = await import("../plugins/anatomiya/lib/reduce.mjs");
   const bodies = [...Array(10).fill(["A", "B"]), ["A"]];

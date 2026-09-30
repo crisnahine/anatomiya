@@ -369,10 +369,10 @@ in `check`.
 | `handler_memoised` | partial | jsx | a handler passed to a child is wrapped in `useCallback` |
 | `rescue_uses_error` | precise | ruby | rescue blocks use the error they caught |
 | `keyword_params` | precise | ruby | methods taking three or more arguments name them with keywords |
-| `zone_aware_time` | precise | ruby | the current time is read through the application time zone |
+| `zone_aware_time` | precise | ruby | times are read and built through the application time zone |
 | `record_lookup` | partial | ruby | a record that may be missing is fetched with `find_by` and checked, not fetched with one that raises |
 | `model_callbacks` | partial | ruby | models keep behaviour out of lifecycle callbacks |
-| `service_result_shape` | partial | ruby | service entry points return their failure instead of raising |
+| `service_result_shape` | partial | ruby | service entry points do not raise, directly or through a bang call like `update!` |
 | `migration_reversible` | partial | ruby | migrations declare `change`, not `up` and `down` |
 | `migration_schema_only` | partial | ruby | migrations change the schema and leave the data alone |
 | `column_null_declared` | partial | ruby | a column on a table the migration creates is declared `null: false` |
@@ -435,7 +435,9 @@ body that mixes in nothing is a site as well, since the forgotten include is the
 actually happens; a module mixing in nothing is namespacing, a subclass may be handed the mixin by
 its base, and a class inside a class is that class's helper, so none of those three is a site.
 Nor is a body that prepends or extends a constant, or a reopening of a class that declares a mixin
-elsewhere in the file: both declared one by another route.
+elsewhere in the file: both declared one by another route. Sidekiq defines `Worker = Job`, so
+`Sidekiq::Worker` and `Sidekiq::Job` vote and conform as one module, in the map and in the check,
+and the claim names whichever spelling the directory writes more.
 `interface_prefix` and `type_alias_prefix` take the leading capital a declared type name carries
 before a second capital, where
 `IComment` votes `I` and `Comment` votes for no prefix at all. A name opening on three or more
