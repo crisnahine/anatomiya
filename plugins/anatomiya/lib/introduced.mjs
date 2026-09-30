@@ -15,7 +15,7 @@ import { CLASSES, claimFor } from "./dimensions-naming.mjs";
 import { encode } from "./encode.mjs";
 import { statedSide } from "./facts.mjs";
 import { holdsTypeSyntax, spokenIn } from "./langs.mjs";
-import { groupKey, isLearnedItself } from "./reduce.mjs";
+import { groupKey, isLearnedItself, reachesThrough, sameConstant } from "./reduce.mjs";
 import { isFunctionLike, walk } from "./walk.mjs";
 
 /**
@@ -28,7 +28,8 @@ import { isFunctionLike, walk } from "./walk.mjs";
  * answering it per revision skipped the whole base side of a file that gained
  * JSX on the branch. `base` and `addedLines` are the two modes and cannot both
  * be given; neither is a file the branch added, where every head site is new.
- * `rows` narrows the registry, for a test driving one row.
+ * `rows` narrows the registry, for a test driving one row. `parents` is what
+ * `declaredParents` found in the files the branch changed in this area.
  *
  * A row that throws on one tree loses its own sites for that file and nothing
  * else. Order is registry order, then walk order, then the grouped bodies of
@@ -46,11 +47,12 @@ export function newlyIntroduced({
   base = null,
   addedLines = null,
   rows,
+  parents = new Map(),
 }) {
   if (base && addedLines) throw new TypeError("a base revision and an added-line list are two answers to one question");
   // Read once and handed to both revisions: read separately, a file whose area
   // states the inverse would show every pre-existing site as newly introduced.
-  const polarity = sidesFor(area, ancestorsOf);
+  const polarity = { ...sidesFor(area, ancestorsOf), parents };
   const judge = (rev) =>
     breakingSites(rev.program, rev.source, lang, keyPath, {
       polarity,
@@ -65,6 +67,32 @@ export function newlyIntroduced({
   const found = judge(head);
   if (addedLines) return found.filter((f) => addedLines.some(([a, b]) => f.line >= a && f.line <= b));
   return absorb(found, base ? judge(base) : []);
+}
+
+/**
+ * The superclass each class in one revision names, per learned row, keyed by
+ * the class's own qualified name.
+ *
+ * The fold follows a chain through every class its area declares, and the
+ * check holds only the map's `reaches` for the classes it did not read. A base
+ * the branch adds is in neither, so the check reads the branch's own
+ * declarations too, or every subclass of that base is told to skip it.
+ */
+export function declaredParents({ path, lang, frameworks, capabilities, rows, head }) {
+  const out = new Map();
+  for (const dim of dimensionsFor(spokenIn(lang, head.facets), { frameworks, capabilities, rows })) {
+    if (!dim.learnedClasses || dim.groupedSites) continue;
+    const parents = new Map();
+    try {
+      dim.run(head.program, (hit) => {
+        if (typeof hit.self === "string" && typeof hit.class === "string" && !parents.has(hit.self)) parents.set(hit.self, hit.class);
+      }, { comments: head.comments, source: head.source, rel: path });
+    } catch {
+      continue;
+    }
+    if (parents.size) out.set(dim.key, parents);
+  }
+  return out;
 }
 
 /**
@@ -196,7 +224,7 @@ function enforceableClass(dim, cls) {
 const isOmission = (hit) => hit.class === undefined || hit.class === null;
 
 function breakingSites(program, source, lang, keyPath, { polarity, frameworks, capabilities, rows, comments = [], stripped = false, rel = null, facets = null }) {
-  const { sides, learned, kinds, qualified, stated, reaching = new Map() } = polarity;
+  const { sides, learned, kinds, qualified, stated, reaching = new Map(), parents = new Map() } = polarity;
   const out = [];
   // One index of line starts per revision, built on the first site that asks.
   const lines = lazyLines(source);
@@ -225,9 +253,10 @@ function breakingSites(program, source, lang, keyPath, { polarity, frameworks, c
     // A site that is the very class the area learned cannot inherit itself, so
     // it reads as conforming here rather than as a finding. The fold drops it
     // from the population; the check re-runs the predicate and has to agree.
+    const chain = dim.learnedClasses ? chainOf(cls, reaching.get(dim.key), parents.get(dim.key)) : null;
     const conformingOf = (hit) =>
       dim.learnedClasses
-        ? hit.class === cls || isLearnedItself(hit, cls) || reaching.get(dim.key)?.has(hit.class) === true
+        ? sameConstant(hit.class, cls, hit.nesting) || isLearnedItself(hit, cls) || reachesThrough(hit.class, cls, chain)
         : hit.conforming;
     const site = (hit) => {
       const node = hit.node || {};
@@ -289,6 +318,17 @@ function breakingSites(program, source, lang, keyPath, { polarity, frameworks, c
     out.push(...found);
   }
   return out;
+}
+
+/**
+ * One parent map for `reachesThrough`: each class the map recorded as reaching
+ * the learned base is one step from it, and what the branch declares replaces
+ * that, since a branch can move a class off the base as well as add one.
+ */
+function chainOf(learned, reaching = new Set(), declared = new Map()) {
+  const chain = new Map([...reaching].map((c) => [c, learned]));
+  for (const [self, parent] of declared) chain.set(self, parent);
+  return chain;
 }
 
 /**
