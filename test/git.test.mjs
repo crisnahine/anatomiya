@@ -463,6 +463,17 @@ test("a git call cannot stop to ask for a credential", async (t) => {
   assert.equal(process.env.GIT_TERMINAL_PROMPT, before, "the parent's environment is untouched");
 });
 
+test("the pathspecs this tool writes keep their magic whatever the caller's environment says", async (t) => {
+  // These variables switch pathspec magic off or on for every call, and the
+  // pin and the refresh build `:(exclude)`, `:(icase)` and globbed pathspecs of their own.
+  const { dir } = repo(t);
+  for (const name of ["GIT_LITERAL_PATHSPECS", "GIT_GLOB_PATHSPECS", "GIT_NOGLOB_PATHSPECS", "GIT_ICASE_PATHSPECS"]) {
+    const env = { ...process.env, [name]: "1" };
+    assert.equal((await gitBuffered(dir, ["ls-files", "-z", "--", ":(icase)A.TS"], { env })).stdout, "a.ts\0", name);
+    assert.equal((await gitBuffered(dir, ["ls-files", "-z", "--", "*.ts", ":(exclude)A.ts"], { env })).stdout, "a.ts\0", name);
+  }
+});
+
 /* --- the listings that grow with the repository are streamed (F6) --- */
 
 test("the grammar does not care how the fields were cut up", () => {
