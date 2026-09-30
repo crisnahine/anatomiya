@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { chmodSync, mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, realpathSync, rmSync, symlinkSync } from "node:fs";
+import { chmodSync, mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, realpathSync, renameSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -487,6 +487,24 @@ test("a pin leaves out this tool's own map committed through a linked rules dire
 
   writeFileSync(join(dir, "agents", "rules", "README.md"), "# edited\n");
   await assert.rejects(() => runPin(dir), /commit or stash/, "a file of the directory's own is still a difference");
+});
+
+test("a pin leaves out its map where the index spells the linked directory in another case than the disk", needsSymlinks, async (t) => {
+  const dir = repo(t);
+  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
+  mkdirSync(join(dir, "Agents", "Rules"), { recursive: true });
+  if (!existsSync(join(dir, "AGENTS"))) return t.skip("this filesystem is case-sensitive");
+  mkdirSync(join(dir, ".claude"), { recursive: true });
+  symlinkSync(join("..", "Agents", "Rules"), join(dir, ".claude", "rules"));
+  await runScan(dir);
+  git("add", "-A");
+  git("commit", "-qm", "commit the map through the link");
+  renameSync(join(dir, "Agents"), join(dir, "tmp"));
+  renameSync(join(dir, "tmp"), join(dir, "agents"));
+  writeFileSync(join(dir, "agents", "Rules", OVERVIEW_FILE), "rewritten by a scan\n");
+
+  await runPin(dir);
+  assert.ok(existsSync(join(dir, PIN_PATH)));
 });
 
 test("a pin refuses while a merge has left a path unmerged, under .claude/ as well", async (t) => {
