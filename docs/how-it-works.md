@@ -329,7 +329,9 @@ files here are named snake_case
 The filename row votes with a stem's class and the check enforces over the site, so a stem spelling none of
 the four is a site with no vote: it leaves the printed population while the check still measures a
 new file against the sentence. `across 1525 of 1532 files` cannot say that, because it mixes those
-sites with the files that are no site at all.
+sites with the files that are no site at all. A stem of capitals alone is that case in a module, the
+SCREAMING spelling of `DEBUG.ts`, and no site at all in a file that holds JSX, where React reads
+`SBA.jsx` holding `SBA` as the acronym component it is.
 
 It does not borrow the words `not counted`: those belong to the clause above, which names forms the
 predicate declines and the check therefore never enforces. These names are the opposite, still
@@ -406,7 +408,10 @@ not, and the direct forms
 are a closed table (console calls, fetch and axios, process.env reads). Each row is offered only where at
 least three examined files already route through a wrapper (C14), so a repository that logs to
 the console on purpose, or one holding a config.ts nobody imports, never carries a line that can
-only read zero.
+only read zero. The Ruby `http_through_client` row reads a verb-shaped call as going through the
+client when the receiver's name ends in that network vocabulary, since the last word is what the
+receiver is: `ApiClient.get` and `http_client.post` do, `OauthClientStore.fetch` and
+`request_params.delete` do not.
 
 A row marked "learned" carries a template rather than a fixed sentence. Its sites vote with the
 naming class they spell, the plurality class becomes the sentence, and a tie learns nothing and
@@ -451,6 +456,10 @@ name out of the repository's own source, so it goes through the encoder where th
 filled rather than at each place the sentence is rendered. The last two can learn an absence, which
 renders as `interfaces carry no prefix` rather than being filled into the template, and which is
 the model default, so a repository that prefixes nothing prints counts and a prefixed one states.
+A filled prefix takes the article its letter is read with, `an I prefix` and `a T prefix`. An
+interface that merges into a name declared elsewhere is not an `interface_prefix` site, since
+prefixing it stops the merge: one inside `declare global`, `declare module` or a namespace, and one
+at the top level of a declaration file with no import or export, which is global the same way.
 Whether a learned class may be enforced is asked of the row and not of the four classes, or the
 check would state all five in the map and enforce none of them.
 

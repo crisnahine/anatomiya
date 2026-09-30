@@ -1199,7 +1199,7 @@ function filenameFinding(row, job, area, capped, { dropped = false, facets = nul
   // A name spelling no class at all is a site with no vote, and it was the
   // violation this could not see: only a name spelling a different class was
   // caught. The two names that spell every class are still not sites.
-  if (!row.isSite(path)) return null;
+  if (!row.isSite(path, facets)) return null;
   const cls = row.classify(path);
   const renamedFrom = job.file.from;
   // A rename answers the claim only where the name changed what it says. Two
@@ -1209,7 +1209,7 @@ function filenameFinding(row, job, area, capped, { dropped = false, facets = nul
   const answers =
     !renamedFrom ||
     (renamedFrom !== path &&
-      (row.isSite(renamedFrom) !== row.isSite(path) || row.classify(renamedFrom) !== cls));
+      (row.isSite(renamedFrom, facets) !== row.isSite(path, facets) || row.classify(renamedFrom) !== cls));
   if (!answers || cls === nameDim.learned) return null;
   // A name spelling no class is the omission, and an omission is reported only
   // where the map stated the claim: "name this file differently" is advice, and

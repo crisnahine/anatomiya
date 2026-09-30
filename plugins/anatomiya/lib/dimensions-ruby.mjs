@@ -377,7 +377,7 @@ export const RUBY_DIMENSIONS = [
     counterClaim: null, // same as logger_over_puts: no wrapper means the question is never asked
     precision: "partial",
     applicabilityPredicate: {
-      sites: "a Ruby file calling Net::HTTP, RestClient, HTTPClient, HTTParty, Faraday, Excon, Typhoeus, HTTP, HTTPX or URI.open, or a class under one of those libraries other than its errors, exceptions and CookieHash, or making a verb-shaped call (get, post, put, patch, delete, head, request, call, perform, execute, fetch) through a constant or variable named client, http, api, request or fetcher; the file whose own stem is nothing but that vocabulary is the client itself and is not a site",
+      sites: "a Ruby file calling Net::HTTP, RestClient, HTTPClient, HTTParty, Faraday, Excon, Typhoeus, HTTP, HTTPX or URI.open, or a class under one of those libraries other than its errors, exceptions and CookieHash, or making a verb-shaped call (get, post, put, patch, delete, head, request, call, perform, execute, fetch) through a constant or variable whose name ends in the word client, http, api, request or fetcher; the file whose own stem is nothing but that vocabulary is the client itself and is not a site",
       blind: "a client behind another name or a non-verb method is not seen, and a model that happens to be called Client with a verb-named scope still counts",
     },
     langs: ["ruby"],
@@ -606,21 +606,25 @@ function loggerReceiver(r) {
   return (r.t === "local_variable_read" || r.t === "instance_variable_read") && name === "logger";
 }
 
-/** A receiver named in the network vocabulary: `ApiClient.get`, `client.post`. */
+/**
+ * A receiver named in the network vocabulary: `ApiClient.get`, `client.post`.
+ *
+ * The last word is what the receiver is, so it has to be the vocabulary word:
+ * `OauthClientStore` is a store, `request_params` a hash and
+ * `RefreshApiUserSecret` a service. Read on any word, they stated in a
+ * repository with no HTTP at all that its HTTP goes through its own client.
+ */
 function clientReceiver(r, recv) {
   if (!r) return false;
-  const words = CAPABILITY_WORDS.network;
-  if (recv) {
-    const last = recv.slice(recv.lastIndexOf(":") + 1);
-    return stemWords(last).some((w) => words.has(w));
-  }
+  const named = (name) => CAPABILITY_WORDS.network.has(stemWords(name).at(-1));
+  if (recv) return named(recv.slice(recv.lastIndexOf(":") + 1));
   // A bare `client` is a method call to prism, not a local, so the receiverless
   // call is the same vocabulary check the variable forms get. A variable named
   // exactly `http` is the raw handle Net::HTTP.start yields, not a wrapper.
   if (r.t === "local_variable_read" || r.t === "instance_variable_read" || (r.t === "call" && !r.receiver)) {
     const name = typeof r.name === "string" ? r.name.replace(/^@+/, "") : "";
     if (name === "http" && r.t !== "call") return false;
-    return stemWords(name).some((w) => words.has(w));
+    return named(name);
   }
   return false;
 }
