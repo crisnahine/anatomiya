@@ -317,8 +317,8 @@ const linkDefined = (text, label) => {
   for (const line of text.split(/\r?\n/)) {
     const [, run, rest] = line.match(/^ {0,3}(`{3,}|~{3,})(.*)$/) ?? [];
     if (fence) {
-      // Only a bare run of the opener's character, at least as long, closes it.
-      if (run && run[0] === fence[0] && run.length >= fence.length && !rest.trim()) fence = null;
+      // Only a run of the opener's character, at least as long, then spaces or tabs, closes it.
+      if (run && run[0] === fence[0] && run.length >= fence.length && !/[^ \t]/.test(rest)) fence = null;
     } else if (run && !(run[0] === "`" && rest.includes("`"))) fence = run;
     else if (line.toLowerCase().startsWith(want)) return true;
   }
