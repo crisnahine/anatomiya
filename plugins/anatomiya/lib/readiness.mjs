@@ -139,10 +139,12 @@ export function remedyFor(engineId, root = pluginRoot()) {
  * with one printer, because the summary and the map both say it.
  */
 export function whyUnread(engineId, engines, root = pluginRoot()) {
-  const version = engines?.[engineId]?.version ?? null;
-  return version
-    ? `${engineId} ${version} ran and answered for none of them`
-    : `${engineId} reported no version: ${remedyFor(engineId, root)}`;
+  const engine = engines?.[engineId];
+  if (engine?.version) return `${engineId} ${engine.version} ran and answered for none of them`;
+  // Stopped by our own clock before it could report a version: the install is
+  // not what that says, so its remedy is not the next move.
+  if (engine?.stalled) return `${engineId} was stopped by its own clock before it answered: ${engine.stalled}`;
+  return `${engineId} reported no version: ${remedyFor(engineId, root)}`;
 }
 
 /**

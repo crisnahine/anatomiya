@@ -272,6 +272,31 @@ exit 1
   assert.match(String(out.missingParser), /prism 0\.19\.0 predates/);
 });
 
+test("a ruby our clock stopped before its ready line is a stall, not a missing install", needsShebang, async (t) => {
+  // No version came back, which alone reads as an install to fix. The idle
+  // window killed it both times, so what failed was the machine's time.
+  const bin = mkdtempSync(join(tmpdir(), "anatomiya-ruby-stall-"));
+  t.after(() => rmSync(bin, { recursive: true, force: true }));
+  writeFileSync(
+    join(bin, "ruby"),
+    `#!/bin/sh
+case "$*" in *Gem::Specification*) printf '[]'; exit 0 ;; esac
+cat >/dev/null
+exec sleep 30
+`,
+    { mode: 0o755 }
+  );
+  const file = join(bin, "a.rb");
+  writeFileSync(file, "class A\nend\n");
+
+  const out = await parseRuby([{ rel: "a.rb", abs: file }], { ruby: join(bin, "ruby"), guards: { idleMs: 200 } });
+
+  assert.equal(out.version, null);
+  assert.equal(out.stalled, "ruby went silent");
+  assert.equal(out.missingParser, null);
+  assert.equal(out.results[0].crashed, true);
+});
+
 test("a mistyped size override refuses loudly instead of dying inside the child", async () => {
   // Ungated: the refusal happens before any interpreter is spawned. `null` is
   // the sharp half, because `Number(null)` is a finite zero and interpolated
@@ -821,7 +846,7 @@ test("no files is an empty run, not a spawn", needsRuby, async () => {
   assert.deepEqual(out.results, []);
   // The results are the record: `parse.mjs` classifies every outcome off them,
   // and the three counters this once carried beside them had no reader.
-  assert.deepEqual(Object.keys(out).sort(), ["error", "missingParser", "results", "truncated", "version"]);
+  assert.deepEqual(Object.keys(out).sort(), ["error", "missingParser", "results", "stalled", "truncated", "version"]);
   assert.equal(out.version, null, "nothing was started, so nothing reported a version");
   assert.equal(out.error, null);
 });
@@ -868,11 +893,16 @@ test("one unreadable file costs that file, not the run", needsRuby, async () => 
   assert.equal(out.results.find((r) => r.rel === "here.rb").ok, true);
 });
 
-test("a path that would need argv quoting never reaches the parser", needsRuby, async () => {
-  const out = await parseRuby([{ rel: "-rsocket.rb", abs: join(dir, "-rsocket.rb") }]);
-  assert.equal(out.results[0].skipped, true);
-  assert.equal(out.results[0].ok, false);
-  assert.equal(out.version, null, "the interpreter never started, so the path never reached it");
+test("a path that reads like an option is parsed as a path", needsRuby, async () => {
+  // Paths travel on stdin, never in argv, so a leading dash is only a name.
+  // Skipping it was charged as a file over the size cap, and as an answer
+  // from an interpreter that never ran.
+  const abs = join(dir, "-rsocket.rb");
+  writeFileSync(abs, "def go\n  1\nend\n");
+  const out = await parseRuby([{ rel: "-rsocket.rb", abs }]);
+  assert.equal(out.results[0].ok, true, out.results[0].error);
+  assert.equal(out.results[0].skipped, undefined);
+  assert.ok(out.version, "the interpreter read it");
 });
 
 test("no ruby on the machine charges the files instead of losing them", needsRuby, async () => {

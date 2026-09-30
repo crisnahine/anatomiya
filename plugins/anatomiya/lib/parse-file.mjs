@@ -79,27 +79,32 @@ let parseOptions = PLAIN_OPTIONS;
 // space before it reads a byte, which a `ulimit -v` or strict overcommit
 // refuses, and measured under `ulimit -v 4000000` every JavaScript and
 // TypeScript file came back unreadable, so the scan wrote zero areas and
-// removed the correct area files beside them. Matched on the text rather than
-// on the class: a nesting deep enough to exhaust the stack is a RangeError
-// from the same call, and the same file under the plain transfer is the
-// segfault B2 exists to contain, so it must stay a parse that failed.
+// removed the correct area files beside them.
 const NO_BUFFER = "Array buffer allocation failed";
 
+// The raw transfer's deserializer recurses in JS and runs out of stack near
+// 3,000 operands in one expression, a shape generated files reach, while the
+// plain transfer reads the same file cleanly. A plain parse deep enough to
+// segfault still dies in this forked worker, where B2 contains it.
+const NO_STACK = "Maximum call stack size exceeded";
+
 /**
- * One parse, off the raw transfer for good once this process has been refused
- * its buffer.
+ * One parse, off the raw transfer for this file when its tree was too deep to
+ * carry, and for good once this process has been refused its buffer.
  *
- * The limit is the process's rather than the file's, so every later file would
- * pay the same failed reservation, and the plain transfer answers the same
- * tree: what the refusal costs is the speed, not the file.
+ * The buffer limit is the process's rather than the file's, so every later file
+ * would pay the same failed reservation. The stack limit is the file's. The
+ * plain transfer answers the same tree either way: what it costs is the speed,
+ * not the file.
  */
 function parseWith(filename, source) {
   try {
     return parseSync(filename, source, parseOptions);
   } catch (err) {
-    if (parseOptions === PLAIN_OPTIONS || !(err instanceof RangeError) || err.message !== NO_BUFFER) throw err;
-    parseOptions = PLAIN_OPTIONS;
-    return parseSync(filename, source, parseOptions);
+    if (parseOptions === PLAIN_OPTIONS || !(err instanceof RangeError)) throw err;
+    if (err.message === NO_BUFFER) parseOptions = PLAIN_OPTIONS;
+    else if (err.message !== NO_STACK) throw err;
+    return parseSync(filename, source, PLAIN_OPTIONS);
   }
 }
 

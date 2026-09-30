@@ -39,6 +39,20 @@ test("a process that cannot reserve the raw transfer's buffer still parses every
   assert.equal(run.stdout.trim(), "src/a.ts true\nsrc/b.ts true");
 });
 
+test("a generated chain the raw transfer cannot carry is parsed through the plain one", async () => {
+  // Measured: the raw transfer's deserializer recurses in JS and runs out of
+  // stack near 3,000 operands, while the plain transfer reads the same file
+  // with no error. A generated string table is exactly this shape.
+  const chain = "module.exports = " + Array.from({ length: 3200 }, (_, i) => JSON.stringify(`line ${i}`)).join(" +\n  ") + ";\n";
+
+  const r = await parseFile(chain, "src/strings.js", "js");
+
+  assert.equal(r.ok, true, r.error);
+  assert.equal(r.errors, 0);
+  const after = await parseFile("export const a = 1;\n", "src/a.js", "js");
+  assert.equal(after.ok, true, "the next file still parses");
+});
+
 test("the grammar follows the real extension: a ts assertion parses in .ts and not in .tsx", async () => {
   const cast = "const x = <string>window.name;\nexport const y = x;\n";
   const ts = await parseFile(cast, "src/a.ts", "js");

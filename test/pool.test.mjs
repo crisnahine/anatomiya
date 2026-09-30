@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { needsPathControl, needsPosixPaths, needsShebang, needsTmpdirVariable } from "./platform.mjs";
-import { existsSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createPool, rssOf, GUARDS } from "../plugins/anatomiya/lib/pool.mjs";
@@ -75,6 +75,68 @@ test("a parse the wall clock killed is tried again before it is charged", async 
     assert.equal(r.attempts, 2, "the timed-out file went back on the queue once");
     assert.match(r.error, /twice/, "the error says the retry ran out too");
   });
+});
+
+test("a parse the wall clock killed is retried alone, after the queue drains", async (t) => {
+  // The batch a killed parse died in was competing for the machine (B3), so
+  // its retry runs with no other parse in flight. Back on the end of the live
+  // queue, six near-cap files killed in one burst were retried side by side
+  // under load and all six were charged as crashed.
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-retry-alone-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const log = join(dir, "log");
+  const preload = join(dir, "preload.mjs");
+  // The first attempt at a `hang` file never returns, so the clock kills it;
+  // every other parse holds its worker a moment, so overlap has room to show.
+  writeFileSync(
+    preload,
+    `import { appendFileSync, existsSync, writeFileSync } from "node:fs";
+const LOG = ${JSON.stringify(log)};
+process.on("message", ({ rel }) => {
+  appendFileSync(LOG, "start " + rel + " " + Date.now() + "\\n");
+  if (rel.startsWith("hang") && !existsSync(LOG + "." + rel)) {
+    writeFileSync(LOG + "." + rel, "");
+    for (;;);
+  }
+  const end = Date.now() + 60;
+  while (Date.now() < end);
+});
+const send = process.send.bind(process);
+process.send = (msg, ...rest) => {
+  if (msg && msg.rel) appendFileSync(LOG, "end " + msg.rel + " " + Date.now() + "\\n");
+  return send(msg, ...rest);
+};
+`,
+  );
+  const files = ["hang1.ts", "hang2.ts", ...Array.from({ length: 6 }, (_, i) => `n${i}.ts`)].map((name) =>
+    file(dir, name, "export const x = 1\n"),
+  );
+
+  await withPool({ size: 2, execArgv: ["--import", preload], guards: { timeoutMs: 1_000 } }, async (pool) => {
+    const results = await Promise.all(files.map((f) => pool.parse(f)));
+    for (const rel of ["hang1.ts", "hang2.ts"]) {
+      const r = results.find((x) => x.rel === rel);
+      assert.equal(r.ok, true, `${rel}: ${r.error}`);
+      assert.equal(r.attempts, 2, `${rel} was killed once and answered on its retry`);
+    }
+  });
+
+  // Each start paired with the end that follows it; a killed attempt has none.
+  const spans = [];
+  const open = new Map();
+  for (const line of readFileSync(log, "utf8").trim().split("\n")) {
+    const [what, rel, at] = line.split(" ");
+    if (what === "start") open.set(rel, { rel, from: Number(at) });
+    else spans.push({ ...open.get(rel), to: Number(at) });
+  }
+  const retries = spans.filter((s) => s.rel.startsWith("hang"));
+  assert.equal(retries.length, 2);
+  for (const r of retries) {
+    for (const s of spans) {
+      if (s === r) continue;
+      assert.ok(s.to <= r.from || s.from >= r.to, `${s.rel} ran beside the retry of ${r.rel}`);
+    }
+  }
 });
 
 test("a parse that answered is charged to one attempt", async () => {
