@@ -215,14 +215,12 @@ export function runSemantic(root, files, { guards: given = null, workerPath = WO
  * The tier's verdict with the rate taken over `rels`, the files a claim is
  * counted over. A file in no area that the map describes still lends its types
  * but not its rate: one untyped bundle took a fully typed repository to 3%.
- * A set holding no checked file keeps the whole-corpus answer, which would
- * otherwise read as a corpus with nothing to resolve.
+ * An empty set, a repository with no area, keeps the whole-corpus answer.
+ * Areas holding no checked file have nothing to resolve.
  */
 export function semanticOver(semantic, rels) {
-  if (!semantic || semantic.error) return semantic;
-  const held = [...rels].filter((rel) => semantic.records.has(rel));
-  if (held.length === 0) return semantic;
-  return { ...semantic, ...classifySemantic({ config: semantic.config, resolution: summed(held, semantic.records) }) };
+  if (!semantic || semantic.error || rels.length === 0) return semantic;
+  return { ...semantic, ...classifySemantic({ config: semantic.config, resolution: summed(rels, semantic.records) }) };
 }
 
 function summed(rels, records) {
