@@ -8,7 +8,7 @@ import { deepRefusal } from "./semantic.mjs";
 import { writeMap } from "./write.mjs";
 import { check } from "./check.mjs";
 import { engineOf, language } from "./langs.mjs";
-import { collect, countUntrackedSource, gitRoot, lsFiles } from "./corpus.mjs";
+import { collect, countUntrackedSource, gitRoot, isCorpusPath, lsFiles } from "./corpus.mjs";
 import { discover } from "./areas.mjs";
 import { buildPin, readPin, writePin, pinDelta, pinTarget, PIN_PATH } from "./baseline.mjs";
 import { gitBuffered, headSha } from "./git.mjs";
@@ -267,8 +267,11 @@ async function refuseUnlikeHead(root) {
   // scan after.
   const unmerged = await gitBuffered(root, ["ls-files", "--unmerged", "-z"]);
   if (!unmerged.ok) throw new Error(`could not read whether the index holds unmerged paths: ${firstLine(unmerged.error ?? "")}`);
+  const merging = (await gitBuffered(root, ["rev-parse", "--verify", "--quiet", "MERGE_HEAD"])).ok;
+  const inMerge = "a merge is in progress, and a pin records HEAD: finish or abort the merge first, then pin";
   if (unmerged.stdout.length > 0) {
-    throw new Error("the index holds unmerged paths, and a pin records HEAD: finish or abort the merge first, then pin");
+    // A rebase, a cherry-pick or a stash pop leaves them too, with no merge to abort.
+    throw new Error(merging ? inMerge : "the index holds unmerged paths, and a pin records HEAD: resolve them, or abort the rebase or cherry-pick that left them, then pin");
   }
   // A staged, edited or deleted tracked file is listed against a commit that
   // does not hold it, and every scan after reads that area as a population
@@ -281,15 +284,17 @@ async function refuseUnlikeHead(root) {
   const dirty = await gitBuffered(root, ["status", "--porcelain", "--untracked-files=no", "-z", "--", ".", ":(exclude).claude", ...own]);
   if (!dirty.ok) throw new Error(`could not read whether the working tree matches HEAD: ${firstLine(dirty.error ?? "")}`);
   if (dirty.stdout.length > 0) {
-    throw new Error("tracked files differ from HEAD, and a pin records HEAD: commit or stash them first, then pin");
+    // Stashing a merge in progress drops the merge.
+    throw new Error(merging ? inMerge : "tracked files differ from HEAD, and a pin records HEAD: commit or stash them first, then pin");
   }
 }
 
-/** How many skip-worktree paths the working tree does not hold. */
+/** How many skip-worktree paths the corpus would count the working tree does not hold. */
 async function absentSkipWorktree(root) {
   let n = 0;
   await lsFiles(root, (entry) => {
-    if (entry.startsWith("S ") && !lstatSync(join(root, entry.slice(2)), { throwIfNoEntry: false })) n++;
+    const rel = entry.slice(2);
+    if (entry.startsWith("S ") && isCorpusPath(rel) && !lstatSync(join(root, rel), { throwIfNoEntry: false })) n++;
   }, ["-t"]);
   return n;
 }
