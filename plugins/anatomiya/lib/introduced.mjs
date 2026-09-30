@@ -272,6 +272,7 @@ function breakingSites(program, source, lang, keyPath, { polarity, frameworks, c
         fp: siteIdentity(keyPath, dim.key, node, source),
       };
       if (located(node)) contextOf.set(found, lines().around(node.start, node.end));
+      if (located(node) && dim.judgesBody) openingOf.set(found, lines().around(node.start, node.start));
       return found;
     };
     // A grouped row answers per enclosing body, so its hits are held until the
@@ -368,7 +369,7 @@ function absorb(head, base) {
   for (const key of [
     (f) => `${f.fp}\0${f.where ?? ""}\0${f.text}`,
     (f) => (contextOf.has(f) ? `${f.fp}\0${contextOf.get(f)}` : null),
-    (f) => `${f.fp}\0${f.where ?? ""}`,
+    (f) => `${f.fp}\0${f.where ?? ""}\0${openingOf.get(f) ?? ""}`,
   ]) {
     const copies = new Map();
     for (const f of base) {
@@ -391,7 +392,7 @@ function absorb(head, base) {
   const out = [];
   for (const f of head) {
     if (held.has(f)) continue;
-    const left = remaining.get(f.fp) || 0;
+    const left = openingOf.has(f) ? 0 : remaining.get(f.fp) || 0;
     if (left > 0) {
       remaining.set(f.fp, left - 1);
       continue;
@@ -421,6 +422,11 @@ const normalise = (s) => s.replace(/\s+/g, " ").trim();
 // alike copies apart by. Beside the site rather than on it, so the record the
 // caller reads keeps the shape it had.
 const contextOf = new WeakMap();
+
+// The line a body-judging site opens on. Its identity leaves out the body its
+// conformance is read from, so two anonymous copies are told apart by where
+// they sit, and are never paired by count alone.
+const openingOf = new WeakMap();
 
 /**
  * Where each line of one source starts, found once and searched by halving.

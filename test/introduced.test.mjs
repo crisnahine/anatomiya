@@ -222,6 +222,32 @@ test("an edited body beside a new one of the same shape is matched by the functi
   assert.deepEqual(added.map((f) => [f.line, f.where]), [[2, "f"]]);
 });
 
+test("a row that judges the body does not let one anonymous copy answer for another", () => {
+  // With the body out of the identity every anonymous handler is one site, so
+  // a handler that lost its catch was absorbed by another that never had one.
+  const handlers = (a, b) =>
+    `app.get("/a", async (req, res) => {\n  ${a}\n})\napp.get("/b", async (req, res) => {\n  ${b}\n})\n`;
+  const judged = (base, head) =>
+    only(
+      "async_error_handling",
+      newlyIntroduced({ area: area(stated("async_error_handling")), path: "src/a.ts", lang: "js", head: revision(head, { file: "f.ts" }), base: revision(base, { file: "f.ts" }) })
+    ).map((f) => f.line);
+  const caught = (call) => `try { await ${call}() } catch (e) { res.end() }`;
+
+  const base = handlers(caught("a"), "await b()");
+  assert.deepEqual(judged(base, handlers("await a()", caught("b"))), [1], "the catch moved from /a to /b");
+  assert.deepEqual(judged(base, handlers("await a()", "await b(); log()")), [1], "/a lost its catch and /b was edited");
+  assert.deepEqual(judged(base, handlers(caught("a"), "await b(); log()")), [], "an edit inside /b alone is not a new site");
+
+  const catches = (a, b) => `try { x() } catch (e) { later(() => ${a}) }\ntry { y() } catch (e) { later(() => ${b}) }\n`;
+  const swallowed = (base, head) =>
+    only(
+      "swallowed_error",
+      newlyIntroduced({ area: area(stated("swallowed_error")), path: "src/a.ts", lang: "js", head: revision(head, { file: "f.ts" }), base: revision(base, { file: "f.ts" }) })
+    ).map((f) => f.line);
+  assert.deepEqual(swallowed(catches("log(e)", "report()"), catches("log()", "report(e)")), [1], "a catch that stopped reading its error inside a closure");
+});
+
 test("a long file of many sites is judged in time linear in its length", () => {
   // Each site's line was counted from the start of the file, so the work grew
   // with the square of the file: a 619 KB file of 30,000 sites took 28 seconds.
