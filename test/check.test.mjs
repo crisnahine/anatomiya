@@ -2573,6 +2573,58 @@ test("a learned mixin is enforced the way a learned base class is", needsRuby, a
   assert.equal(found[0].claim, "classes here include Auditable");
 });
 
+// Sidekiq defines `Worker = Job`, so a body including either spelling already
+// includes the module the claim names, in both directions.
+test("either spelling of Sidekiq's job mixin satisfies a claim learned on the other", needsRuby, async (t) => {
+  for (const [learned, written] of [["Sidekiq::Worker", "Sidekiq::Job"], ["Sidekiq::Job", "Sidekiq::Worker"]]) {
+    const dir = repo(t, ({ git, write, commit }) => {
+      write("app/workers/a_worker.rb", `class AWorker\n  include ${learned}\nend\n`);
+      commit("init");
+      git("checkout", "-q", "-b", "work");
+      write("app/workers/b_worker.rb", `class BWorker\n  include ${written}\nend\n`);
+      write("app/workers/c_worker.rb", "class CWorker\n  include Comparable\nend\n");
+      commit("add");
+    });
+    facts(dir, {
+      sha: sha(dir, "main"),
+      areas: [{
+        id: "aaaaaaaa",
+        path: "app/workers",
+        globs: [{ negated: false, dir: "app/workers", tail: "**/*.rb" }],
+        fileCount: 8,
+        dimensions: [dim({ key: "module_include", learned })],
+      }],
+    });
+    const report = await check(dir);
+    assert.deepEqual(forKey(report, "module_include").map((f) => f.path), ["app/workers/c_worker.rb"], learned);
+  }
+});
+
+// The fold resolves a bare mixin against the body's nesting (C30), so the check
+// has to, or a site the map counted as conforming is a finding here.
+test("a mixin written relative to its namespace satisfies the scoped name the map learned", needsRuby, async (t) => {
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("app/models/user.rb", "module Api\n  class User\n    include Api::Auditable\n  end\nend\n");
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("app/models/order.rb", "module Api\n  class Order\n    include Auditable\n  end\nend\n");
+    commit("add");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    areas: [{
+      id: "aaaaaaaa",
+      path: "app/models",
+      globs: [{ negated: false, dir: "app/models", tail: "**/*.rb" }],
+      fileCount: 8,
+      dimensions: [dim({ key: "module_include", learned: "Api::Auditable" })],
+    }],
+  });
+  const report = await check(dir);
+  assertExamined(report, "app/models/order.rb");
+  assert.deepEqual(forKey(report, "module_include"), [], JSON.stringify(report.findings));
+});
+
 test("a mixin finding fires once per class body, not once per included constant", needsRuby, async (t) => {
   const dir = repo(t, ({ git, write, commit }) => {
     write("app/workers/a_worker.rb", "class AWorker\n  include Sidekiq::Worker\nend\n");
