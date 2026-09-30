@@ -235,6 +235,11 @@ directory above your checkouts.
   `define_method(:up) { backfill(User) }`, as a migration that rewrites rows.
 - `pin` with unmerged paths and no merge in progress says to resolve them or abort the operation
   that left them. It used to say to abort a merge git had not started.
+- `check` no longer says a model lost its spec when that spec was only added to the index (with `git
+  add` or `git add -N`) and then deleted without ever being committed.
+- `pin` and the refresh keep their own pathspecs when `GIT_LITERAL_PATHSPECS`,
+  `GIT_NOGLOB_PATHSPECS`, `GIT_GLOB_PATHSPECS` or `GIT_ICASE_PATHSPECS` is set. Before, git read the
+  pin's `.claude` exclude as a literal filename, so the pin refused over the tool's own map.
 
 ### Changed
 
