@@ -240,6 +240,24 @@ export function resolveRulesDir(root) {
   return resolveInside(root, RULES_DIR);
 }
 
+/**
+ * The rules directory as git spells it: `.claude/rules`, or where a
+ * `.claude/rules` link leads. Git matches no pathspec and no ignore pattern
+ * past a symlink, so a map written through the link is listed under the
+ * target only.
+ */
+export function trackedRulesDir(root) {
+  const real = resolveRulesDir(root);
+  let base;
+  try {
+    base = realpathSync(root);
+  } catch {
+    return RULES_DIR;
+  }
+  if (real === null || !real.startsWith(base + sep)) return RULES_DIR;
+  return relative(base, real).split(sep).join("/");
+}
+
 export function resolveInside(root, relPath) {
   const parts = relPath.split("/");
   // Plain `realpathSync` on both sides here, not the native form
