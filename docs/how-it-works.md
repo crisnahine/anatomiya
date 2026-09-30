@@ -935,7 +935,9 @@ agents, and refused, the scan wrote nothing there at all. Git matches no pathspe
 map written through that link is tracked, ignored and changed only under the link's target. The
 refresh's tracked-map guard and the pin's clean-tree test read the map there (`trackedRulesDir`):
 spelled as `.claude/rules/...`, a map committed through the link read as untracked and every move of
-HEAD rewrote it. A link within `.claude` is still followed.
+HEAD rewrote it. Where core.ignorecase is set, both pathspecs carry `icase`, since git keeps the
+index spelling and a directory renamed in case outside git is found under neither spelling otherwise.
+A link within `.claude` is still followed.
 `facts.json` and `baseline.json` are read through the same resolution, their own names included, so
 a link at either is not followed out; a write replaces it as an entry. A refusal names the path the
 repository spells and says when it is a link, since the resolved name once read "README.md is not a

@@ -11,7 +11,7 @@ import { engineOf, language } from "./langs.mjs";
 import { collect, countUntrackedSource, gitRoot, isCorpusPath, lsFiles } from "./corpus.mjs";
 import { discover } from "./areas.mjs";
 import { buildPin, readPin, writePin, pinDelta, pinTarget, PIN_PATH } from "./baseline.mjs";
-import { gitBuffered, headSha } from "./git.mjs";
+import { caseMagic, gitBuffered, headSha } from "./git.mjs";
 import { encodePath, firstLine } from "./encode.mjs";
 import { byCode } from "./paths.mjs";
 import { plural } from "./render-layout.mjs";
@@ -280,8 +280,9 @@ async function refuseUnlikeHead(root) {
   // every scan, and it is never part of the population. A map written through
   // a `.claude/rules` link is stored under the link's target.
   const rules = trackedRulesDir(root);
-  const own = rules === RULES_DIR ? [] : [`:(exclude)${rules}/${PREFIX}*.md`];
-  const dirty = await gitBuffered(root, ["status", "--porcelain", "--untracked-files=no", "-z", "--", ".", ":(exclude).claude", ...own]);
+  const exclude = `:(${["exclude", await caseMagic(root)].filter(Boolean).join(",")})`;
+  const own = rules === RULES_DIR ? [] : [`${exclude}${rules}/${PREFIX}*.md`];
+  const dirty = await gitBuffered(root, ["status", "--porcelain", "--untracked-files=no", "-z", "--", ".", `${exclude}.claude`, ...own]);
   if (!dirty.ok) throw new Error(`could not read whether the working tree matches HEAD: ${firstLine(dirty.error ?? "")}`);
   if (dirty.stdout.length > 0) {
     // Stashing a merge in progress drops the merge.
