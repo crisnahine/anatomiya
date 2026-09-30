@@ -72,5 +72,5 @@ a plain one on a 3,800-file repository and it cannot be narrowed to the files th
 needs the optional `typescript` 5.x dependency and the repository's own dependencies installed on
 disk inside the repository: a `node_modules` linked in from outside it is not read, so it counts
 as not installed. Without them it says so on the map rather than printing a clean-looking count.
-The share of type lookups that resolved is taken over files in an area, so a vendored bundle in
-no area does not lower it.
+The share of type lookups that resolved is taken over files in the areas the map describes, so a
+vendored bundle outside them does not lower it.
