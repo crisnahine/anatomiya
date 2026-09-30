@@ -12,8 +12,8 @@
  * fastest of each is kept: noise only ever adds time.
  */
 export function doublingRatio(make, n, { rounds = 3 } = {}) {
-  // Windows counts CPU time in steps of about 15.6ms, so work shorter than a
-  // step reads as none. Each side runs the work often enough to fill several.
+  // Windows counts CPU time in steps of about 15.6ms, so a short side reads as
+  // none or rounds by a whole step. Each side runs long enough that a step is noise.
   const probe = make(n);
   const once = process.hrtime.bigint();
   probe();
@@ -31,7 +31,7 @@ export function doublingRatio(make, n, { rounds = 3 } = {}) {
   return best[1] / best[0];
 }
 
-const MIN_SPENT_NS = 60e6;
+const MIN_SPENT_NS = 250e6;
 
 /** Under 3: past linear's 2 with room for noise, short of quadratic's 4. */
 export const LINEAR = 3;
