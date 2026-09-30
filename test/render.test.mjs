@@ -151,8 +151,17 @@ test("a bare-name glob under a directory keeps both halves", () => {
 const renderedPaths = (out) =>
   out.split("\n").slice(3, out.split("\n").indexOf("---", 1)).map((l) => JSON.parse(l.replace(/^ {2}- /, "")));
 
-/** The matcher's semantics: `*` stops at a slash, a `**` segment spans any depth including none. */
+/**
+ * The matcher's semantics: `*` stops at a slash, a `**` segment spans any depth including none.
+ *
+ * Only the syntax glob libraries read alike. picomatch and minimatch read `?`,
+ * `[...]`, `(...)`, `\` and a brace range as syntax, where this would take them
+ * as literal characters and agree with a pattern those libraries read another
+ * way, so a pattern holding any of them is refused rather than matched.
+ */
 function globMatches(pattern, rel) {
+  const beyond = /[?[\]()\\]|\{[^}]*\.\./.exec(pattern);
+  if (beyond) throw new Error(`${JSON.stringify(pattern)} holds ${JSON.stringify(beyond[0])}, which glob libraries read as syntax`);
   const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   let re = "^";
   for (let i = 0; i < pattern.length; i++) {
@@ -2902,24 +2911,15 @@ test("a directory named in extglob syntax folds like any other glob syntax", () 
   }
 });
 
-test("a directory named in extglob syntax is reached by picomatch too, where it is installed", async (t) => {
-  // The helper above does not implement extglobs, so it cannot see the bug on
-  // its own. picomatch is what Claude Code's matcher is built on.
-  let pm;
-  try {
-    pm = (await import("picomatch")).default;
-  } catch {
-    t.skip("picomatch is not installed");
-    return;
+test("the matcher refuses a pattern it would read differently from a glob library", () => {
+  // It takes these characters literally, so without the refusal a rendered
+  // pattern spelling an extglob directory would reach it here and nothing in a
+  // real matcher.
+  for (const p of ["src/@(lib)/**", "src/x+(y)/**", "src/a\\b/**", "src/[ab]/**", "src/?/**", "src/{1..3}/**"]) {
+    assert.throws(() => globMatches(p, "src/lib/m0.ts"), /glob libraries read as syntax/, p);
   }
-  for (const a of discover(extglobFiles())) {
-    const delivered = renderedPaths(renderArea(area({ path: a.path, globs: a.globs })));
-    for (const f of a.files) {
-      let hit = false;
-      for (const p of delivered) if (pm(p.replace(/^!/, ""))(f.rel)) hit = !p.startsWith("!");
-      assert.ok(hit, `${a.path}: ${f.rel} is reached by none of ${JSON.stringify(delivered)}`);
-    }
-  }
+  assert.equal(globMatches("src/**/*.{ts,tsx}", "src/a/b.tsx"), true, "a brace list is read as every library reads it");
+  assert.equal(globMatches("packages/@scope/x/**", "packages/@scope/x/y.ts"), true, "and an `@` with no group after it is a name");
 });
 
 test("a file in no area is not said to be there for having too few neighbours", () => {
