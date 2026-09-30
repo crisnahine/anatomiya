@@ -15,7 +15,7 @@
  * wrote and this one knows nothing about.
  */
 import { accessSync, closeSync, constants, fstatSync, lstatSync, openSync, readSync, readdirSync, realpathSync, statSync } from "node:fs";
-import { join, relative, isAbsolute, resolve, sep } from "node:path";
+import { basename, dirname, join, relative, isAbsolute, resolve, sep } from "node:path";
 
 /**
  * A path resolved through every link and alias the OS keeps, or null where it
@@ -248,14 +248,21 @@ export function resolveRulesDir(root) {
  */
 export function trackedRulesDir(root) {
   const real = resolveRulesDir(root);
-  let base;
-  try {
-    base = realpathSync(root);
-  } catch {
-    return RULES_DIR;
-  }
-  if (real === null || !real.startsWith(base + sep)) return RULES_DIR;
-  return relative(base, real).split(sep).join("/");
+  const base = realpathOrNull(root);
+  if (base === null || real === null) return RULES_DIR;
+  // The native form spells the case on disk, as git does, where the plain form
+  // keeps the link text's: pathspecs match case-sensitively even under core.ignorecase.
+  const onDisk = nativeUpTo(real);
+  if (!onDisk.startsWith(base + sep)) return RULES_DIR;
+  return relative(base, onDisk).split(sep).join("/");
+}
+
+/** The native real path of the deepest part of `p` that exists, with the rest appended as written. */
+function nativeUpTo(p) {
+  const real = realpathOrNull(p);
+  if (real !== null) return real;
+  const parent = dirname(p);
+  return parent === p ? p : join(nativeUpTo(parent), basename(p));
 }
 
 export function resolveInside(root, relPath) {
