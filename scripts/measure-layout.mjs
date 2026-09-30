@@ -132,7 +132,7 @@ function recountRoot(path, corpus, testFiles, byStem) {
     testRoot: tests.length * 2 > own.length,
     companions:
       producers.length > 0 && testFiles.length > 0 && !underTestTree(dir)
-        ? namesakeCompanions(producers, testFiles, dir, byStem)
+        ? { ...namesakeCompanions(producers, testFiles, dir, byStem), ext: producerExt }
         : null,
     helpers: null,
   };
@@ -143,8 +143,12 @@ function recountRoot(path, corpus, testFiles, byStem) {
   if (jsxFiles.length > 0 && modules.length > 0) {
     out.helpers = {
       siblingModules: modules.length,
-      stems: tally(modules.map((f) => stemOf(f.rel))).slice(0, 3).map(([stem]) => stem),
+      stems: tally(modules.map((f) => stemOf(f.rel)))
+        .filter(([, n]) => n > 1)
+        .slice(0, 3)
+        .map(([stem]) => stem),
       inlineFiles: jsxFiles.filter((f) => f.facets?.inlineHelpers > 0).length,
+      jsx: jsxFiles.length,
     };
   }
   return out;
@@ -189,10 +193,11 @@ const pathLabel = (p) => JSON.parse(encodePath(p)) || "(unnamed)";
 // read as a series rather than as one anchored sentence.
 //
 // The middle one keeps an older spelling too, from before the three were
-// counted apart, which a map on disk still carries until it is rescanned.
+// counted apart, which a map on disk still carries until it is rescanned, and
+// both still read the "under the floor" wording maps carried before.
 const FOLD_DIRS = /^(\d+) more (?:directory|directories) holding (\d+) files?$/;
-const FOLD_FILES = /^(\d+) files? in \d+ (?:directory|directories) under the floor$/;
-const FOLD_OLD_FILES = /^(\d+) more files? in directories under the floor$/;
+const FOLD_FILES = /^(\d+) files? in \d+ (?:directory|directories) (?:too small for a line of their own|under the floor)$/;
+const FOLD_OLD_FILES = /^(\d+) more files? in directories (?:too small for a line of their own|under the floor)$/;
 const FOLD_ROOT = /^(\d+)(?: files?)? at the repository root$/;
 
 /**
@@ -342,10 +347,12 @@ function checkSection(section, corpus, root, recordRoots) {
       const h = counted.helpers;
       const first = clauses.shift();
       const wantFirst =
-        `${h.siblingModules} sibling module${h.siblingModules === 1 ? "" : "s"} named ${h.stems.join("/")}`;
+        `${h.siblingModules} sibling module${h.siblingModules === 1 ? "" : "s"}` +
+        (h.stems.length ? ` named ${h.stems.join("/")}` : "");
       if (first !== wantFirst) fail(`${parsed.label} sibling clause: printed "${first}", recount "${wantFirst}"`);
       const second = clauses.shift();
-      const wantSecond = `${h.inlineFiles} file${h.inlineFiles === 1 ? "" : "s"} inline${h.inlineFiles === 1 ? "s" : ""} a helper`;
+      const wantSecond =
+        `${h.inlineFiles} of ${h.jsx} JSX file${h.jsx === 1 ? "" : "s"} inline${h.inlineFiles === 1 ? "s" : ""} a helper`;
       if (second !== wantSecond) fail(`${parsed.label} inline clause: printed "${second}", recount "${wantSecond}"`);
     }
 
@@ -406,7 +413,7 @@ function checkTestsLine(line, corpus, recordRoots, testFiles, byStem) {
   const top = topNamesakeRoot(recordRoots, corpus, testFiles, byStem);
   if (top) {
     const clause = clauses.shift();
-    const expected = namesakeClause({ ...top.companions, root: null }, `${top.exts[0][0]} file`, top.dir && top.path);
+    const expected = namesakeClause({ ...top.companions, root: null }, `${top.companions.ext} file`, top.dir && top.path);
     if (clause !== expected) fail(`tests line namesake clause: printed "${clause}", recount "${expected}"`);
   }
   if (clauses.length) fail(`tests line carries a clause the recount has no ground for: ${clauses[0]}`);

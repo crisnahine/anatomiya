@@ -386,6 +386,7 @@ test("a file two trees both answer votes once, for the first of them", () => {
     with: 2,
     of: 2,
     root: "spec/models",
+    under: 1,
   });
 });
 
@@ -576,7 +577,7 @@ test("the layout record counts each root's extensions, tests, namesakes and help
     testRoot: false,
     // The denominator is the extension the line printed, so `0 of 504` sits
     // beside `504 .tsx` and counts the files the reader can see.
-    companions: { with: 0, of: 504, root: null },
+    companions: { with: 0, of: 504, root: null, ext: ".tsx" },
     helpers: { siblingModules: 65, stems: ["types", "schema", "utils"], inlineFiles: 35 },
   });
 });
@@ -619,7 +620,7 @@ test("a root whose most common extension is not source still finds its producers
   const record = rootFacts({ path: "apps/www", dir: "apps/www", files: corpus.slice(0, 8) }, indexes);
 
   assert.deepEqual(record.exts, [[".png", 5], [".tsx", 3]], "the printed line still leads with .png");
-  assert.deepEqual(record.companions, { with: 2, of: 3, root: "apps/www/test" });
+  assert.deepEqual(record.companions, { with: 2, of: 3, root: "apps/www/test", ext: ".tsx" });
 });
 
 test("a root whose top two extensions are both unparsed asks nothing", () => {
@@ -653,7 +654,7 @@ test("a root inside a test tree is not asked whether its fixtures have tests", (
   assert.deepEqual(record.tests, [{ runner: "jest", files: 2, sub: null, under: 2 }], "and the tests clause");
 
   const outside = rootFacts({ path: "lib", dir: "lib", files: corpus.slice(6) }, indexes);
-  assert.deepEqual(outside.companions, { with: 2, of: 2, root: "test" }, "and a root outside is asked");
+  assert.deepEqual(outside.companions, { with: 2, of: 2, root: "test", ext: ".js" }, "and a root outside is asked");
 });
 
 test("a test tree is caught at any segment, not only the first", () => {
@@ -850,7 +851,41 @@ test("a story file is no sibling module either, whatever its incidental syntax",
   const record = rootFacts({ path: "ui", dir: "ui", files: corpus }, indexes);
 
   assert.equal(record.helpers.siblingModules, 1);
-  assert.deepEqual(record.helpers.stems, ["utils"]);
+  assert.deepEqual(record.helpers.stems, [], "a stem that appears once names nothing");
+});
+
+test("the sibling modules are named only by stems that repeat", () => {
+  // A tally of unique names ranks them by code unit, so the three printed were
+  // the first three alphabetically and read as the directory's commonest.
+  const corpus = [
+    file("ui/Button.tsx", "jsx", { jsx: true, inlineHelpers: 0 }),
+    ...["zebra", "yak", "aardvark"].map((n) => file(`ui/${n}.ts`, "js", { jsx: false, inlineHelpers: 0 })),
+    file("ui/a/types.ts", "js", { jsx: false, inlineHelpers: 0 }),
+    file("ui/b/types.ts", "js", { jsx: false, inlineHelpers: 0 }),
+  ];
+  const record = rootFacts({ path: "ui", dir: "ui", files: corpus }, layoutIndexes(corpus));
+
+  assert.equal(record.helpers.siblingModules, 5);
+  assert.deepEqual(record.helpers.stems, ["types"]);
+
+  const unique = corpus.slice(0, 4);
+  assert.deepEqual(rootFacts({ path: "ui", dir: "ui", files: unique }, layoutIndexes(unique)).helpers.stems, []);
+});
+
+test("a root's namesake count carries the extension it was counted over", () => {
+  // The count is over one extension, and a reader of a mixed root needs to be
+  // told which, from the root's own record.
+  const corpus = [
+    file("ui/shot1.png"),
+    file("ui/shot2.png"),
+    file("ui/shot3.png"),
+    ...files(2, (i) => file(`ui/C${i}.tsx`, "jsx", { jsx: true, inlineHelpers: 0 })),
+    file("ui/C0.test.tsx", "jsx", { testRunner: "vitest" }),
+  ];
+  const record = rootFacts({ path: "ui", dir: "ui", files: corpus }, layoutIndexes(corpus));
+
+  assert.equal(record.companions.ext, ".tsx");
+  assert.equal(record.exts[0][0], ".png", "the root's first extension is not the one counted");
 });
 
 test("a root's story files are counted and named as their own kind", () => {
@@ -907,7 +942,7 @@ test("one root reads the three indexes the corpus was walked for, and rebuilds n
 
   const root = { path: "app/models", dir: "app/models", files: corpus.slice(0, 3) };
 
-  assert.deepEqual(rootFacts(root, indexes).companions, { with: 2, of: 3, root: "spec/models" });
+  assert.deepEqual(rootFacts(root, indexes).companions, { with: 2, of: 3, root: "spec/models", ext: ".rb" });
 });
 
 test("a Ruby file named for a test is one only where a test tree also says so", () => {
@@ -999,7 +1034,7 @@ test("a spec the parse found empty is neither a test nor a file owing one", () =
   const indexes = layoutIndexes(corpus);
   const record = rootFacts({ path: "src", dir: "src", files: corpus }, indexes);
 
-  assert.deepEqual(record.companions, { with: 5, of: 6, root: "src" });
+  assert.deepEqual(record.companions, { with: 5, of: 6, root: "src", ext: ".js" });
 });
 
 test("a commented-out source does not hold a spec no root will count", () => {
@@ -1016,5 +1051,5 @@ test("a commented-out source does not hold a spec no root will count", () => {
   const indexes = layoutIndexes(corpus);
   const record = rootFacts({ path: "lib", dir: "lib", files: corpus.filter((f) => f.rel.startsWith("lib/")) }, indexes);
 
-  assert.deepEqual(record.companions, { with: 2, of: 2, root: "spec" });
+  assert.deepEqual(record.companions, { with: 2, of: 2, root: "spec", under: 1, ext: ".rb" });
 });

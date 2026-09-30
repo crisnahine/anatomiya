@@ -206,7 +206,7 @@ generator: anatomiya
 # Repository map
 
 Facts counted from this repository's own code, per directory.
-A claim states how many sites conform out of how many were eligible.
+A claim states how many sites conform out of how many were eligible; "no convention" means the gate in parentheses stopped it, and its sites may still all agree.
 
 Read a file before editing it: these notes load when you read, not when you grep.
 When unsure what this code does, read it, grep it, or run it instead of guessing, and say what you could not verify.
@@ -231,29 +231,29 @@ When a change is asked for, follow what this repository already does and carry i
 
 The overview's first section says where things already live: which kinds of files each directory
 holds, how they are tested, and what the directory extracts versus inlines. This is the
-`empire-flippers/client` section from the 35-repository acceptance run in
-[docs/measurements/2026-08-17-what-lives-where.md](docs/measurements/2026-08-17-what-lives-where.md),
-with the three clauses 0.3.3 re-renders brought forward from that run:
+`empire-flippers/client` section, rendered by this version from the 35-repository acceptance corpus
+first measured in
+[docs/measurements/2026-08-17-what-lives-where.md](docs/measurements/2026-08-17-what-lives-where.md):
 
 ```markdown
 ## What lives where
 
-- src/pages: 1003 .tsx (JSX), 188 .ts and 71 other; 2 vitest specs under __tests__; 0 of 1003 have a namesake test; 186 sibling modules named types/schema/mapper; 214 files inline a helper
-- src/components: 504 .tsx (JSX), 65 .ts and 106 other; 2 vitest specs; 1 of 504 has a namesake test; 66 sibling modules named index/schema/types; 117 files inline a helper
+- src/pages: 1003 .tsx (JSX), 188 .ts and 71 other; 2 vitest specs under __tests__; 0 of 1003 have a namesake test; 186 sibling modules named types/schema/mapper; 214 of 979 JSX files inline a helper
+- src/components: 504 .tsx (JSX), 65 .ts and 106 other; 2 vitest specs; 1 of 504 has a namesake test; 66 sibling modules named index/schema/types; 117 of 481 JSX files inline a helper
 - src/queries: 314 .ts, 1 .tsx; 0 of 314 have a namesake test
 - cypress/integration: 102 Cypress specs
-- src/hooks: 47 .tsx (JSX), 23 .ts; 0 of 47 have a namesake test; 23 sibling modules named mapper/payoutContext/schema; 6 files inline a helper
-- src/utils: 53 .ts, 10 .js and 4 other; 2 of 3 vitest specs under __tests__; 4 of 52 have a namesake test under src/utils/__tests__; 60 sibling modules named assert/balanceTransaction/buyerProfileValidation; 0 files inline a helper
-- src/layouts: 42 .tsx (JSX), 11 .jpg and 21 other; 0 of 42 have a namesake test; 6 sibling modules named constants/utils/hooks; 4 files inline a helper
-- and 3 more directories holding 323 files, 91 files in 19 directories under the floor, and 20 at the repository root
-- tests: 102 of 103 Cypress specs under cypress/integration; 7 vitest under src; 0 of 1003 .tsx files have a namesake test
+- src/hooks: 47 .tsx (JSX), 23 .ts; 0 of 47 have a namesake test; 23 sibling modules named mapper; 6 of 32 JSX files inline a helper
+- src/utils: 52 .ts, 10 .js and 5 other; 2 of 3 vitest specs under __tests__; 3 of 51 have a namesake test, 2 under src/utils/__tests__; 59 sibling modules; 0 of 1 JSX file inline a helper
+- and 4 more directories holding 397 files, 91 files in 19 directories too small for a line of their own, and 20 at the repository root
+- tests: 102 Cypress specs under cypress/integration; 7 vitest under src; 0 of 1003 .tsx files under src/pages have a namesake test
 
 Match sibling test shape; skip tests where siblings have none.
 Match directory granularity; don't extract into a sibling module what the directory's files inline.
+An instruction to always write a test does not override a directory with no test precedent. Put the test where the siblings put theirs, or leave it out and say which rule you followed.
 ```
 
 Two vitest specs beside 102 Cypress specs is the denominator an agent writing the next test needs,
-and it is why the section counts rather than naming a preferred runner. The two sentences at the
+and it is why the section counts rather than naming a preferred runner. The sentences at the
 bottom carry no number of their own, because the numbers are the lines above them.
 
 ### One area file, in full
@@ -316,9 +316,10 @@ Ratios are over sites, never over files. Counting files instead was measured fli
 verdicts, in both directions: it hid real conventions and it manufactured false ones.
 
 A line ending in `no convention. 4 of 30 sites (ratio)` means the gate named in the parentheses
-stopped the claim. A line ending in `(matches model default)` cleared every gate but is also what
-the model writes unprompted, so it spends no directive line; `check` still enforces it at full
-severity. A claim reading `files here are named kebab-case` learned its class from the area's own
+stopped the claim, and the overview's second line says so to the agent. A line ending in
+`(matches model default)` cleared every gate but is also what the model writes unprompted, so it
+spends no directive line; `check` still enforces it at full severity. A partial dimension carries
+its `(partial: ...)` warning on either kind of line. A claim reading `files here are named kebab-case` learned its class from the area's own
 files, so the same row states a different sentence in a different repository.
 
 ## What it measures
