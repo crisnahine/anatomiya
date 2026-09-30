@@ -16,6 +16,7 @@ import { formatReport, formatReportJson, CAVEATS } from "../plugins/anatomiya/li
 import { scan } from "../plugins/anatomiya/lib/scan.mjs";
 import { writeMap } from "../plugins/anatomiya/lib/write.mjs";
 import { writeFacts } from "../plugins/anatomiya/lib/facts.mjs";
+import { renderArea } from "../plugins/anatomiya/lib/render.mjs";
 import { buildPin, writePin } from "../plugins/anatomiya/lib/baseline.mjs";
 import { collect } from "../plugins/anatomiya/lib/corpus.mjs";
 import { discover } from "../plugins/anatomiya/lib/areas.mjs";
@@ -1385,7 +1386,7 @@ test("MUST-FIX needs a baseline whose evidence would have cleared the gate that 
   // The check may only enforce at top severity what the scan was willing to
   // state, so both read the same bound. A floor left behind here would enforce
   // as law a claim the scan considered too thin to make.
-  const at = (o) => severityFor({ path: "src/a.ts" }, { dim: dim(o), fresh: true }).severity;
+  const at = (o) => severityFor({ path: "src/a.ts" }, { dim: dim(o) }).severity;
 
   assert.equal(at({}), "MUST-FIX");
   assert.equal(at({ baseline: { candidates: 20, conforming: 20 } }), "FIX", "twenty perfect sites hold 0.84");
@@ -1398,25 +1399,36 @@ test("severity never reads the current population", () => {
   // The agent's own output accumulates in the current counts. Judging against
   // them lets a branch raise the bar it is measured by.
   const d = dim({ candidates: 400, conforming: 400, baseline: { candidates: 6, conforming: 5 } });
-  assert.equal(severityFor({ path: "src/a.ts" }, { dim: d, fresh: true }).severity, "FIX");
+  assert.equal(severityFor({ path: "src/a.ts" }, { dim: d }).severity, "FIX");
 });
 
 test("an exception recorded on the baseline population still exempts", () => {
   // Which of the two lists carries the exception is a detail of when the scan
   // saw it. Either one means the map told the agent this file was exempt.
   const d = dim({ exceptions: [], baseline: { candidates: 60, conforming: 60, exceptions: [{ path: "src/a.ts" }] } });
-  assert.equal(severityFor({ path: "src/a.ts" }, { dim: d, fresh: true }).severity, "FIX");
-  assert.equal(severityFor({ path: "src/b.ts" }, { dim: d, fresh: true }).severity, "MUST-FIX");
+  assert.equal(severityFor({ path: "src/a.ts" }, { dim: d }).severity, "FIX");
+  assert.equal(severityFor({ path: "src/b.ts" }, { dim: d }).severity, "MUST-FIX");
 });
 
 test("nothing in the table says BLOCK", () => {
   const seen = new Set();
-  for (const fresh of [true, false]) {
+  for (const capped of [null, "no merge base"]) {
     for (const d of [null, dim(), dim({ directive: false }), dim({ precision: "partial" })]) {
-      seen.add(severityFor({ path: "src/a.ts" }, { dim: d, fresh }).severity);
+      seen.add(severityFor({ path: "src/a.ts" }, { dim: d, capped }).severity);
     }
   }
   assert.deepEqual([...seen].sort(), ["FIX", "MUST-FIX", "NIT"]);
+});
+
+test("a finding capped by the run names the cap that applied", () => {
+  // One fixed sentence covered every cause, so a run with no pin told the
+  // agent the map was stale or had no merge base, and neither was true.
+  const d = dim();
+  for (const why of ["no baseline pinned", "no merge base", "the pinned baseline commit is unreachable"]) {
+    const v = severityFor({ path: "src/a.ts" }, { dim: d, capped: why });
+    assert.equal(v.severity, "FIX");
+    assert.equal(v.reason, `capped by this run: ${why}`);
+  }
 });
 
 // --- polarity: the area is checked against the sentence it was handed ---
@@ -1488,7 +1500,7 @@ test("the severity table reads the stated side's baseline counts and its own exc
   // turns 0 of 60 into the weakest possible evidence for a sentence the map
   // never stated, and exempts exactly the files that never broke the one it did.
   const at = (o, file = { path: "src/a.ts" }) =>
-    severityFor(file, { dim: counterDim(o), fresh: true }).severity;
+    severityFor(file, { dim: counterDim(o) }).severity;
 
   assert.equal(at({}), "MUST-FIX", "60 of 60 counter sites is a clean baseline");
   assert.equal(at({ baseline: { candidates: 60, conforming: 1 } }), "FIX", "one site breaks the inverse");
@@ -2134,6 +2146,18 @@ test("a branch that deletes a companion and leaves its producer alone breaks the
     forKey(r, "model_spec").map((f) => [f.path, f.companion]),
     [["app/models/thing.rb", "spec/models/thing_spec.rb"]]
   );
+});
+
+test("the files a branch deleted travel on the report", async (t) => {
+  const dir = pairedModels(t, ({ git, commit }) => {
+    git("rm", "-q", "spec/models/thing_spec.rb");
+    commit("drop the spec");
+  });
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.deepEqual(r.changed, []);
+  assert.deepEqual(r.removed, ["spec/models/thing_spec.rb"]);
 });
 
 test("a companion deleted in the tree breaks the obligation before it is committed", async (t) => {
@@ -3282,7 +3306,7 @@ test("a claim stated on borrowed confidence is capped, and the reason says whose
   // reason read "9 of 9 baseline sites is thin" under a map that had just
   // stated it, which is a contradiction rather than an explanation.
   const d = dim({ borrowed: true, baseline: { candidates: 9, conforming: 9, exceptions: [] } });
-  const v = severityFor({ path: "src/a.ts" }, { dim: d, fresh: true });
+  const v = severityFor({ path: "src/a.ts" }, { dim: d });
 
   assert.equal(v.severity, "FIX");
   assert.match(v.reason, /rest of the repository/, v.reason);
@@ -3292,7 +3316,7 @@ test("a claim stated on borrowed confidence is capped, and the reason says whose
 test("a thin baseline nobody lent anything to still reads as thin", () => {
   const d = dim({ baseline: { candidates: 9, conforming: 9, exceptions: [] } });
 
-  assert.match(severityFor({ path: "src/a.ts" }, { dim: d, fresh: true }).reason, /9 of 9 baseline sites is thin/);
+  assert.match(severityFor({ path: "src/a.ts" }, { dim: d }).reason, /9 of 9 baseline sites is thin/);
 });
 
 test("an @ base is refused before anything is fetched, so a remote branch named HEAD cannot become one", async (t) => {
@@ -3454,10 +3478,19 @@ test("an inherited slot is judged on the side the ancestor was handed", async (t
 test("a claim the area file had no room to print is capped, and the reason says why", () => {
   const d = dim({ baseline: { candidates: 60, conforming: 60, exceptions: [] } });
 
-  assert.equal(severityFor({ path: "src/a.ts" }, { dim: d, fresh: true }).severity, "MUST-FIX");
-  const capped = severityFor({ path: "src/a.ts" }, { dim: d, fresh: true, dropped: true });
+  assert.equal(severityFor({ path: "src/a.ts" }, { dim: d }).severity, "MUST-FIX");
+  const capped = severityFor({ path: "src/a.ts" }, { dim: d, dropped: true });
   assert.equal(capped.severity, "FIX");
   assert.match(capped.reason, /no room/, capped.reason);
+});
+
+test("a dropped claim the area file still names is capped under its own reason", () => {
+  const d = dim({ baseline: { candidates: 60, conforming: 60, exceptions: [] } });
+
+  const named = severityFor({ path: "src/a.ts" }, { dim: d, dropped: "named" });
+  assert.equal(named.severity, "FIX");
+  assert.equal(named.reason, "the area file names this claim without its counts");
+  assert.match(severityFor({ path: "src/a.ts" }, { dim: d, dropped: "unnamed" }).reason, /no room/);
 });
 
 test("a directive the file dropped is enforced, but never at the top severity", async (t) => {
@@ -3489,7 +3522,41 @@ test("a directive the file dropped is enforced, but never at the top severity", 
 
   assert.equal(hits.length, 1, JSON.stringify(hits));
   assert.equal(hits[0].severity, "FIX");
-  assert.match(hits[0].reason, /no room/, hits[0].reason);
+  assert.match(hits[0].reason, /^the area file (names this claim without its counts|had no room to state this claim)$/, hits[0].reason);
+});
+
+test("a dropped directive says whether the area file still names it", async (t) => {
+  // The notice names the first stated slots it cannot print, and the check told
+  // the agent the file never stated a sentence it prints word for word. The
+  // record stores no claim-side prose, so the file is rendered here from the
+  // slots the scan held, sentences and all.
+  const claim = "catch blocks use the error they caught";
+  for (const [fillers, reason] of [
+    [10, "the area file names this claim without its counts"],
+    [30, "the area file had no room to state this claim"],
+  ]) {
+    const dimensions = [
+      ...Array.from({ length: fillers }, (_, i) => dim({ key: `filler_${i}`, precision: "partial", claim: `filler claim ${i}` })),
+      dim({ claim }),
+    ];
+    const dir = repo(t, ({ git, write, commit }) => {
+      write("src/a.ts", clean(2));
+      commit("init");
+      git("checkout", "-q", "-b", "work");
+      write("src/a.ts", clean(2) + swallow(1));
+      commit("swallow");
+    });
+    facts(dir, { sha: sha(dir, "main"), dimensions });
+    const file = renderArea({ id: "aaaaaaaa", path: "src", globs: [glob("src")], fileCount: 8, dimensions }).split("\n");
+    assert.ok(file.some((l) => /^and \d+ more not shown here/.test(l)), `${fillers}: the block was dropped`);
+    assert.equal(file.includes(`  ${claim}`), fillers === 10, file.join("\n"));
+
+    const hits = forKey(await check(dir, { baseRef: "main" }), "swallowed_error");
+
+    assert.equal(hits.length, 1, JSON.stringify(hits));
+    assert.equal(hits[0].severity, "FIX");
+    assert.equal(hits[0].reason, reason, `${fillers} fillers`);
+  }
 });
 
 test("an error class is not held to the base the area learned", needsRuby, async (t) => {

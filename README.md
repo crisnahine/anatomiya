@@ -359,8 +359,9 @@ which prints one annotation per finding.
 
 `check` blocks nothing. MUST-FIX means the baseline population held zero violations of that claim,
 so this branch is the first. Severity caps at FIX whenever the map is stale, the predicate is
-partial, or there was no merge base, so a clean run under a cap is a weaker signal rather than a
-clean bill.
+partial, there was no merge base, or the area file never delivered the claim to that file in full,
+so a clean run under a cap is a weaker signal rather than a clean bill. Each finding says which cap
+applied.
 
 ## How it is tested
 
