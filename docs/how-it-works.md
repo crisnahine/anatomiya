@@ -659,7 +659,8 @@ records what the check left in a `systemMessage`, which the transcript keeps, so
 is not asked about on the next turn, and the hook writes nothing a later `git status` would report.
 
 Some changed source holds nothing anybody would reuse, and is not asked about: a migration, whose name
-starts with a number right under a `migrate` or `migrations` directory, a schema dump (`db/schema.rb`
+starts with a number right under a `migrate` or `migrations` directory or a `<name>_migrate` one such as
+Rails' `db/cache_migrate`, a schema dump (`db/schema.rb`
 or `db/<name>_schema.rb`), and whatever else the corpus refuses past the path, which is a generated
 file and a link, the same rule `check` applies to its changed files. Only the file right under the
 directory counts as a migration, because code nested deeper under a `migrations` segment was measured
@@ -670,8 +671,9 @@ with no `Agent` tool answered the ask with "No such tool" and spent a turn on it
 
 A Stop payload names no file, so a session started in the directory holding several checkouts, which
 has no map of its own, reads each mapped checkout directly below it instead, and names their files
-from where the session stands (`api/src/x.ts`). A file's mark is taken over its path inside its
-checkout, so a session that later moves into that checkout is not asked about it again.
+from where the session stands (`api/src/x.ts`). A file's mark is taken over its checkout and its path
+inside it, so a session that later moves into that checkout is not asked about it again, and the same
+file copied into a sibling checkout is.
 
 All four are absent from the usage block and from `commands/` on purpose: no person runs them and no
 agent should. Each reads the payload on stdin, answers with one JSON object, and answers `{}` and exits
@@ -1061,7 +1063,9 @@ what matched it (`by`: `reflog`, or `identity` where only the committer did, and
 the commit carries this clone's git identity rather than that it was made in this clone). A session
 started or resumed says so in one line of the terminal (`systemMessage`), built from fixed words and validated commit
 ids only; a compaction or a clear inside the session does not repeat it, and a pin taken by hand
-since the hold ends it. It never enters the model's context: the model is the author E5 keeps from
+since the hold ends it. A session started above its checkouts gets one line per held checkout, each
+naming the checkout's directory and saying to pin it from a session inside it, since
+`/anatomiya:pin` pins the checkout it runs in. It never enters the model's context: the model is the author E5 keeps from
 accepting its own work, and a sentence there naming how to accept it is the suggestion E5 refuses. A
 lock is given back only while it is still the worker's own, so a takeover between three workers
 never frees a fourth.

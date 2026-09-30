@@ -18,7 +18,7 @@ import { gitBuffered, operationUnfinished } from "./git.mjs";
 import { isPathTaken } from "./hook.mjs";
 import { MAX_FILE_BYTES } from "./limits.mjs";
 import { byCode } from "./paths.mjs";
-import { readHead, readTail } from "./rules.mjs";
+import { readHead, readTail, realpathOf } from "./rules.mjs";
 
 /** What an ask or a record carries, so a later stop can tell which files it covered. */
 export const REUSE_MARK = "anatomiya reuse check";
@@ -58,7 +58,7 @@ const MARKS_READ = new RegExp(`${REUSE_MARK} ((?:[0-9a-f]{12} ?)+)\\)`, "g");
 // Only the file right under the directory: measured on the corpus, code nested
 // deeper under a `migrations` segment (angular's schematics, prisma's
 // `core/migrations`, openproject's `db/migrate/tables`) is ordinary library code.
-const ONE_OFF = /(^|\/)(migrate|migrations)\/\d+[_-][^/]*$|(^|\/)db\/(\w+_)?schema\.rb$/;
+const ONE_OFF = /(^|\/)(\w+_)?(migrate|migrations)\/\d+[_-][^/]*$|(^|\/)db\/(\w+_)?schema\.rb$/;
 
 // A name a repository chose is shown as it is only where it cannot carry a
 // line break or a quote into the reason the model reads.
@@ -132,6 +132,7 @@ export async function pendingChange(root, { since = null, turnStart = null } = {
   // The corpus's own refusals past the path, the way `check` asks them: a
   // generated file or a link holds nothing anybody wrote here by hand.
   const dropOf = corpusDrop(root);
+  const home = realpathOf(root);
   const files = [];
   for (const { path, status } of changed.sort((a, b) => byCode(a.path, b.path))) {
     if (ONE_OFF.test(path) || dropOf(path) !== null) continue;
@@ -144,7 +145,8 @@ export async function pendingChange(root, { since = null, turnStart = null } = {
         ? [{ from: 1, to: lineCount(entry.head), created: true }].filter((h) => h.to > 0)
         : (ranges.get(path) ?? []).map(([from, to]) => ({ from, to, created: false }));
     if (hunks.length === 0) continue;
-    const mark = createHash("sha256").update(`${path}\0`).update(entry.head).digest("hex").slice(0, 12);
+    // Over the checkout too: a sibling repository's copy of a file is another file.
+    const mark = createHash("sha256").update(`${home}\0${path}\0`).update(entry.head).digest("hex").slice(0, 12);
     files.push({ path, mark, hunks });
   }
   return files.length > 0 ? files : null;

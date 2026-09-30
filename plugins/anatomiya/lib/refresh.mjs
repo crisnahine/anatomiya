@@ -86,8 +86,9 @@ export function runRefresh(cwd, payload, { start = startWorker } = {}) {
   if (!EVENTS.has(event)) return {};
   const base = typeof payload.cwd === "string" && payload.cwd.length > 0 ? payload.cwd : cwd;
   if (!base) return {};
-  const roots = refreshRoots(base);
-  if (roots.length === 0) return {};
+  const found = refreshRoots(base);
+  if (found.length === 0) return {};
+  const roots = found.map((c) => c.root);
 
   // The watch list is one list shared by every hook. A change to a file this
   // hook did not ask for is somebody else's, and answering it would both start
@@ -103,7 +104,7 @@ export function runRefresh(cwd, payload, { start = startWorker } = {}) {
   const watchPaths = roots.flatMap(watchTargets);
   // Said to the person when they start or resume a session: a `made-here` hold
   // never ends on its own.
-  const notices = event === "SessionStart" && !QUIET_SOURCES.has(payload.source) ? roots.map(holdNotice).filter((n) => n !== null) : [];
+  const notices = event === "SessionStart" && !QUIET_SOURCES.has(payload.source) ? found.map((c) => holdNotice(c.root, c.name)).filter((n) => n !== null) : [];
   const said = notices.length === 0 ? {} : { systemMessage: notices.join("\n") };
   // An empty list would replace every other hook's watches with nothing.
   if (watchPaths.length === 0) return said;
@@ -112,17 +113,18 @@ export function runRefresh(cwd, payload, { start = startWorker } = {}) {
 
 /**
  * The checkouts a session in this directory refreshes: the one whose own map it
- * is in, or where it is in none, the mapped checkouts directly below it.
+ * is in, or where it is in none, the mapped checkouts directly below it, each
+ * with its name there.
  */
 function refreshRoots(base) {
   const own = ownLayout(base);
-  if (own === null) return childLayouts(base).map((child) => child.root);
+  if (own === null) return childLayouts(base).map((child) => ({ root: child.root, name: child.name }));
   // A linked worktree reading its main checkout's map (A93) is answered from
   // there, labelled, and scanning it would write a map nobody asked for. A
   // record below its checkout's root came with a copy of another project; the
   // scan it would start writes at the checkout's root, which never opted in
   // (A24), and the end-of-turn check refuses the same record for the same reason.
-  return own.from === null && isPathTaken(join(own.root, ".git")) ? [own.root] : [];
+  return own.from === null && isPathTaken(join(own.root, ".git")) ? [{ root: own.root, name: null }] : [];
 }
 
 /**
@@ -602,8 +604,19 @@ const sameHold = (a, b) => ["reason", "commit", "pin", "by"].every((key) => (a?.
  * work, and a sentence in its context naming the way to accept it is the
  * suggestion E5 refuses. Only fixed words and hex commit ids, validated here,
  * since the record sits in a directory the repository could ship.
+ *
+ * `name` is the checkout's directory, given where the session sits above it:
+ * `/anatomiya:pin` pins the checkout it runs in, which is not the session's.
  */
-export function holdNotice(root) {
+export function holdNotice(root, name = null) {
+  const body = heldBecause(root);
+  if (body === null) return null;
+  if (name === null) return `anatomiya: ${body} Pinning it is a person's call, made with /anatomiya:pin.`;
+  const shown = /^[\w.@+-]+$/.test(name) ? name : JSON.stringify(name);
+  return `anatomiya (${shown}): ${body} Pinning it is a person's call, made with /anatomiya:pin in a session started inside ${shown}.`;
+}
+
+function heldBecause(root) {
   const path = resolveInside(root, REFRESH_STATE);
   if (path === null) return null;
   const held = readRecord(path).record?.held;
@@ -616,32 +629,26 @@ export function holdNotice(root) {
     // The committer names who made a commit, not where.
     const how =
       held.by === "identity"
-        ? "was committed under this clone's git identity, which the automatic pin reads as this clone's own work. "
-        : "was made in this clone, and the automatic pin never accepts this clone's own work. ";
-    return (
-      `anatomiya: the pin stays${at}: ${commit ? `commit ${commit}` : "a commit"} on origin's default branch ${how}` +
-      "Pinning it is a person's call, made with /anatomiya:pin."
-    );
+        ? "was committed under this clone's git identity, which the automatic pin reads as this clone's own work."
+        : "was made in this clone, and the automatic pin never accepts this clone's own work.";
+    return `the pin stays${at}: ${commit ? `commit ${commit}` : "a commit"} on origin's default branch ${how}`;
   }
   if (held?.reason === "no-record") {
     return (
-      `anatomiya: the pin stays${at}: git kept no record of how origin's default branch last ` +
-      "moved in this clone (no reflog), so a fetch cannot be told from a push and the automatic pin does not follow it. " +
-      "Pinning it is a person's call, made with /anatomiya:pin."
+      `the pin stays${at}: git kept no record of how origin's default branch last ` +
+      "moved in this clone (no reflog), so a fetch cannot be told from a push and the automatic pin does not follow it."
     );
   }
   if (held?.reason === "unread") {
     return (
-      `anatomiya: the pin stays${at}: git could not say whether a commit on origin's default branch was made ` +
-      "in this clone, so the automatic pin does not follow it. " +
-      "Pinning it is a person's call, made with /anatomiya:pin."
+      `the pin stays${at}: git could not say whether a commit on origin's default branch was made ` +
+      "in this clone, so the automatic pin does not follow it."
     );
   }
   if (held?.reason === "not-fetched") {
     return (
-      `anatomiya: the pin stays${at}: origin's default branch was last moved by this clone ` +
-      "(a push, or a ref written by hand), not by a fetch, so the automatic pin does not follow it. " +
-      "Pinning it is a person's call, made with /anatomiya:pin."
+      `the pin stays${at}: origin's default branch was last moved by this clone ` +
+      "(a push, or a ref written by hand), not by a fetch, so the automatic pin does not follow it."
     );
   }
   return null;
