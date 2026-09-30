@@ -1269,6 +1269,17 @@ test("a held record naming no commit id says no id, and a planted one says nothi
   assert.equal(holdNotice(dir), null);
 });
 
+test("a checkout's name in the held notice carries no control, bidi override or line separator", async (t) => {
+  const { holdNotice } = await import("../plugins/anatomiya/lib/refresh.mjs");
+  const dir = await scanned(t);
+  writeFileSync(join(dir, REFRESH_STATE), JSON.stringify({ stamp: "x", ok: true, held: { reason: "made-here", commit: "abcdef1234", pin: null, by: "reflog" } }));
+  for (const code of [0x1b, 0x202e, 0x2028, 0x2029, 0x85]) {
+    const said = holdNotice(dir, `api${String.fromCodePoint(code)}gpj.exe`);
+    assert.match(said, /^anatomiya \("api[^"]*gpj\.exe"\): /);
+    assert.doesNotMatch(said, /[\p{Cc}\p{Cf}\u2028\u2029]/u, `U+${code.toString(16)}`);
+  }
+});
+
 /* --- the lock is given back only while it is still this worker's --- */
 
 test("a worker whose lock was taken over leaves the new holder's lock in place", async (t) => {
