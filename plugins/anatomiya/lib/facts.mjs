@@ -8,7 +8,7 @@
  * version at all.
  */
 import { randomBytes } from "node:crypto";
-import { closeSync, mkdirSync, openSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, openSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 
 import { outsideClaude, readHead, resolveInside } from "./rules.mjs";
@@ -255,7 +255,11 @@ export function readFacts(root) {
     return { facts: null, unreadable: `the map on disk is past the ${RECORD_MOST / 2 ** 20} MB this reads, so nothing was enforced from it` };
   }
   if (parsed === null) {
-    if (readHead(path, 0).kind !== "file") return { facts: null, unreadable: null };
+    const kind = readHead(path, 0).kind;
+    if (kind === "unreadable" && existsSync(path)) {
+      return { facts: null, unreadable: "the map on disk could not be opened, so nothing was enforced from it" };
+    }
+    if (kind !== "file") return { facts: null, unreadable: null };
     return { facts: null, unreadable: "the map on disk does not parse as JSON, so nothing was enforced from it: scan again" };
   }
   // A shape that is not a record at all is the ordinary case of a repository
