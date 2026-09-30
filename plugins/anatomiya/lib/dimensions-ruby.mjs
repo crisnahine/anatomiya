@@ -219,7 +219,9 @@ export const RUBY_DIMENSIONS = [
     // What is measured is the absence of a raise, so the sentence says that: an
     // entry point with no failure path conforms, and it returns no failure.
     claim: "service entry points do not raise, directly or through a bang call like update!",
-    counterClaim: "service entry points raise on failure",
+    // Most entry points that do not raise have no failure to raise, so an
+    // inverse would tell a pure service to raise.
+    counterClaim: null,
     precision: "partial",
     applicabilityPredicate: {
       sites: "a Ruby file declaring a class or module with a call, perform, execute or run method, on the instance or on self; a perform in a body that directly includes Sidekiq::Worker or Sidekiq::Job is not one, because returning is how a job reports success",
@@ -377,7 +379,7 @@ export const RUBY_DIMENSIONS = [
     counterClaim: null, // same as logger_over_puts: no wrapper means the question is never asked
     precision: "partial",
     applicabilityPredicate: {
-      sites: "a Ruby file calling Net::HTTP, RestClient, HTTPClient, HTTParty, Faraday, Excon, Typhoeus, HTTP, HTTPX or URI.open, or a class under one of those libraries other than its errors, exceptions and CookieHash, or making a verb-shaped call (get, post, put, patch, delete, head, request, call, perform, execute, fetch) through a constant or variable whose name ends in the word client, http, api, request or fetcher; the file whose own stem is nothing but that vocabulary is the client itself and is not a site",
+      sites: "a Ruby file calling Net::HTTP, RestClient, HTTPClient, HTTParty, Faraday, Excon, Typhoeus, HTTP, HTTPX or URI.open, or a class under one of those libraries other than its errors, exceptions, anything under an Error, Errors or Exceptions namespace, ConnectionFailed and CookieHash, or making a verb-shaped call (get, post, put, patch, delete, head, request, call, perform, execute, fetch) through a constant or variable whose name ends in the word client, http, api, request or fetcher, a trailing version such as V2 aside, and names no redis, cache, memcache, memcached or dalli; the file whose own stem is nothing but that vocabulary is the client itself and is not a site",
       blind: "a client behind another name or a non-verb method is not seen, and a model that happens to be called Client with a verb-named scope still counts",
     },
     langs: ["ruby"],
@@ -593,7 +595,7 @@ const HTTP_LIBRARIES = ["Net::HTTP", "RestClient", "HTTPClient", "HTTParty", "Fa
 
 // A class under a library's namespace is a request class like Net::HTTP::Get,
 // except its errors and its cookie jar, which send nothing.
-const HTTP_HELPER = /(Error|Exception|::CookieHash)$/;
+const HTTP_HELPER = /(Error|Exception|::CookieHash|::ConnectionFailed)$|::(Errors?|Exceptions)::/;
 const directHttp = (recv) =>
   HTTP_LIBRARIES.some((lib) => recv === lib || (recv.startsWith(`${lib}::`) && !HTTP_HELPER.test(recv)));
 const HTTP_VERB = /^(get|post|put|patch|delete|head|request|call|perform|execute|fetch)$/;
@@ -606,6 +608,16 @@ function loggerReceiver(r) {
   return (r.t === "local_variable_read" || r.t === "instance_variable_read") && name === "logger";
 }
 
+// A version is not what the receiver is, and a cache's client talks to the cache.
+const VERSION = /^v?\d+$/;
+const STORAGE = new Set(["redis", "cache", "memcache", "memcached", "dalli"]);
+
+function named(name) {
+  const words = name.split("::").flatMap(stemWords);
+  while (words.length > 1 && VERSION.test(words.at(-1))) words.pop();
+  return CAPABILITY_WORDS.network.has(words.at(-1)) && !words.some((w) => STORAGE.has(w));
+}
+
 /**
  * A receiver named in the network vocabulary: `ApiClient.get`, `client.post`.
  *
@@ -616,8 +628,7 @@ function loggerReceiver(r) {
  */
 function clientReceiver(r, recv) {
   if (!r) return false;
-  const named = (name) => CAPABILITY_WORDS.network.has(stemWords(name).at(-1));
-  if (recv) return named(recv.slice(recv.lastIndexOf(":") + 1));
+  if (recv) return named(recv);
   // A bare `client` is a method call to prism, not a local, so the receiverless
   // call is the same vocabulary check the variable forms get. A variable named
   // exactly `http` is the raw handle Net::HTTP.start yields, not a wrapper.
