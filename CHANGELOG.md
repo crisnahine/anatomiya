@@ -204,8 +204,8 @@ directory above your checkouts.
 - The hooks section of `docs/how-it-works.md` says all four hooks, not all three, and says where
   `refresh` starts its walk.
 
-- `check --base` refuses the branch's own name spelled in another case on a filesystem that folds
-  case (macOS, Windows), where it used to compare the branch with itself and exit 0 clean.
+- `check --base` refuses the branch's own name spelled in another case, or typed in another Unicode
+  form, on a filesystem that folds it (macOS, Windows), where it used to compare the branch with itself and exit 0 clean.
 - A map or pin file that is on disk but cannot be opened is reported as unreadable, not as missing.
   A linked worktree whose own pin cannot be opened no longer falls back to its main checkout's pin.
 - doctor and `scan --deep` no longer tell a typescript 5.x that is missing createProgram that it
@@ -224,21 +224,23 @@ directory above your checkouts.
   telling those up/down migrations to declare `change`.
 - `http_through_client` no longer counts hand-built `Faraday::ConnectionFailed` or
   `RestClient::Exceptions::*` errors as direct HTTP calls.
-- `http_through_client` no longer reads a Redis, cache, memcache or Dalli client as the repository's
-  HTTP client, so a repository with no HTTP stops stating that its HTTP goes through `redis_client`.
+- `http_through_client` no longer reads a Redis, cache, memcache, Dalli or database client (`db_client`,
+  `pg_client`, `Mongo::Client`) as the repository's HTTP client, so a repository with no HTTP stops
+  stating that its HTTP goes through one.
 - A component annotated through an aliased React namespace (`R.FC` under `import * as R from
   "react"`) is no longer asked to be renamed in camelCase.
-- `pin` in a sparse checkout counts only the source it would pin. A cone that left out only docs no
-  longer refuses just because some other file in the tree was unreadable.
 - `pin` during a merge with no conflicts says to finish or abort the merge. It said to commit or
   stash, and a stash throws away the merge in progress.
-- A session started above several checkouts now names the checkout in each held-pin notice and says
-  to run /anatomiya:pin from a session inside that checkout. Before, it printed the same unnamed
-  line once per checkout, and its remedy failed from the parent directory.
-- The reuse check now asks about a file copied unchanged to the same path in a sibling checkout.
-  Before, a session started above both checkouts read the copy as already asked about.
+- `migration_schema_only` reads a model handed to a helper inside a class-level block, such as
+  `define_method(:up) { backfill(User) }`, as a migration that rewrites rows.
+- `pin` with unmerged paths and no merge in progress says to resolve them or abort the operation
+  that left them. It used to say to abort a merge git had not started.
+
 ### Changed
 
+- `scripts/ab.mjs` no longer refuses to start over engine variables in the operator's
+  `~/.claude/settings.json`: its trials pass `--setting-sources project,local` and never load that
+  file. `measure-defaults` keeps the check, since its trials still read it.
 - `zone_aware_time` now reads "times are read and built through the application time zone", since it
   counts `Time.parse` and `Time.zone.at` as well as clock reads.
 - The usage text, `scan.md` and the README give a deep scan's cost as measured, about 3x a plain
