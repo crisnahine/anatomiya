@@ -1,7 +1,7 @@
 import { degradedSemanticSentence, ORPHAN_CAUSES, truncatedHistoryLine, unexaminedLines, untrackedSentence } from "./render.mjs";
 import { layoutSummary, plural } from "./render-layout.mjs";
 import { statedSide } from "./facts.mjs";
-import { encode, encodePath, firstLine, locator, sanitisePath } from "./encode.mjs";
+import { encode, encodePath, firstLine, locator } from "./encode.mjs";
 import { engineOf } from "./langs.mjs";
 import { whyUnread } from "./readiness.mjs";
 import { listSome, LISTED, RULES_DIR, SETTINGS_PATH } from "./rules.mjs";
@@ -130,10 +130,9 @@ export function scanLines(s) {
   // the baseline are all repository-anchored, so that is the behaviour they
   // need and the line is what says so.
   //
-  // As a locator, not raw: `--format json` sanitised it and this line did not,
-  // so a checkout directory named with a newline forged a line of its own. Not
-  // through the display encoder either, whose cap and script rule would print a
-  // root nobody can `cd` to.
+  // As a locator, as `--format json` prints it: raw, a checkout directory named
+  // with a newline forged a line of its own, and through the display encoder
+  // its cap and script rule would print a root nobody can `cd` to.
   lines.push(`${plural(s.files, "file")}, ${plural(s.areas, "area")}, ${s.durationMs}ms, root ${locator(s.root)}`);
   const engines = enginesLine(s.engines);
   if (engines) lines.push(engines);
@@ -249,18 +248,21 @@ export function scanJson(s) {
  * to whatever reads its stdout unaltered. Run here rather than in
  * `scanSummary`, because the lines encode as they render and a value through
  * the encoder twice is a value quoted twice.
+ *
+ * Paths go out as locators, as `encodeReport` sends them: a reader opens them,
+ * and the display encoder's cap and script rule leave nothing to open.
  */
 function encodeScan(s) {
   return {
     ...s,
-    root: sanitisePath(s.root),
+    root: locator(s.root),
     historyError: s.historyError == null ? null : encode(s.historyError),
     rules: {
       ...s.rules,
-      foreign: s.rules.foreign.map(sanitisePath),
-      unknown: s.rules.unknown.map(sanitisePath),
-      unreadable: s.rules.unreadable.map(sanitisePath),
-      replaced: s.rules.replaced.map(sanitisePath),
+      foreign: s.rules.foreign.map(locator),
+      unknown: s.rules.unknown.map(locator),
+      unreadable: s.rules.unreadable.map(locator),
+      replaced: s.rules.replaced.map(locator),
     },
   };
 }
@@ -383,11 +385,11 @@ function encodePin(s) {
       ...s.delta,
       areas: s.delta.areas.map((a) => ({
         ...a,
-        path: sanitisePath(a.path),
-        added: a.added.map(sanitisePath),
-        removed: a.removed.map(sanitisePath),
-        movedIn: a.movedIn.map(sanitisePath),
-        movedOut: a.movedOut.map(sanitisePath),
+        path: locator(a.path),
+        added: a.added.map(locator),
+        removed: a.removed.map(locator),
+        movedIn: a.movedIn.map(locator),
+        movedOut: a.movedOut.map(locator),
       })),
     },
   };
