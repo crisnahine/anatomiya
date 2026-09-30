@@ -385,7 +385,7 @@ export function pinJson(s) {
 function encodePin(s) {
   return {
     ...s,
-    root: s.root === null ? null : sanitisePath(s.root),
+    root: s.root === null ? null : locator(s.root),
     delta: {
       ...s.delta,
       areas: s.delta.areas.map((a) => ({
