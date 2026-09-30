@@ -593,6 +593,8 @@ class Backfill < ActiveRecord::Migration[7.0]
 
   def down
   end
+
+  def backfill(model) = model.update_all(x: 1)
 end
 `,
   // The model reaches the rewrite as a keyword, a local or a loop element.
@@ -621,6 +623,25 @@ end
 class K3 < ActiveRecord::Migration[7.0]
   def up
     [User, Account].each { |k| k.update_all(x: 1) }
+  end
+
+  def down
+  end
+end
+class K4 < ActiveRecord::Migration[7.0]
+  def up
+    a, b = User, Account
+    a.update_all(x: 1)
+  end
+
+  def down
+  end
+end
+class K5 < ActiveRecord::Migration[7.0]
+  def up
+    in_configurable_batches(Query) do |batches|
+      batches.each_record { |q| q.update_column(:a, 1) }
+    end
   end
 
   def down
@@ -1142,6 +1163,134 @@ class R5 < ActiveRecord::Migration[6.1]
     Rollout.down do
       add_foreign_key :listings, :users
     end
+  end
+end
+`,
+
+  // A framework model or a constant named only for its table, its columns or
+  // an option value, with no row read or written.
+  named_not_data: `
+class AsCol < ActiveRecord::Migration[7.1]
+  def change
+    add_column ActiveStorage::Blob.table_name, :checksum2, :string
+  end
+end
+class AsReset < ActiveRecord::Migration[7.1]
+  def change
+    add_column :active_storage_blobs, :service_name, :string
+    ActiveStorage::Blob.reset_column_information
+  end
+end
+class AtIndex < ActiveRecord::Migration[7.1]
+  def change
+    add_index ActionText::RichText.table_name, :name
+  end
+end
+class KindDefault < ActiveRecord::Migration[7.1]
+  def change
+    add_column :t, :kind, :string, default: Kind::Basic
+  end
+end
+class TableOf < ActiveRecord::Migration[7.1]
+  def change
+    widen(User)
+    [User, Account].each { |k| k.reset_column_information }
+  end
+
+  def widen(model) = add_column(model.table_name, :x, :string)
+end
+class WithKind < ActiveRecord::Migration[7.1]
+  def change
+    with_kind(Kind::Basic) { |k| add_column :t, :k, :string, default: k }
+    create_table :u, comment: Kind::Note do |t|
+      t.references :org
+    end
+    with_kind(Kind::Basic) do
+      create_table :v do |t|
+        t.references :org
+      end
+    end
+  end
+end
+`,
+  sql_row_writes: `
+class S1 < ActiveRecord::Migration[7.1]
+  def up
+    update "UPDATE users SET x = 1"
+    delete "DELETE FROM users WHERE x IS NULL"
+    insert <<~SQL
+      INSERT INTO users (x) VALUES (1)
+    SQL
+  end
+
+  def down
+  end
+end
+class S2 < ActiveRecord::Migration[7.1]
+  def up
+    exec_update "UPDATE users SET x = 1"
+  end
+
+  def down
+  end
+end
+class S3 < ActiveRecord::Migration[7.1]
+  def up
+    exec_delete "DELETE FROM users"
+  end
+
+  def down
+  end
+end
+class S4 < ActiveRecord::Migration[7.1]
+  def up
+    ActiveRecord::Base.connection.exec_query("UPDATE users SET x = 1")
+  end
+
+  def down
+  end
+end
+class S5 < ActiveRecord::Migration[7.1]
+  def up
+    exec_insert "INSERT INTO users (x) VALUES (1)"
+  end
+
+  def down
+  end
+end
+`,
+  sql_and_send_irreversible: `
+class Q1 < ActiveRecord::Migration[7.1]
+  def change
+    exec_query "CREATE TRIGGER t_upd BEFORE UPDATE ON t FOR EACH ROW EXECUTE PROCEDURE f()"
+  end
+end
+class Q2 < ActiveRecord::Migration[7.1]
+  def change
+    connection.exec_query "CREATE INDEX x ON t (a)"
+  end
+end
+class Q3 < ActiveRecord::Migration[7.1]
+  def change
+    send(:change_column, :users, :name, :text)
+  end
+end
+class Q4 < ActiveRecord::Migration[7.1]
+  def change
+    public_send(:remove_column, :users, :name)
+  end
+end
+class Q5 < ActiveRecord::Migration[7.1]
+  def change
+    __send__(:drop_table, :t)
+  end
+end
+`,
+  send_invertible: `
+class Q6 < ActiveRecord::Migration[7.1]
+  def change
+    send(:add_column, :users, :name, :string)
+    send(:remove_column, :users, :old, :string)
   end
 end
 `,
@@ -1732,7 +1881,7 @@ test("a migration holding a command change cannot invert is not a reversibility 
 test("a model handed on as a keyword, a local or a loop element is data work", needsRuby, () => {
   // Only positional arguments were read, so each of these backfills was
   // credited as schema-only and told to declare change.
-  assert.deepEqual(counts("migration_schema_only", "handed_model_backfill"), { candidates: 3, conforming: 0 });
+  assert.deepEqual(counts("migration_schema_only", "handed_model_backfill"), { candidates: 5, conforming: 0 });
   assert.deepEqual(hits("migration_reversible", "handed_model_backfill"), []);
 });
 
@@ -1743,6 +1892,24 @@ test("every class method ActiveRecord gives a model for reading or writing rows 
   assert.deepEqual(hits("migration_reversible", "activerecord_data_calls"), []);
   // Building an error to raise writes nothing.
   assert.deepEqual(counts("migration_schema_only", "activerecord_error_new"), { candidates: 1, conforming: 1 });
+});
+
+test("a constant named for its table, its columns or an option value is not data work", needsRuby, () => {
+  // Every scoped ActiveStorage constant, and every constant handed as an
+  // argument, read as a model, so these pure schema migrations drew a FIX.
+  assert.deepEqual(counts("migration_schema_only", "named_not_data"), { candidates: 6, conforming: 6 });
+  assert.deepEqual(counts("migration_reversible", "named_not_data"), { candidates: 6, conforming: 6 });
+});
+
+test("row-writing SQL through update, delete, insert and the exec_ calls is data work", needsRuby, () => {
+  assert.deepEqual(counts("migration_schema_only", "sql_row_writes"), { candidates: 5, conforming: 0 });
+  assert.deepEqual(hits("migration_reversible", "sql_row_writes"), []);
+});
+
+test("DDL through exec_query and a command spelled through send are refused as change", needsRuby, () => {
+  assert.deepEqual(hits("migration_reversible", "sql_and_send_irreversible"), []);
+  assert.deepEqual(counts("migration_schema_only", "sql_and_send_irreversible"), { candidates: 5, conforming: 5 });
+  assert.deepEqual(counts("migration_reversible", "send_invertible"), { candidates: 1, conforming: 1 });
 });
 
 test("every other command CommandRecorder refuses is not a reversibility site", needsRuby, () => {
