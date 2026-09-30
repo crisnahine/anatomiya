@@ -1278,6 +1278,10 @@ test("a checkout's name in the held notice carries no control, bidi override or 
     assert.match(said, /^anatomiya \("api[^"]*gpj\.exe"\): /);
     assert.doesNotMatch(said, /[\p{Cc}\p{Cf}\u2028\u2029]/u, `U+${code.toString(16)}`);
   }
+  // The person opens the directory the line names, so every printable character stays.
+  for (const name of ["#api", "> api", "1. api", "`api`", "api|v2", "===", "\uff46\uff55\uff4c\uff4c", "caf\u0065\u0301"]) {
+    assert.ok(holdNotice(dir, name).includes(`inside ${JSON.stringify(name)}.`), name);
+  }
 });
 
 /* --- the lock is given back only while it is still this worker's --- */
