@@ -331,10 +331,10 @@ in `check`.
 | `handler_memoised` | partial | jsx | a handler passed to a child is wrapped in `useCallback` |
 | `rescue_uses_error` | precise | ruby | rescue blocks use the error they caught |
 | `keyword_params` | precise | ruby | methods taking three or more arguments name them with keywords |
-| `zone_aware_time` | precise | ruby | the current time is read through the application time zone |
+| `zone_aware_time` | precise | ruby | times are read and built through the application time zone |
 | `record_lookup` | partial | ruby | a record that may be missing is fetched with `find_by` and checked, not fetched with one that raises |
 | `model_callbacks` | partial | ruby | models keep behaviour out of lifecycle callbacks |
-| `service_result_shape` | partial | ruby | service entry points return their failure instead of raising |
+| `service_result_shape` | partial | ruby | service entry points do not raise, directly or through a bang call like `update!` |
 | `migration_reversible` | partial | ruby | migrations declare `change`, not `up` and `down` |
 | `migration_schema_only` | partial | ruby | migrations change the schema and leave the data alone |
 | `column_null_declared` | partial | ruby | a column on a table the migration creates is declared `null: false` |
