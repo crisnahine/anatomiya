@@ -533,10 +533,11 @@ async function resolveBase(root, baseRef, caveats) {
     // `facade` are branch names too.
     if (named === "" && /^[0-9a-f]{4,64}$/i.test(baseRef)) return;
     const own = (await git(root, ["rev-parse", "--symbolic-full-name", "HEAD"])).out.trim();
-    // A filesystem that folds case opens the loose ref under any spelling, so
-    // `FEAT` names this branch while no ref of that name is listed.
+    // A filesystem that folds case and Unicode form opens the loose ref under
+    // any spelling, so `FEAT` names this branch while no ref of that name is listed.
+    const fold = (ref) => ref.normalize("NFC").toLowerCase();
     const mine = named === own ||
-      (named !== "" && named.toLowerCase() === own.toLowerCase() && !(await refsNamed(root, named)).length);
+      (named !== "" && fold(named) === fold(own) && !(await refsNamed(root, named)).length);
     if (named !== "" && !mine) return;
     if (mine) {
       const unasked = await resolveBaseRef(root);

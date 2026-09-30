@@ -4943,6 +4943,28 @@ test("the branch's own name in another case is refused where the filesystem fold
   assert.equal((await check(dir, { baseRef: "refs/heads/Feat" })).mode, "compare");
 });
 
+test("the branch's own name in another Unicode form is refused where the filesystem folds it", async (t) => {
+  const nfc = "caf\u00e9";
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/a.ts", clean(2));
+    commit("init");
+    git("checkout", "-q", "-b", nfc);
+    write("src/a.ts", clean(2) + swallow(1));
+    commit("swallow");
+  });
+  facts(dir, { sha: sha(dir, "main") });
+  const nfd = nfc.normalize("NFD");
+  try {
+    execFileSync("git", ["rev-parse", "--verify", "--quiet", nfd.toUpperCase()], { cwd: dir, stdio: "pipe" });
+  } catch {
+    return t.skip("this filesystem tells the two spellings apart");
+  }
+
+  for (const name of [nfd, nfd.toUpperCase()]) {
+    await assert.rejects(() => check(dir, { baseRef: name }), /names this branch's own tip/);
+  }
+});
+
 test("a base name a tag and a branch both hold is refused, naming both", async (t) => {
   // git picks the tag and warns, and the warning never reached the report: one
   // pick compared against the wrong commit in silence, the other blamed the
