@@ -892,9 +892,9 @@ export function verdictFor(
     directive: blocked ? false : g.directive,
     gate: blocked || g.gate,
     counterGate: blocked || g.counterGate,
-    // The hands behind the side the line is about: the counter's where the
-    // counter is stated, the claim's everywhere else, because an unstated
-    // slot reports the claim's gate.
+    // The counter's where the counter is stated, the claim's everywhere else.
+    // An unstated slot can still print its counter side, and `statedSide`
+    // reads `counterAuthors` for it.
     authors: states === "counter" ? counterAuthors : authors,
     counterAuthors,
     baseline: baselineDim

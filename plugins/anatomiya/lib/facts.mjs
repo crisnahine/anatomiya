@@ -103,7 +103,10 @@ export const FACTS_PATH = ".claude/anatomiya/facts.json";
 // read as a one-author repository. A record written before it carries the
 // summed count, which is what it printed, and says nothing about its clone,
 // which is what its scan knew.
-export const FACTS_SCHEMA = 18;
+// 19 stores `counterAuthors`. A slot shown on its counter side printed the
+// claim side's author count, because the record carried no other, and a held
+// area re-renders from the record. An older record prints what it printed.
+export const FACTS_SCHEMA = 19;
 
 /**
  * Which of a dimension's two sentences an area is about, with the counts and
@@ -150,6 +153,9 @@ export function statedSide(d) {
         exceptions: d.counterExceptions || [],
         more: d.moreCounterExceptions || 0,
         gate: d.counterGate,
+        // D4 counts authors per side. A record written before the counter's
+        // count was stored carries the one its map printed.
+        authors: d.counterAuthors ?? d.authors,
         borrowed: d.counterBorrowed === true,
       }
     : {
@@ -160,6 +166,7 @@ export function statedSide(d) {
         exceptions: d.exceptions || [],
         more: d.moreExceptions || 0,
         gate: d.gate,
+        authors: d.authors,
         // Whether the gates cleared this side on the rest of the repository's
         // record rather than on this area's own sample. The check caps a
         // borrowed claim below MUST-FIX, which is a statement about this
@@ -504,6 +511,7 @@ function counterFacts(d) {
     counterPriorBound: rounded(d.counterPriorBound),
     ...(d.counterBorrowed === true ? { counterBorrowed: true } : {}),
     counterGate: d.counterGate ?? null,
+    ...(d.counterAuthors === undefined ? {} : { counterAuthors: d.counterAuthors }),
     counterExceptions: d.counterExceptions || [],
     moreCounterExceptions: d.moreCounterExceptions ?? 0,
   };

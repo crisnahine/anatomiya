@@ -44,7 +44,7 @@ export function scanSummary(result, plan, { dryRun = false, hook = null } = {}) 
   const slots = result.areas.flatMap((a) => a.dimensions);
   // Through the renderer's own partition, or the summary disagrees with the
   // map: a stated slot the model writes by default renders as a counts line.
-  const authorGated = slots.filter((d) => d.gate === "authors").length;
+  const authorGated = slots.filter((d) => statedSide(d).gate === "authors").length;
   const stated = slots.filter((d) => statedSide(d).states !== null && d.matchesDefault !== true);
   const matching = slots.filter((d) => statedSide(d).states !== null && d.matchesDefault === true);
 

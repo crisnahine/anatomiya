@@ -38,8 +38,22 @@ test("a test added where its own siblings have none is a finding", () => {
   assert.equal(found[0].area, "app/mailers");
   assert.equal(found[0].severity, "FIX");
   assert.equal(found[0].dimension, "test_precedent");
-  assert.equal(found[0].reason, "spec/mailers holds no other test; app/mailers: 4 files, 0 with a namesake test");
+  assert.equal(found[0].reason, "spec/mailers holds no other test; app/mailers: 0 of 4 .rb files have a namesake test");
   assert.match(found[0].claim, /a test goes where this kind of file's tests already go/);
+});
+
+test("the counts name the extension the namesake count was taken over", () => {
+  // A root holding 5 .tsx and 4 .ts files counts the .tsx ones, and "5 files"
+  // read as the whole directory, the way the overview's tests line does not.
+  const roots = [
+    { ...root("src/hooks", { files: 9, companions: { with: 0, of: 5, root: null, ext: ".tsx" } }),
+      exts: [[".tsx", 5], [".ts", 4]] },
+    root("src/lib", { files: 4, companions: { with: 4, of: 4, root: null } }),
+  ];
+
+  const [found] = precedentFindings(["src/hooks/useF.test.ts"], roots);
+
+  assert.equal(found.reason, "src/hooks holds no other test; src/hooks: 0 of 5 .tsx files have a namesake test");
 });
 
 test("a test added beside siblings that already have one is not a finding", () => {
@@ -139,7 +153,7 @@ test("a write into a directory with no precedent is worth a word before it happe
   const said = noticeFor("spec/mailers/cim_share_mailer_spec.rb", layout);
 
   assert.match(said, /spec\/mailers\/cim_share_mailer_spec\.rb/);
-  assert.match(said, /app\/mailers: 4 files, 0 with a namesake test/);
+  assert.match(said, /app\/mailers: 0 of 4 \.rb files have a namesake test/);
   assert.match(said, /Nothing here was matched to a test by name/);
 });
 
@@ -223,7 +237,7 @@ test("where every root a tail answers to is untested, the one with the most prod
 
   const [found] = precedentFindings(["spec/mailers/new_thing_mailer_spec.rb"], roots);
   assert.equal(found.area, "app/mailers");
-  assert.match(found.reason, /app\/mailers: 9 files/);
+  assert.match(found.reason, /app\/mailers: 0 of 9 /);
 });
 
 test("a tests directory in the middle of a path names neither where nor what", () => {
@@ -249,7 +263,7 @@ test("the finding states what was counted, not a conclusion the count cannot car
 
   const said = noticeFor("src/components/__tests__/Thing5.test.tsx", { roots });
 
-  assert.match(said, /0 with a namesake test/);
+  assert.match(said, /0 of 5 \.rb files have a namesake test/);
   assert.doesNotMatch(said, /No precedent for a test here/);
   assert.match(said, /Nothing here was matched to a test by name/);
 });
@@ -314,7 +328,7 @@ test("the finding names the directory that has nothing in it, which is the signa
 
   const [found] = precedentFindings(["spec/mailers/cim_share_mailer_spec.rb"], roots);
 
-  assert.match(found.reason, /^spec\/mailers holds no other test; app\/mailers: 4 files, 0 with a namesake test$/);
+  assert.match(found.reason, /^spec\/mailers holds no other test; app\/mailers: 0 of 4 \.rb files have a namesake test$/);
 });
 
 test("a directory with a habit of its own is not one with no precedent", () => {
@@ -377,7 +391,7 @@ test("one or two namesake tests in a large root are an outlier, not a habit", ()
   const at = (n) => [
     root("src/components", {
       files: 517,
-      companions: { with: n, of: 517, root: null },
+      companions: { with: n, of: 517, root: null, ext: ".tsx" },
       tests: [{ runner: "vitest", files: 2, sub: null, under: 2 }],
     }),
     root("src/utils", { files: 60, companions: { with: 4, of: 60, root: "src/utils/__tests__" } }),
@@ -387,7 +401,7 @@ test("one or two namesake tests in a large root are an outlier, not a habit", ()
   const [one] = precedentFindings([spec], at(1));
   assert.equal(
     one.reason,
-    "src/components/Button/__tests__ holds no other test; src/components: 517 files, 1 with a namesake test; elsewhere in it 2 vitest specs"
+    "src/components/Button/__tests__ holds no other test; src/components: 1 of 517 .tsx files has a namesake test; elsewhere in it 2 vitest specs"
   );
   assert.equal(precedentFindings([spec], at(2)).length, 1);
   assert.deepEqual(precedentFindings([spec], at(3)), [], "three is a habit");

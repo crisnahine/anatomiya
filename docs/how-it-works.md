@@ -497,7 +497,11 @@ The whole battery runs once per side. The three numerators move between the clai
 and so does the author count: how many files the sites are spread over and how much of the area the
 construct reaches are facts about where the sites are, but who wrote them is a fact about the side.
 Each side counts the authors of the files carrying its own sites, so a person whose only file breaks
-the habit is not a second author of it, and a stated line names the authors of the side it states.
+the habit is not a second author of it, and a line names the authors of the side it prints, stated
+or not. A slot no side states still prints the side most of its sites take, so its `(authors k of
+n)` is that side's count: `facts.json` stores `counterAuthors` beside `authors` for that. The
+terminal's count of claims held on the author gate reads the same side, or it named fewer than the
+map printed.
 
 Authors come from one `git log -M --no-merges --name-status` pass, unioning rename chains, and
 `-M100%` on a partial clone (`extensions.partialClone` set, or any remote's `promisor` flag, not
@@ -810,7 +814,11 @@ files they point at, say what the practice is, and this says to follow it and fi
 trigger clause because removing the equivalent scope guard is measured to move the out-of-scope rate
 by double digits;
 `docs/research/one-line-that-finishes-in-house-style.md` carries the sources (A42). All three are
-constant, so A5 holds.
+constant, so A5 holds. The line above them that says what a claim is also carries the key to every
+counts line: `"no convention" means the gate in parentheses stopped it, and its sites may still all
+agree`. Without it `no convention. 73 of 73 sites (applicability)` read as a denial of a habit every
+site follows, and the gates' meanings lived only in this file and the README. It shares that line
+rather than taking its own, so it costs the roster nothing on an overview at its bound.
 
 Writes are atomic: temp file in the same directory, then rename, so a crash never leaves half a
 context file. `.claude/anatomiya/facts.json` holds every count, gated or not, and the facts and
@@ -1057,8 +1065,10 @@ nothing, and the map listed `test` and `examples` and never webpack's source at 
 descent producing no root keeps the directory. A directory under the floor folds into the nearest
 root above it, or into the line that says what did not print. That line carries a clause per
 population rather than one number: `and N more directories holding M files`, then the files in
-directories that cleared no floor, then the files sitting at the repository root, which never took
-the floor test and is not a place either. Sorting by source files first is
+directories too small for a line of their own, then the files sitting at the repository root, which
+never took the roster's floor and is not a place either. The clause does not say "floor": the Not
+covered line calls the area floor "the per-directory floor", a different and smaller number, and most
+files this clause counts do sit in an area. Sorting by source files first is
 what keeps an asset or documentation directory from displacing code.
 
 The three numbers scale with the corpus and are tuned by measurement. That is the decision; the
@@ -1125,8 +1135,8 @@ Every clause is dropped when it counts nothing.
 ```
 - <root>: <n1> <ext1>[ (JSX)][, <n2> <ext2>][ and <k> other]
         [; <t> <Runner> specs[ under <sub>]]
-        [; <c> of <n> has|have a namesake test[ under <test root>]]
-        [; <m> sibling modules named <three stems>; <f> files inline a helper]
+        [; <c> of <n> has|have a namesake test[, <v>][ under <test root>]]
+        [; <m> sibling modules[ named <up to three stems>]; <f> of <j> JSX files inline a helper]
 ```
 
 - The top two extensions by count, then the rest as `and k other`. `(JSX)` marks the first of the
@@ -1165,7 +1175,10 @@ Every clause is dropped when it counts nothing.
   file counted once has to vote once, and a mirror parting on an ordinary name leaves the vote to
   the next candidate rather than spending it on nothing. A top vote under half the matched files
   names no root at all, since a repository with one `__tests__` per component directory has an
-  answer for every file and no one place to name. A root with a `test`, `tests`, `spec`,
+  answer for every file and no one place to name. Half is enough to name one, so where the top vote
+  is fewer than the matched files the count there prints before the name: `4 of 63 have a namesake
+  test, 3 under src/utils/__tests__`, the way a runner group prints `2 of 3 vitest specs under
+  __tests__`. A root with a `test`, `tests`, `spec`,
   `cypress`, `e2e` or `__tests__` directory anywhere in its path is not asked the question: its
   non-test files are what the tests run on, and webpack's `test` read `1 of 7858 has a namesake
   test under test` over the fixture modules its 2,607 tests exercise. Any segment rather than the
@@ -1177,8 +1190,13 @@ Every clause is dropped when it counts nothing.
   all, so `0 of 40 have a spec` is a line rather than a silence: that is the shape an obligation
   cannot carry, because it treats a missing companion as an absence rather than as a habit.
 - The helper facet, JavaScript and JSX roots only: how many non-test `.ts` and `.js` modules sit
-  beside the JSX files, the three commonest stems among them, and how many of the JSX files define
-  a module-level function they do not export. Both numbers print and no side is chosen.
+  beside the JSX files, the three commonest stems among them that appear more than once, and how
+  many of the JSX files define a module-level function they do not export, out of how many JSX
+  files there are. Both numbers print and no side is chosen. A stem that appears once is no habit,
+  and ranking unique names put the first three alphabetically on the line as the "commonest"; where
+  none repeats the clause is the count alone. The JSX count is the denominator because only the JSX
+  files are asked: `0 files inline a helper` over one component read as the whole of a `src/utils`
+  whose 30 modules all keep a private helper.
 
 ### The tests line
 
@@ -1189,7 +1207,8 @@ Not the prefix every one of them shares: one file kept outside the tree the rest
 strict prefix to nothing, and 28 of the 35 measured repositories printed at least one `under .`,
 which is the clause failing at the only job it has. The
 trailing clause takes the first root printed that is not a test directory and has a namesake count,
-and nouns it with that root's top extension, so a repository whose tests are all feature-named
+and nouns it with the extension that root's namesake count was taken over, which is not always its
+first: a root holding more screenshots than components counts the components. So a repository whose tests are all feature-named
 end-to-end specs says out loud that `0 of 504 .tsx files have a namesake test`. That clause is what
 makes the line a denominator rather than a total. It names the population it counted over by the
 root's own label, so a root holding only the files at one level reads
@@ -1243,7 +1262,8 @@ export and is not counted. A default import, or a `require` bound whole, is `def
 module, so it is named for the module it comes from, `user (default)`, and an index file for its
 directory. A specifier is mapped to a file the way
 `pairing.mjs` learns a companion root: a relative one resolves against the importer's directory,
-anything else is matched on the path tail once a `~/`, `@/`, `#/` or `src/` prefix is cut, and a
+one ending in `/` names a directory and resolves only through its `index`, the way Node and
+TypeScript read `./base/`, `./` and `../`, anything else is matched on the path tail once a `~/`, `@/`, `#/` or `src/` prefix is cut, and a
 tail two files answer resolves to neither rather than to whichever sorted first. No `tsconfig` is
 read. Only importers outside the area count: a directory importing its own files is how it is
 written, not who depends on it. This is the counted form of "check before creating", and Ruby has
@@ -1335,7 +1355,10 @@ match a claim, because a file that creates its own directory is the only member 
 itself every time. It carries the same finding shape as any other, `dimension: "test_precedent"` in the
 json, so a reader that filters by dimension sees it beside the counted rows; it is not in the dimension
 count the documentation checks, since nothing about it is measured per area. What it does and refuses to
-do is H38, and the sentence the map states beside it is H39.
+do is H38, and the sentence the map states beside it is H39. Its reason, which the `PreToolUse`
+notice prints too, gives the root's count in the tests line's words, `src/hooks: 0 of 5 .tsx files
+have a namesake test`: the count is over one extension, and a bare `5 files` read as the whole of a
+directory holding nine.
 
 Severity, in the order the checks are made:
 

@@ -858,7 +858,7 @@ test("the notice answers for the repository the write is going into, not the one
 
   const said = runNotice(join(parent, "beta"), write).hookSpecificOutput.additionalContext;
 
-  assert.match(said, /src\/core: 6 files, 0 with a namesake test/);
+  assert.match(said, /src\/core: 0 of 6 \.js files have a namesake test/);
 });
 
 test("a notebook names its path under its own key, and is answered like any other", async (t) => {
@@ -942,7 +942,7 @@ test("the notice reads a relative target the same way the map does", async (t) =
 
   const said = runNotice(join(parent, "beta"), write).hookSpecificOutput.additionalContext;
 
-  assert.match(said, /src\/core: 6 files, 0 with a namesake test/);
+  assert.match(said, /src\/core: 0 of 6 \.js files have a namesake test/);
 });
 
 test("a file the call names outside any map leaves the session's own map standing", async (t) => {
@@ -1019,7 +1019,7 @@ test("the notice answers for a test going where its kind of file has none", need
 
   assert.equal(out.hookSpecificOutput.hookEventName, "PreToolUse");
   assert.match(out.hookSpecificOutput.additionalContext, /spec\/mailers holds no other test/);
-  assert.match(out.hookSpecificOutput.additionalContext, /app\/mailers: 4 files, 0 with a namesake test/);
+  assert.match(out.hookSpecificOutput.additionalContext, /app\/mailers: 0 of 4 \.rb files have a namesake test/);
   assert.equal(out.hookSpecificOutput.permissionDecision, undefined, "it informs and never refuses");
 });
 
@@ -1063,7 +1063,7 @@ test("a linked worktree with no map of its own is answered from its main checkou
 
   const said = runNotice(wt, write(wt, "spec/mailers/cim_share_mailer_spec.rb"));
   assert.match(said.hookSpecificOutput.additionalContext, /spec\/mailers holds no other test/);
-  assert.match(said.hookSpecificOutput.additionalContext, /app\/mailers: 4 files, 0 with a namesake test/);
+  assert.match(said.hookSpecificOutput.additionalContext, /app\/mailers: 0 of 4 \.rb files have a namesake test/);
   assert.ok(said.hookSpecificOutput.additionalContext.endsWith(`\n  Counted from this repository's main checkout at ${realpathSync.native(dir)}, not this worktree.`), "it names where the counts were taken");
 
   const echoed = runEcho(wt, read(join(wt, "app/mailers/admin_mailer.rb"))).hookSpecificOutput.additionalContext;

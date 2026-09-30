@@ -187,7 +187,7 @@ test("a test added where its own siblings have none is a finding, and one added 
   assert.equal(found.length, 1, JSON.stringify(found));
   assert.equal(found[0].path, "spec/mailers/cim_share_mailer_spec.rb");
   assert.equal(found[0].severity, "FIX");
-  assert.match(found[0].reason, /app\/mailers: 4 files, 0 with a namesake test/);
+  assert.match(found[0].reason, /app\/mailers: 0 of 4 \.rb files have a namesake test/);
 });
 
 test("a test still sitting in the working tree is asked the same question as a committed one", needsRuby, async (t) => {
