@@ -279,10 +279,13 @@ an idle window and a wall clock.
 
 The checker builds one program over every JavaScript and TypeScript file, then measures the share
 of property accesses whose receiver resolved to a real type. Under 0.80 the tier is degraded and its
-claims print as counts only (B8). The share is taken over files in an area, because those are the
-only files a claim is counted over: one untyped minified bundle in no area took a repository whose
-own code resolved fully down to 3% and read as a broken tsconfig. Files outside the areas are still
-in the program and still lend their types. A `node_modules` whose real path leaves the repository
+claims print as counts only (B8). The share is taken over files in an area the map describes,
+because those are the only files a claim is counted over: one untyped minified bundle in no area
+took a repository whose own code resolved fully down to 3% and read as a broken tsconfig, and a
+directory of bundles that was discovered and then dropped for counting nothing did the same. Each
+file's share comes back on its own, so the scan sums it once the areas are folded. A repository
+with no such file in any area is measured over every file. Files outside the areas are still in the
+program and still lend their types. A `node_modules` whose real path leaves the repository
 is not read (B9), so dependencies linked in from elsewhere resolve as absent ones do.
 
 ## 4. Dimensions and the three numbers

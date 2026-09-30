@@ -228,8 +228,8 @@ test("a checker that dies partway through is a failure, not a clean partial answ
     [
       "process.send({ ready: true });",
       "process.on('message', () => {",
-      "  process.send({ built: true, resolution: { resolved: 90, total: 100 }, config: { status: 'ok', reason: null } });",
-      "  process.send({ rel: 'a.ts', hits: {} });",
+      "  process.send({ built: true, config: { status: 'ok', reason: null } });",
+      "  process.send({ rel: 'a.ts', hits: {}, resolution: { resolved: 9, total: 10 } });",
       "  setTimeout(() => process.exit(137), 20);",
       "});",
     ].join("\n")
@@ -277,8 +277,8 @@ test("a checker that built its program and then stalled is killed by the shorter
   const { dir, worker } = stallingWorker(
     t,
     "stalled",
-    "  process.send({ built: true, resolution: { resolved: 90, total: 100 }, config: { status: 'ok', reason: null } });\n" +
-      "  process.send({ rel: 'a.ts', hits: {} });"
+    "  process.send({ built: true, config: { status: 'ok', reason: null } });\n" +
+      "  process.send({ rel: 'a.ts', hits: {}, resolution: { resolved: 9, total: 10 } });"
   );
 
   const r = await runSemantic(dir, [{ rel: "a.ts", abs: join(dir, "a.ts"), lang: "js" }], {
