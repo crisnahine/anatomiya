@@ -194,7 +194,8 @@ _Avoid_: snapshot, lockfile, baseline
 
 **Hold**:
 A pin that has stopped following the remote default branch while the checkout sits on its tip, because
-a commit on the way was made in this clone, the tip was not brought by a fetch, or git could not say.
+a commit on the way was made in this clone or carries its committer identity, the tip was not brought
+by a fetch, or git could not say.
 Said to the person in the terminal and never to the agent, and ended by a pin taken by hand or by a
 refresh that finds nothing holding it any more.
 _Avoid_: block, freeze, lock
