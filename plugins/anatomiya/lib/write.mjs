@@ -262,15 +262,17 @@ export function commitMap(root, plan) {
  * Windows refuses one over a file another process holds open.
  */
 function replaceAll(staged, removals) {
+  // Read before the first rename, so the window between the facts and the last
+  // file holds renames and nothing else.
+  const before = new Map([...staged.map(([, path]) => path), ...removals].map((p) => [p, previousBytes(p)]));
   const undo = [];
   try {
     for (const [tmp, path] of staged) {
-      const previous = previousBytes(path);
       renameSync(tmp, path);
-      undo.push([path, previous]);
+      undo.push([path, before.get(path)]);
     }
     for (const path of removals) {
-      const previous = previousBytes(path);
+      const previous = before.get(path);
       try {
         unlinkSync(path);
       } catch (err) {
