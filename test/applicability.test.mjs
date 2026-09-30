@@ -551,6 +551,11 @@ container = document.createElement("div")`,
       // A migration that rewrites rows cannot answer this claim however it is
       // written: `change` auto-inverts only a closed set of schema commands.
       `class M < ActiveRecord::Migration[7.0]\n  def up\n    Prompt.find_by(key: 'x').update!(body: 'y')\n  end\nend`,
+      `class M < ActiveRecord::Migration[7.0]\n  def up\n    ActiveStorage::Blob.update_all(x: 1)\n  end\nend`,
+      `class M < ActiveRecord::Migration[7.0]\n  def up\n    stale(User).update_all(x: 1)\n  end\nend`,
+      // A command outside the set change inverts has no conforming form.
+      `class M < ActiveRecord::Migration[7.0]\n  def change\n    change_column :t, :a, :text\n  end\nend`,
+      `class M < ActiveRecord::Migration[7.0]\n  def up\n    execute "CREATE INDEX i ON t (a)"\n  end\n  def down\n  end\nend`,
     ],
   },
   migration_schema_only: {
