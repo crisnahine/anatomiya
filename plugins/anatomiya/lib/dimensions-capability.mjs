@@ -28,11 +28,11 @@ export function stemWords(stem) {
     .filter(Boolean);
 }
 
-/** A name's words without a trailing version: `ApiClientV2` and `api_client_1` are clients. */
+/** A name's words without its version words: `ApiClientV2` and `V2ApiClient` are clients. */
 export function nameWords(name) {
   const words = stemWords(name);
-  while (words.length > 1 && /^v?\d+$/.test(words.at(-1))) words.pop();
-  return words;
+  const named = words.filter((w) => !/^v?\d+$/.test(w));
+  return named.length > 0 ? named : words;
 }
 
 export const CAPABILITY_WORDS = {
