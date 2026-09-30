@@ -248,6 +248,33 @@ test("a directory holding a shelf of mapped checkouts refreshes none of them", a
   assert.deepEqual(started, []);
 });
 
+test("a directory holding eight mapped checkouts, the most it serves, refreshes all eight", async (t) => {
+  const parent = parentOf(t);
+  const roots = [];
+  for (let i = 0; i < 8; i++) roots.push(await scannedIn(parent, `p${i}`));
+  const { started, start } = recorder();
+
+  const out = runRefresh(parent, { hook_event_name: "SessionStart", cwd: parent }, { start });
+
+  assert.deepEqual(started, roots);
+  assert.equal(out.hookSpecificOutput.watchPaths.length, 16);
+});
+
+test("from above its checkouts, each held pin is named by its checkout and pinned from inside it", async (t) => {
+  const parent = parentOf(t);
+  const held = { stamp: "x", ok: true, held: { reason: "made-here", commit: "abcdef1234", pin: null, by: "reflog" } };
+  for (const name of ["api", "client"]) writeFileSync(join(await scannedIn(parent, name), REFRESH_STATE), JSON.stringify(held));
+  const { start } = recorder();
+
+  const lines = runRefresh(parent, { hook_event_name: "SessionStart", cwd: parent, source: "startup" }, { start }).systemMessage.split("\n");
+
+  assert.equal(lines.length, 2);
+  assert.match(lines[0], /^anatomiya \(api\): the pin stays: commit abcdef1 .* \/anatomiya:pin in a session started inside api\.$/);
+  assert.match(lines[1], /^anatomiya \(client\): .* inside client\.$/);
+  const alone = runRefresh(join(parent, "api"), { hook_event_name: "SessionStart", cwd: join(parent, "api") }, { start }).systemMessage;
+  assert.match(alone, /^anatomiya: the pin stays: .* made with \/anatomiya:pin\.$/, "a session inside the checkout needs no name");
+});
+
 /* --- the worker: what happens to the repository --- */
 
 test("a checkout that has not moved since the last refresh is left alone", async (t) => {
