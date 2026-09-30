@@ -155,10 +155,13 @@ export async function scan(cwd, { guards = null, deep = false } = {}) {
 
   // Over the files a claim is counted in: an area dropped above is one the map
   // says nothing was counted in, so its bundles may not close every other
-  // area's type-checked rows either. Only a repository where no area was
-  // discovered is measured over the whole corpus.
-  const counted = folded.flatMap(({ area }) => area.files.map((f) => f.rel));
-  const semantic = semanticOver(whole, areas.length === 0 ? null : counted);
+  // area's type-checked rows either. With nothing folded, the files in no area
+  // stand in, so root code below the floor is still measured.
+  const inArea = new Set(areas.flatMap((a) => a.files.map((f) => f.rel)));
+  const counted = folded.length
+    ? folded.flatMap(({ area }) => area.files.map((f) => f.rel))
+    : files.map((f) => f.rel).filter((rel) => !inArea.has(rel));
+  const semantic = semanticOver(whole, counted);
 
   const pool = new Map();
   for (const { dims, measuredArea } of folded) {

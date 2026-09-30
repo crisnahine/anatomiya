@@ -930,6 +930,25 @@ test("a repository whose every area was dropped takes no rate from it", async (t
   assert.equal(r.semantic.typedResolutionRate, null);
 });
 
+test("root code below the area floor keeps its rate beside a dropped bundle directory", async (t) => {
+  const dir = repo(t, (d, { git, write }) => {
+    for (let i = 1; i <= 3; i++) write(`f${i}.ts`, `import { make } from "foo";\nexport const v${i} = make().alpha.beta.gamma;\n`);
+    for (let i = 0; i < 8; i++) {
+      const body = Array.from({ length: 150 }, (_, n) => `o.f${n}=function(a,b){return a.x.y+b.z;};`).join("");
+      write(`public/js/lib${i}.js`, `(function(){var o={};${body}})();\n`);
+    }
+    git("add", "-A");
+    git("commit", "-qm", "init");
+  });
+
+  const r = await scan(dir, { deep: true });
+
+  assert.deepEqual(r.areas, []);
+  assert.equal(r.semantic.status, "degraded");
+  assert.equal(r.semantic.reason, "no-tsconfig");
+  assert.equal(r.semantic.typedResolutionRate, 0);
+});
+
 test("a repository with no area is still measured over every file it holds", async (t) => {
   // An empty measured set read as a corpus with no property access, so an
   // install that resolved nothing reported ok with no rate.
