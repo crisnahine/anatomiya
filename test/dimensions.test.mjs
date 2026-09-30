@@ -97,6 +97,32 @@ test("a bare throw is a violation and a Result return conforms", () => {
   assert.equal(r.conforming, 2);
 });
 
+test("an error field is a result only beside the keys a result is made of", () => {
+  // A view-model hook hands its field's message out as `error`, and React
+  // error-boundary state carries one too. Neither returns a failure in place of
+  // a throw, and a hundred such hooks stated the claim over two real throws.
+  const r = counts("error_shape", `
+    export function useField(form) { return { label: "x", error: form.errors.f, disabled: false } }
+    export function useThing() { return { data, error, isLoading } }
+    export function spread(e) { return { ...base, error: e } }
+    export class Boundary { static getDerivedStateFromError(error) { return { error } } }
+    export function stateOf(error) { return { error, sentryEventId: null } }
+  `);
+  assert.deepEqual(r, { candidates: 0, conforming: 0 });
+
+  // The Supabase pair, a success flag and a validation verdict all hand the
+  // failure back as a value.
+  const results = counts("error_shape", `
+    export function load() { return { data: null, error: "x" } }
+    export function save() { return { success: false, error: "x" } }
+    export function check(u) { return { isValid: false, error: "bad url" } }
+    export function act() { return { error: "not allowed" } }
+    export function parse(x) { return ok(x) }
+    export function fail() { return { ok: false, error: "empty", code: 3 } }
+  `);
+  assert.deepEqual(results, { candidates: 6, conforming: 6 });
+});
+
 // --- module_state_const ---
 
 test("module level is no enclosing declaration, not byte position", () => {

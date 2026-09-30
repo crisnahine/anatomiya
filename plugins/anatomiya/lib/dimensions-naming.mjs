@@ -9,7 +9,7 @@
  * imports this file.
  */
 import { walk, isFunctionLike } from "./walk.mjs";
-import { jsxElementNames, makesComponent, yieldsJsx } from "./dimensions-jsx.mjs";
+import { jsxElementNames, makesComponent, typedAsComponent, yieldsJsx } from "./dimensions-jsx.mjs";
 import { fileStem } from "./dimensions-capability.mjs";
 import { encode } from "./encode.mjs";
 
@@ -46,8 +46,14 @@ export function classifyWord(word) {
   return null;
 }
 
-/** One spelling of the template fill, shared by the reducer and the check. */
-export const fillClass = (claim, cls) => claim.replace("<style>", cls);
+/**
+ * One spelling of the template fill, shared by the reducer and the check.
+ *
+ * A prefix class is a letter, read by its name, so "a <style>" takes the
+ * article that name is spoken with: "an I prefix", "a T prefix".
+ */
+export const fillClass = (claim, cls) =>
+  claim.replace(/\ba <style>/, `${/^[AEFHILMNORSX]$/.test(cls) ? "an" : "a"} <style>`).replace("<style>", cls);
 
 /**
  * The sentence a learned row states, from the class its sites voted for.
@@ -101,6 +107,35 @@ export function prefixClass(name) {
  */
 const PREFIX_LETTERS = new Set(["I", "T", "E"]);
 const ACRONYM_OPENING = /^(?:IDs|IPs|IPv\d*|IOs|ETags?|TVs)(?![a-z])/;
+
+const DECLARATION_FILE = /\.d\.[cm]?ts$/;
+
+/** A top-level statement that makes a TypeScript file a module rather than a script. */
+function isModuleSyntax(st) {
+  if (/^(Import|ExportNamed|ExportDefault|ExportAll)Declaration$/.test(st.type)) return true;
+  if (st.type === "TSExportAssignment") return true;
+  return st.type === "TSImportEqualsDeclaration" && st.moduleReference?.type === "TSExternalModuleReference";
+}
+
+/**
+ * The names this file calls with `new` or reads a `.prototype` off: a function
+ * used that way is a constructor, which JavaScript spells in PascalCase.
+ */
+function constructedNames(program) {
+  const names = new Set();
+  walk(program, (n) => {
+    if (n.type === "NewExpression" && n.callee?.type === "Identifier") names.add(n.callee.name);
+    if (
+      n.type === "MemberExpression" &&
+      !n.computed &&
+      n.property?.name === "prototype" &&
+      n.object?.type === "Identifier"
+    ) {
+      names.add(n.object.name);
+    }
+  });
+  return names;
+}
 
 /** A superclass's written name: `B`, or the dotted `React.Component`. */
 function superName(node) {
@@ -175,10 +210,17 @@ const spellsEveryClass = (word) => /^[\p{Ll}\p{Lo}\d]+$/u.test(word);
  * underscore is read off a single word only: `_tmp_probe.rb` and
  * `_tmpProbe.ts` are the C23 omission on a stem that does spell a class
  * underneath, and a router's special file is never named that way.
+ *
+ * A stem of capitals alone in a file that holds JSX is not a site either. React
+ * reads a capital-initial element as a component, so `SBA.jsx` holding `SBA` is
+ * an acronym component, and the only name that cleared a PascalCase claim,
+ * `Sba.jsx`, no longer matched it. Outside JSX it stays the SCREAMING case
+ * `classifyWord` refuses, the way `DEBUG.ts` is.
  */
-export function namesASite(rel) {
+export function namesASite(rel, facets = null) {
   const word = stemWord(rel);
   if (word === null || spellsEveryClass(word)) return false;
+  if (facets?.jsx === true && /^\p{Lu}[\p{Lu}\d]*$/u.test(word)) return false;
   return !/[[\]$+()@]/.test(word) && !/^_+[\p{Ll}\p{Lo}\d]+$/u.test(word);
 }
 
@@ -215,7 +257,7 @@ export const NAMING_CORPUS = [
     splitBy: splitByJsx,
     precision: "precise",
     applicabilityPredicate: {
-      sites: "a file whose stem does not match every naming class at once; a single lowercase word and a bare filename do match them all and are not sites, and neither is a name a file router reads (`[id]`, `$param`, `+page`, or one word under a leading underscore such as `_app`). A stem spelling none of the four is a site the scan does not classify and the check counts against a stated claim",
+      sites: "a file whose stem does not match every naming class at once; a single lowercase word and a bare filename do match them all and are not sites, and neither is a name a file router reads (`[id]`, `$param`, `+page`, or one word under a leading underscore such as `_app`), and neither is a stem of capitals alone in a file that holds JSX, which React reads as a component (`SBA.jsx`). A stem spelling none of the four is a site the scan does not classify and the check counts against a stated claim",
       blind: null,
     },
     langs: ["js", "jsx", "ruby"],
@@ -320,7 +362,7 @@ export const NAMING_AST = [
     applicabilityPredicate: {
       // Module level only, matching function_style's altitude: a method answers
       // to its class's convention, which is a different sentence.
-      sites: "a file declaring a module-level function, or binding one to a module-level variable, under a name that spells a naming class; a function whose body yields JSX, or whose name this file renders as an element, is a component whose name JSX decides and is not a site",
+      sites: "a file declaring a module-level function, or binding one to a module-level variable, under a name that spells a naming class; a function whose body yields JSX, one bound to a name annotated as a React component type (FC, FunctionComponent, ComponentType), or one whose name this file renders as an element, is a component whose name JSX decides and is not a site, and one this file calls with new or reads a prototype off is a constructor and is not a site either",
       blind: null,
     },
     langs: ["js", "jsx"],
@@ -330,6 +372,7 @@ export const NAMING_AST = [
       // ask for wherever this row learns a lowercase-first class. The JSX rows
       // read the same rule from the other side, in `isHostElement`.
       const rendered = jsxElementNames(program);
+      const constructed = constructedNames(program);
       walk(program, (n, ctx) => {
         if (ctx.enclosing !== null) return;
         let name = null;
@@ -339,12 +382,13 @@ export const NAMING_AST = [
           fn = n;
         }
         if (n.type === "VariableDeclarator" && n.id?.type === "Identifier" && n.init && isFunctionLike(n.init)) {
+          if (typedAsComponent(n.id)) return;
           name = n.id.name;
           fn = n.init;
         }
         // A component returning JSX and one this file only renders are the same
         // thing, so excluding one of them alone would be arbitrary.
-        if (name && (rendered.has(name) || yieldsJsx(fn))) return;
+        if (name && (rendered.has(name) || constructed.has(name) || yieldsJsx(fn))) return;
         const cls = name && classifyWord(name);
         // The id node rides along so the check can point at the declaration
         // rather than line 1; the worker strips nodes before IPC either way.
@@ -371,7 +415,7 @@ export const NAMING_AST = [
     splitBy: splitByJsx,
     precision: "precise",
     applicabilityPredicate: {
-      sites: "an export statement declaring a function, or a variable not bound to a class expression, under a name that spells a naming class; an anonymous default export carries no name, and a renaming specifier is not resolved to a declaration, so neither is a site; an exported function whose body yields JSX, a variable bound to a call handed such a function or the name of one this file binds, to a lazy or dynamic import, or to a styled template, and a name this file renders as an element, are components whose name JSX decides and are not sites",
+      sites: "an export statement declaring a function, or a variable not bound to a class expression, under a name that spells a naming class; an anonymous default export carries no name, and a renaming specifier is not resolved to a declaration, so neither is a site; an exported function whose body yields JSX, a variable bound to a call handed such a function or the name of one this file binds, to a lazy or dynamic import, or to a styled template, a name annotated as a React component type (FC, FunctionComponent, ComponentType), and a name this file renders as an element, are components whose name JSX decides and are not sites, and a name this file calls with new or reads a prototype off is a constructor and is not a site either",
       blind: null,
     },
     langs: ["js", "jsx"],
@@ -382,9 +426,11 @@ export const NAMING_AST = [
       // this row binds a name to a call, so only this row meets a component a
       // `forwardRef`, a `memo` or a `styled` template made.
       const rendered = jsxElementNames(program);
+      const constructed = constructedNames(program);
       for (const s of exportedSites(program)) {
         if (s.population !== "value") continue;
-        if (rendered.has(s.name) || yieldsJsx(s.fn) || makesComponent(s.init, program)) continue;
+        if (rendered.has(s.name) || constructed.has(s.name) || typedAsComponent(s.node)) continue;
+        if (yieldsJsx(s.fn) || makesComponent(s.init, program)) continue;
         const cls = classifyWord(s.name);
         if (cls) add({ node: s.node, conforming: false, where: s.name, class: cls });
       }
@@ -475,11 +521,12 @@ export const NAMING_AST = [
     precision: "precise",
     applicabilityPredicate: {
       sites:
-        "a TypeScript interface declaration outside any ambient module or namespace, whose name votes for its prefix letter or for carrying none. A name of two capitals, one opening on three or more, one whose prefix-shaped capital is not I, T or E, or one opening on a known acronym (IDs, IPv4, ETag), votes for neither, since it reads as a prefix and as an acronym alike",
+        "a TypeScript interface declaration outside any ambient module or namespace, and not at the top level of a declaration file with no import or export, whose name votes for its prefix letter or for carrying none. A name of two capitals, one opening on three or more, one whose prefix-shaped capital is not I, T or E, or one opening on a known acronym (IDs, IPv4, ETag), votes for neither, since it reads as a prefix and as an acronym alike",
       blind: null,
     },
     langs: ["js", "jsx"],
-    run(program, add) {
+    run(program, add, { rel } = {}) {
+      const globalScript = DECLARATION_FILE.test(rel ?? "") && !(program.body || []).some(isModuleSyntax);
       walk(program, (n, ctx) => {
         if (n.type !== "TSInterfaceDeclaration" || !n.id) return;
         // An interface inside `declare global` or `declare module "x"` merges
@@ -488,6 +535,10 @@ export const NAMING_AST = [
         // no error at the declaration and `TS2339` at every use. The same
         // ancestor test C12 applies to `module_state_const`.
         if (ctx.ancestors.some((a) => a.type === "TSModuleDeclaration")) return;
+        // A declaration file with no import or export is a script, and its
+        // top-level interfaces are global and merge the same way. Only a
+        // declaration file: `moduleDetection` can make any other file a module.
+        if (globalScript && ctx.ancestors.length === 1) return;
         // A name that votes for neither is not a site, which is the idiom every
         // other row in this file already uses for a name it cannot classify.
         const cls = prefixClass(n.id.name);
