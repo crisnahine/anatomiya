@@ -22,7 +22,7 @@ import { absentInterpreter } from "./child.mjs";
 import { firstLine } from "./encode.mjs";
 import { ENGINES } from "./langs.mjs";
 import { prismLoadArgs, prismVersionArgs, rubyEnv } from "./ruby.mjs";
-import { loadTypeScript } from "./semantic.mjs";
+import { loadTypeScript, NEEDS_MAJOR } from "./semantic.mjs";
 import { olderThan } from "./version.mjs";
 
 /**
@@ -47,7 +47,7 @@ const OPTIONAL = {
     // setup, and `--deep` refused it as not installed: the loader holds it to
     // major 5, because 7 has no JS API and 4 is not what the tier measured.
     usable: loadTypeScript,
-    unusable: "--deep needs typescript 5.x",
+    unusable: NEEDS_MAJOR,
   },
 };
 

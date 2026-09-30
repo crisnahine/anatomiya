@@ -260,6 +260,14 @@ shared, because three hand-written copies of one battery had drifted into three 
 each overshot by a chunk and one bridge holding a single re-armed timeout where the other two held
 an idle window and a wall clock.
 
+The checker builds one program over every JavaScript and TypeScript file, then measures the share
+of property accesses whose receiver resolved to a real type. Under 0.80 the tier is degraded and its
+claims print as counts only (B8). The share is taken over files in an area, because those are the
+only files a claim is counted over: one untyped minified bundle in no area took a repository whose
+own code resolved fully down to 3% and read as a broken tsconfig. Files outside the areas are still
+in the program and still lend their types. A `node_modules` whose real path leaves the repository
+is not read (B9), so dependencies linked in from elsewhere resolve as absent ones do.
+
 ## 4. Dimensions and the three numbers
 
 A dimension is one claim about one area. 49 ship, the filename row included: 28 for JavaScript, 33 reachable in JSX, and 16 that speak Ruby, plus the one type-checked row, which sits in the total and reaches a scan only with --deep. Each
@@ -1475,7 +1483,7 @@ object and exits 0, as it does on any failure.
 | `oxc` | node | `oxc-parser` imports | `anatomiya setup` in the plugin directory |
 | `flow-remove-types` | node | it imports. A row of its own, and not an engine: it is `oxc`'s dialect stripper, and one absent costs a dialect where the other costs the run | the same install |
 | `prism` | the `ruby` interpreter | the interpreter's own prism, or the newest prism gem installed for it when its own is older, answers a version of 1.0.0 or newer. A `ruby` that cannot run `ruby -e 1` at all (an rbenv shim with no version selected exits 127) is reported with its own first line of stderr, not as a missing prism | install Ruby 3.4 or newer, which ships prism 1.x, or run `gem install prism` on the Ruby you have, and put `ruby` on `PATH`; for a `ruby` that does not run, make `ruby -e 1` run first |
-| `typescript` | node | it imports. Optional: only `--deep` needs it | the same install |
+| `typescript` | node | it imports at major 5, the one the tier runs on. One of another major is reported by its version, and `scan --deep` refuses it with the same sentence rather than calling it absent. Optional: only `--deep` needs it | the same install |
 
 `anatomiya setup` installs what node hosts, and only that. It runs
 `npm install --omit=dev --include=optional --ignore-scripts --no-audit --no-fund` with `cwd` set to

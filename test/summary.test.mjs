@@ -797,7 +797,7 @@ test("the pin record neutralises the paths a move names as well", () => {
 /* --- a tier that ran badly reaches the terminal too (#72) --- */
 
 test("a degraded semantic tier is on the summary, not only in the map", () => {
-  // `--deep` costs about 26x the parse. On a measured 2,486-file React
+  // `--deep` costs a few times a plain scan. On a measured 2,486-file React
   // repository it added 110 slots, every one of them read zero, and the summary
   // said nothing: the reader paid 24 seconds instead of 12 and had no way to
   // know the tier answered nothing. The map, `facts.json` and every area file

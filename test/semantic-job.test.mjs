@@ -67,6 +67,27 @@ test("resolution counts every property access and credits only the typed ones", 
   }
 });
 
+test("resolution is measured over the files the job names, and every file is still answered", needsTs, async () => {
+  // A minified bundle in no area pulled a repository whose own code resolved
+  // fully down to 3% and read as low-resolution. It still lends its types to
+  // the program; it is only kept out of the rate.
+  const dir = repo({
+    "tsconfig.json": config,
+    "a.ts": `export const x = " a ".trim().toLowerCase();`,
+    "game.min.js": `function f(a,b){return a.x.y+b.z}function g(a,b){return a.x.y+b.z}`,
+  });
+  try {
+    const files = [{ rel: "a.ts", abs: join(dir, "a.ts") }, { rel: "game.min.js", abs: join(dir, "game.min.js") }];
+    const out = await sent({ root: dir, files, measured: ["a.ts"] });
+    assert.deepEqual(out[0].resolution, { resolved: 2, total: 2 });
+    assert.deepEqual(out.filter((m) => m.rel).map((m) => m.rel), ["a.ts", "game.min.js"]);
+    const all = await sent({ root: dir, files });
+    assert.deepEqual(all[0].resolution, { resolved: 2, total: 8 }, "with no list named, every file is measured");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("whatever the job throws on is one error message, not a dead channel", needsTs, async () => {
   const out = await sent({ root: "/nowhere", files: null });
   assert.equal(out.length, 1);

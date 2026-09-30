@@ -9,6 +9,7 @@ import { repo } from "./ts-repo.mjs";
 import {
   loadTypeScript,
   notInstalledMessage,
+  deepRefusal,
   classifySemantic,
   RESOLUTION_FLOOR,
   SEMANTIC_GUARDS,
@@ -189,6 +190,28 @@ test("a checker outside major 5 is refused, because 7 has no JS API", async (t) 
 
   const ok = await loadTypeScript({ specifier: stub("5.9.3") });
   assert.equal(ok?.version, "5.9.3");
+});
+
+test("a --deep refusal names the typescript it found when that one is the wrong major", async (t) => {
+  // Measured with a typescript 4.9.5 above the plugin and none inside it: doctor
+  // said `--deep needs typescript 5.x` and `scan --deep` said it was not
+  // installed, which sends the reader looking for an install that is there.
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-tsrefuse-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const stub = (version) => {
+    const p = join(dir, `ts-${version}.mjs`);
+    writeFileSync(p, `export const version = ${JSON.stringify(version)};\nexport function createProgram() {}\n`);
+    return pathToFileURL(p).href;
+  };
+  const remedy = remedyFor("typescript");
+
+  const old = await deepRefusal(remedy, { specifier: stub("4.9.5") });
+  assert.match(old, /^typescript 4\.9\.5: --deep needs typescript 5\.x$/m, old);
+  assert.doesNotMatch(old, /not installed/, old);
+  assert.match(old, /bin\/anatomiya\.mjs setup/, old);
+
+  assert.match(await deepRefusal(remedy, { specifier: "typescript-that-is-not-installed" }), /is not installed/);
+  assert.equal(await deepRefusal(remedy, { specifier: stub("5.9.3") }), null);
 });
 
 test("a checker that dies partway through is a failure, not a clean partial answer", async (t) => {
