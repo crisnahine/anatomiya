@@ -586,6 +586,9 @@ container = document.createElement("div")`,
       `class M < ActiveRecord::Migration[7.0]\n  def change\n  end\nend`,
       `class M < ActiveRecord::Migration[7.0]\n  def up\n  end\n  def down\n  end\nend`,
       `class M < ActiveRecord::Migration[7.0]\n  def down\n  end\nend`,
+      // A constant named for its table or as an option value reads no row.
+      `class M < ActiveRecord::Migration[7.0]\n  def change\n    add_column ActiveStorage::Blob.table_name, :a, :string\n  end\nend`,
+      `class M < ActiveRecord::Migration[7.0]\n  def change\n    add_column :t, :a, :string, default: Kind::Basic\n  end\nend`,
     ],
     inapplicable: [
       // A helper-only migration class has made no choice about reversibility.
@@ -595,13 +598,16 @@ container = document.createElement("div")`,
       `class M < ActiveRecord::Migration[7.0]\n  def up\n    Prompt.find_by(key: 'x').update!(body: 'y')\n  end\nend`,
       `class M < ActiveRecord::Migration[7.0]\n  def up\n    ActiveStorage::Blob.update_all(x: 1)\n  end\nend`,
       `class M < ActiveRecord::Migration[7.0]\n  def up\n    ActiveRecord::SchemaMigration.delete_all\n  end\nend`,
-      `class M < ActiveRecord::Migration[7.0]\n  def up\n    stale(User).update_all(x: 1)\n  end\nend`,
-      `class M < ActiveRecord::Migration[7.0]\n  def up\n    stale(model: User).update_all(x: 1)\n  end\nend`,
+      `class M < ActiveRecord::Migration[7.0]\n  def up\n    stale(User).update_all(x: 1)\n  end\n  def stale(m) = m.where(a: 1)\nend`,
+      `class M < ActiveRecord::Migration[7.0]\n  def up\n    stale(model: User).update_all(x: 1)\n  end\n  def stale(model:) = model.where(a: 1)\nend`,
+      `class M < ActiveRecord::Migration[7.0]\n  def up\n    exec_update "UPDATE t SET a = 1"\n  end\n  def down\n  end\nend`,
       // A command outside the set change inverts has no conforming form.
       `class M < ActiveRecord::Migration[7.0]\n  def change\n    change_column :t, :a, :text\n  end\nend`,
       `class M < ActiveRecord::Migration[7.0]\n  def up\n    execute "CREATE INDEX i ON t (a)"\n  end\n  def down\n  end\nend`,
       `class M < ActiveRecord::Migration[7.0]\n  def change\n    remove_check_constraint :t, name: "chk"\n  end\nend`,
       `class M < ActiveRecord::Migration[7.0]\n  def change\n    retype\n  end\n  def retype\n    change_column :t, :a, :text\n  end\nend`,
+      `class M < ActiveRecord::Migration[7.0]\n  def change\n    exec_query "CREATE INDEX i ON t (a)"\n  end\nend`,
+      `class M < ActiveRecord::Migration[7.0]\n  def change\n    send(:change_column, :t, :a, :text)\n  end\nend`,
     ],
   },
   migration_schema_only: {
