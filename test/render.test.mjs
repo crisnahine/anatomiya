@@ -2902,22 +2902,83 @@ test("a directory named in extglob syntax folds like any other glob syntax", () 
   }
 });
 
-test("a directory named in extglob syntax is reached by picomatch too, where it is installed", async (t) => {
-  // The helper above does not implement extglobs, so it cannot see the bug on
-  // its own. picomatch is what Claude Code's matcher is built on.
-  let pm;
-  try {
-    pm = (await import("picomatch")).default;
-  } catch {
-    t.skip("picomatch is not installed");
-    return;
+/**
+ * Claude Code's reading of a `paths` list: every entry split on the commas
+ * outside a brace, the first brace expanded until none is left, then gitignore
+ * matching over the pieces, last match winning. A pattern with no slash but a
+ * trailing one matches at any depth, and one that matches a directory matches
+ * everything under it. `(`, `)` and `\` are literal to it.
+ */
+function claudeCodeReaches(patterns, rel) {
+  const split = (entry) => {
+    const out = [];
+    let cur = "";
+    let depth = 0;
+    for (const ch of entry) {
+      if (ch === "{") depth++;
+      if (ch === "}") depth--;
+      if (ch === "," && depth === 0) {
+        if (cur.trim()) out.push(cur.trim());
+        cur = "";
+      } else cur += ch;
+    }
+    if (cur.trim()) out.push(cur.trim());
+    return out;
+  };
+  const expand = (p) => {
+    const m = p.match(/^([^{]*)\{([^}]+)\}(.*)$/);
+    return m ? m[2].split(",").flatMap((x) => expand(m[1] + x.trim() + m[3])) : [p];
+  };
+  const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const toRe = (p) => {
+    let re = "";
+    for (let i = 0; i < p.length; i++) {
+      if (p.startsWith("**/", i)) { re += "(?:[^/]*/)*"; i += 2; }
+      else if (p[i] === "*") re += "[^/]*";
+      else re += esc(p[i]);
+    }
+    return new RegExp(`^${re}$`, "u");
+  };
+  const ancestry = rel.split("/").map((_, i, parts) => parts.slice(0, i + 1).join("/"));
+  let hit = false;
+  for (const piece of patterns.flatMap(split).flatMap(expand)) {
+    const negated = piece.startsWith("!");
+    let body = negated ? piece.slice(1) : piece;
+    body = body.replace(/\/$/, "");
+    if (!body.includes("/")) body = `**/${body}`;
+    const re = toRe(body.replace(/^\//, ""));
+    if (ancestry.some((p) => re.test(p))) hit = !negated;
   }
+  return hit;
+}
+
+test("a directory named in extglob syntax is reached by Claude Code's own reading of paths", () => {
+  // The helper above does not implement extglobs, so it cannot see the bug on
+  // its own. Claude Code does not read `paths` through picomatch either: it
+  // splits, brace-expands and matches with gitignore rules.
   for (const a of discover(extglobFiles())) {
     const delivered = renderedPaths(renderArea(area({ path: a.path, globs: a.globs })));
     for (const f of a.files) {
-      let hit = false;
-      for (const p of delivered) if (pm(p.replace(/^!/, ""))(f.rel)) hit = !p.startsWith("!");
-      assert.ok(hit, `${a.path}: ${f.rel} is reached by none of ${JSON.stringify(delivered)}`);
+      assert.ok(claudeCodeReaches(delivered, f.rel), `${a.path}: ${f.rel} is reached by none of ${JSON.stringify(delivered)}`);
+    }
+  }
+});
+
+test("a directory with a comma in its name folds like glob syntax, since Claude Code splits paths on it", () => {
+  // `x,y/**/*.rb` reads as the two patterns `x` and `y/**/*.rb`: the area
+  // reached none of its own files, and every file under any `x` or `y`.
+  const files = ["src", "src/x,y", "x", "y"].flatMap((d) =>
+    Array.from({ length: 6 }, (_, i) => ({ rel: `${d}/m${i}.ts`, lang: "js" }))
+  );
+  const areas = discover(files);
+
+  assert.ok(!areas.some((a) => a.path.includes(",")), "no area is rooted at a directory with a comma");
+  for (const a of areas) {
+    for (const g of a.globs) assert.ok(!g.dir.includes(","), `${a.path} names ${g.dir}`);
+    const delivered = renderedPaths(renderArea(area({ path: a.path, globs: a.globs })));
+    const mine = new Set(a.files.map((f) => f.rel));
+    for (const f of files) {
+      assert.equal(claudeCodeReaches(delivered, f.rel), mine.has(f.rel), `${a.path} vs ${f.rel}: ${JSON.stringify(delivered)}`);
     }
   }
 });

@@ -200,8 +200,11 @@ export function assertGlobSafe(g) {
  * `@(lib)` and `x+(y)` as extglobs, `(ab)` as a group and `a\b` as an escaped
  * `b`, so each of those directories rooted an area whose `paths` matched
  * nothing or a different directory. `+` and `@` only bite in front of a `(`.
+ * Claude Code itself splits each `paths` entry on the commas outside a brace
+ * before it expands braces or matches with gitignore rules, so `x,y/**` reads
+ * as `x` and `y/**` and a comma is glob syntax too.
  */
-const GLOB_SYNTAX = /[*?[\]{}!()\\]/;
+const GLOB_SYNTAX = /[*?[\]{}!()\\,]/;
 const spellable = (dir) =>
   dir === "." || (!dir.split("/").some((seg) => GLOB_SYNTAX.test(seg)) && sanitisePath(dir) === dir);
 
