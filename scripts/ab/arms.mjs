@@ -126,6 +126,9 @@ export async function buildArms(repo, sha, { workdir = tmpdir() } = {}) {
       // `.` rather than `repo`: git runs inside it, where a relative `repo` names somewhere else.
       const cloned = await git(repo, ["clone", "--quiet", "--shared", "--no-checkout", ".", path]);
       if (!cloned.ok) throw new Error(`could not create the ${name} arm: ${cloned.error}`);
+      // Before the checkout, so an arm holds the commit's bytes on Windows too.
+      const bytes = await git(path, ["config", "core.autocrlf", "false"]);
+      if (!bytes.ok) throw new Error(`could not configure the ${name} arm: ${bytes.error}`);
       const at = await git(path, ["checkout", "--quiet", "--detach", sha]);
       if (!at.ok) throw new Error(`could not check out ${sha} in the ${name} arm: ${at.error}`);
     }

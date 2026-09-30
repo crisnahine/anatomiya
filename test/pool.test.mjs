@@ -5,6 +5,7 @@ import { existsSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from "no
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createPool, rssOf, GUARDS } from "../plugins/anatomiya/lib/pool.mjs";
+import { pathToFileURL } from "node:url";
 
 function file(dir, name, body) {
   const abs = join(dir, name);
@@ -116,7 +117,7 @@ process.send = (msg, ...rest) => {
     file(dir, name, "export const x = 1\n"),
   );
 
-  await withPool({ size: 2, execArgv: ["--import", preload], guards: { timeoutMs: 1_000 } }, async (pool) => {
+  await withPool({ size: 2, execArgv: ["--import", pathToFileURL(preload).href], guards: { timeoutMs: 1_000 } }, async (pool) => {
     // Both workers answer once first, so the two hang files start side by side:
     // a kill that ran alone is charged without a retry.
     for (let i = 0; answered(log) < 2 && i < 100; i++) {

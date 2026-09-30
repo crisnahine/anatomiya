@@ -12,18 +12,26 @@
  * fastest of each is kept: noise only ever adds time.
  */
 export function doublingRatio(make, n, { rounds = 3 } = {}) {
+  // Windows counts CPU time in steps of about 15.6ms, so work shorter than a
+  // step reads as none. Each side runs the work often enough to fill several.
+  const probe = make(n);
+  const once = process.hrtime.bigint();
+  probe();
+  const reps = Math.max(1, Math.ceil(MIN_SPENT_NS / Math.max(1, Number(process.hrtime.bigint() - once))));
   const best = [Infinity, Infinity];
   for (let r = 0; r < rounds; r++) {
     for (const [side, size] of [[0, n], [1, 2 * n]]) {
       const work = make(size);
       const started = process.cpuUsage();
-      work();
+      for (let i = 0; i < reps; i++) work();
       const spent = process.cpuUsage(started);
       best[side] = Math.min(best[side], spent.user + spent.system);
     }
   }
   return best[1] / best[0];
 }
+
+const MIN_SPENT_NS = 60e6;
 
 /** Under 3: past linear's 2 with room for noise, short of quadratic's 4. */
 export const LINEAR = 3;

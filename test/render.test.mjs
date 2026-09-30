@@ -3057,8 +3057,11 @@ test("the paths reader agrees with Claude Code where gitignore rules part from a
   assert.equal(claudeCodeReaches(["app/**", "!app/x/**"], "app/x/f.ts"), true);
   assert.equal(claudeCodeReaches(["app/**"], "app/y.ts"), true);
   assert.equal(claudeCodeReaches(["src/**/*.ts"], "SRC/a.ts"), true, "the matcher is built with its defaults, which fold case");
-  assert.equal(claudeCodeReaches(["a\\\\b/**/*.rb"], "a\\b/x.rb"), true, "a doubled backslash spells one");
-  assert.equal(claudeCodeReaches(["a\\b/**/*.rb"], "a\\b/x.rb"), false, "a single one escapes the next character");
+  // Windows cannot name a directory with a backslash, and ignore reads one as a separator there.
+  if (process.platform !== "win32") {
+    assert.equal(claudeCodeReaches(["a\\\\b/**/*.rb"], "a\\b/x.rb"), true, "a doubled backslash spells one");
+    assert.equal(claudeCodeReaches(["a\\b/**/*.rb"], "a\\b/x.rb"), false, "a single one escapes the next character");
+  }
   assert.equal(claudeCodeReaches(["**"], "src/a.ts"), false, "a list of nothing but `**` is not a paths list");
 });
 

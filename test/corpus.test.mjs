@@ -140,7 +140,8 @@ for (const [kind, onDisk, alias, written = onDisk, precompose = "false"] of [
   ["case, under a directory decomposed on disk", "src/café/a.ts", "src/café/A.ts", "src/café/a.ts", "true"],
   ["case, in a name decomposed on disk", "src/lib/café.ts", "src/lib/CAFÉ.ts", "src/lib/café.ts", "true"],
 ]) {
-  test(`two index entries that differ only in ${kind} are one file read once, under the name on disk`, needsFoldingFilesystem, async (t) => {
+  const guard = precompose === "true" && process.platform !== "darwin" ? { skip: "only git on macOS precomposes a decomposed name" } : needsFoldingFilesystem;
+  test(`two index entries that differ only in ${kind} are one file read once, under the name on disk`, guard, async (t) => {
     // Both names opened the one file the working tree holds, so its sites counted
     // twice and the other entry's own blob was never read.
     const dir = repo(t, (d, { git, write }) => {
