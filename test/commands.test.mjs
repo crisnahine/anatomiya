@@ -1360,10 +1360,10 @@ test("the end-of-turn check reads a worktree's own change against its main check
   const session = transcript(t, [{ type: "user", timestamp: new Date(Date.now() - 60 * 1000).toISOString(), message: { role: "user", content: "go" } }]);
   const stop = (cwd) => ({ hook_event_name: "Stop", cwd, transcript_path: session });
 
-  writeFileSync(join(dir, "app/services/g.rb"), "class G\nend\n");
+  writeFileSync(join(dir, "app/services/g.rb"), "class G\n  def g = 1\nend\n");
   assert.deepEqual(await runReuse(wt, stop(wt)), {}, "a change only the main checkout holds");
 
-  writeFileSync(join(wt, "app/services/h.rb"), "class H\nend\n");
+  writeFileSync(join(wt, "app/services/h.rb"), "class H\n  def h = 1\nend\n");
   const out = await runReuse(wt, stop(wt));
   assert.equal(out.decision, "block");
   assert.match(out.reason, /app\/services\/h\.rb/);

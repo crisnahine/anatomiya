@@ -135,7 +135,8 @@ directory whose kind of file has no test of its own anywhere: silent on every ot
 nearly all of them. It informs and never refuses. The reuse check runs when a turn ends, and only after a turn that added source
 code: it asks, once per change, for one subagent to look for an existing function the new code could
 call instead, and a session with no subagent tool to run that search itself. A migration, a schema
-dump such as `db/schema.rb`, and a generated file are not asked about. `check` asks the same question of a whole branch, as `test_precedent`. Versions 0.2.4
+dump such as `db/schema.rb`, a generated file, and a file whose added lines define no function are
+not asked about. `check` asks the same question of a whole branch, as `test_precedent`. Versions 0.2.4
 through 0.2.6 did write one into `.claude/settings.local.json`, where the plugin path it names is never
 substituted and Claude Code refuses the hook by name on every prompt; a scan takes that entry out when
 it finds one, and leaves everything else in the file alone.

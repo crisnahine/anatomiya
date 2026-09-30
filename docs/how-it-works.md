@@ -672,8 +672,18 @@ or `db/<name>_schema.rb`), and whatever else the corpus refuses past the path, w
 file and a link, the same rule `check` applies to its changed files. Only the file right under the
 directory counts as a migration, because code nested deeper under a `migrations` segment was measured
 on the corpus as ordinary library code: angular's schematics, prisma's `core/migrations`,
-openproject's `db/migrate/tables`. The reason ends by telling a session with no subagent tool to run
-the search itself. The Stop payload carries no tool list, and without that sentence a headless run
+openproject's `db/migrate/tables`. A file whose added lines define nothing callable is not asked about
+either, and a hunk that defines nothing is not listed among the "added functions". The lines are read
+one by one against a pattern per engine rather than parsed: for JS and TS a `function`, an `=>`, a
+`class`, a `.bind(`, a line shaped like a method head or an assignment that opens an arrow's
+parameters, and for Ruby a `def`, `define_method`, `lambda`, `proc`, `->`, `Struct.new`, `attr_*`,
+`alias_method`, `delegate`, a `let` or `subject` with a block, or a rake `task`. A pattern that also
+matches a call or a string costs one search more and never hides a new function, and so does a
+line longer than 400 characters, which bounds the patterns' backtracking. On the last 200
+commits of ten corpus repositories it skipped 4,609 of 9,223 changed files, and a parser found no
+function, method, class or lambda starting on an added line of any of them (A91). Logic added inside
+a method that already existed is no longer asked about. The reason ends by telling a session with no
+subagent tool to run the search itself. The Stop payload carries no tool list, and without that sentence a headless run
 with no `Agent` tool answered the ask with "No such tool" and spent a turn on it.
 
 A Stop payload names no file, so a session started in the directory holding several checkouts, which
