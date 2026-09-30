@@ -209,7 +209,7 @@ are named with that cause and no install remedy, since `doctor` reports that ins
 | Guard | Value | Enforced |
 |---|---|---|
 | File size | 1 MB | checked with `stat` before the file is dispatched |
-| Wall time | 5s | `SIGKILL` from the parent; a file killed while other parses were in flight is retried once after the queue drains, with no other parse in flight, and one killed while it already ran alone is charged on that attempt |
+| Wall time | 5s | `SIGKILL` from the parent; a file killed while other parses were in flight is retried once after the queue drains, with no other parse in flight, and one killed while it already ran alone is charged on that attempt, which is every kill in a one-worker pool (a one-file batch, or a machine with 2 or fewer CPUs) |
 | Resident memory | 1 GB | polled every 25ms, starting 250ms after the file goes in flight: read from `/proc/<pid>/status` on Linux, from `/bin/ps` on macOS and the BSDs, and not enforced on Windows, where the wall clock is what stops a runaway parse |
 | Worker start | 20s | `SIGKILL` from the parent for a worker that has not said ready; five such workers fail the pool, and its queued files are charged as crashed |
 
