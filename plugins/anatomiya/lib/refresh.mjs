@@ -30,7 +30,7 @@ import { basename, join, resolve } from "node:path";
 import { loadPin } from "./baseline.mjs";
 import { runPin, runScan } from "./commands.mjs";
 import { atomic, readFacts, readRecord, writeTemp } from "./facts.mjs";
-import { BASE_REFS, commitAt, gitBuffered, gitStreamed, headSha, operationUnfinished, shaReachable } from "./git.mjs";
+import { BASE_REFS, caseMagic, commitAt, gitBuffered, gitStreamed, headSha, operationUnfinished, shaReachable } from "./git.mjs";
 import { childLayouts, isPathTaken, ownLayout } from "./hook.mjs";
 import { pluginRoot } from "./readiness.mjs";
 import { OVERVIEW_FILE, readHead, realpathOf, REFRESH_STATE, resolveInside, STORE_DIR, trackedRulesDir } from "./rules.mjs";
@@ -581,7 +581,8 @@ export function movedByRemote(message) {
  * of them would leave a change in `git status` nobody made.
  */
 async function mapTracked(root) {
-  const r = await gitBuffered(root, ["ls-files", "-z", "--", `${trackedRulesDir(root)}/${OVERVIEW_FILE}`, STORE_DIR]);
+  const magic = (await caseMagic(root)) ? ":(icase)" : "";
+  const r = await gitBuffered(root, ["ls-files", "-z", "--", `${magic}${trackedRulesDir(root)}/${OVERVIEW_FILE}`, `${magic}${STORE_DIR}`]);
   return r.ok && r.stdout.length > 0;
 }
 
