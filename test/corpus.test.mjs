@@ -130,17 +130,21 @@ function stageAlias(d, git, alias) {
   git("commit", "-qm", "alias");
 }
 
-for (const [kind, onDisk, alias] of [
+// A checkout made on macOS lists a decomposed name on disk under its composed
+// spelling, which is what `written` against `onDisk` stands for.
+for (const [kind, onDisk, alias, written = onDisk, precompose = "false"] of [
   ["case", "src/lib/a.ts", "src/lib/A.ts"],
   ["a directory's case", "src/lib/a.ts", "src/Lib/a.ts"],
   ["Unicode form", "src/lib/é.ts", "src/lib/é.ts"],
+  ["case, under a directory decomposed on disk", "src/café/a.ts", "src/café/A.ts", "src/café/a.ts", "true"],
+  ["case, in a name decomposed on disk", "src/lib/café.ts", "src/lib/CAFÉ.ts", "src/lib/café.ts", "true"],
 ]) {
   test(`two index entries that differ only in ${kind} are one file read once, under the name on disk`, needsFoldingFilesystem, async (t) => {
     // Both names opened the one file the working tree holds, so its sites counted
     // twice and the other entry's own blob was never read.
     const dir = repo(t, (d, { git, write }) => {
-      git("config", "core.precomposeunicode", "false");
-      write(onDisk);
+      git("config", "core.precomposeunicode", precompose);
+      write(written);
       write("src/lib/b.ts");
       git("add", "-A");
       git("commit", "-qm", "init");

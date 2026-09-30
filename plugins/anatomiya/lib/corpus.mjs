@@ -446,7 +446,7 @@ export async function collect(root) {
     const at = byFold.get(fold);
     if (at !== undefined && sameFile(files[at].abs, abs)) {
       dropped.unreadable++;
-      if (!listedAs(root, files[at].rel) && listedAs(root, rel)) files[at] = file;
+      if (listedAs(root, rel) > listedAs(root, files[at].rel)) files[at] = file;
       return;
     }
     if (at === undefined) byFold.set(fold, files.length);
@@ -469,17 +469,29 @@ function sameFile(a, b) {
   }
 }
 
-/** Whether every directory on the way lists this exact name, rather than one that folds to it. */
+/**
+ * How closely the directories on the way list this name: 2 byte for byte, 1 only
+ * up to Unicode form (macOS lists a decomposed name under git's composed one), 0 not at all.
+ */
 function listedAs(root, rel) {
   let dir = root;
+  let rank = 2;
   try {
     for (const part of rel.split("/")) {
-      if (!readdirSync(dir).includes(part)) return false;
-      dir = join(dir, part);
+      const names = readdirSync(dir);
+      if (names.includes(part)) {
+        dir = join(dir, part);
+        continue;
+      }
+      const nfc = part.normalize("NFC");
+      const found = names.find((n) => n.normalize("NFC") === nfc);
+      if (found === undefined) return 0;
+      rank = 1;
+      dir = join(dir, found);
     }
-    return true;
+    return rank;
   } catch {
-    return false;
+    return 0;
   }
 }
 
