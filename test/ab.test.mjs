@@ -94,6 +94,91 @@ test("a run with no model usage reports none rather than guessing", needsShebang
   assert.equal((await runTrial(stub.arm, "go", { env: { PATH: stub.path } })).ran, null);
 });
 
+test("a trial is handed its tools and no others, the arm's own settings and the plugin under test", needsShebang, async (t) => {
+  // `--allowedTools` only pre-approves: Bash stayed available and ran `cat` on
+  // whatever it was pointed at, which is how arm B reaches a rule file. Without
+  // a settings-source list a trial also read the operator's own CLAUDE.md,
+  // plugins and MCP servers, so two machines ran two experiments.
+  const { runTrial } = await import("../scripts/ab/run.mjs");
+  const stub = stubClaude(t, reporting);
+
+  await runTrial(stub.arm, "write a file", { env: { PATH: stub.path } });
+  const argv = stub.argv();
+  const after = (flag) => argv[argv.indexOf(flag) + 1];
+
+  assert.equal(after("--tools"), "Read,Write,Glob,Grep");
+  assert.equal(after("--allowedTools"), "Read,Write,Glob,Grep", "and still approved, so none of them prompts");
+  assert.ok(argv.includes("--strict-mcp-config"), argv.join(" "));
+  assert.equal(after("--setting-sources"), "project,local", "the project source is where the map is read from");
+  const { ANATOMIYA } = await import("../scripts/plugins.mjs");
+  assert.equal(after("--plugin-dir"), ANATOMIYA, "the user's plugins go with the user source, so this one is named");
+
+  await runTrial(stub.arm, "probe", { env: { PATH: stub.path }, tools: ["Read"] });
+  assert.equal(stub.argv()[stub.argv().indexOf("--tools") + 1], "Read", "the probe gets Read and nothing else");
+});
+
+/** A committed repository holding a settings file, with an untracked map beside it. */
+function armSource(t) {
+  const repo = mkdtempSync(join(tmpdir(), "anatomiya-ab-arms-"));
+  t.after(() => rmSync(repo, { recursive: true, force: true }));
+  const git = (...a) => execFileSync("git", a, { cwd: repo, encoding: "utf8", stdio: "pipe" });
+  git("init", "-q");
+  mkdirSync(join(repo, "src"));
+  mkdirSync(join(repo, ".claude"));
+  writeFileSync(join(repo, "src", "a.ts"), "export const a = 1;\n");
+  writeFileSync(join(repo, ".claude", "settings.json"), '{"env":{"CLAUDE_CODE_EFFORT_LEVEL":"xhigh"}}\n');
+  git("add", "-A");
+  git("-c", "user.name=t", "-c", "user.email=t@t.test", "commit", "-qm", "init");
+  mkdirSync(join(repo, ".claude", "rules"));
+  writeFileSync(join(repo, ".claude", "rules", "anatomiya-area-x.md"), "# the map\n");
+  return { repo, sha: git("rev-parse", "HEAD").trim() };
+}
+
+test("every trial starts from the commit, the map in arm A and nothing in arm B", async (t) => {
+  // The arms were built once and never reset, so trial 2 found trial 1's file
+  // already there, wrote nothing and was dropped.
+  const { buildArms } = await import("../scripts/ab/arms.mjs");
+  const { repo, sha } = armSource(t);
+  const arms = await buildArms(repo, sha);
+  t.after(() => arms.dispose());
+
+  const state = (arm) => ({
+    written: existsSync(join(arm, "src", "New.ts")),
+    source: readFileSync(join(arm, "src", "a.ts"), "utf8"),
+    settings: existsSync(join(arm, ".claude", "settings.json")),
+    map: existsSync(join(arm, ".claude", "rules", "anatomiya-area-x.md")),
+  });
+  const clean = (map) => ({ written: false, source: "export const a = 1;\n", settings: false, map });
+  assert.deepEqual([state(arms.a), state(arms.b)], [clean(true), clean(false)], "as built");
+
+  for (const arm of [arms.a, arms.b]) {
+    writeFileSync(join(arm, "src", "New.ts"), "export const x = 1;\n");
+    writeFileSync(join(arm, "src", "a.ts"), "export const a = 2;\n");
+    mkdirSync(join(arm, ".claude", "rules"), { recursive: true });
+    writeFileSync(join(arm, ".claude", "rules", "anatomiya-area-x.md"), "# a trial's own\n");
+  }
+  await arms.reset();
+
+  assert.deepEqual([state(arms.a), state(arms.b)], [clean(true), clean(false)], "after a trial wrote in both");
+  assert.equal(readFileSync(join(arms.a, ".claude", "rules", "anatomiya-area-x.md"), "utf8"), "# the map\n");
+});
+
+test("neither arm is a linked worktree, so the hooks cannot hand arm B the main checkout's map", async (t) => {
+  // Since the plugin answers a mapless linked worktree from its main checkout,
+  // arm B built with `git worktree add` answered the probe with the map, and
+  // every run aborted at step 4.
+  const { buildArms } = await import("../scripts/ab/arms.mjs");
+  const { mainCheckoutOf } = await import("../plugins/anatomiya/lib/worktree.mjs");
+  const { repo, sha } = armSource(t);
+  const arms = await buildArms(repo, sha);
+  t.after(() => arms.dispose());
+
+  assert.equal(mainCheckoutOf(arms.b), null);
+  assert.equal(mainCheckoutOf(arms.a), null);
+  const worktrees = execFileSync("git", ["worktree", "list", "--porcelain"], { cwd: repo, encoding: "utf8" });
+  assert.equal(worktrees.split("\n").filter((l) => l.startsWith("worktree ")).length, 1, worktrees);
+});
+
 const facts = {
   areas: [
     {
@@ -182,14 +267,33 @@ test("an arm is summed by the predicate, and a trial that wrote nothing is not a
     { ok: true, wrote: [{ rel: "c.ts", source: `export const a = 1` }] },
     { ok: true, wrote: [] },
     { ok: false, wrote: [{ rel: "d.ts", source: violating }] },
+    { ok: false, wrote: [] },
   ];
 
   assert.deepEqual(await scoreArm(runs, { key: "swallowed_error" }), {
-    wroteSomething: 2,
-    filesScored: 2,
-    candidates: 2,
+    wroteSomething: 3,
+    filesScored: 3,
+    candidates: 3,
     conforming: 1,
-    trialsWithAViolation: 1,
+    trialsWithAViolation: 2,
+    endedEarly: 2,
+  });
+});
+
+test("a trial that hit the turn cap is scored on the files it left, and counted", async () => {
+  // `claude -p` exits 1 on the turn cap after a successful Write. The map arm's
+  // Stop hook spends turns the other arm does not, so dropping those trials
+  // dropped them from one arm: 7 of 7 capped trials on two saved runs.
+  const { scoreArm } = await import("../scripts/ab/score.mjs");
+  const file = { rel: "src/Pill.ts", source: "export interface IPillProps { label: string }\nexport const x = 1;\n" };
+
+  assert.deepEqual(await scoreArm([{ ok: false, wrote: [file] }], { key: "interface_prefix" }), {
+    wroteSomething: 1,
+    filesScored: 1,
+    candidates: 1,
+    conforming: 1,
+    trialsWithAViolation: 0,
+    endedEarly: 1,
   });
 });
 
@@ -336,6 +440,55 @@ test("a filename target is scored by the name the trial chose", async () => {
     { key: "file_naming_case", learned: "kebab-case" }
   );
   assert.deepEqual(t, { candidates: 1, conforming: 1, ratio: 1 });
+});
+
+test("a narrowed naming row scores only the kind of file it learned over", async () => {
+  // "files here that hold JSX are named PascalCase" says nothing about a helper
+  // with no JSX, and the map and the check both leave one out. Scoring every
+  // written file put a violation in the harness that neither of them sees.
+  const helper = { rel: "src/currencyFormat.js", lang: "js", source: "export const currencyFormat = (n) => n;\n" };
+  const component = { rel: "src/priceTag.jsx", lang: "jsx", source: "export default function priceTag() { return <div/>; }\n" };
+  const row = { key: "file_naming_case", learned: "PascalCase", learnedKind: "jsx" };
+
+  assert.equal(await scoreFile(helper, row), null);
+  assert.deepEqual(await scoreFile(component, row), { candidates: 1, conforming: 0, ratio: 0 });
+  assert.equal(
+    await scoreFile(helper, { key: "exported_symbol_case", learned: "PascalCase", learnedKind: "jsx" }),
+    null,
+    "and the other rows split the same way"
+  );
+  assert.deepEqual(await scoreFile(helper, { key: "file_naming_case", learned: "PascalCase" }), { candidates: 1, conforming: 0, ratio: 0 }, "a row with no kind scores every file");
+});
+
+test("the picker carries the kind a naming row learned over", () => {
+  const [top] = rankAreas({
+    areas: [{ path: "src", dimensions: [
+      { key: "file_naming_case", states: "claim", candidates: 40, conforming: 30, learned: "PascalCase", learnedKind: "jsx" },
+    ] }],
+  });
+  assert.equal(top.learnedKind, "jsx");
+});
+
+test("a refusal to measure says which rule fired, with the numbers", async () => {
+  // It said "every stated claim in this repository is at 1.00" for a best claim
+  // at 0.988, which a lower --min-headroom would have measured.
+  const { noHeadroom } = await import("../scripts/ab/pick.mjs");
+  const best = { key: "interface_prefix", path: "src/components", ratio: 247 / 250, headroom: 3 / 250 };
+
+  assert.equal(noHeadroom({ ...best, headroom: 0.06 }, { minHeadroom: 0.05 }), null);
+  assert.equal(
+    noHeadroom(best, { minHeadroom: 0.05 }),
+    "no stated claim has headroom of at least 0.05: the best is interface_prefix in src/components at 0.988, headroom 0.012. Lower --min-headroom to measure it, or pick another repository"
+  );
+  assert.equal(
+    noHeadroom({ ...best, ratio: 1, headroom: 0 }, { minHeadroom: 0.05 }),
+    "every stated claim is at 1.00, so an A/B here can only measure a ceiling: pick another repository"
+  );
+  assert.equal(
+    noHeadroom(undefined, { minHeadroom: 0.05, key: "k", area: "src/x" }),
+    "no stated claim matching --key k and --area src/x has 20 sites or more that the model does not already write by default"
+  );
+  assert.match(noHeadroom(best, { minHeadroom: 0.05, key: "interface_prefix" }), /^no stated claim matching --key interface_prefix has headroom/);
 });
 
 test("the harness runs one engine: Opus 5 with the 1M window, at medium", async () => {
@@ -820,8 +973,8 @@ const RESULT = {
   label: "crisnahine/anatomiya",
   said: { a: "src/x 20 files", b: "NONE" },
   engine: { model: "claude-opus-5[1m]", effort: "medium", contextWindow: 1000000 },
-  a: { wroteSomething: 1, filesScored: 1, candidates: 10, conforming: 9, trialsWithAViolation: 1 },
-  b: { wroteSomething: 2, filesScored: 0, candidates: 0, conforming: 0, trialsWithAViolation: 0 },
+  a: { wroteSomething: 1, filesScored: 1, candidates: 10, conforming: 9, trialsWithAViolation: 1, endedEarly: 1 },
+  b: { wroteSomething: 2, filesScored: 0, candidates: 0, conforming: 0, trialsWithAViolation: 0, endedEarly: 0 },
 };
 
 test("the result document is rendered from the result, with both arms' numbers where a reader looks", async () => {
@@ -841,6 +994,7 @@ test("the result document is rendered from the result, with both arms' numbers w
     "| trials per arm | 2 |",
     'Injection: arm A answered "src/x 20 files", arm B answered "NONE".',
     "| trials that wrote a file | 1/2 | 2/2 |",
+    "| trials cut short by the turn cap or an error | 1/2 | 0/2 |",
     "| files scored | 1 | 0 |",
     "| sites conforming | 9 of 10 (0.900) | 0 of 0 (no sites) |",
     "| trials with a violating site | 1 | 0 |",
@@ -956,6 +1110,7 @@ test("the harness completes a run from an empty state and writes the document", 
     "| model | claude-opus-5[1m] |",
     "| trials per arm | 1 |",
     "| trials that wrote a file | 1/1 | 1/1 |",
+    "| trials cut short by the turn cap or an error | 0/1 | 0/1 |",
     "| sites conforming | 2 of 3 (0.667) | 2 of 3 (0.667) |",
   ]) assert.ok(doc.includes(line), `missing: ${line}\n\n${doc}`);
   // Both arms were removed from the repository under measurement.

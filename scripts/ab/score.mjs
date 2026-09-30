@@ -16,11 +16,17 @@ import { parseAll } from "../../plugins/anatomiya/lib/parse.mjs";
 import { reduceArea } from "../../plugins/anatomiya/lib/reduce.mjs";
 import { classifyBasename } from "../../plugins/anatomiya/lib/dimensions-naming.mjs";
 import { language } from "../../plugins/anatomiya/lib/langs.mjs";
+import { rowByKey } from "../../plugins/anatomiya/lib/registry.mjs";
 
-export async function scoreFile({ rel, source, lang }, { key, frameworks = [], learned = null } = {}) {
+export async function scoreFile({ rel, source, lang }, { key, frameworks = [], learned = null, learnedKind = null } = {}) {
   const { records } = await parseAll([{ rel, source, lang }], { frameworks });
   const record = records.get(rel);
   if (!record || !record.ok) return null;
+
+  // A row that learned over one kind of file says nothing about the other,
+  // which the map and the check both leave out.
+  const split = rowByKey(key)?.splitBy;
+  if (split && learnedKind !== null && split(record) !== learnedKind) return null;
 
   // A learned row's sentence is the class the map learned. Letting the scored
   // file vote would measure it against itself: any single-class file reads
@@ -50,15 +56,20 @@ export async function scoreFile({ rel, source, lang }, { key, frameworks = [], l
 /**
  * One arm's trials summed by the predicate. A trial that wrote nothing is not a
  * trial, and a file the row has nothing to say about counts in neither arm.
+ *
+ * A trial that ended early is scored on whatever it wrote and counted apart:
+ * the map arm's Stop hook spends turns the other arm does not, so dropping the
+ * ones that hit the cap dropped them from one side.
  */
-export async function scoreArm(runs, { key, frameworks = [], learned = null } = {}) {
-  const out = { wroteSomething: 0, filesScored: 0, candidates: 0, conforming: 0, trialsWithAViolation: 0 };
+export async function scoreArm(runs, { key, frameworks = [], learned = null, learnedKind = null } = {}) {
+  const out = { wroteSomething: 0, filesScored: 0, candidates: 0, conforming: 0, trialsWithAViolation: 0, endedEarly: 0 };
   for (const r of runs) {
-    if (!r.ok || !r.wrote.length) continue;
+    if (!r.ok) out.endedEarly++;
+    if (!r.wrote.length) continue;
     out.wroteSomething++;
     let violated = false;
     for (const file of r.wrote) {
-      const s = await scoreFile({ rel: file.rel, source: file.source, lang: language(file.rel) }, { key, frameworks, learned });
+      const s = await scoreFile({ rel: file.rel, source: file.source, lang: language(file.rel) }, { key, frameworks, learned, learnedKind });
       if (!s) continue;
       out.filesScored++;
       out.candidates += s.candidates;
