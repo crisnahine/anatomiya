@@ -164,8 +164,10 @@ function refuse(args) {
  * uncommitted edits nobody made.
  */
 function gitEnv(env, { lazyFetch = false, repository = NO_REPOSITORY_COMMANDS } = {}) {
+  // Each of these rewrites what every pathspec means, and the pathspecs here spell their own magic.
+  const { GIT_LITERAL_PATHSPECS, GIT_GLOB_PATHSPECS, GIT_NOGLOB_PATHSPECS, GIT_ICASE_PATHSPECS, ...rest } = env;
   return {
-    ...env,
+    ...rest,
     GIT_TERMINAL_PROMPT: "0",
     // A partial clone fetches a missing object from its promisor on demand, so
     // a read of a pinned blob reached the network and, with the remote gone,
