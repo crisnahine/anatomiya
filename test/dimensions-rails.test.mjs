@@ -543,6 +543,25 @@ class IdToBigint < ActiveRecord::Migration[7.0]
   end
 end
 `,
+  // A class-level call handed a model is a declaration, and a block under one
+  // is a method body that runs.
+  class_level_helper: `
+class Tagged < ActiveRecord::Migration[7.0]
+  helper User
+
+  def change
+    add_column :t, :a, :string
+  end
+end
+`,
+  define_method_backfill: `
+class Backfill < ActiveRecord::Migration[7.0]
+  define_method(:up) { backfill(User) }
+
+  def down
+  end
+end
+`,
 
   // Each forward body holds a command `change` cannot invert, in the form
   // Rails' CommandRecorder refuses.
@@ -660,6 +679,8 @@ class D1 < ActiveRecord::Migration[8.0]
   def change
     remove_column :t, :a, :string, if_exists: true
     drop_table :t, if_exists: true, id: :uuid
+    drop_table :u, "force" => :cascade
+    drop_table :w, "if_exists" => true
   end
 end
 `,
@@ -1401,10 +1422,12 @@ test("a row rewrite through a framework model or a model handed to a helper is d
 });
 
 test("revert and a class-level include name no model", needsRuby, () => {
-  for (const name of ["revert_migration", "include_helpers"]) {
+  for (const name of ["revert_migration", "include_helpers", "class_level_helper"]) {
     assert.deepEqual(counts("migration_schema_only", name), { candidates: 1, conforming: 1 }, name);
     assert.deepEqual(counts("migration_reversible", name), { candidates: 1, conforming: 1 }, name);
   }
+  assert.deepEqual(counts("migration_schema_only", "define_method_backfill"), { candidates: 1, conforming: 0 });
+  assert.deepEqual(hits("migration_reversible", "define_method_backfill"), []);
 });
 
 test("a migration holding a command change cannot invert is not a reversibility site, on either side", needsRuby, () => {

@@ -224,10 +224,10 @@ test("a row handed no path answers exactly as it always did", () => {
 test("implementsCapability asks every word of the stem, and only the stem", async () => {
   const { implementsCapability } = await import("../plugins/anatomiya/lib/dimensions-capability.mjs");
 
-  for (const rel of ["src/queries/request.ts", "app/clients/client.rb", "src/lib/api-client.ts", "src/lib/httpClient.ts"]) {
+  for (const rel of ["src/queries/request.ts", "app/clients/client.rb", "src/lib/api-client.ts", "src/lib/httpClient.ts", "app/clients/api_client_v2.rb", "src/lib/apiClientV1.ts"]) {
     assert.equal(implementsCapability(rel, "network"), true, rel);
   }
-  for (const rel of ["src/queries/userApi.ts", "app/services/payment_api.rb", "src/queries/index.ts"]) {
+  for (const rel of ["src/queries/userApi.ts", "app/services/payment_api.rb", "src/queries/index.ts", "src/lib/v2.ts", "src/lib/v2_payment.ts"]) {
     assert.equal(implementsCapability(rel, "network"), false, rel);
   }
   assert.equal(implementsCapability("src/queries/request.ts", "logging"), false, "one vocabulary at a time");
@@ -283,8 +283,10 @@ test("an acronym-named client is the implementing module and its import the wrap
   const r = counts("route_network", `
     import API from "./API";
     import { HTTPClient } from "../lib/HTTPClient";
+    import apiV2 from "./api-client-v2";
     await API.get("/x");
     await HTTPClient.post("/y");
+    await apiV2.get("/z");
   `);
-  assert.deepEqual(r, { candidates: 2, conforming: 2 });
+  assert.deepEqual(r, { candidates: 3, conforming: 3 });
 });

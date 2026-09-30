@@ -1,5 +1,5 @@
 import { walkRuby, constName, bodyOf, ownDef, site, args } from "./ruby-walk.mjs";
-import { CAPABILITY_WORDS, implementsCapability, stemWords } from "./dimensions-capability.mjs";
+import { CAPABILITY_WORDS, implementsCapability, nameWords } from "./dimensions-capability.mjs";
 
 /**
  * Ruby dimensions, in the shape `reduce.mjs` already folds: one `add` per
@@ -379,8 +379,8 @@ export const RUBY_DIMENSIONS = [
     counterClaim: null, // same as logger_over_puts: no wrapper means the question is never asked
     precision: "partial",
     applicabilityPredicate: {
-      sites: "a Ruby file calling Net::HTTP, RestClient, HTTPClient, HTTParty, Faraday, Excon, Typhoeus, HTTP, HTTPX or URI.open, or a class under one of those libraries other than its errors, exceptions, anything under an Error, Errors or Exceptions namespace, ConnectionFailed and CookieHash, or making a verb-shaped call (get, post, put, patch, delete, head, request, call, perform, execute, fetch) through a constant or variable whose name ends in the word client, http, api, request or fetcher, a trailing version such as V2 aside, and names no redis, cache, memcache, memcached or dalli; the file whose own stem is nothing but that vocabulary is the client itself and is not a site",
-      blind: "a client behind another name or a non-verb method is not seen, and a model that happens to be called Client with a verb-named scope still counts",
+      sites: "a Ruby file calling Net::HTTP, RestClient, HTTPClient, HTTParty, Faraday, Excon, Typhoeus, HTTP, HTTPX or URI.open, or a class under one of those libraries other than its errors, exceptions, anything under an Error, Errors or Exceptions namespace, ConnectionFailed and CookieHash, or making a verb-shaped call (get, post, put, patch, delete, head, request, call, perform, execute, fetch) through a constant or variable whose name ends in the word client, http, api, request or fetcher, a trailing version such as V2 aside, and names no cache or database (redis, cache, memcache, memcached, dalli, db, database, pg, postgres, postgresql, mysql, sql, sqlite, mongo, mongodb); the file whose own stem, a trailing version aside, is nothing but that vocabulary is the client itself and is not a site",
+      blind: "a client behind another name or a non-verb method is not seen, a store the list does not name reads as the client, and a model that happens to be called Client with a verb-named scope still counts",
     },
     langs: ["ruby"],
     run(ast, add, { rel } = {}) {
@@ -608,13 +608,11 @@ function loggerReceiver(r) {
   return (r.t === "local_variable_read" || r.t === "instance_variable_read") && name === "logger";
 }
 
-// A version is not what the receiver is, and a cache's client talks to the cache.
-const VERSION = /^v?\d+$/;
-const STORAGE = new Set(["redis", "cache", "memcache", "memcached", "dalli"]);
+// A cache's or a database's client talks to the store.
+const STORAGE = new Set(["redis", "cache", "memcache", "memcached", "dalli", "db", "database", "pg", "postgres", "postgresql", "mysql", "sql", "sqlite", "mongo", "mongodb"]);
 
 function named(name) {
-  const words = name.split("::").flatMap(stemWords);
-  while (words.length > 1 && VERSION.test(words.at(-1))) words.pop();
+  const words = nameWords(name.replaceAll("::", "_"));
   return CAPABILITY_WORDS.network.has(words.at(-1)) && !words.some((w) => STORAGE.has(w));
 }
 
