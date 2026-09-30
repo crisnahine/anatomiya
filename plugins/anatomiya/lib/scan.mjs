@@ -3,7 +3,7 @@ import { langHas } from "./langs.mjs";
 import { discover, areaFloor, areaCeiling, dirCount } from "./areas.mjs";
 import { adoptedCapabilities } from "./dimensions.mjs";
 import { parseAll } from "./parse.mjs";
-import { runSemantic } from "./semantic.mjs";
+import { runSemantic, semanticOver } from "./semantic.mjs";
 import { blockOf, reduceArea, verdictFor } from "./reduce.mjs";
 import { applyPairings } from "./pairing.mjs";
 import { authorsByFile, isPerson, repoAuthorCount } from "./authors.mjs";
@@ -74,15 +74,10 @@ export async function scan(cwd, { guards = null, deep = false } = {}) {
 
   // The second tier, opt-in and never the default (B7). It runs once for the
   // whole corpus, because narrowing the file set was measured saving 3% and
-  // driving unresolved types from 3.1% to 36.2%. The resolution rate is taken
-  // over area files only, the ones a claim is counted over: one minified bundle
-  // in no area measured a repository whose own code resolved fully at 3%.
-  const semantic = deep
-    ? await runSemantic(root, files.filter((f) => langHas(f.lang, "semantic")), {
-        measured: areas.flatMap((a) => a.files.map((f) => f.rel)),
-      })
-    : null;
-  if (semantic) mergeSemanticHits(head.records, semantic.records);
+  // driving unresolved types from 3.1% to 36.2%. Its verdict is taken once the
+  // fold below knows which areas the map describes.
+  const whole = deep ? await runSemantic(root, files.filter((f) => langHas(f.lang, "semantic"))) : null;
+  if (whole) mergeSemanticHits(head.records, whole.records);
   // An obligation is answered by the corpus, not by a tree, so it is merged in
   // after the parse rather than counted inside the worker.
   const corpusRels = new Set(files.map((f) => f.rel));
@@ -131,16 +126,16 @@ export async function scan(cwd, { guards = null, deep = false } = {}) {
   const held = areas.filter((a) => a.langs.some((l) => unreadable.includes(l)));
   const heldIds = new Set(held.map((a) => a.id));
 
-  // Two passes over the areas, because one gate reads a number no single area
-  // has: how the whole repository answers this dimension. The first pass folds
-  // every area and adds its slots to that pool; the second asks the gates.
+  // Three passes over the areas, because two answers need every area folded
+  // first: which files the checker's rate is taken over, and how the whole
+  // repository answers a dimension. The first folds, the second adds each
+  // area's slots to that pool, the third asks the gates.
   //
   // The pool is a sum, so it does not depend on the order the areas were folded
   // in and two scans of unchanged source still agree (A5). What it does change
   // is that an area's map now depends on the rest of the repository, so
   // scanning a subtree answers differently from scanning the whole of it.
   const folded = [];
-  const pool = new Map();
   for (const area of areas) {
     const areaParsed = area.files.map((f) => head.records.get(f.rel)).filter(Boolean);
     if (areaParsed.length === 0) continue;
@@ -156,7 +151,15 @@ export async function scan(cwd, { guards = null, deep = false } = {}) {
     if (!measuredArea) throw new Error(`no baseline record for area ${area.path}, so its gates read nothing`);
 
     folded.push({ area, areaParsed, dims, measuredArea });
+  }
 
+  // Over the files a claim is counted in: an area dropped above is one the map
+  // says nothing was counted in, so its bundles may not close every other
+  // area's type-checked rows either.
+  const semantic = semanticOver(whole, folded.flatMap(({ area }) => area.files.map((f) => f.rel)));
+
+  const pool = new Map();
+  for (const { dims, measuredArea } of folded) {
     for (const d of dims) {
       const baselineDim = measuredArea.dims.find((b) => b.key === d.key) || null;
       // Only slots nothing else has closed. A greenfield area's population is

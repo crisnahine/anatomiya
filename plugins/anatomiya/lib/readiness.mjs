@@ -22,7 +22,7 @@ import { absentInterpreter } from "./child.mjs";
 import { firstLine } from "./encode.mjs";
 import { ENGINES } from "./langs.mjs";
 import { prismLoadArgs, prismVersionArgs, rubyEnv } from "./ruby.mjs";
-import { loadTypeScript, NEEDS_MAJOR } from "./semantic.mjs";
+import { unusableReason } from "./semantic.mjs";
 import { olderThan } from "./version.mjs";
 
 /**
@@ -41,13 +41,12 @@ const OPTIONAL = {
     optional: true,
     note: "optional: --deep needs it",
     remedy: ENGINES.oxc.remedy,
-    // The loader `--deep` refuses through, so the row answers what the flag
+    // The test `--deep` refuses through, so the row answers what the flag
     // will find. Imported and nothing more, a typescript 4.9.5 in a
     // node_modules above the plugin read `ok` here and `nothing to install` in
     // setup, and `--deep` refused it as not installed: the loader holds it to
     // major 5, because 7 has no JS API and 4 is not what the tier measured.
-    usable: loadTypeScript,
-    unusable: NEEDS_MAJOR,
+    unusable: unusableReason,
   },
 };
 
@@ -335,8 +334,9 @@ async function probeNode(engine) {
   const rows = [];
   for (const module of [engine.module, ...(engine.extras ?? []).map((e) => e.module)]) {
     const extra = module === engine.module ? null : module;
+    let loaded;
     try {
-      await import(module);
+      loaded = await import(module);
     } catch {
       // Absent, or installed and unloadable, which are the same thing to a
       // caller: nothing here can parse with it. An engine carrying a note is
@@ -354,8 +354,9 @@ async function probeNode(engine) {
     // Present and not ready: installed where it resolves, and not a copy the
     // one caller that wants it will take. Not optional in that case, since the
     // flag it is for refuses it, and one install puts a usable one first.
-    if (extra === null && engine.usable && !(await engine.usable())) {
-      rows.push(row(engine, { extra, present: true, version: versionOf(module), reason: engine.unusable }));
+    const why = extra === null && engine.unusable ? engine.unusable(loaded.default ?? loaded) : null;
+    if (why) {
+      rows.push(row(engine, { extra, present: true, version: versionOf(module), reason: why }));
       continue;
     }
     rows.push(row(engine, { extra, present: true, version: versionOf(module), ok: true }));

@@ -10,6 +10,7 @@ import {
   loadTypeScript,
   notInstalledMessage,
   deepRefusal,
+  unusableReason,
   classifySemantic,
   RESOLUTION_FLOOR,
   SEMANTIC_GUARDS,
@@ -210,6 +211,13 @@ test("a --deep refusal names the typescript it found when that one is the wrong 
   assert.doesNotMatch(old, /not installed/, old);
   assert.match(old, /bin\/anatomiya\.mjs setup/, old);
 
+  // A 5.x that cannot build a program is not told it needs 5.x.
+  const p = join(dir, "ts-noprogram.mjs");
+  writeFileSync(p, `export const version = "5.4.0";\n`);
+  const hollow = await deepRefusal(remedy, { specifier: pathToFileURL(p).href });
+  assert.match(hollow, /^typescript 5\.4\.0: --deep needs a typescript that exports createProgram$/m, hollow);
+  assert.equal(unusableReason({ version: "5.4.0" }), "--deep needs a typescript that exports createProgram", "doctor reads the same sentence");
+
   assert.match(await deepRefusal(remedy, { specifier: "typescript-that-is-not-installed" }), /is not installed/);
   assert.equal(await deepRefusal(remedy, { specifier: stub("5.9.3") }), null);
 });
@@ -228,8 +236,8 @@ test("a checker that dies partway through is a failure, not a clean partial answ
     [
       "process.send({ ready: true });",
       "process.on('message', () => {",
-      "  process.send({ built: true, resolution: { resolved: 90, total: 100 }, config: { status: 'ok', reason: null } });",
-      "  process.send({ rel: 'a.ts', hits: {} });",
+      "  process.send({ built: true, config: { status: 'ok', reason: null } });",
+      "  process.send({ rel: 'a.ts', hits: {}, resolution: { resolved: 9, total: 10 } });",
       "  setTimeout(() => process.exit(137), 20);",
       "});",
     ].join("\n")
@@ -277,8 +285,8 @@ test("a checker that built its program and then stalled is killed by the shorter
   const { dir, worker } = stallingWorker(
     t,
     "stalled",
-    "  process.send({ built: true, resolution: { resolved: 90, total: 100 }, config: { status: 'ok', reason: null } });\n" +
-      "  process.send({ rel: 'a.ts', hits: {} });"
+    "  process.send({ built: true, config: { status: 'ok', reason: null } });\n" +
+      "  process.send({ rel: 'a.ts', hits: {}, resolution: { resolved: 9, total: 10 } });"
   );
 
   const r = await runSemantic(dir, [{ rel: "a.ts", abs: join(dir, "a.ts"), lang: "js" }], {

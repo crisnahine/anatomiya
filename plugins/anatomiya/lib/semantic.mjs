@@ -33,12 +33,15 @@ async function importTypeScript(specifier) {
 }
 
 function usable(ts) {
-  if (!ts || typeof ts.createProgram !== "function") return false;
-  return Number(String(ts.version ?? "").split(".")[0]) === SEMANTIC_MIN_MAJOR;
+  return Boolean(ts) && unusableReason(ts) === null;
 }
 
-/** What doctor and `--deep` both say of a typescript that loads and is not the major this tier runs on. */
-export const NEEDS_MAJOR = `--deep needs typescript ${SEMANTIC_MIN_MAJOR}.x`;
+/** What doctor and `--deep` both say of a typescript that loads and cannot run this tier, or null. */
+export function unusableReason(ts) {
+  if (Number(String(ts?.version ?? "").split(".")[0]) !== SEMANTIC_MIN_MAJOR) return `--deep needs typescript ${SEMANTIC_MIN_MAJOR}.x`;
+  if (typeof ts.createProgram !== "function") return "--deep needs a typescript that exports createProgram";
+  return null;
+}
 
 /**
  * What `--deep` refuses with. The remedy is handed in rather than spelled here:
@@ -60,9 +63,10 @@ export function notInstalledMessage(remedy) {
 export async function deepRefusal(remedy, { specifier = "typescript" } = {}) {
   const ts = await importTypeScript(specifier);
   if (!ts) return notInstalledMessage(remedy);
-  if (usable(ts)) return null;
+  const why = unusableReason(ts);
+  if (!why) return null;
   const found = ts.version ? `typescript ${ts.version}` : "typescript of no version";
-  return [`${found}: ${NEEDS_MAJOR}`, `${remedy}, or scan again without --deep`].join("\n");
+  return [`${found}: ${why}`, `${remedy}, or scan again without --deep`].join("\n");
 }
 
 import { guardedChild } from "./child.mjs";
@@ -116,14 +120,9 @@ export function classifySemantic({ config, resolution }) {
  * guard the checker does not have is a caller's mistake rather than a run,
  * and rejects the way `parseAll` refuses one.
  *
- * `measured` names the files the resolution rate is taken over, every file
- * when null; the program still holds them all.
+ * The rate here is over every file; `semanticOver` narrows it.
  */
-export function runSemantic(
-  root,
-  files,
-  { guards: given = null, workerPath = WORKER, cwd = tmpdir(), measured = null } = {}
-) {
+export function runSemantic(root, files, { guards: given = null, workerPath = WORKER, cwd = tmpdir() } = {}) {
   return new Promise((resolve) => {
     // Inside the promise so a bad bag rejects rather than throws, which is how
     // `parseAll` answers one for either parse bridge. Taken whole, a bag naming
@@ -131,7 +130,6 @@ export function runSemantic(
     const guards = guardsOver(SEMANTIC_GUARDS, given, "checker");
     const records = new Map();
     let config = null;
-    let resolution = { resolved: 0, total: 0 };
     let built = false;
     let done = false;
     let settled = false;
@@ -158,8 +156,8 @@ export function runSemantic(
       settled = true;
       sup.settle();
       sup.kill("finished");
-      if (error) return resolve({ records, status: "degraded", reason: "tier-failed", typedResolutionRate: null, error });
-      resolve({ records, ...classifySemantic({ config, resolution }), error: null });
+      if (error) return resolve({ records, config, status: "degraded", reason: "tier-failed", typedResolutionRate: null, error });
+      resolve({ records, config, ...classifySemantic({ config, resolution: summed(records.keys(), records) }), error: null });
     };
 
     const arm = (ms) => {
@@ -170,7 +168,7 @@ export function runSemantic(
     child.on("message", (msg) => {
       if (!msg || typeof msg !== "object") return;
       if (msg.ready) {
-        return child.send({ root, files, measured }, (err) => {
+        return child.send({ root, files }, (err) => {
           if (err) finish(`the checker closed its channel before it was given the corpus: ${err.message}`);
         });
       }
@@ -178,7 +176,6 @@ export function runSemantic(
       if (msg.built) {
         built = true;
         config = msg.config;
-        resolution = msg.resolution;
         return arm(guards.idleMs);
       }
       if (msg.done) {
@@ -186,7 +183,7 @@ export function runSemantic(
         return finish(null);
       }
       if (typeof msg.rel === "string") {
-        records.set(msg.rel, { hits: msg.hits || {} });
+        records.set(msg.rel, { hits: msg.hits || {}, resolution: msg.resolution ?? null });
         return arm(guards.idleMs);
       }
     });
@@ -212,4 +209,29 @@ export function runSemantic(
 
     arm(guards.buildMs);
   });
+}
+
+/**
+ * The tier's verdict with the rate taken over `rels`, the files a claim is
+ * counted over. A file in no area that the map describes still lends its types
+ * but not its rate: one untyped bundle took a fully typed repository to 3%.
+ * A set holding no checked file keeps the whole-corpus answer, which would
+ * otherwise read as a corpus with nothing to resolve.
+ */
+export function semanticOver(semantic, rels) {
+  if (!semantic || semantic.error) return semantic;
+  const held = [...rels].filter((rel) => semantic.records.has(rel));
+  if (held.length === 0) return semantic;
+  return { ...semantic, ...classifySemantic({ config: semantic.config, resolution: summed(held, semantic.records) }) };
+}
+
+function summed(rels, records) {
+  const out = { resolved: 0, total: 0 };
+  for (const rel of rels) {
+    const r = records.get(rel)?.resolution;
+    if (!r) continue;
+    out.resolved += r.resolved;
+    out.total += r.total;
+  }
+  return out;
 }

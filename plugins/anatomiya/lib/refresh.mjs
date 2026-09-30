@@ -211,7 +211,7 @@ export async function refreshRepository(root, { scan = runScan, pin = runPin } =
   if (!top.ok || realpathOf(top.stdout.trim()) !== realpathOf(root)) return { reason: "outside", pinned: false };
   const facts = readFacts(root).facts;
   if (!facts) return { reason: "no-map", pinned: false };
-  // The type checker is opt-in and about 26x slower (B7), so a refresh keeps the
+  // The type checker is opt-in and about 3x a plain scan (B7), so a refresh keeps the
   // mode the person chose: a map built with it is rebuilt with it, rather than
   // skipped (which left it stale after every checkout) or rebuilt without it
   // (which dropped the claims it added). A checker that is no longer installed

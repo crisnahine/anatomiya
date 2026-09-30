@@ -34,9 +34,9 @@ test("the job answers built, one record per file and done, in that order", needs
   try {
     const out = await sent({ root: dir, files: [{ rel: "a.ts", abs: join(dir, "a.ts") }] });
     assert.deepEqual(out.map((m) => Object.keys(m)[0]), ["built", "rel", "done"]);
-    assert.deepEqual(out[0].resolution, { resolved: 2, total: 2 });
     assert.equal(out[0].config.status, "ok");
     assert.equal(out[1].rel, "a.ts");
+    assert.deepEqual(out[1].resolution, { resolved: 2, total: 2 });
     assert.ok(out[1].hits && typeof out[1].hits === "object");
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -67,10 +67,10 @@ test("resolution counts every property access and credits only the typed ones", 
   }
 });
 
-test("resolution is measured over the files the job names, and every file is still answered", needsTs, async () => {
+test("each file carries its own resolution, so the reader can take the rate over the files it counts", needsTs, async () => {
   // A minified bundle in no area pulled a repository whose own code resolved
   // fully down to 3% and read as low-resolution. It still lends its types to
-  // the program; it is only kept out of the rate.
+  // the program; the scan leaves it out of the sum.
   const dir = repo({
     "tsconfig.json": config,
     "a.ts": `export const x = " a ".trim().toLowerCase();`,
@@ -78,11 +78,8 @@ test("resolution is measured over the files the job names, and every file is sti
   });
   try {
     const files = [{ rel: "a.ts", abs: join(dir, "a.ts") }, { rel: "game.min.js", abs: join(dir, "game.min.js") }];
-    const out = await sent({ root: dir, files, measured: ["a.ts"] });
-    assert.deepEqual(out[0].resolution, { resolved: 2, total: 2 });
-    assert.deepEqual(out.filter((m) => m.rel).map((m) => m.rel), ["a.ts", "game.min.js"]);
-    const all = await sent({ root: dir, files });
-    assert.deepEqual(all[0].resolution, { resolved: 2, total: 8 }, "with no list named, every file is measured");
+    const byRel = Object.fromEntries((await sent({ root: dir, files })).filter((m) => m.rel).map((m) => [m.rel, m.resolution]));
+    assert.deepEqual(byRel, { "a.ts": { resolved: 2, total: 2 }, "game.min.js": { resolved: 0, total: 6 } });
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -112,7 +109,7 @@ test("a .js file handed to the job is held by the program whatever the tsconfig 
     assert.deepEqual(out.filter((m) => m.rel).map((m) => m.rel), ["a.ts", "b.js"]);
     const b = out.find((m) => m.rel === "b.js");
     assert.deepEqual(Object.keys(b.hits), ["law_of_demeter"]);
-    assert.deepEqual(out[0].resolution, { resolved: 4, total: 4 }, "the .js file's accesses are measured too");
+    assert.deepEqual(b.resolution, { resolved: 2, total: 2 }, "the .js file's accesses are measured too");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
