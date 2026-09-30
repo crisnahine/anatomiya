@@ -1350,11 +1350,13 @@ test("a binding typed as a function component is a component whose name JSX deci
   // that says `<Gate />` is how it is used elsewhere.
   const src = `
     import React, { FC, FunctionComponent } from "react";
+    import * as R from "react";
     export const Gate: React.FC = () => { return null };
     const Persist: FC<Props> = () => null;
     export const Hidden: React.FunctionComponent<P> = function () { return null };
     export const Blank: FunctionComponent = () => null;
     export const Kind: React.ComponentType<P> = () => null;
+    export const Aliased: R.FC = () => null;
     export const formatDate: (x: string) => string = (x) => x;
     export const makeThing: Factory = () => null;
   `;
