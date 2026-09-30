@@ -61,17 +61,33 @@ const MARKS_READ = new RegExp(`${REUSE_MARK} ((?:[0-9a-f]{12} ?)+)\\)`, "g");
 // `core/migrations`, openproject's `db/migrate/tables`) is ordinary library code.
 const ONE_OFF = /(^|\/)(\w+_)?(migrate|migrations)\/\d+[_-][^/]*$|(^|\/)db\/(\w+_)?schema\.rb$/;
 
-// A line that may define something callable, per engine. Read line by line
-// rather than parsed, so a match on a call or a string costs one search more
-// and never hides a new function; an engine with no pattern always asks, and
-// so does a line past LINE_READ, which bounds the patterns' backtracking.
+// Any token a callable definition could begin with or hold, per engine, so a
+// shape nobody listed still asks and a call or a string costs one search more.
+// For JS and TS that includes any `(` beside a `{` anywhere in the hunk, since
+// a method head is a name, parameters and a brace in any layout.
 const MAY_DEFINE = {
-  oxc: /\bfunction\b|=>|\bclass\b|\.bind\(|^\s*(?:(?:static|async|get|set|public|private|protected|readonly|override|abstract|declare|export|default|accessor)\s+)*\*?\s*(?!(?:if|for|while|switch|catch|with)\b)(?:#?[\w$]+|\[[^\]]*\]|'[^']*'|"[^"]*")\s*(?:<[^()]*>)?\s*\((?:[^)]*$|.*\)\s*(?::[^;{]*)?\{)|=\s*(?:async\s*)?(?:<[^()]*>\s*)?\(\s*\{?\s*$/,
-  prism:
-    /\bdef\b|\bdefine_(?:singleton_)?method\b|\blambda\b|\bproc\b|\bProc\.new\b|->|\b(?:Struct|Class|Module)\.new\b|\bData\.define\b|\balias(?:_method)?\b|\battr_(?:reader|writer|accessor)\b|\bdelegate\b|^\s*(?:let|subject)!?\s*[({]|^\s*task\b/,
+  oxc: { token: /\bfunction\b|\bclass\b|=>|\bFunction\s*\(|\.bind\(|\b[gs]et\s+[\w$#[\x27"]/, parens: true },
+  prism: {
+    token:
+      /\bdef(?:\b|_|ine_)|attr_\w|attribute\b|\bdelegate|\balias|\blambda\b|\b[Pp]roc\b|->|method\s*\(|\b(?:Struct|Class|Module|Data)\b|^\s*class\b|\bdo\b|\{\s*\||^\s*[\w:.]+[?!]?(?:\s*\(.*\))?\s*\{/m,
+    parens: false,
+  },
 };
 
+// Past this a line asks unread, which bounds what each search costs.
 const LINE_READ = 400;
+
+/** Whether a hunk's added lines, or the line right after them, may hold a callable definition. */
+function mayDefine(rule, added, after = "") {
+  if (added.some((line) => line.length > LINE_READ)) return true;
+  const text = added.join("\n");
+  if (rule.token.test(text)) return true;
+  if (!rule.parens) return false;
+  // A head that spans lines leaves a parenthesis open, and an Allman brace
+  // sits on the line after the head.
+  const unbalanced = (line) => line.split("(").length !== line.split(")").length;
+  return added.some(unbalanced) || (text.includes("(") && (text.includes("{") || after.includes("{")));
+}
 
 // A name a repository chose is shown as it is only where it cannot carry a
 // line break or a quote into the reason the model reads.
@@ -163,7 +179,7 @@ export async function pendingChange(root, { since = null, turnStart = null } = {
         : (ranges.get(path) ?? []).map(([from, to]) => ({ from, to, created: false }));
     const may = MAY_DEFINE[engineOf(language(path))];
     const lines = may ? entry.head.split("\n") : [];
-    const defining = may ? hunks.filter((h) => lines.slice(h.from - 1, h.to).some((line) => line.length > LINE_READ || may.test(line))) : hunks;
+    const defining = may ? hunks.filter((h) => mayDefine(may, lines.slice(h.from - 1, h.to), lines[h.to])) : hunks;
     if (defining.length === 0) continue;
     // Over the checkout too: a sibling repository's copy of a file is another file.
     const mark = createHash("sha256").update(`${home}\0${path}\0`).update(entry.head).digest("hex").slice(0, 12);
