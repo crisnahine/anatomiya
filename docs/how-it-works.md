@@ -410,8 +410,8 @@ Ruby, which is what takes Ruby from 11 to 16.
 The three `route_` rows ask whether a cross-cutting concern goes through the repository's own
 module. The wrapper is learned per file from its relative imports whose filename, up to its first
 dot, is nothing but the vocabulary (log, logger, logging; client, http, api, request, fetcher;
-config, env, settings), a trailing version aside, so `./apiClient`, `./HTTPClient` and
-`./api-client-v2` are wrappers and `./settingsSlice` is not, and the direct forms
+config, env, settings), version words such as `v2` aside, so `./apiClient`, `./HTTPClient`,
+`./api-client-v2` and `./v2-api-client` are wrappers and `./settingsSlice` is not, and the direct forms
 are a closed table (console calls, fetch and axios, process.env reads). Each row is offered only where at
 least three examined files already route through a wrapper (C14), so a repository that logs to
 the console on purpose, or one holding a config.ts nobody imports, never carries a line that can
