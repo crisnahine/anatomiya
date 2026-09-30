@@ -95,6 +95,23 @@ files the ceiling left uncovered, since `capCount` can host an area at a directo
 were already orphaned. Measured on a 5,495-file Rails repository, 156 areas: 298 patterns in total,
 37 areas changed, 119 unchanged on the single recursive glob, 21 patterns in the largest list.
 
+The files the corpus left out are foreign too: tracked source under an excluded directory, and
+generated files. The cover was built from the counted files alone, so a `fixtures/` or `test_cases/`
+inside an area read as part of a subtree it wholly owned, and its one recursive glob delivered the
+area's sentences to exactly the code G7 keeps out of the counts: angular's compliance area counted 8
+files and reached 2,017 under `test_cases`. The left-out files a pattern of the area could spell are
+walked as foreign files now. A generated file beside counted ones is cut out by its own name. An
+excluded directory is cut out by its name once, at any depth (`!src/comp/**/fixtures/**/*.ts`), since
+every file under that name is left out wherever it sits; prisma keeps a `_fixture/` beside each of 102
+tests, and one negation per directory made a 106-pattern list in a 40-line file. Where the name also
+sits on a counted file's path, as `build` can under `src`, the directory is cut out by its path
+instead. Measured on seven corpus repositories, the areas reach 0 left-out files, down from 2,017 on
+angular, 1,707 on react and 591 on prisma, for 67 more patterns (2,716 to 2,783).
+
+A directory whose name holds glob syntax cannot root an area or be named by a pattern. That includes a
+comma: Claude Code splits each `paths` entry on the commas outside a brace before it expands braces
+and matches with gitignore rules, so `x,y/**/*.rb` reads as `x` and `y/**/*.rb`.
+
 The area id is the first 8 hex of `sha256(path)`, which is what makes `anatomiya-area-<id>.md` a
 stable filename across scans.
 

@@ -186,6 +186,23 @@ test("every delivered paths pattern reaches the files its area counted, whatever
   }
 });
 
+test("a delivered paths list cuts out the fixture and generated files its area never counted", () => {
+  // Read back the way Claude Code reads it, so a file negation has to survive
+  // the encoder and the comma split as well as the matcher.
+  const files = ["src/comp", "src/comp/a", "src/comp/b"].flatMap((d) =>
+    Array.from({ length: 4 }, (_, i) => ({ rel: `${d}/c${i}.ts`, lang: "js" }))
+  );
+  const uncounted = [
+    ...["src/comp/Gen.ts", 'src/comp/say"hi.ts', "src/comp/gen/G.ts"].map((rel) => ({ rel, lang: "js" })),
+    ...["src/comp/a/fixtures/F.ts", "src/comp/b/fixtures/F.ts"].map((rel) => ({ rel, lang: "js", excludedAt: rel.slice(0, rel.lastIndexOf("/")) })),
+  ];
+  const [a] = discover(files, { uncounted, minFiles: 5 });
+  const delivered = renderedPaths(renderArea(area({ path: a.path, globs: a.globs })));
+
+  for (const f of files) assert.equal(claudeCodeReaches(delivered, f.rel), true, `${f.rel}: ${JSON.stringify(delivered)}`);
+  for (const f of uncounted) assert.equal(claudeCodeReaches(delivered, f.rel), false, `${f.rel}: ${JSON.stringify(delivered)}`);
+});
+
 test("author identity reaches a rendered file as a count, never as a name", () => {
   // D4 counts distinct authors; the name itself has nowhere to land, which is
   // why a display name carrying a fake policy block cannot be rendered at all.
