@@ -1378,7 +1378,8 @@ refused like `HEAD` is: an expression such as `HEAD~0`, and the branch's own nam
 the check would pick unasked is somewhere else. Another branch at the same commit, or the commit by
 its id, is still a base, and is what a branch holding only uncommitted work is checked against. An id
 is a name git resolves to no ref, never a name that happens to be spelled in hex, so a branch called
-`7812` or `facade` is refused as its own base like any other. A name two refs hold, a tag and a
+`7812` or `facade` is refused as its own base like any other, and so is `FEAT` on a filesystem
+that folds case, where it opens `feat`'s ref file under a name no ref holds. A name two refs hold, a tag and a
 branch both called `release`, is refused naming both: git picks the tag and says so only in a warning
 the check never sees. `refs/heads/release` names one. On a
 shallow clone the base commit is fetched with `--depth=1`, which costs about 3.65s and 12 MB;
