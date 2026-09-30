@@ -354,6 +354,45 @@ test("a suppressed dimension still prints its counts and names the gate", () => 
   assert.match(out, /^failure is returned, not thrown: no convention\. 30 of 31 sites \(concentration\)$/m);
 });
 
+test("a partial dimension says so on its counts line too", () => {
+  // The counts line reads like the block form with less room, and a count over
+  // sites the parser cannot all see is the same fact on either.
+  const out = renderArea(
+    area({
+      dimensions: [
+        dim({ precision: "partial", states: "claim", matchesDefault: true, conforming: 22 }),
+        dim({ key: "error_shape", claim: "failure is returned, not thrown", precision: "partial",
+              directive: false, gate: "evidence", conforming: 4, candidates: 4 }),
+        dim({ key: "module_state_const", claim: "module-level bindings are const",
+              directive: false, gate: "evidence", conforming: 4, candidates: 4 }),
+      ],
+    })
+  );
+
+  assert.match(
+    out,
+    /^catch blocks use the error they caught: 22 of 22 sites \(matches model default\) {2}\(partial: some sites are not visible statically\)$/m
+  );
+  assert.match(
+    out,
+    /^failure is returned, not thrown: no convention\. 4 of 4 sites \(evidence\) {2}\(partial: some sites are not visible statically\)$/m
+  );
+  assert.match(out, /^module-level bindings are const: no convention\. 4 of 4 sites \(evidence\)$/m, "a precise one stays bare");
+});
+
+test("the overview says what a no convention line means", () => {
+  // The gate name in parentheses is the only reason printed, and "no convention.
+  // 73 of 73 sites" reads as a denial of a habit every site follows without it.
+  // On the line that says what a claim is, so it costs the bound no line.
+  const lines = renderOverview(result(), { uncovered: 30 }).split("\n");
+  const at = lines.indexOf(
+    'A claim states how many sites conform out of how many were eligible; "no convention" means the gate in parentheses stopped it, and its sites may still all agree.'
+  );
+
+  assert.ok(at > 0, "the sentence is in the overview");
+  assert.equal(lines[at - 1], "Facts counted from this repository's own code, per directory.");
+});
+
 test("a suppressed author gate says how many authors it wanted", () => {
   // "(authors)" was readable while the bar was the constant 2 and is not once
   // the bar is a function of the repository. An audit months later has to be
@@ -370,6 +409,23 @@ test("a suppressed author gate says how many authors it wanted", () => {
   );
 
   assert.match(out, /no convention\. 20 of 20 sites \(authors 1 of 2\)$/m);
+});
+
+test("an unstated slot shown on its counter side names the counter side's authors", () => {
+  // D4 counts authors per side. One person wrote every one of these 40 sites,
+  // and the line read "authors 0 of 2" off the claim side, which holds none.
+  const out = renderArea(
+    area({
+      dimensions: [
+        dim({ key: "function_style", claim: "module-level functions are declared with function",
+              counterClaim: "module-level functions are assigned to variables",
+              states: null, directive: false, conforming: 0, candidates: 40,
+              gate: "ratio", counterGate: "authors", authors: 0, counterAuthors: 1, authorsRequired: 2 }),
+      ],
+    })
+  );
+
+  assert.match(out, /^module-level functions are assigned to variables: no convention\. 40 of 40 sites \(authors 1 of 2\)$/m);
 });
 
 test("a gate that failed because git did not answer says so", () => {
@@ -1444,6 +1500,7 @@ const clientLayout = (o = {}) => ({
       files: 612,
       exts: [[".tsx", 504], [".ts", 65]],
       other: 43,
+      jsx: 504,
       jsxExt: ".tsx",
       tests: [{ runner: "vitest", files: 4, sub: "__tests__" }],
       companions: { with: 0, of: 504, root: null },
@@ -1486,7 +1543,7 @@ test("a root line says what the directory holds, its tests and its namesakes", (
   assert.equal(
     lines[3],
     "- src/components: 504 .tsx (JSX), 65 .ts and 43 other; 4 vitest specs under __tests__; " +
-      "0 of 504 have a namesake test; 60 sibling modules named types/schema/utils; 35 files inline a helper"
+      "0 of 504 have a namesake test; 60 sibling modules named types/schema/utils; 35 of 504 JSX files inline a helper"
   );
   assert.equal(lines[2], "- src/pages: 1003 .tsx (JSX), 188 .ts and 32 other");
   assert.equal(lines[4], "- src/queries: 314 .ts");
@@ -1503,6 +1560,57 @@ test("the tests line is the denominator the roster exists for", () => {
     "- tests: 102 Cypress specs under cypress/integration; 4 vitest under src; " +
       "0 of 504 .tsx files under src/components have a namesake test"
   );
+});
+
+test("the helper clause counts over the JSX files it asked, and names only stems that repeat", () => {
+  // `0 files inline a helper` over one component sat above 30 modules that all
+  // keep a private helper, and read as the whole directory.
+  const line = (helpers, jsx) =>
+    renderLayout({
+      ...clientLayout(),
+      roots: [root("src/utils", { files: 31, exts: [[".ts", 30], [".tsx", 1]], jsx, jsxExt: ".tsx", helpers })],
+      more: { roots: 0, files: 0 },
+      tests: [],
+    })[2];
+
+  assert.equal(
+    line({ siblingModules: 30, stems: [], inlineFiles: 0 }, 1),
+    "- src/utils: 30 .ts, 1 .tsx (JSX); 30 sibling modules; 0 of 1 JSX file inline a helper"
+  );
+  assert.equal(
+    line({ siblingModules: 30, stems: ["mapper"], inlineFiles: 1 }, 2),
+    "- src/utils: 30 .ts, 1 .tsx (JSX); 30 sibling modules named mapper; 1 of 2 JSX files inlines a helper"
+  );
+});
+
+test("a namesake root named by a majority prints how many sit there", () => {
+  const companions = { with: 4, of: 8, root: "src/utils/__tests__", under: 3 };
+
+  assert.equal(namesakeClause(companions), "4 of 8 have a namesake test, 3 under src/utils/__tests__");
+  assert.equal(
+    namesakeClause({ ...companions, under: undefined }),
+    "4 of 8 have a namesake test under src/utils/__tests__",
+    "a record with no count there has every match there"
+  );
+  assert.equal(namesakeClause({ ...companions, root: null }), "4 of 8 have a namesake test", "no place, no count");
+});
+
+test("the tests line nouns its namesake count with the extension it was counted over", () => {
+  // A root holding more screenshots than components counts its components, and
+  // the line named the screenshots.
+  const lines = renderLayout({
+    ...clientLayout(),
+    roots: [
+      root("src/site", {
+        files: 60,
+        exts: [[".png", 40], [".tsx", 20]],
+        companions: { with: 2, of: 20, root: null, ext: ".tsx" },
+      }),
+    ],
+    more: { roots: 0, files: 0 },
+  });
+
+  assert.ok(lines.some((l) => l.endsWith("; 2 of 20 .tsx files under src/site have a namesake test")), lines.join("\n"));
 });
 
 test("one file with a namesake takes the singular verb, on every line that prints the clause", () => {
@@ -1692,7 +1800,7 @@ test("leftovers below the floor are counted as files, not as directories", () =>
   // `and 0 more directories holding 12 files` says a number nobody can act on.
   const lines = renderLayout(clientLayout({ more: { roots: 0, files: 12 } }));
 
-  assert.ok(lines.includes("- and 12 more files in directories under the floor"), lines.join("\n"));
+  assert.ok(lines.includes("- and 12 more files in directories too small for a line of their own"), lines.join("\n"));
   assert.doesNotMatch(lines.join("\n"), /0 more directories/);
 });
 
@@ -1704,11 +1812,11 @@ test("a folded directory is not billed for the files under no directory at all",
 
   assert.equal(
     fold({ roots: 1, files: 3, floor: { dirs: 4, files: 4, root: 14 } }),
-    "- and 1 more directory holding 3 files, 4 files in 4 directories under the floor, and 14 at the repository root"
+    "- and 1 more directory holding 3 files, 4 files in 4 directories too small for a line of their own, and 14 at the repository root"
   );
   assert.equal(
     fold({ roots: 2, files: 3400, floor: { dirs: 26, files: 147, root: 0 } }),
-    "- and 2 more directories holding 3400 files and 147 files in 26 directories under the floor",
+    "- and 2 more directories holding 3400 files and 147 files in 26 directories too small for a line of their own",
     "two clauses join on a bare and; the comma series is for three"
   );
   assert.equal(
@@ -1742,7 +1850,7 @@ test("the line that says what did not print is reserved even when only the floor
 
   assert.match(
     squeezed({ roots: 0, files: 0, floor: { dirs: 3, files: 12, root: 0 } }),
-    /^- and .*12 files in 3 directories under the floor$/m
+    /^- and .*12 files in 3 directories too small for a line of their own$/m
   );
   assert.match(
     squeezed({ roots: 0, files: 0, floor: { dirs: 0, files: 0, root: 3 } }),
@@ -1754,7 +1862,7 @@ test("the line that says what did not print is reserved even when only the floor
 test("nothing folded away costs the roster a line", () => {
   const lines = renderLayout(clientLayout({ more: { roots: 0, files: 0 } }));
 
-  assert.doesNotMatch(lines.join("\n"), /more directories|under the floor/);
+  assert.doesNotMatch(lines.join("\n"), /more directories|too small for a line/);
 });
 
 const monorepoLayout = () => {
@@ -2121,6 +2229,7 @@ test("a count of one reads as one on every clause of a root line", () => {
         root("src/one", {
           files: 3,
           exts: [[".tsx", 3]],
+          jsx: 1,
           jsxExt: ".tsx",
           tests: [{ runner: "vitest", files: 1, sub: null }],
           companions: { with: 1, of: 1, root: null },
@@ -2135,7 +2244,7 @@ test("a count of one reads as one on every clause of a root line", () => {
 
   assert.equal(
     lines[2],
-    "- src/one: 3 .tsx (JSX); 1 vitest spec; 1 of 1 has a namesake test; 1 sibling module named types; 1 file inlines a helper"
+    "- src/one: 3 .tsx (JSX); 1 vitest spec; 1 of 1 has a namesake test; 1 sibling module named types; 1 of 1 JSX file inlines a helper"
   );
   assert.equal(lines[3], "- and 1 more directory holding 1 file");
 });

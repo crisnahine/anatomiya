@@ -234,6 +234,33 @@ test("the terminal builds its own truncation line from what the scan read", () =
   assert.equal(scanSummary(result(), plan()).historyTruncated, null, "and a whole clone says nothing");
 });
 
+test("the author-gate count is taken on the side the map prints", () => {
+  // A slot shown on its counter side prints the counter's gate, so counting the
+  // claim side's gate says fewer claims went to counts than the map shows.
+  const flipped = {
+    key: "function_style",
+    claim: "module-level functions are declared with function",
+    counterClaim: "module-level functions are assigned to variables",
+    candidates: 40,
+    conforming: 0,
+    directive: false,
+    states: null,
+    gate: "ratio",
+    counterGate: "authors",
+  };
+  const unflipped = { ...flipped, conforming: 40, gate: "evidence", counterGate: "authors" };
+  const s = scanSummary(
+    result({
+      areas: [{ path: "src", dimensions: [flipped, unflipped] }],
+      authors: { files: 9, error: null, repo: 1, shallow: { commits: 1, oldest: "2026-09-30T00:00:00Z" } },
+    }),
+    plan()
+  );
+
+  assert.equal(s.authorGated, 1);
+  assert.ok(s.historyTruncated.endsWith("and 1 claim print as counts on the author gate"), s.historyTruncated);
+});
+
 test("a history that could not be read at all says that, and not that it was a window", () => {
   // The shallow probe is a `rev-parse` and answers even where the log failed,
   // so both were true at once: the terminal said the gate held claims to counts

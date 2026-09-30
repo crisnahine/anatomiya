@@ -274,6 +274,22 @@ test("a test directory beside the file at an evaluated root is still credited", 
   });
 });
 
+test("a namesake root named by a majority says how many of the matches sit there", () => {
+  // The half rule names the place on 3 of 4, and the line put all 4 under it.
+  const source = ["alpha", "beta", "gamma", "delta", "eps"].map((n) => file(`src/utils/${n}.ts`));
+  const tests = [
+    ...["alpha", "beta", "gamma"].map((n) => file(`src/utils/__tests__/${n}.test.ts`)),
+    file("src/utils/delta.test.ts"),
+  ];
+
+  assert.deepEqual(namesakeCompanions(source, tests, "src/utils"), {
+    with: 4,
+    of: 5,
+    root: "src/utils/__tests__",
+    under: 3,
+  });
+});
+
 test("namesakeIndex builds the stem map namesakeCompanions is handed", () => {
   const index = namesakeIndex([file("spec/models/foo_spec.rb")]);
 
@@ -483,6 +499,7 @@ test("a root that reduces to the repository itself is not a place, and does not 
     with: 4,
     of: 4,
     root: "zz/spec",
+    under: 2,
   });
 });
 

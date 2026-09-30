@@ -76,6 +76,26 @@ test("a map on disk that does not parse is unreadable, not absent", (t) => {
   assert.deepEqual(readFacts(dir), { facts: null, unreadable: null }, "no file at all is still no map");
 });
 
+test("the counter side's authors reach the record and the side that prints them", (t) => {
+  // A held area re-renders from this record, so a number the renderer prints
+  // has to survive the round trip.
+  const dir = root(t);
+  writeFacts(
+    dir,
+    result([
+      dim({ counterClaim: "the inverse", states: null, directive: false, conforming: 0, candidates: 40,
+            gate: "ratio", counterGate: "authors", authors: 0, counterAuthors: 1 }),
+    ])
+  );
+  const d = readFacts(dir).facts.areas[0].dimensions[0];
+
+  assert.equal(d.counterAuthors, 1);
+  assert.equal(statedSide(d).side, "counter");
+  assert.equal(statedSide(d).authors, 1);
+  assert.equal(statedSide({ ...d, counterAuthors: undefined }).authors, 0, "an older record prints what it printed");
+  assert.equal(statedSide(dim({ authors: 3 })).authors, 3, "the claim side keeps its own");
+});
+
 test("a record written before the new counts existed still reads", (t) => {
   // C10: an older record stays readable, and the three numbers the map prints
   // are simply absent from one written before schema 6.

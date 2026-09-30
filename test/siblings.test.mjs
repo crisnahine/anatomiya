@@ -108,6 +108,20 @@ test("a relative specifier resolves against the importer's directory", () => {
   assert.equal(specifierToFile("./missing", "src/app.ts", rels), null);
 });
 
+test("a specifier ending in a slash names the directory's index", () => {
+  // Node and TypeScript read `./base/` as the directory `./base`, never as a
+  // file `base.ts`, and `./` and `../` as `.` and `..`.
+  const rels = corpus("src/components/base/index.ts", "src/components/base.ts", "src/index.ts", "src/components/index.ts");
+
+  assert.equal(specifierToFile("./base/", "src/components/A.tsx", rels), "src/components/base/index.ts");
+  assert.equal(specifierToFile("./base", "src/components/A.tsx", rels), "src/components/base.ts");
+  assert.equal(specifierToFile("./", "src/components/A.tsx", rels), "src/components/index.ts");
+  assert.equal(specifierToFile("../", "src/components/A.tsx", rels), "src/index.ts");
+  assert.equal(specifierToFile("../../components/", "src/components/base/Icon.tsx", rels), "src/components/index.ts");
+  assert.equal(specifierToFile("@/components/base/", "src/app.ts", rels), "src/components/base/index.ts", "through an alias too");
+  assert.equal(specifierToFile("./nothing/", "src/components/A.tsx", rels), null);
+});
+
 test("a compiled specifier resolves to the TypeScript source it is emitted from", () => {
   // TypeScript under Node16 and NodeNext requires the emitted extension on every
   // relative import, so `../utils/format.js` is how a service names

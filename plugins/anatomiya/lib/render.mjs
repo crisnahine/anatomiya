@@ -61,21 +61,25 @@ function encodeGlob(g) {
 // A stated directive needs authors at or above min(2, repository authors), and
 // at or above 2 where the history read was a window, so one author on a stated
 // line can only be a one-author repository read from a whole clone.
-const hands = (d) => (d.authors === 1 ? "1 author (the repository's only)" : `${d.authors} authors`);
+const hands = (n) => (n === 1 ? "1 author (the repository's only)" : `${n} authors`);
 
 // The noun after "k of n" agrees with n, the count it is a denominator of: a
 // slot with one candidate printed "0 of 1 sites".
 const sitesOf = (n) => (n === 1 ? "site" : "sites");
 const filesOf = (n) => (n === 1 ? "file" : "files");
 
+// C5: a count over sites the parser cannot all see says so on every line it
+// prints on, directive or counts.
+const partialNote = (d) => (d.precision === "partial" ? "  (partial: some sites are not visible statically)" : "");
+
 // The author bar is a function of the repository now, so the name alone no
 // longer says what was asked for, and git failing is not a team of zero.
-const why = (d, gate) =>
-  gate === "authors"
-    ? `authors ${d.authors} of ${d.authorsRequired}`
-    : gate === "history-unread"
+const why = (d, s) =>
+  s.gate === "authors"
+    ? `authors ${s.authors} of ${d.authorsRequired}`
+    : s.gate === "history-unread"
       ? "history could not be read"
-      : gate;
+      : s.gate;
 
 /**
  * A claim is this tool's own sentence, not a repository-controlled value, so it
@@ -376,9 +380,9 @@ function areaBlocks(area) {
       `  ${s.conforming} of ${d.candidates} ${sitesOf(d.candidates)} across ` +
         `${d.applicability} of ${d.langFileCount} ${filesOf(d.langFileCount)}` +
         declinedClause(d) +
-        `, ${hands(d)}` +
+        `, ${hands(s.authors)}` +
         companionAudit(d) +
-        (d.precision === "partial" ? "  (partial: some sites are not visible statically)" : ""),
+        partialNote(d),
     ];
     const notCounted = notCountedLine(d, s, said);
     if (notCounted) block.push(notCounted);
@@ -431,10 +435,11 @@ function areaBlocks(area) {
   // wrong threshold auditable. Only one of those is worth the last line.
   for (const [d, s] of counts) {
     blocks.push([
-      d.matchesDefault === true && s.states !== null
+      (d.matchesDefault === true && s.states !== null
         ? `${claimLine(s.claim)}: ${s.conforming} of ${d.candidates} ${sitesOf(d.candidates)} (matches model default)`
         : `${claimLine(s.claim)}: no convention. ` +
-          `${s.conforming} of ${d.candidates} ${sitesOf(d.candidates)}${companionAudit(d)} (${why(d, s.gate)})`,
+          `${s.conforming} of ${d.candidates} ${sitesOf(d.candidates)}${companionAudit(d)} (${why(d, s)})`) +
+        partialNote(d),
     ]);
     keys.push(s.states === null ? null : d.key);
     claims.push(s.states === null ? null : claimLine(s.claim));
@@ -636,7 +641,9 @@ export function renderOverview(result, files) {
     "# Repository map",
     "",
     "Facts counted from this repository's own code, per directory.",
-    "A claim states how many sites conform out of how many were eligible.",
+    // One line with the legend, so the key to every counts line costs the
+    // roster nothing on a repository whose overview sits at its bound.
+    'A claim states how many sites conform out of how many were eligible; "no convention" means the gate in parentheses stopped it, and its sites may still all agree.',
     "",
     "Read a file before editing it: these notes load when you read, not when you grep.",
     // Names the tools the agent already has, and permits saying
