@@ -63,7 +63,10 @@ cannot install an interpreter. Then run the scan again.
 
 ### The type checker
 
-`--deep` adds the TypeScript checker. It is off by default because it was measured about 26x
-slower than the parse and cannot be narrowed to the files that changed. It needs the optional
-`typescript` dependency and the repository's own dependencies installed; without them it says
-so on the map rather than printing a clean-looking count.
+`--deep` adds the TypeScript checker. It is off by default because a deep scan measured about 3x
+a plain one on a 3,800-file repository and it cannot be narrowed to the files that changed. It
+needs the optional `typescript` 5.x dependency and the repository's own dependencies installed on
+disk inside the repository: a `node_modules` linked in from outside it is not read, so it counts
+as not installed. Without them it says so on the map rather than printing a clean-looking count.
+The share of type lookups that resolved is taken over files in an area, so a vendored bundle in
+no area does not lower it.

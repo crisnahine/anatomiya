@@ -295,7 +295,36 @@ test("a deep scan with the checker installed is not refused", needsTs, async (t)
   assert.equal(summary.files, 8);
 });
 
-test("a scan with no interpreter is told to install Ruby, never to run npm", needsShebang, async (t) => {
+test("a deep scan measures resolution over area files, so a bundle in no area does not degrade it", needsTs, async (t) => {
+  // One untyped minified bundle outside every area pulled a repository whose
+  // own code resolved at 100% down to 3% and printed it as low-resolution,
+  // which points the reader at the tsconfig and the dependencies.
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-commands-bundle-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  mkdirSync(join(dir, "src"), { recursive: true });
+  mkdirSync(join(dir, "public", "assets"), { recursive: true });
+  writeFileSync(join(dir, "tsconfig.json"), `{"compilerOptions":{"strict":true,"allowJs":true},"include":["src","public"]}`);
+  for (let i = 0; i < 8; i++) {
+    writeFileSync(
+      join(dir, "src", `m${i}.ts`),
+      `export interface U${i} { a: { b: string } }\nexport const f${i} = (u: U${i}) => u.a.b.length;\n`
+    );
+  }
+  let bundle = "(function(){";
+  for (let i = 0; i < 200; i++) bundle += `function f${i}(a,b){return a.x.y+b.z;}`;
+  writeFileSync(join(dir, "public", "assets", "game.min.js"), `${bundle}})();`);
+  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
+  git("init", "-q");
+  git("add", "-A");
+  git("-c", "user.email=t@t.test", "-c", "user.name=T", "commit", "-qm", "init");
+
+  const { result } = await runScan(dir, { dryRun: true, deep: true });
+
+  assert.equal(result.semantic.status, "ok", JSON.stringify(result.semantic));
+  assert.equal(result.semantic.typedResolutionRate, 1);
+});
+
+test("a scan with no interpreter is told to install Ruby, never to run npm",needsShebang, async (t) => {
   // Measured on a Ruby repository with no `ruby` on PATH: the scan exited 1
   // with `spawn ruby ENOENT` and then "run `npm install --omit=dev` in the
   // plugin directory". npm cannot install an interpreter, and the one remedy
