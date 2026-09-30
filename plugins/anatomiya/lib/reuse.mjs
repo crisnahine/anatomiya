@@ -131,7 +131,7 @@ export async function pendingChange(root, { since = null, turnStart = null } = {
   const changed = [...pending.present, ...committed.map((path) => ({ path, status: "M" }))];
   // The corpus's own refusals past the path, the way `check` asks them: a
   // generated file or a link holds nothing anybody wrote here by hand.
-  const dropOf = corpusDrop(root);
+  const dropOf = await corpusDrop(root);
   const home = realpathOf(root);
   const files = [];
   for (const { path, status } of changed.sort((a, b) => byCode(a.path, b.path))) {

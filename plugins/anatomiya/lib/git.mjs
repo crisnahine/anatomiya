@@ -118,6 +118,9 @@ const FLAGS = new Set([
   // Each path tagged with its index state, so `pin` sees the skip-worktree
   // paths a sparse checkout leaves out of the tree.
   "-t",
+  // The same with assume-unchanged in lowercase, so the corpus reads a root
+  // `.gitattributes` git treats as unchanged from the index (`corpus.mjs`).
+  "-v",
   // The one read of a repository's own config that says which file each value
   // came from, so the commands it names can be replaced (`repositoryCommands`).
   "--show-scope",
