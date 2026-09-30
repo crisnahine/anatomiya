@@ -224,12 +224,17 @@ test("a row handed no path answers exactly as it always did", () => {
 test("implementsCapability asks every word of the stem, and only the stem", async () => {
   const { implementsCapability } = await import("../plugins/anatomiya/lib/dimensions-capability.mjs");
 
-  for (const rel of ["src/queries/request.ts", "app/clients/client.rb", "src/lib/api-client.ts", "src/lib/httpClient.ts", "app/clients/api_client_v2.rb", "src/lib/apiClientV1.ts", "app/clients/api_v2_client.rb", "app/clients/v2_api_client.rb", "src/lib/ApiV2Client.ts"]) {
+  for (const rel of ["src/queries/request.ts", "app/clients/client.rb", "src/lib/api-client.ts", "src/lib/httpClient.ts", "app/clients/api_client_v2.rb", "src/lib/apiClientV1.ts", "app/clients/api_v2_client.rb", "app/clients/v2_api_client.rb", "src/lib/ApiV2Client.ts", "app/clients/api_client_1.rb"]) {
     assert.equal(implementsCapability(rel, "network"), true, rel);
   }
   for (const rel of ["src/queries/userApi.ts", "app/services/payment_api.rb", "src/queries/index.ts", "src/lib/v2.ts", "src/lib/v2_payment.ts"]) {
     assert.equal(implementsCapability(rel, "network"), false, rel);
   }
+  for (const rel of ["src/2_api.ts", "app/clients/2_client.rb"]) {
+    assert.equal(implementsCapability(rel, "network"), false, `a leading number is a sequence, not a version: ${rel}`);
+  }
+  assert.equal(implementsCapability("db/migrations/20240901_settings.js", "env"), false, "a migration timestamp is not a version");
+  assert.equal(implementsCapability("db/migrate/001_logger.rb", "logging"), false, "nor is a fixture sequence");
   assert.equal(implementsCapability("src/queries/request.ts", "logging"), false, "one vocabulary at a time");
   assert.equal(implementsCapability("src/config.ts", "env"), true);
   assert.equal(implementsCapability(null, "env"), false, "a row handed no path answers as before");
