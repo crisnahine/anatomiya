@@ -910,8 +910,9 @@ HEAD rewrote it. A link within `.claude` is still followed.
 a link at either is not followed out; a write replaces it as an entry. A refusal names the path the
 repository spells and says when it is a link, since the resolved name once read "README.md is not a
 directory ... remove it" for `.claude/rules -> ../README.md`. The planning half also refuses a
-directory at `facts.json` or `baseline.json`, which the rename cannot replace, so a dry run of
-`scan` or `pin` refuses what the real run would die on.
+directory at `facts.json` or `baseline.json`, which the rename cannot replace, and a nearest existing
+directory on the way that this process cannot write, so a dry run of `scan` or `pin` refuses what the
+real run would die on, by the directory's name rather than a raw `EACCES` on a temp file.
 
 Files in there are read by their head, one megabyte at most, and only when the opened handle is a
 regular file. The ownership test reads the frontmatter from byte zero a line at a time, and stops at
@@ -994,7 +995,8 @@ A commit this clone made never joins the pin while it sits on the first-parent l
 the tip, however it reached the remote: a push by URL moves no tracking ref, and a teammate's commit
 on top reviews nothing beneath it. Made here is every commit a reflog entry names except the entries
 that create none (a clone, a checkout, a reset, a branch, a fetch, a push, the remote's HEAD named,
-a fast-forward, a rebase's start and finish, each matched as git writes the whole entry and never
+a fast-forward, a rebase's start and finish, and the empty entry `git worktree add` writes on the new
+worktree's HEAD, each matched as git writes the whole entry and never
 read from a commit's subject or a branch name), so a spelling git adds later holds the pin rather
 than slipping past. The reflog forgets (a removed worktree, a deleted branch, `gc` after 90 days),
 so a commit whose committer is this clone's own identity is made here as well: past a pin, anywhere
@@ -1014,8 +1016,10 @@ written to `refresh.json`.
 
 A pin that stops following while the checkout sits on the tip is held, and `refresh.json` says why
 (`held`: a commit made here, a tip this clone moved, a tip with no record of how it moved, a
-question git could not answer), at which commit and against which pin. A session started or resumed
-says so in one line of the terminal (`systemMessage`), built from fixed words and validated commit
+question git could not answer), at which commit and against which pin; a commit made here also says
+what matched it (`by`: `reflog`, or `identity` where only the committer did, and the line then says
+the commit carries this clone's git identity rather than that it was made in this clone). A session
+started or resumed says so in one line of the terminal (`systemMessage`), built from fixed words and validated commit
 ids only; a compaction or a clear inside the session does not repeat it, and a pin taken by hand
 since the hold ends it. It never enters the model's context: the model is the author E5 keeps from
 accepting its own work, and a sentence there naming how to accept it is the suggestion E5 refuses. A

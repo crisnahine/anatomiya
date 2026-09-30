@@ -72,10 +72,7 @@ export function pinTarget(root) {
   const path = pinFile(root);
   if (path === null) throw new Error(`${outsideClaude(dirname(PIN_PATH))}, so no pin is written there`);
   const blocked = blockedOnTheWay(root, dirname(PIN_PATH));
-  if (blocked !== null) {
-    const remedy = blocked.link ? "replace the link with a directory" : "remove it";
-    throw new Error(`${blocked.sentence}, so no pin is written there: ${remedy} and pin again`);
-  }
+  if (blocked !== null) throw new Error(`${blocked.sentence}, so no pin is written there: ${blocked.remedy} and pin again`);
   if (!leafReplaceable(path)) throw new Error(`${PIN_PATH} is not a file, so no pin is written there: remove it and pin again`);
   return path;
 }

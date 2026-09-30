@@ -1,18 +1,18 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, realpathSync, rmSync, symlinkSync } from "node:fs";
+import { chmodSync, mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, realpathSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { execFileSync } from "node:child_process";
 
-import { needsShebang, needsSymlinks } from "./platform.mjs";
+import { needsPosixPermissions, needsShebang, needsSymlinks } from "./platform.mjs";
 import { needsRuby } from "./ruby-available.mjs";
 import { compact, delivered, filler, transcript } from "./transcript.mjs";
 import { installWithoutDependencies } from "./plugin-install.mjs";
 import { addWorktree, scratch } from "./git-worktrees.mjs";
 import { runCheck, runDoctor, runEcho, runNotice, runPin, runReuse, runScan, runSetup } from "../plugins/anatomiya/lib/commands.mjs";
-import { pinLines, scanLines } from "../plugins/anatomiya/lib/summary.mjs";
+import { pinJson, pinLines, scanLines } from "../plugins/anatomiya/lib/summary.mjs";
 import { PIN_PATH } from "../plugins/anatomiya/lib/baseline.mjs";
 import { PROBE_IDS, pluginRoot } from "../plugins/anatomiya/lib/readiness.mjs";
 import { OVERVIEW_FILE } from "../plugins/anatomiya/lib/rules.mjs";
@@ -551,6 +551,101 @@ test("a pin over no tracked source refuses, and counts the source still untracke
     await assert.rejects(() => runPin(dir, { dryRun }), /nothing to pin: 4 source files in the working tree are untracked/, `dryRun ${dryRun}`);
   }
   assert.equal(existsSync(join(dir, PIN_PATH)), false);
+});
+
+test("a pin whose population makes no area refuses, and names the files left out", async (t) => {
+  // An area-less pin is the empty one by another route: every area a later
+  // commit makes postdates it, and states nothing until somebody pins again.
+  const dir = repo(t, 2);
+
+  for (const dryRun of [true, false]) {
+    await assert.rejects(
+      () => runPin(dir, { dryRun }),
+      /^Error: nothing to pin: the 2 source files tracked here sit in no area \("src\/f0\.ts", "src\/f1\.ts"\), and a pin with no area holds back every area made after it/,
+      `dryRun ${dryRun}`
+    );
+  }
+  assert.equal(existsSync(join(dir, PIN_PATH)), false);
+});
+
+test("a pin in a sparse checkout refuses, since HEAD holds files the tree does not", async (t) => {
+  // The paths outside the cone are skip-worktree, so `git status` is clean, and
+  // the pin labelled half of HEAD's population with HEAD's sha.
+  const dir = repo(t);
+  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
+  mkdirSync(join(dir, "lib"));
+  for (let i = 0; i < 4; i++) writeFileSync(join(dir, "lib", `l${i}.ts`), `export const l${i} = ${i}\n`);
+  git("add", "-A");
+  git("commit", "-qm", "lib");
+  git("sparse-checkout", "set", "lib");
+  assert.equal(existsSync(join(dir, "src")), false, "the fixture left src out of the tree");
+
+  for (const dryRun of [true, false]) {
+    await assert.rejects(() => runPin(dir, { dryRun }), /8 tracked files are outside this sparse checkout, and a pin records HEAD/, `dryRun ${dryRun}`);
+  }
+  assert.equal(existsSync(join(dir, PIN_PATH)), false);
+  git("sparse-checkout", "disable");
+  await runPin(dir);
+  assert.equal(JSON.parse(readFileSync(join(dir, PIN_PATH), "utf8")).corpus, 12);
+});
+
+test("a pin mid-merge says to finish the merge, not to stash what git will not stash", async (t) => {
+  const dir = repo(t);
+  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
+  git("checkout", "-q", "-b", "other");
+  writeFileSync(join(dir, "src", "f0.ts"), "export const a0 = 2\n");
+  git("commit", "-qam", "other");
+  git("checkout", "-q", "-");
+  writeFileSync(join(dir, "src", "f0.ts"), "export const a0 = 3\n");
+  git("commit", "-qam", "here");
+  assert.throws(() => git("merge", "-q", "other"), "the merge conflicts");
+
+  for (const dryRun of [true, false]) {
+    await assert.rejects(() => runPin(dir, { dryRun }), /finish or abort the merge first, then pin$/, `dryRun ${dryRun}`);
+  }
+});
+
+test("a pin names the repository root it pinned, in its lines and its record", async (t) => {
+  // A path argument does not scope the pin: `pin ./src` pins the whole
+  // repository, and an inherited GIT_DIR another one entirely.
+  const dir = realpathSync.native(repo(t));
+
+  for (const dryRun of [true, false]) {
+    const { summary } = await runPin(join(dir, "src"), { dryRun });
+    assert.equal(summary.root, dir);
+    assert.equal(pinLines(summary).at(-1 - (dryRun ? 0 : 2)), `${dryRun ? "would write" : "wrote"} ${PIN_PATH}, root ${dir}`);
+    assert.equal(JSON.parse(pinJson(summary)).root, dir);
+  }
+});
+
+test("a store that cannot be written is refused by name before a dry run says it would write", needsPosixPermissions, async (t) => {
+  // The first write is the temp file's `open`, and its raw EACCES named a
+  // random temp path after `--dry-run` had answered "would write".
+  const dir = repo(t);
+  await runScan(dir);
+  const store = join(dir, ".claude", "anatomiya");
+  const bare = repo(t);
+  chmodSync(store, 0o555);
+  chmodSync(bare, 0o555);
+  try {
+    for (const dryRun of [true, false]) {
+      await assert.rejects(
+        () => runPin(dir, { dryRun }),
+        { message: ".claude/anatomiya is not writable, so no pin is written there: fix its permissions and pin again" },
+        `pin, dryRun ${dryRun}`
+      );
+      await assert.rejects(
+        () => runScan(dir, { dryRun }),
+        { message: ".claude/anatomiya is not writable, so the map could not be written: fix its permissions and scan again" },
+        `scan, dryRun ${dryRun}`
+      );
+    }
+    // With no `.claude` yet, the directory it would be made in is the one asked.
+    await assert.rejects(() => runScan(bare, { dryRun: true }), /^Error: the repository root is not writable, so the map could not be written/);
+  } finally {
+    chmodSync(store, 0o755);
+    chmodSync(bare, 0o755);
+  }
 });
 
 test("a scan over a pin that conflicted on a merge says the pin would not load", async (t) => {
