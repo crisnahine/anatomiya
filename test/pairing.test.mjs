@@ -552,7 +552,7 @@ test("applying pairings on a monorepo credits each package's own producers, not 
   assert.equal(parsed.get("decidim-admin/app/models/decidim/admin/dashboard.rb").hits.model_spec[0].conforming, false);
 });
 
-/* --- an abstract base is never routed to and can never own a spec (#66) --- */
+/* --- an abstract base is never routed to, so it is not a site (#66) --- */
 
 const CONTROLLER_SPEC = { from: "app/controllers", to: "spec/controllers", ext: ".rb", companionSuffix: "_spec.rb" };
 
@@ -645,4 +645,100 @@ test("a learned spelling begins at a separator, not inside the producer's name",
   const hits = pairingHits(corpus, MODEL_SPEC);
 
   assert.equal([...hits.values()].filter(([h]) => h.conforming).length, 0);
+});
+
+/* --- a companion is a test file, not a file name --- */
+
+const SERVICE_SPEC = { from: "app/services", to: "spec/services", ext: ".rb", companionSuffix: "_spec.rb" };
+
+test("a spec for another class of the same basename is not this producer's namesake elsewhere", () => {
+  // empire-flippers/api summed 185 namesakes elsewhere and 2 were specs of the
+  // same class: `create_spec.rb` alone matched 54 producers on its basename.
+  const corpus = new Set([
+    "app/services/users/create.rb",
+    "app/services/orders/create.rb",
+    "app/services/orders/sync.rb",
+    "spec/services/users/create_spec.rb",
+    "spec/legacy/orders/sync_spec.rb",
+  ]);
+
+  const hits = pairingHits(corpus, SERVICE_SPEC);
+
+  assert.deepEqual(hits.get("app/services/users/create.rb"), [{ conforming: true, elsewhere: false }]);
+  assert.deepEqual(hits.get("app/services/orders/create.rb"), [{ conforming: false, elsewhere: false }]);
+  assert.deepEqual(hits.get("app/services/orders/sync.rb"), [{ conforming: false, elsewhere: true }], "the same tail under another root");
+});
+
+test("a file named like a companion outside every test tree does not open the row", () => {
+  // A RuboCop cop named for the guard it enforces put "a model ships with a
+  // test: 0 of 141" into an RSpec repository with no test directory at all.
+  const corpus = new Set([
+    "app/models/user.rb",
+    "spec/models/user_spec.rb",
+    "lib/rubocop/cops/sleep_without_unless_test.rb",
+  ]);
+
+  const keys = [...applyPairings(new Map(), corpus, ["ruby"])];
+
+  assert.ok(keys.includes("model_spec"));
+  assert.equal(keys.includes("model_test"), false);
+});
+
+test("a file named like a companion outside every test tree answers no producer on either side", () => {
+  // Left in, it is the only vote for a companion root and wins it outright.
+  const corpus = new Set(["app/models/user.rb", "lib/models/user_test.rb", "test/models/other_test.rb"]);
+  const parsed = new Map([["app/models/user.rb", { rel: "app/models/user.rb", ok: true, hits: {} }]]);
+
+  applyPairings(parsed, corpus, ["ruby"]);
+
+  assert.deepEqual(parsed.get("app/models/user.rb").hits.model_test, [{ conforming: false, elsewhere: false }]);
+  assert.deepEqual(pairingViolations(["app/models/user.rb"], corpus, MODEL_TEST), [
+    { path: "app/models/user.rb", companion: "test/models/user_test.rb" },
+  ]);
+});
+
+test("a spec the parse found empty answers no producer, so the pairing row and the kinds line agree", () => {
+  // Commented out top to bottom, it made one area file print "2 of 6 have a
+  // namesake test" above "3 of 6 sites" for the same six services.
+  const corpus = new Set([
+    "app/services/billing/svc1.rb",
+    "app/services/billing/svc2.rb",
+    "spec/services/billing/svc1_spec.rb",
+    "spec/services/billing/svc2_spec.rb",
+    "spec/legacy/billing/svc2_spec.rb",
+  ]);
+  const record = (rel, facets) => [rel, { rel, ok: true, hits: {}, ...(facets ? { facets } : {}) }];
+  const parsed = new Map([
+    record("app/services/billing/svc1.rb"),
+    record("app/services/billing/svc2.rb"),
+    record("spec/services/billing/svc1_spec.rb", { testCalls: true }),
+    record("spec/services/billing/svc2_spec.rb", { empty: true }),
+    record("spec/legacy/billing/svc2_spec.rb", { empty: true }),
+  ]);
+
+  applyPairings(parsed, corpus, ["ruby"]);
+
+  assert.deepEqual(parsed.get("app/services/billing/svc1.rb").hits.service_spec, [{ conforming: true, elsewhere: false }]);
+  assert.deepEqual(parsed.get("app/services/billing/svc2.rb").hits.service_spec, [{ conforming: false, elsewhere: false }]);
+});
+
+test("a branch that satisfies an obligation with an empty spec is still told to write one", () => {
+  const corpus = new Set(["app/models/user.rb", "spec/models/user_spec.rb", "spec/models/post_spec.rb"]);
+  const records = new Map([["spec/models/user_spec.rb", { ok: true, facets: { empty: true } }]]);
+
+  assert.deepEqual(pairingViolations(["app/models/user.rb"], corpus, MODEL_SPEC), []);
+  assert.deepEqual(pairingViolations(["app/models/user.rb"], corpus, MODEL_SPEC, new Set(), records), [
+    { path: "app/models/user.rb", companion: "spec/models/user_spec.rb" },
+  ]);
+});
+
+test("the base clause says what the rule reads, a name, and claims nothing about specs", () => {
+  // A base is excluded on its name alone, and 6 of 18 measured bases had a
+  // spec, so "can never own one" was false about the tree it printed in.
+  for (const row of PAIRINGS) {
+    const { sites, notCounted } = row.applicabilityPredicate;
+    assert.doesNotMatch(notCounted, /own one/, row.key);
+    assert.doesNotMatch(sites, /own one/, row.key);
+    assert.match(notCounted, /abstract base/, row.key);
+  }
 });
