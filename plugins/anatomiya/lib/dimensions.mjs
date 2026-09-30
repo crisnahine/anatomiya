@@ -145,6 +145,8 @@ export const DIMENSIONS = [
     claim: "catch blocks use the error they caught",
     counterClaim: null, // discarding the error is an absence, not a style anyone picked
     precision: "precise",
+    // A closure inside the catch can be what reads the error.
+    judgesBody: true,
     applicabilityPredicate: {
       sites: "a file holding at least one catch clause, whether or not it binds the error",
       blind: null,
@@ -254,6 +256,7 @@ export const DIMENSIONS = [
     // an absence as often as an architecture.
     counterClaim: null,
     precision: "partial",
+    judgesBody: true,
     applicabilityPredicate: {
       sites: "a file declaring at least one async function",
       blind: "a caller-level wrapper handling the failure is invisible from the function that fails",
@@ -626,6 +629,9 @@ export function assertDeclaredFields(rows) {
     }
     if (d.blindWhenStripped !== undefined && d.blindWhenStripped !== true) {
       throw new Error(`dimension ${d.key} declares blindWhenStripped as ${JSON.stringify(d.blindWhenStripped)}`);
+    }
+    if (d.judgesBody !== undefined && d.judgesBody !== true) {
+      throw new Error(`dimension ${d.key} declares judgesBody as ${JSON.stringify(d.judgesBody)}`);
     }
     if (d.needsTypeSyntax !== undefined && d.needsTypeSyntax !== true) {
       throw new Error(`dimension ${d.key} declares needsTypeSyntax as ${JSON.stringify(d.needsTypeSyntax)}`);

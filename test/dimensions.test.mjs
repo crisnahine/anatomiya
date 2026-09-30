@@ -1005,6 +1005,7 @@ test("the newest declared fields are held to shape at load, each refused by name
   assert.throws(() => assertDeclaredFields([{ key: "k", noneClaim: "none" }]), /noneClaim off a learned row/);
   assert.throws(() => assertDeclaredFields([{ key: "k", learnedFromSource: true }]), /learnedFromSource without learning a class/);
   assert.throws(() => assertDeclaredFields([{ key: "k", splitBy: () => "a" }]), /splitBy without learning a class/);
+  assert.throws(() => assertDeclaredFields([{ key: "k", judgesBody: "yes" }]), /judgesBody as "yes"/);
   assert.throws(
     () => assertDeclaredFields([{ ...learned, splitBy: () => "a", splitClaim: { a: "x <style>" } }]),
     /without a sentence per kind/
