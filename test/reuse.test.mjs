@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { execFileSync, spawnSync } from "node:child_process";
 
 import { needsPosixPaths, needsPosixSpecialFiles, needsShebang } from "./platform.mjs";
@@ -706,6 +706,30 @@ test("the git reads fit inside the time the hook asks Claude Code for", () => {
   const declared = JSON.parse(readFileSync(new URL("../plugins/anatomiya/hooks/hooks.json", import.meta.url), "utf8")).hooks.Stop[0].hooks[0].timeout;
 
   assert.ok(PAYLOAD_WAIT_MS + 2 * REUSE_GIT_MS + 1000 <= declared * 1000, `${PAYLOAD_WAIT_MS} + 2 x ${REUSE_GIT_MS} against ${declared}s`);
+});
+
+test("a deletion in the tree adds no git read to the two the budget allows", async (t) => {
+  // The budget above counts a status read and a diff in a row. A HEAD listing
+  // between them pushed the worst case past the declared timeout.
+  const { dir, write } = repo(t);
+  write("src/b.ts", NEW_B);
+  execFileSync("git", ["add", "src/b.ts"], { cwd: dir });
+  execFileSync("git", ["commit", "-qm", "b"], { cwd: dir });
+  rmSync(join(dir, "src/b.ts"));
+  write("src/a.ts", "export const one = 1;\nexport function c(x) {\n  return x * 2;\n}\n");
+  const trace = join(dir, "..", `${basename(dir)}.trace`);
+  t.after(() => rmSync(trace, { force: true }));
+  process.env.GIT_TRACE2_EVENT = trace;
+  try {
+    assert.deepEqual(hunksOf(await pendingChange(dir)), [["src/a.ts", [{ from: 2, to: 4, created: false }]]]);
+  } finally {
+    delete process.env.GIT_TRACE2_EVENT;
+  }
+  const commands = readFileSync(trace, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l))
+    .filter((e) => e.event === "start")
+    .map((e) => e.argv.slice(1).find((a, i, all) => !a.startsWith("-") && all[i - 1] !== "-c"))
+    .filter((c) => c !== "config" && c !== "rev-parse");
+  assert.deepEqual(commands, ["status", "diff"]);
 });
 
 /** The `reuse` verb, run exactly as the loader would run its declaration. */
