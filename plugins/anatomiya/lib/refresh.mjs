@@ -257,9 +257,10 @@ async function passes(root, store, { scan, pin, deep }) {
     try {
       await scan(root, { deep });
     } catch (err) {
-      // The previous map stays: a scan that throws has written nothing
-      // (A13), and one that would not run now will not run on the next
-      // trigger either, until something about the checkout changes.
+      // The previous map stays: a scan that throws has written nothing or
+      // put back what it replaced, and one that would not run now will not
+      // run on the next trigger either, until something about the checkout
+      // changes.
       writeState(store, { stamp, ok: false, error: String(err?.message ?? err), pinned: accepted, held });
       return { reason: "failed", pinned, held };
     }

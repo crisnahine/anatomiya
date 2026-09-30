@@ -31,6 +31,12 @@ Every path is then confined to the repository: lexical containment first because
 then `realpath` on both sides because `resolve()` normalises `..` but never follows a symlink and
 `readFile` does. It fails closed, and the resolved path is what gets read, not the unresolved one.
 
+One file is read once however many index entries name it. A repository committed from Linux can hold
+`a.ts` and `A.ts`, or one name in NFC and NFD, and a filesystem that folds case or Unicode form
+checks out one file for both, so both names read it and its sites counted twice. Where two entries
+fold to one name and open one file, the name the directory lists is kept and the other is counted as
+unreadable, since the working tree does not hold that entry's own blob.
+
 A corpus that comes back empty is asked one more question: how many source files the working tree
 holds that are untracked, from a second `git ls-files --others --exclude-standard` through the same
 filters. It is the difference between a repository with nothing in it and one whose first commit has
@@ -775,8 +781,12 @@ by double digits;
 constant, so A5 holds.
 
 Writes are atomic: temp file in the same directory, then rename, so a crash never leaves half a
-context file. `.claude/anatomiya/facts.json` is written first and holds every count, gated or not,
-so no rendered file exists that is not derivable from facts on disk. It carries a schema version,
+context file. `.claude/anatomiya/facts.json` holds every count, gated or not, and the facts and
+the rendered files are replaced as one: every one is written to its temp file before any rename,
+the facts are renamed first and stale area files removed last, and a rename or removal that fails
+puts back what it had replaced. So no rendered file exists that is not derivable from facts on
+disk, and a scan that fails part way does not leave new facts beside the old map for `check` to
+call fresh. A process killed between two renames is the one window left. It carries a schema version,
 and the check refuses a version past the one it knows rather than reading the fields positionally:
 an older record is readable and is read, a newer one is a shape this build has never seen. A run that read no file of a
 language writes neither, for the same reason: keeping the rendered files while replacing the facts
@@ -1330,7 +1340,9 @@ everything else goes through the encoder.
 `--format json` carries the record's own version, so a reader can refuse a shape it does not know
 rather than read fields positionally. It is the rule `facts.json` enforces on disk (C10), offered
 here to whatever reads the stdout; the scan's and the pin's records carry a version of their own for
-the same reason.
+the same reason. Their paths go out the same way the check's do: the scan's root and rule file
+names and the pin's area and file paths are whole, so the scan record's root is the one its text
+line prints and the one `check --format json` gives for the same checkout.
 
 ### The caveat codes
 
