@@ -36,7 +36,7 @@ import {
 import { readAtRevision } from "./revision.mjs";
 import { CAVEATS } from "./check-report.mjs";
 import { mainCheckoutOf } from "./worktree.mjs";
-import { newlyIntroduced } from "./introduced.mjs";
+import { declaredParents, newlyIntroduced } from "./introduced.mjs";
 import { byCode } from "./paths.mjs";
 
 /**
@@ -876,6 +876,28 @@ async function collect(root, run) {
     const { records: parsed, missingEngines, missingParser, missingStripper } = await parseAll(entries, { withProgram: true });
     const findings = [];
 
+    // Per area, as the fold holds them: a base one changed file adds is what
+    // the subclasses in another resolve through.
+    const declaredIn = new Map();
+    for (const job of jobs) {
+      const area = areaFor(job.file.path);
+      const headParse = parsed.get(`head:${job.file.path}`);
+      if (!area || !headParse?.ok || !headParse.program) continue;
+      const declared = declaredParents({
+        path: job.file.path,
+        lang: job.lang,
+        frameworks,
+        capabilities,
+        head: { program: headParse.program, source: job.source, comments: headParse.comments, facets: headParse.facets },
+      });
+      if (!declaredIn.has(area.path)) declaredIn.set(area.path, new Map());
+      const into = declaredIn.get(area.path);
+      for (const [key, parents] of declared) {
+        if (!into.has(key)) into.set(key, new Map());
+        for (const [self, parent] of parents) if (!into.get(key).has(self)) into.get(key).set(self, parent);
+      }
+    }
+
     for (const job of jobs) {
       const path = job.file.path;
       const area = areaFor(path);
@@ -928,6 +950,7 @@ async function collect(root, run) {
         head: { program: headParse.program, source: job.source, comments: headParse.comments, stripped: headParse.stripped, facets: headParse.facets },
         base: mode === "added-lines" || !baseParse ? null : { program: baseParse.program, source: job.base, comments: baseParse.comments, stripped: baseParse.stripped },
         addedLines: mode === "added-lines" ? (added && added.get(path)) || [] : null,
+        parents: area ? declaredIn.get(area.path) : undefined,
       });
 
       for (const f of introduced) {

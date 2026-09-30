@@ -1233,6 +1233,14 @@ report a whole declaration: a line added inside a function body is not a new `fu
 signature still is. Copies that share a fingerprint are matched by their own text first, then by the
 lines around them, then by the function they sit in, and only what is left is matched by count.
 
+A learned row judges a site the way the fold counted it. A superclass or mixin written bare is
+resolved against the nesting it is written in, and a class whose chain of parents reaches the
+learned base conforms. The fold follows that chain through every class its area declares, and the
+check holds only the files the branch changed, so it reads the chain from two places: the map's
+`reaches`, for the classes it did not read, and the classes the branch's own changed files declare
+in the same area, which replace what the map recorded for them. A subclass of a base the branch adds
+is not told to skip that base, and a subclass of a class the branch moved off the base is.
+
 The head side is read from the working tree wherever the tree differs from the commit, and a file
 that exists only in the tree is examined like any other file this branch added. An agent writes,
 checks, fixes, then commits, so the moment the findings are cheapest is the moment the work is not
