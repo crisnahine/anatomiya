@@ -1035,7 +1035,8 @@ the tip, however it reached the remote: a push by URL moves no tracking ref, and
 on top reviews nothing beneath it. Made here is every commit a reflog entry names except the entries
 that create none (a clone, a checkout, a reset, a branch, a fetch, a push, the remote's HEAD named,
 a fast-forward, a rebase's start and finish, and the empty entry `git worktree add` writes on the new
-worktree's HEAD, each matched as git writes the whole entry and never
+worktree's HEAD, which reads as plain `HEAD` from inside that worktree, each matched as git writes the
+whole entry and never
 read from a commit's subject or a branch name), so a spelling git adds later holds the pin rather
 than slipping past. The reflog forgets (a removed worktree, a deleted branch, `gc` after 90 days),
 so a commit whose committer is this clone's own identity is made here as well: past a pin, anywhere

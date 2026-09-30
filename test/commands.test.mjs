@@ -14,6 +14,7 @@ import { addWorktree, scratch } from "./git-worktrees.mjs";
 import { runCheck, runDoctor, runEcho, runNotice, runPin, runReuse, runScan, runSetup } from "../plugins/anatomiya/lib/commands.mjs";
 import { pinJson, pinLines, scanLines } from "../plugins/anatomiya/lib/summary.mjs";
 import { PIN_PATH } from "../plugins/anatomiya/lib/baseline.mjs";
+import { collect } from "../plugins/anatomiya/lib/corpus.mjs";
 import { PROBE_IDS, pluginRoot } from "../plugins/anatomiya/lib/readiness.mjs";
 import { OVERVIEW_FILE } from "../plugins/anatomiya/lib/rules.mjs";
 import { CAVEATS } from "../plugins/anatomiya/lib/check-report.mjs";
@@ -510,7 +511,7 @@ test("a pin refuses while a merge has left a path unmerged, under .claude/ as we
   assert.throws(() => git("merge", "-q", "other"), "the merge conflicts");
 
   for (const dryRun of [true, false]) {
-    await assert.rejects(() => runPin(dir, { dryRun }), /unmerged paths, and a pin records HEAD/, `dryRun ${dryRun}`);
+    await assert.rejects(() => runPin(dir, { dryRun }), /^Error: a merge is in progress, and a pin records HEAD/, `dryRun ${dryRun}`);
   }
   assert.equal(existsSync(join(dir, PIN_PATH)), false);
 });
@@ -589,6 +590,27 @@ test("a pin in a sparse checkout refuses, since HEAD holds files the tree does n
   assert.equal(JSON.parse(readFileSync(join(dir, PIN_PATH), "utf8")).corpus, 12);
 });
 
+test("a sparse checkout that leaves out only what is not corpus still pins", async (t) => {
+  // An unreadable file inside the cone (a case-fold twin on a folding
+  // filesystem) with a docs-only path outside it refused a pin whose population
+  // was the whole one.
+  const dir = repo(t);
+  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
+  mkdirSync(join(dir, "docs"));
+  writeFileSync(join(dir, "docs", "readme.md"), "# docs\n");
+  git("add", "-A");
+  git("commit", "-qm", "docs");
+  git("sparse-checkout", "set", "src");
+  assert.equal(existsSync(join(dir, "docs")), false, "the fixture left docs out of the tree");
+  const collectFiles = async (root) => {
+    const r = await collect(root);
+    return { ...r, dropped: { ...r.dropped, unreadable: r.dropped.unreadable + 1 } };
+  };
+
+  await runPin(dir, { collectFiles });
+  assert.equal(JSON.parse(readFileSync(join(dir, PIN_PATH), "utf8")).corpus, 8);
+});
+
 test("a pin mid-merge says to finish the merge, not to stash what git will not stash", async (t) => {
   const dir = repo(t);
   const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
@@ -601,8 +623,32 @@ test("a pin mid-merge says to finish the merge, not to stash what git will not s
   assert.throws(() => git("merge", "-q", "other"), "the merge conflicts");
 
   for (const dryRun of [true, false]) {
-    await assert.rejects(() => runPin(dir, { dryRun }), /finish or abort the merge first, then pin$/, `dryRun ${dryRun}`);
+    await assert.rejects(() => runPin(dir, { dryRun }), /^Error: a merge is in progress, and a pin records HEAD: finish or abort the merge first, then pin$/, `dryRun ${dryRun}`);
   }
+});
+
+test("a pin names the remedy for the operation that is in progress", async (t) => {
+  // A stash pop conflicts with no merge to abort, and a merge with no conflict
+  // is not one to stash, which drops the merge.
+  const dir = repo(t);
+  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
+  git("checkout", "-q", "-b", "other");
+  writeFileSync(join(dir, "src", "f0.ts"), "export const a0 = 2\n");
+  git("commit", "-qam", "other");
+  git("checkout", "-q", "-");
+  writeFileSync(join(dir, "src", "f0.ts"), "export const a0 = 3\n");
+  git("stash", "-q");
+  git("checkout", "-q", "other");
+  assert.throws(() => git("stash", "pop"), "the pop conflicts");
+  await assert.rejects(() => runPin(dir), /: resolve them, or abort the rebase or cherry-pick that left them, then pin$/);
+
+  git("checkout", "-q", "-f", "-");
+  git("stash", "drop", "-q");
+  writeFileSync(join(dir, "src", "g.ts"), "export const g = 1\n");
+  git("add", "-A");
+  git("commit", "-qm", "here");
+  git("merge", "-q", "--no-commit", "--no-ff", "other");
+  await assert.rejects(() => runPin(dir), /^Error: a merge is in progress, and a pin records HEAD: finish or abort the merge first, then pin$/);
 });
 
 test("a pin names the repository root it pinned, in its lines and its record", async (t) => {
@@ -645,6 +691,34 @@ test("a store that cannot be written is refused by name before a dry run says it
   } finally {
     chmodSync(store, 0o755);
     chmodSync(bare, 0o755);
+  }
+});
+
+test("a store that cannot be entered is refused by name before a dry run says it would write", needsPosixPermissions, async (t) => {
+  // Writable without search permission passes a write check, and the temp
+  // file's `open` inside it still fails.
+  const dir = repo(t);
+  await runScan(dir);
+  const claude = join(dir, ".claude");
+  const store = join(claude, "anatomiya");
+  for (const [at, name] of [[store, ".claude/anatomiya"], [claude, ".claude"]]) {
+    chmodSync(at, 0o666);
+    try {
+      for (const dryRun of [true, false]) {
+        await assert.rejects(
+          () => runPin(dir, { dryRun }),
+          { message: `${name} cannot be entered, so no pin is written there: fix its permissions and pin again` },
+          `pin ${name}, dryRun ${dryRun}`
+        );
+        await assert.rejects(
+          () => runScan(dir, { dryRun }),
+          { message: `${name} cannot be entered, so the map could not be written: fix its permissions and scan again` },
+          `scan ${name}, dryRun ${dryRun}`
+        );
+      }
+    } finally {
+      chmodSync(at, 0o755);
+    }
   }
 });
 

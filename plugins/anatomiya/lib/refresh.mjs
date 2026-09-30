@@ -442,8 +442,9 @@ async function madeHereOnLine(root, from, to) {
       const [sha, selector = ""] = entry.split(" ", 2);
       if (!sha || selector.startsWith("refs/remotes/")) return;
       const message = entry.slice(sha.length + selector.length + 2);
-      // `git worktree add` logs the new HEAD with no message at all.
-      if (message === "" && /^worktrees\/[^/]+\/HEAD@\{/.test(selector)) return;
+      // `git worktree add` logs the new HEAD with no message at all, and from
+      // inside that worktree its HEAD is spelled plain `HEAD`.
+      if (message === "" && /^(?:worktrees\/[^/]+\/|main-worktree\/)?HEAD@\{/.test(selector)) return;
       if (!CREATES_NOTHING.test(message)) made.add(sha);
     }, { terminated: false });
     if (made.size === 0 && me === null) return null;
