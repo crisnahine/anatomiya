@@ -1046,6 +1046,35 @@ test("namesASite separates a name that matches every class from one that matches
   assert.equal(namesASite("src/index.stories.tsx"), false, "only the stem is read, and it is one word");
 });
 
+test("an acronym stem in a file that holds JSX is not a site, and in any other file still is", async () => {
+  // React reads a capital-initial element as a component, so `SBA.jsx` holding
+  // `const SBA` is an ordinary component name there, and the only name that
+  // cleared a PascalCase claim, `Sba.jsx`, no longer matched the component.
+  // Outside JSX a capitals-only stem is still the SCREAMING case of `DEBUG.ts`.
+  const { namesASite } = await import("../plugins/anatomiya/lib/dimensions-naming.mjs");
+  const jsx = { jsx: true };
+
+  for (const rel of ["src/components/SBA.jsx", "src/components/FAQ.tsx", "src/pages/SEO2.tsx"]) {
+    assert.equal(namesASite(rel, jsx), false, rel);
+  }
+  assert.equal(namesASite("src/components/SBA.jsx"), true, "no facets reads as a module");
+  assert.equal(namesASite("src/config/DEBUG.ts", { jsx: false }), true);
+  assert.equal(namesASite("src/components/TMP_PROBE.tsx", jsx), true, "an underscore still spells no class");
+  assert.equal(namesASite("src/components/SBAList.jsx", jsx), true, "a mixed stem is a site that votes");
+});
+
+test("an acronym component leaves the scan's population rather than being counted as declined", async () => {
+  const { reduceArea } = await import("../plugins/anatomiya/lib/reduce.mjs");
+  const rels = ["src/UserCard.tsx", "src/OrderList.tsx", "src/DataTable.tsx", "src/NavBar.tsx", "src/SBA.tsx"];
+  const area = { langs: ["js"], files: rels.map((rel) => ({ rel, lang: "js" })) };
+  const parsed = rels.map((rel) => ({ rel, ok: true, hits: {}, facets: { jsx: true } }));
+
+  const slot = reduceArea(area, parsed).find((d) => d.key === "file_naming_case");
+
+  assert.equal(slot.candidates, 4);
+  assert.equal("declined" in slot, false, JSON.stringify(slot));
+});
+
 test("a name spelled in a router's syntax is not a site for the filename claim", async () => {
   // Next.js `[id].tsx` and `_document.tsx`, Remix `$postId.tsx` and `_index.tsx`,
   // SvelteKit `+page.ts`: the router reads these characters, so the name is not

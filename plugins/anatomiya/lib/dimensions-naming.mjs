@@ -175,10 +175,17 @@ const spellsEveryClass = (word) => /^[\p{Ll}\p{Lo}\d]+$/u.test(word);
  * underscore is read off a single word only: `_tmp_probe.rb` and
  * `_tmpProbe.ts` are the C23 omission on a stem that does spell a class
  * underneath, and a router's special file is never named that way.
+ *
+ * A stem of capitals alone in a file that holds JSX is not a site either. React
+ * reads a capital-initial element as a component, so `SBA.jsx` holding `SBA` is
+ * an acronym component, and the only name that cleared a PascalCase claim,
+ * `Sba.jsx`, no longer matched it. Outside JSX it stays the SCREAMING case
+ * `classifyWord` refuses, the way `DEBUG.ts` is.
  */
-export function namesASite(rel) {
+export function namesASite(rel, facets = null) {
   const word = stemWord(rel);
   if (word === null || spellsEveryClass(word)) return false;
+  if (facets?.jsx === true && /^\p{Lu}[\p{Lu}\d]*$/u.test(word)) return false;
   return !/[[\]$+()@]/.test(word) && !/^_+[\p{Ll}\p{Lo}\d]+$/u.test(word);
 }
 
@@ -215,7 +222,7 @@ export const NAMING_CORPUS = [
     splitBy: splitByJsx,
     precision: "precise",
     applicabilityPredicate: {
-      sites: "a file whose stem does not match every naming class at once; a single lowercase word and a bare filename do match them all and are not sites, and neither is a name a file router reads (`[id]`, `$param`, `+page`, or one word under a leading underscore such as `_app`). A stem spelling none of the four is a site the scan does not classify and the check counts against a stated claim",
+      sites: "a file whose stem does not match every naming class at once; a single lowercase word and a bare filename do match them all and are not sites, and neither is a name a file router reads (`[id]`, `$param`, `+page`, or one word under a leading underscore such as `_app`), and neither is a stem of capitals alone in a file that holds JSX, which React reads as a component (`SBA.jsx`). A stem spelling none of the four is a site the scan does not classify and the check counts against a stated claim",
       blind: null,
     },
     langs: ["js", "jsx", "ruby"],

@@ -3956,6 +3956,31 @@ test("a helper in a directory of components is not judged by the components' nam
   );
 });
 
+test("an acronym component name is not judged by a PascalCase claim over files that hold JSX", async (t) => {
+  // React reads `SBA` as a component exactly as it reads `Sba`, and the one
+  // name that cleared the claim no longer matched the component inside it.
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/UserCard.jsx", `export const UserCard = () => <div />\n`);
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/SBA.jsx", `const SBA = () => <div>SBA</div>\nexport default SBA\n`);
+    write("src/DEBUG_PANEL.jsx", `const Panel = () => <div />\nexport default Panel\n`);
+    commit("add");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    dimensions: [dim({ key: "file_naming_case", learned: "PascalCase", learnedKind: "jsx" })],
+  });
+
+  const r = await check(dir);
+
+  assert.deepEqual(
+    forKey(r, "file_naming_case").map((f) => f.path),
+    ["src/DEBUG_PANEL.jsx"],
+    JSON.stringify(forKey(r, "file_naming_case"))
+  );
+});
+
 test("a file the parser could not read is not sorted into a kind by its absence", async (t) => {
   // `facets: null` read as "module", so a row narrowed to the module side
   // judged an unread `.tsx` at MUST-FIX, one line under the caveat saying the
