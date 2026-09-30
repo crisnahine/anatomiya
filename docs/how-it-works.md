@@ -674,19 +674,18 @@ or `db/<name>_schema.rb`), and whatever else the corpus refuses past the path, w
 file and a link, the same rule `check` applies to its changed files. Only the file right under the
 directory counts as a migration, because code nested deeper under a `migrations` segment was measured
 on the corpus as ordinary library code: angular's schematics, prisma's `core/migrations`,
-openproject's `db/migrate/tables`. A file whose added lines hold nothing a function could be written
-with is not asked about either, and such a hunk is not listed among the "added functions". The rule
-is a set of tokens per engine rather than a parse, and it is broad on purpose, so a shape nobody
-listed still asks. For JS and TS a hunk asks on `function`, `class`, `=>`, `Function(`, `.bind(`, a
-`get` or `set` accessor, a line whose parentheses do not balance, or any `(` in the hunk beside a `{`
-in it or on the line right after it. For Ruby it asks on anything starting with `def` (`def`,
-`def_delegator`, `define_method`), any `attr_` or `attribute` call (`mattr_accessor`,
-`class_attribute`), `delegate`, `alias`, `lambda`, `proc`, `->`, `method(`, `Struct`, `Class`,
-`Module`, `Data`, a `class` line, `do`, `{ |`, or a line that opens a block with `{`. A line longer
-than 400 characters asks unread. On the last 200 commits of ten corpus repositories it skipped
-2,911 of 9,223 changed files, and a parser found no function, method, class, lambda or defining
-call starting on an added line of any of them (A91). Logic added inside a method that already existed
-is asked about only when it holds one of those tokens. The reason ends by telling a session with no
+openproject's `db/migrate/tables`. A file whose every added line provably defines nothing callable is not asked
+about either, and such a hunk is not listed among the "added functions". The rule is an allowlist
+of line shapes rather than a parse, read over the whole file so a line inside a block comment or a
+literal spread over lines counts as part of it: a comment, an import, an `export ... from`, a
+`require`, a name bound to a literal (a number, a string with no interpolation, `true`, `false`,
+`null`, `undefined`, `nil`, a symbol, or an array or object holding only those), a member of such a
+literal, and a closing `}`, `]`, `)` or `end`. Every other line asks, so a shape nobody listed
+still asks, and a line longer than 400 characters asks unread. On the last 200 commits of ten
+corpus repositories it skipped 756 of 9,223 changed files, and a parser found no function, class,
+call, `new`, template or binding to anything but a literal starting on an added line of any of
+them (A91). An import that renames a function defined elsewhere is not asked about, and a `type`
+or `interface` is, at the cost of one search. The reason ends by telling a session with no
 subagent tool to run the search itself. The Stop payload carries no tool list, and without that sentence a headless run
 with no `Agent` tool answered the ask with "No such tool" and spent a turn on it.
 
