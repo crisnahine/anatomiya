@@ -23,6 +23,7 @@ import { JS_DECLINED, PATH_DECLINED, RUBY_DECLINED } from "./declined-fixtures.m
 import "../plugins/anatomiya/lib/registry.mjs";
 import { SEMANTIC_DIMENSIONS } from "../plugins/anatomiya/lib/dimensions-semantic.mjs";
 import { walk, collectHits } from "../plugins/anatomiya/lib/walk.mjs";
+import { doublingRatio, LINEAR } from "./growth.mjs";
 
 const dim = (key) => DIMENSIONS.find((d) => d.key === key);
 
@@ -234,6 +235,27 @@ test("outermost-first ordering makes a nested chain collapse to one visit path",
   assert.equal(seen.length, 3);
   for (let i = 1; i < seen.length; i++) {
     assert.ok(seen[i] < seen[i - 1], `visit ${i} widened: ${seen.join(",")}`);
+  }
+});
+
+test("every JS row reads a deeply nested file in time linear in its depth", () => {
+  // Rows asked every ancestor per node, so the work grew with the square of the
+  // nesting: a generated chain of 30,000 operands took 12 seconds against 5 ms
+  // for its parse, and was charged as crashed.
+  const shapes = {
+    chain: (n) => "export const x = " + Array(n).fill("a").join(" + ") + ";\n",
+    functions: (n) => "export const x = " + "() => ".repeat(n) + "1;\n",
+    blocks: (n) => "{ throw e; let v = 1; interface I {}\n".repeat(n) + "}".repeat(n) + "\n",
+  };
+  const rows = dimensionsFor(["js", "jsx"]);
+  for (const [name, source] of Object.entries(shapes)) {
+    const read = (n) => {
+      const { program, errors } = parseSync("f.tsx", source(n), { sourceType: "module" });
+      assert.deepEqual(errors, [], name);
+      return () => collectHits(program, rows, { comments: [], source: "", rel: "f.tsx" });
+    };
+    const ratio = doublingRatio(read, name === "chain" ? 4000 : 1500);
+    assert.ok(ratio < LINEAR, `${name}: twice the depth took ${ratio.toFixed(2)} times as long`);
   }
 });
 
