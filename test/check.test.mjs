@@ -3841,6 +3841,34 @@ test("a branch that edits an abstract base is not asked for a spec for it", need
   assert.deepEqual(forKey(r, "controller_spec"), [], JSON.stringify(r.findings));
 });
 
+test("a branch that ships its model with a spec commented out top to bottom still owes one", needsRuby, async (t) => {
+  // The map counts that model unpaired, so a check that took the file name for
+  // a spec would pass the branch on a file the runner collects nothing from.
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("app/models/user.rb", "class User\nend\n");
+    write("spec/models/user_spec.rb", "describe User do\n  it { }\nend\n");
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("app/models/post.rb", "class Post\nend\n");
+    write("spec/models/post_spec.rb", "# describe Post do\n#   it { }\n# end\n");
+    commit("add");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    areas: [{
+      id: "aaaaaaaa",
+      path: "app/models",
+      globs: [{ negated: false, dir: "app/models", tail: "**/*.rb" }],
+      fileCount: 8,
+      dimensions: [dim({ key: "model_spec" })],
+    }],
+  });
+
+  const r = await check(dir);
+
+  assert.deepEqual(forKey(r, "model_spec").map((f) => f.path), ["app/models/post.rb"], JSON.stringify(r.findings));
+});
+
 test("a plain JavaScript file on a branch is not asked for a return type", async (t) => {
   // The scan does not count it, so the check must not enforce it: the two
   // disagreeing about what a site is is the asymmetry every one of these rules
