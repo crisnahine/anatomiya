@@ -329,13 +329,18 @@ function authorCount(files = [], authors, toCurrent) {
  * prism's crashed (`parse.mjs`). Before a missing engine stopped costing the
  * whole run, the scan refused on it before this was asked; now it is how the
  * writer learns that language's areas are not this run's to describe.
+ *
+ * A file skipped for its size never reached the engine, so it is left out of
+ * both counts: counted as an answer, one generated bundle beside a missing
+ * engine let the scan remove every area of that language.
  */
 function unreadableLangs(files, parsed) {
   const total = new Map();
   const unanswered = new Map();
   for (const f of files) {
-    total.set(f.lang, (total.get(f.lang) || 0) + 1);
     const r = parsed.get(f.rel);
+    if (r?.skipped) continue;
+    total.set(f.lang, (total.get(f.lang) || 0) + 1);
     if (r && (r.crashed || r.missingParser)) unanswered.set(f.lang, (unanswered.get(f.lang) || 0) + 1);
   }
   return [...total.keys()].filter((lang) => unanswered.get(lang) === total.get(lang)).sort();

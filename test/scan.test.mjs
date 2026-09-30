@@ -293,6 +293,40 @@ test("a language whose parser could not run at all is named", async (t) => {
   assert.deepEqual(result.parse.unreadable, ["jsx"], "no jsx file was readable, and the parser never answered");
 });
 
+test("a file skipped before the parser ran is no proof the parser answered", async (t) => {
+  // An oversize file never reaches the engine, so it says nothing about
+  // whether the engine is there. Counted as an answer, one generated bundle
+  // beside a missing engine let the scan remove every area of that language.
+  const dir = repo(t, (d, { git, write }) => {
+    for (let i = 0; i < 6; i++) write(`src/m${i}.ts`, moduleSource(i));
+    write("src/bomb.jsx", "const x = " + "[".repeat(60_000) + "1" + "]".repeat(60_000) + "\n");
+    write("gen/big.jsx", "export const v = 1\n".repeat(60_000));
+    git("add", "-A");
+    git("commit", "-qm", "init");
+  });
+
+  const result = await scan(dir);
+
+  assert.equal(result.parse.skipped, 1, "the bundle was skipped for its size");
+  assert.deepEqual(result.parse.unreadable, ["jsx"], "and the one jsx file the parser was handed never answered");
+});
+
+test("a language every file of which was skipped for its size is not a blind one", async (t) => {
+  // The symmetric case: nothing reached the engine, so nothing says it failed.
+  const dir = repo(t, (d, { git, write }) => {
+    for (let i = 0; i < 6; i++) write(`src/m${i}.ts`, moduleSource(i));
+    write("gen/big.jsx", "export const v = 1\n".repeat(60_000));
+    git("add", "-A");
+    git("commit", "-qm", "init");
+  });
+
+  const result = await scan(dir);
+
+  assert.equal(result.parse.skipped, 1);
+  assert.deepEqual(result.parse.unreadable, []);
+  assert.equal(result.readNothing, false);
+});
+
 test("an area holding a file of a language no file of which was read is held, not described", async (t) => {
   // Decided per language (B41): described from the half of its files that
   // answered, the area's file would be written over with claims this run had
