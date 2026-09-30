@@ -1241,7 +1241,11 @@ order, or whatever `--base` names. `@{upstream}` is deliberately absent: a pushe
 tracks itself, and the merge base with itself is HEAD. A `--base` that names this branch's own tip is
 refused like `HEAD` is: an expression such as `HEAD~0`, and the branch's own name wherever the base
 the check would pick unasked is somewhere else. Another branch at the same commit, or the commit by
-its id, is still a base, and is what a branch holding only uncommitted work is checked against. On a
+its id, is still a base, and is what a branch holding only uncommitted work is checked against. An id
+is a name git resolves to no ref, never a name that happens to be spelled in hex, so a branch called
+`7812` or `facade` is refused as its own base like any other. A name two refs hold, a tag and a
+branch both called `release`, is refused naming both: git picks the tag and says so only in a warning
+the check never sees. `refs/heads/release` names one. On a
 shallow clone the base commit is fetched with `--depth=1`, which costs about 3.65s and 12 MB;
 `--unshallow` measured 56s and 305 MB and `--deepen=500` measured the same, so bounded deepening is
 not offered. `origin/HEAD` is asked of the remote as its own `HEAD`, so a default branch named

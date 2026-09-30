@@ -500,6 +500,14 @@ async function resolveBase(root, baseRef, caveats) {
   // `HEAD` would otherwise be fetched and used as the base, which is the one
   // thing E6 refuses, and the refusal would arrive as a story about fetching.
   if (asked && (baseRef === "HEAD" || baseRef === "@")) throw new Error(refusal(baseRef, shallow));
+  // git resolves a name two refs hold by precedence, tag before branch, and
+  // says so only on a stderr this run never shows.
+  if (asked) {
+    const holders = await refsNamed(root, baseRef);
+    if (holders.length > 1) {
+      throw new Error(`--base ${baseRef} is ambiguous: ${holders.join(" and ")} both hold that name, so spell out the one you mean`);
+    }
+  }
   // Every other spelling of the same commit is refused by the commit it names,
   // once it has one: `HEAD~0` or the branch's own name compared the branch with
   // itself and printed a clean report at exit 0. Another branch at the same
@@ -512,8 +520,11 @@ async function resolveBase(root, baseRef, caveats) {
   // the trunk, with uncommitted work, it names the base the check would have
   // picked anyway.
   const ownTip = async (sha) => {
-    if (!asked || sha !== head || /^[0-9a-f]{4,64}$/i.test(baseRef)) return;
+    if (!asked || sha !== head) return;
     const named = (await git(root, ["rev-parse", "--symbolic-full-name", baseRef])).out.trim();
+    // A commit id is known by naming no ref, never by its spelling: `7812` and
+    // `facade` are branch names too.
+    if (named === "" && /^[0-9a-f]{4,64}$/i.test(baseRef)) return;
     const own = (await git(root, ["rev-parse", "--symbolic-full-name", "HEAD"])).out.trim();
     if (named !== "" && named !== own) return;
     if (named === own) {
@@ -595,6 +606,17 @@ function shallowNoHistory(caveats) {
     "shallow clone: the base commit is present but shares no held history with HEAD; " +
       "fetch the history to compare (fetch-depth: 0 on actions/checkout)"
   );
+}
+
+/**
+ * The refs a short name reaches under git's own lookup rules, in git's order.
+ * Read off the ref list rather than off rev-parse's warning, which a locale
+ * translates and `core.warnAmbiguousRefs` switches off.
+ */
+async function refsNamed(root, name) {
+  const rules = [name, `refs/${name}`, `refs/tags/${name}`, `refs/heads/${name}`, `refs/remotes/${name}`, `refs/remotes/${name}/HEAD`];
+  const listed = new Set((await git(root, ["for-each-ref", "--format=%(refname)", ...rules])).out.split("\n"));
+  return rules.filter((r) => listed.has(r));
 }
 
 /**
