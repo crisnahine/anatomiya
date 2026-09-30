@@ -155,8 +155,10 @@ export async function scan(cwd, { guards = null, deep = false } = {}) {
 
   // Over the files a claim is counted in: an area dropped above is one the map
   // says nothing was counted in, so its bundles may not close every other
-  // area's type-checked rows either.
-  const semantic = semanticOver(whole, folded.flatMap(({ area }) => area.files.map((f) => f.rel)));
+  // area's type-checked rows either. Only a repository where no area was
+  // discovered is measured over the whole corpus.
+  const counted = folded.flatMap(({ area }) => area.files.map((f) => f.rel));
+  const semantic = semanticOver(whole, areas.length === 0 ? null : counted);
 
   const pool = new Map();
   for (const { dims, measuredArea } of folded) {

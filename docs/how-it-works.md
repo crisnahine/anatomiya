@@ -287,8 +287,9 @@ because those are the only files a claim is counted over: one untyped minified b
 took a repository whose own code resolved fully down to 3% and read as a broken tsconfig, and a
 directory of bundles that was discovered and then dropped for counting nothing did the same. Each
 file's share comes back on its own, so the scan sums it once the areas are folded. A repository
-with no area is measured over every file, and areas holding no checked file (a Ruby app beside a
-directory of bundles) have no rate and stay ok. Files outside the areas are still in the
+where no area was discovered is measured over every file. Areas holding no checked file (a Ruby app
+beside a directory of bundles), or no area left once every discovered one was dropped, have no rate
+and stay ok. Files outside the areas are still in the
 program and still lend their types. A `node_modules` whose real path leaves the repository
 is not read (B9), so dependencies linked in from elsewhere resolve as absent ones do.
 
