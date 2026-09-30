@@ -87,3 +87,10 @@ upstreams and are not meant to move together.
 Branch protection lists the CI contexts a pull request has to clear, by name. A new job produces a
 new context, and until it is added to that list it runs without being able to block a merge. Adding
 one is a repository setting, not a file in here.
+
+The two supply-chain jobs in `.github/workflows/supply-chain.yml` are a deliberate split.
+`dependency review` is required: it compares against the base, so it fails only on what the pull
+request adds. `audit the installed tree` stays advisory: it audits the whole tree, so a new upstream
+advisory against a dependency already here would fail every pull request after it, including ones
+that touch no dependency. It still runs on every push to `main` and weekly, which is where a red
+audit gets seen. `openssf scorecard` never runs on a pull request, so it has no context to require.
