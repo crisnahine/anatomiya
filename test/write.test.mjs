@@ -156,7 +156,7 @@ test("a rules directory that refuses the write leaves the previous facts as well
   const before = snapshot(dir);
   chmodSync(rules(dir), 0o555);
   try {
-    assert.throws(() => writeMap(result(dir, [area("src/services"), area("src/hooks")])), /EACCES/);
+    assert.throws(() => writeMap(result(dir, [area("src/services"), area("src/hooks")])), /\.claude\/rules is not writable, so the map could not be written/);
   } finally {
     chmodSync(rules(dir), 0o755);
   }
