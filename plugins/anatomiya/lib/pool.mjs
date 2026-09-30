@@ -58,12 +58,18 @@ export function createPool({ size, withProgram = false, execArgv = [], guards = 
   const workers = [];
   const idle = [];
   const queue = [];
+  // Parses the wall clock killed, held until the queue drains and every worker
+  // is idle, then run one at a time.
+  const retries = [];
   // What answered, keyed by engine. The ready message has always carried the
   // version and the pool dropped it, so a caller could not say which parser
   // produced the counts it was handed.
   const versions = {};
   let closed = false;
   let broken = null;
+  // Set when the ready clock is what failed the pool: the workers stalled
+  // starting, which a null version alone reads as a missing install.
+  let stalled = null;
   let stillborn = 0;
   let rssTimer = null;
 
@@ -103,13 +109,13 @@ export function createPool({ size, withProgram = false, execArgv = [], guards = 
     // An uncatchable crash lands here, not in a try/catch. The file is charged
     // as a failure and the worker is replaced.
     //
-    // Except when the pool's own wall clock did the killing: that one goes back
-    // on the end of the queue for a second attempt, after the burst that
-    // starved it. How long a parse takes is a property of the machine, not of
-    // the file, and a file charged as crashed in one scan and parsed in the
-    // next moves the unexamined count in the always-loaded overview (A5). A
-    // worker over the RSS ceiling, or one that died by itself, is a poison file
-    // and gets the one attempt.
+    // Except when the pool's own wall clock did the killing: that one gets a
+    // second attempt once the queue drains, alone, since the batch it died in
+    // was competing for the machine. How long a parse takes is a property of
+    // the machine, not of the file, and a file charged as crashed in one scan
+    // and parsed in the next moves the unexamined count in the always-loaded
+    // overview (A5). A worker over the RSS ceiling, or one that died by itself,
+    // is a poison file and gets the one attempt.
     child.on("exit", (code, signal) => died(code, signal));
 
     // A fork that never started emits this and never 'exit': a cwd that is
@@ -131,7 +137,7 @@ export function createPool({ size, withProgram = false, execArgv = [], guards = 
         w.job = null;
         if (w.timer) clearTimeout(w.timer);
         w.timer = null;
-        queue.push(job);
+        retries.push(job);
       } else if (w.job) {
         finish(w, {
           rel: w.job.file.rel,
@@ -145,10 +151,14 @@ export function createPool({ size, withProgram = false, execArgv = [], guards = 
       // dead channel would strand the job.
       drop(idle, w);
       if (closed) return;
+      // The retry this death queued may be the only work left, and only an idle
+      // worker can take it now.
+      const spare = idle.pop();
+      if (spare) release(spare);
       if (!w.ready && ++stillborn >= MAX_STILLBORN) {
         // A fork that never ran printed nothing, so the reason is the spawn's.
         // One the ready clock killed may have printed nothing either.
-        const stalled = w.sup.killedBy() === "ready timeout" ? `no ready answer in ${limits.readyTimeoutMs}ms` : null;
+        if (w.sup.killedBy() === "ready timeout") stalled = `no ready answer in ${limits.readyTimeoutMs}ms`;
         const why = stalled || firstLine(w.sup.stderr()) || firstLine(cause?.message);
         return fail([`parser worker will not start`, why].filter(Boolean).join(": "));
       }
@@ -170,7 +180,7 @@ export function createPool({ size, withProgram = false, execArgv = [], guards = 
   // file and write an overview of zero areas.
   function fail(reason) {
     broken = reason;
-    for (const job of queue.splice(0)) job.resolve(neverAnswered(job.file.rel));
+    for (const job of [...queue.splice(0), ...retries.splice(0)]) job.resolve(neverAnswered(job.file.rel));
   }
 
   function neverAnswered(rel) {
@@ -197,7 +207,7 @@ export function createPool({ size, withProgram = false, execArgv = [], guards = 
 
   function release(w) {
     if (closed) return;
-    const next = queue.shift();
+    const next = queue.shift() ?? (workers.some((x) => x.job) ? null : retries.shift());
     if (next) return assign(w, next);
     idle.push(w);
   }
@@ -275,7 +285,9 @@ export function createPool({ size, withProgram = false, execArgv = [], guards = 
     if (closed) return;
     closed = true;
     stopRssPoll();
-    for (const job of queue.splice(0)) job.resolve({ rel: job.file.rel, ok: false, error: "pool closed" });
+    for (const job of [...queue.splice(0), ...retries.splice(0)]) {
+      job.resolve({ rel: job.file.rel, ok: false, error: "pool closed" });
+    }
     idle.length = 0;
 
     await Promise.all(
@@ -296,7 +308,15 @@ export function createPool({ size, withProgram = false, execArgv = [], guards = 
   const target = Math.max(1, Math.min(64, Math.floor(size) || defaultPoolSize()));
   for (let i = 0; i < target; i++) spawn();
 
-  return { parse, close, size: target, versions };
+  return {
+    parse,
+    close,
+    size: target,
+    versions,
+    get stalled() {
+      return stalled;
+    },
+  };
 }
 
 export function defaultPoolSize() {
