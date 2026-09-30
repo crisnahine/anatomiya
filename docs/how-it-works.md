@@ -1369,15 +1369,17 @@ report a whole declaration: a line added inside a function body is not a new `fu
 signature still is. Copies that share a fingerprint are matched by their own text first, then by the
 lines around them, then by the function they sit in, and only what is left is matched by count.
 Two rows judge what is inside the body, `async_error_handling` and `swallowed_error`, so for them a
-copy that stopped conforming shares its fingerprint with one that never did. Their copies are matched
-by their place among every copy, conforming or not, that opens on the same line text in the same
-function. Where both sides hold as many such copies, each was edited in place, so the place decides
-and count never does: a handler that lost its `catch` is not absorbed by another anonymous handler in
-the same file that never had one, even where both open on `p.then(async (r) => {` or
-`} catch (err) {`. Where the branch added or removed a copy, places shift, and what is left is matched
-by count among those alike copies. That count cannot say which copy is new, so a branch that adds an
-alike copy that breaks above one it edits sends the report to the old one, and a branch that removes
-one copy and adds another around an edited one reads as the `catch` moving between them.
+copy that stopped conforming shares its fingerprint with one that never did. Their copies, conforming
+or not, are aligned the way a line diff aligns lines, among the copies that open on the same line
+text in the same function. A copy whose whole text is unchanged anchors. Between two anchors, a run
+holding as many copies on each side was edited in place, so a copy there is new only where its
+partner conformed: a handler that lost its `catch` is not absorbed by another anonymous handler that
+never had one, even where both open on `p.then(async (r) => {` or `} catch (err) {`, and an edit
+inside a handler that already broke the rule is not new. A run where the branch added or removed a
+copy has no partner to read, so its copies are matched by their whole text, as they were before the
+body left the fingerprint. Only the names inside the bodies could say more, so an edited breaking copy
+next to an added or removed one is reported, and one copy removed above an edited one and another
+added below it reads as the `catch` moving between them. Neither ever hides a copy that newly breaks.
 
 A learned row judges a site the way the fold counted it. A superclass or mixin written bare is
 resolved against the nesting it is written in, and a class whose chain of parents reaches the
