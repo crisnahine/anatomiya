@@ -892,6 +892,25 @@ test("the resolution rate is taken over the areas the map describes", async (t) 
   assert.equal(r.semantic.typedResolutionRate, 1);
 });
 
+test("areas holding no checked file take no rate from a dropped bundle directory", async (t) => {
+  const dir = repo(t, (d, { git, write }) => {
+    for (let i = 0; i < 8; i++) {
+      write(`app/models/m${i}.rb`, `class M${i} < ApplicationRecord\n  validates :name, presence: true\nend\n`);
+      write(`app/services/s${i}_service.rb`, `class S${i}Service\n  def call\n    M${i}.first\n  end\nend\n`);
+      const body = Array.from({ length: 150 }, (_, n) => `o.f${n}=function(a,b){return a.x.y+b.z;};`).join("");
+      write(`public/js/lib${i}.js`, `(function(){var o={};${body}})();\n`);
+    }
+    git("add", "-A");
+    git("commit", "-qm", "init");
+  });
+
+  const r = await scan(dir, { deep: true });
+
+  assert.ok(r.areas.length > 0 && !r.areas.some((a) => a.path === "public/js"), "only the Ruby areas are described");
+  assert.equal(r.semantic.status, "ok", `degraded for ${r.semantic.reason} at ${r.semantic.typedResolutionRate}`);
+  assert.equal(r.semantic.typedResolutionRate, null);
+});
+
 test("a repository with no area is still measured over every file it holds", async (t) => {
   // An empty measured set read as a corpus with no property access, so an
   // install that resolved nothing reported ok with no rate.
