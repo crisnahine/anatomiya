@@ -69,11 +69,16 @@ directory above your checkouts.
   with no failure path at all. Those bang calls now count as raising unless a rescue guards them,
   and the sentence now reads "service entry points do not raise, directly or through a bang call
   like update!".
-- `migration_reversible` no longer counts a migration holding a command `change` cannot invert
-  (`change_column`, `execute`, an untyped `remove_column`, a bare `drop_table` and the rest of
-  Rails' refusals), so `check` stops telling a correct up/down migration to declare `change`. A row
-  rewrite through `ActiveStorage::Blob` or `ActionText::RichText`, or through a model passed to a
-  helper, now counts as data work for both migration rows.
+- `migration_reversible` no longer counts a migration whose `change` holds a command Rails cannot
+  invert (`change_column`, readable DDL through `execute` or `exec_query`, `remove_column` with no
+  type, `drop_table` with no block, the from:/to:-less and name-only forms, their `change_table` and
+  `send` spellings), so a correct up/down migration is no longer told to declare `change`. A row
+  rewrite through a scoped ActiveStorage, ActionText or ActiveRecord model, through a model handed
+  to one of the migration's own methods, a local, a multiple assignment, an iterated array or a
+  batch block, or through `exec_update`, `exec_delete`, `exec_insert`, `connection.exec_query` or a
+  bare `update`/`delete`/`insert` SQL string now counts as data work on `migration_schema_only` and
+  leaves `migration_reversible`. A framework constant named only for its table or columns, and a
+  constant passed as an option value, stay schema-only.
 - `logger_over_puts` counted logger setters such as `level=` and `formatter=` as output, so a
   directory that only configured its logger read as logging through it. Only output calls count now.
 - `http_through_client` counted `HTTParty::Error.new` and `HTTParty::CookieHash.new` as direct HTTP
@@ -175,8 +180,12 @@ directory above your checkouts.
   there, so a pull or commit in a child checkout never refreshed its map. A directory with more than
   eight mapped checkouts side by side is left as before.
 - The reuse check no longer stops a turn that only added a migration, a schema dump such as
-  `db/schema.rb`, or a generated file. Code that merely lives under a `migrations` directory, such
-  as a schematics or a migration runner, is still checked.
+  `db/schema.rb`, a generated file, or lines that define nothing callable: comments, imports,
+  `export ... from`, `require`, constants bound to plain literals (numbers, strings, booleans, nil,
+  and arrays or hashes of them), and closing brackets. Any other added line is still checked,
+  including a function built by a call such as `debounce(save, 300)`, an alias, a styled component,
+  and Rails `enum` or `store_accessor`. So is code that merely lives under a `migrations` directory,
+  such as a schematics or a migration runner.
 - The reuse check's ask now tells a session with no subagent tool to run the search itself, instead
   of asking for a tool it does not have.
 - The A/B harness keeps its arms apart and its trials independent. Every trial starts from the
@@ -247,16 +256,6 @@ directory above your checkouts.
 - The reuse Stop hook no longer asks about a `linguist-generated` file when a sparse checkout or
   skip-worktree hides the root `.gitattributes` from the working tree. It reads the index copy the
   way `check` does, beside its status read, so it still makes two git reads in a row.
-- `migration_schema_only` and `migration_reversible` now treat a data call on a scoped ActiveRecord
-  constant, such as `ActiveRecord::SchemaMigration.delete_all` or
-  `ActiveRecord::InternalMetadata.where(...).delete_all`, as a row rewrite, the same as
-  `User.update_all`: charged by the schema-only row and left out of the reversibility row.
-  `ActiveRecord::Base.connection`, `transaction` and the error classes still count as framework. No
-  figure moves on the measured corpus.
-- The reuse Stop hook no longer asks about a changed file whose added lines hold no token a callable
-  definition could begin with or contain (constants, imports, markup, config), and the reason lists
-  only the hunks that may define one. On the last 200 commits of ten corpus repositories it skips
-  2,911 of 9,223 changed files, and a parser found no callable on an added line of any of them.
 - `migration_reversible` now refuses every command ActiveRecord 8.1's CommandRecorder cannot invert,
   not just the first list: `add_enum_value`, and `drop_enum` or `drop_virtual_table` with no values.
   It also refuses `remove_check_constraint`, `remove_exclusion_constraint` or
@@ -267,10 +266,9 @@ directory above your checkouts.
 - Both migration rows now read the same code: the methods Rails runs plus the migration's own
   helpers they call, whether by name, through `self.`, `method(:x)` or `send(:x)`. So a
   `change_column` inside a helper that `change` calls is no longer counted as reversible.
-- A model reaching a row rewrite as a keyword argument (`stale(model: User)`), a local (`klass =
-  User`) or a loop element (`[User, Account].each`) is now data work. So is a scoped ActiveRecord
-  constant receiving any of ActiveRecord's querying, persistence or counter-cache class methods, or
-  `new(...).save!`.
+- An area's `paths` no longer reaches a source file whose extension or bare name is in another case
+  (`app/Legacy.RB`, `lib/Old.JS`, `RAKEFILE`). Claude Code's matcher folds case and the corpus does
+  not count such a file, so it is now cut out by name, the same way generated files are.
 - A directory whose name differs from a sibling's only in case no longer roots an area. Claude Code
   matches `paths` with case folded, so `src/**` was also delivered to `Src/`. Both twins now fold
   into their parent, and at the repository root they are reported as uncovered.
