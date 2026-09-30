@@ -653,6 +653,8 @@ test("globsReach answers what the delivery channel would, over every glob shape"
     "lib/c0.js", "lib/deep/d0.js", "lib/BadName.jsx", "lib/deep/x.jsx", "lib/tasks/Rakefile",
     "lib/tasks/t0.rake", "lib/tasks/sub/Rakefile", "src/c0.tsx", "src/util/u0.ts", "src/util/u0.tsx",
     "src/new/Late.tsx", "m0.mjs", "sub/m0.mjs", "README.md", "lib/deep/deeper/x.js",
+    // The delivery channel folds case, so a file added in another case is delivered too.
+    "LIB/c0.js", "lib/DEEP/d0.js", "lib/C0.JS", "lib/tasks/RAKEFILE", "SRC/Util/u0.ts",
   ];
 
   for (const files of layouts) {

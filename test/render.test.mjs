@@ -3063,6 +3063,63 @@ test("a directory with a comma in its name folds like glob syntax, since Claude 
   }
 });
 
+test("sibling directories that differ only in case fold, since Claude Code's matcher folds case", () => {
+  // `src/**` reached every file in `Src/`, and `app/views/**` every file in
+  // `app/Views/`. The NFC and NFD spellings of one name stay apart: the matcher
+  // compares code units, and the encoder already refuses the decomposed one.
+  const files = ["src", "Src", "app", "app/Views", "app/views", "lib", "lib/café", "lib/café"].flatMap((d) =>
+    Array.from({ length: 6 }, (_, i) => ({ rel: `${d}/m${i}.rb`, lang: "ruby" }))
+  );
+  const areas = discover(files, { minFiles: 5 });
+
+  assert.deepEqual(areas.map((a) => a.path), ["app", "lib", "lib/café"]);
+  for (const a of areas) {
+    const delivered = renderedPaths(renderArea(area({ path: a.path, globs: a.globs })));
+    const mine = new Set(a.files.map((f) => f.rel));
+    for (const f of files) {
+      assert.equal(claudeCodeReaches(delivered, f.rel), mine.has(f.rel), `${a.path} vs ${f.rel}: ${JSON.stringify(delivered)}`);
+    }
+  }
+});
+
+test("a left-out directory is not cut out by a name that a counted directory spells in another case", () => {
+  // `!pkg/**/build/**` folds case too, so it cut the counted `pkg/a/Build` out of its own area.
+  const files = ["pkg", "pkg/a/Build", "pkg/b"].flatMap((d) =>
+    Array.from({ length: 3 }, (_, i) => ({ rel: `${d}/m${i}.rb`, lang: "ruby" }))
+  );
+  const uncounted = ["pkg/b/build/g.rb", "pkg/c/build/g.rb"].map((rel) => ({ rel, lang: "ruby", excludedAt: rel.slice(0, rel.lastIndexOf("/")) }));
+  const [a] = discover(files, { uncounted, minFiles: 5 });
+  const delivered = renderedPaths(renderArea(area({ path: a.path, globs: a.globs })));
+
+  for (const f of files) assert.equal(claudeCodeReaches(delivered, f.rel), true, `${f.rel}: ${JSON.stringify(delivered)}`);
+  for (const f of uncounted) assert.equal(claudeCodeReaches(delivered, f.rel), false, `${f.rel}: ${JSON.stringify(delivered)}`);
+});
+
+test("a file cut out of one case twin stays cut after the pattern for the other", () => {
+  // `p/A/**`, `!p/A/Gen.rb`, `p/a/**`: last match wins, and `p/a/**` folds onto `p/A/Gen.rb`.
+  const files = ["p/A", "p/a", "p/z"].flatMap((d) =>
+    Array.from({ length: d === "p/z" ? 6 : 3 }, (_, i) => ({ rel: `${d}/m${i}.rb`, lang: "ruby" }))
+  );
+  const uncounted = [{ rel: "p/A/Gen.rb", lang: "ruby" }];
+  const a = discover(files, { uncounted, minFiles: 5 }).find((x) => x.path === "p");
+  const delivered = renderedPaths(renderArea(area({ path: a.path, globs: a.globs })));
+
+  for (const f of files) assert.equal(claudeCodeReaches(delivered, f.rel), f.rel.startsWith("p/z/") === false, `${f.rel}: ${JSON.stringify(delivered)}`);
+  assert.equal(claudeCodeReaches(delivered, "p/A/Gen.rb"), false, JSON.stringify(delivered));
+});
+
+test("an area keeps its own files over a cut whose name another case of them spells", () => {
+  // `!p/Build/**` for a left-out `p/Build/` cut the counted `p/build/` too. The
+  // left-out file cannot be cut without it, so it stays reached.
+  const files = ["p/build", "p/c1", "p/c2"].flatMap((d) =>
+    Array.from({ length: d === "p/build" ? 3 : 2 }, (_, i) => ({ rel: `${d}/m${i}.rb`, lang: "ruby" }))
+  );
+  const [a] = discover(files, { uncounted: [{ rel: "p/Build/g.rb", lang: "ruby" }], minFiles: 5 });
+  const delivered = renderedPaths(renderArea(area({ path: a.path, globs: a.globs })));
+
+  for (const f of files) assert.equal(claudeCodeReaches(delivered, f.rel), true, `${f.rel}: ${JSON.stringify(delivered)}`);
+});
+
 test("a file in no area is not said to be there for having too few neighbours", () => {
   // Discovery leaves a file without an area for three reasons: it sits at the
   // repository root, which is never an area, its directory and every ancestor
