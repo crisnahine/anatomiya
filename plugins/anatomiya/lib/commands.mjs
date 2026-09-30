@@ -19,7 +19,7 @@ import { listSome, LISTED, PREFIX, RULES_DIR, trackedRulesDir } from "./rules.mj
 import { NODE_PROBE_IDS, PROBE_IDS, installProblem, pluginRoot, probeName, readiness, readinessAfresh, readinessLines, remedyFor } from "./readiness.mjs";
 import { pinSummary, scanSummary } from "./summary.mjs";
 import { untrackedSentence } from "./render.mjs";
-import { aboutDir, echoContext, holdsTestIn, inCheckout, isPathTaken, ownLayout, removeStaleHook, targetIn, windowOf } from "./hook.mjs";
+import { aboutDir, childLayouts, echoContext, holdsTestIn, inCheckout, isPathTaken, ownLayout, removeStaleHook, targetIn, windowOf } from "./hook.mjs";
 import { isTestPath, noticeFor } from "./precedent.mjs";
 import { askedMarks, continuedByReuse, pendingChange, reuseReason, reuseRecord, sessionStart, turnStart } from "./reuse.mjs";
 
@@ -136,13 +136,19 @@ export function runNotice(cwd, payload) {
  * Once per file as it stands: a file an ask or a record in this session already
  * marked is not named again, and the stop right after this hook's own block
  * records what the check left, so its fix is not asked about on the next turn.
+ *
+ * A session started above its checkouts has no map of its own and a Stop
+ * payload names no file, so each mapped checkout directly below is read, and
+ * its files named from the session's directory. A file's mark is its
+ * checkout's, so a session that later moves into the checkout is not asked again.
  */
 export async function runReuse(cwd, payload) {
   if (payload?.hook_event_name !== "Stop") return {};
   const root = answersFor(payload, cwd);
   if (root === null) return {};
   const found = ownLayout(root);
-  if (found === null) return {};
+  const checkouts = found !== null ? [{ root: found.root, prefix: "" }] : childLayouts(root).map((c) => ({ root: c.root, prefix: `${c.name}/` }));
+  if (checkouts.length === 0) return {};
   // Both halves of "once per change, and only this session's work" are read off
   // the transcript: when the session began, and what it already asked. One that
   // cannot be read says neither, so nothing is asked. Asking anyway blocked
@@ -150,8 +156,10 @@ export async function runReuse(cwd, payload) {
   // since no ask it made was ever recorded anywhere it could read back.
   const since = sessionStart(payload.transcript_path);
   if (since === null) return {};
-  const change = await pendingChange(found.root, { since, turnStart: turnStart(payload.transcript_path) });
-  if (change === null) return {};
+  const turn = turnStart(payload.transcript_path);
+  const changes = await Promise.all(checkouts.map((c) => pendingChange(c.root, { since, turnStart: turn })));
+  const change = checkouts.flatMap((c, i) => (changes[i] ?? []).map((file) => ({ ...file, path: c.prefix + file.path })));
+  if (change.length === 0) return {};
   const asked = askedMarks(payload.transcript_path);
   const fresh = change.filter((file) => !asked.has(file.mark));
   if (fresh.length === 0) return {};
