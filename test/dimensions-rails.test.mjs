@@ -595,6 +595,150 @@ class Backfill < ActiveRecord::Migration[7.0]
   end
 end
 `,
+  // The model reaches the rewrite as a keyword, a local or a loop element.
+  handed_model_backfill: `
+class K1 < ActiveRecord::Migration[7.0]
+  def up
+    stale(model: User).find_each { |u| u.update!(walkthrough: true) }
+  end
+
+  def down
+  end
+
+  private
+
+  def stale(model:) = model.where(active: false)
+end
+class K2 < ActiveRecord::Migration[7.0]
+  def up
+    klass = User
+    klass.update_all(x: 1)
+  end
+
+  def down
+  end
+end
+class K3 < ActiveRecord::Migration[7.0]
+  def up
+    [User, Account].each { |k| k.update_all(x: 1) }
+  end
+
+  def down
+  end
+end
+`,
+  // Class methods ActiveRecord's Querying, Persistence and CounterCache give a
+  // model, and an instance built and then saved.
+  activerecord_data_calls: `
+class E1 < ActiveRecord::Migration[7.0]
+  def up
+    ActiveRecord::InternalMetadata.find_or_create_by(key: "env")
+  end
+end
+class E2 < ActiveRecord::Migration[7.0]
+  def up
+    ActiveRecord::SchemaMigration.new(version: "1").save!
+  end
+end
+class E3 < ActiveRecord::Migration[7.0]
+  def up
+    ActiveRecord::SchemaMigration.create_or_find_by!(version: "1")
+    ActiveRecord::InternalMetadata.first_or_create
+  end
+end
+class E4 < ActiveRecord::Migration[7.0]
+  def up
+    ActiveRecord::InternalMetadata.increment_counter(:n, 1)
+  end
+end
+class E5 < ActiveRecord::Migration[7.0]
+  def up
+    ActiveRecord::InternalMetadata.update_counters(1, n: 1)
+  end
+end
+class E6 < ActiveRecord::Migration[7.0]
+  def up
+    ActiveRecord::InternalMetadata.touch_all
+  end
+end
+class E7 < ActiveRecord::Migration[7.0]
+  def up
+    ActiveRecord::SchemaMigration.pluck(:version)
+  end
+end
+class E8 < ActiveRecord::Migration[7.0]
+  def up
+    ActiveRecord::SchemaMigration.exists?(version: "1")
+  end
+end
+class E9 < ActiveRecord::Migration[7.0]
+  def up
+    ActiveRecord::SchemaMigration.find_by_sql("SELECT 1")
+  end
+end
+`,
+  // An error built to be raised is not a row.
+  activerecord_error_new: `
+class NoWayBack < ActiveRecord::Migration[7.0]
+  def up
+    add_column :t, :a, :string
+  end
+
+  def down
+    raise ActiveRecord::IrreversibleMigration.new("no")
+  end
+end
+`,
+  // A helper the forward method calls runs; one called only from a reversible
+  // block runs in the direction it spells, and one nobody calls never runs.
+  helper_commands: `
+class H1 < ActiveRecord::Migration[7.1]
+  def change
+    retype
+  end
+
+  def retype
+    change_column :t, :name, :text
+  end
+end
+class H2 < ActiveRecord::Migration[7.1]
+  def change
+    backfill
+  end
+
+  def backfill = touch_users
+
+  def touch_users
+    User.update_all(x: 1)
+  end
+end
+class H4 < ActiveRecord::Migration[4.2]
+  def change
+    add_column :mentions, :kind, :string
+    reversible(&method(:up_down))
+  end
+
+  def up_down(dir)
+    dir.up { Mention.update_all(kind: "Post") }
+  end
+end
+`,
+  helper_spelled: `
+class H3 < ActiveRecord::Migration[7.1]
+  def change
+    add_column :t, :a, :string
+    reversible { |dir| dir.up { retype } }
+  end
+
+  def retype
+    change_column :t, :name, :text
+  end
+
+  def unused
+    User.update_all(x: 1)
+  end
+end
+`,
 
   // Each forward body holds a command `change` cannot invert, in the form
   // Rails' CommandRecorder refuses.
@@ -714,6 +858,110 @@ class D1 < ActiveRecord::Migration[8.0]
     drop_table :t, if_exists: true, id: :uuid
     drop_table :u, "force" => :cascade
     drop_table :w, "if_exists" => true
+  end
+end
+`,
+  // The rest of what CommandRecorder refuses: a constraint or enum dropped
+  // without what re-creates it, an enum value added or renamed one way, and
+  // the change_table spellings of the refused commands.
+  irreversible_recorder_forms: `
+class F1 < ActiveRecord::Migration[7.1]
+  def change
+    remove_check_constraint :t, name: "chk"
+  end
+end
+class F2 < ActiveRecord::Migration[7.1]
+  def change
+    drop_enum :mood
+  end
+end
+class F3 < ActiveRecord::Migration[7.1]
+  def change
+    add_enum_value :mood, "happy"
+  end
+end
+class F4 < ActiveRecord::Migration[7.1]
+  def change
+    rename_enum_value :mood, from: "a"
+  end
+end
+class F5 < ActiveRecord::Migration[7.1]
+  def change
+    remove_exclusion_constraint :t, name: "ex"
+  end
+end
+class F6 < ActiveRecord::Migration[7.1]
+  def change
+    remove_unique_constraint :t, name: "uq"
+  end
+end
+class F7 < ActiveRecord::Migration[7.1]
+  def change
+    add_unique_constraint :t, using_index: "idx"
+  end
+end
+class F8 < ActiveRecord::Migration[7.1]
+  def change
+    drop_virtual_table :v, :fts5
+  end
+end
+class G1 < ActiveRecord::Migration[7.1]
+  def change
+    change_table :t do |t|
+      t.change_default :c, nil
+    end
+  end
+end
+class G2 < ActiveRecord::Migration[7.1]
+  def change
+    change_table :t do |t|
+      t.remove_index name: "idx"
+    end
+  end
+end
+class G3 < ActiveRecord::Migration[7.1]
+  def change
+    change_table :t do |t|
+      t.remove_foreign_key column: :a_id
+    end
+  end
+end
+class G4 < ActiveRecord::Migration[7.1]
+  def change
+    change_table :t do |t|
+      t.remove_check_constraint name: "chk"
+    end
+  end
+end
+class G5 < ActiveRecord::Migration[7.1]
+  def change
+    change_table :t do |t|
+      t.remove_unique_constraint name: "uq"
+    end
+  end
+end
+`,
+  reversible_recorder_forms: `
+class F9 < ActiveRecord::Migration[7.1]
+  def change
+    remove_check_constraint :t, "a > 0", name: "chk"
+    drop_enum :mood, ["a", "b"]
+    rename_enum_value :mood, from: "a", to: "b"
+    remove_exclusion_constraint :t, "tsrange(a, b) WITH &&", name: "ex"
+    remove_unique_constraint :t, [:a]
+    add_unique_constraint :t, [:a]
+    drop_virtual_table :v, :fts5, ["a"]
+    create_enum :tone, ["x"]
+    rename_enum :tone, :hue
+    change_table :t do |t|
+      t.change_default :c, from: nil, to: 1
+      t.remove_index :c
+      t.remove_foreign_key :users
+      t.remove_check_constraint "a > 0", name: "chk"
+      t.remove_unique_constraint [:a]
+      t.change_null :c, false
+      t.remove :c, type: :string
+    end
   end
 end
 `,
@@ -1479,6 +1727,34 @@ test("a migration holding a command change cannot invert is not a reversibility 
   for (const name of ["irreversible_change_column", "irreversible_execute", "irreversible_up_down", "irreversible_forms", "irreversible_if_exists"]) {
     assert.deepEqual(hits("migration_reversible", name), [], name);
   }
+});
+
+test("a model handed on as a keyword, a local or a loop element is data work", needsRuby, () => {
+  // Only positional arguments were read, so each of these backfills was
+  // credited as schema-only and told to declare change.
+  assert.deepEqual(counts("migration_schema_only", "handed_model_backfill"), { candidates: 3, conforming: 0 });
+  assert.deepEqual(hits("migration_reversible", "handed_model_backfill"), []);
+});
+
+test("every class method ActiveRecord gives a model for reading or writing rows is a data call", needsRuby, () => {
+  // find_or_create_by, new then save!, the counter cache and the calculations
+  // were missing, so a scoped ActiveRecord constant receiving one read as framework.
+  assert.deepEqual(counts("migration_schema_only", "activerecord_data_calls"), { candidates: 9, conforming: 0 });
+  assert.deepEqual(hits("migration_reversible", "activerecord_data_calls"), []);
+  // Building an error to raise writes nothing.
+  assert.deepEqual(counts("migration_schema_only", "activerecord_error_new"), { candidates: 1, conforming: 1 });
+});
+
+test("every other command CommandRecorder refuses is not a reversibility site", needsRuby, () => {
+  assert.deepEqual(hits("migration_reversible", "irreversible_recorder_forms"), []);
+  assert.deepEqual(counts("migration_reversible", "reversible_recorder_forms"), { candidates: 1, conforming: 1 });
+});
+
+test("a helper the forward method calls is read by both rows, and one it does not run is read by neither", needsRuby, () => {
+  assert.deepEqual(hits("migration_reversible", "helper_commands"), []);
+  assert.deepEqual(counts("migration_schema_only", "helper_commands"), { candidates: 3, conforming: 1 });
+  assert.deepEqual(counts("migration_reversible", "helper_spelled"), { candidates: 1, conforming: 1 });
+  assert.deepEqual(counts("migration_schema_only", "helper_spelled"), { candidates: 1, conforming: 1 });
 });
 
 test("the invertible spelling of each command is still a conforming site", needsRuby, () => {

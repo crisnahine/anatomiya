@@ -7,7 +7,7 @@ import { parseAll } from "../plugins/anatomiya/lib/parse.mjs";
 import { declOf } from "../plugins/anatomiya/lib/langs.mjs";
 import { needsRuby } from "./ruby-available.mjs";
 import { REACT_HOOKS } from "../plugins/anatomiya/lib/dimensions-jsx.mjs";
-import { COLUMN_TYPE, FRAMEWORK } from "../plugins/anatomiya/lib/dimensions-rails.mjs";
+import { COLUMN_TYPE, DATA_CALLS, FRAMEWORK } from "../plugins/anatomiya/lib/dimensions-rails.mjs";
 import { EFFECT_HOOKS } from "../plugins/anatomiya/lib/dimensions-extra.mjs";
 import { RUBY_ERROR } from "../plugins/anatomiya/lib/dimensions-ruby.mjs";
 
@@ -596,9 +596,12 @@ container = document.createElement("div")`,
       `class M < ActiveRecord::Migration[7.0]\n  def up\n    ActiveStorage::Blob.update_all(x: 1)\n  end\nend`,
       `class M < ActiveRecord::Migration[7.0]\n  def up\n    ActiveRecord::SchemaMigration.delete_all\n  end\nend`,
       `class M < ActiveRecord::Migration[7.0]\n  def up\n    stale(User).update_all(x: 1)\n  end\nend`,
+      `class M < ActiveRecord::Migration[7.0]\n  def up\n    stale(model: User).update_all(x: 1)\n  end\nend`,
       // A command outside the set change inverts has no conforming form.
       `class M < ActiveRecord::Migration[7.0]\n  def change\n    change_column :t, :a, :text\n  end\nend`,
       `class M < ActiveRecord::Migration[7.0]\n  def up\n    execute "CREATE INDEX i ON t (a)"\n  end\n  def down\n  end\nend`,
+      `class M < ActiveRecord::Migration[7.0]\n  def change\n    remove_check_constraint :t, name: "chk"\n  end\nend`,
+      `class M < ActiveRecord::Migration[7.0]\n  def change\n    retype\n  end\n  def retype\n    change_column :t, :a, :text\n  end\nend`,
     ],
   },
   migration_schema_only: {
@@ -966,6 +969,42 @@ end`,
     control: `class M < ActiveRecord::Migration[7.0]\n  def change\n    User.update_all(x: 1)\n  end\nend`,
   },
   {
+    // A scoped ActiveRecord constant receiving one of these is a model, so the
+    // migration rewrites or reads rows and has no reversibility question.
+    what: "the calls that make a scoped ActiveRecord constant a model",
+    key: "migration_reversible",
+    lang: "ruby",
+    expect: "absent",
+    members: [
+      "find", "find_by", "find_by!", "take", "take!", "sole", "find_sole_by", "first", "first!", "last",
+      "last!", "second", "second!", "third", "third!", "fourth", "fourth!", "fifth", "fifth!",
+      "forty_two", "forty_two!", "third_to_last", "third_to_last!", "second_to_last", "second_to_last!",
+      "exists?", "any?", "many?", "none?", "one?",
+      "first_or_create", "first_or_create!", "first_or_initialize",
+      "find_or_create_by", "find_or_create_by!", "find_or_initialize_by",
+      "create_or_find_by", "create_or_find_by!",
+      "destroy", "destroy_all", "delete", "delete_all", "update_all", "touch_all", "destroy_by", "delete_by",
+      "find_each", "find_in_batches", "in_batches",
+      "select", "reselect", "order", "regroup", "in_order_of", "reorder", "group", "limit", "offset",
+      "joins", "left_joins", "left_outer_joins", "where", "rewhere", "invert_where", "preload",
+      "extract_associated", "eager_load", "includes", "from", "lock", "readonly", "and", "or",
+      "annotate", "optimizer_hints", "extending", "having", "create_with", "distinct", "references",
+      "none", "unscope", "merge", "except", "only",
+      "count", "average", "minimum", "maximum", "sum", "calculate",
+      "pluck", "pick", "ids", "async_ids", "strict_loading", "excluding", "without", "with_recursive",
+      "async_count", "async_average", "async_minimum", "async_maximum", "async_sum", "async_pluck", "async_pick",
+      "insert", "insert_all", "insert!", "insert_all!", "upsert", "upsert_all",
+      "with", "find_by_sql", "async_find_by_sql", "count_by_sql", "async_count_by_sql",
+      "all", "unscoped",
+      "create", "create!", "update", "update!",
+      "increment_counter", "decrement_counter", "update_counters", "reset_counters",
+      "save", "save!", "destroy!", "update_attribute", "update_attribute!", "update_column",
+      "update_columns", "increment!", "decrement!", "toggle!", "reload", "touch",
+    ],
+    source: (m) => `class M < ActiveRecord::Migration[7.0]\n  def up\n    ActiveRecord::SchemaMigration.${m}\n  end\nend`,
+    control: `class M < ActiveRecord::Migration[7.0]\n  def up\n    ActiveRecord::Base.connection\n  end\nend`,
+  },
+  {
     // React refuses null from an effect, so a null returned inside one is not
     // this repository choosing how it spells an absent value.
     what: "the effect hooks whose callback is not a site",
@@ -1064,6 +1103,7 @@ test("no table grew a member this list has not seen", () => {
     column_null_declared: COLUMN_TYPE,
     class_base: RUBY_ERROR,
     migration_schema_only: FRAMEWORK,
+    migration_reversible: DATA_CALLS,
     absent_is_null: EFFECT_HOOKS,
   };
   for (const [key, table] of Object.entries(shipped)) {
