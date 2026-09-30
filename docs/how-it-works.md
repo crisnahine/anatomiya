@@ -1350,13 +1350,19 @@ report a whole declaration: a line added inside a function body is not a new `fu
 `explicit_return_type` or `doc_comment_style` site on the declaration that holds it. An edit to the
 signature still is. Copies that share a fingerprint are matched by their own text first, then by the
 lines around them, then by the function they sit in, and only what is left is matched by count.
+Two rows judge what is inside the body, `async_error_handling` and `swallowed_error`, so for them a
+copy that stopped conforming shares its fingerprint with one that never did. Their copies also have
+to open on the same line text to match, and are never matched by count: a handler that lost its
+`catch` is not absorbed by another anonymous handler in the same file that never had one.
 
 A learned row judges a site the way the fold counted it. A superclass or mixin written bare is
 resolved against the nesting it is written in, and a class whose chain of parents reaches the
 learned base conforms. The fold follows that chain through every class its area declares, and the
 check holds only the files the branch changed, so it reads the chain from two places: the map's
 `reaches`, for the classes it did not read, and the classes the branch's own changed files declare
-in the same area, which replace what the map recorded for them. A subclass of a base the branch adds
+in the same area, which replace what the map recorded for them. The area is the one the pinned map
+draws, so a directory the branch adds inside it counts as part of it, even where a rescan would make
+it an area of its own. A subclass of a base the branch adds
 is not told to skip that base, and a subclass of a class the branch moved off the base is.
 
 The head side is read from the working tree wherever the tree differs from the commit, and a file
