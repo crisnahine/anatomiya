@@ -427,8 +427,8 @@ test("a changelog with no link definition for the version its manifest states is
 test("a link definition inside a code fence defines nothing", (t) => {
   // Markdown renders a fenced line as text, so the heading still links nowhere.
   // A fence closes only on a bare run of its own character at least as long, so
-  // the inner line of the last three leaves the fence open. A CRLF checkout fences too.
-  const fences = [["```", "```"], ["~~~md", "~~~"], ["   ```", "```"], ["~~~", "```\n{line}\n~~~"], ["````", "```\n{line}\n````"], ["```", "```js\n{line}\n```"], ["```", "```", "\r\n"]];
+  // the inner line of the last four leaves the fence open, a no-break space after it included. A CRLF checkout fences too.
+  const fences = [["```", "```"], ["~~~md", "~~~"], ["   ```", "```"], ["~~~", "```\n{line}\n~~~"], ["````", "```\n{line}\n````"], ["```", "```js\n{line}\n```"], ["```", "```\u00a0\n{line}\n```"], ["```", "```", "\r\n"]];
   for (const [open, close, eol = "\n"] of fences) {
     const dir = repoCopy(t);
     const path = join(dir, "CHANGELOG.md");
