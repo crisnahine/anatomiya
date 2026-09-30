@@ -18,7 +18,10 @@ directory above your checkouts.
 
 ### Fixed
 
-- A deeply nested file is read in time linear in its depth. The rows asked every enclosing node at every node, so a generated chain of 30,000 operands took 7 seconds to read and a chain past about 15,000 hit the timeout twice and was charged as crashed. It now takes about half a second, and the records for 23,139 corpus files are unchanged.
+- A deeply nested file is read in time linear in its depth. The rows asked every enclosing node at
+  every node, so a generated chain of 30,000 operands took 7 seconds to read and a chain past about
+  15,000 hit the timeout twice and was charged as crashed. It now takes about half a second, and the
+  records for 23,139 corpus files are unchanged.
 - `check` no longer reports a function's or class's untouched declaration as newly introduced when
   the branch only edited inside its body. One added line in an existing function raised
   `function_style` FIX and `doc_comment_style` / `explicit_return_type` findings on the declaration
@@ -201,6 +204,39 @@ directory above your checkouts.
 - The hooks section of `docs/how-it-works.md` says all four hooks, not all three, and says where
   `refresh` starts its walk.
 
+- `check --base` refuses the branch's own name spelled in another case on a filesystem that folds
+  case (macOS, Windows), where it used to compare the branch with itself and exit 0 clean.
+- A map or pin file that is on disk but cannot be opened is reported as unreadable, not as missing.
+  A linked worktree whose own pin cannot be opened no longer falls back to its main checkout's pin.
+- doctor and `scan --deep` no longer tell a typescript 5.x that is missing createProgram that it
+  needs 5.x. They now say it does not export createProgram.
+- The namesake-elsewhere count no longer credits a model sitting directly under `app/models` with an
+  unrelated spec that shares its file name (a request spec named `vote_spec.rb`). A misplaced spec
+  under a `models` directory still counts.
+- `check` flags a branch that comments out a model's whole spec, the same way it already flagged
+  deleting that spec.
+- `migration_schema_only` and `migration_reversible` no longer read `revert CreateWidgets`, or a
+  class-level `include Mastodon::MigrationHelpers`, as a migration that rewrites rows. Five of
+  mastodon's schema-only migrations had dropped out of both rows this way, and `check` gave a FIX to
+  a plain `revert` migration.
+- `migration_reversible` reads `remove_column :t, :a, if_exists: true`, `drop_table :t, if_exists:
+  true` and a drop_table of several tables as irreversible, as Rails 8 does, so `check` stops
+  telling those up/down migrations to declare `change`.
+- `http_through_client` no longer counts hand-built `Faraday::ConnectionFailed` or
+  `RestClient::Exceptions::*` errors as direct HTTP calls.
+- `http_through_client` no longer reads a Redis, cache, memcache or Dalli client as the repository's
+  HTTP client, so a repository with no HTTP stops stating that its HTTP goes through `redis_client`.
+- A component annotated through an aliased React namespace (`R.FC` under `import * as R from
+  "react"`) is no longer asked to be renamed in camelCase.
+- `pin` in a sparse checkout counts only the source it would pin. A cone that left out only docs no
+  longer refuses just because some other file in the tree was unreadable.
+- `pin` during a merge with no conflicts says to finish or abort the merge. It said to commit or
+  stash, and a stash throws away the merge in progress.
+- A session started above several checkouts now names the checkout in each held-pin notice and says
+  to run /anatomiya:pin from a session inside that checkout. Before, it printed the same unnamed
+  line once per checkout, and its remedy failed from the parent directory.
+- The reuse check now asks about a file copied unchanged to the same path in a sibling checkout.
+  Before, a session started above both checkouts read the copy as already asked about.
 ### Changed
 
 - `zone_aware_time` now reads "times are read and built through the application time zone", since it
