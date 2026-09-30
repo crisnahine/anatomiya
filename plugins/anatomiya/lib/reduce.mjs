@@ -436,8 +436,16 @@ function groupSites(hits, learned) {
 }
 
 /**
+ * Constants a library defines as another's alias. Sidekiq's
+ * `worker_compatibility_alias.rb` reads `Worker = Job`, so a body including
+ * either has included the one module.
+ */
+const ALIASES = new Map([["Sidekiq::Worker", "Sidekiq::Job"]]);
+const aliasOf = (name) => ALIASES.get(name) ?? name;
+
+/**
  * Whether the constant a site names and the class the area learned are the same
- * class, read the way Ruby reads a relative reference.
+ * class, read the way Ruby reads a relative reference, or one a library aliases.
  *
  * A bare constant resolves against the nesting the class is *written* in, and
  * `nesting` is `Module.nesting` for the site: the scopes, innermost first. The difference is
@@ -463,7 +471,7 @@ function groupSites(hits, learned) {
  */
 export function sameConstant(written, learned, nesting) {
   if (typeof written !== "string" || typeof learned !== "string") return false;
-  if (written === learned) return true;
+  if (aliasOf(written) === aliasOf(learned)) return true;
   if (!Array.isArray(nesting) || nesting.length === 0) return false;
   const [bare, scoped] = written.includes("::") ? [learned, written] : [written, learned];
   // Both scoped, or both bare and unequal: nothing is left for a nesting to
@@ -541,24 +549,32 @@ export const isLearnedItself = (hit, learned) =>
  */
 export function learnClass(perFile, { grouped = false } = {}) {
   const votes = new Map();
+  // Two aliases of one module are one vote, stated in whichever spelling the
+  // area writes most.
+  const spellings = new Map();
   for (const hits of perFile.values()) {
     const seen = grouped ? new Set() : null;
     let n = 0;
     for (const h of hits) {
       if (!h.class) continue;
+      const cls = aliasOf(h.class);
       if (seen) {
-        const key = `${groupKey(h, n++)} ${h.class}`;
+        const key = `${groupKey(h, n++)} ${cls}`;
         if (seen.has(key)) continue;
         seen.add(key);
       }
-      votes.set(h.class, (votes.get(h.class) || 0) + 1);
+      votes.set(cls, (votes.get(cls) || 0) + 1);
+      if (!spellings.has(cls)) spellings.set(cls, new Map());
+      spellings.get(cls).set(h.class, (spellings.get(cls).get(h.class) || 0) + 1);
     }
   }
-  const ranked = [...votes].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1));
+  const ranked = [...votes].sort(byVotes);
   if (!ranked.length) return null;
   if (ranked.length > 1 && ranked[0][1] === ranked[1][1]) return null;
-  return ranked[0][0];
+  return [...spellings.get(ranked[0][0])].sort(byVotes)[0][0];
 }
+
+const byVotes = (a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1);
 
 function byCountThenPath(a, b) {
   if (b.count !== a.count) return b.count - a.count;

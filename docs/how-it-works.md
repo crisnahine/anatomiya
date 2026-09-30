@@ -397,7 +397,9 @@ body that mixes in nothing is a site as well, since the forgotten include is the
 actually happens; a module mixing in nothing is namespacing, a subclass may be handed the mixin by
 its base, and a class inside a class is that class's helper, so none of those three is a site.
 Nor is a body that prepends or extends a constant, or a reopening of a class that declares a mixin
-elsewhere in the file: both declared one by another route.
+elsewhere in the file: both declared one by another route. Sidekiq defines `Worker = Job`, so
+`Sidekiq::Worker` and `Sidekiq::Job` vote and conform as one module, in the map and in the check,
+and the claim names whichever spelling the directory writes more.
 `interface_prefix` and `type_alias_prefix` take the leading capital a declared type name carries
 before a second capital, where
 `IComment` votes `I` and `Comment` votes for no prefix at all. A name opening on three or more

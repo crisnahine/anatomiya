@@ -15,7 +15,7 @@ import { CLASSES, claimFor } from "./dimensions-naming.mjs";
 import { encode } from "./encode.mjs";
 import { statedSide } from "./facts.mjs";
 import { holdsTypeSyntax, spokenIn } from "./langs.mjs";
-import { groupKey, isLearnedItself } from "./reduce.mjs";
+import { groupKey, isLearnedItself, sameConstant } from "./reduce.mjs";
 
 /**
  * The sites `head` holds that the branch introduced, judged against `base` or
@@ -204,7 +204,7 @@ function breakingSites(program, source, lang, keyPath, { polarity, frameworks, c
     // from the population; the check re-runs the predicate and has to agree.
     const conformingOf = (hit) =>
       dim.learnedClasses
-        ? hit.class === cls || isLearnedItself(hit, cls) || reaching.get(dim.key)?.has(hit.class) === true
+        ? sameConstant(hit.class, cls, hit.nesting) || isLearnedItself(hit, cls) || reaching.get(dim.key)?.has(hit.class) === true
         : hit.conforming;
     const site = (hit) => {
       const node = hit.node || {};
