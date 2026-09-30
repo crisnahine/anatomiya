@@ -1,7 +1,7 @@
-import { mkdirSync, unlinkSync } from "node:fs";
+import { lstatSync, mkdirSync, readFileSync, renameSync, unlinkSync } from "node:fs";
 import { basename, join } from "node:path";
 import { renderArea, renderOverview, splitUncovered } from "./render.mjs";
-import { FACTS_PATH, FACTS_SCHEMA, readFacts, writeFacts, atomic } from "./facts.mjs";
+import { FACTS_PATH, FACTS_SCHEMA, readFacts, factsJson, atomic, writeTemp } from "./facts.mjs";
 import { byCode } from "./paths.mjs";
 import {
   RULES_DIR,
@@ -213,8 +213,11 @@ const isPlain = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
  * The filesystem half: the directories, the facts, the bodies, the removals.
  *
  * The invariant: no rendered file exists that is not derivable from the facts
- * on disk. So facts are written first, rendering reads only what is on disk,
- * and orphans are removed last.
+ * on disk, and no facts sit beside rendered files of another scan. So every
+ * byte is written to a temporary file before anything is replaced, the facts
+ * are replaced first and orphans removed last, and a failure part way puts
+ * back what was there. A process killed between two renames can still leave
+ * both, which is the one window left.
  */
 export function commitMap(root, plan) {
   // One root or none. The record is written under this one and stamped with the
@@ -233,19 +236,75 @@ export function commitMap(root, plan) {
   mkdirSync(rulesDir, { recursive: true });
   mkdirSync(storeDir, { recursive: true });
 
-  // Facts too. Keeping the rendered files while replacing what they were
-  // derived from breaks that invariant, and `check` reads facts.json.
-  writeFacts(root, plan.result);
-  for (const [name, body] of plan.bodies) atomic(join(rulesDir, name), body);
-  for (const f of plan.remove) {
-    try {
-      unlinkSync(join(rulesDir, f));
-    } catch (err) {
-      if (err.code !== "ENOENT") throw err;
-    }
+  // Facts too, and with the rest: `check` reads facts.json, so new facts beside
+  // the old files call a map fresh that the session holds an older scan of.
+  const writes = [
+    [join(storeDir, basename(FACTS_PATH)), factsJson(plan.result)],
+    ...[...plan.bodies].map(([name, body]) => [join(rulesDir, name), body]),
+  ];
+  const staged = [];
+  try {
+    for (const [path, body] of writes) staged.push([writeTemp(path, body), path]);
+    replaceAll(staged, plan.remove.map((f) => join(rulesDir, f)));
+  } catch (err) {
+    for (const [tmp] of staged) quietUnlink(tmp);
+    throw err;
   }
 
   return plan;
+}
+
+/**
+ * Rename every staged file into place and remove the orphans, or put back what
+ * was there before the first one moved.
+ *
+ * A rename in a directory the temporary file was just created in still fails:
+ * Windows refuses one over a file another process holds open.
+ */
+function replaceAll(staged, removals) {
+  // Read before the first rename, so the window between the facts and the last
+  // file holds renames and nothing else.
+  const before = new Map([...staged.map(([, path]) => path), ...removals].map((p) => [p, previousBytes(p)]));
+  const undo = [];
+  try {
+    for (const [tmp, path] of staged) {
+      renameSync(tmp, path);
+      undo.push([path, before.get(path)]);
+    }
+    for (const path of removals) {
+      const previous = before.get(path);
+      try {
+        unlinkSync(path);
+      } catch (err) {
+        if (err.code === "ENOENT") continue;
+        throw err;
+      }
+      undo.push([path, previous]);
+    }
+  } catch (err) {
+    for (const [path, previous] of undo.reverse()) {
+      try {
+        if (previous === null) unlinkSync(path);
+        else if (previous !== undefined) atomic(path, previous);
+      } catch {}
+    }
+    throw err;
+  }
+}
+
+/** A regular file's bytes, `null` where nothing is, `undefined` where they cannot be put back. */
+function previousBytes(path) {
+  try {
+    return lstatSync(path).isFile() ? readFileSync(path) : undefined;
+  } catch (err) {
+    return err.code === "ENOENT" ? null : undefined;
+  }
+}
+
+function quietUnlink(path) {
+  try {
+    unlinkSync(path);
+  } catch {}
 }
 
 /**
