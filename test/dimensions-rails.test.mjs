@@ -497,6 +497,134 @@ class Backfill < ActiveRecord::Migration[7.2]
 end
 `,
 
+  // Rails' own ActiveStorage upgrade migration rewrites rows this way.
+  framework_model_backfill: `
+class AddServiceName < ActiveRecord::Migration[7.0]
+  def up
+    ActiveStorage::Blob.unscoped.update_all(service_name: "local")
+  end
+
+  def down
+  end
+end
+`,
+
+  helper_model_backfill: `
+class SkipWalkthrough < ActiveRecord::Migration[7.0]
+  def up
+    stale(User).find_each { |u| u.update!(walkthrough: true) }
+  end
+
+  def down
+  end
+
+  private
+
+  def stale(model) = model.where(active: false)
+end
+`,
+
+  // Each forward body holds a command `change` cannot invert, in the form
+  // Rails' CommandRecorder refuses.
+  irreversible_change_column: `
+class ChangePrice < ActiveRecord::Migration[7.1]
+  def change
+    change_column :t, :name, :text
+  end
+end
+`,
+  irreversible_execute: `
+class AddTrigger < ActiveRecord::Migration[7.1]
+  def change
+    execute "CREATE TRIGGER t_upd BEFORE UPDATE ON t FOR EACH ROW EXECUTE PROCEDURE f()"
+  end
+end
+`,
+  irreversible_up_down: `
+class RetypeName < ActiveRecord::Migration[7.1]
+  def up
+    change_column :t, :name, :text
+  end
+
+  def down
+    change_column :t, :name, :string
+  end
+end
+`,
+  irreversible_forms: `
+class A1 < ActiveRecord::Migration[7.1]
+  def change
+    remove_column :t, :a
+  end
+end
+class A2 < ActiveRecord::Migration[7.1]
+  def change
+    remove_columns :t, :a, :b
+  end
+end
+class A3 < ActiveRecord::Migration[7.1]
+  def change
+    drop_table :t
+  end
+end
+class A4 < ActiveRecord::Migration[7.1]
+  def change
+    change_column_default :t, :a, 1
+  end
+end
+class A5 < ActiveRecord::Migration[7.1]
+  def change
+    remove_index :t, name: "idx"
+  end
+end
+class A6 < ActiveRecord::Migration[7.1]
+  def change
+    remove_foreign_key :t, column: :a_id
+  end
+end
+class A7 < ActiveRecord::Migration[7.1]
+  def change
+    change_table :t do |t|
+      t.change :a, :text
+    end
+  end
+end
+`,
+  // The same commands written the way `change` can invert them, and raw SQL
+  // inside `reversible`, where each direction is spelled out.
+  reversible_forms: `
+class B1 < ActiveRecord::Migration[7.1]
+  def change
+    remove_column :t, :a, :string
+    remove_columns :t, :a, :b, type: :string
+    drop_table :u do |t|
+    end
+    drop_table :v, id: :uuid
+    change_column_default :t, :a, from: nil, to: 1
+    remove_index :t, :a
+    remove_index :t, column: :a
+    remove_foreign_key :t, :users
+    reversible do |dir|
+      dir.up { execute "CREATE INDEX i ON t (a)" }
+      dir.down { execute "DROP INDEX i" }
+    end
+  end
+end
+`,
+  // Rails runs `change` and never `up` when a class defines both, so the
+  // commands that decide the question are in `change`.
+  change_wins_over_up: `
+class Both < ActiveRecord::Migration[7.1]
+  def change
+    add_column :t, :a, :string
+  end
+
+  def up
+    change_column :t, :a, :text
+  end
+end
+`,
+
   // Verbatim from the two files in
   // /Users/crisn/Documents/Projects/chameleon-realusage-test/rails-blog/db/migrate,
   // copied in so the suite does not read a repository outside this one.
@@ -1206,7 +1334,33 @@ test("raw SQL nobody could read is where up and down is the correct form", needs
   // exactly where `change` cannot invert. The schema-only row already declines
   // to judge it; the reversibility row now declines with it.
   assert.deepEqual(hits("migration_reversible", "sql_update"), []);
-  assert.deepEqual(counts("migration_reversible", "sql_ddl"), { candidates: 1, conforming: 0 });
+  // Readable DDL is raw SQL too: CommandRecorder has no inverse for execute.
+  assert.deepEqual(hits("migration_reversible", "sql_ddl"), []);
+});
+
+test("a row rewrite through a framework model or a model handed to a helper is data work", needsRuby, () => {
+  // Matched on the root segment alone, ActiveStorage::Blob read as framework,
+  // and a model passed as an argument was never looked at: both backfills were
+  // credited as schema-only and charged as irreversible.
+  for (const name of ["framework_model_backfill", "helper_model_backfill"]) {
+    assert.deepEqual(counts("migration_schema_only", name), { candidates: 1, conforming: 0 }, name);
+    assert.deepEqual(hits("migration_reversible", name), [], name);
+  }
+});
+
+test("a migration holding a command change cannot invert is not a reversibility site, on either side", needsRuby, () => {
+  // Counted, `change_column` in change conformed though its rollback raises
+  // ActiveRecord::IrreversibleMigration, and the up/down form of it was told to
+  // declare change.
+  for (const name of ["irreversible_change_column", "irreversible_execute", "irreversible_up_down", "irreversible_forms"]) {
+    assert.deepEqual(hits("migration_reversible", name), [], name);
+  }
+});
+
+test("the invertible spelling of each command is still a conforming site", needsRuby, () => {
+  assert.deepEqual(counts("migration_reversible", "reversible_forms"), { candidates: 1, conforming: 1 });
+  // `up` never runs beside `change`, so its change_column decides nothing.
+  assert.deepEqual(counts("migration_reversible", "change_wins_over_up"), { candidates: 1, conforming: 0 });
 });
 
 test("the only form that runs on a populated table is not judged by three rows at once", needsRuby, () => {

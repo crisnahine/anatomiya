@@ -470,6 +470,43 @@ const SRC = {
       end
     end
   `,
+  service_bang: `
+    class CompleteTask < ActiveInteraction::Base
+      def execute
+        task.update!(status: "completed")
+      end
+    end
+    class Nested
+      def call
+        Other.run!(id: 1)
+      end
+    end
+    class Create
+      def self.call(attrs)
+        User.create!(attrs)
+      end
+    end
+  `,
+  service_bang_rescued: `
+    class Save
+      def call
+        user.save!
+      rescue ActiveRecord::RecordInvalid => e
+        errors.add(:base, e.message)
+      end
+    end
+    class Quiet
+      def call
+        user.update!(a: 1) rescue nil
+      end
+    end
+    class Merge
+      def execute
+        errors.merge!(other.errors)
+        name.strip!
+      end
+    end
+  `,
 
   params_positional: `
     def send_mail(to, from, subject)
@@ -521,6 +558,36 @@ const SRC = {
     class Job
       def run
         @logger.debug("x")
+      end
+    end
+  `,
+  log_setters: `
+    Rails.application.configure do
+      config.logger.level = Logger::ERROR
+      config.logger.formatter = ::Logger::Formatter.new
+    end
+    Rails.logger.progname = "svc"
+    logger.debug? && compute
+  `,
+  log_outputs: `
+    def work
+      logger.error("x")
+      logger.fatal("x")
+      logger.unknown("x")
+      logger.add(1, "x")
+      logger.log(1, "x")
+      logger.tagged("a") { compute }
+      logger << "x"
+    end
+  `,
+  http_helpers: `
+    class Scrape
+      def go(msg)
+        raise HTTParty::Error.new(msg)
+        HTTParty::CookieHash.new
+        Faraday::TimeoutError.new("x")
+        Excon::Errors::SocketError.new
+        Net::HTTP::Get.new(uri)
       end
     end
   `,
@@ -1180,6 +1247,24 @@ test("a method that is not an entry point contributes nothing", needsRuby, () =>
   assert.equal(hits("service_result_shape", "service_not_entry").length, 0);
 });
 
+test("an entry point that fails through a bang call raises, whatever it spells", needsRuby, () => {
+  // `update!`, `create!` and `run!` raise on failure. Read as having no raise
+  // keyword, 36 services failing through an unrescued update! stated the claim.
+  assert.deepEqual(counts("service_result_shape", "service_bang"), { candidates: 3, conforming: 0 });
+});
+
+test("a bang call its own rescue catches does not raise, and a bang that is not a failure is not one", needsRuby, () => {
+  assert.deepEqual(counts("service_result_shape", "service_bang_rescued"), { candidates: 3, conforming: 3 });
+});
+
+test("the claim says what the predicate measures, not that a failure is returned", () => {
+  // An entry point with no failure path conforms, so a sentence promising a
+  // returned failure was stated over code that returns none.
+  const row = dim("service_result_shape");
+  assert.doesNotMatch(row.claim, /return/);
+  assert.match(row.claim, /bang/);
+});
+
 // --- keyword_params ---
 
 test("three positional arguments is the violation and three keywords conform", needsRuby, () => {
@@ -1206,6 +1291,13 @@ test("Time.current, Time.zone.now and Date.current conform", needsRuby, () => {
 
 test("a chained read counts once, not once per link", needsRuby, () => {
   assert.deepEqual(counts("zone_aware_time", "time_chained"), { candidates: 1, conforming: 1 });
+});
+
+test("the claim covers the times it builds, not only the clock it reads", () => {
+  // Time.parse(value) and Time.zone.at(n) are sites and read no clock, so a
+  // sentence about "the current time" was quoted against lines that do neither.
+  assert.doesNotMatch(dim("zone_aware_time").claim, /current time/);
+  assert.match(dim("zone_aware_time").claim, /built/);
 });
 
 test("a file that never reads the clock contributes nothing", needsRuby, () => {
@@ -1451,6 +1543,23 @@ test("puts and friends are direct sites and logger calls conform", needsRuby, ()
 
 test("an instance-variable logger conforms too", needsRuby, () => {
   assert.deepEqual(counts("logger_over_puts", "log_wrapped"), { candidates: 1, conforming: 1 });
+});
+
+test("setting up a logger is not output through it", needsRuby, () => {
+  // `level=`, `formatter=` and `progname=` configure the logger and write
+  // nothing, and read as sites they made a config directory an adopter.
+  assert.deepEqual(hits("logger_over_puts", "log_setters"), []);
+});
+
+test("every output call a logger answers is a conforming site", needsRuby, () => {
+  assert.deepEqual(counts("logger_over_puts", "log_outputs"), { candidates: 7, conforming: 7 });
+});
+
+test("an HTTP library's error or cookie class is not a request", needsRuby, () => {
+  // Building an exception sends nothing. A request class under the library's
+  // namespace still does.
+  const h = hits("http_through_client", "http_helpers");
+  assert.deepEqual(h.map((x) => [x.node.line, x.conforming]), [[8, false]]);
 });
 
 test("Net::HTTP and URI.open are direct sites and client calls conform", needsRuby, () => {
