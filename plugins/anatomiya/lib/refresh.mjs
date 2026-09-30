@@ -29,6 +29,7 @@ import { basename, join, resolve } from "node:path";
 
 import { loadPin } from "./baseline.mjs";
 import { runPin, runScan } from "./commands.mjs";
+import { encodePath } from "./encode.mjs";
 import { atomic, readFacts, readRecord, writeTemp } from "./facts.mjs";
 import { BASE_REFS, commitAt, gitBuffered, gitStreamed, headSha, operationUnfinished, shaReachable } from "./git.mjs";
 import { childLayouts, isPathTaken, ownLayout } from "./hook.mjs";
@@ -612,7 +613,7 @@ export function holdNotice(root, name = null) {
   const body = heldBecause(root);
   if (body === null) return null;
   if (name === null) return `anatomiya: ${body} Pinning it is a person's call, made with /anatomiya:pin.`;
-  const shown = /^[\w.@+-]+$/.test(name) ? name : JSON.stringify(name);
+  const shown = /^[\w.@+-]+$/.test(name) ? name : encodePath(name);
   return `anatomiya (${shown}): ${body} Pinning it is a person's call, made with /anatomiya:pin in a session started inside ${shown}.`;
 }
 
