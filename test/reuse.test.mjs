@@ -151,13 +151,20 @@ test("a migration or a schema dump has nothing to check", async (t) => {
 test("a file whose added lines define nothing callable has nothing to check", async (t) => {
   // No function was added, so there is no copy of one to find and delete.
   const { dir, git, write } = repo(t);
-  write("app/models/m.rb", "class M < ApplicationRecord\nend\n");
+  write("lib/limits.rb", "LIMITS = {\n  max: 3,\n}.freeze\n");
+  write("src/list.ts", "export const IDS = [\n  1,\n];\n");
   git("add", "-A");
-  git("commit", "-qm", "model");
-  write("app/models/consts.rb", "FOO = 1\nBAR = 2\n");
-  write("app/models/m.rb", "class M < ApplicationRecord\n  has_many :items\n  validates :name, presence: true\nend\n");
-  write("Gemfile", "source \"https://rubygems.org\"\ngem \"rails\"\n");
-  write("src/config.ts", "import { x } from './x';\nexport type Id = string;\nexport interface P { id: Id }\nexport const LIMITS = { max: 3, min: 1 };\n");
+  git("commit", "-qm", "constants");
+  write(
+    "app/models/consts.rb",
+    "# frozen_string_literal: true\n\nrequire \"json\"\nrequire_relative \"base\"\nFOO = 1\nBAR = 'two'.freeze\nWORDS = %w[a b].freeze\nNONE = nil\nTABLE = {\n  \"min\" => 1,\n  nested: [nil, true, :sym, -2.5],\n  deep: {\n    on: false,\n  },\n}.freeze\n=begin\ndef old; end\n=end\n"
+  );
+  write("lib/limits.rb", "LIMITS = {\n  max: 3,\n  min: 1,\n  name: \"n\",\n}.freeze\n");
+  write(
+    "src/config.ts",
+    "\"use strict\";\n/**\n * Limits.\n */\nimport { x } from './x';\nimport type { Y } from \"./y\";\nimport def, * as ns from './ns';\nimport './side-effect';\nimport {\n  a,\n  b as c,\n} from './z';\nexport * from './w';\nexport {\n  d,\n} from './v';\nconst fs = require('fs');\nconst { join } = require(\"path\");\nexport const LIMITS = { max: 3, min: 1, name: `n`, ok: true, none: null, [\"k\"]: 0x1f } as const;\nlet total: number = 0; // counted later\nvar big = 10n;\n/* inline */ export const LIST = [[1, 2], [], {}];\n"
+  );
+  write("src/list.ts", "export const IDS = [\n  1,\n  2,\n  'three',\n];\n");
   write("src/a.ts", "export const one = 1;\nexport const three = 3;\nexport const two = 2;\n");
 
   assert.equal(await pendingChange(dir), null);
@@ -217,13 +224,28 @@ test("every way a file can add something callable is still checked", async (t) =
 });
 
 test("a definition written in a shape no line pattern names is still checked", async (t) => {
-  // Each one was silenced by a per-line pattern, so the rule asks on any token
-  // a definition could start with or hold, and over-asks rather than misses.
+  // Each one was silenced by a pattern of what a definition looks like, so a
+  // line asks unless it is one of the few shapes that provably define nothing.
   const { dir, git, write } = repo(t);
   write("src/f1.js", "export function f1(a) {\n  return a;\n}\n");
   write("src/c1.jsx", "export function C1() {\n  return <div />;\n}\n");
   write("src/g1.ts", "class G {\n  total(a: number)\n  {\n    return a;\n  }\n}\n");
   write("src/h1.ts", "class H {\n  total(\n    a: number,\n  ) {\n    return a;\n  }\n}\n");
+  const model = "class M < ApplicationRecord\n  enum status: {\n    active: 0,\n  }\nend\n";
+  const models = {
+    "app/models/enum.rb": "  enum kind: { a: 0, b: 1 }\n",
+    "app/models/store.rb": "  store_accessor :settings, :theme, :locale\n",
+    "app/models/assoc.rb": "  has_many :items\n",
+    "app/models/nested.rb": "  accepts_nested_attributes_for :items\n",
+    "app/models/attached.rb": "  has_one_attached :avatar\n",
+    "app/models/valid.rb": "  validates :name, presence: true\n",
+    "app/models/mixin.rb": "  include Sluggable\n",
+    "app/models/member.rb": "    archived: 1,\n",
+  };
+  for (const path of Object.keys(models)) write(path, model);
+  write("src/f2.js", "export function f2(a) {\n  return a;\n}\n");
+  write("src/g2.ts", "export const g = 1;\n");
+  write("src/c2.jsx", "export function C2() {\n  return <div />;\n}\n");
   git("add", "-A");
   git("commit", "-qm", "base");
   const created = {
@@ -241,8 +263,30 @@ test("a definition written in a shape no line pattern names is still checked", a
     "lib/each.rb": "DOUBLED = ITEMS.map { |i| i * 2 }\n",
     "lib/arrow.rb": "F = ->(x) { x }\n",
     "lib/reflect.rb": "HANDLER = instance_method(:call)\n",
+    "src/debounced.js": 'import debounce from "lodash/debounce";\nimport save from "./save";\nexport const debouncedSave = debounce(save, 300);\n',
+    "src/alias.ts": 'import { useSelector } from "react-redux";\nexport const useAppSelector = useSelector;\n',
+    "src/title.jsx": 'import styled from "styled-components";\nexport const Title = styled.h1`\n  color: red;\n`;\n',
+    "src/connect.js": "export default connect(mapState)(TodoList);\n",
+    "src/compose.js": "export const clean = compose(trim, lower);\n",
+    "src/thunk.js": "export const fetchX = createAsyncThunk('x', fn);\n",
+    "src/abstract.ts": "export abstract class Job {\n  abstract run(x: string): Promise<void>;\n}\n",
+    "src/types.ts": "export type Id = string;\nexport interface P { id: Id }\n",
+    "src/ternary.js": "export const X = cond ? 1 : 2;\n",
+    "src/template.js": "export const X = `a${b}`;\n",
+    "src/spread.js": "export const X = {\n  ...base,\n};\n",
+    "src/local.js": "export { a as b };\n",
+    "lib/interp.rb": 'FOO = "a#{bar}"\n',
+    "lib/ns.rb": "module Ns\n  FOO = 1\nend\n",
   };
   for (const [path, body] of Object.entries(created)) write(path, body);
+  for (const [path, line] of Object.entries(models)) {
+    const lines = model.split("\n");
+    lines.splice(path.endsWith("member.rb") ? 3 : 1, 0, line.slice(0, -1));
+    write(path, lines.join("\n"));
+  }
+  write("src/f2.js", "export function f2(a) {\n  return a;\n}\nexport const debouncedF2 = debounce(f2, 300);\n");
+  write("src/g2.ts", "export const g = 1;\nexport const selectF = createSelector([g1, g2], sum);\n");
+  write("src/c2.jsx", "export function C2() {\n  return <div />;\n}\nexport const MemoC2 = React.memo(C2);\n");
   write("src/f1.js", "export function f1(a) {\n  return a;\n}\nexport const m = {\n  sum(a, b = defaults(),\n  c) {\n    return a + b + c;\n  },\n};\n");
   write("src/c1.jsx", "export function C1() {\n  return <div />;\n}\nexport const kit = { Badge(p) { return <b>{p.n}</b> } };\n");
   // Only the head line of an Allman method changed; its brace is on the next line.
@@ -251,7 +295,7 @@ test("a definition written in a shape no line pattern names is still checked", a
 
   assert.deepEqual(
     ((await pendingChange(dir)) ?? []).map((f) => f.path),
-    [...Object.keys(created), "src/c1.jsx", "src/f1.js", "src/g1.ts", "src/h1.ts"].sort()
+    [...Object.keys(created), ...Object.keys(models), "src/c1.jsx", "src/c2.jsx", "src/f1.js", "src/f2.js", "src/g1.ts", "src/g2.ts", "src/h1.ts"].sort()
   );
 });
 
