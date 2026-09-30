@@ -416,6 +416,23 @@ test("a repository that commits any file of the refresh's own is never refreshed
   assert.equal(existsSync(join(dir, ".claude", "anatomiya", "refresh.again")), true);
 });
 
+test("a refresh file committed under another case of .claude than the disk's still counts as committed", async (t) => {
+  const dir = await scanned(t);
+  if (!existsSync(join(dir, ".CLAUDE"))) return t.skip("this filesystem is case-sensitive");
+  const recase = (from, to) => {
+    renameSync(join(dir, from), join(dir, "tmp"));
+    renameSync(join(dir, "tmp"), join(dir, to));
+  };
+  recase(".claude", ".Claude");
+  writeFileSync(join(dir, ".Claude", "anatomiya", "refresh.again"), "");
+  git(dir, "add", "-f", join(".Claude", "anatomiya", "refresh.again"));
+  git(dir, "commit", "-qm", "commit the word");
+  recase(".Claude", ".claude");
+
+  assert.equal((await refreshRepository(dir)).reason, "tracked");
+  assert.equal(existsSync(join(dir, ".claude", "anatomiya", "refresh.again")), true);
+});
+
 test("a map built with the type checker is refreshed with the checker it was built with", async (t) => {
   // Skipping it left `--deep` users running the scan by hand after every
   // checkout, and rescanning without the checker would drop the claims it
