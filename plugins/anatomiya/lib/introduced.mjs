@@ -15,7 +15,8 @@ import { CLASSES, claimFor } from "./dimensions-naming.mjs";
 import { encode } from "./encode.mjs";
 import { statedSide } from "./facts.mjs";
 import { holdsTypeSyntax, spokenIn } from "./langs.mjs";
-import { groupKey, isLearnedItself } from "./reduce.mjs";
+import { groupKey, isLearnedItself, reachesThrough, sameConstant } from "./reduce.mjs";
+import { isFunctionLike, walk } from "./walk.mjs";
 
 /**
  * The sites `head` holds that the branch introduced, judged against `base` or
@@ -27,7 +28,8 @@ import { groupKey, isLearnedItself } from "./reduce.mjs";
  * answering it per revision skipped the whole base side of a file that gained
  * JSX on the branch. `base` and `addedLines` are the two modes and cannot both
  * be given; neither is a file the branch added, where every head site is new.
- * `rows` narrows the registry, for a test driving one row.
+ * `rows` narrows the registry, for a test driving one row. `parents` is what
+ * `declaredParents` found in the files the branch changed in this area.
  *
  * A row that throws on one tree loses its own sites for that file and nothing
  * else. Order is registry order, then walk order, then the grouped bodies of
@@ -45,11 +47,12 @@ export function newlyIntroduced({
   base = null,
   addedLines = null,
   rows,
+  parents = new Map(),
 }) {
   if (base && addedLines) throw new TypeError("a base revision and an added-line list are two answers to one question");
   // Read once and handed to both revisions: read separately, a file whose area
   // states the inverse would show every pre-existing site as newly introduced.
-  const polarity = sidesFor(area, ancestorsOf);
+  const polarity = { ...sidesFor(area, ancestorsOf), parents };
   const judge = (rev) =>
     breakingSites(rev.program, rev.source, lang, keyPath, {
       polarity,
@@ -67,18 +70,66 @@ export function newlyIntroduced({
 }
 
 /**
+ * The superclass each class in one revision names, per learned row, keyed by
+ * the class's own qualified name.
+ *
+ * The fold follows a chain through every class its area declares, and the
+ * check holds only the map's `reaches` for the classes it did not read. A base
+ * the branch adds is in neither, so the check reads the branch's own
+ * declarations too, or every subclass of that base is told to skip it.
+ */
+export function declaredParents({ path, lang, frameworks, capabilities, rows, head }) {
+  const out = new Map();
+  for (const dim of dimensionsFor(spokenIn(lang, head.facets), { frameworks, capabilities, rows })) {
+    if (!dim.learnedClasses || dim.groupedSites) continue;
+    const parents = new Map();
+    try {
+      dim.run(head.program, (hit) => {
+        if (typeof hit.self === "string" && typeof hit.class === "string" && !parents.has(hit.self)) parents.set(hit.self, hit.class);
+      }, { comments: head.comments, source: head.source, rel: path });
+    } catch {
+      continue;
+    }
+    if (parents.size) out.set(dim.key, parents);
+  }
+  return out;
+}
+
+/**
  * The identity of one site: the node's type and its normalised slice of the
  * parsed string, keyed under the path and the row. Never the line, since one
  * added import shifts every line below it. A parser that reports no offsets
  * leaves the node's own name as the identity.
+ *
+ * Every function and class body inside the node reads as `{}`: a row that
+ * reports a whole declaration would otherwise give it a new identity for any
+ * line added to its body, and the untouched declaration came back as new.
  */
 export function siteIdentity(keyPath, key, node, source) {
-  const text = sliceOf(node, source);
+  const text = located(node) ? normalise(withoutBodies(node, source)) : "";
   return fingerprint(keyPath, key, node.type, text || node.name || "");
 }
 
 /** Whether the parser reported offsets for a node; prism reports none (B5). */
 const located = (node) => typeof node.start === "number" && typeof node.end === "number";
+
+function withoutBodies(node, source) {
+  const bodies = [];
+  walk(node, (n) => {
+    if ((isFunctionLike(n) || n.type === "ClassDeclaration" || n.type === "ClassExpression") && n.body && located(n.body)) {
+      bodies.push(n.body);
+    }
+  });
+  let text = "";
+  let at = node.start;
+  // A body inside one already cut starts before `at` and is skipped.
+  for (const b of bodies.sort((x, y) => x.start - y.start)) {
+    if (b.start < at) continue;
+    text += `${source.slice(at, b.start)}{}`;
+    at = b.end;
+  }
+  return text + source.slice(at, node.end);
+}
 
 /**
  * The normalised slice of the parsed string under a node, or nothing where the
@@ -173,7 +224,7 @@ function enforceableClass(dim, cls) {
 const isOmission = (hit) => hit.class === undefined || hit.class === null;
 
 function breakingSites(program, source, lang, keyPath, { polarity, frameworks, capabilities, rows, comments = [], stripped = false, rel = null, facets = null }) {
-  const { sides, learned, kinds, qualified, stated, reaching = new Map() } = polarity;
+  const { sides, learned, kinds, qualified, stated, reaching = new Map(), parents = new Map() } = polarity;
   const out = [];
   // One index of line starts per revision, built on the first site that asks.
   const lines = lazyLines(source);
@@ -202,9 +253,10 @@ function breakingSites(program, source, lang, keyPath, { polarity, frameworks, c
     // A site that is the very class the area learned cannot inherit itself, so
     // it reads as conforming here rather than as a finding. The fold drops it
     // from the population; the check re-runs the predicate and has to agree.
+    const chain = dim.learnedClasses ? chainOf(cls, reaching.get(dim.key), parents.get(dim.key)) : null;
     const conformingOf = (hit) =>
       dim.learnedClasses
-        ? hit.class === cls || isLearnedItself(hit, cls) || reaching.get(dim.key)?.has(hit.class) === true
+        ? sameConstant(hit.class, cls, hit.nesting) || isLearnedItself(hit, cls) || reachesThrough(hit.class, cls, chain)
         : hit.conforming;
     const site = (hit) => {
       const node = hit.node || {};
@@ -269,6 +321,17 @@ function breakingSites(program, source, lang, keyPath, { polarity, frameworks, c
 }
 
 /**
+ * One parent map for `reachesThrough`: each class the map recorded as reaching
+ * the learned base is one step from it, and what the branch declares replaces
+ * that, since a branch can move a class off the base as well as add one.
+ */
+function chainOf(learned, reaching = new Set(), declared = new Map()) {
+  const chain = new Map([...reaching].map((c) => [c, learned]));
+  for (const [self, parent] of declared) chain.set(self, parent);
+  return chain;
+}
+
+/**
  * Identical sites in one file are distinguished by count, not by identity: two
  * copies of the same site at the base absorb two at HEAD, and a third one
  * is new. The enclosing declaration's name is deliberately not part of the key,
@@ -288,6 +351,11 @@ function breakingSites(program, source, lang, keyPath, { polarity, frameworks, c
  * The site's own text is the same in every copy, which is why the copies share
  * an identity, but the lines around it are what the branch did or did not
  * touch. Where those match too, the copies are alike and order is all there is.
+ *
+ * The identity leaves bodies out, so the first pass also asks for the site's
+ * own text, which is what the identity alone matched before. A copy whose body
+ * the branch edited matches neither of the first two and is taken by the name
+ * around it last, so a new copy of the same shape elsewhere is the one left.
  */
 function absorb(head, base) {
   const remaining = new Map();
@@ -298,8 +366,9 @@ function absorb(head, base) {
   const spent = new Set();
   const held = new Set();
   for (const key of [
-    (f) => `${f.fp}\0${f.where ?? ""}`,
+    (f) => `${f.fp}\0${f.where ?? ""}\0${f.text}`,
     (f) => (contextOf.has(f) ? `${f.fp}\0${contextOf.get(f)}` : null),
+    (f) => `${f.fp}\0${f.where ?? ""}`,
   ]) {
     const copies = new Map();
     for (const f of base) {
