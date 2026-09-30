@@ -114,8 +114,8 @@ tests, and one negation per directory made a 106-pattern list in a 40-line file.
 sits on a counted file's path, as `build` can under `src`, the directory is cut out by its path
 instead. A left-out file never makes a subtree the area otherwise holds whole read as shared: the
 glob stays recursive and carries the negation, so a directory added under the area after the scan
-is still reached. Measured on seven corpus repositories, the areas reach 0 left-out files, down from 2,017 on
-angular, 1,707 on react and 591 on prisma, for 67 more patterns (2,716 to 2,783).
+is still reached. Measured over all 35 corpus repositories, the areas reach 0 left-out files, down from 16,311 in 24 of
+them (8,512 on babel, 2,017 on angular, 1,707 on react), for 232 more patterns (12,237 to 12,469).
 
 A directory whose name holds glob syntax cannot root an area or be named by a pattern. That includes a
 comma: Claude Code splits each `paths` entry on the commas outside a brace before it expands braces
