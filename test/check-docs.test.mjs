@@ -416,6 +416,31 @@ test("a changelog with no link definition for the version its manifest states is
   assert.match(output, new RegExp(`CHANGELOG\\.md: has no "\\[${escaped}\\]:" link definition`), output);
 });
 
+test("a link definition inside a code fence defines nothing", (t) => {
+  // Markdown renders a fenced line as text, so the heading still links nowhere.
+  const dir = repoCopy(t);
+  const path = join(dir, "CHANGELOG.md");
+  const text = readFileSync(path, "utf8");
+  const line = text.match(/^\[Unreleased\]: .*$/m)[0];
+  writeFileSync(path, text.replace(line + "\n", "") + "\n```\n" + line + "\n```\n");
+
+  const { status, output } = check(dir);
+
+  assert.equal(status, 1);
+  assert.match(output, /CHANGELOG\.md: has no "\[Unreleased\]:" link definition/, output);
+});
+
+test("a link definition matches its heading whatever the label's case", (t) => {
+  // Markdown matches link labels case-insensitively, so `[unreleased]:` resolves.
+  const dir = repoCopy(t);
+  const path = join(dir, "CHANGELOG.md");
+  writeFileSync(path, readFileSync(path, "utf8").replace(/^\[Unreleased\]: /m, "[unreleased]: "));
+
+  const { output } = check(dir);
+
+  assert.doesNotMatch(output, /link definition/, output);
+});
+
 test("a changelog with no section for the version names the file once, not twice", (t) => {
   const dir = repoCopy(t);
   bump(dir, "9.9.9");
