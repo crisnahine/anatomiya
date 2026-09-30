@@ -56,6 +56,20 @@ test("the counts name the extension the namesake count was taken over", () => {
   assert.equal(found.reason, "src/hooks holds no other test; src/hooks: 0 of 5 .tsx files have a namesake test");
 });
 
+test("a map that never recorded the counted extension says files, not its first one", () => {
+  // Screenshots outnumber components here, and a map written before the
+  // extension was recorded does not say which of the two was counted.
+  const roots = [
+    { ...root("src/hooks", { files: 13, companions: { with: 0, of: 5, root: null } }),
+      exts: [[".png", 8], [".tsx", 5]] },
+    root("src/lib", { files: 4, companions: { with: 4, of: 4, root: null } }),
+  ];
+
+  const [found] = precedentFindings(["src/hooks/useA.test.tsx"], roots);
+
+  assert.equal(found.reason, "src/hooks holds no other test; src/hooks: 0 of 5 files have a namesake test");
+});
+
 test("a test added beside siblings that already have one is not a finding", () => {
   // The discriminating case. A rule that fires on both is a rule that fires on
   // everything, and the same session that invented spec/mailers also added a
