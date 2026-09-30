@@ -216,12 +216,14 @@ export const RUBY_DIMENSIONS = [
   {
     key: "service_result_shape",
     tier: "syntactic",
-    claim: "service entry points return their failure instead of raising",
+    // What is measured is the absence of a raise, so the sentence says that: an
+    // entry point with no failure path conforms, and it returns no failure.
+    claim: "service entry points do not raise, directly or through a bang call like update!",
     counterClaim: "service entry points raise on failure",
     precision: "partial",
     applicabilityPredicate: {
       sites: "a Ruby file declaring a class or module with a call, perform, execute or run method, on the instance or on self; a perform in a body that directly includes Sidekiq::Worker or Sidekiq::Job is not one, because returning is how a job reports success",
-      blind: "a raise inside a helper the entry point calls is invisible from the entry method",
+      blind: "a raise inside a helper the entry point calls is invisible from the entry method, and a bang call under a rescue counts as caught whatever the rescue names",
     },
     langs: ["ruby"],
     run(ast, add) {
@@ -240,7 +242,12 @@ export const RUBY_DIMENSIONS = [
         if (n.name === "perform" && sidekiq.has(ctx.cls)) return;
         let raises = false;
         walkRuby(n.body, (m, mctx) => {
-          if (m.t !== "call" || !RAISE.test(m.name) || m.receiver) return;
+          if (m.t !== "call") return;
+          if (RAISING_BANG.test(m.name)) {
+            if (!caught(mctx.ancestors, m)) raises = true;
+            return;
+          }
+          if (!RAISE.test(m.name) || m.receiver) return;
           // A raise inside a rescue is a translation of someone else's error,
           // not this method's choice about how it reports failure.
           if (mctx.ancestors.some((a) => a.t === "rescue")) return;
@@ -295,7 +302,7 @@ export const RUBY_DIMENSIONS = [
     key: "zone_aware_time",
     tier: "syntactic",
     framework: "rails",
-    claim: "the current time is read through the application time zone",
+    claim: "times are read and built through the application time zone",
     // Time.now is right in plain Ruby and a drifting timestamp under Rails, and
     // the predicate cannot see which of the two it is standing in.
     counterClaim: null,
@@ -345,7 +352,7 @@ export const RUBY_DIMENSIONS = [
     counterClaim: null, // a repository with no logger is never asked (C8), so the other side has no sites
     precision: "partial",
     applicabilityPredicate: {
-      sites: "a Ruby file calling puts, print, p, pp or warn with no receiver, or calling through a logger receiver; the file whose own stem is nothing but the logging vocabulary implements the routing rather than following it and is not a site",
+      sites: "a Ruby file calling puts, print, p, pp or warn with no receiver, or calling debug, info, warn, error, fatal, unknown, add, log, tagged or << on a logger receiver; setting or asking about the logger writes nothing and is not a site; the file whose own stem is nothing but the logging vocabulary implements the routing rather than following it and is not a site",
       blind: "output behind a helper, and a CLI that writes to stdout on purpose, look the same from here",
     },
     langs: ["ruby"],
@@ -357,7 +364,7 @@ export const RUBY_DIMENSIONS = [
         if (!n.receiver && LOG_DIRECT.test(n.name)) {
           return add({ node: site(n), conforming: false, where: where(ctx) });
         }
-        if (loggerReceiver(n.receiver)) add({ node: site(n), conforming: true, where: where(ctx) });
+        if (LOG_OUTPUT.test(n.name) && loggerReceiver(n.receiver)) add({ node: site(n), conforming: true, where: where(ctx) });
       });
     },
   },
@@ -370,7 +377,7 @@ export const RUBY_DIMENSIONS = [
     counterClaim: null, // same as logger_over_puts: no wrapper means the question is never asked
     precision: "partial",
     applicabilityPredicate: {
-      sites: "a Ruby file calling Net::HTTP, RestClient, HTTPClient, HTTParty, Faraday, Excon, Typhoeus, HTTP, HTTPX or URI.open, or making a verb-shaped call (get, post, put, patch, delete, head, request, call, perform, execute, fetch) through a constant or variable named client, http, api, request or fetcher; the file whose own stem is nothing but that vocabulary is the client itself and is not a site",
+      sites: "a Ruby file calling Net::HTTP, RestClient, HTTPClient, HTTParty, Faraday, Excon, Typhoeus, HTTP, HTTPX or URI.open, or a class under one of those libraries other than its errors, exceptions and CookieHash, or making a verb-shaped call (get, post, put, patch, delete, head, request, call, perform, execute, fetch) through a constant or variable named client, http, api, request or fetcher; the file whose own stem is nothing but that vocabulary is the client itself and is not a site",
       blind: "a client behind another name or a non-verb method is not seen, and a model that happens to be called Client with a verb-named scope still counts",
     },
     langs: ["ruby"],
@@ -552,9 +559,28 @@ export const RUBY_DIMENSIONS = [
 ];
 
 const LOG_DIRECT = /^(puts|print|p|pp|warn)$/;
+// What writes through a logger. `level=`, `formatter=` and `debug?` configure or
+// ask, and a directory that only sets its logger up has logged nothing.
+const LOG_OUTPUT = /^(debug|info|warn|error|fatal|unknown|add|log|tagged|<<)$/;
 // Kernel#fail is raise under another name, and the "fail to signal, raise to
 // re-raise" style spells half its raises with it.
 const RAISE = /^(raise|fail)$/;
+// The bang calls that raise on failure: ActiveRecord's persistence and lookup,
+// and the run! and call! of ActiveInteraction and Interactor. A table, because
+// `merge!` and `strip!` are bangs that fail nothing.
+const RAISING_BANG =
+  /^(save|create|update|update_attributes|destroy|find_by|find_or_create_by|create_or_find_by|first|last|take|validate|insert_all|run|call)!$/;
+
+/** Whether a call sits in the body a `begin` or `def` rescue guards, or under a rescue modifier. */
+function caught(ancestors, node) {
+  const chain = [...ancestors, node];
+  for (let i = 0; i < chain.length - 1; i++) {
+    const a = chain[i];
+    if (a.t === "begin" && a.rescue_clause && chain[i + 1] === a.statements) return true;
+    if (a.t === "rescue_modifier" && chain[i + 1] === a.expression) return true;
+  }
+  return false;
+}
 
 /**
  * The HTTP libraries a wrapper wraps, the way axios is on the JS side. A
@@ -565,7 +591,11 @@ const RAISE = /^(raise|fail)$/;
  */
 const HTTP_LIBRARIES = ["Net::HTTP", "RestClient", "HTTPClient", "HTTParty", "Faraday", "Excon", "Typhoeus", "HTTP", "HTTPX"];
 
-const directHttp = (recv) => HTTP_LIBRARIES.some((lib) => recv === lib || recv.startsWith(`${lib}::`));
+// A class under a library's namespace is a request class like Net::HTTP::Get,
+// except its errors and its cookie jar, which send nothing.
+const HTTP_HELPER = /(Error|Exception|::CookieHash)$/;
+const directHttp = (recv) =>
+  HTTP_LIBRARIES.some((lib) => recv === lib || (recv.startsWith(`${lib}::`) && !HTTP_HELPER.test(recv)));
 const HTTP_VERB = /^(get|post|put|patch|delete|head|request|call|perform|execute|fetch)$/;
 
 /** A receiver that is a logger: `logger.info`, `Rails.logger.warn`, `@logger.debug`. */
