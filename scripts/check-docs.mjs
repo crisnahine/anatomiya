@@ -313,10 +313,14 @@ const UNRELEASED = "## [Unreleased]";
 /** Whether a changelog defines the link its `## [label]` heading points at, read as Markdown reads it: outside a fence, any case. */
 const linkDefined = (text, label) => {
   const want = `[${label}]: `.toLowerCase();
-  let fenced = false;
-  for (const line of text.split("\n")) {
-    if (/^ {0,3}(```|~~~)/.test(line)) fenced = !fenced;
-    else if (!fenced && line.toLowerCase().startsWith(want)) return true;
+  let fence = null;
+  for (const line of text.split(/\r?\n/)) {
+    const [, run, rest] = line.match(/^ {0,3}(`{3,}|~{3,})(.*)$/) ?? [];
+    if (fence) {
+      // Only a bare run of the opener's character, at least as long, closes it.
+      if (run && run[0] === fence[0] && run.length >= fence.length && !rest.trim()) fence = null;
+    } else if (run && !(run[0] === "`" && rest.includes("`"))) fence = run;
+    else if (line.toLowerCase().startsWith(want)) return true;
   }
   return false;
 };
