@@ -1360,7 +1360,9 @@ resolved against the nesting it is written in, and a class whose chain of parent
 learned base conforms. The fold follows that chain through every class its area declares, and the
 check holds only the files the branch changed, so it reads the chain from two places: the map's
 `reaches`, for the classes it did not read, and the classes the branch's own changed files declare
-in the same area, which replace what the map recorded for them. A subclass of a base the branch adds
+in the same area, which replace what the map recorded for them. The area is the one the pinned map
+draws, so a directory the branch adds inside it counts as part of it, even where a rescan would make
+it an area of its own. A subclass of a base the branch adds
 is not told to skip that base, and a subclass of a class the branch moved off the base is.
 
 The head side is read from the working tree wherever the tree differs from the commit, and a file
