@@ -708,6 +708,13 @@ test("a spec the check did not read keeps its name's answer, wherever the reposi
   assert.deepEqual(pairingViolations(["app/models/m1.rb"], corpus, MODEL_SPEC, new Set(), records), []);
 });
 
+test("a spec the branch left unparseable keeps its name's answer, so it is not read as taken away", () => {
+  const corpus = new Set(["app/models/m1.rb", "app/models/m2.rb", "specs/models/m1_spec.rb", "specs/models/m2_spec.rb"]);
+  const records = new Map([["specs/models/m2_spec.rb", { ok: false }]]);
+
+  assert.deepEqual(pairingViolations(["specs/models/m2_spec.rb"], corpus, MODEL_SPEC, new Set(), records), []);
+});
+
 test("a branch that empties a spec is asked about the producer it answered, as one that deletes it is", () => {
   const corpus = new Set(["app/models/user.rb", "app/models/post.rb", "spec/models/user_spec.rb", "spec/models/post_spec.rb"]);
   const records = new Map([["spec/models/user_spec.rb", { ok: true, facets: { empty: true } }]]);
