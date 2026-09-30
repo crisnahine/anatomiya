@@ -2174,6 +2174,13 @@ test("a file deleted only in the tree travels on the report the way a committed 
     writeFileSync(join(root, "spec/models/zz_spec.rb"), "x\n");
     git("add", "spec/models/zz_spec.rb");
     rmSync(join(root, "spec/models/zz_spec.rb"));
+    // The same with intent to add, which git reports as ` D`, and a path no
+    // source filter would keep.
+    writeFileSync(join(root, "spec/models/yy_spec.rb"), "x\n");
+    writeFileSync(join(root, "NOTES.md"), "x\n");
+    git("add", "-N", "spec/models/yy_spec.rb", "NOTES.md");
+    rmSync(join(root, "spec/models/yy_spec.rb"));
+    rmSync(join(root, "NOTES.md"));
   });
 
   const r = await check(dir, { baseRef: "main" });
@@ -2199,6 +2206,33 @@ test("a tree deletion is counted once, and for any path a committed one would be
 
   assert.deepEqual(r.changed.map((c) => c.path), ["spec/models/thing_spec.rb"]);
   assert.deepEqual(r.removed, ["README.md"]);
+});
+
+test("a companion no commit held, added to the index and deleted, breaks nothing", async (t) => {
+  // The branch never touched the model, and committing the same steps leaves
+  // no trace, so a finding here would charge it for a file it never had.
+  const dir = repo(t, ({ dir: root, git, write, commit }) => {
+    write("app/models/thing.rb", "class Thing\nend\n");
+    write("spec/models/thing_spec.rb", "describe Thing do\nend\n");
+    for (const n of ["lone", "bare"]) write(`app/models/${n}.rb`, `class ${n}\nend\n`);
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    for (const [n, flags] of [["lone", []], ["bare", ["-N"]]]) {
+      write(`spec/models/${n}_spec.rb`, `describe ${n} do\nend\n`);
+      git("add", ...flags, `spec/models/${n}_spec.rb`);
+      rmSync(join(root, `spec/models/${n}_spec.rb`));
+    }
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    path: "app/models",
+    dimensions: [dim({ key: "model_spec", directive: true })],
+  });
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.deepEqual(forKey(r, "model_spec").map((f) => f.path), []);
+  assert.deepEqual(r.removed, []);
 });
 
 test("a companion deleted in the tree breaks the obligation before it is committed", async (t) => {
