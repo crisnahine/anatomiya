@@ -771,8 +771,12 @@ by double digits;
 constant, so A5 holds.
 
 Writes are atomic: temp file in the same directory, then rename, so a crash never leaves half a
-context file. `.claude/anatomiya/facts.json` is written first and holds every count, gated or not,
-so no rendered file exists that is not derivable from facts on disk. It carries a schema version,
+context file. `.claude/anatomiya/facts.json` holds every count, gated or not, and the facts and
+the rendered files are replaced as one: every one is written to its temp file before any rename,
+the facts are renamed first and stale area files removed last, and a rename or removal that fails
+puts back what it had replaced. So no rendered file exists that is not derivable from facts on
+disk, and a scan that fails part way does not leave new facts beside the old map for `check` to
+call fresh. A process killed between two renames is the one window left. It carries a schema version,
 and the check refuses a version past the one it knows rather than reading the fields positionally:
 an older record is readable and is read, a newer one is a shape this build has never seen. A run that read no file of a
 language writes neither, for the same reason: keeping the rendered files while replacing the facts

@@ -363,7 +363,12 @@ export function writeFacts(root, result) {
     throw new Error(`${outsideClaude(dirname(FACTS_PATH))}, so the facts were not written`);
   }
   mkdirSync(dir, { recursive: true });
-  atomic(join(dir, basename(FACTS_PATH)), JSON.stringify(factsRecord(result), null, 2) + "\n");
+  atomic(join(dir, basename(FACTS_PATH)), factsJson(result));
+}
+
+/** The record's bytes, for a writer that puts them on disk together with the map. */
+export function factsJson(result) {
+  return JSON.stringify(factsRecord(result), null, 2) + "\n";
 }
 
 function factsRecord(result) {
