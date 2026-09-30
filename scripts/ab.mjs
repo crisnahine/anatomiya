@@ -18,8 +18,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { parseArgs, USAGE } from "./ab/args.mjs";
-import { rankAreas, NO_HEADROOM } from "./ab/pick.mjs";
-import { buildArms, installMap, probeFor } from "./ab/arms.mjs";
+import { rankAreas, noHeadroom } from "./ab/pick.mjs";
+import { buildArms, probeFor } from "./ab/arms.mjs";
 import { runTrial } from "./ab/run.mjs";
 import { conflictingSettings, engineRan } from "./ab/engine.mjs";
 import { settingsFor } from "./claude-build.mjs";
@@ -62,11 +62,8 @@ async function main(argv) {
     (r) => (!args.key || r.key === args.key) && (!args.area || r.path === args.area)
   );
   const target = ranked[0];
-  if (!target || target.headroom < args.minHeadroom) {
-    die(
-      `${NO_HEADROOM}\n\nbest available: ${target ? `${target.key} in ${target.path} at ${target.ratio.toFixed(3)}, headroom ${target.headroom.toFixed(3)}` : "no stated claim at all"}`
-    );
-  }
+  const refused = noHeadroom(target, args);
+  if (refused) die(refused);
   console.log(`measuring ${target.key} in ${target.path}: ${target.ratio.toFixed(3)}, headroom ${target.headroom.toFixed(3)}`);
 
   const sha = execFileSync("git", ["rev-parse", "HEAD"], { cwd: args.repo, encoding: "utf8" }).trim();
@@ -85,11 +82,9 @@ async function main(argv) {
     label = repoLabel(args.repo, origin);
     const prompt = readFileSync(args.task, "utf8");
 
-    // 3. Two worktrees off one commit, one holding the map.
+    // 3. Two checkouts of one commit, one holding the map.
     const arms = await buildArms(args.repo, sha);
     try {
-      installMap(args.repo, arms.a);
-
       // 4. An unverified arm is not an arm.
       // A file the corpus holds, because the map's own globs are what attach it:
       // a tracked file the scan excluded attaches nothing, and a hand-kept
@@ -110,18 +105,26 @@ async function main(argv) {
       if (!/NONE/i.test(said.b)) throw new Error(`arm B received a map it should not have: it answered "${said.b}"`);
       console.log(`injection verified: A said "${said.a}", B said "${said.b}"`);
 
-      // 5. Alternating, so a rate limit partway through hits both arms equally.
+      // 5. Alternating, so a rate limit partway through hits both arms equally,
+      // and each from the commit, so no trial starts from another's files.
       const trials = { a: [], b: [] };
       for (let i = 0; i < args.trials; i++) {
         for (const name of ["a", "b"]) {
+          await arms.reset();
           const r = await runTrial(name === "a" ? arms.a : arms.b, prompt, args.engine);
           trials[name].push(r);
-          console.log(`  trial ${i + 1} arm ${name}: ${r.ok ? `${r.wrote.length} file(s)` : `failed, ${r.reason}`}`);
+          console.log(`  trial ${i + 1} arm ${name}: ${r.wrote.length} file(s)${r.ok ? "" : `, ended early: ${r.reason}`}`);
         }
       }
 
       // 6. Scored by the predicate the map stated, never by a second one.
-      const arm = (runs) => scoreArm(runs, { key: target.key, frameworks: facts.corpus?.frameworks ?? [], learned: target.learned ?? null });
+      const arm = (runs) =>
+        scoreArm(runs, {
+          key: target.key,
+          frameworks: facts.corpus?.frameworks ?? [],
+          learned: target.learned ?? null,
+          learnedKind: target.learnedKind ?? null,
+        });
       // The result file quotes the engine the trials reported, not the flags they
       // were given. A run whose arms answered from two engines measured nothing.
       const ran = engineRan(args.engine, [...trials.a, ...trials.b]);
