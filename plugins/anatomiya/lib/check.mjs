@@ -981,7 +981,11 @@ async function collect(root, run) {
 
     }
 
-    await addPairingFindings(root, findings, run, droppedIn);
+    // A spec this branch wrote empty answers no obligation, as it answers none
+    // in the map. Only the files this run parsed are known; the rest keep the
+    // answer their names give.
+    const headRecords = new Map(jobs.map((job) => [job.file.path, parsed.get(`head:${job.file.path}`)]));
+    await addPairingFindings(root, findings, run, droppedIn, headRecords);
     // The scan says this on its own summary, and a check runs in CI where nobody
     // read that. Without it a Flow file reads as a broken file.
     if (missingStripper) {
@@ -1013,7 +1017,7 @@ async function collect(root, run) {
  * claim it could execute, reported clean, and said nothing about the one it
  * could not: the same shape as reporting clean for a file that was never read.
  */
-async function addPairingFindings(root, findings, { examined, areas, fresh, caveats, pending, removed }, droppedIn) {
+async function addPairingFindings(root, findings, { examined, areas, fresh, caveats, pending, removed }, droppedIn, headRecords) {
   const areaFor = areaIndex(areas);
   const changed = examined.map((f) => f.path);
   // A removed companion asks its language's obligations too, or a branch that
@@ -1056,7 +1060,7 @@ async function addPairingFindings(root, findings, { examined, areas, fresh, cave
   for (const row of pending?.present ?? []) asItStands.add(row.path);
 
   for (const pairing of pairings) {
-    for (const { path, companion } of pairingViolations(changed, asItStands, pairing, removed)) {
+    for (const { path, companion } of pairingViolations(changed, asItStands, pairing, removed, headRecords)) {
       const area = areaFor(path);
       const dim = area && (area.dimensions || []).find((d) => d.key === pairing.key);
       // Same rule as every other finding: the check enforces what the map
