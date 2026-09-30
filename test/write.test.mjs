@@ -208,6 +208,30 @@ test("a removal that fails puts back what the scan had written", async (t) => {
   rmSync(dir, { recursive: true, force: true });
 });
 
+test("every file being replaced is read before the first one is renamed", async (t) => {
+  // A read between two renames widens the window in which the facts are new and
+  // the rules are not.
+  const dir = workspace();
+  writeMap(result(dir, [area("src/services"), area("src/api")]));
+  const fs = (await import("node:fs")).default;
+  const { syncBuiltinESMExports } = await import("node:module");
+  const real = { readFileSync: fs.readFileSync, renameSync: fs.renameSync };
+  const calls = [];
+  for (const name of Object.keys(real)) fs[name] = (...args) => (calls.push(name), real[name](...args));
+  syncBuiltinESMExports();
+  t.after(() => {
+    Object.assign(fs, real);
+    syncBuiltinESMExports();
+  });
+
+  writeMap(result(dir, [area("src/services"), area("src/hooks")]));
+
+  const firstRename = calls.indexOf("renameSync");
+  assert.ok(firstRename > 0, "the replace renamed");
+  assert.equal(calls.lastIndexOf("readFileSync") < firstRename, true, "no read after the first rename");
+  rmSync(dir, { recursive: true, force: true });
+});
+
 test("a dry run writes nothing at all", () => {
   const dir = workspace();
 
