@@ -33,12 +33,15 @@ async function importTypeScript(specifier) {
 }
 
 function usable(ts) {
-  if (!ts || typeof ts.createProgram !== "function") return false;
-  return Number(String(ts.version ?? "").split(".")[0]) === SEMANTIC_MIN_MAJOR;
+  return Boolean(ts) && unusableReason(ts) === null;
 }
 
-/** What doctor and `--deep` both say of a typescript that loads and is not the major this tier runs on. */
-export const NEEDS_MAJOR = `--deep needs typescript ${SEMANTIC_MIN_MAJOR}.x`;
+/** What doctor and `--deep` both say of a typescript that loads and cannot run this tier, or null. */
+export function unusableReason(ts) {
+  if (Number(String(ts?.version ?? "").split(".")[0]) !== SEMANTIC_MIN_MAJOR) return `--deep needs typescript ${SEMANTIC_MIN_MAJOR}.x`;
+  if (typeof ts.createProgram !== "function") return "--deep needs a typescript that exports createProgram";
+  return null;
+}
 
 /**
  * What `--deep` refuses with. The remedy is handed in rather than spelled here:
@@ -60,9 +63,10 @@ export function notInstalledMessage(remedy) {
 export async function deepRefusal(remedy, { specifier = "typescript" } = {}) {
   const ts = await importTypeScript(specifier);
   if (!ts) return notInstalledMessage(remedy);
-  if (usable(ts)) return null;
+  const why = unusableReason(ts);
+  if (!why) return null;
   const found = ts.version ? `typescript ${ts.version}` : "typescript of no version";
-  return [`${found}: ${NEEDS_MAJOR}`, `${remedy}, or scan again without --deep`].join("\n");
+  return [`${found}: ${why}`, `${remedy}, or scan again without --deep`].join("\n");
 }
 
 import { guardedChild } from "./child.mjs";
