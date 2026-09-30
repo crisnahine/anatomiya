@@ -2960,6 +2960,24 @@ test("a map from a build this one cannot read is one code, whatever the sentence
   assert.deepEqual(codesOf(r), [CAVEATS.MAP_UNREADABLE]);
 });
 
+test("a map on disk that does not parse is reported as unreadable, not as no map", async (t) => {
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/a.ts", clean(2));
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/a.ts", clean(2) + swallow(1));
+    commit("swallow");
+  });
+  facts(dir, { sha: sha(dir, "main") });
+  writeFileSync(join(dir, ".claude", "anatomiya", "facts.json"), "{bad");
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.deepEqual(codesOf(r), [CAVEATS.MAP_UNREADABLE]);
+  assert.match(notes(r)[0], /does not parse as JSON/);
+  assert.equal(r.staleReason, "the map on disk could not be read");
+});
+
 test("a repository holding none of the base refs says so, by code", async (t) => {
   const dir = repo(t, ({ git, write, commit }) => {
     write("src/a.ts", clean(2));

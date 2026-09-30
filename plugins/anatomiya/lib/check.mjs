@@ -1312,7 +1312,7 @@ function isException(dim, side, file) {
  * at the moment it costs most.
  */
 async function staleness(root, facts, base, unreadable = null) {
-  if (unreadable) return { reason: "the map on disk could not be read by this build" };
+  if (unreadable) return { reason: "the map on disk could not be read" };
   if (!facts) return { reason: "no map on disk" };
   if (facts.suppressAll) return { reason: "the scan was truncated, so no directive was stated" };
 

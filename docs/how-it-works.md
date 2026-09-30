@@ -1317,7 +1317,7 @@ are 28. Most appear at most once in a run; the ones that repeat are named under 
 
 | Code | What it means |
 |---|---|
-| `map-unreadable` | there is a map and none of it was used: the store resolves outside the repository, or its schema is past the one this build reads |
+| `map-unreadable` | there is a map and none of it was used: the store resolves outside the repository, the file does not parse as JSON (a committed one that conflicted on a merge), or its schema is past the one this build reads |
 | `no-map` | no map on disk, so nothing was stated and nothing can be enforced |
 | `no-base-ref` | none of the candidate base refs resolved |
 | `no-merge-base` | a base was found and shares no fork point with HEAD, so nothing can be called newly introduced |
