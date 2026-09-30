@@ -223,7 +223,7 @@ export function reduceArea(area, parsed, { frameworks, tier = "syntactic", capab
         if (!dim.langs.includes(lang)) continue;
         const cls = dim.classify(file.rel);
         if (cls !== null) perFile.set(file.rel, [{ conforming: false, class: cls }]);
-        else if (dim.isSite(file.rel)) declined.add(file.rel);
+        else if (dim.isSite(file.rel, file.facets)) declined.add(file.rel);
         continue;
       }
       if (!file.hits) continue;
