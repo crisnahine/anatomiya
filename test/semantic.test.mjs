@@ -10,6 +10,7 @@ import {
   loadTypeScript,
   notInstalledMessage,
   deepRefusal,
+  unusableReason,
   classifySemantic,
   RESOLUTION_FLOOR,
   SEMANTIC_GUARDS,
@@ -209,6 +210,13 @@ test("a --deep refusal names the typescript it found when that one is the wrong 
   assert.match(old, /^typescript 4\.9\.5: --deep needs typescript 5\.x$/m, old);
   assert.doesNotMatch(old, /not installed/, old);
   assert.match(old, /bin\/anatomiya\.mjs setup/, old);
+
+  // A 5.x that cannot build a program is not told it needs 5.x.
+  const p = join(dir, "ts-noprogram.mjs");
+  writeFileSync(p, `export const version = "5.4.0";\n`);
+  const hollow = await deepRefusal(remedy, { specifier: pathToFileURL(p).href });
+  assert.match(hollow, /^typescript 5\.4\.0: --deep needs a typescript that exports createProgram$/m, hollow);
+  assert.equal(unusableReason({ version: "5.4.0" }), "--deep needs a typescript that exports createProgram", "doctor reads the same sentence");
 
   assert.match(await deepRefusal(remedy, { specifier: "typescript-that-is-not-installed" }), /is not installed/);
   assert.equal(await deepRefusal(remedy, { specifier: stub("5.9.3") }), null);
