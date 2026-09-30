@@ -16,6 +16,7 @@ import { corpusDrop, isCorpusPath } from "./corpus.mjs";
 import { encodePath } from "./encode.mjs";
 import { gitBuffered, operationUnfinished } from "./git.mjs";
 import { isPathTaken } from "./hook.mjs";
+import { engineOf, language } from "./langs.mjs";
 import { MAX_FILE_BYTES } from "./limits.mjs";
 import { byCode } from "./paths.mjs";
 import { readHead, readTail, realpathOf } from "./rules.mjs";
@@ -60,6 +61,18 @@ const MARKS_READ = new RegExp(`${REUSE_MARK} ((?:[0-9a-f]{12} ?)+)\\)`, "g");
 // `core/migrations`, openproject's `db/migrate/tables`) is ordinary library code.
 const ONE_OFF = /(^|\/)(\w+_)?(migrate|migrations)\/\d+[_-][^/]*$|(^|\/)db\/(\w+_)?schema\.rb$/;
 
+// A line that may define something callable, per engine. Read line by line
+// rather than parsed, so a match on a call or a string costs one search more
+// and never hides a new function; an engine with no pattern always asks, and
+// so does a line past LINE_READ, which bounds the patterns' backtracking.
+const MAY_DEFINE = {
+  oxc: /\bfunction\b|=>|\bclass\b|\.bind\(|^\s*(?:(?:static|async|get|set|public|private|protected|readonly|override|abstract|declare|export|default|accessor)\s+)*\*?\s*(?!(?:if|for|while|switch|catch|with)\b)(?:#?[\w$]+|\[[^\]]*\]|'[^']*'|"[^"]*")\s*(?:<[^()]*>)?\s*\((?:[^)]*$|.*\)\s*(?::[^;{]*)?\{)|=\s*(?:async\s*)?(?:<[^()]*>\s*)?\(\s*\{?\s*$/,
+  prism:
+    /\bdef\b|\bdefine_(?:singleton_)?method\b|\blambda\b|\bproc\b|\bProc\.new\b|->|\b(?:Struct|Class|Module)\.new\b|\bData\.define\b|\balias(?:_method)?\b|\battr_(?:reader|writer|accessor)\b|\bdelegate\b|^\s*(?:let|subject)!?\s*[({]|^\s*task\b/,
+};
+
+const LINE_READ = 400;
+
 // A name a repository chose is shown as it is only where it cannot carry a
 // line break or a quote into the reason the model reads.
 const PLAIN_PATH = /^[\w./@+-]+$/;
@@ -99,7 +112,8 @@ export function reuseRecord(files) {
  * last written before that moment, which is work the session did not do, and
  * nothing is read while a merge or the like is unfinished, which is another
  * branch's. A migration, a schema dump and a file the corpus refuses (generated,
- * or a link) have no function anybody would reuse, and are left out.
+ * or a link) have no function anybody would reuse, and are left out, and so is
+ * a hunk none of whose lines may define something callable.
  *
  * `turnStart` adds what this turn committed: a turn told to write and commit
  * leaves the tree clean, and read against HEAD alone its work was never asked
@@ -147,10 +161,13 @@ export async function pendingChange(root, { since = null, turnStart = null } = {
       status === "A"
         ? [{ from: 1, to: lineCount(entry.head), created: true }].filter((h) => h.to > 0)
         : (ranges.get(path) ?? []).map(([from, to]) => ({ from, to, created: false }));
-    if (hunks.length === 0) continue;
+    const may = MAY_DEFINE[engineOf(language(path))];
+    const lines = may ? entry.head.split("\n") : [];
+    const defining = may ? hunks.filter((h) => lines.slice(h.from - 1, h.to).some((line) => line.length > LINE_READ || may.test(line))) : hunks;
+    if (defining.length === 0) continue;
     // Over the checkout too: a sibling repository's copy of a file is another file.
     const mark = createHash("sha256").update(`${home}\0${path}\0`).update(entry.head).digest("hex").slice(0, 12);
-    files.push({ path, mark, hunks });
+    files.push({ path, mark, hunks: defining });
   }
   return files.length > 0 ? files : null;
 }
