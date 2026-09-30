@@ -322,7 +322,8 @@ test("a long group of alike copies edited at both ends is aligned in time linear
 
   assert.deepEqual(judged(3000)().map((f) => f.line), [3, 5 * 3000 - 2]);
 
-  const ratio = doublingRatio(judged, 3000);
+  // Large enough that one collection pause cannot swing a side timed in tens of milliseconds.
+  const ratio = doublingRatio(judged, 8000, { rounds: 5 });
   assert.ok(ratio < LINEAR, `twice the copies took ${ratio.toFixed(2)} times as long`);
 });
 
