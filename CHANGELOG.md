@@ -247,9 +247,30 @@ directory above your checkouts.
 - The reuse Stop hook no longer asks about a `linguist-generated` file when a sparse checkout or
   skip-worktree hides the root `.gitattributes` from the working tree. It reads the index copy the
   way `check` does, beside its status read, so it still makes two git reads in a row.
+- `migration_schema_only` and `migration_reversible` now treat a data call on a scoped ActiveRecord
+  constant, such as `ActiveRecord::SchemaMigration.delete_all` or
+  `ActiveRecord::InternalMetadata.where(...).delete_all`, as a row rewrite, the same as
+  `User.update_all`: charged by the schema-only row and left out of the reversibility row.
+  `ActiveRecord::Base.connection`, `transaction` and the error classes still count as framework. No
+  figure moves on the measured corpus.
+- The reuse Stop hook no longer asks about a changed file whose added lines define nothing callable
+  (constants, imports, markup, config, statements inside an existing method), and the reason lists
+  only the hunks that may define a function, method, class or lambda. On the last 200 commits of ten
+  corpus repositories it skips 4,609 of 9,223 changed files, and a parser found no callable on an
+  added line of any of them (#190).
 
 ### Changed
 
+- The A/B harness now reports a trial that finishes and writes nothing. The log line quotes the
+  first line of the model's answer as the reason, and the result document counts these trials per
+  arm in a new "trials that finished and wrote nothing" row.
+- The delivery tests read a rendered `paths` list through the `ignore` package, which Claude Code
+  matches rule paths with. It is now a root dev dependency pinned at 7.0.5, so CI runs it. They used
+  to read through two hand-rolled models that disagreed with Claude Code on a trailing `/**`, on
+  case and on a backslash.
+- The severity table in docs/how-it-works.md now quotes each reason `check` prints, including the
+  borrowed-prior cap ("N of M baseline sites here, on a claim the rest of the repository carries"),
+  and `npm run check:docs` fails when a reason in `check.mjs` has no quote in its row.
 - `scripts/ab.mjs` no longer refuses to start over engine variables in the operator's
   `~/.claude/settings.json`: its trials pass `--setting-sources project,local` and never load that
   file. `measure-defaults` keeps the check, since its trials still read it.
