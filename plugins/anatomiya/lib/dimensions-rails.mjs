@@ -294,6 +294,40 @@ function inColumnBlock(n, ctx, only = null) {
   return false;
 }
 
+const BY_NAME = /^(method|send|public_send|__send__)$/;
+
+/**
+ * Every node Rails runs from the named methods: their bodies and, each once,
+ * the bodies of this class's own methods they call. Both reversibility readers
+ * go through here, so a helper is read by one exactly when it is read by the
+ * other. `held(node, ctx)` marks code that does not run this way, and a helper
+ * called only from there is not followed.
+ */
+function eachRun(cls, entries, visit, held = () => false) {
+  const own = new Map();
+  walkRuby(cls.body, (d, ctx) => {
+    if (ctx.enclosing !== null) return;
+    if (d.t === "def" && ownDef(d)) own.set(d.name, d.body);
+    // `define_method(:up) { ... }` is a method body that runs.
+    else if (bare(d, "define_method") && d.block && lit(args(d)[0])) own.set(lit(args(d)[0]), d.block.body);
+  });
+  const queue = entries.filter((name) => own.has(name));
+  const seen = new Set(queue);
+  for (const name of queue) {
+    walkRuby(own.get(name), (n, ctx) => {
+      if (held(n, ctx)) return;
+      visit(n, ctx);
+      if (n.t !== "call" || (n.receiver && n.receiver.t !== "self")) return;
+      // `reversible(&method(:up_down))` and `send(:backfill)` name the method.
+      const target = BY_NAME.test(n.name) ? lit(args(n)[0]) : n.name;
+      if (own.has(target) && !seen.has(target)) {
+        seen.add(target);
+        queue.push(target);
+      }
+    });
+  }
+}
+
 /**
  * Whether this migration rewrites rows, and whether anything in it could not be
  * read well enough to say.
@@ -313,7 +347,13 @@ function dataWork(cls) {
 
   let touches = false;
   let unreadable = false;
-  walkRuby(cls.body, (m, ctx) => {
+  eachRun(cls, ["change", "up", "down"], (m) => {
+    // `stale(model: User)`, `klass = User` and `[User, Account].each` hand the
+    // model on. SCREAMING_CASE is a value rather than a class.
+    for (const v of handed(m)) {
+      const name = constName(v);
+      if (name && /[a-z]/.test(name.slice(name.lastIndexOf(":") + 1)) && isModel(name, local)) touches = true;
+    }
     if (m.t !== "call") return;
     // Any `execute`, with a receiver or without: the framework whitelist
     // swallowed `ActiveRecord::Base.connection.execute`, so a migration
@@ -328,61 +368,83 @@ function dataWork(cls) {
       else if (DML.test(body)) touches = true;
       return;
     }
-    const recv = constName(m.receiver);
-    if (recv) {
-      if (isModel(recv, local, m.name)) touches = true;
-      return;
-    }
-    // `stale(User).find_each` reaches the model through a helper handed it.
-    // SCREAMING_CASE is a value rather than a class, a raise names an error, and
-    // the class body's own statements and `revert` name modules and migrations.
-    // A block under a class-level call, like `define_method(:up) { ... }`, runs.
-    const runs = ctx.def || ctx.ancestors.some((a) => a.t === "block");
-    if (!runs || NAMES_NO_MODEL.test(m.name)) return;
-    for (const arg of args(m)) {
-      const name = constName(arg);
-      if (name && /[a-z]/.test(name.slice(name.lastIndexOf(":") + 1)) && isModel(name, local)) touches = true;
-    }
+    const recv = constName(m.receiver) ?? built(m);
+    if (recv && isModel(recv, local, m.name)) touches = true;
   });
 
   return { touches, unreadable };
 }
 
+// A raise names an error, and `revert` and `migrate` name migrations.
 const NAMES_NO_MODEL = /^(raise|fail|revert|migrate)$/;
+
+/** What a node hands on: a call's arguments and keyword values, an array's elements, a local's value. */
+function handed(n) {
+  if (n.t === "array") return n.elements || [];
+  if (n.t === "local_variable_write") return [n.value];
+  if (n.t !== "call" || NAMES_NO_MODEL.test(n.name)) return [];
+  return args(n).flatMap((a) =>
+    a.t === "hash" || a.t === "keyword_hash" ? (a.elements || []).map((e) => e.value) : [a]
+  );
+}
+
+/** The constant behind `Model.new(...).save!`, whose write is on the instance. */
+const built = (m) =>
+  m.receiver && m.receiver.t === "call" && /^(new|build)$/.test(m.receiver.name)
+    ? constName(m.receiver.receiver)
+    : null;
 
 // Blocks that spell each direction themselves, so what they hold is not
 // something `change` has to invert.
 const SPELLED = /^(reversible|up_only)$/;
 
 /**
- * Whether the method Rails runs forward holds a command `change` cannot invert,
- * in the form ActiveRecord's CommandRecorder refuses. Rails runs `change` and
- * never `up` when a class defines both, so the caller names the one that runs.
- * Options this tool cannot read decide nothing (C33).
+ * Whether the method Rails runs forward, or a helper of the class it calls,
+ * holds a command `change` cannot invert, in the form ActiveRecord's
+ * CommandRecorder refuses. Rails runs `change` and never `up` when a class
+ * defines both, so the caller names the one that runs. Options this tool
+ * cannot read decide nothing (C33).
  */
 function holdsIrreversible(cls, forward) {
   let found = false;
-  walkRuby(cls.body, (d, dctx) => {
-    if (d.t !== "def" || d.name !== forward || dctx.enclosing !== null || !ownDef(d)) return;
-    walkRuby(d.body, (c, ctx) => {
-      if (c.t !== "call" || ctx.ancestors.some((a) => a.t === "call" && !a.receiver && SPELLED.test(a.name))) return;
-      if (refused(c, ctx)) found = true;
-    });
-  });
+  eachRun(
+    cls,
+    [forward],
+    (c, ctx) => {
+      if (c.t === "call" && refused(c, ctx)) found = true;
+    },
+    (_, ctx) => ctx.ancestors.some((a) => a.t === "call" && !a.receiver && SPELLED.test(a.name))
+  );
   return found;
 }
 
+// The change_table spellings of the commands CommandRecorder can refuse, which
+// Rails sends on with the table as the first argument.
+const TABLE_COMMAND = new Map([
+  ["change", "change_column"],
+  ["change_default", "change_column_default"],
+  ["remove", "remove_columns"],
+  ["remove_index", "remove_index"],
+  ["remove_foreign_key", "remove_foreign_key"],
+  ["remove_check_constraint", "remove_check_constraint"],
+  ["remove_exclusion_constraint", "remove_exclusion_constraint"],
+  ["remove_unique_constraint", "remove_unique_constraint"],
+  ["unique_constraint", "add_unique_constraint"],
+]);
+
 function refused(c, ctx) {
   if (c.name === "execute") return true;
-  if (c.receiver) {
-    if (!inColumnBlock(c, ctx, "change_table")) return false;
-    if (c.name === "change") return true;
-    return c.name === "remove" && lacks(c, "type");
-  }
   const list = args(c);
-  const positional = list.filter((a) => a.t !== "hash" && a.t !== "keyword_hash").length;
-  switch (c.name) {
+  let positional = list.filter((a) => a.t !== "hash" && a.t !== "keyword_hash").length;
+  let name = c.name;
+  if (c.receiver) {
+    if (!TABLE_COMMAND.has(c.name) || !inColumnBlock(c, ctx, "change_table")) return false;
+    name = TABLE_COMMAND.get(c.name);
+    positional += 1;
+  }
+  switch (name) {
     case "change_column":
+    case "add_enum_value":
       return true;
     case "remove_column":
       return positional <= 2;
@@ -401,11 +463,24 @@ function refused(c, ctx) {
     case "change_column_default":
     case "change_column_comment":
     case "change_table_comment":
+    case "rename_enum_value":
       return lacks(c, "from") || lacks(c, "to");
     case "remove_index":
       return positional < 2 && lacks(c, "column");
     case "remove_foreign_key":
       return positional < 2 && lacks(c, "to_table");
+    // With no expression, columns or values there is nothing to re-create.
+    case "remove_check_constraint":
+    case "remove_exclusion_constraint":
+    case "remove_unique_constraint":
+    case "drop_enum":
+      return positional < 2;
+    case "drop_virtual_table":
+      return positional < 3;
+    case "add_unique_constraint": {
+      const opts = options(c);
+      return opts !== null && isTruthy(opts.get("using_index"));
+    }
     default:
       return false;
   }
@@ -422,12 +497,35 @@ function lacks(call, key) {
 const FRAMEWORK_MODELS = new Set(["ActiveStorage", "ActionText"]);
 
 // ActiveRecord also names the connection, transactions and errors, so there a
-// scoped constant is a model only as the receiver of one of these.
-const DATA_CALLS = new Set([
-  "all", "where", "find", "find_by", "find_by!", "find_each", "find_in_batches", "in_batches",
-  "unscoped", "create", "create!", "insert", "insert!", "insert_all", "insert_all!", "upsert",
-  "upsert_all", "update", "update_all", "delete", "delete_all", "delete_by", "destroy",
-  "destroy_all", "destroy_by",
+// scoped constant is a model only as the receiver of one of these: the class
+// methods activerecord 8.1 gives a model to read or write rows (Querying's
+// QUERYING_METHODS and SQL finders, `all`, `unscoped`, Persistence and
+// CounterCache), and the instance writers `built` reaches through `new`.
+export const DATA_CALLS = new Set([
+  "find", "find_by", "find_by!", "take", "take!", "sole", "find_sole_by", "first", "first!", "last",
+  "last!", "second", "second!", "third", "third!", "fourth", "fourth!", "fifth", "fifth!",
+  "forty_two", "forty_two!", "third_to_last", "third_to_last!", "second_to_last", "second_to_last!",
+  "exists?", "any?", "many?", "none?", "one?",
+  "first_or_create", "first_or_create!", "first_or_initialize",
+  "find_or_create_by", "find_or_create_by!", "find_or_initialize_by",
+  "create_or_find_by", "create_or_find_by!",
+  "destroy", "destroy_all", "delete", "delete_all", "update_all", "touch_all", "destroy_by", "delete_by",
+  "find_each", "find_in_batches", "in_batches",
+  "select", "reselect", "order", "regroup", "in_order_of", "reorder", "group", "limit", "offset",
+  "joins", "left_joins", "left_outer_joins", "where", "rewhere", "invert_where", "preload",
+  "extract_associated", "eager_load", "includes", "from", "lock", "readonly", "and", "or",
+  "annotate", "optimizer_hints", "extending", "having", "create_with", "distinct", "references",
+  "none", "unscope", "merge", "except", "only",
+  "count", "average", "minimum", "maximum", "sum", "calculate",
+  "pluck", "pick", "ids", "async_ids", "strict_loading", "excluding", "without", "with_recursive",
+  "async_count", "async_average", "async_minimum", "async_maximum", "async_sum", "async_pluck", "async_pick",
+  "insert", "insert_all", "insert!", "insert_all!", "upsert", "upsert_all",
+  "with", "find_by_sql", "async_find_by_sql", "count_by_sql", "async_count_by_sql",
+  "all", "unscoped",
+  "create", "create!", "update", "update!",
+  "increment_counter", "decrement_counter", "update_counters", "reset_counters",
+  "save", "save!", "destroy!", "update_attribute", "update_attribute!", "update_column",
+  "update_columns", "increment!", "decrement!", "toggle!", "reload", "touch",
 ]);
 
 function isModel(name, local, method = null) {
@@ -447,7 +545,7 @@ export const RAILS_DIMENSIONS = [
     counterClaim: null, // no measured spread across repositories yet, and a counter needs the same bar the claim does
     precision: "partial",
     applicabilityPredicate: {
-      sites: "a migration class defining at least one of change, up or down, unless it rewrites rows or carries an execute this tool could not read: those are answered by migration_schema_only, and change cannot invert either. Nor is one whose change, or up where there is no change, holds a command change cannot invert outside a reversible or up_only block: an execute, a change_column, a remove_column with no positional type, a remove_columns with no type:, a drop_table naming several tables or with neither a block nor an option other than the symbol if_exists:, a change_column_default or comment change with no from: and to:, a remove_index with no column, a remove_foreign_key with no second table, or a t.change or untyped t.remove in a change_table block",
+      sites: "a migration class defining at least one of change, up or down, unless it rewrites rows or carries an execute this tool could not read: those are answered by migration_schema_only, and change cannot invert either. Nor is one whose change, or up where there is no change, or a method of the class either one calls, holds a command change cannot invert outside a reversible or up_only block: an execute, a change_column, an add_enum_value, a remove_column with no positional type, a remove_columns with no type:, a drop_table naming several tables or with neither a block nor an option other than the symbol if_exists:, a change_column_default, comment change or rename_enum_value with no from: and to:, a remove_index with no column, a remove_foreign_key with no second table, a remove_check_constraint, remove_exclusion_constraint or remove_unique_constraint with nothing after the table, a drop_enum with no values, a drop_virtual_table with no values, an add_unique_constraint with using_index:, or the change_table spelling of any of these",
       blind: "a repository-local base class hides the migration from the superclass test",
     },
     langs: ["ruby"],
