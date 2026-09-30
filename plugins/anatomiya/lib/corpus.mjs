@@ -1,5 +1,5 @@
-import { realpathSync, statSync } from "node:fs";
-import { dirname, resolve, sep } from "node:path";
+import { readdirSync, realpathSync, statSync } from "node:fs";
+import { basename, dirname, resolve, sep } from "node:path";
 
 import { gitBuffered, gitStreamed } from "./git.mjs";
 import { EXT_BY_LANG, LANGUAGES, language } from "./langs.mjs";
@@ -397,7 +397,8 @@ export async function gitRoot(cwd) {
  * path escaping the repository and one that is not a regular file are dropped
  * together, as `escaped`. One the filesystem will not resolve (gone from the
  * working tree, under a directory this may not enter, or a name that is not
- * UTF-8) is `unreadable`, which the summary states as a count.
+ * UTF-8) is `unreadable`, which the summary states as a count, and so is a
+ * second index entry for a file already read under a name that folds to it.
  *
  * `git ls-files -z` is NUL-delimited because git permits newlines in paths, and
  * a newline-split here would turn one hostile filename into two corpus entries.
@@ -412,6 +413,9 @@ export async function collect(root) {
   const files = [];
   const others = [];
   const generatedRules = generatedAttrRules(root);
+  // Where each folded name sits in `files`. Only a fold that collides is asked
+  // for file identity, so a stat per file is not the price of the rare case.
+  const byFold = new Map();
 
   await lsFiles(root, (rel) => {
     const { drop, abs } = classify(root, rel, generatedRules);
@@ -419,13 +423,46 @@ export async function collect(root) {
     // tracked path, not just the parsed ones.
     if (drop === "notSource") { dropped.notSource++; others.push({ rel }); return; }
     if (drop) { dropped[drop]++; return; }
-    files.push({ rel, abs, lang: language(rel) });
+    const file = { rel, abs, lang: language(rel) };
+    // Two index entries that differ only in case or Unicode form are one file
+    // on a filesystem that folds them, and both names read it: its sites counted
+    // twice and the other entry's blob, which the tree does not hold, not at all.
+    // The name the directory holds is kept and the other is unread.
+    const fold = rel.normalize("NFC").toLowerCase();
+    const at = byFold.get(fold);
+    if (at !== undefined && sameFile(files[at].abs, abs)) {
+      dropped.unreadable++;
+      if (!listedAs(files[at].abs) && listedAs(abs)) files[at] = file;
+      return;
+    }
+    if (at === undefined) byFold.set(fold, files.length);
+    files.push(file);
   });
 
   // Kept in the shape callers already read. No repository size truncates the
   // corpus now; the flag still travels because the Ruby stream can hit its
   // per-line guard, and a partly-answered corpus must not state a convention.
   return { files, others, truncated: false, dropped };
+}
+
+/** Whether two paths open one file. BigInt, since an NTFS file id passes 2^53. */
+function sameFile(a, b) {
+  try {
+    const x = statSync(a, { bigint: true });
+    const y = statSync(b, { bigint: true });
+    return x.dev === y.dev && x.ino === y.ino;
+  } catch {
+    return false;
+  }
+}
+
+/** Whether the directory lists this exact name, rather than one that folds to it. */
+function listedAs(abs) {
+  try {
+    return readdirSync(dirname(abs)).includes(basename(abs));
+  } catch {
+    return false;
+  }
 }
 
 /**
