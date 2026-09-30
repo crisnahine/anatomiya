@@ -137,8 +137,10 @@ function countsLine(dir, root) {
   const namesakes = withTest === 0 ? ", none of them a namesake" : "";
   const held = here.length > 0 ? `; elsewhere in it ${here.join(", ")}${namesakes}` : "";
   // The count is over one extension, nouned the way the overview's tests line
-  // nouns it, or a mixed directory reads as smaller than it is.
-  const ext = root.companions.ext ?? root.exts?.[0]?.[0];
+  // nouns it, or a mixed directory reads as smaller than it is. A map that did
+  // not record the extension names one only where the root has no other: the
+  // first of several can be a .png.
+  const ext = root.companions.ext ?? (root.exts?.length === 1 ? root.exts[0][0] : null);
   const counted = namesakeClause({ ...root.companions, root: null }, ext ? `${encode(ext)} file` : "file");
   return `${dir} holds no other test; ${root.dir}: ${counted}${held}`;
 }
