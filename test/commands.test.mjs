@@ -662,6 +662,28 @@ test("a sparse checkout that leaves out only generated source still pins", async
   assert.equal(JSON.parse(readFileSync(join(dir, PIN_PATH), "utf8")).corpus, 8);
 });
 
+test("a sparse checkout that leaves out the root .gitattributes refuses the pin", async (t) => {
+  // Every source file is in the tree, so nothing is unreadable, but the rules
+  // marking gen/ generated are not: the pin counted gen/ as source under HEAD's sha.
+  const dir = repo(t);
+  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
+  mkdirSync(join(dir, "gen"));
+  for (let i = 0; i < 4; i++) writeFileSync(join(dir, "gen", `g${i}.ts`), `export const g${i} = ${i}\n`);
+  writeFileSync(join(dir, ".gitattributes"), "gen/** linguist-generated\n");
+  git("add", "-A");
+  git("commit", "-qm", "gen");
+  git("sparse-checkout", "set", "--no-cone", "/src/", "/gen/");
+  assert.equal(existsSync(join(dir, ".gitattributes")), false, "the fixture left .gitattributes out of the tree");
+
+  for (const dryRun of [true, false]) {
+    await assert.rejects(() => runPin(dir, { dryRun }), /^Error: 1 tracked file is outside this sparse checkout, and a pin records HEAD/, `dryRun ${dryRun}`);
+  }
+  assert.equal(existsSync(join(dir, PIN_PATH)), false);
+  git("sparse-checkout", "disable");
+  await runPin(dir);
+  assert.equal(JSON.parse(readFileSync(join(dir, PIN_PATH), "utf8")).corpus, 8);
+});
+
 test("a pin mid-merge says to finish the merge, not to stash what git will not stash", async (t) => {
   const dir = repo(t);
   const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
