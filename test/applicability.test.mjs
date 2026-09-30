@@ -522,6 +522,7 @@ container = document.createElement("div")`,
       `Faraday::ConnectionFailed.new("x")`,
       `RestClient::Exceptions::Timeout.new`,
       `redis_client.get(id)`,
+      `pg_client.execute(sql)`,
     ],
   },
   class_base: {

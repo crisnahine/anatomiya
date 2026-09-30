@@ -645,6 +645,8 @@ const SRC = {
         HttpClientV2.get("/v")
         api_client_v1.post("/v")
         ApiV2.get("/v")
+        db_client.execute(sql)
+        PG::Client.execute(sql)
       end
     end
   `,
@@ -1809,17 +1811,20 @@ test("the Ruby bridge hands a row the path it read, not just the tree", needsRub
   // in Ruby.
   const wrapper = write("zz_client", "class Client\n  def go\n    Net::HTTP.get(uri)\n  end\nend\n");
   const service = write("zz_payment_service", "class PaymentService\n  def go\n    Net::HTTP.get(uri)\n  end\nend\n");
+  const versioned = write("zz_api_client_v2", "class ApiClientV2\n  def go\n    Net::HTTP.get(uri)\n  end\nend\n");
   const { RUBY_DIMENSIONS } = await import("../plugins/anatomiya/lib/dimensions-ruby.mjs");
   const { results } = await parseRuby(
     [
       { rel: "app/clients/client.rb", abs: wrapper.abs, lang: "ruby" },
       { rel: "app/services/payment_service.rb", abs: service.abs, lang: "ruby" },
+      { rel: "app/clients/api_client_v2.rb", abs: versioned.abs, lang: "ruby" },
     ],
     { dimensions: RUBY_DIMENSIONS.filter((d) => d.key === "http_through_client") }
   );
   const at = (rel) => results.find((r) => r.rel === rel);
 
   assert.equal(at("app/clients/client.rb").hits.http_through_client, undefined, "the client implements the routing");
+  assert.equal(at("app/clients/api_client_v2.rb").hits.http_through_client, undefined, "a version is not what the file is");
   assert.equal(at("app/services/payment_service.rb").hits.http_through_client.length, 1);
 });
 

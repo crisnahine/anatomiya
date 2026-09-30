@@ -410,16 +410,18 @@ Ruby, which is what takes Ruby from 11 to 16.
 The three `route_` rows ask whether a cross-cutting concern goes through the repository's own
 module. The wrapper is learned per file from its relative imports whose filename, up to its first
 dot, is nothing but the vocabulary (log, logger, logging; client, http, api, request, fetcher;
-config, env, settings), so `./apiClient` and `./HTTPClient` are wrappers and `./settingsSlice` is
-not, and the direct forms
+config, env, settings), a trailing version aside, so `./apiClient`, `./HTTPClient` and
+`./api-client-v2` are wrappers and `./settingsSlice` is not, and the direct forms
 are a closed table (console calls, fetch and axios, process.env reads). Each row is offered only where at
 least three examined files already route through a wrapper (C14), so a repository that logs to
 the console on purpose, or one holding a config.ts nobody imports, never carries a line that can
 only read zero. The Ruby `http_through_client` row reads a verb-shaped call as going through the
 client when the receiver's name ends in that network vocabulary, since the last word is what the
 receiver is: `ApiClient.get`, `HttpClientV2.get` and `http_client.post` do, `OauthClientStore.fetch` and
-`request_params.delete` do not. A receiver naming redis, cache, memcache or dalli talks to a store,
-so `redis_client.get` does not either.
+`request_params.delete` do not. A receiver naming a cache or a database (redis, cache, memcache,
+dalli, db, pg, mysql, mongo and a few more) talks to a store, so `redis_client.get` and
+`db_client.execute` do not either. The list is closed, so a store it does not name still reads as
+the client.
 
 A row marked "learned" carries a template rather than a fixed sentence. Its sites vote with the
 naming class they spell, the plurality class becomes the sentence, and a tie learns nothing and

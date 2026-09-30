@@ -325,7 +325,7 @@ test("a map stating the counter side of a row that no longer has one enforces ne
   // Read as the claim, the map's own majority became the finding: every new
   // site written the way the area said to write it.
   const slot = area(stated("non_null_assertion", { states: "counter", counterClaim: "an older sentence" }));
-  const head = revision(`declare const a: string[] | null;\nexport const b = a!.length;`, { file: "f.ts" });
+  const head = revision(`declare const a: string[] | null;\nexport const b = a!.length;\nexport const c = a?.length;`, { file: "f.ts" });
   assert.equal(rowByKey("non_null_assertion").counterClaim, null);
   assert.deepEqual(only("non_null_assertion", newlyIntroduced({ area: slot, path: "src/a.ts", lang: "js", head, base: null })), []);
   const claim = area(stated("non_null_assertion"));
