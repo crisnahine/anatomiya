@@ -310,8 +310,16 @@ const CHANGELOG = /(^|\/)CHANGELOG\.md$/;
 /** The heading a changelog keeps for the next change, spelled once. */
 const UNRELEASED = "## [Unreleased]";
 
-/** Whether a changelog defines the link its `## [label]` heading points at. */
-const linkDefined = (text, label) => text.split("\n").some((line) => line.startsWith(`[${label}]: `));
+/** Whether a changelog defines the link its `## [label]` heading points at, read as Markdown reads it: outside a fence, any case. */
+const linkDefined = (text, label) => {
+  const want = `[${label}]: `.toLowerCase();
+  let fenced = false;
+  for (const line of text.split("\n")) {
+    if (/^ {0,3}(```|~~~)/.test(line)) fenced = !fenced;
+    else if (!fenced && line.toLowerCase().startsWith(want)) return true;
+  }
+  return false;
+};
 
 /** The section a changelog's next release ships, or nothing where it has none. */
 const unreleased = (text) => {
