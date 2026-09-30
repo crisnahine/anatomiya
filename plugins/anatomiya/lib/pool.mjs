@@ -58,8 +58,8 @@ export function createPool({ size, withProgram = false, execArgv = [], guards = 
   const workers = [];
   const idle = [];
   const queue = [];
-  // Parses the wall clock killed, held until the queue drains and every worker
-  // is idle, then run one at a time.
+  // Parses the wall clock killed beside other parses, held until the queue
+  // drains and every worker is idle, then run one at a time.
   const retries = [];
   // What answered, keyed by engine. The ready message has always carried the
   // version and the pool dropped it, so a caller could not say which parser
@@ -109,9 +109,11 @@ export function createPool({ size, withProgram = false, execArgv = [], guards = 
     // An uncatchable crash lands here, not in a try/catch. The file is charged
     // as a failure and the worker is replaced.
     //
-    // Except when the pool's own wall clock did the killing: that one gets a
-    // second attempt once the queue drains, alone, since the batch it died in
-    // was competing for the machine. How long a parse takes is a property of
+    // Except when the pool's own wall clock did the killing while other parses
+    // were in flight: that one gets a second attempt once the queue drains,
+    // alone, since the batch it died in was competing for the machine. One
+    // killed while it already ran alone is charged, as a retry would only
+    // repeat it: retries run one at a time, so each cost the scan its timeout. How long a parse takes is a property of
     // the machine, not of the file, and a file charged as crashed in one scan
     // and parsed in the next moves the unexamined count in the always-loaded
     // overview (A5). A worker over the RSS ceiling, or one that died by itself,
@@ -132,7 +134,7 @@ export function createPool({ size, withProgram = false, execArgv = [], guards = 
 
     function died(code, signal, cause = null) {
       const timedOut = w.sup.killedBy() === "timeout";
-      if (w.job && timedOut && !closed && retryOnce(w.job)) {
+      if (w.job && timedOut && !closed && w.job.crowded && retryOnce(w.job)) {
         const job = w.job;
         w.job = null;
         if (w.timer) clearTimeout(w.timer);
@@ -142,7 +144,7 @@ export function createPool({ size, withProgram = false, execArgv = [], guards = 
         finish(w, {
           rel: w.job.file.rel,
           ok: false,
-          error: timedOut && w.job.retried ? "parser timed out twice" : `parser died (${signal || `exit ${code}`})`,
+          error: !timedOut ? `parser died (${signal || `exit ${code}`})` : w.job.retried ? "parser timed out twice" : "parser timed out",
           crashed: !closed,
         }, true);
       }
@@ -215,6 +217,8 @@ export function createPool({ size, withProgram = false, execArgv = [], guards = 
   function assign(w, job) {
     w.job = job;
     w.started = Date.now();
+    const busy = workers.filter((x) => x.job);
+    if (busy.length > 1) for (const x of busy) x.job.crowded = true;
 
     w.timer = setTimeout(() => {
       if (w.job !== job) return;
