@@ -53,9 +53,10 @@ export function newlyIntroduced({
   // Read once and handed to both revisions: read separately, a file whose area
   // states the inverse would show every pre-existing site as newly introduced.
   const polarity = { ...sidesFor(area, ancestorsOf), parents };
-  const judge = (rev) =>
+  const judge = (rev, copies) =>
     breakingSites(rev.program, rev.source, lang, keyPath, {
       polarity,
+      copies,
       frameworks,
       capabilities,
       rows,
@@ -64,9 +65,11 @@ export function newlyIntroduced({
       rel: path,
       facets: head.facets,
     });
-  const found = judge(head);
+  const headCopies = new Map();
+  const found = judge(head, headCopies);
   if (addedLines) return found.filter((f) => addedLines.some(([a, b]) => f.line >= a && f.line <= b));
-  return absorb(found, base ? judge(base) : []);
+  const baseCopies = new Map();
+  return absorb(found, base ? judge(base, baseCopies) : [], headCopies, baseCopies);
 }
 
 /**
@@ -223,7 +226,7 @@ function enforceableClass(dim, cls) {
  */
 const isOmission = (hit) => hit.class === undefined || hit.class === null;
 
-function breakingSites(program, source, lang, keyPath, { polarity, frameworks, capabilities, rows, comments = [], stripped = false, rel = null, facets = null }) {
+function breakingSites(program, source, lang, keyPath, { polarity, copies = new Map(), frameworks, capabilities, rows, comments = [], stripped = false, rel = null, facets = null }) {
   const { sides, learned, kinds, qualified, stated, reaching = new Map(), parents = new Map() } = polarity;
   const out = [];
   // One index of line starts per revision, built on the first site that asks.
@@ -261,7 +264,7 @@ function breakingSites(program, source, lang, keyPath, { polarity, frameworks, c
       dim.learnedClasses
         ? sameConstant(hit.class, cls, hit.nesting) || isLearnedItself(hit, cls) || reachesThrough(hit.class, cls, chain)
         : hit.conforming;
-    const site = (hit) => {
+    const site = (hit, fp = siteIdentity(keyPath, dim.key, hit.node || {}, source)) => {
       const node = hit.node || {};
       const found = {
         dimension: dim.key,
@@ -272,21 +275,15 @@ function breakingSites(program, source, lang, keyPath, { polarity, frameworks, c
         text: sliceOf(node, source),
         // Through the exported spelling, so the identity every pin imports is
         // the one written here, at the cost of slicing the node twice.
-        fp: siteIdentity(keyPath, dim.key, node, source),
+        fp,
       };
       if (located(node)) contextOf.set(found, lines().around(node.start, node.end));
-      if (ordinals.has(hit)) openingOf.set(found, ordinals.get(hit));
       return found;
     };
     // A grouped row answers per enclosing body, so its hits are held until the
     // walk is over: one include out of two matching is the body conforming, and
     // reporting per constant would charge the author twice for one class.
     const bodies = dim.groupedSites ? new Map() : null;
-    // A body-judging hit's place among every copy, conforming or not, that
-    // opens on the same line text in the same declaration. `all.count` is
-    // final once the walk is over.
-    const ordinals = new Map();
-    const openings = new Map();
     // A dimension that throws on this program loses its own findings for this
     // file. Both sides of the comparison run the same dimensions over the same
     // shapes, so a failure that is not symmetric can only lose a finding, never
@@ -299,19 +296,27 @@ function breakingSites(program, source, lang, keyPath, { polarity, frameworks, c
           else bodies.set(key, [hit]);
           return;
         }
+        // Every copy of a body-judging row is kept, conforming or not, in walk
+        // order per identity, declaration and opening line.
+        let copy = null;
         if (dim.judgesBody && located(hit.node)) {
-          const opening = lines().around(hit.node.start, hit.node.start);
-          const at = `${hit.where ?? ""}\0${opening}`;
-          if (!openings.has(at)) openings.set(at, { count: 0 });
-          const all = openings.get(at);
-          ordinals.set(hit, { opening, from: all.count++, all });
+          const fp = siteIdentity(keyPath, dim.key, hit.node, source);
+          const at = `${fp}\0${hit.where ?? ""}\0${lines().around(hit.node.start, hit.node.start)}`;
+          copy = { fp, text: sliceOf(hit.node, source), site: null };
+          if (copies.has(at)) copies.get(at).push(copy);
+          else copies.set(at, [copy]);
         }
         // On the counter side the conforming sites are the ones that break what
         // the map said. Enforcing `!conforming` there charges an author for
         // writing the sentence the area handed them.
         if (counter ? !conformingOf(hit) : conformingOf(hit)) return;
         if (dim.learnedClasses && isOmission(hit) && !stated.has(dim.key)) return;
-        found.push(site(hit));
+        const at = site(hit, copy?.fp);
+        if (copy) {
+          copy.site = at;
+          judged.add(at);
+        }
+        found.push(at);
       }, { comments, source, rel });
     } catch {
       continue;
@@ -372,19 +377,36 @@ function chainOf(learned, reaching = new Set(), declared = new Map()) {
  * own text, which is what the identity alone matched before. A copy whose body
  * the branch edited matches neither of the first two and is taken by the name
  * around it last, so a new copy of the same shape elsewhere is the one left.
- * A row that judges the body cannot be taken by the name alone, since which
- * copy breaks is the question. Where both sides hold as many alike copies,
- * each copy is taken by its place among them and never by count, or a handler
- * that lost its catch was absorbed by one that never had one. Where a copy was
- * added or removed, places shift and only the count is left.
+ *
+ * A row that judges the body cannot be matched by name or count, since which
+ * copy breaks is the question. Its alike copies, conforming or not, are
+ * aligned the way a line diff aligns lines: an unchanged copy anchors, and a
+ * run between two anchors holding as many copies on each side was edited in
+ * place, so a head copy breaks anew where its partner did not. A run where the
+ * branch added or removed a copy has no partner to read, and its sites are
+ * matched as any other, with the whole text as the identity.
  */
-function absorb(head, base) {
-  const remaining = new Map();
-  const copiesAtBase = new Map();
-  for (const f of base) {
-    remaining.set(countKey(f), (remaining.get(countKey(f)) || 0) + 1);
-    if (openingOf.has(f)) copiesAtBase.set(countKey(f), openingOf.get(f).all.count);
+function absorb(head, base, headCopies = new Map(), baseCopies = new Map()) {
+  const out = new Set();
+  const settled = new Set();
+  for (const [key, now] of headCopies) {
+    for (const [was, is] of runs(baseCopies.get(key) || [], now)) {
+      if (was.length !== is.length) continue;
+      is.forEach((c, i) => {
+        if (c.site && !was[i].site) out.add(c.site);
+        settled.add(c.site).add(was[i].site);
+      });
+    }
   }
+  const unsettled = (sites) => sites.filter((f) => !settled.has(f));
+  for (const f of byIdentity(unsettled(head), unsettled(base))) out.add(f);
+  return head.filter((f) => out.has(f));
+}
+
+function byIdentity(head, base) {
+  const id = (f) => (judged.has(f) ? `${f.fp}\0${f.text}` : f.fp);
+  const remaining = new Map();
+  for (const f of base) remaining.set(id(f), (remaining.get(id(f)) || 0) + 1);
 
   // A base copy one pass matched is spent for the next, or one copy could
   // answer for two head sites and leave a copy nobody matched.
@@ -393,7 +415,7 @@ function absorb(head, base) {
   for (const key of [
     (f) => `${f.fp}\0${f.where ?? ""}\0${f.text}`,
     (f) => (contextOf.has(f) ? `${f.fp}\0${contextOf.get(f)}` : null),
-    (f) => (openingOf.has(f) ? `${countKey(f)}\0${openingOf.get(f).from}` : `${f.fp}\0${f.where ?? ""}`),
+    (f) => `${id(f)}\0${f.where ?? ""}`,
   ]) {
     const copies = new Map();
     for (const f of base) {
@@ -408,24 +430,54 @@ function absorb(head, base) {
       const copy = k === null ? undefined : copies.get(k)?.shift();
       if (!copy) continue;
       spent.add(copy);
-      remaining.set(countKey(copy), remaining.get(countKey(copy)) - 1);
+      remaining.set(id(copy), remaining.get(id(copy)) - 1);
       held.add(f);
     }
   }
 
-  const out = [];
-  for (const f of head) {
-    if (held.has(f)) continue;
-    // As many alike copies on both sides means each was edited in place, so
-    // the place decided; a copy added or removed leaves only the count.
-    const inPlace = openingOf.has(f) && openingOf.get(f).all.count === copiesAtBase.get(countKey(f));
-    const left = inPlace ? 0 : remaining.get(countKey(f)) || 0;
-    if (left > 0) {
-      remaining.set(countKey(f), left - 1);
-      continue;
+  return head.filter((f) => {
+    if (held.has(f)) return false;
+    const left = remaining.get(id(f)) || 0;
+    if (left > 0) remaining.set(id(f), left - 1);
+    return left === 0;
+  });
+}
+
+/**
+ * Two lists of copies cut into runs, each a pair of the base's and the head's
+ * copies in order: one unchanged copy on each side, or what lies between two
+ * of them. The unchanged ones are a longest common subsequence of the texts,
+ * after the common ends are trimmed, which is all an unedited file costs.
+ */
+function runs(was, now) {
+  const same = (i, j) => was[i].text === now[j].text;
+  let lo = 0;
+  while (lo < was.length && lo < now.length && same(lo, lo)) lo++;
+  let hi = 0;
+  while (hi < was.length - lo && hi < now.length - lo && same(was.length - 1 - hi, now.length - 1 - hi)) hi++;
+  const m = was.length - hi;
+  const n = now.length - hi;
+  // ponytail: quadratic in the copies the branch touched in one group; a Myers diff if that ever grows.
+  const L = Array.from({ length: m - lo + 1 }, () => new Uint32Array(n - lo + 1));
+  for (let i = m - 1; i >= lo; i--) {
+    for (let j = n - 1; j >= lo; j--) {
+      L[i - lo][j - lo] = same(i, j) ? L[i - lo + 1][j - lo + 1] + 1 : Math.max(L[i - lo + 1][j - lo], L[i - lo][j - lo + 1]);
     }
-    out.push(f);
   }
+  const out = [];
+  for (let k = 0; k < lo; k++) out.push([[was[k]], [now[k]]]);
+  let gap = [[], []];
+  let i = lo;
+  let j = lo;
+  while (i < m || j < n) {
+    if (i < m && j < n && same(i, j) && L[i - lo][j - lo] === L[i - lo + 1][j - lo + 1] + 1) {
+      out.push(gap, [[was[i++]], [now[j++]]]);
+      gap = [[], []];
+    } else if (j >= n || (i < m && L[i - lo + 1][j - lo] >= L[i - lo][j - lo + 1])) gap[0].push(was[i++]);
+    else gap[1].push(now[j++]);
+  }
+  out.push(gap);
+  for (let k = hi; k > 0; k--) out.push([[was[was.length - k]], [now[now.length - k]]]);
   return out;
 }
 
@@ -450,15 +502,9 @@ const normalise = (s) => s.replace(/\s+/g, " ").trim();
 // caller reads keeps the shape it had.
 const contextOf = new WeakMap();
 
-// The line a body-judging site opens on, and its place among every copy that
-// opens on the same text in the same declaration. Its identity leaves out the
-// body its conformance is read from, so alike copies are counted apart from
-// copies that open on other lines.
-const openingOf = new WeakMap();
-const countKey = (f) => {
-  const o = openingOf.get(f);
-  return o ? `${f.fp}\0${f.where ?? ""}\0${o.opening}` : f.fp;
-};
+// The sites of a body-judging row, whose identity leaves out what the row
+// judges, so the whole text has to stand beside it.
+const judged = new WeakSet();
 
 /**
  * Where each line of one source starts, found once and searched by halving.
