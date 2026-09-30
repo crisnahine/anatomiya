@@ -199,12 +199,9 @@ function isGeneratedHead(prefix) {
  * and only the root file: a pattern outside those three, or one declared by a
  * nested `.gitattributes`, is not read rather than guessed at.
  */
-function generatedAttrRules(root) {
-  const abs = safeResolve(root, ".gitattributes");
-  if (!abs) return [];
+async function generatedAttrRules(root) {
   const rules = [];
-  const file = readHead(abs, ATTR_FILE_BYTES);
-  for (const line of (file.kind === "file" ? file.head : "").split("\n")) {
+  for (const line of (await rootAttributes(root)).split("\n")) {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith("#")) continue;
     const [pattern, ...attrs] = trimmed.split(/\s+/);
@@ -215,6 +212,22 @@ function generatedAttrRules(root) {
     if (re) rules.push({ re, value: set });
   }
   return rules;
+}
+
+/**
+ * The root `.gitattributes`, from the index where the index marks it
+ * skip-worktree or assume-unchanged: git then counts whatever the tree holds
+ * there, a sparse checkout's absence included, as no change.
+ */
+async function rootAttributes(root) {
+  const listed = await gitBuffered(root, ["ls-files", "-v", "-z", "--", ".gitattributes"]);
+  if (listed.ok && /^[a-zS] /.test(listed.stdout)) {
+    const blob = await gitBuffered(root, ["cat-file", "blob", ":.gitattributes"]);
+    if (blob.ok) return blob.stdout.slice(0, ATTR_FILE_BYTES);
+  }
+  const abs = safeResolve(root, ".gitattributes");
+  const file = abs ? readHead(abs, ATTR_FILE_BYTES) : null;
+  return file?.kind === "file" ? file.head : "";
 }
 
 const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -423,7 +436,7 @@ export async function collect(root) {
   const files = [];
   const others = [];
   const uncounted = [];
-  const generatedRules = generatedAttrRules(root);
+  const generatedRules = await generatedAttrRules(root);
   // Where each folded name sits in `files`. Only a fold that collides is asked
   // for file identity, so a stat per file is not the price of the rare case.
   const byFold = new Map();
@@ -510,7 +523,7 @@ function listedAs(root, rel) {
  */
 export async function countUntrackedSource(root) {
   let n = 0;
-  const generatedRules = generatedAttrRules(root);
+  const generatedRules = await generatedAttrRules(root);
   await lsFiles(root, (rel) => {
     if (!classify(root, rel, generatedRules).drop) n++;
   }, ["--others", "--exclude-standard"]);
@@ -525,8 +538,8 @@ export async function countUntrackedSource(root) {
  * files a branch changed, and one the corpus leaves out is one the map never
  * counted. `.gitattributes` is read once, when the question is built.
  */
-export function corpusDrop(root) {
-  const generatedRules = generatedAttrRules(root);
+export async function corpusDrop(root) {
+  const generatedRules = await generatedAttrRules(root);
   return (rel) => classify(root, rel, generatedRules).drop ?? null;
 }
 
@@ -534,8 +547,8 @@ export function corpusDrop(root) {
  * Whether a path is one the corpus would count, asked of its name and the root
  * `.gitattributes` without opening it: for a path the tree does not hold.
  */
-export function corpusByName(root) {
-  const generatedRules = generatedAttrRules(root);
+export async function corpusByName(root) {
+  const generatedRules = await generatedAttrRules(root);
   return (rel) => isCorpusPath(rel) && !isAttrGenerated(generatedRules, rel);
 }
 
