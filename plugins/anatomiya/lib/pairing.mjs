@@ -244,8 +244,11 @@ export function pairingHits(corpus, pairing) {
       // corpus and attached to every area, it told a nine-file directory that the
       // repository's other 185 belonged to it. Matched on the tail below the
       // root, as the root itself is learned: on the basename alone every
-      // `create_spec.rb` in the tree answered every `create.rb` producer.
-      const tail = companion.slice(root.length);
+      // `create_spec.rb` in the tree answered every `create.rb` producer. A
+      // producer directly under its root has only that basename below it, so
+      // its tail also carries the producer directory's own name.
+      const below = companion.slice(root.length);
+      const tail = below.lastIndexOf("/") > 0 ? below : `/${basename(from)}${below}`;
       const elsewhere = !conforming && (shaped.get(basename(companion)) ?? []).some((c) => c.endsWith(tail));
       hits.set(rel, [{ conforming, elsewhere }]);
     }
@@ -309,11 +312,13 @@ export function applyPairings(parsed, corpus, langs) {
  * years is what the map counts, not a finding against this diff. A producer
  * whose companion the branch removed is one it touched, through the other
  * file: deleting an inconvenient spec passed clean while a one-line edit to
- * its model was flagged. `removed` is every path the branch took away.
- * `records` holds the parses this run has, keyed by path.
+ * its model was flagged. `removed` is every path the branch took away, and a
+ * spec the branch emptied is taken away the same way. `records` holds the
+ * parses this run has, keyed by path: only the branch's files, so a companion
+ * with none keeps its name's answer rather than the scan's test-tree fallback.
  */
 export function pairingViolations(changed, tree, pairing, removed = new Set(), records = null) {
-  const corpus = answeringCorpus(tree, pairing, records);
+  const corpus = answeringCorpus(tree, pairing, records, true);
   const packages = packagedPairings(corpus, pairing);
   // The first package whose shape the path has decides, as the scan's own
   // count does.
@@ -325,8 +330,9 @@ export function pairingViolations(changed, tree, pairing, removed = new Set(), r
     return null;
   };
   const producers = new Set(changed);
-  if (removed.size) {
-    for (const path of corpus) if (owed(path)?.any.some((c) => removed.has(c))) producers.add(path);
+  const lost = new Set([...removed, ...[...producers].filter((p) => tree.has(p) && !corpus.has(p))]);
+  if (lost.size) {
+    for (const path of corpus) if (owed(path)?.any.some((c) => lost.has(c))) producers.add(path);
   }
   const out = [];
   for (const path of producers) {
@@ -343,12 +349,13 @@ export function pairingViolations(changed, tree, pairing, removed = new Set(), r
  * The name alone let a RuboCop cop open the minitest row in an RSpec-only
  * repository, and a spec commented out top to bottom credit the service beside
  * it while the kinds line, reading the same file, did not. `isTestFile` is the
- * one rule for both (H29, H35); a file with no parse keeps its name's answer.
+ * one rule for both (H29, H35). With `partial`, `records` covers only some
+ * files and one it does not cover answers on its name alone.
  */
-function answeringCorpus(corpus, pairing, records) {
+function answeringCorpus(corpus, pairing, records, partial = false) {
   const out = new Set();
   for (const rel of corpus) {
-    if (rel.endsWith(pairing.companionSuffix)) {
+    if (rel.endsWith(pairing.companionSuffix) && !(partial && !records?.has(rel))) {
       const record = records?.get(rel);
       if (!isTestFile({ rel, lang: language(rel), facets: record?.ok ? record.facets : null })) continue;
     }
