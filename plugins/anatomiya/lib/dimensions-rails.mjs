@@ -65,7 +65,8 @@ export const COLUMN_TYPE = new Set([
  * Constants a migration may name without touching data. Matched on the root
  * segment, so `ActiveRecord::Base.connection` and `Digest::MD5.hexdigest` are
  * covered by their first name, except where `FRAMEWORK_MODELS` names the root
- * of a set of models. Anything outside it counts as a data touch,
+ * of a set of models or a scoped ActiveRecord constant receives a data call.
+ * Anything outside it counts as a data touch,
  * which over-counts violations and so suppresses a directive rather than
  * stating one.
  */
@@ -329,7 +330,7 @@ function dataWork(cls) {
     }
     const recv = constName(m.receiver);
     if (recv) {
-      if (isModel(recv, local)) touches = true;
+      if (isModel(recv, local, m.name)) touches = true;
       return;
     }
     // `stale(User).find_each` reaches the model through a helper handed it.
@@ -420,11 +421,21 @@ function lacks(call, key) {
 // ActionText::RichText are tables, and a migration naming them rewrites rows.
 const FRAMEWORK_MODELS = new Set(["ActiveStorage", "ActionText"]);
 
-function isModel(name, local) {
+// ActiveRecord also names the connection, transactions and errors, so there a
+// scoped constant is a model only as the receiver of one of these.
+const DATA_CALLS = new Set([
+  "all", "where", "find", "find_by", "find_by!", "find_each", "find_in_batches", "in_batches",
+  "unscoped", "create", "create!", "insert", "insert!", "insert_all", "insert_all!", "upsert",
+  "upsert_all", "update", "update_all", "delete", "delete_all", "delete_by", "destroy",
+  "destroy_all", "destroy_by",
+]);
+
+function isModel(name, local, method = null) {
   const root = name.split("::")[0];
   // A constant the migration assigned itself is an index name, not a model.
   if (local.has(root) || local.has(name)) return false;
   if (FRAMEWORK_MODELS.has(root)) return name !== root;
+  if (root === "ActiveRecord") return name !== root && DATA_CALLS.has(method);
   return !FRAMEWORK.has(root);
 }
 

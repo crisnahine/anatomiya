@@ -594,6 +594,7 @@ container = document.createElement("div")`,
       // written: `change` auto-inverts only a closed set of schema commands.
       `class M < ActiveRecord::Migration[7.0]\n  def up\n    Prompt.find_by(key: 'x').update!(body: 'y')\n  end\nend`,
       `class M < ActiveRecord::Migration[7.0]\n  def up\n    ActiveStorage::Blob.update_all(x: 1)\n  end\nend`,
+      `class M < ActiveRecord::Migration[7.0]\n  def up\n    ActiveRecord::SchemaMigration.delete_all\n  end\nend`,
       `class M < ActiveRecord::Migration[7.0]\n  def up\n    stale(User).update_all(x: 1)\n  end\nend`,
       // A command outside the set change inverts has no conforming form.
       `class M < ActiveRecord::Migration[7.0]\n  def change\n    change_column :t, :a, :text\n  end\nend`,
