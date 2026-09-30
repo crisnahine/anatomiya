@@ -207,7 +207,7 @@ are named with that cause and no install remedy, since `doctor` reports that ins
 | Guard | Value | Enforced |
 |---|---|---|
 | File size | 1 MB | checked with `stat` before the file is dispatched |
-| Wall time | 5s | `SIGKILL` from the parent; the file is retried once after the queue drains, with no other parse in flight |
+| Wall time | 5s | `SIGKILL` from the parent; a file killed while other parses were in flight is retried once after the queue drains, with no other parse in flight, and one killed while it already ran alone is charged on that attempt |
 | Resident memory | 1 GB | polled every 25ms, starting 250ms after the file goes in flight: read from `/proc/<pid>/status` on Linux, from `/bin/ps` on macOS and the BSDs, and not enforced on Windows, where the wall clock is what stops a runaway parse |
 | Worker start | 20s | `SIGKILL` from the parent for a worker that has not said ready; five such workers fail the pool, and its queued files are charged as crashed |
 
@@ -266,7 +266,7 @@ A child either of those timers killed is spawned once more, for the files that n
 others, and only what is still unanswered after that is charged. Both timers measure the machine
 rather than the files, and a file charged as crashed in one scan and parsed in the next moves the
 always-loaded overview, which is the same reason a JavaScript parse the pool's own clock killed is
-tried once more, alone, after the queue drains. A child that exited on its own, a missing interpreter and a fatal from the
+tried once more, alone, after the queue drains, when it died beside other parses. A child that exited on its own, a missing interpreter and a fatal from the
 script are charged on the first attempt: a second child answers those the same way at twice the
 cost. Every record says which attempt answered it.
 
