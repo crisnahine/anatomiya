@@ -489,7 +489,10 @@ per entry, written by `scripts/measure-defaults.mjs` from the model's own output
 the same predicates the scan uses. A learned row's default is a class rather than a side:
 "functions are named camelCase" in JavaScript is exactly what the model writes anyway, so a
 learned class equal to the model's own renders as counts too. An unmeasured entry reads `none`
-and fails open: the dimension keeps stating.
+and fails open: the dimension keeps stating. That holds for the side. A class is read as written,
+whatever the provenance method says, and two seeded entries carry one set by hand:
+`interface_prefix` and `type_alias_prefix` hold the class `none`, since no prefix is what the model
+writes, so a repository that prefixes nothing prints counts for them though neither was measured.
 
 Each entry names the engine it was measured at, and two engines never merge into one tally. The 24
 measured entries shipped so far say `claude-opus-5` and name no effort, which is the engine the
@@ -596,11 +599,12 @@ session's transcript already holds is not named again. The stop right after the 
 records what the check left in a `systemMessage`, which the transcript keeps, so the check's own fix
 is not asked about on the next turn, and the hook writes nothing a later `git status` would report.
 
-All three are absent from the usage block and from `commands/` on purpose: no person runs them and no
+All four are absent from the usage block and from `commands/` on purpose: no person runs them and no
 agent should. Each reads the payload on stdin, answers with one JSON object, and answers `{}` and exits
 0 on every failure path, because a hook that exits non-zero interrupts the session it exists to help.
-All three walk up to find what they answer from, the rendered map for `echo` and the recorded counts
-for the other two, and all start from the place the tool call is about rather than from where the
+All four walk up to find what they answer from, the rendered map for `echo` and the recorded counts
+for the other three. `refresh` starts from the payload's working directory, since its events name no
+tool call. The other three start from the place the tool call is about rather than from where the
 session's shell happens to be. Measured on 2.1.251, five tools name that place: `Read`, `Write` and
 `Edit` under `file_path`, `NotebookEdit` under `notebook_path`, and `Glob` and `Grep` under `path`, which
 is a directory rather than a file on those two. Where the payload names none, `Bash` and `Agent` among

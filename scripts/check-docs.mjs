@@ -310,6 +310,9 @@ const CHANGELOG = /(^|\/)CHANGELOG\.md$/;
 /** The heading a changelog keeps for the next change, spelled once. */
 const UNRELEASED = "## [Unreleased]";
 
+/** Whether a changelog defines the link its `## [label]` heading points at. */
+const linkDefined = (text, label) => text.split("\n").some((line) => line.startsWith(`[${label}]: `));
+
 /** The section a changelog's next release ships, or nothing where it has none. */
 const unreleased = (text) => {
   const start = text.indexOf(UNRELEASED);
@@ -747,6 +750,7 @@ export function checkDocs() {
     claim(release.changelog, changelog !== null, "is missing, so there is nothing to release this plugin with");
     if (changelog !== null) {
       claim(release.changelog, changelog.includes(UNRELEASED), `has no ${UNRELEASED} heading to write the next change under`);
+      claim(release.changelog, linkDefined(changelog, "Unreleased"), `has no "[Unreleased]:" link definition, so its heading links nowhere`);
     }
     // `null` parses, and is not a manifest. Read as "did not parse" it said
     // nothing here and then threw on the summary line, which names no file.
@@ -767,6 +771,7 @@ export function checkDocs() {
     // section to it and the link under it dangles with nothing saying so.
     if (changelog !== null) {
       claim(release.changelog, changelog.includes(`## [${version}]`), `has no "## [${version}]" heading for the version its manifest states`);
+      claim(release.changelog, linkDefined(changelog, version), `has no "[${version}]:" link definition for the version its manifest states`);
     }
 
     // `notesFor` answers a missing changelog in its own wording, and the author
