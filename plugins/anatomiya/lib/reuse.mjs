@@ -12,7 +12,7 @@ import { createHash } from "node:crypto";
 import { join } from "node:path";
 
 import { addedRanges, pendingPaths } from "./check.mjs";
-import { isCorpusPath } from "./corpus.mjs";
+import { corpusDrop, isCorpusPath } from "./corpus.mjs";
 import { encodePath } from "./encode.mjs";
 import { gitBuffered, operationUnfinished } from "./git.mjs";
 import { isPathTaken } from "./hook.mjs";
@@ -53,6 +53,13 @@ const OWN_COMMIT = /^commit(?: \(amend\))?: /;
 
 const MARKS_READ = new RegExp(`${REUSE_MARK} ((?:[0-9a-f]{12} ?)+)\\)`, "g");
 
+// A migration is a numbered one-off that restates the framework's calls by
+// design and that nothing calls, and a schema dump is written by the migrations.
+// Only the file right under the directory: measured on the corpus, code nested
+// deeper under a `migrations` segment (angular's schematics, prisma's
+// `core/migrations`, openproject's `db/migrate/tables`) is ordinary library code.
+const ONE_OFF = /(^|\/)(migrate|migrations)\/\d+[_-][^/]*$|(^|\/)db\/(\w+_)?schema\.rb$/;
+
 // A name a repository chose is shown as it is only where it cannot carry a
 // line break or a quote into the reason the model reads.
 const PLAIN_PATH = /^[\w./@+-]+$/;
@@ -70,7 +77,9 @@ export function reuseReason(files) {
   return (
     `${REASON_OPENING} and these added functions: ${list}. ` +
     "Have it grep shared and utility modules, files near the change, and code making the same calls, then name any existing function that does the same job. " +
-    "Call each named function and delete the copy it replaces. If it names none, finish without changing anything.\n" +
+    "Call each named function and delete the copy it replaces. If it names none, finish without changing anything. " +
+    // Last, so the measured wording above is unchanged where the tool exists.
+    "If this session has no subagent tool, run that search yourself.\n" +
     tag(files)
   );
 }
@@ -89,7 +98,8 @@ export function reuseRecord(files) {
  * one file does not make every other one look new. `since` leaves out a file
  * last written before that moment, which is work the session did not do, and
  * nothing is read while a merge or the like is unfinished, which is another
- * branch's.
+ * branch's. A migration, a schema dump and a file the corpus refuses (generated,
+ * or a link) have no function anybody would reuse, and are left out.
  *
  * `turnStart` adds what this turn committed: a turn told to write and commit
  * leaves the tree clean, and read against HEAD alone its work was never asked
@@ -119,8 +129,12 @@ export async function pendingChange(root, { since = null, turnStart = null } = {
   const listed = new Set(pending.present.map((p) => p.path));
   const committed = [...ranges.keys()].filter((path) => !listed.has(path) && isCorpusPath(path));
   const changed = [...pending.present, ...committed.map((path) => ({ path, status: "M" }))];
+  // The corpus's own refusals past the path, the way `check` asks them: a
+  // generated file or a link holds nothing anybody wrote here by hand.
+  const dropOf = corpusDrop(root);
   const files = [];
   for (const { path, status } of changed.sort((a, b) => byCode(a.path, b.path))) {
+    if (ONE_OFF.test(path) || dropOf(path) !== null) continue;
     const entry = readHead(join(root, path), MAX_FILE_BYTES + 1);
     // Past the size the parser skips, or not a file: nothing this reads either.
     if (entry.kind !== "file" || entry.size > MAX_FILE_BYTES) continue;

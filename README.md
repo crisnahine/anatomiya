@@ -129,7 +129,8 @@ a tool call when the context window does not already hold that same map. The not
 directory whose kind of file has no test of its own anywhere: silent on every other write, which is
 nearly all of them. It informs and never refuses. The reuse check runs when a turn ends, and only after a turn that added source
 code: it asks, once per change, for one subagent to look for an existing function the new code could
-call instead. `check` asks the same question of a whole branch, as `test_precedent`. Versions 0.2.4
+call instead, and a session with no subagent tool to run that search itself. A migration, a schema
+dump such as `db/schema.rb`, and a generated file are not asked about. `check` asks the same question of a whole branch, as `test_precedent`. Versions 0.2.4
 through 0.2.6 did write one into `.claude/settings.local.json`, where the plugin path it names is never
 substituted and Claude Code refuses the hook by name on every prompt; a scan takes that entry out when
 it finds one, and leaves everything else in the file alone.
@@ -152,6 +153,11 @@ built. It leaves alone a checkout with no map of its own, a map, pin or refresh 
 the repository, and a repository in the middle of a merge or rebase. When a rescan fails it keeps
 the previous map, tries again after half an hour or once the checkout moves, and the delivered map
 says the refresh failed until one succeeds.
+
+A session started in the directory that holds your checkouts, which has no map of its own, refreshes
+and watches each mapped checkout directly below it, and the reuse check reads each one's change,
+naming files from where the session started. A directory holding more than eight mapped checkouts
+side by side gets neither, and neither does a checkout two levels down.
 
 The pin follows the same way, but only onto commits the team has already accepted: when the checkout
 sits exactly on the tip of `origin`'s default branch (or, where a clone's only remote has another
@@ -395,7 +401,10 @@ repository's root, the overview reaches a subagent on its first turn, before it 
 is what five subagent transcripts here show. Run one directory up, with the repository as a
 subdirectory, nothing loads until a file under it is touched, so a subagent that only greps and
 `cat`s receives nothing at all. Same ceiling as above, one level worse, and it is the exploration
-phase of a fan-out that it costs.
+phase of a fan-out that it costs. Started one directory up, the echo has nothing to deliver on the
+prompt either, since a prompt names no file, so the first batch of parallel tool calls into a mapped
+checkout can each carry a copy of its overview: up to one per call, once per context window and per
+map. Inside the checkout the prompt delivers it first and the batch adds none.
 
 **The measured preventable share is 8% to 15% of human review comments.** That is from 4,616 review
 comments at one company and 3,015 from ten public repositories, hand-classified. Those are the

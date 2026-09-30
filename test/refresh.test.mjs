@@ -167,6 +167,87 @@ test("a linked worktree with a map of its own watches its own HEAD", async (t) =
   assert.deepEqual(started, [wt]);
 });
 
+/** A directory that is not a repository, holding checkouts side by side, the way a project split into repositories is opened. */
+function parentOf(t) {
+  const parent = realpathSync.native(mkdtempSync(join(tmpdir(), "anatomiya-refresh-parent-")));
+  t.after(() => rmSync(parent, { recursive: true, force: true }));
+  return parent;
+}
+
+async function scannedIn(parent, name) {
+  const dir = join(parent, name);
+  mkdirSync(dir);
+  init(dir);
+  source(dir, "src", 8);
+  commit(dir, "init");
+  await runScan(dir);
+  return dir;
+}
+
+test("a session started above its checkouts refreshes and watches each one that holds a map", async (t) => {
+  // The session's own directory has no map, and neither SessionStart nor
+  // FileChanged names a path the way a tool call does.
+  const parent = parentOf(t);
+  const api = await scannedIn(parent, "api");
+  const client = await scannedIn(parent, "client");
+  const docs = join(parent, "docs");
+  mkdirSync(docs);
+  init(docs);
+  source(docs, "src", 8);
+  commit(docs, "init");
+  const { started, start } = recorder();
+
+  const out = runRefresh(parent, { hook_event_name: "SessionStart", cwd: parent, source: "startup" }, { start });
+
+  assert.deepEqual(started, [api, client], "the checkout nobody scanned is left alone");
+  assert.deepEqual(out.hookSpecificOutput.watchPaths, [
+    join(api, ".git", "logs", "HEAD"),
+    join(api, ".git", "HEAD"),
+    join(client, ".git", "logs", "HEAD"),
+    join(client, ".git", "HEAD"),
+  ]);
+});
+
+test("a watched file changing below a session's directory refreshes only its own checkout, and names every watch again", async (t) => {
+  const parent = parentOf(t);
+  const api = await scannedIn(parent, "api");
+  const client = await scannedIn(parent, "client");
+  const { started, start } = recorder();
+
+  const out = runRefresh(parent, { hook_event_name: "FileChanged", cwd: parent, file_path: join(client, ".git", "logs", "HEAD") }, { start });
+
+  assert.deepEqual(started, [client]);
+  assert.equal(out.hookSpecificOutput.watchPaths.length, 4, "the list is replaced by whoever answers last");
+  assert.deepEqual(runRefresh(parent, { hook_event_name: "FileChanged", cwd: parent, file_path: join(parent, "HEAD") }, { start }), {});
+  assert.deepEqual(started, [client], `${api} is not started for a file of nobody's`);
+});
+
+test("a copied map with no checkout under it, or a checkout two levels down, is not refreshed from above", async (t) => {
+  const parent = parentOf(t);
+  const nested = join(parent, "group");
+  mkdirSync(nested);
+  await scannedIn(nested, "deep");
+  mkdirSync(join(parent, "copy", ".claude"), { recursive: true });
+  const api = await scannedIn(parent, "api");
+  execFileSync("cp", ["-R", join(api, ".claude"), join(parent, "copy")]);
+  rmSync(api, { recursive: true, force: true });
+  const { started, start } = recorder();
+
+  assert.deepEqual(runRefresh(parent, { hook_event_name: "SessionStart", cwd: parent }, { start }), {});
+  assert.deepEqual(started, []);
+});
+
+test("a directory holding a shelf of mapped checkouts refreshes none of them", async (t) => {
+  // Nine projects side by side are a collection, not one project split in a
+  // few, and a worker each at every session start is nobody's request.
+  const parent = parentOf(t);
+  for (let i = 0; i < 9; i++) await scannedIn(parent, `p${i}`);
+  const { started, start } = recorder();
+
+  assert.deepEqual(runRefresh(parent, { hook_event_name: "SessionStart", cwd: parent }, { start }), {});
+  assert.deepEqual(started, []);
+});
+
 /* --- the worker: what happens to the repository --- */
 
 test("a checkout that has not moved since the last refresh is left alone", async (t) => {
