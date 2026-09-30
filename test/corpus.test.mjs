@@ -132,6 +132,7 @@ function stageAlias(d, git, alias) {
 
 for (const [kind, onDisk, alias] of [
   ["case", "src/lib/a.ts", "src/lib/A.ts"],
+  ["a directory's case", "src/lib/a.ts", "src/Lib/a.ts"],
   ["Unicode form", "src/lib/é.ts", "src/lib/é.ts"],
 ]) {
   test(`two index entries that differ only in ${kind} are one file read once, under the name on disk`, needsFoldingFilesystem, async (t) => {
