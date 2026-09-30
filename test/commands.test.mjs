@@ -629,6 +629,23 @@ test("a sparse checkout that leaves out only what is not corpus still pins", asy
   assert.equal(JSON.parse(readFileSync(join(dir, PIN_PATH), "utf8")).corpus, 8);
 });
 
+test("a sparse checkout that leaves out only generated source still pins", async (t) => {
+  // An absent file is unreadable before its generated attribute is asked, so it
+  // tripped the sparse refusal while a full checkout drops it from the population.
+  const dir = repo(t);
+  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
+  mkdirSync(join(dir, "gen"));
+  writeFileSync(join(dir, "gen", "api.ts"), "export const api = 1\n");
+  writeFileSync(join(dir, ".gitattributes"), "gen/** linguist-generated\n");
+  git("add", "-A");
+  git("commit", "-qm", "gen");
+  git("sparse-checkout", "set", "src");
+  assert.equal(existsSync(join(dir, "gen")), false, "the fixture left gen out of the tree");
+
+  await runPin(dir);
+  assert.equal(JSON.parse(readFileSync(join(dir, PIN_PATH), "utf8")).corpus, 8);
+});
+
 test("a pin mid-merge says to finish the merge, not to stash what git will not stash", async (t) => {
   const dir = repo(t);
   const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
@@ -658,7 +675,8 @@ test("a pin names the remedy for the operation that is in progress", async (t) =
   git("stash", "-q");
   git("checkout", "-q", "other");
   assert.throws(() => git("stash", "pop"), "the pop conflicts");
-  await assert.rejects(() => runPin(dir), /: resolve them, or abort the rebase or cherry-pick that left them, then pin$/);
+  const leftBy = /^Error: the index holds unmerged paths, and a pin records HEAD: resolve them, or abort the operation that left them, then pin$/;
+  await assert.rejects(() => runPin(dir), leftBy, "stash pop");
 
   git("checkout", "-q", "-f", "-");
   git("stash", "drop", "-q");
@@ -667,6 +685,14 @@ test("a pin names the remedy for the operation that is in progress", async (t) =
   git("commit", "-qm", "here");
   git("merge", "-q", "--no-commit", "--no-ff", "other");
   await assert.rejects(() => runPin(dir), /^Error: a merge is in progress, and a pin records HEAD: finish or abort the merge first, then pin$/);
+
+  git("merge", "--abort");
+  writeFileSync(join(dir, "src", "f0.ts"), "export const a0 = 3\n");
+  git("commit", "-qam", "once");
+  writeFileSync(join(dir, "src", "f0.ts"), "export const a0 = 4\n");
+  git("commit", "-qam", "again");
+  assert.throws(() => git("revert", "--no-edit", "HEAD~1"), "the revert conflicts");
+  await assert.rejects(() => runPin(dir), leftBy, "revert");
 });
 
 test("a pin names the repository root it pinned, in its lines and its record", async (t) => {
