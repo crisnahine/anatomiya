@@ -15,6 +15,9 @@ Run the check and report what it found.
    `--base` you named and that resolves to no commit is refused by name rather than fallen back
    from, because a whole-branch review at exit 0 reads as a clean one. So is one naming this
    branch's own tip, such as `HEAD~0` or the branch's own name: there is nothing to compare against.
+   The tip's own commit id is still a base, so `--base <that sha>` checks only uncommitted work and
+   its "0 changed files" means the branch's commits were not looked at. A name both a tag and a
+   branch hold is refused; spell out `refs/heads/<name>` or `refs/tags/<name>`.
 
    Leave the format alone: `--format json` prints the same run as a record for a machine reader,
    and this report is read off the text.

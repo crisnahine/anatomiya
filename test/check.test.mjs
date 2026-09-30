@@ -4615,6 +4615,61 @@ test("a base spelled any way that names this branch's own tip is refused, not an
   }
 });
 
+test("a branch whose name spells like a commit id is still refused as its own base", async (t) => {
+  // The id exemption was read off the spelling, so a branch named by a ticket
+  // number or a hex word compared itself with itself and printed 0 changed
+  // files at exit 0.
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/a.ts", clean(2));
+    commit("init");
+    git("checkout", "-q", "-b", "feat");
+    write("src/a.ts", clean(2) + swallow(1));
+    commit("swallow");
+  });
+  facts(dir, { sha: sha(dir, "main") });
+
+  for (const name of ["7812", "facade", "cafe0"]) {
+    execFileSync("git", ["checkout", "-q", "-b", name, "feat"], { cwd: dir, stdio: "pipe" });
+    await assert.rejects(() => check(dir, { baseRef: name }), /--base \w+ names this branch's own tip/, name);
+  }
+  // The tip's own id, full or abbreviated, stays a base.
+  for (const ref of [sha(dir), sha(dir).slice(0, 7)]) {
+    assert.equal((await check(dir, { baseRef: ref })).mode, "compare", ref);
+  }
+});
+
+test("a base name a tag and a branch both hold is refused, naming both", async (t) => {
+  // git picks the tag and warns, and the warning never reached the report: one
+  // pick compared against the wrong commit in silence, the other blamed the
+  // branch's own tip for a tag git chose.
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/a.ts", clean(2));
+    commit("init");
+    git("checkout", "-q", "-b", "feat");
+    write("src/a.ts", clean(2) + swallow(1));
+    commit("swallow");
+    git("tag", "amb", "main");
+    git("branch", "amb", "feat");
+    git("branch", "amb2", "main");
+    git("tag", "amb2", "feat");
+  });
+  facts(dir, { sha: sha(dir, "main") });
+
+  for (const name of ["amb", "amb2"]) {
+    await assert.rejects(
+      () => check(dir, { baseRef: name }),
+      (err) => {
+        assert.match(err.message, new RegExp(`--base ${name} is ambiguous`), err.message);
+        assert.ok(err.message.includes(`refs/heads/${name}`) && err.message.includes(`refs/tags/${name}`), err.message);
+        return true;
+      },
+      name
+    );
+  }
+  // The spelled-out name is one ref and stays a base.
+  assert.equal((await check(dir, { baseRef: "refs/heads/amb2" })).base.sha, sha(dir, "main"));
+});
+
 test("a companion moved out of the corpus in the tree no longer satisfies the obligation", async (t) => {
   // The rows were filtered by the corpus before their old paths were read, so
   // a move to a name the corpus does not count took the old path with it:
