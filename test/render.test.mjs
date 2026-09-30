@@ -3075,7 +3075,8 @@ test("the matcher refuses a pattern it would read differently from a glob librar
  * outside a brace, the first brace expanded until none is left, then gitignore
  * matching over the pieces, last match winning. A pattern with no slash but a
  * trailing one matches at any depth, and one that matches a directory matches
- * everything under it. `(`, `)` and `\` are literal to it.
+ * everything under it. `(` and `)` are literal to it. `\` is an escape it reads
+ * differently from this model, which is safe only because no pattern spells one.
  */
 function claudeCodeReaches(patterns, rel) {
   const split = (entry) => {
