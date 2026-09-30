@@ -533,9 +533,20 @@ function settle(blocks, keys, claims, budget) {
  * and fifteen more on a counts line that went the same way.
  */
 export function droppedDirectives(area) {
+  return new Set(droppedSlots(area).keys());
+}
+
+/**
+ * The same slots, each marked `named` where the notice still prints its
+ * sentence without counts, and `unnamed` where the file says nothing of it.
+ */
+export function droppedSlots(area) {
   const { blocks, keys, claims, budget } = areaBlocks(area);
-  const { kept } = settle(blocks, keys, claims, budget);
-  return new Set(keys.slice(kept).filter(Boolean));
+  const { kept, names } = settle(blocks, keys, claims, budget);
+  // By position, never by prose: `names` runs over the hidden stated keys in
+  // this order, and facts.json stores no claim-side sentence, while the scan
+  // that wrote the file had one for every stated slot.
+  return new Map(keys.slice(kept).filter(Boolean).map((key, i) => [key, i < names.length ? "named" : "unnamed"]));
 }
 
 export function renderArea(area) {

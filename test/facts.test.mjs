@@ -60,6 +60,22 @@ test("what the writer emits is what the reader reads back", (t) => {
   assert.equal(statedSide(facts.areas[0].dimensions[0]).states, "claim");
 });
 
+test("a map on disk that does not parse is unreadable, not absent", (t) => {
+  // A committed map that conflicted on a merge was reported as no map at all,
+  // the same bug the pin reader already fixed.
+  const dir = root(t);
+  writeFacts(dir, result([dim()]));
+  const path = join(dir, FACTS_PATH);
+  writeFileSync(path, `<<<<<<< HEAD\n${readFileSync(path, "utf8")}=======\n{}\n>>>>>>> other\n`);
+
+  const { facts, unreadable } = readFacts(dir);
+
+  assert.equal(facts, null);
+  assert.match(unreadable ?? "", /does not parse as JSON/);
+  rmSync(path);
+  assert.deepEqual(readFacts(dir), { facts: null, unreadable: null }, "no file at all is still no map");
+});
+
 test("a record written before the new counts existed still reads", (t) => {
   // C10: an older record stays readable, and the three numbers the map prints
   // are simply absent from one written before schema 6.
@@ -608,7 +624,10 @@ test("a record is measured by its bytes on disk, not by its decoded length", (t)
   mkdirSync(join(dir, ".claude/anatomiya"), { recursive: true });
   writeFileSync(join(dir, FACTS_PATH), Buffer.alloc(22 * 1024 * 1024, 0xff));
 
-  assert.deepEqual(readFacts(dir), { facts: null, unreadable: null });
+  const { facts, unreadable } = readFacts(dir);
+  assert.equal(facts, null);
+  assert.match(unreadable ?? "", /does not parse as JSON/);
+  assert.doesNotMatch(unreadable, /MB/);
 });
 
 test("the replace never writes through a link planted where its temporary file goes", () => {

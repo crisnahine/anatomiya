@@ -1238,14 +1238,21 @@ checks, fixes, then commits, so the moment the findings are cheapest is the mome
 committed, and a check that answered `0 MUST-FIX` there was answering about a file it had not read.
 The run says how many files it read that way, because that many make it unreproducible from git
 alone. The base side never moves: it is read with `git cat-file` at the merge base, which is what
-keeps an agent's own edits from moving the population it is judged against (E2).
+keeps an agent's own edits from moving the population it is judged against (E2). A file the branch
+deleted has nothing to examine and can still owe a finding, as a dropped spec does, so the header
+counts it among the changed files, says how many were removed, and the record lists them as
+`removed`.
 
 Base ref resolution tries `origin/HEAD`, `origin/main`, `origin/master`, `main`, `master`, in that
 order, or whatever `--base` names. `@{upstream}` is deliberately absent: a pushed feature branch
 tracks itself, and the merge base with itself is HEAD. A `--base` that names this branch's own tip is
 refused like `HEAD` is: an expression such as `HEAD~0`, and the branch's own name wherever the base
 the check would pick unasked is somewhere else. Another branch at the same commit, or the commit by
-its id, is still a base, and is what a branch holding only uncommitted work is checked against. On a
+its id, is still a base, and is what a branch holding only uncommitted work is checked against. An id
+is a name git resolves to no ref, never a name that happens to be spelled in hex, so a branch called
+`7812` or `facade` is refused as its own base like any other. A name two refs hold, a tag and a
+branch both called `release`, is refused naming both: git picks the tag and says so only in a warning
+the check never sees. `refs/heads/release` names one. On a
 shallow clone the base commit is fetched with `--depth=1`, which costs about 3.65s and 12 MB;
 `--unshallow` measured 56s and 305 MB and `--deepen=500` measured the same, so bounded deepening is
 not offered. `origin/HEAD` is asked of the remote as its own `HEAD`, so a default branch named
@@ -1276,7 +1283,7 @@ Severity, in the order the checks are made:
 | Result | When |
 |---|---|
 | NIT | no convention counted here, or a gate suppressed the one that was |
-| FIX | the map is stale, or there was no merge base, or the predicate is partial, or the map already names this file as an exception, or no baseline population was recorded, or the Wilson bound on the baseline counts does not reach 0.90, or the baseline itself was not perfect |
+| FIX | the area file's 40-line budget dropped the claim's block: "the area file names this claim without its counts" where the notice still prints its sentence, "had no room to state this claim" where it does not; or the run is capped, "capped by this run:" and the cause, which is the stale reason the header prints or no merge base; or the predicate is partial; or the map already names this file as an exception; or no baseline population was recorded; or the claim was stated on the rest of the repository's bound rather than this area's own (D8); or the Wilson bound on the baseline counts does not reach 0.90; or the baseline itself was not perfect. Two caps sit outside that ladder (H24): a file whose area holds no slot for the claim is judged on the nearest enclosing area that states one, "counted in" that area, and a MUST-FIX on a path the owning area's globs never deliver to, such as a new subdirectory under a `dir/*.ext` area, drops to FIX, "counted in" the area or "does not reach" |
 | MUST-FIX | all baseline sites conform, so this branch is the first violation |
 
 Baseline counts come from the pinned population, never from the current one, or the agent's own
@@ -1321,7 +1328,7 @@ are 28. Most appear at most once in a run; the ones that repeat are named under 
 
 | Code | What it means |
 |---|---|
-| `map-unreadable` | there is a map and none of it was used: the store resolves outside the repository, or its schema is past the one this build reads |
+| `map-unreadable` | there is a map and none of it was used: the store resolves outside the repository, the file does not parse as JSON (a committed one that conflicted on a merge), or its schema is past the one this build reads |
 | `no-map` | no map on disk, so nothing was stated and nothing can be enforced |
 | `no-base-ref` | none of the candidate base refs resolved |
 | `no-merge-base` | a base was found and shares no fork point with HEAD, so nothing can be called newly introduced |

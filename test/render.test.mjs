@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   degradedSemanticSentence,
   droppedDirectives,
+  droppedSlots,
   renderArea,
   renderOverview,
   truncatedHistoryLine,
@@ -2433,6 +2434,27 @@ test("the directives an area file had no room for are recoverable from the recor
   for (let i = 0; i < 30; i++) {
     if (dropped.has(`k${i}`)) continue;
     assert.match(out, new RegExp(`^claim number ${i}$`, "m"), `k${i} was not reported dropped and is not in the file`);
+  }
+});
+
+test("a dropped slot is told apart by whether the file still names its sentence", () => {
+  // The check capped both the same way and said of both that the file had no
+  // room to state the claim, including the ones printed word for word under
+  // the notice.
+  const many = area({
+    dimensions: Array.from({ length: 30 }, (_, i) => dim({ key: `k${i}`, claim: `claim number ${i}` })),
+  });
+
+  const lines = renderArea(many).split("\n");
+  const slots = droppedSlots(many);
+  const kinds = new Set(slots.values());
+
+  assert.ok(kinds.has("named") && kinds.has("unnamed"), JSON.stringify([...slots]));
+  assert.deepEqual(new Set(slots.keys()), droppedDirectives(many));
+  for (const [key, kind] of slots) {
+    const sentence = `claim number ${key.slice(1)}`;
+    const printed = lines.some((l) => l.trim() === sentence);
+    assert.equal(printed, kind === "named", `${key} is ${kind}`);
   }
 });
 

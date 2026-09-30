@@ -372,7 +372,7 @@ test("a dimension's baseline population survives the write, so the check can rea
     conforming: 60,
     exceptions: [{ path: "src/services/old.ts", count: 2 }],
   });
-  assert.deepEqual(severityFor({ path: "src/services/new.ts", oldPath: null }, { dim: stored, fresh: true }), {
+  assert.deepEqual(severityFor({ path: "src/services/new.ts", oldPath: null }, { dim: stored }), {
     severity: "MUST-FIX",
     reason: "all 60 baseline sites conform",
   });
@@ -407,7 +407,7 @@ test("a scan that recorded no baseline writes no baseline key", () => {
 
   const [stored] = readFacts(dir).areas[0].dimensions;
   assert.equal("baseline" in stored, false);
-  assert.deepEqual(severityFor({ path: "src/services/new.ts", oldPath: null }, { dim: stored, fresh: true }), {
+  assert.deepEqual(severityFor({ path: "src/services/new.ts", oldPath: null }, { dim: stored }), {
     severity: "FIX",
     reason: "no baseline population recorded",
   });
@@ -425,7 +425,7 @@ test("a baseline the check would reject is carried through unaltered", () => {
   const [stored] = readFacts(dir).areas[0].dimensions;
   assert.deepEqual(stored.baseline, { candidates: 4, conforming: 4, exceptions: [] });
   assert.equal(
-    severityFor({ path: "src/services/new.ts", oldPath: null }, { dim: stored, fresh: true }).severity,
+    severityFor({ path: "src/services/new.ts", oldPath: null }, { dim: stored }).severity,
     "FIX"
   );
   rmSync(dir, { recursive: true, force: true });
