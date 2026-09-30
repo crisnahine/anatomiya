@@ -120,6 +120,8 @@ them (8,512 on babel, 2,017 on angular, 1,707 on react), for 232 more patterns (
 A directory whose name holds glob syntax cannot root an area or be named by a pattern. That includes a
 comma: Claude Code splits each `paths` entry on the commas outside a brace before it expands braces
 and matches with gitignore rules, so `x,y/**/*.rb` reads as `x` and `y/**/*.rb`.
+That matcher also folds case, so a directory whose name differs from a sibling's only in case cannot
+root an area either: both fold into the parent, and `src/` and `Src/` at the root are reported as uncovered.
 
 The area id is the first 8 hex of `sha256(path)`, which is what makes `anatomiya-area-<id>.md` a
 stable filename across scans.
