@@ -187,6 +187,43 @@ export function ownLayout(from) {
   return hit && { root: hit.at, layout: hit.found, from: hit.from };
 }
 
+// More mapped checkouts than this side by side is a shelf of projects rather
+// than one project split into a few, and the session has named none of them.
+const CHILD_CHECKOUTS_MOST = 8;
+
+/**
+ * The checkouts directly below a directory that hold a map of their own, each
+ * with the name it has there, or none where there are more than
+ * `CHILD_CHECKOUTS_MOST`.
+ *
+ * For the hooks whose payload names no file, in a session started above its
+ * checkouts: a project split into sibling repositories is opened from the
+ * directory holding them, which has no map. The echo and the notice need none
+ * of this, since their tool calls name the file. Only a checkout's own root
+ * counts, so a `.claude` copied with no `.git` beside it opts nothing in, and
+ * a link is not followed out of the directory.
+ */
+export function childLayouts(dir) {
+  const at = realpathOrNull(resolve(dir));
+  if (at === null) return [];
+  let names;
+  try {
+    names = readdirSync(at, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name).sort();
+  } catch {
+    return [];
+  }
+  const found = [];
+  for (const name of names) {
+    const child = join(at, name);
+    if (!isBoundary(child) || !isPathTaken(join(child, FACTS_PATH))) continue;
+    const own = ownLayout(child);
+    if (own === null || own.from !== null || own.root !== child) continue;
+    found.push({ ...own, name });
+    if (found.length > CHILD_CHECKOUTS_MOST) return [];
+  }
+  return found;
+}
+
 /**
  * The layout inside a record, or null for anything that is not one.
  *

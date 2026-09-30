@@ -652,6 +652,21 @@ session's transcript already holds is not named again. The stop right after the 
 records what the check left in a `systemMessage`, which the transcript keeps, so the check's own fix
 is not asked about on the next turn, and the hook writes nothing a later `git status` would report.
 
+Some changed source holds nothing anybody would reuse, and is not asked about: a migration, whose name
+starts with a number right under a `migrate` or `migrations` directory, a schema dump (`db/schema.rb`
+or `db/<name>_schema.rb`), and whatever else the corpus refuses past the path, which is a generated
+file and a link, the same rule `check` applies to its changed files. Only the file right under the
+directory counts as a migration, because code nested deeper under a `migrations` segment was measured
+on the corpus as ordinary library code: angular's schematics, prisma's `core/migrations`,
+openproject's `db/migrate/tables`. The reason ends by telling a session with no subagent tool to run
+the search itself. The Stop payload carries no tool list, and without that sentence a headless run
+with no `Agent` tool answered the ask with "No such tool" and spent a turn on it.
+
+A Stop payload names no file, so a session started in the directory holding several checkouts, which
+has no map of its own, reads each mapped checkout directly below it instead, and names their files
+from where the session stands (`api/src/x.ts`). A file's mark is taken over its path inside its
+checkout, so a session that later moves into that checkout is not asked about it again.
+
 All four are absent from the usage block and from `commands/` on purpose: no person runs them and no
 agent should. Each reads the payload on stdin, answers with one JSON object, and answers `{}` and exits
 0 on every failure path, because a hook that exits non-zero interrupts the session it exists to help.
@@ -752,7 +767,8 @@ not substituted, and Claude Code refuses the hook by name on every prompt and ev
 the life of that session, which is what 0.2.4 through 0.2.6 shipped. A plugin hook runs in every
 session the plugin is installed for, with no way to scope it to one repository, so the scoping is
 the hook's own job: it walks up from the working directory for a map, and a session with none gets
-`{}`. That answer costs one node process and almost nothing else: three runs on one laptop put the median
+`{}`. The refresh and the end-of-turn check also look one level down when the walk up finds nothing,
+since their payloads name no file (below and above). That answer costs one node process and almost nothing else: three runs on one laptop put the median
 at 73ms, 104ms and 237ms, and which `node` is on `PATH` moves it more than anything the tool does. It is
 paid per turn and per tool call.
 
@@ -775,7 +791,13 @@ last 256 KiB of the session's transcript first and stays silent when that tail h
 same map with no compaction after it. Each map carries a `digest` of its body, so a re-scan is delivered
 on the next call, and a copy further back than the window is delivered again, about every 29k tokens of
 context in a typical session. A subagent or a workflow stage is answered from its own transcript.
-Anything the hook cannot read answers with a delivery, which is the old behaviour.
+Anything the hook cannot read answers with a delivery, which is the old behaviour. Parallel tool
+calls in one batch each run before any of the batch's deliveries is written, so none sees the
+others', and the worst case is one copy per call. Inside a mapped checkout the prompt has already
+delivered the map before the first batch, and the batch adds none. A session started one directory
+above the checkout has no map on the prompt, which names no file, so its first batch into that
+checkout reaches the worst case, once per context window and per map: measured on 2.1.285, five
+parallel reads gave four copies from the parent and one from inside the checkout.
 `scripts/measure-echo.mjs` replays the rule over a transcript store: on 3,502 local transcripts it kept
 7,857 of 65,977 deliveries. The measurements behind the rule are in
 `docs/research/what-a-repeated-hook-context-costs.md`. There is still no flag; this tool ships no
@@ -974,6 +996,17 @@ only after half an hour, and the echo says the refresh failed until a refresh or
 succeeds. A scan run by hand records its stamp too, so the next refresh has nothing to redo. It has
 its own clock. A changed overview reaches a running session through the echo's digest, and an area
 file is read from disk the first time its directory is.
+
+A session started above its checkouts, the way a project split into sibling repositories is opened,
+has no map at its own directory, and neither `SessionStart` nor `FileChanged` names a path the walk
+could start from instead. Where the walk up finds nothing, the hook takes each checkout directly
+below that holds a map of its own: it starts a worker for each, names every one's watches in the one
+list, and on `FileChanged` starts only the checkout whose git directory the changed file is in. A
+`.claude` with no `.git` beside it, a checkout two levels down, and a linked worktree borrowing its
+main checkout's map are not taken, and a directory holding more than eight mapped checkouts side by
+side takes none: that is a shelf of projects rather than one project, and a worker each at every
+session start is nobody's request. A `cd` inside the session cannot move the watch, since
+`CwdChanged` reaches only hooks a settings file declares.
 
 The same worker moves the pin, and only onto what the remote default branch holds: HEAD equal to the
 first of `origin/HEAD`, `origin/main` or `origin/master` that resolves, or the only remote's `HEAD`

@@ -31,7 +31,7 @@ import { loadPin } from "./baseline.mjs";
 import { runPin, runScan } from "./commands.mjs";
 import { atomic, readFacts, readRecord, writeTemp } from "./facts.mjs";
 import { BASE_REFS, commitAt, gitBuffered, gitStreamed, headSha, operationUnfinished, shaReachable } from "./git.mjs";
-import { isPathTaken, ownLayout } from "./hook.mjs";
+import { childLayouts, isPathTaken, ownLayout } from "./hook.mjs";
 import { pluginRoot } from "./readiness.mjs";
 import { OVERVIEW_FILE, readHead, realpathOf, REFRESH_STATE, resolveInside, STORE_DIR, trackedRulesDir } from "./rules.mjs";
 import { commonDirOf, gitDirOf } from "./worktree.mjs";
@@ -86,33 +86,43 @@ export function runRefresh(cwd, payload, { start = startWorker } = {}) {
   if (!EVENTS.has(event)) return {};
   const base = typeof payload.cwd === "string" && payload.cwd.length > 0 ? payload.cwd : cwd;
   if (!base) return {};
-  // A map of this checkout's own. A linked worktree reading its main checkout's
-  // (A93) is answered from there, labelled, and scanning it would write a map
-  // nobody asked for.
-  const own = ownLayout(base);
-  if (!own || own.from !== null) return {};
-  // A record below its checkout's root came with a copy of another project; the
-  // scan it would start writes at the checkout's root, which never opted in
-  // (A24), and the end-of-turn check refuses the same record for the same reason.
-  if (!isPathTaken(join(own.root, ".git"))) return {};
+  const roots = refreshRoots(base);
+  if (roots.length === 0) return {};
 
-  const watchPaths = watchTargets(own.root);
   // The watch list is one list shared by every hook. A change to a file this
   // hook did not ask for is somebody else's, and answering it would both start
   // a worker for nothing and replace their watch with ours. Ours is any file
-  // the watch could name in this checkout's git directories, not only the ones
+  // the watch could name in these checkouts' git directories, not only the ones
   // it names now: a first commit writes `logs/HEAD`, which moves the watch off
   // the index it named before, and refusing the index's change then left the
   // session watching a file nothing would change again.
-  if (event === "FileChanged" && !ownWatch(own.root, resolve(String(payload.file_path ?? "")))) return {};
-  start(own.root);
+  const changed = event === "FileChanged" ? resolve(String(payload.file_path ?? "")) : null;
+  const moved = changed === null ? roots : roots.filter((root) => ownWatch(root, changed));
+  if (moved.length === 0) return {};
+  for (const root of moved) start(root);
+  const watchPaths = roots.flatMap(watchTargets);
   // Said to the person when they start or resume a session: a `made-here` hold
   // never ends on its own.
-  const notice = event === "SessionStart" && !QUIET_SOURCES.has(payload.source) ? holdNotice(own.root) : null;
-  const said = notice === null ? {} : { systemMessage: notice };
+  const notices = event === "SessionStart" && !QUIET_SOURCES.has(payload.source) ? roots.map(holdNotice).filter((n) => n !== null) : [];
+  const said = notices.length === 0 ? {} : { systemMessage: notices.join("\n") };
   // An empty list would replace every other hook's watches with nothing.
   if (watchPaths.length === 0) return said;
   return { ...said, hookSpecificOutput: { hookEventName: event, watchPaths } };
+}
+
+/**
+ * The checkouts a session in this directory refreshes: the one whose own map it
+ * is in, or where it is in none, the mapped checkouts directly below it.
+ */
+function refreshRoots(base) {
+  const own = ownLayout(base);
+  if (own === null) return childLayouts(base).map((child) => child.root);
+  // A linked worktree reading its main checkout's map (A93) is answered from
+  // there, labelled, and scanning it would write a map nobody asked for. A
+  // record below its checkout's root came with a copy of another project; the
+  // scan it would start writes at the checkout's root, which never opted in
+  // (A24), and the end-of-turn check refuses the same record for the same reason.
+  return own.from === null && isPathTaken(join(own.root, ".git")) ? [own.root] : [];
 }
 
 /**

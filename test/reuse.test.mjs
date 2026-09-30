@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { execFileSync, spawnSync } from "node:child_process";
@@ -19,9 +19,10 @@ import { ANATOMIYA } from "../scripts/plugins.mjs";
  * Real git, because what the hook reads is the working tree against HEAD, and
  * a fixture cannot say which lines a change added.
  */
-function repo(t, { scanned = true, commit = true, refFormat = null } = {}) {
-  const dir = mkdtempSync(join(tmpdir(), "anatomiya-reuse-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+function repo(t, { scanned = true, commit = true, refFormat = null, at = null } = {}) {
+  const dir = at ?? mkdtempSync(join(tmpdir(), "anatomiya-reuse-"));
+  if (at === null) t.after(() => rmSync(dir, { recursive: true, force: true }));
+  else mkdirSync(dir);
   const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
   git("init", "-q", ...(refFormat ? [`--ref-format=${refFormat}`] : []));
   git("config", "user.email", "t@t.test");
@@ -61,7 +62,9 @@ const hunksOf = (change) => change.map((f) => [f.path, f.hunks]);
 test("the reason is the measured wording, naming the lines the change added", () => {
   // The wording is the one that passed 24 of 24 on the hard cases, and every
   // inline wording scored 9 or 10 of 12, so it is held here word for word
-  // (docs/research/one-line-that-finds-the-existing-function.md).
+  // (docs/research/one-line-that-finds-the-existing-function.md). The last
+  // sentence is for a session with no Agent tool, which refused the ask as
+  // "No such tool" and spent a turn on it.
   const reason = reuseReason([
     { path: "src/a.ts", mark: "aaaaaaaaaaaa", hunks: [{ from: 3, to: 9, created: false }] },
     { path: "src/b.ts", mark: "bbbbbbbbbbbb", hunks: [{ from: 1, to: 12, created: true }] },
@@ -71,7 +74,8 @@ test("the reason is the measured wording, naming the lines the change added", ()
     reason.startsWith(
       "Before you finish, give one subagent this change's diff and these added functions: src/a.ts:3-9; src/b.ts:1-12 (new file). " +
         "Have it grep shared and utility modules, files near the change, and code making the same calls, then name any existing function that does the same job. " +
-        "Call each named function and delete the copy it replaces. If it names none, finish without changing anything."
+        "Call each named function and delete the copy it replaces. If it names none, finish without changing anything. " +
+        "If this session has no subagent tool, run that search yourself."
     ),
     reason
   );
@@ -123,6 +127,45 @@ test("a change that adds no source line has nothing to check", async (t) => {
   const { dir, write } = repo(t);
   write("README.md", "# notes\n");
   write("src/a.ts", "export const one = 1;\n");
+
+  assert.equal(await pendingChange(dir), null);
+});
+
+test("a migration or a schema dump has nothing to check", async (t) => {
+  // Each one restates the framework's calls by design and nothing calls it.
+  const { dir, write } = repo(t);
+  const migration = "class AddFeatured < ActiveRecord::Migration[7.1]\n  def change\n    add_column :ms, :featured, :boolean\n  end\nend\n";
+  write("db/migrate/20260930000000_add_featured.rb", migration);
+  write("engines/shop/db/migrate/20260930000001_add_rank.rb", migration);
+  write("db/schema.rb", "ActiveRecord::Schema[7.1].define(version: 1) do\nend\n");
+  write("db/queue_schema.rb", "ActiveRecord::Schema[7.1].define(version: 1) do\nend\n");
+  write("shop/migrations/0002_rank.py", "def forwards(apps, schema_editor):\n    pass\n");
+  write("server/migrations/20260930_add_rank.js", "exports.up = (knex) => knex;\n");
+
+  assert.equal(await pendingChange(dir), null);
+});
+
+test("code that only lives near migrations is still checked", async (t) => {
+  // Measured on the corpus: angular's schematics/migrations, prisma's
+  // core/migrations and openproject's db/migrate/tables are library code.
+  const { dir, write } = repo(t);
+  write("db/migrate/tables/base.rb", "class Base\n  def self.table\n    :x\n  end\nend\n");
+  write("schematics/migrations/signal/src/passes/1_identify.ts", NEW_B);
+  write("lib/migrations/runner.ts", NEW_B);
+  write("lib/schema.rb", "module Schema\n  def self.x\n    1\n  end\nend\n");
+
+  assert.deepEqual(
+    (await pendingChange(dir)).map((f) => f.path),
+    ["db/migrate/tables/base.rb", "lib/migrations/runner.ts", "lib/schema.rb", "schematics/migrations/signal/src/passes/1_identify.ts"]
+  );
+});
+
+test("a generated file has nothing to check, by the corpus's own rule", async (t) => {
+  // Nobody wrote it by hand, so no hand-written copy can be deleted from it.
+  const { dir, write } = repo(t);
+  write("src/gen.ts", `// Code generated by protoc. DO NOT EDIT.\n${NEW_B}`);
+  write(".gitattributes", "src/api/** linguist-generated\n");
+  write("src/api/client.ts", NEW_B);
 
   assert.equal(await pendingChange(dir), null);
 });
@@ -350,6 +393,31 @@ test("a turn that added source code in a scanned repository is asked to check it
 
   assert.equal(answer.decision, "block");
   assert.match(answer.reason, /src\/b\.ts:1-3 \(new file\)/);
+});
+
+test("a session started above its checkouts is asked about each one's change, named from where it stands", async (t) => {
+  // A Stop payload names no file, so its directory is the session's, which
+  // holds no map when the project is split into sibling repositories.
+  const parent = realpathSync.native(mkdtempSync(join(tmpdir(), "anatomiya-reuse-parent-")));
+  t.after(() => rmSync(parent, { recursive: true, force: true }));
+  const api = repo(t, { at: join(parent, "api") });
+  const client = repo(t, { at: join(parent, "client") });
+  const unscanned = repo(t, { at: join(parent, "docs"), scanned: false });
+  api.write("src/b.ts", NEW_B);
+  client.write("src/c.ts", NEW_B);
+  unscanned.write("src/d.ts", NEW_B);
+
+  const session = begun(t);
+  const answer = await runReuse(parent, stop(parent, { transcript_path: session }));
+
+  assert.equal(answer.decision, "block");
+  assert.match(answer.reason, /added functions: api\/src\/b\.ts:1-3 \(new file\); client\/src\/c\.ts:1-3 \(new file\)\./);
+  assert.doesNotMatch(answer.reason, /docs\//);
+
+  // The same file asked from inside its checkout carries the same mark, so a
+  // session that moved into it is not asked again.
+  append(session, blocked(answer.reason));
+  assert.deepEqual(await runReuse(api.dir, stop(api.dir, { transcript_path: session })), {});
 });
 
 test("a file left changed from before this session began is not asked about", async (t) => {
