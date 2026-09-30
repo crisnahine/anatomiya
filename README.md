@@ -412,10 +412,12 @@ already enforces a rule, the map restating it is waste, not defence in depth.
 
 **JavaScript, TypeScript and Ruby, nothing else.** A Python, Go or Rust repository gets an overview
 with a layout section and no claims in it. One of the 58 needs the type checker and is the only
-thing `scan --deep` adds: `a call chain stays inside one type`. It is off by default because the
-checker was measured about 26x slower than the parse and whole-program, so it cannot be narrowed to
-the files you changed; `--deep` needs the optional `typescript` dependency and the scanned
-repository's own dependencies on disk, and says on the map when the checker answered badly.
+thing `scan --deep` adds: `a call chain stays inside one type`. It is off by default because a deep
+scan measured about 3x a plain one on a 3,800-file repository and the checker is whole-program, so
+it cannot be narrowed to the files you changed; `--deep` needs the optional `typescript` 5.x
+dependency and the scanned repository's own dependencies on disk inside the repository (a
+`node_modules` linked in from elsewhere is not read and counts as not installed), and says on the
+map when the checker answered badly.
 
 **Small directories are not covered.** A directory needs `clamp(round(sqrt(N) / 6), 3, 8)` source
 files to be an area. On the excalidraw run above, 15 of 693 files sat in no area, and 205 of 2,468
