@@ -7,6 +7,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-09-30
+
 `check` gets quieter where it was wrong and more exact where it was vague. It stops reporting a
 function's untouched declaration after an edit inside its body, a subclass of a base the branch
 itself adds, and `Sidekiq::Job` in a directory that writes `Sidekiq::Worker`, and every finding it
@@ -3471,7 +3473,8 @@ which are partial; several listed there are not implemented yet.
 - No claim that this catches defects. Measured across ten repositories, 1 of 317 defect review
   comments was preventable by a conventions map.
 
-[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.11.1...HEAD
+[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/crisnahine/anatomiya/compare/v0.11.1...v0.12.0
 [0.11.1]: https://github.com/crisnahine/anatomiya/compare/v0.11.0...v0.11.1
 [0.11.0]: https://github.com/crisnahine/anatomiya/compare/v0.10.2...v0.11.0
 [0.10.2]: https://github.com/crisnahine/anatomiya/compare/v0.10.1...v0.10.2
