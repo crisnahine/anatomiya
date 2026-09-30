@@ -130,6 +130,22 @@ export function isSource(path) {
   return SOURCE.test(path) || BARE_FILENAME.test(path);
 }
 
+// Claude Code's `paths` matcher folds case as a non-unicode /i regex does, so
+// `*.rb` reaches `Legacy.RB`. oxc picks its grammar from the extension as
+// written, so such a file is left out rather than counted.
+const SOURCE_ANY_CASE = new RegExp(SOURCE.source, "i");
+const BARE_ANY_CASE = new RegExp(BARE_FILENAME.source, "i");
+
+/** The language a path is counted under, asked with its name's case folded. */
+function languageInAnyCase(path) {
+  if (isSource(path)) return language(path);
+  const ext = SOURCE_ANY_CASE.exec(path)?.[1];
+  if (ext) return language(`f.${ext.toLowerCase()}`);
+  const bare = BARE_ANY_CASE.exec(path)?.[2]?.toLowerCase();
+  const name = bare && LANGUAGES.flatMap((l) => l.filenames).find((n) => n.toLowerCase() === bare);
+  return name ? language(name) : null;
+}
+
 /**
  * Which path-only rule refuses a path, or null where none does. The generated-
  * file head read and the realpath check are not path-only questions and stay
@@ -446,9 +462,15 @@ export async function collect(root) {
     const { drop, abs } = classify(root, rel, generatedRules);
     // Non-source tracked files feed the roster this scan builds over every
     // tracked path, not just the parsed ones.
-    if (drop === "notSource") { dropped.notSource++; others.push({ rel }); return; }
+    const folded = drop === "notSource" || drop === "excluded" ? languageInAnyCase(rel) : null;
+    if (drop === "notSource") {
+      dropped.notSource++;
+      others.push({ rel });
+      if (folded) uncounted.push({ rel, lang: folded });
+      return;
+    }
     // Left out as unidiomatic on purpose, so an area's glob has to cut it out.
-    if (drop === "excluded" && isSource(rel)) uncounted.push({ rel, lang: language(rel), excludedAt: excludedAt(rel) });
+    if (drop === "excluded" && folded) uncounted.push({ rel, lang: folded, excludedAt: excludedAt(rel) });
     if (drop === "generated") uncounted.push({ rel, lang: language(rel) });
     if (drop) { dropped[drop]++; return; }
     const file = { rel, abs, lang: language(rel) };

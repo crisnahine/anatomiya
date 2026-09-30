@@ -102,8 +102,9 @@ files the ceiling left uncovered, since `capCount` can host an area at a directo
 were already orphaned. Measured on a 5,495-file Rails repository, 156 areas: 298 patterns in total,
 37 areas changed, 119 unchanged on the single recursive glob, 21 patterns in the largest list.
 
-The files the corpus left out are foreign too: tracked source under an excluded directory, and
-generated files. The cover was built from the counted files alone, so a `fixtures/` or `test_cases/`
+The files the corpus left out are foreign too: tracked source under an excluded directory,
+generated files, and source whose extension or bare name is in another case (`Legacy.RB`), which
+Claude Code's matcher folds onto `*.rb` and the corpus does not count. The cover was built from the counted files alone, so a `fixtures/` or `test_cases/`
 inside an area read as part of a subtree it wholly owned, and its one recursive glob delivered the
 area's sentences to exactly the code G7 keeps out of the counts: angular's compliance area counted 8
 files and reached 2,017 under `test_cases`. The left-out files a pattern of the area could spell are
