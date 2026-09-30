@@ -214,7 +214,8 @@ directory above your checkouts.
   `refresh` starts its walk.
 
 - `check --base` refuses the branch's own name spelled in another case, or typed in another Unicode
-  form, on a filesystem that folds it (macOS, Windows), where it used to compare the branch with itself and exit 0 clean.
+  form, on a filesystem that folds it (macOS, Windows), where it used to compare the branch with
+  itself and exit 0 clean.
 - A map or pin file that is on disk but cannot be opened is reported as unreadable, not as missing.
   A linked worktree whose own pin cannot be opened no longer falls back to its main checkout's pin.
 - doctor and `scan --deep` no longer tell a typescript 5.x that is missing createProgram that it
@@ -233,9 +234,9 @@ directory above your checkouts.
   telling those up/down migrations to declare `change`.
 - `http_through_client` no longer counts hand-built `Faraday::ConnectionFailed` or
   `RestClient::Exceptions::*` errors as direct HTTP calls.
-- `http_through_client` no longer reads a Redis, cache, memcache, Dalli or database client (`db_client`,
-  `pg_client`, `Mongo::Client`) as the repository's HTTP client, so a repository with no HTTP stops
-  stating that its HTTP goes through one.
+- `http_through_client` no longer reads a Redis, cache, memcache, Dalli or database client
+  (`db_client`, `pg_client`, `Mongo::Client`) as the repository's HTTP client, so a repository with
+  no HTTP stops stating that its HTTP goes through one.
 - A component annotated through an aliased React namespace (`R.FC` under `import * as R from
   "react"`) is no longer asked to be renamed in camelCase.
 - `pin` during a merge with no conflicts says to finish or abort the merge. It said to commit or
