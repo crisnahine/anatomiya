@@ -1333,6 +1333,25 @@ test("a worktree made on a teammate's commit creates nothing, and the pin follow
   assert.equal(loadPin(dir).sha, teammate);
 });
 
+test("a worktree made on a teammate's commit and refreshed from inside creates nothing", async (t) => {
+  // Seen from inside a linked worktree, its own HEAD log is spelled plain `HEAD`.
+  const { origin, dir } = await cloned(t);
+  await refreshRepository(dir);
+  source(origin, "lib/t1", 8);
+  const teammate = commit(origin, "a teammate's commit");
+  git(dir, "fetch", "-q");
+  const wt = realpathSync.native(mkdtempSync(join(tmpdir(), "anatomiya-refresh-wt-")));
+  t.after(() => rmSync(wt, { recursive: true, force: true }));
+  rmSync(wt, { recursive: true, force: true });
+  git(dir, "worktree", "add", "-q", "--detach", wt, "origin/main");
+  await runScan(wt);
+
+  const r = await refreshRepository(wt);
+
+  assert.equal(r.held, null);
+  assert.equal(loadPin(wt).sha, teammate);
+});
+
 test("a hold found by the committer identity alone says so, and never that the commit was made in this clone", async (t) => {
   // The same person pushing from another machine: nothing in this clone made
   // the commit, and the notice sent them looking for a local one.
