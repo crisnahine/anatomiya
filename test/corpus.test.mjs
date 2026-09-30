@@ -9,6 +9,7 @@ import { execFileSync } from "node:child_process";
 import { collect, countUntrackedSource, isDenied, isCorpusPath, isExcludedDir, isSource, safeResolve, gitRoot, frameworksIn } from "../plugins/anatomiya/lib/corpus.mjs";
 import { language } from "../plugins/anatomiya/lib/langs.mjs";
 import * as areaLib from "../plugins/anatomiya/lib/areas.mjs";
+import { claudeCodeReaches } from "./paths-reader.mjs";
 
 const { discover, globEntry, globText, assertGlobSafe, areaId, AREA } = areaLib;
 
@@ -511,38 +512,8 @@ test("no generated glob ends in a bare /**", () => {
   assert.throws(() => assertGlobSafe({ negated: false, dir: "app", tail: "**" }), /bare \/\*\*/);
 });
 
-const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-
-/** The matcher's semantics: `*` stops at a slash, a `**` segment spans any depth including none. */
-function toRegExp(pattern) {
-  let out = "^";
-  for (let i = 0; i < pattern.length; i++) {
-    if (pattern.startsWith("**/", i)) {
-      out += "(?:[^/]*/)*";
-      i += 2;
-    } else if (pattern[i] === "*") {
-      out += "[^/]*";
-    } else if (pattern[i] === "{") {
-      const end = pattern.indexOf("}", i);
-      out += `(?:${pattern.slice(i + 1, end).split(",").map(escapeRe).join("|")})`;
-      i = end;
-    } else {
-      out += escapeRe(pattern[i]);
-    }
-  }
-  return new RegExp(`${out}$`);
-}
-
-/** Which of `globs` a path ends up matching: negations included, last match winning. */
-function matches(globs, rel) {
-  let hit = false;
-  for (const g of globs) {
-    // The area record carries the halves apart; the matcher reads the pattern
-    // the delivery channel would.
-    if (toRegExp(areaLib.globText({ ...g, negated: false })).test(rel)) hit = !g.negated;
-  }
-  return hit;
-}
+/** Which files `globs` reach, read as Claude Code reads the rendered `paths` list. */
+const matches = (globs, rel) => claudeCodeReaches(globs.map((g) => areaLib.globText(g)), rel);
 
 test("an area's globs match the files it counted and no others", () => {
   // The bug: `lib/core/**/*` matched `lib/core/deep`, whose own area measured
