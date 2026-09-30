@@ -222,65 +222,67 @@ test("an edited body beside a new one of the same shape is matched by the functi
   assert.deepEqual(added.map((f) => [f.line, f.where]), [[2, "f"]]);
 });
 
-test("a row that judges the body does not let one anonymous copy answer for another", () => {
+test("a row that judges the body aligns alike copies the way a line diff does", () => {
   // With the body out of the identity every anonymous handler is one site, so
-  // a handler that lost its catch was absorbed by another that never had one.
-  const handlers = (a, b) =>
-    `app.get("/a", async (req, res) => {\n  ${a}\n})\napp.get("/b", async (req, res) => {\n  ${b}\n})\n`;
-  const judged = (base, head) =>
-    only(
-      "async_error_handling",
-      newlyIntroduced({ area: area(stated("async_error_handling")), path: "src/a.ts", lang: "js", head: revision(head, { file: "f.ts" }), base: revision(base, { file: "f.ts" }) })
-    ).map((f) => f.line);
+  // which copy breaks has to be read off an alignment of all of them. `human`
+  // is what a reviewer reading both files would name. `limit` is the answer
+  // where only the names inside the bodies tell the readings apart; each one
+  // is also what the full-text identity reported before the body left it.
   const caught = (call) => `try { await ${call}() } catch (e) { res.end() }`;
-
-  const base = handlers(caught("a"), "await b()");
-  assert.deepEqual(judged(base, handlers("await a()", caught("b"))), [1], "the catch moved from /a to /b");
-  assert.deepEqual(judged(base, handlers("await a()", "await b(); log()")), [1], "/a lost its catch and /b was edited");
-  assert.deepEqual(judged(base, handlers(caught("a"), "await b(); log()")), [], "an edit inside /b alone is not a new site");
-
+  const then = (...bodies) => bodies.map((b) => `p.then(async (r) => {\n  ${b}\n})\n`).join("");
+  const handlers = (a, b) => `app.get("/a", async (req, res) => {\n  ${a}\n})\napp.get("/b", async (req, res) => {\n  ${b}\n})\n`;
+  const routes = (...pairs) => pairs.map(([p, b]) => `app.get("${p}", async (req, res) => {\n  ${b}\n})\n`).join("");
   const catches = (a, b) => `try { x() } catch (e) { later(() => ${a}) }\ntry { y() } catch (e) { later(() => ${b}) }\n`;
-  const swallowed = (base, head) =>
-    only(
-      "swallowed_error",
-      newlyIntroduced({ area: area(stated("swallowed_error")), path: "src/a.ts", lang: "js", head: revision(head, { file: "f.ts" }), base: revision(base, { file: "f.ts" }) })
-    ).map((f) => f.line);
-  assert.deepEqual(swallowed(catches("log(e)", "report()"), catches("log()", "report(e)")), [1], "a catch that stopped reading its error inside a closure");
-
-  // Formatted over lines, every catch opens on the same `} catch (err) {`.
   const sync = (a, b) =>
     `export async function sync() {\n  try {\n    await pull()\n  } catch (err) {\n    queue(() => ${a})\n  }\n  try {\n    await push()\n  } catch (err) {\n    queue(() => ${b})\n  }\n}\n`;
-  assert.deepEqual(swallowed(sync("log(err)", "retry()"), sync("log()", "retry(1)")), [4], "multi-line catches in one function");
   const top = (a, b) => `try {\n  x()\n} catch (e) {\n  later(() => ${a})\n}\ntry {\n  y()\n} catch (e) {\n  later(() => ${b})\n}\n`;
-  assert.deepEqual(swallowed(top("log(e)", "report()"), top("log()", "report(e)")), [3], "multi-line catches that swap which one swallows");
-
-  // Anonymous handlers that open on the same line text.
-  const thens = (a, b) => `p.then(async (r) => {\n  ${a}\n})\np.then(async (r) => {\n  ${b}\n})\n`;
-  assert.deepEqual(judged(thens(caught("a"), "await b()"), thens("await a()", caught("b"))), [1], "the catch moved between same-opening handlers");
-  assert.deepEqual(judged(thens(caught("a"), "await b()"), thens(caught("a"), "await b(); log()")), [], "an edit inside the bare one alone");
-  assert.deepEqual(
-    judged(`p.then(async (r) => {\n  await b()\n})\n`, thens(caught("a"), "await b(); log()")),
-    [],
-    "a caught handler added above an edited bare one"
-  );
-  const then = (...bodies) => bodies.map((b) => `p.then(async (r) => {\n  ${b}\n})\n`).join("");
-  assert.deepEqual(judged(then("await b()"), then(caught("a"), "await b(); log()", caught("c"))), [], "caught handlers added on both sides of an edited bare one");
-  assert.deepEqual(judged(then(caught("a"), "await b()", caught("c")), then("await b(); log()")), [], "caught handlers removed from both sides of an edited bare one");
-  // Nothing but the text tells this apart from the catch moving between two
-  // handlers, so it reads as that move.
-  assert.deepEqual(judged(then(caught("a"), "await b()"), then("await b(); log()", caught("c"))), [1], "one removed above and one added below");
   const multi = (...bodies) => bodies.map((b) => `try {\n  x()\n} catch (e) {\n  later(() => ${b})\n}\n`).join("");
-  assert.deepEqual(swallowed(multi("report()"), multi("log(e)", "report(1)", "log(e)")), [], "reading catches added on both sides of an edited swallowing one");
+  const A = "async_error_handling";
+  const S = "swallowed_error";
 
-  // Handlers on other routes are not copies, so adding one moves nothing.
-  const routes = (...pairs) => pairs.map(([p, b]) => `app.get("${p}", async (req, res) => {\n  ${b}\n})\n`).join("");
-  assert.deepEqual(judged(routes(["/b", "await b()"]), routes(["/a", caught("a")], ["/b", "await b(); log()"], ["/c", caught("c")])), [], "other routes added around an edited one");
-  assert.deepEqual(judged(routes(["/a", caught("a")], ["/b", "await b()"]), routes(["/b", "await b(); log()"], ["/c", caught("c")])), [], "one route removed above and one added below an edited one");
-  assert.deepEqual(
-    judged(routes(["/a", caught("a")], ["/b", "await b()"]), routes(["/a", "await a()"], ["/b", caught("b")], ["/c", caught("c")])),
-    [1],
-    "the catch moved from /a to /b while /c was added"
-  );
+  const cases = [
+    // As many copies on both sides: each was edited in place.
+    ["the catch moved from /a to /b", A, handlers(caught("a"), "await b()"), handlers("await a()", caught("b")), [1]],
+    ["/a lost its catch and /b was edited", A, handlers(caught("a"), "await b()"), handlers("await a()", "await b(); log()"), [1]],
+    ["an edit inside /b alone", A, handlers(caught("a"), "await b()"), handlers(caught("a"), "await b(); log()"), []],
+    ["a catch that stopped reading its error inside a closure", S, catches("log(e)", "report()"), catches("log()", "report(e)"), [1]],
+    ["multi-line catches in one function", S, sync("log(err)", "retry()"), sync("log()", "retry(1)"), [4]],
+    ["multi-line catches that swap which one swallows", S, top("log(e)", "report()"), top("log()", "report(e)"), [3]],
+    ["the catch moved between same-opening handlers (T7)", A, then(caught("a"), "await b()"), then("await a()", caught("b")), [1]],
+    ["an edit inside the bare one alone", A, then(caught("a"), "await b()"), then(caught("a"), "await b(); log()"), []],
+    ["one removed above and one added below an edited one (E4)", A, then(caught("a"), "await b()"), then("await b(); log()", caught("c")), [], [1]],
+    // Copies on other routes open on other lines, so they are other groups.
+    ["other routes added around an edited one", A, routes(["/b", "await b()"]), routes(["/a", caught("a")], ["/b", "await b(); log()"], ["/c", caught("c")]), []],
+    ["one route removed above and one added below an edited one", A, routes(["/a", caught("a")], ["/b", "await b()"]), routes(["/b", "await b(); log()"], ["/c", caught("c")]), []],
+    ["the catch moved from /a to /b while /c was added", A, routes(["/a", caught("a")], ["/b", "await b()"]), routes(["/a", "await a()"], ["/b", caught("b")], ["/c", caught("c")]), [1]],
+    // A copy added or removed: an unchanged copy on both sides anchors, and
+    // between two anchors an edited copy has no known partner.
+    ["a caught handler added above an untouched caught one and an edited bare one", A, then(caught("a"), "await b()"), then(caught("x"), caught("a"), "await b(); log()"), []],
+    ["a new bare handler beside an untouched bare one", A, then("await a()"), then("await a()", "await b()"), [4]],
+    ["a new swallowing catch above an untouched reading one (S2)", S, multi("log(e)"), multi("report()", "log(e)"), [3]],
+    ["b lost its catch while a gained one and c was added above (F1)", A, then("await a()", caught("b")), then(caught("c"), caught("a"), "await b()"), [7]],
+    ["b lost its catch while a gained one and c was added below (F2)", A, then("await a()", caught("b")), then(caught("a"), "await b()", caught("c")), [4]],
+    ["b lost its catch while a gained one and c was removed (F3)", A, then("await a()", caught("b"), caught("c")), then(caught("a"), "await b()"), [4]],
+    ["b lost its catch while a gained one and c was added between (F5)", A, then("await a()", caught("b")), then(caught("a"), caught("c"), "await b()"), [7]],
+    ["bare a deleted and b lost its catch (F6)", A, then("await a()", caught("b")), then("await b()"), [1]],
+    ["bare a unchanged, b lost its catch, c added (F7)", A, then("await a()", caught("b")), then("await a()", "await b()", caught("c")), [4]],
+    ["the reading catch stopped reading and the swallowing one was deleted (S3)", S, multi("log(e)", "report()"), multi("log()"), [3]],
+    ["a fixed, b stopped reading, c added (S4)", S, multi("log()", "report(e)"), multi("log(e)", "report()", "keep(e)"), [8]],
+    ["a caught handler added above an edited bare one", A, then("await b()"), then(caught("a"), "await b(); log()"), [], [4]],
+    ["caught handlers added on both sides of an edited bare one (E1)", A, then("await b()"), then(caught("a"), "await b(); log()", caught("c")), [], [4]],
+    ["caught handlers removed from both sides of an edited bare one (E2)", A, then(caught("a"), "await b()", caught("c")), then("await b(); log()"), [], [1]],
+    ["a caught handler added above an edited bare one beside an untouched bare one (E3)", A, then("await b()", "await z()"), then(caught("a"), "await b(); log()", "await z()"), [], [4]],
+    ["a new bare handler above an edited bare one (E5)", A, then("await b()"), then("await n()", "await b(); log()"), [1], [1, 4]],
+    ["reading catches added on both sides of an edited swallowing one (S1)", S, multi("report()"), multi("log(e)", "report(1)", "log(e)"), [], [8]],
+    ["an unchanged file", A, then(caught("a"), "await b()", "await b()"), then(caught("a"), "await b()", "await b()"), []],
+  ];
+  const wrong = [];
+  for (const [name, key, base, head, human, limit] of cases) {
+    const found = only(key, newlyIntroduced({ area: area(stated(key)), path: "src/a.ts", lang: "js", head: revision(head, { file: "f.ts" }), base: revision(base, { file: "f.ts" }) }));
+    const lines = found.map((f) => f.line);
+    if (JSON.stringify(lines) !== JSON.stringify(limit ?? human)) wrong.push(`${name}: ${JSON.stringify(lines)}`);
+  }
+  assert.deepEqual(wrong, []);
 });
 
 test("a long file of many sites is judged in time linear in its length", () => {
