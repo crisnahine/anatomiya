@@ -5,13 +5,14 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { execFileSync, spawnSync } from "node:child_process";
 
-import { needsPosixPaths, needsPosixSpecialFiles, needsShebang } from "./platform.mjs";
+import { needsPathControl, needsPosixPaths, needsPosixSpecialFiles, needsShebang } from "./platform.mjs";
 import { transcript } from "./transcript.mjs";
 import { askedMarks, pendingChange, REUSE_GIT_MS, REUSE_MARK, reuseReason } from "../plugins/anatomiya/lib/reuse.mjs";
 import { runReuse } from "../plugins/anatomiya/lib/commands.mjs";
 import { PAYLOAD_WAIT_MS } from "../plugins/anatomiya/lib/hook.mjs";
 import { FACTS_PATH, FACTS_SCHEMA } from "../plugins/anatomiya/lib/facts.mjs";
 import { ANATOMIYA } from "../scripts/plugins.mjs";
+import { corpusDrop } from "../plugins/anatomiya/lib/corpus.mjs";
 
 /**
  * A scanned repository with one committed source file.
@@ -708,7 +709,7 @@ test("the git reads fit inside the time the hook asks Claude Code for", () => {
   assert.ok(PAYLOAD_WAIT_MS + 2 * REUSE_GIT_MS + 1000 <= declared * 1000, `${PAYLOAD_WAIT_MS} + 2 x ${REUSE_GIT_MS} against ${declared}s`);
 });
 
-test("a deletion in the tree adds no git read to the two the budget allows", async (t) => {
+test("a deletion in the tree adds no git read to the two the budget allows", { ...needsShebang, ...needsPathControl }, async (t) => {
   // The budget above counts a status read and a diff in a row. A HEAD listing
   // between them pushed the worst case past the declared timeout.
   const { dir, write } = repo(t);
@@ -719,17 +720,60 @@ test("a deletion in the tree adds no git read to the two the budget allows", asy
   write("src/a.ts", "export const one = 1;\nexport function c(x) {\n  return x * 2;\n}\n");
   const trace = join(dir, "..", `${basename(dir)}.trace`);
   t.after(() => rmSync(trace, { force: true }));
+  // Every git holds its caller a while after it exits, so reads started
+  // together overlap however fast this machine runs a small one.
+  const HELD_MS = 300;
+  const slow = mkdtempSync(join(tmpdir(), "anatomiya-slow-git-"));
+  t.after(() => rmSync(slow, { recursive: true, force: true }));
+  const real = execFileSync("sh", ["-c", "command -v git"], { encoding: "utf8" }).trim();
+  writeFileSync(join(slow, "git"), `#!/bin/sh\n'${real}' "$@"\ncode=$?\nsleep ${HELD_MS / 1000}\nexit $code\n`);
+  chmodSync(join(slow, "git"), 0o755);
+  const path = process.env.PATH;
+  process.env.PATH = `${slow}:${path}`;
   process.env.GIT_TRACE2_EVENT = trace;
   try {
     assert.deepEqual(hunksOf(await pendingChange(dir)), [["src/a.ts", [{ from: 2, to: 4, created: false }]]]);
   } finally {
     delete process.env.GIT_TRACE2_EVENT;
+    process.env.PATH = path;
   }
-  const commands = readFileSync(trace, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l))
-    .filter((e) => e.event === "start")
-    .map((e) => e.argv.slice(1).find((a, i, all) => !a.startsWith("-") && all[i - 1] !== "-c"))
-    .filter((c) => c !== "config" && c !== "rev-parse");
-  assert.deepEqual(commands, ["status", "diff"]);
+  // Reads that overlap cost the budget one read, so what is counted is the
+  // longest run of reads each starting after the one before it ended.
+  const reads = new Map();
+  for (const e of readFileSync(trace, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l))) {
+    if (e.event === "start") {
+      const command = e.argv.slice(1).find((a, i, all) => !a.startsWith("-") && all[i - 1] !== "-c");
+      if (command !== "config" && command !== "rev-parse") reads.set(e.sid, { command, start: Date.parse(e.time) });
+    } else if (e.event === "exit" && reads.has(e.sid)) reads.get(e.sid).end = Date.parse(e.time) + HELD_MS;
+  }
+  const runs = new Map();
+  const longest = (read) => {
+    if (!runs.has(read)) {
+      const before = [...reads.values()].filter((r) => r.end < read.start).map(longest);
+      runs.set(read, [...before.reduce((a, b) => (b.length > a.length ? b : a), []), read.command]);
+    }
+    return runs.get(read);
+  };
+  assert.deepEqual(new Set([...reads.values()].map((r) => r.command)), new Set(["status", "ls-files", "cat-file", "diff"]));
+  const run = [...reads.values()].map(longest).reduce((a, b) => (b.length > a.length ? b : a), []);
+  assert.equal(run.length, 2, run.join(" then "));
+  assert.equal(run[1], "diff");
+});
+
+test("the hook and check agree on a generated file whose .gitattributes a sparse checkout hides", async (t) => {
+  // Git counts the tree's missing copy as no change, so the index holds the rules.
+  const { dir, git, write } = repo(t);
+  write(".gitattributes", "gen/** linguist-generated\n");
+  write("gen/g.ts", "export const g = 1;\n");
+  git("add", "-A");
+  git("commit", "-qm", "gen");
+  git("sparse-checkout", "set", "--no-cone", "/src/", "/gen/");
+  assert.equal(existsSync(join(dir, ".gitattributes")), false);
+  write("gen/g.ts", "export const g = 1;\nexport function h(x) {\n  return x;\n}\n");
+  write("src/a.ts", "export const one = 1;\nexport function c(x) {\n  return x * 2;\n}\n");
+
+  assert.equal((await corpusDrop(dir))("gen/g.ts"), "generated");
+  assert.deepEqual((await pendingChange(dir)).map((f) => f.path), ["src/a.ts"]);
 });
 
 /** The `reuse` verb, run exactly as the loader would run its declaration. */
