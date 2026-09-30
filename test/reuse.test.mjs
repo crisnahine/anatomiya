@@ -1,17 +1,18 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { execFileSync, spawnSync } from "node:child_process";
 
-import { needsPosixPaths, needsPosixSpecialFiles, needsShebang } from "./platform.mjs";
+import { needsPathControl, needsPosixPaths, needsPosixSpecialFiles, needsShebang } from "./platform.mjs";
 import { transcript } from "./transcript.mjs";
 import { askedMarks, pendingChange, REUSE_GIT_MS, REUSE_MARK, reuseReason } from "../plugins/anatomiya/lib/reuse.mjs";
 import { runReuse } from "../plugins/anatomiya/lib/commands.mjs";
 import { PAYLOAD_WAIT_MS } from "../plugins/anatomiya/lib/hook.mjs";
 import { FACTS_PATH, FACTS_SCHEMA } from "../plugins/anatomiya/lib/facts.mjs";
 import { ANATOMIYA } from "../scripts/plugins.mjs";
+import { corpusDrop } from "../plugins/anatomiya/lib/corpus.mjs";
 
 /**
  * A scanned repository with one committed source file.
@@ -19,9 +20,10 @@ import { ANATOMIYA } from "../scripts/plugins.mjs";
  * Real git, because what the hook reads is the working tree against HEAD, and
  * a fixture cannot say which lines a change added.
  */
-function repo(t, { scanned = true, commit = true, refFormat = null } = {}) {
-  const dir = mkdtempSync(join(tmpdir(), "anatomiya-reuse-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+function repo(t, { scanned = true, commit = true, refFormat = null, at = null } = {}) {
+  const dir = at ?? mkdtempSync(join(tmpdir(), "anatomiya-reuse-"));
+  if (at === null) t.after(() => rmSync(dir, { recursive: true, force: true }));
+  else mkdirSync(dir);
   const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
   git("init", "-q", ...(refFormat ? [`--ref-format=${refFormat}`] : []));
   git("config", "user.email", "t@t.test");
@@ -61,7 +63,9 @@ const hunksOf = (change) => change.map((f) => [f.path, f.hunks]);
 test("the reason is the measured wording, naming the lines the change added", () => {
   // The wording is the one that passed 24 of 24 on the hard cases, and every
   // inline wording scored 9 or 10 of 12, so it is held here word for word
-  // (docs/research/one-line-that-finds-the-existing-function.md).
+  // (docs/research/one-line-that-finds-the-existing-function.md). The last
+  // sentence is for a session with no Agent tool, which refused the ask as
+  // "No such tool" and spent a turn on it.
   const reason = reuseReason([
     { path: "src/a.ts", mark: "aaaaaaaaaaaa", hunks: [{ from: 3, to: 9, created: false }] },
     { path: "src/b.ts", mark: "bbbbbbbbbbbb", hunks: [{ from: 1, to: 12, created: true }] },
@@ -71,7 +75,8 @@ test("the reason is the measured wording, naming the lines the change added", ()
     reason.startsWith(
       "Before you finish, give one subagent this change's diff and these added functions: src/a.ts:3-9; src/b.ts:1-12 (new file). " +
         "Have it grep shared and utility modules, files near the change, and code making the same calls, then name any existing function that does the same job. " +
-        "Call each named function and delete the copy it replaces. If it names none, finish without changing anything."
+        "Call each named function and delete the copy it replaces. If it names none, finish without changing anything. " +
+        "If this session has no subagent tool, run that search yourself."
     ),
     reason
   );
@@ -112,7 +117,7 @@ test("an untracked source file is added from its first line to its last", async 
 
 test("an edited source file names only the lines it added", async (t) => {
   const { dir, write } = repo(t);
-  write("src/a.ts", "export const one = 1;\nexport const x = 3;\nexport const y = 4;\nexport const two = 2;\n");
+  write("src/a.ts", "export const one = 1;\nexport function x() {}\nexport const y = () => 4;\nexport const two = 2;\n");
 
   assert.deepEqual(hunksOf(await pendingChange(dir)), [["src/a.ts", [{ from: 2, to: 3, created: false }]]]);
 });
@@ -127,10 +132,211 @@ test("a change that adds no source line has nothing to check", async (t) => {
   assert.equal(await pendingChange(dir), null);
 });
 
+test("a migration or a schema dump has nothing to check", async (t) => {
+  // Each one restates the framework's calls by design and nothing calls it.
+  const { dir, write } = repo(t);
+  const migration = "class AddFeatured < ActiveRecord::Migration[7.1]\n  def change\n    add_column :ms, :featured, :boolean\n  end\nend\n";
+  write("db/migrate/20260930000000_add_featured.rb", migration);
+  write("engines/shop/db/migrate/20260930000001_add_rank.rb", migration);
+  write("db/schema.rb", "ActiveRecord::Schema[7.1].define(version: 1) do\nend\n");
+  write("db/queue_schema.rb", "ActiveRecord::Schema[7.1].define(version: 1) do\nend\n");
+  write("db/cache_migrate/20260930000002_create_entries.rb", migration);
+  write("db/post_migrate/20260930000003_drop_old.rb", migration);
+  write("shop/migrations/0002_rank.py", "def forwards(apps, schema_editor):\n    pass\n");
+  write("server/migrations/20260930_add_rank.js", "exports.up = (knex) => knex;\n");
+
+  assert.equal(await pendingChange(dir), null);
+});
+
+test("a file whose added lines define nothing callable has nothing to check", async (t) => {
+  // No function was added, so there is no copy of one to find and delete.
+  const { dir, git, write } = repo(t);
+  write("lib/limits.rb", "LIMITS = {\n  max: 3,\n}.freeze\n");
+  write("src/list.ts", "export const IDS = [\n  1,\n];\n");
+  git("add", "-A");
+  git("commit", "-qm", "constants");
+  write(
+    "app/models/consts.rb",
+    "# frozen_string_literal: true\n\nrequire \"json\"\nrequire_relative \"base\"\nFOO = 1\nBAR = 'two'.freeze\nWORDS = %w[a b].freeze\nNONE = nil\nTABLE = {\n  \"min\" => 1,\n  nested: [nil, true, :sym, -2.5],\n  deep: {\n    on: false,\n  },\n}.freeze\n=begin\ndef old; end\n=end\n"
+  );
+  write("lib/limits.rb", "LIMITS = {\n  max: 3,\n  min: 1,\n  name: \"n\",\n}.freeze\n");
+  write(
+    "src/config.ts",
+    "\"use strict\";\n/**\n * Limits.\n */\nimport { x } from './x';\nimport type { Y } from \"./y\";\nimport def, * as ns from './ns';\nimport './side-effect';\nimport {\n  a,\n  b as c,\n} from './z';\nexport * from './w';\nexport {\n  d,\n} from './v';\nconst fs = require('fs');\nconst { join } = require(\"path\");\nexport const LIMITS = { max: 3, min: 1, name: `n`, ok: true, none: null, [\"k\"]: 0x1f } as const;\nlet total: number = 0; // counted later\nvar big = 10n;\n/* inline */ export const LIST = [[1, 2], [], {}];\n"
+  );
+  write("src/list.ts", "export const IDS = [\n  1,\n  2,\n  'three',\n];\n");
+  write("src/a.ts", "export const one = 1;\nexport const three = 3;\nexport const two = 2;\n");
+
+  assert.equal(await pendingChange(dir), null);
+});
+
+test("every way a file can add something callable is still checked", async (t) => {
+  // A line that only might define one still asks: one search more costs less
+  // than a copy nobody was asked about.
+  const { dir, git, write } = repo(t);
+  const js = {
+    decl: "export function f() {}\n",
+    arrow: "export const f = async (a) =>\n  a;\n",
+    expression: "module.exports.f = function () {};\n",
+    klass: "export class K {}\n",
+    method: "export const o = {\n  total(items) {\n    return 0;\n  },\n};\n",
+    wrapped: "class K {\n  static async *walk(\n    a,\n  ) {}\n}\n",
+    typed: "class K {\n  private total(items: number[]): number {\n    return 0;\n  }\n}\n",
+    computed: "class K {\n  [Symbol.iterator]() {}\n}\n",
+    getter: "class K {\n  get size() {\n    return 0;\n  }\n}\n",
+    bound: "export const f = g.bind(null);\n",
+    minified: `var a=${"1+".repeat(300)}1;\n`,
+  };
+  const ruby = {
+    def: "module M\n  def self.f\n    1\n  end\nend\n",
+    endless: "class K\n  def f = 1\nend\n",
+    defined: "class K\n  define_method(:f) { 1 }\nend\n",
+    lambda: "F = lambda { |x| x }\n",
+    stabby: "class K\n  scope :live, -> { where(live: true) }\nend\n",
+    proc: "F = proc { 1 }\n",
+    struct: "Point = Struct.new(:x, :y)\n",
+    reader: "class K\n  attr_reader :size\nend\n",
+    delegated: "class K\n  delegate :size, to: :items\nend\n",
+    aliased: "class K\n  alias_method :count, :size\nend\n",
+    let: "RSpec.describe K do\n  let(:k) { K.new }\nend\n",
+    task: "task :seed do\n  Seed.run\nend\n",
+  };
+  for (const [name, body] of Object.entries(js)) write(`src/${name}.ts`, body);
+  for (const [name, body] of Object.entries(ruby)) write(`lib/${name}.rb`, body);
+  write("src/view.jsx", "export default function View() {\n  return <p />;\n}\n");
+  // Measured on the corpus: an edit to the head of an arrow whose `=>` stays on
+  // a line the edit left alone, and a constructor with its body on one line.
+  const heads = {
+    "src/head.ts": ["export const f = ({\n", "export const f = async ({\n"],
+    "src/typed-head.tsx": ["export const f = ({\n", "export const f = <As extends E>({\n"],
+    "src/injected.ts": ["class K {\n  constructor() {\n", "class K {\n  constructor(private readonly deps: D) {}\n  {\n"],
+  };
+  const rest = "  a,\n}) => {\n  return a;\n};\n";
+  for (const [path, [before]] of Object.entries(heads)) write(path, before + rest);
+  git("add", ...Object.keys(heads));
+  git("commit", "-qm", "heads");
+  for (const [path, [, after]] of Object.entries(heads)) write(path, after + rest);
+
+  assert.deepEqual(
+    (await pendingChange(dir)).map((f) => f.path),
+    [...Object.keys(ruby).map((n) => `lib/${n}.rb`), ...Object.keys(js).map((n) => `src/${n}.ts`), ...Object.keys(heads), "src/view.jsx"].sort()
+  );
+});
+
+test("a definition written in a shape no line pattern names is still checked", async (t) => {
+  // Each one was silenced by a pattern of what a definition looks like, so a
+  // line asks unless it is one of the few shapes that provably define nothing.
+  const { dir, git, write } = repo(t);
+  write("src/f1.js", "export function f1(a) {\n  return a;\n}\n");
+  write("src/c1.jsx", "export function C1() {\n  return <div />;\n}\n");
+  write("src/g1.ts", "class G {\n  total(a: number)\n  {\n    return a;\n  }\n}\n");
+  write("src/h1.ts", "class H {\n  total(\n    a: number,\n  ) {\n    return a;\n  }\n}\n");
+  const model = "class M < ApplicationRecord\n  enum status: {\n    active: 0,\n  }\nend\n";
+  const models = {
+    "app/models/enum.rb": "  enum kind: { a: 0, b: 1 }\n",
+    "app/models/store.rb": "  store_accessor :settings, :theme, :locale\n",
+    "app/models/assoc.rb": "  has_many :items\n",
+    "app/models/nested.rb": "  accepts_nested_attributes_for :items\n",
+    "app/models/attached.rb": "  has_one_attached :avatar\n",
+    "app/models/valid.rb": "  validates :name, presence: true\n",
+    "app/models/mixin.rb": "  include Sluggable\n",
+    "app/models/member.rb": "    archived: 1,\n",
+  };
+  for (const path of Object.keys(models)) write(path, model);
+  write("src/f2.js", "export function f2(a) {\n  return a;\n}\n");
+  write("src/g2.ts", "export const g = 1;\n");
+  write("src/c2.jsx", "export function C2() {\n  return <div />;\n}\n");
+  git("add", "-A");
+  git("commit", "-qm", "base");
+  const created = {
+    "src/o.js": "module.exports = { double(a) { return a * 2 }, triple(a) { return a * 3 } };\n",
+    "src/o.ts": "export const api = { get(id) { return db.find(id) }, list() { return db.all() } };\n",
+    "src/o.jsx": "export default { data() { return {} }, render(h) { return h('p') } };\n",
+    "src/nf.js": 'const f = new Function("a", "b", "return a + b");\n',
+    "lib/bag.rb": "class Bag\n  extend Forwardable\n  def_delegators :@items, :size, :each, :first\nend\n",
+    "lib/shout.rb": "def_delegator :label, :upcase, :shout\n",
+    "lib/cfg.rb": "module Cfg\n  mattr_accessor :timeout\nend\n",
+    "lib/level.rb": "cattr_reader :level\n",
+    "lib/handler.rb": "class_attribute :handler\n",
+    "lib/oops.rb": "class Oops < StandardError; end\n",
+    "lib/hooks.rb": "before_save do\n  1\nend\n",
+    "lib/each.rb": "DOUBLED = ITEMS.map { |i| i * 2 }\n",
+    "lib/arrow.rb": "F = ->(x) { x }\n",
+    "lib/reflect.rb": "HANDLER = instance_method(:call)\n",
+    "src/debounced.js": 'import debounce from "lodash/debounce";\nimport save from "./save";\nexport const debouncedSave = debounce(save, 300);\n',
+    "src/alias.ts": 'import { useSelector } from "react-redux";\nexport const useAppSelector = useSelector;\n',
+    "src/title.jsx": 'import styled from "styled-components";\nexport const Title = styled.h1`\n  color: red;\n`;\n',
+    "src/connect.js": "export default connect(mapState)(TodoList);\n",
+    "src/compose.js": "export const clean = compose(trim, lower);\n",
+    "src/thunk.js": "export const fetchX = createAsyncThunk('x', fn);\n",
+    "src/abstract.ts": "export abstract class Job {\n  abstract run(x: string): Promise<void>;\n}\n",
+    "src/types.ts": "export type Id = string;\nexport interface P { id: Id }\n",
+    "src/ternary.js": "export const X = cond ? 1 : 2;\n",
+    "src/template.js": "export const X = `a${b}`;\n",
+    "src/spread.js": "export const X = {\n  ...base,\n};\n",
+    "src/local.js": "export { a as b };\n",
+    "lib/interp.rb": 'FOO = "a#{bar}"\n',
+    "lib/ns.rb": "module Ns\n  FOO = 1\nend\n",
+  };
+  for (const [path, body] of Object.entries(created)) write(path, body);
+  for (const [path, line] of Object.entries(models)) {
+    const lines = model.split("\n");
+    lines.splice(path.endsWith("member.rb") ? 3 : 1, 0, line.slice(0, -1));
+    write(path, lines.join("\n"));
+  }
+  write("src/f2.js", "export function f2(a) {\n  return a;\n}\nexport const debouncedF2 = debounce(f2, 300);\n");
+  write("src/g2.ts", "export const g = 1;\nexport const selectF = createSelector([g1, g2], sum);\n");
+  write("src/c2.jsx", "export function C2() {\n  return <div />;\n}\nexport const MemoC2 = React.memo(C2);\n");
+  write("src/f1.js", "export function f1(a) {\n  return a;\n}\nexport const m = {\n  sum(a, b = defaults(),\n  c) {\n    return a + b + c;\n  },\n};\n");
+  write("src/c1.jsx", "export function C1() {\n  return <div />;\n}\nexport const kit = { Badge(p) { return <b>{p.n}</b> } };\n");
+  // Only the head line of an Allman method changed; its brace is on the next line.
+  write("src/g1.ts", "class G {\n  sum(a: number)\n  {\n    return a;\n  }\n}\n");
+  write("src/h1.ts", "class H {\n  sum(\n    a: number,\n  ) {\n    return a;\n  }\n}\n");
+
+  assert.deepEqual(
+    ((await pendingChange(dir)) ?? []).map((f) => f.path),
+    [...Object.keys(created), ...Object.keys(models), "src/c1.jsx", "src/c2.jsx", "src/f1.js", "src/f2.js", "src/g1.ts", "src/g2.ts", "src/h1.ts"].sort()
+  );
+});
+
+test("an edit names only the added lines that define something callable", async (t) => {
+  // The reason calls what it lists added functions, so a hunk of constants
+  // beside a new function is not listed as one.
+  const { dir, write } = repo(t);
+  write("src/a.ts", "export const one = 1;\nexport const x = 3;\n\n\n\nexport const two = 2;\nexport function b() {\n  return 2;\n}\n");
+
+  assert.deepEqual(hunksOf(await pendingChange(dir)), [["src/a.ts", [{ from: 7, to: 9, created: false }]]]);
+});
+
+test("code that only lives near migrations is still checked", async (t) => {
+  // Measured on the corpus: angular's schematics/migrations, prisma's
+  // core/migrations and openproject's db/migrate/tables are library code.
+  const { dir, write } = repo(t);
+  write("db/migrate/tables/base.rb", "class Base\n  def self.table\n    :x\n  end\nend\n");
+  write("schematics/migrations/signal/src/passes/1_identify.ts", NEW_B);
+  write("lib/migrations/runner.ts", NEW_B);
+  write("lib/schema.rb", "module Schema\n  def self.x\n    1\n  end\nend\n");
+
+  assert.deepEqual(
+    (await pendingChange(dir)).map((f) => f.path),
+    ["db/migrate/tables/base.rb", "lib/migrations/runner.ts", "lib/schema.rb", "schematics/migrations/signal/src/passes/1_identify.ts"]
+  );
+});
+
+test("a generated file has nothing to check, by the corpus's own rule", async (t) => {
+  // Nobody wrote it by hand, so no hand-written copy can be deleted from it.
+  const { dir, write } = repo(t);
+  write("src/gen.ts", `// Code generated by protoc. DO NOT EDIT.\n${NEW_B}`);
+  write(".gitattributes", "src/api/** linguist-generated\n");
+  write("src/api/client.ts", NEW_B);
+
+  assert.equal(await pendingChange(dir), null);
+});
+
 test("a repository with no commit yet asks about every source file in it", async (t) => {
   // No HEAD to diff against, so nothing may reach the diff at all.
   const { dir, git, write } = repo(t, { commit: false });
-  write("src/a.ts", "export const one = 1;\n");
+  write("src/a.ts", "export function one() {}\n");
   write("src/b.ts", NEW_B);
   git("add", "src/a.ts");
 
@@ -152,7 +358,7 @@ test("a file is measured by its bytes on disk, the way the parser measures it", 
   // A byte that is not UTF-8 decodes to three, so the decoded length ran past
   // the cap on a file the parser still reads, and the file was left out.
   const { dir, write } = repo(t);
-  write("src/odd.ts", Buffer.concat([Buffer.from("export const odd = 1;\n"), Buffer.alloc(512 * 1024, 0xff), Buffer.from("\n")]));
+  write("src/odd.ts", Buffer.concat([Buffer.from("export function odd() {}\n"), Buffer.alloc(512 * 1024, 0xff), Buffer.from("\n")]));
 
   assert.deepEqual(hunksOf(await pendingChange(dir)).map(([path]) => path), ["src/odd.ts"]);
 });
@@ -162,11 +368,11 @@ test("a file's mark moves with its content, even where its lines do not, and no 
   // different edits on the same line have to read as two changes, and an edit
   // to one file must not make another look new.
   const { dir, write } = repo(t);
-  write("src/a.ts", "export const one = 1;\nexport const two = 2;\nexport const three = 3;\n");
+  write("src/a.ts", "export const one = 1;\nexport const two = 2;\nexport function three() {}\n");
   write("src/b.ts", NEW_B);
   const first = await pendingChange(dir);
   const again = await pendingChange(dir);
-  write("src/a.ts", "export const one = 1;\nexport const two = 2;\nexport const four = 4;\n");
+  write("src/a.ts", "export const one = 1;\nexport const two = 2;\nexport function four() {}\n");
   const edited = await pendingChange(dir);
   const markOf = (change, path) => change.find((f) => f.path === path).mark;
 
@@ -217,7 +423,7 @@ test("a diff prefix or colour a repository configures does not hide an edit", as
   ]) {
     const { dir, git, write } = repo(t);
     git("config", key, value);
-    write("src/a.ts", "export const one = 1;\nexport const two = 2;\nexport const three = 3;\n");
+    write("src/a.ts", "export const one = 1;\nexport const two = 2;\nexport function three() {}\n");
 
     assert.deepEqual(hunksOf((await pendingChange(dir)) ?? []), [["src/a.ts", [{ from: 3, to: 3, created: false }]]], `${key}=${value}`);
   }
@@ -230,7 +436,7 @@ test("a tracked file named HEAD neither hides an edit nor the new file beside it
   write("HEAD", "a file that happens to be called HEAD\n");
   git("add", "HEAD");
   git("commit", "-qm", "head");
-  write("src/a.ts", "export const one = 1;\nexport const two = 2;\nexport const three = 3;\n");
+  write("src/a.ts", "export const one = 1;\nexport const two = 2;\nexport function three() {}\n");
   write("src/b.ts", NEW_B);
 
   assert.deepEqual(hunksOf(await pendingChange(dir)), [
@@ -247,7 +453,7 @@ test("a name git has to quote keeps its lines", needsPosixPaths, async (t) => {
   for (const name of names) write(name, "export const one = 1;\n");
   git("add", "-A");
   git("commit", "-qm", "odd names");
-  for (const name of names) write(name, "export const one = 1;\nexport const two = 2;\n");
+  for (const name of names) write(name, "export const one = 1;\nexport function two() {}\n");
 
   assert.deepEqual(
     hunksOf(await pendingChange(dir)).sort(),
@@ -257,7 +463,7 @@ test("a name git has to quote keeps its lines", needsPosixPaths, async (t) => {
 
 test("an added line that starts with ++ is not read as a file of its own", async (t) => {
   const { dir, write } = repo(t);
-  write("src/a.ts", "export const one = 1;\nexport const two = 2;\n++ b/src/elsewhere.ts\nexport const three = 3;\n");
+  write("src/a.ts", "export const one = 1;\nexport const two = 2;\n++ b/src/elsewhere.ts\nexport function three() {}\n");
 
   assert.deepEqual(hunksOf(await pendingChange(dir)), [["src/a.ts", [{ from: 3, to: 4, created: false }]]]);
 });
@@ -273,7 +479,7 @@ test("a diff driver the repository configures is never run", needsShebang, async
   writeFileSync(driver, `#!/bin/sh\ntouch "${marker}"\n`);
   chmodSync(driver, 0o755);
   git("config", "diff.external", driver);
-  write("src/a.ts", "export const one = 1;\nexport const two = 2;\nexport const three = 3;\n");
+  write("src/a.ts", "export const one = 1;\nexport const two = 2;\nexport function three() {}\n");
 
   const change = await pendingChange(dir);
 
@@ -293,7 +499,7 @@ test("a text conversion the repository configures is never run", needsShebang, a
   git("add", ".gitattributes");
   git("commit", "-qm", "attributes");
   git("config", "diff.conv.textconv", conv);
-  write("src/a.ts", "export const one = 1;\nexport const two = 2;\nexport const three = 3;\n");
+  write("src/a.ts", "export const one = 1;\nexport const two = 2;\nexport function three() {}\n");
 
   const change = await pendingChange(dir);
 
@@ -350,6 +556,37 @@ test("a turn that added source code in a scanned repository is asked to check it
 
   assert.equal(answer.decision, "block");
   assert.match(answer.reason, /src\/b\.ts:1-3 \(new file\)/);
+});
+
+test("a session started above its checkouts is asked about each one's change, named from where it stands", async (t) => {
+  // A Stop payload names no file, so its directory is the session's, which
+  // holds no map when the project is split into sibling repositories.
+  const parent = realpathSync.native(mkdtempSync(join(tmpdir(), "anatomiya-reuse-parent-")));
+  t.after(() => rmSync(parent, { recursive: true, force: true }));
+  const api = repo(t, { at: join(parent, "api") });
+  const client = repo(t, { at: join(parent, "client") });
+  const unscanned = repo(t, { at: join(parent, "docs"), scanned: false });
+  api.write("src/b.ts", NEW_B);
+  client.write("src/c.ts", NEW_B);
+  unscanned.write("src/d.ts", NEW_B);
+
+  const session = begun(t);
+  const answer = await runReuse(parent, stop(parent, { transcript_path: session }));
+
+  assert.equal(answer.decision, "block");
+  assert.match(answer.reason, /added functions: api\/src\/b\.ts:1-3 \(new file\); client\/src\/c\.ts:1-3 \(new file\)\./);
+  assert.doesNotMatch(answer.reason, /docs\//);
+
+  // The same file asked from inside its checkout carries the same mark, so a
+  // session that moved into it is not asked again.
+  append(session, blocked(answer.reason));
+  assert.deepEqual(await runReuse(api.dir, stop(api.dir, { transcript_path: session })), {});
+
+  // The same bytes at the same path in a sibling checkout are another file,
+  // and copying a helper between repositories is the duplication asked about.
+  client.write("src/b.ts", NEW_B);
+  const copied = await runReuse(parent, stop(parent, { transcript_path: session }));
+  assert.match(copied.reason, /added functions: client\/src\/b\.ts:1-3 \(new file\)\./);
 });
 
 test("a file left changed from before this session began is not asked about", async (t) => {
@@ -630,6 +867,73 @@ test("the git reads fit inside the time the hook asks Claude Code for", () => {
   const declared = JSON.parse(readFileSync(new URL("../plugins/anatomiya/hooks/hooks.json", import.meta.url), "utf8")).hooks.Stop[0].hooks[0].timeout;
 
   assert.ok(PAYLOAD_WAIT_MS + 2 * REUSE_GIT_MS + 1000 <= declared * 1000, `${PAYLOAD_WAIT_MS} + 2 x ${REUSE_GIT_MS} against ${declared}s`);
+});
+
+test("a deletion in the tree adds no git read to the two the budget allows", { ...needsShebang, ...needsPathControl }, async (t) => {
+  // The budget above counts a status read and a diff in a row. A HEAD listing
+  // between them pushed the worst case past the declared timeout.
+  const { dir, write } = repo(t);
+  write("src/b.ts", NEW_B);
+  execFileSync("git", ["add", "src/b.ts"], { cwd: dir });
+  execFileSync("git", ["commit", "-qm", "b"], { cwd: dir });
+  rmSync(join(dir, "src/b.ts"));
+  write("src/a.ts", "export const one = 1;\nexport function c(x) {\n  return x * 2;\n}\n");
+  const trace = join(dir, "..", `${basename(dir)}.trace`);
+  t.after(() => rmSync(trace, { force: true }));
+  // Every git holds its caller a while after it exits, so reads started
+  // together overlap however fast this machine runs a small one.
+  const HELD_MS = 300;
+  const slow = mkdtempSync(join(tmpdir(), "anatomiya-slow-git-"));
+  t.after(() => rmSync(slow, { recursive: true, force: true }));
+  const real = execFileSync("sh", ["-c", "command -v git"], { encoding: "utf8" }).trim();
+  writeFileSync(join(slow, "git"), `#!/bin/sh\n'${real}' "$@"\ncode=$?\nsleep ${HELD_MS / 1000}\nexit $code\n`);
+  chmodSync(join(slow, "git"), 0o755);
+  const path = process.env.PATH;
+  process.env.PATH = `${slow}:${path}`;
+  process.env.GIT_TRACE2_EVENT = trace;
+  try {
+    assert.deepEqual(hunksOf(await pendingChange(dir)), [["src/a.ts", [{ from: 2, to: 4, created: false }]]]);
+  } finally {
+    delete process.env.GIT_TRACE2_EVENT;
+    process.env.PATH = path;
+  }
+  // Reads that overlap cost the budget one read, so what is counted is the
+  // longest run of reads each starting after the one before it ended.
+  const reads = new Map();
+  for (const e of readFileSync(trace, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l))) {
+    if (e.event === "start") {
+      const command = e.argv.slice(1).find((a, i, all) => !a.startsWith("-") && all[i - 1] !== "-c");
+      if (command !== "config" && command !== "rev-parse") reads.set(e.sid, { command, start: Date.parse(e.time) });
+    } else if (e.event === "exit" && reads.has(e.sid)) reads.get(e.sid).end = Date.parse(e.time) + HELD_MS;
+  }
+  const runs = new Map();
+  const longest = (read) => {
+    if (!runs.has(read)) {
+      const before = [...reads.values()].filter((r) => r.end < read.start).map(longest);
+      runs.set(read, [...before.reduce((a, b) => (b.length > a.length ? b : a), []), read.command]);
+    }
+    return runs.get(read);
+  };
+  assert.deepEqual(new Set([...reads.values()].map((r) => r.command)), new Set(["status", "ls-files", "cat-file", "diff"]));
+  const run = [...reads.values()].map(longest).reduce((a, b) => (b.length > a.length ? b : a), []);
+  assert.equal(run.length, 2, run.join(" then "));
+  assert.equal(run[1], "diff");
+});
+
+test("the hook and check agree on a generated file whose .gitattributes a sparse checkout hides", async (t) => {
+  // Git counts the tree's missing copy as no change, so the index holds the rules.
+  const { dir, git, write } = repo(t);
+  write(".gitattributes", "gen/** linguist-generated\n");
+  write("gen/g.ts", "export const g = 1;\n");
+  git("add", "-A");
+  git("commit", "-qm", "gen");
+  git("sparse-checkout", "set", "--no-cone", "/src/", "/gen/");
+  assert.equal(existsSync(join(dir, ".gitattributes")), false);
+  write("gen/g.ts", "export const g = 1;\nexport function h(x) {\n  return x;\n}\n");
+  write("src/a.ts", "export const one = 1;\nexport function c(x) {\n  return x * 2;\n}\n");
+
+  assert.equal((await corpusDrop(dir))("gen/g.ts"), "generated");
+  assert.deepEqual((await pendingChange(dir)).map((f) => f.path), ["src/a.ts"]);
 });
 
 /** The `reuse` verb, run exactly as the loader would run its declaration. */

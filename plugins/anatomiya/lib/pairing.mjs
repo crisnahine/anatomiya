@@ -13,6 +13,8 @@
  */
 import { LEARNED_SUFFIX_FLOOR, LEARNED_SUFFIX_SHARE, startsAtSeparator } from "./test-shape.mjs";
 import { byCode } from "./paths.mjs";
+import { isTestFile } from "./layout.mjs";
+import { language } from "./langs.mjs";
 
 const rails = (key, claim, from, to, { companionSuffix = "_spec.rb", ext = ".rb" } = {}) => ({
   key,
@@ -29,8 +31,8 @@ const rails = (key, claim, from, to, { companionSuffix = "_spec.rb", ext = ".rb"
     // repository tests with, so without it the RSpec row and the minitest row
     // both find producers in every Rails tree and one of them can only ever
     // read zero, which is a false statement rather than a measurement.
-    sites: `a ${ext} file anywhere under ${from} whose own name does not end in ${companionSuffix}, once the repository is seen using that suffix at all. An abstract base, named base or base_<the directory's noun>, is never routed to and can never own one, so it is not a site either`,
-    notCounted: "a file named base or base_<the directory noun>, and one already named like a companion: neither can own one",
+    sites: `a ${ext} file anywhere under ${from} whose own name does not end in ${companionSuffix}, once the repository is seen using that suffix in a test file at all. A file named base or base_<the directory's noun> is taken for an abstract base by that name alone and is not a site either. A companion answers only where the tests line would count it as a test file, so never one the parse found empty, nor one outside every test tree that no runner is seen in`,
+    notCounted: "files named base or base_<the directory noun> (abstract bases) and files already named like a companion",
     blind: null,
   },
   langs: ["ruby"],
@@ -222,9 +224,11 @@ export function pairingsFor(langs) {
  * every dimension produces, so the fold counts this without knowing it differs.
  */
 export function pairingHits(corpus, pairing) {
-  const shaped = new Set();
+  const shaped = new Map();
   for (const rel of corpus) {
-    if (rel.endsWith(pairing.companionSuffix)) shaped.add(basename(rel));
+    if (!rel.endsWith(pairing.companionSuffix)) continue;
+    const base = basename(rel);
+    shaped.set(base, [...(shaped.get(base) ?? []), rel]);
   }
 
   const hits = new Map();
@@ -238,8 +242,15 @@ export function pairingHits(corpus, pairing) {
       const conforming = companionsOf(rel, { ...pairing, from }, root, suffixes).some((c) => corpus.has(c));
       // `elsewhere` rides the hit so the fold counts it per area. Taken over the
       // corpus and attached to every area, it told a nine-file directory that the
-      // repository's other 185 belonged to it.
-      hits.set(rel, [{ conforming, elsewhere: !conforming && shaped.has(basename(companion)) }]);
+      // repository's other 185 belonged to it. Matched on the tail below the
+      // root, as the root itself is learned: on the basename alone every
+      // `create_spec.rb` in the tree answered every `create.rb` producer. A
+      // producer directly under its root has only that basename below it, so
+      // its tail also carries the producer directory's own name.
+      const below = companion.slice(root.length);
+      const tail = below.lastIndexOf("/") > 0 ? below : `/${basename(from)}${below}`;
+      const elsewhere = !conforming && (shaped.get(basename(companion)) ?? []).some((c) => c.endsWith(tail));
+      hits.set(rel, [{ conforming, elsewhere }]);
     }
   }
   return hits;
@@ -268,10 +279,11 @@ export function applyPairings(parsed, corpus, langs) {
     // app/models, so the RSpec row and the minitest row both find eligible files
     // and one can only ever read zero. One companion of that shape anywhere is
     // the evidence the habit exists at all.
-    if (!usesCompanionShape(corpus, pairing)) continue;
+    const answering = answeringCorpus(corpus, pairing, parsed);
+    if (!usesCompanionShape(answering, pairing)) continue;
     unanswered.delete(pairing.key);
     applied.add(pairing.key);
-    for (const [rel, hits] of pairingHits(corpus, pairing)) {
+    for (const [rel, hits] of pairingHits(answering, pairing)) {
       const record = parsed.get(rel);
       if (!record || !record.ok || !record.hits) continue;
       // Replaced, never written to. The baseline map and the corpus map hold
@@ -300,9 +312,14 @@ export function applyPairings(parsed, corpus, langs) {
  * years is what the map counts, not a finding against this diff. A producer
  * whose companion the branch removed is one it touched, through the other
  * file: deleting an inconvenient spec passed clean while a one-line edit to
- * its model was flagged. `removed` is every path the branch took away.
+ * its model was flagged. `removed` is every path the branch took away, and a
+ * spec the branch emptied is taken away the same way. `records` holds the
+ * parses this run has, keyed by path: only the branch's files, so a companion
+ * with none, or one that failed, keeps its name's answer rather than the
+ * scan's test-tree fallback.
  */
-export function pairingViolations(changed, corpus, pairing, removed = new Set()) {
+export function pairingViolations(changed, tree, pairing, removed = new Set(), records = null) {
+  const corpus = answeringCorpus(tree, pairing, records, true);
   const packages = packagedPairings(corpus, pairing);
   // The first package whose shape the path has decides, as the scan's own
   // count does.
@@ -314,8 +331,9 @@ export function pairingViolations(changed, corpus, pairing, removed = new Set())
     return null;
   };
   const producers = new Set(changed);
-  if (removed.size) {
-    for (const path of corpus) if (owed(path)?.any.some((c) => removed.has(c))) producers.add(path);
+  const lost = new Set([...removed, ...[...producers].filter((p) => tree.has(p) && !corpus.has(p))]);
+  if (lost.size) {
+    for (const path of corpus) if (owed(path)?.any.some((c) => lost.has(c))) producers.add(path);
   }
   const out = [];
   for (const path of producers) {
@@ -326,6 +344,27 @@ export function pairingViolations(changed, corpus, pairing, removed = new Set())
 }
 
 
+/**
+ * The corpus less every file named like a companion that is not a test file.
+ *
+ * The name alone let a RuboCop cop open the minitest row in an RSpec-only
+ * repository, and a spec commented out top to bottom credit the service beside
+ * it while the kinds line, reading the same file, did not. `isTestFile` is the
+ * one rule for both (H29, H35). With `partial`, `records` covers only some
+ * files and one with no usable parse answers on its name alone.
+ */
+function answeringCorpus(corpus, pairing, records, partial = false) {
+  const out = new Set();
+  for (const rel of corpus) {
+    if (rel.endsWith(pairing.companionSuffix) && !(partial && !records?.get(rel)?.ok)) {
+      const record = records?.get(rel);
+      if (!isTestFile({ rel, lang: language(rel), facets: record?.ok ? record.facets : null })) continue;
+    }
+    out.add(rel);
+  }
+  return out;
+}
+
 const usesCompanionShape = (corpus, pairing) => {
   for (const rel of corpus) if (rel.endsWith(pairing.companionSuffix)) return true;
   return false;
@@ -335,7 +374,9 @@ const basename = (path) => path.slice(path.lastIndexOf("/") + 1);
 
 
 /**
- * An abstract base, which is never routed to and can never own a companion.
+ * An abstract base, known by its name alone, which is never routed to. Some
+ * repositories spec one anyway; the name test cannot see that, so the note
+ * printed under the row says what it reads rather than that no spec exists.
  *
  * Ruby has no `abstract` keyword, so the name is how a repository declares one,
  * and `base_controller.rb` is what Rails' own generators write. Excluded rather

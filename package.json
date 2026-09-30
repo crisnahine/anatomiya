@@ -43,5 +43,8 @@
   },
   "workspaces": [
     "plugins/*"
-  ]
+  ],
+  "devDependencies": {
+    "ignore": "7.0.5"
+  }
 }

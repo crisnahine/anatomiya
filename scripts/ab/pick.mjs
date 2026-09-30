@@ -21,7 +21,10 @@ import { REGISTRY } from "../../plugins/anatomiya/lib/registry.mjs";
 // from the one place that holds it.
 const CLAIMS = new Map(REGISTRY.map((d) => [d.key, d.claim]));
 
-export function rankAreas(facts, { minCandidates = 20 } = {}) {
+/** Fewer sites than this is not an arm anyone could read a difference off. */
+const MIN_CANDIDATES = 20;
+
+export function rankAreas(facts, { minCandidates = MIN_CANDIDATES } = {}) {
   const out = [];
   for (const area of facts.areas ?? []) {
     for (const d of area.dimensions ?? []) {
@@ -39,6 +42,8 @@ export function rankAreas(facts, { minCandidates = 20 } = {}) {
         // The record stores the class, not the sentence; the sentence is the
         // template filled with it.
         ...(d.learned !== undefined ? { learned: d.learned } : {}),
+        // A naming row learned over one kind of file is scored over that kind.
+        ...(typeof d.learnedKind === "string" ? { learnedKind: d.learnedKind } : {}),
         claim: d.learned !== undefined ? fillClass(template, d.learned) : template,
         candidates: d.candidates,
         ratio,
@@ -49,5 +54,20 @@ export function rankAreas(facts, { minCandidates = 20 } = {}) {
   return out.sort((a, b) => b.headroom - a.headroom || b.candidates - a.candidates);
 }
 
-export const NO_HEADROOM =
-  "every stated claim in this repository is at 1.00, so an A/B here can only measure a ceiling: pick another repository";
+/**
+ * Why the best-ranked claim cannot be measured, naming the rule that refused
+ * it, or null when it can. Only a claim at 1.00 is a ceiling; one under the
+ * floor is named with its numbers, since a lower --min-headroom measures it.
+ */
+export function noHeadroom(best, { minHeadroom, key = null, area = null } = {}) {
+  if (best && best.headroom >= minHeadroom) return null;
+  const filters = [key && `--key ${key}`, area && `--area ${area}`].filter(Boolean);
+  const claim = `stated claim${filters.length ? ` matching ${filters.join(" and ")}` : ""}`;
+  if (!best) return `no ${claim} has ${MIN_CANDIDATES} sites or more that the model does not already write by default`;
+  if (best.headroom === 0) return `every ${claim} is at 1.00, so an A/B here can only measure a ceiling: pick another repository`;
+  return [
+    `no ${claim} has headroom of at least ${minHeadroom}: the best is ${best.key} in ${best.path}`,
+    ` at ${best.ratio.toFixed(3)}, headroom ${best.headroom.toFixed(3)}.`,
+    " Lower --min-headroom to measure it, or pick another repository",
+  ].join("");
+}

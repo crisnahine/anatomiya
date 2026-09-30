@@ -4,6 +4,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 
 import { needsRuby } from "./ruby-available.mjs";
 import { installWithoutStripper, FLOW_SOURCE } from "./no-stripper.mjs";
@@ -126,6 +127,29 @@ test("an interpreter that is not there names its own engine and no other", async
   assert.deepEqual(out.missingEngines, ["prism"]);
   assert.match(out.missingParser, /ruby/);
   assert.equal(out.engines.prism.version, null, "the child never started, so it reported no version");
+});
+
+test("workers the ready clock killed are named as stalled, not as a missing install", async (t) => {
+  // A worker that never says ready never reports a version either, and a null
+  // version alone read as a broken install: the scan sent the reader to run
+  // setup for a parser doctor called installed.
+  const options = process.env.NODE_OPTIONS;
+  t.after(() => {
+    if (options === undefined) delete process.env.NODE_OPTIONS;
+    else process.env.NODE_OPTIONS = options;
+  });
+  // A preload that stalls only in a forked child, reached the way a user's own
+  // NODE_OPTIONS would reach it. NODE_OPTIONS splits on spaces, so it is a file.
+  const stall = write(dir(t), "stall.mjs", "if (process.send) { setInterval(() => {}, 1e6); await new Promise(() => {}); }\n");
+  process.env.NODE_OPTIONS = `--import=${pathToFileURL(stall.abs).href}`;
+
+  const out = await parseAll([{ rel: "a.ts", source: "export const a = 1\n", lang: "js" }], {
+    guards: { js: { readyTimeoutMs: 300 } },
+  });
+
+  assert.equal(out.engines.oxc.version, null);
+  assert.equal(out.engines.oxc.stalled, "no ready answer in 300ms");
+  assert.deepEqual(out.missingEngines, [], "nothing is missing from the install");
 });
 
 test("a source held in memory is parsed without the caller finding it a path", async () => {

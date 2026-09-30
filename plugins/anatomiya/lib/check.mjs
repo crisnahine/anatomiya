@@ -18,7 +18,7 @@ import {
 } from "./corpus.mjs";
 import { language, MISSING_STRIPPER } from "./langs.mjs";
 import { areaOwner, globsReach } from "./areas.mjs";
-import { droppedDirectives, unexaminedPhrase } from "./render.mjs";
+import { droppedSlots, unexaminedPhrase } from "./render.mjs";
 import { auditRules, isLink, knownNames, readHead, resolveInside, RULES_DIR } from "./rules.mjs";
 import { FACTS_PATH, readFacts, statedSide } from "./facts.mjs";
 import { MAX_FILE_BYTES } from "./limits.mjs";
@@ -36,7 +36,7 @@ import {
 import { readAtRevision } from "./revision.mjs";
 import { CAVEATS } from "./check-report.mjs";
 import { mainCheckoutOf } from "./worktree.mjs";
-import { newlyIntroduced } from "./introduced.mjs";
+import { declaredParents, newlyIntroduced } from "./introduced.mjs";
 import { byCode } from "./paths.mjs";
 
 /**
@@ -162,7 +162,7 @@ export async function check(cwd, { baseRef = null } = {}) {
   // be called newly introduced, which is why the degraded modes report nothing
   // rather than everything, and reading the tree there would report every site
   // in an uncommitted file against an author who may not have written one.
-  const pending = status !== null && mode === "compare" ? status : { present: [], deleted: [] };
+  const pending = status !== null && mode === "compare" ? await onlyInHead(root, status) : { present: [], deleted: [], removed: [] };
   await resolvePendingBases(root, base.mergeBase, pending.present);
   // Generated files leave with the path filter's rejects, by the corpus's own
   // rule: a regenerated client was a MUST-FIX per site in code nobody writes by
@@ -172,7 +172,7 @@ export async function check(cwd, { baseRef = null } = {}) {
   // where it is tracked, and read through the link its sites were charged
   // twice. Asked of the tree, where every examined row stands once the
   // pending edits are folded in.
-  const dropOf = corpusDrop(root);
+  const dropOf = await corpusDrop(root);
   const examined = withPendingEdits(changed.filter((c) => isCorpusPath(c.path)), pending)
     .filter((c) => dropOf(c.path) !== "generated" && !isLink(join(root, c.path)));
   const fromTree = examined.filter((c) => c.tree).length;
@@ -235,7 +235,9 @@ export async function check(cwd, { baseRef = null } = {}) {
     removed: new Set([...removed, ...pending.deleted]),
     // Only the two-run comparison establishes that a site is newly introduced,
     // so the degraded mode caps severity for the same reason a stale map does.
-    fresh: !stale.reason && mode === "compare",
+    // Named per cause: one sentence for all of them told a run with no pin that
+    // its map was stale or had no merge base.
+    capped: [stale.reason, mode === "compare" ? null : "no merge base"].filter(Boolean).join("; ") || null,
     caveats,
   });
 
@@ -329,6 +331,11 @@ export async function check(cwd, { baseRef = null } = {}) {
     // an unreachable one, or a drift range git would not produce.
     drift: stale.drift ?? null,
     changed,
+    // Deletions, apart from `changed` because none has a file to examine. The
+    // tree's count too, and a path `changed` names is counted there.
+    removed: [...new Set(diff.rows.filter((c) => c.status === "D").map((c) => c.path).concat(
+      pending.removed.filter((p) => !changed.some((c) => c.path === p))
+    ))],
     examined,
     findings,
     counts: tally(findings),
@@ -500,6 +507,14 @@ async function resolveBase(root, baseRef, caveats) {
   // `HEAD` would otherwise be fetched and used as the base, which is the one
   // thing E6 refuses, and the refusal would arrive as a story about fetching.
   if (asked && (baseRef === "HEAD" || baseRef === "@")) throw new Error(refusal(baseRef, shallow));
+  // git resolves a name two refs hold by precedence, tag before branch, and
+  // says so only on a stderr this run never shows.
+  if (asked) {
+    const holders = await refsNamed(root, baseRef);
+    if (holders.length > 1) {
+      throw new Error(`--base ${baseRef} is ambiguous: ${holders.join(" and ")} both hold that name, so spell out the one you mean`);
+    }
+  }
   // Every other spelling of the same commit is refused by the commit it names,
   // once it has one: `HEAD~0` or the branch's own name compared the branch with
   // itself and printed a clean report at exit 0. Another branch at the same
@@ -512,11 +527,19 @@ async function resolveBase(root, baseRef, caveats) {
   // the trunk, with uncommitted work, it names the base the check would have
   // picked anyway.
   const ownTip = async (sha) => {
-    if (!asked || sha !== head || /^[0-9a-f]{4,64}$/i.test(baseRef)) return;
+    if (!asked || sha !== head) return;
     const named = (await git(root, ["rev-parse", "--symbolic-full-name", baseRef])).out.trim();
+    // A commit id is known by naming no ref, never by its spelling: `7812` and
+    // `facade` are branch names too.
+    if (named === "" && /^[0-9a-f]{4,64}$/i.test(baseRef)) return;
     const own = (await git(root, ["rev-parse", "--symbolic-full-name", "HEAD"])).out.trim();
-    if (named !== "" && named !== own) return;
-    if (named === own) {
+    // A filesystem that folds case and Unicode form opens the loose ref under
+    // any spelling, so `FEAT` names this branch while no ref of that name is listed.
+    const fold = (ref) => ref.normalize("NFC").toLowerCase();
+    const mine = named === own ||
+      (named !== "" && fold(named) === fold(own) && !(await refsNamed(root, named)).length);
+    if (named !== "" && !mine) return;
+    if (mine) {
       const unasked = await resolveBaseRef(root);
       if (unasked.ok && unasked.sha === head) return;
     }
@@ -595,6 +618,17 @@ function shallowNoHistory(caveats) {
     "shallow clone: the base commit is present but shares no held history with HEAD; " +
       "fetch the history to compare (fetch-depth: 0 on actions/checkout)"
   );
+}
+
+/**
+ * The refs a short name reaches under git's own lookup rules, in git's order.
+ * Read off the ref list rather than off rev-parse's warning, which a locale
+ * translates and `core.warnAmbiguousRefs` switches off.
+ */
+async function refsNamed(root, name) {
+  const rules = [name, `refs/${name}`, `refs/tags/${name}`, `refs/heads/${name}`, `refs/remotes/${name}`, `refs/remotes/${name}/HEAD`];
+  const listed = new Set((await git(root, ["for-each-ref", "--format=%(refname)", ...rules])).out.split("\n"));
+  return rules.filter((r) => listed.has(r));
 }
 
 /**
@@ -758,7 +792,7 @@ async function trackedTests(root) {
 }
 
 async function collect(root, run) {
-  const { examined, areas, base, mode, added, fresh, caveats, frameworks, capabilities, pending } = run;
+  const { examined, areas, base, mode, added, capped, caveats, frameworks, capabilities, pending } = run;
   const areaFor = areaIndex(areas);
   const ancestorsOf = ancestorsIndex(areas);
   // Which directives each area's file had no room to state, recomputed from the
@@ -769,9 +803,9 @@ async function collect(root, run) {
   const droppedIn = new Map(
     areas.map((a) => {
       try {
-        return [a.path, droppedDirectives(a)];
+        return [a.path, droppedSlots(a)];
       } catch {
-        return [a.path, new Set()];
+        return [a.path, new Map()];
       }
     })
   );
@@ -876,6 +910,28 @@ async function collect(root, run) {
     const { records: parsed, missingEngines, missingParser, missingStripper } = await parseAll(entries, { withProgram: true });
     const findings = [];
 
+    // Per area, as the fold holds them: a base one changed file adds is what
+    // the subclasses in another resolve through.
+    const declaredIn = new Map();
+    for (const job of jobs) {
+      const area = areaFor(job.file.path);
+      const headParse = parsed.get(`head:${job.file.path}`);
+      if (!area || !headParse?.ok || !headParse.program) continue;
+      const declared = declaredParents({
+        path: job.file.path,
+        lang: job.lang,
+        frameworks,
+        capabilities,
+        head: { program: headParse.program, source: job.source, comments: headParse.comments, facets: headParse.facets },
+      });
+      if (!declaredIn.has(area.path)) declaredIn.set(area.path, new Map());
+      const into = declaredIn.get(area.path);
+      for (const [key, parents] of declared) {
+        if (!into.has(key)) into.set(key, new Map());
+        for (const [self, parent] of parents) if (!into.get(key).has(self)) into.get(key).set(self, parent);
+      }
+    }
+
     for (const job of jobs) {
       const path = job.file.path;
       const area = areaFor(path);
@@ -889,8 +945,8 @@ async function collect(root, run) {
         // measured a population this directory sits inside.
         const own = area && (area.dimensions || []).find((d) => d.key === row.key);
         const up = !own && area ? ancestorSlot(ancestorsOf, area, row.key) : null;
-        const named = filenameFinding(row, job, up ? { ...area, dimensions: [up.dim] } : area, fresh, {
-          dropped: area ? droppedIn.get(area.path)?.has(row.key) === true : false,
+        const named = filenameFinding(row, job, up ? { ...area, dimensions: [up.dim] } : area, capped, {
+          dropped: droppedOf(droppedIn, area, row.key),
           // Null where the file went unread, which is a kind a narrowed row
           // declines to guess. The caveat below says the file went unread.
           facets: headParse?.facets ?? null,
@@ -928,6 +984,7 @@ async function collect(root, run) {
         head: { program: headParse.program, source: job.source, comments: headParse.comments, stripped: headParse.stripped, facets: headParse.facets },
         base: mode === "added-lines" || !baseParse ? null : { program: baseParse.program, source: job.base, comments: baseParse.comments, stripped: baseParse.stripped },
         addedLines: mode === "added-lines" ? (added && added.get(path)) || [] : null,
+        parents: area ? declaredIn.get(area.path) : undefined,
       });
 
       for (const f of introduced) {
@@ -957,7 +1014,7 @@ async function collect(root, run) {
           : cappedAway(
               severityFor(
                 { path, oldPath: job.file.from },
-                { dim, fresh, dropped: area ? droppedIn.get(area.path)?.has(f.dimension) === true : false }
+                { dim, capped, dropped: droppedOf(droppedIn, area, f.dimension) }
               ),
               away,
               area,
@@ -981,7 +1038,11 @@ async function collect(root, run) {
 
     }
 
-    await addPairingFindings(root, findings, run, droppedIn);
+    // A spec this branch wrote empty answers no obligation, as it answers none
+    // in the map. Only the files this run parsed are known; the rest keep the
+    // answer their names give.
+    const headRecords = new Map(jobs.map((job) => [job.file.path, parsed.get(`head:${job.file.path}`)]));
+    await addPairingFindings(root, findings, run, droppedIn, headRecords);
     // The scan says this on its own summary, and a check runs in CI where nobody
     // read that. Without it a Flow file reads as a broken file.
     if (missingStripper) {
@@ -1013,7 +1074,7 @@ async function collect(root, run) {
  * claim it could execute, reported clean, and said nothing about the one it
  * could not: the same shape as reporting clean for a file that was never read.
  */
-async function addPairingFindings(root, findings, { examined, areas, fresh, caveats, pending, removed }, droppedIn) {
+async function addPairingFindings(root, findings, { examined, areas, capped, caveats, pending, removed }, droppedIn, headRecords) {
   const areaFor = areaIndex(areas);
   const changed = examined.map((f) => f.path);
   // A removed companion asks its language's obligations too, or a branch that
@@ -1056,7 +1117,7 @@ async function addPairingFindings(root, findings, { examined, areas, fresh, cave
   for (const row of pending?.present ?? []) asItStands.add(row.path);
 
   for (const pairing of pairings) {
-    for (const { path, companion } of pairingViolations(changed, asItStands, pairing, removed)) {
+    for (const { path, companion } of pairingViolations(changed, asItStands, pairing, removed, headRecords)) {
       const area = areaFor(path);
       const dim = area && (area.dimensions || []).find((d) => d.key === pairing.key);
       // Same rule as every other finding: the check enforces what the map
@@ -1069,7 +1130,7 @@ async function addPairingFindings(root, findings, { examined, areas, fresh, cave
       const verdict = cappedAway(
         severityFor(
           { path, oldPath: null },
-          { dim, fresh, dropped: area ? droppedIn?.get(area.path)?.has(pairing.key) === true : false }
+          { dim, capped, dropped: droppedOf(droppedIn, area, pairing.key) }
         ),
         area && !globsReach(area.globs, path),
         area,
@@ -1120,13 +1181,18 @@ function cappedAway(verdict, away, area, path) {
   return { severity: "FIX", reason: `the area file for ${area.path} does not reach ${type}, so this claim was never delivered here` };
 }
 
+/** How an area's file dropped this slot, `named` or `unnamed`, or false where it printed it. */
+function droppedOf(droppedIn, area, key) {
+  return (area && droppedIn?.get(area.path)?.get(key)) || false;
+}
+
 /**
  * A corpus row's site is the name itself, which no tree walk sees. A file
  * this branch created answers it outright; a rename answers it only when the
  * name changed class, because the old name predates the branch and a same-class
  * rename kept the convention.
  */
-function filenameFinding(row, job, area, fresh, { dropped = false, facets = null, from = null } = {}) {
+function filenameFinding(row, job, area, capped, { dropped = false, facets = null, from = null } = {}) {
   const path = job.file.path;
   const nameDim = area && (area.dimensions || []).find((d) => d.key === row.key);
   if (!nameDim || typeof nameDim.learned !== "string" || !CLASSES.includes(nameDim.learned)) return null;
@@ -1141,7 +1207,7 @@ function filenameFinding(row, job, area, fresh, { dropped = false, facets = null
   // A name spelling no class at all is a site with no vote, and it was the
   // violation this could not see: only a name spelling a different class was
   // caught. The two names that spell every class are still not sites.
-  if (!row.isSite(path)) return null;
+  if (!row.isSite(path, facets)) return null;
   const cls = row.classify(path);
   const renamedFrom = job.file.from;
   // A rename answers the claim only where the name changed what it says. Two
@@ -1151,7 +1217,7 @@ function filenameFinding(row, job, area, fresh, { dropped = false, facets = null
   const answers =
     !renamedFrom ||
     (renamedFrom !== path &&
-      (row.isSite(renamedFrom) !== row.isSite(path) || row.classify(renamedFrom) !== cls));
+      (row.isSite(renamedFrom, facets) !== row.isSite(path, facets) || row.classify(renamedFrom) !== cls));
   if (!answers || cls === nameDim.learned) return null;
   // A name spelling no class is the omission, and an omission is reported only
   // where the map stated the claim: "name this file differently" is advice, and
@@ -1165,7 +1231,7 @@ function filenameFinding(row, job, area, fresh, { dropped = false, facets = null
   const away = !from && !globsReach(area.globs, path);
   const verdict = from
     ? { severity: "FIX", reason: `counted in ${from}, which this directory sits inside` }
-    : cappedAway(severityFor({ path, oldPath }, { dim: nameDim, fresh, dropped }), away, area, path);
+    : cappedAway(severityFor({ path, oldPath }, { dim: nameDim, capped, dropped }), away, area, path);
   return {
     severity: verdict.severity,
     reason: verdict.reason,
@@ -1228,18 +1294,19 @@ export function unreadCode(parse) {
  * as an exception is not held to the convention it is exempt from. And a stale
  * map caps severity rather than stopping the run.
  */
-export function severityFor(file, { dim, fresh, dropped = false }) {
+export function severityFor(file, { dim, capped = null, dropped = false }) {
   if (!dim) return { severity: "NIT", reason: "no convention counted here" };
   const side = statedSide(dim);
   if (side.states === null) {
     return { severity: "NIT", reason: `no convention stated here (${side.gate || dim.gate || "suppressed"})` };
   }
-  // The gates stated it and the file had no room to print it, so the agent was
-  // never handed the sentence. MUST-FIX means the map told them and they are
-  // the first to break it, and here the map did not tell. Same ladder position
-  // staleness and a partial predicate already occupy.
+  // The gates stated it and the file had no room for its block, so the agent
+  // got at most the sentence under the notice, with no counts to weigh it by.
+  // MUST-FIX means the map told them and they are the first to break it. Same
+  // ladder position staleness and a partial predicate already occupy.
+  if (dropped === "named") return { severity: "FIX", reason: "the area file names this claim without its counts" };
   if (dropped) return { severity: "FIX", reason: "the area file had no room to state this claim" };
-  if (!fresh) return { severity: "FIX", reason: "capped by this run: stale map or no merge base" };
+  if (capped) return { severity: "FIX", reason: `capped by this run: ${capped}` };
   if (dim.precision !== "precise") {
     return { severity: "FIX", reason: "partial predicate: some sites are not visible statically" };
   }
@@ -1312,7 +1379,7 @@ function isException(dim, side, file) {
  * at the moment it costs most.
  */
 async function staleness(root, facts, base, unreadable = null) {
-  if (unreadable) return { reason: "the map on disk could not be read by this build" };
+  if (unreadable) return { reason: "the map on disk could not be read" };
   if (!facts) return { reason: "no map on disk" };
   if (facts.suppressAll) return { reason: "the scan was truncated, so no directive was stated" };
 
@@ -1461,11 +1528,32 @@ export async function pendingPaths(root, { timeout } = {}) {
     // companion deleted in the tree is a companion this branch owes. A rename
     // is a deletion of the path it moved away from and says no `D` at all, so
     // that path is taken from `orig` rather than from the status letters.
+    //
+    // Both are candidates until `onlyInHead` asks HEAD, which is left to the
+    // caller that reads them: the Stop hook reads neither and has two reads.
     deleted: [
       ...rows.filter(gone).map((row) => row.path),
       ...all.map((row) => row.orig).filter((path) => path != null && isCorpusPath(path)),
     ],
+    // What left HEAD, for the report, read the way the committed diff reads it:
+    // any path, and a move is no deletion.
+    removed: all.flatMap((row) => !gone(row) ? [] : [row.orig ?? row.path]),
   };
+}
+
+/**
+ * The pending deletions of paths HEAD holds.
+ *
+ * HEAD is asked rather than the letters, which spell an index-only addition
+ * deleted again more than one way (`AD`, ` D` after `add -N`), and a file no
+ * commit held is no companion lost. A listing git would not give keeps both.
+ */
+async function onlyInHead(root, pending) {
+  if (pending.deleted.length + pending.removed.length === 0) return pending;
+  const atHead = await filesAt(root, "HEAD", { timeout: GIT.checkTimeoutMs, maxFieldBytes: GIT.checkMaxBytes });
+  if (atHead === null) return pending;
+  const held = (paths) => paths.filter((path) => atHead.has(path));
+  return { ...pending, deleted: held(pending.deleted), removed: held(pending.removed) };
 }
 
 /**

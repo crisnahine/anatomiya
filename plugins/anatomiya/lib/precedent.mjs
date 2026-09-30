@@ -11,7 +11,8 @@ import { byCode, dirOf } from "./paths.mjs";
 import { RUBY_TEST_NAME, TEST_DIRS, TEST_NAME, TEST_ROOTS } from "./test-shape.mjs";
 import { isCorpusPath } from "./corpus.mjs";
 import { LEVEL_ONLY_LABEL } from "./layout.mjs";
-import { testsParts } from "./render-layout.mjs";
+import { namesakeClause, testsParts } from "./render-layout.mjs";
+import { encode } from "./encode.mjs";
 
 /**
  * Producers a source root needs before its silence counts as precedent, and
@@ -128,14 +129,20 @@ const PRECEDENT_KEY = "test_precedent";
  * already uses for them.
  */
 function countsLine(dir, root) {
-  const { with: withTest, of } = root.companions;
+  const withTest = root.companions.with;
   const here = testsParts(root.tests ?? []);
   // "Elsewhere", because the guard above has already established that the
   // directory this file is going into holds none. Without the word the clause
   // reads as precedent for the very write it is refusing.
   const namesakes = withTest === 0 ? ", none of them a namesake" : "";
   const held = here.length > 0 ? `; elsewhere in it ${here.join(", ")}${namesakes}` : "";
-  return `${dir} holds no other test; ${root.dir}: ${of} files, ${withTest} with a namesake test${held}`;
+  // The count is over one extension, nouned the way the overview's tests line
+  // nouns it, or a mixed directory reads as smaller than it is. A map that did
+  // not record the extension names one only where the root has no other: the
+  // first of several can be a .png.
+  const ext = root.companions.ext ?? (root.exts?.length === 1 ? root.exts[0][0] : null);
+  const counted = namesakeClause({ ...root.companions, root: null }, ext ? `${encode(ext)} file` : "file");
+  return `${dir} holds no other test; ${root.dir}: ${counted}${held}`;
 }
 
 /**

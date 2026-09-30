@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { needsPosixPaths, needsPosixSpecialFiles, needsSymlinks } from "./platform.mjs";
+import { needsCaseSensitiveFilesystem, needsFoldingFilesystem, needsPosixPaths, needsPosixSpecialFiles, needsSymlinks } from "./platform.mjs";
 import { chmodSync, mkdtempSync, mkdirSync, writeFileSync, symlinkSync, rmSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, isAbsolute, sep } from "node:path";
@@ -9,6 +9,7 @@ import { execFileSync } from "node:child_process";
 import { collect, countUntrackedSource, isDenied, isCorpusPath, isExcludedDir, isSource, safeResolve, gitRoot, frameworksIn } from "../plugins/anatomiya/lib/corpus.mjs";
 import { language } from "../plugins/anatomiya/lib/langs.mjs";
 import * as areaLib from "../plugins/anatomiya/lib/areas.mjs";
+import { claudeCodeReaches } from "./paths-reader.mjs";
 
 const { discover, globEntry, globText, assertGlobSafe, areaId, AREA } = areaLib;
 
@@ -121,6 +122,56 @@ test("a tracked symlink to a file inside the repository is dropped, since its ta
 
   assert.deepEqual(files.map((f) => f.rel), ["src/a.ts"]);
   assert.equal(dropped.escaped, 1, "dropped where a link out of the repository is");
+});
+
+/** A second index entry for `rel`'s file under `alias`, as a commit made on Linux leaves it. */
+function stageAlias(d, git, alias) {
+  const blob = execFileSync("git", ["hash-object", "-w", "--stdin"], { cwd: d, input: "export const alias = 2;\n" }).toString().trim();
+  git("update-index", "--add", "--cacheinfo", `100644,${blob},${alias}`);
+  git("commit", "-qm", "alias");
+}
+
+// A checkout made on macOS lists a decomposed name on disk under its composed
+// spelling, which is what `written` against `onDisk` stands for.
+for (const [kind, onDisk, alias, written = onDisk, precompose = "false"] of [
+  ["case", "src/lib/a.ts", "src/lib/A.ts"],
+  ["a directory's case", "src/lib/a.ts", "src/Lib/a.ts"],
+  ["Unicode form", "src/lib/é.ts", "src/lib/é.ts"],
+  ["case, under a directory decomposed on disk", "src/café/a.ts", "src/café/A.ts", "src/café/a.ts", "true"],
+  ["case, in a name decomposed on disk", "src/lib/café.ts", "src/lib/CAFÉ.ts", "src/lib/café.ts", "true"],
+]) {
+  const guard = precompose === "true" && process.platform !== "darwin" ? { skip: "only git on macOS precomposes a decomposed name" } : needsFoldingFilesystem;
+  test(`two index entries that differ only in ${kind} are one file read once, under the name on disk`, guard, async (t) => {
+    // Both names opened the one file the working tree holds, so its sites counted
+    // twice and the other entry's own blob was never read.
+    const dir = repo(t, (d, { git, write }) => {
+      git("config", "core.precomposeunicode", precompose);
+      write(written);
+      write("src/lib/b.ts");
+      git("add", "-A");
+      git("commit", "-qm", "init");
+      stageAlias(d, git, alias);
+    });
+
+    const { files, dropped } = await collect(dir);
+
+    assert.deepEqual(files.map((f) => f.rel).sort(), [onDisk, "src/lib/b.ts"].sort());
+    assert.equal(dropped.unreadable, 1, "the entry whose blob the tree does not hold is named as unread");
+  });
+}
+
+test("two files that differ only in case on a case-sensitive filesystem are both read", needsCaseSensitiveFilesystem, async (t) => {
+  const dir = repo(t, (d, { git, write }) => {
+    write("src/lib/a.ts");
+    write("src/lib/A.ts", "export const upper = 2;\n");
+    git("add", "-A");
+    git("commit", "-qm", "init");
+  });
+
+  const { files, dropped } = await collect(dir);
+
+  assert.deepEqual(files.map((f) => f.rel).sort(), ["src/lib/A.ts", "src/lib/a.ts"]);
+  assert.equal(dropped.unreadable, 0);
 });
 
 test("untracked source is counted by the same rule the corpus is collected by", async (t) => {
@@ -462,38 +513,8 @@ test("no generated glob ends in a bare /**", () => {
   assert.throws(() => assertGlobSafe({ negated: false, dir: "app", tail: "**" }), /bare \/\*\*/);
 });
 
-const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-
-/** The matcher's semantics: `*` stops at a slash, a `**` segment spans any depth including none. */
-function toRegExp(pattern) {
-  let out = "^";
-  for (let i = 0; i < pattern.length; i++) {
-    if (pattern.startsWith("**/", i)) {
-      out += "(?:[^/]*/)*";
-      i += 2;
-    } else if (pattern[i] === "*") {
-      out += "[^/]*";
-    } else if (pattern[i] === "{") {
-      const end = pattern.indexOf("}", i);
-      out += `(?:${pattern.slice(i + 1, end).split(",").map(escapeRe).join("|")})`;
-      i = end;
-    } else {
-      out += escapeRe(pattern[i]);
-    }
-  }
-  return new RegExp(`${out}$`);
-}
-
-/** Which of `globs` a path ends up matching: negations included, last match winning. */
-function matches(globs, rel) {
-  let hit = false;
-  for (const g of globs) {
-    // The area record carries the halves apart; the matcher reads the pattern
-    // the delivery channel would.
-    if (toRegExp(areaLib.globText({ ...g, negated: false })).test(rel)) hit = !g.negated;
-  }
-  return hit;
-}
+/** Which files `globs` reach, read as Claude Code reads the rendered `paths` list. */
+const matches = (globs, rel) => claudeCodeReaches(globs.map((g) => areaLib.globText(g)), rel);
 
 test("an area's globs match the files it counted and no others", () => {
   // The bug: `lib/core/**/*` matched `lib/core/deep`, whose own area measured
@@ -513,6 +534,99 @@ test("an area's globs match the files it counted and no others", () => {
       assert.equal(matches(a.globs, f.rel), mine.has(f.rel), `${a.path} vs ${f.rel}`);
     }
   }
+});
+
+test("an area's globs do not reach the fixture and generated files its counts left out", () => {
+  // The excluded subtrees were not in the tree the cover was built from, so the
+  // area read as holding its whole subtree and emitted one bare recursive glob:
+  // 40 counted files, 67 reached.
+  const files = fakeFiles([
+    ...Array.from({ length: 8 }, (_, i) => `src/comp/c${i}.ts`),
+    ...Array.from({ length: 8 }, (_, i) => `src/other/o${i}.ts`),
+  ]);
+  const uncounted = [
+    ...fakeFiles(["src/comp/fixtures/F.ts", "src/comp/test_cases/a/Case.ts", "src/comp/Gen.ts", "src/comp/gen/G.ts"]),
+    ...fakeFiles(["src/other/fixtures/deep/x.rb"], "ruby"),
+  ];
+  const areas = discover(files, { uncounted });
+
+  assert.deepEqual(areas.map((a) => a.path), ["src/comp", "src/other"]);
+  for (const a of areas) {
+    const mine = new Set(a.files.map((f) => f.rel));
+    for (const f of [...files, ...uncounted]) {
+      assert.equal(matches(a.globs, f.rel), mine.has(f.rel), `${a.path} vs ${f.rel}`);
+      assert.equal(areaLib.globsReach(a.globs, f.rel), mine.has(f.rel), `globsReach: ${a.path} vs ${f.rel}`);
+    }
+  }
+  assert.deepEqual(
+    areas[1].globs.map((g) => areaLib.globText(g)),
+    ["src/other/**/*.{cjs,cts,js,mjs,mts,ts}"],
+    "a left-out file in a language the glob cannot spell costs no pattern"
+  );
+});
+
+test("a left-out file inside an area keeps its glob recursive, so a new subdirectory is still reached", () => {
+  // Laid into the tree as foreign, one generated file made the area root read as
+  // shared, and the one-level positive shape won the tie.
+  const files = fakeFiles([
+    ...Array.from({ length: 8 }, (_, i) => `src/comp/c${i}.ts`),
+    ...Array.from({ length: 8 }, (_, i) => `src/other/o${i}.ts`),
+  ]);
+  for (const left of [["src/comp/Gen.ts"], ["src/comp/gen/G.ts"], ["src/comp/Gen.ts", "src/comp/gen/G.ts"]]) {
+    const [comp] = discover(files, { uncounted: fakeFiles(left) });
+    assert.equal(comp.path, "src/comp");
+    assert.equal(areaLib.globText(comp.globs[0]), "src/comp/**/*.{cjs,cts,js,mjs,mts,ts}", left.join());
+    assert.equal(matches(comp.globs, "src/comp/feature/New.ts"), true, left.join());
+    assert.equal(areaLib.globsReach(comp.globs, "src/comp/feature/New.ts"), true, left.join());
+    for (const rel of left) assert.equal(matches(comp.globs, rel), false, rel);
+  }
+});
+
+test("an excluded directory repeated under many directories is cut out by its name, once", () => {
+  // prisma keeps a `_fixture/` beside every functional test: cut out one
+  // directory at a time, a 111-file area needed 106 patterns, and an area file
+  // holds 40 lines.
+  const tests = Array.from({ length: 20 }, (_, i) => `t/functional/case${i}`);
+  const files = fakeFiles(tests.map((d) => `${d}/run.test.ts`));
+  const uncounted = tests.flatMap((d) => [
+    { rel: `${d}/_fixture/config.ts`, lang: "js", excludedAt: `${d}/_fixture` },
+    { rel: `${d}/_fixture/generated/contract.d.ts`, lang: "js", excludedAt: `${d}/_fixture` },
+  ]);
+  const [a] = discover(files, { uncounted, minFiles: 3 });
+
+  assert.deepEqual(a.globs.map((g) => areaLib.globText(g)), [
+    "t/functional/**/*.{cjs,cts,js,mjs,mts,ts}",
+    "!t/functional/**/_fixture/**/*.{cjs,cts,js,mjs,mts,ts}",
+  ]);
+  for (const f of [...files, ...uncounted]) {
+    assert.equal(matches(a.globs, f.rel), !f.rel.includes("_fixture"), f.rel);
+    assert.equal(areaLib.globsReach(a.globs, f.rel), !f.rel.includes("_fixture"), `globsReach: ${f.rel}`);
+  }
+});
+
+test("an excluded name that also names a counted directory is cut out by path instead", () => {
+  // `build` is output only where no `src` sits above it, so the name alone
+  // would cut `src/build/` out of the area that counted it.
+  const files = fakeFiles([
+    ...Array.from({ length: 6 }, (_, i) => `pkg/src/build/m${i}.ts`),
+    ...Array.from({ length: 6 }, (_, i) => `pkg/src/s${i}.ts`),
+  ]);
+  const uncounted = [{ rel: "pkg/build/out.ts", lang: "js", excludedAt: "pkg/build" }];
+  const areas = discover(files, { uncounted, minFiles: 3 });
+
+  for (const a of areas) {
+    const mine = new Set(a.files.map((f) => f.rel));
+    for (const f of [...files, ...uncounted]) assert.equal(matches(a.globs, f.rel), mine.has(f.rel), `${a.path} vs ${f.rel}`);
+  }
+});
+
+test("a left-out file whose name no pattern can spell is never written into one", () => {
+  // `!src/comp/a,b.ts` reads as `!src/comp/a` and `b.ts`, which reaches every
+  // `b.ts` in the repository. The recursive fallback over-reaches by one file.
+  const files = fakeFiles(Array.from({ length: 8 }, (_, i) => `src/comp/c${i}.ts`));
+  const areas = discover(files, { uncounted: fakeFiles(["src/comp/a,b.ts", "src/comp/fixtures/F.ts"]) });
+
+  assert.deepEqual(areas[0].globs.map((g) => areaLib.globText(g)), ["src/comp/**/*.{cjs,cts,js,mjs,mts,ts}"]);
 });
 
 test("globsReach answers what the delivery channel would, over every glob shape", () => {
@@ -540,6 +654,8 @@ test("globsReach answers what the delivery channel would, over every glob shape"
     "lib/c0.js", "lib/deep/d0.js", "lib/BadName.jsx", "lib/deep/x.jsx", "lib/tasks/Rakefile",
     "lib/tasks/t0.rake", "lib/tasks/sub/Rakefile", "src/c0.tsx", "src/util/u0.ts", "src/util/u0.tsx",
     "src/new/Late.tsx", "m0.mjs", "sub/m0.mjs", "README.md", "lib/deep/deeper/x.js",
+    // The delivery channel folds case, so a file added in another case is delivered too.
+    "LIB/c0.js", "lib/DEEP/d0.js", "lib/C0.JS", "lib/tasks/RAKEFILE", "SRC/Util/u0.ts",
   ];
 
   for (const files of layouts) {
@@ -1061,6 +1177,59 @@ test("a file stamped with a generated-file marker does not enter the corpus", as
 
   assert.deepEqual(files.map((f) => f.rel), ["gen/b.ts"]);
   assert.equal(dropped.generated, 1);
+});
+
+test("the source an exclusion left out is listed, so a paths glob can cut it back out", async (t) => {
+  // An area's glob is built over the counted files, so a fixture or generated
+  // file inside its directory was reached by a pattern that never counted it.
+  const dir = repo(t, (d, { git, write }) => {
+    write("src/a.ts");
+    write("src/fixtures/F.ts");
+    write("src/g.ts", "// @generated\nexport const g = 1\n");
+    write("src/fixtures/data.json", "{}\n");
+    write("README.md", "# hi\n");
+    write(".env.ts", "export const KEY = 1\n");
+    git("add", "-A");
+    git("commit", "-qm", "init");
+  });
+
+  const { uncounted } = await collect(dir);
+
+  assert.deepEqual(uncounted.map((f) => f.rel).sort(), ["src/fixtures/F.ts", "src/g.ts"]);
+  assert.ok(uncounted.every((f) => f.lang === "js"), "each carries the language a glob would spell it by");
+  assert.deepEqual(
+    Object.fromEntries(uncounted.map((f) => [f.rel, f.excludedAt ?? null])),
+    { "src/fixtures/F.ts": "src/fixtures", "src/g.ts": null },
+    "and the excluded directory it sits under, where one decided it"
+  );
+});
+
+test("a source file whose extension or name is in another case is listed as left out", async (t) => {
+  // Claude Code's matcher folds case, so an area's `*.rb` reaches `Legacy.RB`,
+  // which the corpus does not count.
+  const dir = repo(t, (d, { git, write }) => {
+    write("app/a.rb", "class A\nend\n");
+    write("app/Legacy.RB", "class Legacy\nend\n");
+    write("app/RAKEFILE", "task :x\n");
+    write("lib/Old.JS", "export const x = 1\n");
+    write("lib/fixtures/F.TS", "export const f = 1\n");
+    write("lib/notes.TXT", "hi\n");
+    git("add", "-A");
+    git("commit", "-qm", "init");
+  });
+
+  const { files, uncounted } = await collect(dir);
+
+  assert.deepEqual(files.map((f) => f.rel), ["app/a.rb"]);
+  assert.deepEqual(
+    Object.fromEntries(uncounted.map((f) => [f.rel, [f.lang, f.excludedAt ?? null]])),
+    {
+      "app/Legacy.RB": ["ruby", null],
+      "app/RAKEFILE": ["ruby", null],
+      "lib/Old.JS": ["js", null],
+      "lib/fixtures/F.TS": ["js", "lib/fixtures"],
+    }
+  );
 });
 
 test("all three generated markers are read", async (t) => {

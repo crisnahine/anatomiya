@@ -64,7 +64,9 @@ export const COLUMN_TYPE = new Set([
 /**
  * Constants a migration may name without touching data. Matched on the root
  * segment, so `ActiveRecord::Base.connection` and `Digest::MD5.hexdigest` are
- * covered by their first name. Anything outside it counts as a data touch,
+ * covered by their first name, except a scoped constant under a
+ * `FRAMEWORK_MODELS` root that receives a data call.
+ * Anything outside it counts as a data touch,
  * which over-counts violations and so suppresses a directive rather than
  * stating one.
  */
@@ -292,6 +294,48 @@ function inColumnBlock(n, ctx, only = null) {
   return false;
 }
 
+const BY_NAME = /^(method|send|public_send|__send__)$/;
+
+/** The class's own methods by name, each with its body and parameters. */
+function ownMethods(cls) {
+  const own = new Map();
+  walkRuby(cls.body, (d, ctx) => {
+    if (ctx.enclosing !== null) return;
+    if (d.t === "def" && ownDef(d)) own.set(d.name, { body: d.body, params: d.parameters });
+    // `define_method(:up) { ... }` is a method body that runs.
+    else if (bare(d, "define_method") && d.block && lit(args(d)[0])) {
+      own.set(lit(args(d)[0]), { body: d.block.body, params: d.block.parameters?.parameters });
+    }
+  });
+  return own;
+}
+
+/**
+ * Every node Rails runs from the named methods: their bodies and, each once,
+ * the bodies of this class's own methods they call. Both reversibility readers
+ * go through here, so a helper is read by one exactly when it is read by the
+ * other. `held(node, ctx)` marks code that does not run this way, and a helper
+ * called only from there is not followed.
+ */
+function eachRun(cls, entries, visit, held = () => false) {
+  const own = ownMethods(cls);
+  const queue = entries.filter((name) => own.has(name));
+  const seen = new Set(queue);
+  for (const name of queue) {
+    walkRuby(own.get(name).body, (n, ctx) => {
+      if (held(n, ctx)) return;
+      visit(n, ctx);
+      if (n.t !== "call" || (n.receiver && n.receiver.t !== "self")) return;
+      // `reversible(&method(:up_down))` and `send(:backfill)` name the method.
+      const target = BY_NAME.test(n.name) ? lit(args(n)[0]) : n.name;
+      if (own.has(target) && !seen.has(target)) {
+        seen.add(target);
+        queue.push(target);
+      }
+    });
+  }
+}
+
 /**
  * Whether this migration rewrites rows, and whether anything in it could not be
  * read well enough to say.
@@ -311,12 +355,26 @@ function dataWork(cls) {
 
   let touches = false;
   let unreadable = false;
-  walkRuby(cls.body, (m) => {
+  const own = ownMethods(cls);
+  // Locals, parameters and block parameters by name, each with a data call it receives.
+  const carriers = new Map();
+  const bound = [];
+  // Constants handed to a call whose block sends a data call to a local.
+  const reached = [];
+  eachRun(cls, ["change", "up", "down"], (m, ctx) => {
+    bound.push(...handed(m, own));
     if (m.t !== "call") return;
-    // Any `execute`, with a receiver or without: the framework whitelist
+    if (m.block && m.receiver?.t !== "array" && !own.has(m.name) && !TABLE_BLOCK.test(m.name)) {
+      let call = null;
+      walkRuby(m.block, (b, bctx) => {
+        call ??= b.t === "call" ? dataCallOnLocal(b, bctx)?.[1] : null;
+      });
+      if (call) for (const v of argValues(m)) reached.push([v, call]);
+    }
+    // Any SQL call, with a receiver or without: the framework whitelist
     // swallowed `ActiveRecord::Base.connection.execute`, so a migration
     // rewriting rows through it was checked by neither arm.
-    if (m.name === "execute") {
+    if (sqlCall(m)) {
       const sql = firstString(args(m));
       // A heredoc that keeps its indentation can truncate to whitespace at the
       // string cap, and defaulting that to schema-only would state the
@@ -326,14 +384,231 @@ function dataWork(cls) {
       else if (DML.test(body)) touches = true;
       return;
     }
-    const recv = constName(m.receiver);
-    if (!recv) return;
-    // A constant the migration assigned itself is an index name, not a model.
-    if (local.has(recv.split("::")[0]) || local.has(recv)) return;
-    if (!FRAMEWORK.has(recv.split("::")[0])) touches = true;
+    const onLocal = dataCallOnLocal(m, ctx);
+    if (onLocal) carriers.set(...onLocal);
+    const recv = constName(m.receiver) ?? built(m);
+    if (recv && isModel(recv, local, m.name)) touches = true;
   });
+  // `stale(model: User)`, `klass = User` and `[User, Account].each` hand the
+  // model on, and it is data work only where it reaches a data call.
+  // SCREAMING_CASE is a value rather than a class.
+  for (const [v, call] of [...bound.map(([to, v]) => [v, carriers.get(to)]), ...reached]) {
+    const name = constName(v);
+    if (!name || !call || !/[a-z]/.test(name.slice(name.lastIndexOf(":") + 1))) continue;
+    if (isModel(name, local, call)) touches = true;
+  }
 
   return { touches, unreadable };
+}
+
+/**
+ * What a node binds to a name, as [name, value] pairs: a local's value, each
+ * value of a multiple assignment, an array literal's elements to the block
+ * iterating it, and the arguments of a call to one of the class's own methods
+ * to its parameters.
+ */
+function handed(n, own) {
+  if (n.t === "local_variable_write") return [[n.name, n.value]];
+  if (n.t === "multi_write" && n.value?.t === "array") {
+    const values = n.value.elements || [];
+    return (n.lefts || []).flatMap((l, i) => (typeof l.name === "string" && values[i] ? [[l.name, values[i]]] : []));
+  }
+  if (n.t !== "call") return [];
+  if (n.receiver?.t === "array" && blockParam(n)) {
+    return (n.receiver.elements || []).map((e) => [blockParam(n), e]);
+  }
+  const target = (!n.receiver || n.receiver.t === "self") && own.get(n.name);
+  if (!target) return [];
+  const params = target.params;
+  const positional = [...(params?.requireds || []), ...(params?.optionals || [])];
+  let i = 0;
+  return args(n).flatMap((a) => {
+    if (a.t === "hash" || a.t === "keyword_hash") {
+      return (a.elements || []).filter((e) => lit(e.key)).map((e) => [lit(e.key), e.value]);
+    }
+    const p = positional[i++];
+    return p && typeof p.name === "string" ? [[p.name, a]] : [];
+  });
+}
+
+// SQL a migration hands the connection. A bare `update "UPDATE ..."` is the
+// connection's, and its string first argument is what says so.
+const SQL_CALL = /^(execute|exec_query|exec_update|exec_delete|exec_insert)$/;
+const isText = (n) =>
+  !!n && (n.t === "string" || n.t === "interpolated_string" || (n.t === "call" && isText(n.receiver)));
+const sqlCall = (c) =>
+  SQL_CALL.test(c.name) || (!c.receiver && /^(update|delete|insert)$/.test(c.name) && isText(args(c)[0]));
+
+/**
+ * A data call sent to a local, directly or through `new`, as [local, call]. A
+ * table block's `t.references` is a column, whatever the call is named.
+ */
+function dataCallOnLocal(m, ctx) {
+  const via = m.receiver?.t === "call" && /^(new|build)$/.test(m.receiver.name) ? m.receiver.receiver : m.receiver;
+  if (via?.t !== "local_variable_read" || !DATA_CALLS.has(m.name) || inColumnBlock(m, ctx)) return null;
+  return [via.name, m.name];
+}
+
+/** A call's positional arguments and keyword values. */
+const argValues = (n) =>
+  args(n).flatMap((a) => (a.t === "hash" || a.t === "keyword_hash" ? (a.elements || []).map((e) => e.value) : [a]));
+
+/** The constant behind `Model.new(...).save!`, whose write is on the instance. */
+const built = (m) =>
+  m.receiver && m.receiver.t === "call" && /^(new|build)$/.test(m.receiver.name)
+    ? constName(m.receiver.receiver)
+    : null;
+
+// Blocks that spell each direction themselves, so what they hold is not
+// something `change` has to invert.
+const SPELLED = /^(reversible|up_only)$/;
+
+/**
+ * Whether the method Rails runs forward, or a helper of the class it calls,
+ * holds a command `change` cannot invert, in the form ActiveRecord's
+ * CommandRecorder refuses. Rails runs `change` and never `up` when a class
+ * defines both, so the caller names the one that runs. Options this tool
+ * cannot read decide nothing (C33).
+ */
+function holdsIrreversible(cls, forward) {
+  let found = false;
+  eachRun(
+    cls,
+    [forward],
+    (c, ctx) => {
+      if (c.t === "call" && refused(c, ctx)) found = true;
+    },
+    (_, ctx) => ctx.ancestors.some((a) => a.t === "call" && !a.receiver && SPELLED.test(a.name))
+  );
+  return found;
+}
+
+// The change_table spellings of the commands CommandRecorder can refuse, which
+// Rails sends on with the table as the first argument.
+const TABLE_COMMAND = new Map([
+  ["change", "change_column"],
+  ["change_default", "change_column_default"],
+  ["remove", "remove_columns"],
+  ["remove_index", "remove_index"],
+  ["remove_foreign_key", "remove_foreign_key"],
+  ["remove_check_constraint", "remove_check_constraint"],
+  ["remove_exclusion_constraint", "remove_exclusion_constraint"],
+  ["remove_unique_constraint", "remove_unique_constraint"],
+  ["unique_constraint", "add_unique_constraint"],
+]);
+
+const SEND = /^(send|public_send|__send__)$/;
+
+function refused(c, ctx) {
+  if (sqlCall(c)) return true;
+  let list = args(c);
+  let name = c.name;
+  let extra = 0;
+  // `send(:change_column, ...)` reaches the recorder as change_column.
+  const sent = SEND.test(name) && (!c.receiver || c.receiver.t === "self") ? lit(list[0]) : null;
+  if (sent) {
+    name = sent;
+    list = list.slice(1);
+    if (SQL_CALL.test(name)) return true;
+  } else if (c.receiver) {
+    if (!TABLE_COMMAND.has(c.name) || !inColumnBlock(c, ctx, "change_table")) return false;
+    name = TABLE_COMMAND.get(c.name);
+    extra = 1;
+  }
+  const positional = list.filter((a) => a.t !== "hash" && a.t !== "keyword_hash").length + extra;
+  switch (name) {
+    case "change_column":
+    case "add_enum_value":
+      return true;
+    case "remove_column":
+      return positional <= 2;
+    case "remove_columns":
+      return lacks(c, "type");
+    case "drop_table": {
+      if (positional > 1) return true;
+      // Rails drops the symbol :if_exists before asking whether any options
+      // were given, and keeps a string key as one.
+      const opts = options(c);
+      if (c.block || opts === null) return false;
+      const last = list.at(-1);
+      const given = last && (last.t === "hash" || last.t === "keyword_hash") ? (last.elements || []).length : 0;
+      return given === (opts.has("if_exists") ? 1 : 0);
+    }
+    case "change_column_default":
+    case "change_column_comment":
+    case "change_table_comment":
+    case "rename_enum_value":
+      return lacks(c, "from") || lacks(c, "to");
+    case "remove_index":
+      return positional < 2 && lacks(c, "column");
+    case "remove_foreign_key":
+      return positional < 2 && lacks(c, "to_table");
+    // With no expression, columns or values there is nothing to re-create.
+    case "remove_check_constraint":
+    case "remove_exclusion_constraint":
+    case "remove_unique_constraint":
+    case "drop_enum":
+      return positional < 2;
+    case "drop_virtual_table":
+      return positional < 3;
+    case "add_unique_constraint": {
+      const opts = options(c);
+      return opts !== null && isTruthy(opts.get("using_index"));
+    }
+    default:
+      return false;
+  }
+}
+
+/** Whether the trailing options can be read and do not carry this key. */
+function lacks(call, key) {
+  const opts = options(call);
+  return opts !== null && !opts.has(key);
+}
+
+// Framework roots whose scoped constants may be models: ActiveStorage::Blob
+// and ActionText::RichText are tables, and ActiveRecord::SchemaMigration is one.
+// They also name the connection, transactions, errors and a table name read
+// for DDL, so a scoped constant under one is a model only as the receiver of
+// one of DATA_CALLS: the class methods activerecord 8.1 gives a model to read
+// or write rows (Querying's QUERYING_METHODS and SQL finders, `all`,
+// `unscoped`, Persistence and CounterCache), and the instance writers `built`
+// reaches through `new`.
+const FRAMEWORK_MODELS = new Set(["ActiveStorage", "ActionText", "ActiveRecord"]);
+
+export const DATA_CALLS = new Set([
+  "find", "find_by", "find_by!", "take", "take!", "sole", "find_sole_by", "first", "first!", "last",
+  "last!", "second", "second!", "third", "third!", "fourth", "fourth!", "fifth", "fifth!",
+  "forty_two", "forty_two!", "third_to_last", "third_to_last!", "second_to_last", "second_to_last!",
+  "exists?", "any?", "many?", "none?", "one?",
+  "first_or_create", "first_or_create!", "first_or_initialize",
+  "find_or_create_by", "find_or_create_by!", "find_or_initialize_by",
+  "create_or_find_by", "create_or_find_by!",
+  "destroy", "destroy_all", "delete", "delete_all", "update_all", "touch_all", "destroy_by", "delete_by",
+  "find_each", "find_in_batches", "in_batches",
+  "select", "reselect", "order", "regroup", "in_order_of", "reorder", "group", "limit", "offset",
+  "joins", "left_joins", "left_outer_joins", "where", "rewhere", "invert_where", "preload",
+  "extract_associated", "eager_load", "includes", "from", "lock", "readonly", "and", "or",
+  "annotate", "optimizer_hints", "extending", "having", "create_with", "distinct", "references",
+  "none", "unscope", "merge", "except", "only",
+  "count", "average", "minimum", "maximum", "sum", "calculate",
+  "pluck", "pick", "ids", "async_ids", "strict_loading", "excluding", "without", "with_recursive",
+  "async_count", "async_average", "async_minimum", "async_maximum", "async_sum", "async_pluck", "async_pick",
+  "insert", "insert_all", "insert!", "insert_all!", "upsert", "upsert_all",
+  "with", "find_by_sql", "async_find_by_sql", "count_by_sql", "async_count_by_sql",
+  "all", "unscoped",
+  "create", "create!", "update", "update!",
+  "increment_counter", "decrement_counter", "update_counters", "reset_counters",
+  "save", "save!", "destroy!", "update_attribute", "update_attribute!", "update_column",
+  "update_columns", "increment!", "decrement!", "toggle!", "reload", "touch",
+]);
+
+function isModel(name, local, method = null) {
+  const root = name.split("::")[0];
+  // A constant the migration assigned itself is an index name, not a model.
+  if (local.has(root) || local.has(name)) return false;
+  if (FRAMEWORK_MODELS.has(root)) return name !== root && DATA_CALLS.has(method);
+  return !FRAMEWORK.has(root);
 }
 
 export const RAILS_DIMENSIONS = [
@@ -344,7 +619,7 @@ export const RAILS_DIMENSIONS = [
     counterClaim: null, // no measured spread across repositories yet, and a counter needs the same bar the claim does
     precision: "partial",
     applicabilityPredicate: {
-      sites: "a migration class defining at least one of change, up or down, unless it rewrites rows or carries an execute this tool could not read: those are answered by migration_schema_only, and change cannot invert either",
+      sites: "a migration class defining at least one of change, up or down, unless it rewrites rows or carries SQL this tool could not read: those are answered by migration_schema_only, and change cannot invert either. Nor is one whose change, or up where there is no change, or a method of the class either one calls, holds a command change cannot invert outside a reversible or up_only block: an execute, exec_query, exec_update, exec_delete or exec_insert, a bare update, delete or insert handed an SQL string, a change_column, an add_enum_value, a remove_column with no positional type, a remove_columns with no type:, a drop_table naming several tables or with neither a block nor an option other than the symbol if_exists:, a change_column_default, comment change or rename_enum_value with no from: and to:, a remove_index with no column, a remove_foreign_key with no second table, a remove_check_constraint, remove_exclusion_constraint or remove_unique_constraint with nothing after the table, a drop_enum with no values, a drop_virtual_table with no values, an add_unique_constraint with using_index:, or the change_table or send spelling of any of these",
       blind: "a repository-local base class hides the migration from the superclass test",
     },
     langs: ["ruby"],
@@ -363,6 +638,9 @@ export const RAILS_DIMENSIONS = [
           defs.add(m.name);
         });
         if (!defs.has("change") && !defs.has("up") && !defs.has("down")) return;
+        // `change` has no spelling of a command Rails cannot invert, so a
+        // migration holding one cannot conform and its up/down is correct.
+        if (holdsIrreversible(cls, defs.has("change") ? "change" : "up")) return;
         // Defining both is a migration Rails cannot roll back, so it is a
         // violation rather than the good case.
         const reversible = defs.has("change") && !defs.has("up") && !defs.has("down");
@@ -378,8 +656,8 @@ export const RAILS_DIMENSIONS = [
     counterClaim: null, // the inverse rewrites rows from inside a schema migration
     precision: "partial",
     applicabilityPredicate: {
-      sites: "a migration class, unless one of its execute calls carries SQL this tool could not read",
-      blind: "an unreadable execute drops the class, and a repository-local base class hides the migration from the superclass test",
+      sites: "a migration class, unless one of its SQL calls (execute, exec_query, exec_update, exec_delete, exec_insert, or a bare update, delete or insert handed a string) carries SQL this tool could not read",
+      blind: "unreadable SQL drops the class, and a repository-local base class hides the migration from the superclass test",
     },
     langs: ["ruby"],
     run(ast, add) {

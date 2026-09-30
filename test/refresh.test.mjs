@@ -167,6 +167,114 @@ test("a linked worktree with a map of its own watches its own HEAD", async (t) =
   assert.deepEqual(started, [wt]);
 });
 
+/** A directory that is not a repository, holding checkouts side by side, the way a project split into repositories is opened. */
+function parentOf(t) {
+  const parent = realpathSync.native(mkdtempSync(join(tmpdir(), "anatomiya-refresh-parent-")));
+  t.after(() => rmSync(parent, { recursive: true, force: true }));
+  return parent;
+}
+
+async function scannedIn(parent, name) {
+  const dir = join(parent, name);
+  mkdirSync(dir);
+  init(dir);
+  source(dir, "src", 8);
+  commit(dir, "init");
+  await runScan(dir);
+  return dir;
+}
+
+test("a session started above its checkouts refreshes and watches each one that holds a map", async (t) => {
+  // The session's own directory has no map, and neither SessionStart nor
+  // FileChanged names a path the way a tool call does.
+  const parent = parentOf(t);
+  const api = await scannedIn(parent, "api");
+  const client = await scannedIn(parent, "client");
+  const docs = join(parent, "docs");
+  mkdirSync(docs);
+  init(docs);
+  source(docs, "src", 8);
+  commit(docs, "init");
+  const { started, start } = recorder();
+
+  const out = runRefresh(parent, { hook_event_name: "SessionStart", cwd: parent, source: "startup" }, { start });
+
+  assert.deepEqual(started, [api, client], "the checkout nobody scanned is left alone");
+  assert.deepEqual(out.hookSpecificOutput.watchPaths, [
+    join(api, ".git", "logs", "HEAD"),
+    join(api, ".git", "HEAD"),
+    join(client, ".git", "logs", "HEAD"),
+    join(client, ".git", "HEAD"),
+  ]);
+});
+
+test("a watched file changing below a session's directory refreshes only its own checkout, and names every watch again", async (t) => {
+  const parent = parentOf(t);
+  const api = await scannedIn(parent, "api");
+  const client = await scannedIn(parent, "client");
+  const { started, start } = recorder();
+
+  const out = runRefresh(parent, { hook_event_name: "FileChanged", cwd: parent, file_path: join(client, ".git", "logs", "HEAD") }, { start });
+
+  assert.deepEqual(started, [client]);
+  assert.equal(out.hookSpecificOutput.watchPaths.length, 4, "the list is replaced by whoever answers last");
+  assert.deepEqual(runRefresh(parent, { hook_event_name: "FileChanged", cwd: parent, file_path: join(parent, "HEAD") }, { start }), {});
+  assert.deepEqual(started, [client], `${api} is not started for a file of nobody's`);
+});
+
+test("a copied map with no checkout under it, or a checkout two levels down, is not refreshed from above", async (t) => {
+  const parent = parentOf(t);
+  const nested = join(parent, "group");
+  mkdirSync(nested);
+  await scannedIn(nested, "deep");
+  mkdirSync(join(parent, "copy", ".claude"), { recursive: true });
+  const api = await scannedIn(parent, "api");
+  execFileSync("cp", ["-R", join(api, ".claude"), join(parent, "copy")]);
+  rmSync(api, { recursive: true, force: true });
+  const { started, start } = recorder();
+
+  assert.deepEqual(runRefresh(parent, { hook_event_name: "SessionStart", cwd: parent }, { start }), {});
+  assert.deepEqual(started, []);
+});
+
+test("a directory holding a shelf of mapped checkouts refreshes none of them", async (t) => {
+  // Nine projects side by side are a collection, not one project split in a
+  // few, and a worker each at every session start is nobody's request.
+  const parent = parentOf(t);
+  for (let i = 0; i < 9; i++) await scannedIn(parent, `p${i}`);
+  const { started, start } = recorder();
+
+  assert.deepEqual(runRefresh(parent, { hook_event_name: "SessionStart", cwd: parent }, { start }), {});
+  assert.deepEqual(started, []);
+});
+
+test("a directory holding eight mapped checkouts, the most it serves, refreshes all eight", async (t) => {
+  const parent = parentOf(t);
+  const roots = [];
+  for (let i = 0; i < 8; i++) roots.push(await scannedIn(parent, `p${i}`));
+  const { started, start } = recorder();
+
+  const out = runRefresh(parent, { hook_event_name: "SessionStart", cwd: parent }, { start });
+
+  assert.deepEqual(started, roots);
+  assert.equal(out.hookSpecificOutput.watchPaths.length, 16);
+});
+
+test("from above its checkouts, each held pin is named by its checkout and pinned from inside it", async (t) => {
+  const parent = parentOf(t);
+  const held = { stamp: "x", ok: true, held: { reason: "made-here", commit: "abcdef1234", pin: null, by: "reflog" } };
+  for (const name of ["api", "client"]) writeFileSync(join(await scannedIn(parent, name), REFRESH_STATE), JSON.stringify(held));
+  const { start } = recorder();
+
+  const lines = runRefresh(parent, { hook_event_name: "SessionStart", cwd: parent, source: "startup" }, { start }).systemMessage.split("\n");
+
+  assert.equal(lines.length, 2);
+  assert.match(lines[0], /^anatomiya \(api\): the pin stays: commit abcdef1 .* \/anatomiya:pin in a session started inside api\.$/);
+  assert.match(lines[1], /^anatomiya \(client\): .* inside client\.$/);
+  const alone = runRefresh(join(parent, "api"), { hook_event_name: "SessionStart", cwd: join(parent, "api") }, { start }).systemMessage;
+  assert.match(alone, /^anatomiya: the pin stays: .* made with \/anatomiya:pin\.$/, "a session inside the checkout needs no name");
+});
+
 /* --- the worker: what happens to the repository --- */
 
 test("a checkout that has not moved since the last refresh is left alone", async (t) => {
@@ -229,6 +337,73 @@ test("a map the repository tracks is never rewritten behind its back", async (t)
   assert.equal((await refreshRepository(dir)).reason, "tracked");
 });
 
+test("a map committed through a linked rules directory is tracked too", needsSymlinks, async (t) => {
+  // calcom/cal.diy shares `.claude/rules -> ../agents/rules` between agents.
+  // Git matches no pathspec past a symlink, so the map it stores under
+  // `agents/rules/` read as untracked and every move of HEAD rewrote it.
+  const dir = realpathSync.native(mkdtempSync(join(tmpdir(), "anatomiya-refresh-")));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  init(dir);
+  source(dir, "src", 8);
+  mkdirSync(join(dir, "agents", "rules"), { recursive: true });
+  mkdirSync(join(dir, ".claude"));
+  symlinkSync(join("..", "agents", "rules"), join(dir, ".claude", "rules"));
+  commit(dir, "init");
+  await runScan(dir);
+  git(dir, "add", "-f", join("agents", "rules"));
+  git(dir, "commit", "-qm", "commit the map");
+  source(dir, "lib", 4);
+  commit(dir, "HEAD moves");
+
+  assert.equal((await refreshRepository(dir)).reason, "tracked");
+  assert.equal(git(dir, "status", "--porcelain", "--untracked-files=no"), "", "and the committed map is untouched");
+});
+
+test("a link spelled in another case than the directory it names still finds the committed map", needsSymlinks, async (t) => {
+  // A case-insensitive filesystem follows `../Agents/Rules` to `agents/rules`,
+  // and git matches pathspecs case-sensitively whatever core.ignorecase says.
+  const dir = realpathSync.native(mkdtempSync(join(tmpdir(), "anatomiya-refresh-")));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  mkdirSync(join(dir, "agents", "rules"), { recursive: true });
+  if (!existsSync(join(dir, "AGENTS"))) return t.skip("this filesystem is case-sensitive");
+  init(dir);
+  source(dir, "src", 8);
+  mkdirSync(join(dir, ".claude"));
+  symlinkSync(join("..", "Agents", "Rules"), join(dir, ".claude", "rules"));
+  commit(dir, "init");
+  await runScan(dir);
+  git(dir, "add", "-f", join("agents", "rules"));
+  git(dir, "commit", "-qm", "commit the map");
+  source(dir, "lib", 4);
+  commit(dir, "HEAD moves");
+
+  assert.equal((await refreshRepository(dir)).reason, "tracked");
+  assert.equal(git(dir, "status", "--porcelain", "--untracked-files=no"), "", "and the committed map is untouched");
+});
+
+test("a directory renamed in case outside git still finds the map the index holds under the old case", needsSymlinks, async (t) => {
+  // The index keeps `Agents/Rules` after a rename git never saw, while the disk says `agents`.
+  const dir = realpathSync.native(mkdtempSync(join(tmpdir(), "anatomiya-refresh-")));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  mkdirSync(join(dir, "Agents", "Rules"), { recursive: true });
+  if (!existsSync(join(dir, "AGENTS"))) return t.skip("this filesystem is case-sensitive");
+  init(dir);
+  source(dir, "src", 8);
+  mkdirSync(join(dir, ".claude"));
+  symlinkSync(join("..", "Agents", "Rules"), join(dir, ".claude", "rules"));
+  commit(dir, "init");
+  await runScan(dir);
+  git(dir, "add", "-f", join("Agents", "Rules"));
+  git(dir, "commit", "-qm", "commit the map");
+  renameSync(join(dir, "Agents"), join(dir, "tmp"));
+  renameSync(join(dir, "tmp"), join(dir, "agents"));
+  source(dir, "lib", 4);
+  commit(dir, "HEAD moves");
+
+  assert.equal((await refreshRepository(dir)).reason, "tracked");
+  assert.equal(git(dir, "status", "--porcelain", "--untracked-files=no"), "", "and the committed map is untouched");
+});
+
 test("a repository that commits any file of the refresh's own is never refreshed", async (t) => {
   // The worker removes its lock and its word to the next worker, and removing
   // a tracked file is an edit in `git status` nobody made, which `pin` refuses.
@@ -236,6 +411,23 @@ test("a repository that commits any file of the refresh's own is never refreshed
   writeFileSync(join(dir, ".claude", "anatomiya", "refresh.again"), "");
   git(dir, "add", "-f", join(".claude", "anatomiya", "refresh.again"));
   git(dir, "commit", "-qm", "commit the word");
+
+  assert.equal((await refreshRepository(dir)).reason, "tracked");
+  assert.equal(existsSync(join(dir, ".claude", "anatomiya", "refresh.again")), true);
+});
+
+test("a refresh file committed under another case of .claude than the disk's still counts as committed", async (t) => {
+  const dir = await scanned(t);
+  if (!existsSync(join(dir, ".CLAUDE"))) return t.skip("this filesystem is case-sensitive");
+  const recase = (from, to) => {
+    renameSync(join(dir, from), join(dir, "tmp"));
+    renameSync(join(dir, "tmp"), join(dir, to));
+  };
+  recase(".claude", ".Claude");
+  writeFileSync(join(dir, ".Claude", "anatomiya", "refresh.again"), "");
+  git(dir, "add", "-f", join(".Claude", "anatomiya", "refresh.again"));
+  git(dir, "commit", "-qm", "commit the word");
+  recase(".Claude", ".claude");
 
   assert.equal((await refreshRepository(dir)).reason, "tracked");
   assert.equal(existsSync(join(dir, ".claude", "anatomiya", "refresh.again")), true);
@@ -1038,11 +1230,11 @@ test("a pin held by this clone's own commit is recorded, and said to the person 
 
   const r = await refreshRepository(dir);
 
-  assert.deepEqual(r.held, { reason: "made-here", commit: agent, pin: first });
-  assert.deepEqual(JSON.parse(readFileSync(join(dir, REFRESH_STATE), "utf8")).held, { reason: "made-here", commit: agent, pin: first });
+  assert.deepEqual(r.held, { reason: "made-here", commit: agent, pin: first, by: "reflog" });
+  assert.deepEqual(JSON.parse(readFileSync(join(dir, REFRESH_STATE), "utf8")).held, { reason: "made-here", commit: agent, pin: first, by: "reflog" });
   const { start } = recorder();
   const out = runRefresh(dir, { hook_event_name: "SessionStart", cwd: dir }, { start });
-  assert.match(out.systemMessage, new RegExp(`stays at ${first.slice(0, 7)}: commit ${agent.slice(0, 7)} `));
+  assert.match(out.systemMessage, new RegExp(`stays at ${first.slice(0, 7)}: commit ${agent.slice(0, 7)} on origin's default branch was made in this clone,`));
   assert.ok(out.hookSpecificOutput.watchPaths.length > 0, "the watches are still named");
   assert.equal(out.hookSpecificOutput.additionalContext, undefined, "nothing of it reaches the model");
   const changed = runRefresh(dir, { hook_event_name: "FileChanged", cwd: dir, file_path: join(dir, ".git", "logs", "HEAD") }, { start });
@@ -1092,6 +1284,21 @@ test("a held record naming no commit id says no id, and a planted one says nothi
   assert.doesNotMatch(said, /ignore|instructions/);
   writeFileSync(state, JSON.stringify({ stamp: "x", ok: true, held: { reason: "something else" } }));
   assert.equal(holdNotice(dir), null);
+});
+
+test("a checkout's name in the held notice carries no control, bidi override or line separator", async (t) => {
+  const { holdNotice } = await import("../plugins/anatomiya/lib/refresh.mjs");
+  const dir = await scanned(t);
+  writeFileSync(join(dir, REFRESH_STATE), JSON.stringify({ stamp: "x", ok: true, held: { reason: "made-here", commit: "abcdef1234", pin: null, by: "reflog" } }));
+  for (const code of [0x1b, 0x202e, 0x2028, 0x2029, 0x85]) {
+    const said = holdNotice(dir, `api${String.fromCodePoint(code)}gpj.exe`);
+    assert.match(said, /^anatomiya \("api[^"]*gpj\.exe"\): /);
+    assert.doesNotMatch(said, /[\p{Cc}\p{Cf}\u2028\u2029]/u, `U+${code.toString(16)}`);
+  }
+  // The person opens the directory the line names, so every printable character stays.
+  for (const name of ["#api", "> api", "1. api", "`api`", "api|v2", "===", "\uff46\uff55\uff4c\uff4c", "caf\u0065\u0301"]) {
+    assert.ok(holdNotice(dir, name).includes(`inside ${JSON.stringify(name)}.`), name);
+  }
 });
 
 /* --- the lock is given back only while it is still this worker's --- */
@@ -1183,6 +1390,69 @@ test("a commit from a linked worktree since removed, its branch deleted, is stil
   });
   assert.equal((await refreshRepository(dir)).pinned, false);
   assert.equal(loadPin(dir).sha, first);
+});
+
+test("a worktree made on a teammate's commit creates nothing, and the pin follows that commit once pulled", async (t) => {
+  // `git worktree add` logs the new HEAD with an empty message, which read as a
+  // commit made here and held the pin for as long as the worktree stood.
+  const { origin, dir } = await cloned(t);
+  await refreshRepository(dir);
+  source(origin, "lib/t1", 8);
+  const teammate = commit(origin, "a teammate's commit");
+  git(dir, "fetch", "-q");
+  for (const args of [["--detach"], ["-b", "feat"]]) {
+    const wt = realpathSync.native(mkdtempSync(join(tmpdir(), "anatomiya-refresh-wt-")));
+    t.after(() => rmSync(wt, { recursive: true, force: true }));
+    rmSync(wt, { recursive: true, force: true });
+    git(dir, "worktree", "add", "-q", ...args, wt, "origin/main");
+  }
+  git(dir, "pull", "-q", "--ff-only");
+
+  const r = await refreshRepository(dir);
+
+  assert.equal(r.held, null);
+  assert.equal(r.pinned, true);
+  assert.equal(loadPin(dir).sha, teammate);
+});
+
+test("a worktree made on a teammate's commit and refreshed from inside creates nothing", async (t) => {
+  // Seen from inside a linked worktree, its own HEAD log is spelled plain `HEAD`.
+  const { origin, dir } = await cloned(t);
+  await refreshRepository(dir);
+  source(origin, "lib/t1", 8);
+  const teammate = commit(origin, "a teammate's commit");
+  git(dir, "fetch", "-q");
+  const wt = realpathSync.native(mkdtempSync(join(tmpdir(), "anatomiya-refresh-wt-")));
+  t.after(() => rmSync(wt, { recursive: true, force: true }));
+  rmSync(wt, { recursive: true, force: true });
+  git(dir, "worktree", "add", "-q", "--detach", wt, "origin/main");
+  await runScan(wt);
+
+  const r = await refreshRepository(wt);
+
+  assert.equal(r.held, null);
+  assert.equal(loadPin(wt).sha, teammate);
+});
+
+test("a hold found by the committer identity alone says so, and never that the commit was made in this clone", async (t) => {
+  // The same person pushing from another machine: nothing in this clone made
+  // the commit, and the notice sent them looking for a local one.
+  const { origin, dir } = await cloned(t);
+  await refreshRepository(dir);
+  const first = loadPin(dir).sha;
+  source(origin, "lib/laptop", 8);
+  git(origin, "add", "-A");
+  execFileSync("git", ["commit", "-qm", "from my laptop"], { cwd: origin, stdio: "pipe", env: { ...process.env, GIT_COMMITTER_EMAIL: "me@clone.test" } });
+  const laptop = git(origin, "rev-parse", "HEAD");
+  git(dir, "pull", "-q", "--ff-only");
+
+  const r = await refreshRepository(dir);
+
+  assert.deepEqual(r.held, { reason: "made-here", commit: laptop, pin: first, by: "identity" });
+  const { start } = recorder();
+  const said = runRefresh(dir, { hook_event_name: "SessionStart", cwd: dir }, { start }).systemMessage;
+  assert.match(said, new RegExp(`commit ${laptop.slice(0, 7)} on origin's default branch was committed under this clone's git identity`));
+  assert.doesNotMatch(said, /made in this clone/);
 });
 
 test("a commit made here is still held after its reflog entries expire", async (t) => {
@@ -1425,7 +1695,7 @@ test("a first pin holds a commit made here though gc expired every reflog entry 
   const r = await refreshRepository(dir);
 
   assert.equal(r.pinned, false);
-  assert.deepEqual(r.held, { reason: "made-here", commit: mine, pin: null });
+  assert.deepEqual(r.held, { reason: "made-here", commit: mine, pin: null, by: "identity" });
 });
 
 test("a fetch into a local branch is the remote moving, and the pin follows it", async (t) => {

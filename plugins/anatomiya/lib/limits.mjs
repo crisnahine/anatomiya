@@ -27,8 +27,8 @@
  * at the 5 s parse timeout boundary under the old 4 MB cap and flipped between
  * crashed and parsed with machine load, and each flip moved the always-loaded
  * overview (A5). A size cap is deterministic; a wall-clock timeout is not, which
- * is why a parse the clock killed is tried once more after the queue drains,
- * where the count holds still under load.
+ * is why a parse the clock killed beside other parses is tried once more
+ * after the queue drains, alone, where the count holds still under load.
  */
 export const MAX_FILE_BYTES = 1024 * 1024;
 

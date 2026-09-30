@@ -1,9 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { execFileSync, spawnSync } from "node:child_process";
-import { needsPosixSpecialFiles } from "./platform.mjs";
+import { needsPosixPermissions, needsPosixSpecialFiles } from "./platform.mjs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
@@ -58,6 +58,54 @@ test("what the writer emits is what the reader reads back", (t) => {
   assert.equal(facts.schema, FACTS_SCHEMA);
   assert.equal(facts.areas[0].dimensions[0].key, "k");
   assert.equal(statedSide(facts.areas[0].dimensions[0]).states, "claim");
+});
+
+test("a map on disk that does not parse is unreadable, not absent", (t) => {
+  // A committed map that conflicted on a merge was reported as no map at all,
+  // the same bug the pin reader already fixed.
+  const dir = root(t);
+  writeFacts(dir, result([dim()]));
+  const path = join(dir, FACTS_PATH);
+  writeFileSync(path, `<<<<<<< HEAD\n${readFileSync(path, "utf8")}=======\n{}\n>>>>>>> other\n`);
+
+  const { facts, unreadable } = readFacts(dir);
+
+  assert.equal(facts, null);
+  assert.match(unreadable ?? "", /does not parse as JSON/);
+  rmSync(path);
+  assert.deepEqual(readFacts(dir), { facts: null, unreadable: null }, "no file at all is still no map");
+});
+
+test("a map on disk that will not open is unreadable, not absent", needsPosixPermissions, (t) => {
+  const dir = root(t);
+  writeFacts(dir, result([dim()]));
+  const path = join(dir, FACTS_PATH);
+  chmodSync(path, 0o000);
+
+  const { facts, unreadable } = readFacts(dir);
+
+  assert.equal(facts, null);
+  assert.match(unreadable ?? "", /could not be opened/);
+});
+
+test("the counter side's authors reach the record and the side that prints them", (t) => {
+  // A held area re-renders from this record, so a number the renderer prints
+  // has to survive the round trip.
+  const dir = root(t);
+  writeFacts(
+    dir,
+    result([
+      dim({ counterClaim: "the inverse", states: null, directive: false, conforming: 0, candidates: 40,
+            gate: "ratio", counterGate: "authors", authors: 0, counterAuthors: 1 }),
+    ])
+  );
+  const d = readFacts(dir).facts.areas[0].dimensions[0];
+
+  assert.equal(d.counterAuthors, 1);
+  assert.equal(statedSide(d).side, "counter");
+  assert.equal(statedSide(d).authors, 1);
+  assert.equal(statedSide({ ...d, counterAuthors: undefined }).authors, 0, "an older record prints what it printed");
+  assert.equal(statedSide(dim({ authors: 3 })).authors, 3, "the claim side keeps its own");
 });
 
 test("a record written before the new counts existed still reads", (t) => {
@@ -608,7 +656,10 @@ test("a record is measured by its bytes on disk, not by its decoded length", (t)
   mkdirSync(join(dir, ".claude/anatomiya"), { recursive: true });
   writeFileSync(join(dir, FACTS_PATH), Buffer.alloc(22 * 1024 * 1024, 0xff));
 
-  assert.deepEqual(readFacts(dir), { facts: null, unreadable: null });
+  const { facts, unreadable } = readFacts(dir);
+  assert.equal(facts, null);
+  assert.match(unreadable ?? "", /does not parse as JSON/);
+  assert.doesNotMatch(unreadable, /MB/);
 });
 
 test("the replace never writes through a link planted where its temporary file goes", () => {

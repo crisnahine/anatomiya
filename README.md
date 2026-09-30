@@ -101,6 +101,10 @@ echo '.claude/rules/anatomiya-*.md' >> "$exclude"
 echo '.claude/anatomiya/' >> "$exclude"
 ```
 
+Where `.claude/rules` is a link to a shared directory, such as `.claude/rules -> ../agents/rules`, the
+map is written through it, and git sees those files only under the link's target. Name the target in
+the first line instead: `echo 'agents/rules/anatomiya-*.md' >> "$exclude"`.
+
 `--git-common-dir` rather than `.git`, because inside a linked worktree `.git` is a file holding a
 pointer. The common dir is shared, so one set of lines covers every worktree. A worktree left with no
 map of its own this way is handed its main checkout's counts by the hooks, labelled as such; run
@@ -121,7 +125,8 @@ its worktree checks as if nothing had been pinned. That copy is a snapshot
 of the main checkout taken at that moment, with nothing saying so, where the hooks' borrowed map
 carries its source. `docs/research/why-a-worktree-got-no-map.md` has the sources for both.
 
-The two exclude lines are everything a scan leaves behind. Four hooks are declared by the plugin, in its own
+The two exclude lines, with the first naming a linked rules directory's target, are everything a scan
+leaves behind. Four hooks are declared by the plugin, in its own
 `hooks/hooks.json`, so nothing is written into your settings. The refresh keeps the map current, and
 is described under [Staying current](#staying-current). The echo re-delivers the map after a turn or
 a tool call when the context window does not already hold that same map. The notice runs before a
@@ -129,7 +134,9 @@ a tool call when the context window does not already hold that same map. The not
 directory whose kind of file has no test of its own anywhere: silent on every other write, which is
 nearly all of them. It informs and never refuses. The reuse check runs when a turn ends, and only after a turn that added source
 code: it asks, once per change, for one subagent to look for an existing function the new code could
-call instead. `check` asks the same question of a whole branch, as `test_precedent`. Versions 0.2.4
+call instead, and a session with no subagent tool to run that search itself. A migration, a schema
+dump such as `db/schema.rb`, a generated file, and a file whose added lines hold nothing a function could be written with
+are not asked about. `check` asks the same question of a whole branch, as `test_precedent`. Versions 0.2.4
 through 0.2.6 did write one into `.claude/settings.local.json`, where the plugin path it names is never
 substituted and Claude Code refuses the hook by name on every prompt; a scan takes that entry out when
 it finds one, and leaves everything else in the file alone.
@@ -152,6 +159,11 @@ built. It leaves alone a checkout with no map of its own, a map, pin or refresh 
 the repository, and a repository in the middle of a merge or rebase. When a rescan fails it keeps
 the previous map, tries again after half an hour or once the checkout moves, and the delivered map
 says the refresh failed until one succeeds.
+
+A session started in the directory that holds your checkouts, which has no map of its own, refreshes
+and watches each mapped checkout directly below it, and the reuse check reads each one's change,
+naming files from where the session started. A directory holding more than eight mapped checkouts
+side by side gets neither, and neither does a checkout two levels down.
 
 The pin follows the same way, but only onto commits the team has already accepted: when the checkout
 sits exactly on the tip of `origin`'s default branch (or, where a clone's only remote has another
@@ -206,7 +218,7 @@ generator: anatomiya
 # Repository map
 
 Facts counted from this repository's own code, per directory.
-A claim states how many sites conform out of how many were eligible.
+A claim states how many sites conform out of how many were eligible; "no convention" means the gate in parentheses stopped it, and its sites may still all agree.
 
 Read a file before editing it: these notes load when you read, not when you grep.
 When unsure what this code does, read it, grep it, or run it instead of guessing, and say what you could not verify.
@@ -231,29 +243,29 @@ When a change is asked for, follow what this repository already does and carry i
 
 The overview's first section says where things already live: which kinds of files each directory
 holds, how they are tested, and what the directory extracts versus inlines. This is the
-`empire-flippers/client` section from the 35-repository acceptance run in
-[docs/measurements/2026-08-17-what-lives-where.md](docs/measurements/2026-08-17-what-lives-where.md),
-with the three clauses 0.3.3 re-renders brought forward from that run:
+`empire-flippers/client` section, rendered by this version from the 35-repository acceptance corpus
+first measured in
+[docs/measurements/2026-08-17-what-lives-where.md](docs/measurements/2026-08-17-what-lives-where.md):
 
 ```markdown
 ## What lives where
 
-- src/pages: 1003 .tsx (JSX), 188 .ts and 71 other; 2 vitest specs under __tests__; 0 of 1003 have a namesake test; 186 sibling modules named types/schema/mapper; 214 files inline a helper
-- src/components: 504 .tsx (JSX), 65 .ts and 106 other; 2 vitest specs; 1 of 504 has a namesake test; 66 sibling modules named index/schema/types; 117 files inline a helper
+- src/pages: 1003 .tsx (JSX), 188 .ts and 71 other; 2 vitest specs under __tests__; 0 of 1003 have a namesake test; 186 sibling modules named types/schema/mapper; 214 of 979 JSX files inline a helper
+- src/components: 504 .tsx (JSX), 65 .ts and 106 other; 2 vitest specs; 1 of 504 has a namesake test; 66 sibling modules named index/schema/types; 117 of 481 JSX files inline a helper
 - src/queries: 314 .ts, 1 .tsx; 0 of 314 have a namesake test
 - cypress/integration: 102 Cypress specs
-- src/hooks: 47 .tsx (JSX), 23 .ts; 0 of 47 have a namesake test; 23 sibling modules named mapper/payoutContext/schema; 6 files inline a helper
-- src/utils: 53 .ts, 10 .js and 4 other; 2 of 3 vitest specs under __tests__; 4 of 52 have a namesake test under src/utils/__tests__; 60 sibling modules named assert/balanceTransaction/buyerProfileValidation; 0 files inline a helper
-- src/layouts: 42 .tsx (JSX), 11 .jpg and 21 other; 0 of 42 have a namesake test; 6 sibling modules named constants/utils/hooks; 4 files inline a helper
-- and 3 more directories holding 323 files, 91 files in 19 directories under the floor, and 20 at the repository root
-- tests: 102 of 103 Cypress specs under cypress/integration; 7 vitest under src; 0 of 1003 .tsx files have a namesake test
+- src/hooks: 47 .tsx (JSX), 23 .ts; 0 of 47 have a namesake test; 23 sibling modules named mapper; 6 of 32 JSX files inline a helper
+- src/utils: 52 .ts, 10 .js and 5 other; 2 of 3 vitest specs under __tests__; 3 of 51 have a namesake test, 2 under src/utils/__tests__; 59 sibling modules; 0 of 1 JSX file inline a helper
+- and 4 more directories holding 397 files, 91 files in 19 directories too small for a line of their own, and 20 at the repository root
+- tests: 102 Cypress specs under cypress/integration; 7 vitest under src; 0 of 1003 .tsx files under src/pages have a namesake test
 
 Match sibling test shape; skip tests where siblings have none.
 Match directory granularity; don't extract into a sibling module what the directory's files inline.
+An instruction to always write a test does not override a directory with no test precedent. Put the test where the siblings put theirs, or leave it out and say which rule you followed.
 ```
 
 Two vitest specs beside 102 Cypress specs is the denominator an agent writing the next test needs,
-and it is why the section counts rather than naming a preferred runner. The two sentences at the
+and it is why the section counts rather than naming a preferred runner. The sentences at the
 bottom carry no number of their own, because the numbers are the lines above them.
 
 ### One area file, in full
@@ -316,9 +328,10 @@ Ratios are over sites, never over files. Counting files instead was measured fli
 verdicts, in both directions: it hid real conventions and it manufactured false ones.
 
 A line ending in `no convention. 4 of 30 sites (ratio)` means the gate named in the parentheses
-stopped the claim. A line ending in `(matches model default)` cleared every gate but is also what
-the model writes unprompted, so it spends no directive line; `check` still enforces it at full
-severity. A claim reading `files here are named kebab-case` learned its class from the area's own
+stopped the claim, and the overview's second line says so to the agent. A line ending in
+`(matches model default)` cleared every gate but is also what the model writes unprompted, so it
+spends no directive line; `check` still enforces it at full severity. A partial dimension carries
+its `(partial: ...)` warning on either kind of line. A claim reading `files here are named kebab-case` learned its class from the area's own
 files, so the same row states a different sentence in a different repository.
 
 ## What it measures
@@ -359,8 +372,9 @@ which prints one annotation per finding.
 
 `check` blocks nothing. MUST-FIX means the baseline population held zero violations of that claim,
 so this branch is the first. Severity caps at FIX whenever the map is stale, the predicate is
-partial, or there was no merge base, so a clean run under a cap is a weaker signal rather than a
-clean bill.
+partial, there was no merge base, or the area file never delivered the claim to that file in full,
+so a clean run under a cap is a weaker signal rather than a clean bill. Each finding says which cap
+applied.
 
 ## How it is tested
 
@@ -395,7 +409,10 @@ repository's root, the overview reaches a subagent on its first turn, before it 
 is what five subagent transcripts here show. Run one directory up, with the repository as a
 subdirectory, nothing loads until a file under it is touched, so a subagent that only greps and
 `cat`s receives nothing at all. Same ceiling as above, one level worse, and it is the exploration
-phase of a fan-out that it costs.
+phase of a fan-out that it costs. Started one directory up, the echo has nothing to deliver on the
+prompt either, since a prompt names no file, so the first batch of parallel tool calls into a mapped
+checkout can each carry a copy of its overview: up to one per call, once per context window and per
+map. Inside the checkout the prompt delivers it first and the batch adds none.
 
 **The measured preventable share is 8% to 15% of human review comments.** That is from 4,616 review
 comments at one company and 3,015 from ten public repositories, hand-classified. Those are the
@@ -412,10 +429,12 @@ already enforces a rule, the map restating it is waste, not defence in depth.
 
 **JavaScript, TypeScript and Ruby, nothing else.** A Python, Go or Rust repository gets an overview
 with a layout section and no claims in it. One of the 58 needs the type checker and is the only
-thing `scan --deep` adds: `a call chain stays inside one type`. It is off by default because the
-checker was measured about 26x slower than the parse and whole-program, so it cannot be narrowed to
-the files you changed; `--deep` needs the optional `typescript` dependency and the scanned
-repository's own dependencies on disk, and says on the map when the checker answered badly.
+thing `scan --deep` adds: `a call chain stays inside one type`. It is off by default because a deep
+scan measured about 3x a plain one on a 3,800-file repository and the checker is whole-program, so
+it cannot be narrowed to the files you changed; `--deep` needs the optional `typescript` 5.x
+dependency and the scanned repository's own dependencies on disk inside the repository (a
+`node_modules` linked in from elsewhere is not read and counts as not installed), and says on the
+map when the checker answered badly.
 
 **Small directories are not covered.** A directory needs `clamp(round(sqrt(N) / 6), 3, 8)` source
 files to be an area. On the excalidraw run above, 15 of 693 files sat in no area, and 205 of 2,468
@@ -435,7 +454,7 @@ full numbers and their caveats are in [docs/why.md](docs/why.md).
 - [docs/plugin-contract.md](docs/plugin-contract.md) is what Claude Code requires of a plugin and a
   marketplace, read against the documentation and the CLI itself, with a source per claim and the
   version it was true of.
-- [DECISIONS.md](DECISIONS.md) is the build contract: 227 numbered decisions, each with the
+- [DECISIONS.md](DECISIONS.md) is the build contract: 255 numbered decisions, each with the
   measurement or the review finding that forced it. Why a threshold is where it is, why the parser
   runs in child processes, why no hook carries the map on its own: that is the file.
 - [docs/why.md](docs/why.md) is the longer argument and the full numbers.

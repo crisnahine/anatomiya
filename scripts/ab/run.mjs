@@ -6,19 +6,29 @@
  * differ in exactly one thing and anything that varies between them is a second
  * variable nobody controlled. The tool list is the same four the first run used:
  * an agent that can run bash can `cat` a rule file, and reading one that way is
- * how the map reaches an arm that was supposed to have none.
+ * how the map reaches an arm that was supposed to have none. `--tools` is what
+ * takes the others away; `--allowedTools` only approves, and left alone it let
+ * Bash run.
+ *
+ * Nothing comes from the operator's own `~/.claude`: their CLAUDE.md, plugins
+ * and MCP servers made two machines run two experiments. The project source
+ * stays, since the map is read through it, and the plugin under measurement is
+ * loaded from this repository in both arms.
  */
 import { execFile } from "node:child_process";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 
 import { ENGINE, engineEnv, engineFor } from "./engine.mjs";
+import { ANATOMIYA } from "../plugins.mjs";
 
 export const CLAUDE_DEFAULTS = {
   model: ENGINE.model,
   effort: ENGINE.effort,
   maxTurns: 12,
   tools: ["Read", "Write", "Glob", "Grep"],
+  settingSources: "project,local",
+  pluginDir: ANATOMIYA,
   timeoutMs: 10 * 60 * 1000,
   maxBytes: 4 * 1024 * 1024,
 };
@@ -42,7 +52,11 @@ export function runTrial(arm, prompt, options = {}) {
       "--model", engine.model,
       "--effort", engine.effort,
       "--max-turns", String(o.maxTurns),
+      "--tools", o.tools.join(","),
       "--allowedTools", o.tools.join(","),
+      "--strict-mcp-config",
+      "--setting-sources", o.settingSources,
+      "--plugin-dir", o.pluginDir,
       // Asked for so the answer says which engine actually served it. The flags
       // above are a request; `modelUsage` is what the run reports back.
       "--output-format", "json",
@@ -60,11 +74,12 @@ export function runTrial(arm, prompt, options = {}) {
         if (err && err.code === "ENOENT") {
           return resolve({ ok: false, wrote: [], stdout: "", ran: null, reason: "the claude CLI is not on PATH" });
         }
-        // A trial that hit the turn cap wrote nothing and is not a failure of
-        // the arm: it is dropped from both arms' denominators and counted.
+        // A trial that hit the turn cap exits 1 with its files already written,
+        // so they are kept and scored; `ok` only says it ended early.
         const wrote = added(arm, before);
         const said = answerIn(String(stdout ?? ""), engine.model);
-        resolve({ ok: !err, wrote, stdout: said.text, ran: said.ran, reason: err ? String(err.message) : null });
+        const reason = err ? String(err.message) : wrote.length ? null : `answered ${firstLine(said.text)}`;
+        resolve({ ok: !err, wrote, stdout: said.text, ran: said.ran, reason });
       }
     );
   });
@@ -94,6 +109,11 @@ function answerIn(stdout, askedModel) {
   const busiest = (a, b) => (b[1]?.outputTokens ?? 0) - (a[1]?.outputTokens ?? 0);
   const [model, usage] = used.find(([m]) => m === askedModel) ?? [...used].sort(busiest)[0];
   return { text, ran: { model, contextWindow: usage?.contextWindow ?? null } };
+}
+
+/** Encoded, so an answer cannot break the log line it is quoted on. */
+function firstLine(text) {
+  return JSON.stringify((text.trim().split("\n")[0] ?? "").trim().slice(0, 200));
 }
 
 function snapshot(dir) {

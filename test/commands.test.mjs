@@ -1,19 +1,20 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, realpathSync, rmSync, symlinkSync } from "node:fs";
+import { chmodSync, mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, realpathSync, renameSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { execFileSync } from "node:child_process";
 
-import { needsShebang } from "./platform.mjs";
+import { needsPosixPermissions, needsShebang, needsSymlinks } from "./platform.mjs";
 import { needsRuby } from "./ruby-available.mjs";
 import { compact, delivered, filler, transcript } from "./transcript.mjs";
 import { installWithoutDependencies } from "./plugin-install.mjs";
 import { addWorktree, scratch } from "./git-worktrees.mjs";
 import { runCheck, runDoctor, runEcho, runNotice, runPin, runReuse, runScan, runSetup } from "../plugins/anatomiya/lib/commands.mjs";
-import { pinLines, scanLines } from "../plugins/anatomiya/lib/summary.mjs";
+import { pinJson, pinLines, scanLines } from "../plugins/anatomiya/lib/summary.mjs";
 import { PIN_PATH } from "../plugins/anatomiya/lib/baseline.mjs";
+import { collect } from "../plugins/anatomiya/lib/corpus.mjs";
 import { PROBE_IDS, pluginRoot } from "../plugins/anatomiya/lib/readiness.mjs";
 import { OVERVIEW_FILE } from "../plugins/anatomiya/lib/rules.mjs";
 import { CAVEATS } from "../plugins/anatomiya/lib/check-report.mjs";
@@ -295,7 +296,36 @@ test("a deep scan with the checker installed is not refused", needsTs, async (t)
   assert.equal(summary.files, 8);
 });
 
-test("a scan with no interpreter is told to install Ruby, never to run npm", needsShebang, async (t) => {
+test("a deep scan measures resolution over area files, so a bundle in no area does not degrade it", needsTs, async (t) => {
+  // One untyped minified bundle outside every area pulled a repository whose
+  // own code resolved at 100% down to 3% and printed it as low-resolution,
+  // which points the reader at the tsconfig and the dependencies.
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-commands-bundle-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  mkdirSync(join(dir, "src"), { recursive: true });
+  mkdirSync(join(dir, "public", "assets"), { recursive: true });
+  writeFileSync(join(dir, "tsconfig.json"), `{"compilerOptions":{"strict":true,"allowJs":true},"include":["src","public"]}`);
+  for (let i = 0; i < 8; i++) {
+    writeFileSync(
+      join(dir, "src", `m${i}.ts`),
+      `export interface U${i} { a: { b: string } }\nexport const f${i} = (u: U${i}) => u.a.b.length;\n`
+    );
+  }
+  let bundle = "(function(){";
+  for (let i = 0; i < 200; i++) bundle += `function f${i}(a,b){return a.x.y+b.z;}`;
+  writeFileSync(join(dir, "public", "assets", "game.min.js"), `${bundle}})();`);
+  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
+  git("init", "-q");
+  git("add", "-A");
+  git("-c", "user.email=t@t.test", "-c", "user.name=T", "commit", "-qm", "init");
+
+  const { result } = await runScan(dir, { dryRun: true, deep: true });
+
+  assert.equal(result.semantic.status, "ok", JSON.stringify(result.semantic));
+  assert.equal(result.semantic.typedResolutionRate, 1);
+});
+
+test("a scan with no interpreter is told to install Ruby, never to run npm",needsShebang, async (t) => {
   // Measured on a Ruby repository with no `ruby` on PATH: the scan exited 1
   // with `spawn ruby ENOENT` and then "run `npm install --omit=dev` in the
   // plugin directory". npm cannot install an interpreter, and the one remedy
@@ -437,6 +467,62 @@ test("a pin refuses a tree that differs from the commit it would record", async 
   assert.ok(existsSync(join(dir, PIN_PATH)));
 });
 
+test("a pin leaves out this tool's own map committed through a linked rules directory", needsSymlinks, async (t) => {
+  // A map committed under `.claude/rules` is rewritten by every scan and the pin
+  // leaves it out. Through `.claude/rules -> ../agents/rules` git stores it
+  // under `agents/rules/`, which the `.claude` exclusion never reached.
+  const dir = repo(t);
+  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
+  mkdirSync(join(dir, "agents", "rules"), { recursive: true });
+  writeFileSync(join(dir, "agents", "rules", "README.md"), "# shared\n");
+  mkdirSync(join(dir, ".claude"), { recursive: true });
+  symlinkSync(join("..", "agents", "rules"), join(dir, ".claude", "rules"));
+  await runScan(dir);
+  git("add", "-A");
+  git("commit", "-qm", "commit the map through the link");
+  writeFileSync(join(dir, "agents", "rules", OVERVIEW_FILE), "rewritten by a scan\n");
+
+  await runPin(dir);
+  assert.ok(existsSync(join(dir, PIN_PATH)));
+
+  writeFileSync(join(dir, "agents", "rules", "README.md"), "# edited\n");
+  await assert.rejects(() => runPin(dir), /commit or stash/, "a file of the directory's own is still a difference");
+});
+
+test("a pin leaves out its map where the index spells the linked directory in another case than the disk", needsSymlinks, async (t) => {
+  const dir = repo(t);
+  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
+  mkdirSync(join(dir, "Agents", "Rules"), { recursive: true });
+  if (!existsSync(join(dir, "AGENTS"))) return t.skip("this filesystem is case-sensitive");
+  mkdirSync(join(dir, ".claude"), { recursive: true });
+  symlinkSync(join("..", "Agents", "Rules"), join(dir, ".claude", "rules"));
+  await runScan(dir);
+  git("add", "-A");
+  git("commit", "-qm", "commit the map through the link");
+  renameSync(join(dir, "Agents"), join(dir, "tmp"));
+  renameSync(join(dir, "tmp"), join(dir, "agents"));
+  writeFileSync(join(dir, "agents", "Rules", OVERVIEW_FILE), "rewritten by a scan\n");
+
+  await runPin(dir);
+  assert.ok(existsSync(join(dir, PIN_PATH)));
+});
+
+test("a pin leaves out its map where the index spells .claude in another case than the disk", async (t) => {
+  const dir = repo(t);
+  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
+  mkdirSync(join(dir, ".Claude"));
+  if (!existsSync(join(dir, ".CLAUDE"))) return t.skip("this filesystem is case-sensitive");
+  await runScan(dir);
+  git("add", "-f", join(".Claude", "rules"));
+  git("commit", "-qm", "commit the map");
+  renameSync(join(dir, ".Claude"), join(dir, "tmp"));
+  renameSync(join(dir, "tmp"), join(dir, ".claude"));
+  writeFileSync(join(dir, ".claude", "rules", OVERVIEW_FILE), "rewritten by a scan\n");
+
+  await runPin(dir);
+  assert.ok(existsSync(join(dir, PIN_PATH)));
+});
+
 test("a pin refuses while a merge has left a path unmerged, under .claude/ as well", async (t) => {
   // `ls-files` lists an unmerged path once per stage, so a pin taken mid-merge
   // recorded the file three times and a corpus two larger than the tree, and
@@ -459,7 +545,7 @@ test("a pin refuses while a merge has left a path unmerged, under .claude/ as we
   assert.throws(() => git("merge", "-q", "other"), "the merge conflicts");
 
   for (const dryRun of [true, false]) {
-    await assert.rejects(() => runPin(dir, { dryRun }), /unmerged paths, and a pin records HEAD/, `dryRun ${dryRun}`);
+    await assert.rejects(() => runPin(dir, { dryRun }), /^Error: a merge is in progress, and a pin records HEAD/, `dryRun ${dryRun}`);
   }
   assert.equal(existsSync(join(dir, PIN_PATH)), false);
 });
@@ -500,6 +586,233 @@ test("a pin over no tracked source refuses, and counts the source still untracke
     await assert.rejects(() => runPin(dir, { dryRun }), /nothing to pin: 4 source files in the working tree are untracked/, `dryRun ${dryRun}`);
   }
   assert.equal(existsSync(join(dir, PIN_PATH)), false);
+});
+
+test("a pin whose population makes no area refuses, and names the files left out", async (t) => {
+  // An area-less pin is the empty one by another route: every area a later
+  // commit makes postdates it, and states nothing until somebody pins again.
+  const dir = repo(t, 2);
+
+  for (const dryRun of [true, false]) {
+    await assert.rejects(
+      () => runPin(dir, { dryRun }),
+      /^Error: nothing to pin: the 2 source files tracked here sit in no area \("src\/f0\.ts", "src\/f1\.ts"\), and a pin with no area holds back every area made after it/,
+      `dryRun ${dryRun}`
+    );
+  }
+  assert.equal(existsSync(join(dir, PIN_PATH)), false);
+});
+
+test("a pin in a sparse checkout refuses, since HEAD holds files the tree does not", async (t) => {
+  // The paths outside the cone are skip-worktree, so `git status` is clean, and
+  // the pin labelled half of HEAD's population with HEAD's sha.
+  const dir = repo(t);
+  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
+  mkdirSync(join(dir, "lib"));
+  for (let i = 0; i < 4; i++) writeFileSync(join(dir, "lib", `l${i}.ts`), `export const l${i} = ${i}\n`);
+  git("add", "-A");
+  git("commit", "-qm", "lib");
+  git("sparse-checkout", "set", "lib");
+  assert.equal(existsSync(join(dir, "src")), false, "the fixture left src out of the tree");
+
+  for (const dryRun of [true, false]) {
+    await assert.rejects(() => runPin(dir, { dryRun }), /8 tracked files are outside this sparse checkout, and a pin records HEAD/, `dryRun ${dryRun}`);
+  }
+  assert.equal(existsSync(join(dir, PIN_PATH)), false);
+  git("sparse-checkout", "disable");
+  await runPin(dir);
+  assert.equal(JSON.parse(readFileSync(join(dir, PIN_PATH), "utf8")).corpus, 12);
+});
+
+test("a sparse checkout that leaves out only what is not corpus still pins", async (t) => {
+  // An unreadable file inside the cone (a case-fold twin on a folding
+  // filesystem) with a docs-only path outside it refused a pin whose population
+  // was the whole one.
+  const dir = repo(t);
+  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
+  mkdirSync(join(dir, "docs"));
+  writeFileSync(join(dir, "docs", "readme.md"), "# docs\n");
+  git("add", "-A");
+  git("commit", "-qm", "docs");
+  git("sparse-checkout", "set", "src");
+  assert.equal(existsSync(join(dir, "docs")), false, "the fixture left docs out of the tree");
+  const collectFiles = async (root) => {
+    const r = await collect(root);
+    return { ...r, dropped: { ...r.dropped, unreadable: r.dropped.unreadable + 1 } };
+  };
+
+  await runPin(dir, { collectFiles });
+  assert.equal(JSON.parse(readFileSync(join(dir, PIN_PATH), "utf8")).corpus, 8);
+});
+
+test("a sparse checkout that leaves out only generated source still pins", async (t) => {
+  // An absent file is unreadable before its generated attribute is asked, so it
+  // tripped the sparse refusal while a full checkout drops it from the population.
+  const dir = repo(t);
+  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
+  mkdirSync(join(dir, "gen"));
+  writeFileSync(join(dir, "gen", "api.ts"), "export const api = 1\n");
+  writeFileSync(join(dir, ".gitattributes"), "gen/** linguist-generated\n");
+  git("add", "-A");
+  git("commit", "-qm", "gen");
+  git("sparse-checkout", "set", "src");
+  assert.equal(existsSync(join(dir, "gen")), false, "the fixture left gen out of the tree");
+
+  await runPin(dir);
+  assert.equal(JSON.parse(readFileSync(join(dir, PIN_PATH), "utf8")).corpus, 8);
+});
+
+test("a root .gitattributes the index hides from the tree is read from the index", async (t) => {
+  // Sparse, skip-worktree and assume-unchanged all make git treat the tree's
+  // copy as no change, so the population is the one a full checkout counts.
+  const cases = [
+    { name: "left out by a non-cone sparse checkout", attrs: "gen/** linguist-generated\n", corpus: 8,
+      hide: (git) => git("sparse-checkout", "set", "--no-cone", "/src/", "/gen/") },
+    { name: "left out, holding no generated rule", attrs: "* text=auto eol=lf\n", corpus: 12,
+      hide: (git) => git("sparse-checkout", "set", "--no-cone", "/src/", "/gen/") },
+    { name: "skip-worktree and edited", attrs: "gen/** linguist-generated\n", corpus: 8,
+      hide: (git, dir) => { git("update-index", "--skip-worktree", ".gitattributes"); writeFileSync(join(dir, ".gitattributes"), "x\n"); } },
+    { name: "assume-unchanged and deleted", attrs: "gen/** linguist-generated\n", corpus: 8,
+      hide: (git, dir) => { git("update-index", "--assume-unchanged", ".gitattributes"); rmSync(join(dir, ".gitattributes")); } },
+    { name: "assume-unchanged and edited", attrs: "gen/** linguist-generated\n", corpus: 8,
+      hide: (git, dir) => { git("update-index", "--assume-unchanged", ".gitattributes"); writeFileSync(join(dir, ".gitattributes"), "x\n"); } },
+  ];
+  for (const c of cases) {
+    const dir = repo(t);
+    const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
+    mkdirSync(join(dir, "gen"));
+    for (let i = 0; i < 4; i++) writeFileSync(join(dir, "gen", `g${i}.ts`), `export const g${i} = ${i}\n`);
+    writeFileSync(join(dir, ".gitattributes"), c.attrs);
+    git("add", "-A");
+    git("commit", "-qm", "gen");
+    c.hide(git, dir);
+    assert.equal(git("status", "--porcelain").length, 0, `${c.name}: git calls the tree clean`);
+    assert.notEqual(existsSync(join(dir, ".gitattributes")) && readFileSync(join(dir, ".gitattributes"), "utf8"), c.attrs, `${c.name}: the tree's copy differs`);
+
+    assert.equal((await collect(dir)).files.length, c.corpus, `${c.name}: collect`);
+    await runPin(dir);
+    assert.equal(JSON.parse(readFileSync(join(dir, PIN_PATH), "utf8")).corpus, c.corpus, `${c.name}: pin`);
+  }
+});
+
+test("a pin mid-merge says to finish the merge, not to stash what git will not stash", async (t) => {
+  const dir = repo(t);
+  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
+  git("checkout", "-q", "-b", "other");
+  writeFileSync(join(dir, "src", "f0.ts"), "export const a0 = 2\n");
+  git("commit", "-qam", "other");
+  git("checkout", "-q", "-");
+  writeFileSync(join(dir, "src", "f0.ts"), "export const a0 = 3\n");
+  git("commit", "-qam", "here");
+  assert.throws(() => git("merge", "-q", "other"), "the merge conflicts");
+
+  for (const dryRun of [true, false]) {
+    await assert.rejects(() => runPin(dir, { dryRun }), /^Error: a merge is in progress, and a pin records HEAD: finish or abort the merge first, then pin$/, `dryRun ${dryRun}`);
+  }
+});
+
+test("a pin names the remedy for the operation that is in progress", async (t) => {
+  // A stash pop conflicts with no merge to abort, and a merge with no conflict
+  // is not one to stash, which drops the merge.
+  const dir = repo(t);
+  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
+  git("checkout", "-q", "-b", "other");
+  writeFileSync(join(dir, "src", "f0.ts"), "export const a0 = 2\n");
+  git("commit", "-qam", "other");
+  git("checkout", "-q", "-");
+  writeFileSync(join(dir, "src", "f0.ts"), "export const a0 = 3\n");
+  git("stash", "-q");
+  git("checkout", "-q", "other");
+  assert.throws(() => git("stash", "pop"), "the pop conflicts");
+  const leftBy = /^Error: the index holds unmerged paths, and a pin records HEAD: resolve them, or abort the operation that left them, then pin$/;
+  await assert.rejects(() => runPin(dir), leftBy, "stash pop");
+
+  git("checkout", "-q", "-f", "-");
+  git("stash", "drop", "-q");
+  writeFileSync(join(dir, "src", "g.ts"), "export const g = 1\n");
+  git("add", "-A");
+  git("commit", "-qm", "here");
+  git("merge", "-q", "--no-commit", "--no-ff", "other");
+  await assert.rejects(() => runPin(dir), /^Error: a merge is in progress, and a pin records HEAD: finish or abort the merge first, then pin$/);
+
+  git("merge", "--abort");
+  writeFileSync(join(dir, "src", "f0.ts"), "export const a0 = 3\n");
+  git("commit", "-qam", "once");
+  writeFileSync(join(dir, "src", "f0.ts"), "export const a0 = 4\n");
+  git("commit", "-qam", "again");
+  assert.throws(() => git("revert", "--no-edit", "HEAD~1"), "the revert conflicts");
+  await assert.rejects(() => runPin(dir), leftBy, "revert");
+});
+
+test("a pin names the repository root it pinned, in its lines and its record", async (t) => {
+  // A path argument does not scope the pin: `pin ./src` pins the whole
+  // repository, and an inherited GIT_DIR another one entirely.
+  const dir = realpathSync.native(repo(t));
+
+  for (const dryRun of [true, false]) {
+    const { summary } = await runPin(join(dir, "src"), { dryRun });
+    assert.equal(summary.root, dir);
+    assert.equal(pinLines(summary).at(-1 - (dryRun ? 0 : 2)), `${dryRun ? "would write" : "wrote"} ${PIN_PATH}, root ${dir}`);
+    assert.equal(JSON.parse(pinJson(summary)).root, dir);
+  }
+});
+
+test("a store that cannot be written is refused by name before a dry run says it would write", needsPosixPermissions, async (t) => {
+  // The first write is the temp file's `open`, and its raw EACCES named a
+  // random temp path after `--dry-run` had answered "would write".
+  const dir = repo(t);
+  await runScan(dir);
+  const store = join(dir, ".claude", "anatomiya");
+  const bare = repo(t);
+  chmodSync(store, 0o555);
+  chmodSync(bare, 0o555);
+  try {
+    for (const dryRun of [true, false]) {
+      await assert.rejects(
+        () => runPin(dir, { dryRun }),
+        { message: ".claude/anatomiya is not writable, so no pin is written there: fix its permissions and pin again" },
+        `pin, dryRun ${dryRun}`
+      );
+      await assert.rejects(
+        () => runScan(dir, { dryRun }),
+        { message: ".claude/anatomiya is not writable, so the map could not be written: fix its permissions and scan again" },
+        `scan, dryRun ${dryRun}`
+      );
+    }
+    // With no `.claude` yet, the directory it would be made in is the one asked.
+    await assert.rejects(() => runScan(bare, { dryRun: true }), /^Error: the repository root is not writable, so the map could not be written/);
+  } finally {
+    chmodSync(store, 0o755);
+    chmodSync(bare, 0o755);
+  }
+});
+
+test("a store that cannot be entered is refused by name before a dry run says it would write", needsPosixPermissions, async (t) => {
+  // Writable without search permission passes a write check, and the temp
+  // file's `open` inside it still fails.
+  const dir = repo(t);
+  await runScan(dir);
+  const claude = join(dir, ".claude");
+  const store = join(claude, "anatomiya");
+  for (const [at, name] of [[store, ".claude/anatomiya"], [claude, ".claude"]]) {
+    chmodSync(at, 0o666);
+    try {
+      for (const dryRun of [true, false]) {
+        await assert.rejects(
+          () => runPin(dir, { dryRun }),
+          { message: `${name} cannot be entered, so no pin is written there: fix its permissions and pin again` },
+          `pin ${name}, dryRun ${dryRun}`
+        );
+        await assert.rejects(
+          () => runScan(dir, { dryRun }),
+          { message: `${name} cannot be entered, so the map could not be written: fix its permissions and scan again` },
+          `scan ${name}, dryRun ${dryRun}`
+        );
+      }
+    } finally {
+      chmodSync(at, 0o755);
+    }
+  }
 });
 
 test("a scan over a pin that conflicted on a merge says the pin would not load", async (t) => {
@@ -807,7 +1120,7 @@ test("the notice answers for the repository the write is going into, not the one
 
   const said = runNotice(join(parent, "beta"), write).hookSpecificOutput.additionalContext;
 
-  assert.match(said, /src\/core: 6 files, 0 with a namesake test/);
+  assert.match(said, /src\/core: 0 of 6 \.js files have a namesake test/);
 });
 
 test("a notebook names its path under its own key, and is answered like any other", async (t) => {
@@ -891,7 +1204,7 @@ test("the notice reads a relative target the same way the map does", async (t) =
 
   const said = runNotice(join(parent, "beta"), write).hookSpecificOutput.additionalContext;
 
-  assert.match(said, /src\/core: 6 files, 0 with a namesake test/);
+  assert.match(said, /src\/core: 0 of 6 \.js files have a namesake test/);
 });
 
 test("a file the call names outside any map leaves the session's own map standing", async (t) => {
@@ -968,7 +1281,7 @@ test("the notice answers for a test going where its kind of file has none", need
 
   assert.equal(out.hookSpecificOutput.hookEventName, "PreToolUse");
   assert.match(out.hookSpecificOutput.additionalContext, /spec\/mailers holds no other test/);
-  assert.match(out.hookSpecificOutput.additionalContext, /app\/mailers: 4 files, 0 with a namesake test/);
+  assert.match(out.hookSpecificOutput.additionalContext, /app\/mailers: 0 of 4 \.rb files have a namesake test/);
   assert.equal(out.hookSpecificOutput.permissionDecision, undefined, "it informs and never refuses");
 });
 
@@ -1012,7 +1325,7 @@ test("a linked worktree with no map of its own is answered from its main checkou
 
   const said = runNotice(wt, write(wt, "spec/mailers/cim_share_mailer_spec.rb"));
   assert.match(said.hookSpecificOutput.additionalContext, /spec\/mailers holds no other test/);
-  assert.match(said.hookSpecificOutput.additionalContext, /app\/mailers: 4 files, 0 with a namesake test/);
+  assert.match(said.hookSpecificOutput.additionalContext, /app\/mailers: 0 of 4 \.rb files have a namesake test/);
   assert.ok(said.hookSpecificOutput.additionalContext.endsWith(`\n  Counted from this repository's main checkout at ${realpathSync.native(dir)}, not this worktree.`), "it names where the counts were taken");
 
   const echoed = runEcho(wt, read(join(wt, "app/mailers/admin_mailer.rb"))).hookSpecificOutput.additionalContext;
@@ -1047,10 +1360,10 @@ test("the end-of-turn check reads a worktree's own change against its main check
   const session = transcript(t, [{ type: "user", timestamp: new Date(Date.now() - 60 * 1000).toISOString(), message: { role: "user", content: "go" } }]);
   const stop = (cwd) => ({ hook_event_name: "Stop", cwd, transcript_path: session });
 
-  writeFileSync(join(dir, "app/services/g.rb"), "class G\nend\n");
+  writeFileSync(join(dir, "app/services/g.rb"), "class G\n  def g = 1\nend\n");
   assert.deepEqual(await runReuse(wt, stop(wt)), {}, "a change only the main checkout holds");
 
-  writeFileSync(join(wt, "app/services/h.rb"), "class H\nend\n");
+  writeFileSync(join(wt, "app/services/h.rb"), "class H\n  def h = 1\nend\n");
   const out = await runReuse(wt, stop(wt));
   assert.equal(out.decision, "block");
   assert.match(out.reason, /app\/services\/h\.rb/);

@@ -35,6 +35,9 @@ import { FRAMEWORK_NAMES } from "./frameworks.mjs";
 
 const isThrow = (n) => n.type === "ThrowStatement";
 const isCatch = (n) => n.type === "CatchClause";
+const CATCH = new Set(["CatchClause"]);
+const LOOPS = new Set(["ForStatement", "ForInStatement", "ForOfStatement", "WhileStatement", "DoWhileStatement"]);
+const NAMESPACE = new Set(["TSModuleDeclaration"]);
 
 function usesParam(body, names) {
   if (!names.length) return false;
@@ -142,6 +145,8 @@ export const DIMENSIONS = [
     claim: "catch blocks use the error they caught",
     counterClaim: null, // discarding the error is an absence, not a style anyone picked
     precision: "precise",
+    // A closure inside the catch can be what reads the error.
+    judgesBody: true,
     applicabilityPredicate: {
       sites: "a file holding at least one catch clause, whether or not it binds the error",
       blind: null,
@@ -167,7 +172,7 @@ export const DIMENSIONS = [
     counterClaim: null,
     precision: "partial",
     applicabilityPredicate: {
-      sites: "a file that throws outside a catch, or returns a result-shaped object",
+      sites: "a file that throws outside a catch, or returns a result: a Result.* call, an ok(), err(), Ok() or Err() call, or an object literal carrying an ok key, or one carrying an error or success key whose every key is error, success, data, value, result, valid or isValid. An object carrying any other key beside error is a view-model or state, not a result, and so is whatever getDerivedStateFromError returns",
       blind: "a throw inside a helper the caller wraps is invisible from the file that throws",
     },
     langs: ["js", "jsx"],
@@ -175,12 +180,14 @@ export const DIMENSIONS = [
       walk(program, (n, ctx) => {
         if (!isThrow(n)) return;
         // A rethrow inside a catch is deliberate, not a policy violation.
-        const inCatch = ctx.ancestors.some((s) => s.type === "CatchClause");
+        const inCatch = ctx.within(CATCH);
         if (inCatch) return;
         add({ node: n, conforming: false, where: declName(ctx.fn) });
       });
       walk(program, (n, ctx) => {
         if (n.type !== "ReturnStatement" || !n.argument) return;
+        // React merges what this returns into component state, `{ error }` included.
+        if (declName(ctx.fn) === "getDerivedStateFromError") return;
         if (!isResultShaped(value(n.argument))) return;
         add({ node: n, conforming: true, where: declName(ctx.fn) });
       });
@@ -208,13 +215,13 @@ export const DIMENSIONS = [
         // loop binding sits at module level by position and is not module
         // state, so it is excluded by its enclosing statement.
         if (ctx.enclosing !== null) return;
-        if (ctx.ancestors.some((s) => /^(For|While|DoWhile)/.test(s.type))) return;
+        if (ctx.within(LOOPS)) return;
         // `declare const x: number` binds nothing at run time, so it is not
         // state this claim is about either way, and a binding inside a
         // namespace or an ambient module is scoped to that block rather than to
         // the module.
         if (n.declare) return;
-        if (ctx.ancestors.some((a) => a.type === "TSModuleDeclaration")) return;
+        if (ctx.within(NAMESPACE)) return;
         // `using r = open()` and `await using` dispose r when the module's
         // evaluation ends. The binding is already immutable, and the `const`
         // the violation asked for keeps it while dropping the disposal.
@@ -249,6 +256,7 @@ export const DIMENSIONS = [
     // an absence as often as an architecture.
     counterClaim: null,
     precision: "partial",
+    judgesBody: true,
     applicabilityPredicate: {
       sites: "a file declaring at least one async function",
       blind: "a caller-level wrapper handling the failure is invisible from the function that fails",
@@ -321,15 +329,18 @@ function isResultShaped(node) {
     if (c && c.type === "MemberExpression" && c.object && c.object.name === "Result") return true;
     if (c && c.type === "Identifier" && /^(ok|err|Ok|Err)$/.test(c.name)) return true;
   }
+  // An `error` key alone is not a result: a view-model hook hands its field
+  // message out as `{ label, error, disabled }`. Without the `ok` discriminant,
+  // every key has to be one a result is made of.
   if (node.type === "ObjectExpression") {
-    return node.properties.some((p) => {
-      if (!p.key || p.computed) return false;
-      const k = p.key.name ?? p.key.value;
-      return k === "ok" || k === "error";
-    });
+    const keys = node.properties.map((p) => (p.key && !p.computed ? p.key.name ?? p.key.value : null));
+    if (keys.includes("ok")) return true;
+    return keys.some((k) => k === "error" || k === "success") && keys.every((k) => RESULT_KEYS.has(k));
   }
   return false;
 }
+
+const RESULT_KEYS = new Set(["error", "success", "data", "value", "result", "valid", "isValid"]);
 
 // Every tree row, whichever file defines it: this is the list the parse worker
 // runs, and `registry.mjs` composes it with the other two.
@@ -452,7 +463,7 @@ const TIERS = ["syntactic", "semantic"];
 /**
  * Two values, and a row carrying neither does not ship.
  *
- * A semantic row needs a checker, which is opt-in and 26x the cost. A row that
+ * A semantic row needs a checker, which is opt-in and about 3x a plain scan. A row that
  * forgets the field, or spells it `"Syntactic"`, would be offered to the parse
  * worker, run against a program with no checker in it, and answer nothing on
  * every file forever. Checked at load for the same reason precision is: the
@@ -618,6 +629,9 @@ export function assertDeclaredFields(rows) {
     }
     if (d.blindWhenStripped !== undefined && d.blindWhenStripped !== true) {
       throw new Error(`dimension ${d.key} declares blindWhenStripped as ${JSON.stringify(d.blindWhenStripped)}`);
+    }
+    if (d.judgesBody !== undefined && d.judgesBody !== true) {
+      throw new Error(`dimension ${d.key} declares judgesBody as ${JSON.stringify(d.judgesBody)}`);
     }
     if (d.needsTypeSyntax !== undefined && d.needsTypeSyntax !== true) {
       throw new Error(`dimension ${d.key} declares needsTypeSyntax as ${JSON.stringify(d.needsTypeSyntax)}`);

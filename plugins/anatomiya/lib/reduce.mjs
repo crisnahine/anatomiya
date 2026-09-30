@@ -223,7 +223,7 @@ export function reduceArea(area, parsed, { frameworks, tier = "syntactic", capab
         if (!dim.langs.includes(lang)) continue;
         const cls = dim.classify(file.rel);
         if (cls !== null) perFile.set(file.rel, [{ conforming: false, class: cls }]);
-        else if (dim.isSite(file.rel)) declined.add(file.rel);
+        else if (dim.isSite(file.rel, file.facets)) declined.add(file.rel);
         continue;
       }
       if (!file.hits) continue;
@@ -436,8 +436,16 @@ function groupSites(hits, learned) {
 }
 
 /**
+ * Constants a library defines as another's alias. Sidekiq's
+ * `worker_compatibility_alias.rb` reads `Worker = Job`, so a body including
+ * either has included the one module.
+ */
+const ALIASES = new Map([["Sidekiq::Worker", "Sidekiq::Job"]]);
+const aliasOf = (name) => ALIASES.get(name) ?? name;
+
+/**
  * Whether the constant a site names and the class the area learned are the same
- * class, read the way Ruby reads a relative reference.
+ * class, read the way Ruby reads a relative reference, or one a library aliases.
  *
  * A bare constant resolves against the nesting the class is *written* in, and
  * `nesting` is `Module.nesting` for the site: the scopes, innermost first. The difference is
@@ -463,7 +471,7 @@ function groupSites(hits, learned) {
  */
 export function sameConstant(written, learned, nesting) {
   if (typeof written !== "string" || typeof learned !== "string") return false;
-  if (written === learned) return true;
+  if (aliasOf(written) === aliasOf(learned)) return true;
   if (!Array.isArray(nesting) || nesting.length === 0) return false;
   const [bare, scoped] = written.includes("::") ? [learned, written] : [written, learned];
   // Both scoped, or both bare and unequal: nothing is left for a nesting to
@@ -498,7 +506,7 @@ function parentsIn(perFile) {
  * `isLearnedItself` gives, and a cycle, a NameError in Ruby, ends here and
  * conforms to nothing.
  */
-function reachesThrough(base, learned, parents) {
+export function reachesThrough(base, learned, parents) {
   if (!parents || typeof learned !== "string") return false;
   const seen = new Set();
   for (let at = base; typeof at === "string" && parents.has(at) && !seen.has(at); ) {
@@ -541,24 +549,32 @@ export const isLearnedItself = (hit, learned) =>
  */
 export function learnClass(perFile, { grouped = false } = {}) {
   const votes = new Map();
+  // Two aliases of one module are one vote, stated in whichever spelling the
+  // area writes most.
+  const spellings = new Map();
   for (const hits of perFile.values()) {
     const seen = grouped ? new Set() : null;
     let n = 0;
     for (const h of hits) {
       if (!h.class) continue;
+      const cls = aliasOf(h.class);
       if (seen) {
-        const key = `${groupKey(h, n++)} ${h.class}`;
+        const key = `${groupKey(h, n++)} ${cls}`;
         if (seen.has(key)) continue;
         seen.add(key);
       }
-      votes.set(h.class, (votes.get(h.class) || 0) + 1);
+      votes.set(cls, (votes.get(cls) || 0) + 1);
+      if (!spellings.has(cls)) spellings.set(cls, new Map());
+      spellings.get(cls).set(h.class, (spellings.get(cls).get(h.class) || 0) + 1);
     }
   }
-  const ranked = [...votes].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1));
+  const ranked = [...votes].sort(byVotes);
   if (!ranked.length) return null;
   if (ranked.length > 1 && ranked[0][1] === ranked[1][1]) return null;
-  return ranked[0][0];
+  return [...spellings.get(ranked[0][0])].sort(byVotes)[0][0];
 }
+
+const byVotes = (a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1);
 
 function byCountThenPath(a, b) {
   if (b.count !== a.count) return b.count - a.count;
@@ -573,14 +589,22 @@ function byCountThenPath(a, b) {
  * A share of the candidates cannot answer either question. At two files the
  * largest share is at least 0.5 by arithmetic, and at fifty files no share ever
  * fires however lopsided the distribution is.
+ *
+ * Files tying for the most sites leave the one worst for each side out:
+ * `conforming` is the most any of them holds and `leastConforming` the fewest.
+ * Taking whichever sorted first let a rename state a claim the counts withheld.
  */
 function spread(perFile, candidates) {
   let sumSq = 0;
-  let top = { candidates: 0, conforming: 0 };
+  let top = { candidates: 0, conforming: 0, leastConforming: 0 };
   for (const hits of perFile.values()) {
     sumSq += (hits.length / candidates) ** 2;
+    const conforming = hits.filter((h) => h.conforming).length;
     if (hits.length > top.candidates) {
-      top = { candidates: hits.length, conforming: hits.filter((h) => h.conforming).length };
+      top = { candidates: hits.length, conforming, leastConforming: conforming };
+    } else if (hits.length === top.candidates) {
+      top.conforming = Math.max(top.conforming, conforming);
+      top.leastConforming = Math.min(top.leastConforming, conforming);
     }
   }
   return { effectiveFiles: candidates && sumSq ? 1 / sumSq : 0, top };
@@ -707,10 +731,11 @@ export function applyGates(dim, {
   // The leave-one-out reuses the file with the most candidates rather than the
   // most counter sites. The counter only reaches this gate at 0.90, so no other
   // file's counter sites can exceed that file's by more than a tenth of the
-  // sample, which cannot move the ratio across 0.90 outside that band.
+  // sample, which cannot move the ratio across 0.90 outside that band. Among
+  // files tied for the most, it is the one holding the most counter sites.
   const counter = judge(
     candidates - conforming,
-    (top.candidates || 0) - (top.conforming || 0),
+    (top.candidates || 0) - (top.leastConforming ?? top.conforming ?? 0),
     restCandidates - restConforming,
     counterAuthors
   );
@@ -848,7 +873,7 @@ export function verdictFor(
   // not (D6). Today's includes whatever the agent under review just wrote, so a
   // caller choosing between them is a caller that can choose wrong.
   const shape = baselineDim && measured ? measured.pinned : current;
-  // A capped corpus answered for part of the repository, and a ratio over an
+  // A truncated corpus answered for part of the repository, and a ratio over an
   // arbitrary subset rendered as a convention is worse than counts (F7).
   // Decided here rather than at render time, so the facts store and the
   // rendered map agree on what was stated.
@@ -892,9 +917,9 @@ export function verdictFor(
     directive: blocked ? false : g.directive,
     gate: blocked || g.gate,
     counterGate: blocked || g.counterGate,
-    // The hands behind the side the line is about: the counter's where the
-    // counter is stated, the claim's everywhere else, because an unstated
-    // slot reports the claim's gate.
+    // The counter's where the counter is stated, the claim's everywhere else.
+    // An unstated slot can still print its counter side, and `statedSide`
+    // reads `counterAuthors` for it.
     authors: states === "counter" ? counterAuthors : authors,
     counterAuthors,
     baseline: baselineDim

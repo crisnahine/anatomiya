@@ -376,23 +376,14 @@ export async function parseRuby(
     version: null,
     error: null,
     missingParser: null,
+    // Our own clock stopped the child before its ready line, so the missing
+    // version says nothing about the install.
+    stalled: null,
   };
   if (files.length === 0) return out;
 
-  const queued = [];
-  for (const f of files) {
-    // F5 keeps a leading dash out of argv. Paths never reach argv here, but a
-    // path that would need that rule is malformed for our purposes either way.
-    if (f.rel.startsWith("-") || f.abs.startsWith("-")) {
-      deliver(out, { rel: f.rel, ok: false, error: "suspicious path", skipped: true }, 1);
-      continue;
-    }
-    queued.push(f);
-  }
-  if (queued.length === 0) return out;
-
   const seen = new Set();
-  const unanswered = () => queued.filter((f) => !seen.has(f.rel));
+  const unanswered = () => files.filter((f) => !seen.has(f.rel));
   const load = await prismLoadArgs({ ruby });
 
   // Resolves true when one of our own timers did the killing, which is the only
@@ -496,15 +487,17 @@ export async function parseRuby(
   // is a broken install or a fatal from the script, and answers the same twice.
   let attempts = 1;
   let killed = null;
-  if ((await run(queued, 1)) && unanswered().length) {
+  let timed = await run(files, 1);
+  if (timed && unanswered().length) {
     attempts = 2;
     // The retry reports its own ending, so it starts clean. The kill is kept
     // because a second child that answers nothing and exits 0 says nothing at
     // all, and what happened to these files is still the first child's timer.
     killed = out.error;
     out.error = null;
-    await run(unanswered(), 2);
+    timed = await run(unanswered(), 2);
   }
+  if (timed && out.version === null && unanswered().length) out.stalled = out.error ?? killed;
 
   // Every file answered, so whatever ended a child on the way out is not a
   // failure of the run: reporting one made a loaded machine turn a clean parse

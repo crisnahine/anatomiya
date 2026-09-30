@@ -16,6 +16,7 @@ import { formatReport, formatReportJson, CAVEATS } from "../plugins/anatomiya/li
 import { scan } from "../plugins/anatomiya/lib/scan.mjs";
 import { writeMap } from "../plugins/anatomiya/lib/write.mjs";
 import { writeFacts } from "../plugins/anatomiya/lib/facts.mjs";
+import { renderArea } from "../plugins/anatomiya/lib/render.mjs";
 import { buildPin, writePin } from "../plugins/anatomiya/lib/baseline.mjs";
 import { collect } from "../plugins/anatomiya/lib/corpus.mjs";
 import { discover } from "../plugins/anatomiya/lib/areas.mjs";
@@ -186,7 +187,7 @@ test("a test added where its own siblings have none is a finding, and one added 
   assert.equal(found.length, 1, JSON.stringify(found));
   assert.equal(found[0].path, "spec/mailers/cim_share_mailer_spec.rb");
   assert.equal(found[0].severity, "FIX");
-  assert.match(found[0].reason, /app\/mailers: 4 files, 0 with a namesake test/);
+  assert.match(found[0].reason, /app\/mailers: 0 of 4 \.rb files have a namesake test/);
 });
 
 test("a test still sitting in the working tree is asked the same question as a committed one", needsRuby, async (t) => {
@@ -1385,7 +1386,7 @@ test("MUST-FIX needs a baseline whose evidence would have cleared the gate that 
   // The check may only enforce at top severity what the scan was willing to
   // state, so both read the same bound. A floor left behind here would enforce
   // as law a claim the scan considered too thin to make.
-  const at = (o) => severityFor({ path: "src/a.ts" }, { dim: dim(o), fresh: true }).severity;
+  const at = (o) => severityFor({ path: "src/a.ts" }, { dim: dim(o) }).severity;
 
   assert.equal(at({}), "MUST-FIX");
   assert.equal(at({ baseline: { candidates: 20, conforming: 20 } }), "FIX", "twenty perfect sites hold 0.84");
@@ -1398,25 +1399,36 @@ test("severity never reads the current population", () => {
   // The agent's own output accumulates in the current counts. Judging against
   // them lets a branch raise the bar it is measured by.
   const d = dim({ candidates: 400, conforming: 400, baseline: { candidates: 6, conforming: 5 } });
-  assert.equal(severityFor({ path: "src/a.ts" }, { dim: d, fresh: true }).severity, "FIX");
+  assert.equal(severityFor({ path: "src/a.ts" }, { dim: d }).severity, "FIX");
 });
 
 test("an exception recorded on the baseline population still exempts", () => {
   // Which of the two lists carries the exception is a detail of when the scan
   // saw it. Either one means the map told the agent this file was exempt.
   const d = dim({ exceptions: [], baseline: { candidates: 60, conforming: 60, exceptions: [{ path: "src/a.ts" }] } });
-  assert.equal(severityFor({ path: "src/a.ts" }, { dim: d, fresh: true }).severity, "FIX");
-  assert.equal(severityFor({ path: "src/b.ts" }, { dim: d, fresh: true }).severity, "MUST-FIX");
+  assert.equal(severityFor({ path: "src/a.ts" }, { dim: d }).severity, "FIX");
+  assert.equal(severityFor({ path: "src/b.ts" }, { dim: d }).severity, "MUST-FIX");
 });
 
 test("nothing in the table says BLOCK", () => {
   const seen = new Set();
-  for (const fresh of [true, false]) {
+  for (const capped of [null, "no merge base"]) {
     for (const d of [null, dim(), dim({ directive: false }), dim({ precision: "partial" })]) {
-      seen.add(severityFor({ path: "src/a.ts" }, { dim: d, fresh }).severity);
+      seen.add(severityFor({ path: "src/a.ts" }, { dim: d, capped }).severity);
     }
   }
   assert.deepEqual([...seen].sort(), ["FIX", "MUST-FIX", "NIT"]);
+});
+
+test("a finding capped by the run names the cap that applied", () => {
+  // One fixed sentence covered every cause, so a run with no pin told the
+  // agent the map was stale or had no merge base, and neither was true.
+  const d = dim();
+  for (const why of ["no baseline pinned", "no merge base", "the pinned baseline commit is unreachable"]) {
+    const v = severityFor({ path: "src/a.ts" }, { dim: d, capped: why });
+    assert.equal(v.severity, "FIX");
+    assert.equal(v.reason, `capped by this run: ${why}`);
+  }
 });
 
 // --- polarity: the area is checked against the sentence it was handed ---
@@ -1488,7 +1500,7 @@ test("the severity table reads the stated side's baseline counts and its own exc
   // turns 0 of 60 into the weakest possible evidence for a sentence the map
   // never stated, and exempts exactly the files that never broke the one it did.
   const at = (o, file = { path: "src/a.ts" }) =>
-    severityFor(file, { dim: counterDim(o), fresh: true }).severity;
+    severityFor(file, { dim: counterDim(o) }).severity;
 
   assert.equal(at({}), "MUST-FIX", "60 of 60 counter sites is a clean baseline");
   assert.equal(at({ baseline: { candidates: 60, conforming: 1 } }), "FIX", "one site breaks the inverse");
@@ -2136,6 +2148,93 @@ test("a branch that deletes a companion and leaves its producer alone breaks the
   );
 });
 
+test("the files a branch deleted travel on the report", async (t) => {
+  const dir = pairedModels(t, ({ git, commit }) => {
+    git("rm", "-q", "spec/models/thing_spec.rb");
+    commit("drop the spec");
+  });
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.deepEqual(r.changed, []);
+  assert.deepEqual(r.removed, ["spec/models/thing_spec.rb"]);
+});
+
+test("a file deleted only in the tree travels on the report the way a committed one does", async (t) => {
+  // The obligation already read the tree's deletion, so a header saying no
+  // file changed sat above a finding about the file this branch removed.
+  const dir = pairedModels(t, ({ root, git }) => {
+    rmSync(join(root, "spec/models/thing_spec.rb"));
+    // A move keeps its file whatever the new name, source or not.
+    git("mv", "spec/models/other_spec.rb", "spec/models/other_spec.rb.bak");
+    // Moved and then deleted: one file left, under its old name.
+    git("mv", "app/models/other.rb", "app/models/gone.rb");
+    rmSync(join(root, "app/models/gone.rb"));
+    // Added to the index and deleted: never committed anywhere.
+    writeFileSync(join(root, "spec/models/zz_spec.rb"), "x\n");
+    git("add", "spec/models/zz_spec.rb");
+    rmSync(join(root, "spec/models/zz_spec.rb"));
+    // The same with intent to add, which git reports as ` D`, and a path no
+    // source filter would keep.
+    writeFileSync(join(root, "spec/models/yy_spec.rb"), "x\n");
+    writeFileSync(join(root, "NOTES.md"), "x\n");
+    git("add", "-N", "spec/models/yy_spec.rb", "NOTES.md");
+    rmSync(join(root, "spec/models/yy_spec.rb"));
+    rmSync(join(root, "NOTES.md"));
+  });
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.deepEqual([...r.removed].sort(), ["app/models/other.rb", "spec/models/thing_spec.rb"]);
+});
+
+test("a tree deletion is counted once, and for any path a committed one would be", async (t) => {
+  const dir = repo(t, ({ dir: root, git, write, commit }) => {
+    write("README.md", "hi\n");
+    write("app/models/thing.rb", "class Thing\nend\n");
+    write("spec/models/thing_spec.rb", "describe Thing do\nend\n");
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("spec/models/thing_spec.rb", "describe Thing do\n  it {}\nend\n");
+    commit("edit the spec");
+    rmSync(join(root, "spec/models/thing_spec.rb"));
+    rmSync(join(root, "README.md"));
+  });
+  facts(dir, { sha: sha(dir, "main") });
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.deepEqual(r.changed.map((c) => c.path), ["spec/models/thing_spec.rb"]);
+  assert.deepEqual(r.removed, ["README.md"]);
+});
+
+test("a companion no commit held, added to the index and deleted, breaks nothing", async (t) => {
+  // The branch never touched the model, and committing the same steps leaves
+  // no trace, so a finding here would charge it for a file it never had.
+  const dir = repo(t, ({ dir: root, git, write, commit }) => {
+    write("app/models/thing.rb", "class Thing\nend\n");
+    write("spec/models/thing_spec.rb", "describe Thing do\nend\n");
+    for (const n of ["lone", "bare"]) write(`app/models/${n}.rb`, `class ${n}\nend\n`);
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    for (const [n, flags] of [["lone", []], ["bare", ["-N"]]]) {
+      write(`spec/models/${n}_spec.rb`, `describe ${n} do\nend\n`);
+      git("add", ...flags, `spec/models/${n}_spec.rb`);
+      rmSync(join(root, `spec/models/${n}_spec.rb`));
+    }
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    path: "app/models",
+    dimensions: [dim({ key: "model_spec", directive: true })],
+  });
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.deepEqual(forKey(r, "model_spec").map((f) => f.path), []);
+  assert.deepEqual(r.removed, []);
+});
+
 test("a companion deleted in the tree breaks the obligation before it is committed", async (t) => {
   const dir = pairedModels(t, ({ root }) => rmSync(join(root, "spec/models/thing_spec.rb")));
 
@@ -2573,6 +2672,58 @@ test("a learned mixin is enforced the way a learned base class is", needsRuby, a
   assert.equal(found[0].claim, "classes here include Auditable");
 });
 
+// Sidekiq defines `Worker = Job`, so a body including either spelling already
+// includes the module the claim names, in both directions.
+test("either spelling of Sidekiq's job mixin satisfies a claim learned on the other", needsRuby, async (t) => {
+  for (const [learned, written] of [["Sidekiq::Worker", "Sidekiq::Job"], ["Sidekiq::Job", "Sidekiq::Worker"]]) {
+    const dir = repo(t, ({ git, write, commit }) => {
+      write("app/workers/a_worker.rb", `class AWorker\n  include ${learned}\nend\n`);
+      commit("init");
+      git("checkout", "-q", "-b", "work");
+      write("app/workers/b_worker.rb", `class BWorker\n  include ${written}\nend\n`);
+      write("app/workers/c_worker.rb", "class CWorker\n  include Comparable\nend\n");
+      commit("add");
+    });
+    facts(dir, {
+      sha: sha(dir, "main"),
+      areas: [{
+        id: "aaaaaaaa",
+        path: "app/workers",
+        globs: [{ negated: false, dir: "app/workers", tail: "**/*.rb" }],
+        fileCount: 8,
+        dimensions: [dim({ key: "module_include", learned })],
+      }],
+    });
+    const report = await check(dir);
+    assert.deepEqual(forKey(report, "module_include").map((f) => f.path), ["app/workers/c_worker.rb"], learned);
+  }
+});
+
+// The fold resolves a bare mixin against the body's nesting (C30), so the check
+// has to, or a site the map counted as conforming is a finding here.
+test("a mixin written relative to its namespace satisfies the scoped name the map learned", needsRuby, async (t) => {
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("app/models/user.rb", "module Api\n  class User\n    include Api::Auditable\n  end\nend\n");
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("app/models/order.rb", "module Api\n  class Order\n    include Auditable\n  end\nend\n");
+    commit("add");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    areas: [{
+      id: "aaaaaaaa",
+      path: "app/models",
+      globs: [{ negated: false, dir: "app/models", tail: "**/*.rb" }],
+      fileCount: 8,
+      dimensions: [dim({ key: "module_include", learned: "Api::Auditable" })],
+    }],
+  });
+  const report = await check(dir);
+  assertExamined(report, "app/models/order.rb");
+  assert.deepEqual(forKey(report, "module_include"), [], JSON.stringify(report.findings));
+});
+
 test("a mixin finding fires once per class body, not once per included constant", needsRuby, async (t) => {
   const dir = repo(t, ({ git, write, commit }) => {
     write("app/workers/a_worker.rb", "class AWorker\n  include Sidekiq::Worker\nend\n");
@@ -2776,7 +2927,7 @@ test("a learned type prefix is enforced on a new interface", async (t) => {
   const found = forKey(report, "interface_prefix");
   assert.equal(found.length, 1, JSON.stringify(report.findings));
   assert.equal(found[0].where, "Comment");
-  assert.equal(found[0].claim, "interfaces are named with a I prefix");
+  assert.equal(found[0].claim, "interfaces are named with an I prefix");
 });
 
 test("a learned absence of a prefix is enforced against a prefixed interface", async (t) => {
@@ -2958,6 +3109,24 @@ test("a map from a build this one cannot read is one code, whatever the sentence
   const r = await check(dir, { baseRef: "main" });
 
   assert.deepEqual(codesOf(r), [CAVEATS.MAP_UNREADABLE]);
+});
+
+test("a map on disk that does not parse is reported as unreadable, not as no map", async (t) => {
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/a.ts", clean(2));
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/a.ts", clean(2) + swallow(1));
+    commit("swallow");
+  });
+  facts(dir, { sha: sha(dir, "main") });
+  writeFileSync(join(dir, ".claude", "anatomiya", "facts.json"), "{bad");
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.deepEqual(codesOf(r), [CAVEATS.MAP_UNREADABLE]);
+  assert.match(notes(r)[0], /does not parse as JSON/);
+  assert.equal(r.staleReason, "the map on disk could not be read");
 });
 
 test("a repository holding none of the base refs says so, by code", async (t) => {
@@ -3264,7 +3433,7 @@ test("a claim stated on borrowed confidence is capped, and the reason says whose
   // reason read "9 of 9 baseline sites is thin" under a map that had just
   // stated it, which is a contradiction rather than an explanation.
   const d = dim({ borrowed: true, baseline: { candidates: 9, conforming: 9, exceptions: [] } });
-  const v = severityFor({ path: "src/a.ts" }, { dim: d, fresh: true });
+  const v = severityFor({ path: "src/a.ts" }, { dim: d });
 
   assert.equal(v.severity, "FIX");
   assert.match(v.reason, /rest of the repository/, v.reason);
@@ -3274,7 +3443,7 @@ test("a claim stated on borrowed confidence is capped, and the reason says whose
 test("a thin baseline nobody lent anything to still reads as thin", () => {
   const d = dim({ baseline: { candidates: 9, conforming: 9, exceptions: [] } });
 
-  assert.match(severityFor({ path: "src/a.ts" }, { dim: d, fresh: true }).reason, /9 of 9 baseline sites is thin/);
+  assert.match(severityFor({ path: "src/a.ts" }, { dim: d }).reason, /9 of 9 baseline sites is thin/);
 });
 
 test("an @ base is refused before anything is fetched, so a remote branch named HEAD cannot become one", async (t) => {
@@ -3436,10 +3605,19 @@ test("an inherited slot is judged on the side the ancestor was handed", async (t
 test("a claim the area file had no room to print is capped, and the reason says why", () => {
   const d = dim({ baseline: { candidates: 60, conforming: 60, exceptions: [] } });
 
-  assert.equal(severityFor({ path: "src/a.ts" }, { dim: d, fresh: true }).severity, "MUST-FIX");
-  const capped = severityFor({ path: "src/a.ts" }, { dim: d, fresh: true, dropped: true });
+  assert.equal(severityFor({ path: "src/a.ts" }, { dim: d }).severity, "MUST-FIX");
+  const capped = severityFor({ path: "src/a.ts" }, { dim: d, dropped: true });
   assert.equal(capped.severity, "FIX");
   assert.match(capped.reason, /no room/, capped.reason);
+});
+
+test("a dropped claim the area file still names is capped under its own reason", () => {
+  const d = dim({ baseline: { candidates: 60, conforming: 60, exceptions: [] } });
+
+  const named = severityFor({ path: "src/a.ts" }, { dim: d, dropped: "named" });
+  assert.equal(named.severity, "FIX");
+  assert.equal(named.reason, "the area file names this claim without its counts");
+  assert.match(severityFor({ path: "src/a.ts" }, { dim: d, dropped: "unnamed" }).reason, /no room/);
 });
 
 test("a directive the file dropped is enforced, but never at the top severity", async (t) => {
@@ -3471,7 +3649,41 @@ test("a directive the file dropped is enforced, but never at the top severity", 
 
   assert.equal(hits.length, 1, JSON.stringify(hits));
   assert.equal(hits[0].severity, "FIX");
-  assert.match(hits[0].reason, /no room/, hits[0].reason);
+  assert.match(hits[0].reason, /^the area file (names this claim without its counts|had no room to state this claim)$/, hits[0].reason);
+});
+
+test("a dropped directive says whether the area file still names it", async (t) => {
+  // The notice names the first stated slots it cannot print, and the check told
+  // the agent the file never stated a sentence it prints word for word. The
+  // record stores no claim-side prose, so the file is rendered here from the
+  // slots the scan held, sentences and all.
+  const claim = "catch blocks use the error they caught";
+  for (const [fillers, reason] of [
+    [10, "the area file names this claim without its counts"],
+    [30, "the area file had no room to state this claim"],
+  ]) {
+    const dimensions = [
+      ...Array.from({ length: fillers }, (_, i) => dim({ key: `filler_${i}`, precision: "partial", claim: `filler claim ${i}` })),
+      dim({ claim }),
+    ];
+    const dir = repo(t, ({ git, write, commit }) => {
+      write("src/a.ts", clean(2));
+      commit("init");
+      git("checkout", "-q", "-b", "work");
+      write("src/a.ts", clean(2) + swallow(1));
+      commit("swallow");
+    });
+    facts(dir, { sha: sha(dir, "main"), dimensions });
+    const file = renderArea({ id: "aaaaaaaa", path: "src", globs: [glob("src")], fileCount: 8, dimensions }).split("\n");
+    assert.ok(file.some((l) => /^and \d+ more not shown here/.test(l)), `${fillers}: the block was dropped`);
+    assert.equal(file.includes(`  ${claim}`), fillers === 10, file.join("\n"));
+
+    const hits = forKey(await check(dir, { baseRef: "main" }), "swallowed_error");
+
+    assert.equal(hits.length, 1, JSON.stringify(hits));
+    assert.equal(hits[0].severity, "FIX");
+    assert.equal(hits[0].reason, reason, `${fillers} fillers`);
+  }
 });
 
 test("an error class is not held to the base the area learned", needsRuby, async (t) => {
@@ -3553,6 +3765,73 @@ test("a new subclass of a class the map records as reaching the learned base is 
 
   const found = forKey(report, "class_base");
   assert.deepEqual(found.map((f) => f.path), ["app/models/ledger.rb"], JSON.stringify(found));
+});
+
+test("a subclass of a base the branch adds in the same area conforms when that base reaches the learned one", needsRuby, async (t) => {
+  // The fold follows the chain through every class the area declares, and a
+  // base the branch adds is one of them; read off the pinned map alone, each
+  // subclass was told to skip the base the branch added on purpose.
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("app/models/user.rb", "class User < ApplicationRecord\nend\n");
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("app/models/blocks_base.rb", "class Slack::BlocksBase < ApplicationRecord\nend\n");
+    write("app/models/block_a.rb", "class Slack::BlockA < Slack::BlocksBase\nend\n");
+    write("app/models/deep.rb", "class Deep < Mid\nend\nclass Mid < Slack::BlocksBase\nend\n");
+    // A base outside the area is not one the fold follows.
+    write("lib/outside_base.rb", "class OutsideBase < ApplicationRecord\nend\n");
+    write("app/models/outside.rb", "class Outside < OutsideBase\nend\n");
+    commit("add");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    areas: [{
+      id: "aaaaaaaa",
+      path: "app/models",
+      globs: [{ negated: false, dir: "app/models", tail: "**/*.rb" }],
+      fileCount: 8,
+      dimensions: [dim({ key: "class_base", learned: "ApplicationRecord", reaches: ["User"] })],
+    }, {
+      id: "bbbbbbbb",
+      path: "lib",
+      globs: [{ negated: false, dir: "lib", tail: "**/*.rb" }],
+      fileCount: 8,
+      dimensions: [dim({ key: "class_base", learned: "ApplicationRecord" })],
+    }],
+  });
+
+  const report = await check(dir);
+
+  const found = forKey(report, "class_base");
+  assert.deepEqual(found.map((f) => f.path), ["app/models/outside.rb"], JSON.stringify(found));
+});
+
+test("a class the branch moves off the learned base no longer carries its subclasses", needsRuby, async (t) => {
+  // The pinned map says User reaches the base, and the branch says it does not
+  // any more; the branch's tree is the one being judged.
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("app/models/user.rb", "class User < ApplicationRecord\nend\n");
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("app/models/user.rb", "class User < Struct\nend\n");
+    write("app/models/guest.rb", "class Guest < User\nend\n");
+    commit("move");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    areas: [{
+      id: "aaaaaaaa",
+      path: "app/models",
+      globs: [{ negated: false, dir: "app/models", tail: "**/*.rb" }],
+      fileCount: 8,
+      dimensions: [dim({ key: "class_base", learned: "ApplicationRecord", reaches: ["User"] })],
+    }],
+  });
+
+  const report = await check(dir);
+
+  const found = forKey(report, "class_base");
+  assert.deepEqual(found.map((f) => f.path).sort(), ["app/models/guest.rb", "app/models/user.rb"], JSON.stringify(found));
 });
 
 /* --- an omission is only a finding where the map stated the claim (#54) --- */
@@ -3687,6 +3966,34 @@ test("a branch that edits an abstract base is not asked for a spec for it", need
   const r = await check(dir);
 
   assert.deepEqual(forKey(r, "controller_spec"), [], JSON.stringify(r.findings));
+});
+
+test("a branch that ships its model with a spec commented out top to bottom still owes one", needsRuby, async (t) => {
+  // The map counts that model unpaired, so a check that took the file name for
+  // a spec would pass the branch on a file the runner collects nothing from.
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("app/models/user.rb", "class User\nend\n");
+    write("spec/models/user_spec.rb", "describe User do\n  it { }\nend\n");
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("app/models/post.rb", "class Post\nend\n");
+    write("spec/models/post_spec.rb", "# describe Post do\n#   it { }\n# end\n");
+    commit("add");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    areas: [{
+      id: "aaaaaaaa",
+      path: "app/models",
+      globs: [{ negated: false, dir: "app/models", tail: "**/*.rb" }],
+      fileCount: 8,
+      dimensions: [dim({ key: "model_spec" })],
+    }],
+  });
+
+  const r = await check(dir);
+
+  assert.deepEqual(forKey(r, "model_spec").map((f) => f.path), ["app/models/post.rb"], JSON.stringify(r.findings));
 });
 
 test("a plain JavaScript file on a branch is not asked for a return type", async (t) => {
@@ -3952,6 +4259,31 @@ test("a helper in a directory of components is not judged by the components' nam
   assert.deepEqual(
     forKey(r, "file_naming_case").map((f) => f.path),
     ["src/orderList.tsx"],
+    JSON.stringify(forKey(r, "file_naming_case"))
+  );
+});
+
+test("an acronym component name is not judged by a PascalCase claim over files that hold JSX", async (t) => {
+  // React reads `SBA` as a component exactly as it reads `Sba`, and the one
+  // name that cleared the claim no longer matched the component inside it.
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/UserCard.jsx", `export const UserCard = () => <div />\n`);
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("src/SBA.jsx", `const SBA = () => <div>SBA</div>\nexport default SBA\n`);
+    write("src/DEBUG_PANEL.jsx", `const Panel = () => <div />\nexport default Panel\n`);
+    commit("add");
+  });
+  facts(dir, {
+    sha: sha(dir, "main"),
+    dimensions: [dim({ key: "file_naming_case", learned: "PascalCase", learnedKind: "jsx" })],
+  });
+
+  const r = await check(dir);
+
+  assert.deepEqual(
+    forKey(r, "file_naming_case").map((f) => f.path),
+    ["src/DEBUG_PANEL.jsx"],
     JSON.stringify(forKey(r, "file_naming_case"))
   );
 });
@@ -4595,6 +4927,108 @@ test("a base spelled any way that names this branch's own tip is refused, not an
   for (const ref of ["same", sha(dir)]) {
     assert.equal((await check(dir, { baseRef: ref })).mode, "compare", ref);
   }
+});
+
+test("a branch whose name spells like a commit id is still refused as its own base", async (t) => {
+  // The id exemption was read off the spelling, so a branch named by a ticket
+  // number or a hex word compared itself with itself and printed 0 changed
+  // files at exit 0.
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/a.ts", clean(2));
+    commit("init");
+    git("checkout", "-q", "-b", "feat");
+    write("src/a.ts", clean(2) + swallow(1));
+    commit("swallow");
+  });
+  facts(dir, { sha: sha(dir, "main") });
+
+  for (const name of ["7812", "facade", "cafe0"]) {
+    execFileSync("git", ["checkout", "-q", "-b", name, "feat"], { cwd: dir, stdio: "pipe" });
+    await assert.rejects(() => check(dir, { baseRef: name }), /--base \w+ names this branch's own tip/, name);
+  }
+  // The tip's own id, full or abbreviated, stays a base.
+  for (const ref of [sha(dir), sha(dir).slice(0, 7)]) {
+    assert.equal((await check(dir, { baseRef: ref })).mode, "compare", ref);
+  }
+});
+
+test("the branch's own name in another case is refused where the filesystem folds case", async (t) => {
+  // The loose ref file opens under any case, so `FEAT` resolved to this tip as
+  // `refs/heads/FEAT`, a name that is not HEAD's, and read as another branch.
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/a.ts", clean(2));
+    commit("init");
+    git("checkout", "-q", "-b", "feat");
+    write("src/a.ts", clean(2) + swallow(1));
+    commit("swallow");
+  });
+  facts(dir, { sha: sha(dir, "main") });
+  try {
+    execFileSync("git", ["rev-parse", "--verify", "--quiet", "FEAT"], { cwd: dir, stdio: "pipe" });
+  } catch {
+    return t.skip("this filesystem tells FEAT from feat");
+  }
+
+  await assert.rejects(() => check(dir, { baseRef: "FEAT" }), /--base FEAT names this branch's own tip/);
+  // A second branch at the same tip whose name only case tells apart is a
+  // real ref, and stays a base.
+  execFileSync("git", ["pack-refs", "--all"], { cwd: dir, stdio: "pipe" });
+  execFileSync("git", ["update-ref", "refs/heads/Feat", "HEAD"], { cwd: dir, stdio: "pipe" });
+  assert.equal((await check(dir, { baseRef: "refs/heads/Feat" })).mode, "compare");
+});
+
+test("the branch's own name in another Unicode form is refused where the filesystem folds it", async (t) => {
+  const nfc = "caf\u00e9";
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/a.ts", clean(2));
+    commit("init");
+    git("checkout", "-q", "-b", nfc);
+    write("src/a.ts", clean(2) + swallow(1));
+    commit("swallow");
+  });
+  facts(dir, { sha: sha(dir, "main") });
+  const nfd = nfc.normalize("NFD");
+  try {
+    execFileSync("git", ["rev-parse", "--verify", "--quiet", nfd.toUpperCase()], { cwd: dir, stdio: "pipe" });
+  } catch {
+    return t.skip("this filesystem tells the two spellings apart");
+  }
+
+  for (const name of [nfd, nfd.toUpperCase()]) {
+    await assert.rejects(() => check(dir, { baseRef: name }), /names this branch's own tip/);
+  }
+});
+
+test("a base name a tag and a branch both hold is refused, naming both", async (t) => {
+  // git picks the tag and warns, and the warning never reached the report: one
+  // pick compared against the wrong commit in silence, the other blamed the
+  // branch's own tip for a tag git chose.
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/a.ts", clean(2));
+    commit("init");
+    git("checkout", "-q", "-b", "feat");
+    write("src/a.ts", clean(2) + swallow(1));
+    commit("swallow");
+    git("tag", "amb", "main");
+    git("branch", "amb", "feat");
+    git("branch", "amb2", "main");
+    git("tag", "amb2", "feat");
+  });
+  facts(dir, { sha: sha(dir, "main") });
+
+  for (const name of ["amb", "amb2"]) {
+    await assert.rejects(
+      () => check(dir, { baseRef: name }),
+      (err) => {
+        assert.match(err.message, new RegExp(`--base ${name} is ambiguous`), err.message);
+        assert.ok(err.message.includes(`refs/heads/${name}`) && err.message.includes(`refs/tags/${name}`), err.message);
+        return true;
+      },
+      name
+    );
+  }
+  // The spelled-out name is one ref and stays a base.
+  assert.equal((await check(dir, { baseRef: "refs/heads/amb2" })).base.sha, sha(dir, "main"));
 });
 
 test("a companion moved out of the corpus in the tree no longer satisfies the obligation", async (t) => {

@@ -139,6 +139,99 @@ test("a plan is committed to the root it was made for, or to nothing", () => {
   rmSync(dir, { recursive: true, force: true });
 });
 
+/** Every byte of the map on disk, by name, so a failed write can be compared whole. */
+function snapshot(dir) {
+  const out = {};
+  for (const sub of [RULES, STORE]) {
+    for (const name of readdirSync(join(dir, sub)).sort()) out[`${sub}/${name}`] = readFileSync(join(dir, sub, name), "utf8");
+  }
+  return out;
+}
+
+test("a rules directory that refuses the write leaves the previous facts as well as the previous files", needsPosixPermissions, () => {
+  // `check` reads facts.json, so new facts beside the old files called the map
+  // fresh while the session loaded a map of an older scan.
+  const dir = workspace();
+  writeMap(result(dir, [area("src/services"), area("src/api")]));
+  const before = snapshot(dir);
+  chmodSync(rules(dir), 0o555);
+  try {
+    assert.throws(() => writeMap(result(dir, [area("src/services"), area("src/hooks")])), /\.claude\/rules is not writable, so the map could not be written/);
+  } finally {
+    chmodSync(rules(dir), 0o755);
+  }
+
+  assert.deepEqual(snapshot(dir), before, "the previous map, whole, and no temporary file beside it");
+  rmSync(dir, { recursive: true, force: true });
+});
+
+/** Make the `n`th call of one `node:fs` export throw, and put it back after the test. */
+async function failNth(t, name, n, code = "EPERM") {
+  const fs = (await import("node:fs")).default;
+  const { syncBuiltinESMExports } = await import("node:module");
+  const real = fs[name];
+  let calls = 0;
+  fs[name] = (...args) => {
+    if (++calls === n) throw Object.assign(new Error(`${code}: operation not permitted, ${name}`), { code });
+    return real(...args);
+  };
+  syncBuiltinESMExports();
+  t.after(() => {
+    fs[name] = real;
+    syncBuiltinESMExports();
+  });
+}
+
+test("a replace that fails part way puts back every file it had already replaced", async (t) => {
+  // The facts go first, so a failure on the second file already had them new.
+  const dir = workspace();
+  writeMap(result(dir, [area("src/services"), area("src/api")]));
+  const before = snapshot(dir);
+  await failNth(t, "renameSync", 3);
+
+  assert.throws(() => writeMap(result(dir, [area("src/services"), area("src/hooks")])), /EPERM/);
+
+  assert.deepEqual(snapshot(dir), before, "the previous map, whole, and no temporary file beside it");
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("a removal that fails puts back what the scan had written", async (t) => {
+  // A stale area file left beside new facts is a rendered file no fact on disk derives.
+  const dir = workspace();
+  writeMap(result(dir, [area("src/services"), area("src/api")]));
+  const before = snapshot(dir);
+  await failNth(t, "unlinkSync", 1);
+
+  assert.throws(() => writeMap(result(dir, [area("src/services")])), /EPERM/);
+
+  assert.deepEqual(snapshot(dir), before);
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("every file being replaced is read before the first one is renamed", async (t) => {
+  // A read between two renames widens the window in which the facts are new and
+  // the rules are not.
+  const dir = workspace();
+  writeMap(result(dir, [area("src/services"), area("src/api")]));
+  const fs = (await import("node:fs")).default;
+  const { syncBuiltinESMExports } = await import("node:module");
+  const real = { readFileSync: fs.readFileSync, renameSync: fs.renameSync };
+  const calls = [];
+  for (const name of Object.keys(real)) fs[name] = (...args) => (calls.push(name), real[name](...args));
+  syncBuiltinESMExports();
+  t.after(() => {
+    Object.assign(fs, real);
+    syncBuiltinESMExports();
+  });
+
+  writeMap(result(dir, [area("src/services"), area("src/hooks")]));
+
+  const firstRename = calls.indexOf("renameSync");
+  assert.ok(firstRename > 0, "the replace renamed");
+  assert.equal(calls.lastIndexOf("readFileSync") < firstRename, true, "no read after the first rename");
+  rmSync(dir, { recursive: true, force: true });
+});
+
 test("a dry run writes nothing at all", () => {
   const dir = workspace();
 
@@ -372,7 +465,7 @@ test("a dimension's baseline population survives the write, so the check can rea
     conforming: 60,
     exceptions: [{ path: "src/services/old.ts", count: 2 }],
   });
-  assert.deepEqual(severityFor({ path: "src/services/new.ts", oldPath: null }, { dim: stored, fresh: true }), {
+  assert.deepEqual(severityFor({ path: "src/services/new.ts", oldPath: null }, { dim: stored }), {
     severity: "MUST-FIX",
     reason: "all 60 baseline sites conform",
   });
@@ -407,7 +500,7 @@ test("a scan that recorded no baseline writes no baseline key", () => {
 
   const [stored] = readFacts(dir).areas[0].dimensions;
   assert.equal("baseline" in stored, false);
-  assert.deepEqual(severityFor({ path: "src/services/new.ts", oldPath: null }, { dim: stored, fresh: true }), {
+  assert.deepEqual(severityFor({ path: "src/services/new.ts", oldPath: null }, { dim: stored }), {
     severity: "FIX",
     reason: "no baseline population recorded",
   });
@@ -425,7 +518,7 @@ test("a baseline the check would reject is carried through unaltered", () => {
   const [stored] = readFacts(dir).areas[0].dimensions;
   assert.deepEqual(stored.baseline, { candidates: 4, conforming: 4, exceptions: [] });
   assert.equal(
-    severityFor({ path: "src/services/new.ts", oldPath: null }, { dim: stored, fresh: true }).severity,
+    severityFor({ path: "src/services/new.ts", oldPath: null }, { dim: stored }).severity,
     "FIX"
   );
   rmSync(dir, { recursive: true, force: true });
@@ -1110,7 +1203,8 @@ test("a rules directory that cannot be listed is not one holding nothing", needs
   // reported, never rendered as a clean one.
   const dir = workspace();
   writeMap(result(dir, [area("src/services")]));
-  chmodSync(rules(dir), 0o100);
+  // Writable, or the plan refuses the directory before listing it.
+  chmodSync(rules(dir), 0o300);
 
   const blind = writeMap(result(dir, [area("src/services")]), { dryRun: true });
   chmodSync(rules(dir), 0o755);

@@ -1,21 +1,25 @@
 import { execFile } from "node:child_process";
+import { lstatSync } from "node:fs";
 import { join } from "node:path";
 
 import { absentInterpreter } from "./child.mjs";
 import { scan } from "./scan.mjs";
-import { loadTypeScript, notInstalledMessage } from "./semantic.mjs";
+import { deepRefusal } from "./semantic.mjs";
 import { writeMap } from "./write.mjs";
 import { check } from "./check.mjs";
 import { engineOf, language } from "./langs.mjs";
-import { collect, countUntrackedSource, gitRoot } from "./corpus.mjs";
+import { collect, corpusByName, countUntrackedSource, gitRoot, lsFiles } from "./corpus.mjs";
 import { discover } from "./areas.mjs";
 import { buildPin, readPin, writePin, pinDelta, pinTarget, PIN_PATH } from "./baseline.mjs";
-import { gitBuffered, headSha } from "./git.mjs";
-import { firstLine } from "./encode.mjs";
+import { caseMagic, gitBuffered, headSha } from "./git.mjs";
+import { encodePath, firstLine } from "./encode.mjs";
+import { byCode } from "./paths.mjs";
+import { plural } from "./render-layout.mjs";
+import { listSome, LISTED, PREFIX, RULES_DIR, trackedRulesDir } from "./rules.mjs";
 import { NODE_PROBE_IDS, PROBE_IDS, installProblem, pluginRoot, probeName, readiness, readinessAfresh, readinessLines, remedyFor } from "./readiness.mjs";
 import { pinSummary, scanSummary } from "./summary.mjs";
 import { untrackedSentence } from "./render.mjs";
-import { aboutDir, echoContext, holdsTestIn, inCheckout, isPathTaken, ownLayout, removeStaleHook, targetIn, windowOf } from "./hook.mjs";
+import { aboutDir, childLayouts, echoContext, holdsTestIn, inCheckout, isPathTaken, ownLayout, removeStaleHook, targetIn, windowOf } from "./hook.mjs";
 import { isTestPath, noticeFor } from "./precedent.mjs";
 import { askedMarks, continuedByReuse, pendingChange, reuseReason, reuseRecord, sessionStart, turnStart } from "./reuse.mjs";
 
@@ -32,7 +36,8 @@ export async function runScan(cwd, { dryRun = false, deep = false } = {}) {
   // Refused before any work, not after the parse: --deep with no checker
   // installed is an install problem, and a scan that runs for a minute and then
   // says so has already spent the time (B13's shape).
-  if (deep && (await loadTypeScript()) === null) throw new Error(notInstalledMessage(remedyFor("typescript")));
+  const refused = deep ? await deepRefusal(remedyFor("typescript")) : null;
+  if (refused) throw new Error(refused);
 
   const result = await scan(cwd, { deep });
   // Only where it left nothing to read (B13). An engine missing for one
@@ -131,13 +136,19 @@ export function runNotice(cwd, payload) {
  * Once per file as it stands: a file an ask or a record in this session already
  * marked is not named again, and the stop right after this hook's own block
  * records what the check left, so its fix is not asked about on the next turn.
+ *
+ * A session started above its checkouts has no map of its own and a Stop
+ * payload names no file, so each mapped checkout directly below is read, and
+ * its files named from the session's directory. A file's mark is its
+ * checkout's, so a session that later moves into the checkout is not asked again.
  */
 export async function runReuse(cwd, payload) {
   if (payload?.hook_event_name !== "Stop") return {};
   const root = answersFor(payload, cwd);
   if (root === null) return {};
   const found = ownLayout(root);
-  if (found === null) return {};
+  const checkouts = found !== null ? [{ root: found.root, prefix: "" }] : childLayouts(root).map((c) => ({ root: c.root, prefix: `${c.name}/` }));
+  if (checkouts.length === 0) return {};
   // Both halves of "once per change, and only this session's work" are read off
   // the transcript: when the session began, and what it already asked. One that
   // cannot be read says neither, so nothing is asked. Asking anyway blocked
@@ -145,8 +156,10 @@ export async function runReuse(cwd, payload) {
   // since no ask it made was ever recorded anywhere it could read back.
   const since = sessionStart(payload.transcript_path);
   if (since === null) return {};
-  const change = await pendingChange(found.root, { since, turnStart: turnStart(payload.transcript_path) });
-  if (change === null) return {};
+  const turn = turnStart(payload.transcript_path);
+  const changes = await Promise.all(checkouts.map((c) => pendingChange(c.root, { since, turnStart: turn })));
+  const change = checkouts.flatMap((c, i) => (changes[i] ?? []).map((file) => ({ ...file, path: c.prefix + file.path })));
+  if (change.length === 0) return {};
   const asked = askedMarks(payload.transcript_path);
   const fresh = change.filter((file) => !asked.has(file.mark));
   if (fresh.length === 0) return {};
@@ -178,7 +191,7 @@ export async function runPin(cwd, { dryRun = false, expect = null, collectFiles 
   pinTarget(root);
   await refuseUnlikeHead(root);
 
-  const { files, truncated } = await collectFiles(root);
+  const { files, truncated, dropped } = await collectFiles(root);
   // Asked again once the list is read. It comes from the index, and reading it
   // takes seconds on a large repository: a commit or a `git add` landing in
   // that window put files into a pin labelled with the commit judged before.
@@ -188,6 +201,18 @@ export async function runPin(cwd, { dryRun = false, expect = null, collectFiles 
   // `collect`. It stays because a pin must describe a whole population, and the
   // flag is the one thing that says whether this one is.
   if (truncated) throw new Error("only part of the corpus was read, so this would pin a partial population");
+  // Paths outside a sparse checkout's cone are skip-worktree, so `git status`
+  // is clean while the tree holds only part of HEAD. A file unreadable for any
+  // other reason stays out of every scan as well, so it is no gap in the pin.
+  if (dropped?.unreadable > 0) {
+    const outside = await absentSkipWorktree(root);
+    if (outside > 0) {
+      throw new Error(
+        `${plural(outside, "tracked file")} ${outside === 1 ? "is" : "are"} outside this sparse checkout, and a pin records HEAD: ` +
+          "disable or widen the sparse checkout first, then pin"
+      );
+    }
+  }
   // An empty population is not a smaller baseline, it is one that makes every
   // area written after it postdate it, so nothing is stated anywhere until a
   // human pins again. The usual cause is source nobody has committed yet, and
@@ -201,7 +226,19 @@ export async function runPin(cwd, { dryRun = false, expect = null, collectFiles 
     );
   }
 
-  const next = buildPin(discover(files), { sha, corpus: files.length });
+  const areas = discover(files);
+  // No area is the empty population by another route: every area a later
+  // commit makes postdates it.
+  if (areas.length === 0) {
+    const { shown, rest } = listSome(areas.orphaned.map((f) => f.rel).sort(byCode), LISTED.overview);
+    const n = areas.orphaned.length;
+    throw new Error(
+      `nothing to pin: the ${plural(n, "source file")} tracked here ${n === 1 ? "sits" : "sit"} in no area ` +
+        `(${shown.map(encodePath).join(", ")}${rest ? `, and ${rest} more` : ""}), and a pin with no area holds back ` +
+        "every area made after it: pin once a directory holds enough source to be one"
+    );
+  }
+  const next = buildPin(areas, { sha, corpus: files.length });
   // A pin on disk this build cannot read is compared against as nothing, and
   // replaced. Said, rather than printed as a first pin: it may be a conflict
   // somebody meant to resolve, or a newer build's.
@@ -210,7 +247,7 @@ export async function runPin(cwd, { dryRun = false, expect = null, collectFiles 
   if (!dryRun) writePin(root, next);
 
   return {
-    summary: pinSummary({ previous, next, delta, path: PIN_PATH, dryRun, previousUnreadable: unreadable }),
+    summary: pinSummary({ root, previous, next, delta, path: PIN_PATH, dryRun, previousUnreadable: unreadable }),
     pin: next,
     previous,
     delta,
@@ -222,26 +259,46 @@ export async function runPin(cwd, { dryRun = false, expect = null, collectFiles 
  * area holds, and that list is read from the index and the working tree.
  */
 async function refuseUnlikeHead(root) {
-  // A staged, edited, deleted or unmerged tracked file is listed against a
-  // commit that does not hold it, and every scan after reads that area as a
-  // population change for as long as the pin stands. This tool's own output
-  // under `.claude/` is left out: a repository that commits its map rewrites it
-  // on every scan, and it is never part of the population.
-  const dirty = await gitBuffered(root, ["status", "--porcelain", "--untracked-files=no", "-z", "--", ".", ":(exclude).claude"]);
-  if (!dirty.ok) throw new Error(`could not read whether the working tree matches HEAD: ${firstLine(dirty.error ?? "")}`);
-  if (dirty.stdout.length > 0) {
-    throw new Error("tracked files differ from HEAD, and a pin records HEAD: commit or stash them first, then pin");
-  }
-  // Asked of the whole index, since the exclusion above is for this tool's
-  // output and a tracked source file under `.claude/` is corpus like any other.
-  // An unmerged path is listed once per stage, so a pin taken mid-merge holds
-  // it three times and a corpus larger than the tree, and the corpus fixes the
-  // area floor for every scan after.
+  // Asked first and of the whole index: an unmerged path also shows in the
+  // status below, whose advice to stash is one git refuses mid-merge. A tracked
+  // source file under `.claude/` is corpus like any other. An unmerged path is
+  // listed once per stage, so a pin taken mid-merge holds it three times and a
+  // corpus larger than the tree, and the corpus fixes the area floor for every
+  // scan after.
   const unmerged = await gitBuffered(root, ["ls-files", "--unmerged", "-z"]);
   if (!unmerged.ok) throw new Error(`could not read whether the index holds unmerged paths: ${firstLine(unmerged.error ?? "")}`);
+  const merging = (await gitBuffered(root, ["rev-parse", "--verify", "--quiet", "MERGE_HEAD"])).ok;
+  const inMerge = "a merge is in progress, and a pin records HEAD: finish or abort the merge first, then pin";
   if (unmerged.stdout.length > 0) {
-    throw new Error("the index holds unmerged paths, and a pin records HEAD: finish or abort the merge first, then pin");
+    // A rebase, cherry-pick, revert, am or stash pop leaves them too, with no merge to abort.
+    throw new Error(merging ? inMerge : "the index holds unmerged paths, and a pin records HEAD: resolve them, or abort the operation that left them, then pin");
   }
+  // A staged, edited or deleted tracked file is listed against a commit that
+  // does not hold it, and every scan after reads that area as a population
+  // change for as long as the pin stands. This tool's own output under
+  // `.claude/` is left out: a repository that commits its map rewrites it on
+  // every scan, and it is never part of the population. A map written through
+  // a `.claude/rules` link is stored under the link's target.
+  const rules = trackedRulesDir(root);
+  const exclude = `:(${["exclude", await caseMagic(root)].filter(Boolean).join(",")})`;
+  const own = rules === RULES_DIR ? [] : [`${exclude}${rules}/${PREFIX}*.md`];
+  const dirty = await gitBuffered(root, ["status", "--porcelain", "--untracked-files=no", "-z", "--", ".", `${exclude}.claude`, ...own]);
+  if (!dirty.ok) throw new Error(`could not read whether the working tree matches HEAD: ${firstLine(dirty.error ?? "")}`);
+  if (dirty.stdout.length > 0) {
+    // Stashing a merge in progress drops the merge.
+    throw new Error(merging ? inMerge : "tracked files differ from HEAD, and a pin records HEAD: commit or stash them first, then pin");
+  }
+}
+
+/** How many skip-worktree corpus paths the working tree does not hold. */
+async function absentSkipWorktree(root) {
+  const byName = await corpusByName(root);
+  let n = 0;
+  await lsFiles(root, (entry) => {
+    const rel = entry.slice(2);
+    if (entry.startsWith("S ") && byName(rel) && !lstatSync(join(root, rel), { throwIfNoEntry: false })) n++;
+  }, ["-t"]);
+  return n;
 }
 
 /** Answer the branch against the map on disk. */

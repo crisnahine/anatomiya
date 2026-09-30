@@ -261,6 +261,22 @@ export function makesComponent(init, program = null) {
 
 const LAZY = /^(lazy|dynamic)$/;
 
+const COMPONENT_TYPE = /^(FC|VFC|FunctionComponent|VoidFunctionComponent|ComponentType)$/;
+
+/**
+ * Whether a binding is annotated as a React component type, `React.FC` or a
+ * bare `FC`. The namespace is not read, so `R.FC` under `import * as R` counts. A component that renders nothing hands out no JSX, and in a file
+ * holding none it is rendered only from elsewhere, so the annotation is the one
+ * thing in this file that says what it is.
+ */
+export function typedAsComponent(id) {
+  const t = id?.typeAnnotation?.typeAnnotation;
+  if (t?.type !== "TSTypeReference") return false;
+  const name = t.typeName;
+  if (name?.type === "Identifier") return COMPONENT_TYPE.test(name.name);
+  return name?.type === "TSQualifiedName" && COMPONENT_TYPE.test(name.right?.name ?? "");
+}
+
 // The functions this file binds by name at module level: a declaration, or a
 // variable bound to a function, exported or not.
 function moduleFunctions(program) {

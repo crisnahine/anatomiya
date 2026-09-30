@@ -15,10 +15,15 @@ const { applyGates, verdictFor, blockedFor, GATES } = reduce;
 function spread(candidatesPerFile, conformingPerFile = candidatesPerFile) {
   const candidates = candidatesPerFile.reduce((a, b) => a + b, 0);
   let sumSq = 0;
-  let top = { candidates: 0, conforming: 0 };
+  let top = { candidates: 0, conforming: 0, leastConforming: 0 };
   candidatesPerFile.forEach((n, i) => {
     sumSq += (n / candidates) ** 2;
-    if (n > top.candidates) top = { candidates: n, conforming: conformingPerFile[i] };
+    const k = conformingPerFile[i];
+    if (n > top.candidates) top = { candidates: n, conforming: k, leastConforming: k };
+    else if (n === top.candidates) {
+      top.conforming = Math.max(top.conforming, k);
+      top.leastConforming = Math.min(top.leastConforming, k);
+    }
   });
   return {
     candidates,
@@ -204,8 +209,53 @@ test("the reducer counts how many files the evidence is worth, not which file is
 
   assert.equal(d.candidates, 48);
   assert.equal(Number(d.effectiveFiles.toFixed(4)), 2.7961);
-  assert.deepEqual(d.top, { candidates: 24, conforming: 24 });
+  assert.deepEqual(d.top, { candidates: 24, conforming: 24, leastConforming: 24 });
   assert.equal(d.largestFileShare, undefined, "the share the count replaces");
+});
+
+// Ten files of one site each, one of them the odd one out, in the order given.
+// Folded by the reducer itself, so the file it leaves out is the one it picks.
+function tiedArea(rels, oddOne, conformingOdd) {
+  const area = { langs: ["js"], files: rels.map((rel) => ({ rel, lang: "js" })) };
+  const parsed = rels.map((rel) => ({
+    rel,
+    ok: true,
+    hits: { swallowed_error: [{ conforming: rel === oddOne ? conformingOdd : !conformingOdd }] },
+  }));
+  return reduce.reduceArea(area, parsed).find((x) => x.key === "swallowed_error");
+}
+
+const TIED = ["a/b.ts", "a/c.ts", "a/d.ts", "a/e.ts", "a/f.ts", "b/g.ts", "b/h.ts", "b/i.ts", "b/j.ts", "b/k.ts"];
+
+test("when files tie for the most sites, the file left out does not depend on which sorts first", () => {
+  // Nine of ten single-site files conform. Leaving out a conforming one reads
+  // 8 of 9 and fails; leaving out the violator reads 9 of 9 and passes. A
+  // rename that moved the violator to the front stated the claim.
+  const first = tiedArea(["a/a_bad.ts", ...TIED.slice(1)], "a/a_bad.ts", false);
+  const last = tiedArea([...TIED.slice(1), "b/z_bad.ts"], "b/z_bad.ts", false);
+  // A repository behind the area that lends it the evidence gate, so the
+  // leave-one-out is the only gate left to decide.
+  const pooled = { candidates: 110, conforming: 106 };
+
+  const a = applyGates(first, ctx({ areaFileCount: 10, pooled }));
+  const b = applyGates(last, ctx({ areaFileCount: 10, pooled }));
+
+  assert.equal(Math.round(first.effectiveFiles), 10);
+  assert.equal(a.gate, "concentration");
+  assert.deepEqual(a, b);
+});
+
+test("the counter side leaves out the tied file worst for the counter, whatever order the files sort in", () => {
+  const first = tiedArea(["a/a_ok.ts", ...TIED.slice(1)], "a/a_ok.ts", true);
+  const last = tiedArea([...TIED.slice(1), "b/z_ok.ts"], "b/z_ok.ts", true);
+  const pooled = { candidates: 110, conforming: 4 };
+  const twoSided = (d) => ({ ...d, counterClaim: "errors are rethrown" });
+
+  const a = applyGates(twoSided(first), ctx({ areaFileCount: 10, pooled }));
+  const b = applyGates(twoSided(last), ctx({ areaFileCount: 10, pooled }));
+
+  assert.equal(a.counterGate, "concentration");
+  assert.deepEqual(a, b);
 });
 
 test("the concentration gate blocks one file's habit", () => {

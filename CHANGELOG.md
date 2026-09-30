@@ -7,6 +7,308 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-09-30
+
+`check` gets quieter where it was wrong and more exact where it was vague. It stops reporting a
+function's untouched declaration after an edit inside its body, a subclass of a base the branch
+itself adds, and `Sidekiq::Job` in a directory that writes `Sidekiq::Worker`, and every finding it
+caps at FIX names the cause. Several Ruby and JavaScript rows stop counting sites their sentence
+does not describe, so fewer directories state a habit they do not have. A scan that fails while
+writing keeps the previous map, an area's rules no longer reach fixtures and generated files the
+scan left out, and the background refresh and reuse check now work in a session started one
+directory above your checkouts.
+
+### Fixed
+
+- A deeply nested file is read in time linear in its depth. The rows asked every enclosing node at
+  every node, so a generated chain of 30,000 operands took 7 seconds to read and a chain past about
+  15,000 hit the timeout twice and was charged as crashed. It now takes about half a second, and the
+  records for 23,139 corpus files are unchanged.
+- `check` no longer reports a function's or class's untouched declaration as newly introduced when
+  the branch only edited inside its body. One added line in an existing function raised
+  `function_style` FIX and `doc_comment_style` / `explicit_return_type` findings on the declaration
+  line. The site identity now leaves function and class bodies out, and a signature edit is still a
+  new site.
+- `check` no longer reports `class_base` on subclasses of a base class the branch itself adds, when
+  that base inherits the learned class in the same area. The map already counted them as conforming.
+  A class the branch moves off the learned base now stops carrying its subclasses in the check.
+- `check` judges a learned base or mixin the way the map does. A superclass or mixin written bare
+  inside a namespace resolves as in the map, so `module Api::V1` with `class Qbo < BaseController`
+  is no longer a finding under a learned `Api::V1::BaseController`.
+- `module_include` treated `Sidekiq::Worker` and `Sidekiq::Job` as two modules, so `check` gave a
+  MUST-FIX to a worker including `Sidekiq::Job` in a directory that writes `Sidekiq::Worker`. The
+  two spellings now vote and conform as one, and the map names the one the directory writes more.
+- A finding `check` caps at FIX names the cap that applied. A run with no pin used to say "stale map
+  or no merge base" on every finding. It now says "no baseline pinned", or whichever cause applied.
+- A claim whose block the area file dropped, but whose sentence the notice still prints, now reads
+  "the area file names this claim without its counts" instead of "had no room to state this claim".
+- The `check` header counts files the branch deleted, as in `1 changed file (1 removed)`, and the
+  JSON record lists them as `removed`. A branch that only dropped a spec used to print "0 changed
+  files" above a finding about that spec.
+- `check --base <name>` on a branch whose name looks like a commit id, such as `7812` or `facade`,
+  is refused as the branch's own tip like any other name. It used to compare the branch with itself
+  and print 0 changed files at exit 0. The tip's own sha is still a base.
+- `check --base <name>` where a tag and a branch share the name is refused, and the refusal names
+  both refs. It used to take the tag without a word, or blame the branch's own tip for it.
+- `check` reports a `facts.json` that does not parse, such as one with merge-conflict markers, as
+  `map-unreadable` ("the map on disk does not parse as JSON"). It used to report it as no map on
+  disk.
+- An all-caps component file such as `SBA.jsx` is no longer a MUST-FIX against "files here are named
+  PascalCase". In a file that holds JSX a capitals-only name is an acronym component. Outside JSX it
+  is still counted, as `DEBUG.ts` is.
+- The file-to-file obligations count a companion only where the tests line would count it as a test.
+  A RuboCop cop named `*_test.rb` outside every test tree no longer opens a "ships with a test" row
+  in an RSpec-only repository, and a spec commented out top to bottom no longer credits its
+  producer, in the map or in `check`. "N with a namesake elsewhere in the tree" now needs a spec
+  with the producer's own path, not only its file name: on one Rails repository it went from 142
+  over 44 lines to 0.
+- The concentration gate no longer depends on which of several equally large files sorts first.
+  Among files tied for the most sites, the leave-one-out drops the one worst for the side being
+  judged, so renaming a file can no longer turn "no convention (concentration)" into a stated claim
+  with every count unchanged.
+- `service_result_shape` said service entry points "return their failure instead of raising" over
+  entry points that fail through an unrescued `update!`, `save!` or `run!`, and over entry points
+  with no failure path at all. Those bang calls now count as raising unless a rescue guards them,
+  and the sentence now reads "service entry points do not raise, directly or through a bang call
+  like update!".
+- `migration_reversible` no longer counts a migration whose `change` holds a command Rails cannot
+  invert (`change_column`, readable DDL through `execute` or `exec_query`, `remove_column` with no
+  type, `drop_table` with no block, the from:/to:-less and name-only forms, their `change_table` and
+  `send` spellings), so a correct up/down migration is no longer told to declare `change`. A row
+  rewrite through a scoped ActiveStorage, ActionText or ActiveRecord model, through a model handed
+  to one of the migration's own methods, a local, a multiple assignment, an iterated array or a
+  batch block, or through `exec_update`, `exec_delete`, `exec_insert`, `connection.exec_query` or a
+  bare `update`/`delete`/`insert` SQL string now counts as data work on `migration_schema_only` and
+  leaves `migration_reversible`. A framework constant named only for its table or columns, and a
+  constant passed as an option value, stay schema-only.
+- `logger_over_puts` counted logger setters such as `level=` and `formatter=` as output, so a
+  directory that only configured its logger read as logging through it. Only output calls count now.
+- `http_through_client` counted `HTTParty::Error.new` and `HTTParty::CookieHash.new` as direct HTTP
+  calls, and counted a Ruby call as going through the repository's client when any word of the
+  receiver's name was a client word. A library's error, exception and cookie classes are no longer
+  sites, and the receiver's name has to end in the client vocabulary, so `OauthClientStore.fetch`,
+  `RequestStore.delete` and `request_params.delete` no longer state that HTTP goes through a client
+  in a repository that makes no HTTP calls.
+- A top-level interface in a declaration file with no import or export is global and merges like one
+  in `declare global`, so `interface_prefix` no longer asks for `interface Window` there to be
+  renamed `IWindow`.
+- `function_naming_case` and `exported_symbol_case` no longer judge a binding typed `React.FC`,
+  `FC`, `FunctionComponent` or `ComponentType`, or a function the same file calls with `new` or
+  gives a `.prototype`. They are components and constructors, and the rename these rows asked for
+  broke them.
+- Prefix claims read "named with an I prefix" and "an E prefix" instead of "a I" and "a E".
+- `error_shape` no longer counts a returned object with an `error` key as a returned failure when it
+  also carries keys a result is not made of, such as a view-model hook's `{ label, error, disabled
+  }`, or when `getDerivedStateFromError` returns it. An area of such hooks no longer states "failure
+  is returned, not thrown" and flags ordinary throws.
+- A counts line for a partial dimension now carries the same `(partial: some sites are not visible
+  statically)` warning the stated block carries. The overview's claim line now says what `no
+  convention` and the gate in parentheses mean, without taking a line from the roster.
+- A counts line shown on its counter side printed the claim side's author count, so one author's 40
+  sites read `(authors 0 of 2)`. It now prints the side it shows, `facts.json` stores
+  `counterAuthors` (schema 19), and the shallow-clone note counts the author-gated claims the map
+  actually prints.
+- The overview's roster clauses now print over what they counted. The helper facet reads `0 of 1 JSX
+  file inline a helper`. Sibling modules are named only by stems that repeat. A namesake root named
+  by a majority says how many sit there (`4 of 8 have a namesake test, 3 under
+  src/utils/__tests__`). The fold line says `too small for a line of their own` instead of reusing
+  "floor". A relative or alias import ending in `/` now resolves to the directory's index in the
+  reuse counts.
+- The test precedent line in the PreToolUse notice and in `/anatomiya:check` names the extension its
+  count covers (`src/hooks: 0 of 5 .tsx files have a namesake test`), and the overview's tests line
+  nouns its count with that same extension.
+- An area's `paths` list no longer reaches the fixture, `test_cases` and generated files the scan
+  left out of its counts, so their conventions stop loading on files they were never measured on.
+  angular's compliance area counted 8 files and delivered to 2,017. The first scan after upgrading
+  rewrites the area files this changes.
+- A directory with a comma in its name no longer roots an area. Claude Code splits each `paths`
+  entry on commas before it matches, so `x,y/**/*.rb` reached none of the area's own files and every
+  file under any `x` or `y`. The directory now folds into a parent whose name a pattern can spell,
+  or is reported as uncovered.
+- A scan that fails while writing the map (a read-only `.claude/rules`, a full disk, a file held
+  open on Windows) leaves the previous `facts.json` and rule files as they were, instead of new
+  facts beside the old map, which `check` then called fresh. The background refresh keeps the
+  previous map the same way.
+- `scan` reads a file once when two tracked paths differ only in case or Unicode form and the
+  filesystem (macOS, Windows) checks them out as one file. It keeps the name on disk and reports the
+  other as a file that could not be read, instead of counting that file's sites twice.
+- `scan --format json` prints the whole repository root and rule file names, the same root its text
+  line and `check --format json` print, instead of cutting a root past 120 characters or replacing a
+  mixed-script one with a placeholder. `pin --format json` no longer caps its file paths either, so
+  two long paths in one directory stay two.
+- A tracked file over the size cap no longer hides a missing parser engine. With `oxc-parser` absent
+  and one 1 MiB bundle in the repository, the scan exited 0 and removed every JavaScript area file.
+  It now refuses with the engine's remedy and keeps the map, as it already did without the bundle.
+- A Ruby file whose name starts with `-`, such as `-weird.rb`, is now parsed. It was reported as
+  over the size cap.
+- A generated JavaScript or TypeScript file with a long expression chain (3,000 or more operands),
+  or a flat body of about 116,000 statements, is parsed. It was reported as a file that could not be
+  parsed, because the fast raw parser transfer ran out of stack. The same file is now parsed again
+  without it.
+- A scan whose parser workers never start, or whose Ruby child goes silent before it says ready,
+  names that stall instead of telling you to run setup or install Ruby for an engine `doctor`
+  reports as installed. The line reads, for example, `oxc was stopped by its own clock before it
+  answered: no ready answer in 20000ms`.
+- A file the 5 second parse clock killed is retried once, alone, after every other file has parsed,
+  as documented. It used to be retried alongside other parses, so under heavy load near-1 MB files
+  failed again and an area could drop out of the map between scans of unchanged source.
+- `scan --deep` takes its resolution rate over files in an area, so one untyped minified bundle in
+  no area no longer marks a repository whose own code resolves as `low-resolution`.
+- `scan --deep` with a `typescript` of another major on the resolution path names its version and
+  says `--deep needs typescript 5.x`, as `doctor` does, instead of saying it is not installed.
+- `pin` refuses a population that makes no area, naming the files that sit in none. It pinned
+  `areas: []`, which held back every area made after it.
+- `pin` refuses in a sparse checkout that leaves tracked files out of the tree. It pinned the
+  in-cone half of HEAD under HEAD's sha.
+- `pin` mid-merge says to finish or abort the merge. It said to commit or stash, and git refuses a
+  stash with a conflict in the index.
+- `pin` names the repository root it pinned (`wrote ..., root <path>`, and `root` in `--format
+  json`), as `scan` does.
+- `scan --dry-run` and `pin --dry-run` refuse a store directory this process cannot write, by name.
+  They said "would write", and the real run died on a raw `EACCES` naming a temp file.
+- The automatic pin follows a teammate's commit that a `git worktree add` was started on. The empty
+  reflog entry git writes for the new worktree's HEAD read as a commit made here, and held the pin
+  for as long as the worktree stood.
+- A hold found only because a commit carries this clone's committer identity now says that, not that
+  the commit "was made in this clone". The hold record says which match fired (`by`: `reflog` or
+  `identity`).
+- A map committed through a `.claude/rules -> ../agents/rules` link is recognised as committed. The
+  background refresh no longer rewrites it on every move of HEAD, and `pin` no longer refuses the
+  tree because a scan rewrote it. The README now says to name the link's target in the first exclude
+  line.
+- A session started in the directory that holds your checkouts, with no map of its own, now
+  refreshes and watches each mapped checkout directly below it, and the reuse check asks about each
+  one's change, naming files from where the session started. Before, both hooks answered nothing
+  there, so a pull or commit in a child checkout never refreshed its map. A directory with more than
+  eight mapped checkouts side by side is left as before.
+- The reuse check no longer stops a turn that only added a migration, a schema dump such as
+  `db/schema.rb`, a generated file, or lines that define nothing callable: comments, imports,
+  `export ... from`, `require`, constants bound to plain literals (numbers, strings, booleans, nil,
+  and arrays or hashes of them), and closing brackets. Any other added line is still checked,
+  including a function built by a call such as `debounce(save, 300)`, an alias, a styled component,
+  and Rails `enum` or `store_accessor`. So is code that merely lives under a `migrations` directory,
+  such as a schematics or a migration runner.
+- The reuse check's ask now tells a session with no subagent tool to run the search itself, instead
+  of asking for a tool it does not have.
+- The A/B harness keeps its arms apart and its trials independent. Every trial starts from the
+  measured commit, with the map in one arm only. The arms are shared clones instead of linked
+  worktrees, so the hooks no longer hand the no-map arm its main checkout's map, which made every
+  run abort at the probe for anyone with the plugin enabled. A trial is limited to its own tools
+  with `--tools`, and loads the arm's project settings and this repository's plugin but nothing from
+  the operator's `~/.claude`. A trial cut short by the turn cap is scored on the files it wrote, and
+  the result counts those trials per arm. A naming row narrowed to one kind of file is scored only
+  over that kind. The refusal to measure names the rule that fired and the best claim's numbers.
+- The linearity tests for the introduced-site judge, the frontmatter ownership reader and the
+  encoder no longer fail on a busy runner. Each compares the time at n and 2n instead of checking a
+  fixed number of milliseconds, and each still fails when the old quadratic code is put back. The
+  picomatch cross-check that skipped on every CI leg is gone: the render tests' own glob matcher
+  refuses any pattern syntax it would read differently from picomatch, and those tests run
+  everywhere.
+- `docs/how-it-works.md` said every unmeasured model-defaults entry fails open. The side does, but
+  `interface_prefix` and `type_alias_prefix` are seeded with a hand-set class `none`, so a
+  repository that prefixes nothing prints counts for them. The walkthrough names the two, and a test
+  holds the unmeasured classes to them.
+- The release checklist said to replace the `[Unreleased]` link ref. Releases keep it and add one
+  for the new version, and `check:docs` now refuses a changelog missing either definition.
+- `plugins/anatomiya/commands/pin.md` no longer tells the agent a capped corpus refuses to pin. The
+  corpus has no cap.
+- The hooks section of `docs/how-it-works.md` says all four hooks, not all three, and says where
+  `refresh` starts its walk.
+
+- `check --base` refuses the branch's own name spelled in another case, or typed in another Unicode
+  form, on a filesystem that folds it (macOS, Windows), where it used to compare the branch with
+  itself and exit 0 clean.
+- A map or pin file that is on disk but cannot be opened is reported as unreadable, not as missing.
+  A linked worktree whose own pin cannot be opened no longer falls back to its main checkout's pin.
+- doctor and `scan --deep` no longer tell a typescript 5.x that is missing createProgram that it
+  needs 5.x. They now say it does not export createProgram.
+- The namesake-elsewhere count no longer credits a model sitting directly under `app/models` with an
+  unrelated spec that shares its file name (a request spec named `vote_spec.rb`). A misplaced spec
+  under a `models` directory still counts.
+- `check` flags a branch that comments out a model's whole spec, the same way it already flagged
+  deleting that spec.
+- `migration_schema_only` and `migration_reversible` no longer read `revert CreateWidgets`, or a
+  class-level `include Mastodon::MigrationHelpers`, as a migration that rewrites rows. Five of
+  mastodon's schema-only migrations had dropped out of both rows this way, and `check` gave a FIX to
+  a plain `revert` migration.
+- `migration_reversible` reads `remove_column :t, :a, if_exists: true`, `drop_table :t, if_exists:
+  true` and a drop_table of several tables as irreversible, as Rails 8 does, so `check` stops
+  telling those up/down migrations to declare `change`.
+- `http_through_client` no longer counts hand-built `Faraday::ConnectionFailed` or
+  `RestClient::Exceptions::*` errors as direct HTTP calls.
+- `http_through_client` no longer reads a Redis, cache, memcache, Dalli or database client
+  (`db_client`, `pg_client`, `Mongo::Client`) as the repository's HTTP client, so a repository with
+  no HTTP stops stating that its HTTP goes through one.
+- A component annotated through an aliased React namespace (`R.FC` under `import * as R from
+  "react"`) is no longer asked to be renamed in camelCase.
+- `pin` during a merge with no conflicts says to finish or abort the merge. It said to commit or
+  stash, and a stash throws away the merge in progress.
+- `migration_schema_only` reads a model handed to a helper inside a class-level block, such as
+  `define_method(:up) { backfill(User) }`, as a migration that rewrites rows.
+- `pin` with unmerged paths and no merge in progress says to resolve them or abort the operation
+  that left them. It used to say to abort a merge git had not started.
+- `check` no longer says a model lost its spec when that spec was only added to the index (with `git
+  add` or `git add -N`) and then deleted without ever being committed.
+- `pin` and the refresh keep their own pathspecs when `GIT_LITERAL_PATHSPECS`,
+  `GIT_NOGLOB_PATHSPECS`, `GIT_GLOB_PATHSPECS` or `GIT_ICASE_PATHSPECS` is set. Before, git read the
+  pin's `.claude` exclude as a literal filename, so the pin refused over the tool's own map.
+- `pin`, `scan` and `check` read the root `.gitattributes` from the index when the index marks it
+  skip-worktree or assume-unchanged, a sparse checkout that leaves it out included. Before, a copy
+  edited or deleted under one of those bits decided which files counted as `linguist-generated`, so
+  generated directories could become areas.
+- The reuse Stop hook no longer asks about a `linguist-generated` file when a sparse checkout or
+  skip-worktree hides the root `.gitattributes` from the working tree. It reads the index copy the
+  way `check` does, beside its status read, so it still makes two git reads in a row.
+- `migration_reversible` now refuses every command ActiveRecord 8.1's CommandRecorder cannot invert,
+  not just the first list: `add_enum_value`, and `drop_enum` or `drop_virtual_table` with no values.
+  It also refuses `remove_check_constraint`, `remove_exclusion_constraint` or
+  `remove_unique_constraint` with only a name, `rename_enum_value` without `from:` and `to:`, and
+  `add_unique_constraint` with `using_index:`. The `change_table` spellings of the refused commands
+  count too (`t.change_default`, `t.remove_index` and the rest). A correct up/down migration using
+  one of these no longer gets "migrations declare change, not up and down".
+- Both migration rows now read the same code: the methods Rails runs plus the migration's own
+  helpers they call, whether by name, through `self.`, `method(:x)` or `send(:x)`. So a
+  `change_column` inside a helper that `change` calls is no longer counted as reversible.
+- An area's `paths` no longer reaches a source file whose extension or bare name is in another case
+  (`app/Legacy.RB`, `lib/Old.JS`, `RAKEFILE`). Claude Code's matcher folds case and the corpus does
+  not count such a file, so it is now cut out by name, the same way generated files are.
+- A directory whose name differs from a sibling's only in case no longer roots an area. Claude Code
+  matches `paths` with case folded, so `src/**` was also delivered to `Src/`. Both twins now fold
+  into their parent, and at the repository root they are reported as uncovered.
+- Area `paths` put every negation after every positive pattern. A negation that would also cut one
+  of the area's own files by case is dropped, so an area never loses its own files to a case-folded
+  cut.
+- `check` reads a file added in another case as delivered, the way Claude Code does.
+
+### Changed
+
+- The A/B harness now reports a trial that finishes and writes nothing. The log line quotes the
+  first line of the model's answer as the reason, and the result document counts these trials per
+  arm in a new "trials that finished and wrote nothing" row.
+- The delivery tests read a rendered `paths` list through the `ignore` package, which Claude Code
+  matches rule paths with. It is now a root dev dependency pinned at 7.0.5, so CI runs it. They used
+  to read through two hand-rolled models that disagreed with Claude Code on a trailing `/**`, on
+  case and on a backslash.
+- The severity table in docs/how-it-works.md now quotes each reason `check` prints, including the
+  borrowed-prior cap ("N of M baseline sites here, on a claim the rest of the repository carries"),
+  and `npm run check:docs` fails when a reason in `check.mjs` has no quote in its row.
+- `scripts/ab.mjs` no longer refuses to start over engine variables in the operator's
+  `~/.claude/settings.json`: its trials pass `--setting-sources project,local` and never load that
+  file. `measure-defaults` keeps the check, since its trials still read it.
+- `zone_aware_time` now reads "times are read and built through the application time zone", since it
+  counts `Time.parse` and `Time.zone.at` as well as clock reads.
+- The usage text, `scan.md` and the README give a deep scan's cost as measured, about 3x a plain
+  scan, instead of 26x, and say that dependencies must sit on disk inside the repository: a
+  `node_modules` linked in from elsewhere reads as not installed.
+- The severity table in `docs/how-it-works.md`, the check command and the README list every FIX cap
+  `check` applies, with the reason each prints.
+- README Limits and `docs/how-it-works.md` say that a session started one directory above a checkout
+  can get one copy of its overview per call in its first parallel batch, once per context window and
+  per map.
+- `docs/releasing.md` says which supply-chain job gates a merge. `dependency review` is required,
+  since it fails only on what a pull request adds. The runtime audit stays advisory, since an
+  upstream advisory against an existing dependency would block unrelated pull requests.
+
 ## [0.11.1] - 2026-09-30
 
 The JavaScript parser moves to `oxc-parser` 0.151.0. Scanned under both parsers, 34 of the 35
@@ -3171,7 +3473,8 @@ which are partial; several listed there are not implemented yet.
 - No claim that this catches defects. Measured across ten repositories, 1 of 317 defect review
   comments was preventable by a conventions map.
 
-[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.11.1...HEAD
+[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/crisnahine/anatomiya/compare/v0.11.1...v0.12.0
 [0.11.1]: https://github.com/crisnahine/anatomiya/compare/v0.11.0...v0.11.1
 [0.11.0]: https://github.com/crisnahine/anatomiya/compare/v0.10.2...v0.11.0
 [0.10.2]: https://github.com/crisnahine/anatomiya/compare/v0.10.1...v0.10.2

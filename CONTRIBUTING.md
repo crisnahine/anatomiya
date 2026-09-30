@@ -1,6 +1,6 @@
 # Contributing
 
-Read `DECISIONS.md` first. It is 227 numbered rows, each one a measurement or a review finding reduced
+Read `DECISIONS.md` first. It is 255 numbered rows, each one a measurement or a review finding reduced
 to the decision it forces on the code. It is the build contract, and most questions you will have
 about why something is shaped the way it is are answered there in one line.
 
@@ -10,6 +10,8 @@ Node 22 or newer. ES modules, `.mjs` throughout. Two runtime dependencies, `oxc-
 `flow-remove-types`, the second loaded the first time a `.js`-family file is rejected. Ruby
 dimensions need `prism` 1.x, a default gem on Ruby 3.4 and up, so a system Ruby is
 usually enough. If you do not have Ruby, the Ruby tests skip and the rest still run.
+The one dev dependency, `ignore`, is the package Claude Code matches a rule's `paths` with, so the
+tests read a rendered `paths` list through it.
 
 ```sh
 npm install
@@ -206,7 +208,10 @@ exists. It carries no `run`; the shape is a directory pair:
 
 Three rules are particular to this class. A repository is only asked the question for a companion
 suffix it actually uses, because producers exist whatever the repository tests with and a row that
-can only read zero is a false statement rather than a measurement.
+can only read zero is a false statement rather than a measurement. A companion is a file named like
+one that the tests line would also count as a test (H29, H35): a RuboCop cop named `..._test.rb`
+outside every test tree opens no minitest row, and a spec the parse found empty answers no producer,
+in the scan and in the check alike.
 
 `to` is the declared pair, and it is a prior rather than an answer. The root is learned from the
 corpus by asking each producer which file ends with its own path tail, and the declared pair stands
@@ -216,7 +221,8 @@ and reads 117 of 160 against the root it actually uses. A tie learns nothing, or
 decided by whichever filename sorts first.
 
 And every such row carries `companionsElsewhere`, the producers whose companion is missing where the
-predicate looks but whose namesake exists elsewhere. It is the number that separates "this
+predicate looks but whose namesake exists elsewhere, matched on the same path tail the root is
+learned from, so `users/create_spec.rb` is never the namesake of `orders/create.rb`. It is the number that separates "this
 repository has no such habit" from "the predicate is looking in the wrong place", which is what made
 the learned root worth building.
 

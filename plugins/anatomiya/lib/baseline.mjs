@@ -1,7 +1,7 @@
 import {
   changedSinceWorktree, diffRange, filesAt, isSha, mergeBase, resolveBaseRef, shaReachable,
 } from "./git.mjs";
-import { mkdirSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import { basename, join, dirname } from "node:path";
 
 import { areaOwner, dirCount } from "./areas.mjs";
@@ -72,10 +72,7 @@ export function pinTarget(root) {
   const path = pinFile(root);
   if (path === null) throw new Error(`${outsideClaude(dirname(PIN_PATH))}, so no pin is written there`);
   const blocked = blockedOnTheWay(root, dirname(PIN_PATH));
-  if (blocked !== null) {
-    const remedy = blocked.link ? "replace the link with a directory" : "remove it";
-    throw new Error(`${blocked.sentence}, so no pin is written there: ${remedy} and pin again`);
-  }
+  if (blocked !== null) throw new Error(`${blocked.sentence}, so no pin is written there: ${blocked.remedy} and pin again`);
   if (!leafReplaceable(path)) throw new Error(`${PIN_PATH} is not a file, so no pin is written there: remove it and pin again`);
   return path;
 }
@@ -106,7 +103,9 @@ export function readPin(root) {
   const { record, oversize } = readRecord(path);
   if (oversize) return { pin: null, unreadable: "it is past the size this reads" };
   if (record === null) {
-    if (readHead(path, 0).kind === "file") return { pin: null, unreadable: "it does not parse as JSON" };
+    const kind = readHead(path, 0).kind;
+    if (kind === "file") return { pin: null, unreadable: "it does not parse as JSON" };
+    if (kind === "unreadable" && existsSync(path)) return { pin: null, unreadable: "it could not be opened" };
     // No pin here at all. A linked worktree reads its main checkout's: the pin
     // names commits in the history both share, the hooks already read that
     // checkout's map there (A93), and without it every finding in the place a

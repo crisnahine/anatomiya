@@ -29,11 +29,12 @@ import { basename, join, resolve } from "node:path";
 
 import { loadPin } from "./baseline.mjs";
 import { runPin, runScan } from "./commands.mjs";
+import { locator } from "./encode.mjs";
 import { atomic, readFacts, readRecord, writeTemp } from "./facts.mjs";
-import { BASE_REFS, commitAt, gitBuffered, gitStreamed, headSha, operationUnfinished, shaReachable } from "./git.mjs";
-import { isPathTaken, ownLayout } from "./hook.mjs";
+import { BASE_REFS, caseMagic, commitAt, gitBuffered, gitStreamed, headSha, operationUnfinished, shaReachable } from "./git.mjs";
+import { childLayouts, isPathTaken, ownLayout } from "./hook.mjs";
 import { pluginRoot } from "./readiness.mjs";
-import { OVERVIEW_FILE, readHead, realpathOf, REFRESH_STATE, resolveInside, RULES_DIR, STORE_DIR } from "./rules.mjs";
+import { OVERVIEW_FILE, readHead, realpathOf, REFRESH_STATE, resolveInside, STORE_DIR, trackedRulesDir } from "./rules.mjs";
 import { commonDirOf, gitDirOf } from "./worktree.mjs";
 
 const LOCK_FILE = "refresh.lock";
@@ -86,33 +87,45 @@ export function runRefresh(cwd, payload, { start = startWorker } = {}) {
   if (!EVENTS.has(event)) return {};
   const base = typeof payload.cwd === "string" && payload.cwd.length > 0 ? payload.cwd : cwd;
   if (!base) return {};
-  // A map of this checkout's own. A linked worktree reading its main checkout's
-  // (A93) is answered from there, labelled, and scanning it would write a map
-  // nobody asked for.
-  const own = ownLayout(base);
-  if (!own || own.from !== null) return {};
-  // A record below its checkout's root came with a copy of another project; the
-  // scan it would start writes at the checkout's root, which never opted in
-  // (A24), and the end-of-turn check refuses the same record for the same reason.
-  if (!isPathTaken(join(own.root, ".git"))) return {};
+  const found = refreshRoots(base);
+  if (found.length === 0) return {};
+  const roots = found.map((c) => c.root);
 
-  const watchPaths = watchTargets(own.root);
   // The watch list is one list shared by every hook. A change to a file this
   // hook did not ask for is somebody else's, and answering it would both start
   // a worker for nothing and replace their watch with ours. Ours is any file
-  // the watch could name in this checkout's git directories, not only the ones
+  // the watch could name in these checkouts' git directories, not only the ones
   // it names now: a first commit writes `logs/HEAD`, which moves the watch off
   // the index it named before, and refusing the index's change then left the
   // session watching a file nothing would change again.
-  if (event === "FileChanged" && !ownWatch(own.root, resolve(String(payload.file_path ?? "")))) return {};
-  start(own.root);
+  const changed = event === "FileChanged" ? resolve(String(payload.file_path ?? "")) : null;
+  const moved = changed === null ? roots : roots.filter((root) => ownWatch(root, changed));
+  if (moved.length === 0) return {};
+  for (const root of moved) start(root);
+  const watchPaths = roots.flatMap(watchTargets);
   // Said to the person when they start or resume a session: a `made-here` hold
   // never ends on its own.
-  const notice = event === "SessionStart" && !QUIET_SOURCES.has(payload.source) ? holdNotice(own.root) : null;
-  const said = notice === null ? {} : { systemMessage: notice };
+  const notices = event === "SessionStart" && !QUIET_SOURCES.has(payload.source) ? found.map((c) => holdNotice(c.root, c.name)).filter((n) => n !== null) : [];
+  const said = notices.length === 0 ? {} : { systemMessage: notices.join("\n") };
   // An empty list would replace every other hook's watches with nothing.
   if (watchPaths.length === 0) return said;
   return { ...said, hookSpecificOutput: { hookEventName: event, watchPaths } };
+}
+
+/**
+ * The checkouts a session in this directory refreshes: the one whose own map it
+ * is in, or where it is in none, the mapped checkouts directly below it, each
+ * with its name there.
+ */
+function refreshRoots(base) {
+  const own = ownLayout(base);
+  if (own === null) return childLayouts(base).map((child) => ({ root: child.root, name: child.name }));
+  // A linked worktree reading its main checkout's map (A93) is answered from
+  // there, labelled, and scanning it would write a map nobody asked for. A
+  // record below its checkout's root came with a copy of another project; the
+  // scan it would start writes at the checkout's root, which never opted in
+  // (A24), and the end-of-turn check refuses the same record for the same reason.
+  return own.from === null && isPathTaken(join(own.root, ".git")) ? [{ root: own.root, name: null }] : [];
 }
 
 /**
@@ -201,7 +214,7 @@ export async function refreshRepository(root, { scan = runScan, pin = runPin } =
   if (!top.ok || realpathOf(top.stdout.trim()) !== realpathOf(root)) return { reason: "outside", pinned: false };
   const facts = readFacts(root).facts;
   if (!facts) return { reason: "no-map", pinned: false };
-  // The type checker is opt-in and about 26x slower (B7), so a refresh keeps the
+  // The type checker is opt-in and about 3x a plain scan (B7), so a refresh keeps the
   // mode the person chose: a map built with it is rebuilt with it, rather than
   // skipped (which left it stale after every checkout) or rebuilt without it
   // (which dropped the claims it added). A checker that is no longer installed
@@ -257,9 +270,10 @@ async function passes(root, store, { scan, pin, deep }) {
     try {
       await scan(root, { deep });
     } catch (err) {
-      // The previous map stays: a scan that throws has written nothing
-      // (A13), and one that would not run now will not run on the next
-      // trigger either, until something about the checkout changes.
+      // The previous map stays: a scan that throws has written nothing or
+      // put back what it replaced, and one that would not run now will not
+      // run on the next trigger either, until something about the checkout
+      // changes.
       writeState(store, { stamp, ok: false, error: String(err?.message ?? err), pinned: accepted, held });
       return { reason: "failed", pinned, held };
     }
@@ -353,7 +367,7 @@ async function followPin(root, pin) {
   const current = loadPin(root);
   if (current?.sha === head) return none;
   // Each hold names the pin it held, so a pin taken by hand since ends it.
-  const hold = (reason, commit) => ({ accepted: null, held: { reason, commit, pin: current?.sha ?? null } });
+  const hold = (reason, commit, by = null) => ({ accepted: null, held: { reason, commit, pin: current?.sha ?? null, ...(by ? { by } : {}) } });
   const moved = await fetchedHere(root, tip.ref, tip.sha);
   if (moved !== "fetched") return hold(moved === "no-record" ? "no-record" : "not-fetched", head);
   // A pinned commit git no longer holds (its branch merged, deleted and
@@ -367,7 +381,7 @@ async function followPin(root, pin) {
   }
   const made = await madeHereOnLine(root, from, head);
   if (made === "") return hold("unread", head);
-  if (made !== null) return hold("made-here", made);
+  if (made !== null) return hold("made-here", made.commit, made.by);
   // A staged or edited tracked file is refused by `pin` itself, the one rule for
   // what a pin may record, and so is HEAD having moved since it was judged here.
   // A refusal is simply no pin: the tree is mid-edit, not held.
@@ -409,8 +423,9 @@ const CREATES_NOTHING = new RegExp(
  * the one this does not see. A walk git could not answer is left open, never
  * read as a teammate's.
  *
- * The commit found, so the hold can name it; `""` where git could not answer,
- * and null where nothing on the line was made here.
+ * The commit found and what matched it (`reflog` or `identity`), so the hold
+ * can say which; `""` where git could not answer, and null where nothing on
+ * the line was made here.
  */
 async function madeHereOnLine(root, from, to) {
   // Both walks grow with the repository, a first pin's with its whole history,
@@ -430,6 +445,9 @@ async function madeHereOnLine(root, from, to) {
       const [sha, selector = ""] = entry.split(" ", 2);
       if (!sha || selector.startsWith("refs/remotes/")) return;
       const message = entry.slice(sha.length + selector.length + 2);
+      // `git worktree add` logs the new HEAD with no message at all, and from
+      // inside that worktree its HEAD is spelled plain `HEAD`.
+      if (message === "" && /^(?:worktrees\/[^/]+\/|main-worktree\/)?HEAD@\{/.test(selector)) return;
       if (!CREATES_NOTHING.test(message)) made.add(sha);
     }, { terminated: false });
     if (made.size === 0 && me === null) return null;
@@ -437,7 +455,7 @@ async function madeHereOnLine(root, from, to) {
       const [sha, time, email = ""] = record.trim().split(" ");
       const mine = me !== null && email.toLowerCase() === me && (since === null || Number(time) >= since);
       if (!made.has(sha) && !mine) return true;
-      found = sha;
+      found = { commit: sha, by: made.has(sha) ? "reflog" : "identity" };
       return false;
     }, { terminated: false });
   } catch {
@@ -564,7 +582,8 @@ export function movedByRemote(message) {
  * of them would leave a change in `git status` nobody made.
  */
 async function mapTracked(root) {
-  const r = await gitBuffered(root, ["ls-files", "-z", "--", `${RULES_DIR}/${OVERVIEW_FILE}`, STORE_DIR]);
+  const magic = (await caseMagic(root)) ? ":(icase)" : "";
+  const r = await gitBuffered(root, ["ls-files", "-z", "--", `${magic}${trackedRulesDir(root)}/${OVERVIEW_FILE}`, `${magic}${STORE_DIR}`]);
   return r.ok && r.stdout.length > 0;
 }
 
@@ -578,7 +597,7 @@ function writeState(store, { stamp, ok, error, pinned = null, held = null, at = 
   atomic(join(store, basename(REFRESH_STATE)), JSON.stringify(record, null, 2) + "\n");
 }
 
-const sameHold = (a, b) => ["reason", "commit", "pin"].every((key) => (a?.[key] ?? null) === (b?.[key] ?? null));
+const sameHold = (a, b) => ["reason", "commit", "pin", "by"].every((key) => (a?.[key] ?? null) === (b?.[key] ?? null));
 
 /**
  * What the person hears at the start of a session when the pin has stopped
@@ -587,8 +606,19 @@ const sameHold = (a, b) => ["reason", "commit", "pin"].every((key) => (a?.[key] 
  * work, and a sentence in its context naming the way to accept it is the
  * suggestion E5 refuses. Only fixed words and hex commit ids, validated here,
  * since the record sits in a directory the repository could ship.
+ *
+ * `name` is the checkout's directory, given where the session sits above it:
+ * `/anatomiya:pin` pins the checkout it runs in, which is not the session's.
  */
-export function holdNotice(root) {
+export function holdNotice(root, name = null) {
+  const body = heldBecause(root);
+  if (body === null) return null;
+  if (name === null) return `anatomiya: ${body} Pinning it is a person's call, made with /anatomiya:pin.`;
+  const shown = /^[\w.@+-]+$/.test(name) ? name : JSON.stringify(locator(name));
+  return `anatomiya (${shown}): ${body} Pinning it is a person's call, made with /anatomiya:pin in a session started inside ${shown}.`;
+}
+
+function heldBecause(root) {
   const path = resolveInside(root, REFRESH_STATE);
   if (path === null) return null;
   const held = readRecord(path).record?.held;
@@ -598,31 +628,29 @@ export function holdNotice(root) {
   const commit = typeof held?.commit === "string" && /^[0-9a-f]{7,64}$/.test(held.commit) ? held.commit.slice(0, 7) : null;
   const at = typeof pin === "string" && /^[0-9a-f]{7,64}$/.test(pin) ? ` at ${pin.slice(0, 7)}` : "";
   if (held?.reason === "made-here") {
-    return (
-      `anatomiya: the pin stays${at}: ${commit ? `commit ${commit}` : "a commit"} on origin's default branch ` +
-      "was made in this clone, and the automatic pin never accepts this clone's own work. " +
-      "Pinning it is a person's call, made with /anatomiya:pin."
-    );
+    // The committer names who made a commit, not where.
+    const how =
+      held.by === "identity"
+        ? "was committed under this clone's git identity, which the automatic pin reads as this clone's own work."
+        : "was made in this clone, and the automatic pin never accepts this clone's own work.";
+    return `the pin stays${at}: ${commit ? `commit ${commit}` : "a commit"} on origin's default branch ${how}`;
   }
   if (held?.reason === "no-record") {
     return (
-      `anatomiya: the pin stays${at}: git kept no record of how origin's default branch last ` +
-      "moved in this clone (no reflog), so a fetch cannot be told from a push and the automatic pin does not follow it. " +
-      "Pinning it is a person's call, made with /anatomiya:pin."
+      `the pin stays${at}: git kept no record of how origin's default branch last ` +
+      "moved in this clone (no reflog), so a fetch cannot be told from a push and the automatic pin does not follow it."
     );
   }
   if (held?.reason === "unread") {
     return (
-      `anatomiya: the pin stays${at}: git could not say whether a commit on origin's default branch was made ` +
-      "in this clone, so the automatic pin does not follow it. " +
-      "Pinning it is a person's call, made with /anatomiya:pin."
+      `the pin stays${at}: git could not say whether a commit on origin's default branch was made ` +
+      "in this clone, so the automatic pin does not follow it."
     );
   }
   if (held?.reason === "not-fetched") {
     return (
-      `anatomiya: the pin stays${at}: origin's default branch was last moved by this clone ` +
-      "(a push, or a ref written by hand), not by a fetch, so the automatic pin does not follow it. " +
-      "Pinning it is a person's call, made with /anatomiya:pin."
+      `the pin stays${at}: origin's default branch was last moved by this clone ` +
+      "(a push, or a ref written by hand), not by a fetch, so the automatic pin does not follow it."
     );
   }
   return null;
