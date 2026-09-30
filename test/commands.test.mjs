@@ -6,7 +6,7 @@ import { delimiter, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { execFileSync } from "node:child_process";
 
-import { needsShebang } from "./platform.mjs";
+import { needsShebang, needsSymlinks } from "./platform.mjs";
 import { needsRuby } from "./ruby-available.mjs";
 import { compact, delivered, filler, transcript } from "./transcript.mjs";
 import { installWithoutDependencies } from "./plugin-install.mjs";
@@ -435,6 +435,28 @@ test("a pin refuses a tree that differs from the commit it would record", async 
   writeFileSync(join(dir, "notes.txt"), "scratch\n");
   await runPin(dir);
   assert.ok(existsSync(join(dir, PIN_PATH)));
+});
+
+test("a pin leaves out this tool's own map committed through a linked rules directory", needsSymlinks, async (t) => {
+  // A map committed under `.claude/rules` is rewritten by every scan and the pin
+  // leaves it out. Through `.claude/rules -> ../agents/rules` git stores it
+  // under `agents/rules/`, which the `.claude` exclusion never reached.
+  const dir = repo(t);
+  const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
+  mkdirSync(join(dir, "agents", "rules"), { recursive: true });
+  writeFileSync(join(dir, "agents", "rules", "README.md"), "# shared\n");
+  mkdirSync(join(dir, ".claude"), { recursive: true });
+  symlinkSync(join("..", "agents", "rules"), join(dir, ".claude", "rules"));
+  await runScan(dir);
+  git("add", "-A");
+  git("commit", "-qm", "commit the map through the link");
+  writeFileSync(join(dir, "agents", "rules", OVERVIEW_FILE), "rewritten by a scan\n");
+
+  await runPin(dir);
+  assert.ok(existsSync(join(dir, PIN_PATH)));
+
+  writeFileSync(join(dir, "agents", "rules", "README.md"), "# edited\n");
+  await assert.rejects(() => runPin(dir), /commit or stash/, "a file of the directory's own is still a difference");
 });
 
 test("a pin refuses while a merge has left a path unmerged, under .claude/ as well", async (t) => {

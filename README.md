@@ -101,6 +101,10 @@ echo '.claude/rules/anatomiya-*.md' >> "$exclude"
 echo '.claude/anatomiya/' >> "$exclude"
 ```
 
+Where `.claude/rules` is a link to a shared directory, such as `.claude/rules -> ../agents/rules`, the
+map is written through it, and git sees those files only under the link's target. Name the target in
+the first line instead: `echo 'agents/rules/anatomiya-*.md' >> "$exclude"`.
+
 `--git-common-dir` rather than `.git`, because inside a linked worktree `.git` is a file holding a
 pointer. The common dir is shared, so one set of lines covers every worktree. A worktree left with no
 map of its own this way is handed its main checkout's counts by the hooks, labelled as such; run
@@ -121,7 +125,8 @@ its worktree checks as if nothing had been pinned. That copy is a snapshot
 of the main checkout taken at that moment, with nothing saying so, where the hooks' borrowed map
 carries its source. `docs/research/why-a-worktree-got-no-map.md` has the sources for both.
 
-The two exclude lines are everything a scan leaves behind. Four hooks are declared by the plugin, in its own
+The two exclude lines, with the first naming a linked rules directory's target, are everything a scan
+leaves behind. Four hooks are declared by the plugin, in its own
 `hooks/hooks.json`, so nothing is written into your settings. The refresh keeps the map current, and
 is described under [Staying current](#staying-current). The echo re-delivers the map after a turn or
 a tool call when the context window does not already hold that same map. The notice runs before a
