@@ -12,6 +12,7 @@ import { discover } from "./areas.mjs";
 import { buildPin, readPin, writePin, pinDelta, pinTarget, PIN_PATH } from "./baseline.mjs";
 import { gitBuffered, headSha } from "./git.mjs";
 import { firstLine } from "./encode.mjs";
+import { PREFIX, RULES_DIR, trackedRulesDir } from "./rules.mjs";
 import { NODE_PROBE_IDS, PROBE_IDS, installProblem, pluginRoot, probeName, readiness, readinessAfresh, readinessLines, remedyFor } from "./readiness.mjs";
 import { pinSummary, scanSummary } from "./summary.mjs";
 import { untrackedSentence } from "./render.mjs";
@@ -227,8 +228,11 @@ async function refuseUnlikeHead(root) {
   // commit that does not hold it, and every scan after reads that area as a
   // population change for as long as the pin stands. This tool's own output
   // under `.claude/` is left out: a repository that commits its map rewrites it
-  // on every scan, and it is never part of the population.
-  const dirty = await gitBuffered(root, ["status", "--porcelain", "--untracked-files=no", "-z", "--", ".", ":(exclude).claude"]);
+  // on every scan, and it is never part of the population. A map written
+  // through a `.claude/rules` link is stored under the link's target.
+  const rules = trackedRulesDir(root);
+  const own = rules === RULES_DIR ? [] : [`:(exclude)${rules}/${PREFIX}*.md`];
+  const dirty = await gitBuffered(root, ["status", "--porcelain", "--untracked-files=no", "-z", "--", ".", ":(exclude).claude", ...own]);
   if (!dirty.ok) throw new Error(`could not read whether the working tree matches HEAD: ${firstLine(dirty.error ?? "")}`);
   if (dirty.stdout.length > 0) {
     throw new Error("tracked files differ from HEAD, and a pin records HEAD: commit or stash them first, then pin");

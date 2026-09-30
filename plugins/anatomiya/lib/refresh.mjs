@@ -33,7 +33,7 @@ import { atomic, readFacts, readRecord, writeTemp } from "./facts.mjs";
 import { BASE_REFS, commitAt, gitBuffered, gitStreamed, headSha, operationUnfinished, shaReachable } from "./git.mjs";
 import { isPathTaken, ownLayout } from "./hook.mjs";
 import { pluginRoot } from "./readiness.mjs";
-import { OVERVIEW_FILE, readHead, realpathOf, REFRESH_STATE, resolveInside, RULES_DIR, STORE_DIR } from "./rules.mjs";
+import { OVERVIEW_FILE, readHead, realpathOf, REFRESH_STATE, resolveInside, STORE_DIR, trackedRulesDir } from "./rules.mjs";
 import { commonDirOf, gitDirOf } from "./worktree.mjs";
 
 const LOCK_FILE = "refresh.lock";
@@ -565,7 +565,7 @@ export function movedByRemote(message) {
  * of them would leave a change in `git status` nobody made.
  */
 async function mapTracked(root) {
-  const r = await gitBuffered(root, ["ls-files", "-z", "--", `${RULES_DIR}/${OVERVIEW_FILE}`, STORE_DIR]);
+  const r = await gitBuffered(root, ["ls-files", "-z", "--", `${trackedRulesDir(root)}/${OVERVIEW_FILE}`, STORE_DIR]);
   return r.ok && r.stdout.length > 0;
 }
 

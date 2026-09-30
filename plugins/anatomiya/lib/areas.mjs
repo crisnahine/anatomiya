@@ -108,7 +108,9 @@ export function globText({ negated, dir, tail }, encodeDir) {
   // Ignored unless it is callable, because `globs.map(globText)` hands this the
   // array index and the pattern comes back unencoded rather than throwing.
   const encode = typeof encodeDir === "function" ? encodeDir : (d) => d;
-  return `${negated ? "!" : ""}${dir ? `${encode(dir)}/` : ""}${tail}`;
+  // A tail with no `*` is a file's own name, repository-controlled like the directory.
+  const name = tail.includes("*") ? tail : encode(tail);
+  return `${negated ? "!" : ""}${dir ? `${encode(dir)}/` : ""}${name}`;
 }
 
 // The names the extension brace cannot spell, from the registry so the corpus
@@ -117,11 +119,16 @@ const BARE_NAMES = LANGUAGES.flatMap((l) => l.filenames);
 
 const baseName = (rel) => rel.slice(rel.lastIndexOf("/") + 1);
 
-/** The extension glob for a directory, plus one pattern per bare name it holds. */
-function patternsFor(dir, langs, { recursive, negated }, bare) {
+/**
+ * The extension glob for a directory, plus one pattern per bare name it holds.
+ * `under` names a directory at any depth below `dir` that every pattern goes
+ * through, which a recursive pattern alone can spell.
+ */
+function patternsFor(dir, langs, { recursive, negated }, bare, under = null) {
+  const via = (e) => (under === null ? e : { ...e, tail: `**/${under}/${e.tail}` });
   return [
-    globEntry(dir, langs, { recursive, negated }),
-    ...bare.map((name) => entry(dir, recursive ? `**/${name}` : name, negated)),
+    via(globEntry(dir, langs, { recursive, negated })),
+    ...bare.map((name) => via(entry(dir, recursive ? `**/${name}` : name, negated))),
   ];
 }
 
@@ -155,6 +162,8 @@ function reaches(g, rel) {
   if (dir && !rel.startsWith(`${dir}/`)) return false;
   const rest = rel.slice(dir ? dir.length + 1 : 0);
   const tail = String(g.tail || "");
+  const named = tail.match(/^\*\*\/([^*/]+)\/\*\*\/(.+)$/);
+  if (named) return rest.split("/").slice(0, -1).includes(named[1]) && spells(named[2], rest.slice(rest.lastIndexOf("/") + 1));
   const deep = tail.startsWith("**/");
   if (!deep && rest.includes("/")) return false;
   return spells(deep ? tail.slice(3) : tail, rest.slice(rest.lastIndexOf("/") + 1));
@@ -200,8 +209,11 @@ export function assertGlobSafe(g) {
  * `@(lib)` and `x+(y)` as extglobs, `(ab)` as a group and `a\b` as an escaped
  * `b`, so each of those directories rooted an area whose `paths` matched
  * nothing or a different directory. `+` and `@` only bite in front of a `(`.
+ * Claude Code itself splits each `paths` entry on the commas outside a brace
+ * before it expands braces or matches with gitignore rules, so `x,y/**` reads
+ * as `x` and `y/**` and a comma is glob syntax too.
  */
-const GLOB_SYNTAX = /[*?[\]{}!()\\]/;
+const GLOB_SYNTAX = /[*?[\]{}!()\\,]/;
 const spellable = (dir) =>
   dir === "." || (!dir.split("/").some((seg) => GLOB_SYNTAX.test(seg)) && sanitisePath(dir) === dir);
 
@@ -236,12 +248,20 @@ const children = (corpus, d) => [...(corpus.kids.get(d) || [])].sort();
 /** A subtree holding nothing but this area's files needs one pattern and no descent. */
 const whollyOwned = (corpus, mine, d) => corpus.under.get(d) === mine.under.get(d);
 
+/**
+ * The files a directory holds that the counts left out, one negation each. A
+ * directory's counted files all belong to one area, but a fixture or generated
+ * file can sit beside them, and the directory's own pattern reaches it.
+ */
+const leftOut = (corpus, mine, d) =>
+  mine.direct.has(d) ? (corpus.left.get(d) || []).map((name) => ({ dir: d, name, negated: true })) : [];
+
 /** One pattern per directory the area holds files in, subtrees it wholly owns collapsed. */
 function positiveCover(root, corpus, mine) {
   const out = [];
   const walk = (d) => {
     if (whollyOwned(corpus, mine, d)) return out.push({ dir: d, recursive: true, negated: false });
-    if (mine.direct.has(d)) out.push({ dir: d, recursive: false, negated: false });
+    if (mine.direct.has(d)) out.push({ dir: d, recursive: false, negated: false }, ...leftOut(corpus, mine, d));
     for (const c of children(corpus, d)) if (mine.under.get(c)) walk(c);
   };
   walk(root);
@@ -252,11 +272,12 @@ function positiveCover(root, corpus, mine) {
  * One pattern over the whole subtree, minus the foreign subtrees below it and
  * the foreign files sitting directly in the directories it walks through.
  *
- * A directory's files always travel to one area together, since every fold
- * moves whole buckets, so a directory is entirely in the area or entirely
- * outside it. Both cases are foreign to some area, and the ceiling produces the
- * second: it can synthesize a host at a directory whose own bucket was already
- * orphaned, leaving a host that holds files under that directory and none in it.
+ * A directory's counted files always travel to one area together, since every
+ * fold moves whole buckets, so a directory is entirely in the area or entirely
+ * outside it, apart from the files the counts left out. Both cases are foreign
+ * to some area, and the ceiling produces the second: it can synthesize a host
+ * at a directory whose own bucket was already orphaned, leaving a host that
+ * holds files under that directory and none in it.
  */
 function negativeCover(root, corpus, mine) {
   const out = [{ dir: root, recursive: true, negated: false }];
@@ -265,6 +286,7 @@ function negativeCover(root, corpus, mine) {
     if ((corpus.direct.get(d) || 0) > 0 && !mine.direct.has(d)) {
       out.push({ dir: d, recursive: false, negated: true });
     }
+    out.push(...leftOut(corpus, mine, d));
     for (const c of children(corpus, d)) {
       if (mine.under.get(c)) walk(c);
       else out.push({ dir: c, recursive: true, negated: true });
@@ -284,10 +306,74 @@ function negativeCover(root, corpus, mine) {
  * still bounded by the area, which is what A10 asks.
  */
 function spellableCover(root, positive, negative) {
-  const ok = (cover) => cover.every((e) => spellable(e.dir));
+  const ok = (cover) => cover.every((e) => spellable(e.dir) && (e.name === undefined || spellable(e.name)));
   const shapes = [positive, negative].filter(ok);
   if (shapes.length === 0) return [{ dir: root, recursive: true, negated: false }];
   return shapes.reduce((a, b) => (b.length < a.length ? b : a));
+}
+
+/**
+ * The tree the cover walks for one area: the counted files, plus the files the
+ * counts left out that this area's patterns would otherwise reach. Those are in
+ * no area, so they read as foreign, and a directory holding nothing else is cut
+ * out whole. Only the area's own subtree is ever walked, so the counted tree is
+ * shared and the left-out files are laid over it.
+ */
+function withLeftOut(corpus, left) {
+  if (left.length === 0) return { ...corpus, left: new Map() };
+  const extra = corpusTree(left);
+  const byDir = new Map();
+  for (const f of left) {
+    const d = dirOf(f.rel);
+    if (!byDir.has(d)) byDir.set(d, []);
+    byDir.get(d).push(baseName(f.rel));
+  }
+  const sum = (a, b) => ({ get: (d) => (a.get(d) || 0) + (b.get(d) || 0) || undefined });
+  return {
+    under: sum(corpus.under, extra.under),
+    direct: sum(corpus.direct, extra.direct),
+    kids: { get: (d) => new Set([...(corpus.kids.get(d) || []), ...(extra.kids.get(d) || [])]) },
+    left: new Map([...byDir].map(([d, names]) => [d, names.sort(byCode)])),
+  };
+}
+
+/**
+ * The left-out files an excluded directory's name can cut out in one pattern,
+ * by that name, and the rest, which the cover walks as foreign files.
+ *
+ * Every file under a directory the exclusion names is left out wherever that
+ * directory sits, so one negation by name replaces one per directory holding
+ * it: prisma keeps a `_fixture/` beside each of 102 functional tests. Not where
+ * the name also sits on a counted file's path, as `build` does under `src`,
+ * and not a name the matcher would read as more than a name.
+ */
+function byExcludedName(area, left) {
+  const under = area.path === "." ? "" : `${area.path}/`;
+  const counted = new Set(area.files.flatMap((f) => f.rel.slice(under.length).split("/").slice(0, -1)));
+  const byName = new Map();
+  const inTree = [];
+  for (const f of left) {
+    const n = f.excludedAt && f.excludedAt.startsWith(under) ? baseName(f.excludedAt) : null;
+    if (n === null || counted.has(n) || !/^[\w.-]+$/.test(n) || !spellable(n)) {
+      inTree.push(f);
+      continue;
+    }
+    if (!byName.has(n)) byName.set(n, []);
+    byName.get(n).push(f);
+  }
+  return { byName, inTree };
+}
+
+/** The left-out files inside an area that its extension brace or its bare names would spell. */
+function reachable(area, uncounted, bare) {
+  const exts = new Set(area.langs.flatMap((l) => EXT_BY_LANG[l] || []));
+  const under = area.path === "." ? "" : `${area.path}/`;
+  return uncounted.filter((f) => {
+    if (!f.rel.startsWith(under)) return false;
+    const name = baseName(f.rel);
+    const dot = name.lastIndexOf(".");
+    return bare.includes(name) || (dot > 0 && exts.has(name.slice(dot + 1)));
+  });
 }
 
 /**
@@ -310,10 +396,13 @@ function spellableCover(root, positive, negative) {
  * negations. 37 of those 156 areas change; the other 119 hold a whole subtree
  * and emit the same single recursive glob they emitted before.
  */
-function assignGlobs(areas, files) {
-  const corpus = corpusTree(files);
+function assignGlobs(areas, files, uncounted) {
+  const counted = corpusTree(files);
   for (const area of areas) {
     const mine = corpusTree(area.files);
+    const bare = BARE_NAMES.filter((n) => area.files.some((f) => baseName(f.rel) === n));
+    const { byName, inTree } = byExcludedName(area, reachable(area, uncounted, bare));
+    const corpus = withLeftOut(counted, inTree);
     const positive = positiveCover(area.path, corpus, mine);
     const negative = negativeCover(area.path, corpus, mine);
     // A tie goes to the shape with no negation: one pattern to read rather than
@@ -327,8 +416,14 @@ function assignGlobs(areas, files) {
     // foreign subtree exactly as it cuts the extension glob, and only for the
     // names this area actually holds, so nothing is excluded that was never
     // matched.
-    const bare = BARE_NAMES.filter((n) => area.files.some((f) => baseName(f.rel) === n));
-    area.globs = cover.flatMap((e) => patternsFor(e.dir, area.langs, e, bare).map(assertGlobSafe));
+    const globs = cover.flatMap((e) =>
+      e.name === undefined ? patternsFor(e.dir, area.langs, e, bare) : [entry(e.dir, e.name, true)]
+    );
+    // Cut out by name only where the cover would otherwise reach them.
+    const names = [...byName].filter(([, fs]) => fs.some((f) => globsReach(globs, f.rel))).map(([n]) => n).sort(byCode);
+    area.globs = globs
+      .concat(names.flatMap((n) => patternsFor(area.path, area.langs, { recursive: true, negated: true }, bare, n)))
+      .map(assertGlobSafe);
   }
   return areas;
 }
@@ -346,10 +441,15 @@ function assignGlobs(areas, files) {
  * caller passes the pinned corpus size where there is one: the floor is a step
  * function, so one added file otherwise re-partitions the repository and every
  * area reads as a population change against the pin.
+ *
+ * `uncounted` is the tracked source the corpus left out as fixture or
+ * generated code. It decides no area and counts toward none; it only keeps
+ * the globs off it.
  */
 export function discover(files, {
   minFiles = areaFloor(files.length),
   maxAreas = areaCeiling(files.length),
+  uncounted = [],
 } = {}) {
   const byDir = new Map();
   for (const f of files) {
@@ -403,7 +503,7 @@ export function discover(files, {
   const all = capped.sort((a, b) => byCode(a.path, b.path));
   // After the count is capped, never before: a glob is measured against the
   // areas that ended up existing, and a fold changes which subtrees are foreign.
-  assignGlobs(all, files);
+  assignGlobs(all, files, uncounted);
   all.orphaned = orphaned.concat(folded);
   return all;
 }

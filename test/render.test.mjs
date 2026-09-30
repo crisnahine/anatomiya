@@ -196,6 +196,23 @@ test("every delivered paths pattern reaches the files its area counted, whatever
   }
 });
 
+test("a delivered paths list cuts out the fixture and generated files its area never counted", () => {
+  // Read back the way Claude Code reads it, so a file negation has to survive
+  // the encoder and the comma split as well as the matcher.
+  const files = ["src/comp", "src/comp/a", "src/comp/b"].flatMap((d) =>
+    Array.from({ length: 4 }, (_, i) => ({ rel: `${d}/c${i}.ts`, lang: "js" }))
+  );
+  const uncounted = [
+    ...["src/comp/Gen.ts", 'src/comp/say"hi.ts', "src/comp/gen/G.ts"].map((rel) => ({ rel, lang: "js" })),
+    ...["src/comp/a/fixtures/F.ts", "src/comp/b/fixtures/F.ts"].map((rel) => ({ rel, lang: "js", excludedAt: rel.slice(0, rel.lastIndexOf("/")) })),
+  ];
+  const [a] = discover(files, { uncounted, minFiles: 5 });
+  const delivered = renderedPaths(renderArea(area({ path: a.path, globs: a.globs })));
+
+  for (const f of files) assert.equal(claudeCodeReaches(delivered, f.rel), true, `${f.rel}: ${JSON.stringify(delivered)}`);
+  for (const f of uncounted) assert.equal(claudeCodeReaches(delivered, f.rel), false, `${f.rel}: ${JSON.stringify(delivered)}`);
+});
+
 test("author identity reaches a rendered file as a count, never as a name", () => {
   // D4 counts distinct authors; the name itself has nowhere to land, which is
   // why a display name carrying a fake policy block cannot be rendered at all.
@@ -2942,6 +2959,87 @@ test("the matcher refuses a pattern it would read differently from a glob librar
   }
   assert.equal(globMatches("src/**/*.{ts,tsx}", "src/a/b.tsx"), true, "a brace list is read as every library reads it");
   assert.equal(globMatches("packages/@scope/x/**", "packages/@scope/x/y.ts"), true, "and an `@` with no group after it is a name");
+});
+
+/**
+ * Claude Code's reading of a `paths` list: every entry split on the commas
+ * outside a brace, the first brace expanded until none is left, then gitignore
+ * matching over the pieces, last match winning. A pattern with no slash but a
+ * trailing one matches at any depth, and one that matches a directory matches
+ * everything under it. `(`, `)` and `\` are literal to it.
+ */
+function claudeCodeReaches(patterns, rel) {
+  const split = (entry) => {
+    const out = [];
+    let cur = "";
+    let depth = 0;
+    for (const ch of entry) {
+      if (ch === "{") depth++;
+      if (ch === "}") depth--;
+      if (ch === "," && depth === 0) {
+        if (cur.trim()) out.push(cur.trim());
+        cur = "";
+      } else cur += ch;
+    }
+    if (cur.trim()) out.push(cur.trim());
+    return out;
+  };
+  const expand = (p) => {
+    const m = p.match(/^([^{]*)\{([^}]+)\}(.*)$/);
+    return m ? m[2].split(",").flatMap((x) => expand(m[1] + x.trim() + m[3])) : [p];
+  };
+  const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const toRe = (p) => {
+    let re = "";
+    for (let i = 0; i < p.length; i++) {
+      if (p.startsWith("**/", i)) { re += "(?:[^/]*/)*"; i += 2; }
+      else if (p[i] === "*") re += "[^/]*";
+      else re += esc(p[i]);
+    }
+    return new RegExp(`^${re}$`, "u");
+  };
+  const ancestry = rel.split("/").map((_, i, parts) => parts.slice(0, i + 1).join("/"));
+  let hit = false;
+  for (const piece of patterns.flatMap(split).flatMap(expand)) {
+    const negated = piece.startsWith("!");
+    let body = negated ? piece.slice(1) : piece;
+    body = body.replace(/\/$/, "");
+    if (!body.includes("/")) body = `**/${body}`;
+    const re = toRe(body.replace(/^\//, ""));
+    if (ancestry.some((p) => re.test(p))) hit = !negated;
+  }
+  return hit;
+}
+
+test("a directory named in extglob syntax is reached by Claude Code's own reading of paths", () => {
+  // The helper above does not implement extglobs, so it cannot see the bug on
+  // its own. Claude Code does not read `paths` through picomatch either: it
+  // splits, brace-expands and matches with gitignore rules.
+  for (const a of discover(extglobFiles())) {
+    const delivered = renderedPaths(renderArea(area({ path: a.path, globs: a.globs })));
+    for (const f of a.files) {
+      assert.ok(claudeCodeReaches(delivered, f.rel), `${a.path}: ${f.rel} is reached by none of ${JSON.stringify(delivered)}`);
+    }
+  }
+});
+
+test("a directory with a comma in its name folds like glob syntax, since Claude Code splits paths on it", () => {
+  // `x,y/**/*.rb` reads as the two patterns `x` and `y/**/*.rb`: the area
+  // reached none of its own files, and every file under any `x` or `y`.
+  const files = ["src", "src/x,y", "x", "y"].flatMap((d) =>
+    Array.from({ length: 6 }, (_, i) => ({ rel: `${d}/m${i}.ts`, lang: "js" }))
+  );
+  const areas = discover(files);
+
+  assert.ok(!areas.some((a) => a.path.includes(",")), "no area is rooted at a directory with a comma");
+  for (const a of areas) {
+    for (const g of a.globs) assert.ok(!g.dir.includes(","), `${a.path} names ${g.dir}`);
+    const delivered = renderedPaths(renderArea(area({ path: a.path, globs: a.globs })));
+    const mine = new Set(a.files.map((f) => f.rel));
+    for (const f of files) {
+      assert.equal(claudeCodeReaches(delivered, f.rel), mine.has(f.rel), `${a.path} vs ${f.rel}: ${JSON.stringify(delivered)}`);
+    }
+  }
 });
 
 test("a file in no area is not said to be there for having too few neighbours", () => {

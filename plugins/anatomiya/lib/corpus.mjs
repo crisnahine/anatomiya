@@ -116,6 +116,16 @@ export function isExcludedDir(path) {
   return EXCLUDE_DIR.some((re) => re.test(path)) || isBuildOutput(path);
 }
 
+/** The shallowest directory on a path that the excluded-directory rules refuse, or null. */
+function excludedAt(path) {
+  const parts = path.split("/");
+  for (let i = 1; i < parts.length; i++) {
+    const dir = parts.slice(0, i).join("/");
+    if (isExcludedDir(dir)) return dir;
+  }
+  return null;
+}
+
 export function isSource(path) {
   return SOURCE.test(path) || BARE_FILENAME.test(path);
 }
@@ -412,6 +422,7 @@ export async function collect(root) {
   const dropped = { denied: 0, excluded: 0, escaped: 0, notSource: 0, generated: 0, unreadable: 0 };
   const files = [];
   const others = [];
+  const uncounted = [];
   const generatedRules = generatedAttrRules(root);
   // Where each folded name sits in `files`. Only a fold that collides is asked
   // for file identity, so a stat per file is not the price of the rare case.
@@ -422,6 +433,9 @@ export async function collect(root) {
     // Non-source tracked files feed the roster this scan builds over every
     // tracked path, not just the parsed ones.
     if (drop === "notSource") { dropped.notSource++; others.push({ rel }); return; }
+    // Left out as unidiomatic on purpose, so an area's glob has to cut it out.
+    if (drop === "excluded" && isSource(rel)) uncounted.push({ rel, lang: language(rel), excludedAt: excludedAt(rel) });
+    if (drop === "generated") uncounted.push({ rel, lang: language(rel) });
     if (drop) { dropped[drop]++; return; }
     const file = { rel, abs, lang: language(rel) };
     // Two index entries that differ only in case or Unicode form are one file
@@ -439,9 +453,10 @@ export async function collect(root) {
     files.push(file);
   });
 
-  // Kept in the shape callers already read: listing the files never truncates
-  // the corpus. A parse that hits the Ruby per-line guard sets its own flag.
-  return { files, others, truncated: false, dropped };
+  // Kept in the shape callers already read. No repository size truncates the
+  // corpus now; the flag still travels because the Ruby stream can hit its
+  // per-line guard, and a partly-answered corpus must not state a convention.
+  return { files, others, uncounted, truncated: false, dropped };
 }
 
 /** Whether two paths open one file. BigInt, since an NTFS file id passes 2^53. */
