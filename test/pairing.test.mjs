@@ -236,19 +236,19 @@ test("a dimension that is not an obligation carries no companion count", () => {
 
 test("a producer whose companion sits elsewhere is marked on its own hit", () => {
   const corpus = new Set([
-    "app/models/a.rb",
+    "app/models/x/a.rb",
     "app/models/b.rb",
     "spec/models/b_spec.rb",
-    "spec/legacy/a_spec.rb",
+    "spec/legacy/x/a_spec.rb",
   ]);
   const parsed = new Map([
-    ["app/models/a.rb", { rel: "app/models/a.rb", ok: true, hits: {} }],
+    ["app/models/x/a.rb", { rel: "app/models/x/a.rb", ok: true, hits: {} }],
     ["app/models/b.rb", { rel: "app/models/b.rb", ok: true, hits: {} }],
   ]);
 
   applyPairings(parsed, corpus, ["ruby"]);
 
-  assert.deepEqual(parsed.get("app/models/a.rb").hits.model_spec, [{ conforming: false, elsewhere: true }]);
+  assert.deepEqual(parsed.get("app/models/x/a.rb").hits.model_spec, [{ conforming: false, elsewhere: true }]);
   assert.deepEqual(parsed.get("app/models/b.rb").hits.model_spec, [{ conforming: true, elsewhere: false }]);
 });
 
@@ -465,7 +465,8 @@ test("a producer pairs only within its own package, never across a sibling packa
 test("a flat corpus learns the identical root and hits it always did", () => {
   // Pin: package-prefix learning must be a no-op with no package boundary.
   // Hand-computed against the pre-fix algorithm: user and post tie the root
-  // vote one each, spec/models wins on being the declared pair.
+  // vote one each, spec/models wins on being the declared pair. A flat
+  // producer's tail carries its directory, `models`, which legacy/ lacks.
   const corpus = new Set([
     "app/models/user.rb",
     "app/models/post.rb",
@@ -478,7 +479,7 @@ test("a flat corpus learns the identical root and hits it always did", () => {
 
   assert.deepEqual(hits, new Map([
     ["app/models/user.rb", [{ conforming: true, elsewhere: false }]],
-    ["app/models/post.rb", [{ conforming: false, elsewhere: true }]],
+    ["app/models/post.rb", [{ conforming: false, elsewhere: false }]],
     ["app/models/order.rb", [{ conforming: false, elsewhere: false }]],
   ]));
 });
@@ -692,9 +693,46 @@ test("a file named like a companion outside every test tree answers no producer 
   applyPairings(parsed, corpus, ["ruby"]);
 
   assert.deepEqual(parsed.get("app/models/user.rb").hits.model_test, [{ conforming: false, elsewhere: false }]);
-  assert.deepEqual(pairingViolations(["app/models/user.rb"], corpus, MODEL_TEST), [
+  const records = new Map([["lib/models/user_test.rb", { ok: true, facets: {} }]]);
+  assert.deepEqual(pairingViolations(["app/models/user.rb"], corpus, MODEL_TEST, new Set(), records), [
     { path: "app/models/user.rb", companion: "test/models/user_test.rb" },
   ]);
+});
+
+test("a spec the check did not read keeps its name's answer, wherever the repository keeps it", () => {
+  // The scan read it and found `RSpec.describe`; the check reads only the
+  // branch's files, and `specs/` is no named test tree.
+  const corpus = new Set(["app/models/m1.rb", "app/models/m2.rb", "specs/models/m1_spec.rb", "specs/models/m2_spec.rb"]);
+  const records = new Map([["app/models/m1.rb", { ok: true, facets: {} }]]);
+
+  assert.deepEqual(pairingViolations(["app/models/m1.rb"], corpus, MODEL_SPEC, new Set(), records), []);
+});
+
+test("a branch that empties a spec is asked about the producer it answered, as one that deletes it is", () => {
+  const corpus = new Set(["app/models/user.rb", "app/models/post.rb", "spec/models/user_spec.rb", "spec/models/post_spec.rb"]);
+  const records = new Map([["spec/models/user_spec.rb", { ok: true, facets: { empty: true } }]]);
+
+  assert.deepEqual(pairingViolations(["spec/models/user_spec.rb"], corpus, MODEL_SPEC, new Set(), records), [
+    { path: "app/models/user.rb", companion: "spec/models/user_spec.rb" },
+  ]);
+});
+
+test("a producer directly under its root is matched on its directory and basename, never the basename alone", () => {
+  // `spec/requests/vote_spec.rb` is a request spec; whitehall's models are
+  // tested under `test/unit/app/models`, one directory deeper.
+  const corpus = new Set([
+    "app/models/user.rb",
+    "app/models/vote.rb",
+    "app/models/tag.rb",
+    "spec/models/user_spec.rb",
+    "spec/requests/vote_spec.rb",
+    "spec/unit/app/models/tag_spec.rb",
+  ]);
+
+  const hits = pairingHits(corpus, MODEL_SPEC);
+
+  assert.deepEqual(hits.get("app/models/vote.rb"), [{ conforming: false, elsewhere: false }]);
+  assert.deepEqual(hits.get("app/models/tag.rb"), [{ conforming: false, elsewhere: true }]);
 });
 
 test("a spec the parse found empty answers no producer, so the pairing row and the kinds line agree", () => {
