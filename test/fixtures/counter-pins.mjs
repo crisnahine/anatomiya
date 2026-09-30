@@ -17,7 +17,7 @@
 export const ELIGIBLE = [
   "function_style", "type_only_import", "import_extension", "test_call_style",
   "assertion_style", "absent_is_null", "doc_comment_style",
-  "record_lookup", "model_callbacks", "service_result_shape",
+  "record_lookup", "model_callbacks",
   "hook_call_style", "handler_is_named", "handler_memoised",
 ];
 
@@ -37,6 +37,9 @@ export const REFUSED = [
   // The inverse reads "a call chain crosses several types", which as a
   // directive asks an agent to reach through one object to another.
   "law_of_demeter",
+  // Every entry point that does not raise is the inverse's violation, and most
+  // of them have no failure to raise: it told a pure service to raise.
+  "service_result_shape",
   "migration_reversible", "migration_schema_only", "column_null_declared",
   "table_primary_key_declared", "reference_foreign_key",
   // The other side of a learned class is another class, which the learning

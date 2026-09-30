@@ -312,7 +312,7 @@ function dataWork(cls) {
 
   let touches = false;
   let unreadable = false;
-  walkRuby(cls.body, (m) => {
+  walkRuby(cls.body, (m, ctx) => {
     if (m.t !== "call") return;
     // Any `execute`, with a receiver or without: the framework whitelist
     // swallowed `ActiveRecord::Base.connection.execute`, so a migration
@@ -333,8 +333,9 @@ function dataWork(cls) {
       return;
     }
     // `stale(User).find_each` reaches the model through a helper handed it.
-    // SCREAMING_CASE is a value rather than a class, and a raise names an error.
-    if (RAISE.test(m.name)) return;
+    // SCREAMING_CASE is a value rather than a class, a raise names an error, and
+    // the class body and `revert` name modules and migrations.
+    if (!ctx.def || NAMES_NO_MODEL.test(m.name)) return;
     for (const arg of args(m)) {
       const name = constName(arg);
       if (name && /[a-z]/.test(name.slice(name.lastIndexOf(":") + 1)) && isModel(name, local)) touches = true;
@@ -344,7 +345,7 @@ function dataWork(cls) {
   return { touches, unreadable };
 }
 
-const RAISE = /^(raise|fail)$/;
+const NAMES_NO_MODEL = /^(raise|fail|include|extend|prepend|revert|migrate)$/;
 
 // Blocks that spell each direction themselves, so what they hold is not
 // something `change` has to invert.
@@ -381,11 +382,15 @@ function refused(c, ctx) {
     case "change_column":
       return true;
     case "remove_column":
-      return list.length <= 2;
+      return positional <= 2;
     case "remove_columns":
       return lacks(c, "type");
-    case "drop_table":
-      return list.length === 1 && !c.block;
+    case "drop_table": {
+      if (positional > 1) return true;
+      // Rails drops if_exists before asking whether any options were given.
+      const opts = options(c);
+      return !c.block && opts !== null && [...opts.keys()].every((k) => k === "if_exists");
+    }
     case "change_column_default":
     case "change_column_comment":
     case "change_table_comment":
@@ -425,7 +430,7 @@ export const RAILS_DIMENSIONS = [
     counterClaim: null, // no measured spread across repositories yet, and a counter needs the same bar the claim does
     precision: "partial",
     applicabilityPredicate: {
-      sites: "a migration class defining at least one of change, up or down, unless it rewrites rows or carries an execute this tool could not read: those are answered by migration_schema_only, and change cannot invert either. Nor is one whose change, or up where there is no change, holds a command change cannot invert outside a reversible or up_only block: an execute, a change_column, a remove_column with no type, a remove_columns with no type:, a drop_table with neither options nor a block, a change_column_default or comment change with no from: and to:, a remove_index with no column, a remove_foreign_key with no second table, or a t.change or untyped t.remove in a change_table block",
+      sites: "a migration class defining at least one of change, up or down, unless it rewrites rows or carries an execute this tool could not read: those are answered by migration_schema_only, and change cannot invert either. Nor is one whose change, or up where there is no change, holds a command change cannot invert outside a reversible or up_only block: an execute, a change_column, a remove_column with no positional type, a remove_columns with no type:, a drop_table naming several tables or with neither a block nor an option other than if_exists, a change_column_default or comment change with no from: and to:, a remove_index with no column, a remove_foreign_key with no second table, or a t.change or untyped t.remove in a change_table block",
       blind: "a repository-local base class hides the migration from the superclass test",
     },
     langs: ["ruby"],
