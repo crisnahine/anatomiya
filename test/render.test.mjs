@@ -327,6 +327,47 @@ test("a suppressed dimension still prints its counts and names the gate", () => 
   assert.match(out, /^failure is returned, not thrown: no convention\. 30 of 31 sites \(concentration\)$/m);
 });
 
+test("a partial dimension says so on its counts line too", () => {
+  // The counts line reads like the block form with less room, and a count over
+  // sites the parser cannot all see is the same fact on either.
+  const out = renderArea(
+    area({
+      dimensions: [
+        dim({ precision: "partial", states: "claim", matchesDefault: true, conforming: 22 }),
+        dim({ key: "error_shape", claim: "failure is returned, not thrown", precision: "partial",
+              directive: false, gate: "evidence", conforming: 4, candidates: 4 }),
+        dim({ key: "module_state_const", claim: "module-level bindings are const",
+              directive: false, gate: "evidence", conforming: 4, candidates: 4 }),
+      ],
+    })
+  );
+
+  assert.match(
+    out,
+    /^catch blocks use the error they caught: 22 of 22 sites \(matches model default\) {2}\(partial: some sites are not visible statically\)$/m
+  );
+  assert.match(
+    out,
+    /^failure is returned, not thrown: no convention\. 4 of 4 sites \(evidence\) {2}\(partial: some sites are not visible statically\)$/m
+  );
+  assert.match(out, /^module-level bindings are const: no convention\. 4 of 4 sites \(evidence\)$/m, "a precise one stays bare");
+});
+
+
+test("the overview says what a no convention line means", () => {
+  // The gate name in parentheses is the only reason printed, and "no convention.
+  // 73 of 73 sites" reads as a denial of a habit every site follows without it.
+  // On the line that says what a claim is, so it costs the bound no line.
+  const lines = renderOverview(result(), { uncovered: 30 }).split("\n");
+  const at = lines.indexOf(
+    'A claim states how many sites conform out of how many were eligible; "no convention" means the gate in parentheses stopped it, and its sites may still all agree.'
+  );
+
+  assert.ok(at > 0, "the sentence is in the overview");
+  assert.equal(lines[at - 1], "Facts counted from this repository's own code, per directory.");
+});
+
+
 test("a suppressed author gate says how many authors it wanted", () => {
   // "(authors)" was readable while the bar was the constant 2 and is not once
   // the bar is a function of the repository. An audit months later has to be
@@ -344,6 +385,24 @@ test("a suppressed author gate says how many authors it wanted", () => {
 
   assert.match(out, /no convention\. 20 of 20 sites \(authors 1 of 2\)$/m);
 });
+
+test("an unstated slot shown on its counter side names the counter side's authors", () => {
+  // D4 counts authors per side. One person wrote every one of these 40 sites,
+  // and the line read "authors 0 of 2" off the claim side, which holds none.
+  const out = renderArea(
+    area({
+      dimensions: [
+        dim({ key: "function_style", claim: "module-level functions are declared with function",
+              counterClaim: "module-level functions are assigned to variables",
+              states: null, directive: false, conforming: 0, candidates: 40,
+              gate: "ratio", counterGate: "authors", authors: 0, counterAuthors: 1, authorsRequired: 2 }),
+      ],
+    })
+  );
+
+  assert.match(out, /^module-level functions are assigned to variables: no convention\. 40 of 40 sites \(authors 1 of 2\)$/m);
+});
+
 
 test("a gate that failed because git did not answer says so", () => {
   // Unread history and a team of one produced identical output, so a broken git
