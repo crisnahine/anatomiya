@@ -14,7 +14,7 @@
  * is a filename anyone can type; the frontmatter alone is a file an older build
  * wrote and this one knows nothing about.
  */
-import { closeSync, constants, fstatSync, lstatSync, openSync, readSync, readdirSync, realpathSync, statSync } from "node:fs";
+import { accessSync, closeSync, constants, fstatSync, lstatSync, openSync, readSync, readdirSync, realpathSync, statSync } from "node:fs";
 import { join, relative, isAbsolute, resolve, sep } from "node:path";
 
 /**
@@ -312,10 +312,15 @@ export const outsideClaude = (relPath) =>
  * `.claude/rules -> ../README.md` read "README.md is not a directory ...
  * remove it and scan again", and an agent following that sentence deletes the
  * README. A link is said to be one, and what is to be removed is the link.
+ *
+ * The nearest directory that exists must also be writable: the first write
+ * into it was a temp file's `open`, whose raw EACCES named a random temp path
+ * after a dry run had said "would write". A superuser passes, as it writes.
  */
 export function blockedOnTheWay(root, relPath) {
   const base = realpathOrNull(root) ?? resolve(root);
   const parts = relPath.split("/");
+  let nearest = { name: "the repository root", at: base };
   for (let i = 1; i <= parts.length; i++) {
     const name = parts.slice(0, i).join("/");
     const at = join(base, ...parts.slice(0, i));
@@ -324,17 +329,24 @@ export function blockedOnTheWay(root, relPath) {
       entry = lstatSync(at);
     } catch {
       // Nothing there, so the rest is created.
-      return null;
+      break;
     }
-    if (entry.isDirectory()) continue;
     if (entry.isSymbolicLink()) {
       const stat = statSync(at, { throwIfNoEntry: false });
-      if (stat?.isDirectory()) continue;
-      const real = realpathOrNull(at);
-      const to = real === null ? "nothing" : relative(base, real).split(sep).join("/") || ".";
-      return { name, link: true, sentence: `${name} is a link to ${to}, which is not a directory` };
+      if (!stat?.isDirectory()) {
+        const real = realpathOrNull(at);
+        const to = real === null ? "nothing" : relative(base, real).split(sep).join("/") || ".";
+        return { name, sentence: `${name} is a link to ${to}, which is not a directory`, remedy: "replace the link with a directory" };
+      }
+    } else if (!entry.isDirectory()) {
+      return { name, sentence: `${name} is not a directory`, remedy: "remove it" };
     }
-    return { name, link: false, sentence: `${name} is not a directory` };
+    nearest = { name, at };
+  }
+  try {
+    accessSync(nearest.at, constants.W_OK);
+  } catch {
+    return { name: nearest.name, sentence: `${nearest.name} is not writable`, remedy: "fix its permissions" };
   }
   return null;
 }

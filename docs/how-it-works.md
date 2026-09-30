@@ -841,8 +841,9 @@ agents, and refused, the scan wrote nothing there at all. A link within `.claude
 a link at either is not followed out; a write replaces it as an entry. A refusal names the path the
 repository spells and says when it is a link, since the resolved name once read "README.md is not a
 directory ... remove it" for `.claude/rules -> ../README.md`. The planning half also refuses a
-directory at `facts.json` or `baseline.json`, which the rename cannot replace, so a dry run of
-`scan` or `pin` refuses what the real run would die on.
+directory at `facts.json` or `baseline.json`, which the rename cannot replace, and a nearest existing
+directory on the way that this process cannot write, so a dry run of `scan` or `pin` refuses what the
+real run would die on, by the directory's name rather than a raw `EACCES` on a temp file.
 
 Files in there are read by their head, one megabyte at most, and only when the opened handle is a
 regular file. The ownership test reads the frontmatter from byte zero a line at a time, and stops at
