@@ -418,16 +418,33 @@ test("a changelog with no link definition for the version its manifest states is
 
 test("a link definition inside a code fence defines nothing", (t) => {
   // Markdown renders a fenced line as text, so the heading still links nowhere.
+  // A fence closes only on a bare run of its own character at least as long, so
+  // the inner line of the last three leaves the fence open. A CRLF checkout fences too.
+  const fences = [["```", "```"], ["~~~md", "~~~"], ["   ```", "```"], ["~~~", "```\n{line}\n~~~"], ["````", "```\n{line}\n````"], ["```", "```js\n{line}\n```"], ["```", "```", "\r\n"]];
+  for (const [open, close, eol = "\n"] of fences) {
+    const dir = repoCopy(t);
+    const path = join(dir, "CHANGELOG.md");
+    const text = readFileSync(path, "utf8");
+    const line = text.match(/^\[Unreleased\]: .*$/m)[0];
+    const body = close.includes("{line}") ? close.replace("{line}", line) : line + "\n" + close;
+    writeFileSync(path, (text.replace(line + "\n", "") + `\n${open}\n${body}\n`).replace(/\n/g, eol));
+
+    const { status, output } = check(dir);
+
+    assert.equal(status, 1, `${open} fence: ${output}`);
+    assert.match(output, /CHANGELOG\.md: has no "\[Unreleased\]:" link definition/, output);
+  }
+});
+
+test("a line opening with an inline code span opens no fence", (t) => {
+  // A backtick fence's info string cannot hold a backtick, so this is a paragraph.
   const dir = repoCopy(t);
   const path = join(dir, "CHANGELOG.md");
-  const text = readFileSync(path, "utf8");
-  const line = text.match(/^\[Unreleased\]: .*$/m)[0];
-  writeFileSync(path, text.replace(line + "\n", "") + "\n```\n" + line + "\n```\n");
+  writeFileSync(path, readFileSync(path, "utf8").replace("## [Unreleased]\n", "## [Unreleased]\n\n```npm test``` now runs the docs check too.\n"));
 
-  const { status, output } = check(dir);
+  const { output } = check(dir);
 
-  assert.equal(status, 1);
-  assert.match(output, /CHANGELOG\.md: has no "\[Unreleased\]:" link definition/, output);
+  assert.doesNotMatch(output, /link definition/, output);
 });
 
 test("a link definition matches its heading whatever the label's case", (t) => {
