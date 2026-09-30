@@ -139,6 +139,75 @@ test("a plan is committed to the root it was made for, or to nothing", () => {
   rmSync(dir, { recursive: true, force: true });
 });
 
+/** Every byte of the map on disk, by name, so a failed write can be compared whole. */
+function snapshot(dir) {
+  const out = {};
+  for (const sub of [RULES, STORE]) {
+    for (const name of readdirSync(join(dir, sub)).sort()) out[`${sub}/${name}`] = readFileSync(join(dir, sub, name), "utf8");
+  }
+  return out;
+}
+
+test("a rules directory that refuses the write leaves the previous facts as well as the previous files", needsPosixPermissions, () => {
+  // `check` reads facts.json, so new facts beside the old files called the map
+  // fresh while the session loaded a map of an older scan.
+  const dir = workspace();
+  writeMap(result(dir, [area("src/services"), area("src/api")]));
+  const before = snapshot(dir);
+  chmodSync(rules(dir), 0o555);
+  try {
+    assert.throws(() => writeMap(result(dir, [area("src/services"), area("src/hooks")])), /EACCES/);
+  } finally {
+    chmodSync(rules(dir), 0o755);
+  }
+
+  assert.deepEqual(snapshot(dir), before, "the previous map, whole, and no temporary file beside it");
+  rmSync(dir, { recursive: true, force: true });
+});
+
+/** Make the `n`th call of one `node:fs` export throw, and put it back after the test. */
+async function failNth(t, name, n, code = "EPERM") {
+  const fs = (await import("node:fs")).default;
+  const { syncBuiltinESMExports } = await import("node:module");
+  const real = fs[name];
+  let calls = 0;
+  fs[name] = (...args) => {
+    if (++calls === n) throw Object.assign(new Error(`${code}: operation not permitted, ${name}`), { code });
+    return real(...args);
+  };
+  syncBuiltinESMExports();
+  t.after(() => {
+    fs[name] = real;
+    syncBuiltinESMExports();
+  });
+}
+
+test("a replace that fails part way puts back every file it had already replaced", async (t) => {
+  // The facts go first, so a failure on the second file already had them new.
+  const dir = workspace();
+  writeMap(result(dir, [area("src/services"), area("src/api")]));
+  const before = snapshot(dir);
+  await failNth(t, "renameSync", 3);
+
+  assert.throws(() => writeMap(result(dir, [area("src/services"), area("src/hooks")])), /EPERM/);
+
+  assert.deepEqual(snapshot(dir), before, "the previous map, whole, and no temporary file beside it");
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("a removal that fails puts back what the scan had written", async (t) => {
+  // A stale area file left beside new facts is a rendered file no fact on disk derives.
+  const dir = workspace();
+  writeMap(result(dir, [area("src/services"), area("src/api")]));
+  const before = snapshot(dir);
+  await failNth(t, "unlinkSync", 1);
+
+  assert.throws(() => writeMap(result(dir, [area("src/services")])), /EPERM/);
+
+  assert.deepEqual(snapshot(dir), before);
+  rmSync(dir, { recursive: true, force: true });
+});
+
 test("a dry run writes nothing at all", () => {
   const dir = workspace();
 
