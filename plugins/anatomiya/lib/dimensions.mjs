@@ -167,7 +167,7 @@ export const DIMENSIONS = [
     counterClaim: null,
     precision: "partial",
     applicabilityPredicate: {
-      sites: "a file that throws outside a catch, or returns a result-shaped object",
+      sites: "a file that throws outside a catch, or returns a result: a Result.* call, an ok(), err(), Ok() or Err() call, or an object literal carrying an ok key, or one carrying an error or success key whose every key is error, success, data, value, result, valid or isValid. An object carrying any other key beside error is a view-model or state, not a result, and so is whatever getDerivedStateFromError returns",
       blind: "a throw inside a helper the caller wraps is invisible from the file that throws",
     },
     langs: ["js", "jsx"],
@@ -181,6 +181,8 @@ export const DIMENSIONS = [
       });
       walk(program, (n, ctx) => {
         if (n.type !== "ReturnStatement" || !n.argument) return;
+        // React merges what this returns into component state, `{ error }` included.
+        if (declName(ctx.fn) === "getDerivedStateFromError") return;
         if (!isResultShaped(value(n.argument))) return;
         add({ node: n, conforming: true, where: declName(ctx.fn) });
       });
@@ -321,15 +323,18 @@ function isResultShaped(node) {
     if (c && c.type === "MemberExpression" && c.object && c.object.name === "Result") return true;
     if (c && c.type === "Identifier" && /^(ok|err|Ok|Err)$/.test(c.name)) return true;
   }
+  // An `error` key alone is not a result: a view-model hook hands its field
+  // message out as `{ label, error, disabled }`. Without the `ok` discriminant,
+  // every key has to be one a result is made of.
   if (node.type === "ObjectExpression") {
-    return node.properties.some((p) => {
-      if (!p.key || p.computed) return false;
-      const k = p.key.name ?? p.key.value;
-      return k === "ok" || k === "error";
-    });
+    const keys = node.properties.map((p) => (p.key && !p.computed ? p.key.name ?? p.key.value : null));
+    if (keys.includes("ok")) return true;
+    return keys.some((k) => k === "error" || k === "success") && keys.every((k) => RESULT_KEYS.has(k));
   }
   return false;
 }
+
+const RESULT_KEYS = new Set(["error", "success", "data", "value", "result", "valid", "isValid"]);
 
 // Every tree row, whichever file defines it: this is the list the parse worker
 // runs, and `registry.mjs` composes it with the other two.
