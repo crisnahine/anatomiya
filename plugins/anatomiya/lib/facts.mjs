@@ -223,8 +223,9 @@ export function readRecord(path) {
  *
  * A version past this reader's is refused rather than read: fields move between
  * versions, and a record read against the wrong shape enforces a convention
- * nobody stated. Absent or malformed stays `null`, which is the ordinary case of
- * a repository nobody has scanned.
+ * nobody stated. Absent stays `null`, which is the ordinary case of a repository
+ * nobody has scanned. A file there that does not parse is a map nothing could
+ * use, a committed one that conflicted on a merge, and is said as one.
  */
 export function readFacts(root) {
   // The same containment the write side carries. This record drives every
@@ -246,7 +247,10 @@ export function readFacts(root) {
   if (oversize) {
     return { facts: null, unreadable: `the map on disk is past the ${RECORD_MOST / 2 ** 20} MB this reads, so nothing was enforced from it` };
   }
-  if (parsed === null) return { facts: null, unreadable: null };
+  if (parsed === null) {
+    if (readHead(path, 0).kind !== "file") return { facts: null, unreadable: null };
+    return { facts: null, unreadable: "the map on disk does not parse as JSON, so nothing was enforced from it: scan again" };
+  }
   // A shape that is not a record at all is the ordinary case of a repository
   // nobody has scanned; a version this build has not heard of is not, and says
   // so. Both decided by the one rule every reader shares.

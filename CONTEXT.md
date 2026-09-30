@@ -217,8 +217,8 @@ _Avoid_: churn, delta, divergence
 
 **Staleness**:
 The verdict that this run cannot tell a new site from an old one well enough to be trusted at full
-severity: drift past the threshold, or no map, no pin, no reachable base, an empty pinned population, or
-a truncated scan. It caps severity and never refuses to run.
+severity: drift past the threshold, or no map or one that could not be read, no pin, no reachable base,
+an empty pinned population, or a truncated scan. It caps severity and never refuses to run.
 _Avoid_: expiry, invalidation, rot
 
 ### What reaches the agent
