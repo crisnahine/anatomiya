@@ -20,7 +20,8 @@ import { crossing } from "./walk.mjs";
 /**
  * Run one job and report through `send`: `{ error }` and nothing after it,
  * or `{ built, resolution, config }`, then `{ rel, hits }` per file the
- * program holds, then `{ done }`.
+ * program holds, then `{ done }`. The resolution is over `job.measured` where
+ * it names files, and over every file where it does not.
  *
  * Every failure is one message on the channel rather than a dead one: the
  * parent reads a channel that closes with nothing said as a crash.
@@ -45,7 +46,8 @@ export async function runJob(job, send, { load = loadTypeScript } = {}) {
     const program = ts.createProgram({ rootNames, options, host });
     const checker = program.getTypeChecker();
 
-    const resolution = measureResolution(ts, program, checker, job.files);
+    const measured = job.measured ? new Set(job.measured) : null;
+    const resolution = measureResolution(ts, program, checker, measured ? job.files.filter((f) => measured.has(f.rel)) : job.files);
     send({ built: true, resolution, config: { status: config.status, reason: config.reason } });
 
     for (const file of job.files) {

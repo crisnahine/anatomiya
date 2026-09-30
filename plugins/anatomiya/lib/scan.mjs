@@ -70,8 +70,14 @@ export async function scan(cwd, { guards = null, deep = false } = {}) {
 
   // The second tier, opt-in and never the default (B7). It runs once for the
   // whole corpus, because narrowing the file set was measured saving 3% and
-  // driving unresolved types from 3.1% to 36.2%.
-  const semantic = deep ? await runSemantic(root, files.filter((f) => langHas(f.lang, "semantic"))) : null;
+  // driving unresolved types from 3.1% to 36.2%. The resolution rate is taken
+  // over area files only, the ones a claim is counted over: one minified bundle
+  // in no area measured a repository whose own code resolved fully at 3%.
+  const semantic = deep
+    ? await runSemantic(root, files.filter((f) => langHas(f.lang, "semantic")), {
+        measured: areas.flatMap((a) => a.files.map((f) => f.rel)),
+      })
+    : null;
   if (semantic) mergeSemanticHits(head.records, semantic.records);
   // An obligation is answered by the corpus, not by a tree, so it is merged in
   // after the parse rather than counted inside the worker.

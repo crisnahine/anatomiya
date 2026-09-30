@@ -2,9 +2,9 @@
 /**
  * The second tier: `typescript@5`'s checker, opt-in and never the default.
  *
- * Measured 26x slower than the syntactic tier and whole-program, so narrowing
- * its file set does not buy the time back: driving the corpus down drove
- * unresolved types from 3.1% to 36.2%. Major 5 is pinned because 7 is the Go
+ * A deep scan measured about 3x a plain one, and the checker is whole-program,
+ * so narrowing its file set does not buy the time back: driving the corpus down
+ * drove unresolved types from 3.1% to 36.2%. Major 5 is pinned because 7 is the Go
  * port and publishes no JS API at all.
  */
 
@@ -19,17 +19,26 @@ const SEMANTIC_MIN_MAJOR = 5;
  * repository-controlled code inside this process.
  */
 export async function loadTypeScript({ specifier = "typescript" } = {}) {
+  const ts = await importTypeScript(specifier);
+  return usable(ts) ? { ts, version: String(ts.version) } : null;
+}
+
+async function importTypeScript(specifier) {
   try {
     const mod = await import(specifier);
-    const ts = mod.default ?? mod;
-    if (!ts || typeof ts.createProgram !== "function") return null;
-    const version = String(ts.version ?? "");
-    if (Number(version.split(".")[0]) !== SEMANTIC_MIN_MAJOR) return null;
-    return { ts, version };
+    return mod.default ?? mod;
   } catch {
     return null;
   }
 }
+
+function usable(ts) {
+  if (!ts || typeof ts.createProgram !== "function") return false;
+  return Number(String(ts.version ?? "").split(".")[0]) === SEMANTIC_MIN_MAJOR;
+}
+
+/** What doctor and `--deep` both say of a typescript that loads and is not the major this tier runs on. */
+export const NEEDS_MAJOR = `--deep needs typescript ${SEMANTIC_MIN_MAJOR}.x`;
 
 /**
  * What `--deep` refuses with. The remedy is handed in rather than spelled here:
@@ -42,6 +51,18 @@ export function notInstalledMessage(remedy) {
     "--deep needs typescript, which is an optional dependency and is not installed",
     `${remedy}, or scan again without --deep`,
   ].join("\n");
+}
+
+/**
+ * Why `--deep` cannot run, or null when it can. Absent and the wrong major are
+ * told apart, because one install fixes both and only one of them is absent.
+ */
+export async function deepRefusal(remedy, { specifier = "typescript" } = {}) {
+  const ts = await importTypeScript(specifier);
+  if (!ts) return notInstalledMessage(remedy);
+  if (usable(ts)) return null;
+  const found = ts.version ? `typescript ${ts.version}` : "typescript of no version";
+  return [`${found}: ${NEEDS_MAJOR}`, `${remedy}, or scan again without --deep`].join("\n");
 }
 
 import { guardedChild } from "./child.mjs";
@@ -94,11 +115,14 @@ export function classifySemantic({ config, resolution }) {
  * "no hits" is the shape B13 and F15 both closed elsewhere. A bag naming a
  * guard the checker does not have is a caller's mistake rather than a run,
  * and rejects the way `parseAll` refuses one.
+ *
+ * `measured` names the files the resolution rate is taken over, every file
+ * when null; the program still holds them all.
  */
 export function runSemantic(
   root,
   files,
-  { guards: given = null, workerPath = WORKER, cwd = tmpdir() } = {}
+  { guards: given = null, workerPath = WORKER, cwd = tmpdir(), measured = null } = {}
 ) {
   return new Promise((resolve) => {
     // Inside the promise so a bad bag rejects rather than throws, which is how
@@ -146,7 +170,7 @@ export function runSemantic(
     child.on("message", (msg) => {
       if (!msg || typeof msg !== "object") return;
       if (msg.ready) {
-        return child.send({ root, files }, (err) => {
+        return child.send({ root, files, measured }, (err) => {
           if (err) finish(`the checker closed its channel before it was given the corpus: ${err.message}`);
         });
       }

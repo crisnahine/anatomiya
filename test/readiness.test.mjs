@@ -299,18 +299,22 @@ test("a checker --deep would refuse is not ok, and setup counts it as needed", (
   cpSync(join(ROOT, REL.anatomiya, "package.json"), join(home, "package.json"));
   const script = `
     const { readiness } = await import(${JSON.stringify(pathToFileURL(join(home, "lib", "readiness.mjs")).href)});
-    const { runSetup } = await import(${JSON.stringify(pathToFileURL(join(home, "lib", "commands.mjs")).href)});
+    const { runScan, runSetup } = await import(${JSON.stringify(pathToFileURL(join(home, "lib", "commands.mjs")).href)});
     const [row] = await readiness({ engines: ["typescript"] });
     const { needed } = await runSetup({ dryRun: true });
-    process.stdout.write(JSON.stringify({ row, needed }));
+    let refused = null;
+    try { await runScan(${JSON.stringify(above)}, { dryRun: true, deep: true }); } catch (err) { refused = err.message; }
+    process.stdout.write(JSON.stringify({ row, needed, refused }));
   `;
 
-  const { row, needed } = JSON.parse(execFileSync(process.execPath, ["--input-type=module", "-e", script], { encoding: "utf8" }));
+  const { row, needed, refused } = JSON.parse(execFileSync(process.execPath, ["--input-type=module", "-e", script], { encoding: "utf8" }));
 
   assert.equal(row.version, "4.9.5");
   assert.equal(row.ok, false);
   assert.match(row.reason, /5\.x/, row.reason);
   assert.ok(needed.includes("typescript"), `setup would install it: ${needed}`);
+  // scan --deep names the same cause doctor does, not an absent install.
+  assert.equal(refused?.split("\n")[0], `typescript 4.9.5: ${row.reason}`, refused);
 });
 
 test("an engine fixed after a failed load reads as fixed only to a node that never tried it", needsSymlinks, (t) => {

@@ -3,7 +3,7 @@ import { join } from "node:path";
 
 import { absentInterpreter } from "./child.mjs";
 import { scan } from "./scan.mjs";
-import { loadTypeScript, notInstalledMessage } from "./semantic.mjs";
+import { deepRefusal } from "./semantic.mjs";
 import { writeMap } from "./write.mjs";
 import { check } from "./check.mjs";
 import { engineOf, language } from "./langs.mjs";
@@ -32,7 +32,8 @@ export async function runScan(cwd, { dryRun = false, deep = false } = {}) {
   // Refused before any work, not after the parse: --deep with no checker
   // installed is an install problem, and a scan that runs for a minute and then
   // says so has already spent the time (B13's shape).
-  if (deep && (await loadTypeScript()) === null) throw new Error(notInstalledMessage(remedyFor("typescript")));
+  const refused = deep ? await deepRefusal(remedyFor("typescript")) : null;
+  if (refused) throw new Error(refused);
 
   const result = await scan(cwd, { deep });
   // Only where it left nothing to read (B13). An engine missing for one
