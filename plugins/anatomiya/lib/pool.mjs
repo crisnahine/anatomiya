@@ -112,11 +112,12 @@ export function createPool({ size, withProgram = false, execArgv = [], guards = 
     // Except when the pool's own wall clock did the killing while other parses
     // were in flight: that one gets a second attempt once the queue drains,
     // alone, since the batch it died in was competing for the machine. One
-    // killed while it already ran alone is charged, as a retry would only
-    // repeat it: retries run one at a time, so each cost the scan its timeout. How long a parse takes is a property of
-    // the machine, not of the file, and a file charged as crashed in one scan
-    // and parsed in the next moves the unexamined count in the always-loaded
-    // overview (A5). A worker over the RSS ceiling, or one that died by itself,
+    // killed while it already ran alone, which is every kill in a one-worker
+    // pool, is charged: its retry would find the same empty pool, and retries
+    // run one at a time, each costing the scan its timeout. How long a parse
+    // takes is a property of the machine, not of the file, and a file charged
+    // as crashed in one scan and parsed in the next moves the unexamined count
+    // in the always-loaded overview (A5). A worker over the RSS ceiling, or one that died by itself,
     // is a poison file and gets the one attempt.
     child.on("exit", (code, signal) => died(code, signal));
 
