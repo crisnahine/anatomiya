@@ -329,6 +329,36 @@ test("a documented code the report can never emit fails too", (t) => {
   assert.match(output, /documents no-map-at-all, which is not a caveat code/);
 });
 
+test("a severity reason check prints that the walkthrough's table does not quote fails", (t) => {
+  // An agent relays the reason line as fact, and the table is where a reader
+  // looks it up, so a paraphrase there is a reason nobody can find.
+  const dir = repoCopy(t);
+  edit(join(dir, "docs", "how-it-works.md"), (text) =>
+    text.replace(/^\| FIX \|.*$/m, "| FIX | the area file had no room for it |")
+  );
+
+  const { status, output } = check(dir);
+
+  assert.equal(status, 1);
+  assert.match(output, /table's FIX row does not quote the reason "the area file had no room to state this claim"/);
+});
+
+test("a reason built from counts is read with the row's own placeholders, and a paraphrase of it still fails", (t) => {
+  const dir = repoCopy(t);
+  edit(join(dir, "docs", "how-it-works.md"), (text) =>
+    text.replace(
+      '"N of M baseline sites here, on a claim the rest of the repository carries"',
+      "stated on the repository's bound"
+    )
+  );
+
+  const { status, output } = check(dir);
+
+  assert.equal(status, 1);
+  assert.match(output, /FIX row does not quote the reason "\$\{base\.conforming\} of \$\{base\.candidates\} baseline sites here, on a claim the rest of the repository carries"/);
+  assert.doesNotMatch(output, /baseline sites is thin"/);
+});
+
 test("a decision row whose cells outnumber the header is named, with the escape as its remedy", (t) => {
   // GitHub drops every cell past the header count, silently, so an unescaped
   // `|` inside a code span takes the Status column off the end of the row. It
