@@ -315,7 +315,8 @@ export function applyPairings(parsed, corpus, langs) {
  * its model was flagged. `removed` is every path the branch took away, and a
  * spec the branch emptied is taken away the same way. `records` holds the
  * parses this run has, keyed by path: only the branch's files, so a companion
- * with none keeps its name's answer rather than the scan's test-tree fallback.
+ * with none, or one that failed, keeps its name's answer rather than the
+ * scan's test-tree fallback.
  */
 export function pairingViolations(changed, tree, pairing, removed = new Set(), records = null) {
   const corpus = answeringCorpus(tree, pairing, records, true);
@@ -350,12 +351,12 @@ export function pairingViolations(changed, tree, pairing, removed = new Set(), r
  * repository, and a spec commented out top to bottom credit the service beside
  * it while the kinds line, reading the same file, did not. `isTestFile` is the
  * one rule for both (H29, H35). With `partial`, `records` covers only some
- * files and one it does not cover answers on its name alone.
+ * files and one with no usable parse answers on its name alone.
  */
 function answeringCorpus(corpus, pairing, records, partial = false) {
   const out = new Set();
   for (const rel of corpus) {
-    if (rel.endsWith(pairing.companionSuffix) && !(partial && !records?.has(rel))) {
+    if (rel.endsWith(pairing.companionSuffix) && !(partial && !records?.get(rel)?.ok)) {
       const record = records?.get(rel);
       if (!isTestFile({ rel, lang: language(rel), facets: record?.ok ? record.facets : null })) continue;
     }
