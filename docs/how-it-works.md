@@ -1419,7 +1419,8 @@ count the documentation checks, since nothing about it is measured per area. Wha
 do is H38, and the sentence the map states beside it is H39. Its reason, which the `PreToolUse`
 notice prints too, gives the root's count in the tests line's words, `src/hooks: 0 of 5 .tsx files
 have a namesake test`: the count is over one extension, and a bare `5 files` read as the whole of a
-directory holding nine.
+directory holding nine. A map written before the root recorded that extension says `0 of 5 files`
+unless the root holds only one, since its most common extension can be a screenshot.
 
 Severity, in the order the checks are made:
 
