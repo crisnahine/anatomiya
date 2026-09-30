@@ -996,8 +996,15 @@ test("a prefix row that learned none states the absence instead of filling the t
   const none = await learnedSlot("interface_prefix", "none");
   assert.equal(none.claim, "interfaces carry no prefix");
   const prefixed = await learnedSlot("interface_prefix", "I");
-  assert.equal(prefixed.claim, "interfaces are named with a I prefix");
+  assert.equal(prefixed.claim, "interfaces are named with an I prefix");
   assert.equal((await learnedSlot("type_alias_prefix", "none")).claim, "type aliases carry no prefix");
+});
+
+test("a prefix letter takes the article its name is read with", async () => {
+  // A letter is read by its name, so it is "an I" and "an E" but "a T".
+  assert.equal((await learnedSlot("type_alias_prefix", "T")).claim, "type aliases are named with a T prefix");
+  assert.equal((await learnedSlot("type_alias_prefix", "E")).claim, "type aliases are named with an E prefix");
+  assert.equal((await learnedSlot("interface_prefix", "T")).claim, "interfaces are named with a T prefix");
 });
 
 /* --- an area that prefixes nothing has said what the model already writes --- */
@@ -1124,6 +1131,36 @@ test("an interface inside an ambient module or a namespace does not vote on the 
   `);
 
   assert.deepEqual(hits.map((h) => h.where), ["IThing"]);
+});
+
+test("a top-level interface in a declaration file with no import or export is global, and does not vote on the prefix", async () => {
+  // A script-mode declaration file merges its top-level interfaces into the
+  // global scope exactly as `declare global` does, so `interface Window` there
+  // is the same augmentation and prefixing it stops the merge.
+  const { parseSync } = await import("oxc-parser");
+  const { NAMING_AST } = await import("../plugins/anatomiya/lib/dimensions-naming.mjs");
+  const row = NAMING_AST.find((d) => d.key === "interface_prefix");
+  const at = (rel, src) => {
+    const out = [];
+    row.run(parseSync(rel, src, { sourceType: "module" }).program, (h) => out.push(h), { rel });
+    return out.map((h) => h.where);
+  };
+  const body = `
+    interface Window { probeFlag: boolean }
+    interface IThing { a: string }
+    declare namespace N { interface Inner { a: string } }
+  `;
+
+  for (const rel of ["src/types/globals.d.ts", "src/types/env.d.mts", "src/types/env.d.cts"]) {
+    assert.deepEqual(at(rel, body), [], rel);
+  }
+  // One import or export makes it a module, and its interfaces local.
+  for (const head of [`export {}`, `import { a } from "./a"`, `import type { B } from "./b"`, `import fs = require("fs")`]) {
+    assert.deepEqual(at("src/types/globals.d.ts", `${head}\n${body}`), ["Window", "IThing"], head);
+  }
+  // Any other file may be a module whatever it holds, since `moduleDetection`
+  // decides that outside the file.
+  assert.deepEqual(at("src/types/globals.ts", body), ["Window", "IThing"]);
 });
 
 test("a type alias inside a module augmentation still votes, because it cannot merge", async () => {
@@ -1291,6 +1328,43 @@ test("a wrapper handed a named component, and a lazy import, make a component to
   `);
 
   assert.deepEqual(h.map((x) => x.where), ["useStore", "loadAll"]);
+});
+
+test("a binding typed as a function component is a component whose name JSX decides", async () => {
+  // One that renders nothing hands out no JSX, and a file that holds none of
+  // its own renders nothing either, so the annotation is the only thing here
+  // that says `<Gate />` is how it is used elsewhere.
+  const src = `
+    import React, { FC, FunctionComponent } from "react";
+    export const Gate: React.FC = () => { return null };
+    const Persist: FC<Props> = () => null;
+    export const Hidden: React.FunctionComponent<P> = function () { return null };
+    export const Blank: FunctionComponent = () => null;
+    export const Kind: React.ComponentType<P> = () => null;
+    export const formatDate: (x: string) => string = (x) => x;
+    export const makeThing: Factory = () => null;
+  `;
+  for (const key of ["function_naming_case", "exported_symbol_case"]) {
+    const h = await astHits(key, src);
+    assert.deepEqual(h.map((x) => x.where), ["formatDate", "makeThing"], key);
+  }
+});
+
+test("a function this file constructs with new, or gives a prototype, is a constructor", async () => {
+  // PascalCase is how JavaScript spells a constructor, and the `class` it
+  // stands in for is never a site of these rows.
+  const src = `
+    function PointFitter() { this.count = 0 }
+    PointFitter.prototype = { add(x) { this.count += x } };
+    function LineFitter() {}
+    LineFitter.prototype.add = function () {};
+    const Made = function () {};
+    export function Built() {}
+    export function makeFitter() { return [new Made(), new Built()] }
+    function helperThing() { return Array.prototype.slice.call(arguments) }
+  `;
+  assert.deepEqual((await astHits("function_naming_case", src)).map((x) => x.where), ["makeFitter", "helperThing"]);
+  assert.deepEqual((await astHits("exported_symbol_case", src)).map((x) => x.where), ["makeFitter"]);
 });
 
 /* --- a directory of components and a directory of helpers hold different conventions (#64) --- */

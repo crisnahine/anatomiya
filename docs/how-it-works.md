@@ -416,6 +416,10 @@ name out of the repository's own source, so it goes through the encoder where th
 filled rather than at each place the sentence is rendered. The last two can learn an absence, which
 renders as `interfaces carry no prefix` rather than being filled into the template, and which is
 the model default, so a repository that prefixes nothing prints counts and a prefixed one states.
+A filled prefix takes the article its letter is read with, `an I prefix` and `a T prefix`. An
+interface that merges into a name declared elsewhere is not an `interface_prefix` site, since
+prefixing it stops the merge: one inside `declare global`, `declare module` or a namespace, and one
+at the top level of a declaration file with no import or export, which is global the same way.
 Whether a learned class may be enforced is asked of the row and not of the four classes, or the
 check would state all five in the map and enforce none of them.
 
