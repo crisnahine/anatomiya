@@ -240,6 +240,10 @@ directory above your checkouts.
 - `pin` and the refresh keep their own pathspecs when `GIT_LITERAL_PATHSPECS`,
   `GIT_NOGLOB_PATHSPECS`, `GIT_GLOB_PATHSPECS` or `GIT_ICASE_PATHSPECS` is set. Before, git read the
   pin's `.claude` exclude as a literal filename, so the pin refused over the tool's own map.
+- `pin`, `scan` and `check` read the root `.gitattributes` from the index when the index marks it
+  skip-worktree or assume-unchanged, a sparse checkout that leaves it out included. Before, a copy
+  edited or deleted under one of those bits decided which files counted as `linguist-generated`, so
+  generated directories could become areas.
 
 ### Changed
 
