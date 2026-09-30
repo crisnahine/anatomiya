@@ -2165,12 +2165,40 @@ test("a file deleted only in the tree travels on the report the way a committed 
   // file changed sat above a finding about the file this branch removed.
   const dir = pairedModels(t, ({ root, git }) => {
     rmSync(join(root, "spec/models/thing_spec.rb"));
-    git("mv", "spec/models/other_spec.rb", "spec/models/renamed_spec.rb");
+    // A move keeps its file whatever the new name, source or not.
+    git("mv", "spec/models/other_spec.rb", "spec/models/other_spec.rb.bak");
+    // Moved and then deleted: one file left, under its old name.
+    git("mv", "app/models/other.rb", "app/models/gone.rb");
+    rmSync(join(root, "app/models/gone.rb"));
+    // Added to the index and deleted: never committed anywhere.
+    writeFileSync(join(root, "spec/models/zz_spec.rb"), "x\n");
+    git("add", "spec/models/zz_spec.rb");
+    rmSync(join(root, "spec/models/zz_spec.rb"));
   });
 
   const r = await check(dir, { baseRef: "main" });
 
-  assert.deepEqual(r.removed, ["spec/models/thing_spec.rb"]);
+  assert.deepEqual([...r.removed].sort(), ["app/models/other.rb", "spec/models/thing_spec.rb"]);
+});
+
+test("a tree deletion is counted once, and for any path a committed one would be", async (t) => {
+  const dir = repo(t, ({ dir: root, git, write, commit }) => {
+    write("README.md", "hi\n");
+    write("app/models/thing.rb", "class Thing\nend\n");
+    write("spec/models/thing_spec.rb", "describe Thing do\nend\n");
+    commit("init");
+    git("checkout", "-q", "-b", "work");
+    write("spec/models/thing_spec.rb", "describe Thing do\n  it {}\nend\n");
+    commit("edit the spec");
+    rmSync(join(root, "spec/models/thing_spec.rb"));
+    rmSync(join(root, "README.md"));
+  });
+  facts(dir, { sha: sha(dir, "main") });
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.deepEqual(r.changed.map((c) => c.path), ["spec/models/thing_spec.rb"]);
+  assert.deepEqual(r.removed, ["README.md"]);
 });
 
 test("a companion deleted in the tree breaks the obligation before it is committed", async (t) => {

@@ -162,7 +162,7 @@ export async function check(cwd, { baseRef = null } = {}) {
   // be called newly introduced, which is why the degraded modes report nothing
   // rather than everything, and reading the tree there would report every site
   // in an uncommitted file against an author who may not have written one.
-  const pending = status !== null && mode === "compare" ? status : { present: [], deleted: [] };
+  const pending = status !== null && mode === "compare" ? status : { present: [], deleted: [], removed: [] };
   await resolvePendingBases(root, base.mergeBase, pending.present);
   // Generated files leave with the path filter's rejects, by the corpus's own
   // rule: a regenerated client was a MUST-FIX per site in code nobody writes by
@@ -332,10 +332,9 @@ export async function check(cwd, { baseRef = null } = {}) {
     drift: stale.drift ?? null,
     changed,
     // Deletions, apart from `changed` because none has a file to examine. The
-    // tree's count too: the obligations above already read them. A move's old
-    // path is not one, and a path `changed` names is counted there.
+    // tree's count too, and a path `changed` names is counted there.
     removed: [...new Set(diff.rows.filter((c) => c.status === "D").map((c) => c.path).concat(
-      pending.deleted.filter((p) => !pending.present.some((f) => f.from === p) && !changed.some((c) => c.path === p))
+      pending.removed.filter((p) => !changed.some((c) => c.path === p))
     ))],
     examined,
     findings,
@@ -1532,6 +1531,9 @@ export async function pendingPaths(root, { timeout } = {}) {
       ...rows.filter(gone).map((row) => row.path),
       ...all.map((row) => row.orig).filter((path) => path != null && isCorpusPath(path)),
     ],
+    // What left HEAD, for the report, read the way the committed diff reads it:
+    // any path, a move is no deletion, and an index-only addition never existed.
+    removed: all.flatMap((row) => !gone(row) ? [] : row.orig != null ? [row.orig] : row.x === "A" ? [] : [row.path]),
   };
 }
 
