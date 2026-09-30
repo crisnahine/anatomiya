@@ -46,10 +46,23 @@ const WITNESSES = {
   },
   error_shape: {
     lang: "js",
-    applicable: [`export function f() { throw new Error("x") }`, `export function g() { return { ok: true } }`],
-    // A throw inside a catch is a rethrow, which is deliberate rather than a
-    // policy violation, so it is not a site.
-    inapplicable: `try { a() } catch (e) { throw e }`,
+    applicable: [
+      `export function f() { throw new Error("x") }`,
+      `export function g() { return { ok: true } }`,
+      `export function h() { return Result.ok(1) }`,
+      `export function i() { return err("x") }`,
+      `export function j() { return Ok(1) }`,
+      `export function k() { return { data: null, error: "x" } }`,
+    ],
+    inapplicable: [
+      // A throw inside a catch is a rethrow, which is deliberate rather than a
+      // policy violation, so it is not a site.
+      `try { a() } catch (e) { throw e }`,
+      // An error field beside a key no result carries is a message to display,
+      // and React merges what getDerivedStateFromError returns into state.
+      `export function useField(form) { return { label: "x", error: form.error } }`,
+      `export class B { static getDerivedStateFromError(error) { return { error } } }`,
+    ],
   },
   module_state_const: {
     lang: "js",
