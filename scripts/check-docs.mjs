@@ -360,6 +360,7 @@ export const READS = [
   `${REL.anatomiya}/package.json`,
   `${REL.anatomiya}/bin/anatomiya.mjs`,
   `${REL.anatomiya}/commands`,
+  `${REL.anatomiya}/lib/check.mjs`,
   "docs/how-it-works.md",
   "docs/why.md",
   "docs/dimension-intake.md",
@@ -550,6 +551,30 @@ export function checkDocs() {
     new RegExp(`There\\s+are ${codes.size}\\.`).test(caveatText),
     `does not say there are ${codes.size} caveat codes`
   );
+
+  // --- the severity reasons ---------------------------------------------------
+
+  // An agent relays a finding's reason line as fact, and the severity table is
+  // where a reader looks it up, so each row quotes every reason check prints at
+  // that severity. Read from the source because the reasons are built inline.
+  // A `${...}` in a reason is any placeholder the row spells, such as N or <area>.
+  const walkthroughLines = read("docs/how-it-works.md").split(/\r?\n/);
+  const reasons = read(`${REL.anatomiya}/lib/check.mjs`).matchAll(
+    /severity: "(NIT|FIX|MUST-FIX)",\s*reason: (?:"([^"]*)"|`([^`]*)`)/g
+  );
+  for (const [, severity, plain, template] of reasons) {
+    const reason = plain ?? template;
+    const row = walkthroughLines.find((line) => line.startsWith(`| ${severity} |`));
+    const quoted = reason
+      .split(/\$\{[^}]*\}/)
+      .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+      .join('[^"]+');
+    claim(
+      "docs/how-it-works.md",
+      row !== undefined && new RegExp(`"${quoted}"`).test(row),
+      `the severity table's ${severity} row does not quote the reason "${reason}"`
+    );
+  }
 
   // --- what a scan leaves in the working tree ---------------------------------
 
