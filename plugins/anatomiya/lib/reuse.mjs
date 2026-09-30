@@ -112,8 +112,14 @@ export async function pendingChange(root, { since = null, turnStart = null } = {
   // project, and joined against it git's paths name files nobody changed.
   if (!isPathTaken(join(root, ".git"))) return null;
   // Asked beside the status read rather than after it, so the hook still makes
-  // two git reads in a row inside the time it declares.
-  const [pending, gitdir] = await Promise.all([pendingPaths(root, { timeout: REUSE_GIT_MS }), gitDir(root)]);
+  // two git reads in a row inside the time it declares. The corpus's own
+  // refusals past the path are asked the way `check` asks them: a generated
+  // file or a link holds nothing anybody wrote here by hand.
+  const [pending, gitdir, dropOf] = await Promise.all([
+    pendingPaths(root, { timeout: REUSE_GIT_MS }),
+    gitDir(root),
+    corpusDrop(root, { timeout: REUSE_GIT_MS }),
+  ]);
   if (gitdir === null || operationUnfinished(gitdir) || pending === null) return null;
   // One diff from before the turn's first commit to the tree reads what it
   // committed and what it left uncommitted together, so the reads in a row
@@ -129,10 +135,6 @@ export async function pendingChange(root, { since = null, turnStart = null } = {
   const listed = new Set(pending.present.map((p) => p.path));
   const committed = [...ranges.keys()].filter((path) => !listed.has(path) && isCorpusPath(path));
   const changed = [...pending.present, ...committed.map((path) => ({ path, status: "M" }))];
-  // The corpus's own refusals past the path, the way `check` asks them: a
-  // generated file or a link holds nothing anybody wrote here by hand. The
-  // tree's `.gitattributes` only: asking the index is a third git read in a row.
-  const dropOf = await corpusDrop(root, { index: false });
   const home = realpathOf(root);
   const files = [];
   for (const { path, status } of changed.sort((a, b) => byCode(a.path, b.path))) {
