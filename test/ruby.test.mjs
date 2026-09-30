@@ -587,6 +587,9 @@ const SRC = {
         HTTParty::CookieHash.new
         Faraday::TimeoutError.new("x")
         Excon::Errors::SocketError.new
+        Faraday::ConnectionFailed.new("x")
+        RestClient::Exceptions::Timeout.new
+        Excon::Error::Timeout.new
         Net::HTTP::Get.new(uri)
       end
     end
@@ -636,6 +639,12 @@ const SRC = {
         http_client.post("/y")
         GithubApi.get("/z")
         fetcher.fetch(id)
+        redis_client.get(id)
+        cache_client.fetch(id)
+        Redis::Client.get(id)
+        HttpClientV2.get("/v")
+        api_client_v1.post("/v")
+        ApiV2.get("/v")
       end
     end
   `,
@@ -1281,6 +1290,12 @@ test("the claim says what the predicate measures, not that a failure is returned
   assert.match(row.claim, /bang/);
 });
 
+test("the row states no inverse, because an entry point with no failure path is not a raise it skipped", () => {
+  // Stated over a directory of `update!` services, "raise on failure" gave a
+  // FIX to a pure service that has no failure to raise.
+  assert.equal(dim("service_result_shape").counterClaim, null);
+});
+
 // --- keyword_params ---
 
 test("three positional arguments is the violation and three keywords conform", needsRuby, () => {
@@ -1575,7 +1590,7 @@ test("an HTTP library's error or cookie class is not a request", needsRuby, () =
   // Building an exception sends nothing. A request class under the library's
   // namespace still does.
   const h = hits("http_through_client", "http_helpers");
-  assert.deepEqual(h.map((x) => [x.node.line, x.conforming]), [[8, false]]);
+  assert.deepEqual(h.map((x) => [x.node.line, x.conforming]), [[11, false]]);
 });
 
 test("Net::HTTP and URI.open are direct sites and client calls conform", needsRuby, () => {
@@ -1591,7 +1606,7 @@ test("a receiver whose name only mentions the client vocabulary is not a client"
   // `request_params` is a hash, so a repository fetching from them fourteen
   // files over stated that HTTP goes through its own client with no HTTP in it.
   const h = hits("http_through_client", "http_store");
-  assert.deepEqual(h.map((x) => [x.node.line, x.conforming]), [[10, true], [11, true], [12, true], [13, true]]);
+  assert.deepEqual(h.map((x) => [x.node.line, x.conforming]), [[10, true], [11, true], [12, true], [13, true], [17, true], [18, true], [19, true]]);
 });
 
 test("a raw Net::HTTP block handle named http is not a conforming client", needsRuby, () => {

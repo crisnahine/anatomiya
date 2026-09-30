@@ -248,7 +248,10 @@ function breakingSites(program, source, lang, keyPath, { polarity, frameworks, c
     // kind by it is the pooling the narrowing exists to stop. A record with no
     // learned kind is an older scan, which narrowed nothing.
     if (dim.splitBy && kinds.has(dim.key) && dim.splitBy({ facets }) !== kinds.get(dim.key)) continue;
-    const counter = sides.get(dim.key) === "counter" && typeof dim.counterClaim === "string";
+    // A map written when the row still had an inverse stated it; judged as the
+    // claim, the area's own majority would be the finding.
+    if (sides.get(dim.key) === "counter" && typeof dim.counterClaim !== "string") continue;
+    const counter = sides.get(dim.key) === "counter";
     const found = [];
     // A site that is the very class the area learned cannot inherit itself, so
     // it reads as conforming here rather than as a finding. The fold drops it

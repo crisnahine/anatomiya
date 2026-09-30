@@ -524,6 +524,26 @@ class SkipWalkthrough < ActiveRecord::Migration[7.0]
 end
 `,
 
+  // `revert` runs another migration backwards and a class-level include names
+  // a helper module; neither names a model.
+  revert_migration: `
+class UndoWidgets < ActiveRecord::Migration[7.0]
+  def change
+    revert CreateWidgets
+  end
+end
+`,
+  include_helpers: `
+class IdToBigint < ActiveRecord::Migration[7.0]
+  include Mastodon::MigrationHelpers
+  extend MigrationHelpers
+
+  def change
+    add_column :t, :a, :string
+  end
+end
+`,
+
   // Each forward body holds a command `change` cannot invert, in the form
   // Rails' CommandRecorder refuses.
   irreversible_change_column: `
@@ -608,6 +628,38 @@ class B1 < ActiveRecord::Migration[7.1]
       dir.up { execute "CREATE INDEX i ON t (a)" }
       dir.down { execute "DROP INDEX i" }
     end
+  end
+end
+`,
+  // Rails 8 refuses to invert these: `if_exists:` is not a type, and a
+  // drop_table's only option being if_exists is no options at all.
+  irreversible_if_exists: `
+class C1 < ActiveRecord::Migration[8.0]
+  def change
+    remove_column :t, :a, if_exists: true
+  end
+end
+class C2 < ActiveRecord::Migration[8.0]
+  def change
+    drop_table :t, if_exists: true
+  end
+end
+class C3 < ActiveRecord::Migration[8.0]
+  def change
+    drop_table :t, :u, force: :cascade
+  end
+end
+class C4 < ActiveRecord::Migration[8.0]
+  def change
+    remove_column :t, :a, type: :string
+  end
+end
+`,
+  reversible_if_exists: `
+class D1 < ActiveRecord::Migration[8.0]
+  def change
+    remove_column :t, :a, :string, if_exists: true
+    drop_table :t, if_exists: true, id: :uuid
   end
 end
 `,
@@ -1348,17 +1400,25 @@ test("a row rewrite through a framework model or a model handed to a helper is d
   }
 });
 
+test("revert and a class-level include name no model", needsRuby, () => {
+  for (const name of ["revert_migration", "include_helpers"]) {
+    assert.deepEqual(counts("migration_schema_only", name), { candidates: 1, conforming: 1 }, name);
+    assert.deepEqual(counts("migration_reversible", name), { candidates: 1, conforming: 1 }, name);
+  }
+});
+
 test("a migration holding a command change cannot invert is not a reversibility site, on either side", needsRuby, () => {
   // Counted, `change_column` in change conformed though its rollback raises
   // ActiveRecord::IrreversibleMigration, and the up/down form of it was told to
   // declare change.
-  for (const name of ["irreversible_change_column", "irreversible_execute", "irreversible_up_down", "irreversible_forms"]) {
+  for (const name of ["irreversible_change_column", "irreversible_execute", "irreversible_up_down", "irreversible_forms", "irreversible_if_exists"]) {
     assert.deepEqual(hits("migration_reversible", name), [], name);
   }
 });
 
 test("the invertible spelling of each command is still a conforming site", needsRuby, () => {
   assert.deepEqual(counts("migration_reversible", "reversible_forms"), { candidates: 1, conforming: 1 });
+  assert.deepEqual(counts("migration_reversible", "reversible_if_exists"), { candidates: 1, conforming: 1 });
   // `up` never runs beside `change`, so its change_column decides nothing.
   assert.deepEqual(counts("migration_reversible", "change_wins_over_up"), { candidates: 1, conforming: 0 });
 });

@@ -304,6 +304,17 @@ test("a slot the area does not hold is answered by the nearest ancestor that sta
   assert.equal(found[0].claim, functionStyle.counterClaim);
 });
 
+test("a map stating the counter side of a row that no longer has one enforces neither side", () => {
+  // Read as the claim, the map's own majority became the finding: every new
+  // site written the way the area said to write it.
+  const slot = area(stated("non_null_assertion", { states: "counter", counterClaim: "an older sentence" }));
+  const head = revision(`declare const a: string[] | null;\nexport const b = a!.length;`, { file: "f.ts" });
+  assert.equal(rowByKey("non_null_assertion").counterClaim, null);
+  assert.deepEqual(only("non_null_assertion", newlyIntroduced({ area: slot, path: "src/a.ts", lang: "js", head, base: null })), []);
+  const claim = area(stated("non_null_assertion"));
+  assert.equal(only("non_null_assertion", newlyIntroduced({ area: claim, path: "src/a.ts", lang: "js", head, base: null })).length, 1, "the claim side still finds it");
+});
+
 /* --- the two modes --- */
 
 test("the added-lines mode keeps the head sites inside the ranges and needs no base", () => {
