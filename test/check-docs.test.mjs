@@ -152,6 +152,14 @@ function check(dir) {
   }
 }
 
+/** Rewrites a copied file read with LF endings, as a CRLF checkout has it too, and fails where the edit matched nothing. */
+function edit(path, change) {
+  const before = readFileSync(path, "utf8").replace(/\r\n/g, "\n");
+  const after = change(before);
+  assert.notEqual(after, before, `the edit to ${path} matched nothing`);
+  writeFileSync(path, after);
+}
+
 /** The one count a document states in this phrasing, raised by one. The walkthrough unless named. */
 function bumpCount(dir, phrasing, rel = "docs/how-it-works.md") {
   const path = join(dir, ...rel.split("/"));
@@ -395,7 +403,7 @@ test("a changelog whose Unreleased link was replaced rather than kept is named",
   // it is retargeted and kept. Replaced, the heading it points at links nowhere.
   const dir = repoCopy(t);
   const path = join(dir, "CHANGELOG.md");
-  writeFileSync(path, readFileSync(path, "utf8").replace(/^\[Unreleased\]: .*\n/m, ""));
+  edit(path, (text) => text.replace(/^\[Unreleased\]: .*\n/m, ""));
 
   const { status, output } = check(dir);
 
@@ -408,7 +416,7 @@ test("a changelog with no link definition for the version its manifest states is
   const path = join(dir, "CHANGELOG.md");
   const version = JSON.parse(readFileSync(join(dir, REL.anatomiya, "package.json"), "utf8")).version;
   const escaped = version.replace(/\./g, "\\.");
-  writeFileSync(path, readFileSync(path, "utf8").replace(new RegExp(`^\\[${escaped}\\]: .*\\n`, "m"), ""));
+  edit(path, (text) => text.replace(new RegExp(`^\\[${escaped}\\]: .*\\n`, "m"), ""));
 
   const { status, output } = check(dir);
 
@@ -424,10 +432,12 @@ test("a link definition inside a code fence defines nothing", (t) => {
   for (const [open, close, eol = "\n"] of fences) {
     const dir = repoCopy(t);
     const path = join(dir, "CHANGELOG.md");
-    const text = readFileSync(path, "utf8");
-    const line = text.match(/^\[Unreleased\]: .*$/m)[0];
-    const body = close.includes("{line}") ? close.replace("{line}", line) : line + "\n" + close;
-    writeFileSync(path, (text.replace(line + "\n", "") + `\n${open}\n${body}\n`).replace(/\n/g, eol));
+    edit(path, (text) => {
+      const line = text.match(/^\[Unreleased\]: .*$/m)[0];
+      const body = close.includes("{line}") ? close.replace("{line}", line) : line + "\n" + close;
+      assert.ok(text.includes(line + "\n"), "the definition to move is there");
+      return (text.replace(line + "\n", "") + `\n${open}\n${body}\n`).replace(/\n/g, eol);
+    });
 
     const { status, output } = check(dir);
 
@@ -440,7 +450,7 @@ test("a line opening with an inline code span opens no fence", (t) => {
   // A backtick fence's info string cannot hold a backtick, so this is a paragraph.
   const dir = repoCopy(t);
   const path = join(dir, "CHANGELOG.md");
-  writeFileSync(path, readFileSync(path, "utf8").replace("## [Unreleased]\n", "## [Unreleased]\n\n```npm test``` now runs the docs check too.\n"));
+  edit(path, (text) => text.replace("## [Unreleased]\n", "## [Unreleased]\n\n```npm test``` now runs the docs check too.\n"));
 
   const { output } = check(dir);
 
@@ -451,7 +461,7 @@ test("a link definition matches its heading whatever the label's case", (t) => {
   // Markdown matches link labels case-insensitively, so `[unreleased]:` resolves.
   const dir = repoCopy(t);
   const path = join(dir, "CHANGELOG.md");
-  writeFileSync(path, readFileSync(path, "utf8").replace(/^\[Unreleased\]: /m, "[unreleased]: "));
+  edit(path, (text) => text.replace(/^\[Unreleased\]: /m, "[unreleased]: "));
 
   const { output } = check(dir);
 
