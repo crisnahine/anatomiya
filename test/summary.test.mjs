@@ -385,6 +385,17 @@ test("an engine that answered and still read nothing is not called a missing ins
   assert.equal(lines.at(-1), "prism 1.5.2 ran and answered for none of them");
 });
 
+test("an engine its own clock stopped before it answered is not called a missing install", () => {
+  // doctor reported the parser installed; the workers stalled at startup. The
+  // setup remedy fixes nothing there, and the cause was never printed.
+  const lines = scanLines(
+    summary({ blind: ["js"], wrote: 0, engines: { oxc: { version: null, stalled: "no ready answer in 20000ms" } } })
+  );
+
+  assert.equal(lines.at(-1), "oxc was stopped by its own clock before it answered: no ready answer in 20000ms");
+  assert.ok(!lines.some((l) => l.includes("setup")), lines.join("\n"));
+});
+
 test("a run blind to two languages names both", () => {
   assert.ok(
     scanLines(summary({ blind: ["js", "ruby"], wrote: 0 })).includes(

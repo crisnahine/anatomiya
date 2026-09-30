@@ -50,6 +50,10 @@ start of each session and whenever HEAD moves. Run this when the user asks for i
 
 If the scanner exits non-zero, show its output and stop. Do not guess at what it found.
 
+If the reason line says an engine was stopped by its own clock before it answered, the install is
+not the cause, so do not run setup. Say that the parser stalled on this machine and that a scan on a
+quieter machine, or with whatever blocked its startup removed, is the next move.
+
 If it says a parser engine is not installed, run the readiness probe:
 
 ```

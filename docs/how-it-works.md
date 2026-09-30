@@ -167,7 +167,9 @@ name the language, why none of it was read, and the remedy. An engine that is no
 same case, so a TypeScript repository whose only Ruby is a Gemfile still gets its map on a machine
 with no Ruby. Only a run that read no file of any language writes nothing and removes nothing, and
 creates no `.claude` directory it would have written into; where a missing engine is the reason, the
-scan refuses with that engine's remedy instead. The check draws the same line: it names the files it
+scan refuses with that engine's remedy instead. A file skipped for its size never reached the parser,
+so it counts neither way: one generated bundle beside a missing engine used to read as an answer,
+and the scan removed every area of that language. The check draws the same line: it names the files it
 could not read and the engine's remedy, and refuses only a change with nothing else in it to read. A
 syntax error is none of this: the parser ran and answered.
 
@@ -175,12 +177,14 @@ Why a run went blind is asked of the engine rather than guessed. An engine that 
 ran, so the files are what failed; one that reported none is the install, and its line carries that
 engine's own remedy. Guessing was measured wrong on a real machine: with `ruby` on `PATH` and no
 `prism`, one sentence naming a missing interpreter was the wrong answer, and no version anywhere on
-screen said so.
+screen said so. An engine this tool's own clock stopped before it could report a version is neither:
+parse workers that never said ready, or a Ruby child silent past its idle window on both attempts,
+are named with that cause and no install remedy, since `doctor` reports that install as fine.
 
 | Guard | Value | Enforced |
 |---|---|---|
 | File size | 1 MB | checked with `stat` before the file is dispatched |
-| Wall time | 5s | `SIGKILL` from the parent |
+| Wall time | 5s | `SIGKILL` from the parent; the file is retried once after the queue drains, with no other parse in flight |
 | Resident memory | 1 GB | polled every 25ms, starting 250ms after the file goes in flight: read from `/proc/<pid>/status` on Linux, from `/bin/ps` on macOS and the BSDs, and not enforced on Windows, where the wall clock is what stops a runaway parse |
 | Worker start | 20s | `SIGKILL` from the parent for a worker that has not said ready; five such workers fail the pool, and its queued files are charged as crashed |
 
@@ -203,7 +207,10 @@ Two things the parser publishes are taken rather than reimplemented. It can hand
 from Rust without building it through a serialisation step, which measured 3.06x on the parse itself
 (279ms to 91ms over 1,200 files) and found the same 11,751 sites with a byte-identical JSON encoding;
 it is asked for through `rawTransferSupported()` rather than assumed, because the flag is still
-experimental upstream. And it publishes, for all 165 node types it emits, which properties hold
+experimental upstream. Its deserializer recurses in JavaScript and runs out of stack near 3,000
+operands in one expression, which a generated string table reaches, so a file that overflows it is
+parsed again with the plain transfer, that file only. A process refused the raw transfer's 6 GiB
+reservation drops it for every later file. And it publishes, for all 165 node types it emits, which properties hold
 children. The walk used to enumerate each node instead, which pushed every string and number onto
 its work stack too: 63% of a measured corpus was scalars pushed and discarded one iteration later.
 Reading the published table visits the same 630,000 nodes 2.5x faster, with `Object.keys` left as
@@ -235,8 +242,8 @@ idle timer happy and never ends.
 A child either of those timers killed is spawned once more, for the files that never answered and no
 others, and only what is still unanswered after that is charged. Both timers measure the machine
 rather than the files, and a file charged as crashed in one scan and parsed in the next moves the
-always-loaded overview, which is the same reason a JavaScript parse the pool's own clock killed goes
-back on the queue once. A child that exited on its own, a missing interpreter and a fatal from the
+always-loaded overview, which is the same reason a JavaScript parse the pool's own clock killed is
+tried once more, alone, after the queue drains. A child that exited on its own, a missing interpreter and a fatal from the
 script are charged on the first attempt: a second child answers those the same way at twice the
 cost. Every record says which attempt answered it.
 
