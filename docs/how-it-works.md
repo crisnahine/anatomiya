@@ -1064,7 +1064,7 @@ the commit carries this clone's git identity rather than that it was made in thi
 started or resumed says so in one line of the terminal (`systemMessage`), built from fixed words and validated commit
 ids only; a compaction or a clear inside the session does not repeat it, and a pin taken by hand
 since the hold ends it. A session started above its checkouts gets one line per held checkout, each
-naming the checkout's directory and saying to pin it from a session inside it, since
+naming the checkout's directory, encoded as any path a repository names, and saying to pin it from a session inside it, since
 `/anatomiya:pin` pins the checkout it runs in. It never enters the model's context: the model is the author E5 keeps from
 accepting its own work, and a sentence there naming how to accept it is the suggestion E5 refuses. A
 lock is given back only while it is still the worker's own, so a takeover between three workers
