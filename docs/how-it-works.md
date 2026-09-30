@@ -1368,7 +1368,8 @@ alone. The base side never moves: it is read with `git cat-file` at the merge ba
 keeps an agent's own edits from moving the population it is judged against (E2). A file the branch
 deleted has nothing to examine and can still owe a finding, as a dropped spec does, so the header
 counts it among the changed files, says how many were removed, and the record lists them as
-`removed`.
+`removed`, whether the deletion is committed or only in the working tree. A move's old path is not
+counted as removed.
 
 Base ref resolution tries `origin/HEAD`, `origin/main`, `origin/master`, `main`, `master`, in that
 order, or whatever `--base` names. `@{upstream}` is deliberately absent: a pushed feature branch

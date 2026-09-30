@@ -2160,6 +2160,19 @@ test("the files a branch deleted travel on the report", async (t) => {
   assert.deepEqual(r.removed, ["spec/models/thing_spec.rb"]);
 });
 
+test("a file deleted only in the tree travels on the report the way a committed one does", async (t) => {
+  // The obligation already read the tree's deletion, so a header saying no
+  // file changed sat above a finding about the file this branch removed.
+  const dir = pairedModels(t, ({ root, git }) => {
+    rmSync(join(root, "spec/models/thing_spec.rb"));
+    git("mv", "spec/models/other_spec.rb", "spec/models/renamed_spec.rb");
+  });
+
+  const r = await check(dir, { baseRef: "main" });
+
+  assert.deepEqual(r.removed, ["spec/models/thing_spec.rb"]);
+});
+
 test("a companion deleted in the tree breaks the obligation before it is committed", async (t) => {
   const dir = pairedModels(t, ({ root }) => rmSync(join(root, "spec/models/thing_spec.rb")));
 

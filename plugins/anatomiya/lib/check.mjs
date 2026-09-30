@@ -331,8 +331,12 @@ export async function check(cwd, { baseRef = null } = {}) {
     // an unreachable one, or a drift range git would not produce.
     drift: stale.drift ?? null,
     changed,
-    // Committed deletions, apart from `changed` because none has a file to examine.
-    removed: diff.rows.filter((c) => c.status === "D").map((c) => c.path),
+    // Deletions, apart from `changed` because none has a file to examine. The
+    // tree's count too: the obligations above already read them. A move's old
+    // path is not one, and a path `changed` names is counted there.
+    removed: [...new Set(diff.rows.filter((c) => c.status === "D").map((c) => c.path).concat(
+      pending.deleted.filter((p) => !pending.present.some((f) => f.from === p) && !changed.some((c) => c.path === p))
+    ))],
     examined,
     findings,
     counts: tally(findings),
