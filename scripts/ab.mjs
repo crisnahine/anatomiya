@@ -134,7 +134,8 @@ export async function runTrials(arms, prompt, engine, count, log = console.log) 
       await arms.reset();
       const r = await runTrial(arms[name], prompt, engine);
       trials[name].push(r);
-      log(`  trial ${i + 1} arm ${name}: ${r.wrote.length} file(s)${r.ok ? "" : `, ended early: ${r.reason}`}`);
+      const why = !r.ok ? `, ended early: ${r.reason}` : r.wrote.length ? "" : `, wrote nothing: ${r.reason}`;
+      log(`  trial ${i + 1} arm ${name}: ${r.wrote.length} file(s)${why}`);
     }
   }
   return trials;

@@ -78,7 +78,8 @@ export function runTrial(arm, prompt, options = {}) {
         // so they are kept and scored; `ok` only says it ended early.
         const wrote = added(arm, before);
         const said = answerIn(String(stdout ?? ""), engine.model);
-        resolve({ ok: !err, wrote, stdout: said.text, ran: said.ran, reason: err ? String(err.message) : null });
+        const reason = err ? String(err.message) : wrote.length ? null : `answered ${firstLine(said.text)}`;
+        resolve({ ok: !err, wrote, stdout: said.text, ran: said.ran, reason });
       }
     );
   });
@@ -108,6 +109,11 @@ function answerIn(stdout, askedModel) {
   const busiest = (a, b) => (b[1]?.outputTokens ?? 0) - (a[1]?.outputTokens ?? 0);
   const [model, usage] = used.find(([m]) => m === askedModel) ?? [...used].sort(busiest)[0];
   return { text, ran: { model, contextWindow: usage?.contextWindow ?? null } };
+}
+
+/** Encoded, so an answer cannot break the log line it is quoted on. */
+function firstLine(text) {
+  return JSON.stringify((text.trim().split("\n")[0] ?? "").trim().slice(0, 200));
 }
 
 function snapshot(dir) {
