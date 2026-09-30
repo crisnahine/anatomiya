@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { chmodSync, cpSync, existsSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -466,11 +466,15 @@ test("a git call cannot stop to ask for a credential", async (t) => {
 test("the pathspecs this tool writes keep their magic whatever the caller's environment says", async (t) => {
   // These variables switch pathspec magic off or on for every call, and the
   // pin and the refresh build `:(exclude)`, `:(icase)` and globbed pathspecs of their own.
-  const { dir } = repo(t);
+  const { dir, git } = repo(t);
+  // Default mode lets `*` cross `/`; glob mode does not, so only a nested file shows it.
+  mkdirSync(join(dir, "src"));
+  writeFileSync(join(dir, "src", "b.ts"), "export const b = 1\n");
+  git("add", "-A");
   for (const name of ["GIT_LITERAL_PATHSPECS", "GIT_GLOB_PATHSPECS", "GIT_NOGLOB_PATHSPECS", "GIT_ICASE_PATHSPECS"]) {
     const env = { ...process.env, [name]: "1" };
     assert.equal((await gitBuffered(dir, ["ls-files", "-z", "--", ":(icase)A.TS"], { env })).stdout, "a.ts\0", name);
-    assert.equal((await gitBuffered(dir, ["ls-files", "-z", "--", "*.ts", ":(exclude)A.ts"], { env })).stdout, "a.ts\0", name);
+    assert.equal((await gitBuffered(dir, ["ls-files", "-z", "--", "*.ts", ":(exclude)A.ts"], { env })).stdout, "a.ts\0src/b.ts\0", name);
   }
 });
 
