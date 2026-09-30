@@ -2,26 +2,25 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { GENERATOR, HEAD_BYTES, isOwned } from "../plugins/anatomiya/lib/rules.mjs";
+import { doublingRatio, LINEAR } from "./growth.mjs";
+
+/** A frontmatter block opening with our key repeated `lines` times, closed or not. */
+const repeating = (lines, close = "") => "---\n" + `generator: ${GENERATOR}\n`.repeat(lines) + close;
 
 test("an unclosed frontmatter repeating our key is answered in linear time", () => {
   // Measured: a regex whose lazy line group re-tried every line after every
   // candidate key took 24 s over 32,000 lines, and a 1 MB overview of this shape
   // held the echo hook for 50,621 ms against its 5 s timeout. It is not ours:
   // the fence never closes.
-  for (const lines of [32_000, Math.floor(HEAD_BYTES / 21)]) {
-    const text = "---\n" + `generator: ${GENERATOR}\n`.repeat(lines);
-    const started = performance.now();
-    assert.equal(isOwned(text), false);
-    const ms = performance.now() - started;
-    assert.ok(ms < 1000, `${lines} lines took ${Math.round(ms)} ms`);
-  }
+  for (const lines of [32_000, Math.floor(HEAD_BYTES / 21)]) assert.equal(isOwned(repeating(lines)), false);
+  const ratio = doublingRatio((lines) => { const text = repeating(lines); return () => isOwned(text); }, 4000, { rounds: 5 });
+  assert.ok(ratio < LINEAR, `twice the lines took ${ratio.toFixed(2)} times as long`);
 });
 
-test("the same shape closed at the end is ours, and still quick", () => {
-  const text = "---\n" + `generator: ${GENERATOR}\n`.repeat(32_000) + "---\n";
-  const started = performance.now();
-  assert.equal(isOwned(text), true);
-  assert.ok(performance.now() - started < 1000);
+test("the same shape closed at the end is ours, and still linear", () => {
+  assert.equal(isOwned(repeating(32_000, "---\n")), true);
+  const ratio = doublingRatio((lines) => { const text = repeating(lines, "---\n"); return () => isOwned(text); }, 4000, { rounds: 5 });
+  assert.ok(ratio < LINEAR, `twice the lines took ${ratio.toFixed(2)} times as long`);
 });
 
 test("ownership reads the fences it always read", () => {

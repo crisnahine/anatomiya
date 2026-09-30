@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { parseSync } from "oxc-parser";
 
 import { needsRuby } from "./ruby-available.mjs";
+import { doublingRatio, LINEAR } from "./growth.mjs";
 import { bodyIdentity, newlyIntroduced, siteIdentity } from "../plugins/anatomiya/lib/introduced.mjs";
 import { parseRuby } from "../plugins/anatomiya/lib/ruby.mjs";
 import { rowByKey } from "../plugins/anatomiya/lib/registry.mjs";
@@ -164,20 +165,24 @@ test("a site added above a function that was renamed is the one reported, not th
   assert.deepEqual(found.map((f) => [f.line, f.where]), [[2, "added"]]);
 });
 
-test("a file holding tens of thousands of sites is judged in time linear in its length", () => {
+test("a long file of many sites is judged in time linear in its length", () => {
   // Each site's line was counted from the start of the file, so the work grew
   // with the square of the file: a 619 KB file of 30,000 sites took 28 seconds.
-  const n = 20000;
-  const src = Array.from({ length: n }, (_, i) => `try { g${i}(); } catch (e) {}`).join("\n") + "\n";
-  const head = revision(src, { file: "f.ts" });
+  // The blank lines between sites make the file's length, not the per-site
+  // work, the cost that doubles.
+  const gap = 1000;
+  const judged = (n) => {
+    const src = Array.from({ length: n }, (_, i) => `try { g${i}(); } catch (e) {}` + "\n".repeat(gap)).join("");
+    const head = revision(src, { file: "f.ts" });
+    return () => only("swallowed_error", newlyIntroduced({ area: area(stated("swallowed_error")), path: "src/l.ts", lang: "js", head }));
+  };
 
-  const started = performance.now();
-  const found = only("swallowed_error", newlyIntroduced({ area: area(stated("swallowed_error")), path: "src/l.ts", lang: "js", head }));
-  const took = performance.now() - started;
+  const found = judged(500)();
+  assert.equal(found.length, 500);
+  assert.deepEqual([found[0].line, found[499].line], [1, 1 + 499 * gap]);
 
-  assert.equal(found.length, n);
-  assert.deepEqual([found[0].line, found[n - 1].line], [1, n]);
-  assert.ok(took < 6000, `took ${Math.round(took)} ms`);
+  const ratio = doublingRatio(judged, 500);
+  assert.ok(ratio < LINEAR, `twice the file took ${ratio.toFixed(2)} times as long`);
 });
 
 /* --- one polarity for both revisions --- */
