@@ -531,6 +531,22 @@ const SRC = {
       end
     end
   `,
+  http_store: `
+    class Registration
+      def run(id)
+        OauthClientStore.fetch(id)
+        RequestStore.delete(:user)
+        client_options.fetch(:timeout)
+        request_params.delete(:id)
+        api_method_cache.fetch(id)
+        RefreshApiUserSecret.call(id)
+        tunes_request_client.get("/x")
+        http_client.post("/y")
+        GithubApi.get("/z")
+        fetcher.fetch(id)
+      end
+    end
+  `,
   http_model: `
     class Order
       def sync
@@ -1429,6 +1445,14 @@ test("Net::HTTP and URI.open are direct sites and client calls conform", needsRu
 
 test("an ActiveRecord-shaped call on a client-named constant is not an HTTP site", needsRuby, () => {
   assert.deepEqual(counts("http_through_client", "http_model"), { candidates: 1, conforming: 1 });
+});
+
+test("a receiver whose name only mentions the client vocabulary is not a client", needsRuby, () => {
+  // The last word is what the thing is: `OauthClientStore` is a store and
+  // `request_params` is a hash, so a repository fetching from them fourteen
+  // files over stated that HTTP goes through its own client with no HTTP in it.
+  const h = hits("http_through_client", "http_store");
+  assert.deepEqual(h.map((x) => [x.node.line, x.conforming]), [[10, true], [11, true], [12, true], [13, true]]);
 });
 
 test("a raw Net::HTTP block handle named http is not a conforming client", needsRuby, () => {

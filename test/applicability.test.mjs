@@ -494,7 +494,7 @@ container = document.createElement("div")`,
       `client.post("/y")`,
       `@client.post("/y")`,
     ],
-    inapplicable: `record.save`,
+    inapplicable: [`record.save`, `OauthClientStore.fetch(id)`, `request_params.delete(:id)`],
   },
   class_base: {
     lang: "ruby",

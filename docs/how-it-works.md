@@ -370,7 +370,10 @@ not, and the direct forms
 are a closed table (console calls, fetch and axios, process.env reads). Each row is offered only where at
 least three examined files already route through a wrapper (C14), so a repository that logs to
 the console on purpose, or one holding a config.ts nobody imports, never carries a line that can
-only read zero.
+only read zero. The Ruby `http_through_client` row reads a verb-shaped call as going through the
+client when the receiver's name ends in that network vocabulary, since the last word is what the
+receiver is: `ApiClient.get` and `http_client.post` do, `OauthClientStore.fetch` and
+`request_params.delete` do not.
 
 A row marked "learned" carries a template rather than a fixed sentence. Its sites vote with the
 naming class they spell, the plurality class becomes the sentence, and a tie learns nothing and
