@@ -2776,7 +2776,7 @@ test("a learned type prefix is enforced on a new interface", async (t) => {
   const found = forKey(report, "interface_prefix");
   assert.equal(found.length, 1, JSON.stringify(report.findings));
   assert.equal(found[0].where, "Comment");
-  assert.equal(found[0].claim, "interfaces are named with a I prefix");
+  assert.equal(found[0].claim, "interfaces are named with an I prefix");
 });
 
 test("a learned absence of a prefix is enforced against a prefixed interface", async (t) => {
