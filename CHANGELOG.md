@@ -18,6 +18,7 @@ directory above your checkouts.
 
 ### Fixed
 
+- A deeply nested file is read in time linear in its depth. The rows asked every enclosing node at every node, so a generated chain of 30,000 operands took 7 seconds to read and a chain past about 15,000 hit the timeout twice and was charged as crashed. It now takes about half a second, and the records for 23,139 corpus files are unchanged.
 - `check` no longer reports a function's or class's untouched declaration as newly introduced when
   the branch only edited inside its body. One added line in an existing function raised
   `function_style` FIX and `doc_comment_style` / `explicit_return_type` findings on the declaration
