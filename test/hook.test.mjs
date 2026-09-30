@@ -846,7 +846,7 @@ test("the declared notice, run the way the loader runs it, answers for the path 
   assert.equal(run.status, 0, run.signal === null ? run.stderr : `killed by ${run.signal}: the hook did not answer`);
   const answer = JSON.parse(run.stdout);
   assert.equal(answer.hookSpecificOutput.hookEventName, "PreToolUse");
-  assert.match(answer.hookSpecificOutput.additionalContext, /app\/mailers: 4 files, 0 with a namesake test/);
+  assert.match(answer.hookSpecificOutput.additionalContext, /app\/mailers: 0 of 4 files have a namesake test/);
   assert.equal(answer.hookSpecificOutput.permissionDecision, undefined, "it informs and never refuses");
 });
 

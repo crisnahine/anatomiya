@@ -105,14 +105,13 @@ const packageOf = (spec) => {
  * the source is still the one named.
  */
 export function specifierToFile(spec, importerRel, corpusRels) {
+  // A trailing slash names a directory, so only its index answers: `./base/`
+  // is never `base.ts`.
+  const dirOnly = spec.endsWith("/");
   if (spec.startsWith("./") || spec.startsWith("../") || spec === "." || spec === "..") {
-    const at = posix.join(posix.dirname(importerRel), spec);
-    const candidates = [
-      at,
-      ...emittedFrom(at),
-      ...EXTENSIONS.map((e) => at + e),
-      ...EXTENSIONS.map((e) => `${at}/index${e}`),
-    ];
+    const at = posix.join(posix.dirname(importerRel), spec).replace(/\/+$/, "");
+    const indexes = EXTENSIONS.map((e) => `${at}/index${e}`);
+    const candidates = dirOnly ? indexes : [at, ...emittedFrom(at), ...EXTENSIONS.map((e) => at + e), ...indexes];
     for (const candidate of candidates) {
       if (corpusRels.has(candidate)) return candidate;
     }
@@ -120,11 +119,12 @@ export function specifierToFile(spec, importerRel, corpusRels) {
   }
 
   const alias = ALIASES.find((a) => spec.startsWith(a));
-  const tail = alias ? spec.slice(alias.length) : spec;
+  const tail = (alias ? spec.slice(alias.length) : spec).replace(/\/+$/, "");
   // A single segment is a bare package name (`react`) or too short to identify
   // a file, and both are somebody else's module.
   if (!tail.includes("/")) return null;
   const index = tailIndex(corpusRels);
+  if (dirOnly) return index.get(`/${tail}/index`) ?? null;
   const whole = index.get(`/${tail}`);
   if (whole !== undefined) return whole;
   // The index is keyed without extensions, so a tail that writes one is looked

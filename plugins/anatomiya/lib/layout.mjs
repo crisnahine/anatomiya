@@ -369,6 +369,14 @@ const jsxExtension = (jsxFiles, exts) => {
   return null;
 };
 
+// The three commonest module stems that appear more than once. A stem seen once
+// is no habit, and ranking unique stems only put the first three in code order.
+const repeatedStems = (modules) =>
+  tally(modules.map((f) => stemOf(f.rel)))
+    .filter(([, n]) => n > 1)
+    .slice(0, 3)
+    .map(([stem]) => stem);
+
 /**
  * The counted ground for the granularity sentence: how many sibling modules the
  * root holds beside its components, what they are named, and how many of the
@@ -388,7 +396,7 @@ const helperFacet = (own, jsxFiles, mirrored) => {
   if (modules.length === 0) return null;
   return {
     siblingModules: modules.length,
-    stems: tally(modules.map((f) => stemOf(f.rel))).slice(0, 3).map(([stem]) => stem),
+    stems: repeatedStems(modules),
     inlineFiles: jsxFiles.filter((f) => f.facets?.inlineHelpers > 0).length,
   };
 };
@@ -475,7 +483,8 @@ export function rootFacts(root, { testFiles, mirrored, byStem }) {
   };
   if (stories.length > 0) record.stories = stories.length;
   if (producers.length > 0 && testFiles.length > 0 && !underTestTree(dir)) {
-    record.companions = namesakeCompanions(producers, testFiles, dir, byStem);
+    // The extension the count is over, which is not always the root's first.
+    record.companions = { ...namesakeCompanions(producers, testFiles, dir, byStem), ext: producerExt };
   }
   const helpers = helperFacet(own, jsxFiles, mirrored);
   if (helpers !== null) record.helpers = helpers;
