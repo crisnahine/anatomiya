@@ -111,7 +111,9 @@ excluded directory is cut out by its name once, at any depth (`!src/comp/**/fixt
 every file under that name is left out wherever it sits; prisma keeps a `_fixture/` beside each of 102
 tests, and one negation per directory made a 106-pattern list in a 40-line file. Where the name also
 sits on a counted file's path, as `build` can under `src`, the directory is cut out by its path
-instead. Measured on seven corpus repositories, the areas reach 0 left-out files, down from 2,017 on
+instead. A left-out file never makes a subtree the area otherwise holds whole read as shared: the
+glob stays recursive and carries the negation, so a directory added under the area after the scan
+is still reached. Measured on seven corpus repositories, the areas reach 0 left-out files, down from 2,017 on
 angular, 1,707 on react and 591 on prisma, for 67 more patterns (2,716 to 2,783).
 
 A directory whose name holds glob syntax cannot root an area or be named by a pattern. That includes a

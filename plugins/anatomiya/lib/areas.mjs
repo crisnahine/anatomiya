@@ -256,11 +256,15 @@ const whollyOwned = (corpus, mine, d) => corpus.under.get(d) === mine.under.get(
 const leftOut = (corpus, mine, d) =>
   mine.direct.has(d) ? (corpus.left.get(d) || []).map((name) => ({ dir: d, name, negated: true })) : [];
 
-/** One pattern per directory the area holds files in, subtrees it wholly owns collapsed. */
+/**
+ * One pattern per directory the area holds files in, subtrees it wholly owns collapsed.
+ * Ownership is over the counted files: a left-out file costs a negation, never the
+ * recursion, which is what still reaches a directory added after the scan.
+ */
 function positiveCover(root, corpus, mine) {
   const out = [];
   const walk = (d) => {
-    if (whollyOwned(corpus, mine, d)) return out.push({ dir: d, recursive: true, negated: false });
+    if (whollyOwned(corpus.counted, mine, d)) return out.push(...negativeCover(d, corpus, mine));
     if (mine.direct.has(d)) out.push({ dir: d, recursive: false, negated: false }, ...leftOut(corpus, mine, d));
     for (const c of children(corpus, d)) if (mine.under.get(c)) walk(c);
   };
@@ -320,7 +324,7 @@ function spellableCover(root, positive, negative) {
  * shared and the left-out files are laid over it.
  */
 function withLeftOut(corpus, left) {
-  if (left.length === 0) return { ...corpus, left: new Map() };
+  if (left.length === 0) return { ...corpus, counted: corpus, left: new Map() };
   const extra = corpusTree(left);
   const byDir = new Map();
   for (const f of left) {
@@ -334,6 +338,7 @@ function withLeftOut(corpus, left) {
     direct: sum(corpus.direct, extra.direct),
     kids: { get: (d) => new Set([...(corpus.kids.get(d) || []), ...(extra.kids.get(d) || [])]) },
     left: new Map([...byDir].map(([d, names]) => [d, names.sort(byCode)])),
+    counted: corpus,
   };
 }
 
