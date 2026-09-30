@@ -515,6 +515,82 @@ test("an area's globs match the files it counted and no others", () => {
   }
 });
 
+test("an area's globs do not reach the fixture and generated files its counts left out", () => {
+  // The excluded subtrees were not in the tree the cover was built from, so the
+  // area read as holding its whole subtree and emitted one bare recursive glob:
+  // 40 counted files, 67 reached.
+  const files = fakeFiles([
+    ...Array.from({ length: 8 }, (_, i) => `src/comp/c${i}.ts`),
+    ...Array.from({ length: 8 }, (_, i) => `src/other/o${i}.ts`),
+  ]);
+  const uncounted = [
+    ...fakeFiles(["src/comp/fixtures/F.ts", "src/comp/test_cases/a/Case.ts", "src/comp/Gen.ts", "src/comp/gen/G.ts"]),
+    ...fakeFiles(["src/other/fixtures/deep/x.rb"], "ruby"),
+  ];
+  const areas = discover(files, { uncounted });
+
+  assert.deepEqual(areas.map((a) => a.path), ["src/comp", "src/other"]);
+  for (const a of areas) {
+    const mine = new Set(a.files.map((f) => f.rel));
+    for (const f of [...files, ...uncounted]) {
+      assert.equal(matches(a.globs, f.rel), mine.has(f.rel), `${a.path} vs ${f.rel}`);
+      assert.equal(areaLib.globsReach(a.globs, f.rel), mine.has(f.rel), `globsReach: ${a.path} vs ${f.rel}`);
+    }
+  }
+  assert.deepEqual(
+    areas[1].globs.map((g) => areaLib.globText(g)),
+    ["src/other/**/*.{cjs,cts,js,mjs,mts,ts}"],
+    "a left-out file in a language the glob cannot spell costs no pattern"
+  );
+});
+
+test("an excluded directory repeated under many directories is cut out by its name, once", () => {
+  // prisma keeps a `_fixture/` beside every functional test: cut out one
+  // directory at a time, a 111-file area needed 106 patterns, and an area file
+  // holds 40 lines.
+  const tests = Array.from({ length: 20 }, (_, i) => `t/functional/case${i}`);
+  const files = fakeFiles(tests.map((d) => `${d}/run.test.ts`));
+  const uncounted = tests.flatMap((d) => [
+    { rel: `${d}/_fixture/config.ts`, lang: "js", excludedAt: `${d}/_fixture` },
+    { rel: `${d}/_fixture/generated/contract.d.ts`, lang: "js", excludedAt: `${d}/_fixture` },
+  ]);
+  const [a] = discover(files, { uncounted, minFiles: 3 });
+
+  assert.deepEqual(a.globs.map((g) => areaLib.globText(g)), [
+    "t/functional/**/*.{cjs,cts,js,mjs,mts,ts}",
+    "!t/functional/**/_fixture/**/*.{cjs,cts,js,mjs,mts,ts}",
+  ]);
+  for (const f of [...files, ...uncounted]) {
+    assert.equal(matches(a.globs, f.rel), !f.rel.includes("_fixture"), f.rel);
+    assert.equal(areaLib.globsReach(a.globs, f.rel), !f.rel.includes("_fixture"), `globsReach: ${f.rel}`);
+  }
+});
+
+test("an excluded name that also names a counted directory is cut out by path instead", () => {
+  // `build` is output only where no `src` sits above it, so the name alone
+  // would cut `src/build/` out of the area that counted it.
+  const files = fakeFiles([
+    ...Array.from({ length: 6 }, (_, i) => `pkg/src/build/m${i}.ts`),
+    ...Array.from({ length: 6 }, (_, i) => `pkg/src/s${i}.ts`),
+  ]);
+  const uncounted = [{ rel: "pkg/build/out.ts", lang: "js", excludedAt: "pkg/build" }];
+  const areas = discover(files, { uncounted, minFiles: 3 });
+
+  for (const a of areas) {
+    const mine = new Set(a.files.map((f) => f.rel));
+    for (const f of [...files, ...uncounted]) assert.equal(matches(a.globs, f.rel), mine.has(f.rel), `${a.path} vs ${f.rel}`);
+  }
+});
+
+test("a left-out file whose name no pattern can spell is never written into one", () => {
+  // `!src/comp/a,b.ts` reads as `!src/comp/a` and `b.ts`, which reaches every
+  // `b.ts` in the repository. The recursive fallback over-reaches by one file.
+  const files = fakeFiles(Array.from({ length: 8 }, (_, i) => `src/comp/c${i}.ts`));
+  const areas = discover(files, { uncounted: fakeFiles(["src/comp/a,b.ts", "src/comp/fixtures/F.ts"]) });
+
+  assert.deepEqual(areas[0].globs.map((g) => areaLib.globText(g)), ["src/comp/**/*.{cjs,cts,js,mjs,mts,ts}"]);
+});
+
 test("globsReach answers what the delivery channel would, over every glob shape", () => {
   // `check` reads this to decide whether the map ever handed this file's author
   // the sentence it is about to enforce. Held against the reference matcher
@@ -1061,6 +1137,31 @@ test("a file stamped with a generated-file marker does not enter the corpus", as
 
   assert.deepEqual(files.map((f) => f.rel), ["gen/b.ts"]);
   assert.equal(dropped.generated, 1);
+});
+
+test("the source an exclusion left out is listed, so a paths glob can cut it back out", async (t) => {
+  // An area's glob is built over the counted files, so a fixture or generated
+  // file inside its directory was reached by a pattern that never counted it.
+  const dir = repo(t, (d, { git, write }) => {
+    write("src/a.ts");
+    write("src/fixtures/F.ts");
+    write("src/g.ts", "// @generated\nexport const g = 1\n");
+    write("src/fixtures/data.json", "{}\n");
+    write("README.md", "# hi\n");
+    write(".env.ts", "export const KEY = 1\n");
+    git("add", "-A");
+    git("commit", "-qm", "init");
+  });
+
+  const { uncounted } = await collect(dir);
+
+  assert.deepEqual(uncounted.map((f) => f.rel).sort(), ["src/fixtures/F.ts", "src/g.ts"]);
+  assert.ok(uncounted.every((f) => f.lang === "js"), "each carries the language a glob would spell it by");
+  assert.deepEqual(
+    Object.fromEntries(uncounted.map((f) => [f.rel, f.excludedAt ?? null])),
+    { "src/fixtures/F.ts": "src/fixtures", "src/g.ts": null },
+    "and the excluded directory it sits under, where one decided it"
+  );
 });
 
 test("all three generated markers are read", async (t) => {
