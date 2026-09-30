@@ -13,6 +13,8 @@ import { jsxElementNames, makesComponent, typedAsComponent, yieldsJsx } from "./
 import { fileStem } from "./dimensions-capability.mjs";
 import { encode } from "./encode.mjs";
 
+const NAMESPACE = new Set(["TSModuleDeclaration"]);
+
 export const CLASSES = ["camelCase", "PascalCase", "kebab-case", "snake_case"];
 
 /**
@@ -534,7 +536,7 @@ export const NAMING_AST = [
         // thing being augmented: prefix it and the merge silently stops, with
         // no error at the declaration and `TS2339` at every use. The same
         // ancestor test C12 applies to `module_state_const`.
-        if (ctx.ancestors.some((a) => a.type === "TSModuleDeclaration")) return;
+        if (ctx.within(NAMESPACE)) return;
         // A declaration file with no import or export is a script, and its
         // top-level interfaces are global and merge the same way. Only a
         // declaration file: `moduleDetection` can make any other file a module.
