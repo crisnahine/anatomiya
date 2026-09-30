@@ -331,7 +331,7 @@ export const outsideClaude = (relPath) =>
  * remove it and scan again", and an agent following that sentence deletes the
  * README. A link is said to be one, and what is to be removed is the link.
  *
- * The nearest directory that exists must also be writable: the first write
+ * The nearest directory that exists must also be writable and searchable: the first write
  * into it was a temp file's `open`, whose raw EACCES named a random temp path
  * after a dry run had said "would write". A superuser passes, as it writes.
  */
@@ -346,7 +346,8 @@ export function blockedOnTheWay(root, relPath) {
     try {
       entry = lstatSync(at);
     } catch {
-      // Nothing there, so the rest is created.
+      // Nothing there, so the rest is created; or the directory above cannot be
+      // entered, which the check below names.
       break;
     }
     if (entry.isSymbolicLink()) {
@@ -361,10 +362,12 @@ export function blockedOnTheWay(root, relPath) {
     }
     nearest = { name, at };
   }
-  try {
-    accessSync(nearest.at, constants.W_OK);
-  } catch {
-    return { name: nearest.name, sentence: `${nearest.name} is not writable`, remedy: "fix its permissions" };
+  for (const [mode, is] of [[constants.W_OK, "is not writable"], [constants.X_OK, "cannot be entered"]]) {
+    try {
+      accessSync(nearest.at, mode);
+    } catch {
+      return { name: nearest.name, sentence: `${nearest.name} ${is}`, remedy: "fix its permissions" };
+    }
   }
   return null;
 }
