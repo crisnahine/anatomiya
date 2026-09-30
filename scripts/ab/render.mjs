@@ -35,6 +35,7 @@ Injection: arm A answered "${r.said.a}", arm B answered "${r.said.b}".
 |---|---|---|
 | trials that wrote a file | ${a.wroteSomething}/${o.trials} | ${b.wroteSomething}/${o.trials} |
 | trials cut short by the turn cap or an error | ${a.endedEarly}/${o.trials} | ${b.endedEarly}/${o.trials} |
+| trials that finished and wrote nothing | ${a.wroteNothing}/${o.trials} | ${b.wroteNothing}/${o.trials} |
 | files scored | ${a.filesScored} | ${b.filesScored} |
 | sites conforming | ${a.conforming} of ${a.candidates} (${pct(a)}) | ${b.conforming} of ${b.candidates} (${pct(b)}) |
 | trials with a violating site | ${a.trialsWithAViolation} | ${b.trialsWithAViolation} |
