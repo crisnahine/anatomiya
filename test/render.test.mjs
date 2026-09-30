@@ -190,6 +190,24 @@ test("a delivered paths list cuts out the fixture and generated files its area n
   for (const f of uncounted) assert.equal(claudeCodeReaches(delivered, f.rel), false, `${f.rel}: ${JSON.stringify(delivered)}`);
 });
 
+test("a delivered paths list cuts out a source file spelled in another case", () => {
+  // The matcher folds case, so `*.rb` and `**/Rakefile` reach these, and the corpus never counted them.
+  const files = [
+    ...Array.from({ length: 6 }, (_, i) => ({ rel: `app/m${i}.rb`, lang: "ruby" })),
+    { rel: "app/Rakefile", lang: "ruby" },
+  ];
+  const uncounted = [
+    { rel: "app/Legacy.RB", lang: "ruby" },
+    { rel: "app/sub/RAKEFILE", lang: "ruby" },
+    { rel: "app/fixtures/F.Rb", lang: "ruby", excludedAt: "app/fixtures" },
+  ];
+  const [a] = discover(files, { uncounted, minFiles: 5 });
+  const delivered = renderedPaths(renderArea(area({ path: a.path, globs: a.globs })));
+
+  for (const f of files) assert.equal(claudeCodeReaches(delivered, f.rel), true, `${f.rel}: ${JSON.stringify(delivered)}`);
+  for (const f of uncounted) assert.equal(claudeCodeReaches(delivered, f.rel), false, `${f.rel}: ${JSON.stringify(delivered)}`);
+});
+
 test("author identity reaches a rendered file as a count, never as a name", () => {
   // D4 counts distinct authors; the name itself has nowhere to land, which is
   // why a display name carrying a fake policy block cannot be rendered at all.

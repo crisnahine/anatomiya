@@ -436,13 +436,14 @@ function cutsOwn(g, own) {
 
 /** The left-out files inside an area that its extension brace or its bare names would spell. */
 function reachable(area, uncounted, bare) {
-  const exts = new Set(area.langs.flatMap((l) => EXT_BY_LANG[l] || []));
+  const exts = new Set(area.langs.flatMap((l) => EXT_BY_LANG[l] || []).map(foldCase));
+  const names = new Set(bare.map(foldCase));
   const under = area.path === "." ? "" : `${area.path}/`;
   return uncounted.filter((f) => {
     if (!f.rel.startsWith(under)) return false;
-    const name = baseName(f.rel);
+    const name = foldCase(baseName(f.rel));
     const dot = name.lastIndexOf(".");
-    return bare.includes(name) || (dot > 0 && exts.has(name.slice(dot + 1)));
+    return names.has(name) || (dot > 0 && exts.has(name.slice(dot + 1)));
   });
 }
 
