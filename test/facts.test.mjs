@@ -1,9 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { execFileSync, spawnSync } from "node:child_process";
-import { needsPosixSpecialFiles } from "./platform.mjs";
+import { needsPosixPermissions, needsPosixSpecialFiles } from "./platform.mjs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
@@ -74,6 +74,18 @@ test("a map on disk that does not parse is unreadable, not absent", (t) => {
   assert.match(unreadable ?? "", /does not parse as JSON/);
   rmSync(path);
   assert.deepEqual(readFacts(dir), { facts: null, unreadable: null }, "no file at all is still no map");
+});
+
+test("a map on disk that will not open is unreadable, not absent", needsPosixPermissions, (t) => {
+  const dir = root(t);
+  writeFacts(dir, result([dim()]));
+  const path = join(dir, FACTS_PATH);
+  chmodSync(path, 0o000);
+
+  const { facts, unreadable } = readFacts(dir);
+
+  assert.equal(facts, null);
+  assert.match(unreadable ?? "", /could not be opened/);
 });
 
 test("the counter side's authors reach the record and the side that prints them", (t) => {
