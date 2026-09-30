@@ -28,10 +28,15 @@ export function stemWords(stem) {
     .filter(Boolean);
 }
 
-/** A name's words without its version words: `ApiClientV2` and `V2ApiClient` are clients. */
+/**
+ * A name's words without its version words: `ApiClientV2`, `V2ApiClient` and
+ * `api_client_1` are clients. A bare number counts only at the end, since a
+ * leading one is a migration timestamp or a sequence (`20240901_settings`).
+ */
 export function nameWords(name) {
   const words = stemWords(name);
-  const named = words.filter((w) => !/^v?\d+$/.test(w));
+  const named = words.filter((w) => !/^v\d+$/.test(w));
+  while (named.length > 1 && /^\d+$/.test(named.at(-1))) named.pop();
   return named.length > 0 ? named : words;
 }
 
