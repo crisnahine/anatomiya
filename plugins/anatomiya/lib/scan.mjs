@@ -155,11 +155,13 @@ export async function scan(cwd, { guards = null, deep = false } = {}) {
 
   // Over the files a claim is counted in: an area dropped above is one the map
   // says nothing was counted in, so its bundles may not close every other
-  // area's type-checked rows either. With nothing folded, the files in no area
-  // stand in, so root code below the floor is still measured.
+  // area's type-checked rows either. When no folded file was checked, the files
+  // in no area stand in, so root code below the floor is still measured whether
+  // the areas beside it were folded or held.
   const inArea = new Set(areas.flatMap((a) => a.files.map((f) => f.rel)));
-  const counted = folded.length
-    ? folded.flatMap(({ area }) => area.files.map((f) => f.rel))
+  const areaFiles = folded.flatMap(({ area }) => area.files.map((f) => f.rel));
+  const counted = areaFiles.some((rel) => whole?.records.has(rel))
+    ? areaFiles
     : files.map((f) => f.rel).filter((rel) => !inArea.has(rel));
   const semantic = semanticOver(whole, counted);
 

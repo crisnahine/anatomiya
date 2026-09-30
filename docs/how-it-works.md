@@ -286,12 +286,13 @@ claims print as counts only (B8). The share is taken over files in an area the m
 because those are the only files a claim is counted over: one untyped minified bundle in no area
 took a repository whose own code resolved fully down to 3% and read as a broken tsconfig, and a
 directory of bundles that was discovered and then dropped for counting nothing did the same. Each
-file's share comes back on its own, so the scan sums it once the areas are folded. With no area
-left to describe, whether none was discovered or every one was dropped, the rate is taken over the
-files in no area, so code at the root below the area floor is still measured. Areas holding no
-checked file (a Ruby app beside a directory of bundles), or a repository holding nothing but dropped
-bundles, have no rate and stay ok. Files outside the areas are still in the
-program and still lend their types. A `node_modules` whose real path leaves the repository
+file's share comes back on its own, so the scan sums it once the areas are folded. When no folded
+area holds a checked file, whether none was discovered, every one was dropped, or the areas left
+hold only Ruby, the rate is taken over the files in no area. Code at the root below the area floor
+is then still measured, and a machine with no Ruby, which holds the Ruby areas back, answers the
+same as one that reads them. With no checked file there either (a Ruby app beside a directory of
+bundles, or a repository holding nothing but dropped bundles) there is no rate and the tier stays
+ok. Files outside the areas are still in the program and still lend their types. A `node_modules` whose real path leaves the repository
 is not read (B9), so dependencies linked in from elsewhere resolve as absent ones do.
 
 ## 4. Dimensions and the three numbers

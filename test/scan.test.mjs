@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { needsPosixPaths } from "./platform.mjs";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { execFileSync } from "node:child_process";
@@ -947,6 +947,39 @@ test("root code below the area floor keeps its rate beside a dropped bundle dire
   assert.equal(r.semantic.status, "degraded");
   assert.equal(r.semantic.reason, "no-tsconfig");
   assert.equal(r.semantic.typedResolutionRate, 0);
+});
+
+test("root code below the area floor keeps its rate beside Ruby areas, with or without a Ruby", async (t) => {
+  // Areas holding no checked file leave the rate to the files in no area, so
+  // a machine that holds Ruby areas back answers the same as one that reads them.
+  const dir = repo(t, (d, { git, write }) => {
+    for (let i = 1; i <= 3; i++) write(`f${i}.ts`, `import { make } from "foo";\nexport const v${i} = make().alpha.beta.gamma;\n`);
+    for (let i = 0; i < 8; i++) {
+      write(`app/models/m${i}.rb`, `class M${i} < ApplicationRecord\n  validates :name, presence: true\nend\n`);
+      write(`app/services/s${i}_service.rb`, `class S${i}Service\n  def call\n    M${i}.first\n  end\nend\n`);
+    }
+    git("add", "-A");
+    git("commit", "-qm", "init");
+  });
+  const verdict = (r) => ({ status: r.semantic.status, reason: r.semantic.reason, rate: r.semantic.typedResolutionRate });
+  const expected = { status: "degraded", reason: "no-tsconfig", rate: 0 };
+
+  assert.deepEqual(verdict(await scan(dir, { deep: true })), expected);
+
+  if (process.platform === "win32") return;
+  const bin = mkdtempSync(join(tmpdir(), "anatomiya-bin-"));
+  const path = process.env.PATH;
+  t.after(() => {
+    process.env.PATH = path;
+    rmSync(bin, { recursive: true, force: true });
+  });
+  symlinkSync(execFileSync("sh", ["-c", "command -v git"]).toString().trim(), join(bin, "git"));
+  process.env.PATH = bin;
+
+  const blind = await scan(dir, { deep: true });
+
+  assert.deepEqual(blind.parse.unreadable, ["ruby"], "the Ruby areas are held");
+  assert.deepEqual(verdict(blind), expected);
 });
 
 test("a repository with no area is still measured over every file it holds", async (t) => {
