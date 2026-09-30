@@ -531,6 +531,15 @@ export function corpusDrop(root) {
 }
 
 /**
+ * Whether a path is one the corpus would count, asked of its name and the root
+ * `.gitattributes` without opening it: for a path the tree does not hold.
+ */
+export function corpusByName(root) {
+  const generatedRules = generatedAttrRules(root);
+  return (rel) => isCorpusPath(rel) && !isAttrGenerated(generatedRules, rel);
+}
+
+/**
  * Whether a listed path is corpus, and if not, which rule refused it.
  *
  * One classifier for both listings: the corpus and the untracked count are the
