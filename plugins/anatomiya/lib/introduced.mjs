@@ -373,11 +373,18 @@ function chainOf(learned, reaching = new Set(), declared = new Map()) {
  * the branch edited matches neither of the first two and is taken by the name
  * around it last, so a new copy of the same shape elsewhere is the one left.
  * A row that judges the body cannot be taken by the name alone, since which
- * copy breaks is the question, so it is taken by its place among alike copies.
+ * copy breaks is the question. Where both sides hold as many alike copies,
+ * each copy is taken by its place among them and never by count, or a handler
+ * that lost its catch was absorbed by one that never had one. Where a copy was
+ * added or removed, places shift and only the count is left.
  */
 function absorb(head, base) {
   const remaining = new Map();
-  for (const f of base) remaining.set(f.fp, (remaining.get(f.fp) || 0) + 1);
+  const copiesAtBase = new Map();
+  for (const f of base) {
+    remaining.set(countKey(f), (remaining.get(countKey(f)) || 0) + 1);
+    if (openingOf.has(f)) copiesAtBase.set(countKey(f), openingOf.get(f).all.count);
+  }
 
   // A base copy one pass matched is spent for the next, or one copy could
   // answer for two head sites and leave a copy nobody matched.
@@ -386,8 +393,7 @@ function absorb(head, base) {
   for (const key of [
     (f) => `${f.fp}\0${f.where ?? ""}\0${f.text}`,
     (f) => (contextOf.has(f) ? `${f.fp}\0${contextOf.get(f)}` : null),
-    (f) => ordinal(f, (o) => o.from) ?? `${f.fp}\0${f.where ?? ""}`,
-    (f) => ordinal(f, (o) => o.all.count - 1 - o.from),
+    (f) => (openingOf.has(f) ? `${countKey(f)}\0${openingOf.get(f).from}` : `${f.fp}\0${f.where ?? ""}`),
   ]) {
     const copies = new Map();
     for (const f of base) {
@@ -402,7 +408,7 @@ function absorb(head, base) {
       const copy = k === null ? undefined : copies.get(k)?.shift();
       if (!copy) continue;
       spent.add(copy);
-      remaining.set(f.fp, remaining.get(f.fp) - 1);
+      remaining.set(countKey(copy), remaining.get(countKey(copy)) - 1);
       held.add(f);
     }
   }
@@ -410,9 +416,12 @@ function absorb(head, base) {
   const out = [];
   for (const f of head) {
     if (held.has(f)) continue;
-    const left = openingOf.has(f) ? 0 : remaining.get(f.fp) || 0;
+    // As many alike copies on both sides means each was edited in place, so
+    // the place decided; a copy added or removed leaves only the count.
+    const inPlace = openingOf.has(f) && openingOf.get(f).all.count === copiesAtBase.get(countKey(f));
+    const left = inPlace ? 0 : remaining.get(countKey(f)) || 0;
     if (left > 0) {
-      remaining.set(f.fp, left - 1);
+      remaining.set(countKey(f), left - 1);
       continue;
     }
     out.push(f);
@@ -442,13 +451,13 @@ const normalise = (s) => s.replace(/\s+/g, " ").trim();
 const contextOf = new WeakMap();
 
 // The line a body-judging site opens on, and its place among every copy that
-// opens on the same text. Its identity leaves out the body its conformance is
-// read from, so two anonymous copies are told apart by which one they are,
-// counted from the top and then from the bottom, and never by count alone.
+// opens on the same text in the same declaration. Its identity leaves out the
+// body its conformance is read from, so alike copies are counted apart from
+// copies that open on other lines.
 const openingOf = new WeakMap();
-const ordinal = (f, place) => {
+const countKey = (f) => {
   const o = openingOf.get(f);
-  return o ? `${f.fp}\0${f.where ?? ""}\0${o.opening}\0${place(o)}` : null;
+  return o ? `${f.fp}\0${f.where ?? ""}\0${o.opening}` : f.fp;
 };
 
 /**

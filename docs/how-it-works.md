@@ -1370,9 +1370,13 @@ lines around them, then by the function they sit in, and only what is left is ma
 Two rows judge what is inside the body, `async_error_handling` and `swallowed_error`, so for them a
 copy that stopped conforming shares its fingerprint with one that never did. Their copies are matched
 by their place among every copy, conforming or not, that opens on the same line text in the same
-function, counted from the top and then from the bottom, and are never matched by count: a handler
-that lost its `catch` is not absorbed by another anonymous handler in the same file that never had
-one, even where both open on `p.then(async (r) => {` or `} catch (err) {`.
+function. Where both sides hold as many such copies, each was edited in place, so the place decides
+and count never does: a handler that lost its `catch` is not absorbed by another anonymous handler in
+the same file that never had one, even where both open on `p.then(async (r) => {` or
+`} catch (err) {`. Where the branch added or removed a copy, places shift, and what is left is matched
+by count among those alike copies. That count cannot say which copy is new, so a branch that adds an
+alike copy that breaks above one it edits sends the report to the old one, and a branch that removes
+one copy and adds another around an edited one reads as the `catch` moving between them.
 
 A learned row judges a site the way the fold counted it. A superclass or mixin written bare is
 resolved against the nesting it is written in, and a class whose chain of parents reaches the
