@@ -849,6 +849,47 @@ test("a degraded checker suppresses its own claims across a real scan", async (t
   }
 });
 
+test("the resolution rate is taken over the areas the map describes", async (t) => {
+  // A directory of vendored bundles is discovered as an area, counts nothing
+  // and is dropped, and the map then says nothing was counted in it. Its
+  // untyped accesses still took a fully typed repository to 26% and closed
+  // every type-checked claim.
+  const dir = repo(t, (d, { git, write }) => {
+    write("tsconfig.json", `{"include":["src","public"],"compilerOptions":{"strict":true,"allowJs":true}}`);
+    for (let i = 0; i < 8; i++) {
+      write(`src/models/m${i}.ts`, `export class M${i} { name = "m${i}"; label() { return this.name.trim() } }\n`);
+      write(`src/services/s${i}.ts`, `import { M${i} } from "../models/m${i}"\nexport const s${i} = new M${i}().label().length\n`);
+      const body = Array.from({ length: 150 }, (_, n) => `o.f${n}=function(a,b){return a.x.y+b.z;};`).join("");
+      write(`public/js/lib${i}.js`, `(function(){var o={};${body}})();\n`);
+    }
+    git("add", "-A");
+    git("commit", "-qm", "init");
+  });
+
+  const r = await scan(dir, { deep: true });
+
+  assert.ok(!r.areas.some((a) => a.path === "public/js"), "the bundles are counted in no area");
+  assert.equal(r.semantic.status, "ok", `degraded for ${r.semantic.reason} at ${r.semantic.typedResolutionRate}`);
+  assert.equal(r.semantic.typedResolutionRate, 1);
+});
+
+test("a repository with no area is still measured over every file it holds", async (t) => {
+  // An empty measured set read as a corpus with no property access, so an
+  // install that resolved nothing reported ok with no rate.
+  const dir = repo(t, (d, { git, write }) => {
+    for (let i = 1; i <= 3; i++) write(`f${i}.ts`, `import { make } from "foo";\nexport const v${i} = make().alpha.beta.gamma;\n`);
+    git("add", "-A");
+    git("commit", "-qm", "init");
+  });
+
+  const r = await scan(dir, { deep: true });
+
+  assert.deepEqual(r.areas, []);
+  assert.equal(r.semantic.status, "degraded");
+  assert.equal(r.semantic.reason, "no-tsconfig");
+  assert.equal(r.semantic.typedResolutionRate, 0);
+});
+
 test("the scan writes down which kinds of file live where", async (t) => {
   // The denominator the roster exists for: five Cypress specs beside five
   // components is a repository that tests in Cypress, and nothing in the map
