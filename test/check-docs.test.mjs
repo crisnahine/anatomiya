@@ -390,6 +390,32 @@ test("a changelog with no Unreleased heading is named", (t) => {
   assert.match(output, /CHANGELOG\.md.*Unreleased/, output);
 });
 
+test("a changelog whose Unreleased link was replaced rather than kept is named", (t) => {
+  // A release renames the heading and puts an empty one back, so the link under
+  // it is retargeted and kept. Replaced, the heading it points at links nowhere.
+  const dir = repoCopy(t);
+  const path = join(dir, "CHANGELOG.md");
+  writeFileSync(path, readFileSync(path, "utf8").replace(/^\[Unreleased\]: .*\n/m, ""));
+
+  const { status, output } = check(dir);
+
+  assert.equal(status, 1);
+  assert.match(output, /CHANGELOG\.md: has no "\[Unreleased\]:" link definition/, output);
+});
+
+test("a changelog with no link definition for the version its manifest states is named", (t) => {
+  const dir = repoCopy(t);
+  const path = join(dir, "CHANGELOG.md");
+  const version = JSON.parse(readFileSync(join(dir, REL.anatomiya, "package.json"), "utf8")).version;
+  const escaped = version.replace(/\./g, "\\.");
+  writeFileSync(path, readFileSync(path, "utf8").replace(new RegExp(`^\\[${escaped}\\]: .*\\n`, "m"), ""));
+
+  const { status, output } = check(dir);
+
+  assert.equal(status, 1);
+  assert.match(output, new RegExp(`CHANGELOG\\.md: has no "\\[${escaped}\\]:" link definition`), output);
+});
+
 test("a changelog with no section for the version names the file once, not twice", (t) => {
   const dir = repoCopy(t);
   bump(dir, "9.9.9");

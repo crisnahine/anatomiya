@@ -848,7 +848,7 @@ export function verdictFor(
   // not (D6). Today's includes whatever the agent under review just wrote, so a
   // caller choosing between them is a caller that can choose wrong.
   const shape = baselineDim && measured ? measured.pinned : current;
-  // A capped corpus answered for part of the repository, and a ratio over an
+  // A truncated corpus answered for part of the repository, and a ratio over an
   // arbitrary subset rendered as a convention is worse than counts (F7).
   // Decided here rather than at render time, so the facts store and the
   // rendered map agree on what was stated.

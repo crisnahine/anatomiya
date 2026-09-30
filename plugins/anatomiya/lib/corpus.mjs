@@ -422,9 +422,8 @@ export async function collect(root) {
     files.push({ rel, abs, lang: language(rel) });
   });
 
-  // Kept in the shape callers already read. No repository size truncates the
-  // corpus now; the flag still travels because the Ruby stream can hit its
-  // per-line guard, and a partly-answered corpus must not state a convention.
+  // Kept in the shape callers already read: listing the files never truncates
+  // the corpus. A parse that hits the Ruby per-line guard sets its own flag.
   return { files, others, truncated: false, dropped };
 }
 
