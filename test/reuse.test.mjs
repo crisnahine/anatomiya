@@ -139,6 +139,8 @@ test("a migration or a schema dump has nothing to check", async (t) => {
   write("engines/shop/db/migrate/20260930000001_add_rank.rb", migration);
   write("db/schema.rb", "ActiveRecord::Schema[7.1].define(version: 1) do\nend\n");
   write("db/queue_schema.rb", "ActiveRecord::Schema[7.1].define(version: 1) do\nend\n");
+  write("db/cache_migrate/20260930000002_create_entries.rb", migration);
+  write("db/post_migrate/20260930000003_drop_old.rb", migration);
   write("shop/migrations/0002_rank.py", "def forwards(apps, schema_editor):\n    pass\n");
   write("server/migrations/20260930_add_rank.js", "exports.up = (knex) => knex;\n");
 
@@ -418,6 +420,12 @@ test("a session started above its checkouts is asked about each one's change, na
   // session that moved into it is not asked again.
   append(session, blocked(answer.reason));
   assert.deepEqual(await runReuse(api.dir, stop(api.dir, { transcript_path: session })), {});
+
+  // The same bytes at the same path in a sibling checkout are another file,
+  // and copying a helper between repositories is the duplication asked about.
+  client.write("src/b.ts", NEW_B);
+  const copied = await runReuse(parent, stop(parent, { transcript_path: session }));
+  assert.match(copied.reason, /added functions: client\/src\/b\.ts:1-3 \(new file\)\./);
 });
 
 test("a file left changed from before this session began is not asked about", async (t) => {
