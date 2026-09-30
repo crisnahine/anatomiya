@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { needsPosixPaths, needsPosixSpecialFiles, needsSymlinks } from "./platform.mjs";
+import { needsCaseSensitiveFilesystem, needsFoldingFilesystem, needsPosixPaths, needsPosixSpecialFiles, needsSymlinks } from "./platform.mjs";
 import { chmodSync, mkdtempSync, mkdirSync, writeFileSync, symlinkSync, rmSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, isAbsolute, sep } from "node:path";
@@ -121,6 +121,50 @@ test("a tracked symlink to a file inside the repository is dropped, since its ta
 
   assert.deepEqual(files.map((f) => f.rel), ["src/a.ts"]);
   assert.equal(dropped.escaped, 1, "dropped where a link out of the repository is");
+});
+
+/** A second index entry for `rel`'s file under `alias`, as a commit made on Linux leaves it. */
+function stageAlias(d, git, alias) {
+  const blob = execFileSync("git", ["hash-object", "-w", "--stdin"], { cwd: d, input: "export const alias = 2;\n" }).toString().trim();
+  git("update-index", "--add", "--cacheinfo", `100644,${blob},${alias}`);
+  git("commit", "-qm", "alias");
+}
+
+for (const [kind, onDisk, alias] of [
+  ["case", "src/lib/a.ts", "src/lib/A.ts"],
+  ["Unicode form", "src/lib/é.ts", "src/lib/é.ts"],
+]) {
+  test(`two index entries that differ only in ${kind} are one file read once, under the name on disk`, needsFoldingFilesystem, async (t) => {
+    // Both names opened the one file the working tree holds, so its sites counted
+    // twice and the other entry's own blob was never read.
+    const dir = repo(t, (d, { git, write }) => {
+      git("config", "core.precomposeunicode", "false");
+      write(onDisk);
+      write("src/lib/b.ts");
+      git("add", "-A");
+      git("commit", "-qm", "init");
+      stageAlias(d, git, alias);
+    });
+
+    const { files, dropped } = await collect(dir);
+
+    assert.deepEqual(files.map((f) => f.rel).sort(), [onDisk, "src/lib/b.ts"].sort());
+    assert.equal(dropped.unreadable, 1, "the entry whose blob the tree does not hold is named as unread");
+  });
+}
+
+test("two files that differ only in case on a case-sensitive filesystem are both read", needsCaseSensitiveFilesystem, async (t) => {
+  const dir = repo(t, (d, { git, write }) => {
+    write("src/lib/a.ts");
+    write("src/lib/A.ts", "export const upper = 2;\n");
+    git("add", "-A");
+    git("commit", "-qm", "init");
+  });
+
+  const { files, dropped } = await collect(dir);
+
+  assert.deepEqual(files.map((f) => f.rel).sort(), ["src/lib/A.ts", "src/lib/a.ts"]);
+  assert.equal(dropped.unreadable, 0);
 });
 
 test("untracked source is counted by the same rule the corpus is collected by", async (t) => {
