@@ -53,8 +53,8 @@ export function unusableReason(ts) {
  * it resolved 25% to 39% on three installed repositories and closed every row,
  * and installing nothing changes that.
  */
-export async function checkerBlocked(root, { specifier = "typescript", checked = [] } = {}) {
-  if (!hasConfig(root) && !checked.some((rel) => holdsTypeSyntax(rel))) return "plain-javascript";
+export async function checkerBlocked(root, { specifier = "typescript", checked = null } = {}) {
+  if (checked && !hasConfig(root) && !checked.some((rel) => holdsTypeSyntax(rel))) return "plain-javascript";
   if (!hasPackages(join(root, "node_modules"))) return "no-dependencies";
   return (await loadTypeScript({ specifier })) ? null : "not-installed";
 }

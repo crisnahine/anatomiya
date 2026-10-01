@@ -24,9 +24,9 @@ import {
   readJson,
   rootsColumn,
   rootsProblems,
-  semanticCell,
   rootsPrinted,
   rosterCounts,
+  semanticCell,
   summaryProblems,
   tableOf,
   timeless,
@@ -477,7 +477,7 @@ test("a clone gets every installed node_modules the source holds, and nothing el
   // no-dependencies in all 36 repositories and the corpus never ran it.
   const { source, clone } = installed(t);
 
-  assert.deepEqual(copyDependencies(source, clone), ["node_modules", "packages/a/node_modules"]);
+  assert.deepEqual(copyDependencies(source, clone), { copied: ["node_modules", "packages/a/node_modules"] });
   assert.equal(readFileSync(join(clone, "node_modules/left-pad/index.js"), "utf8"), "x\n");
   assert.equal(readFileSync(join(clone, "packages/a/node_modules/b/index.js"), "utf8"), "x\n");
   // The checker refuses a linked node_modules, so the copy has to be a directory.
@@ -490,7 +490,15 @@ test("a source with nothing installed copies nothing", (t) => {
   rmSync(join(source, "node_modules"), { recursive: true });
   rmSync(join(source, "packages"), { recursive: true });
 
-  assert.deepEqual(copyDependencies(source, clone), []);
+  assert.deepEqual(copyDependencies(source, clone), { copied: [] });
+});
+
+test("a source git cannot list is an error, not a clone quietly left uninstalled", (t) => {
+  // Copying nothing reads no-dependencies again, which is the blind run this exists to end.
+  const home = mkdtempSync(join(tmpdir(), "e2e-deps-nogit-"));
+  t.after(() => rmSync(home, { recursive: true, force: true }));
+
+  assert.match(copyDependencies(join(home, "missing"), home).error, /could not list/);
 });
 
 test("links inside an install are copied as the same links", { skip: process.platform === "win32" && "a symlink needs a privilege Windows runners do not grant" }, (t) => {

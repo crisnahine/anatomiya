@@ -418,14 +418,15 @@ function run(cmd, args, cwd) {
 }
 
 /**
- * Copy every `node_modules` the source has installed into the clone, and name
- * them. A clone carries tracked files only, so without this the type checker
+ * Copy every `node_modules` the source has installed into the clone, or say why
+ * it could not be listed. A clone carries tracked files only, so without this the type checker
  * reads `no-dependencies` in every repository and the corpus never runs it.
  * Copied rather than linked, because the checker refuses a linked install, and
  * cloned on a filesystem that can, because a monorepo's install is large.
  */
 export function copyDependencies(source, clone) {
   const listed = git(["ls-files", "-z", "--others", "--ignored", "--exclude-standard", "--directory"], source);
+  if (listed.status !== 0) return { error: `could not list what ${source} has installed: ${listed.err}` };
   const dirs = listed.out
     .split("\0")
     .map((p) => p.replace(/\/$/, ""))
@@ -433,7 +434,7 @@ export function copyDependencies(source, clone) {
   for (const rel of dirs) {
     cpSync(join(source, rel), join(clone, rel), { recursive: true, verbatimSymlinks: true, mode: constants.COPYFILE_FICLONE });
   }
-  return dirs;
+  return { copied: dirs };
 }
 
 /**
@@ -503,7 +504,8 @@ async function runRepo(name, source, scratchDir) {
     }
     git(["config", "gc.auto", "0"], clone);
     git(["config", "maintenance.auto", "false"], clone);
-    copyDependencies(source, clone);
+    const deps = copyDependencies(source, clone);
+    if (deps.error) fail(deps.error);
     const branch = git(["symbolic-ref", "--short", "HEAD"], clone);
     if (branch.status !== 0 || git(["rev-parse", "HEAD"], clone).status !== 0) {
       row.probe = "no commits";
