@@ -8,9 +8,10 @@ import { fileURLToPath } from "node:url";
 
 import {
   LEARNED_ROWS,
+  TABLED_ROWS,
   foldCounts,
-  learnedRows,
-  learnedTables,
+  tabledRows,
+  tabledTables,
   overviewFor,
   parseArgs,
 } from "../scripts/measure-layout.mjs";
@@ -51,8 +52,25 @@ test("every learned row gets a table, whether or not the corpus counted one", ()
     "type_alias_prefix",
   ]);
 
-  const tables = learnedTables(LEARNED_ROWS.map(() => []).map((rows, i) => [LEARNED_ROWS[i], rows]));
+  const tables = tabledTables(LEARNED_ROWS.map(() => []).map((rows, i) => [LEARNED_ROWS[i], rows]));
   for (const key of LEARNED_ROWS) assert.match(tables, new RegExp(`### ${key}`));
+});
+
+test("law_of_demeter gets a table too, with the gate the checker's answer closed it on", () => {
+  // The type-checked dimension is the one a checker or baseline regression moves, and
+  // the corpus has to show it per area the way it shows the syntactic five.
+  assert.deepEqual(TABLED_ROWS, [...LEARNED_ROWS, "law_of_demeter"]);
+  const areas = [
+    area("src/app", [dim("law_of_demeter", { candidates: 119, conforming: 115, ratio: 0.966, learned: null })]),
+    area("src/lib", [dim("law_of_demeter", { candidates: 30, states: null, gate: "degraded-semantic", learned: null })]),
+  ];
+
+  const rows = tabledRows("client", areas);
+  assert.deepEqual(rows.get("law_of_demeter").map((r) => [r.area, r.stated]), [
+    ["src/app", "yes"],
+    ["src/lib", "no (degraded-semantic)"],
+  ]);
+  assert.match(tabledTables([...rows]), /### law_of_demeter\n\n.*\n.*\n\| client \| src\/app \| 8 \| 40 \| 119 \| 115 \| 0\.966 \| - \| yes \|/);
 });
 
 test("an area that carried no site of the row is not a line", () => {
@@ -62,7 +80,7 @@ test("an area that carried no site of the row is not a line", () => {
     area("lib", [dim("extends_base")]),
   ];
 
-  const rows = learnedRows("api", areas);
+  const rows = tabledRows("api", areas);
 
   assert.deepEqual(rows.get("class_base").map((r) => r.area), ["app/models"]);
   assert.deepEqual(rows.get("module_include"), []);
@@ -75,7 +93,7 @@ test("a repository is capped at its five biggest areas, biggest first", () => {
     area(`app/a${i}`, [dim("class_base", { candidates: n, conforming: n })])
   );
 
-  const rows = learnedRows("api", areas);
+  const rows = tabledRows("api", areas);
 
   assert.deepEqual(rows.get("class_base").map((r) => r.candidates), [90, 70, 50, 30, 20]);
 });
@@ -86,7 +104,7 @@ test("two areas at one candidate count order by code unit, not by the host's loc
   const areas = ["app/foo", "app/Foo"].map((path) => area(path, [dim("class_base", { candidates: 5 })]));
 
   assert.deepEqual(
-    learnedRows("api", areas).get("class_base").map((r) => r.area),
+    tabledRows("api", areas).get("class_base").map((r) => r.area),
     ["app/Foo", "app/foo"]
   );
 });
@@ -98,14 +116,14 @@ test("the stated column carries the gate that stopped the row", () => {
     area("app/workers", [dim("class_base", { candidates: 10, conforming: 9, matchesDefault: true })]),
   ];
 
-  const rows = learnedRows("api", areas);
+  const rows = tabledRows("api", areas);
 
   assert.deepEqual(rows.get("class_base").map((r) => r.stated), ["yes", "no (ratio)", "no (model default)"]);
 });
 
 test("the table prints one line per area, with the numbers the bar asks for", () => {
-  const rows = learnedRows("api", [area("app/models", [dim("class_base", { learned: "ApplicationRecord" })])]);
-  const line = learnedTables([...rows]).split("\n").find((l) => l.startsWith("| api |"));
+  const rows = tabledRows("api", [area("app/models", [dim("class_base", { learned: "ApplicationRecord" })])]);
+  const line = tabledTables([...rows]).split("\n").find((l) => l.startsWith("| api |"));
 
   assert.equal(line, "| api | app/models | 8 | 40 | 20 | 19 | 0.950 | ApplicationRecord | yes |");
 });

@@ -23,11 +23,37 @@ which hardlinks the object store, and the clone is removed again in a `finally`,
 directory ends empty and the corpus is never written to. This tool's own repository runs last, as
 the 36th.
 
+A clone carries tracked files only, so without help the type checker read `no-dependencies` in all
+36 and the run never exercised it. Every `node_modules` the corpus repository has installed and
+ignores is copied into the clone after it is made, links kept as links, and added to the clone's own
+`info/exclude`, since a source that ignores it there or in a global file hands that rule to no
+clone. A repository whose root install was copied in and whose checker still reads
+`no-dependencies` fails the run. The `seconds` column counts the copy and the checker's three runs,
+so it is not comparable with a run from before this change.
+
+The harness still writes nothing into the corpus. Installing is a setup step done by hand, once, in
+the corpus copy and outside this checkout, so the frozen tree stays frozen. Use the repository's own
+lockfile and no scripts (`npm ci --ignore-scripts`, `yarn install --frozen-lockfile
+--ignore-scripts`, `pnpm install --frozen-lockfile --ignore-scripts`), and check `git status` is
+still clean after. pnpm walks up to the nearest `pnpm-workspace.yaml`, so a repository with none of
+its own installs into whatever workspace sits above the corpus; pass `--ignore-workspace` there. A
+repository that does not ignore `node_modules` stays uninstalled, or the scan would count the
+install as its source.
+
+The `semantic` column says what the checker answered: `ok` or `degraded` with the reason and the
+resolution rate, or `off` with why it did not run. `scripts/measure-layout.mjs` prints the same
+column and a per-area `law_of_demeter` table of the five areas with the most sites. The facts records
+its `--facts` writes carry every area's slot, gate included, so a facts diff between two builds shows
+a type-checked slot that moved the way it shows a syntactic one.
+
 ## The flow, per repository
 
-1. Clone what is checked out. A clone with no commit is recorded and skipped.
+1. Clone what is checked out. A clone with no commit is recorded and skipped. Every `node_modules`
+   the source has installed is copied in and excluded in the clone; one that cannot be listed or
+   copied is a failure.
 2. `scan <clone>`, which must exit 0. Its summary lines are parsed and every file it wrote is read
-   back.
+   back. A clone holding packages at its root whose facts record says the checker read
+   `no-dependencies` is a failure.
 3. `scan <clone>` again. Every generated file must be byte-identical to the first run, and the
    summary must match it except for the duration (A5).
 4. `pin <clone>`, which must exit 0 and leave `.claude/anatomiya/baseline.json`, then a third
@@ -69,7 +95,8 @@ measure the check against a file this harness wrote rather than against the repo
 | pin | `pin` exited 0, wrote the baseline, and the scan after it named the pinned sha |
 | clean | findings on the clean tree, and the check exited 0 |
 | probe | a finding named the probe file, and which row it broke; `n.a.` is a repository stating none of the three, which then has to draw zero findings |
-| seconds | the whole flow: clone, three scans, a pin, two checks and the removal |
+| semantic | what the type checker answered on the first scan: `ok` or `degraded` with the reason and the resolution rate, or `off` with why it did not run; `off no-dependencies` in a clone holding packages is a failure |
+| seconds | the whole flow: clone, the dependency copy, three scans, a pin, two checks and the removal |
 
 Alongside the table, every run asserts that `.claude/rules/anatomiya-overview.md` exists, holds
 `## What lives where` or the truncation notice, and comes to at most 40 lines; that every

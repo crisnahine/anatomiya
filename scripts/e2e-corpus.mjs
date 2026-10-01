@@ -25,13 +25,15 @@
  * and a frozen re-run passed all 36. Start it and leave the checkout alone.
  */
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { cp } from "node:fs/promises";
+import { appendFileSync, constants, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { invokedAs, readArgv, selectRepos } from "./entry.mjs";
 import { BINARY, REL } from "./plugins.mjs";
 import { isSource } from "../plugins/anatomiya/lib/corpus.mjs";
+import { hasInstall } from "../plugins/anatomiya/lib/semantic.mjs";
 import { byCode } from "../plugins/anatomiya/lib/paths.mjs";
 import { language } from "../plugins/anatomiya/lib/langs.mjs";
 import { CLASSES } from "../plugins/anatomiya/lib/dimensions-naming.mjs";
@@ -77,6 +79,18 @@ export function summaryProblems(s) {
   if (!s.baseline) problems.push("no baseline");
   if (typeof s.wrote !== "number") problems.push("no wrote count");
   return problems;
+}
+
+/**
+ * The checker's answer for one repository, off its facts record: the status and
+ * rate when it ran, and the reason when it did not, so a corpus that never ran
+ * it says so in every row.
+ */
+export function semanticCell(semantic) {
+  if (!semantic) return "-";
+  if (!semantic.ran) return `off ${semantic.reason}`;
+  const rate = semantic.typedResolutionRate;
+  return [semantic.status, semantic.reason, rate === null ? null : `${(rate * 100).toFixed(1)}%`].filter(Boolean).join(" ");
 }
 
 // The roots column is what the scan printed, so it is read off the layout line
@@ -281,6 +295,7 @@ export const COLUMNS = [
   "pin",
   "clean",
   "probe",
+  "semantic",
   "seconds",
 ];
 
@@ -401,7 +416,61 @@ const anatomiya = (args, cwd) => run(process.execPath, [BIN, ...args], cwd);
 
 function run(cmd, args, cwd) {
   const r = spawnSync(cmd, args, { cwd, encoding: "utf8", maxBuffer: MAX_BUFFER });
-  return { status: r.status, out: r.stdout ?? "", err: (r.stderr ?? "").trim() };
+  return { status: r.status, out: r.stdout ?? "", err: (r.stderr ?? "").trim() || (r.error?.message ?? "") };
+}
+
+/**
+ * Copy every `node_modules` the source has installed into the clone, or say why
+ * it could not. A clone carries tracked files only, so without this the type
+ * checker reads `no-dependencies` in every repository and the corpus never runs
+ * it. Copied rather than linked, because the checker refuses a linked install,
+ * and cloned on a filesystem that can, because a monorepo's install is large.
+ * Asynchronous because `cpSync` aborts the whole process on an unreadable
+ * directory and refuses to copy over a link the clone already tracks, where
+ * `cp` rejects and replaces.
+ */
+export async function copyDependencies(source, clone) {
+  const listed = git(["ls-files", "-z", "--others", "--ignored", "--exclude-standard", "--directory"], source);
+  if (listed.status !== 0) return { error: `could not list what ${source} has installed: ${listed.err}` };
+  const dirs = [...new Set(listed.out.split("\0").map(installOf).filter(Boolean))].sort(byCode);
+  for (const rel of dirs) {
+    try {
+      await cp(join(source, rel), join(clone, rel), { recursive: true, verbatimSymlinks: true, mode: constants.COPYFILE_FICLONE });
+    } catch (err) {
+      return { copied: dirs, error: `could not copy ${rel}: ${err.code ?? err.message}` };
+    }
+  }
+  // The source may ignore its install through info/exclude or a global file,
+  // neither of which a clone carries, and an install the clone does not ignore
+  // is counted as untracked source.
+  if (dirs.length > 0) {
+    const exclude = git(["rev-parse", "--git-path", "info/exclude"], clone);
+    if (exclude.status !== 0) return { copied: dirs, error: `could not find where ${clone} keeps its excludes: ${exclude.err}` };
+    const path = resolve(clone, exclude.out.trim());
+    mkdirSync(dirname(path), { recursive: true });
+    // Led by a newline in case the file does not end in one; unslashed so a
+    // linked install matches too; escaped so a bracket in a name is literal.
+    appendFileSync(path, `\n${dirs.map((rel) => `/${escapeGlob(rel)}\n`).join("")}`);
+  }
+  return { copied: dirs };
+}
+
+const escapeGlob = (rel) => rel.replace(/[\\[\]*?]/g, "\\$&").replace(/ $/, "\\ ");
+
+/**
+ * The install a path ignored by git sits in, or null. A `node_modules/*` rule
+ * makes git list each package rather than the directory.
+ */
+function installOf(path) {
+  const parts = path.replace(/\/$/, "").split("/");
+  const at = parts.indexOf("node_modules");
+  return at === -1 ? null : parts.slice(0, at + 1).join("/");
+}
+
+/** What a clone with its packages installed still says that it should not. */
+export function dependencyProblems(clone, semantic) {
+  if (semantic?.reason !== "no-dependencies" || !hasInstall(clone)) return [];
+  return ["node_modules holds packages, and the checker still read no-dependencies"];
 }
 
 /**
@@ -459,7 +528,7 @@ async function runRepo(name, source, scratchDir) {
   const clone = join(scratchDir, name);
   const started = Date.now();
   const problems = [];
-  const row = { repo: name, files: "-", areas: "-", stated: "-", roots: "-", wrote: "-", stable: "-", pin: "-", clean: "-", probe: "-", seconds: "-" };
+  const row = { ...Object.fromEntries(COLUMNS.map((c) => [c, "-"])), repo: name };
   const fail = (what) => problems.push(`${name}: ${what}`);
 
   try {
@@ -477,6 +546,8 @@ async function runRepo(name, source, scratchDir) {
       return { row, problems };
     }
     const base = branch.out.trim();
+    const deps = await copyDependencies(source, clone);
+    if (deps.error) fail(deps.error);
 
     /* 1 and 2: the first scan, and what it wrote. */
     const first = anatomiya(["scan", clone, "--format", "json"], scratchDir);
@@ -503,7 +574,11 @@ async function runRepo(name, source, scratchDir) {
     const factsFile = join(clone, FACTS_PATH);
     const { problems: wrongs, written, facts } = writtenProblems(clone, s1.wrote);
     for (const p of wrongs) fail(p);
-    if (facts !== null) row.roots = rootsColumn(rootsPrinted(s1), rosterCounts(facts));
+    if (facts !== null) {
+      row.roots = rootsColumn(rootsPrinted(s1), rosterCounts(facts));
+      row.semantic = semanticCell(facts.semantic);
+      for (const p of dependencyProblems(clone, facts.semantic)) fail(p);
+    }
 
     /* 3: the same source twice, byte for byte, or the map is not worth a
        cached read. */

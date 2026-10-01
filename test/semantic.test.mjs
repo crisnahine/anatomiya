@@ -24,6 +24,14 @@ import {
 const loaded = await loadTypeScript();
 const needsTs = { skip: loaded ? false : "typescript is not installed" };
 
+/** A module standing in for typescript at one version, as a specifier the loader imports. */
+function typescriptStub(dir, version = "5.9.3", { createProgram = true } = {}) {
+  const p = join(dir, `ts-${version}.mjs`);
+  const program = createProgram ? "export function createProgram() {}\n" : "";
+  writeFileSync(p, `export const version = ${JSON.stringify(version)};\n${program}`);
+  return pathToFileURL(p).href;
+}
+
 test("the loader answers null rather than throwing when typescript is absent", async () => {
   // A user who never installed the checker must not pay for it, so an absent
   // one is an ordinary state and not a crash.
@@ -173,38 +181,74 @@ test("a checker outside major 5 is refused, because 7 has no JS API", async (t) 
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-tsver-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
 
-  const stub = (version) => {
-    const p = join(dir, `ts-${version}.mjs`);
-    writeFileSync(p, `export const version = ${JSON.stringify(version)};\nexport function createProgram() {}\n`);
-    return pathToFileURL(p).href;
-  };
+  assert.equal(await loadTypeScript({ specifier: typescriptStub(dir, "7.0.0") }), null, "the Go port is refused");
+  assert.equal(await loadTypeScript({ specifier: typescriptStub(dir, "6.1.2") }), null, "so is anything else off major 5");
 
-  assert.equal(await loadTypeScript({ specifier: stub("7.0.0") }), null, "the Go port is refused");
-  assert.equal(await loadTypeScript({ specifier: stub("6.1.2") }), null, "so is anything else off major 5");
-
-  const ok = await loadTypeScript({ specifier: stub("5.9.3") });
+  const ok = await loadTypeScript({ specifier: typescriptStub(dir, "5.9.3") });
   assert.equal(ok?.version, "5.9.3");
 });
 
 test("the checker is blocked for each reason it could state nothing, and runs otherwise", async (t) => {
   const dir = scratch(t, "anatomiya-tsskip-");
-  const stub = (name, body) => {
-    const p = join(dir, `${name}.mjs`);
-    writeFileSync(p, body);
-    return pathToFileURL(p).href;
-  };
-  const good = stub("ts-5.9.3", `export const version = "5.9.3";\nexport function createProgram() {}\n`);
+  const checkedRels = ["src/a.ts"];
+  const good = typescriptStub(dir);
 
-  assert.equal(await checkerBlocked(dir, { specifier: good }), "no-dependencies");
+  assert.equal(await checkerBlocked(dir, { specifier: good, checkedRels }), "no-dependencies");
   mkdirSync(join(dir, "node_modules", ".cache"), { recursive: true });
-  assert.equal(await checkerBlocked(dir, { specifier: good }), "no-dependencies", "a cache is no install");
+  assert.equal(await checkerBlocked(dir, { specifier: good, checkedRels }), "no-dependencies", "a cache is no install");
   mkdirSync(join(dir, "node_modules", "left-pad"));
-  assert.equal(await checkerBlocked(dir, { specifier: good }), null);
-  assert.equal(await checkerBlocked(dir, { specifier: "typescript-that-is-not-installed" }), "not-installed");
-  const old = stub("ts-4.9.5", `export const version = "4.9.5";\nexport function createProgram() {}\n`);
-  assert.equal(await checkerBlocked(dir, { specifier: old }), "not-installed");
-  const hollow = stub("ts-noprogram", `export const version = "5.4.0";\n`);
-  assert.equal(await checkerBlocked(dir, { specifier: hollow }), "not-installed");
+  assert.equal(await checkerBlocked(dir, { specifier: good, checkedRels }), null);
+  assert.equal(await checkerBlocked(dir, { specifier: "typescript-that-is-not-installed", checkedRels }), "not-installed");
+  const old = typescriptStub(dir, "4.9.5");
+  assert.equal(await checkerBlocked(dir, { specifier: old, checkedRels }), "not-installed");
+  const hollow = typescriptStub(dir, "5.4.0", { createProgram: false });
+  assert.equal(await checkerBlocked(dir, { specifier: hollow, checkedRels }), "not-installed");
+});
+
+test("plain JavaScript with no tsconfig.json is not checked, whatever is installed", async (t) => {
+  // Measured with dependencies installed: huginn, diaspora and whitehall all
+  // came back degraded no-tsconfig at 25% to 39%, so every type-checked slot
+  // closed, after paying the checker's time on every scan and refresh.
+  const dir = scratch(t, "anatomiya-tsplain-");
+  const specifier = typescriptStub(dir);
+  mkdirSync(join(dir, "node_modules", "left-pad"), { recursive: true });
+
+  const plain = ["app/a.js", "app/b.jsx", "lib/c.mjs"];
+  assert.equal(await checkerBlocked(dir, { specifier, checkedRels: plain }), "plain-javascript");
+  // One TypeScript file is enough: an Nx-style monorepo keeps its options in
+  // tsconfig.base.json, runs on defaults, and resolved at 100%.
+  for (const typed of ["src/d.ts", "src/e.tsx", "src/f.mts", "src/g.cts"]) {
+    assert.equal(await checkerBlocked(dir, { specifier, checkedRels: [...plain, typed] }), null, typed);
+  }
+  // A declaration file types nothing the JavaScript beside it imports.
+  for (const declared of ["index.d.ts", "types/a.d.mts", "types/b.d.cts"]) {
+    assert.equal(await checkerBlocked(dir, { specifier, checkedRels: [...plain, declared] }), "plain-javascript", declared);
+  }
+  // A tsconfig.json is the repository asking for its JavaScript to be checked.
+  writeFileSync(join(dir, "tsconfig.json"), "{}");
+  assert.equal(await checkerBlocked(dir, { specifier, checkedRels: plain }), null);
+});
+
+test("a caller that does not say which files it checks is refused, not answered", async () => {
+  // A default would read every repository as plain, or none of them.
+  await assert.rejects(checkerBlocked("/nowhere"), TypeError);
+});
+
+test("plain JavaScript is named before missing dependencies, which would not help it", async (t) => {
+  const dir = scratch(t, "anatomiya-tsplain-nodeps-");
+
+  assert.equal(await checkerBlocked(dir, { checkedRels: ["app/a.js"] }), "plain-javascript");
+  assert.equal(await checkerBlocked(dir, { checkedRels: ["app/a.ts"] }), "no-dependencies");
+});
+
+test("the refresh stamp moves when a tsconfig.json appears, tracked or not", (t) => {
+  // An untracked tsconfig.json is not in the index the refresh hashes, and it
+  // turns plain JavaScript's checker on.
+  const dir = scratch(t, "anatomiya-tsstamp-config-");
+  const before = checkerStamp(dir);
+  writeFileSync(join(dir, "tsconfig.json"), "{}");
+
+  assert.notEqual(checkerStamp(dir), before);
 });
 
 test("a node_modules this cannot read is no install, not a crash", needsPosixPermissions, async (t) => {
@@ -218,7 +262,7 @@ test("a node_modules this cannot read is no install, not a crash", needsPosixPer
     rmSync(dir, { recursive: true, force: true });
   });
 
-  assert.equal(await checkerBlocked(dir), "no-dependencies");
+  assert.equal(await checkerBlocked(dir, { checkedRels: ["src/a.ts"] }), "no-dependencies");
 });
 
 test("the refresh stamp moves when packages land or the checker resolves elsewhere", needsTs, (t) => {
