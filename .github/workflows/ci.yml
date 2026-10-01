@@ -404,8 +404,10 @@ jobs:
           cd "$RUNNER_TEMP/checker"
           # The repository's own dependencies on disk are what turn the checker
           # on, and the one thing this tier needs that nothing else here does (B8).
-          npm ci --ignore-scripts --no-audit --no-fund >/dev/null 2>&1 \
-            || { echo "::warning::could not install the checker smoke repository's dependencies"; exit 0; }
+          # The repository ships no lockfile, so `npm ci` refuses it; an install
+          # that fails is an error, or this leg passes having never run the tier.
+          npm install --ignore-scripts --no-audit --no-fund --no-package-lock >/dev/null 2>&1 \
+            || { echo "::error::could not install the checker smoke repository's dependencies"; exit 1; }
           node "$GITHUB_WORKSPACE/plugins/anatomiya/bin/anatomiya.mjs" scan . | tee "$RUNNER_TEMP/checker.out"
           grep -qE "^[0-9]+ files?, [0-9]+ areas?" "$RUNNER_TEMP/checker.out" \
             || { echo "::error::the checked scan printed no summary line"; exit 1; }
