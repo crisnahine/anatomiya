@@ -7,6 +7,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-10-01
+
+The type checker no longer waits for a flag. `scan` runs it wherever the repository's own
+dependencies are installed, records why it stayed off where they are not, and the background refresh
+follows suit. A pinned repository now gets type-checked claims too, measured against the pinned files
+that have not changed since the pin.
+
 ### Changed
 
 - `scan` runs the TypeScript checker on its own when it can resolve types: the optional `typescript`
@@ -3489,7 +3496,8 @@ which are partial; several listed there are not implemented yet.
 - No claim that this catches defects. Measured across ten repositories, 1 of 317 defect review
   comments was preventable by a conventions map.
 
-[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.12.0...HEAD
+[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.13.0...HEAD
+[0.13.0]: https://github.com/crisnahine/anatomiya/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/crisnahine/anatomiya/compare/v0.11.1...v0.12.0
 [0.11.1]: https://github.com/crisnahine/anatomiya/compare/v0.11.0...v0.11.1
 [0.11.0]: https://github.com/crisnahine/anatomiya/compare/v0.10.2...v0.11.0
