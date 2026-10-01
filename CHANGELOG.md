@@ -7,6 +7,27 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Changed
+
+- `scan` leaves the type checker off in plain JavaScript: no `tsconfig.json` at the root and no
+  `.ts`, `.tsx`, `.mts` or `.cts` file. There it ran on the compiler's defaults and resolved 25% to
+  39% on three installed repositories, so every type-checked claim closed after paying the checker's
+  time on every scan and refresh. The facts record says `plain-javascript`, and adding a
+  `tsconfig.json` later is a reason for the background refresh to rescan.
+
+### Added
+
+- The corpus runs see the type checker. `scripts/e2e-corpus.mjs` copies every `node_modules` a
+  corpus repository has installed into its clone, and both it and `scripts/measure-layout.mjs` print
+  what the checker answered per repository. `measure-layout.mjs` also prints a per-area
+  `law_of_demeter` table, so a facts diff between two builds shows a type-checked row that moved.
+
+### Fixed in the tests themselves
+
+- `test/ab.test.mjs` rules on the two names Claude Code 2.1.286 adds to its string table with the
+  next entry's length byte on the end (`CLAUDE_CODE_ALWAYS_ENABLE_EFFORTE`,
+  `CLAUDE_CODE_SKIP_MODEL_ACCESS_MEMORYE`). The names the build reads were already ruled on.
+
 ## [0.13.0] - 2026-10-01
 
 The type checker no longer waits for a flag. `scan` runs it wherever the repository's own
