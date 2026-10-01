@@ -52,7 +52,8 @@ a type-checked slot that moved the way it shows a syntactic one.
    the source has installed is copied in and excluded in the clone; one that cannot be listed or
    copied is a failure.
 2. `scan <clone>`, which must exit 0. Its summary lines are parsed and every file it wrote is read
-   back.
+   back. A clone holding packages at its root whose facts record says the checker read
+   `no-dependencies` is a failure.
 3. `scan <clone>` again. Every generated file must be byte-identical to the first run, and the
    summary must match it except for the duration (A5).
 4. `pin <clone>`, which must exit 0 and leave `.claude/anatomiya/baseline.json`, then a third
@@ -61,8 +62,6 @@ a type-checked slot that moved the way it shows a syntactic one.
    a check that could not run, and a missing merge base is a caveat rather than a failure.
 6. A branch `e2e/probe` carrying one committed file built to break a row the map actually stated,
    then `check <clone> --base <default branch>`. At least one finding has to name that file.
-   Before it, a clone holding packages at its root whose facts record says the checker read
-   `no-dependencies` is a failure.
 7. `rm -rf` the clone, in a `finally`, and again if the first attempt fails.
 
 ## The probe

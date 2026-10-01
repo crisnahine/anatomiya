@@ -285,8 +285,9 @@ Say the quiet part plainly.
   Ruby install, `git`, and `ps`. Their supply chain is not something this tool checks.
 - **The type checker reads the repository's `tsconfig.json`.** It is the one tier that reads
   repository configuration. A scan runs it on its own when the optional `typescript` dependency is
-  installed (never a runtime one), the repository holds a JavaScript or TypeScript file, and a real
-  `node_modules` at its root holds at least one package; `check` never runs it. Inside that tier an
+  installed (never a runtime one), the repository holds a JavaScript or TypeScript file, a real
+  `node_modules` at its root holds at least one package, and there is a root `tsconfig.json` or a
+  TypeScript source file that is not a declaration file; `check` never runs it. Inside that tier an
   `extends` leaving the repository is refused rather than followed, the root file list is forced to
   the corpus rather than the config's globs, every option that writes to disk is forced off, and the
   lib files come from the plugin's own `typescript`, never the repository's, because a repository
