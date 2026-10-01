@@ -1002,6 +1002,8 @@ test("areas holding no checked file take no rate from a dropped bundle directory
       const body = Array.from({ length: 150 }, (_, n) => `o.f${n}=function(a,b){return a.x.y+b.z;};`).join("");
       write(`public/js/lib${i}.js`, `(function(){var o={};${body}})();\n`);
     }
+    // Plain JavaScript with no config is skipped before the checker runs.
+    write("tsconfig.json", "{}\n");
     git("add", "-A");
     git("commit", "-qm", "init");
   });
@@ -1021,6 +1023,8 @@ test("a repository whose every area was dropped takes no rate from it", async (t
       const body = Array.from({ length: 150 }, (_, n) => `o.f${n}=function(a,b){return a.x.y+b.z;};`).join("");
       write(`public/js/lib${i}.js`, `(function(){var o={};${body}})();\n`);
     }
+    // Plain JavaScript with no config is skipped before the checker runs.
+    write("tsconfig.json", "{}\n");
     git("add", "-A");
     git("commit", "-qm", "init");
   });

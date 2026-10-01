@@ -193,18 +193,58 @@ test("the checker is blocked for each reason it could state nothing, and runs ot
     writeFileSync(p, body);
     return pathToFileURL(p).href;
   };
+  const checked = ["src/a.ts"];
   const good = stub("ts-5.9.3", `export const version = "5.9.3";\nexport function createProgram() {}\n`);
 
-  assert.equal(await checkerBlocked(dir, { specifier: good }), "no-dependencies");
+  assert.equal(await checkerBlocked(dir, { specifier: good, checked }), "no-dependencies");
   mkdirSync(join(dir, "node_modules", ".cache"), { recursive: true });
-  assert.equal(await checkerBlocked(dir, { specifier: good }), "no-dependencies", "a cache is no install");
+  assert.equal(await checkerBlocked(dir, { specifier: good, checked }), "no-dependencies", "a cache is no install");
   mkdirSync(join(dir, "node_modules", "left-pad"));
-  assert.equal(await checkerBlocked(dir, { specifier: good }), null);
-  assert.equal(await checkerBlocked(dir, { specifier: "typescript-that-is-not-installed" }), "not-installed");
+  assert.equal(await checkerBlocked(dir, { specifier: good, checked }), null);
+  assert.equal(await checkerBlocked(dir, { specifier: "typescript-that-is-not-installed", checked }), "not-installed");
   const old = stub("ts-4.9.5", `export const version = "4.9.5";\nexport function createProgram() {}\n`);
-  assert.equal(await checkerBlocked(dir, { specifier: old }), "not-installed");
+  assert.equal(await checkerBlocked(dir, { specifier: old, checked }), "not-installed");
   const hollow = stub("ts-noprogram", `export const version = "5.4.0";\n`);
-  assert.equal(await checkerBlocked(dir, { specifier: hollow }), "not-installed");
+  assert.equal(await checkerBlocked(dir, { specifier: hollow, checked }), "not-installed");
+});
+
+test("plain JavaScript with no tsconfig.json is not checked, whatever is installed", async (t) => {
+  // Measured with dependencies installed: huginn, diaspora and whitehall all
+  // came back degraded no-tsconfig at 25% to 39%, so every type-checked row
+  // closed, after paying the checker's time on every scan and refresh.
+  const dir = scratch(t, "anatomiya-tsplain-");
+  const good = join(dir, "ts.mjs");
+  writeFileSync(good, `export const version = "5.9.3";\nexport function createProgram() {}\n`);
+  const specifier = pathToFileURL(good).href;
+  mkdirSync(join(dir, "node_modules", "left-pad"), { recursive: true });
+
+  const plain = ["app/a.js", "app/b.jsx", "lib/c.mjs"];
+  assert.equal(await checkerBlocked(dir, { specifier, checked: plain }), "plain-javascript");
+  // One TypeScript file is enough: an Nx-style monorepo keeps its options in
+  // tsconfig.base.json, runs on defaults, and resolved at 100%.
+  for (const typed of ["src/d.ts", "src/e.tsx", "src/f.mts", "src/g.cts"]) {
+    assert.equal(await checkerBlocked(dir, { specifier, checked: [...plain, typed] }), null, typed);
+  }
+  // A tsconfig.json is the repository asking for its JavaScript to be checked.
+  writeFileSync(join(dir, "tsconfig.json"), "{}");
+  assert.equal(await checkerBlocked(dir, { specifier, checked: plain }), null);
+});
+
+test("plain JavaScript is named before missing dependencies, which would not help it", async (t) => {
+  const dir = scratch(t, "anatomiya-tsplain-nodeps-");
+
+  assert.equal(await checkerBlocked(dir, { checked: ["app/a.js"] }), "plain-javascript");
+  assert.equal(await checkerBlocked(dir, { checked: ["app/a.ts"] }), "no-dependencies");
+});
+
+test("the refresh stamp moves when a tsconfig.json appears, tracked or not", (t) => {
+  // An untracked tsconfig.json is not in the index the refresh hashes, and it
+  // turns plain JavaScript's checker on.
+  const dir = scratch(t, "anatomiya-tsstamp-config-");
+  const before = checkerStamp(dir);
+  writeFileSync(join(dir, "tsconfig.json"), "{}");
+
+  assert.notEqual(checkerStamp(dir), before);
 });
 
 test("a node_modules this cannot read is no install, not a crash", needsPosixPermissions, async (t) => {
@@ -218,7 +258,7 @@ test("a node_modules this cannot read is no install, not a crash", needsPosixPer
     rmSync(dir, { recursive: true, force: true });
   });
 
-  assert.equal(await checkerBlocked(dir), "no-dependencies");
+  assert.equal(await checkerBlocked(dir, { checked: ["src/a.ts"] }), "no-dependencies");
 });
 
 test("the refresh stamp moves when packages land or the checker resolves elsewhere", needsTs, (t) => {
