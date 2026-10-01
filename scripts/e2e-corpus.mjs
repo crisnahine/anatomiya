@@ -414,7 +414,7 @@ const anatomiya = (args, cwd) => run(process.execPath, [BIN, ...args], cwd);
 
 function run(cmd, args, cwd) {
   const r = spawnSync(cmd, args, { cwd, encoding: "utf8", maxBuffer: MAX_BUFFER });
-  return { status: r.status, out: r.stdout ?? "", err: (r.stderr ?? "").trim() };
+  return { status: r.status, out: r.stdout ?? "", err: (r.stderr ?? "").trim() || (r.error?.message ?? "") };
 }
 
 /**

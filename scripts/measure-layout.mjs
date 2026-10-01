@@ -36,6 +36,7 @@ import {
   underTestTree,
 } from "../plugins/anatomiya/lib/layout.mjs";
 import { parseAll } from "../plugins/anatomiya/lib/parse.mjs";
+import { SEMANTIC_DIMENSIONS } from "../plugins/anatomiya/lib/dimensions-semantic.mjs";
 import { baseOf, byCode, dirOf, extOf, stemOf } from "../plugins/anatomiya/lib/paths.mjs";
 import { scan } from "../plugins/anatomiya/lib/scan.mjs";
 import { MAX_LINES } from "../plugins/anatomiya/lib/render.mjs";
@@ -52,9 +53,9 @@ const LEVEL_SUFFIX = " (files at this level)";
 // anywhere is visible as such.
 export const LEARNED_ROWS = ["extends_base", "class_base", "module_include", "interface_prefix", "type_alias_prefix"];
 
-// The rows printed per area: the five, and the type-checked one, which only a
+// The rows printed per area: the five, and the type-checked ones, which only a
 // corpus with dependencies installed can move.
-export const TABLED_ROWS = [...LEARNED_ROWS, "law_of_demeter"];
+export const TABLED_ROWS = [...LEARNED_ROWS, ...SEMANTIC_DIMENSIONS.map((d) => d.key)];
 
 // --- the recount ------------------------------------------------------------
 
@@ -554,7 +555,7 @@ function tableOf(rows, columns = COLUMNS) {
 /**
  * What the bar asks for and a summary cannot answer: the three numbers and the
  * ratio, per repository and per area, for each of the five learned rows and
- * the type-checked one.
+ * the type-checked ones.
  *
  * A summary hides the one thing step 3 is looking for. `module_state_const`
  * scored 620 of 620 on one repository and shipped a directive nobody could
