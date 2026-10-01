@@ -33,7 +33,7 @@ frozen tree stays frozen: in the corpus copy, with the repository's own lockfile
 repository that does not ignore `node_modules` stays uninstalled, or the scan would count the install
 as its source. The `semantic` column says what the checker answered: `ok` or `degraded` with the
 reason and the resolution rate, or `off` with why it did not run. `scripts/measure-layout.mjs`
-prints the same column and a per-area `law_of_demeter` table of the five biggest areas. The facts
+prints the same column and a per-area `law_of_demeter` table of the five areas with the most sites. The facts
 records its `--facts` writes carry every area's row, gate included, so a facts diff between two
 builds shows a type-checked row that moved the way it shows a syntactic one. One trap: pnpm walks up
 to the nearest `pnpm-workspace.yaml`, so a repository with none of its own installs into whatever

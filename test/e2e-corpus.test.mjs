@@ -1,11 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
 import { lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { needsPosixSeparators } from "./platform.mjs";
+import { git, scratch } from "./git-worktrees.mjs";
 import { FACTS_PATH, FACTS_SCHEMA } from "../plugins/anatomiya/lib/facts.mjs";
 import { scanJson, scanSummary } from "../plugins/anatomiya/lib/summary.mjs";
 import { layoutSummary } from "../plugins/anatomiya/lib/render-layout.mjs";
@@ -455,8 +455,7 @@ test("the semantic column says whether the checker ran, what it answered and why
 
 /** A source repository ignoring its installs, and an empty directory to copy them into. */
 function installed(t) {
-  const home = mkdtempSync(join(tmpdir(), "e2e-deps-"));
-  t.after(() => rmSync(home, { recursive: true, force: true }));
+  const home = scratch(t, "e2e-deps-");
   const source = join(home, "source");
   const clone = join(home, "clone");
   mkdirSync(clone);
@@ -465,7 +464,7 @@ function installed(t) {
     writeFileSync(join(source, rel), body);
   };
   write(".gitignore", "node_modules/\ndist/\n");
-  execFileSync("git", ["init", "-q"], { cwd: source, stdio: "pipe" });
+  git(source, "init", "-q");
   write("node_modules/left-pad/index.js");
   write("packages/a/node_modules/b/index.js");
   write("dist/out.js");
@@ -493,12 +492,14 @@ test("a source with nothing installed copies nothing", (t) => {
   assert.deepEqual(copyDependencies(source, clone), { copied: [] });
 });
 
-test("a source git cannot list is an error, not a clone quietly left uninstalled", (t) => {
+test("a source git cannot list is an error that says why, not a clone quietly left uninstalled", (t) => {
   // Copying nothing reads no-dependencies again, which is the blind run this exists to end.
-  const home = mkdtempSync(join(tmpdir(), "e2e-deps-nogit-"));
-  t.after(() => rmSync(home, { recursive: true, force: true }));
+  const home = scratch(t, "e2e-deps-nogit-");
+  mkdirSync(join(home, "plain"));
 
-  assert.match(copyDependencies(join(home, "missing"), home).error, /could not list/);
+  assert.match(copyDependencies(join(home, "plain"), home).error, /could not list .*not a git repository/i);
+  // A directory that is not there fails before git runs, and has no stderr to quote.
+  assert.match(copyDependencies(join(home, "missing"), home).error, /could not list .*ENOENT/);
 });
 
 test("links inside an install are copied as the same links", { skip: process.platform === "win32" && "a symlink needs a privilege Windows runners do not grant" }, (t) => {
