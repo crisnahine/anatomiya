@@ -225,6 +225,8 @@ test("plain JavaScript with no tsconfig.json is not checked, whatever is install
   for (const typed of ["src/d.ts", "src/e.tsx", "src/f.mts", "src/g.cts"]) {
     assert.equal(await checkerBlocked(dir, { specifier, checked: [...plain, typed] }), null, typed);
   }
+  // A caller that does not say which files it checks is not told it has none.
+  assert.equal(await checkerBlocked(dir, { specifier }), null);
   // A tsconfig.json is the repository asking for its JavaScript to be checked.
   writeFileSync(join(dir, "tsconfig.json"), "{}");
   assert.equal(await checkerBlocked(dir, { specifier, checked: plain }), null);
