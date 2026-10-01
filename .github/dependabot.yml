@@ -22,6 +22,9 @@ updates:
     ignore:
       - dependency-name: typescript
         update-types: ["version-update:semver-major"]
+      # `ignore` is the test oracle for how Claude Code reads `paths` (A10), so it moves
+      # only when the version Claude Code bundles does, never on its own release.
+      - dependency-name: ignore
     groups:
       npm:
         patterns: ["*"]
