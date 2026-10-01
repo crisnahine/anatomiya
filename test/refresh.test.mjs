@@ -11,9 +11,11 @@ import { loadPin, PIN_PATH } from "../plugins/anatomiya/lib/baseline.mjs";
 import { EXCLUDE_LINES, REFRESH_STATE } from "../plugins/anatomiya/lib/rules.mjs";
 import { movedByRemote, noteScan, refreshRepository, runRefresh } from "../plugins/anatomiya/lib/refresh.mjs";
 import { collect } from "../plugins/anatomiya/lib/corpus.mjs";
+import { loadTypeScript } from "../plugins/anatomiya/lib/semantic.mjs";
 import { needsSymlinks } from "./platform.mjs";
 
 const OVERVIEW = join(".claude", "rules", "anatomiya-overview.md");
+const needsTs = { skip: (await loadTypeScript()) ? false : "typescript is not installed" };
 const BIN = fileURLToPath(new URL("../plugins/anatomiya/bin/anatomiya.mjs", import.meta.url));
 
 function git(dir, ...args) {
@@ -433,29 +435,35 @@ test("a refresh file committed under another case of .claude than the disk's sti
   assert.equal(existsSync(join(dir, ".claude", "anatomiya", "refresh.again")), true);
 });
 
-test("a map built with the type checker is refreshed with the checker it was built with", async (t) => {
-  // Skipping it left `--deep` users running the scan by hand after every
-  // checkout, and rescanning without the checker would drop the claims it
-  // added. The mode the person chose is the mode it keeps (B7: never unasked).
+test("installing the dependencies after a scan is a reason to rescan", needsTs, async (t) => {
+  // The checker turns on with a node_modules, and the usual order is clone,
+  // scan, install: nothing about HEAD or the index moves when it lands.
+  const dir = await scanned(t);
+  let scans = 0;
+  const scan = async () => {
+    scans++;
+  };
+  await refreshRepository(dir, { scan });
+  assert.equal((await refreshRepository(dir, { scan })).reason, "current");
+
+  mkdirSync(join(dir, "node_modules", "left-pad"), { recursive: true });
+
+  assert.equal((await refreshRepository(dir, { scan })).reason, "scanned");
+  assert.equal(scans, 2);
+});
+
+test("a refresh leaves the type checker to the scan's own decision", async (t) => {
+  // An old map records whether the checker ran; the scan decides afresh from
+  // the repository, so a refresh passes no mode of its own.
   const dir = await scanned(t);
   const factsPath = join(dir, ".claude", "anatomiya", "facts.json");
   const facts = JSON.parse(readFileSync(factsPath, "utf8"));
   facts.semantic = { ...facts.semantic, ran: true };
   writeFileSync(factsPath, JSON.stringify(facts));
   const calls = [];
-  const scan = async (root, options) => {
-    calls.push(options);
-  };
 
-  assert.equal((await refreshRepository(dir, { scan })).reason, "scanned");
-  assert.deepEqual(calls, [{ deep: true }]);
-});
-
-test("a map built without the checker is refreshed without it", async (t) => {
-  const dir = await scanned(t);
-  const calls = [];
-  await refreshRepository(dir, { scan: async (root, options) => calls.push(options) });
-  assert.deepEqual(calls, [{ deep: false }]);
+  assert.equal((await refreshRepository(dir, { scan: async (...args) => calls.push(args) })).reason, "scanned");
+  assert.deepEqual(calls, [[dir]], "the scan is handed the root and no options");
 });
 
 test("a rescan that fails keeps the previous map, and the same state is not tried again", async (t) => {

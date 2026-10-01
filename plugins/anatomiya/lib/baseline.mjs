@@ -609,7 +609,11 @@ async function countAtPin(root, state, areas, populations, { headParsed = null, 
   }
   if (wanted.size === 0) return out;
 
-  const { parsed, stale } = reuseUnchanged(await changedSinceWorktree(root, state.sha), wanted, headParsed);
+  const changed = await changedSinceWorktree(root, state.sha);
+  const { parsed, stale } = reuseUnchanged(changed, wanted, headParsed);
+  // Not every stale file: one that fails to parse on both sides is stale
+  // without having moved.
+  const moved = (f) => !unmoved(changed, f);
 
   let blobs = null;
   try {
@@ -677,7 +681,9 @@ async function countAtPin(root, state, areas, populations, { headParsed = null, 
       // any other population change: report and suppress.
       out.set(
         area.id,
-        unread ? { gate: "population-change", dims: [] } : { gate: null, dims: reduce(area, usable) }
+        unread
+          ? { gate: "population-change", dims: [] }
+          : { gate: null, dims: reduce(area, usable, { moved: population.files.filter(moved) }) }
       );
     }
   } finally {
@@ -707,11 +713,15 @@ function reuseUnchanged(changed, wanted, headParsed) {
   const stale = [];
 
   for (const f of wanted.values()) {
-    const same = changed && !changed.has(f.rel) && (f.currentRel ?? f.rel) === f.rel;
-    const hit = same && headParsed ? headParsed.get(f.rel) : null;
+    const hit = unmoved(changed, f) && headParsed ? headParsed.get(f.rel) : null;
     if (hit && hit.ok) parsed.set(f.rel, hit);
     else stale.push(f);
   }
 
   return { parsed, stale };
+}
+
+/** Same bytes at the same path since the pin, as far as git would say. */
+function unmoved(changed, f) {
+  return Boolean(changed) && !changed.has(f.rel) && (f.currentRel ?? f.rel) === f.rel;
 }

@@ -67,9 +67,9 @@ cannot install an interpreter. Then run the check again.
 
 ### Type-checked claims
 
-The check has no `--deep`: the checker is whole-program, so answering a branch with it would mean
-building the whole corpus at two revisions, which is a scan's cost. Type-checked claims are measured
-by `anatomiya scan --deep` and printed on the map.
+The check never runs the type checker: it is whole-program, so answering a branch with it would
+mean building the whole corpus at two revisions, which is a scan's cost. Type-checked claims are
+measured by `anatomiya scan` and printed on the map.
 
 If the map holds one, the report says so on its own line. A report with no findings does not mean
 that claim was clean on this branch, because it was not asked.

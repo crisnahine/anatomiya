@@ -273,20 +273,20 @@ test("an interpreter our own timer killed is not reported as a missing library",
 });
 
 test("the optional checker is never what makes a probe fail", async () => {
-  // It is not an engine: one flag asks for it and that flag refuses on its own
-  // before any work, so a doctor report that called it broken would send a
-  // reader to install something no default run uses.
+  // It is not an engine: a scan without it leaves the type checker off and
+  // still writes a map, so a doctor report that called it broken would send a
+  // reader to install something no scan needs.
   const [row] = await readiness({ engines: ["typescript"] });
 
   assert.equal(row.engine, "typescript");
   assert.equal(row.ok, true);
-  assert.match(row.reason, /--deep/, "and the row still says which flag wants it");
+  assert.match(row.reason, /type checker/, "and the row still says what wants it");
 });
 
-test("a checker --deep would refuse is not ok, and setup counts it as needed", (t) => {
+test("a checker the scan would not load is not ok, and setup counts it as needed", (t) => {
   // Measured with a typescript 4.9.5 in a node_modules above the plugin, the
   // kind a home directory collects: doctor said `typescript 4.9.5 ok`, setup
-  // said `nothing to install`, and `scan --deep` refused it as not installed,
+  // said `nothing to install`, and the scan refused it as not installed,
   // because the loader holds it to major 5 and the probe only imported it.
   // Probed out of process: module resolution is what is under test.
   const above = mkdtempSync(join(tmpdir(), "anatomiya-oldts-"));
@@ -299,22 +299,21 @@ test("a checker --deep would refuse is not ok, and setup counts it as needed", (
   cpSync(join(ROOT, REL.anatomiya, "package.json"), join(home, "package.json"));
   const script = `
     const { readiness } = await import(${JSON.stringify(pathToFileURL(join(home, "lib", "readiness.mjs")).href)});
-    const { runScan, runSetup } = await import(${JSON.stringify(pathToFileURL(join(home, "lib", "commands.mjs")).href)});
+    const { runSetup } = await import(${JSON.stringify(pathToFileURL(join(home, "lib", "commands.mjs")).href)});
+    const { loadTypeScript } = await import(${JSON.stringify(pathToFileURL(join(home, "lib", "semantic.mjs")).href)});
     const [row] = await readiness({ engines: ["typescript"] });
     const { needed } = await runSetup({ dryRun: true });
-    let refused = null;
-    try { await runScan(${JSON.stringify(above)}, { dryRun: true, deep: true }); } catch (err) { refused = err.message; }
-    process.stdout.write(JSON.stringify({ row, needed, refused }));
+    const loaded = await loadTypeScript();
+    process.stdout.write(JSON.stringify({ row, needed, loaded }));
   `;
 
-  const { row, needed, refused } = JSON.parse(execFileSync(process.execPath, ["--input-type=module", "-e", script], { encoding: "utf8" }));
+  const { row, needed, loaded } = JSON.parse(execFileSync(process.execPath, ["--input-type=module", "-e", script], { encoding: "utf8" }));
 
   assert.equal(row.version, "4.9.5");
   assert.equal(row.ok, false);
   assert.match(row.reason, /5\.x/, row.reason);
   assert.ok(needed.includes("typescript"), `setup would install it: ${needed}`);
-  // scan --deep names the same cause doctor does, not an absent install.
-  assert.equal(refused?.split("\n")[0], `typescript 4.9.5: ${row.reason}`, refused);
+  assert.equal(loaded, null, "and the scan leaves the checker off");
 });
 
 test("an engine fixed after a failed load reads as fixed only to a node that never tried it", needsSymlinks, (t) => {
@@ -367,7 +366,7 @@ test("a doctor line says what answered, or what to do about it", () => {
     { engine: "oxc", extra: "flow-remove-types", present: true, version: "2.3.0", floor: null, ok: true, reason: null, remedy: "r" },
     { engine: "prism", extra: null, present: false, version: null, floor: "1.0.0", ok: false, reason: "ruby is not on PATH", remedy: "install Ruby" },
     { engine: "prism", extra: null, present: true, version: null, floor: "1.0.0", ok: false, reason: "prism is not installed for this ruby", remedy: "install Ruby" },
-    { engine: "typescript", extra: null, present: false, version: null, floor: null, ok: true, reason: "optional: --deep needs it", remedy: "r" },
+    { engine: "typescript", extra: null, present: false, version: null, floor: null, ok: true, reason: "optional: scan runs the type checker with it", remedy: "r" },
   ];
 
   assert.deepEqual(readinessLines(rows), [
@@ -375,7 +374,7 @@ test("a doctor line says what answered, or what to do about it", () => {
     "flow-remove-types 2.3.0 ok",
     "prism absent: ruby is not on PATH, install Ruby",
     "prism no version: prism is not installed for this ruby, install Ruby",
-    "typescript absent ok (optional: --deep needs it)",
+    "typescript absent ok (optional: scan runs the type checker with it)",
   ]);
 });
 

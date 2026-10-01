@@ -7,6 +7,22 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Changed
+
+- `scan` runs the TypeScript checker on its own when it can resolve types: the optional `typescript`
+  5.x is installed and the repository's own `node_modules` is on disk inside it. `--deep` is no
+  longer an option and is refused with a sentence saying so. A repository without its dependencies
+  installed leaves the checker off, and the facts record says why. The background refresh decides
+  the same way, and installing or removing the dependencies after a scan is now a reason for it to
+  rescan.
+- A pinned repository no longer closes every type-checked claim. An area whose checked files are
+  unchanged since the pin is measured against them; an area holding one that changed is still
+  closed, so an edit cannot take a violation out of the baseline. On a pinned 2,588-file repository
+  all 119 `law_of_demeter` slots had read `semantic-unbaselined`; with no file changed since the
+  pin, 115 now read `ratio` and 4 `evidence`.
+- A scan that runs the checker costs more: 17.4s against 2.2s on that repository, and the checker
+  process was measured at 880 MB resident. The background refresh pays it too.
+
 ## [0.12.0] - 2026-09-30
 
 `check` gets quieter where it was wrong and more exact where it was vague. It stops reporting a

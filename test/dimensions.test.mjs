@@ -589,8 +589,8 @@ test("every registry row declares a tier, and an unknown one refuses to load", (
 });
 
 test("the default caller is offered the syntactic tier only", () => {
-  // The tier is opt-in. A caller that forgets to ask must not get a claim that
-  // needs a checker nobody ran.
+  // A caller that forgets to ask for the semantic tier must not get a claim
+  // that needs a checker nobody ran.
   const keys = dimensionsFor(["js"]).map((d) => d.key);
   for (const d of SEMANTIC_DIMENSIONS) assert.equal(keys.includes(d.key), false, `${d.key} leaked into the default set`);
 });

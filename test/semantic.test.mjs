@@ -1,22 +1,23 @@
 // test/semantic.test.mjs
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { chmodSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { pathToFileURL } from "node:url";
 import { repo } from "./ts-repo.mjs";
+import { needsPosixPermissions } from "./platform.mjs";
+import { scratch } from "./git-worktrees.mjs";
 import {
   loadTypeScript,
-  notInstalledMessage,
-  deepRefusal,
+  checkerBlocked,
+  checkerStamp,
   unusableReason,
   classifySemantic,
   RESOLUTION_FLOOR,
   SEMANTIC_GUARDS,
   runSemantic,
 } from "../plugins/anatomiya/lib/semantic.mjs";
-import { remedyFor } from "../plugins/anatomiya/lib/readiness.mjs";
 
 // The tier is optional, so every test that needs the checker says so rather
 // than failing on a machine that never installed it.
@@ -24,8 +25,8 @@ const loaded = await loadTypeScript();
 const needsTs = { skip: loaded ? false : "typescript is not installed" };
 
 test("the loader answers null rather than throwing when typescript is absent", async () => {
-  // A user who never asked for --deep must not pay for this dependency, so an
-  // absent one is an ordinary state and not a crash.
+  // A user who never installed the checker must not pay for it, so an absent
+  // one is an ordinary state and not a crash.
   const got = await loadTypeScript({ specifier: "typescript-that-is-not-installed" });
   assert.equal(got, null);
 });
@@ -35,14 +36,6 @@ test("the loader answers the module and its version when it is there", async () 
   if (got === null) return; // the optional dependency is not installed here
   assert.equal(typeof got.ts.createProgram, "function");
   assert.match(got.version, /^5\./, "the range is pinned to major 5");
-});
-
-test("the refusal names the install command and the flag that needs it", () => {
-  // Composed the way the scan composes it, since the remedy is the engine
-  // table's sentence and this module holds only the frame around it.
-  const m = notInstalledMessage(remedyFor("typescript"));
-  assert.match(m, /--deep/);
-  assert.match(m, /bin\/anatomiya\.mjs setup/);
 });
 
 test("a clean config with a high resolution rate is not degraded", () => {
@@ -174,9 +167,9 @@ test("a repository with no root tsconfig whose types did not resolve says it had
 
 test("a checker outside major 5 is refused, because 7 has no JS API", async (t) => {
   // The range in package.json may never widen past major 5: typescript@7 is the
-  // Go port and publishes no JS API, so a range that admits it turns --deep into
-  // a silent no-op the day it publishes. Refusing here is what turns that into
-  // the same named refusal an absent checker gets.
+  // Go port and publishes no JS API, so a range that admits it turns the checker
+  // into a silent no-op the day it publishes. Refusing here is what makes doctor
+  // name it rather than the scan quietly leaving it off.
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-tsver-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
 
@@ -193,33 +186,69 @@ test("a checker outside major 5 is refused, because 7 has no JS API", async (t) 
   assert.equal(ok?.version, "5.9.3");
 });
 
-test("a --deep refusal names the typescript it found when that one is the wrong major", async (t) => {
-  // Measured with a typescript 4.9.5 above the plugin and none inside it: doctor
-  // said `--deep needs typescript 5.x` and `scan --deep` said it was not
-  // installed, which sends the reader looking for an install that is there.
-  const dir = mkdtempSync(join(tmpdir(), "anatomiya-tsrefuse-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
-  const stub = (version) => {
-    const p = join(dir, `ts-${version}.mjs`);
-    writeFileSync(p, `export const version = ${JSON.stringify(version)};\nexport function createProgram() {}\n`);
+test("the checker is blocked for each reason it could state nothing, and runs otherwise", async (t) => {
+  const dir = scratch(t, "anatomiya-tsskip-");
+  const stub = (name, body) => {
+    const p = join(dir, `${name}.mjs`);
+    writeFileSync(p, body);
     return pathToFileURL(p).href;
   };
-  const remedy = remedyFor("typescript");
+  const good = stub("ts-5.9.3", `export const version = "5.9.3";\nexport function createProgram() {}\n`);
 
-  const old = await deepRefusal(remedy, { specifier: stub("4.9.5") });
-  assert.match(old, /^typescript 4\.9\.5: --deep needs typescript 5\.x$/m, old);
-  assert.doesNotMatch(old, /not installed/, old);
-  assert.match(old, /bin\/anatomiya\.mjs setup/, old);
+  assert.equal(await checkerBlocked(dir, { specifier: good }), "no-dependencies");
+  mkdirSync(join(dir, "node_modules", ".cache"), { recursive: true });
+  assert.equal(await checkerBlocked(dir, { specifier: good }), "no-dependencies", "a cache is no install");
+  mkdirSync(join(dir, "node_modules", "left-pad"));
+  assert.equal(await checkerBlocked(dir, { specifier: good }), null);
+  assert.equal(await checkerBlocked(dir, { specifier: "typescript-that-is-not-installed" }), "not-installed");
+  const old = stub("ts-4.9.5", `export const version = "4.9.5";\nexport function createProgram() {}\n`);
+  assert.equal(await checkerBlocked(dir, { specifier: old }), "not-installed");
+  const hollow = stub("ts-noprogram", `export const version = "5.4.0";\n`);
+  assert.equal(await checkerBlocked(dir, { specifier: hollow }), "not-installed");
+});
 
-  // A 5.x that cannot build a program is not told it needs 5.x.
-  const p = join(dir, "ts-noprogram.mjs");
-  writeFileSync(p, `export const version = "5.4.0";\n`);
-  const hollow = await deepRefusal(remedy, { specifier: pathToFileURL(p).href });
-  assert.match(hollow, /^typescript 5\.4\.0: --deep needs a typescript that exports createProgram$/m, hollow);
-  assert.equal(unusableReason({ version: "5.4.0" }), "--deep needs a typescript that exports createProgram", "doctor reads the same sentence");
+test("a node_modules this cannot read is no install, not a crash", needsPosixPermissions, async (t) => {
+  // The refresh stamps this answer, so a throw here would fail every refresh.
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-tslocked-"));
+  const deps = join(dir, "node_modules");
+  mkdirSync(join(deps, "left-pad"), { recursive: true });
+  chmodSync(deps, 0o000);
+  t.after(() => {
+    chmodSync(deps, 0o755);
+    rmSync(dir, { recursive: true, force: true });
+  });
 
-  assert.match(await deepRefusal(remedy, { specifier: "typescript-that-is-not-installed" }), /is not installed/);
-  assert.equal(await deepRefusal(remedy, { specifier: stub("5.9.3") }), null);
+  assert.equal(await checkerBlocked(dir), "no-dependencies");
+});
+
+test("the refresh stamp moves when packages land or the checker resolves elsewhere", needsTs, (t) => {
+  const dir = scratch(t, "anatomiya-tsstamp-");
+  const before = checkerStamp(dir);
+  mkdirSync(join(dir, "node_modules", "left-pad"), { recursive: true });
+  const after = checkerStamp(dir);
+
+  assert.notEqual(after, before);
+  assert.equal(checkerStamp(dir), after, "and holds still while nothing moves");
+  assert.notEqual(checkerStamp(dir, { specifier: "typescript-that-is-not-installed" }), after);
+});
+
+test("the refresh stamp moves when typescript is upgraded in place", (t) => {
+  const dir = scratch(t, "anatomiya-tsupgrade-");
+  const pkg = join(dir, "typescript");
+  mkdirSync(join(pkg, "lib"), { recursive: true });
+  writeFileSync(join(pkg, "lib", "typescript.js"), "");
+  const specifier = pathToFileURL(join(pkg, "lib", "typescript.js")).href;
+  writeFileSync(join(pkg, "package.json"), `{"version":"4.9.5"}`);
+  const before = checkerStamp(dir, { specifier });
+  writeFileSync(join(pkg, "package.json"), `{"version":"5.9.3"}`);
+
+  assert.notEqual(checkerStamp(dir, { specifier }), before);
+});
+
+test("doctor names why a typescript that loads cannot run the checker", () => {
+  assert.equal(unusableReason({ version: "4.9.5", createProgram() {} }), "the type checker needs typescript 5.x");
+  assert.equal(unusableReason({ version: "5.4.0" }), "the type checker needs a typescript that exports createProgram");
+  assert.equal(unusableReason({ version: "5.9.3", createProgram() {} }), null);
 });
 
 test("a checker that dies partway through is a failure, not a clean partial answer", async (t) => {

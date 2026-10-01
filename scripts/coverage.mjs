@@ -15,7 +15,7 @@
  * counted sat under the whole-tree floor on their own while the total cleared,
  * and the largest module the plugin ships could have lost every covered line
  * unnoticed. So the plugin's own `lib` is held to a floor per file too.
- * The rest of the tree is not: the `--deep` tier runs only in the smoke job and
+ * The rest of the tree is not: the type-checked tier runs only in the smoke job and
  * the harnesses under `scripts/` are run by hand, so `scripts/ab/run.mjs`
  * reports a third of its lines, and a floor low enough to admit that says
  * nothing about the rest.
@@ -73,7 +73,7 @@ export const FLOORS = [
     // TypeScript installed and working. Named rather than accommodated on all
     // three kinds, because a floor low enough to admit 0% of functions would
     // admit every other file at 0% too. The tier itself is covered by the
-    // smoke job, which runs `scan --deep` against a real repository.
+    // smoke job, which scans a real repository with its dependencies installed.
     except: [`${REL.anatomiya}/lib/dimensions-semantic.mjs`],
   },
 ];

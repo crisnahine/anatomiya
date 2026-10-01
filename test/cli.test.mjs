@@ -474,28 +474,15 @@ test("a dry run does not report in the past tense", (t) => {
   );
 });
 
-test("--deep is refused on check, because the check cannot run a whole-program checker", () => {
-  // It was accepted, recorded as ran, and never ran: check.mjs has no runSemantic
-  // in it. So the report said "rerun with --deep", the user did, the note
-  // disappeared because ran was true, and nothing was measured either time.
-  // The checker is whole-program and would need the whole corpus built at two
-  // revisions to answer a branch, which is a scan's job and not a check's.
-  let code = 0;
-  let stderr = "";
-  try {
-    execFileSync(process.execPath, [join(ANATOMIYA, "bin", "anatomiya.mjs"), "check", ".", "--deep"], {
-      stdio: "pipe",
-      encoding: "utf8",
-    });
-  } catch (err) {
-    code = err.status;
-    stderr = String(err.stderr ?? "");
-  }
+for (const cmd of ["scan", "check", "pin", "doctor", "setup"]) {
+  test(`--deep is refused on ${cmd}, and says the checker runs on its own`, () => {
+    const path = cmd === "doctor" || cmd === "setup" ? [] : ["."];
+    const { code, stderr } = runFrom(ANATOMIYA, [cmd, ...path, "--deep"], process.env.PATH);
 
-  assert.equal(code, 2);
-  assert.match(stderr, /check takes no --deep option/);
-  assert.match(stderr, /anatomiya scan --deep/, "and it says where the tier does run");
-});
+    assert.equal(code, 2);
+    assert.match(stderr, /--deep is not an option: scan runs the type checker on its own/);
+  });
+}
 
 /* --- one answer, three writers --- */
 
@@ -725,8 +712,7 @@ test("a setup whose npm finished without the engine loading fails and names it",
 });
 
 test("doctor and setup refuse the arguments they have no use for", () => {
-  // Same trade as --deep on a check: refused with the usage, rather than
-  // accepted and quietly not used.
+  // Refused with the usage, rather than accepted and quietly not used.
   const refused = (...args) => {
     try {
       cli(...args);
