@@ -528,7 +528,7 @@ async function runRepo(name, source, scratchDir) {
   const clone = join(scratchDir, name);
   const started = Date.now();
   const problems = [];
-  const row = { repo: name, files: "-", areas: "-", stated: "-", roots: "-", wrote: "-", stable: "-", pin: "-", clean: "-", probe: "-", semantic: "-", seconds: "-" };
+  const row = { ...Object.fromEntries(COLUMNS.map((c) => [c, "-"])), repo: name };
   const fail = (what) => problems.push(`${name}: ${what}`);
 
   try {

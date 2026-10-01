@@ -51,8 +51,7 @@ export function unusableReason(ts) {
  * reads `not-installed` too, and doctor names which. Plain JavaScript with no
  * `tsconfig.json` is skipped before any of that: run on the compiler's defaults
  * it resolved 25% to 39% on three installed repositories and closed every
- * type-checked slot,
- * and no install changes that.
+ * type-checked slot, and no install changes that.
  */
 export async function checkerBlocked(root, { specifier = "typescript", checkedRels } = {}) {
   if (!Array.isArray(checkedRels)) throw new TypeError("checkerBlocked needs { checkedRels }: the paths of the files the checker would read");

@@ -431,9 +431,11 @@ already enforces a rule, the map restating it is waste, not defence in depth.
 **JavaScript, TypeScript and Ruby, nothing else.** A Python, Go or Rust repository gets an overview
 with a layout section and no claims in it. One of the 58 needs the type checker and is the only
 thing the type checker adds: `a call chain stays inside one type`. The scan runs the checker on its
-own when the optional `typescript` 5.x dependency is installed and the scanned repository's own
+own when the optional `typescript` 5.x dependency is installed, the scanned repository's own
 dependencies are on disk inside it (a `node_modules` linked in from elsewhere is not read and counts
-as no dependencies), and leaves it off otherwise. It costs: a scan with it measured about 3x a plain
+as no dependencies), and the repository has a root `tsconfig.json` or a TypeScript source file that
+is not a declaration file, and leaves it off otherwise. Plain JavaScript run on the compiler's
+defaults resolved too little to state anything, and a `jsconfig.json` does not count. It costs: a scan with it measured about 3x a plain
 one on a 3,800-file repository and about 8x on a 2,600-file one, and the checker is whole-program,
 so it cannot be narrowed to the files you changed. The map says when the checker answered badly.
 

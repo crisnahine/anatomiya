@@ -48,7 +48,9 @@ a type-checked slot that moved the way it shows a syntactic one.
 
 ## The flow, per repository
 
-1. Clone what is checked out. A clone with no commit is recorded and skipped.
+1. Clone what is checked out. A clone with no commit is recorded and skipped. Every `node_modules`
+   the source has installed is copied in and excluded in the clone; one that cannot be listed or
+   copied is a failure.
 2. `scan <clone>`, which must exit 0. Its summary lines are parsed and every file it wrote is read
    back.
 3. `scan <clone>` again. Every generated file must be byte-identical to the first run, and the
@@ -59,6 +61,8 @@ a type-checked slot that moved the way it shows a syntactic one.
    a check that could not run, and a missing merge base is a caveat rather than a failure.
 6. A branch `e2e/probe` carrying one committed file built to break a row the map actually stated,
    then `check <clone> --base <default branch>`. At least one finding has to name that file.
+   Before it, a clone holding packages at its root whose facts record says the checker read
+   `no-dependencies` is a failure.
 7. `rm -rf` the clone, in a `finally`, and again if the first attempt fails.
 
 ## The probe
@@ -92,7 +96,8 @@ measure the check against a file this harness wrote rather than against the repo
 | pin | `pin` exited 0, wrote the baseline, and the scan after it named the pinned sha |
 | clean | findings on the clean tree, and the check exited 0 |
 | probe | a finding named the probe file, and which row it broke; `n.a.` is a repository stating none of the three, which then has to draw zero findings |
-| seconds | the whole flow: clone, three scans, a pin, two checks and the removal |
+| semantic | what the type checker answered on the first scan: `ok` or `degraded` with the reason and the resolution rate, or `off` with why it did not run; `off no-dependencies` in a clone holding packages is a failure |
+| seconds | the whole flow: clone, the dependency copy, three scans, a pin, two checks and the removal |
 
 Alongside the table, every run asserts that `.claude/rules/anatomiya-overview.md` exists, holds
 `## What lives where` or the truncation notice, and comes to at most 40 lines; that every

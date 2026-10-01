@@ -25,9 +25,10 @@ const loaded = await loadTypeScript();
 const needsTs = { skip: loaded ? false : "typescript is not installed" };
 
 /** A module standing in for typescript at one version, as a specifier the loader imports. */
-function typescriptStub(dir, version = "5.9.3") {
+function typescriptStub(dir, version = "5.9.3", { createProgram = true } = {}) {
   const p = join(dir, `ts-${version}.mjs`);
-  writeFileSync(p, `export const version = ${JSON.stringify(version)};\nexport function createProgram() {}\n`);
+  const program = createProgram ? "export function createProgram() {}\n" : "";
+  writeFileSync(p, `export const version = ${JSON.stringify(version)};\n${program}`);
   return pathToFileURL(p).href;
 }
 
@@ -189,13 +190,8 @@ test("a checker outside major 5 is refused, because 7 has no JS API", async (t) 
 
 test("the checker is blocked for each reason it could state nothing, and runs otherwise", async (t) => {
   const dir = scratch(t, "anatomiya-tsskip-");
-  const stub = (name, body) => {
-    const p = join(dir, `${name}.mjs`);
-    writeFileSync(p, body);
-    return pathToFileURL(p).href;
-  };
   const checkedRels = ["src/a.ts"];
-  const good = stub("ts-5.9.3", `export const version = "5.9.3";\nexport function createProgram() {}\n`);
+  const good = typescriptStub(dir);
 
   assert.equal(await checkerBlocked(dir, { specifier: good, checkedRels }), "no-dependencies");
   mkdirSync(join(dir, "node_modules", ".cache"), { recursive: true });
@@ -203,9 +199,9 @@ test("the checker is blocked for each reason it could state nothing, and runs ot
   mkdirSync(join(dir, "node_modules", "left-pad"));
   assert.equal(await checkerBlocked(dir, { specifier: good, checkedRels }), null);
   assert.equal(await checkerBlocked(dir, { specifier: "typescript-that-is-not-installed", checkedRels }), "not-installed");
-  const old = stub("ts-4.9.5", `export const version = "4.9.5";\nexport function createProgram() {}\n`);
+  const old = typescriptStub(dir, "4.9.5");
   assert.equal(await checkerBlocked(dir, { specifier: old, checkedRels }), "not-installed");
-  const hollow = stub("ts-noprogram", `export const version = "5.4.0";\n`);
+  const hollow = typescriptStub(dir, "5.4.0", { createProgram: false });
   assert.equal(await checkerBlocked(dir, { specifier: hollow, checkedRels }), "not-installed");
 });
 

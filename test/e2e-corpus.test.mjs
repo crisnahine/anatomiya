@@ -547,7 +547,7 @@ test("an install ignored by its contents rather than by its name is still copied
   assert.equal(readFileSync(join(clone, "node_modules/left-pad/index.js"), "utf8"), "x\n");
 });
 
-test("an installed clone whose checker still reads no-dependencies is a finding", (t) => {
+test("an installed clone whose checker still reads no-dependencies fails the run", (t) => {
   // The copy is what lets the corpus run the checker; a clone that reads
   // no-dependencies after it is the blind run coming back.
   const clone = scratch(t, "e2e-deps-finding-");
