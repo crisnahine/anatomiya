@@ -898,7 +898,7 @@ export const truncatedHistoryLine = (shallow, gated = 0) =>
  * What a tier that ran badly cost, or null where it ran clean or never ran.
  *
  * One sentence for the same reason `untrackedSentence` is one: the overview
- * said this and the summary did not, so `--deep` bought 110 slots that all read
+ * said this and the summary did not, so the checker bought 110 slots that all read
  * zero and the terminal the caller was watching never mentioned it. The share
  * and the reason are what the record already holds; the cause is deliberately
  * not named, because a repository whose own types are loose reads the same as

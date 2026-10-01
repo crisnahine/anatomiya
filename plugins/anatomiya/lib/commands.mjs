@@ -4,7 +4,6 @@ import { join } from "node:path";
 
 import { absentInterpreter } from "./child.mjs";
 import { scan } from "./scan.mjs";
-import { deepRefusal } from "./semantic.mjs";
 import { writeMap } from "./write.mjs";
 import { check } from "./check.mjs";
 import { engineOf, language } from "./langs.mjs";
@@ -32,14 +31,8 @@ import { askedMarks, continuedByReuse, pendingChange, reuseReason, reuseRecord, 
  */
 
 /** Scan the repository the path is in, and write the map unless this is a dry run. */
-export async function runScan(cwd, { dryRun = false, deep = false } = {}) {
-  // Refused before any work, not after the parse: --deep with no checker
-  // installed is an install problem, and a scan that runs for a minute and then
-  // says so has already spent the time (B13's shape).
-  const refused = deep ? await deepRefusal(remedyFor("typescript")) : null;
-  if (refused) throw new Error(refused);
-
-  const result = await scan(cwd, { deep });
+export async function runScan(cwd, { dryRun = false } = {}) {
+  const result = await scan(cwd);
   // Only where it left nothing to read (B13). An engine missing for one
   // language costs that language's files and the scan goes on for the rest:
   // refusing here gave a TypeScript repository with one Gemfile no map at all

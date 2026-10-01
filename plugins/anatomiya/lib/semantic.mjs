@@ -1,8 +1,8 @@
 // lib/semantic.mjs
 /**
- * The second tier: `typescript@5`'s checker, opt-in and never the default.
+ * The second tier: `typescript@5`'s checker, run where the repository can use it.
  *
- * A deep scan measured about 3x a plain one, and the checker is whole-program,
+ * A scan with it measured about 3x a plain one, and the checker is whole-program,
  * so narrowing its file set does not buy the time back: driving the corpus down
  * drove unresolved types from 3.1% to 36.2%. Major 5 is pinned because 7 is the Go
  * port and publishes no JS API at all.
@@ -36,43 +36,55 @@ function usable(ts) {
   return Boolean(ts) && unusableReason(ts) === null;
 }
 
-/** What doctor and `--deep` both say of a typescript that loads and cannot run this tier, or null. */
+/** What doctor says of a typescript that loads and cannot run this tier, or null. */
 export function unusableReason(ts) {
-  if (Number(String(ts?.version ?? "").split(".")[0]) !== SEMANTIC_MIN_MAJOR) return `--deep needs typescript ${SEMANTIC_MIN_MAJOR}.x`;
-  if (typeof ts.createProgram !== "function") return "--deep needs a typescript that exports createProgram";
+  if (Number(String(ts?.version ?? "").split(".")[0]) !== SEMANTIC_MIN_MAJOR) return `the type checker needs typescript ${SEMANTIC_MIN_MAJOR}.x`;
+  if (typeof ts.createProgram !== "function") return "the type checker needs a typescript that exports createProgram";
   return null;
 }
 
 /**
- * What `--deep` refuses with. The remedy is handed in rather than spelled here:
- * the engine table owns every install sentence, and importing the module that
- * reads it would pull the Ruby bridge and its walkers into the checker child,
- * which forks this file, for one line of prose.
+ * Why the checker cannot run in this repository, or null when it can. Without
+ * the repository's own packages on disk, inside it, its types do not resolve
+ * and every claim the checker could make reads degraded; a directory holding
+ * only tool caches such as `.vite` is no install. A typescript of another major
+ * reads `not-installed` too, and doctor names which.
  */
-export function notInstalledMessage(remedy) {
-  return [
-    "--deep needs typescript, which is an optional dependency and is not installed",
-    `${remedy}, or scan again without --deep`,
-  ].join("\n");
+export async function checkerBlocked(root, { specifier = "typescript" } = {}) {
+  if (!hasPackages(join(root, "node_modules"))) return "no-dependencies";
+  return (await loadTypeScript({ specifier })) ? null : "not-installed";
 }
 
 /**
- * Why `--deep` cannot run, or null when it can. Absent and the wrong major are
- * told apart, because one install fixes both and only one of them is absent.
+ * What `checkerBlocked` reads, without importing typescript: the refresh stamps
+ * this on every run, and the import doubled a no-op refresh's memory. The
+ * version is there because an upgrade in place keeps the path.
  */
-export async function deepRefusal(remedy, { specifier = "typescript" } = {}) {
-  const ts = await importTypeScript(specifier);
-  if (!ts) return notInstalledMessage(remedy);
-  const why = unusableReason(ts);
-  if (!why) return null;
-  const found = ts.version ? `typescript ${ts.version}` : "typescript of no version";
-  return [`${found}: ${why}`, `${remedy}, or scan again without --deep`].join("\n");
+export function checkerStamp(root, { specifier = "typescript" } = {}) {
+  let resolved = "";
+  try {
+    resolved = import.meta.resolve(specifier);
+    resolved += `\0${readFileSync(join(dirname(dirname(fileURLToPath(resolved))), "package.json"), "utf8")}`;
+  } catch {
+    // Absent is a state the stamp records, not a failure.
+  }
+  return `${hasPackages(join(root, "node_modules"))}\0${resolved}`;
+}
+
+function hasPackages(deps) {
+  try {
+    return lstatSync(deps).isDirectory() && readdirSync(deps).some((name) => !name.startsWith("."));
+  } catch {
+    return false;
+  }
 }
 
 import { guardedChild } from "./child.mjs";
 import { guardsOver } from "./limits.mjs";
 import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
+import { lstatSync, readdirSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 
 const WORKER = fileURLToPath(new URL("./semantic-worker.mjs", import.meta.url));
 

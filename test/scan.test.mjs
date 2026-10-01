@@ -832,6 +832,108 @@ test("a Rails repository is still asked", needsRuby, async (t) => {
   );
 });
 
+/** The checker runs where the repository's own dependencies are on disk. */
+function withDeps(dir) {
+  mkdirSync(join(dir, "node_modules", "left-pad"), { recursive: true });
+  return dir;
+}
+
+function typedRepo(t, { deps = "dir", pinned = false, areas = ["src/models"], broken = false } = {}) {
+  return repo(t, (d, { git, write, pin }) => {
+    write("tsconfig.json", `{"compilerOptions":{"strict":true}}`);
+    write(".gitignore", "node_modules\n");
+    const pinnedAreas = [];
+    for (const path of areas) {
+      const files = Array.from({ length: 8 }, (_, i) => `${path}/m${i}.ts`);
+      if (broken) files.push(`${path}/bad.ts`);
+      for (const [i, rel] of files.entries()) {
+        write(rel, rel.endsWith("bad.ts") ? "export const = ;\n" : `export class M${i} { name = "m${i}"; label() { return this.name.trim() } }\n`);
+      }
+      pinnedAreas.push({ path, files });
+    }
+    if (deps === "dir") write("node_modules/left-pad/index.js", "");
+    if (deps === "link") {
+      const elsewhere = mkdtempSync(join(tmpdir(), "anatomiya-deps-"));
+      t.after(() => rmSync(elsewhere, { recursive: true, force: true }));
+      symlinkSync(elsewhere, join(d, "node_modules"), "dir");
+    }
+    git("add", "-A");
+    git("commit", "-qm", "init");
+    if (pinned) pin(pinnedAreas);
+  });
+}
+
+test("the checker runs on its own where the repository can use it", async (t) => {
+  const r = await scan(typedRepo(t));
+  assert.equal(r.semantic.ran, true);
+  assert.ok(r.areas.some((a) => a.dimensions.some((d) => d.key === "law_of_demeter")));
+});
+
+test("the checker stays off in a repository with no file it reads", async (t) => {
+  const dir = repo(t, (d, { git, write }) => {
+    for (let i = 0; i < 8; i++) write(`app/m${i}.py`, "x = 1\n");
+    write("node_modules/left-pad/index.js", "");
+    git("add", "app");
+    git("commit", "-qm", "init");
+  });
+  assert.equal((await scan(dir)).semantic.reason, "no-checked-files");
+});
+
+for (const [name, opts, reason] of [
+  ["with no dependencies on disk", { deps: null }, "no-dependencies"],
+  ["with its dependencies linked in from elsewhere", { deps: "link" }, "no-dependencies"],
+]) {
+  test(`the checker stays off ${name}`, { skip: opts.deps === "link" && process.platform === "win32" }, async (t) => {
+    const r = await scan(typedRepo(t, opts));
+    assert.deepEqual(r.semantic, { ran: false, status: null, reason, typedResolutionRate: null });
+    assert.ok(!r.areas.some((a) => a.dimensions.some((d) => d.key === "law_of_demeter")));
+  });
+}
+
+const demeterRow = async (dir, path = "src/models") => dimension(await scan(dir), path, "law_of_demeter");
+
+test("a pinned repository baselines a type-checked row over its pinned files", async (t) => {
+  const row = await demeterRow(typedRepo(t, { pinned: true }));
+  assert.equal(row.gate, "ratio");
+  assert.deepEqual([row.baseline.candidates, row.baseline.conforming], [8, 0]);
+});
+
+for (const [name, change] of [
+  ["edited in the working tree", (dir) => writeFileSync(join(dir, "src/models/m0.ts"), `export const m0 = 1\n`)],
+  [
+    "renamed in a commit",
+    (dir) => {
+      const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
+      git("mv", "src/models/m0.ts", "src/models/renamed.ts");
+      git("commit", "-qm", "rename");
+    },
+  ],
+]) {
+  test(`a checked file ${name} since the pin closes its area's type-checked row`, async (t) => {
+    // Read back from the pin, the file has no type-checked hits, so counting the
+    // rest would let an edit take a violation out of the baseline.
+    const dir = typedRepo(t, { pinned: true });
+    change(dir);
+    const row = await demeterRow(dir);
+    assert.equal(row.gate, "semantic-unbaselined");
+    assert.equal(row.states, null);
+  });
+}
+
+test("an edit closes only the area that holds it", async (t) => {
+  const dir = typedRepo(t, { pinned: true, areas: ["src/models", "src/other"] });
+  writeFileSync(join(dir, "src/other/m0.ts"), `export const m0 = 1\n`);
+
+  assert.equal((await demeterRow(dir, "src/other")).gate, "semantic-unbaselined");
+  assert.equal((await demeterRow(dir, "src/models")).gate, "ratio");
+});
+
+test("a file that parses on neither side has not moved, so it closes nothing", async (t) => {
+  const row = await demeterRow(typedRepo(t, { pinned: true, broken: true }));
+  assert.equal(row.gate, "ratio");
+  assert.deepEqual([row.baseline.candidates, row.baseline.conforming], [8, 0]);
+});
+
 test("a degraded checker suppresses its own claims across a real scan", async (t) => {
   // B8's whole point. The tier ran on two real repositories at 70% and 29%
   // resolution, and both stated semantic claims anyway, because the tier's
@@ -856,7 +958,7 @@ test("a degraded checker suppresses its own claims across a real scan", async (t
   git("add", "-A");
   git("commit", "-qm", "init");
 
-  const r = await scan(dir, { deep: true });
+  const r = await scan(withDeps(dir));
 
   assert.equal(r.semantic.ran, true);
   assert.equal(r.semantic.status, "degraded", `the tier was expected degraded, got ${r.semantic.reason}`);
@@ -885,7 +987,7 @@ test("the resolution rate is taken over the areas the map describes", async (t) 
     git("commit", "-qm", "init");
   });
 
-  const r = await scan(dir, { deep: true });
+  const r = await scan(withDeps(dir));
 
   assert.ok(!r.areas.some((a) => a.path === "public/js"), "the bundles are counted in no area");
   assert.equal(r.semantic.status, "ok", `degraded for ${r.semantic.reason} at ${r.semantic.typedResolutionRate}`);
@@ -904,7 +1006,7 @@ test("areas holding no checked file take no rate from a dropped bundle directory
     git("commit", "-qm", "init");
   });
 
-  const r = await scan(dir, { deep: true });
+  const r = await scan(withDeps(dir));
 
   assert.ok(r.areas.length > 0 && !r.areas.some((a) => a.path === "public/js"), "only the Ruby areas are described");
   assert.equal(r.semantic.status, "ok", `degraded for ${r.semantic.reason} at ${r.semantic.typedResolutionRate}`);
@@ -923,7 +1025,7 @@ test("a repository whose every area was dropped takes no rate from it", async (t
     git("commit", "-qm", "init");
   });
 
-  const r = await scan(dir, { deep: true });
+  const r = await scan(withDeps(dir));
 
   assert.deepEqual(r.areas, []);
   assert.equal(r.semantic.status, "ok", `degraded for ${r.semantic.reason} at ${r.semantic.typedResolutionRate}`);
@@ -941,7 +1043,7 @@ test("root code below the area floor keeps its rate beside a dropped bundle dire
     git("commit", "-qm", "init");
   });
 
-  const r = await scan(dir, { deep: true });
+  const r = await scan(withDeps(dir));
 
   assert.deepEqual(r.areas, []);
   assert.equal(r.semantic.status, "degraded");
@@ -964,7 +1066,7 @@ test("root code below the area floor keeps its rate beside Ruby areas, with or w
   const verdict = (r) => ({ status: r.semantic.status, reason: r.semantic.reason, rate: r.semantic.typedResolutionRate });
   const expected = { status: "degraded", reason: "no-tsconfig", rate: 0 };
 
-  assert.deepEqual(verdict(await scan(dir, { deep: true })), expected);
+  assert.deepEqual(verdict(await scan(withDeps(dir))), expected);
 
   if (process.platform === "win32") return;
   const bin = mkdtempSync(join(tmpdir(), "anatomiya-bin-"));
@@ -976,7 +1078,7 @@ test("root code below the area floor keeps its rate beside Ruby areas, with or w
   symlinkSync(execFileSync("sh", ["-c", "command -v git"]).toString().trim(), join(bin, "git"));
   process.env.PATH = bin;
 
-  const blind = await scan(dir, { deep: true });
+  const blind = await scan(withDeps(dir));
 
   assert.deepEqual(blind.parse.unreadable, ["ruby"], "the Ruby areas are held");
   assert.deepEqual(verdict(blind), expected);
@@ -991,7 +1093,7 @@ test("a repository with no area is still measured over every file it holds", asy
     git("commit", "-qm", "init");
   });
 
-  const r = await scan(dir, { deep: true });
+  const r = await scan(withDeps(dir));
 
   assert.deepEqual(r.areas, []);
   assert.equal(r.semantic.status, "degraded");

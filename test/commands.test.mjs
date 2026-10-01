@@ -261,42 +261,26 @@ test("a scan of a directory that is not a repository refuses rather than reporti
   await assert.rejects(() => runScan(dir, { dryRun: true }), /not a git repository/);
 });
 
-test("a deep scan with no checker refuses before it reads anything", (t) => {
-  // An install that did not run leaves the plugin's own code with nothing
-  // beside it, which is the shape a `--deep` meets with no checker. Refused
-  // before the parse rather than after a minute of it, and out of process
-  // because that is where the whole deep path can be exercised at all.
-  const install = installWithoutDependencies(t);
+test("a scan runs the checker where the repository's dependencies are on disk", needsTs, async (t) => {
   const dir = repo(t);
+  mkdirSync(join(dir, "node_modules", "left-pad"), { recursive: true });
 
-  let status = 0;
-  let stderr = "";
-  try {
-    execFileSync(process.execPath, [join(install, "bin", "anatomiya.mjs"), "scan", dir, "--deep"], { stdio: "pipe" });
-  } catch (err) {
-    status = err.status;
-    stderr = String(err.stderr);
-  }
-
-  assert.equal(status, 1, stderr);
-  // The checker's own sentence, not the parser's: both are absent here, and the
-  // refusal that fires decides which install the reader goes and does.
-  assert.match(stderr, /--deep needs typescript/, stderr);
-  assert.match(stderr, /bin\/anatomiya\.mjs setup/, stderr);
-  assert.equal(existsSync(join(dir, ".claude")), false, "a refused scan wrote nothing");
-});
-
-test("a deep scan with the checker installed is not refused", needsTs, async (t) => {
-  // The other half. A refusal that fired on every deep scan would pass the test
-  // above just as loudly, and nothing else here runs this path at all.
-  const dir = repo(t);
-
-  const { summary } = await runScan(dir, { dryRun: true, deep: true });
+  const { result, summary } = await runScan(dir, { dryRun: true });
 
   assert.equal(summary.files, 8);
+  assert.equal(result.semantic.ran, true, JSON.stringify(result.semantic));
 });
 
-test("a deep scan measures resolution over area files, so a bundle in no area does not degrade it", needsTs, async (t) => {
+test("a scan that leaves the checker off says why in the facts it writes", async (t) => {
+  const dir = repo(t);
+
+  await runScan(dir);
+
+  const facts = JSON.parse(readFileSync(join(dir, ".claude", "anatomiya", "facts.json"), "utf8"));
+  assert.deepEqual(facts.semantic, { ran: false, status: null, reason: "no-dependencies", typedResolutionRate: null });
+});
+
+test("a checked scan measures resolution over area files, so a bundle in no area does not degrade it", needsTs, async (t) => {
   // One untyped minified bundle outside every area pulled a repository whose
   // own code resolved at 100% down to 3% and printed it as low-resolution,
   // which points the reader at the tsconfig and the dependencies.
@@ -304,6 +288,7 @@ test("a deep scan measures resolution over area files, so a bundle in no area do
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   mkdirSync(join(dir, "src"), { recursive: true });
   mkdirSync(join(dir, "public", "assets"), { recursive: true });
+  mkdirSync(join(dir, "node_modules", "left-pad"), { recursive: true });
   writeFileSync(join(dir, "tsconfig.json"), `{"compilerOptions":{"strict":true,"allowJs":true},"include":["src","public"]}`);
   for (let i = 0; i < 8; i++) {
     writeFileSync(
@@ -319,7 +304,7 @@ test("a deep scan measures resolution over area files, so a bundle in no area do
   git("add", "-A");
   git("-c", "user.email=t@t.test", "-c", "user.name=T", "commit", "-qm", "init");
 
-  const { result } = await runScan(dir, { dryRun: true, deep: true });
+  const { result } = await runScan(dir, { dryRun: true });
 
   assert.equal(result.semantic.status, "ok", JSON.stringify(result.semantic));
   assert.equal(result.semantic.typedResolutionRate, 1);

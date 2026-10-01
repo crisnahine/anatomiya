@@ -42,8 +42,8 @@ export const FACTS_PATH = ".claude/anatomiya/facts.json";
 // `applicability` by an inflated count and reports a share nobody measured.
 // 8 adds the semantic tier's own state: whether it ran, whether it ran
 // degraded, and the share of type lookups that resolved. A record written
-// without it is a scan that did not pass --deep, which is the default, so an
-// absent key reads as "did not run" rather than as a missing field.
+// without it is a scan that did not run the checker, so an absent key reads as
+// "did not run" rather than as a missing field.
 // 9 stores `tier` on each dimension. The check decides whether to warn about
 // unmeasured type-checked claims from it, and a schema-8 record carries no such
 // claim to warn about, so an older record reading as none is the truth rather
@@ -393,8 +393,8 @@ function factsRecord(result) {
     scannedAt: result.scannedAt,
     corpus: result.corpus,
     parse: result.parse,
-    // Absent on an older record and on every scan that did not pass --deep,
-    // which is the default. Read back as "did not run" rather than as missing.
+    // Absent on an older record. Read back as "did not run" rather than as
+    // missing; a scan that left the checker off says why in `reason`.
     semantic: result.semantic ?? { ran: false, status: null, reason: null, typedResolutionRate: null },
     suppressAll: result.suppressAll,
     // What history said, and how much of it there was. The gates read it and
