@@ -3,7 +3,7 @@ import { langHas } from "./langs.mjs";
 import { discover, areaFloor, areaCeiling, dirCount } from "./areas.mjs";
 import { adoptedCapabilities } from "./dimensions.mjs";
 import { parseAll } from "./parse.mjs";
-import { runSemantic, semanticOver } from "./semantic.mjs";
+import { checkerBlocked, runSemantic, semanticOver } from "./semantic.mjs";
 import { blockOf, reduceArea, verdictFor } from "./reduce.mjs";
 import { applyPairings } from "./pairing.mjs";
 import { authorsByFile, isPerson, repoAuthorCount } from "./authors.mjs";
@@ -40,7 +40,7 @@ const poolKey = (d) => `${d.key}\u0000${d.learned ?? ""}\u0000${d.learnedKind ??
  * block then does to a slot is asked of `verdictFor` directly, which is why
  * this is one test and not the way that branch is covered.
  */
-export async function scan(cwd, { guards = null, deep = false } = {}) {
+export async function scan(cwd, { guards = null } = {}) {
   const started = Date.now();
   const root = await gitRoot(cwd);
 
@@ -72,11 +72,14 @@ export async function scan(cwd, { guards = null, deep = false } = {}) {
   // files already routing through a wrapper is what makes the habit real (C14).
   const capabilities = adoptedCapabilities(head.records);
 
-  // The second tier, opt-in and never the default (B7). It runs once for the
+  // The second tier, where the repository can use it (B7). It runs once for the
   // whole corpus, because narrowing the file set was measured saving 3% and
   // driving unresolved types from 3.1% to 36.2%. Its verdict is taken once the
   // fold below knows which areas the map describes.
-  const whole = deep ? await runSemantic(root, files.filter((f) => langHas(f.lang, "semantic"))) : null;
+  const checked = files.filter((f) => langHas(f.lang, "semantic"));
+  const offReason = checked.length === 0 ? "no-checked-files" : await checkerBlocked(root);
+  const whole = offReason ? null : await runSemantic(root, checked);
+  const tier = whole ? "all" : "syntactic";
   if (whole) mergeSemanticHits(head.records, whole.records);
   // An obligation is answered by the corpus, not by a tree, so it is merged in
   // after the parse rather than counted inside the worker.
@@ -104,7 +107,16 @@ export async function scan(cwd, { guards = null, deep = false } = {}) {
   const measured = await measureBaseline(root, state, areas, {
     headParsed: head.records,
     parse: (blobs) => parseAll(blobs, { guards, frameworks }),
-    reduce: (area, usable) => reduceArea(area, usable, { frameworks, capabilities }),
+    // A file unchanged since the pin reuses its working-tree record, semantic
+    // hits and all. One read back from the pin has none, so dropping it would let
+    // an edit take a violation out of the baseline: an area holding one is not
+    // baselined for type-checked rows at all.
+    reduce: (area, usable, { moved = [] } = {}) =>
+      reduceArea(area, usable, {
+        frameworks,
+        capabilities,
+        tier: moved.some((f) => langHas(f.lang, "semantic")) ? "syntactic" : tier,
+      }),
   });
   // Either corpus read answering for only part of what it was asked suppresses
   // every directive (F7). The baseline is the second read, over blobs from the
@@ -140,7 +152,7 @@ export async function scan(cwd, { guards = null, deep = false } = {}) {
     const areaParsed = area.files.map((f) => head.records.get(f.rel)).filter(Boolean);
     if (areaParsed.length === 0) continue;
 
-    const dims = reduceArea(area, areaParsed, { frameworks, capabilities, tier: deep ? "all" : "syntactic" });
+    const dims = reduceArea(area, areaParsed, { frameworks, capabilities, tier });
     if (dims.length === 0) continue;
 
     // `measure` writes a record for every area it was handed, so a miss is a
@@ -255,7 +267,7 @@ export async function scan(cwd, { guards = null, deep = false } = {}) {
           reason: semantic.reason,
           typedResolutionRate: semantic.typedResolutionRate,
         }
-      : { ran: false, status: null, reason: null, typedResolutionRate: null },
+      : { ran: false, status: null, reason: offReason, typedResolutionRate: null },
     scannedAt: new Date().toISOString(),
     durationMs: Date.now() - started,
     // `orphaned` is the files discovery found nowhere to put. The rest of the

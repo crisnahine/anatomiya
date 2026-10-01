@@ -251,7 +251,7 @@ function renderText(report) {
     const n = report.semantic.claims;
     lines.push(
       `note: ${n} type-checked claim${n === 1 ? " is" : "s are"} stated in the map and not enforced on a branch: ` +
-        "the checker is whole-program, so it runs on `anatomiya scan --deep` and not here"
+        "the checker is whole-program, so it runs on `anatomiya scan` and not here"
     );
   }
 

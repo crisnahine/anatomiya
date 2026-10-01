@@ -276,12 +276,26 @@ tried once more, alone, after the queue drains, when it died beside other parses
 script are charged on the first attempt: a second child answers those the same way at twice the
 cost. Every record says which attempt answered it.
 
-Every child this tool runs, the pool's parse workers, the Ruby stream and the type checker that
-`--deep` asks for, goes through one supervisor that owns the spawn, the bounded stderr, the two
-clocks and the kill. The numbers stay with the bridge that measured them and only the shape is
-shared, because three hand-written copies of one battery had drifted into three stderr caps that
-each overshot by a chunk and one bridge holding a single re-armed timeout where the other two held
-an idle window and a wall clock.
+Every child this tool runs, the pool's parse workers, the Ruby stream and the type checker, goes
+through one supervisor that owns the spawn, the bounded stderr, the two clocks and the kill. The
+numbers stay with the bridge that measured them and only the shape is shared, because three
+hand-written copies of one battery had drifted into three stderr caps that each overshot by a chunk
+and one bridge holding a single re-armed timeout where the other two held an idle window and a wall
+clock.
+
+A scan runs the checker when the repository has a JavaScript or TypeScript file, a real
+`node_modules` directory at its root holding at least one package (a directory of tool caches such
+as `.vite` is no install), and a `typescript` 5.x the plugin can load. Otherwise it leaves the
+checker off and the facts record says why in `semantic.reason`: `no-checked-files`,
+`no-dependencies` or `not-installed`, which also covers a `typescript` of another major that doctor
+names. A pin does not switch it off: a pinned file unchanged since the pin reuses its working-tree
+record, type-checked hits included, so an area whose checked pinned files are all unchanged is
+baselined over them. An area holding one that changed or was renamed since the pin is closed as
+`semantic-unbaselined`, because that file read back from the pin has no type-checked hits and
+leaving it out would let an edit take a violation out of the baseline. A file whose bytes are
+unchanged lends the hits the working tree gives it even when its imported types moved in another
+area, the `tsconfig.json` changed or a dependency was upgraded: the checker is whole-program, and
+there is no program at the pin to ask.
 
 The checker builds one program over every JavaScript and TypeScript file, then measures the share
 of property accesses whose receiver resolved to a real type. Under 0.80 the tier is degraded and its
@@ -300,8 +314,9 @@ is not read (B9), so dependencies linked in from elsewhere resolve as absent one
 
 ## 4. Dimensions and the three numbers
 
-A dimension is one claim about one area. 49 ship, the filename row included: 28 for JavaScript, 33 reachable in JSX, and 16 that speak Ruby, plus the one type-checked row, which sits in the total and reaches a scan only with --deep. Each
-is defined by three quantities, not one.
+A dimension is one claim about one area. 49 ship, the filename row included: 28 for JavaScript, 33
+reachable in JSX, and 16 that speak Ruby, plus the one type-checked row, which sits in the total and
+reaches a scan only when the checker runs. Each is defined by three quantities, not one.
 
 | Quantity | Meaning |
 |---|---|
@@ -598,7 +613,7 @@ Five conditions stop a directive before any gate is consulted:
 | `unreachable` | the pinned commit is gone from this clone, usually a squash-merge. Every claim drops to counts, and stored counts are never fallen back on |
 | `population-change` | a pinned file is no longer in this area, or would not come back or parse. Suppressed until a human re-pins |
 | `postdates-baseline` | nothing in this area, or nothing this dimension counts, existed at the pin. Greenfield directories are where agents write most, and there the baseline would be the agent's own output at 100% |
-| `semantic-unbaselined` | a type-checked claim on a pinned repository. The checker does not run over the pinned blobs and `pin --deep` is refused, so there is nothing at the pin to compare against and the counts print without a directive. Not the same as a greenfield directory, which is why it has its own name |
+| `semantic-unbaselined` | a type-checked claim on a pinned repository whose area holds a checked file changed or renamed since the pin, or no pinned site at all. The checker reads the working tree and never the pinned blobs, so only unchanged files can lend the baseline type-checked sites, and the counts print without a directive. Not the same as a greenfield directory, which is why it has its own name |
 | `corpus-truncated` | the scan hit a cap and answered for a subset of the repository |
 
 A rename map from `git diff --find-renames` is carried into the lookup, so a renamed directory finds
@@ -1019,14 +1034,15 @@ The worker keeps its state beside `facts.json`. It takes an exclusive lock, read
 since the directory can come with the repository, and a worker that finds it taken leaves word for
 the holder to run once more after letting go, so a move landing after the holder's last look at HEAD
 is not lost. It stamps what a scan depends on (HEAD, the index as `ls-files -s`, the pin's bytes,
-the plugin version), and rescans only when the stamp moved. It leaves alone a checkout with no map
-of its own (A24), a map, a pin or any other file of the store the repository tracks, and a merge,
-rebase, cherry-pick, revert or bisect in progress, and rebuilds a map built with `--deep` with the
-checker. A scan that throws writes nothing, so the previous map stays; the same stamp is tried again
-only after half an hour, and the echo says the refresh failed until a refresh or a scan run by hand
-succeeds. A scan run by hand records its stamp too, so the next refresh has nothing to redo. It has
-its own clock. A changed overview reaches a running session through the echo's digest, and an area
-file is read from disk the first time its directory is.
+the plugin version, whether the repository holds packages and where `typescript` resolves), and
+rescans only when the stamp moved. It leaves alone a checkout with no map of its own (A24), a map, a
+pin or any other file of the store the repository tracks, and a merge, rebase, cherry-pick, revert
+or bisect in progress, and leaves whether to run the type checker to the rescan, which decides it
+the way any scan does. A scan that throws writes nothing, so the previous map stays; the same stamp
+is tried again only after half an hour, and the echo says the refresh failed until a refresh or a
+scan run by hand succeeds. A scan run by hand records its stamp too, so the next refresh has nothing
+to redo. It has its own clock. A changed overview reaches a running session through the echo's
+digest, and an area file is read from disk the first time its directory is.
 
 A session started above its checkouts, the way a project split into sibling repositories is opened,
 has no map at its own directory, and neither `SessionStart` nor `FileChanged` names a path the walk
@@ -1615,8 +1631,9 @@ missing would make every scan an outbound call.
 `anatomiya doctor` probes what the parsers need and prints one line each: the version where it
 answered, and otherwise what was wrong and what to do about it. The remedy is the engine's own,
 because npm cannot install an interpreter and installing Ruby does not install a node module. The
-type checker is probed beside the engines and marked optional, since only `--deep` asks for it.
-`doctor` exits 0 whatever it found: a non-zero exit would read as a probe that could not run.
+type checker is probed beside the engines and marked optional, since a scan without it leaves the
+checker off. `doctor` exits 0 whatever it found: a non-zero exit would read as a probe that could
+not run.
 
 The first row is the node the tool itself runs on. Nothing enforces a plugin's `engines` field, and
 Claude Code's own installer needs no Node, so the `node` on a user's `PATH` can be anything: on Node
@@ -1631,7 +1648,7 @@ object and exits 0, as it does on any failure.
 | `oxc` | node | `oxc-parser` imports | `anatomiya setup` in the plugin directory |
 | `flow-remove-types` | node | it imports. A row of its own, and not an engine: it is `oxc`'s dialect stripper, and one absent costs a dialect where the other costs the run | the same install |
 | `prism` | the `ruby` interpreter | the interpreter's own prism, or the newest prism gem installed for it when its own is older, answers a version of 1.0.0 or newer. A `ruby` that cannot run `ruby -e 1` at all (an rbenv shim with no version selected exits 127) is reported with its own first line of stderr, not as a missing prism | install Ruby 3.4 or newer, which ships prism 1.x, or run `gem install prism` on the Ruby you have, and put `ruby` on `PATH`; for a `ruby` that does not run, make `ruby -e 1` run first |
-| `typescript` | node | it imports at major 5, the one the tier runs on. One of another major is reported by its version, and `scan --deep` refuses it with the same sentence rather than calling it absent. Optional: only `--deep` needs it | the same install |
+| `typescript` | node | it imports at major 5, the one the tier runs on. One of another major is reported by its version rather than called absent, and the scan leaves the checker off. Optional: only the type checker needs it | the same install |
 
 `anatomiya setup` installs what node hosts, and only that. It runs
 `npm install --omit=dev --include=optional --ignore-scripts --no-audit --no-fund` with `cwd` set to

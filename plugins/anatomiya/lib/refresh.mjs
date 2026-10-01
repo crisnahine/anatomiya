@@ -34,6 +34,7 @@ import { atomic, readFacts, readRecord, writeTemp } from "./facts.mjs";
 import { BASE_REFS, caseMagic, commitAt, gitBuffered, gitStreamed, headSha, operationUnfinished, shaReachable } from "./git.mjs";
 import { childLayouts, isPathTaken, ownLayout } from "./hook.mjs";
 import { pluginRoot } from "./readiness.mjs";
+import { checkerStamp } from "./semantic.mjs";
 import { OVERVIEW_FILE, readHead, realpathOf, REFRESH_STATE, resolveInside, STORE_DIR, trackedRulesDir } from "./rules.mjs";
 import { commonDirOf, gitDirOf } from "./worktree.mjs";
 
@@ -214,12 +215,6 @@ export async function refreshRepository(root, { scan = runScan, pin = runPin } =
   if (!top.ok || realpathOf(top.stdout.trim()) !== realpathOf(root)) return { reason: "outside", pinned: false };
   const facts = readFacts(root).facts;
   if (!facts) return { reason: "no-map", pinned: false };
-  // The type checker is opt-in and about 3x a plain scan (B7), so a refresh keeps the
-  // mode the person chose: a map built with it is rebuilt with it, rather than
-  // skipped (which left it stale after every checkout) or rebuilt without it
-  // (which dropped the claims it added). A checker that is no longer installed
-  // fails the rescan, and the previous map stays.
-  const deep = facts.semantic?.ran === true;
   if (await mapTracked(root)) return { reason: "tracked", pinned: false };
   if (await gitBusy(root)) return { reason: "git-busy", pinned: false };
 
@@ -238,7 +233,7 @@ export async function refreshRepository(root, { scan = runScan, pin = runPin } =
   for (;;) {
     let round;
     try {
-      round = await passes(root, store, { scan, pin, deep });
+      round = await passes(root, store, { scan, pin });
     } finally {
       release(lock);
     }
@@ -251,7 +246,7 @@ export async function refreshRepository(root, { scan = runScan, pin = runPin } =
 }
 
 /** Follow the pin, then rescan until HEAD holds still or the passes run out. */
-async function passes(root, store, { scan, pin, deep }) {
+async function passes(root, store, { scan, pin }) {
   const { accepted, held } = await followPin(root, pin);
   const pinned = accepted !== null;
   for (let pass = 0; pass < PASSES; pass++) {
@@ -268,7 +263,7 @@ async function passes(root, store, { scan, pin, deep }) {
       return { reason: state.ok ? "current" : "failed-before", pinned, held };
     }
     try {
-      await scan(root, { deep });
+      await scan(root);
     } catch (err) {
       // The previous map stays: a scan that throws has written nothing or
       // put back what it replaced, and one that would not run now will not
@@ -305,8 +300,11 @@ export async function noteScan(root) {
 /**
  * Everything a scan's answer depends on that can change without the scan
  * knowing: the commit, the index (which paths are tracked, and what is staged),
- * the pin, and this build. Working-tree edits are left out on purpose: they
- * move with every keystroke, and what a refresh follows is HEAD.
+ * the pin, this build, whether the repository holds packages and where
+ * typescript resolves, so installing the repository's dependencies after the
+ * first scan turns the checker on. Working-tree
+ * edits are left out on purpose: they move with every keystroke, and what a
+ * refresh follows is HEAD.
  */
 async function stampOf(root) {
   const head = await headSha(root);
@@ -331,6 +329,8 @@ async function stampOf(root) {
     .update(pinBytes)
     .update("\0")
     .update(buildVersion())
+    .update("\0")
+    .update(checkerStamp(root))
     .digest("hex");
 }
 

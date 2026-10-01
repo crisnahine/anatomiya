@@ -824,7 +824,7 @@ test("the pin record neutralises the paths a move names as well", () => {
 /* --- a tier that ran badly reaches the terminal too (#72) --- */
 
 test("a degraded semantic tier is on the summary, not only in the map", () => {
-  // `--deep` costs a few times a plain scan. On a measured 2,486-file React
+  // The checker costs a few times a plain scan. On a measured 2,486-file React
   // repository it added 110 slots, every one of them read zero, and the summary
   // said nothing: the reader paid 24 seconds instead of 12 and had no way to
   // know the tier answered nothing. The map, `facts.json` and every area file
@@ -841,7 +841,7 @@ test("a degraded semantic tier is on the summary, not only in the map", () => {
 });
 
 test("a tier that ran cleanly, and one that never ran, say nothing", () => {
-  // A clean tier is the tier working, and a scan without --deep never asked.
+  // A clean tier is the tier working, and a scan that left it off never asked.
   // `null` is the only value a run produces for either, so the comparison is
   // against the sentence rather than against another falsy spelling of it.
   const lines = scanLines(summary({ semantic: null }));

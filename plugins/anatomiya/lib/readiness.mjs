@@ -39,13 +39,13 @@ const OPTIONAL = {
     host: "node",
     module: "typescript",
     optional: true,
-    note: "optional: --deep needs it",
+    note: "optional: scan runs the type checker with it",
     remedy: ENGINES.oxc.remedy,
-    // The test `--deep` refuses through, so the row answers what the flag
-    // will find. Imported and nothing more, a typescript 4.9.5 in a
-    // node_modules above the plugin read `ok` here and `nothing to install` in
-    // setup, and `--deep` refused it as not installed: the loader holds it to
-    // major 5, because 7 has no JS API and 4 is not what the tier measured.
+    // The test the scan's loader applies, so the row answers what a scan will
+    // find. Imported and nothing more, a typescript 4.9.5 in a node_modules
+    // above the plugin read `ok` here and `nothing to install` in setup while
+    // the loader refused it: it holds to major 5, because 7 has no JS API and
+    // 4 is not what the tier measured.
     unusable: unusableReason,
   },
 };

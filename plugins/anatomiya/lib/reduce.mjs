@@ -788,10 +788,9 @@ export function blockedFor(measured, baselineDim, dim = null) {
   // counts-only repository rather than a greenfield directory.
   if (!measured.pinned) return null;
   if (baselineDim && baselineDim.candidates) return null;
-  // A semantic row never has a baseline: the checker does not run over the
-  // pinned blobs and `pin --deep` is refused, so there is nothing at the pin to
-  // postdate. Saying "greenfield" there names a cause that is not the reason,
-  // and the reader cannot tell a new directory from a tier nobody asked.
+  // A semantic row is baselined only where every checked pinned file is
+  // unchanged since the pin, because the checker reads the working tree and never
+  // the pinned blobs. Not a greenfield directory, so it is named apart.
   return dimTier(baselineDim, dim) === "semantic" ? "semantic-unbaselined" : "postdates-baseline";
 }
 
