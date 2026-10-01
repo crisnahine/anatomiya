@@ -25,7 +25,7 @@
  * and a frozen re-run passed all 36. Start it and leave the checkout alone.
  */
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { constants, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -77,6 +77,18 @@ export function summaryProblems(s) {
   if (!s.baseline) problems.push("no baseline");
   if (typeof s.wrote !== "number") problems.push("no wrote count");
   return problems;
+}
+
+/**
+ * The checker's answer for one repository, off its facts record: the status and
+ * rate when it ran, and the reason when it did not, so a corpus that never ran
+ * it says so in every row.
+ */
+export function semanticCell(semantic) {
+  if (!semantic) return "-";
+  if (!semantic.ran) return `off ${semantic.reason}`;
+  const rate = semantic.typedResolutionRate;
+  return [semantic.status, semantic.reason, rate === null ? null : `${(rate * 100).toFixed(1)}%`].filter(Boolean).join(" ");
 }
 
 // The roots column is what the scan printed, so it is read off the layout line
@@ -281,6 +293,7 @@ export const COLUMNS = [
   "pin",
   "clean",
   "probe",
+  "semantic",
   "seconds",
 ];
 
@@ -405,6 +418,25 @@ function run(cmd, args, cwd) {
 }
 
 /**
+ * Copy every `node_modules` the source has installed into the clone, and name
+ * them. A clone carries tracked files only, so without this the type checker
+ * reads `no-dependencies` in every repository and the corpus never runs it.
+ * Copied rather than linked, because the checker refuses a linked install, and
+ * cloned on a filesystem that can, because a monorepo's install is large.
+ */
+export function copyDependencies(source, clone) {
+  const listed = git(["ls-files", "-z", "--others", "--ignored", "--exclude-standard", "--directory"], source);
+  const dirs = listed.out
+    .split("\0")
+    .map((p) => p.replace(/\/$/, ""))
+    .filter((p) => p === "node_modules" || p.endsWith("/node_modules"));
+  for (const rel of dirs) {
+    cpSync(join(source, rel), join(clone, rel), { recursive: true, verbatimSymlinks: true, mode: constants.COPYFILE_FICLONE });
+  }
+  return dirs;
+}
+
+/**
  * Remove a clone, or say why it is still there.
  *
  * `git commit` starts a detached `gc --auto`, and on a repository with enough
@@ -459,7 +491,7 @@ async function runRepo(name, source, scratchDir) {
   const clone = join(scratchDir, name);
   const started = Date.now();
   const problems = [];
-  const row = { repo: name, files: "-", areas: "-", stated: "-", roots: "-", wrote: "-", stable: "-", pin: "-", clean: "-", probe: "-", seconds: "-" };
+  const row = { repo: name, files: "-", areas: "-", stated: "-", roots: "-", wrote: "-", stable: "-", pin: "-", clean: "-", probe: "-", semantic: "-", seconds: "-" };
   const fail = (what) => problems.push(`${name}: ${what}`);
 
   try {
@@ -471,6 +503,7 @@ async function runRepo(name, source, scratchDir) {
     }
     git(["config", "gc.auto", "0"], clone);
     git(["config", "maintenance.auto", "false"], clone);
+    copyDependencies(source, clone);
     const branch = git(["symbolic-ref", "--short", "HEAD"], clone);
     if (branch.status !== 0 || git(["rev-parse", "HEAD"], clone).status !== 0) {
       row.probe = "no commits";
@@ -503,7 +536,10 @@ async function runRepo(name, source, scratchDir) {
     const factsFile = join(clone, FACTS_PATH);
     const { problems: wrongs, written, facts } = writtenProblems(clone, s1.wrote);
     for (const p of wrongs) fail(p);
-    if (facts !== null) row.roots = rootsColumn(rootsPrinted(s1), rosterCounts(facts));
+    if (facts !== null) {
+      row.roots = rootsColumn(rootsPrinted(s1), rosterCounts(facts));
+      row.semantic = semanticCell(facts.semantic);
+    }
 
     /* 3: the same source twice, byte for byte, or the map is not worth a
        cached read. */

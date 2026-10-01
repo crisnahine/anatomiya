@@ -23,6 +23,18 @@ which hardlinks the object store, and the clone is removed again in a `finally`,
 directory ends empty and the corpus is never written to. This tool's own repository runs last, as
 the 36th.
 
+A clone carries tracked files only, so every `node_modules` the corpus repository has installed and
+ignores is copied into the clone after it is made, links kept as links. Without that the type
+checker read `no-dependencies` in all 36 and the run never exercised it. To run the checker on a
+repository, install its dependencies in the corpus copy once, with its own lockfile and no scripts
+(`npm ci --ignore-scripts`, `yarn install --frozen-lockfile --ignore-scripts`,
+`pnpm install --frozen-lockfile --ignore-scripts`), and check `git status` is still clean after. A
+repository that does not ignore `node_modules` stays uninstalled, or the scan would count the install
+as its source. The `semantic` column says what the checker answered: `ok` or `degraded` with the
+reason and the resolution rate, or `off` with why it did not run. `scripts/measure-layout.mjs`
+prints the same column and a per-area `law_of_demeter` table, so a facts diff between two builds
+shows a type-checked row that moved the way it shows a syntactic one.
+
 ## The flow, per repository
 
 1. Clone what is checked out. A clone with no commit is recorded and skipped.

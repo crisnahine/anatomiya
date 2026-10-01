@@ -22,7 +22,7 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 import { checkOutput, invokedAs, readArgv, selectRepos } from "./entry.mjs";
-import { corpusRepos } from "./e2e-corpus.mjs";
+import { corpusRepos, semanticCell } from "./e2e-corpus.mjs";
 import { namesakeCompanions, namesakeIndex } from "../plugins/anatomiya/lib/companions.mjs";
 import { collect, frameworksIn } from "../plugins/anatomiya/lib/corpus.mjs";
 import {
@@ -51,6 +51,10 @@ const LEVEL_SUFFIX = " (files at this level)";
 // The five rows part 2 added, counted per repository so a row nothing states
 // anywhere is visible as such.
 export const LEARNED_ROWS = ["extends_base", "class_base", "module_include", "interface_prefix", "type_alias_prefix"];
+
+// The rows printed per area: the five, and the type-checked one, which only a
+// corpus with dependencies installed can move.
+export const TABLED_ROWS = [...LEARNED_ROWS, "law_of_demeter"];
 
 // --- the recount ------------------------------------------------------------
 
@@ -517,6 +521,7 @@ async function measure(name, dir) {
       ...Object.fromEntries(LEARNED_ROWS.map((key) => [key, statedCount(first.areas, key)])),
       imports: first.areas.filter((x) => x.imports?.length).length,
       reused: first.areas.filter((x) => x.reused?.length).length,
+      semantic: semanticCell(first.semantic),
       seconds: ((Date.now() - started) / 1000).toFixed(1),
     },
   };
@@ -534,6 +539,7 @@ const COLUMNS = [
   ...LEARNED_ROWS,
   "imports",
   "reused",
+  "semantic",
   "seconds",
 ];
 
@@ -547,7 +553,8 @@ function tableOf(rows, columns = COLUMNS) {
 
 /**
  * What the bar asks for and a summary cannot answer: the three numbers and the
- * ratio, per repository and per area, for each of the five learned rows.
+ * ratio, per repository and per area, for each of the five learned rows and
+ * the type-checked one.
  *
  * A summary hides the one thing step 3 is looking for. `module_state_const`
  * scored 620 of 620 on one repository and shipped a directive nobody could
@@ -584,7 +591,7 @@ function statedText(d) {
 
 /** One repository's lines for each learned row, biggest area first. */
 export function learnedRows(repo, areas) {
-  const out = new Map(LEARNED_ROWS.map((key) => [key, []]));
+  const out = new Map(TABLED_ROWS.map((key) => [key, []]));
   for (const a of areas) {
     for (const d of a.dimensions) {
       // An area holding no site of the row is not evidence about it either way,
@@ -610,10 +617,10 @@ export function learnedRows(repo, areas) {
   return out;
 }
 
-/** The five tables, in registry order, from `[key, rows]` pairs. */
+/** The tables, in registry order, from `[key, rows]` pairs. */
 export function learnedTables(collected) {
   const byKey = new Map(collected);
-  return LEARNED_ROWS.flatMap((key) => [`### ${key}`, "", tableOf(byKey.get(key) ?? [], LEARNED_COLUMNS), ""]).join(
+  return TABLED_ROWS.flatMap((key) => [`### ${key}`, "", tableOf(byKey.get(key) ?? [], LEARNED_COLUMNS), ""]).join(
     "\n"
   );
 }
@@ -669,7 +676,7 @@ async function main() {
 
   const rows = [];
   const sections = [];
-  const learned = new Map(LEARNED_ROWS.map((key) => [key, []]));
+  const learned = new Map(TABLED_ROWS.map((key) => [key, []]));
   const failures = [];
 
   for (const name of repos) {
