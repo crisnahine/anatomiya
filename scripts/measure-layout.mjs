@@ -511,7 +511,7 @@ async function measure(name, dir) {
     section: section === null ? null : section.join("\n"),
     overviewLines: count,
     result: first,
-    learned: learnedRows(name, first.areas),
+    tabled: tabledRows(name, first.areas),
     row: {
       repo: name,
       tracked: corpus.length,
@@ -561,7 +561,7 @@ function tableOf(rows, columns = COLUMNS) {
  * scored 620 of 620 on one repository and shipped a directive nobody could
  * break; what would have caught it is a column of ratios sitting at 1.0.
  */
-const LEARNED_COLUMNS = [
+const TABLED_COLUMNS = [
   "repo",
   "area",
   "applicability",
@@ -591,7 +591,7 @@ function statedText(d) {
 }
 
 /** One repository's lines for each tabled row, the area with the most sites first. */
-export function learnedRows(repo, areas) {
+export function tabledRows(repo, areas) {
   const out = new Map(TABLED_ROWS.map((key) => [key, []]));
   for (const a of areas) {
     for (const d of a.dimensions) {
@@ -619,9 +619,9 @@ export function learnedRows(repo, areas) {
 }
 
 /** The tables, in registry order, from `[key, rows]` pairs. */
-export function learnedTables(collected) {
+export function tabledTables(collected) {
   const byKey = new Map(collected);
-  return TABLED_ROWS.flatMap((key) => [`### ${key}`, "", tableOf(byKey.get(key) ?? [], LEARNED_COLUMNS), ""]).join(
+  return TABLED_ROWS.flatMap((key) => [`### ${key}`, "", tableOf(byKey.get(key) ?? [], TABLED_COLUMNS), ""]).join(
     "\n"
   );
 }
@@ -677,7 +677,7 @@ async function main() {
 
   const rows = [];
   const sections = [];
-  const learned = new Map(TABLED_ROWS.map((key) => [key, []]));
+  const tabled = new Map(TABLED_ROWS.map((key) => [key, []]));
   const failures = [];
 
   for (const name of repos) {
@@ -685,7 +685,7 @@ async function main() {
       const out = await measure(name, join(corpusDir, name));
       rows.push(out.row);
       sections.push(out);
-      for (const [key, lines] of out.learned) learned.get(key).push(...lines);
+      for (const [key, lines] of out.tabled) tabled.get(key).push(...lines);
       console.log(`| ${COLUMNS.map((c) => out.row[c]).join(" | ")} |`);
       if (opts.facts) {
         const dir = join(resolve(opts.facts), name);
@@ -702,13 +702,13 @@ async function main() {
   console.log("");
   console.log(tableOf(rows));
   console.log("");
-  console.log(learnedTables([...learned]));
+  console.log(tabledTables([...tabled]));
 
   if (md) {
     const body = [
       tableOf(rows),
       "",
-      learnedTables([...learned]),
+      tabledTables([...tabled]),
       ...sections.flatMap((s) => [`## ${s.name}`, "", "```", s.section ?? "(no section)", "```", ""]),
     ];
     writeFileSync(md, body.join("\n"));

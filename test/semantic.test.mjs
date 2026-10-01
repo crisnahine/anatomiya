@@ -24,6 +24,13 @@ import {
 const loaded = await loadTypeScript();
 const needsTs = { skip: loaded ? false : "typescript is not installed" };
 
+/** A module standing in for typescript at one version, as a specifier the loader imports. */
+function typescriptStub(dir, version = "5.9.3") {
+  const p = join(dir, `ts-${version}.mjs`);
+  writeFileSync(p, `export const version = ${JSON.stringify(version)};\nexport function createProgram() {}\n`);
+  return pathToFileURL(p).href;
+}
+
 test("the loader answers null rather than throwing when typescript is absent", async () => {
   // A user who never installed the checker must not pay for it, so an absent
   // one is an ordinary state and not a crash.
@@ -173,16 +180,10 @@ test("a checker outside major 5 is refused, because 7 has no JS API", async (t) 
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-tsver-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
 
-  const stub = (version) => {
-    const p = join(dir, `ts-${version}.mjs`);
-    writeFileSync(p, `export const version = ${JSON.stringify(version)};\nexport function createProgram() {}\n`);
-    return pathToFileURL(p).href;
-  };
+  assert.equal(await loadTypeScript({ specifier: typescriptStub(dir, "7.0.0") }), null, "the Go port is refused");
+  assert.equal(await loadTypeScript({ specifier: typescriptStub(dir, "6.1.2") }), null, "so is anything else off major 5");
 
-  assert.equal(await loadTypeScript({ specifier: stub("7.0.0") }), null, "the Go port is refused");
-  assert.equal(await loadTypeScript({ specifier: stub("6.1.2") }), null, "so is anything else off major 5");
-
-  const ok = await loadTypeScript({ specifier: stub("5.9.3") });
+  const ok = await loadTypeScript({ specifier: typescriptStub(dir, "5.9.3") });
   assert.equal(ok?.version, "5.9.3");
 });
 
@@ -210,12 +211,10 @@ test("the checker is blocked for each reason it could state nothing, and runs ot
 
 test("plain JavaScript with no tsconfig.json is not checked, whatever is installed", async (t) => {
   // Measured with dependencies installed: huginn, diaspora and whitehall all
-  // came back degraded no-tsconfig at 25% to 39%, so every type-checked row
+  // came back degraded no-tsconfig at 25% to 39%, so every type-checked slot
   // closed, after paying the checker's time on every scan and refresh.
   const dir = scratch(t, "anatomiya-tsplain-");
-  const good = join(dir, "ts.mjs");
-  writeFileSync(good, `export const version = "5.9.3";\nexport function createProgram() {}\n`);
-  const specifier = pathToFileURL(good).href;
+  const specifier = typescriptStub(dir);
   mkdirSync(join(dir, "node_modules", "left-pad"), { recursive: true });
 
   const plain = ["app/a.js", "app/b.jsx", "lib/c.mjs"];

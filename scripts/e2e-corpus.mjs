@@ -25,13 +25,15 @@
  * and a frozen re-run passed all 36. Start it and leave the checkout alone.
  */
 import { spawnSync } from "node:child_process";
-import { appendFileSync, constants, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { cp } from "node:fs/promises";
+import { appendFileSync, constants, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { invokedAs, readArgv, selectRepos } from "./entry.mjs";
 import { BINARY, REL } from "./plugins.mjs";
 import { isSource } from "../plugins/anatomiya/lib/corpus.mjs";
+import { hasInstall } from "../plugins/anatomiya/lib/semantic.mjs";
 import { byCode } from "../plugins/anatomiya/lib/paths.mjs";
 import { language } from "../plugins/anatomiya/lib/langs.mjs";
 import { CLASSES } from "../plugins/anatomiya/lib/dimensions-naming.mjs";
@@ -419,31 +421,41 @@ function run(cmd, args, cwd) {
 
 /**
  * Copy every `node_modules` the source has installed into the clone, or say why
- * it could not be listed. A clone carries tracked files only, so without this
- * the type checker reads `no-dependencies` in every repository and the corpus
- * never runs it. Copied rather than linked, because the checker refuses a
- * linked install, and cloned on a filesystem that can, because a monorepo's
- * install is large.
+ * it could not. A clone carries tracked files only, so without this the type
+ * checker reads `no-dependencies` in every repository and the corpus never runs
+ * it. Copied rather than linked, because the checker refuses a linked install,
+ * and cloned on a filesystem that can, because a monorepo's install is large.
+ * Asynchronous because `cpSync` aborts the whole process on an unreadable
+ * directory and refuses to copy over a link the clone already tracks, where
+ * `cp` rejects and replaces.
  */
-export function copyDependencies(source, clone) {
+export async function copyDependencies(source, clone) {
   const listed = git(["ls-files", "-z", "--others", "--ignored", "--exclude-standard", "--directory"], source);
   if (listed.status !== 0) return { error: `could not list what ${source} has installed: ${listed.err}` };
   const dirs = [...new Set(listed.out.split("\0").map(installOf).filter(Boolean))].sort(byCode);
   for (const rel of dirs) {
-    cpSync(join(source, rel), join(clone, rel), { recursive: true, verbatimSymlinks: true, mode: constants.COPYFILE_FICLONE });
+    try {
+      await cp(join(source, rel), join(clone, rel), { recursive: true, verbatimSymlinks: true, mode: constants.COPYFILE_FICLONE });
+    } catch (err) {
+      return { copied: dirs, error: `could not copy ${rel}: ${err.code ?? err.message}` };
+    }
   }
   // The source may ignore its install through info/exclude or a global file,
   // neither of which a clone carries, and an install the clone does not ignore
   // is counted as untracked source.
   if (dirs.length > 0) {
     const exclude = git(["rev-parse", "--git-path", "info/exclude"], clone);
-    if (exclude.status !== 0) return { error: `could not find where ${clone} keeps its excludes: ${exclude.err}` };
+    if (exclude.status !== 0) return { copied: dirs, error: `could not find where ${clone} keeps its excludes: ${exclude.err}` };
     const path = resolve(clone, exclude.out.trim());
     mkdirSync(dirname(path), { recursive: true });
-    appendFileSync(path, dirs.map((rel) => `/${rel}/\n`).join(""));
+    // Led by a newline in case the file does not end in one; unslashed so a
+    // linked install matches too; escaped so a bracket in a name is literal.
+    appendFileSync(path, `\n${dirs.map((rel) => `/${escapeGlob(rel)}\n`).join("")}`);
   }
   return { copied: dirs };
 }
+
+const escapeGlob = (rel) => rel.replace(/[\\[\]*?]/g, "\\$&").replace(/ $/, "\\ ");
 
 /**
  * The install a path ignored by git sits in, or null. A `node_modules/*` rule
@@ -455,10 +467,10 @@ function installOf(path) {
   return at === -1 ? null : parts.slice(0, at + 1).join("/");
 }
 
-/** What a clone with an install copied in still says that it should not. */
-export function dependencyProblems(copied, semantic) {
-  if (!copied.includes("node_modules") || semantic?.reason !== "no-dependencies") return [];
-  return ["node_modules was copied in, and the checker still read no-dependencies"];
+/** What a clone with its packages installed still says that it should not. */
+export function dependencyProblems(clone, semantic) {
+  if (semantic?.reason !== "no-dependencies" || !hasInstall(clone)) return [];
+  return ["node_modules holds packages, and the checker still read no-dependencies"];
 }
 
 /**
@@ -534,7 +546,7 @@ async function runRepo(name, source, scratchDir) {
       return { row, problems };
     }
     const base = branch.out.trim();
-    const deps = copyDependencies(source, clone);
+    const deps = await copyDependencies(source, clone);
     if (deps.error) fail(deps.error);
 
     /* 1 and 2: the first scan, and what it wrote. */
@@ -565,7 +577,7 @@ async function runRepo(name, source, scratchDir) {
     if (facts !== null) {
       row.roots = rootsColumn(rootsPrinted(s1), rosterCounts(facts));
       row.semantic = semanticCell(facts.semantic);
-      for (const p of dependencyProblems(deps.copied ?? [], facts.semantic)) fail(p);
+      for (const p of dependencyProblems(clone, facts.semantic)) fail(p);
     }
 
     /* 3: the same source twice, byte for byte, or the map is not worth a

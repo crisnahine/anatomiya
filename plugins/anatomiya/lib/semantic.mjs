@@ -50,13 +50,14 @@ export function unusableReason(ts) {
  * only tool caches such as `.vite` is no install. A typescript of another major
  * reads `not-installed` too, and doctor names which. Plain JavaScript with no
  * `tsconfig.json` is skipped before any of that: run on the compiler's defaults
- * it resolved 25% to 39% on three installed repositories and closed every row,
- * and installing nothing changes that.
+ * it resolved 25% to 39% on three installed repositories and closed every
+ * type-checked slot,
+ * and no install changes that.
  */
 export async function checkerBlocked(root, { specifier = "typescript", checkedRels } = {}) {
-  if (!Array.isArray(checkedRels)) throw new TypeError("checkerBlocked needs the paths of the files the checker would read");
-  if (!hasConfig(root) && !checkedRels.some(typesSomething)) return "plain-javascript";
-  if (!hasPackages(join(root, "node_modules"))) return "no-dependencies";
+  if (!Array.isArray(checkedRels)) throw new TypeError("checkerBlocked needs { checkedRels }: the paths of the files the checker would read");
+  if (!hasConfig(root) && !checkedRels.some(isTypeScriptSource)) return "plain-javascript";
+  if (!hasInstall(root)) return "no-dependencies";
   return (await loadTypeScript({ specifier })) ? null : "not-installed";
 }
 
@@ -73,7 +74,7 @@ export function checkerStamp(root, { specifier = "typescript" } = {}) {
   } catch {
     // Absent is a state the stamp records, not a failure.
   }
-  return `${hasPackages(join(root, "node_modules"))}\0${hasConfig(root)}\0${resolved}`;
+  return `${hasInstall(root)}\0${hasConfig(root)}\0${resolved}`;
 }
 
 function hasConfig(root) {
@@ -81,10 +82,17 @@ function hasConfig(root) {
 }
 
 // A hand-written `.d.ts` beside JavaScript types nothing that JavaScript imports.
-const DECLARATION = /\.d\.[mc]?ts$/;
+function isTypeScriptSource(rel) {
+  return holdsTypeSyntax(rel) && !extOf(rel).startsWith(".d.");
+}
 
-function typesSomething(rel) {
-  return holdsTypeSyntax(rel) && !DECLARATION.test(rel);
+/**
+ * Whether the repository's own packages are installed at its root: a real
+ * directory holding at least one, since tool caches such as `.vite` are no
+ * install and a linked one is not the repository's own.
+ */
+export function hasInstall(root) {
+  return hasPackages(join(root, "node_modules"));
 }
 
 function hasPackages(deps) {
@@ -98,6 +106,7 @@ function hasPackages(deps) {
 import { guardedChild } from "./child.mjs";
 import { guardsOver } from "./limits.mjs";
 import { holdsTypeSyntax } from "./langs.mjs";
+import { extOf } from "./paths.mjs";
 import { CONFIG_NAME } from "./tsconfig.mjs";
 import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
