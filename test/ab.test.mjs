@@ -913,6 +913,10 @@ const KEPT = new Map([
   // 2.1.285 stores CLAUDE_CODE_EFFORT_LEVEL as a 24-byte string-table entry,
   // and the next entry's length byte is 0x5f, so the scan reads a trailing `_`.
   ["CLAUDE_CODE_EFFORT_LEVEL_", "CLAUDE_CODE_EFFORT_LEVEL with the next string-table entry's length byte, not a name the build reads"],
+  // 2.1.286 does the same to two more names: the byte after each is 0x45, so
+  // the scan reads a trailing `E`. The code reads both without it.
+  ["CLAUDE_CODE_ALWAYS_ENABLE_EFFORTE", "CLAUDE_CODE_ALWAYS_ENABLE_EFFORT, which OVERRIDES scrubs, with the next string-table entry's length byte"],
+  ["CLAUDE_CODE_SKIP_MODEL_ACCESS_MEMORYE", "CLAUDE_CODE_SKIP_MODEL_ACCESS_MEMORY with the next string-table entry's length byte, not a name the build reads"],
   // CLAUDE_CODE_MODEL_CATALOG sat here through 2.1.252 as the off switch for a
   // catalog that was compared and logged. 2.1.257 installs the fetched catalog
   // in place of the compiled model list, so the switch is scrubbed with the URL
