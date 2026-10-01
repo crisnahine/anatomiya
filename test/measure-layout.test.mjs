@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 
 import {
   LEARNED_ROWS,
+  TABLED_ROWS,
   foldCounts,
   learnedRows,
   learnedTables,
@@ -53,6 +54,23 @@ test("every learned row gets a table, whether or not the corpus counted one", ()
 
   const tables = learnedTables(LEARNED_ROWS.map(() => []).map((rows, i) => [LEARNED_ROWS[i], rows]));
   for (const key of LEARNED_ROWS) assert.match(tables, new RegExp(`### ${key}`));
+});
+
+test("law_of_demeter gets a table too, with the gate the checker's answer closed it on", () => {
+  // The type-checked row is the one a checker or baseline regression moves, and
+  // the corpus has to show it per area the way it shows the syntactic five.
+  assert.deepEqual(TABLED_ROWS, [...LEARNED_ROWS, "law_of_demeter"]);
+  const areas = [
+    area("src/app", [dim("law_of_demeter", { candidates: 119, conforming: 115, ratio: 0.966, learned: null })]),
+    area("src/lib", [dim("law_of_demeter", { candidates: 30, states: null, gate: "degraded-semantic", learned: null })]),
+  ];
+
+  const rows = learnedRows("client", areas);
+  assert.deepEqual(rows.get("law_of_demeter").map((r) => [r.area, r.stated]), [
+    ["src/app", "yes"],
+    ["src/lib", "no (degraded-semantic)"],
+  ]);
+  assert.match(learnedTables([...rows]), /### law_of_demeter\n\n.*\n.*\n\| client \| src\/app \| 8 \| 40 \| 119 \| 115 \| 0\.966 \| - \| yes \|/);
 });
 
 test("an area that carried no site of the row is not a line", () => {

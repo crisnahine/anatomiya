@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -13,6 +14,7 @@ import {
   areaProblems,
   byName,
   checkDirs,
+  copyDependencies,
   corpusRepos,
   factsProblems,
   findingPaths,
@@ -22,6 +24,7 @@ import {
   readJson,
   rootsColumn,
   rootsProblems,
+  semanticCell,
   rootsPrinted,
   rosterCounts,
   summaryProblems,
@@ -287,13 +290,13 @@ test("the report's finding paths are read off its findings and nothing else", ()
 
 test("the table prints one row per repository, in the order they ran", () => {
   const rows = [
-    { repo: "errbit", files: 252, areas: 32, stated: 0, roots: 7, wrote: 33, stable: "yes", pin: "ok", clean: 0, probe: "n.a.", seconds: 4.1 },
+    { repo: "errbit", files: 252, areas: 32, stated: 0, roots: 7, wrote: 33, stable: "yes", pin: "ok", clean: 0, probe: "n.a.", semantic: "off no-dependencies", seconds: 4.1 },
   ];
 
   const out = tableOf(rows).split("\n");
   assert.equal(out[0], `| ${COLUMNS.join(" | ")} |`);
   assert.equal(out[1], `|${COLUMNS.map(() => "---").join("|")}|`);
-  assert.equal(out[2], "| errbit | 252 | 32 | 0 | 7 | 33 | yes | ok | 0 | n.a. | 4.1 |");
+  assert.equal(out[2], "| errbit | 252 | 32 | 0 | 7 | 33 | yes | ok | 0 | n.a. | off no-dependencies | 4.1 |");
 });
 
 test("the arguments name a corpus and a scratch directory, and refuse anything else", () => {
@@ -434,4 +437,70 @@ test("what a scan wrote is held to the count it printed and to every rule the co
   assert.deepEqual(writtenProblems(repo, 2).problems, [`no readable ${FACTS_PATH} was written`]);
   rmSync(join(repo, ".claude/rules/anatomiya-overview.md"));
   assert.match(writtenProblems(repo, 1).problems.join("\n"), /no anatomiya-overview\.md was written/);
+});
+
+test("the semantic column says whether the checker ran, what it answered and why not", () => {
+  assert.equal(semanticCell({ ran: true, status: "ok", reason: null, typedResolutionRate: 0.9064 }), "ok 90.6%");
+  assert.equal(
+    semanticCell({ ran: true, status: "degraded", reason: "no-tsconfig", typedResolutionRate: 0.12 }),
+    "degraded no-tsconfig 12.0%"
+  );
+  // No property access anywhere is ok with no rate, and a rate of 0 is a rate.
+  assert.equal(semanticCell({ ran: true, status: "ok", reason: null, typedResolutionRate: null }), "ok");
+  assert.equal(semanticCell({ ran: true, status: "degraded", reason: "low-resolution", typedResolutionRate: 0 }), "degraded low-resolution 0.0%");
+  assert.equal(semanticCell({ ran: false, status: null, reason: "no-dependencies", typedResolutionRate: null }), "off no-dependencies");
+  // A facts record from before the tier carries no semantic key at all.
+  assert.equal(semanticCell(undefined), "-");
+});
+
+/** A source repository ignoring its installs, and an empty directory to copy them into. */
+function installed(t) {
+  const home = mkdtempSync(join(tmpdir(), "e2e-deps-"));
+  t.after(() => rmSync(home, { recursive: true, force: true }));
+  const source = join(home, "source");
+  const clone = join(home, "clone");
+  mkdirSync(clone);
+  const write = (rel, body = "x\n") => {
+    mkdirSync(join(source, rel, ".."), { recursive: true });
+    writeFileSync(join(source, rel), body);
+  };
+  write(".gitignore", "node_modules/\ndist/\n");
+  execFileSync("git", ["init", "-q"], { cwd: source, stdio: "pipe" });
+  write("node_modules/left-pad/index.js");
+  write("packages/a/node_modules/b/index.js");
+  write("dist/out.js");
+  return { source, clone };
+}
+
+test("a clone gets every installed node_modules the source holds, and nothing else it ignores", (t) => {
+  // A clone carries tracked files only, so without this the checker read
+  // no-dependencies in all 36 repositories and the corpus never ran it.
+  const { source, clone } = installed(t);
+
+  assert.deepEqual(copyDependencies(source, clone), ["node_modules", "packages/a/node_modules"]);
+  assert.equal(readFileSync(join(clone, "node_modules/left-pad/index.js"), "utf8"), "x\n");
+  assert.equal(readFileSync(join(clone, "packages/a/node_modules/b/index.js"), "utf8"), "x\n");
+  // The checker refuses a linked node_modules, so the copy has to be a directory.
+  assert.ok(lstatSync(join(clone, "node_modules")).isDirectory());
+  assert.throws(() => lstatSync(join(clone, "dist")), { code: "ENOENT" });
+});
+
+test("a source with nothing installed copies nothing", (t) => {
+  const { source, clone } = installed(t);
+  rmSync(join(source, "node_modules"), { recursive: true });
+  rmSync(join(source, "packages"), { recursive: true });
+
+  assert.deepEqual(copyDependencies(source, clone), []);
+});
+
+test("links inside an install are copied as the same links", { skip: process.platform === "win32" && "a symlink needs a privilege Windows runners do not grant" }, (t) => {
+  // pnpm's node_modules is relative links into node_modules/.pnpm; a link
+  // rewritten to the source's absolute path would read the corpus, not the clone.
+  const { source, clone } = installed(t);
+  mkdirSync(join(source, "node_modules/.pnpm/c/node_modules/c"), { recursive: true });
+  symlinkSync(".pnpm/c/node_modules/c", join(source, "node_modules/c"));
+
+  copyDependencies(source, clone);
+
+  assert.equal(readlinkSync(join(clone, "node_modules/c")), ".pnpm/c/node_modules/c");
 });
