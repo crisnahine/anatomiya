@@ -890,6 +890,20 @@ for (const [name, opts, reason] of [
   });
 }
 
+test("the checker stays off in plain JavaScript, with its dependencies installed and a declaration file beside it", async (t) => {
+  // A package's hand-written index.d.ts types nothing its .js files import, so
+  // it is not the TypeScript that would let the checker resolve.
+  const dir = repo(t, (d, { git, write }) => {
+    write(".gitignore", "node_modules\n");
+    for (let i = 0; i < 8; i++) write(`app/m${i}.js`, `export const m${i} = (o) => o.a.b.c();\n`);
+    write("index.d.ts", "export declare const m0: unknown;\n");
+    git("add", "-A");
+    git("commit", "-qm", "init");
+  });
+  const r = await scan(withDeps(dir));
+  assert.deepEqual(r.semantic, { ran: false, status: null, reason: "plain-javascript", typedResolutionRate: null });
+});
+
 const demeterRow = async (dir, path = "src/models") => dimension(await scan(dir), path, "law_of_demeter");
 
 test("a pinned repository baselines a type-checked row over its pinned files", async (t) => {
@@ -1002,6 +1016,8 @@ test("areas holding no checked file take no rate from a dropped bundle directory
       const body = Array.from({ length: 150 }, (_, n) => `o.f${n}=function(a,b){return a.x.y+b.z;};`).join("");
       write(`public/js/lib${i}.js`, `(function(){var o={};${body}})();\n`);
     }
+    // Plain JavaScript with no config is skipped before the checker runs.
+    write("tsconfig.json", "{}\n");
     git("add", "-A");
     git("commit", "-qm", "init");
   });
@@ -1021,6 +1037,8 @@ test("a repository whose every area was dropped takes no rate from it", async (t
       const body = Array.from({ length: 150 }, (_, n) => `o.f${n}=function(a,b){return a.x.y+b.z;};`).join("");
       write(`public/js/lib${i}.js`, `(function(){var o={};${body}})();\n`);
     }
+    // Plain JavaScript with no config is skipped before the checker runs.
+    write("tsconfig.json", "{}\n");
     git("add", "-A");
     git("commit", "-qm", "init");
   });

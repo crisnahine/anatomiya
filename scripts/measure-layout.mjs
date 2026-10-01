@@ -22,7 +22,7 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 import { checkOutput, invokedAs, readArgv, selectRepos } from "./entry.mjs";
-import { corpusRepos } from "./e2e-corpus.mjs";
+import { corpusRepos, semanticCell } from "./e2e-corpus.mjs";
 import { namesakeCompanions, namesakeIndex } from "../plugins/anatomiya/lib/companions.mjs";
 import { collect, frameworksIn } from "../plugins/anatomiya/lib/corpus.mjs";
 import {
@@ -36,6 +36,7 @@ import {
   underTestTree,
 } from "../plugins/anatomiya/lib/layout.mjs";
 import { parseAll } from "../plugins/anatomiya/lib/parse.mjs";
+import { SEMANTIC_DIMENSIONS } from "../plugins/anatomiya/lib/dimensions-semantic.mjs";
 import { baseOf, byCode, dirOf, extOf, stemOf } from "../plugins/anatomiya/lib/paths.mjs";
 import { scan } from "../plugins/anatomiya/lib/scan.mjs";
 import { MAX_LINES } from "../plugins/anatomiya/lib/render.mjs";
@@ -51,6 +52,10 @@ const LEVEL_SUFFIX = " (files at this level)";
 // The five rows part 2 added, counted per repository so a row nothing states
 // anywhere is visible as such.
 export const LEARNED_ROWS = ["extends_base", "class_base", "module_include", "interface_prefix", "type_alias_prefix"];
+
+// The rows printed per area: the five, and the type-checked ones, which only a
+// corpus with dependencies installed can move.
+export const TABLED_ROWS = [...LEARNED_ROWS, ...SEMANTIC_DIMENSIONS.map((d) => d.key)];
 
 // --- the recount ------------------------------------------------------------
 
@@ -506,7 +511,7 @@ async function measure(name, dir) {
     section: section === null ? null : section.join("\n"),
     overviewLines: count,
     result: first,
-    learned: learnedRows(name, first.areas),
+    tabled: tabledRows(name, first.areas),
     row: {
       repo: name,
       tracked: corpus.length,
@@ -517,6 +522,7 @@ async function measure(name, dir) {
       ...Object.fromEntries(LEARNED_ROWS.map((key) => [key, statedCount(first.areas, key)])),
       imports: first.areas.filter((x) => x.imports?.length).length,
       reused: first.areas.filter((x) => x.reused?.length).length,
+      semantic: semanticCell(first.semantic),
       seconds: ((Date.now() - started) / 1000).toFixed(1),
     },
   };
@@ -534,6 +540,7 @@ const COLUMNS = [
   ...LEARNED_ROWS,
   "imports",
   "reused",
+  "semantic",
   "seconds",
 ];
 
@@ -547,13 +554,14 @@ function tableOf(rows, columns = COLUMNS) {
 
 /**
  * What the bar asks for and a summary cannot answer: the three numbers and the
- * ratio, per repository and per area, for each of the five learned rows.
+ * ratio, per repository and per area, for each of the five learned rows and
+ * the type-checked ones.
  *
  * A summary hides the one thing step 3 is looking for. `module_state_const`
  * scored 620 of 620 on one repository and shipped a directive nobody could
  * break; what would have caught it is a column of ratios sitting at 1.0.
  */
-const LEARNED_COLUMNS = [
+const TABLED_COLUMNS = [
   "repo",
   "area",
   "applicability",
@@ -582,9 +590,9 @@ function statedText(d) {
   return d.matchesDefault === true ? "no (model default)" : "yes";
 }
 
-/** One repository's lines for each learned row, biggest area first. */
-export function learnedRows(repo, areas) {
-  const out = new Map(LEARNED_ROWS.map((key) => [key, []]));
+/** One repository's lines for each tabled row, the area with the most sites first. */
+export function tabledRows(repo, areas) {
+  const out = new Map(TABLED_ROWS.map((key) => [key, []]));
   for (const a of areas) {
     for (const d of a.dimensions) {
       // An area holding no site of the row is not evidence about it either way,
@@ -610,10 +618,10 @@ export function learnedRows(repo, areas) {
   return out;
 }
 
-/** The five tables, in registry order, from `[key, rows]` pairs. */
-export function learnedTables(collected) {
+/** The tables, in registry order, from `[key, rows]` pairs. */
+export function tabledTables(collected) {
   const byKey = new Map(collected);
-  return LEARNED_ROWS.flatMap((key) => [`### ${key}`, "", tableOf(byKey.get(key) ?? [], LEARNED_COLUMNS), ""]).join(
+  return TABLED_ROWS.flatMap((key) => [`### ${key}`, "", tableOf(byKey.get(key) ?? [], TABLED_COLUMNS), ""]).join(
     "\n"
   );
 }
@@ -669,7 +677,7 @@ async function main() {
 
   const rows = [];
   const sections = [];
-  const learned = new Map(LEARNED_ROWS.map((key) => [key, []]));
+  const tabled = new Map(TABLED_ROWS.map((key) => [key, []]));
   const failures = [];
 
   for (const name of repos) {
@@ -677,7 +685,7 @@ async function main() {
       const out = await measure(name, join(corpusDir, name));
       rows.push(out.row);
       sections.push(out);
-      for (const [key, lines] of out.learned) learned.get(key).push(...lines);
+      for (const [key, lines] of out.tabled) tabled.get(key).push(...lines);
       console.log(`| ${COLUMNS.map((c) => out.row[c]).join(" | ")} |`);
       if (opts.facts) {
         const dir = join(resolve(opts.facts), name);
@@ -694,13 +702,13 @@ async function main() {
   console.log("");
   console.log(tableOf(rows));
   console.log("");
-  console.log(learnedTables([...learned]));
+  console.log(tabledTables([...tabled]));
 
   if (md) {
     const body = [
       tableOf(rows),
       "",
-      learnedTables([...learned]),
+      tabledTables([...tabled]),
       ...sections.flatMap((s) => [`## ${s.name}`, "", "```", s.section ?? "(no section)", "```", ""]),
     ];
     writeFileSync(md, body.join("\n"));

@@ -7,6 +7,43 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.13.1] - 2026-10-01
+
+Plain JavaScript stops paying for a type checker that cannot answer there, and the corpus runs can
+finally see the checker at all.
+
+### Changed
+
+- `scan` leaves the type checker off in plain JavaScript: no `tsconfig.json` at the root and no
+  `.ts`, `.tsx`, `.mts` or `.cts` file other than a declaration file. There it ran on the compiler's
+  defaults and resolved 25% to 39% on three installed repositories, so every type-checked claim
+  closed after paying the checker's time on every scan and refresh. The facts record says
+  `plain-javascript`, and adding a `tsconfig.json` later is a reason for the background refresh to
+  rescan. A `jsconfig.json` does not turn it back on: the checker reads only `tsconfig.json`.
+- Dependabot no longer bumps `ignore`. It is the oracle the tests hold an area's `paths` against,
+  standing in for how Claude Code reads them, and Claude Code 2.1.286 still bundles 7.0.5. From
+  7.0.7 on it handles brackets, backslashes and blank lines differently, so a bump would test
+  against a reader Claude Code does not run.
+
+### Added
+
+- The corpus runs see the type checker. `scripts/e2e-corpus.mjs` copies every `node_modules` a
+  corpus repository has installed into its clone, and both it and `scripts/measure-layout.mjs` print
+  what the checker answered per repository. `measure-layout.mjs` also prints a per-area
+  `law_of_demeter` table, so a facts diff between two builds shows a type-checked slot that moved.
+  The from-zero run fails a repository whose install was copied in and whose checker still reads
+  `no-dependencies`.
+
+### Fixed in the tests themselves
+
+- `test/ab.test.mjs` rules on the two names Claude Code 2.1.286 adds to its string table with the
+  next entry's length byte on the end (`CLAUDE_CODE_ALWAYS_ENABLE_EFFORTE`,
+  `CLAUDE_CODE_SKIP_MODEL_ACCESS_MEMORYE`). The names the build reads were already ruled on.
+- The growth tests collect garbage before each timed side. `process.cpuUsage` counts the
+  collector's threads, so a linear judge read 3.0 to 3.16 on CI runners, past its bound of 3, and
+  failed three times on macOS and Windows. It now reads 2.0 to 2.4, and a quadratic one still reads
+  3.7 to 3.9.
+
 ## [0.13.0] - 2026-10-01
 
 The type checker no longer waits for a flag. `scan` runs it wherever the repository's own
@@ -3496,7 +3533,8 @@ which are partial; several listed there are not implemented yet.
 - No claim that this catches defects. Measured across ten repositories, 1 of 317 defect review
   comments was preventable by a conventions map.
 
-[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.13.0...HEAD
+[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.13.1...HEAD
+[0.13.1]: https://github.com/crisnahine/anatomiya/compare/v0.13.0...v0.13.1
 [0.13.0]: https://github.com/crisnahine/anatomiya/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/crisnahine/anatomiya/compare/v0.11.1...v0.12.0
 [0.11.1]: https://github.com/crisnahine/anatomiya/compare/v0.11.0...v0.11.1

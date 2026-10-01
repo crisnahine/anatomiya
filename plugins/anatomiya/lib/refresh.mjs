@@ -300,11 +300,11 @@ export async function noteScan(root) {
 /**
  * Everything a scan's answer depends on that can change without the scan
  * knowing: the commit, the index (which paths are tracked, and what is staged),
- * the pin, this build, whether the repository holds packages and where
- * typescript resolves, so installing the repository's dependencies after the
- * first scan turns the checker on. Working-tree
- * edits are left out on purpose: they move with every keystroke, and what a
- * refresh follows is HEAD.
+ * the pin, this build, whether the repository holds packages, whether a root
+ * `tsconfig.json` is on disk and where typescript resolves, so installing the
+ * repository's dependencies or adding a config after the first scan turns the
+ * checker on. Other working-tree edits are left out on purpose: they move with
+ * every keystroke, and what a refresh follows is HEAD.
  */
 async function stampOf(root) {
   const head = await headSha(root);
