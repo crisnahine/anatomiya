@@ -45,6 +45,6 @@
     "plugins/*"
   ],
   "devDependencies": {
-    "ignore": "7.0.5"
+    "ignore": "7.0.10"
   }
 }
