@@ -590,7 +590,7 @@ function statedText(d) {
   return d.matchesDefault === true ? "no (model default)" : "yes";
 }
 
-/** One repository's lines for each learned row, biggest area first. */
+/** One repository's lines for each tabled row, the area with the most sites first. */
 export function learnedRows(repo, areas) {
   const out = new Map(TABLED_ROWS.map((key) => [key, []]));
   for (const a of areas) {

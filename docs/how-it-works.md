@@ -286,11 +286,13 @@ clock.
 A scan runs the checker when the repository has a JavaScript or TypeScript file, a real
 `node_modules` directory at its root holding at least one package (a directory of tool caches such
 as `.vite` is no install), a `typescript` 5.x the plugin can load, and something for it to type: a
-root `tsconfig.json` or a `.ts`, `.tsx`, `.mts` or `.cts` file. Plain JavaScript with neither ran on
-the compiler's defaults and resolved 25% to 39% on three installed repositories, which closes every
-type-checked row. Where any of these is missing the checker stays off and the facts record says why
-in `semantic.reason`: `no-checked-files`, `plain-javascript`, `no-dependencies` or `not-installed`,
-which also covers a `typescript` of another major that doctor names. A pin does not switch it off: a pinned file unchanged since the pin reuses its working-tree
+root `tsconfig.json` or a `.ts`, `.tsx`, `.mts` or `.cts` file that is not a declaration file. Plain
+JavaScript with neither ran on the compiler's defaults and resolved 25% to 39% on three installed
+repositories, which closes every type-checked slot. A `jsconfig.json` does not count, because the
+checker reads only `tsconfig.json`. Where any of these is missing the checker stays off and the
+facts record says why in `semantic.reason`: `no-checked-files`, `plain-javascript`,
+`no-dependencies` or `not-installed`, which also covers a `typescript` of another major that doctor
+names. A pin does not switch it off: a pinned file unchanged since the pin reuses its working-tree
 record, type-checked hits included, so an area whose checked pinned files are all unchanged is
 baselined over them. An area holding one that changed or was renamed since the pin is closed as
 `semantic-unbaselined`, because that file read back from the pin has no type-checked hits and

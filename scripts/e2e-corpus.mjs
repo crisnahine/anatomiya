@@ -25,7 +25,7 @@
  * and a frozen re-run passed all 36. Start it and leave the checkout alone.
  */
 import { spawnSync } from "node:child_process";
-import { constants, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, constants, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -419,22 +419,46 @@ function run(cmd, args, cwd) {
 
 /**
  * Copy every `node_modules` the source has installed into the clone, or say why
- * it could not be listed. A clone carries tracked files only, so without this the type checker
- * reads `no-dependencies` in every repository and the corpus never runs it.
- * Copied rather than linked, because the checker refuses a linked install, and
- * cloned on a filesystem that can, because a monorepo's install is large.
+ * it could not be listed. A clone carries tracked files only, so without this
+ * the type checker reads `no-dependencies` in every repository and the corpus
+ * never runs it. Copied rather than linked, because the checker refuses a
+ * linked install, and cloned on a filesystem that can, because a monorepo's
+ * install is large.
  */
 export function copyDependencies(source, clone) {
   const listed = git(["ls-files", "-z", "--others", "--ignored", "--exclude-standard", "--directory"], source);
   if (listed.status !== 0) return { error: `could not list what ${source} has installed: ${listed.err}` };
-  const dirs = listed.out
-    .split("\0")
-    .map((p) => p.replace(/\/$/, ""))
-    .filter((p) => p === "node_modules" || p.endsWith("/node_modules"));
+  const dirs = [...new Set(listed.out.split("\0").map(installOf).filter(Boolean))].sort(byCode);
   for (const rel of dirs) {
     cpSync(join(source, rel), join(clone, rel), { recursive: true, verbatimSymlinks: true, mode: constants.COPYFILE_FICLONE });
   }
+  // The source may ignore its install through info/exclude or a global file,
+  // neither of which a clone carries, and an install the clone does not ignore
+  // is counted as untracked source.
+  if (dirs.length > 0) {
+    const exclude = git(["rev-parse", "--git-path", "info/exclude"], clone);
+    if (exclude.status !== 0) return { error: `could not find where ${clone} keeps its excludes: ${exclude.err}` };
+    const path = resolve(clone, exclude.out.trim());
+    mkdirSync(dirname(path), { recursive: true });
+    appendFileSync(path, dirs.map((rel) => `/${rel}/\n`).join(""));
+  }
   return { copied: dirs };
+}
+
+/**
+ * The install a path ignored by git sits in, or null. A `node_modules/*` rule
+ * makes git list each package rather than the directory.
+ */
+function installOf(path) {
+  const parts = path.replace(/\/$/, "").split("/");
+  const at = parts.indexOf("node_modules");
+  return at === -1 ? null : parts.slice(0, at + 1).join("/");
+}
+
+/** What a clone with an install copied in still says that it should not. */
+export function dependencyProblems(copied, semantic) {
+  if (!copied.includes("node_modules") || semantic?.reason !== "no-dependencies") return [];
+  return ["node_modules was copied in, and the checker still read no-dependencies"];
 }
 
 /**
@@ -504,14 +528,14 @@ async function runRepo(name, source, scratchDir) {
     }
     git(["config", "gc.auto", "0"], clone);
     git(["config", "maintenance.auto", "false"], clone);
-    const deps = copyDependencies(source, clone);
-    if (deps.error) fail(deps.error);
     const branch = git(["symbolic-ref", "--short", "HEAD"], clone);
     if (branch.status !== 0 || git(["rev-parse", "HEAD"], clone).status !== 0) {
       row.probe = "no commits";
       return { row, problems };
     }
     const base = branch.out.trim();
+    const deps = copyDependencies(source, clone);
+    if (deps.error) fail(deps.error);
 
     /* 1 and 2: the first scan, and what it wrote. */
     const first = anatomiya(["scan", clone, "--format", "json"], scratchDir);
@@ -541,6 +565,7 @@ async function runRepo(name, source, scratchDir) {
     if (facts !== null) {
       row.roots = rootsColumn(rootsPrinted(s1), rosterCounts(facts));
       row.semantic = semanticCell(facts.semantic);
+      for (const p of dependencyProblems(deps.copied ?? [], facts.semantic)) fail(p);
     }
 
     /* 3: the same source twice, byte for byte, or the map is not worth a

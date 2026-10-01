@@ -53,8 +53,9 @@ export function unusableReason(ts) {
  * it resolved 25% to 39% on three installed repositories and closed every row,
  * and installing nothing changes that.
  */
-export async function checkerBlocked(root, { specifier = "typescript", checked = null } = {}) {
-  if (checked && !hasConfig(root) && !checked.some((rel) => holdsTypeSyntax(rel))) return "plain-javascript";
+export async function checkerBlocked(root, { specifier = "typescript", checkedRels } = {}) {
+  if (!Array.isArray(checkedRels)) throw new TypeError("checkerBlocked needs the paths of the files the checker would read");
+  if (!hasConfig(root) && !checkedRels.some(typesSomething)) return "plain-javascript";
   if (!hasPackages(join(root, "node_modules"))) return "no-dependencies";
   return (await loadTypeScript({ specifier })) ? null : "not-installed";
 }
@@ -75,7 +76,16 @@ export function checkerStamp(root, { specifier = "typescript" } = {}) {
   return `${hasPackages(join(root, "node_modules"))}\0${hasConfig(root)}\0${resolved}`;
 }
 
-const hasConfig = (root) => existsSync(join(root, CONFIG_NAME));
+function hasConfig(root) {
+  return existsSync(join(root, CONFIG_NAME));
+}
+
+// A hand-written `.d.ts` beside JavaScript types nothing that JavaScript imports.
+const DECLARATION = /\.d\.[mc]?ts$/;
+
+function typesSomething(rel) {
+  return holdsTypeSyntax(rel) && !DECLARATION.test(rel);
+}
 
 function hasPackages(deps) {
   try {
