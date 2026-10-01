@@ -15,6 +15,7 @@ import {
   byName,
   checkDirs,
   copyDependencies,
+  dependencyProblems,
   corpusRepos,
   factsProblems,
   findingPaths,
@@ -459,6 +460,7 @@ function installed(t) {
   const source = join(home, "source");
   const clone = join(home, "clone");
   mkdirSync(clone);
+  git(clone, "init", "-q");
   const write = (rel, body = "x\n") => {
     mkdirSync(join(source, rel, ".."), { recursive: true });
     writeFileSync(join(source, rel), body);
@@ -482,6 +484,34 @@ test("a clone gets every installed node_modules the source holds, and nothing el
   // The checker refuses a linked node_modules, so the copy has to be a directory.
   assert.ok(lstatSync(join(clone, "node_modules")).isDirectory());
   assert.throws(() => lstatSync(join(clone, "dist")), { code: "ENOENT" });
+  // The clone does not carry the source's info/exclude or global excludes, so
+  // the copy is excluded there too, or a scan counts it as untracked source.
+  assert.equal(git(clone, "status", "--porcelain", "--untracked-files=all").toString(), "");
+});
+
+test("an install ignored by its contents rather than by its name is still copied whole", (t) => {
+  // With a tracked file inside, `node_modules/*` makes git list each package
+  // rather than the directory.
+  const { source, clone } = installed(t);
+  writeFileSync(join(source, ".gitignore"), "node_modules/*\n!node_modules/.keep\npackages/a/node_modules/*\n");
+  writeFileSync(join(source, "node_modules/.keep"), "");
+  git(source, "add", ".gitignore", "node_modules/.keep");
+
+  assert.deepEqual(copyDependencies(source, clone), { copied: ["node_modules", "packages/a/node_modules"] });
+  assert.equal(readFileSync(join(clone, "node_modules/left-pad/index.js"), "utf8"), "x\n");
+});
+
+test("an installed repository whose checker still reads no-dependencies is a finding", () => {
+  // The copy is what lets the corpus run the checker; a clone that reads
+  // no-dependencies after it is the blind run coming back.
+  const off = (reason) => ({ ran: false, status: null, reason, typedResolutionRate: null });
+  assert.deepEqual(dependencyProblems(["node_modules"], off("no-dependencies")), [
+    "node_modules was copied in, and the checker still read no-dependencies",
+  ]);
+  assert.deepEqual(dependencyProblems(["packages/a/node_modules"], off("no-dependencies")), []);
+  assert.deepEqual(dependencyProblems([], off("no-dependencies")), []);
+  assert.deepEqual(dependencyProblems(["node_modules"], off("plain-javascript")), []);
+  assert.deepEqual(dependencyProblems(["node_modules"], undefined), []);
 });
 
 test("a source with nothing installed copies nothing", (t) => {

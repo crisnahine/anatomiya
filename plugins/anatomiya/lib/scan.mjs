@@ -77,7 +77,7 @@ export async function scan(cwd, { guards = null } = {}) {
   // driving unresolved types from 3.1% to 36.2%. Its verdict is taken once the
   // fold below knows which areas the map describes.
   const checked = files.filter((f) => langHas(f.lang, "semantic"));
-  const offReason = checked.length === 0 ? "no-checked-files" : await checkerBlocked(root, { checked: checked.map((f) => f.rel) });
+  const offReason = checked.length === 0 ? "no-checked-files" : await checkerBlocked(root, { checkedRels: checked.map((f) => f.rel) });
   const whole = offReason ? null : await runSemantic(root, checked);
   const tier = whole ? "all" : "syntactic";
   if (whole) mergeSemanticHits(head.records, whole.records);

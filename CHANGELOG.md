@@ -15,10 +15,11 @@ finally see the checker at all.
 ### Changed
 
 - `scan` leaves the type checker off in plain JavaScript: no `tsconfig.json` at the root and no
-  `.ts`, `.tsx`, `.mts` or `.cts` file. There it ran on the compiler's defaults and resolved 25% to
-  39% on three installed repositories, so every type-checked claim closed after paying the checker's
-  time on every scan and refresh. The facts record says `plain-javascript`, and adding a
-  `tsconfig.json` later is a reason for the background refresh to rescan.
+  `.ts`, `.tsx`, `.mts` or `.cts` file other than a declaration file. There it ran on the compiler's
+  defaults and resolved 25% to 39% on three installed repositories, so every type-checked claim
+  closed after paying the checker's time on every scan and refresh. The facts record says
+  `plain-javascript`, and adding a `tsconfig.json` later is a reason for the background refresh to
+  rescan. A `jsconfig.json` does not turn it back on: the checker reads only `tsconfig.json`.
 - Dependabot no longer bumps `ignore`. It is the oracle the tests hold an area's `paths` against,
   standing in for how Claude Code reads them, and Claude Code 2.1.286 still bundles 7.0.5. From
   7.0.7 on it handles brackets, backslashes and blank lines differently, so a bump would test
@@ -29,7 +30,9 @@ finally see the checker at all.
 - The corpus runs see the type checker. `scripts/e2e-corpus.mjs` copies every `node_modules` a
   corpus repository has installed into its clone, and both it and `scripts/measure-layout.mjs` print
   what the checker answered per repository. `measure-layout.mjs` also prints a per-area
-  `law_of_demeter` table, so a facts diff between two builds shows a type-checked row that moved.
+  `law_of_demeter` table, so a facts diff between two builds shows a type-checked slot that moved.
+  The from-zero run fails a repository whose install was copied in and whose checker still reads
+  `no-dependencies`.
 
 ### Fixed in the tests themselves
 
