@@ -84,7 +84,7 @@ export function scanSummary(result, plan, { dryRun = false, hook = null } = {}) 
     // the scan without a word. Zero from a record written before the count.
     unreadFiles: result.corpus.dropped?.unreadable ?? 0,
     unexamined: unexaminedLines(result.parse),
-    // What a tier that ran badly cost, in the overview's own words. `--deep`
+    // What a tier that ran badly cost, in the overview's own words. The checker
     // added 110 slots that all read zero on a measured repository and the
     // terminal said nothing: the map, the facts store and every area file
     // carried it, and the one surface the caller was watching did not.

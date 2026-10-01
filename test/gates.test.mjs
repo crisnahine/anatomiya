@@ -1164,10 +1164,9 @@ test("a framework row on a JS language gets a slot only where the corpus shows t
 });
 
 test("a semantic dimension with no baseline names the tier, not a greenfield directory", () => {
-  // The tier does not run at the pin and `pin --deep` is refused, so a semantic
-  // row on any pinned repository has no baselineDim and was gated
-  // postdates-baseline: permanently, and naming a cause that is not the reason.
-  // The area is not new; the checker was never asked there.
+  // The checker never reads the pinned blobs, so a semantic row whose pinned
+  // files all changed since the pin has no baselineDim and was gated
+  // postdates-baseline, naming a cause that is not the reason.
   const d = dim({ tier: "semantic" });
   const r = verdictFor(d, {
     current: { fileCount: 24, dirCount: 2 },

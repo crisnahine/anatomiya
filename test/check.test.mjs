@@ -2474,7 +2474,7 @@ test("a map holding a type-checked claim says the check did not enforce it", asy
   const bin = fileURLToPath(new URL("../plugins/anatomiya/bin/anatomiya.mjs", import.meta.url));
   execFileSync(process.execPath, [bin, "scan", dir], { stdio: "pipe" });
 
-  // Plant a stated semantic claim, which is what a --deep scan would have left.
+  // Plant a stated semantic claim, which is what a scan with the checker would have left.
   const factsPath = join(dir, ".claude/anatomiya/facts.json");
   const facts = JSON.parse(readFileSync(factsPath, "utf8"));
   facts.areas[0].dimensions.push({
@@ -2504,7 +2504,7 @@ test("a map holding a type-checked claim says the check did not enforce it", asy
   });
 
   assert.match(out, /type-checked claim is stated in the map and not enforced on a branch/, out);
-  assert.match(out, /anatomiya scan --deep/, "and it says where the tier does run");
+  assert.match(out, /runs on `anatomiya scan` and not here/, "and it says where the tier does run");
 });
 
 /* --- the new claim families at check time --- */

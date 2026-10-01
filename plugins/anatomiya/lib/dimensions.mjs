@@ -463,7 +463,7 @@ const TIERS = ["syntactic", "semantic"];
 /**
  * Two values, and a row carrying neither does not ship.
  *
- * A semantic row needs a checker, which is opt-in and about 3x a plain scan. A row that
+ * A semantic row needs a checker, which a scan runs only where it can. A row that
  * forgets the field, or spells it `"Syntactic"`, would be offered to the parse
  * worker, run against a program with no checker in it, and answer nothing on
  * every file forever. Checked at load for the same reason precision is: the
@@ -747,8 +747,8 @@ export function dimensionsFor(langs, { frameworks, tier = "syntactic", capabilit
   return rows.filter(
     (d) =>
       d.langs.some((l) => langs.includes(l)) &&
-      // The tier is opt-in. A caller that does not ask for it must never be
-      // handed a claim that needs a checker nobody ran.
+      // A caller that does not ask for the semantic tier must never be handed
+      // a claim that needs a checker nobody ran.
       (tier === "all" || d.tier === tier) &&
       (!known || !d.framework || known.has(d.framework)) &&
       (!caps || !d.capability || caps.has(d.capability))

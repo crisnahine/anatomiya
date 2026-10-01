@@ -151,14 +151,15 @@ it finds one, and leaves everything else in the file alone.
 After the first `/anatomiya:scan` in a checkout, you do not run it again. At the start of every
 session, and whenever HEAD moves (a checkout, a commit, a pull, a merge, a reset), the plugin starts
 a background refresh that rescans only when something the map depends on changed: the commit, the
-tracked files, the pin, or this plugin's version. It watches the reflog, or, where there is none,
-the reftable backend's table list or the index, so a repository created without a reflog or on
-reftable refreshes on every move too. The hook returns at once and the scan runs detached, so
-nothing waits on it. A map built with `--deep` is rebuilt with the type checker, the way it was
-built. It leaves alone a checkout with no map of its own, a map, pin or refresh file committed to
-the repository, and a repository in the middle of a merge or rebase. When a rescan fails it keeps
-the previous map, tries again after half an hour or once the checkout moves, and the delivered map
-says the refresh failed until one succeeds.
+tracked files, the pin, this plugin's version, whether the repository holds packages, or where
+`typescript` resolves. It watches the reflog, or, where there is none, the reftable backend's table
+list or the index, so a repository created without a reflog or on reftable refreshes on every move
+too. The hook returns at once and the scan runs detached, so nothing waits on it. Each rescan
+decides on its own whether to run the type checker, the same way `/anatomiya:scan` does. It leaves
+alone a checkout with no map of its own, a map, pin or refresh file committed to the repository, and
+a repository in the middle of a merge or rebase. When a rescan fails it keeps the previous map,
+tries again after half an hour or once the checkout moves, and the delivered map says the refresh
+failed until one succeeds.
 
 A session started in the directory that holds your checkouts, which has no map of its own, refreshes
 and watches each mapped checkout directly below it, and the reuse check reads each one's change,
@@ -429,12 +430,12 @@ already enforces a rule, the map restating it is waste, not defence in depth.
 
 **JavaScript, TypeScript and Ruby, nothing else.** A Python, Go or Rust repository gets an overview
 with a layout section and no claims in it. One of the 58 needs the type checker and is the only
-thing `scan --deep` adds: `a call chain stays inside one type`. It is off by default because a deep
-scan measured about 3x a plain one on a 3,800-file repository and the checker is whole-program, so
-it cannot be narrowed to the files you changed; `--deep` needs the optional `typescript` 5.x
-dependency and the scanned repository's own dependencies on disk inside the repository (a
-`node_modules` linked in from elsewhere is not read and counts as not installed), and says on the
-map when the checker answered badly.
+thing the type checker adds: `a call chain stays inside one type`. The scan runs the checker on its
+own when the optional `typescript` 5.x dependency is installed and the scanned repository's own
+dependencies are on disk inside it (a `node_modules` linked in from elsewhere is not read and counts
+as no dependencies), and leaves it off otherwise. It costs: a scan with it measured about 3x a plain
+one on a 3,800-file repository and about 8x on a 2,600-file one, and the checker is whole-program,
+so it cannot be narrowed to the files you changed. The map says when the checker answered badly.
 
 **Small directories are not covered.** A directory needs `clamp(round(sqrt(N) / 6), 3, 8)` source
 files to be an area. On the excalidraw run above, 15 of 693 files sat in no area, and 205 of 2,468

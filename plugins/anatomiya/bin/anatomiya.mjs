@@ -7,7 +7,7 @@ import { pinJson, pinLines, scanJson, scanLines } from "../lib/summary.mjs";
 import { formatReport, formatReportGithub, formatReportJson } from "../lib/check-report.mjs";
 
 const USAGE = [
-  "usage: anatomiya scan   [path] [--dry-run] [--deep] [--format <name>]",
+  "usage: anatomiya scan   [path] [--dry-run] [--format <name>]",
   "       anatomiya check  [path] [--base <ref>] [--format <name>]",
   "       anatomiya pin    [path] [--dry-run] [--format <name>]",
   "       anatomiya doctor",
@@ -16,11 +16,12 @@ const USAGE = [
   "A command word is required. Given none, this usage is what prints, and",
   "nothing is written; an unknown one is refused by name.",
   "",
-  "--deep adds the typescript checker to a scan: measured about 3x a plain scan",
-  "on a 3,800-file repository, and it needs the optional typescript dependency",
-  "and the repository's own dependencies on disk inside it. It is a scan option",
-  "only, because the checker is whole-program and a check would have to build",
-  "the corpus twice.",
+  "scan runs the typescript checker on its own where it can resolve types: the",
+  "optional typescript dependency is installed and the repository's own",
+  "dependencies are on disk inside it. It measured about 3x a plain scan on a",
+  "3,800-file repository and about 8x on a 2,600-file one. check never runs it,",
+  "because the checker is whole-program and a check would have to build the",
+  "corpus twice.",
   "",
   "--format is text by default. json prints the same answer as a record, for a",
   "reader that is not a terminal. github prints one annotation per finding and",
@@ -40,9 +41,9 @@ const USAGE = [
 /**
  * Every command: which of the shared arguments it answers to, and its arm. An
  * argument a command has no use for is refused with the usage rather than
- * accepted and quietly ignored, which is the trade --deep already makes. The
- * arm lives here so a verb cannot be declared without one: the dispatch that
- * ended in a bare else scanned for any verb it did not name.
+ * accepted and quietly ignored. The arm lives here so a verb cannot be declared
+ * without one: the dispatch that ended in a bare else scanned for any verb it
+ * did not name.
  */
 const COMMANDS = {
   scan: {
@@ -50,7 +51,7 @@ const COMMANDS = {
     dryRun: true,
     formats: ["text", "json"],
     async run(cwd, opts) {
-      const { result, summary } = await runScan(cwd, { dryRun: opts.dryRun, deep: opts.deep });
+      const { result, summary } = await runScan(cwd, { dryRun: opts.dryRun });
       // A scan run by hand is the refresh's answer too: it clears a failed
       // refresh the echo is reporting, and the next refresh has nothing to redo.
       if (!opts.dryRun) await noteScan(result.root);
@@ -218,21 +219,13 @@ function parseArgs(argv) {
   }
   const cmd = argv.shift();
   const spec = COMMANDS[cmd];
-  const opts = { cmd, path: null, dryRun: false, baseRef: null, deep: false, format: "text" };
+  const opts = { cmd, path: null, dryRun: false, baseRef: null, format: "text" };
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === "-h" || arg === "--help") return { ...opts, help: true };
     if (arg === "--deep") {
-      // The checker is whole-program. Answering a branch with it would mean
-      // building the whole corpus at two revisions, which is a scan's cost and
-      // not a check's, so the flag is refused here rather than accepted and
-      // quietly ignored: it was accepted, recorded as having run, and never run.
-      if (cmd !== "scan") {
-        fail(`${cmd} takes no --deep option: the type checker runs on \`anatomiya scan --deep\`\n${USAGE}`);
-      }
-      opts.deep = true;
-      continue;
+      fail(`--deep is not an option: scan runs the type checker on its own where it can resolve types\n${USAGE}`);
     }
     if (arg === "--dry-run") {
       if (!spec.dryRun) fail(`${cmd} takes no --dry-run option\n${USAGE}`);
@@ -250,9 +243,9 @@ function parseArgs(argv) {
       const value = arg === "--format" ? argv[++i] : arg.slice("--format=".length);
       if (!value || value.startsWith("-")) fail(`--format needs a name\n${USAGE}`);
       if (!FORMATS.has(value)) fail(`unknown format: ${value}\n${USAGE}`);
-      // Refused rather than accepted and answered in text, which is the same
-      // trade --deep makes: a format that was asked for and quietly not used
-      // reads as a run whose output shape nobody has to check.
+      // Refused rather than accepted and answered in text: a format that was
+      // asked for and quietly not used reads as a run whose output shape nobody
+      // has to check.
       if (!spec.formats.includes(value)) {
         fail(`${cmd} does not answer in ${value}: it answers in ${spec.formats.join(" and ")}\n${USAGE}`);
       }
