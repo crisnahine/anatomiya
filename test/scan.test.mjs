@@ -11,13 +11,16 @@ import { renderOverview } from "../plugins/anatomiya/lib/render.mjs";
 import { globsReach } from "../plugins/anatomiya/lib/areas.mjs";
 import { PIN_PATH, PIN_SCHEMA } from "../plugins/anatomiya/lib/baseline.mjs";
 import { RUBY_GUARDS } from "../plugins/anatomiya/lib/ruby.mjs";
+import { defaultPoolSize } from "../plugins/anatomiya/lib/pool.mjs";
+import { checkerBlocked, loadTypeScript } from "../plugins/anatomiya/lib/semantic.mjs";
 import { needsRuby } from "./ruby-available.mjs";
 
 // The directory is removed through the test context, so a failing assertion
 // still cleans up instead of leaving a repository in the temporary directory.
 function repo(t, build) {
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-scan-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  // Retried because a scan's history read can still hold the directory open on Windows.
+  t.after(() => rmSync(dir, { recursive: true, force: true, maxRetries: 5 }));
 
   const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" }).toString();
   git("init", "-q");
@@ -87,6 +90,31 @@ function stable(result) {
     })),
   };
 }
+
+test("a scan that fails while the checker runs beside it stops the checker", async (t) => {
+  if (defaultPoolSize() === 1) return t.skip("with no spare core the checker waits for the parse");
+  if (!(await loadTypeScript())) return t.skip("typescript is not installed");
+  const dir = repo(t, (d, { git, write }) => {
+    write("tsconfig.json", "{}\n");
+    write("src/a.ts");
+    git("add", ".");
+    git("commit", "-qm", "init");
+    write("node_modules/dep/index.js", "\n");
+  });
+  assert.equal(await checkerBlocked(dir, { checkedRels: ["src/a.ts"] }), null, "the fixture has to open the checker's gate");
+  const signals = [];
+  const fakeChecker = (root, files, { signal }) => {
+    signals.push(signal);
+    return new Promise((done) => signal.addEventListener("abort", () => done({ records: new Map(), error: "stopped" })));
+  };
+
+  await assert.rejects(scan(dir, { guards: { nope: {} }, runChecker: fakeChecker }), /nope/);
+  // Either the checker started before the parse failed or its gate is still
+  // settling; give the gate the time it takes to reach the checker.
+  await new Promise((resolve) => setTimeout(resolve, 1_500));
+
+  assert.ok(signals.every((s) => s.aborted), "a checker the failed scan started was left to run out its clock");
+});
 
 test("a scan that counted tracked source never also counts untracked source", async (t) => {
   // The overview's head lines for the two states say opposite things: one says

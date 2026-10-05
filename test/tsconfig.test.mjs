@@ -451,6 +451,29 @@ test("every read the compiler host offers refuses a path outside the root", (t) 
   assert.deepEqual(reached.filter((r) => r.includes("b.ts")), [], "the far side saw a path the host had refused");
 });
 
+test("the compiler host refuses a link out of the tree on every ask, not only the first", needsSymlinks, (t) => {
+  // It remembers each path's answer for the build, so a second ask must get the
+  // same refusal and never fall through to the far side.
+  const dir = tree(t);
+  const away = tree(t);
+  writeFileSync(join(away, "secret.ts"), "export const secret = 1;\n");
+  symlinkSync(away, join(dir, "out"));
+  const via = join(dir, "out", "secret.ts");
+  const inside = join(dir, "a.ts");
+  writeFileSync(inside, "export const a = 1;\n");
+  const { ts, reached } = compiler({ [via]: "export const secret = 1;", [inside]: "export const a = 1;" });
+
+  const host = confinedCompilerHost(ts, dir, {});
+
+  for (let ask = 0; ask < 2; ask++) {
+    assert.equal(host.fileExists(via), false);
+    assert.equal(host.readFile(via), undefined);
+    assert.equal(host.getSourceFile(via), undefined);
+    assert.equal(host.readFile(inside), "export const a = 1;");
+  }
+  assert.deepEqual(reached.filter((r) => r.includes("secret")), [], "the far side saw a path the host had refused");
+});
+
 test("the compiler host answers for the root it was given, and writes nothing", (t) => {
   // A checker asked for a program can be asked to emit one, and this runs over
   // somebody else's repository. `noEmit` already says so; this is the second

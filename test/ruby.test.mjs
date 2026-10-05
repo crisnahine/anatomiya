@@ -297,6 +297,29 @@ exec sleep 30
   assert.equal(out.results[0].crashed, true);
 });
 
+test("one stalled child beside one that answered is files charged, not a stall", needsShebang, async (t) => {
+  // A single child that said ready and then went silent reports a version and
+  // no stall. Split across children, the run has to answer the same way.
+  const bin = mkdtempSync(join(tmpdir(), "anatomiya-ruby-half-"));
+  t.after(() => rmSync(bin, { recursive: true, force: true }));
+  writeFileSync(
+    join(bin, "ruby"),
+    `#!/bin/sh
+case "$*" in *Gem::Specification*) printf '[]'; exit 0 ;; esac
+if tr '\\000' '\\n' | grep -q 'b[.]rb'; then exec sleep 30; fi
+printf '{"ready":true,"prism":"9.9.9"}\\n{"rel":"a.rb","ok":false,"error":"x"}\\n'
+`,
+    { mode: 0o755 }
+  );
+  const files = ["a.rb", "b.rb"].map((rel) => ({ rel, abs: join(bin, rel) }));
+
+  const out = await parseRuby(files, { ruby: join(bin, "ruby"), shards: 2, guards: { idleMs: 1500 } });
+
+  assert.equal(out.version, "9.9.9");
+  assert.equal(out.stalled, null);
+  assert.deepEqual(out.results.map((r) => [r.rel, Boolean(r.crashed)]), [["a.rb", false], ["b.rb", true]]);
+});
+
 test("a mistyped size override refuses loudly instead of dying inside the child", async () => {
   // Ungated: the refusal happens before any interpreter is spawned. `null` is
   // the sharp half, because `Number(null)` is a finite zero and interpolated
@@ -1123,6 +1146,45 @@ test("scope attribution resolves to the innermost declaration, not the block", n
     if (n.t === "call" && n.name === "now") where = [ctx.def && ctx.def.name, ctx.cls && ctx.cls.name];
   });
   assert.deepEqual(where, ["run", "Outer"], "a block does not shadow the method it sits in");
+});
+
+test("leaving a declaration hands its context back to the one around it", () => {
+  const seen = {};
+  const call = (name) => ({ t: "call", name });
+  const tree = {
+    t: "class",
+    name: "Outer",
+    body: [
+      { t: "def", name: "run", body: [call("inDef"), { t: "class", name: "Local", body: [call("inLocal")] }, call("afterLocal")] },
+      call("afterDef"),
+      { t: "singleton_class", body: [call("inSingleton")] },
+      { t: "module", name: "Inner", body: [call("inInner")] },
+      call("afterInner"),
+    ],
+  };
+  walkRuby(tree, (n, ctx) => {
+    if (n.t === "call") seen[n.name] = [ctx.def?.name ?? null, ctx.cls?.name ?? null, ctx.enclosing?.t ?? null, ctx.stack.length];
+  });
+  assert.deepEqual(seen, {
+    inDef: ["run", "Outer", "def", 2],
+    inLocal: ["run", "Local", "class", 3],
+    afterLocal: ["run", "Outer", "def", 2],
+    afterDef: [null, "Outer", "class", 1],
+    inSingleton: [null, "Outer", "singleton_class", 2],
+    inInner: [null, "Inner", "module", 2],
+    afterInner: [null, "Outer", "class", 1],
+  });
+});
+
+test("a run split across children answers every file in the order it was handed", needsRuby, async () => {
+  const files = Object.keys(SRC).map((name) => ({ rel: `${name}.rb`, abs: join(dir, `${name}.rb`) }));
+  const one = await parseRuby(files, { dimensions: RUBY_DIMENSIONS, shards: 1 });
+  const split = await parseRuby(files, { dimensions: RUBY_DIMENSIONS, shards: 3 });
+
+  assert.deepEqual(split.results.map((r) => r.rel), files.map((f) => f.rel));
+  assert.deepEqual(split.results, one.results, "the same records, whichever child read them");
+  assert.equal(split.version, one.version);
+  assert.equal(split.error, null);
 });
 
 test("a namespaced constant reads back as its dotted name", needsRuby, () => {

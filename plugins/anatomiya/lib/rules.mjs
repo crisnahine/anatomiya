@@ -265,7 +265,7 @@ function nativeUpTo(p) {
   return parent === p ? p : join(nativeUpTo(parent), basename(p));
 }
 
-export function resolveInside(root, relPath) {
+export function resolveInside(root, relPath, { realpath = realpathSync } = {}) {
   const parts = relPath.split("/");
   // Plain `realpathSync` on both sides here, not the native form
   // `realpathOrNull` uses: this walk compares its own answers against each
@@ -273,7 +273,7 @@ export function resolveInside(root, relPath) {
   // 8.3 short one would fail to contain a path that is inside.
   let base;
   try {
-    base = realpathSync(root);
+    base = realpath(root);
   } catch {
     return null;
   }
@@ -288,7 +288,7 @@ export function resolveInside(root, relPath) {
     const next = join(at, parts[i]);
     let real;
     try {
-      real = realpathSync(next);
+      real = realpath(next);
     } catch {
       // A dangling link resolves to nothing and is still a link: creating
       // through it lands wherever it points, the moment that exists.

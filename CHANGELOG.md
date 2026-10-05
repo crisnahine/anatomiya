@@ -7,6 +7,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Changed
+
+- `scan` is faster on large repositories, with the same map: the history read runs beside the parse,
+  and so does the type checker wherever a core is spare, Ruby is read by up to four children instead
+  of one, the checker's compiler host stops re-walking `realpath` for a path it already answered,
+  the memory guard's `ps` no longer holds the parent between files, and the Ruby walk tracks the
+  enclosing method and class as it descends instead of searching for them at every node.
+
 ## [0.13.1] - 2026-10-01
 
 Plain JavaScript stops paying for a type checker that cannot answer there, and the corpus runs can

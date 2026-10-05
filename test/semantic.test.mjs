@@ -351,6 +351,33 @@ test("a checker that never finishes its program build is killed by the clock tha
   assert.equal(r.records.size, 0);
 });
 
+test("a checker the scan stopped is killed at once rather than waited on", { timeout: 15_000 }, async (t) => {
+  // A scan that failed beside it would otherwise hold the process open until
+  // the build clock, ten minutes by default, ran out.
+  const { dir, worker } = stallingWorker(t, "stopped", "");
+  const stop = new AbortController();
+  const started = Date.now();
+  const run = runSemantic(dir, [{ rel: "a.ts", abs: join(dir, "a.ts"), lang: "js" }], { workerPath: worker, signal: stop.signal });
+  setTimeout(() => stop.abort(), 100);
+  const r = await run;
+
+  assert.equal(r.status, "degraded");
+  assert.match(String(r.error ?? ""), /scan stopped/);
+  assert.ok(Date.now() - started < 5_000, "answered long before any clock would have");
+});
+
+test("a checker asked for after the scan already stopped is never left running", { timeout: 15_000 }, async (t) => {
+  const { dir, worker } = stallingWorker(t, "prestopped", "");
+  const stop = new AbortController();
+  stop.abort();
+  const started = Date.now();
+
+  const r = await runSemantic(dir, [{ rel: "a.ts", abs: join(dir, "a.ts"), lang: "js" }], { workerPath: worker, signal: stop.signal });
+
+  assert.match(String(r.error ?? ""), /scan stopped/);
+  assert.ok(Date.now() - started < 1_000, "answered at once");
+});
+
 test("a checker that built its program and then stalled is killed by the shorter clock", { timeout: 15_000 }, async (t) => {
   // The window moves once the build lands: after it, silence is a stall rather
   // than a large repository, and a run that answered one file of a thousand is
