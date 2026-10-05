@@ -42,38 +42,45 @@ export const ownDef = (n) => n.t === "def" && (!n.receiver || n.receiver.t === "
 export function walkRuby(ast, visit) {
   const stack = [];
   const ancestors = [];
+  // Kept as the walk descends, not searched for per node: this runs once per
+  // node per dimension, and the search was most of a Ruby-heavy scan.
+  let def = null;
+  let cls = null;
 
   const step = (node) => {
-    if (!node || typeof node !== "object") return;
+    if (node === null || typeof node !== "object") return;
 
     if (Array.isArray(node)) {
       for (const child of node) step(child);
       return;
     }
-    if (typeof node.t !== "string") return;
+    const t = node.t;
+    if (typeof t !== "string") return;
 
-    const isDecl = DECL.has(node.t);
-    visit(node, {
-      stack,
-      ancestors,
-      enclosing: stack.length ? stack[stack.length - 1] : null,
-      def: last(stack, (n) => n.t === "def"),
-      cls: last(stack, (n) => n.t === "class" || n.t === "module"),
-    });
+    visit(node, { stack, ancestors, enclosing: stack.length ? stack[stack.length - 1] : null, def, cls });
 
-    if (isDecl) stack.push(node);
+    const isDecl = DECL.has(t);
+    const outerDef = def;
+    const outerCls = cls;
+    if (isDecl) {
+      stack.push(node);
+      if (t === "def") def = node;
+      else if (t === "class" || t === "module") cls = node;
+    }
     ancestors.push(node);
-    for (const key of Object.keys(node)) step(node[key]);
+    for (const key of Object.keys(node)) {
+      const v = node[key];
+      if (v !== null && typeof v === "object") step(v);
+    }
     ancestors.pop();
-    if (isDecl) stack.pop();
+    if (isDecl) {
+      stack.pop();
+      def = outerDef;
+      cls = outerCls;
+    }
   };
 
   step(ast);
-}
-
-function last(stack, pred) {
-  for (let i = stack.length - 1; i >= 0; i--) if (pred(stack[i])) return stack[i];
-  return null;
 }
 
 /**

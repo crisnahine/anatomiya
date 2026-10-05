@@ -423,18 +423,17 @@ test("a worker that cannot be forked fails the pool with its reason, not an unha
   }
 });
 
-test("a ps that will not return costs the poll its timeout, not the run", needsShebang, () => {
-  // F5: every subprocess here carries a timeout, and this one runs through
-  // `execFileSync`, which blocks the parent's event loop. Without the timeout
-  // the guard that exists to stop a runaway parse becomes the hang. Handed
-  // through the seam rather than PATH, which no longer decides which `ps`
-  // runs, and as a platform that polls with one, since Linux reads /proc.
+test("a ps that will not return costs the poll its timeout, not the run", needsShebang, async () => {
+  // F5: every subprocess here carries a timeout. Without it the guard that
+  // exists to stop a runaway parse becomes the hang. Handed through the seam
+  // rather than PATH, which no longer decides which `ps` runs, and as a
+  // platform that polls with one, since Linux reads /proc.
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-ps-"));
   writeFileSync(join(dir, "ps"), "#!/bin/sh\nsleep 30\n", { mode: 0o755 });
 
   const started = Date.now();
   try {
-    const out = rssOf([process.pid], GUARDS, { platform: "darwin", ps: join(dir, "ps") });
+    const out = await rssOf([process.pid], GUARDS, { platform: "darwin", ps: join(dir, "ps") });
     const elapsed = Date.now() - started;
 
     assert.equal(out.size, 0, "a ps that answered nothing reports nothing");
@@ -444,6 +443,22 @@ test("a ps that will not return costs the poll its timeout, not the run", needsS
   }
 });
 
+test("a parse over the memory ceiling is killed and charged, and the same file parses under the default", async (t) => {
+  // Windows has no poll, so the five-second clock is the only guard there.
+  if (process.platform === "win32") return t.skip("no resident-size poll on Windows");
+  const body = "export const a = [" + Array.from({ length: 40000 }, (_, i) => `{ k${i}: ${i} }`).join(",") + "];\n";
+
+  await withPool({ size: 1, guards: { rssBytes: 1, rssGraceMs: 0, rssPollMs: 5 } }, async (pool, dir) => {
+    const r = await pool.parse(file(dir, "big.js", body));
+    assert.equal(r.ok, false, "every worker is over a one-byte ceiling");
+    assert.equal(r.crashed, true);
+    assert.equal(r.attempts, 1, "a kill for memory is charged, not retried");
+  });
+  await withPool({ size: 1 }, async (pool, dir) => {
+    assert.equal((await pool.parse(file(dir, "big.js", body))).ok, true, "so the ceiling is what failed it");
+  });
+});
+
 test("the memory poll bounds what it will read back", () => {
   // The same battery every other subprocess carries: a timeout and a byte
   // bound, both named rather than left to the default.
@@ -451,17 +466,17 @@ test("the memory poll bounds what it will read back", () => {
   assert.ok(Number.isFinite(GUARDS.psMaxBytes) && GUARDS.psMaxBytes > 0);
 });
 
-test("the poll reads a live process's resident size", () => {
+test("the poll reads a live process's resident size", async () => {
   // The guard has to work, not only fail safely: a run whose ps is fine must
   // still get a number back, or the RSS ceiling never fires on anything.
   if (process.platform === "win32") return;
 
-  const out = rssOf([process.pid]);
+  const out = await rssOf([process.pid]);
 
   assert.ok(out.get(process.pid) > 0, "this process has a resident size");
 });
 
-test("the poll reads a resident size on a machine with no ps on PATH", needsPathControl, () => {
+test("the poll reads a resident size on a machine with no ps on PATH", needsPathControl, async () => {
   // Slim images (node:*-slim and most devcontainers) ship no procps, and the
   // guard shelled out to `ps` through PATH and swallowed the ENOENT: measured,
   // three files a forced 1 MB ceiling killed with `ps` present all parsed with
@@ -470,7 +485,7 @@ test("the poll reads a resident size on a machine with no ps on PATH", needsPath
   const path = process.env.PATH;
   process.env.PATH = "";
   try {
-    const out = rssOf([process.pid]);
+    const out = await rssOf([process.pid]);
 
     assert.ok(out.get(process.pid) > 0, "this process has a resident size with nothing on PATH");
   } finally {
@@ -478,17 +493,17 @@ test("the poll reads a resident size on a machine with no ps on PATH", needsPath
   }
 });
 
-test("where the poll runs ps, it reads the same resident size", (t) => {
+test("where the poll runs ps, it reads the same resident size", async (t) => {
   // macOS and the BSDs still take this path, and without this case it would
   // run only on the one CI job that is not Linux.
   if (process.platform === "win32" || !existsSync("/bin/ps")) return t.skip("no /bin/ps on this machine");
 
-  const out = rssOf([process.pid], GUARDS, { platform: "darwin" });
+  const out = await rssOf([process.pid], GUARDS, { platform: "darwin" });
 
   assert.ok(out.get(process.pid) > 0, "this process has a resident size");
 });
 
-test("a ps in the directory the scan runs from is never the one the guard runs", { ...needsPathControl, ...needsShebang }, (t) => {
+test("a ps in the directory the scan runs from is never the one the guard runs", { ...needsPathControl, ...needsShebang }, async (t) => {
   // `scan .` runs from the repository, and an empty PATH entry is the current
   // directory: measured, a `ps` committed to the scanned repository ran as the
   // user, handed the workers' pids, while the guard polled.
@@ -500,7 +515,7 @@ test("a ps in the directory the scan runs from is never the one the guard runs",
   process.env.PATH = ":";
   process.chdir(dir);
   try {
-    rssOf([process.pid]);
+    await rssOf([process.pid]);
   } finally {
     process.chdir(cwd);
     process.env.PATH = path;

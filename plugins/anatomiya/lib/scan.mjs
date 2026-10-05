@@ -3,6 +3,7 @@ import { langHas } from "./langs.mjs";
 import { discover, areaFloor, areaCeiling, dirCount } from "./areas.mjs";
 import { adoptedCapabilities } from "./dimensions.mjs";
 import { parseAll } from "./parse.mjs";
+import { defaultPoolSize } from "./pool.mjs";
 import { checkerBlocked, runSemantic, semanticOver } from "./semantic.mjs";
 import { blockOf, reduceArea, verdictFor } from "./reduce.mjs";
 import { applyPairings } from "./pairing.mjs";
@@ -38,9 +39,10 @@ const poolKey = (d) => `${d.key}\u0000${d.learned ?? ""}\u0000${d.learnedKind ??
  * any more, so the Ruby per-line guard is the only cause left, and leaving the
  * path that silences every directive untested was the worse trade. What the
  * block then does to a slot is asked of `verdictFor` directly, which is why
- * this is one test and not the way that branch is covered.
+ * this is one test and not the way that branch is covered. `runChecker` is the
+ * seam that shows a failed scan stops the checker running beside it.
  */
-export async function scan(cwd, { guards = null } = {}) {
+export async function scan(cwd, { guards = null, runChecker = runSemantic } = {}) {
   const started = Date.now();
   const root = await gitRoot(cwd);
 
@@ -50,35 +52,54 @@ export async function scan(cwd, { guards = null } = {}) {
   // changes what every line below means, so it is asked before anything else.
   const untracked = files.length === 0 ? await countUntrackedSource(root) : 0;
 
-  const state = await resolveBaseline(root);
-  // The areas are partitioned over the corpus the pin was built over where there
-  // is one. The floor is a step function of the corpus size, so deriving it from
-  // today's file count re-partitions the repository on one added file and every
-  // area then reads as a population change against a pin that knew the old one.
-  const partitionSize = state.partitionSize ?? files.length;
-  const areas = discover(files, {
-    minFiles: areaFloor(partitionSize),
-    maxAreas: areaCeiling(partitionSize),
-    uncounted,
-  });
-
-  // A claim that belongs to a framework cannot be judged without knowing the
-  // repository uses it, and one file never says. Read from the corpus, so a
-  // fixture cannot make a repository look like a Rails application.
-  const frameworks = [...frameworksIn(files)];
-
-  const head = await parseAll(files, { guards, frameworks });
-  // Which routing claims this repository can be asked at all: at least three
-  // files already routing through a wrapper is what makes the habit real (C14).
-  const capabilities = adoptedCapabilities(head.records);
-
   // The second tier, where the repository can use it (B7). It runs once for the
   // whole corpus, because narrowing the file set was measured saving 3% and
   // driving unresolved types from 3.1% to 36.2%. Its verdict is taken once the
   // fold below knows which areas the map describes.
   const checked = files.filter((f) => langHas(f.lang, "semantic"));
-  const offReason = checked.length === 0 ? "no-checked-files" : await checkerBlocked(root, { checkedRels: checked.map((f) => f.rel) });
-  const whole = offReason ? null : await runSemantic(root, checked);
+  const stopChecker = new AbortController();
+  const startChecker = async () => {
+    const offReason = checked.length === 0 ? "no-checked-files" : await checkerBlocked(root, { checkedRels: checked.map((f) => f.rel) });
+    if (offReason || stopChecker.signal.aborted) return { offReason, whole: null };
+    return { offReason, whole: await runChecker(root, checked, { signal: stopChecker.signal }) };
+  };
+  // Neither needs the parse, so both start first; the checker only with a core
+  // to spare, or it slows the parse's one worker. The catches are for a throw below.
+  const semanticRun = defaultPoolSize() > 1 ? startChecker() : null;
+  const authorsRun = authorsByFile(root);
+  semanticRun?.catch(() => {});
+  authorsRun.catch(() => {});
+
+  let state, areas, frameworks, head;
+  try {
+    state = await resolveBaseline(root);
+    // The areas are partitioned over the corpus the pin was built over where
+    // there is one. The floor is a step function of the corpus size, so deriving
+    // it from today's file count re-partitions the repository on one added file
+    // and every area then reads as a population change against a pin that knew
+    // the old one.
+    const partitionSize = state.partitionSize ?? files.length;
+    areas = discover(files, {
+      minFiles: areaFloor(partitionSize),
+      maxAreas: areaCeiling(partitionSize),
+      uncounted,
+    });
+
+    // A claim that belongs to a framework cannot be judged without knowing the
+    // repository uses it, and one file never says. Read from the corpus, so a
+    // fixture cannot make a repository look like a Rails application.
+    frameworks = [...frameworksIn(files)];
+
+    head = await parseAll(files, { guards, frameworks });
+  } catch (err) {
+    // Otherwise the process stays up until a checker nobody will read finishes.
+    stopChecker.abort();
+    throw err;
+  }
+  const { offReason, whole } = await (semanticRun ?? startChecker());
+  // Which routing claims this repository can be asked at all: at least three
+  // files already routing through a wrapper is what makes the habit real (C14).
+  const capabilities = adoptedCapabilities(head.records);
   const tier = whole ? "all" : "syntactic";
   if (whole) mergeSemanticHits(head.records, whole.records);
   // An obligation is answered by the corpus, not by a tree, so it is merged in
@@ -87,7 +108,7 @@ export async function scan(cwd, { guards = null } = {}) {
   applyPairings(head.records, corpusRels, langsIn(files));
   const headTruncated = corpusTruncated || head.truncated;
 
-  const authors = await authorsByFile(root);
+  const authors = await authorsRun;
   // Unread history and empty history both give every file zero authors, which
   // fails the author gate on every dimension. Only one of them is a real answer.
   const authorsError = authors.error ?? null;

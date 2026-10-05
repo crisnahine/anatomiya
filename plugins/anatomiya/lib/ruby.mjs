@@ -5,6 +5,7 @@ import { guardsOver, MAX_FILE_BYTES } from "./limits.mjs";
 import { firstLine } from "./encode.mjs";
 import { olderThan } from "./version.mjs";
 import { ENGINES } from "./langs.mjs";
+import { defaultPoolSize } from "./pool.mjs";
 import { execFile } from "node:child_process";
 import { tmpdir } from "node:os";
 import { delimiter, isAbsolute } from "node:path";
@@ -353,21 +354,56 @@ data.split("\\0").each_slice(2) do |rel, abs|
 end
 `;
 
+// Each child is handed at least this many files: for fewer, an interpreter's
+// startup costs more than it saves.
+const MIN_SHARD_FILES = 500;
+// Past four the parent's own walk of the trees is what the scan waits on.
+const MAX_SHARDS = Math.min(4, defaultPoolSize());
+
+function shardsFor(count) {
+  return Math.max(1, Math.min(MAX_SHARDS, Math.floor(count / MIN_SHARD_FILES)));
+}
+
 /**
- * Parse Ruby files. Resolves once the child has exited or a guard has fired.
+ * Parse Ruby files. Resolves once every child has exited or a guard has fired.
  *
  * The results are the whole record: `parse.mjs` classifies every outcome off
  * them, so no count rides beside them.
  */
 export async function parseRuby(
   files,
-  { ruby = "ruby", guards: given = null, dimensions = [] } = {},
+  { ruby = "ruby", guards: given = null, dimensions = [], shards = shardsFor(files.length) } = {},
 ) {
   const guards = guardsOver(RUBY_GUARDS, given, "prism");
   // Built once, and before any child: a bad override refuses here, loudly,
   // rather than dying inside the spawn where it reads as a broken install.
   const rubyScript = scriptFor(guards.maxBytes);
-  const out = {
+  if (files.length === 0) return blank();
+  const load = await prismLoadArgs({ ruby });
+
+  // One child left the parent idle for most of a large Ruby repository. Shards
+  // are contiguous and joined in order, so the records arrive as one child sends them.
+  const size = Math.ceil(files.length / Math.max(1, shards));
+  const batches = [];
+  for (let i = 0; i < files.length; i += size) batches.push(files.slice(i, i + size));
+  const outs = await Promise.all(batches.map((batch) => parseBatch(batch, { ruby, guards, rubyScript, load, dimensions })));
+
+  const out = blank();
+  for (const o of outs) {
+    for (const r of o.results) out.results.push(r);
+    out.truncated = out.truncated || o.truncated;
+    out.version ??= o.version;
+    out.error ??= o.error;
+    out.missingParser ??= o.missingParser;
+    out.stalled ??= o.stalled;
+  }
+  // Stalled says no child ever started reading, which one that answered disproves.
+  if (out.version !== null) out.stalled = null;
+  return out;
+}
+
+function blank() {
+  return {
     results: [],
     truncated: false,
     // Which prism read these files, off the child's own ready line. It was
@@ -380,11 +416,13 @@ export async function parseRuby(
     // version says nothing about the install.
     stalled: null,
   };
-  if (files.length === 0) return out;
+}
 
+/** One child over one contiguous batch, retried once for what a timer cut off. */
+async function parseBatch(files, { ruby, guards, rubyScript, load, dimensions }) {
+  const out = blank();
   const seen = new Set();
   const unanswered = () => files.filter((f) => !seen.has(f.rel));
-  const load = await prismLoadArgs({ ruby });
 
   // Resolves true when one of our own timers did the killing, which is the only
   // ending a second child could answer differently.

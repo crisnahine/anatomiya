@@ -11,7 +11,7 @@
  * counted, and half a dozen options make the checker write to disk in a tree
  * somebody is working in.
  */
-import { existsSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import { dirname, join, resolve, relative, isAbsolute, posix, win32 } from "node:path";
 
 import { realpathOf, resolveInside } from "./rules.mjs";
@@ -39,13 +39,13 @@ export const FORCED_OPTIONS = {
 };
 
 /** Whether an absolute path resolves inside the repository, links followed. */
-export function insideRoot(root, abs) {
+export function insideRoot(root, abs, { realpath } = {}) {
   const rel = relative(resolve(root), resolve(abs));
   if (rel === "") return true;
   if (climbs(rel) || isAbsolute(rel)) return false;
   // Lexical containment costs nothing and is not containment: resolve()
   // normalises ".." and follows no link, and the checker's own reads do.
-  return resolveInside(root, rel.split(/[\\/]/).join("/")) !== null;
+  return resolveInside(root, rel.split(/[\\/]/).join("/"), { realpath }) !== null;
 }
 
 /**
@@ -233,10 +233,14 @@ export function confinedCompilerHost(ts, root, options) {
   // chain read as one type, and the tier reported 0% resolution everywhere.
   const realRoot = realpathOf(root);
   const realLibDir = realpathOf(libDir);
-  const allowed = (p) => {
-    if (insideRoot(root, p) || contains(libDir, p)) return true;
+  const realpath = remembered(realpathSync);
+  const permitted = (p) => {
+    if (insideRoot(root, p, { realpath }) || contains(libDir, p)) return true;
     return contains(realRoot, realpathOf(p)) || contains(realLibDir, realpathOf(p));
   };
+  // Module resolution asks about thousands of paths, each a walk of realpath
+  // calls up from the root, and the uncached walk was 45% of building the program.
+  const allowed = remembered(permitted);
 
   return {
     ...base,
@@ -250,5 +254,23 @@ export function confinedCompilerHost(ts, root, options) {
     readDirectory: (p, ...rest) => (allowed(p) ? base.readDirectory(p, ...rest) : []),
     realpath: base.realpath,
     getCurrentDirectory: () => root,
+  };
+}
+
+/** `fn` answering each argument once, a throw included, for a build that sees a fixed tree. */
+function remembered(fn) {
+  const seen = new Map();
+  return (p) => {
+    let r = seen.get(p);
+    if (r === undefined) {
+      try {
+        r = { value: fn(p) };
+      } catch (error) {
+        r = { error };
+      }
+      seen.set(p, r);
+    }
+    if ("error" in r) throw r.error;
+    return r.value;
   };
 }
