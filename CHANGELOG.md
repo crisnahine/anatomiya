@@ -23,6 +23,12 @@ Scans of large repositories take about 40% less time and write the same map, byt
   2,600-file repository they measure, down from 8x. A scan that fails while the checker runs beside
   it now stops the checker instead of waiting for it.
 
+### Fixed
+
+- The growth tests size each timed side from warmed calls. The first call runs unoptimised and
+  measured twice as slow, so each side ran about 120ms instead of 250ms, and Windows counts CPU
+  time in 15.6ms steps: a linear ratio read 3.32 on a Windows runner against its bound of 3.
+
 ## [0.13.1] - 2026-10-01
 
 Plain JavaScript stops paying for a type checker that cannot answer there, and the corpus runs can
