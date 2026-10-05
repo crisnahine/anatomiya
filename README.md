@@ -437,7 +437,7 @@ as no dependencies), and the repository has a root `tsconfig.json` or a TypeScri
 is not a declaration file, and leaves it off otherwise. Plain JavaScript run on the compiler's
 defaults resolved 25% to 39% on three installed repositories, too little to state anything, and a
 `jsconfig.json` does not count. It costs: a scan with it measured about 3x a plain one on a
-3,800-file repository and about 8x on a 2,600-file one, and the checker is whole-program, so it
+3,800-file repository and about 6x on a 2,600-file one, and the checker is whole-program, so it
 cannot be narrowed to the files you changed. The map says when the checker answered badly.
 
 **Small directories are not covered.** A directory needs `clamp(round(sqrt(N) / 6), 3, 8)` source
