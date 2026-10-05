@@ -17,10 +17,18 @@ import { runInNewContext } from "node:vm";
 export function doublingRatio(make, n, { rounds = 3 } = {}) {
   // Windows counts CPU time in steps of about 15.6ms, so a short side reads as
   // none or rounds by a whole step. Each side runs long enough that a step is noise.
+  // Sized from warmed calls: the first runs unoptimised, measured at twice a
+  // warm one, which left each side at half the time it was meant to run.
   const probe = make(n);
-  const once = process.hrtime.bigint();
   probe();
-  const reps = Math.max(1, Math.ceil(MIN_SPENT_NS / Math.max(1, Number(process.hrtime.bigint() - once))));
+  let calls = 0;
+  const warm = process.hrtime.bigint();
+  do {
+    probe();
+    calls++;
+  } while (Number(process.hrtime.bigint() - warm) < CALIBRATE_NS);
+  const each = Number(process.hrtime.bigint() - warm) / calls;
+  const reps = Math.max(1, Math.ceil(MIN_SPENT_NS / Math.max(1, each)));
   const best = [Infinity, Infinity];
   for (let r = 0; r < rounds; r++) {
     for (const [side, size] of [[0, n], [1, 2 * n]]) {
@@ -36,6 +44,7 @@ export function doublingRatio(make, n, { rounds = 3 } = {}) {
 }
 
 const MIN_SPENT_NS = 250e6;
+const CALIBRATE_NS = 20e6;
 
 // cpuUsage counts the collector's own threads, so garbage left by building the
 // input would be charged to the work, more of it on the larger side.

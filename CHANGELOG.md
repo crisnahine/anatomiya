@@ -7,6 +7,28 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.13.2] - 2026-10-05
+
+Scans of large repositories take about 40% less time and write the same map, byte for byte: across
+35 measured repositories the whole set went from 429s to 262s.
+
+### Changed
+
+- `scan` is faster on large repositories, with the same map: the history read runs beside the parse,
+  and so does the type checker wherever a core is spare, Ruby is read by up to four children instead
+  of one, the checker's compiler host stops re-walking `realpath` for a path it already answered,
+  the memory guard's `ps` no longer holds the parent between files, and the Ruby walk tracks the
+  enclosing method and class as it descends instead of searching for them at every node.
+- `--help`, the README and the scan command say the checker costs about 6x a plain scan on the
+  2,600-file repository they measure, down from 8x. A scan that fails while the checker runs beside
+  it now stops the checker instead of waiting for it.
+
+### Fixed
+
+- The growth tests size each timed side from warmed calls. The first call runs unoptimised and
+  measured twice as slow, so each side ran about 120ms instead of 250ms, and Windows counts CPU
+  time in 15.6ms steps: a linear ratio read 3.32 on a Windows runner against its bound of 3.
+
 ## [0.13.1] - 2026-10-01
 
 Plain JavaScript stops paying for a type checker that cannot answer there, and the corpus runs can
@@ -3533,7 +3555,8 @@ which are partial; several listed there are not implemented yet.
 - No claim that this catches defects. Measured across ten repositories, 1 of 317 defect review
   comments was preventable by a conventions map.
 
-[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.13.1...HEAD
+[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.13.2...HEAD
+[0.13.2]: https://github.com/crisnahine/anatomiya/compare/v0.13.1...v0.13.2
 [0.13.1]: https://github.com/crisnahine/anatomiya/compare/v0.13.0...v0.13.1
 [0.13.0]: https://github.com/crisnahine/anatomiya/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/crisnahine/anatomiya/compare/v0.11.1...v0.12.0

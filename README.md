@@ -437,7 +437,7 @@ as no dependencies), and the repository has a root `tsconfig.json` or a TypeScri
 is not a declaration file, and leaves it off otherwise. Plain JavaScript run on the compiler's
 defaults resolved 25% to 39% on three installed repositories, too little to state anything, and a
 `jsconfig.json` does not count. It costs: a scan with it measured about 3x a plain one on a
-3,800-file repository and about 8x on a 2,600-file one, and the checker is whole-program, so it
+3,800-file repository and about 6x on a 2,600-file one, and the checker is whole-program, so it
 cannot be narrowed to the files you changed. The map says when the checker answered badly.
 
 **Small directories are not covered.** A directory needs `clamp(round(sqrt(N) / 6), 3, 8)` source
@@ -458,7 +458,7 @@ full numbers and their caveats are in [docs/why.md](docs/why.md).
 - [docs/plugin-contract.md](docs/plugin-contract.md) is what Claude Code requires of a plugin and a
   marketplace, read against the documentation and the CLI itself, with a source per claim and the
   version it was true of.
-- [DECISIONS.md](DECISIONS.md) is the build contract: 255 numbered decisions, each with the
+- [DECISIONS.md](DECISIONS.md) is the build contract: 256 numbered decisions, each with the
   measurement or the review finding that forced it. Why a threshold is where it is, why the parser
   runs in child processes, why no hook carries the map on its own: that is the file.
 - [docs/why.md](docs/why.md) is the longer argument and the full numbers.

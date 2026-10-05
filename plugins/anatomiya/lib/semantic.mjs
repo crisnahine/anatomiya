@@ -158,9 +158,10 @@ export function classifySemantic({ config, resolution }) {
  * guard the checker does not have is a caller's mistake rather than a run,
  * and rejects the way `parseAll` refuses one.
  *
- * The rate here is over every file; `semanticOver` narrows it.
+ * The rate here is over every file; `semanticOver` narrows it. `signal` stops the
+ * child, for a scan that failed while the checker ran beside it.
  */
-export function runSemantic(root, files, { guards: given = null, workerPath = WORKER, cwd = tmpdir() } = {}) {
+export function runSemantic(root, files, { guards: given = null, workerPath = WORKER, cwd = tmpdir(), signal = null } = {}) {
   return new Promise((resolve) => {
     // Inside the promise so a bad bag rejects rather than throws, which is how
     // `parseAll` answers one for either parse bridge. Taken whole, a bag naming
@@ -245,6 +246,9 @@ export function runSemantic(root, files, { guards: given = null, workerPath = WO
     // whole scan with it, including the syntactic pass that already finished.
     child.on("error", (err) => finish(`the checker could not run: ${err && err.message ? err.message : err}`));
 
+    const stopped = () => finish("the scan stopped before the checker finished");
+    signal?.addEventListener("abort", stopped, { once: true });
+    if (signal?.aborted) stopped();
     arm(guards.buildMs);
   });
 }
