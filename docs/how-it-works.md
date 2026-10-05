@@ -214,7 +214,7 @@ are named with that cause and no install remedy, since `doctor` reports that ins
 |---|---|---|
 | File size | 1 MB | checked with `stat` before the file is dispatched |
 | Wall time | 5s | `SIGKILL` from the parent; a file killed while other parses were in flight is retried once after the queue drains, with no other parse in flight, and one killed while it already ran alone is charged on that attempt, which is every kill in a one-worker pool (a one-file batch, or a machine with 2 or fewer CPUs) |
-| Resident memory | 1 GB | polled every 25ms, starting 250ms after the file goes in flight: read from `/proc/<pid>/status` on Linux, from `/bin/ps` on macOS and the BSDs, and not enforced on Windows, where the wall clock is what stops a runaway parse |
+| Resident memory | 1 GB | polled every 25ms, starting 250ms after the file goes in flight: read from `/proc/<pid>/status` on Linux, from `/bin/ps` on macOS and the BSDs without holding the parent, and not enforced on Windows, where the wall clock is what stops a runaway parse. A worker that moved on to another file while the read ran is not charged for the new one |
 | Worker start | 20s | `SIGKILL` from the parent for a worker that has not said ready; five such workers fail the pool, and its queued files are charged as crashed |
 
 Pool size is `min(8, cpus - 1)`. The memory grace period exists so a normal parse never pays for the
@@ -268,6 +268,13 @@ for minutes and what a hung parse looks like is silence; behind it sits a wall c
 number of files handed over, since a child that answers one file every fourteen seconds keeps the
 idle timer happy and never ends.
 
+A corpus of 1,000 Ruby files or more is split into contiguous batches, one child each, up to four
+and never more than the machine's cores less one, and the answers are joined in the order the files
+were handed over. One child left the parent idle for most of a Ruby-heavy scan; past four, the
+parent's own walk of the trees is what the scan waits on (measured on discourse: 22.1s with one
+child, 13.5s with four, 12.8s with six). Each child keeps its own clocks and its own retry, so a
+child that dies charges the files left in its batch and no others.
+
 A child either of those timers killed is spawned once more, for the files that never answered and no
 others, and only what is still unanswered after that is charged. Both timers measure the machine
 rather than the files, and a file charged as crashed in one scan and parsed in the next moves the
@@ -300,6 +307,13 @@ leaving it out would let an edit take a violation out of the baseline. A file wh
 unchanged lends the hits the working tree gives it even when its imported types moved in another
 area, the `tsconfig.json` changed or a dependency was upgraded: the checker is whole-program, and
 there is no program at the pin to ask.
+
+The checker and the history read start beside the parse rather than after it, since neither needs
+anything the parse answers. On a machine with no spare core (a one-worker pool) the checker still
+waits for the parse, because beside it, it would take the time of the parse's only worker. A scan
+that fails while the checker runs stops it rather than waiting on it. The compiler host asks each
+path's containment once per build: module resolution asks about the same paths thousands of times,
+and walking `realpath` up from the root on every ask was 45% of building the program.
 
 The checker builds one program over every JavaScript and TypeScript file, then measures the share
 of property accesses whose receiver resolved to a real type. Under 0.80 the tier is degraded and its

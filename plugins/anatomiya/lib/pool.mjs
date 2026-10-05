@@ -1,12 +1,14 @@
-import { execFileSync } from "node:child_process";
+import { execFile } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { readFileSync, statSync } from "node:fs";
 import { cpus } from "node:os";
+import { promisify } from "node:util";
 
 import { guardedChild, retryOnce } from "./child.mjs";
 import { guardsOver, MAX_FILE_BYTES } from "./limits.mjs";
 import { firstLine } from "./encode.mjs";
 
+const execFileAsync = promisify(execFile);
 const WORKER = fileURLToPath(new URL("./parse-worker.mjs", import.meta.url));
 
 export const GUARDS = {
@@ -16,10 +18,9 @@ export const GUARDS = {
   rssPollMs: 25,
   rssGraceMs: 250,
   // The memory guard's own subprocess carries the same battery every other
-  // subprocess here does. A `ps` that does not return would otherwise
-  // block the parent's event loop indefinitely, on the poll that exists to stop
-  // a runaway parse: the guard becomes the hang. One second is far past what a
-  // read of a handful of pids takes.
+  // subprocess here does. A `ps` that does not return would otherwise park the
+  // poll for good, and with it the guard that exists to stop a runaway parse.
+  // One second is far past what a read of a handful of pids takes.
   psTimeoutMs: 1_000,
   psMaxBytes: 64 * 1024,
   // A file is handed only to a worker that said ready, and nothing timed the
@@ -72,6 +73,7 @@ export function createPool({ size, withProgram = false, execArgv = [], guards = 
   let stalled = null;
   let stillborn = 0;
   let rssTimer = null;
+  let rssReading = false;
 
   function spawn() {
     // The clocks are the pool's rather than the supervisor's: a warm worker
@@ -255,13 +257,20 @@ export function createPool({ size, withProgram = false, execArgv = [], guards = 
 
     // Only watch a file that has been in flight a moment, so a normal parse
     // never pays for the polling.
-    const watched = inFlight.filter((w) => w.child.pid && now - w.started >= limits.rssGraceMs);
-    if (watched.length === 0) return;
+    const watched = inFlight
+      .filter((w) => w.child.pid && now - w.started >= limits.rssGraceMs)
+      .map((w) => ({ w, job: w.job, pid: w.child.pid }));
+    if (watched.length === 0 || rssReading) return;
 
-    const rss = rssOf(watched.map((w) => w.child.pid), limits);
-    for (const w of watched) {
-      if (rss.get(w.child.pid) > limits.rssBytes) w.sup.kill("memory");
-    }
+    // Read without blocking the loop that hands out files, so a worker that
+    // moved on to another file while `ps` ran is not charged for this one.
+    rssReading = true;
+    rssOf(watched.map((x) => x.pid), limits).then((rss) => {
+      rssReading = false;
+      for (const { w, job, pid } of watched) {
+        if (w.job === job && rss.get(pid) > limits.rssBytes) w.sup.kill("memory");
+      }
+    });
   }
 
   function parse(file) {
@@ -338,13 +347,14 @@ const PS = "/bin/ps";
  * Resident size per pid, and the one subprocess this module runs that is not a
  * worker, where it runs one at all.
  *
- * Exported because it is the guard's own guard: `execFileSync` blocks the
- * parent's event loop, so a `ps` that never returns is the memory guard
- * becoming the hang it exists to prevent, and the only way to show that the
- * timeout holds is to hand it a `ps` that stalls. `platform` and `ps` are that
- * seam: on Linux the poll never reaches a `ps`.
+ * Exported because it is the guard's own guard: a `ps` that never returns is
+ * the memory guard becoming the hang it exists to prevent, and the only way to
+ * show that the timeout holds is to hand it a `ps` that stalls. `platform` and
+ * `ps` are that seam: on Linux the poll never reaches a `ps`. Asynchronous,
+ * because a synchronous `ps` every 25ms held the parent for 1.7s of a
+ * 20,000-file scan, and no file is handed out while the parent is held.
  */
-export function rssOf(pids, limits = GUARDS, { platform = process.platform, ps = PS } = {}) {
+export async function rssOf(pids, limits = GUARDS, { platform = process.platform, ps = PS } = {}) {
   // No `ps` on Windows, and the usual replacement is on its way out: `wmic` is
   // removed in Windows 11 25H2 and gone entirely in the next feature update,
   // which is what `pidusage` still shells out to. Rather than ship an untested
@@ -356,20 +366,19 @@ export function rssOf(pids, limits = GUARDS, { platform = process.platform, ps =
   // ps is the portable way to read another process's resident size without a
   // native dependency.
   const out = new Map();
-  try {
-    const stdout = execFileSync(ps, ["-o", "pid=,rss=", "-p", pids.join(",")], {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
-      timeout: limits.psTimeoutMs,
-      killSignal: "SIGKILL",
-      maxBuffer: limits.psMaxBytes,
-    });
-    for (const line of stdout.split("\n")) {
-      const [pid, kb] = line.trim().split(/\s+/);
-      if (pid && kb) out.set(Number(pid), Number(kb) * 1024);
-    }
-  } catch {
-    /* the process is gone, or there is no ps; the exit handler takes it */
+  const stdout = await execFileAsync(ps, ["-o", "pid=,rss=", "-p", pids.join(",")], {
+    encoding: "utf8",
+    timeout: limits.psTimeoutMs,
+    killSignal: "SIGKILL",
+    maxBuffer: limits.psMaxBytes,
+  }).then(
+    (r) => r.stdout,
+    // The process is gone, or there is no ps; the exit handler takes it.
+    () => ""
+  );
+  for (const line of stdout.split("\n")) {
+    const [pid, kb] = line.trim().split(/\s+/);
+    if (pid && kb) out.set(Number(pid), Number(kb) * 1024);
   }
   return out;
 }
