@@ -90,8 +90,8 @@ Then, in the repository you want mapped:
 /anatomiya:scan
 ```
 
-It writes `.claude/rules/anatomiya-overview.md`, one file per area beside it, and
-`.claude/anatomiya/facts.json`. Pass `--dry-run` to see the plan without writing anything.
+It writes `.claude/rules/anatomiya-overview.md`, one file per area beside it,
+`.claude/anatomiya/facts.json`, and `layout.json` beside it. Pass `--dry-run` to see the plan without writing anything.
 
 To keep the map out of git:
 
@@ -462,7 +462,7 @@ full numbers and their caveats are in [docs/why.md](docs/why.md).
 - [docs/plugin-contract.md](docs/plugin-contract.md) is what Claude Code requires of a plugin and a
   marketplace, read against the documentation and the CLI itself, with a source per claim and the
   version it was true of.
-- [DECISIONS.md](DECISIONS.md) is the build contract: 256 numbered decisions, each with the
+- [DECISIONS.md](DECISIONS.md) is the build contract: 262 numbered decisions, each with the
   measurement or the review finding that forced it. Why a threshold is where it is, why the parser
   runs in child processes, why no hook carries the map on its own: that is the file.
 - [docs/why.md](docs/why.md) is the longer argument and the full numbers.

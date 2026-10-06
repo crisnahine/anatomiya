@@ -7,6 +7,38 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+Hooks, scans and checks take less time and give the same answers, byte for byte. The numbers below
+were measured on a loaded machine and will be re-timed before release.
+
+### Added
+
+- `.claude/anatomiya/layout.json`, written beside `facts.json` by every scan, holds the record's
+  layout on its own, stamped with the size and mtime of the record it was taken from. The notice,
+  the end-of-turn check and the refresh read it instead of parsing the whole record, and read the
+  record wherever the stamp does not match. A `.worktreeinclude` that copies the map can copy it
+  too, and the README's list now names it.
+
+### Changed
+
+- A hook loads only the modules its verb uses: 26 for the echo and the notice and 29 for the
+  refresh, where every hook loaded 65. The echo went from 64ms to 42ms, the notice from 66ms to
+  51ms and the refresh from 67ms to 44ms, against 21ms for bare node. On microsoft/vscode, whose
+  record is 10 MB, the notice went from 104ms to 48ms with the layout file.
+- `scan` walks each JavaScript and TypeScript tree once for every dimension instead of once per
+  dimension: 8.7 walks a file where it was 50.6 on a large front end, and this repository's scan
+  went from 897ms to 418ms. The baseline's git reads now run beside the parse.
+- `check` resolves HEAD once, runs its independent git reads side by side and asks git once per
+  commit sha: 26 git calls to 21 on a two-file branch here, and the median check went from 482ms to
+  347ms here, 1821ms to 1636ms on a large Rails API and 607ms to 413ms on eslint.
+- The type checker's compiler host answers each path once per build: 24,781 stats where it was
+  107,928 on a large front end, and that scan went from 19.7s to 17.8s.
+
+### Fixed
+
+- The type checker decides whether a path stays inside the repository on the path the system will
+  open. A `..` after a link (`src/up/../x` with `up -> ..`) was checked as text and could read a
+  file outside the repository; it is now taken from where the link leads and refused.
+
 ## [0.13.3] - 2026-10-06
 
 The docs catch up with Claude Code 2.1.288, which loads an area file after a Write or Edit as well as
