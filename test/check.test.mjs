@@ -5184,6 +5184,8 @@ function pendingRubyDeletion(t) {
   });
 }
 
+const namingHead = (calls) => calls.filter((c) => c.split(" ").some((arg) => /^HEAD\b|\.\.HEAD$/.test(arg)));
+
 test("a check resolves HEAD once and lists HEAD's tree once", needsShebang, async (t) => {
   const dir = pendingRubyDeletion(t);
   const head = execFileSync("git", ["rev-parse", "HEAD"], { cwd: dir }).toString().trim();
@@ -5192,13 +5194,8 @@ test("a check resolves HEAD once and lists HEAD's tree once", needsShebang, asyn
 
   assert.deepEqual(report.removed, ["app/models/user.rb"], "the fixture reached the pending deletion");
   assert.notEqual(report.drift, null, "the fixture reached the baseline");
-  // Every other read is handed HEAD's sha. The one diff that still names HEAD
-  // reads its tree and resolves nothing a later read depends on.
-  const namingHead = calls.filter((c) => c.split(" ").some((arg) => /^HEAD\b|\.\.HEAD$/.test(arg)));
-  assert.deepEqual(namingHead.map((c) => c.split(" ")[0] === "-c" ? "diff" : c), [
-    "rev-parse --verify --quiet HEAD^{commit}",
-    "diff",
-  ], calls.join("\n"));
+  // Every other read is handed HEAD's sha.
+  assert.deepEqual(namingHead(calls), ["rev-parse --verify --quiet HEAD^{commit}"], calls.join("\n"));
   assert.equal(calls.filter((c) => c === "rev-parse --verify --quiet main^{commit}").length, 1, "and main once");
   const listing = calls.filter((c) => c.startsWith("ls-tree -r"));
   assert.deepEqual(listing, [`ls-tree -r --name-only -z ${head} --`], calls.join("\n"));
@@ -5223,4 +5220,23 @@ test("each read that runs beside the others still reports its own failure", need
   ]);
   assert.deepEqual(said(noDiff, CAVEATS.PENDING_UNLISTED), []);
   assert.deepEqual(noDiff.removed, ["app/models/user.rb"], "the pending edits still answered");
+});
+
+test("with no merge base, the added lines and the oldest commit are read at HEAD's sha too", needsShebang, async (t) => {
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/a.ts", "export const a = 1\n");
+    commit("init");
+    git("checkout", "-q", "--orphan", "feature");
+    write("src/a.ts", "export const a = 2\n");
+    commit("unrelated");
+    write("src/b.ts", "export const b = 1\n");
+    commit("second");
+  });
+
+  const { report, calls } = await checkThroughShim(t, dir);
+
+  assert.equal(report.mode, "added-lines");
+  assert.ok(calls.some((c) => c.startsWith("rev-list --max-parents=0 ")), calls.join("\n"));
+  assert.ok(calls.some((c) => c.includes("--unified=0")), "the added ranges were read");
+  assert.deepEqual(namingHead(calls), ["rev-parse --verify --quiet HEAD^{commit}"], calls.join("\n"));
 });

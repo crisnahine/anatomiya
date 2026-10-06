@@ -146,6 +146,22 @@ test("the change set reaches no parser, no dimension and no writer, and the Stop
   assert.equal(reachedFrom("reuse.mjs", edges).has("check.mjs"), false, "reuse.mjs reaches check.mjs");
 });
 
+test(
+  "the change set and the Stop hook reach no dimension module at all",
+  {
+    todo:
+      "corpus.mjs takes its capability words from dimensions-capability.mjs, and hook.mjs reaches " +
+      "dimensions.mjs through facts.mjs and reduce.mjs; both edges are in modules other changes own",
+  },
+  () => {
+    const edges = graph();
+    for (const from of ["changeset.mjs", "reuse.mjs"]) {
+      const dims = [...reachedFrom(from, edges)].filter((file) => file.startsWith("dimensions"));
+      assert.deepEqual(dims, [], `${from} reaches ${dims.join(", ")}`);
+    }
+  }
+);
+
 // A field a row adds to a hit crossed the worker boundary only if the copy in
 // `collectHits` named it, and nothing held that copy to what a reader reads:
 // `nesting` was dropped once and the base-class row stated nothing. The table

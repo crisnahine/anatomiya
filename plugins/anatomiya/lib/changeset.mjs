@@ -19,9 +19,10 @@ import { filesAt, gitBuffered, gitStreamed, nameStatusReader, parsePorcelainRows
  * `from` is already the fork point, or the oldest commit HEAD reaches, so the
  * two are compared directly. Spelled `from...HEAD`, git computes the merge
  * base a second time, which on every clone answers `from` itself and on a
- * depth-1 one, whose HEAD is grafted as a root, fails the whole diff.
+ * depth-1 one, whose HEAD is grafted as a root, fails the whole diff. `head` is
+ * HEAD's sha where the caller has resolved it.
  */
-export async function changedFiles(root, from) {
+export async function changedFiles(root, from, head = "HEAD") {
   const rows = [];
   // The rename limit is set rather than inherited: past `diff.renameLimit`,
   // 1000 by default, git skips inexact rename detection and lists each move as
@@ -44,7 +45,7 @@ export async function changedFiles(root, from) {
       root,
       [
         "-c", `diff.renameLimit=${RENAME_LIMIT}`,
-        "diff", "--find-renames", "--ignore-submodules=all", "-z", "--name-status", from, "HEAD",
+        "diff", "--find-renames", "--ignore-submodules=all", "-z", "--name-status", from, head,
       ],
       nameStatusReader((row) => {
         rows.push(namedRow(row));
