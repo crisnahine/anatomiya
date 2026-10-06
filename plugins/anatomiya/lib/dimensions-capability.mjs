@@ -9,7 +9,7 @@
  * reducer offers a row only where at least three files already route through
  * one (C14), so no map carries a line that can only ever read zero.
  */
-import { walk, fromVisitor, declName } from "./walk.mjs";
+import { walk, declName } from "./walk.mjs";
 import { ASSET_IMPORT } from "./langs.mjs";
 import { CAPABILITY_WORDS, fileStem, stemWords } from "./stems.mjs";
 
@@ -244,4 +244,3 @@ export const CAPABILITY_DIMENSIONS = [
     },
   },
 ];
-for (const d of CAPABILITY_DIMENSIONS) if (d.visitor) d.run = fromVisitor(d.visitor);

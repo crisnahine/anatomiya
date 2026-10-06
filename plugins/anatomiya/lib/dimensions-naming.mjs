@@ -8,7 +8,7 @@
  * other dimension. Nothing here imports the registry, because the registry
  * imports this file.
  */
-import { fromVisitor, isFunctionLike } from "./walk.mjs";
+import { isFunctionLike } from "./walk.mjs";
 import { jsxElementNames, makesComponent, typedAsComponent, yieldsJsx } from "./dimensions-jsx.mjs";
 import { fileStem } from "./stems.mjs";
 import { encode } from "./encode.mjs";
@@ -596,4 +596,3 @@ export const NAMING_AST = [
     },
   },
 ];
-for (const d of NAMING_AST) if (d.visitor) d.run = fromVisitor(d.visitor);

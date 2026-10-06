@@ -1,4 +1,6 @@
 import { walk, fromVisitor, isFunctionLike, declName, value, boundNames, optionalChain } from "./walk.mjs";
+import { walkRuby } from "./ruby-walk.mjs";
+import { engineOf } from "./langs.mjs";
 import { EXTRA_DIMENSIONS } from "./dimensions-extra.mjs";
 import { RUBY_DIMENSIONS } from "./dimensions-ruby.mjs";
 import { JSX_DIMENSIONS } from "./dimensions-jsx.mjs";
@@ -328,7 +330,6 @@ export const DIMENSIONS = [
     },
   },
 ];
-for (const d of DIMENSIONS) if (d.visitor) d.run = fromVisitor(d.visitor);
 
 function hasRethrow(block) {
   let found = false;
@@ -370,6 +371,13 @@ export const ALL_DIMENSIONS = [
   ...NAMING_AST,
   ...CAPABILITY_DIMENSIONS,
 ];
+
+// A visitor row's `run` walks the tree alone, on its engine's walk, for the
+// callers that ask one row at a time: the check, and the tests. Here, where the
+// tree rows meet, because the parse worker and the Ruby shard read this list
+// and must not reach `registry.mjs`.
+const WALKS = { oxc: walk, prism: walkRuby };
+for (const d of ALL_DIMENSIONS) if (d.visitor) d.run = fromVisitor(d.visitor, WALKS[engineOf(d.langs[0])]);
 
 export const PRECISIONS = ["precise", "partial"];
 

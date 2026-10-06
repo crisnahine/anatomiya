@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { needsPosixPaths, needsShebang } from "./platform.mjs";
 import { needsRuby, needsRubyInterpreter } from "./ruby-available.mjs";
-import { mkdirSync, mkdtempSync, writeFileSync, readFileSync, realpathSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, writeFileSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -969,7 +969,7 @@ test("no files is an empty run, not a spawn", needsRuby, async () => {
   assert.equal(out.error, null);
 });
 
-test("a newline in a path is a path, not two paths", needsPosixPaths, needsRuby, async () => {
+test("a newline in a path is a path, not two paths", { ...needsPosixPaths, ...needsRuby }, async () => {
   const abs = join(dir, "two\nlines.rb");
   writeFileSync(abs, "def go\n  Time.now\nend\n");
   const out = await parseRuby([{ rel: "two\nlines.rb", abs }]);
@@ -1405,8 +1405,12 @@ test("a file that never reads the clock contributes nothing", needsRuby, () => {
 test("every Ruby row answers the same on the shared walk as walking alone, with a frozen ctx", needsRuby, () => {
   assert.deepEqual(RUBY_DIMENSIONS.filter((d) => !d.visitor).map((d) => d.key), []);
   // A visitor that writes to the ctx it shares with every other row throws
-  // here, and loses its sites.
-  const frozen = (tree, visit) => walkRuby(tree, (node, ctx) => visit(node, Object.freeze(ctx)));
+  // here, and loses its sites. The arrays are frozen copies, since the walk's
+  // own are live and a frozen ctx alone still lets a visitor push onto them.
+  const frozen = (tree, visit) =>
+    walkRuby(tree, (node, ctx) =>
+      visit(node, Object.freeze({ ...ctx, stack: Object.freeze([...ctx.stack]), ancestors: Object.freeze([...ctx.ancestors]) }))
+    );
   const reached = new Set();
   for (const [name, file] of programs) {
     const extra = { rel: `${name}.rb` };
@@ -2027,6 +2031,37 @@ const shape = (out) => ({
   results: out.results.map((r) => [r.rel, r.ok, r.error ?? null, Boolean(r.crashed), r.attempts]),
 });
 
+/** A stub that answers every file it is handed and keeps each child's list as `in.<pid>`. */
+function recordingStub(name) {
+  return stubRuby(name, [
+    `in="$(dirname "$0")/in.$$"`,
+    `tr '\\0' '\\n' > "$in"`,
+    READY,
+    "while IFS= read -r rel && IFS= read -r abs; do",
+    `  printf '{"rel":"%s","ok":true,"errors":0,"length":1,"ast":{"t":"program","line":1}}\\n' "$rel"`,
+    `done < "$in"`,
+  ]);
+}
+
+/** What each child was handed, as lists of relative paths, sorted for comparison. */
+function handed(ruby) {
+  const home = join(ruby, "..");
+  return readdirSync(home)
+    .filter((f) => f.startsWith("in."))
+    .map((f) => readFileSync(join(home, f), "utf8").split("\n").slice(0, -1).filter((_, i) => i % 2 === 0))
+    .sort((a, b) => a[0].localeCompare(b[0]));
+}
+
+test("a file over the size cap weighs nothing in the balance, as the child reads none of it", needsShebang, async () => {
+  // The child skips it unread, so weighed at its size it took a shard to itself
+  // and left the others to split everything else.
+  const files = [write("cap_big", "x".repeat(1000)), write("cap_a", "a".repeat(100)), write("cap_b", "b".repeat(100)), write("cap_c", "c".repeat(100))];
+  const ruby = recordingStub("cap-balance");
+  const out = await parseRuby(files, { ruby, shards: 2, guards: { maxBytes: 500 } });
+  assert.equal(out.results.length, 4);
+  assert.deepEqual(handed(ruby), [["cap_a.rb", "cap_c.rb"], ["cap_big.rb", "cap_b.rb"]]);
+});
+
 test("failure class, no interpreter: every file charged as a missing parser, off the parent", async () => {
   const { out, lines } = await linesParsedHere(() =>
     parseRuby(pair, { ruby: "anatomiya-no-such-ruby", dimensions: RUBY_DIMENSIONS })
@@ -2107,6 +2142,35 @@ test("failure class, the line cap: the run is truncated and nothing past the cap
   assert.deepEqual(lines, []);
 });
 
+test("facets that throw on a tree fall back on their own, and cost no row its sites", { ...needsRuby, ...needsShebang }, async () => {
+  // A def whose name is no string throws in the facets visitor, which rides the
+  // rows' walk, after an RSpec block the facets had already read: the fallback
+  // answers, not the half-read facets, and the rows still answer. A check
+  // asking for no rows gets the same fallback beside the tree it keeps.
+  const abs = join(dir, "odd_facets_spec.rb");
+  writeFileSync(abs, 'describe "x" do\n  it "y" do\n    begin\n      go\n    rescue => e\n    end\n  end\nend\n');
+  const one = [{ rel: "a.rb", abs }];
+  const ast = (await parseRuby(one)).results[0].program;
+  assert.equal((await parseRuby(one, { dimensions: RUBY_DIMENSIONS })).results[0].facets.testRunner, "rspec");
+  ast.statements.body.push({ t: "def", name: 5, line: 9 });
+  const ruby = stubRuby("odd-facets", [
+    "cat >/dev/null",
+    READY,
+    `printf '%s\\n' '${JSON.stringify({ rel: "a.rb", ok: true, errors: 0, length: 1, ast })}'`,
+  ]);
+  const fallback = { testRunner: null, testCalls: false };
+
+  const scan = (await parseRuby(one, { ruby, dimensions: RUBY_DIMENSIONS })).results[0];
+  assert.equal(scan.ok, true);
+  assert.deepEqual(scan.facets, fallback);
+  assert.ok(Object.keys(scan.hits).length, "the fixture reaches a row");
+  assert.deepEqual(scan.hits, collectHits(ast, RUBY_DIMENSIONS, { rel: "a.rb" }, walkRuby));
+
+  const check = (await parseRuby(one, { ruby })).results[0];
+  assert.deepEqual(check.facets, fallback);
+  assert.deepEqual(check.program, ast);
+});
+
 test("failure class, an unreadable file: the interpreter names the error class and the rest still count", needsRuby, async () => {
   const files = [{ rel: "gone.rb", abs: join(dir, "no-such-file.rb") }, { rel: "here.rb", abs: join(dir, "rescue_none.rb") }];
   const { out, lines } = await linesParsedHere(() => parseRuby(files, { dimensions: RUBY_DIMENSIONS }));
@@ -2182,6 +2246,40 @@ test("a tree too large for a shard's held heap is read again on a full one, and 
   const pids = readFileSync(log, "utf8").trim().split("\n").map(Number);
   assert.equal(pids.length, 2, "the held thread ran out and the batch was read again");
   assert.deepEqual(pids.filter(exists), [], "no child of either attempt is left, running or unreaped");
+});
+
+test("a held heap that runs out keeps the records already answered and reads again only the rest", { ...needsRuby, ...needsShebang }, async () => {
+  // Two small files answer before the dense one outgrows the hold. The stand-in
+  // keeps what each parse child was handed, by pid, in the order they started.
+  const home = mkdtempSync(join(dir, "held-rest-"));
+  const real = execFileSync("ruby", ["-e", "print RbConfig.ruby"], { encoding: "utf8" });
+  const log = join(home, "pids");
+  const ruby = join(home, "ruby");
+  writeFileSync(
+    ruby,
+    [
+      "#!/bin/sh",
+      `case "$*" in *MAX_BYTES*) ;; *) exec '${real}' "$@" ;; esac`,
+      `first=$(test -s '${log}' && echo no || echo yes)`,
+      `echo $$ >> '${log}'`,
+      `cat > '${home}/in.'$$`,
+      `if [ "$first" = yes ]; then '${real}' "$@" < '${home}/in.'$$; exec sleep 30; fi`,
+      `exec '${real}' "$@" < '${home}/in.'$$`,
+      "",
+    ].join("\n"),
+    { mode: 0o755 }
+  );
+  const small = [write("held_small_a", "a = 1\n"), write("held_small_b", "b = 2\n")];
+  const big = write("held_dense", Array.from({ length: 150_000 }, () => "a.b").join("\n") + "\n");
+  const out = await parseRuby([...small, big], { ruby, dimensions: RUBY_DIMENSIONS, shards: 1 });
+
+  assert.deepEqual(out.results.map((r) => [r.rel, r.ok, r.attempts]), [["held_small_a.rb", true, 1], ["held_small_b.rb", true, 1], ["held_dense.rb", true, 1]]);
+  assert.equal(out.error, null);
+  const pids = readFileSync(log, "utf8").trim().split("\n");
+  assert.equal(pids.length, 2, "the held thread ran out and a second child was started");
+  const rels = (pid) => readFileSync(join(home, `in.${pid}`), "utf8").split("\0").filter((_, i) => i % 2 === 0).slice(0, -1);
+  assert.deepEqual(rels(pids[0]), ["held_small_a.rb", "held_small_b.rb", "held_dense.rb"]);
+  assert.deepEqual(rels(pids[1]), ["held_dense.rb"], "only the file with no record is read again");
 });
 
 test("a shard whose thread throws after its child started stops and reaps that child", needsShebang, async () => {

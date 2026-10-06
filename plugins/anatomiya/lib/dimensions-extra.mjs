@@ -1,4 +1,4 @@
-import { optionalChain, walk, fromVisitor, isFunctionLike, declName, value } from "./walk.mjs";
+import { optionalChain, walk, isFunctionLike, declName, value } from "./walk.mjs";
 import { calleeName, jsxElementNames } from "./dimensions-jsx.mjs";
 import { ASSET_IMPORT } from "./langs.mjs";
 
@@ -867,7 +867,6 @@ export const EXTRA_DIMENSIONS = [
     },
   },
 ];
-for (const d of EXTRA_DIMENSIONS) if (d.visitor) d.run = fromVisitor(d.visitor);
 
 /**
  * Comments that instruct a tool rather than a reader.
