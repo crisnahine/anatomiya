@@ -28,7 +28,7 @@ import { CAVEATS } from "../plugins/anatomiya/lib/check-report.mjs";
 import { pairingsFor } from "../plugins/anatomiya/lib/pairing.mjs";
 import { REGISTRY, rowsForLangs, rowsOfKind } from "../plugins/anatomiya/lib/registry.mjs";
 import { EXCLUDE_LINES, PREFIX, RULES_DIR } from "../plugins/anatomiya/lib/rules.mjs";
-import { FACTS_PATH } from "../plugins/anatomiya/lib/facts.mjs";
+import { FACTS_PATH, LAYOUT_PATH } from "../plugins/anatomiya/lib/facts.mjs";
 import { PIN_PATH } from "../plugins/anatomiya/lib/baseline.mjs";
 import { GATES } from "../plugins/anatomiya/lib/gates.mjs";
 import { PARSE_OUTCOMES } from "../plugins/anatomiya/lib/parse.mjs";
@@ -593,7 +593,7 @@ export function checkDocs() {
   // the pin it was checked against everywhere else. Read as lines, since git on
   // Windows checks the README out with CRLF endings.
   const readmeLines = new Set(read("README.md").split(/\r?\n/));
-  for (const path of [`${RULES_DIR}/${PREFIX}*.md`, FACTS_PATH, PIN_PATH]) {
+  for (const path of [`${RULES_DIR}/${PREFIX}*.md`, FACTS_PATH, LAYOUT_PATH, PIN_PATH]) {
     claim("README.md", readmeLines.has(`**/${path}`), `does not have a worktree Claude Code makes copy ${path}`);
   }
 

@@ -240,9 +240,11 @@ export function commitMap(root, plan) {
 
   // Facts too, and with the rest: `check` reads facts.json, so new facts beside
   // the old files call a map fresh that the session holds an older scan of.
+  const record = factsJson(plan.result);
+  // The layout file after the record: `readLayout` refuses one older than it.
   const writes = [
-    [join(storeDir, basename(FACTS_PATH)), factsJson(plan.result)],
-    [join(storeDir, basename(LAYOUT_PATH)), layoutJson(plan.result)],
+    [join(storeDir, basename(FACTS_PATH)), record],
+    [join(storeDir, basename(LAYOUT_PATH)), layoutJson(plan.result, record)],
     ...[...plan.bodies].map(([name, body]) => [join(rulesDir, name), body]),
   ];
   const staged = [];

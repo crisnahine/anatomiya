@@ -383,8 +383,9 @@ export function writeFacts(root, result) {
     throw new Error(`${outsideClaude(dirname(FACTS_PATH))}, so the facts were not written`);
   }
   mkdirSync(dir, { recursive: true });
-  atomic(join(dir, basename(FACTS_PATH)), factsJson(result));
-  atomic(join(dir, basename(LAYOUT_PATH)), layoutJson(result));
+  const record = factsJson(result);
+  atomic(join(dir, basename(FACTS_PATH)), record);
+  atomic(join(dir, basename(LAYOUT_PATH)), layoutJson(result, record));
 }
 
 /** The record's bytes, for a writer that puts them on disk together with the map. */
@@ -392,36 +393,42 @@ export function factsJson(result) {
   return JSON.stringify(factsRecord(result), null, 2) + "\n";
 }
 
-/** The layout file's bytes: the record's own `layout`, under the record's schema. */
-export function layoutJson(result) {
-  return JSON.stringify({ schema: FACTS_SCHEMA, layout: result.layout ?? null }, null, 2) + "\n";
+/**
+ * The layout file's bytes: the record's own `layout`, under the record's schema,
+ * with the size of the record bytes it was taken from.
+ */
+export function layoutJson(result, record) {
+  return JSON.stringify({ schema: FACTS_SCHEMA, recordBytes: Buffer.byteLength(record), layout: result.layout ?? null }, null, 2) + "\n";
 }
 
 /**
  * The layout the record beside it holds, as `{ layout }`, or null where the
  * layout file cannot answer for that record and the record has to be read.
  *
- * Refused under the record's own schema rule, and refused where it is older
- * than the record: a build from before this file rewrites the record and leaves
- * the file standing, describing a scan the record has replaced.
+ * Refused under the record's own schema rule, where it is older than the
+ * record, since a build from before this file rewrites the record and leaves the
+ * file standing, and where the record is not the size it was written at: a
+ * conflict marker or a hand edit makes a record the reader refuses, and the
+ * layout file must not answer for it.
  */
 export function readLayout(root) {
   const path = resolveInside(root, LAYOUT_PATH);
   const facts = path === null ? null : resolveInside(root, FACTS_PATH);
   if (facts === null) return null;
-  const layoutAt = mtimeOf(path);
-  const factsAt = mtimeOf(facts);
-  if (layoutAt === null || factsAt === null || layoutAt < factsAt) return null;
+  const layoutStat = statOf(path);
+  const factsStat = statOf(facts);
+  if (layoutStat === null || factsStat === null || layoutStat.mtimeMs < factsStat.mtimeMs) return null;
   const parsed = readRecord(path).record;
   const schema = parsed?.schema;
   if (!Number.isInteger(schema) || schema < 1 || schema > FACTS_SCHEMA) return null;
+  if (parsed.recordBytes !== factsStat.size) return null;
   return { layout: parsed.layout ?? null };
 }
 
 // Null for anything a stat refuses: this runs inside a hook, which never throws.
-function mtimeOf(path) {
+function statOf(path) {
   try {
-    return statSync(path).mtimeMs;
+    return statSync(path);
   } catch {
     return null;
   }
