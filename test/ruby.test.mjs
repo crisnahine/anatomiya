@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { needsPosixPaths, needsShebang } from "./platform.mjs";
 import { needsRuby, needsRubyInterpreter } from "./ruby-available.mjs";
-import { mkdirSync, mkdtempSync, readdirSync, writeFileSync, readFileSync, realpathSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, writeFileSync, readFileSync, realpathSync, rmSync, statSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -2216,8 +2216,9 @@ function exists(pid) {
 }
 
 test("a tree too large for a shard's held heap is read again on a full one, and the first child is stopped and reaped", { ...needsRuby, ...needsShebang }, async () => {
-  // 600 KB, so inside the size cap, and the densest shape measured: a call
-  // per four bytes outgrows the hold its size buys. The stand-in logs the pid
+  // 233 KB of nested calls, under the size where the hold grows to cover the
+  // densest shapes, and dense enough to outgrow the hold its size buys there.
+  // The stand-in logs the pid
   // of every parse child, and the first one lingers after its answer, so a
   // child left running by the thread that died is still there to find.
   const home = mkdtempSync(join(dir, "held-"));
@@ -2237,7 +2238,7 @@ test("a tree too large for a shard's held heap is read again on a full one, and 
     ].join("\n"),
     { mode: 0o755 }
   );
-  const big = write("heap_heavy", Array.from({ length: 150_000 }, () => "a.b").join("\n") + "\n");
+  const big = write("heap_heavy", ("a(".repeat(300) + ")".repeat(300) + "\n").repeat(265));
   const out = await parseRuby([big], { ruby, dimensions: RUBY_DIMENSIONS });
 
   assert.equal(out.results[0].ok, true, out.results[0].error);
@@ -2270,7 +2271,7 @@ test("a held heap that runs out keeps the records already answered and reads aga
     { mode: 0o755 }
   );
   const small = [write("held_small_a", "a = 1\n"), write("held_small_b", "b = 2\n")];
-  const big = write("held_dense", Array.from({ length: 150_000 }, () => "a.b").join("\n") + "\n");
+  const big = write("held_dense", ("a(".repeat(300) + ")".repeat(300) + "\n").repeat(265));
   const out = await parseRuby([...small, big], { ruby, dimensions: RUBY_DIMENSIONS, shards: 1 });
 
   assert.deepEqual(out.results.map((r) => [r.rel, r.ok, r.attempts]), [["held_small_a.rb", true, 1], ["held_small_b.rb", true, 1], ["held_dense.rb", true, 1]]);
@@ -2280,6 +2281,30 @@ test("a held heap that runs out keeps the records already answered and reads aga
   const rels = (pid) => readFileSync(join(home, `in.${pid}`), "utf8").split("\0").filter((_, i) => i % 2 === 0).slice(0, -1);
   assert.deepEqual(rels(pids[0]), ["held_small_a.rb", "held_small_b.rb", "held_dense.rb"]);
   assert.deepEqual(rels(pids[1]), ["held_dense.rb"], "only the file with no record is read again");
+});
+
+test("the densest trees measured under the size cap are read by one child per shard", { ...needsRuby, ...needsShebang }, async () => {
+  // Nested calls and nested hashes were the two shapes that needed the most
+  // old generation per byte, 90 MB for a megabyte, measured. Each file has a
+  // shard of its own, and a child more than one per shard is a held thread
+  // that ran out and read its batch again.
+  const home = mkdtempSync(join(dir, "dense-"));
+  const real = execFileSync("ruby", ["-e", "print RbConfig.ruby"], { encoding: "utf8" });
+  const log = join(home, "pids");
+  const ruby = join(home, "ruby");
+  writeFileSync(
+    ruby,
+    ["#!/bin/sh", `case "$*" in *MAX_BYTES*) echo $$ >> '${log}' ;; esac`, `exec '${real}' "$@"`, ""].join("\n"),
+    { mode: 0o755 }
+  );
+  const calls = write("dense_calls", ("a(".repeat(300) + ")".repeat(300) + "\n").repeat(1_100));
+  const hashes = write("dense_hashes", ("x=" + "{a:".repeat(200) + "1" + "}".repeat(200) + "\n").repeat(1_240));
+  for (const f of [calls, hashes]) assert.ok(statSync(f.abs).size > 950 * 1024 && statSync(f.abs).size < 1024 * 1024, "inside the size cap");
+
+  const out = await parseRuby([calls, hashes], { ruby, dimensions: RUBY_DIMENSIONS, shards: 2 });
+
+  assert.deepEqual(out.results.map((r) => [r.rel, r.ok, r.attempts]), [["dense_calls.rb", true, 1], ["dense_hashes.rb", true, 1]]);
+  assert.equal(readFileSync(log, "utf8").trim().split("\n").length, 2, "one child per shard, none read again");
 });
 
 test("a shard whose thread dies while a stalled child's stdout is held open ends at once, charged, and reaps it", needsShebang, async () => {

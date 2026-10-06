@@ -455,6 +455,8 @@ export async function parseRuby(
   return out;
 }
 
+const STEEP_HOLD_BYTES = 256 * 1024;
+
 /**
  * A shard's heap is held to what its largest file needs, because V8 grows a
  * heap toward its limit rather than its live set: four threads at the default
@@ -464,9 +466,17 @@ export async function parseRuby(
  * with the default heap, with every file not yet answered, so the hold costs
  * time and never a file, and a record already answered is kept rather than
  * read twice.
+ *
+ * Dense code needs more: nested calls or hashes took 28 MB at 256 KB and 90 MB
+ * at a megabyte, and a hold that covered them on every shard took api's peak
+ * from 221 MB to about 340 MB. So only a shard whose largest file is past
+ * `STEEP_HOLD_BYTES` gets the hold that covers them, where a reread costs
+ * seconds; below it, a dense file reads again and costs little.
  */
 function heldHeap(largestBytes) {
-  return { maxYoungGenerationSizeMb: 1, maxOldGenerationSizeMb: 8 + Math.ceil((32 * largestBytes) / (1024 * 1024)) };
+  const mb = largestBytes / (1024 * 1024);
+  const old = largestBytes > STEEP_HOLD_BYTES ? 16 + Math.ceil(96 * mb) : 8 + Math.ceil(32 * mb);
+  return { maxYoungGenerationSizeMb: 1, maxOldGenerationSizeMb: old };
 }
 
 async function inWorker(files, job, largestBytes) {
