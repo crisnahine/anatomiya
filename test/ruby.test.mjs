@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { needsPosixPaths, needsShebang } from "./platform.mjs";
 import { needsRuby, needsRubyInterpreter } from "./ruby-available.mjs";
-import { mkdirSync, mkdtempSync, writeFileSync, readFileSync, realpathSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, writeFileSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -2029,6 +2029,37 @@ const shape = (out) => ({
   stalled: out.stalled,
   truncated: out.truncated,
   results: out.results.map((r) => [r.rel, r.ok, r.error ?? null, Boolean(r.crashed), r.attempts]),
+});
+
+/** A stub that answers every file it is handed and keeps each child's list as `in.<pid>`. */
+function recordingStub(name) {
+  return stubRuby(name, [
+    `in="$(dirname "$0")/in.$$"`,
+    `tr '\\0' '\\n' > "$in"`,
+    READY,
+    "while IFS= read -r rel && IFS= read -r abs; do",
+    `  printf '{"rel":"%s","ok":true,"errors":0,"length":1,"ast":{"t":"program","line":1}}\\n' "$rel"`,
+    `done < "$in"`,
+  ]);
+}
+
+/** What each child was handed, as lists of relative paths, sorted for comparison. */
+function handed(ruby) {
+  const home = join(ruby, "..");
+  return readdirSync(home)
+    .filter((f) => f.startsWith("in."))
+    .map((f) => readFileSync(join(home, f), "utf8").split("\n").slice(0, -1).filter((_, i) => i % 2 === 0))
+    .sort((a, b) => a[0].localeCompare(b[0]));
+}
+
+test("a file over the size cap weighs nothing in the balance, as the child reads none of it", needsShebang, async () => {
+  // The child skips it unread, so weighed at its size it took a shard to itself
+  // and left the others to split everything else.
+  const files = [write("cap_big", "x".repeat(1000)), write("cap_a", "a".repeat(100)), write("cap_b", "b".repeat(100)), write("cap_c", "c".repeat(100))];
+  const ruby = recordingStub("cap-balance");
+  const out = await parseRuby(files, { ruby, shards: 2, guards: { maxBytes: 500 } });
+  assert.equal(out.results.length, 4);
+  assert.deepEqual(handed(ruby), [["cap_a.rb", "cap_c.rb"], ["cap_big.rb", "cap_b.rb"]]);
 });
 
 test("failure class, no interpreter: every file charged as a missing parser, off the parent", async () => {

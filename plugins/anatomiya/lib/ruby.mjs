@@ -394,8 +394,9 @@ export function shardsBySize(sizes, count) {
     .sort((a, b) => a[0] - b[0]);
 }
 
-// The child reports what it cannot read; for balance it weighs nothing.
-const bytesOf = (abs) => stat(abs).then((s) => s.size, () => 0);
+// The child reports what it cannot read and skips what is over the cap; for
+// balance either weighs nothing.
+const bytesOf = (abs, maxBytes) => stat(abs).then((s) => (s.size > maxBytes ? 0 : s.size), () => 0);
 
 /**
  * Parse Ruby files. Resolves once every child has exited or a guard has fired.
@@ -424,7 +425,7 @@ export async function parseRuby(
   // the rows, and a scan gets only counts back, as B10 does for JavaScript. A
   // check asks for no rows, so the trees of the files it touched do cross.
   const keys = dimensions.map((d) => d.key);
-  const sizes = await Promise.all(files.map((f) => bytesOf(f.abs)));
+  const sizes = await Promise.all(files.map((f) => bytesOf(f.abs, guards.maxBytes)));
   const outs = await Promise.all(
     shardsBySize(sizes, shards).map((ix) =>
       inWorker(ix.map((i) => files[i]), { ruby, guards, rubyScript, load, keys }, ix.reduce((most, i) => Math.max(most, sizes[i]), 0)),
