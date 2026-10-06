@@ -383,9 +383,21 @@ export function writeFacts(root, result) {
     throw new Error(`${outsideClaude(dirname(FACTS_PATH))}, so the facts were not written`);
   }
   mkdirSync(dir, { recursive: true });
+  // Stamped from the temporary file, whose size and mtime the rename keeps:
+  // stat after the rename and another writer's record could be the one stamped.
   const path = join(dir, basename(FACTS_PATH));
-  atomic(path, factsJson(result));
-  atomic(join(dir, basename(LAYOUT_PATH)), layoutJson(result, statSync(path)));
+  const tmp = writeTemp(path, factsJson(result));
+  let stamp;
+  try {
+    stamp = statSync(tmp);
+    renameSync(tmp, path);
+  } catch (err) {
+    try {
+      unlinkSync(tmp);
+    } catch {}
+    throw err;
+  }
+  atomic(join(dir, basename(LAYOUT_PATH)), layoutJson(result, stamp));
 }
 
 /** The record's bytes, for a writer that puts them on disk together with the map. */
