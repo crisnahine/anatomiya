@@ -1,4 +1,4 @@
-import { closeSync, constants, fstatSync, mkdirSync, openSync, readFileSync, renameSync, unlinkSync } from "node:fs";
+import { closeSync, constants, fstatSync, mkdirSync, openSync, readFileSync, renameSync, statSync, unlinkSync } from "node:fs";
 import { basename, join } from "node:path";
 import { renderArea, renderOverview, splitUncovered } from "./render.mjs";
 import { FACTS_PATH, FACTS_SCHEMA, LAYOUT_PATH, readFacts, factsJson, layoutJson, atomic, writeTemp } from "./facts.mjs";
@@ -240,15 +240,16 @@ export function commitMap(root, plan) {
 
   // Facts too, and with the rest: `check` reads facts.json, so new facts beside
   // the old files call a map fresh that the session holds an older scan of.
-  const record = factsJson(plan.result);
-  // The layout file after the record: `readLayout` refuses one older than it.
-  const writes = [
-    [join(storeDir, basename(FACTS_PATH)), record],
-    [join(storeDir, basename(LAYOUT_PATH)), layoutJson(plan.result, record)],
-    ...[...plan.bodies].map(([name, body]) => [join(rulesDir, name), body]),
-  ];
+  const factsPath = join(storeDir, basename(FACTS_PATH));
   const staged = [];
   try {
+    const recordTemp = writeTemp(factsPath, factsJson(plan.result));
+    staged.push([recordTemp, factsPath]);
+    // Stamped from the record's temporary file, whose size and mtime the rename keeps.
+    const writes = [
+      [join(storeDir, basename(LAYOUT_PATH)), layoutJson(plan.result, statSync(recordTemp))],
+      ...[...plan.bodies].map(([name, body]) => [join(rulesDir, name), body]),
+    ];
     for (const [path, body] of writes) staged.push([writeTemp(path, body), path]);
     replaceAll(staged, plan.remove.map((f) => join(rulesDir, f)));
   } catch (err) {

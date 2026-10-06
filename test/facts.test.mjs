@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { chmodSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
+import { chmodSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, truncateSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { execFileSync, spawnSync } from "node:child_process";
 import { needsPosixPermissions, needsPosixSpecialFiles } from "./platform.mjs";
@@ -746,8 +746,8 @@ test("the layout is written beside the record, and reads back as the record's ow
   writeFacts(dir, { ...result([dim()]), layout });
   const record = JSON.parse(readFileSync(join(dir, FACTS_PATH), "utf8"));
 
-  const recordBytes = readFileSync(join(dir, FACTS_PATH)).length;
-  assert.deepEqual(JSON.parse(readFileSync(join(dir, LAYOUT_PATH), "utf8")), { schema: FACTS_SCHEMA, recordBytes, layout: record.layout });
+  const { size, mtimeMs } = statSync(join(dir, FACTS_PATH));
+  assert.deepEqual(JSON.parse(readFileSync(join(dir, LAYOUT_PATH), "utf8")), { schema: FACTS_SCHEMA, record: { size, mtimeMs }, layout: record.layout });
   assert.deepEqual(readLayout(dir), { layout: record.layout });
 });
 
@@ -757,21 +757,53 @@ test("a layout file that cannot answer for the record beside it is not read", (t
   const absent = root(t);
   assert.equal(readLayout(absent), null, "nothing written");
 
+  // Stamped from the record as it stands, so each case below refuses on its one change.
+  const stamped = (dir, { schema = FACTS_SCHEMA, size = 0, mtimeMs = 0 } = {}) => {
+    const now = statSync(join(dir, FACTS_PATH));
+    const record = { size: now.size + size, mtimeMs: now.mtimeMs + mtimeMs };
+    writeFileSync(join(dir, LAYOUT_PATH), JSON.stringify({ schema, record, layout: { tests: [], roots: [] } }));
+  };
+
+  const exact = root(t);
+  writeFacts(exact, result([dim()]));
+  stamped(exact);
+  assert.deepEqual(readLayout(exact), { layout: { tests: [], roots: [] } }, "the control: an exact stamp is read");
+
   const ahead = root(t);
   writeFacts(ahead, result([dim()]));
-  writeFileSync(join(ahead, LAYOUT_PATH), JSON.stringify({ schema: FACTS_SCHEMA + 1, layout: { tests: [], roots: [] } }));
+  stamped(ahead, { schema: FACTS_SCHEMA + 1 });
   assert.equal(readLayout(ahead), null, "a schema this build has not heard of");
+
+  const shifted = root(t);
+  writeFacts(shifted, result([dim()]));
+  stamped(shifted, { mtimeMs: 1 });
+  assert.equal(readLayout(shifted), null, "a record one millisecond off, at the same size");
+
+  const resized = root(t);
+  writeFacts(resized, result([dim()]));
+  stamped(resized, { size: 1 });
+  assert.equal(readLayout(resized), null, "a record of another size");
 
   const alone = root(t);
   writeFacts(alone, result([dim()]));
   rmSync(join(alone, FACTS_PATH));
   assert.equal(readLayout(alone), null, "no record for it to be the layout of");
 
-  // An older build rewrites the record and leaves this file as it was, so a
-  // layout file older than its record describes a scan the record replaced.
+  // A restore or an older build that rewrites the record leaves this file
+  // describing a record that is no longer there, whatever the layout file's own mtime.
   const behind = root(t);
   writeFacts(behind, result([dim()]));
   const then = new Date(Date.now() - 60_000);
-  utimesSync(join(behind, LAYOUT_PATH), then, then);
-  assert.equal(readLayout(behind), null, "older than the record");
+  utimesSync(join(behind, FACTS_PATH), then, then);
+  const later = new Date(Date.now() + 60_000);
+  utimesSync(join(behind, LAYOUT_PATH), later, later);
+  assert.equal(readLayout(behind), null, "a record with another mtime");
+
+  // Past the size the reader takes, the record reads as nothing, so the layout
+  // file cannot answer for it even stamped exactly. Sparse, so it costs no disk.
+  const over = root(t);
+  writeFacts(over, result([dim()]));
+  truncateSync(join(over, FACTS_PATH), 64 * 1024 * 1024 + 1);
+  stamped(over);
+  assert.equal(readLayout(over), null, "a record past the cap");
 });

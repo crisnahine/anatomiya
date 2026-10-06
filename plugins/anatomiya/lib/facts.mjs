@@ -383,9 +383,9 @@ export function writeFacts(root, result) {
     throw new Error(`${outsideClaude(dirname(FACTS_PATH))}, so the facts were not written`);
   }
   mkdirSync(dir, { recursive: true });
-  const record = factsJson(result);
-  atomic(join(dir, basename(FACTS_PATH)), record);
-  atomic(join(dir, basename(LAYOUT_PATH)), layoutJson(result, record));
+  const path = join(dir, basename(FACTS_PATH));
+  atomic(path, factsJson(result));
+  atomic(join(dir, basename(LAYOUT_PATH)), layoutJson(result, statSync(path)));
 }
 
 /** The record's bytes, for a writer that puts them on disk together with the map. */
@@ -395,33 +395,33 @@ export function factsJson(result) {
 
 /**
  * The layout file's bytes: the record's own `layout`, under the record's schema,
- * with the size of the record bytes it was taken from.
+ * stamped with the size and mtime of the record file it was taken from.
  */
-export function layoutJson(result, record) {
-  return JSON.stringify({ schema: FACTS_SCHEMA, recordBytes: Buffer.byteLength(record), layout: result.layout ?? null }, null, 2) + "\n";
+export function layoutJson(result, { size, mtimeMs }) {
+  return JSON.stringify({ schema: FACTS_SCHEMA, record: { size, mtimeMs }, layout: result.layout ?? null }, null, 2) + "\n";
 }
 
 /**
  * The layout the record beside it holds, as `{ layout }`, or null where the
  * layout file cannot answer for that record and the record has to be read.
  *
- * Refused under the record's own schema rule, where it is older than the
- * record, since a build from before this file rewrites the record and leaves the
- * file standing, and where the record is not the size it was written at: a
- * conflict marker or a hand edit makes a record the reader refuses, and the
- * layout file must not answer for it.
+ * Refused under the record's own schema rule, and unless the record on disk is
+ * the very file it was stamped from, to the byte count and the millisecond. An
+ * older build rewriting only the record, a checkout or a restore that changes it
+ * and keeps old mtimes, a conflict marker or a hand edit all leave a layout file
+ * describing some other record. Refused too past the size the reader takes, since
+ * the record then reads as nothing.
  */
 export function readLayout(root) {
   const path = resolveInside(root, LAYOUT_PATH);
   const facts = path === null ? null : resolveInside(root, FACTS_PATH);
   if (facts === null) return null;
-  const layoutStat = statOf(path);
-  const factsStat = statOf(facts);
-  if (layoutStat === null || factsStat === null || layoutStat.mtimeMs < factsStat.mtimeMs) return null;
+  const record = statOf(facts);
+  if (record === null || record.size > RECORD_MOST) return null;
   const parsed = readRecord(path).record;
   const schema = parsed?.schema;
   if (!Number.isInteger(schema) || schema < 1 || schema > FACTS_SCHEMA) return null;
-  if (parsed.recordBytes !== factsStat.size) return null;
+  if (parsed.record?.size !== record.size || parsed.record?.mtimeMs !== record.mtimeMs) return null;
   return { layout: parsed.layout ?? null };
 }
 

@@ -252,7 +252,7 @@ test("a scan writes the layout file beside the record, holding the record's layo
 
   assert.deepEqual(JSON.parse(readFileSync(join(dir, STORE, "layout.json"), "utf8")).layout, readFacts(dir).layout);
   assert.deepEqual(readFacts(dir).layout, layout);
-  // Read back too: a layout file written before the record is older than it and refused.
+  // Read back too: the stamp is the record's as it landed, so the rename kept it.
   assert.deepEqual(readLayout(dir), { layout });
 });
 
