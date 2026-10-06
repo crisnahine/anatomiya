@@ -14,15 +14,17 @@ const LIB = join(ANATOMIYA, "lib");
  * Who imports whom, inside one directory. Node's own modules and the one npm
  * dependency are not part of this repository's shape.
  */
-function graph(dir = LIB) {
+function graph(dir = LIB, { dynamic = true } = {}) {
   const edges = new Map();
   for (const file of readdirSync(dir).filter((f) => f.endsWith(".mjs"))) {
     const src = readFileSync(join(dir, file), "utf8");
     // Every spelling that closes a cycle, not just the one this repo writes
     // most: a bare `import "./x.mjs"` runs the module for its side effects and
     // a dynamic `import("./x.mjs")` is the form `parse-worker.mjs` already uses.
-    // A cycle through either would pass a check that only knew `from`.
-    const local = [...src.matchAll(/(?:from\s*|import\s*\(\s*|import\s+)["']\.\/([^"']+\.mjs)["']/g)].map((m) => m[1]);
+    // A cycle through either would pass a check that only knew `from`. What a
+    // module costs to load is its static imports alone, which `dynamic: false` asks.
+    const spelling = dynamic ? /(?:from\s*|import\s*\(\s*|import\s+)["']\.\/([^"']+\.mjs)["']/g : /(?:from\s*|import\s+)["']\.\/([^"']+\.mjs)["']/g;
+    const local = [...src.matchAll(spelling)].map((m) => m[1]);
     edges.set(file, [...new Set(local)]);
   }
   return edges;
@@ -528,20 +530,82 @@ test("every verb the binary declares carries its own arm in the one table", () =
     const keys = value.type === "ObjectExpression" ? value.properties.map(keyOf) : [];
     assert.ok(keys.includes("run"), `${verb} carries no run`);
   }
-  // Every command the binary imports is called inside the table, so no arm can
-  // exist outside it for a verb to fall through to, however it is spelled. The
-  // names come off the import rather than a list here, so an arm added
-  // tomorrow is one this sees. The offsets are asserted first: compared
-  // against undefined, every call would read as inside.
-  const arms = program.body
-    .filter((n) => n.type === "ImportDeclaration" && n.source.value.endsWith("/commands.mjs"))
-    .flatMap((n) => n.specifiers.map((s) => s.local.name));
-  assert.ok(arms.length >= 5, `read ${arms.length} command imports`);
+  // A command is imported inside the arm that runs it, so no arm can exist
+  // outside the table for a verb to fall through to, and a hook loads only its
+  // own. The binary itself imports what reading argv and the never-fail
+  // boundary need. The offsets are asserted first: compared against undefined,
+  // every import would read as inside.
+  const own = program.body.filter((n) => n.type === "ImportDeclaration").map((n) => n.source.value);
+  assert.deepEqual(own.sort(), ["../lib/hook.mjs", "../lib/readiness.mjs"]);
   assert.ok(Number.isInteger(table.init.start) && Number.isInteger(table.init.end), "the table carries offsets");
-  const outside = [...scan(src).matchAll(new RegExp(`\\b(?:${arms.join("|")})\\(`, "g"))]
-    .filter((m) => m.index < table.init.start || m.index >= table.init.end)
-    .map((m) => m[0]);
-  assert.deepEqual(outside, []);
+  const loads = [...scan(src).matchAll(/\bimport\(/g)];
+  assert.ok(loads.length >= verbs.length, `read ${loads.length} arm imports`);
+  assert.deepEqual(loads.filter((m) => m.index < table.init.start || m.index >= table.init.end).map((m) => m[0]), []);
+});
+
+/**
+ * What one verb of the binary loads: the binary's own imports and the modules
+ * its arm imports, followed through static imports only. A dynamic import in a
+ * function body loads when that function runs, not when its module does.
+ */
+function armReach(verb) {
+  const src = readFileSync(BINARY, "utf8");
+  const { program } = parseSync("anatomiya.mjs", src, { sourceType: "module" });
+  const table = program.body
+    .flatMap((n) => (n.type === "VariableDeclaration" ? n.declarations : []))
+    .find((d) => d.id.type === "Identifier" && d.id.name === "COMMANDS");
+  const arm = table.init.properties.find((p) => (p.key.name ?? p.key.value) === verb).value;
+  const roots = [
+    ...program.body.filter((n) => n.type === "ImportDeclaration").map((n) => n.source.value),
+    ...[...src.slice(arm.start, arm.end).matchAll(/\bimport\(\s*["']([^"']+)["']\s*\)/g)].map((m) => m[1]),
+  ].map((spec) => spec.replace(/^\.\.\/lib\//, ""));
+  const edges = graph(LIB, { dynamic: false });
+  return new Set(roots.flatMap((root) => [...reachedFrom(root, edges)]));
+}
+
+// Written out rather than counted, so a module joining the echo's load shows by name.
+const ECHO_LOADS = [
+  "child.mjs",
+  "companions.mjs",
+  "corpus.mjs",
+  "encode.mjs",
+  "facts.mjs",
+  "frameworks.mjs",
+  "gates.mjs",
+  "git.mjs",
+  "hook-verbs.mjs",
+  "hook.mjs",
+  "langs.mjs",
+  "layout.mjs",
+  "limits.mjs",
+  "paths.mjs",
+  "precedent.mjs",
+  "principles.mjs",
+  "readiness.mjs",
+  "render-layout.mjs",
+  "rules.mjs",
+  "semantic.mjs",
+  "stems.mjs",
+  "test-shape.mjs",
+  "tsconfig.mjs",
+  "version.mjs",
+  "worktree.mjs",
+];
+
+test("a hook verb loads none of the scan, the check or the parser", () => {
+  // Every hook process loaded 74 modules, oxc's native binding among them,
+  // because the binary imported every command up front and the facts reader
+  // took one bound from the reducer. A hook runs on every tool call.
+  for (const verb of ["echo", "notice", "refresh"]) {
+    const reached = armReach(verb);
+    assert.ok(reached.has("hook.mjs"), `${verb}: the binary's own imports were not read`);
+    for (const heavy of ["scan.mjs", "parse.mjs", "walk.mjs", "dimensions.mjs", "reduce.mjs", "check.mjs"]) {
+      assert.equal(reached.has(heavy), false, `${verb} reaches ${heavy}`);
+    }
+    const oxc = [...reached].filter((f) => /(?:from|import|require|\))\s*\(?\s*["']oxc-parser["']/.test(readFileSync(join(LIB, f), "utf8")));
+    assert.deepEqual(oxc, [], `${verb} loads oxc`);
+  }
+  assert.deepEqual([...armReach("echo")].sort(), ECHO_LOADS);
 });
 
 const FUNCTIONS = new Set(["FunctionDeclaration", "FunctionExpression", "ArrowFunctionExpression"]);

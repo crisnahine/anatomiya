@@ -787,14 +787,28 @@ test("echo answers an object and exits 0 when the directory it fired in is gone"
  * child starts: the removal has to happen inside the process that then execs
  * the command, rather than in the one launching it.
  */
-function fromRemovedCwd(work, args, input) {
-  const bin = join(ANATOMIYA, "bin", "anatomiya.mjs");
+function fromRemovedCwd(work, args, input, { bin = join(ANATOMIYA, "bin", "anatomiya.mjs") } = {}) {
   const spelled = args.map((a) => `"${a}"`).join(" ");
   return execFileSync("sh", ["-c", `cd "${work}" && rm -rf "${work}" && exec "${process.execPath}" "${bin}" ${spelled}`], {
     input,
     encoding: "utf8",
   });
 }
+
+test("a hook whose own module will not load still answers an object and exits 0, from a directory that is gone", needsRemovableCwd, (t) => {
+  // Each arm imports its module when it runs, so a module that fails to load
+  // is now a throw inside the boundary rather than before it.
+  const install = installWithoutDependencies(t);
+  for (const module of ["hook-verbs.mjs", "refresh.mjs"]) rmSync(join(install, "lib", module));
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-gone-hooks-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  for (const [hook, event] of [["echo", "PostToolUse"], ["notice", "PreToolUse"], ["reuse", "Stop"], ["refresh", "SessionStart"]]) {
+    const work = join(dir, hook);
+    mkdirSync(work);
+
+    assert.equal(fromRemovedCwd(work, [hook], JSON.stringify({ hook_event_name: event }), { bin: join(install, "bin", "anatomiya.mjs") }), "{}", hook);
+  }
+});
 
 test("a hook whose directory is gone still answers off the map the payload names", needsRemovableCwd, (t) => {
   // The case above stops where it is safe: a payload naming no place is owed
