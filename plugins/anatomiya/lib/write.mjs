@@ -1,7 +1,7 @@
-import { closeSync, constants, fstatSync, mkdirSync, openSync, readFileSync, renameSync, unlinkSync } from "node:fs";
+import { closeSync, constants, fstatSync, mkdirSync, openSync, readFileSync, renameSync, statSync, unlinkSync } from "node:fs";
 import { basename, join } from "node:path";
 import { renderArea, renderOverview, splitUncovered } from "./render.mjs";
-import { FACTS_PATH, FACTS_SCHEMA, readFacts, factsJson, atomic, writeTemp } from "./facts.mjs";
+import { FACTS_PATH, FACTS_SCHEMA, LAYOUT_PATH, readFacts, factsJson, layoutJson, atomic, writeTemp } from "./facts.mjs";
 import { byCode } from "./paths.mjs";
 import {
   RULES_DIR,
@@ -39,8 +39,10 @@ export function planMap(result) {
   // The record's own name, the one leaf here the map does not audit. A directory
   // committed at it let a dry run say "would write" and the scan die on a raw
   // `EISDIR` out of the rename.
-  if (!leafReplaceable(join(storeDir, basename(FACTS_PATH)))) {
-    throw new Error(`${FACTS_PATH} is not a file, so the map could not be written: remove it and scan again`);
+  for (const leaf of [FACTS_PATH, LAYOUT_PATH]) {
+    if (!leafReplaceable(join(storeDir, basename(leaf)))) {
+      throw new Error(`${leaf} is not a file, so the map could not be written: remove it and scan again`);
+    }
   }
 
   const withDirectives = result.areas.filter((a) => a.dimensions.length > 0);
@@ -238,12 +240,16 @@ export function commitMap(root, plan) {
 
   // Facts too, and with the rest: `check` reads facts.json, so new facts beside
   // the old files call a map fresh that the session holds an older scan of.
-  const writes = [
-    [join(storeDir, basename(FACTS_PATH)), factsJson(plan.result)],
-    ...[...plan.bodies].map(([name, body]) => [join(rulesDir, name), body]),
-  ];
+  const factsPath = join(storeDir, basename(FACTS_PATH));
   const staged = [];
   try {
+    const recordTemp = writeTemp(factsPath, factsJson(plan.result));
+    staged.push([recordTemp, factsPath]);
+    // Stamped from the record's temporary file, whose size and mtime the rename keeps.
+    const writes = [
+      [join(storeDir, basename(LAYOUT_PATH)), layoutJson(plan.result, statSync(recordTemp))],
+      ...[...plan.bodies].map(([name, body]) => [join(rulesDir, name), body]),
+    ];
     for (const [path, body] of writes) staged.push([writeTemp(path, body), path]);
     replaceAll(staged, plan.remove.map((f) => join(rulesDir, f)));
   } catch (err) {

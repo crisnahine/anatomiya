@@ -2,7 +2,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { parseSync } from "oxc-parser";
 
-import { CAPABILITY_DIMENSIONS, stemWords } from "../plugins/anatomiya/lib/dimensions-capability.mjs";
+import { CAPABILITY_DIMENSIONS } from "../plugins/anatomiya/lib/dimensions-capability.mjs";
+import { stemWords } from "../plugins/anatomiya/lib/stems.mjs";
 import { dimensionsFor } from "../plugins/anatomiya/lib/dimensions.mjs";
 import { capabilitiesIn } from "../plugins/anatomiya/lib/corpus.mjs";
 

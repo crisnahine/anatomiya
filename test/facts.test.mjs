@@ -1,13 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { chmodSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, truncateSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { execFileSync, spawnSync } from "node:child_process";
 import { needsPosixPermissions, needsPosixSpecialFiles } from "./platform.mjs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
-import { atomic, writeFacts, readFacts, statedSide, FACTS_SCHEMA, FACTS_PATH } from "../plugins/anatomiya/lib/facts.mjs";
+import { atomic, writeFacts, readFacts, readLayout, statedSide, FACTS_SCHEMA, FACTS_PATH, LAYOUT_PATH } from "../plugins/anatomiya/lib/facts.mjs";
 
 /**
  * One owner for the machine record, so one round trip through it.
@@ -735,4 +735,105 @@ test("a write that fails part way leaves no temporary file behind", async (t) =>
 
   assert.throws(() => atomic(join(dir, "facts.json"), "{}\n"), /ENOSPC/);
   assert.deepEqual(readdirSync(dir), []);
+});
+
+test("the layout is written beside the record, and reads back as the record's own", (t) => {
+  // The hooks want the layout alone, and the record holding it was 10 MB on
+  // microsoft/vscode: parsing all of it to read 1.5 KB was most of a notice.
+  const dir = root(t);
+  const layout = { tests: [], roots: [{ dir: "app", path: "app", companions: { with: 0, of: 6 } }] };
+
+  writeFacts(dir, { ...result([dim()]), layout });
+  const record = JSON.parse(readFileSync(join(dir, FACTS_PATH), "utf8"));
+
+  const { size, mtimeMs } = statSync(join(dir, FACTS_PATH));
+  assert.deepEqual(JSON.parse(readFileSync(join(dir, LAYOUT_PATH), "utf8")), { schema: FACTS_SCHEMA, record: { size, mtimeMs }, layout: record.layout });
+  assert.deepEqual(readLayout(dir), { layout: record.layout });
+});
+
+test("a layout file that cannot answer for the record beside it is not read", (t) => {
+  // Each refusal leaves the caller to read the record itself, which is what a
+  // map written before the layout file existed already needs.
+  const absent = root(t);
+  assert.equal(readLayout(absent), null, "nothing written");
+
+  // Stamped from the record as it stands, so each case below refuses on its one change.
+  const stamped = (dir, { schema = FACTS_SCHEMA, size = 0, mtimeMs = 0 } = {}) => {
+    const now = statSync(join(dir, FACTS_PATH));
+    const record = { size: now.size + size, mtimeMs: now.mtimeMs + mtimeMs };
+    writeFileSync(join(dir, LAYOUT_PATH), JSON.stringify({ schema, record, layout: { tests: [], roots: [] } }));
+  };
+
+  const exact = root(t);
+  writeFacts(exact, result([dim()]));
+  stamped(exact);
+  assert.deepEqual(readLayout(exact), { layout: { tests: [], roots: [] } }, "the control: an exact stamp is read");
+
+  const ahead = root(t);
+  writeFacts(ahead, result([dim()]));
+  stamped(ahead, { schema: FACTS_SCHEMA + 1 });
+  assert.equal(readLayout(ahead), null, "a schema this build has not heard of");
+
+  const shifted = root(t);
+  writeFacts(shifted, result([dim()]));
+  stamped(shifted, { mtimeMs: 1 });
+  assert.equal(readLayout(shifted), null, "a record one millisecond off, at the same size");
+
+  const resized = root(t);
+  writeFacts(resized, result([dim()]));
+  stamped(resized, { size: 1 });
+  assert.equal(readLayout(resized), null, "a record of another size");
+
+  const alone = root(t);
+  writeFacts(alone, result([dim()]));
+  rmSync(join(alone, FACTS_PATH));
+  assert.equal(readLayout(alone), null, "no record for it to be the layout of");
+
+  // A restore or an older build that rewrites the record leaves this file
+  // describing a record that is no longer there, whatever the layout file's own mtime.
+  const behind = root(t);
+  writeFacts(behind, result([dim()]));
+  const then = new Date(Date.now() - 60_000);
+  utimesSync(join(behind, FACTS_PATH), then, then);
+  const later = new Date(Date.now() + 60_000);
+  utimesSync(join(behind, LAYOUT_PATH), later, later);
+  assert.equal(readLayout(behind), null, "a record with another mtime");
+
+  // Past the size the reader takes, the record reads as nothing, so the layout
+  // file cannot answer for it even stamped exactly. Sparse, so it costs no disk.
+  const over = root(t);
+  writeFacts(over, result([dim()]));
+  truncateSync(join(over, FACTS_PATH), 64 * 1024 * 1024 + 1);
+  stamped(over);
+  assert.equal(readLayout(over), null, "a record past the cap");
+});
+
+test("the layout file is stamped from the record this writer renamed, not whatever is there after", async (t) => {
+  // Another writer replacing the record right after this one's rename must
+  // leave a layout file that refuses, so the reader goes to that writer's record.
+  const dir = root(t);
+  writeFacts(dir, result([dim()]));
+  const fs = (await import("node:fs")).default;
+  const { syncBuiltinESMExports } = await import("node:module");
+  const real = fs.renameSync;
+  let replaced = 0;
+  // The writer renames through the resolved directory, so the target is matched by its tail.
+  fs.renameSync = (from, to) => {
+    real(from, to);
+    if (to.endsWith(join(".claude", "anatomiya", "facts.json"))) {
+      writeFileSync(`${to}.theirs`, readFileSync(to, "utf8") + "\n\n");
+      real(`${to}.theirs`, to);
+      replaced++;
+    }
+  };
+  syncBuiltinESMExports();
+  try {
+    writeFacts(dir, result([dim({ key: "mine" })]));
+  } finally {
+    fs.renameSync = real;
+    syncBuiltinESMExports();
+  }
+
+  assert.equal(replaced, 1, "the other writer ran once, right after this one's rename");
+  assert.equal(readLayout(dir), null);
 });

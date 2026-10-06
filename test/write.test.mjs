@@ -10,7 +10,7 @@ import { execFileSync } from "node:child_process";
 import { commitMap, planMap, writeMap } from "../plugins/anatomiya/lib/write.mjs";
 import { areaFilename, isOwned, realpathOf, realpathOrNull, EXCLUDE_LINES, HEAD_BYTES, PREFIX, SETTINGS_PATH } from "../plugins/anatomiya/lib/rules.mjs";
 import { areaId } from "../plugins/anatomiya/lib/areas.mjs";
-import { writeFacts, readFacts as readFactsFrom } from "../plugins/anatomiya/lib/facts.mjs";
+import { writeFacts, readFacts as readFactsFrom, readLayout } from "../plugins/anatomiya/lib/facts.mjs";
 import { severityFor } from "../plugins/anatomiya/lib/check.mjs";
 
 const RULES = ".claude/rules";
@@ -232,13 +232,51 @@ test("every file being replaced is read before the first one is renamed", async 
   rmSync(dir, { recursive: true, force: true });
 });
 
+/** A roster with one root, the shape the overview renders from. */
+const roster = (root) => ({
+  size: 10,
+  minFiles: 3,
+  roots: [{ path: root, dir: root, files: 5, source: 5, exts: [[".ts", 5]], other: 0, jsx: 0, jsxExt: null, tests: [], testRoot: false }],
+  more: { roots: 0, files: 0, floor: { dirs: 4, files: 4, root: 14 } },
+  tests: [],
+  principles: [],
+  truncated: false,
+});
+
+test("a scan writes the layout file beside the record, holding the record's layout", (t) => {
+  const dir = workspace();
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const layout = roster("src/services");
+
+  writeMap({ ...result(dir, [area("src/services")]), layout });
+
+  assert.deepEqual(JSON.parse(readFileSync(join(dir, STORE, "layout.json"), "utf8")).layout, readFacts(dir).layout);
+  assert.deepEqual(readFacts(dir).layout, layout);
+  // Read back too: the stamp is the record's as it landed, so the rename kept it.
+  assert.deepEqual(readLayout(dir), { layout });
+});
+
+test("a replace that fails part way puts the previous layout file back with the record", async (t) => {
+  // Staged with the record, so the two always describe the same scan.
+  const dir = workspace();
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  writeMap({ ...result(dir, [area("src/services"), area("src/api")]), layout: roster("src/a") });
+  const before = snapshot(dir);
+  await failNth(t, "renameSync", 3);
+
+  assert.throws(() => writeMap({ ...result(dir, [area("src/services"), area("src/hooks")]), layout: roster("src/b") }), /EPERM/);
+
+  assert.ok(`${STORE}/layout.json` in before, "the first scan wrote one");
+  assert.deepEqual(snapshot(dir), before);
+});
+
 test("a dry run writes nothing at all", () => {
   const dir = workspace();
 
   const plan = writeMap(result(dir, [area("src/services")]), { dryRun: true });
 
   assert.equal(plan.write.length, 2);
-  assert.equal(existsSync(join(dir, ".claude")), false, "not even the directory");
+  assert.equal(existsSync(join(dir, ".claude")), false, "not even the directory, so neither the record nor the layout file");
   rmSync(dir, { recursive: true, force: true });
 });
 

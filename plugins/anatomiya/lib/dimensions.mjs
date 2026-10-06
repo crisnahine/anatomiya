@@ -5,7 +5,8 @@ import { JSX_DIMENSIONS } from "./dimensions-jsx.mjs";
 import { RAILS_DIMENSIONS } from "./dimensions-rails.mjs";
 import { SEMANTIC_DIMENSIONS } from "./dimensions-semantic.mjs";
 import { NAMING_AST } from "./dimensions-naming.mjs";
-import { CAPABILITY_DIMENSIONS, CAPABILITY_WORDS } from "./dimensions-capability.mjs";
+import { CAPABILITY_DIMENSIONS } from "./dimensions-capability.mjs";
+import { CAPABILITY_WORDS } from "./stems.mjs";
 // The framework field is held to the declared profiles, so a row naming a
 // framework nobody detects cannot ship as a slot that can only read zero (C8).
 import { FRAMEWORK_NAMES } from "./frameworks.mjs";

@@ -21,7 +21,6 @@ import { fileURLToPath } from "node:url";
 import { absentInterpreter } from "./child.mjs";
 import { firstLine } from "./encode.mjs";
 import { ENGINES } from "./langs.mjs";
-import { prismLoadArgs, prismVersionArgs, rubyEnv } from "./ruby.mjs";
 import { unusableReason } from "./semantic.mjs";
 import { olderThan } from "./version.mjs";
 
@@ -85,8 +84,14 @@ export const NODE_PROBE_IDS = Object.freeze(PROBE_IDS.filter((id) => PROBES[id].
 // installs to ask: the same load path the parser is handed, so the answer is
 // about the library that will parse. The argv belongs to the engine rather than
 // to its interpreter, so a second one adds a row here instead of a branch below.
-const ASK_VERSION = { prism: prismVersionArgs };
-const LOAD_ARGS = { prism: prismLoadArgs };
+// Loaded when the probe runs: the entry point imports this module for the node
+// floor before every hook, and the Ruby bridge reaches the walker.
+const BRIDGES = {
+  prism: async () => {
+    const { prismLoadArgs, prismVersionArgs, rubyEnv } = await import("./ruby.mjs");
+    return { loadArgs: prismLoadArgs, versionArgs: prismVersionArgs, env: rubyEnv };
+  },
+};
 
 // The phrase the node remedy spells in the directory for. The table states it
 // the way a person would read it aloud; a person following it needs the path.
@@ -387,8 +392,10 @@ function versionOf(module) {
  * under the floor parses without raising and counts every site as zero.
  */
 async function probeInterpreter(engine, { timeoutMs, env }) {
-  const load = await LOAD_ARGS[engine.id]({ ruby: engine.command, env, timeoutMs });
-  const { err, stdout } = await ask(engine.command, ASK_VERSION[engine.id](load), { timeoutMs, env });
+  const bridge = await BRIDGES[engine.id]();
+  const load = await bridge.loadArgs({ ruby: engine.command, env, timeoutMs });
+  const scrubbed = bridge.env(env);
+  const { err, stdout } = await ask(engine.command, bridge.versionArgs(load), { timeoutMs, env: scrubbed });
   if (absentInterpreter(err)) {
     return row(engine, { present: false, reason: `${engine.command} is not on PATH` });
   }
@@ -402,7 +409,7 @@ async function probeInterpreter(engine, { timeoutMs, env }) {
     // global version: the shim exits 127 with "rbenv: ruby: command not found",
     // and this said prism was not installed, whose remedy fails the same way.
     // Asked apart, with nothing loaded, so its failure is the interpreter's.
-    const bare = await ask(engine.command, ["--disable-gems", "-e", "1"], { timeoutMs, env });
+    const bare = await ask(engine.command, ["--disable-gems", "-e", "1"], { timeoutMs, env: scrubbed });
     if (bare.err && !bare.err.killed && !absentInterpreter(bare.err)) {
       const said = firstLine(bare.stderr) || `exit ${bare.err.code}`;
       return row(engine, {
@@ -436,8 +443,9 @@ async function probeInterpreter(engine, { timeoutMs, env }) {
  *
  * Buffered rather than streamed, unlike the parse bridge: what comes back is
  * one version string, so it is bounded by what it is. Outside the repository
- * and under the same scrub the Ruby bridge spawns with, because this points an
- * interpreter at whatever `PATH` names and `RUBYOPT` can inject a `-r` into it.
+ * and under the same scrub the Ruby bridge spawns with, which the caller hands
+ * in, because this points an interpreter at whatever `PATH` names and `RUBYOPT`
+ * can inject a `-r` into it.
  */
 function ask(command, args, { timeoutMs, env }) {
   return new Promise((resolve) => {
@@ -446,7 +454,7 @@ function ask(command, args, { timeoutMs, env }) {
       args,
       {
         cwd: tmpdir(),
-        env: rubyEnv(env),
+        env,
         encoding: "utf8",
         timeout: timeoutMs,
         killSignal: "SIGKILL",

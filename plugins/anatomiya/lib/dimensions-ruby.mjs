@@ -1,5 +1,6 @@
 import { walkRuby, constName, bodyOf, ownDef, site, args } from "./ruby-walk.mjs";
-import { CAPABILITY_WORDS, implementsCapability, nameWords } from "./dimensions-capability.mjs";
+import { implementsCapability, nameWords } from "./dimensions-capability.mjs";
+import { CAPABILITY_WORDS } from "./stems.mjs";
 
 /**
  * Ruby dimensions, in the shape `reduce.mjs` already folds: one `add` per
