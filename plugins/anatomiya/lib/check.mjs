@@ -172,7 +172,9 @@ export async function check(cwd, { baseRef = null } = {}) {
   // rather than everything, and reading the tree there would report every site
   // in an uncommitted file against an author who may not have written one.
   // Both ask a listing of a commit, HEAD's and the merge base's, and neither
-  // reads the other's answer.
+  // waits on the other. They share the rows: the base sets `from` on the rows
+  // in `status.present`, the same array `pending` carries, and the tree reads
+  // it only once both are done.
   const [pending] = await Promise.all([
     status !== null && mode === "compare" ? onlyInHead(root, status, base.head) : { present: [], deleted: [], removed: [] },
     resolvePendingBases(root, base.mergeBase, status?.present ?? []),
