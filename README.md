@@ -164,7 +164,8 @@ decides on its own whether to run the type checker, the same way `/anatomiya:sca
 alone a checkout with no map of its own, a map, pin or refresh file committed to the repository, and
 a repository in the middle of a merge or rebase. When a rescan fails it keeps the previous map,
 tries again after half an hour or once the checkout moves, and the delivered map says the refresh
-failed until one succeeds.
+failed until one succeeds. A committed map's `.claude/anatomiya/layout.json` comes along but does
+nothing after a clone: it names the committing checkout's record file, so the hooks read the record.
 
 A session started in the directory that holds your checkouts, which has no map of its own, refreshes
 and watches each mapped checkout directly below it, and the reuse check reads each one's change,
