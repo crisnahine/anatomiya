@@ -4,8 +4,9 @@
  * A thread rather than a process, because nothing here can crash the way an
  * oxc parse can (B2): prism runs in the child, and what this thread holds is
  * JSON and the walks. The rows arrive as keys, since a function cannot cross
- * to a thread, and what leaves is one record per file, counts and no tree,
- * then how the batch ended.
+ * to a thread, and what leaves is one record per file, then how the batch
+ * ended: counts and no tree for a scan, the tree itself for a check, which asks
+ * for no rows.
  *
  * The child itself is started by the parent and reached through a stand-in
  * that answers like one, because only the thread that spawns a child can reap
