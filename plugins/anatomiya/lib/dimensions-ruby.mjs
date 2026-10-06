@@ -1,4 +1,3 @@
-import { fromVisitor } from "./walk.mjs";
 import { walkRuby, constName, bodyOf, ownDef, site, args } from "./ruby-walk.mjs";
 import { implementsCapability, nameWords, NOTHING } from "./dimensions-capability.mjs";
 import { CAPABILITY_WORDS } from "./stems.mjs";
@@ -594,7 +593,6 @@ export const RUBY_DIMENSIONS = [
     },
   },
 ];
-for (const d of RUBY_DIMENSIONS) if (d.visitor) d.run = fromVisitor(d.visitor, walkRuby);
 
 const LOG_DIRECT = /^(puts|print|p|pp|warn)$/;
 // What writes through a logger. `level=`, `formatter=` and `debug?` configure or

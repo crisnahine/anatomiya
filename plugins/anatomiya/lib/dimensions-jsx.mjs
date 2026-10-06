@@ -1,4 +1,4 @@
-import { walk, fromVisitor, isFunctionLike, declName, value, boundNames } from "./walk.mjs";
+import { walk, isFunctionLike, declName, value, boundNames } from "./walk.mjs";
 
 /**
  * JSX dimensions, same contract as `dimensions.mjs`: one claim, one `add` per
@@ -632,4 +632,3 @@ export const JSX_DIMENSIONS = [
     },
   },
 ];
-for (const d of JSX_DIMENSIONS) if (d.visitor) d.run = fromVisitor(d.visitor);
