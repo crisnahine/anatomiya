@@ -69,5 +69,5 @@ function spawner(command, args, options) {
 // Each record leaves as it is decided, so the held heap carries one tree
 // rather than every record of the batch.
 const out = await parseBatch(files, { ...job, dimensions, spawner, onResult: (result) => parentPort.postMessage({ result }) });
-parentPort.postMessage({ out: { ...out, results: [] } });
+parentPort.postMessage({ out });
 parentPort.off("message", relay);
