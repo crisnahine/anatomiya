@@ -746,7 +746,8 @@ test("the layout is written beside the record, and reads back as the record's ow
   writeFacts(dir, { ...result([dim()]), layout });
   const record = JSON.parse(readFileSync(join(dir, FACTS_PATH), "utf8"));
 
-  assert.deepEqual(JSON.parse(readFileSync(join(dir, LAYOUT_PATH), "utf8")), { schema: FACTS_SCHEMA, layout: record.layout });
+  const recordBytes = readFileSync(join(dir, FACTS_PATH)).length;
+  assert.deepEqual(JSON.parse(readFileSync(join(dir, LAYOUT_PATH), "utf8")), { schema: FACTS_SCHEMA, recordBytes, layout: record.layout });
   assert.deepEqual(readLayout(dir), { layout: record.layout });
 });
 

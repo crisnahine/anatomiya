@@ -10,7 +10,7 @@ import { execFileSync } from "node:child_process";
 import { commitMap, planMap, writeMap } from "../plugins/anatomiya/lib/write.mjs";
 import { areaFilename, isOwned, realpathOf, realpathOrNull, EXCLUDE_LINES, HEAD_BYTES, PREFIX, SETTINGS_PATH } from "../plugins/anatomiya/lib/rules.mjs";
 import { areaId } from "../plugins/anatomiya/lib/areas.mjs";
-import { writeFacts, readFacts as readFactsFrom } from "../plugins/anatomiya/lib/facts.mjs";
+import { writeFacts, readFacts as readFactsFrom, readLayout } from "../plugins/anatomiya/lib/facts.mjs";
 import { severityFor } from "../plugins/anatomiya/lib/check.mjs";
 
 const RULES = ".claude/rules";
@@ -243,20 +243,23 @@ const roster = (root) => ({
   truncated: false,
 });
 
-test("a scan writes the layout file beside the record, holding the record's layout", () => {
+test("a scan writes the layout file beside the record, holding the record's layout", (t) => {
   const dir = workspace();
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
   const layout = roster("src/services");
 
   writeMap({ ...result(dir, [area("src/services")]), layout });
 
   assert.deepEqual(JSON.parse(readFileSync(join(dir, STORE, "layout.json"), "utf8")).layout, readFacts(dir).layout);
   assert.deepEqual(readFacts(dir).layout, layout);
-  rmSync(dir, { recursive: true, force: true });
+  // Read back too: a layout file written before the record is older than it and refused.
+  assert.deepEqual(readLayout(dir), { layout });
 });
 
 test("a replace that fails part way puts the previous layout file back with the record", async (t) => {
   // Staged with the record, so the two always describe the same scan.
   const dir = workspace();
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
   writeMap({ ...result(dir, [area("src/services"), area("src/api")]), layout: roster("src/a") });
   const before = snapshot(dir);
   await failNth(t, "renameSync", 3);
@@ -265,7 +268,6 @@ test("a replace that fails part way puts the previous layout file back with the 
 
   assert.ok(`${STORE}/layout.json` in before, "the first scan wrote one");
   assert.deepEqual(snapshot(dir), before);
-  rmSync(dir, { recursive: true, force: true });
 });
 
 test("a dry run writes nothing at all", () => {

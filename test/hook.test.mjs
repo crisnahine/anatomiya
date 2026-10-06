@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { chmodSync, existsSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -258,17 +258,32 @@ test("the layout file answers the walk, and a map without one answers the same f
   const layout = { tests: [], roots: [{ dir: "app", path: "app" }] };
   const dir = recorded(t, layout);
   const fromRecord = ownLayout(dir);
-  writeFileSync(join(dir, LAYOUT_PATH), JSON.stringify({ schema: FACTS_SCHEMA, layout }));
+  const recordBytes = statSync(join(dir, FACTS_PATH)).size;
+  writeFileSync(join(dir, LAYOUT_PATH), JSON.stringify({ schema: FACTS_SCHEMA, recordBytes, layout }));
 
   assert.deepEqual(ownLayout(dir), fromRecord);
 
   // Read rather than passed over: a layout file saying something else is what answers.
   const other = { tests: [], roots: [{ dir: "lib", path: "lib" }] };
-  writeFileSync(join(dir, LAYOUT_PATH), JSON.stringify({ schema: FACTS_SCHEMA, layout: other }));
+  writeFileSync(join(dir, LAYOUT_PATH), JSON.stringify({ schema: FACTS_SCHEMA, recordBytes, layout: other }));
   assert.deepEqual(ownLayout(dir).layout, other);
 
-  writeFileSync(join(dir, LAYOUT_PATH), JSON.stringify({ schema: FACTS_SCHEMA + 1, layout: other }));
+  writeFileSync(join(dir, LAYOUT_PATH), JSON.stringify({ schema: FACTS_SCHEMA + 1, recordBytes, layout: other }));
   assert.deepEqual(ownLayout(dir), fromRecord, "a layout file from a build ahead of this one leaves the record to answer");
+});
+
+test("a record the reader refuses is not answered for by a newer layout file", (t) => {
+  // A merge conflict in a committed record: the record reads as nothing and the
+  // walk goes on, so the layout file written with it must not answer either.
+  const layout = { tests: [], roots: [{ dir: "app", path: "app" }] };
+  const dir = recorded(t, layout);
+  const recordBytes = statSync(join(dir, FACTS_PATH)).size;
+  writeFileSync(join(dir, LAYOUT_PATH), JSON.stringify({ schema: FACTS_SCHEMA, recordBytes, layout }));
+  writeFileSync(join(dir, FACTS_PATH), `<<<<<<< HEAD\n${readFileSync(join(dir, FACTS_PATH), "utf8")}`);
+  const later = new Date(Date.now() + 60_000);
+  utimesSync(join(dir, LAYOUT_PATH), later, later);
+
+  assert.equal(ownLayout(dir), null);
 });
 
 test("a record with no layout in it is not a record", (t) => {
