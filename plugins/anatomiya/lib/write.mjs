@@ -1,7 +1,7 @@
-import { closeSync, constants, fstatSync, mkdirSync, openSync, readFileSync, renameSync, unlinkSync } from "node:fs";
+import { mkdirSync, renameSync, unlinkSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { renderArea, renderOverview, splitUncovered } from "./render.mjs";
-import { FACTS_PATH, FACTS_SCHEMA, LAYOUT_PATH, readFacts, readLayout, factsJson, stampedLayout, atomic, writePair, writeTemp } from "./facts.mjs";
+import { FACTS_PATH, FACTS_SCHEMA, LAYOUT_PATH, readFacts, readLayout, factsJson, stampedLayout, atomic, previousBytes, writePair, writeTemp } from "./facts.mjs";
 import { byCode } from "./paths.mjs";
 import {
   RULES_DIR,
@@ -299,21 +299,6 @@ function replaceAll(staged, removals, pair) {
       } catch {}
     }
     throw err;
-  }
-}
-
-/** A regular file's bytes, `null` where nothing is, `undefined` where they cannot be put back. */
-function previousBytes(path) {
-  let fd;
-  try {
-    // Opened then typed through the handle, so the file read is the file typed;
-    // O_NOFOLLOW refuses a link the way lstat did.
-    fd = openSync(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0));
-    return fstatSync(fd).isFile() ? readFileSync(fd) : undefined;
-  } catch (err) {
-    return err.code === "ENOENT" ? null : undefined;
-  } finally {
-    if (fd !== undefined) closeSync(fd);
   }
 }
 

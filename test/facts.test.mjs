@@ -881,3 +881,42 @@ test("a record that cannot be renamed into place leaves no temporary file", asyn
   assert.deepEqual(readdirSync(join(dir, ".claude", "anatomiya")).sort(), ["facts.json", "layout.json"]);
   assert.notEqual(readLayout(dir), null, "the old pair still answers");
 });
+
+test("a layout file that cannot be renamed into place puts the record back", async (t) => {
+  // The record is renamed first, so a throw at the layout's rename had already
+  // replaced it: a caller told the write failed found the new record beside
+  // the old layout file.
+  const dir = root(t);
+  writeFacts(dir, result([dim()]));
+  const before = readFileSync(join(dir, FACTS_PATH), "utf8");
+  const fresh = root(t);
+  await refuseFor(t, "renameSync", (path) => path.includes("layout.json.tmp-"));
+
+  assert.throws(() => writeFacts(dir, result([dim({ key: "new" })])), /EPERM/);
+  assert.equal(readFileSync(join(dir, FACTS_PATH), "utf8"), before);
+  assert.deepEqual(readdirSync(join(dir, ".claude", "anatomiya")).sort(), ["facts.json", "layout.json"], "no temporary file left");
+
+  assert.throws(() => writeFacts(fresh, result([dim()])), /EPERM/);
+  assert.deepEqual(readdirSync(join(fresh, ".claude", "anatomiya")), [], "a record that was not there is not left there");
+});
+
+test("a directory with no record is answered before the layout file's path is resolved", async (t) => {
+  // The notice asks this of every ancestor it walks past, and most hold no map.
+  const dir = root(t);
+  const fs = (await import("node:fs")).default;
+  const { syncBuiltinESMExports } = await import("node:module");
+  const real = fs.realpathSync;
+  let resolved = 0;
+  fs.realpathSync = (...args) => {
+    resolved++;
+    return real(...args);
+  };
+  syncBuiltinESMExports();
+  try {
+    assert.equal(readLayout(dir, join(dir, FACTS_PATH)), null);
+  } finally {
+    fs.realpathSync = real;
+    syncBuiltinESMExports();
+  }
+  assert.equal(resolved, 0);
+});
