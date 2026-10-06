@@ -6,7 +6,6 @@
 import { join } from "node:path";
 
 import { aboutDir, childLayouts, echoContext, holdsTestIn, inCheckout, isPathTaken, ownLayout, targetIn, windowOf } from "./hook.mjs";
-import { isTestPath, noticeFor } from "./precedent.mjs";
 
 /**
  * The directory whose repository answers this call.
@@ -58,7 +57,7 @@ export function runEcho(cwd, payload) {
  * count that was wrong. The same reason the rest of this file exits 0 whatever
  * happens (A24).
  */
-export function runNotice(cwd, payload) {
+export async function runNotice(cwd, payload) {
   const event = payload?.hook_event_name;
   if (!event) return {};
   const root = answersFor(payload, cwd);
@@ -74,6 +73,9 @@ export function runNotice(cwd, payload) {
   // No exclusion to make, unlike `check`, which subtracts everything its change
   // brought: the guard above has already answered for a path something is at,
   // so anything this finds in that directory is another file.
+  // Loaded here: the echo shares this module and runs on every tool call, and
+  // the notice's rules reach nine modules it never needs.
+  const { isTestPath, noticeFor } = await import("./precedent.mjs");
   const holdsTest = holdsTestIn(found.root, isTestPath);
   const additionalContext = noticeFor(rel, found.layout, { holdsTest, from: found.from });
   if (additionalContext === null) return {};
