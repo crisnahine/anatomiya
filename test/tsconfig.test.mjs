@@ -17,6 +17,7 @@ import {
   toTsPath,
   within,
   contains,
+  walkingRealpath,
 } from "../plugins/anatomiya/lib/tsconfig.mjs";
 
 import { needsSymlinks } from "./platform.mjs";
@@ -541,6 +542,48 @@ test("the containment walk resolves each directory once, not once per path under
     syncBuiltinESMExports();
   }
   assert.deepEqual(asked.filter((p) => p.startsWith(dir)), [], "a directory inside the tree was walked again");
+});
+
+test("the walking realpath answers what realpathSync answers for a step back through a link", needsSymlinks, (t) => {
+  // realpathSync drops `link/..` as text before it reads a link; resolving the
+  // link first lands in the parent of wherever it points.
+  const dir = tree(t);
+  mkdirSync(join(dir, "away", "deep"), { recursive: true });
+  symlinkSync(join(dir, "away", "deep"), join(dir, "link"));
+  const asked = `${dir}/link/../away`;
+
+  assert.equal(walkingRealpath()(asked), realpathSync(asked));
+});
+
+test("the compiler host refuses a step back through a link that leaves the root", needsSymlinks, (t) => {
+  // The host opens the path as written and the OS takes `..` from where `up`
+  // leads, while the string reads as `src/outside` inside the root.
+  const parent = tree(t);
+  const dir = join(parent, "repo");
+  mkdirSync(join(dir, "src"), { recursive: true });
+  mkdirSync(join(parent, "outside"));
+  writeFileSync(join(parent, "outside", "secret.ts"), "export const secret = 1;\n");
+  symlinkSync("..", join(dir, "src", "up"));
+  const via = `${dir}/src/up/../outside/secret.ts`;
+  const inside = `${dir}/src/up/src/..`;
+  const { ts, reached } = compiler({ [via]: "export const secret = 1;" });
+
+  const host = confinedCompilerHost(ts, dir, {});
+
+  assert.equal(host.readFile(via), undefined);
+  assert.equal(host.fileExists(via), false);
+  assert.equal(host.getSourceFile(via), undefined);
+  assert.deepEqual(reached.filter((r) => r.includes("secret")), [], "the far side saw a path the host had refused");
+  assert.deepEqual(host.getDirectories(inside), ["sub"], "a step back that stays inside is still read");
+});
+
+test("a list of directories the host remembers cannot be changed by the caller", (t) => {
+  const dir = tree(t);
+  const { ts } = compiler();
+  const host = confinedCompilerHost(ts, dir, {});
+
+  host.getDirectories(dir).push("planted");
+  assert.deepEqual(host.getDirectories(dir), ["sub"]);
 });
 
 test("two builds never share what the disk said", (t) => {

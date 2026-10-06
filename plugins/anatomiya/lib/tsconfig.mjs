@@ -12,7 +12,7 @@
  * somebody is working in.
  */
 import { existsSync, lstatSync, realpathSync } from "node:fs";
-import { basename, dirname, join, resolve, relative, isAbsolute, posix, win32 } from "node:path";
+import { basename, dirname, join, parse, resolve, relative, isAbsolute, posix, win32 } from "node:path";
 
 import { realpathOf, resolveInside } from "./rules.mjs";
 
@@ -233,22 +233,21 @@ export function confinedCompilerHost(ts, root, options) {
   // chain read as one type, and the tier reported 0% resolution everywhere.
   const realRoot = realpathOf(root);
   const realLibDir = realpathOf(libDir);
-  // Each `realpathSync` lstats every directory above the path again, and the
-  // containment walk asks it of every directory it enters: one lstat per path
-  // per build, off the parent's answer, unless the path is itself a link.
-  const realpath = remembered((p) => {
-    const up = dirname(p);
-    if (up === p) return realpathSync(p);
-    const at = join(realpath(up), basename(p));
-    return lstatSync(at).isSymbolicLink() ? realpathSync(p) : at;
-  });
-  const permitted = (p) => {
+  const realpath = walkingRealpath();
+  const permitted = (asked) => {
+    let p;
+    try {
+      p = opened(asked, realpath);
+    } catch {
+      return false;
+    }
     if (insideRoot(root, p, { realpath }) || contains(libDir, p)) return true;
     return contains(realRoot, realpathOf(p)) || contains(realLibDir, realpathOf(p));
   };
   // Module resolution asks about thousands of paths, each a walk of realpath
   // calls up from the root, and the uncached walk was 45% of building the program.
   const allowed = remembered(permitted);
+  const directories = remembered((p) => (allowed(p) ? base.getDirectories(p) : []));
 
   // Module resolution probes the same candidates from every importing file,
   // measured at 107,928 stats on 24,737 paths in one build.
@@ -261,11 +260,49 @@ export function confinedCompilerHost(ts, root, options) {
     // Nothing this tier does may leave a file behind in a repository somebody
     // is working in. `noEmit` already says so; this is the second lock.
     writeFile: () => {},
-    getDirectories: remembered((p) => (allowed(p) ? base.getDirectories(p) : [])),
+    getDirectories: (p) => directories(p).slice(),
     readDirectory: (p, ...rest) => (allowed(p) ? base.readDirectory(p, ...rest) : []),
     realpath: base.realpath && remembered(base.realpath),
     getCurrentDirectory: () => root,
   };
+}
+
+/**
+ * `realpathSync` for one build, each directory resolved once.
+ *
+ * Each `realpathSync` lstats every directory above the path again, and the
+ * containment walk asks it of every directory it enters: one lstat per path
+ * per build, off the parent's answer, unless the path is itself a link.
+ */
+export function walkingRealpath() {
+  const realpath = remembered((asked) => {
+    // `..` as text first, the way `realpathSync` takes it.
+    const p = resolve(asked);
+    const up = dirname(p);
+    if (up === p) return realpathSync(p);
+    const at = join(realpath(up), basename(p));
+    return lstatSync(at).isSymbolicLink() ? realpathSync(p) : at;
+  });
+  return realpath;
+}
+
+/**
+ * The path the OS reaches for `p` as written.
+ *
+ * The base host opens the raw string, and the OS takes each `..` from where
+ * the links before it lead: `src/up/../x` with `up -> ..` is a sibling of the
+ * root, while the string reads as `src/x`. A path with no `..` is its own answer.
+ */
+function opened(p, realpath) {
+  const { root } = parse(p);
+  const segments = p.slice(root.length).split(/[\\/]/);
+  if (!segments.includes("..")) return p;
+  let at = root;
+  for (const segment of segments) {
+    if (segment === "" || segment === ".") continue;
+    at = segment === ".." ? dirname(realpath(at)) : join(at, segment);
+  }
+  return at;
 }
 
 /** `fn` answering each argument once, a throw included, for a build that sees a fixed tree. */
