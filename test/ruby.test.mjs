@@ -6,7 +6,7 @@ import { mkdirSync, mkdtempSync, writeFileSync, readFileSync, realpathSync, rmSy
 import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { choosePrism, listPrism, parseRuby, prismLoadArgs, RUBY_GUARDS } from "../plugins/anatomiya/lib/ruby.mjs";
+import { choosePrism, listPrism, parseRuby, prismLoadArgs, RUBY_GUARDS, shardsBySize } from "../plugins/anatomiya/lib/ruby.mjs";
 import { walkRuby, constName, bodyOf, site, args } from "../plugins/anatomiya/lib/ruby-walk.mjs";
 import { RUBY_DIMENSIONS } from "../plugins/anatomiya/lib/dimensions-ruby.mjs";
 import { siteIdentity } from "../plugins/anatomiya/lib/introduced.mjs";
@@ -1944,4 +1944,247 @@ test("the Ruby site and argument readers live in the leaf both registries import
     const source = readFileSync(new URL(`../plugins/anatomiya/lib/${file}`, import.meta.url), "utf8");
     assert.doesNotMatch(source, /const site =|arguments\.arguments|arguments\?\.arguments/, `${file} reads both off the leaf`);
   }
+});
+
+// --- shards: balanced by bytes, read off the parent thread ---
+
+test("shards are balanced by bytes, the largest file first into the lightest shard", () => {
+  // Contiguous batches put the heavy end of a Rails tree in one child: on
+  // empire-flippers/api the last of four took 3.1s against 1.2s for the first.
+  assert.deepEqual(shardsBySize([9, 1, 1, 1, 1, 1, 1, 1, 1], 2), [[0], [1, 2, 3, 4, 5, 6, 7, 8]]);
+  // Equal sizes keep input order, and an equal load goes to the shard holding fewer files.
+  assert.deepEqual(shardsBySize([3, 3, 3, 3], 2), [[0, 2], [1, 3]]);
+  assert.deepEqual(shardsBySize([0, 0], 2), [[0], [1]]);
+  // Each shard lists its files in input order, and the shards follow their first file.
+  assert.deepEqual(shardsBySize([1, 9], 2), [[0], [1]]);
+  assert.deepEqual(shardsBySize([1, 9, 5], 2), [[0, 2], [1]]);
+  assert.deepEqual(shardsBySize([5], 3), [[0]]);
+});
+
+/** Run `parse`, recording every stream line this thread hands `JSON.parse`. */
+async function linesParsedHere(parse) {
+  const lines = [];
+  const original = JSON.parse;
+  JSON.parse = function (text, ...rest) {
+    if (typeof text === "string" && /^\{"(ready|fatal|rel)"/.test(text)) lines.push(text.slice(0, 60));
+    return original.call(this, text, ...rest);
+  };
+  try {
+    return { out: await parse(), lines };
+  } finally {
+    JSON.parse = original;
+  }
+}
+
+test("the parent reads no line of the stream: trees are parsed and walked off its thread", needsRuby, async () => {
+  // The trees for empire-flippers/api are 75 MB of JSON, and reading and
+  // walking them here was 2.28s of a 3.45s parse phase on one core.
+  const files = Object.keys(SRC).map((name) => ({ rel: `${name}.rb`, abs: join(dir, `${name}.rb`) }));
+  const { out, lines } = await linesParsedHere(() => parseRuby(files, { dimensions: RUBY_DIMENSIONS, shards: 2 }));
+
+  assert.ok(out.results.some((r) => r.ok && r.hits && Object.keys(r.hits).length), "the run answered counts");
+  assert.ok(out.results.every((r) => r.program === null || r.program === undefined), "and no tree");
+  assert.deepEqual(lines, []);
+});
+
+/** A stub interpreter, warmed once so a short idle window times the script and not the first exec. */
+function stubRuby(name, body) {
+  const home = mkdtempSync(join(dir, `${name}-`));
+  const path = join(home, "ruby");
+  writeFileSync(
+    path,
+    ["#!/bin/sh", `if [ "$1" = "--warm" ]; then exit 0; fi`, `case "$*" in *Gem::Specification*) printf '[]'; exit 0 ;; esac`, ...body, ""].join("\n"),
+    { mode: 0o755 }
+  );
+  execFileSync(path, ["--warm"]);
+  return path;
+}
+
+const READY = `printf '{"ready":true,"prism":"1.0.0"}\\n'`;
+const pair = ["a.rb", "b.rb"].map((rel) => ({ rel, abs: join(dir, "rescue_none.rb") }));
+const shape = (out) => ({
+  version: out.version,
+  error: out.error,
+  missingParser: out.missingParser,
+  stalled: out.stalled,
+  truncated: out.truncated,
+  results: out.results.map((r) => [r.rel, r.ok, r.error ?? null, Boolean(r.crashed), r.attempts]),
+});
+
+test("failure class, no interpreter: every file charged as a missing parser, off the parent", async () => {
+  const { out, lines } = await linesParsedHere(() =>
+    parseRuby(pair, { ruby: "anatomiya-no-such-ruby", dimensions: RUBY_DIMENSIONS })
+  );
+  const why = "spawn anatomiya-no-such-ruby ENOENT";
+  assert.deepEqual(shape(out), {
+    version: null, error: why, missingParser: why, stalled: null, truncated: false,
+    results: [["a.rb", false, why, true, 1], ["b.rb", false, why, true, 1]],
+  });
+  assert.ok(out.results.every((r) => r.missingParser === true));
+  assert.deepEqual(lines, []);
+});
+
+test("failure class, an interpreter exiting non-zero: its own stderr is the reason", needsShebang, async () => {
+  const ruby = stubRuby("exit3", ["cat >/dev/null", "echo 'boom: no libruby' >&2", "exit 3"]);
+  const { out, lines } = await linesParsedHere(() => parseRuby(pair, { ruby, dimensions: RUBY_DIMENSIONS }));
+  assert.deepEqual(shape(out), {
+    version: null, error: "boom: no libruby", missingParser: null, stalled: null, truncated: false,
+    results: [["a.rb", false, "boom: no libruby", true, 1], ["b.rb", false, "boom: no libruby", true, 1]],
+  });
+  assert.deepEqual(lines, []);
+});
+
+test("failure class, a child killed mid-batch: what it answered stands and the rest is charged", needsShebang, async () => {
+  const ruby = stubRuby("killed", [
+    "cat >/dev/null",
+    READY,
+    `printf '{"rel":"a.rb","ok":true,"errors":0,"length":1,"ast":{"t":"program","line":1}}\\n'`,
+    "kill -9 $$",
+  ]);
+  const { out, lines } = await linesParsedHere(() => parseRuby(pair, { ruby, dimensions: RUBY_DIMENSIONS }));
+  assert.deepEqual(shape(out), {
+    version: "1.0.0", error: null, missingParser: null, stalled: null, truncated: false,
+    results: [["a.rb", true, null, false, 1], ["b.rb", false, "no result", true, 1]],
+  });
+  assert.deepEqual(lines, []);
+});
+
+test("failure class, the idle guard: killed twice after its ready line, every file charged", needsShebang, async () => {
+  const ruby = stubRuby("silent", ["cat >/dev/null", READY, "exec sleep 30"]);
+  const { out, lines } = await linesParsedHere(() =>
+    parseRuby(pair, { ruby, dimensions: RUBY_DIMENSIONS, guards: { idleMs: 1500 } })
+  );
+  assert.deepEqual(shape(out), {
+    version: "1.0.0", error: "ruby went silent", missingParser: null, stalled: null, truncated: false,
+    results: [["a.rb", false, "ruby went silent", true, 2], ["b.rb", false, "ruby went silent", true, 2]],
+  });
+  assert.deepEqual(lines, []);
+});
+
+test("failure class, the wall clock: a timeout is retried once and then charged", needsShebang, async () => {
+  const ruby = stubRuby("wall", ["cat >/dev/null", READY, "exec sleep 30"]);
+  const { out, lines } = await linesParsedHere(() =>
+    parseRuby(pair, { ruby, dimensions: RUBY_DIMENSIONS, guards: { wallBaseMs: 1500, wallPerFileMs: 0 } })
+  );
+  const why = "ruby ran past its wall clock";
+  assert.deepEqual(shape(out), {
+    version: "1.0.0", error: why, missingParser: null, stalled: null, truncated: false,
+    results: [["a.rb", false, why, true, 2], ["b.rb", false, why, true, 2]],
+  });
+  assert.deepEqual(lines, []);
+});
+
+test("failure class, the line cap: the run is truncated and nothing past the cap is counted", needsShebang, async () => {
+  const ruby = stubRuby("linecap", [
+    "cat >/dev/null",
+    READY,
+    `printf '{"rel":"a.rb","ok":true,"ast":{"t":"program","line":1,"pad":"${"x".repeat(200)}'`,
+    "exec sleep 30",
+  ]);
+  const { out, lines } = await linesParsedHere(() =>
+    parseRuby(pair, { ruby, dimensions: RUBY_DIMENSIONS, guards: { maxLineBytes: 64 } })
+  );
+  assert.deepEqual(shape(out), {
+    version: "1.0.0", error: "line cap", missingParser: null, stalled: null, truncated: true,
+    results: [["a.rb", false, "line cap", true, 1], ["b.rb", false, "line cap", true, 1]],
+  });
+  assert.deepEqual(lines, []);
+});
+
+test("failure class, an unreadable file: the interpreter names the error class and the rest still count", needsRuby, async () => {
+  const files = [{ rel: "gone.rb", abs: join(dir, "no-such-file.rb") }, { rel: "here.rb", abs: join(dir, "rescue_none.rb") }];
+  const { out, lines } = await linesParsedHere(() => parseRuby(files, { dimensions: RUBY_DIMENSIONS }));
+  const { version, ...rest } = shape(out);
+  assert.match(version, /^\d+\.\d+/);
+  assert.deepEqual(rest, {
+    error: null, missingParser: null, stalled: null, truncated: false,
+    results: [["gone.rb", false, "Errno::ENOENT", false, 1], ["here.rb", true, null, false, 1]],
+  });
+  assert.deepEqual(lines, []);
+});
+
+test("a shard whose worker cannot run its rows charges its files rather than losing them", needsRuby, async () => {
+  // A row reaches the worker by key, so one the registry does not hold is the
+  // one way the worker itself fails before it answers.
+  const out = await parseRuby(pair, { dimensions: [{ key: "no_such_row", run() {} }] });
+  assert.equal(out.results.length, 2);
+  for (const r of out.results) {
+    assert.equal(r.crashed, true);
+    assert.match(r.error, /no_such_row/);
+  }
+});
+
+test("a shard starts under a parent run as `node --input-type=module -e`", needsRuby, () => {
+  // A thread inherits the parent's flags unless told otherwise, and this one
+  // is legal on the parent and refused by a thread that loads a file.
+  const lib = new URL("../plugins/anatomiya/lib/ruby.mjs", import.meta.url).href;
+  const script = `const { parseRuby } = await import(${JSON.stringify(lib)});
+const out = await parseRuby([{ rel: "a.rb", abs: ${JSON.stringify(join(dir, "rescue_none.rb"))} }], { dimensions: [] });
+process.stdout.write(JSON.stringify(out.results.map((r) => [r.ok, r.error ?? null])));`;
+  const stdout = execFileSync(process.execPath, ["--input-type=module", "-e", script], { encoding: "utf8" });
+  assert.equal(stdout, '[[true,null]]');
+});
+
+/** Whether a pid still names a process, a zombie included: only a reaped child is gone. */
+function exists(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    return err.code !== "ESRCH";
+  }
+}
+
+test("a tree too large for a shard's held heap is read again on a full one, and the first child is stopped and reaped", { ...needsRuby, ...needsShebang }, async () => {
+  // 600 KB, so inside the size cap, and the densest shape measured: a call
+  // per four bytes outgrows the hold its size buys. The stand-in logs the pid
+  // of every parse child, and the first one lingers after its answer, so a
+  // child left running by the thread that died is still there to find.
+  const home = mkdtempSync(join(dir, "held-"));
+  const real = execFileSync("ruby", ["-e", "print RbConfig.ruby"], { encoding: "utf8" });
+  const log = join(home, "pids");
+  const ruby = join(home, "ruby");
+  writeFileSync(
+    ruby,
+    [
+      "#!/bin/sh",
+      `case "$*" in *MAX_BYTES*) ;; *) exec '${real}' "$@" ;; esac`,
+      `first=$(test -s '${log}' && echo no || echo yes)`,
+      `echo $$ >> '${log}'`,
+      `if [ "$first" = yes ]; then '${real}' "$@"; exec sleep 30; fi`,
+      `exec '${real}' "$@"`,
+      "",
+    ].join("\n"),
+    { mode: 0o755 }
+  );
+  const big = write("heap_heavy", Array.from({ length: 150_000 }, () => "a.b").join("\n") + "\n");
+  const out = await parseRuby([big], { ruby, dimensions: RUBY_DIMENSIONS });
+
+  assert.equal(out.results[0].ok, true, out.results[0].error);
+  assert.equal(out.results[0].attempts, 1);
+  assert.equal(out.error, null);
+  const pids = readFileSync(log, "utf8").trim().split("\n").map(Number);
+  assert.equal(pids.length, 2, "the held thread ran out and the batch was read again");
+  assert.deepEqual(pids.filter(exists), [], "no child of either attempt is left, running or unreaped");
+});
+
+test("a shard whose thread throws after its child started stops and reaps that child", needsShebang, async () => {
+  // A fatal whose value cannot become a string throws inside the stream
+  // handler, after the child is running and with its clocks on that thread.
+  const home = mkdtempSync(join(dir, "throws-"));
+  const log = join(home, "pid");
+  const ruby = stubRuby("throws", [
+    "cat >/dev/null",
+    `echo $$ > '${log}'`,
+    READY,
+    `printf '{"fatal":{"toString":1,"valueOf":1}}\\n'`,
+    "exec sleep 30",
+  ]);
+  const started = Date.now();
+  const out = await parseRuby(pair, { ruby, dimensions: RUBY_DIMENSIONS });
+
+  assert.ok(Date.now() - started < 15_000, "the child was stopped, not waited out");
+  assert.deepEqual(out.results.map((r) => [r.rel, r.ok, Boolean(r.crashed), r.attempts]), [["a.rb", false, true, 1], ["b.rb", false, true, 1]]);
+  assert.match(out.results[0].error, /primitive/);
+  assert.equal(exists(Number(readFileSync(log, "utf8"))), false, "the child is gone, not running and not a zombie");
 });

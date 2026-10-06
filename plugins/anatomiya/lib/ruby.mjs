@@ -6,9 +6,11 @@ import { firstLine } from "./encode.mjs";
 import { olderThan } from "./version.mjs";
 import { ENGINES } from "./langs.mjs";
 import { defaultPoolSize } from "./pool.mjs";
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
+import { stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { delimiter, isAbsolute } from "node:path";
+import { Worker } from "node:worker_threads";
 
 /**
  * Ruby files, parsed by prism, in the shape the reducer already consumes.
@@ -357,18 +359,51 @@ end
 // Each child is handed at least this many files: for fewer, an interpreter's
 // startup costs more than it saves.
 const MIN_SHARD_FILES = 500;
-// Past four the parent's own walk of the trees is what the scan waits on.
+// Measured on discourse: 13.5s with four children, 12.8s with six.
 const MAX_SHARDS = Math.min(4, defaultPoolSize());
 
 function shardsFor(count) {
   return Math.max(1, Math.min(MAX_SHARDS, Math.floor(count / MIN_SHARD_FILES)));
 }
 
+const SHARD = new URL("./ruby-shard.mjs", import.meta.url);
+
+/**
+ * Which files each shard reads, as indexes into `sizes`: the largest file goes
+ * first into the lightest shard, and an equal load goes to the shard holding
+ * fewer files. Contiguous batches put the heavy end of a tree in one child,
+ * and the scan waited on that child. Each shard lists its files in input order
+ * and the shards follow their first file, so a child reads in the order it was
+ * always handed and the merge below meets the batches in the same order.
+ */
+export function shardsBySize(sizes, count) {
+  const shards = Array.from({ length: Math.max(1, count) }, () => ({ load: 0, files: [] }));
+  const order = sizes.map((_, i) => i).sort((a, b) => sizes[b] - sizes[a]);
+  for (const i of order) {
+    let lightest = shards[0];
+    for (const s of shards) {
+      if (s.load < lightest.load || (s.load === lightest.load && s.files.length < lightest.files.length)) lightest = s;
+    }
+    lightest.load += sizes[i];
+    lightest.files.push(i);
+  }
+  return shards
+    .filter((s) => s.files.length)
+    .map((s) => s.files.sort((a, b) => a - b))
+    .sort((a, b) => a[0] - b[0]);
+}
+
+// The child reports what it cannot read; for balance it weighs nothing.
+const bytesOf = (abs) => stat(abs).then((s) => s.size, () => 0);
+
 /**
  * Parse Ruby files. Resolves once every child has exited or a guard has fired.
  *
  * The results are the whole record: `parse.mjs` classifies every outcome off
  * them, so no count rides beside them.
+ *
+ * `dimensions` must be rows of `ALL_DIMENSIONS`: they reach the shard threads
+ * by key, and a row the registry does not hold charges its batch as crashed.
  */
 export async function parseRuby(
   files,
@@ -381,12 +416,18 @@ export async function parseRuby(
   if (files.length === 0) return blank();
   const load = await prismLoadArgs({ ruby });
 
-  // One child left the parent idle for most of a large Ruby repository. Shards
-  // are contiguous and joined in order, so the records arrive as one child sends them.
-  const size = Math.ceil(files.length / Math.max(1, shards));
-  const batches = [];
-  for (let i = 0; i < files.length; i += size) batches.push(files.slice(i, i + size));
-  const outs = await Promise.all(batches.map((batch) => parseBatch(batch, { ruby, guards, rubyScript, load, dimensions })));
+  // One child left the parent idle for most of a large Ruby repository, and
+  // with several the parent's own reading of the trees was what the scan
+  // waited on: on empire-flippers/api, 2.28s of a 3.45s parse phase. So each
+  // shard is a worker thread that runs its child, reads the trees and answers
+  // the rows, and only counts reach this thread, as B10 does for JavaScript.
+  const keys = dimensions.map((d) => d.key);
+  const sizes = await Promise.all(files.map((f) => bytesOf(f.abs)));
+  const outs = await Promise.all(
+    shardsBySize(sizes, shards).map((ix) =>
+      inWorker(ix.map((i) => files[i]), { ruby, guards, rubyScript, load, keys }, ix.reduce((most, i) => Math.max(most, sizes[i]), 0)),
+    ),
+  );
 
   const out = blank();
   for (const o of outs) {
@@ -399,7 +440,119 @@ export async function parseRuby(
   }
   // Stalled says no child ever started reading, which one that answered disproves.
   if (out.version !== null) out.stalled = null;
+  // Back in the order the files were handed over, which the records' insertion
+  // order and every tie downstream of it read.
+  const at = new Map();
+  files.forEach((f, i) => at.has(f.rel) || at.set(f.rel, i));
+  out.results.sort((a, b) => (at.get(a.rel) ?? files.length) - (at.get(b.rel) ?? files.length));
   return out;
+}
+
+/**
+ * A shard's heap is held to what its largest file needs, because V8 grows a
+ * heap toward its limit rather than its live set: four threads at the default
+ * limit took a scan of empire-flippers/api from 176 MB peak to 318 MB, and
+ * held it is 197 MB against 183 MB. Measured, a 588 KB spec needs 20 MB of old
+ * generation. A tree that outgrows its hold anyway is read again on a thread
+ * with the default heap, so the hold costs time and never a file.
+ */
+function heldHeap(largestBytes) {
+  return { maxYoungGenerationSizeMb: 1, maxOldGenerationSizeMb: 8 + Math.ceil((32 * largestBytes) / (1024 * 1024)) };
+}
+
+async function inWorker(files, job, largestBytes) {
+  return (await onThread(files, job, heldHeap(largestBytes))) ?? (await onThread(files, job, null));
+}
+
+/**
+ * One shard in a worker thread. A worker that ends without answering charges
+ * its own batch as crashed, the way a child that dies does, rather than
+ * leaving those files out of the record; one that ran out of a held heap
+ * answers null instead, for the caller to run again.
+ *
+ * The `ruby` child is started here, on the parent, at the thread's request,
+ * and its bytes are passed through undecoded. A thread that dies takes its
+ * clocks with it, and a child it had started itself kept running unguarded and
+ * then stayed a zombie: only the thread that spawns a child can reap it. So
+ * the parent owns every child, and kills and reaps what a dead thread left.
+ */
+function onThread(files, job, resourceLimits) {
+  return new Promise((resolve) => {
+    let failure = null;
+    const children = new Map();
+    const worker = new Worker(SHARD, {
+      workerData: { ...job, files: files.map(({ rel, abs }) => ({ rel, abs })) },
+      // Empty for the reason `guardedChild` gives: a flag legal on the parent
+      // can be refused on a thread that loads a file.
+      execArgv: [],
+      ...(resourceLimits ? { resourceLimits } : {}),
+    });
+    const results = [];
+    worker.on("message", (msg) => {
+      if (msg.result) results.push(msg.result);
+      else if (msg.out) resolve({ ...msg.out, results });
+      else if (msg.spawn) children.set(msg.id, startFor(worker, msg));
+      else if (msg.read) children.get(msg.id)?.read();
+      else if (msg.kill) children.get(msg.id)?.kill("SIGKILL");
+      else if (msg.stdin !== undefined) children.get(msg.id)?.stdin.end(msg.stdin);
+    });
+    worker.once("error", (err) => {
+      failure = err;
+    });
+    // Messages drain before exit, so one that answered has already resolved.
+    worker.once("exit", async (code) => {
+      await Promise.all([...children.values()].map(stopped));
+      if (resourceLimits && failure?.code === "ERR_WORKER_OUT_OF_MEMORY") return resolve(null);
+      const out = blank();
+      out.error = failure ? String(failure.message ?? failure) : `ruby shard exited ${code}`;
+      for (const f of files) deliver(out, { rel: f.rel, ok: false, error: out.error, crashed: true }, 1);
+      resolve(out);
+    });
+  });
+}
+
+// Chunks in flight to a thread before the child's stdout is paused. Read
+// without a bound, the parent queued the whole stream faster than a thread
+// could parse it, and held it all.
+const IN_FLIGHT = 4;
+
+/** A child started for a thread, every event it raises sent back to that thread in order. */
+function startFor(worker, { id, spawn: [command, args, options] }) {
+  const send = (msg, moved) => worker.postMessage({ id, ...msg }, moved);
+  let child;
+  try {
+    child = spawn(command, args, options);
+  } catch (err) {
+    send({ error: { message: String(err?.message ?? err), code: err?.code } });
+    return null;
+  }
+  let unread = 0;
+  child.stdout.on("data", (bytes) => {
+    // Moved rather than copied where the chunk owns its memory: a copy left
+    // the parent holding every chunk it had read until its own next collection.
+    const owned = bytes.byteOffset === 0 && bytes.byteLength === bytes.buffer.byteLength;
+    send({ stdout: bytes }, owned ? [bytes.buffer] : undefined);
+    if (++unread >= IN_FLIGHT) child.stdout.pause();
+  });
+  child.read = () => {
+    if (--unread < IN_FLIGHT) child.stdout.resume();
+  };
+  child.stderr.on("data", (bytes) => send({ stderr: bytes }));
+  child.stdin.on("error", () => {
+    /* the child died first; its exit is what reports the failure */
+  });
+  child.on("error", (err) => send({ error: { message: String(err?.message ?? err), code: err?.code } }));
+  child.on("close", (code, signal) => send({ close: [code, signal] }));
+  return child;
+}
+
+/** Killed if still running, and resolved once the exit is reaped. */
+function stopped(child) {
+  return new Promise((resolve) => {
+    if (!child || child.pid === undefined || child.exitCode !== null || child.signalCode !== null) return resolve();
+    child.once("exit", () => resolve());
+    child.kill("SIGKILL");
+  });
 }
 
 function blank() {
@@ -418,9 +571,14 @@ function blank() {
   };
 }
 
-/** One child over one contiguous batch, retried once for what a timer cut off. */
-async function parseBatch(files, { ruby, guards, rubyScript, load, dimensions }) {
+/**
+ * One child over one batch, retried once for what a timer cut off. The body a
+ * shard worker runs; `onResult` takes each record as it is decided instead of
+ * the batch holding them all, and `spawner` starts the child on the parent.
+ */
+export async function parseBatch(files, { ruby, guards, rubyScript, load, dimensions, onResult = null, spawner }) {
   const out = blank();
+  if (onResult) out.results = { push: onResult };
   const seen = new Set();
   const unanswered = () => files.filter((f) => !seen.has(f.rel));
 
@@ -437,6 +595,7 @@ async function parseBatch(files, { ruby, guards, rubyScript, load, dimensions })
           env: rubyEnv(),
           stdio: ["pipe", "pipe", "pipe"],
           stderrBytes: guards.stderrBytes,
+          ...(spawner ? { spawner } : {}),
           // The whole run's ceiling: a child answering one file every fourteen
           // seconds keeps the idle clock happy and never ends.
           wallMs: guards.wallBaseMs + guards.wallPerFileMs * batch.length,
@@ -606,7 +765,7 @@ function take(out, seen, line, dimensions, attempt) {
     //
     // Guarded the way each dimension is, and for a sharper reason: this runs
     // inside the stdout handler, so a throw on one odd tree escapes into the
-    // stream and takes the whole scan rather than the file it came from.
+    // stream and takes the whole shard rather than the file it came from.
     try {
       result.facets = rubyFacets(program, result.rel);
     } catch {
@@ -615,8 +774,9 @@ function take(out, seen, line, dimensions, attempt) {
     if (dimensions.length) {
       result.hits = collectHits(program, dimensions, { rel: result.rel });
       // Answered, so the tree is dropped before the result is retained. Holding
-      // it made the parent carry every tree in the repository at once, which is
-      // the cost the JS side pays a process boundary to avoid.
+      // it made the shard carry every tree in its batch at once, and then copy
+      // them all to the parent, which is the cost the JS side pays a process
+      // boundary to avoid.
       result.program = null;
     }
   }
