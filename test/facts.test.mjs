@@ -807,3 +807,33 @@ test("a layout file that cannot answer for the record beside it is not read", (t
   stamped(over);
   assert.equal(readLayout(over), null, "a record past the cap");
 });
+
+test("the layout file is stamped from the record this writer renamed, not whatever is there after", async (t) => {
+  // Another writer replacing the record right after this one's rename must
+  // leave a layout file that refuses, so the reader goes to that writer's record.
+  const dir = root(t);
+  writeFacts(dir, result([dim()]));
+  const fs = (await import("node:fs")).default;
+  const { syncBuiltinESMExports } = await import("node:module");
+  const real = fs.renameSync;
+  let replaced = 0;
+  // The writer renames through the resolved directory, so the target is matched by its tail.
+  fs.renameSync = (from, to) => {
+    real(from, to);
+    if (to.endsWith(join(".claude", "anatomiya", "facts.json"))) {
+      writeFileSync(`${to}.theirs`, readFileSync(to, "utf8") + "\n\n");
+      real(`${to}.theirs`, to);
+      replaced++;
+    }
+  };
+  syncBuiltinESMExports();
+  try {
+    writeFacts(dir, result([dim({ key: "mine" })]));
+  } finally {
+    fs.renameSync = real;
+    syncBuiltinESMExports();
+  }
+
+  assert.equal(replaced, 1, "the other writer ran once, right after this one's rename");
+  assert.equal(readLayout(dir), null);
+});
