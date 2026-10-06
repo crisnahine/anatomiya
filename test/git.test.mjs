@@ -1223,6 +1223,38 @@ test("the merge base of a commit with itself is the commit, with no merge-base s
   assert.deepEqual(calls, [`rev-parse --verify --quiet ${second}^{commit}`], "only the commit itself was verified");
 });
 
+test("past its bound the memory drops the oldest answer first, and a dropped sha is asked again", needsShebang, async (t) => {
+  // A stand-in git that names whatever full sha it is asked about, so filling
+  // the memory costs a shell per question rather than a commit each. The shas
+  // asked first are older than anything an earlier test left, so they are the
+  // ones the bound reaches.
+  const bin = scratch(t, "anatomiya-git-fill-");
+  const log = join(bin, "asked");
+  writeFileSync(
+    join(bin, "git"),
+    `#!/bin/sh\ncase "$1" in config) exit 1 ;; esac\nsha="\${4%^\\{commit\\}}"\necho "$sha" >> '${log}'\necho "$sha"\n`,
+    { mode: 0o755 }
+  );
+  const sha = (i) => (i + 1).toString(16).padStart(40, "0");
+  const asked = () => (existsSync(log) ? readFileSync(log, "utf8").trim().split("\n") : []);
+  const path = process.env.PATH;
+  process.env.PATH = `${bin}:${path}`;
+  let filled;
+  let after;
+  try {
+    for (let i = 0; i <= 256; i++) assert.equal(await commitAt(bin, sha(i)), sha(i));
+    filled = asked().length;
+    rmSync(log);
+    for (const i of [256, 0, 2, 1]) assert.equal(await commitAt(bin, sha(i)), sha(i));
+    after = asked();
+  } finally {
+    process.env.PATH = path;
+  }
+
+  assert.equal(filled, 257);
+  assert.deepEqual(after, [sha(0), sha(1)], "the first sha fell out, and asking it again pushed out the next oldest");
+});
+
 test("a commit pruned while the process runs reads as unreachable at once", async (t) => {
   // E3: reachability exists to notice a commit that went away, so it is never
   // answered from memory.
