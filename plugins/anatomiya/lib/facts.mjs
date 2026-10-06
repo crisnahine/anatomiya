@@ -12,7 +12,7 @@ import { closeSync, existsSync, mkdirSync, openSync, renameSync, unlinkSync, wri
 import { basename, dirname, join } from "node:path";
 
 import { outsideClaude, readHead, resolveInside } from "./rules.mjs";
-import { wilsonLower } from "./reduce.mjs";
+import { wilsonLower } from "./gates.mjs";
 
 export const FACTS_PATH = ".claude/anatomiya/facts.json";
 
