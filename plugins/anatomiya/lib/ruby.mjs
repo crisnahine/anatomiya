@@ -569,8 +569,14 @@ function startFor(worker, { id, spawn: [command, args, options] }) {
   return child;
 }
 
-/** Killed if still running, and resolved once the exit is reaped. */
+/**
+ * Killed if still running, and resolved once the exit is reaped. Its pipes are
+ * closed first: a dead thread never acks, so stdout may sit paused, and a
+ * process the child forked then blocks writing to it while the open handle
+ * keeps the parent alive.
+ */
 function killAndReap(child) {
+  for (const stream of [child?.stdin, child?.stdout, child?.stderr]) stream?.destroy();
   return new Promise((resolve) => {
     if (!child || child.pid === undefined || child.exitCode !== null || child.signalCode !== null) return resolve();
     child.once("exit", () => resolve());
