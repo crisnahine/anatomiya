@@ -9,7 +9,7 @@
  * reducer offers a row only where at least three files already route through
  * one (C14), so no map carries a line that can only ever read zero.
  */
-import { walk, declName } from "./walk.mjs";
+import { walk, fromVisitor, declName } from "./walk.mjs";
 import { ASSET_IMPORT } from "./langs.mjs";
 
 /**
@@ -113,26 +113,43 @@ function namesAModule(spec) {
  */
 function wrapperBindings(program, words) {
   const names = new Set();
-  walk(program, (n) => {
-    if (n.type !== "ImportDeclaration") return;
+  for (const n of importsOf(program)) {
     const spec = n.source?.value;
-    if (typeof spec !== "string" || !spec.startsWith(".") || !namesAModule(spec)) return;
+    if (typeof spec !== "string" || !spec.startsWith(".") || !namesAModule(spec)) continue;
     const parts = nameWords(fileStem(spec));
-    if (parts.length === 0 || !parts.every((w) => words.has(w))) return;
+    if (parts.length === 0 || !parts.every((w) => words.has(w))) continue;
     for (const s of n.specifiers || []) if (s.local?.name) names.add(s.local.name);
-  });
+  }
   return names;
 }
 
 /** Local names bound by importing exactly this package. */
 function packageBindings(program, pkg) {
   const names = new Set();
-  walk(program, (n) => {
-    if (n.type !== "ImportDeclaration" || n.source?.value !== pkg) return;
+  for (const n of importsOf(program)) {
+    if (n.source?.value !== pkg) continue;
     for (const s of n.specifiers || []) if (s.local?.name) names.add(s.local.name);
-  });
+  }
   return names;
 }
+
+// Every import declaration in the tree, ambient modules included. Each routing
+// row asks with its own vocabulary, so the walk is kept per tree rather than
+// per answer.
+const IMPORTS = new WeakMap();
+function importsOf(program) {
+  const known = IMPORTS.get(program);
+  if (known) return known;
+  const out = [];
+  walk(program, (n) => {
+    if (n.type === "ImportDeclaration") out.push(n);
+  });
+  IMPORTS.set(program, out);
+  return out;
+}
+
+// A file that implements the routing has no sites, and nothing to visit.
+const NOTHING = Object.freeze({ node() {} });
 
 const rootName = (node) => {
   let n = node;
@@ -155,19 +172,21 @@ export const CAPABILITY_DIMENSIONS = [
       blind: "a logging call behind a helper with another name or a re-export is not seen, and a wrapper spelled as a directory module (logging/index.ts) is read by its stem and is still a site",
     },
     langs: ["js", "jsx"],
-    run(program, add, { rel } = {}) {
+    visitor(program, add, { rel } = {}) {
       // The module that implements the routing is not one of its own sites.
-      if (implementsCapability(rel, "logging")) return;
+      if (implementsCapability(rel, "logging")) return NOTHING;
       const wrap = wrapperBindings(program, CAPABILITY_WORDS.logging);
-      walk(program, (n, ctx) => {
-        if (n.type !== "CallExpression") return;
-        const c = n.callee;
-        if (c?.type === "MemberExpression" && c.object?.type === "Identifier" && c.object.name === "console") {
-          return add({ node: n, conforming: false, where: declName(ctx.fn) });
-        }
-        const root = c?.type === "Identifier" ? c.name : rootName(c);
-        if (root && wrap.has(root)) add({ node: n, conforming: true, where: declName(ctx.fn) });
-      });
+      return {
+        node(n, ctx) {
+          if (n.type !== "CallExpression") return;
+          const c = n.callee;
+          if (c?.type === "MemberExpression" && c.object?.type === "Identifier" && c.object.name === "console") {
+            return add({ node: n, conforming: false, where: declName(ctx.fn) });
+          }
+          const root = c?.type === "Identifier" ? c.name : rootName(c);
+          if (root && wrap.has(root)) add({ node: n, conforming: true, where: declName(ctx.fn) });
+        },
+      };
     },
   },
 
@@ -185,22 +204,24 @@ export const CAPABILITY_DIMENSIONS = [
       blind: "a shadowed fetch still counts, and a client behind another name is not seen",
     },
     langs: ["js", "jsx"],
-    run(program, add, { rel } = {}) {
+    visitor(program, add, { rel } = {}) {
       // The module that implements the routing is not one of its own sites.
-      if (implementsCapability(rel, "network")) return;
+      if (implementsCapability(rel, "network")) return NOTHING;
       const wrap = wrapperBindings(program, CAPABILITY_WORDS.network);
       const axios = packageBindings(program, "axios");
-      walk(program, (n, ctx) => {
-        if (n.type !== "CallExpression") return;
-        const c = n.callee;
-        if (c?.type === "Identifier" && c.name === "fetch") {
-          return add({ node: n, conforming: false, where: declName(ctx.fn) });
-        }
-        const root = c?.type === "Identifier" ? c.name : rootName(c);
-        if (!root) return;
-        if (axios.has(root)) return add({ node: n, conforming: false, where: declName(ctx.fn) });
-        if (wrap.has(root)) add({ node: n, conforming: true, where: declName(ctx.fn) });
-      });
+      return {
+        node(n, ctx) {
+          if (n.type !== "CallExpression") return;
+          const c = n.callee;
+          if (c?.type === "Identifier" && c.name === "fetch") {
+            return add({ node: n, conforming: false, where: declName(ctx.fn) });
+          }
+          const root = c?.type === "Identifier" ? c.name : rootName(c);
+          if (!root) return;
+          if (axios.has(root)) return add({ node: n, conforming: false, where: declName(ctx.fn) });
+          if (wrap.has(root)) add({ node: n, conforming: true, where: declName(ctx.fn) });
+        },
+      };
     },
   },
 
@@ -218,33 +239,36 @@ export const CAPABILITY_DIMENSIONS = [
       blind: "an env read behind a helper, or destructured from process.env once and read as locals, is one site rather than each use",
     },
     langs: ["js", "jsx"],
-    run(program, add, { rel } = {}) {
+    visitor(program, add, { rel } = {}) {
       // The module that implements the routing is not one of its own sites.
-      if (implementsCapability(rel, "env")) return;
+      if (implementsCapability(rel, "env")) return NOTHING;
       const wrap = wrapperBindings(program, CAPABILITY_WORDS.env);
       const isProcessEnv = (v) =>
         v?.type === "MemberExpression" && v.object?.type === "Identifier" &&
         v.object.name === "process" && !v.computed && v.property?.name === "env";
-      walk(program, (n, ctx) => {
-        // `const { PORT } = process.env` reads one name per pattern property,
-        // and missing it inflates the ratio in the dangerous direction.
-        if (n.type === "VariableDeclarator" && n.id?.type === "ObjectPattern" && isProcessEnv(n.init)) {
-          for (const p of n.id.properties || []) add({ node: p, conforming: false, where: declName(ctx.fn) });
-          return;
-        }
-        if (n.type !== "MemberExpression") return;
-        const o = n.object;
-        if (o?.type === "MemberExpression" && o.object?.type === "Identifier" &&
-            o.object.name === "process" && !o.computed && o.property?.name === "env") {
-          return add({ node: n, conforming: false, where: declName(ctx.fn) });
-        }
-        // Only the outermost member of a wrapper chain is the site, or
-        // config.db.host counts three times for one read.
-        const parent = ctx.ancestors[ctx.ancestors.length - 1];
-        if (parent?.type === "MemberExpression" && parent.object === n) return;
-        const root = rootName(n);
-        if (root && wrap.has(root)) add({ node: n, conforming: true, where: declName(ctx.fn) });
-      });
+      return {
+        node(n, ctx) {
+          // `const { PORT } = process.env` reads one name per pattern property,
+          // and missing it inflates the ratio in the dangerous direction.
+          if (n.type === "VariableDeclarator" && n.id?.type === "ObjectPattern" && isProcessEnv(n.init)) {
+            for (const p of n.id.properties || []) add({ node: p, conforming: false, where: declName(ctx.fn) });
+            return;
+          }
+          if (n.type !== "MemberExpression") return;
+          const o = n.object;
+          if (o?.type === "MemberExpression" && o.object?.type === "Identifier" &&
+              o.object.name === "process" && !o.computed && o.property?.name === "env") {
+            return add({ node: n, conforming: false, where: declName(ctx.fn) });
+          }
+          // Only the outermost member of a wrapper chain is the site, or
+          // config.db.host counts three times for one read.
+          const parent = ctx.ancestors[ctx.ancestors.length - 1];
+          if (parent?.type === "MemberExpression" && parent.object === n) return;
+          const root = rootName(n);
+          if (root && wrap.has(root)) add({ node: n, conforming: true, where: declName(ctx.fn) });
+        },
+      };
     },
   },
 ];
+for (const d of CAPABILITY_DIMENSIONS) if (d.visitor) d.run = fromVisitor(d.visitor);

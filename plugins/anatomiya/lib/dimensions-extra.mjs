@@ -1,4 +1,4 @@
-import { optionalChain, walk, isFunctionLike, declName, value } from "./walk.mjs";
+import { optionalChain, walk, fromVisitor, isFunctionLike, declName, value } from "./walk.mjs";
 import { calleeName, jsxElementNames } from "./dimensions-jsx.mjs";
 import { ASSET_IMPORT } from "./langs.mjs";
 
@@ -123,35 +123,26 @@ const TYPE_CONTEXT = new Set([
 const inTypeContext = (ctx) => ctx.within(TYPE_CONTEXT);
 
 /**
- * Names read as values anywhere in the file. An import is type-only when its
- * local name appears in type position and never here.
+ * The name this node reads as a value, gathered over every node of the file.
+ * An import is type-only when its local name appears in type position and never
+ * among these.
+ *
+ * A JSX element resolves its name through the same binding a call would, so
+ * `<Button/>` reads Button as a value: a component also named in a type
+ * position is not type-only, and `import type` there is TS1361. Which
+ * JSXIdentifiers name an element is `jsxElementNames`' question, asked once per
+ * file by the row rather than re-answered per node here.
  */
-function valueReads(program, comments) {
-  const names = new Set();
-  const elements = jsxElementNames(program);
-  for (const name of jsxFactoryReads(program, comments)) names.add(name);
-  walk(program, (n, ctx) => {
-    const parent = ctx.ancestors[ctx.ancestors.length - 1];
-    if (!parent) return;
-    // A JSX element resolves its name through the same binding a call would, so
-    // `<Button/>` reads Button as a value: a component also named in a type
-    // position is not type-only, and `import type` there is TS1361. Which
-    // JSXIdentifiers name an element is `jsxElementNames`' question, asked once
-    // per file above rather than re-answered per node here.
-    if (n.type === "JSXIdentifier") {
-      if (elements.has(n.name)) names.add(n.name);
-      return;
-    }
-    if (n.type !== "Identifier" || inTypeContext(ctx)) return;
-    // The binding site is not a read, and a property key or a non-computed
-    // member property spells the name without reading it.
-    if (/^Import(Default|Namespace)?Specifier$/.test(parent.type)) return;
-    if ((parent.type === "Property" || parent.type === "ObjectProperty") && parent.key === n && !parent.computed) return;
-    if (parent.type === "MemberExpression" && parent.property === n && !parent.computed) return;
-    names.add(n.name);
-  });
-  for (const name of metadataReads(program)) names.add(name);
-  return names;
+function noteValueRead(n, ctx, names) {
+  if (n.type !== "Identifier") return;
+  const parent = ctx.ancestors[ctx.ancestors.length - 1];
+  if (!parent || inTypeContext(ctx)) return;
+  // The binding site is not a read, and a property key or a non-computed
+  // member property spells the name without reading it.
+  if (/^Import(Default|Namespace)?Specifier$/.test(parent.type)) return;
+  if ((parent.type === "Property" || parent.type === "ObjectProperty") && parent.key === n && !parent.computed) return;
+  if (parent.type === "MemberExpression" && parent.property === n && !parent.computed) return;
+  names.add(n.name);
 }
 
 // `@jsx h`, `@jsx preact.h`, `@jsxFrag Fragment`: the binding is the root of
@@ -169,11 +160,7 @@ const JSX_PRAGMA = /@jsx(?:Frag)?\s+([A-Za-z_$][\w$]*)/g;
  * here, so React is read whenever the file holds JSX: under the automatic
  * runtime that loses a site, where the other reading asks for a broken build.
  */
-function jsxFactoryReads(program, comments) {
-  let holdsJsx = false;
-  walk(program, (n) => {
-    if (n.type === "JSXElement" || n.type === "JSXFragment") holdsJsx = true;
-  });
+function jsxFactoryReads(holdsJsx, comments) {
   if (!holdsJsx) return [];
   const names = ["React"];
   for (const c of comments || []) {
@@ -219,7 +206,7 @@ const paramAnnotation = (p) => {
 };
 
 /**
- * Names a decorated signature's metadata reads as values.
+ * Names a decorated signature's metadata reads as values, off one class.
  *
  * Under emitDecoratorMetadata a class with a decorator on it, or on one of its
  * constructor's parameters, writes that constructor's parameter types into
@@ -231,31 +218,27 @@ const paramAnnotation = (p) => {
  * see, so a decorated signature is read as though it were: the row loses a
  * site where it is off, rather than asking for a break where it is on.
  */
-function metadataReads(program) {
-  const names = new Set();
+function noteMetadataReads(n, names) {
+  if (n.type !== "ClassDeclaration" && n.type !== "ClassExpression") return;
   const take = (annotation) => {
     const name = emittedName(annotation);
     if (name) names.add(name);
   };
-  walk(program, (n) => {
-    if (n.type !== "ClassDeclaration" && n.type !== "ClassExpression") return;
-    for (const m of n.body.body) {
-      if (m.type === "MethodDefinition") {
-        const fn = m.value;
-        // An overload signature has no body and emits nothing: the metadata is
-        // read off the implementation.
-        if (!fn || !fn.body) continue;
-        const params = fn.params || [];
-        const owner = m.kind === "constructor" ? n : m;
-        if (!hasDecorators(owner) && !params.some(paramDecorated)) continue;
-        for (const p of params) take(paramAnnotation(p));
-        if (m.kind !== "constructor") take(fn.returnType);
-      } else if ((m.type === "PropertyDefinition" || m.type === "AccessorProperty") && hasDecorators(m)) {
-        take(m.typeAnnotation);
-      }
+  for (const m of n.body.body) {
+    if (m.type === "MethodDefinition") {
+      const fn = m.value;
+      // An overload signature has no body and emits nothing: the metadata is
+      // read off the implementation.
+      if (!fn || !fn.body) continue;
+      const params = fn.params || [];
+      const owner = m.kind === "constructor" ? n : m;
+      if (!hasDecorators(owner) && !params.some(paramDecorated)) continue;
+      for (const p of params) take(paramAnnotation(p));
+      if (m.kind !== "constructor") take(fn.returnType);
+    } else if ((m.type === "PropertyDefinition" || m.type === "AccessorProperty") && hasDecorators(m)) {
+      take(m.typeAnnotation);
     }
-  });
-  return names;
+  }
 }
 
 /**
@@ -282,7 +265,9 @@ function ownReturns(fn) {
 }
 
 /**
- * The declarations in this body that implement a TypeScript overload set.
+ * The declarations in this node's statement list that implement a TypeScript
+ * overload set, gathered as the walk passes each list. A list is visited before
+ * the declarations in it, so a row reading the map at a declaration finds it.
  *
  * Held by node identity rather than by name, so a name colliding across scopes
  * cannot suppress the wrong declaration. Adjacency is the language's own rule
@@ -290,40 +275,36 @@ function ownReturns(fn) {
  * immediately follow its signatures, so this and "any signature of that name"
  * agree on every legal program and this is the stricter of the two on the rest.
  */
-function overloadImplementations(program) {
+function noteOverloads(n, impls) {
   // Each implementation mapped to whether every signature before it declares a
   // return type, which is the boundary a caller sees (`explicit_return_type`).
-  const impls = new Map();
   // Every statement list, not the program's alone: a function inside
   // `namespace N { }` or a block has no enclosing declaration either, so it is
   // a module-level site the exclusion has to reach.
-  walk(program, (n) => {
-    if (!Array.isArray(n.body)) return;
-    let signature = null;
-    let typed = true;
-    for (const s of n.body) {
-      // `export default function f(): T;` is an overload set as much as a named
-      // one, and unwrapping only the named export left its implementation a
-      // function-style site with no arrow form.
-      const exported = s && (s.type === "ExportNamedDeclaration" || s.type === "ExportDefaultDeclaration");
-      const d = exported && s.declaration ? s.declaration : s;
-      if (!d || typeof d.type !== "string") {
-        signature = null;
-        continue;
-      }
-      if (d.type === "TSDeclareFunction") {
-        const name = d.id?.name ?? null;
-        if (name !== signature) typed = true;
-        signature = name;
-        typed = typed && !!d.returnType;
-        continue;
-      }
-      if (d.type === "FunctionDeclaration" && signature !== null && d.id?.name === signature) impls.set(d, typed);
+  if (!Array.isArray(n.body)) return;
+  let signature = null;
+  let typed = true;
+  for (const s of n.body) {
+    // `export default function f(): T;` is an overload set as much as a named
+    // one, and unwrapping only the named export left its implementation a
+    // function-style site with no arrow form.
+    const exported = s && (s.type === "ExportNamedDeclaration" || s.type === "ExportDefaultDeclaration");
+    const d = exported && s.declaration ? s.declaration : s;
+    if (!d || typeof d.type !== "string") {
       signature = null;
-      typed = true;
+      continue;
     }
-  });
-  return impls;
+    if (d.type === "TSDeclareFunction") {
+      const name = d.id?.name ?? null;
+      if (name !== signature) typed = true;
+      signature = name;
+      typed = typed && !!d.returnType;
+      continue;
+    }
+    if (d.type === "FunctionDeclaration" && signature !== null && d.id?.name === signature) impls.set(d, typed);
+    signature = null;
+    typed = true;
+  }
 }
 
 /**
@@ -454,22 +435,25 @@ export const EXTRA_DIMENSIONS = [
     // structural claim: one repository writes every module function as an
     // arrow const and another writes none of them that way.
     langs: ["js", "jsx"],
-    run(program, add) {
-      const overloads = overloadImplementations(program);
-      walk(program, (n, ctx) => {
-        // Module level is "no enclosing declaration"; a function nested in
-        // another one is that one's business.
-        if (ctx.enclosing !== null) return;
-        if (n.type === "FunctionDeclaration") {
-          // Overload signatures attach only to a declaration, so the
-          // implementation carrying them has no arrow form to be written as.
-          if (overloads.has(n)) return;
-          return add({ node: n, conforming: true, where: declName(n) });
-        }
-        if (n.type === "VariableDeclarator" && n.init && isFunctionLike(n.init)) {
-          add({ node: n, conforming: false, where: n.id && n.id.name });
-        }
-      });
+    visitor(program, add) {
+      const overloads = new Map();
+      return {
+        node(n, ctx) {
+          noteOverloads(n, overloads);
+          // Module level is "no enclosing declaration"; a function nested in
+          // another one is that one's business.
+          if (ctx.enclosing !== null) return;
+          if (n.type === "FunctionDeclaration") {
+            // Overload signatures attach only to a declaration, so the
+            // implementation carrying them has no arrow form to be written as.
+            if (overloads.has(n)) return;
+            return add({ node: n, conforming: true, where: declName(n) });
+          }
+          if (n.type === "VariableDeclarator" && n.init && isFunctionLike(n.init)) {
+            add({ node: n, conforming: false, where: n.id && n.id.name });
+          }
+        },
+      };
     },
   },
 
@@ -495,31 +479,34 @@ export const EXTRA_DIMENSIONS = [
     // could move, which is the same trade `blindWhenStripped` makes.
     needsTypeSyntax: true,
     langs: ["js", "jsx"],
-    run(program, add) {
-      const overloads = overloadImplementations(program);
-      walk(program, (n) => {
-        if (n.type !== "ExportNamedDeclaration" && n.type !== "ExportDefaultDeclaration") return;
-        const d = n.declaration;
-        if (!d) return;
-        // `export default () => 1` is as much a boundary as a named export, so
-        // any function-like declaration counts, not only a declared one.
-        if (isFunctionLike(d)) {
-          // An overload set's boundary is its signatures: the implementation's
-          // own is not callable from outside, so once every signature declares
-          // its return type the set does, and flagging the implementation asked
-          // for a line no caller reads.
-          const typed = !!d.returnType || overloads.get(d) === true;
-          return add({ node: d, conforming: typed, where: declName(d) });
-        }
-        if (d.type !== "VariableDeclaration") return;
-        for (const v of d.declarations || []) {
-          if (!v.init || !isFunctionLike(v.init)) continue;
-          // The annotation sits on the arrow or on the binding it is assigned
-          // to, and either one states the boundary type.
-          const typed = !!v.init.returnType || !!(v.id && v.id.typeAnnotation);
-          add({ node: v, conforming: typed, where: v.id && v.id.name });
-        }
-      });
+    visitor(program, add) {
+      const overloads = new Map();
+      return {
+        node(n) {
+          noteOverloads(n, overloads);
+          if (n.type !== "ExportNamedDeclaration" && n.type !== "ExportDefaultDeclaration") return;
+          const d = n.declaration;
+          if (!d) return;
+          // `export default () => 1` is as much a boundary as a named export, so
+          // any function-like declaration counts, not only a declared one.
+          if (isFunctionLike(d)) {
+            // An overload set's boundary is its signatures: the implementation's
+            // own is not callable from outside, so once every signature declares
+            // its return type the set does, and flagging the implementation asked
+            // for a line no caller reads.
+            const typed = !!d.returnType || overloads.get(d) === true;
+            return add({ node: d, conforming: typed, where: declName(d) });
+          }
+          if (d.type !== "VariableDeclaration") return;
+          for (const v of d.declarations || []) {
+            if (!v.init || !isFunctionLike(v.init)) continue;
+            // The annotation sits on the arrow or on the binding it is assigned
+            // to, and either one states the boundary type.
+            const typed = !!v.init.returnType || !!(v.id && v.id.typeAnnotation);
+            add({ node: v, conforming: typed, where: v.id && v.id.name });
+          }
+        },
+      };
     },
   },
 
@@ -538,21 +525,35 @@ export const EXTRA_DIMENSIONS = [
     // such a file rather than counting a confident zero.
     blindWhenStripped: true,
     langs: ["js", "jsx"],
-    run(program, add, extra = {}) {
-      const values = valueReads(program, extra.comments);
+    visitor(program, add, extra = {}) {
+      const values = new Set();
       const types = new Set();
-      walk(program, (n, ctx) => {
-        if (n.type === "Identifier" && inTypeContext(ctx)) types.add(n.name);
-      });
-
-      walk(program, (n) => {
-        if (n.type !== "ImportDeclaration" || !n.specifiers) return;
-        for (const s of n.specifiers) {
-          const local = s.local && s.local.name;
-          if (!local || !types.has(local) || values.has(local)) continue;
-          add({ node: s, conforming: n.importKind === "type" || s.importKind === "type", where: null });
-        }
-      });
+      const imports = [];
+      let holdsJsx = false;
+      return {
+        node(n, ctx) {
+          if (n.type === "JSXElement" || n.type === "JSXFragment") holdsJsx = true;
+          if (n.type === "Identifier" && inTypeContext(ctx)) types.add(n.name);
+          noteValueRead(n, ctx, values);
+          noteMetadataReads(n, values);
+          if (n.type === "ImportDeclaration" && n.specifiers) imports.push(n);
+        },
+        // Judged after the walk: a name is read as a value anywhere in the file,
+        // below its import as much as above it.
+        done() {
+          for (const name of jsxFactoryReads(holdsJsx, extra.comments)) values.add(name);
+          // Element names only matter for a name that is otherwise type-only.
+          let elements = null;
+          const isValue = (name) => values.has(name) || (elements ??= jsxElementNames(program)).has(name);
+          for (const n of imports) {
+            for (const s of n.specifiers) {
+              const local = s.local && s.local.name;
+              if (!local || !types.has(local) || isValue(local)) continue;
+              add({ node: s, conforming: n.importKind === "type" || s.importKind === "type", where: null });
+            }
+          }
+        },
+      };
     },
   },
 
@@ -574,25 +575,27 @@ export const EXTRA_DIMENSIONS = [
     // that survived and read as more conformant than the file is.
     blindWhenStripped: true,
     langs: ["js", "jsx"],
-    run(program, add) {
-      walk(program, (n) => {
-        if (!isModuleSource(n)) return;
-        const src = n.source && n.source.value;
-        if (typeof src !== "string" || !src.startsWith(".")) return;
-        // A bundler query or hash is not part of the file name, and leaving it
-        // on defeats both tests below: "./icon.svg?react" would count as a
-        // source import missing its extension.
-        const spec = src.replace(/[?#].*$/, "");
-        // A directory specifier has no file name to carry an extension, so it
-        // cannot conform and is not a choice anyone made. `./dir/..` is one
-        // as much as `../` is.
-        if (DIRECTORY_IMPORT.test(spec)) return;
-        // A stylesheet or an image is always imported by its full name, so
-        // counting it would report an extension convention no one chose. Any
-        // other suffix is a stem the source file carries before its extension.
-        if (ASSET_IMPORT.test(spec) || FOREIGN_SOURCE.test(spec)) return;
-        add({ node: n, conforming: SOURCE_IMPORT.test(spec), where: null });
-      });
+    visitor(program, add) {
+      return {
+        node(n) {
+          if (!isModuleSource(n)) return;
+          const src = n.source && n.source.value;
+          if (typeof src !== "string" || !src.startsWith(".")) return;
+          // A bundler query or hash is not part of the file name, and leaving it
+          // on defeats both tests below: "./icon.svg?react" would count as a
+          // source import missing its extension.
+          const spec = src.replace(/[?#].*$/, "");
+          // A directory specifier has no file name to carry an extension, so it
+          // cannot conform and is not a choice anyone made. `./dir/..` is one
+          // as much as `../` is.
+          if (DIRECTORY_IMPORT.test(spec)) return;
+          // A stylesheet or an image is always imported by its full name, so
+          // counting it would report an extension convention no one chose. Any
+          // other suffix is a stem the source file carries before its extension.
+          if (ASSET_IMPORT.test(spec) || FOREIGN_SOURCE.test(spec)) return;
+          add({ node: n, conforming: SOURCE_IMPORT.test(spec), where: null });
+        },
+      };
     },
   },
 
@@ -609,23 +612,25 @@ export const EXTRA_DIMENSIONS = [
       blind: null,
     },
     langs: ["js", "jsx"],
-    run(program, add) {
-      walk(program, (n, ctx) => {
-        if (n.type !== "LogicalExpression") return;
-        if (n.operator !== "||" && n.operator !== "??") return;
-        // Only a literal on the right is a default. `a || b()` is a fallback
-        // branch, where the two operators are not interchangeable.
-        if (!isDefaultValue(n.right)) return;
-        // `??` may not sit beside `||` or `&&` without parentheses (TS5076), so
-        // flipping this operator alone does not compile and adding the
-        // parentheses changes the expression. oxc keeps them, so a chain
-        // somebody already bracketed is still a site.
-        if (n.operator === "||") {
-          const parent = ctx.ancestors[ctx.ancestors.length - 1];
-          if (mixesWithNullish(n.left) || mixesWithNullish(parent)) return;
-        }
-        add({ node: n, conforming: n.operator === "??", where: declName(ctx.fn) });
-      });
+    visitor(program, add) {
+      return {
+        node(n, ctx) {
+          if (n.type !== "LogicalExpression") return;
+          if (n.operator !== "||" && n.operator !== "??") return;
+          // Only a literal on the right is a default. `a || b()` is a fallback
+          // branch, where the two operators are not interchangeable.
+          if (!isDefaultValue(n.right)) return;
+          // `??` may not sit beside `||` or `&&` without parentheses (TS5076), so
+          // flipping this operator alone does not compile and adding the
+          // parentheses changes the expression. oxc keeps them, so a chain
+          // somebody already bracketed is still a site.
+          if (n.operator === "||") {
+            const parent = ctx.ancestors[ctx.ancestors.length - 1];
+            if (mixesWithNullish(n.left) || mixesWithNullish(parent)) return;
+          }
+          add({ node: n, conforming: n.operator === "??", where: declName(ctx.fn) });
+        },
+      };
     },
   },
 
@@ -647,20 +652,22 @@ export const EXTRA_DIMENSIONS = [
     // a file leaves the denominator, the trade `explicit_return_type` makes.
     needsTypeSyntax: true,
     langs: ["js", "jsx"],
-    run(program, add) {
-      walk(program, (n, ctx) => {
-        if (n.type === "TSNonNullExpression") {
-          // `x!` standing alone has no `?.` form at all: `x?` is TS1109. One
-          // sitting in a write position, a `new` callee or a tagged template's
-          // tag heads a chain the grammar refuses to make optional.
-          const { outer, allowed } = optionalChain(n, ctx.ancestors);
-          if (outer === n || !allowed) return;
-          return add({ node: n, conforming: false, where: declName(ctx.fn) });
-        }
-        if ((n.type === "MemberExpression" || n.type === "CallExpression") && n.optional === true) {
-          add({ node: n, conforming: true, where: declName(ctx.fn) });
-        }
-      });
+    visitor(program, add) {
+      return {
+        node(n, ctx) {
+          if (n.type === "TSNonNullExpression") {
+            // `x!` standing alone has no `?.` form at all: `x?` is TS1109. One
+            // sitting in a write position, a `new` callee or a tagged template's
+            // tag heads a chain the grammar refuses to make optional.
+            const { outer, allowed } = optionalChain(n, ctx.ancestors);
+            if (outer === n || !allowed) return;
+            return add({ node: n, conforming: false, where: declName(ctx.fn) });
+          }
+          if ((n.type === "MemberExpression" || n.type === "CallExpression") && n.optional === true) {
+            add({ node: n, conforming: true, where: declName(ctx.fn) });
+          }
+        },
+      };
     },
   },
 
@@ -675,44 +682,46 @@ export const EXTRA_DIMENSIONS = [
       blind: "falling off the end of a function returns undefined with no site to count, and a function annotated `: void` still counts although `return null` there is TS2322, because the annotation is what the Flow retry blanks and reading it would make the row answer differently on a stripped tree",
     },
     langs: ["js", "jsx"],
-    run(program, add) {
-      walk(program, (n, ctx) => {
-        if (!isFunctionLike(n)) return;
-        const where = siteName(n, ctx);
-        // React refuses `return null` from an effect in its own words, so
-        // `undefined` there says "stop" rather than "an absent value is spelled
-        // undefined", which is the same thing a bare return says.
-        //
-        // The other function that cannot answer, one annotated `: void`, is
-        // deliberately still counted: the annotation is what the Flow retry
-        // blanks, so reading it would make the row answer differently on a
-        // stripped tree than on the same file unstripped, and a base stripped
-        // beside an unstripped head would then cancel real findings. One
-        // measured site is not worth that.
-        // Both arms, which is what the sentence says and what the reason
-        // argues: React refuses null there, so a `return null` in an effect is
-        // not this repository choosing how it spells an absent value either.
-        // Guarding only the undefined arms put those in the conforming
-        // numerator of a row whose predicate says an effect is not a site.
-        if (isEffectCallback(n, ctx)) return;
-        if (n.body && n.body.type !== "BlockStatement") {
-          // An expression body always yields a value, so `() => undefined` is
-          // the violating twin of `() => null` and has to be counted with it.
-          if (isNullLiteral(n.body)) add({ node: n, conforming: true, where });
-          else if (isUndefined(n.body)) add({ node: n, conforming: false, where });
-          return;
-        }
-        const returns = ownReturns(n);
-        // A bare `return` is a guard clause: it says "stop here", not "an absent
-        // value is spelled undefined". Counted, it built the opposite
-        // convention out of early returns, and on the claim side it told an
-        // agent to `return null` from a `useEffect`, which React forbids. Only
-        // an explicit `undefined` is the other side of this choice.
-        for (const r of returns) {
-          if (isNullLiteral(r.argument)) add({ node: r, conforming: true, where });
-          else if (r.argument && isUndefined(r.argument)) add({ node: r, conforming: false, where });
-        }
-      });
+    visitor(program, add) {
+      return {
+        node(n, ctx) {
+          if (!isFunctionLike(n)) return;
+          const where = siteName(n, ctx);
+          // React refuses `return null` from an effect in its own words, so
+          // `undefined` there says "stop" rather than "an absent value is spelled
+          // undefined", which is the same thing a bare return says.
+          //
+          // The other function that cannot answer, one annotated `: void`, is
+          // deliberately still counted: the annotation is what the Flow retry
+          // blanks, so reading it would make the row answer differently on a
+          // stripped tree than on the same file unstripped, and a base stripped
+          // beside an unstripped head would then cancel real findings. One
+          // measured site is not worth that.
+          // Both arms, which is what the sentence says and what the reason
+          // argues: React refuses null there, so a `return null` in an effect is
+          // not this repository choosing how it spells an absent value either.
+          // Guarding only the undefined arms put those in the conforming
+          // numerator of a row whose predicate says an effect is not a site.
+          if (isEffectCallback(n, ctx)) return;
+          if (n.body && n.body.type !== "BlockStatement") {
+            // An expression body always yields a value, so `() => undefined` is
+            // the violating twin of `() => null` and has to be counted with it.
+            if (isNullLiteral(n.body)) add({ node: n, conforming: true, where });
+            else if (isUndefined(n.body)) add({ node: n, conforming: false, where });
+            return;
+          }
+          const returns = ownReturns(n);
+          // A bare `return` is a guard clause: it says "stop here", not "an absent
+          // value is spelled undefined". Counted, it built the opposite
+          // convention out of early returns, and on the claim side it told an
+          // agent to `return null` from a `useEffect`, which React forbids. Only
+          // an explicit `undefined` is the other side of this choice.
+          for (const r of returns) {
+            if (isNullLiteral(r.argument)) add({ node: r, conforming: true, where });
+            else if (r.argument && isUndefined(r.argument)) add({ node: r, conforming: false, where });
+          }
+        },
+      };
     },
   },
 
@@ -729,16 +738,18 @@ export const EXTRA_DIMENSIONS = [
       blind: "an indexed for loop is a third form the claim does not name and neither count reaches, and whether a receiver can be iterated at all is a tsconfig question (target, downlevelIteration, whether lib includes DOM.Iterable) this tier cannot see: a NodeList under an ES5 target answers TS2495 to the for...of the claim asks for",
     },
     langs: ["js", "jsx"],
-    run(program, add) {
-      walk(program, (n, ctx) => {
-        if (n.type === "ForOfStatement") {
-          return add({ node: n, conforming: true, where: declName(ctx.fn) });
-        }
-        if (n.type !== "CallExpression" || calleeName(n.callee) !== "forEach") return;
-        if (n.callee.type !== "MemberExpression") return;
-        if (!isArrayForEach(n)) return;
-        add({ node: n, conforming: false, where: declName(ctx.fn) });
-      });
+    visitor(program, add) {
+      return {
+        node(n, ctx) {
+          if (n.type === "ForOfStatement") {
+            return add({ node: n, conforming: true, where: declName(ctx.fn) });
+          }
+          if (n.type !== "CallExpression" || calleeName(n.callee) !== "forEach") return;
+          if (n.callee.type !== "MemberExpression") return;
+          if (!isArrayForEach(n)) return;
+          add({ node: n, conforming: false, where: declName(ctx.fn) });
+        },
+      };
     },
   },
 
@@ -753,16 +764,18 @@ export const EXTRA_DIMENSIONS = [
       blind: null,
     },
     langs: ["js", "jsx"],
-    run(program, add) {
-      walk(program, (n) => {
-        if (n.type !== "CallExpression") return;
-        // `test.each` and `it.skip` are the same choice, one member deeper.
-        // Any other property means the base is an ordinary value: `it.trim()`
-        // over a loop variable, or a regex `pattern.test()`.
-        const name = testRunnerName(n.callee);
-        if (name !== "it" && name !== "test") return;
-        add({ node: n, conforming: name === "test", where: null });
-      });
+    visitor(program, add) {
+      return {
+        node(n) {
+          if (n.type !== "CallExpression") return;
+          // `test.each` and `it.skip` are the same choice, one member deeper.
+          // Any other property means the base is an ordinary value: `it.trim()`
+          // over a loop variable, or a regex `pattern.test()`.
+          const name = testRunnerName(n.callee);
+          if (name !== "it" && name !== "test") return;
+          add({ node: n, conforming: name === "test", where: null });
+        },
+      };
     },
   },
 
@@ -777,29 +790,31 @@ export const EXTRA_DIMENSIONS = [
       blind: "an assertion behind a helper, or from a third library, carries neither name",
     },
     langs: ["js", "jsx"],
-    run(program, add) {
-      walk(program, (n) => {
-        if (n.type !== "CallExpression") return;
-        const c = n.callee;
-        if (c && c.type === "Identifier") {
-          if (c.name === "expect") return add({ node: n, conforming: true, where: null });
-          if (c.name === "assert") return add({ node: n, conforming: false, where: null });
-          return;
-        }
-        // `expect.soft(x)` and `expect.poll(fn)` open an assertion the way
-        // `expect(x)` does. The other members off `expect` are matchers and
-        // setup (`expect.any`, `expect.assertions`, `expect.extend`), which
-        // assert nothing on their own and stay uncounted.
-        if (
-          c && c.type === "MemberExpression" && !c.computed &&
-          c.object?.type === "Identifier" && c.object.name === "expect" &&
-          /^(soft|poll)$/.test(c.property?.name ?? "")
-        ) {
-          return add({ node: n, conforming: true, where: null });
-        }
-        // `assert.strict.equal` is the same library two members deep.
-        if (rootIdentifier(c) === "assert") add({ node: n, conforming: false, where: null });
-      });
+    visitor(program, add) {
+      return {
+        node(n) {
+          if (n.type !== "CallExpression") return;
+          const c = n.callee;
+          if (c && c.type === "Identifier") {
+            if (c.name === "expect") return add({ node: n, conforming: true, where: null });
+            if (c.name === "assert") return add({ node: n, conforming: false, where: null });
+            return;
+          }
+          // `expect.soft(x)` and `expect.poll(fn)` open an assertion the way
+          // `expect(x)` does. The other members off `expect` are matchers and
+          // setup (`expect.any`, `expect.assertions`, `expect.extend`), which
+          // assert nothing on their own and stay uncounted.
+          if (
+            c && c.type === "MemberExpression" && !c.computed &&
+            c.object?.type === "Identifier" && c.object.name === "expect" &&
+            /^(soft|poll)$/.test(c.property?.name ?? "")
+          ) {
+            return add({ node: n, conforming: true, where: null });
+          }
+          // `assert.strict.equal` is the same library two members deep.
+          if (rootIdentifier(c) === "assert") add({ node: n, conforming: false, where: null });
+        },
+      };
     },
   },
 
@@ -819,7 +834,7 @@ export const EXTRA_DIMENSIONS = [
       blind: "a doc comment on a re-export, or attached through a wrapper, is not seen",
     },
     langs: ["js", "jsx"],
-    run(program, add, extra = {}) {
+    visitor(program, add, extra = {}) {
       // Nearest-first once per file rather than once per export: the walk above
       // steps upward through the directives it skips, so the run has to arrive
       // in the order it is walked.
@@ -834,22 +849,25 @@ export const EXTRA_DIMENSIONS = [
       const top = (n) => Math.min(n.start, ...(n.declaration?.decorators || []).map((d) => d.start));
       const site = (n, name) =>
         add({ node: n, conforming: attachedAbove(comments, top(n), source), where: name ?? null });
-      walk(program, (n) => {
-        if (n.type === "ExportNamedDeclaration" && n.declaration) {
-          const d = n.declaration;
-          if (d.type === "FunctionDeclaration" || d.type === "ClassDeclaration") return site(n, d.id?.name);
-          const holder = d.type === "VariableDeclaration" &&
-            d.declarations.find((x) => x.init && isFunctionLike(value(x.init)));
-          if (holder) return site(n, holder.id?.name);
-        }
-        if (n.type === "ExportDefaultDeclaration") {
-          const d = n.declaration;
-          if (d && (isFunctionLike(d) || d.type === "ClassDeclaration")) site(n, "default");
-        }
-      });
+      return {
+        node(n) {
+          if (n.type === "ExportNamedDeclaration" && n.declaration) {
+            const d = n.declaration;
+            if (d.type === "FunctionDeclaration" || d.type === "ClassDeclaration") return site(n, d.id?.name);
+            const holder = d.type === "VariableDeclaration" &&
+              d.declarations.find((x) => x.init && isFunctionLike(value(x.init)));
+            if (holder) return site(n, holder.id?.name);
+          }
+          if (n.type === "ExportDefaultDeclaration") {
+            const d = n.declaration;
+            if (d && (isFunctionLike(d) || d.type === "ClassDeclaration")) site(n, "default");
+          }
+        },
+      };
     },
   },
 ];
+for (const d of EXTRA_DIMENSIONS) if (d.visitor) d.run = fromVisitor(d.visitor);
 
 /**
  * Comments that instruct a tool rather than a reader.
