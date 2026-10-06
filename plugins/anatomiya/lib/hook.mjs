@@ -182,7 +182,11 @@ export function ownLayout(from) {
   // the repository deciding what a write inside it was judged against.
   const hit = walkUp(from, (at) => {
     const path = resolveInside(at, FACTS_PATH);
-    return path === null ? null : (readLayout(at, path)?.layout ?? recordedLayout(path));
+    if (path === null) return null;
+    // A layout file that answers is believed even when it says null: the
+    // record it was stamped from says the same, and reading that is the cost.
+    const stamped = readLayout(at, path);
+    return stamped === null ? recordedLayout(path) : stamped.layout;
   });
   return hit && { root: hit.at, layout: hit.found, from: hit.from };
 }
