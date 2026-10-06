@@ -360,8 +360,12 @@ end
 // Each child is handed at least this many files: for fewer, an interpreter's
 // startup costs more than it saves.
 const MIN_SHARD_FILES = 500;
-// Measured on discourse: 13.5s with four children, 12.8s with six.
-const MAX_SHARDS = Math.min(4, defaultPoolSize());
+// Six since each shard walks its own trees: while the parent walked them all,
+// a fifth and sixth child only queued more for it (13.5s against 12.8s on
+// discourse). Scan medians of three under the bench lock, four against six:
+// discourse 10.2s against 8.7s, empire-flippers/api 2.79s against 2.58s for
+// 26 MB more peak memory.
+const MAX_SHARDS = Math.min(6, defaultPoolSize());
 
 function shardsFor(count) {
   return Math.max(1, Math.min(MAX_SHARDS, Math.floor(count / MIN_SHARD_FILES)));
