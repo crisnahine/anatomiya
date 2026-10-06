@@ -58,10 +58,17 @@ test("a perfect record needs thirty-five sites before it may be stated", () => {
   // The whole behavioural claim of the bound: 34 of 34 is below 0.90 and 35 of
   // 35 is above it. Moving z moves this floor (1.645 puts it at 25 sites,
   // 2.576 at 60), and re-adding a candidate floor hides it.
+  //
+  // By hand, not from the module: with every site conforming the Wilson lower
+  // bound is n / (n + z^2), and z^2 = 1.96^2 = 3.8416, so 34 / 37.8416 = 0.8985
+  // and 35 / 38.8416 = 0.9011, either side of 0.90.
   assert.equal(Number(wilsonLower(34, 34).toFixed(4)), 0.8985);
   assert.equal(Number(wilsonLower(35, 35).toFixed(4)), 0.9011);
-  assert.ok(wilsonLower(34, 34) < GATES.minRatio);
-  assert.ok(wilsonLower(35, 35) >= GATES.minRatio);
+  assert.ok(wilsonLower(34, 34) < 0.9);
+  assert.ok(wilsonLower(35, 35) >= 0.9);
+  // And the gate itself, which reads the table's own ratio and z.
+  assert.equal(applyGates(dim(spread([7, 7, 7, 7, 6])), ctx()).gate, "evidence", "34 of 34");
+  assert.equal(applyGates(dim(spread([7, 7, 7, 7, 7])), ctx()).directive, true, "35 of 35");
   assert.equal(GATES.z, 1.96);
   assert.equal(GATES.minCandidates, undefined, "no floor below 35 can ever fire");
 });
@@ -76,13 +83,13 @@ test("no dimension clears the evidence gate while failing the ninety percent def
     for (let k = 0; k <= n; k++) {
       const bound = wilsonLower(k, n);
       assert.ok(bound <= k / n, `${k}/${n} bound ${bound} above its own ratio`);
-      if (bound >= GATES.minRatio) {
-        assert.ok(k / n >= GATES.minRatio, `${k}/${n} cleared the bound below 0.90`);
+      if (bound >= 0.9) {
+        assert.ok(k / n >= 0.9, `${k}/${n} cleared the bound below 0.90`);
         lowestStated = Math.min(lowestStated, k / n);
       }
     }
   }
-  assert.ok(lowestStated > GATES.minRatio, "the boundary itself is never reachable");
+  assert.ok(lowestStated > 0.9, "the boundary itself is never reachable");
   assert.equal(wilsonLower(0, 11), 0);
 });
 
