@@ -1,5 +1,6 @@
+import { fromVisitor } from "./walk.mjs";
 import { walkRuby, constName, bodyOf, ownDef, site, args } from "./ruby-walk.mjs";
-import { implementsCapability, nameWords } from "./dimensions-capability.mjs";
+import { implementsCapability, nameWords, NOTHING } from "./dimensions-capability.mjs";
 import { CAPABILITY_WORDS } from "./stems.mjs";
 
 /**
@@ -111,27 +112,21 @@ function inSingletonClass(ctx) {
 }
 
 /**
- * The class bodies that directly include Sidekiq's worker mixin.
+ * The class body a node includes Sidekiq's worker mixin into directly, or null.
  *
- * Collected in a pass of its own because the include may sit below the def, and
- * `walkRuby` visits a node before pushing it, so a call inside a class body
- * already sees its enclosing class.
+ * Asked of every node and only read once the walk is over, because the include
+ * may sit below the def. `walkRuby` visits a node before pushing it, so a call
+ * inside a class body already sees its enclosing class.
  *
  * Direct includes only. A worker handed the mixin by its own base class still
  * counts, which over-counts violations and so suppresses a row rather than
  * stating a convention nobody holds. Measured, all 73 `perform` sites on the
  * repository this was found on include the mixin directly.
  */
-function sidekiqBodies(ast) {
-  const bodies = new Set();
-  walkRuby(ast, (n, ctx) => {
-    if (n.t !== "call" || n.receiver || n.name !== "include") return;
-    if (ctx.def || !ctx.cls || inSingletonClass(ctx)) return;
-    for (const arg of args(n)) {
-      if (SIDEKIQ_JOB.test(constName(arg) || "")) bodies.add(ctx.cls);
-    }
-  });
-  return bodies;
+function sidekiqBody(n, ctx) {
+  if (n.t !== "call" || n.receiver || n.name !== "include") return null;
+  if (ctx.def || !ctx.cls || inSingletonClass(ctx)) return null;
+  return args(n).some((arg) => SIDEKIQ_JOB.test(constName(arg) || "")) ? ctx.cls : null;
 }
 
 export const RUBY_DIMENSIONS = [
@@ -146,14 +141,16 @@ export const RUBY_DIMENSIONS = [
       blind: null,
     },
     langs: ["ruby"],
-    run(ast, add) {
-      walkRuby(ast, (n, ctx) => {
-        if (n.t !== "rescue") return;
-        const name = n.reference && n.reference.name;
-        const stmts = n.statements;
-        const handled = !isEmpty(stmts) && (readsBinding(stmts, name) || reraises(stmts));
-        add({ node: site(n), conforming: handled, where: where(ctx) });
-      });
+    visitor(ast, add) {
+      return {
+        node(n, ctx) {
+          if (n.t !== "rescue") return;
+          const name = n.reference && n.reference.name;
+          const stmts = n.statements;
+          const handled = !isEmpty(stmts) && (readsBinding(stmts, name) || reraises(stmts));
+          add({ node: site(n), conforming: handled, where: where(ctx) });
+        },
+      };
     },
   },
 
@@ -174,17 +171,19 @@ export const RUBY_DIMENSIONS = [
       blind: "a controller that wants the 404 from find is indistinguishable from one that forgot to check",
     },
     langs: ["ruby"],
-    run(ast, add) {
+    visitor(ast, add) {
       // `find!` is not an ActiveRecord method, so the sentence no longer names
       // it and the pattern no longer matches it.
-      walkRuby(ast, (n, ctx) => {
-        if (n.t !== "call" || !/^(find|find_by!?)$/.test(n.name)) return;
-        // A constant receiver is what separates a model lookup from
-        // Enumerable#find, which takes a block and is a different method
-        // entirely despite the name.
-        if (!constName(n.receiver) || n.block) return;
-        add({ node: site(n), conforming: n.name === "find_by", where: where(ctx) });
-      });
+      return {
+        node(n, ctx) {
+          if (n.t !== "call" || !/^(find|find_by!?)$/.test(n.name)) return;
+          // A constant receiver is what separates a model lookup from
+          // Enumerable#find, which takes a block and is a different method
+          // entirely despite the name.
+          if (!constName(n.receiver) || n.block) return;
+          add({ node: site(n), conforming: n.name === "find_by", where: where(ctx) });
+        },
+      };
     },
   },
 
@@ -199,18 +198,20 @@ export const RUBY_DIMENSIONS = [
       blind: "an included concern can register callbacks from a file this one never names",
     },
     langs: ["ruby"],
-    run(ast, add) {
-      walkRuby(ast, (n) => {
-        if (n.t !== "class" || !MODEL_BASE.test(constName(n.superclass) || "")) return;
-        let registers = false;
-        walkRuby(n.body, (m, mctx) => {
-          // Only the class's own body: a callback in a nested class belongs to
-          // that class, and one inside a method is not a registration at all.
-          if (m.t !== "call" || mctx.enclosing !== null || m.receiver) return;
-          if (CALLBACK.test(m.name)) registers = true;
-        });
-        add({ node: site(n), conforming: !registers, where: n.name });
-      });
+    visitor(ast, add) {
+      return {
+        node(n) {
+          if (n.t !== "class" || !MODEL_BASE.test(constName(n.superclass) || "")) return;
+          let registers = false;
+          walkRuby(n.body, (m, mctx) => {
+            // Only the class's own body: a callback in a nested class belongs to
+            // that class, and one inside a method is not a registration at all.
+            if (m.t !== "call" || mctx.enclosing !== null || m.receiver) return;
+            if (CALLBACK.test(m.name)) registers = true;
+          });
+          add({ node: site(n), conforming: !registers, where: n.name });
+        },
+      };
     },
   },
 
@@ -229,39 +230,48 @@ export const RUBY_DIMENSIONS = [
       blind: "a raise inside a helper the entry point calls is invisible from the entry method, and a bang call under a rescue counts as caught whatever the rescue names",
     },
     langs: ["ruby"],
-    run(ast, add) {
-      // Collected first, because the include may sit below the def.
-      const sidekiq = sidekiqBodies(ast);
-      walkRuby(ast, (n, ctx) => {
-        if (n.t !== "def" || !ctx.cls || !ENTRY.test(n.name)) return;
-        // A def on any other receiver belongs to that object, not to this
-        // class. `self` is not another object, and it is how a good deal of
-        // Ruby spells an entry point.
-        if (!ownDef(n)) return;
-        // A Sidekiq job that returns instead of raising is acked as successful:
-        // never retried, never in the dead set, never in Sentry. Raising is how
-        // a worker reports failure, so the claim's remedy is the one thing it
-        // must not do.
-        if (n.name === "perform" && sidekiq.has(ctx.cls)) return;
-        let raises = false;
-        walkRuby(n.body, (m, mctx) => {
-          if (m.t !== "call") return;
-          if (RAISING_BANG.test(m.name)) {
-            if (!caught(mctx.ancestors, m)) raises = true;
-            return;
+    visitor(ast, add) {
+      const sidekiq = new Set();
+      const entries = [];
+      return {
+        node(n, ctx) {
+          const job = sidekiqBody(n, ctx);
+          if (job) sidekiq.add(job);
+          if (n.t !== "def" || !ctx.cls || !ENTRY.test(n.name)) return;
+          // A def on any other receiver belongs to that object, not to this
+          // class. `self` is not another object, and it is how a good deal of
+          // Ruby spells an entry point.
+          if (!ownDef(n)) return;
+          entries.push({ n, cls: ctx.cls });
+        },
+        done() {
+          for (const { n, cls } of entries) {
+            // A Sidekiq job that returns instead of raising is acked as successful:
+            // never retried, never in the dead set, never in Sentry. Raising is how
+            // a worker reports failure, so the claim's remedy is the one thing it
+            // must not do.
+            if (n.name === "perform" && sidekiq.has(cls)) continue;
+            let raises = false;
+            walkRuby(n.body, (m, mctx) => {
+              if (m.t !== "call") return;
+              if (RAISING_BANG.test(m.name)) {
+                if (!caught(mctx.ancestors, m)) raises = true;
+                return;
+              }
+              if (!RAISE.test(m.name) || m.receiver) return;
+              // A raise inside a rescue is a translation of someone else's error,
+              // not this method's choice about how it reports failure.
+              if (mctx.ancestors.some((a) => a.t === "rescue")) return;
+              // `raise ActiveRecord::Rollback` unwinds the transaction block, which
+              // swallows it, and the method still returns. It is control flow, not
+              // a service raising its failure.
+              if (constName(args(m)[0]) === "ActiveRecord::Rollback") return;
+              raises = true;
+            });
+            add({ node: site(n), conforming: !raises, where: n.name });
           }
-          if (!RAISE.test(m.name) || m.receiver) return;
-          // A raise inside a rescue is a translation of someone else's error,
-          // not this method's choice about how it reports failure.
-          if (mctx.ancestors.some((a) => a.t === "rescue")) return;
-          // `raise ActiveRecord::Rollback` unwinds the transaction block, which
-          // swallows it, and the method still returns. It is control flow, not
-          // a service raising its failure.
-          if (constName(args(m)[0]) === "ActiveRecord::Rollback") return;
-          raises = true;
-        });
-        add({ node: site(n), conforming: !raises, where: n.name });
-      });
+        },
+      };
     },
   },
 
@@ -276,28 +286,38 @@ export const RUBY_DIMENSIONS = [
       blind: null,
     },
     langs: ["ruby"],
-    run(ast, add) {
-      const sidekiq = sidekiqBodies(ast);
-      walkRuby(ast, (n, ctx) => {
-        if (n.t !== "def" || !n.parameters) return;
-        // `s[a: 1] = 2` does not parse: "unexpected keyword arg given in index
-        // assignment". ActiveModel calls `validate_each(record, attribute,
-        // value)` positionally from `EachValidator#validate`.
-        if (n.name === "[]=" || n.name === "validate_each") return;
-        // Sidekiq reaches `perform` through `instance.perform(*cloned_args)`, a
-        // splat of a JSON array, and in Ruby 3 a splatted Hash is never
-        // keywords. Gated on the mixin rather than on the name, because
-        // ActiveJob does carry keywords through and `perform` is an ordinary
-        // method name. `def self.perform` is not what Sidekiq calls.
-        if (n.name === "perform" && !n.receiver && ctx.cls && sidekiq.has(ctx.cls)) return;
-        const p = n.parameters;
-        const positional = len(p.requireds) + len(p.optionals) + len(p.posts);
-        const total = positional + len(p.keywords);
-        // Two arguments read fine positionally; the convention is about the
-        // point where a call site stops being readable.
-        if (total < 3) return;
-        add({ node: site(n), conforming: positional === 0, where: n.name });
-      });
+    visitor(ast, add) {
+      const sidekiq = new Set();
+      const sites = [];
+      return {
+        node(n, ctx) {
+          const job = sidekiqBody(n, ctx);
+          if (job) sidekiq.add(job);
+          if (n.t !== "def" || !n.parameters) return;
+          // `s[a: 1] = 2` does not parse: "unexpected keyword arg given in index
+          // assignment". ActiveModel calls `validate_each(record, attribute,
+          // value)` positionally from `EachValidator#validate`.
+          if (n.name === "[]=" || n.name === "validate_each") return;
+          const p = n.parameters;
+          const positional = len(p.requireds) + len(p.optionals) + len(p.posts);
+          const total = positional + len(p.keywords);
+          // Two arguments read fine positionally; the convention is about the
+          // point where a call site stops being readable.
+          if (total < 3) return;
+          sites.push({ n, cls: ctx.cls, hit: { node: site(n), conforming: positional === 0, where: n.name } });
+        },
+        done() {
+          for (const { n, cls, hit } of sites) {
+            // Sidekiq reaches `perform` through `instance.perform(*cloned_args)`, a
+            // splat of a JSON array, and in Ruby 3 a splatted Hash is never
+            // keywords. Gated on the mixin rather than on the name, because
+            // ActiveJob does carry keywords through and `perform` is an ordinary
+            // method name. `def self.perform` is not what Sidekiq calls.
+            if (n.name === "perform" && !n.receiver && cls && sidekiq.has(cls)) continue;
+            add(hit);
+          }
+        },
+      };
     },
   },
 
@@ -315,35 +335,37 @@ export const RUBY_DIMENSIONS = [
       blind: null,
     },
     langs: ["ruby"],
-    run(ast, add) {
-      walkRuby(ast, (n, ctx) => {
-        if (n.t !== "call") return;
-        const recv = constName(n.receiver);
-        if (recv) {
-          // `DateTime.new(2026, 8, 20, 9, 0, 0, 'PST')` always resolves to
-          // UTC-08:00 and `Time.new(..., '-08:00')` reports utc_offset -28800,
-          // so the application zone never reaches the value. Any arity: a bare
-          // `Time.new` is `Time.now` under another name.
-          const clock = recv === "Time" || recv === "DateTime";
-          // `Time.local`, `Time.parse` and `Time.at` are the unzoned twins of
-          // the constructions counted as conforming on `Time.zone`. Counting
-          // one half of a pair made a directory of both read 40 of 40.
-          const unzoned = recv === "Time" && /^(local|parse|at)$/.test(n.name);
-          if ((clock && (n.name === "now" || n.name === "new")) || unzoned || (recv === "Date" && n.name === "today")) {
-            return add({ node: site(n), conforming: false, where: where(ctx) });
+    visitor(ast, add) {
+      return {
+        node(n, ctx) {
+          if (n.t !== "call") return;
+          const recv = constName(n.receiver);
+          if (recv) {
+            // `DateTime.new(2026, 8, 20, 9, 0, 0, 'PST')` always resolves to
+            // UTC-08:00 and `Time.new(..., '-08:00')` reports utc_offset -28800,
+            // so the application zone never reaches the value. Any arity: a bare
+            // `Time.new` is `Time.now` under another name.
+            const clock = recv === "Time" || recv === "DateTime";
+            // `Time.local`, `Time.parse` and `Time.at` are the unzoned twins of
+            // the constructions counted as conforming on `Time.zone`. Counting
+            // one half of a pair made a directory of both read 40 of 40.
+            const unzoned = recv === "Time" && /^(local|parse|at)$/.test(n.name);
+            if ((clock && (n.name === "now" || n.name === "new")) || unzoned || (recv === "Date" && n.name === "today")) {
+              return add({ node: site(n), conforming: false, where: where(ctx) });
+            }
+            if (/^(Time|Date|DateTime)$/.test(recv) && n.name === "current") {
+              return add({ node: site(n), conforming: true, where: where(ctx) });
+            }
+            return;
           }
-          if (/^(Time|Date|DateTime)$/.test(recv) && n.name === "current") {
-            return add({ node: site(n), conforming: true, where: where(ctx) });
+          // Time.zone.now, where the inner Time.zone call matches no rule and so
+          // is not a second candidate for the same read.
+          const r = n.receiver;
+          if (r && r.t === "call" && r.name === "zone" && constName(r.receiver) === "Time" && ZONED.test(n.name)) {
+            add({ node: site(n), conforming: true, where: where(ctx) });
           }
-          return;
-        }
-        // Time.zone.now, where the inner Time.zone call matches no rule and so
-        // is not a second candidate for the same read.
-        const r = n.receiver;
-        if (r && r.t === "call" && r.name === "zone" && constName(r.receiver) === "Time" && ZONED.test(n.name)) {
-          add({ node: site(n), conforming: true, where: where(ctx) });
-        }
-      });
+        },
+      };
     },
   },
 
@@ -359,16 +381,18 @@ export const RUBY_DIMENSIONS = [
       blind: "output behind a helper, and a CLI that writes to stdout on purpose, look the same from here",
     },
     langs: ["ruby"],
-    run(ast, add, { rel } = {}) {
+    visitor(ast, add, { rel } = {}) {
       // The module that implements the routing is not one of its own sites.
-      if (implementsCapability(rel, "logging")) return;
-      walkRuby(ast, (n, ctx) => {
-        if (n.t !== "call") return;
-        if (!n.receiver && LOG_DIRECT.test(n.name)) {
-          return add({ node: site(n), conforming: false, where: where(ctx) });
-        }
-        if (LOG_OUTPUT.test(n.name) && loggerReceiver(n.receiver)) add({ node: site(n), conforming: true, where: where(ctx) });
-      });
+      if (implementsCapability(rel, "logging")) return NOTHING;
+      return {
+        node(n, ctx) {
+          if (n.t !== "call") return;
+          if (!n.receiver && LOG_DIRECT.test(n.name)) {
+            return add({ node: site(n), conforming: false, where: where(ctx) });
+          }
+          if (LOG_OUTPUT.test(n.name) && loggerReceiver(n.receiver)) add({ node: site(n), conforming: true, where: where(ctx) });
+        },
+      };
     },
   },
 
@@ -384,24 +408,26 @@ export const RUBY_DIMENSIONS = [
       blind: "a client behind another name or a non-verb method is not seen, a store the list does not name reads as the client, and a model that happens to be called Client with a verb-named scope still counts",
     },
     langs: ["ruby"],
-    run(ast, add, { rel } = {}) {
+    visitor(ast, add, { rel } = {}) {
       // The module that implements the routing is not one of its own sites.
-      if (implementsCapability(rel, "network")) return;
-      walkRuby(ast, (n, ctx) => {
-        if (n.t !== "call") return;
-        const recv = constName(n.receiver);
-        if (recv && directHttp(recv)) {
-          return add({ node: site(n), conforming: false, where: where(ctx) });
-        }
-        if (recv === "URI" && n.name === "open") {
-          return add({ node: site(n), conforming: false, where: where(ctx) });
-        }
-        // The verb table is what keeps a Rails model named Client from turning
-        // its every find and update into a conforming HTTP site.
-        if (HTTP_VERB.test(n.name) && clientReceiver(n.receiver, recv)) {
-          add({ node: site(n), conforming: true, where: where(ctx) });
-        }
-      });
+      if (implementsCapability(rel, "network")) return NOTHING;
+      return {
+        node(n, ctx) {
+          if (n.t !== "call") return;
+          const recv = constName(n.receiver);
+          if (recv && directHttp(recv)) {
+            return add({ node: site(n), conforming: false, where: where(ctx) });
+          }
+          if (recv === "URI" && n.name === "open") {
+            return add({ node: site(n), conforming: false, where: where(ctx) });
+          }
+          // The verb table is what keeps a Rails model named Client from turning
+          // its every find and update into a conforming HTTP site.
+          if (HTTP_VERB.test(n.name) && clientReceiver(n.receiver, recv)) {
+            add({ node: site(n), conforming: true, where: where(ctx) });
+          }
+        },
+      };
     },
   },
 
@@ -420,47 +446,51 @@ export const RUBY_DIMENSIONS = [
       blind: null,
     },
     langs: ["ruby"],
-    run(ast, add) {
+    visitor(ast, add) {
       // Two passes, because a class written in two parts declares its
       // superclass in whichever part carries it, and that part may be the one
       // below. Same rule H16 gave the include-less body.
       const bare = [];
       const declared = new Set();
-      walkRuby(ast, (n, ctx) => {
-        if (n.t !== "class") return;
-        const self = qualifiedName(ctx, n);
-        // A superclass naming no constant is still a superclass somebody
-        // chose. Measured: `ActiveRecord::Migration[7.2]` is an index call, so
-        // counting it as an omission took one repository's db/migrate from 41
-        // of 41 to 41 of 576.
-        if (n.superclass) {
-          declared.add(self);
-          const base = constName(n.superclass);
-          if (!base) return;
-          // Ruby refuses to raise a class that is not an Exception, so an error
-          // class cannot inherit whatever the area learned: conforming makes it
-          // unraisable. Only the language's own, so a repository that gives its
-          // errors a base of their own keeps every subclass.
-          if (isRubyError(base)) return;
-          // The site's own qualified name, for the fold: `class X < X` is a
-          // NameError, and the class an area learned is counted as a site of
-          // its own row. Deciding it needs the learned class, which only the
-          // fold has.
-          add({ node: site(n), conforming: false, where: n.name, class: base, self, nesting: nestingOf(ctx) });
-          return;
-        }
-        // A class inside another class is that class's helper rather than a
-        // peer of the models the claim is about.
-        if (ctx.cls?.t === "class") return;
-        bare.push({ node: n, self, where: n.name });
-      });
-      for (const b of bare) {
-        if (declared.has(b.self)) continue;
-        // No class key, so it votes for nothing and conforms to nothing. The
-        // omission is the violation an agent actually commits: a PORO dropped
-        // into app/models, rather than a class inheriting the wrong base.
-        add({ node: site(b.node), conforming: false, where: b.where, self: b.self });
-      }
+      return {
+        node(n, ctx) {
+          if (n.t !== "class") return;
+          const self = qualifiedName(ctx, n);
+          // A superclass naming no constant is still a superclass somebody
+          // chose. Measured: `ActiveRecord::Migration[7.2]` is an index call, so
+          // counting it as an omission took one repository's db/migrate from 41
+          // of 41 to 41 of 576.
+          if (n.superclass) {
+            declared.add(self);
+            const base = constName(n.superclass);
+            if (!base) return;
+            // Ruby refuses to raise a class that is not an Exception, so an error
+            // class cannot inherit whatever the area learned: conforming makes it
+            // unraisable. Only the language's own, so a repository that gives its
+            // errors a base of their own keeps every subclass.
+            if (isRubyError(base)) return;
+            // The site's own qualified name, for the fold: `class X < X` is a
+            // NameError, and the class an area learned is counted as a site of
+            // its own row. Deciding it needs the learned class, which only the
+            // fold has.
+            add({ node: site(n), conforming: false, where: n.name, class: base, self, nesting: nestingOf(ctx) });
+            return;
+          }
+          // A class inside another class is that class's helper rather than a
+          // peer of the models the claim is about.
+          if (ctx.cls?.t === "class") return;
+          bare.push({ node: n, self, where: n.name });
+        },
+        done() {
+          for (const b of bare) {
+            if (declared.has(b.self)) continue;
+            // No class key, so it votes for nothing and conforms to nothing. The
+            // omission is the violation an agent actually commits: a PORO dropped
+            // into app/models, rather than a class inheriting the wrong base.
+            add({ node: site(b.node), conforming: false, where: b.where, self: b.self });
+          }
+        },
+      };
     },
   },
 
@@ -480,7 +510,7 @@ export const RUBY_DIMENSIONS = [
       blind: null,
     },
     langs: ["ruby"],
-    run(ast, add) {
+    visitor(ast, add) {
       // Every body is registered as it is walked, so a body that declares no
       // mixin is still a site. Emitting a hit only where an include already sat
       // made the omission invisible, which is the violation that actually
@@ -491,75 +521,80 @@ export const RUBY_DIMENSIONS = [
       // prism's `name` is the last segment even of a compact path, so the path
       // is read whole, as `qualifiedName` does: named `Worker`, B's include
       // counted as A's declaration and A's missing one was never a site.
-      walkRuby(ast, (n, ctx) => {
-        if (n.t === "class" || n.t === "module") {
-          // `ctx.cls` is the enclosing body, since the walk visits before it
-          // pushes. A module namespaces what it holds; a class owns it.
-          if (!bodies.has(n)) {
-            const name = qualifiedName(ctx, n);
-            bodies.set(n, {
-              node: n,
-              name,
-              ownedByClass: ctx.cls?.t === "class",
-              group: bodies.size + 1,
-              hits: [],
-              // `prepend` and `extend` put the module somewhere else in the
-              // ancestry, so the body declared a mixin either way.
-              declares: false,
-            });
+      return {
+        node(n, ctx) {
+          if (n.t === "class" || n.t === "module") {
+            // `ctx.cls` is the enclosing body, since the walk visits before it
+            // pushes. A module namespaces what it holds; a class owns it.
+            if (!bodies.has(n)) {
+              const name = qualifiedName(ctx, n);
+              bodies.set(n, {
+                node: n,
+                name,
+                ownedByClass: ctx.cls?.t === "class",
+                group: bodies.size + 1,
+                hits: [],
+                // `prepend` and `extend` put the module somewhere else in the
+                // ancestry, so the body declared a mixin either way.
+                declares: false,
+              });
+            }
+            return;
           }
-          return;
-        }
-        if (n.t !== "call" || n.receiver) return;
-        if (n.name !== "include" && n.name !== "prepend" && n.name !== "extend") return;
-        const body = ctx.def || !ctx.cls ? null : bodies.get(ctx.cls);
-        if (!body) return;
-        // `class << self; include M; end` is `extend M`: a mixin declared, but
-        // not one the class's instances carry, so no vote for M.
-        if (n.name !== "include" || inSingletonClass(ctx)) {
-          if (args(n).some((arg) => constName(arg))) body.declares = true;
-          return;
-        }
-        // One hit per constant, because `include A, B` mixes in both and each
-        // is a vote; the group is what keeps the body counting as one site.
-        for (const arg of args(n)) {
-          const mixin = constName(arg);
-          if (mixin) {
-            // Where a bare mixin is looked up: the body holding the call, then
-            // each scope above it.
-            const nesting = nestingOf(ctx, ctx.cls);
-            body.hits.push({
-              node: site(n),
-              conforming: false,
-              where: where(ctx),
-              class: mixin,
-              group: body.group,
-              nesting,
-            });
+          if (n.t !== "call" || n.receiver) return;
+          if (n.name !== "include" && n.name !== "prepend" && n.name !== "extend") return;
+          const body = ctx.def || !ctx.cls ? null : bodies.get(ctx.cls);
+          if (!body) return;
+          // `class << self; include M; end` is `extend M`: a mixin declared, but
+          // not one the class's instances carry, so no vote for M.
+          if (n.name !== "include" || inSingletonClass(ctx)) {
+            if (args(n).some((arg) => constName(arg))) body.declares = true;
+            return;
           }
-        }
-      });
-      // One class written in two parts is one class, and the part carrying the
-      // mixins is where it declared them.
-      const declared = new Set(
-        [...bodies.values()].filter((b) => b.hits.length || b.declares).map((b) => b.name)
-      );
-      for (const body of bodies.values()) {
-        if (body.hits.length) {
-          for (const hit of body.hits) add(hit);
-          continue;
-        }
-        // A namespacing module, a subclass and a nested helper each have
-        // somewhere else to have got the mixin, and each was a wrong finding on
-        // the corpus before it was excluded.
-        if (body.node.t !== "class" || body.ownedByClass || body.node.superclass) continue;
-        if (declared.has(body.name)) continue;
-        // No class key, so it votes for nothing and conforms to nothing.
-        add({ node: site(body.node), conforming: false, where: body.name || null, group: body.group });
-      }
+          // One hit per constant, because `include A, B` mixes in both and each
+          // is a vote; the group is what keeps the body counting as one site.
+          for (const arg of args(n)) {
+            const mixin = constName(arg);
+            if (mixin) {
+              // Where a bare mixin is looked up: the body holding the call, then
+              // each scope above it.
+              const nesting = nestingOf(ctx, ctx.cls);
+              body.hits.push({
+                node: site(n),
+                conforming: false,
+                where: where(ctx),
+                class: mixin,
+                group: body.group,
+                nesting,
+              });
+            }
+          }
+        },
+        done() {
+          // One class written in two parts is one class, and the part carrying the
+          // mixins is where it declared them.
+          const declared = new Set(
+            [...bodies.values()].filter((b) => b.hits.length || b.declares).map((b) => b.name)
+          );
+          for (const body of bodies.values()) {
+            if (body.hits.length) {
+              for (const hit of body.hits) add(hit);
+              continue;
+            }
+            // A namespacing module, a subclass and a nested helper each have
+            // somewhere else to have got the mixin, and each was a wrong finding on
+            // the corpus before it was excluded.
+            if (body.node.t !== "class" || body.ownedByClass || body.node.superclass) continue;
+            if (declared.has(body.name)) continue;
+            // No class key, so it votes for nothing and conforms to nothing.
+            add({ node: site(body.node), conforming: false, where: body.name || null, group: body.group });
+          }
+        },
+      };
     },
   },
 ];
+for (const d of RUBY_DIMENSIONS) if (d.visitor) d.run = fromVisitor(d.visitor, walkRuby);
 
 const LOG_DIRECT = /^(puts|print|p|pp|warn)$/;
 // What writes through a logger. `level=`, `formatter=` and `debug?` configure or

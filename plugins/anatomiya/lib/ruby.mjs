@@ -1,5 +1,6 @@
 import { guardedChild, absentInterpreter } from "./child.mjs";
 import { collectHits } from "./walk.mjs";
+import { walkRuby } from "./ruby-walk.mjs";
 import { rubyFacets } from "./facets.mjs";
 import { guardsOver, MAX_FILE_BYTES } from "./limits.mjs";
 import { firstLine } from "./encode.mjs";
@@ -772,7 +773,7 @@ function take(out, seen, line, dimensions, attempt) {
       result.facets = { testRunner: null, testCalls: false };
     }
     if (dimensions.length) {
-      result.hits = collectHits(program, dimensions, { rel: result.rel });
+      result.hits = collectHits(program, dimensions, { rel: result.rel }, walkRuby);
       // Answered, so the tree is dropped before the result is retained. Holding
       // it made the shard carry every tree in its batch at once, and then copy
       // them all to the parent, which is the cost the JS side pays a process

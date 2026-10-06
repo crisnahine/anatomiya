@@ -9,6 +9,7 @@ import { join } from "node:path";
 import { choosePrism, listPrism, parseRuby, prismLoadArgs, RUBY_GUARDS, shardsBySize } from "../plugins/anatomiya/lib/ruby.mjs";
 import { walkRuby, constName, bodyOf, site, args } from "../plugins/anatomiya/lib/ruby-walk.mjs";
 import { RUBY_DIMENSIONS } from "../plugins/anatomiya/lib/dimensions-ruby.mjs";
+import { collectHits } from "../plugins/anatomiya/lib/walk.mjs";
 import { siteIdentity } from "../plugins/anatomiya/lib/introduced.mjs";
 import { readiness } from "../plugins/anatomiya/lib/readiness.mjs";
 
@@ -1400,6 +1401,21 @@ test("a file that never reads the clock contributes nothing", needsRuby, () => {
 });
 
 // --- the shape the reducer relies on ---
+
+test("every Ruby row answers the same on the shared walk as walking alone, with a frozen ctx", needsRuby, () => {
+  assert.deepEqual(RUBY_DIMENSIONS.filter((d) => !d.visitor).map((d) => d.key), []);
+  // A visitor that writes to the ctx it shares with every other row throws
+  // here, and loses its sites.
+  const frozen = (tree, visit) => walkRuby(tree, (node, ctx) => visit(node, Object.freeze(ctx)));
+  const reached = new Set();
+  for (const [name, file] of programs) {
+    const extra = { rel: `${name}.rb` };
+    const alone = collectHits(file.program, RUBY_DIMENSIONS.map((d) => ({ key: d.key, run: d.run })), extra);
+    assert.deepEqual(collectHits(file.program, RUBY_DIMENSIONS, extra, frozen), alone, name);
+    for (const key of Object.keys(alone)) reached.add(key);
+  }
+  assert.equal(reached.size, RUBY_DIMENSIONS.length, "the fixtures should reach every row");
+});
 
 test("every shipped ruby dimension declares its precision and its language", needsRuby, () => {
   for (const d of RUBY_DIMENSIONS) {
