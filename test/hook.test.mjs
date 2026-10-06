@@ -269,6 +269,11 @@ test("the layout file answers the walk, and a map without one answers the same f
   writeFileSync(join(dir, LAYOUT_PATH), JSON.stringify({ schema: FACTS_SCHEMA, record, layout: other }));
   assert.deepEqual(ownLayout(dir).layout, other);
 
+  // Its null is an answer too. The record holds a layout here, so reading it
+  // after a null would show as one.
+  writeFileSync(join(dir, LAYOUT_PATH), JSON.stringify({ schema: FACTS_SCHEMA, record, layout: null }));
+  assert.equal(ownLayout(dir), null, "a layout file saying null is not passed over for the record");
+
   writeFileSync(join(dir, LAYOUT_PATH), JSON.stringify({ schema: FACTS_SCHEMA + 1, record, layout: other }));
   assert.deepEqual(ownLayout(dir), fromRecord, "a layout file from a build ahead of this one leaves the record to answer");
 });
