@@ -224,8 +224,9 @@ export function precedentFindings(arrived, roots, { fresh = true, holdsTest = ()
  * What to say before a file is written, or null where there is nothing to say.
  *
  * The claims a repository states reach an agent on `PostToolUse`, which is
- * after the file exists, and an area's own file loads only when something in
- * that area is read. A directory nobody read is the blind spot, and it is
+ * after the file exists, and an area's own file loads when something in that
+ * area is read, or from Claude Code 2.1.288 once a Write or Edit there has
+ * landed, never before. A directory nobody read is the blind spot, and it is
  * exactly where a convention gets broken: the path is chosen with none of its
  * counts in front of the reader.
  *

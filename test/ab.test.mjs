@@ -917,6 +917,9 @@ const KEPT = new Map([
   // the scan reads a trailing `E`. The code reads both without it.
   ["CLAUDE_CODE_ALWAYS_ENABLE_EFFORTE", "CLAUDE_CODE_ALWAYS_ENABLE_EFFORT, which OVERRIDES scrubs, with the next string-table entry's length byte"],
   ["CLAUDE_CODE_SKIP_MODEL_ACCESS_MEMORYE", "CLAUDE_CODE_SKIP_MODEL_ACCESS_MEMORY with the next string-table entry's length byte, not a name the build reads"],
+  // 2.1.290 does it once more: the byte after the name is 0x4e, so the scan
+  // reads a trailing `N`.
+  ["CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENTN", "CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT, which OVERRIDES scrubs, with the next string-table entry's length byte"],
   // CLAUDE_CODE_MODEL_CATALOG sat here through 2.1.252 as the off switch for a
   // catalog that was compared and logged. 2.1.257 installs the fetched catalog
   // in place of the compiled model list, so the switch is scrubbed with the URL

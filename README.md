@@ -271,7 +271,8 @@ bottom carry no number of their own, because the numbers are the lines above the
 
 ### One area file, in full
 
-An area file carries a `paths` key, so it loads only when the agent reads a file underneath it:
+An area file carries a `paths` key, so it loads when the agent reads a file underneath it, or from
+Claude Code 2.1.288 once it has written or edited one there:
 
 ```markdown
 ---
@@ -393,11 +394,13 @@ too long for the unix socket one fixture binds, fails the run rather than quietl
 
 Read this section before deciding.
 
-**The map loads when the agent reads a file, and only then.** A `paths` rule attaches on a Read
-tool call or an `@file` mention. It does not load on grep, on glob, on `cat` through bash, or on an
-edit with no prior read. An agent that greps its way to a line and edits it never sees the area
-file; the overview, which has no `paths` key, is the one part that always loads. That is a real
-ceiling on coverage, not a rough edge.
+**The map loads when the agent reads a file, and from 2.1.288 after it writes one.** A `paths` rule
+attaches on a Read tool call or an `@file` mention, and from Claude Code 2.1.288 on a Write or Edit
+too, once that call has landed. It does not load on grep, on glob, on `cat` through bash, or on a
+notebook edit, and on an older build not on an edit with no prior read. From 2.1.288 an agent that
+greps its way to a line and edits it sees the area file only after the edit is made, and on an older
+build it never does; the overview, which has no `paths` key, is the one part that always loads
+first. That is a real ceiling on coverage, not a rough edge.
 
 The Read has to be attempted, not to succeed: a Read of a path that does not exist yet still
 attaches the area file for it, so an agent checking whether its target is already there gets the
