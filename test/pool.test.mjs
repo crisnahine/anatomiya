@@ -443,18 +443,20 @@ test("a ps that will not return costs the poll its timeout, not the run", needsS
   }
 });
 
-test("a parse over the memory ceiling is killed and charged, and the same file parses under the default", async (t) => {
+test("a parse over the memory ceiling is killed and charged, and the same file parses under the default ceiling", async (t) => {
   // Windows has no poll, so the five-second clock is the only guard there.
   if (process.platform === "win32") return t.skip("no resident-size poll on Windows");
   const body = "export const a = [" + Array.from({ length: 40000 }, (_, i) => `{ k${i}: ${i} }`).join(",") + "];\n";
 
-  await withPool({ size: 1, guards: { rssBytes: 1, rssGraceMs: 0, rssPollMs: 5 } }, async (pool, dir) => {
+  // The clock is lifted on both pools so it cannot fail either parse: under
+  // coverage on a loaded runner the second one has run past 5s.
+  await withPool({ size: 1, guards: { timeoutMs: 60_000, rssBytes: 1, rssGraceMs: 0, rssPollMs: 5 } }, async (pool, dir) => {
     const r = await pool.parse(file(dir, "big.js", body));
     assert.equal(r.ok, false, "every worker is over a one-byte ceiling");
     assert.equal(r.crashed, true);
     assert.equal(r.attempts, 1, "a kill for memory is charged, not retried");
   });
-  await withPool({ size: 1 }, async (pool, dir) => {
+  await withPool({ size: 1, guards: { timeoutMs: 60_000 } }, async (pool, dir) => {
     assert.equal((await pool.parse(file(dir, "big.js", body))).ok, true, "so the ceiling is what failed it");
   });
 });

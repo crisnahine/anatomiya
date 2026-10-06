@@ -25,6 +25,10 @@ on a read, and the A/B harness test passes on 2.1.290. The map itself is unchang
 - `test/ab.test.mjs` rules on the name Claude Code 2.1.290 adds to its string table with the next
   entry's length byte on the end (`CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENTN`). The name
   the build reads was already scrubbed.
+- The pool test that compares a parse over the memory ceiling with the same parse under the default
+  ceiling lifts the five-second clock on both, so the clock cannot fail either parse. Under coverage
+  on a loaded runner the second parse ran past it, 5.3s on CI, and the test took that as the ceiling
+  failing it.
 
 ## [0.13.2] - 2026-10-05
 
