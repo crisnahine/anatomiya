@@ -302,9 +302,11 @@ dies leaves its child to the parent, which kills and reaps it before anything el
 passes through the parent's event loop on its way, so the thread's idle clock also measures how busy
 the parent is. Each thread's heap is held to what its largest file needs, because V8 grows a heap
 toward its limit rather than its live set and four threads at the default limit doubled the scan's
-peak memory; a thread that runs out of its hold keeps the records it already sent, and the files it
-left unanswered are read again on a thread with the default heap, which costs time and never a
-file. Each child keeps its own clocks and its own retry, so a child that dies charges the files left
+peak memory. Past 256 KB the hold covers the densest code measured (nested calls or hashes, 90 MB of
+heap for a megabyte); below it the hold stays small, since covering dense code on every thread took
+empire-flippers/api's peak from 221 MB to about 340 MB. A thread that runs out of its hold keeps the
+records it already sent, and the files it left unanswered are read again on a thread with the
+default heap, which costs time and never a file. Each child keeps its own clocks and its own retry, so a child that dies charges the files left
 in its batch and no others. Which files those are follows the byte balance: a broken Ruby charges
 the same number of files, with the same text, as contiguous batches did, and may name different
 ones. A worker thread that ends any other way without answering charges its whole batch, the
