@@ -1310,7 +1310,9 @@ test("the parse starts before the baseline answers, and the map is the same as w
   };
   let order = null;
   const resolveState = async (root) => {
-    order = await Promise.race([started, new Promise((resolve) => setTimeout(resolve, 5_000, "baseline first"))]);
+    let timer;
+    order = await Promise.race([started, new Promise((resolve) => (timer = setTimeout(resolve, 5_000, "baseline first")))]);
+    clearTimeout(timer);
     // And slower than the parse may take, so the parse is still running when it answers.
     await new Promise((resolve) => setTimeout(resolve, 200));
     return resolveBaseline(root);

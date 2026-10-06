@@ -753,8 +753,7 @@ function safeRef(ref) {
  */
 export async function shaReachable(root, sha) {
   if (!isSha(sha)) return false;
-  // Asked the way `commitAt` asks it, so a pin checked here and resolved there is one read.
-  if (isFullSha(sha)) return (await commitAt(root, sha)) !== null;
+  // Never from memory: this exists to notice a commit that has gone away.
   const r = await gitBuffered(root, ["cat-file", "-e", `${sha}^{commit}`]);
   return r.ok;
 }
@@ -961,7 +960,9 @@ export async function filesAt(root, sha, { timeout, maxFieldBytes } = {}) {
   const args = ["ls-tree", "-r", "--name-only", "-z", sha, "--"];
   const ask = () => pathSet(root, args, { timeout, maxFieldBytes });
   if (!isFullSha(sha)) return ask();
-  const paths = await remembered(root, args, ask, (answer) => answer !== null);
+  // The bounds are part of the question: a listing read under one caller's
+  // must not answer a caller that set tighter ones.
+  const paths = await remembered(root, [...args, `${timeout}`, `${maxFieldBytes}`], ask, (answer) => answer !== null);
   // A copy each, so one caller's edit never reaches another's answer.
   return paths && new Set(paths);
 }

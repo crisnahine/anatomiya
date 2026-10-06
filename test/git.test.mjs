@@ -1136,7 +1136,8 @@ function twoCommits(t) {
 
 test("a question about full commit shas spawns git once however often it is asked", needsShebang, async (t) => {
   // An object named by its full hash cannot change, and the check asked the
-  // same merge base three times and the same diff twice in one run.
+  // same merge base three times and the same diff twice in one run. Whether
+  // the commit still exists is the one question asked every time.
   const { dir, first, second } = twoCommits(t);
   const answers = [];
   const calls = await gitCalls(t, async () => {
@@ -1154,7 +1155,7 @@ test("a question about full commit shas spawns git once however often it is aske
   const spawned = (sub) => calls.filter((c) => c.startsWith(`${sub} `)).length;
   assert.deepEqual(
     ["merge-base", "rev-parse", "cat-file", "ls-tree", "diff"].map((sub) => [sub, spawned(sub)]),
-    [["merge-base", 1], ["rev-parse", 1], ["cat-file", 0], ["ls-tree", 1], ["diff", 1]],
+    [["merge-base", 1], ["rev-parse", 1], ["cat-file", 2], ["ls-tree", 1], ["diff", 1]],
     calls.join("\n")
   );
 });
@@ -1220,4 +1221,27 @@ test("the merge base of a commit with itself is the commit, with no merge-base s
 
   assert.deepEqual(answers, [{ found: true, failed: false, sha: second }, { found: true, failed: false, sha: second }]);
   assert.deepEqual(calls, [`rev-parse --verify --quiet ${second}^{commit}`], "only the commit itself was verified");
+});
+
+test("a commit pruned while the process runs reads as unreachable at once", async (t) => {
+  // E3: reachability exists to notice a commit that went away, so it is never
+  // answered from memory.
+  const { dir, git, first, second } = twoCommits(t);
+  git("checkout", "-q", "-b", "keep", first);
+  assert.equal(await shaReachable(dir, second), true);
+
+  for (const branch of git("branch", "--format=%(refname:short)").toString().trim().split("\n")) {
+    if (branch !== "keep") git("branch", "-q", "-D", branch);
+  }
+  git("reflog", "expire", "--expire=now", "--all");
+  git("gc", "-q", "--prune=now");
+
+  assert.equal(await shaReachable(dir, second), false);
+});
+
+test("a listing read under one caller's bounds does not answer a caller with tighter ones", async (t) => {
+  const { dir, second } = twoCommits(t);
+
+  assert.deepEqual([...(await filesAt(dir, second))], ["a.ts", "b.ts"]);
+  assert.equal(await filesAt(dir, second, { timeout: 1 }), null, "no git answers inside a millisecond");
 });

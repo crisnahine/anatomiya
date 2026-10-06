@@ -133,11 +133,11 @@ export async function check(cwd, { baseRef = null } = {}) {
   // run: no map on disk" above a note saying the map is a schema this build
   // cannot read. The first is false and points at the wrong fix.
   const [diff, status, dropOf, stale, added, tracked] = await Promise.all([
-    from ? changedFiles(root, from) : { ok: true, rows: [] },
+    from ? changedFiles(root, from, base.head ?? "HEAD") : { ok: true, rows: [] },
     pendingPaths(root),
     corpusDrop(root),
     staleness(root, facts, base, unreadable),
-    mode === "added-lines" ? addedRanges(root, from) : null,
+    mode === "added-lines" ? addedRanges(root, from, base.head ?? "HEAD") : null,
     trackedTests(root),
   ]);
   if (!diff.ok) {
@@ -613,7 +613,7 @@ async function recordedParents(root) {
  * ancestor of HEAD, which is what makes diffing against it legitimate.
  */
 async function boundary(root, head) {
-  const r = await git(root, ["rev-list", "--max-parents=0", "HEAD"]);
+  const r = await git(root, ["rev-list", "--max-parents=0", head ?? "HEAD"]);
   const first = r.out.trim().split("\n").filter(Boolean).pop();
   if (!first) return null;
   return first === head ? null : first;
@@ -1326,7 +1326,6 @@ function ancestorSlot(ancestorsOf, area, key) {
   }
   return null;
 }
-
 
 /**
  * One path as it stands on disk, as `{ source, oversize }`, the source null
