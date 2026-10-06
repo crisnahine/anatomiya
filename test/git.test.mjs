@@ -1245,3 +1245,18 @@ test("a listing read under one caller's bounds does not answer a caller with tig
   assert.deepEqual([...(await filesAt(dir, second))], ["a.ts", "b.ts"]);
   assert.equal(await filesAt(dir, second, { timeout: 1 }), null, "no git answers inside a millisecond");
 });
+
+test("an answer one caller edits is not the answer the next caller of the same sha gets", async (t) => {
+  const { dir, first, second } = twoCommits(t);
+
+  const listing = await filesAt(dir, second);
+  listing.delete("a.ts");
+  listing.add("edited.ts");
+  const range = await diffRange(dir, first, second);
+  range.changed.clear();
+  range.renames.set("edited.ts", "a.ts");
+
+  assert.deepEqual([...(await filesAt(dir, second))], ["a.ts", "b.ts"]);
+  const again = await diffRange(dir, first, second);
+  assert.deepEqual([[...again.changed], [...again.renames]], [["b.ts"], []]);
+});
