@@ -11,7 +11,8 @@ import { installWithoutStripper, FLOW_SOURCE } from "./no-stripper.mjs";
 import { addWorktree, git, scratch } from "./git-worktrees.mjs";
 
 import { needsRuby } from "./ruby-available.mjs";
-import { check, renamesSkipped, severityFor, unreadReason, unreadCode } from "../plugins/anatomiya/lib/check.mjs";
+import { check, severityFor, unreadReason, unreadCode } from "../plugins/anatomiya/lib/check.mjs";
+import { renamesSkipped } from "../plugins/anatomiya/lib/changeset.mjs";
 import { formatReport, formatReportJson, CAVEATS } from "../plugins/anatomiya/lib/check-report.mjs";
 import { scan } from "../plugins/anatomiya/lib/scan.mjs";
 import { writeMap } from "../plugins/anatomiya/lib/write.mjs";

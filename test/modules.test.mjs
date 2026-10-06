@@ -135,6 +135,17 @@ test("the grammar deciding what a branch introduced reaches no git, no child and
   assert.deepEqual(importers, ["check.mjs"]);
 });
 
+test("the change set reaches no parser, no dimension and no writer, and the Stop hook does not load the check", () => {
+  // The Stop hook needs two git readers, and taking them from the check loaded
+  // 48 modules, the parser and every dimension among them, on every turn.
+  const edges = graph();
+  const reached = reachedFrom("changeset.mjs", edges);
+  for (const module of ["parse.mjs", "dimensions.mjs", "render.mjs", "check.mjs"]) {
+    assert.equal(reached.has(module), false, `changeset.mjs reaches ${module}`);
+  }
+  assert.equal(reachedFrom("reuse.mjs", edges).has("check.mjs"), false, "reuse.mjs reaches check.mjs");
+});
+
 // A field a row adds to a hit crossed the worker boundary only if the copy in
 // `collectHits` named it, and nothing held that copy to what a reader reads:
 // `nesting` was dropped once and the base-class row stated nothing. The table
@@ -221,14 +232,14 @@ test("every git read that grows with the repository is streamed, never buffered"
   // values on a small repository, so the only thing that says which one a
   // function used is the call it makes.
   const git = bodies("git.mjs");
-  const check = bodies("check.mjs");
+  const changeset = bodies("changeset.mjs");
 
   for (const [name, body] of [
     ["filesAt", git.get("filesAt")],
     ["pathSet", git.get("pathSet")],
     ["changedSinceWorktree", git.get("changedSinceWorktree")],
     ["diffRange", git.get("diffRange")],
-    ["changedFiles", check.get("changedFiles")],
+    ["changedFiles", changeset.get("changedFiles")],
   ]) {
     assert.ok(body, `${name} is not a named function any more`);
     assert.doesNotMatch(body, /gitBuffered\(/, `${name} buffers a listing that grows with the repository`);
