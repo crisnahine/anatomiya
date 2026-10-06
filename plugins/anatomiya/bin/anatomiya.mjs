@@ -140,7 +140,7 @@ const COMMANDS = {
       // The same guarantee `echo` makes, on the event before the tool rather
       // than the one after it.
       const { runNotice } = await import("../lib/hook-verbs.mjs");
-      respond(runNotice(cwd, await readPayload()));
+      respond(await runNotice(cwd, await readPayload()));
     },
   },
   reuse: {

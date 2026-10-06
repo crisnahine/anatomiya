@@ -113,7 +113,7 @@ test("the notice answers for the repository the write is going into, not the one
   const spec = join(parent, "alpha/src/core/__tests__/a.test.js");
   const write = { hook_event_name: "PreToolUse", tool_name: "Write", tool_input: { file_path: spec } };
 
-  const said = runNotice(join(parent, "beta"), write).hookSpecificOutput.additionalContext;
+  const said = (await runNotice(join(parent, "beta"), write)).hookSpecificOutput.additionalContext;
 
   assert.match(said, /src\/core: 0 of 6 \.js files have a namesake test/);
 });
@@ -197,7 +197,7 @@ test("the notice reads a relative target the same way the map does", async (t) =
     tool_input: { file_path: "src/core/__tests__/a.test.js" },
   };
 
-  const said = runNotice(join(parent, "beta"), write).hookSpecificOutput.additionalContext;
+  const said = (await runNotice(join(parent, "beta"), write)).hookSpecificOutput.additionalContext;
 
   assert.match(said, /src\/core: 0 of 6 \.js files have a namesake test/);
 });
@@ -272,7 +272,7 @@ test("a path too long to name a place does not cost the turn its map", async (t)
 test("the notice answers for a test going where its kind of file has none", needsRuby, async (t) => {
   const dir = await railsish(t);
 
-  const out = runNotice(dir, write(dir, "spec/mailers/cim_share_mailer_spec.rb"));
+  const out = await runNotice(dir, write(dir, "spec/mailers/cim_share_mailer_spec.rb"));
 
   assert.equal(out.hookSpecificOutput.hookEventName, "PreToolUse");
   assert.match(out.hookSpecificOutput.additionalContext, /spec\/mailers holds no other test/);
@@ -284,26 +284,26 @@ test("the notice answers with an empty object for everything it cannot decide", 
   const dir = await railsish(t);
   const spec = join(dir, "spec/mailers/cim_share_mailer_spec.rb");
 
-  assert.deepEqual(runNotice(dir, {}), {}, "no event name");
-  assert.deepEqual(runNotice(dir, { hook_event_name: "PreToolUse" }), {}, "no tool input");
-  assert.deepEqual(runNotice(dir, write(dir, "spec/services/g_spec.rb")), {}, "siblings have theirs");
-  assert.deepEqual(runNotice(dir, write(dir, "app/mailers/report_mailer.rb")), {}, "not a test");
+  assert.deepEqual(await runNotice(dir, {}), {}, "no event name");
+  assert.deepEqual(await runNotice(dir, { hook_event_name: "PreToolUse" }), {}, "no tool input");
+  assert.deepEqual(await runNotice(dir, write(dir, "spec/services/g_spec.rb")), {}, "siblings have theirs");
+  assert.deepEqual(await runNotice(dir, write(dir, "app/mailers/report_mailer.rb")), {}, "not a test");
   assert.deepEqual(
-    runNotice(dir, { ...write(dir, "x"), tool_input: { file_path: "/elsewhere/spec/mailers/x_spec.rb" } }),
+    await runNotice(dir, { ...write(dir, "x"), tool_input: { file_path: "/elsewhere/spec/mailers/x_spec.rb" } }),
     {},
     "another repository's file"
   );
 
   mkdirSync(join(dir, "spec/mailers"), { recursive: true });
   writeFileSync(spec, "RSpec.describe CimShareMailer do\nend\n");
-  assert.deepEqual(runNotice(dir, write(dir, "spec/mailers/cim_share_mailer_spec.rb")), {}, "the file is already there");
+  assert.deepEqual(await runNotice(dir, write(dir, "spec/mailers/cim_share_mailer_spec.rb")), {}, "the file is already there");
 });
 
-test("a repository nobody has scanned is answered with an empty object by both hooks", (t) => {
+test("a repository nobody has scanned is answered with an empty object by both hooks", async (t) => {
   const dir = mkdtempSync(join(realpathSync(tmpdir()), "anatomiya-nomap-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
 
-  assert.deepEqual(runNotice(dir, write(dir, "spec/mailers/x_spec.rb")), {});
+  assert.deepEqual(await runNotice(dir, write(dir, "spec/mailers/x_spec.rb")), {});
   assert.deepEqual(runEcho(dir, { hook_event_name: "UserPromptSubmit" }), {});
 });
 
@@ -318,7 +318,7 @@ test("a linked worktree with no map of its own is answered from its main checkou
   const dir = await railsish(t);
   const wt = worktreeOf(t, dir);
 
-  const said = runNotice(wt, write(wt, "spec/mailers/cim_share_mailer_spec.rb"));
+  const said = await runNotice(wt, write(wt, "spec/mailers/cim_share_mailer_spec.rb"));
   assert.match(said.hookSpecificOutput.additionalContext, /spec\/mailers holds no other test/);
   assert.match(said.hookSpecificOutput.additionalContext, /app\/mailers: 0 of 4 \.rb files have a namesake test/);
   assert.ok(said.hookSpecificOutput.additionalContext.endsWith(`\n  Counted from this repository's main checkout at ${realpathSync.native(dir)}, not this worktree.`), "it names where the counts were taken");
@@ -338,11 +338,11 @@ test("a borrowed layout is judged against the worktree's own files, not the main
   mkdirSync(join(dir, "spec/mailers"), { recursive: true });
   writeFileSync(join(dir, "spec/mailers/admin_mailer_spec.rb"), "RSpec.describe AdminMailer do\nend\n");
 
-  assert.match(runNotice(wt, write(wt, "spec/mailers/cim_share_mailer_spec.rb")).hookSpecificOutput.additionalContext, /holds no other test/);
+  assert.match((await runNotice(wt, write(wt, "spec/mailers/cim_share_mailer_spec.rb"))).hookSpecificOutput.additionalContext, /holds no other test/);
 
   mkdirSync(join(wt, "spec/mailers"), { recursive: true });
   writeFileSync(join(wt, "spec/mailers/user_mailer_spec.rb"), "RSpec.describe UserMailer do\nend\n");
-  assert.deepEqual(runNotice(wt, write(wt, "spec/mailers/cim_share_mailer_spec.rb")), {});
+  assert.deepEqual(await runNotice(wt, write(wt, "spec/mailers/cim_share_mailer_spec.rb")), {});
 });
 
 test("the end-of-turn check reads a worktree's own change against its main checkout's record", needsRuby, async (t) => {
@@ -373,7 +373,7 @@ test("a worktree that was scanned answers with its own map, not its main checkou
   const echoed = runEcho(wt, read(join(wt, "app/mailers/admin_mailer.rb"))).hookSpecificOutput.additionalContext;
   assert.match(echoed, /Counted from this repository's own code/);
   assert.ok(!echoed.includes("main checkout"));
-  assert.doesNotMatch(runNotice(wt, write(wt, "spec/mailers/cim_share_mailer_spec.rb")).hookSpecificOutput.additionalContext, /main checkout/);
+  assert.doesNotMatch((await runNotice(wt, write(wt, "spec/mailers/cim_share_mailer_spec.rb"))).hookSpecificOutput.additionalContext, /main checkout/);
 });
 
 test("both hooks answer a payload when this process has no working directory", needsRuby, async (t) => {
@@ -393,17 +393,17 @@ test("both hooks answer a payload when this process has no working directory", n
   });
   assert.match(out.hookSpecificOutput.additionalContext, /<repository-map delivered="/);
 
-  const said = runNotice(undefined, write(dir, "spec/mailers/cim_share_mailer_spec.rb"));
+  const said = await runNotice(undefined, write(dir, "spec/mailers/cim_share_mailer_spec.rb"));
   assert.match(said.hookSpecificOutput.additionalContext, /spec\/mailers holds no other test/);
 });
 
-test("a payload that names no place, with no working directory either, is silence rather than a throw", () => {
+test("a payload that names no place, with no working directory either, is silence rather than a throw", async () => {
   // The fallback is the only base such a payload has, and there is none. Both
   // hooks answer the empty object; the guard in the bin would turn a throw into
   // the same object, so the difference this holds is that nothing threw.
   assert.deepEqual(runEcho(undefined, { hook_event_name: "UserPromptSubmit" }), {});
   assert.deepEqual(runEcho(undefined, { hook_event_name: "PostToolUse", tool_name: "Bash", tool_input: { command: "ls" } }), {});
-  assert.deepEqual(runNotice(undefined, { hook_event_name: "PreToolUse", tool_name: "Write", tool_input: { file_path: "spec/x_spec.rb" } }), {});
+  assert.deepEqual(await runNotice(undefined, { hook_event_name: "PreToolUse", tool_name: "Write", tool_input: { file_path: "spec/x_spec.rb" } }), {});
 });
 
 test("the echo hands back the map it was asked for, and nothing without an event", needsRuby, async (t) => {

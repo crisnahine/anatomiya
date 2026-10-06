@@ -20,8 +20,8 @@ were measured on a loaded machine and will be re-timed before release.
 
 ### Changed
 
-- A hook loads only the modules its verb uses: 26 for the echo and the notice, 28 for the
-  end-of-turn check and 29 for the refresh, where every hook loaded 65. The echo went from 64ms to
+- A hook loads only the modules its verb uses: 12 for the echo, 24 at most for the notice, 20 for
+  the end-of-turn check and 27 for the refresh, where every hook loaded 65. The echo went from 64ms to
   42ms, the notice from 66ms to 51ms and the refresh from 67ms to 44ms, against 21ms for bare node.
   On microsoft/vscode, whose record is 10 MB, the notice went from 104ms to 48ms with the layout
   file.

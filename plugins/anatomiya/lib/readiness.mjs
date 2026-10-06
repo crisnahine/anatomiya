@@ -21,7 +21,6 @@ import { fileURLToPath } from "node:url";
 import { absentInterpreter } from "./child.mjs";
 import { firstLine } from "./encode.mjs";
 import { ENGINES } from "./langs.mjs";
-import { unusableReason } from "./semantic.mjs";
 import { olderThan } from "./version.mjs";
 
 /**
@@ -44,8 +43,9 @@ const OPTIONAL = {
     // find. Imported and nothing more, a typescript 4.9.5 in a node_modules
     // above the plugin read `ok` here and `nothing to install` in setup while
     // the loader refused it: it holds to major 5, because 7 has no JS API and
-    // 4 is not what the tier measured.
-    unusable: unusableReason,
+    // 4 is not what the tier measured. Loaded when the probe runs, since the
+    // entry point imports this module before every hook.
+    unusable: async (ts) => (await import("./semantic.mjs")).unusableReason(ts),
   },
 };
 
@@ -359,7 +359,7 @@ async function probeNode(engine) {
     // Present and not ready: installed where it resolves, and not a copy the
     // one caller that wants it will take. Not optional in that case, since the
     // flag it is for refuses it, and one install puts a usable one first.
-    const why = extra === null && engine.unusable ? engine.unusable(loaded.default ?? loaded) : null;
+    const why = extra === null && engine.unusable ? await engine.unusable(loaded.default ?? loaded) : null;
     if (why) {
       rows.push(row(engine, { extra, present: true, version: versionOf(module), reason: why }));
       continue;

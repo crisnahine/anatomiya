@@ -899,8 +899,9 @@ paid per turn and per tool call, so a hook loads only what its verb uses. The bi
 payload reader and the readiness check and nothing else, each verb imports its own module when it
 runs (`hook-verbs.mjs` for the echo, the notice and the end-of-turn check, `refresh.mjs` for the
 refresh), and none of them reaches the scan, the parser, the walker, the reducer or the check.
-Every hook process used to load 65 modules; the echo and the notice now load 26 and the refresh 29,
-and the echo went from 64ms to 42ms against 21ms for bare node (A100). A module that will not load
+Every hook process used to load 65 modules; the echo now loads 12, the notice 12 until it reads its
+rules and 24 after, and the refresh 27. The echo went from 64ms to 42ms against 21ms for bare node,
+and from 48ms to 44ms again when the notice's rules left its load (A100). A module that will not load
 throws inside the same boundary as everything else, so the hook still answers `{}`.
 
 The map it echoes has to be one this tool wrote, which is A3's rule arriving on the read side. The file is
