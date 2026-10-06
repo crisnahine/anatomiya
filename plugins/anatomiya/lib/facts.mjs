@@ -391,15 +391,27 @@ export function writeFacts(root, result) {
     writePair(dir, factsJson(result), result.layout);
   } catch (err) {
     const now = previousBytes(record);
+    // Only where the failed write replaced what was there: unreadable before, or
+    // still the same bytes, and there is nothing to put back.
     if (previous !== undefined && (previous === null ? now !== null : !now?.equals(previous))) {
       try {
-        if (previous === null) unlinkSync(record);
-        else if (was !== null) writePair(dir, previous, was.layout, was.schema);
-        else atomic(record, previous);
+        putBack(record, previous, was);
       } catch {}
     }
     throw err;
   }
+}
+
+/**
+ * `previous`, from `previousBytes`, back at `path`: removed where nothing was,
+ * left where it could not be read, and where `was` is the layout file that
+ * answered for it, the pair written again so the restored record has one.
+ */
+export function putBack(path, previous, was = null) {
+  if (previous === undefined) return;
+  if (previous === null) unlinkSync(path);
+  else if (was !== null) writePair(dirname(path), previous, was.layout, was.schema);
+  else atomic(path, previous);
 }
 
 /** A regular file's bytes, `null` where nothing is, `undefined` where they cannot be put back. */
@@ -423,7 +435,7 @@ export function previousBytes(path) {
  * nothing. The record goes first because that rename is the one that can fail
  * with nothing moved: the old pair stays whole and still answers.
  */
-export function writePair(dir, recordBytes, layout, schema) {
+function writePair(dir, recordBytes, layout, schema) {
   const record = join(dir, basename(FACTS_PATH));
   const temps = [writeTemp(record, recordBytes)];
   try {

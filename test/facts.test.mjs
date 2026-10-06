@@ -900,6 +900,18 @@ test("a layout file that cannot be renamed into place puts the record back", asy
   assert.deepEqual(readdirSync(join(fresh, ".claude", "anatomiya")), [], "a record that was not there is not left there");
 });
 
+test("a record put back after a failed layout rename is answered by its layout file again", async (t) => {
+  // The record put back is a new file, so the old layout file's stamp no
+  // longer names it unless the rollback writes the pair again.
+  const dir = root(t);
+  writeFacts(dir, result([dim()]));
+  let refused = false;
+  await refuseFor(t, "renameSync", (path) => path.includes("layout.json.tmp-") && !refused && (refused = true));
+
+  assert.throws(() => writeFacts(dir, result([dim({ key: "new" })])), /EPERM/);
+  assert.notEqual(readLayout(dir), null, "the old pair still answers");
+});
+
 test("a directory with no record is answered before the layout file's path is resolved", async (t) => {
   // The notice asks this of every ancestor it walks past, and most hold no map.
   const dir = root(t);
