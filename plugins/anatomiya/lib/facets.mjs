@@ -169,10 +169,10 @@ function visitorOf(node, done) {
  * and exports it saw. The record is already built and was being discarded.
  *
  * Its own walk, ahead of the rows', because the facets choose which rows the
- * file gets. Riding the rows' walk instead saved that walk, 369ms beside the
- * rows' 1,067ms on empire-flippers/client's 2,485 files, but every row the file
+ * file gets. Riding the rows' walk instead saved that walk, 502ms beside the
+ * rows' 4,269ms on empire-flippers/client's 2,486 files, but every row the file
  * could get had to walk before the facets could rule any out: on this
- * repository 25 rows a file became 32 and worker CPU rose 9%, scan wall flat.
+ * repository a file walks 25 rows, and would have walked all 32.
  */
 export function jsFacets({ program, module: mod }) {
   const imports = [];

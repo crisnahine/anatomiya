@@ -233,25 +233,25 @@ The dimensions share one walk of each tree (B49), `walk` for JavaScript and `wal
 row is a visitor: `collectHits` makes every row's visitor, walks the tree once handing each node to
 each row still live, then calls each row's `done` for the work that needs the whole file. A throw
 while a visitor is made, on any node, or in `done` drops that row's sites for the file and no other
-row's. A throw from the walk itself, which a deep tree can raise from a recursive walker, drops every
-visitor row's sites for the file, and a row with its own `run` keeps its own. When every row walked
-for itself, a file on a measured front end took 50.6 walks and 18,118 visitor calls, and
-`collectHits` was 88% of each parse worker's time; one shared walk took that to 8.7 walks and 1,987
-calls, and this repository's scan from 897ms to 418ms. The check and the tests still ask one row at
-a time, through a `run` that `dimensions.mjs` builds from the same visitor on its engine's walk. A
-row that reads only `program.body` never walked, and keeps its `run`.
+row's. A throw from the walk itself, which a deep tree can raise from a recursive walker, drops
+every visitor row's sites for the file, and a row with its own `run` keeps its own. When every row
+walked for itself, a file on empire-flippers/client took 50.8 walks and 18,518 visitor calls,
+counting every walk of the file's tree or of a subtree in it, and `collectHits` was 87% of each
+parse worker's time; one shared walk took that to 9.2 walks and 2,047 calls. The check and the tests
+still ask one row at a time, through a `run` that `dimensions.mjs` builds from the same visitor on
+its engine's walk. A row that reads only `program.body` never walked, and keeps its `run`.
 
 A JavaScript file's facets take a walk of their own first, because they choose its rows: JSX and type
 syntax decide which rows the file gets, and only those rows go on the shared walk. Riding the rows'
-walk would save that walk, 369ms beside 1,067ms of rows over empire-flippers/client's 2,485 files, but
-every row the file could get would have to walk before the facets ruled any out: measured on this
-repository, 25 rows a file became 32 and worker CPU rose 9%, with the scan's wall flat. A Ruby batch's
+walk would save that walk, 502ms beside 4,269ms of rows summed over empire-flippers/client's 2,486
+files, but every row the file could get would have to walk before the facets ruled any out: a file
+on this repository walks 25 rows, and would walk all 32 a JavaScript file can get. A Ruby batch's
 rows are chosen from its languages and the repository's frameworks before any file is read, so the
 Ruby facets choose nothing and ride the rows' walk, as a visitor `collectHits` takes beside the rows
 in its `also` list. They are not a row: they run when no row was asked for, as on the check's Ruby
 path, and a throw in them is held until their `done`, which throws it for the bridge to answer with no
 test runner, so it never stops a row's walk. That took one walk off every Ruby file: a file on
-empire-flippers/api went from 6.5 walks to 5.5.
+empire-flippers/api takes 5.5 walks, where 0.13.3 took 22.5.
 
 Two things the parser publishes are taken rather than reimplemented. It can hand its tree across
 from Rust without building it through a serialisation step, which measured 3.06x on the parse itself
@@ -834,16 +834,17 @@ either path never returns, and the record is the whole count of a repository, me
 bytes on microsoft/vscode, so the bound the rendered map is held to would have silenced the notice on
 exactly the repositories where a directory nobody read is easiest to miss.
 
-The notice, the end-of-turn check and the refresh want only the record's `layout`, 1,704 of those
-bytes on vscode, so a scan writes it a second time on its own, as `.claude/anatomiya/layout.json`,
-stamped with the size and mtime of the record file it was taken from. A hook reads it only where its
-schema is one this build reads and the record on disk has exactly that size and that mtime, and
-reads the record otherwise. A length alone passed a record holding a conflict marker, and length and
-age together passed a checkout or a restore that keeps old mtimes, so the stamp names the one file.
-A map written before the layout file existed has none and is read as before. A `.claude/` the
-repository commits carries `layout.json` too, and it is inert after a clone or a checkout that
-rewrites the record: its stamp names an mtime the record no longer has, so the record is read. On
-the vscode record the notice went from 104ms to 48ms (A100 and A101 together).
+The notice, the end-of-turn check and the refresh want only the record's `layout`, 2,037 bytes of
+the 10,217,406 this build writes for vscode, so a scan writes it a second time on its own, as
+`.claude/anatomiya/layout.json`, stamped with the size and mtime of the record file it was taken
+from. A hook reads it only where its schema is one this build reads and the record on disk has
+exactly that size and that mtime, and reads the record otherwise. A length alone passed a record
+holding a conflict marker, and length and age together passed a checkout or a restore that keeps old
+mtimes, so the stamp names the one file. A map written before the layout file existed has none and
+is read as before. A `.claude/` the repository commits carries `layout.json` too, and it is inert
+after a clone or a checkout that rewrites the record: its stamp names an mtime the record no longer
+has, so the record is read. On that record the notice went from 90ms to 41ms (A100 and A101
+together).
 
 The payload itself is read to a megabyte and no further, because a hook runs on every tool call and
 the writer decides the size. What that megabyte holds is then read twice over. `JSON.parse` first,
@@ -910,8 +911,8 @@ payload reader and the readiness check and nothing else, each verb imports its o
 runs (`hook-verbs.mjs` for the echo, the notice and the end-of-turn check, `refresh.mjs` for the
 refresh), and none of them reaches the scan, the parser, the walker, the reducer or the check.
 Every hook process used to load 65 modules; the echo now loads 12, the notice 12 until it reads its
-rules and 24 after, and the refresh 27. The echo went from 64ms to 42ms against 21ms for bare node,
-and from 48ms to 44ms again when the notice's rules left its load (A100). A module that will not
+rules and 24 after, the end-of-turn check 20 and the refresh 27. The echo went from 65ms to 39ms
+against 26ms for bare node (A100). A module that will not
 load throws inside the same boundary as everything else, so the hook still answers `{}`.
 
 The map it echoes has to be one this tool wrote, which is A3's rule arriving on the read side. The file is
@@ -1578,8 +1579,8 @@ end-of-turn hook reads the same one, so that hook loads no parser and no dimensi
 resolves HEAD once and hands its sha to every read after it, runs the reads that need no other's
 answer side by side, and asks git once per process about a commit named by its full sha. A ref name
 is never remembered, since a commit can land between two calls in one process, and neither is a
-failed answer. A two-file branch of this repository went from 26 git calls to 21, and its check from
-482ms to 347ms (E14).
+failed answer. A two-file branch of this repository went from 25 git calls to 20, and its check
+from 422ms to 285ms (E14).
 
 One rule here is not a dimension and does not come from the registry. `test_precedent` asks whether a
 test the change added has any precedent in the source root it covers, rather than whether its contents

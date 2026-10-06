@@ -519,7 +519,7 @@ test("the compiler host asks the disk once per path and question for one build",
 
 test("the containment walk resolves each directory once, not once per path under it", async (t) => {
   // `realpathSync` lstats every directory above its argument again, and the
-  // walk asks it of every directory it enters: 20,813 calls on ef-client.
+  // walk asks it of every directory it enters: 20,816 calls on ef-client.
   const dir = tree(t);
   const deep = join(dir, "a", "b", "c");
   mkdirSync(deep, { recursive: true });
