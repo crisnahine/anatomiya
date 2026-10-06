@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { chmodSync, existsSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, truncateSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -258,32 +258,40 @@ test("the layout file answers the walk, and a map without one answers the same f
   const layout = { tests: [], roots: [{ dir: "app", path: "app" }] };
   const dir = recorded(t, layout);
   const fromRecord = ownLayout(dir);
-  const recordBytes = statSync(join(dir, FACTS_PATH)).size;
-  writeFileSync(join(dir, LAYOUT_PATH), JSON.stringify({ schema: FACTS_SCHEMA, recordBytes, layout }));
+  const { size, mtimeMs } = statSync(join(dir, FACTS_PATH));
+  const record = { size, mtimeMs };
+  writeFileSync(join(dir, LAYOUT_PATH), JSON.stringify({ schema: FACTS_SCHEMA, record, layout }));
 
   assert.deepEqual(ownLayout(dir), fromRecord);
 
   // Read rather than passed over: a layout file saying something else is what answers.
   const other = { tests: [], roots: [{ dir: "lib", path: "lib" }] };
-  writeFileSync(join(dir, LAYOUT_PATH), JSON.stringify({ schema: FACTS_SCHEMA, recordBytes, layout: other }));
+  writeFileSync(join(dir, LAYOUT_PATH), JSON.stringify({ schema: FACTS_SCHEMA, record, layout: other }));
   assert.deepEqual(ownLayout(dir).layout, other);
 
-  writeFileSync(join(dir, LAYOUT_PATH), JSON.stringify({ schema: FACTS_SCHEMA + 1, recordBytes, layout: other }));
+  writeFileSync(join(dir, LAYOUT_PATH), JSON.stringify({ schema: FACTS_SCHEMA + 1, record, layout: other }));
   assert.deepEqual(ownLayout(dir), fromRecord, "a layout file from a build ahead of this one leaves the record to answer");
 });
 
-test("a record the reader refuses is not answered for by a newer layout file", (t) => {
+test("a record the reader refuses is not answered for by the layout file", (t) => {
   // A merge conflict in a committed record: the record reads as nothing and the
   // walk goes on, so the layout file written with it must not answer either.
   const layout = { tests: [], roots: [{ dir: "app", path: "app" }] };
   const dir = recorded(t, layout);
-  const recordBytes = statSync(join(dir, FACTS_PATH)).size;
-  writeFileSync(join(dir, LAYOUT_PATH), JSON.stringify({ schema: FACTS_SCHEMA, recordBytes, layout }));
+  const { size, mtimeMs } = statSync(join(dir, FACTS_PATH));
+  writeFileSync(join(dir, LAYOUT_PATH), JSON.stringify({ schema: FACTS_SCHEMA, record: { size, mtimeMs }, layout }));
   writeFileSync(join(dir, FACTS_PATH), `<<<<<<< HEAD\n${readFileSync(join(dir, FACTS_PATH), "utf8")}`);
   const later = new Date(Date.now() + 60_000);
   utimesSync(join(dir, LAYOUT_PATH), later, later);
 
   assert.equal(ownLayout(dir), null);
+
+  // Past the size the reader takes, the record reads as nothing too, even with
+  // the layout file stamped from it exactly.
+  truncateSync(join(dir, FACTS_PATH), 64 * 1024 * 1024 + 1);
+  const over = statSync(join(dir, FACTS_PATH));
+  writeFileSync(join(dir, LAYOUT_PATH), JSON.stringify({ schema: FACTS_SCHEMA, record: { size: over.size, mtimeMs: over.mtimeMs }, layout }));
+  assert.equal(ownLayout(dir), null, "a record past the cap");
 });
 
 test("a record with no layout in it is not a record", (t) => {
