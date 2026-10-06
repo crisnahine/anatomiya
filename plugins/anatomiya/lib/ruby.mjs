@@ -759,22 +759,26 @@ function take(out, seen, line, dimensions, attempt) {
   // The reducer reads counts, never trees, so a Ruby file answers the same
   // shape a JS worker answers. The walk happens as each tree arrives off the
   // stream rather than in a second pass over every tree at once, which is also
-  // what keeps the parent from holding the whole corpus in memory.
+  // what keeps the shard from holding its whole batch in memory.
   if (result.ok && program) {
     // Asked of every tree, including the ones a caller wanted kept: the facets
     // are the same shape the JS worker sends, and a record that carries them on
-    // one side and not the other is one the reader has to special-case.
+    // one side and not the other is one the reader has to special-case. On the
+    // rows' walk, which runs for the facets alone when a check asks for no rows.
     //
     // Guarded the way each dimension is, and for a sharper reason: this runs
     // inside the stdout handler, so a throw on one odd tree escapes into the
     // stream and takes the whole shard rather than the file it came from.
+    const facets = rubyFacets(program, result.rel);
+    const hits = collectHits(program, dimensions, { rel: result.rel }, walkRuby, [facets]);
     try {
-      result.facets = rubyFacets(program, result.rel);
+      if (facets.error) throw facets.error;
+      result.facets = facets.done();
     } catch {
       result.facets = { testRunner: null, testCalls: false };
     }
     if (dimensions.length) {
-      result.hits = collectHits(program, dimensions, { rel: result.rel }, walkRuby);
+      result.hits = hits;
       // Answered, so the tree is dropped before the result is retained. Holding
       // it made the shard carry every tree in its batch at once, and then copy
       // them all to the parent, which is the cost the JS side pays a process

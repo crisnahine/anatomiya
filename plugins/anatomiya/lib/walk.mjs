@@ -262,9 +262,15 @@ export function crossing(hit) {
  * A row declaring `visitor` is handed each node of one shared walk instead of
  * walking for itself: about fifty walks a file became one (B49). A throw while
  * making it, on any node, or in its `done` drops that row's sites, the same
- * guarantee a throwing `run` has. `walker` is the bridge's own walk.
+ * guarantee a throwing `run` has, and so does a throw from the walk itself: a
+ * recursive walker overflows on a deep tree. `walker` is the bridge's own walk.
+ *
+ * `also` rides the same walk without being a row: a bridge's facets, which it
+ * needs whether or not any row was asked for. Each is fed until it throws, or
+ * the walk does, and is then left holding that error in `error` for its caller
+ * to answer, so it never costs a row its sites.
  */
-export function collectHits(program, dimensions, extra = {}, walker = walk) {
+export function collectHits(program, dimensions, extra = {}, walker = walk, also = []) {
   const found = new Array(dimensions.length);
   const visiting = [];
   for (let i = 0; i < dimensions.length; i++) {
@@ -287,18 +293,33 @@ export function collectHits(program, dimensions, extra = {}, walker = walk) {
       continue;
     }
   }
-  if (visiting.length) {
+  if (visiting.length || also.length) {
     let live = visiting;
-    walker(program, (node, ctx) => {
-      for (let k = 0; k < live.length; k++) {
-        try {
-          live[k].v.node(node, ctx);
-        } catch {
-          live = live.filter((row) => row !== live[k]);
-          k--;
+    let riding = also;
+    try {
+      walker(program, (node, ctx) => {
+        for (let k = 0; k < live.length; k++) {
+          try {
+            live[k].v.node(node, ctx);
+          } catch {
+            live = live.filter((row) => row !== live[k]);
+            k--;
+          }
         }
-      }
-    });
+        for (let k = 0; k < riding.length; k++) {
+          try {
+            riding[k].node(node, ctx);
+          } catch (err) {
+            riding[k].error = err;
+            riding = riding.filter((v) => v !== riding[k]);
+            k--;
+          }
+        }
+      });
+    } catch (err) {
+      live = [];
+      for (const v of riding) v.error = err;
+    }
     for (const row of live) {
       try {
         row.v.done?.();
