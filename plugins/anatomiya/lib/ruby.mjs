@@ -361,7 +361,7 @@ end
 // startup costs more than it saves.
 const MIN_SHARD_FILES = 500;
 // Six since each shard walks its own trees: while the parent walked them all,
-// a fifth and sixth child only queued more for it (13.5s against 12.8s on
+// a fifth and sixth child gained little (12.8s against 13.5s with four on
 // discourse). Scan medians of three under the bench lock, four against six:
 // discourse 10.2s against 8.7s, empire-flippers/api 2.79s against 2.58s for
 // 26 MB more peak memory.
@@ -419,7 +419,7 @@ export async function parseRuby(
   // Built once, and before any child: a bad override refuses here, loudly,
   // rather than dying inside the spawn where it reads as a broken install.
   const rubyScript = scriptFor(guards.maxBytes);
-  if (files.length === 0) return blank();
+  if (files.length === 0) return { ...blank(), results: [] };
   const load = await prismLoadArgs({ ruby });
 
   // One child left the parent idle for most of a large Ruby repository, and
@@ -436,7 +436,7 @@ export async function parseRuby(
     ),
   );
 
-  const out = blank();
+  const out = { ...blank(), results: [] };
   for (const o of outs) {
     for (const r of o.results) out.results.push(r);
     out.truncated = out.truncated || o.truncated;
@@ -517,9 +517,9 @@ function onThread(files, job, resourceLimits) {
     worker.once("exit", async (code) => {
       await Promise.all([...children.values()].map(killAndReap));
       if (resourceLimits && failure?.code === "ERR_WORKER_OUT_OF_MEMORY") return resolve({ ranOut: true, results });
-      const out = blank();
+      const out = { ...blank(), results: [] };
       out.error = failure ? String(failure.message ?? failure) : `ruby shard exited ${code}`;
-      for (const f of files) out.results.push({ rel: f.rel, ok: false, error: out.error, crashed: true, attempts: 1 });
+      for (const f of files) deliver((r) => out.results.push(r), { rel: f.rel, ok: false, error: out.error, crashed: true }, 1);
       resolve(out);
     });
   });
@@ -569,9 +569,10 @@ function killAndReap(child) {
   });
 }
 
+// How a batch ended. A batch hands its records over one at a time, so only a
+// caller that gathers them adds `results`.
 function blank() {
   return {
-    results: [],
     truncated: false,
     // Which prism read these files, off the child's own ready line. It was
     // parsed and dropped before anything could read it, so a map could not say
@@ -588,8 +589,8 @@ function blank() {
 /**
  * One child over one batch, retried once for what a timer cut off. The body a
  * shard worker runs; `onResult` takes each record as it is decided instead of
- * the batch holding them all, so the batch's own `results` stays empty, and
- * `spawner` starts the child on the parent.
+ * the batch holding them all, so what it returns is only how the batch ended,
+ * and `spawner` starts the child on the parent.
  */
 export async function parseBatch(files, { ruby, guards, rubyScript, load, dimensions, onResult, spawner }) {
   const out = blank();
