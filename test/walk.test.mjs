@@ -116,7 +116,7 @@ test("a walk that throws costs the visitor rows their sites, never the run rows 
       visit(node, ctx);
     });
   };
-  assert.deepEqual(collectHits(program, asVisitors, {}, overflows), { program: [{ conforming: false, where: "Program" }] });
+  assert.deepEqual(collectHits(program, asVisitors, {}, { walker: overflows }), { program: [{ conforming: false, where: "Program" }] });
 });
 
 test("a visitor riding the walk is fed every node without any row, and keeps its own throw", () => {
@@ -126,9 +126,11 @@ test("a visitor riding the walk is fed every node without any row, and keeps its
     walk(tree, visit);
   };
   const types = [];
-  const rider = { node: (n) => types.push(n.type) };
-  assert.deepEqual(collectHits(program, [], {}, spy, [rider]), {});
+  let answered = 0;
+  const rider = { node: (n) => types.push(n.type), done: () => answered++ };
+  assert.deepEqual(collectHits(program, [], {}, { walker: spy, also: [rider] }), {});
   assert.equal(walks, 1);
+  assert.equal(answered, 0, "its done is its caller's to call");
   const alone = [];
   walk(program, (n) => alone.push(n.type));
   assert.deepEqual(types, alone);
@@ -137,13 +139,13 @@ test("a visitor riding the walk is fed every node without any row, and keeps its
   let fed = 0;
   const odd = new Error("an odd node");
   const throwing = { node: () => { if (++fed === 3) throw odd; } };
-  assert.deepEqual(collectHits(program, asVisitors, {}, walk, [throwing]), collectHits(program, asRuns));
+  assert.deepEqual(collectHits(program, asVisitors, {}, { also: [throwing] }), collectHits(program, asRuns));
   assert.equal(throwing.error, odd);
   assert.equal(fed, 3, "fed no more nodes after its throw");
 
   const overflow = new RangeError("Maximum call stack size exceeded");
   const stranded = { node() {} };
-  collectHits(program, [], {}, () => { throw overflow; }, [stranded]);
+  collectHits(program, [], {}, { walker: () => { throw overflow; }, also: [stranded] });
   assert.equal(stranded.error, overflow);
 });
 
@@ -154,13 +156,13 @@ test("one walk serves every visitor row, and none is taken without one", () => {
     walk(tree, visit);
   };
   const many = [1, 2, 3, 4, 5].map((i) => ({ key: `calls${i}`, visitor: calls }));
-  const hits = collectHits(program, [...many, { key: "program", run: program1 }], {}, spy);
+  const hits = collectHits(program, [...many, { key: "program", run: program1 }], {}, { walker: spy });
   assert.equal(walks, 1);
   assert.equal(Object.keys(hits).length, 6);
   for (let i = 1; i <= 5; i++) assert.equal(hits[`calls${i}`].length, hits.calls1.length);
 
   walks = 0;
-  collectHits(program, [{ key: "program", run: program1 }], {}, spy);
+  collectHits(program, [{ key: "program", run: program1 }], {}, { walker: spy });
   assert.equal(walks, 0);
 });
 
@@ -230,7 +232,7 @@ test("every JS row answers the same on the shared walk as walking alone, with a 
     walk(tree, (node, ctx) =>
       visit(node, Object.freeze({ ...ctx, stack: Object.freeze([...ctx.stack]), ancestors: Object.freeze([...ctx.ancestors]) }))
     );
-  const shared = collectHits(program, rows, extra, frozen);
+  const shared = collectHits(program, rows, extra, { walker: frozen });
 
   assert.deepEqual(shared, alone);
   const visiting = rows.filter((d) => d.visitor).map((d) => d.key);
