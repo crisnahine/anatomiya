@@ -240,15 +240,15 @@ calls, and this repository's scan from 897ms to 418ms. The check and the tests s
 a time, through a `run` that `dimensions.mjs` builds from the same visitor on its engine's walk. A
 row that reads only `program.body` never walked, and keeps its `run`.
 
-The facets ride the same walk, as a visitor `collectHits` takes beside the rows in its `also` list.
-They are not a row: they run when no row was asked for, as on the check's Ruby path, and a throw in
-them is held until their `done`, which throws it for the bridge to answer, so it never costs a row its
-sites. Which JavaScript rows apply
-depends on the facets (JSX, type syntax), and those are known only once the walk is over, so every
-row the file could be asked for walks and the hits of the rows the facets rule out are dropped. On
-empire-flippers/client the facets' own walk was 369ms beside 1,067ms of rows over 2,485 files.
-Folding it in took one walk off every file on both engines: a Ruby file on empire-flippers/api went
-from 6.5 walks to 5.5.
+The facets ride the same walk, as a visitor `collectHits` takes beside the rows in its `also` list. They
+are not a row: they run when no row was asked for, as on the check's Ruby path, and a throw in them is
+held until their `done`, which throws it, so it never stops a row's walk. The Ruby bridge answers it
+with no test runner; the JavaScript one lets it fail the file, as a throw from the facets' own walk
+always did. Which JavaScript rows apply depends on the facets (JSX, type syntax), and those are known
+only once the walk is over, so every row the file could be asked for walks and the hits of the rows the
+facets rule out are dropped. On empire-flippers/client the facets' own walk was 369ms beside 1,067ms of
+rows over 2,485 files. Folding it in took one walk off every file on both engines: a Ruby file on
+empire-flippers/api went from 6.5 walks to 5.5.
 
 Two things the parser publishes are taken rather than reimplemented. It can hand its tree across
 from Rust without building it through a serialisation step, which measured 3.06x on the parse itself
