@@ -18,6 +18,7 @@ import {
   within,
   contains,
   walkingRealpath,
+  opened,
 } from "../plugins/anatomiya/lib/tsconfig.mjs";
 
 import { needsSymlinks } from "./platform.mjs";
@@ -575,6 +576,39 @@ test("the compiler host refuses a step back through a link that leaves the root"
   assert.equal(host.getSourceFile(via), undefined);
   assert.deepEqual(reached.filter((r) => r.includes("secret")), [], "the far side saw a path the host had refused");
   assert.deepEqual(host.getDirectories(inside), ["sub"], "a step back that stays inside is still read");
+});
+
+test("a step back is taken where each platform's open takes it", () => {
+  // POSIX steps up from where the link leads; Windows collapses `..` as text
+  // before it opens anything, so a link resolved first checks a path it never opens.
+  const links = { "/repo/src/in": "/repo/deep/a/b/c", "C:\\repo\\src\\in": "C:\\repo\\deep\\a\\b\\c" };
+  const realpath = (p) => links[p] ?? p;
+
+  assert.equal(opened("/repo/src/in/../../../y", realpath, "linux"), "/repo/deep/y");
+  assert.equal(opened("C:\\repo\\src\\in\\..\\..\\..\\y", realpath, "win32"), "C:\\y");
+  assert.equal(opened("C:/repo/src/in/../../../y", realpath, "win32"), "C:\\y");
+});
+
+test("a backslash in a POSIX name is a character, not a step back", { skip: process.platform === "win32" ? "the name cannot exist on Windows" : needsSymlinks.skip }, (t) => {
+  // Split on both separators, a link named `x\..\y` read as `src/y`, a file
+  // that is not there, and the host opened the link to the file beside the root.
+  const parent = tree(t);
+  const dir = join(parent, "repo");
+  mkdirSync(join(dir, "src"), { recursive: true });
+  mkdirSync(join(parent, "outside"));
+  writeFileSync(join(parent, "outside", "secret.ts"), "export const secret = 1;\n");
+  const via = `${dir}/src/x\\..\\y`;
+  symlinkSync(join(parent, "outside", "secret.ts"), via);
+  const named = `${dir}/src/a\\..\\b.ts`;
+  writeFileSync(named, "export const b = 1;\n");
+  const { ts, reached } = compiler({ [via]: "export const secret = 1;", [named]: "export const b = 1;" });
+
+  assert.equal(insideRoot(dir, via), false);
+  const host = confinedCompilerHost(ts, dir, {});
+  assert.equal(host.readFile(via), undefined);
+  assert.equal(host.fileExists(via), false);
+  assert.deepEqual(reached.filter((r) => r.includes("x\\")), [], "the far side saw a path the host had refused");
+  assert.equal(host.readFile(named), "export const b = 1;", "a file inside with that name is still read");
 });
 
 test("a list of directories the host remembers cannot be changed by the caller", (t) => {
