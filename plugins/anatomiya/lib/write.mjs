@@ -1,7 +1,7 @@
-import { closeSync, constants, fstatSync, mkdirSync, openSync, readFileSync, renameSync, unlinkSync } from "node:fs";
+import { mkdirSync, renameSync, unlinkSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { renderArea, renderOverview, splitUncovered } from "./render.mjs";
-import { FACTS_PATH, FACTS_SCHEMA, LAYOUT_PATH, readFacts, readLayout, factsJson, stampedLayout, atomic, writePair, writeTemp } from "./facts.mjs";
+import { FACTS_PATH, FACTS_SCHEMA, LAYOUT_PATH, readFacts, readLayout, factsJson, stampedLayout, atomic, previousBytes, writePair, writeTemp } from "./facts.mjs";
 import { byCode } from "./paths.mjs";
 import {
   RULES_DIR,
@@ -36,9 +36,9 @@ export function planMap(result) {
   // reporting a clean write that cannot happen is the one answer worse than the
   // failure.
   const { storeDir } = resolveDirs(result.root);
-  // The record's own name, the one leaf here the map does not audit. A directory
-  // committed at it let a dry run say "would write" and the scan die on a raw
-  // `EISDIR` out of the rename.
+  // The record's and its layout file's names, the leaves here the map does not
+  // audit. A directory committed at the record let a dry run say "would write"
+  // and the scan die on a raw `EISDIR` out of the rename.
   for (const leaf of [FACTS_PATH, LAYOUT_PATH]) {
     if (!leafReplaceable(join(storeDir, basename(leaf)))) {
       throw new Error(`${leaf} is not a file, so the map could not be written: remove it and scan again`);
@@ -290,6 +290,7 @@ function replaceAll(staged, removals, pair) {
     for (const [path, previous] of undo.reverse()) {
       try {
         if (previous === null) unlinkSync(path);
+        // Unreadable before the replace: nothing to put back, so it is left as it is.
         else if (previous === undefined) continue;
         // The record put back is a new file, so the layout file that answered
         // for it is stamped again or no hook reads it until the next scan.
@@ -298,21 +299,6 @@ function replaceAll(staged, removals, pair) {
       } catch {}
     }
     throw err;
-  }
-}
-
-/** A regular file's bytes, `null` where nothing is, `undefined` where they cannot be put back. */
-function previousBytes(path) {
-  let fd;
-  try {
-    // Opened then typed through the handle, so the file read is the file typed;
-    // O_NOFOLLOW refuses a link the way lstat did.
-    fd = openSync(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0));
-    return fstatSync(fd).isFile() ? readFileSync(fd) : undefined;
-  } catch (err) {
-    return err.code === "ENOENT" ? null : undefined;
-  } finally {
-    if (fd !== undefined) closeSync(fd);
   }
 }
 

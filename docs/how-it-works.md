@@ -827,13 +827,13 @@ exactly the repositories where a directory nobody read is easiest to miss.
 The notice, the end-of-turn check and the refresh want only the record's `layout`, 1,704 of those
 bytes on vscode, so a scan writes it a second time on its own, as `.claude/anatomiya/layout.json`,
 stamped with the size and mtime of the record file it was taken from. A hook reads it only where its
-schema is one this build reads and the record on disk has exactly that size and that mtime, and reads
-the record otherwise. A length alone passed a record holding a conflict marker, and length and age
-together passed a checkout or a restore that keeps old mtimes, so the stamp names the one file. A
-map written before the layout file existed has none and is read as before, and so is a map the
-repository commits, after a clone or a checkout that rewrites the record, since its record's mtime is
-then the checkout's. On
-the vscode record the notice went from 104ms to 48ms (A100 and A101 together).
+schema is one this build reads and the record on disk has exactly that size and that mtime, and
+reads the record otherwise. A length alone passed a record holding a conflict marker, and length and
+age together passed a checkout or a restore that keeps old mtimes, so the stamp names the one file.
+A map written before the layout file existed has none and is read as before, and so is a map the
+repository commits, after a clone or a checkout that rewrites the record, since its record's mtime
+is then the checkout's. On the vscode record the notice went from 104ms to 48ms (A100 and A101
+together).
 
 The payload itself is read to a megabyte and no further, because a hook runs on every tool call and
 the writer decides the size. What that megabyte holds is then read twice over. `JSON.parse` first,
@@ -899,9 +899,10 @@ paid per turn and per tool call, so a hook loads only what its verb uses. The bi
 payload reader and the readiness check and nothing else, each verb imports its own module when it
 runs (`hook-verbs.mjs` for the echo, the notice and the end-of-turn check, `refresh.mjs` for the
 refresh), and none of them reaches the scan, the parser, the walker, the reducer or the check.
-Every hook process used to load 65 modules; the echo and the notice now load 26 and the refresh 29,
-and the echo went from 64ms to 42ms against 21ms for bare node (A100). A module that will not load
-throws inside the same boundary as everything else, so the hook still answers `{}`.
+Every hook process used to load 65 modules; the echo now loads 12, the notice 12 until it reads its
+rules and 24 after, and the refresh 27. The echo went from 64ms to 42ms against 21ms for bare node,
+and from 48ms to 44ms again when the notice's rules left its load (A100). A module that will not
+load throws inside the same boundary as everything else, so the hook still answers `{}`.
 
 The map it echoes has to be one this tool wrote, which is A3's rule arriving on the read side. The file is
 read through the same bounded reader the audit uses, so a named pipe at that path does not hang the session
@@ -988,13 +989,14 @@ rather than taking its own, so it costs the roster nothing on an overview at its
 
 Writes are atomic: temp file in the same directory, then rename, so a crash never leaves half a
 context file. `.claude/anatomiya/facts.json` holds every count, gated or not, `layout.json` beside
-it holds the record's layout on its own, and the three are replaced as one with the rendered files: every one is written to its temp file before any rename,
-the facts are renamed first and stale area files removed last, and a rename or removal that fails
-puts back what it had replaced. So no rendered file exists that is not derivable from facts on
-disk, and a scan that fails part way does not leave new facts beside the old map for `check` to
-call fresh. A process killed between two renames is the one window left. It carries a schema version,
-and the check refuses a version past the one it knows rather than reading the fields positionally:
-an older record is readable and is read, a newer one is a shape this build has never seen. A run that read no file of a
+it holds the record's layout on its own, and the record, its layout file and the rendered files are
+replaced as one: every one is written to its temp file before any rename, the facts are renamed
+first and stale area files removed last, and a rename or removal that fails puts back what it had
+replaced. So no rendered file exists that is not derivable from facts on disk, and a scan that fails
+part way does not leave new facts beside the old map for `check` to call fresh. A process killed
+between two renames is the one window left. It carries a schema version, and the check refuses a
+version past the one it knows rather than reading the fields positionally: an older record is
+readable and is read, a newer one is a shape this build has never seen. A run that read no file of a
 language writes neither, for the same reason: keeping the rendered files while replacing the facts
 they came from breaks exactly that invariant.
 
@@ -1063,13 +1065,14 @@ spelled as `.claude/rules/...`, a map committed through the link read as untrack
 HEAD rewrote it. Where core.ignorecase is set, both pathspecs carry `icase`, since git keeps the
 index spelling and a directory renamed in case outside git is found under neither spelling otherwise.
 A link within `.claude` is still followed.
-`facts.json`, `layout.json` and `baseline.json` are read through the same resolution, their own names included, so
-a link at either is not followed out; a write replaces it as an entry. A refusal names the path the
-repository spells and says when it is a link, since the resolved name once read "README.md is not a
-directory ... remove it" for `.claude/rules -> ../README.md`. The planning half also refuses a
-directory at `facts.json`, `layout.json` or `baseline.json`, which the rename cannot replace, and a nearest existing
-directory on the way that this process cannot write, so a dry run of `scan` or `pin` refuses what the
-real run would die on, by the directory's name rather than a raw `EACCES` on a temp file.
+`facts.json`, `layout.json` and `baseline.json` are read through the same resolution, their own
+names included, so a link at any of them is not followed out; a write replaces it as an entry. A
+refusal names the path the repository spells and says when it is a link, since the resolved name
+once read "README.md is not a directory ... remove it" for `.claude/rules -> ../README.md`. The
+planning half also refuses a directory at `facts.json`, `layout.json` or `baseline.json`, which the
+rename cannot replace, and a nearest existing directory on the way that this process cannot write,
+so a dry run of `scan` or `pin` refuses what the real run would die on, by the directory's name
+rather than a raw `EACCES` on a temp file.
 
 Files in there are read by their head, one megabyte at most, and only when the opened handle is a
 regular file. The ownership test reads the frontmatter from byte zero a line at a time, and stops at
@@ -1120,19 +1123,20 @@ exactly those basenames (`^(HEAD|index|tables\.list)$`), and a change to any fil
 ask for answers nothing, since answering it would replace somebody else's watch.
 
 The worker keeps its state beside `facts.json`. It is its own module, `refresh-run.mjs`, the one
-refresh module that loads the scan; the hook, `refresh.mjs`, only starts it. It takes an exclusive lock, read bounded and typed
-since the directory can come with the repository, and a worker that finds it taken leaves word for
-the holder to run once more after letting go, so a move landing after the holder's last look at HEAD
-is not lost. It stamps what a scan depends on (HEAD, the index as `ls-files -s`, the pin's bytes,
-the plugin version, whether the repository holds packages and where `typescript` resolves), and
-rescans only when the stamp moved. It leaves alone a checkout with no map of its own (A24), a map, a
-pin or any other file of the store the repository tracks, and a merge, rebase, cherry-pick, revert
-or bisect in progress, and leaves whether to run the type checker to the rescan, which decides it
-the way any scan does. A scan that throws writes nothing, so the previous map stays; the same stamp
-is tried again only after half an hour, and the echo says the refresh failed until a refresh or a
-scan run by hand succeeds. A scan run by hand records its stamp too, so the next refresh has nothing
-to redo. It has its own clock. A changed overview reaches a running session through the echo's
-digest, and an area file is read from disk the first time its directory is.
+refresh module that loads the scan; the hook, `refresh.mjs`, only starts it. It takes an exclusive
+lock, read bounded and typed since the directory can come with the repository, and a worker that
+finds it taken leaves word for the holder to run once more after letting go, so a move landing after
+the holder's last look at HEAD is not lost. It stamps what a scan depends on (HEAD, the index as
+`ls-files -s`, the pin's bytes, the plugin version, whether the repository holds packages and where
+`typescript` resolves), and rescans only when the stamp moved. It leaves alone a checkout with no
+map of its own (A24), a map, a pin or any other file of the store the repository tracks, and a
+merge, rebase, cherry-pick, revert or bisect in progress, and leaves whether to run the type checker
+to the rescan, which decides it the way any scan does. A scan that throws writes nothing, so the
+previous map stays; the same stamp is tried again only after half an hour, and the echo says the
+refresh failed until a refresh or a scan run by hand succeeds. A scan run by hand records its stamp
+too, so the next refresh has nothing to redo. It has its own clock. A changed overview reaches a
+running session through the echo's digest, and an area file is read from disk the first time its
+directory is.
 
 A session started above its checkouts, the way a project split into sibling repositories is opened,
 has no map at its own directory, and neither `SessionStart` nor `FileChanged` names a path the walk

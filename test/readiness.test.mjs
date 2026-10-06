@@ -230,6 +230,31 @@ esac
   assert.equal(row.ok, true);
 });
 
+test("the version probe runs under the bridge's scrub, not the environment it was handed", needsShebang, async (t) => {
+  // RUBYOPT can inject a `-r` into an interpreter this points at whatever PATH
+  // names, so the probe runs under the same scrub the parser does.
+  const env = {
+    ...stubInterpreter(
+      t,
+      `#!/bin/sh
+case "$*" in
+  *Gem::Specification*) printf '[]' ;;
+  *) if [ -n "$RUBYOPT$RUBYLIB$GEM_HOME" ]; then printf 'RUBYOPT=%s RUBYLIB=%s GEM_HOME=%s' "$RUBYOPT" "$RUBYLIB" "$GEM_HOME"; else printf 1.9.0; fi ;;
+esac
+`
+    ),
+    RUBYOPT: "-r/tmp/injected",
+    RUBYLIB: "/tmp/lib",
+    GEM_HOME: "/tmp/gems",
+  };
+
+  const [row] = await readiness({ engines: ["prism"], env });
+
+  assert.equal(row.reason, null);
+  assert.equal(row.version, "1.9.0");
+  assert.equal(row.ok, true);
+});
+
 test("an installed prism that does not load for this ruby gives way to the one that does", needsShebang, async (t) => {
   // Measured after a Ruby upgrade with a shared GEM_HOME: prism 1.9.0 was
   // built for the old Ruby, RubyGems skipped it and loaded the default 0.19.0,

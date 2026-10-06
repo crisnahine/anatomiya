@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { encode, encodePath, quotePath, sanitisePath, firstLine } from "../plugins/anatomiya/lib/encode.mjs";
 import { doublingRatio, LINEAR } from "./growth.mjs";
 
@@ -234,27 +235,31 @@ test("a segment mixing look-alike alphabets is still refused", () => {
   }
 });
 
-test("the grapheme segmenter is built on the first cap, not at import", async () => {
+test("the grapheme segmenter is built on the first cap, not at import", () => {
   // Every hook process imports this module and most never cap anything; the
-  // segmenter cost 6.5 ms to build at load.
-  const Real = Intl.Segmenter;
-  let built = 0;
-  Intl.Segmenter = class extends Real {
-    constructor(...args) {
-      super(...args);
-      built++;
-    }
-  };
-  try {
-    const fresh = await import(`../plugins/anatomiya/lib/encode.mjs?lazy=${Date.now()}`);
-    assert.equal(fresh.locator("x"), "x");
-    assert.equal(built, 0, "importing and locating built a segmenter");
-
-    const family = "\u{1F468}‍\u{1F469}‍\u{1F467}";
-    assert.equal(fresh.encode(family.repeat(3), { max: 2 }), encode(family.repeat(3), { max: 2 }));
-    assert.equal(fresh.encode("abcdef", { max: 3 }), encode("abcdef", { max: 3 }));
-    assert.equal(built, 1, "the segmenter is built once and kept");
-  } finally {
-    Intl.Segmenter = Real;
-  }
+  // segmenter cost 6.5 ms to build at load. A child process so the stub is in
+  // place before the one import: a second copy under a query string counts as
+  // an uncalled module in the coverage merge.
+  const url = new URL("../plugins/anatomiya/lib/encode.mjs", import.meta.url).href;
+  const script = `
+    const Real = Intl.Segmenter;
+    let built = 0;
+    Intl.Segmenter = class extends Real { constructor(...a) { super(...a); built++; } };
+    const m = await import(${JSON.stringify(url)});
+    const out = { located: m.locator("x"), afterLocate: built };
+    const family = "\\u{1F468}\\u200d\\u{1F469}\\u200d\\u{1F467}";
+    out.family = m.encode(family.repeat(3), { max: 2 });
+    out.abc = m.encode("abcdef", { max: 3 });
+    out.afterCaps = built;
+    process.stdout.write(JSON.stringify(out));
+  `;
+  const run = spawnSync(process.execPath, ["--input-type=module", "-e", script], { encoding: "utf8", timeout: 8000 });
+  assert.equal(run.status, 0, run.stderr);
+  const out = JSON.parse(run.stdout);
+  assert.equal(out.located, "x");
+  assert.equal(out.afterLocate, 0, "importing and locating built a segmenter");
+  const family = "\u{1F468}\u200d\u{1F469}\u200d\u{1F467}";
+  assert.equal(out.family, encode(family.repeat(3), { max: 2 }));
+  assert.equal(out.abc, encode("abcdef", { max: 3 }));
+  assert.equal(out.afterCaps, 1, "the segmenter is built once and kept");
 });
