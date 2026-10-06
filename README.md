@@ -91,7 +91,8 @@ Then, in the repository you want mapped:
 ```
 
 It writes `.claude/rules/anatomiya-overview.md`, one file per area beside it,
-`.claude/anatomiya/facts.json`, and `layout.json` beside it. Pass `--dry-run` to see the plan without writing anything.
+`.claude/anatomiya/facts.json`, and `layout.json` beside it. Pass `--dry-run` to see the plan
+without writing anything.
 
 To keep the map out of git:
 

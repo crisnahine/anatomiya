@@ -8,7 +8,7 @@
  * version at all.
  */
 import { randomBytes } from "node:crypto";
-import { closeSync, existsSync, mkdirSync, openSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { closeSync, constants, existsSync, fstatSync, mkdirSync, openSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 
 import { outsideClaude, readHead, resolveInside } from "./rules.mjs";
@@ -382,7 +382,39 @@ export function writeFacts(root, result) {
     throw new Error(`${outsideClaude(dirname(FACTS_PATH))}, so the facts were not written`);
   }
   mkdirSync(dir, { recursive: true });
-  writePair(dir, factsJson(result), result.layout);
+  // The record is renamed before its layout file, so a throw at the second
+  // rename has already replaced it. Put back the way the map's own write does.
+  const record = join(dir, basename(FACTS_PATH));
+  const previous = previousBytes(record);
+  const was = previous ? readLayout(root, record) : null;
+  try {
+    writePair(dir, factsJson(result), result.layout);
+  } catch (err) {
+    const now = previousBytes(record);
+    if (previous !== undefined && (previous === null ? now !== null : !now?.equals(previous))) {
+      try {
+        if (previous === null) unlinkSync(record);
+        else if (was !== null) writePair(dir, previous, was.layout, was.schema);
+        else atomic(record, previous);
+      } catch {}
+    }
+    throw err;
+  }
+}
+
+/** A regular file's bytes, `null` where nothing is, `undefined` where they cannot be put back. */
+export function previousBytes(path) {
+  let fd;
+  try {
+    // Opened then typed through the handle, so the file read is the file typed;
+    // O_NOFOLLOW refuses a link the way lstat did.
+    fd = openSync(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0));
+    return fstatSync(fd).isFile() ? readFileSync(fd) : undefined;
+  } catch (err) {
+    return err.code === "ENOENT" ? null : undefined;
+  } finally {
+    if (fd !== undefined) closeSync(fd);
+  }
 }
 
 /**
@@ -437,10 +469,11 @@ export function stampedLayout(layout, recordTemp, schema = FACTS_SCHEMA) {
  * that has already resolved it.
  */
 export function readLayout(root, facts = resolveInside(root, FACTS_PATH)) {
-  const path = facts === null ? null : resolveInside(root, LAYOUT_PATH);
-  if (path === null) return null;
-  const record = statOf(facts);
+  // The record first: most directories a hook asks about hold none.
+  const record = facts === null ? null : statOf(facts);
   if (record === null || record.size > RECORD_MOST) return null;
+  const path = resolveInside(root, LAYOUT_PATH);
+  if (path === null) return null;
   const parsed = readRecord(path).record;
   const schema = parsed?.schema;
   if (!Number.isInteger(schema) || schema < 1 || schema > FACTS_SCHEMA) return null;
