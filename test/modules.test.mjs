@@ -142,7 +142,7 @@ test("the change set reaches no parser, no dimension and no writer, and the Stop
   // 48 modules, the parser and every dimension among them, on every turn.
   const edges = graph();
   const reached = reachedFrom("changeset.mjs", edges);
-  for (const module of ["parse.mjs", "dimensions.mjs", "render.mjs", "check.mjs"]) {
+  for (const module of ["parse.mjs", "dimensions.mjs", "render.mjs", "write.mjs", "check.mjs"]) {
     assert.equal(reached.has(module), false, `changeset.mjs reaches ${module}`);
   }
   assert.equal(reachedFrom("reuse.mjs", edges).has("check.mjs"), false, "reuse.mjs reaches check.mjs");
