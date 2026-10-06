@@ -11,7 +11,8 @@ import { installWithoutStripper, FLOW_SOURCE } from "./no-stripper.mjs";
 import { addWorktree, git, scratch } from "./git-worktrees.mjs";
 
 import { needsRuby } from "./ruby-available.mjs";
-import { check, renamesSkipped, severityFor, unreadReason, unreadCode } from "../plugins/anatomiya/lib/check.mjs";
+import { check, severityFor, unreadReason, unreadCode } from "../plugins/anatomiya/lib/check.mjs";
+import { renamesSkipped } from "../plugins/anatomiya/lib/changeset.mjs";
 import { formatReport, formatReportJson, CAVEATS } from "../plugins/anatomiya/lib/check-report.mjs";
 import { scan } from "../plugins/anatomiya/lib/scan.mjs";
 import { writeMap } from "../plugins/anatomiya/lib/write.mjs";
@@ -5141,4 +5142,101 @@ test("rename detection git skipped past the limit this run set is said, not char
   assert.equal(renamesSkipped(rows(2, 2), 1), true);
   assert.equal(renamesSkipped(rows(1, 1), 1), false);
   assert.equal(renamesSkipped(rows(5, 0), 1), false, "nothing deleted is nothing to pair");
+});
+
+/* --- the reads after base resolution run side by side, and ask once --- */
+
+/**
+ * The git calls one check makes, through a shim on this process's own PATH,
+ * since the check takes no environment. `fail` names the argument text that
+ * makes the shim exit 128 instead of running git.
+ */
+async function checkThroughShim(t, dir, { fail = null } = {}) {
+  const bin = mkdtempSync(join(tmpdir(), "anatomiya-check-bin-"));
+  t.after(() => rmSync(bin, { recursive: true, force: true }));
+  const log = join(bin, "calls");
+  const real = execFileSync("sh", ["-c", "command -v git"]).toString().trim();
+  const refuse = fail === null ? "" : `case "$*" in *'${fail}'*) exit 128;; esac\n`;
+  writeFileSync(join(bin, "git"), `#!/bin/sh\necho "$*" >> '${log}'\n${refuse}exec '${real}' "$@"\n`, { mode: 0o755 });
+  const path = process.env.PATH;
+  process.env.PATH = `${bin}:${path}`;
+  try {
+    const report = await check(dir, { baseRef: "main" });
+    return { report, calls: readFileSync(log, "utf8").trim().split("\n") };
+  } finally {
+    process.env.PATH = path;
+  }
+}
+
+function pendingRubyDeletion(t) {
+  return repo(t, ({ dir, git, write, commit }) => {
+    write("src/a.ts", "export const a = 1\n");
+    write("app/models/user.rb", "class User\nend\n");
+    commit("init");
+    // Pinned where the branch forks, so the baseline's reads are asked too.
+    facts(dir, { sha: sha(dir), pinned: ["src/a.ts"] });
+    git("checkout", "-q", "-b", "feature");
+    write("src/a.ts", "export const a = 2\n");
+    commit("edit");
+    // A pending deletion of a Ruby file asks both readers of HEAD's tree: the
+    // one that keeps only deletions HEAD holds, and the obligations.
+    rmSync(join(git("rev-parse", "--show-toplevel").toString().trim(), "app/models/user.rb"));
+  });
+}
+
+const namingHead = (calls) => calls.filter((c) => c.split(" ").some((arg) => /^HEAD\b|\.\.HEAD$/.test(arg)));
+
+test("a check resolves HEAD once and lists HEAD's tree once", needsShebang, async (t) => {
+  const dir = pendingRubyDeletion(t);
+  const head = execFileSync("git", ["rev-parse", "HEAD"], { cwd: dir }).toString().trim();
+
+  const { report, calls } = await checkThroughShim(t, dir);
+
+  assert.deepEqual(report.removed, ["app/models/user.rb"], "the fixture reached the pending deletion");
+  assert.notEqual(report.drift, null, "the fixture reached the baseline");
+  // Every other read is handed HEAD's sha.
+  assert.deepEqual(namingHead(calls), ["rev-parse --verify --quiet HEAD^{commit}"], calls.join("\n"));
+  assert.equal(calls.filter((c) => c === "rev-parse --verify --quiet main^{commit}").length, 1, "and main once");
+  const listing = calls.filter((c) => c.startsWith("ls-tree -r"));
+  assert.deepEqual(listing, [`ls-tree -r --name-only -z ${head} --`], calls.join("\n"));
+});
+
+test("each read that runs beside the others still reports its own failure", needsShebang, async (t) => {
+  // F15: reading the diff, the pending edits and the rest at once must not
+  // let one failure stand for another, or go unsaid.
+  const dir = pendingRubyDeletion(t);
+  const said = (report, code) => report.caveats.filter((c) => c.code === code).map((c) => c.message);
+
+  const noStatus = (await checkThroughShim(t, dir, { fail: " status " })).report;
+  assert.deepEqual(said(noStatus, CAVEATS.PENDING_UNLISTED), [
+    "the working tree's pending edits could not be listed, so only committed content was read",
+  ]);
+  assert.deepEqual(said(noStatus, CAVEATS.DIFF_UNREADABLE), []);
+  assert.deepEqual(noStatus.examined.map((c) => c.path), ["src/a.ts"], "the diff still answered");
+
+  const noDiff = (await checkThroughShim(t, dir, { fail: "--name-status" })).report;
+  assert.deepEqual(said(noDiff, CAVEATS.DIFF_UNREADABLE), [
+    "the diff against main could not be read, so no file was examined and this run found nothing it could look at",
+  ]);
+  assert.deepEqual(said(noDiff, CAVEATS.PENDING_UNLISTED), []);
+  assert.deepEqual(noDiff.removed, ["app/models/user.rb"], "the pending edits still answered");
+});
+
+test("with no merge base, the added lines and the oldest commit are read at HEAD's sha too", needsShebang, async (t) => {
+  const dir = repo(t, ({ git, write, commit }) => {
+    write("src/a.ts", "export const a = 1\n");
+    commit("init");
+    git("checkout", "-q", "--orphan", "feature");
+    write("src/a.ts", "export const a = 2\n");
+    commit("unrelated");
+    write("src/b.ts", "export const b = 1\n");
+    commit("second");
+  });
+
+  const { report, calls } = await checkThroughShim(t, dir);
+
+  assert.equal(report.mode, "added-lines");
+  assert.ok(calls.some((c) => c.startsWith("rev-list --max-parents=0 ")), calls.join("\n"));
+  assert.ok(calls.some((c) => c.includes("--unified=0")), "the added ranges were read");
+  assert.deepEqual(namingHead(calls), ["rev-parse --verify --quiet HEAD^{commit}"], calls.join("\n"));
 });

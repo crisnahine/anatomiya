@@ -40,9 +40,11 @@ const poolKey = (d) => `${d.key}\u0000${d.learned ?? ""}\u0000${d.learnedKind ??
  * path that silences every directive untested was the worse trade. What the
  * block then does to a slot is asked of `verdictFor` directly, which is why
  * this is one test and not the way that branch is covered. `runChecker` is the
- * seam that shows a failed scan stops the checker running beside it.
+ * seam that shows a failed scan stops the checker running beside it, and
+ * `resolveState` and `parseFiles` the two that show the baseline and the parse
+ * run side by side.
  */
-export async function scan(cwd, { guards = null, runChecker = runSemantic } = {}) {
+export async function scan(cwd, { guards = null, runChecker = runSemantic, resolveState = resolveBaseline, parseFiles = parseAll } = {}) {
   const started = Date.now();
   const root = await gitRoot(cwd);
 
@@ -70,9 +72,21 @@ export async function scan(cwd, { guards = null, runChecker = runSemantic } = {}
   semanticRun?.catch(() => {});
   authorsRun.catch(() => {});
 
-  let state, areas, frameworks, head;
+  // The baseline's git reads need nothing the parse makes, and the parse needs
+  // only the files and the frameworks, so neither waits on the other.
+  const stateRun = resolveState(root);
+  stateRun.catch(() => {});
+
+  let state, areas, frameworks, head, headRun;
   try {
-    state = await resolveBaseline(root);
+    // A claim that belongs to a framework cannot be judged without knowing the
+    // repository uses it, and one file never says. Read from the corpus, so a
+    // fixture cannot make a repository look like a Rails application.
+    frameworks = [...frameworksIn(files)];
+    headRun = parseFiles(files, { guards, frameworks });
+    headRun.catch(() => {});
+
+    state = await stateRun;
     // The areas are partitioned over the corpus the pin was built over where
     // there is one. The floor is a step function of the corpus size, so deriving
     // it from today's file count re-partitions the repository on one added file
@@ -85,15 +99,13 @@ export async function scan(cwd, { guards = null, runChecker = runSemantic } = {}
       uncounted,
     });
 
-    // A claim that belongs to a framework cannot be judged without knowing the
-    // repository uses it, and one file never says. Read from the corpus, so a
-    // fixture cannot make a repository look like a Rails application.
-    frameworks = [...frameworksIn(files)];
-
-    head = await parseAll(files, { guards, frameworks });
+    head = await headRun;
   } catch (err) {
     // Otherwise the process stays up until a checker nobody will read finishes.
     stopChecker.abort();
+    // The parse has no such signal, so a baseline that failed waits for it
+    // rather than leaving its workers running behind the error.
+    await headRun?.catch(() => {});
     throw err;
   }
   const { offReason, whole } = await (semanticRun ?? startChecker());
@@ -127,7 +139,7 @@ export async function scan(cwd, { guards = null, runChecker = runSemantic } = {}
   // guard is.
   const measured = await measureBaseline(root, state, areas, {
     headParsed: head.records,
-    parse: (blobs) => parseAll(blobs, { guards, frameworks }),
+    parse: (blobs) => parseFiles(blobs, { guards, frameworks }),
     // A file unchanged since the pin reuses its working-tree record, semantic
     // hits and all. One read back from the pin has none, so dropping it would let
     // an edit take a violation out of the baseline: an area holding one is not
