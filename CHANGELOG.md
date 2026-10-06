@@ -8,7 +8,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ## [Unreleased]
 
 Hooks, scans and checks take less time and give the same answers, byte for byte. The numbers below
-were measured on a loaded machine and will be re-timed before release.
+are medians measured against 0.13.3 on one machine, under the same load for both.
 
 ### Added
 
@@ -21,26 +21,28 @@ were measured on a loaded machine and will be re-timed before release.
 ### Changed
 
 - A hook loads only the modules its verb uses: 12 for the echo, 24 at most for the notice, 20 for
-  the end-of-turn check and 27 for the refresh, where every hook loaded 65. The echo went from 64ms
-  to 42ms, the notice from 66ms to 51ms and the refresh from 67ms to 44ms, against 21ms for bare
-  node. On microsoft/vscode, whose record is 10 MB, the notice went from 104ms to 48ms with the
-  layout file.
+  the end-of-turn check and 27 for the refresh, where every hook loaded 65. The echo went from 65ms
+  to 39ms, the notice from 68ms to 43ms, the end-of-turn check from 108ms to 90ms and the refresh
+  from 69ms to 45ms, against 26ms for bare node. On microsoft/vscode, whose record is 10 MB, the
+  notice went from 90ms to 41ms with the layout file.
 - `scan` walks each JavaScript and TypeScript tree once for every dimension instead of once per
-  dimension: 8.7 walks a file where it was 50.6 on a large front end, and this repository's scan
-  went from 897ms to 418ms. The baseline's git reads now run beside the parse.
+  dimension: 9.2 walks a file where it was 50.8 on a large front end, counting every walk of a
+  file's tree or a subtree in it. The baseline's git reads now run beside the parse. This
+  repository's scan went from 697ms to 490ms.
 - `scan` reads Ruby in worker threads, one per `ruby` child, that parse and walk the trees and send
   back counts, so the parent no longer reads or walks a Ruby tree; `check` still gets the trees of
   the files a diff touched. The Ruby dimensions and facets share one walk of each tree: 5.5 walks a
   file where it was 22.5. A large Ruby corpus is still read by up to four children, never more than
-  the machine's cores less one. On a large Rails API the parse phase went from 3,224ms to 2,041ms
-  and the scan from 3,948ms to 2,677ms. When a `ruby` child dies mid-run, which files it charges
-  follows the byte balance of the batches, so the degraded map can differ from 0.13.3's: on 2,100
-  files under a `ruby` that hangs after five records, 3 areas against 1.
+  the machine's cores less one. On a large Rails API the parse phase went from 3,378ms to 1,820ms
+  and the scan from 4,507ms to 2,793ms, and its peak memory rose 10%, from 178 MB to 196 MB, for the
+  threads' heaps; discourse's scan went from 13.5s to 7.6s. When a `ruby` child dies mid-run, which
+  files it charges follows the byte balance of the batches, so the degraded map can differ from
+  0.13.3's: on 2,100 files under a `ruby` that hangs after five records, 3 areas against 1.
 - `check` resolves HEAD once, runs its independent git reads side by side and asks git once per
-  commit sha: 26 git calls to 21 on a two-file branch here, and the median check went from 482ms to
-  347ms here, 1821ms to 1636ms on a large Rails API and 607ms to 413ms on eslint.
+  commit sha: 25 git calls to 20 on a two-file branch here, and that check went from 422ms to
+  285ms.
 - The type checker's compiler host answers each path once per build: 24,781 stats where it was
-  107,928 on a large front end, and that scan went from 19.7s to 17.8s.
+  107,928 on a large front end, and the checker there went from 12.2s to 11.8s.
 
 ### Fixed
 
