@@ -581,7 +581,8 @@ export const JSX_DIMENSIONS = [
       // name in another component.
       const bound = [];
       // A handler can be passed above the line that binds it, so each one keeps
-      // the nodes above it and is judged after the walk.
+      // the functions above it, the only ancestors a binding's scope can be,
+      // and is judged after the walk. Every ancestor grew with depth squared.
       const passed = [];
       return {
         node(n, ctx) {
@@ -601,7 +602,7 @@ export const JSX_DIMENSIONS = [
           if (n.type !== "JSXAttribute") return;
           const e = handlerValue(n);
           if (!e || e.type !== "Identifier") return;
-          passed.push({ n, e, where: declName(ctx.fn), ancestors: ctx.ancestors.slice() });
+          passed.push({ n, e, where: declName(ctx.fn), ancestors: ctx.ancestors.filter(isFunctionLike) });
         },
         done() {
           if (bound.length === 0) return;
