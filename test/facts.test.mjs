@@ -1,13 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { chmodSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { execFileSync, spawnSync } from "node:child_process";
 import { needsPosixPermissions, needsPosixSpecialFiles } from "./platform.mjs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
-import { atomic, writeFacts, readFacts, statedSide, FACTS_SCHEMA, FACTS_PATH } from "../plugins/anatomiya/lib/facts.mjs";
+import { atomic, writeFacts, readFacts, readLayout, statedSide, FACTS_SCHEMA, FACTS_PATH, LAYOUT_PATH } from "../plugins/anatomiya/lib/facts.mjs";
 
 /**
  * One owner for the machine record, so one round trip through it.
@@ -735,4 +735,42 @@ test("a write that fails part way leaves no temporary file behind", async (t) =>
 
   assert.throws(() => atomic(join(dir, "facts.json"), "{}\n"), /ENOSPC/);
   assert.deepEqual(readdirSync(dir), []);
+});
+
+test("the layout is written beside the record, and reads back as the record's own", (t) => {
+  // The hooks want the layout alone, and the record holding it was 10 MB on
+  // microsoft/vscode: parsing all of it to read 1.5 KB was most of a notice.
+  const dir = root(t);
+  const layout = { tests: [], roots: [{ dir: "app", path: "app", companions: { with: 0, of: 6 } }] };
+
+  writeFacts(dir, { ...result([dim()]), layout });
+  const record = JSON.parse(readFileSync(join(dir, FACTS_PATH), "utf8"));
+
+  assert.deepEqual(JSON.parse(readFileSync(join(dir, LAYOUT_PATH), "utf8")), { schema: FACTS_SCHEMA, layout: record.layout });
+  assert.deepEqual(readLayout(dir), { layout: record.layout });
+});
+
+test("a layout file that cannot answer for the record beside it is not read", (t) => {
+  // Each refusal leaves the caller to read the record itself, which is what a
+  // map written before the layout file existed already needs.
+  const absent = root(t);
+  assert.equal(readLayout(absent), null, "nothing written");
+
+  const ahead = root(t);
+  writeFacts(ahead, result([dim()]));
+  writeFileSync(join(ahead, LAYOUT_PATH), JSON.stringify({ schema: FACTS_SCHEMA + 1, layout: { tests: [], roots: [] } }));
+  assert.equal(readLayout(ahead), null, "a schema this build has not heard of");
+
+  const alone = root(t);
+  writeFacts(alone, result([dim()]));
+  rmSync(join(alone, FACTS_PATH));
+  assert.equal(readLayout(alone), null, "no record for it to be the layout of");
+
+  // An older build rewrites the record and leaves this file as it was, so a
+  // layout file older than its record describes a scan the record replaced.
+  const behind = root(t);
+  writeFacts(behind, result([dim()]));
+  const then = new Date(Date.now() - 60_000);
+  utimesSync(join(behind, LAYOUT_PATH), then, then);
+  assert.equal(readLayout(behind), null, "older than the record");
 });
