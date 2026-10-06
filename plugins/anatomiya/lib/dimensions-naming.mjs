@@ -8,7 +8,7 @@
  * other dimension. Nothing here imports the registry, because the registry
  * imports this file.
  */
-import { walk, isFunctionLike } from "./walk.mjs";
+import { fromVisitor, isFunctionLike } from "./walk.mjs";
 import { jsxElementNames, makesComponent, typedAsComponent, yieldsJsx } from "./dimensions-jsx.mjs";
 import { fileStem } from "./dimensions-capability.mjs";
 import { encode } from "./encode.mjs";
@@ -120,23 +120,20 @@ function isModuleSyntax(st) {
 }
 
 /**
- * The names this file calls with `new` or reads a `.prototype` off: a function
- * used that way is a constructor, which JavaScript spells in PascalCase.
+ * The name this node calls with `new` or reads a `.prototype` off, gathered
+ * over every node of the file: a function used that way is a constructor, which
+ * JavaScript spells in PascalCase.
  */
-function constructedNames(program) {
-  const names = new Set();
-  walk(program, (n) => {
-    if (n.type === "NewExpression" && n.callee?.type === "Identifier") names.add(n.callee.name);
-    if (
-      n.type === "MemberExpression" &&
-      !n.computed &&
-      n.property?.name === "prototype" &&
-      n.object?.type === "Identifier"
-    ) {
-      names.add(n.object.name);
-    }
-  });
-  return names;
+function noteConstructed(n, names) {
+  if (n.type === "NewExpression" && n.callee?.type === "Identifier") names.add(n.callee.name);
+  if (
+    n.type === "MemberExpression" &&
+    !n.computed &&
+    n.property?.name === "prototype" &&
+    n.object?.type === "Identifier"
+  ) {
+    names.add(n.object.name);
+  }
 }
 
 /** A superclass's written name: `B`, or the dotted `React.Component`. */
@@ -368,34 +365,46 @@ export const NAMING_AST = [
       blind: null,
     },
     langs: ["js", "jsx"],
-    run(program, add) {
-      // A component's name is JSX's to decide, not the area's: lowercase it and
-      // the element becomes a host tag, TS2339, which is what the check would
-      // ask for wherever this row learns a lowercase-first class. The JSX rows
-      // read the same rule from the other side, in `isHostElement`.
-      const rendered = jsxElementNames(program);
-      const constructed = constructedNames(program);
-      walk(program, (n, ctx) => {
-        if (ctx.enclosing !== null) return;
-        let name = null;
-        let fn = null;
-        if (n.type === "FunctionDeclaration" && n.id) {
-          name = n.id.name;
-          fn = n;
-        }
-        if (n.type === "VariableDeclarator" && n.id?.type === "Identifier" && n.init && isFunctionLike(n.init)) {
-          if (typedAsComponent(n.id)) return;
-          name = n.id.name;
-          fn = n.init;
-        }
-        // A component returning JSX and one this file only renders are the same
-        // thing, so excluding one of them alone would be arbitrary.
-        if (name && (rendered.has(name) || constructed.has(name) || yieldsJsx(fn))) return;
-        const cls = name && classifyWord(name);
-        // The id node rides along so the check can point at the declaration
-        // rather than line 1; the worker strips nodes before IPC either way.
-        if (cls) add({ node: n.id, conforming: false, where: name, class: cls });
-      });
+    visitor(program, add) {
+      const constructed = new Set();
+      const named = [];
+      return {
+        node(n, ctx) {
+          noteConstructed(n, constructed);
+          if (ctx.enclosing !== null) return;
+          let name = null;
+          let fn = null;
+          if (n.type === "FunctionDeclaration" && n.id) {
+            name = n.id.name;
+            fn = n;
+          }
+          if (n.type === "VariableDeclarator" && n.id?.type === "Identifier" && n.init && isFunctionLike(n.init)) {
+            if (typedAsComponent(n.id)) return;
+            name = n.id.name;
+            fn = n.init;
+          }
+          const cls = name && classifyWord(name);
+          if (cls) named.push({ id: n.id, name, fn, cls });
+        },
+        // After the walk, because a name can be rendered or constructed below
+        // its declaration.
+        done() {
+          if (named.length === 0) return;
+          // A component's name is JSX's to decide, not the area's: lowercase it and
+          // the element becomes a host tag, TS2339, which is what the check would
+          // ask for wherever this row learns a lowercase-first class. The JSX rows
+          // read the same rule from the other side, in `isHostElement`.
+          const rendered = jsxElementNames(program);
+          for (const { id, name, fn, cls } of named) {
+            // A component returning JSX and one this file only renders are the same
+            // thing, so excluding one of them alone would be arbitrary.
+            if (rendered.has(name) || constructed.has(name) || yieldsJsx(fn)) continue;
+            // The id node rides along so the check can point at the declaration
+            // rather than line 1; the worker strips nodes before IPC either way.
+            add({ node: id, conforming: false, where: name, class: cls });
+          }
+        },
+      };
     },
   },
   {
@@ -421,21 +430,30 @@ export const NAMING_AST = [
       blind: null,
     },
     langs: ["js", "jsx"],
-    run(program, add) {
-      // The same rule its sibling row reads: a component's name is JSX's to
-      // decide. Excluding it on one row and not the other left the same
-      // declaration asked for a lowercase name by the other sentence. Only
-      // this row binds a name to a call, so only this row meets a component a
-      // `forwardRef`, a `memo` or a `styled` template made.
-      const rendered = jsxElementNames(program);
-      const constructed = constructedNames(program);
-      for (const s of exportedSites(program)) {
-        if (s.population !== "value") continue;
-        if (rendered.has(s.name) || constructed.has(s.name) || typedAsComponent(s.node)) continue;
-        if (yieldsJsx(s.fn) || makesComponent(s.init, program)) continue;
-        const cls = classifyWord(s.name);
-        if (cls) add({ node: s.node, conforming: false, where: s.name, class: cls });
-      }
+    visitor(program, add) {
+      const constructed = new Set();
+      return {
+        node(n) {
+          noteConstructed(n, constructed);
+        },
+        done() {
+          // The same rule its sibling row reads: a component's name is JSX's to
+          // decide. Excluding it on one row and not the other left the same
+          // declaration asked for a lowercase name by the other sentence. Only
+          // this row binds a name to a call, so only this row meets a component a
+          // `forwardRef`, a `memo` or a `styled` template made.
+          let rendered = null;
+          for (const s of exportedSites(program)) {
+            if (s.population !== "value") continue;
+            const cls = classifyWord(s.name);
+            if (!cls) continue;
+            rendered ??= jsxElementNames(program);
+            if (rendered.has(s.name) || constructed.has(s.name) || typedAsComponent(s.node)) continue;
+            if (yieldsJsx(s.fn) || makesComponent(s.init, program)) continue;
+            add({ node: s.node, conforming: false, where: s.name, class: cls });
+          }
+        },
+      };
     },
   },
   {
@@ -499,15 +517,17 @@ export const NAMING_AST = [
       blind: null,
     },
     langs: ["js", "jsx"],
-    run(program, add) {
-      walk(program, (n) => {
-        if (n.type !== "ClassDeclaration" && n.type !== "ClassExpression") return;
-        const base = superName(n.superClass);
-        // A computed superclass is an expression, and its written form names no
-        // base anybody could extend on purpose.
-        if (!base) return;
-        add({ node: n.id ?? n, conforming: false, where: n.id?.name ?? null, class: base });
-      });
+    visitor(program, add) {
+      return {
+        node(n) {
+          if (n.type !== "ClassDeclaration" && n.type !== "ClassExpression") return;
+          const base = superName(n.superClass);
+          // A computed superclass is an expression, and its written form names no
+          // base anybody could extend on purpose.
+          if (!base) return;
+          add({ node: n.id ?? n, conforming: false, where: n.id?.name ?? null, class: base });
+        },
+      };
     },
   },
   {
@@ -527,25 +547,27 @@ export const NAMING_AST = [
       blind: null,
     },
     langs: ["js", "jsx"],
-    run(program, add, { rel } = {}) {
+    visitor(program, add, { rel } = {}) {
       const globalScript = DECLARATION_FILE.test(rel ?? "") && !(program.body || []).some(isModuleSyntax);
-      walk(program, (n, ctx) => {
-        if (n.type !== "TSInterfaceDeclaration" || !n.id) return;
-        // An interface inside `declare global` or `declare module "x"` merges
-        // into a name declared elsewhere, and the name is the identity of the
-        // thing being augmented: prefix it and the merge silently stops, with
-        // no error at the declaration and `TS2339` at every use. The same
-        // ancestor test C12 applies to `module_state_const`.
-        if (ctx.within(NAMESPACE)) return;
-        // A declaration file with no import or export is a script, and its
-        // top-level interfaces are global and merge the same way. Only a
-        // declaration file: `moduleDetection` can make any other file a module.
-        if (globalScript && ctx.ancestors.length === 1) return;
-        // A name that votes for neither is not a site, which is the idiom every
-        // other row in this file already uses for a name it cannot classify.
-        const cls = prefixClass(n.id.name);
-        if (cls !== null) add({ node: n.id, conforming: false, where: n.id.name, class: cls });
-      });
+      return {
+        node(n, ctx) {
+          if (n.type !== "TSInterfaceDeclaration" || !n.id) return;
+          // An interface inside `declare global` or `declare module "x"` merges
+          // into a name declared elsewhere, and the name is the identity of the
+          // thing being augmented: prefix it and the merge silently stops, with
+          // no error at the declaration and `TS2339` at every use. The same
+          // ancestor test C12 applies to `module_state_const`.
+          if (ctx.within(NAMESPACE)) return;
+          // A declaration file with no import or export is a script, and its
+          // top-level interfaces are global and merge the same way. Only a
+          // declaration file: `moduleDetection` can make any other file a module.
+          if (globalScript && ctx.ancestors.length === 1) return;
+          // A name that votes for neither is not a site, which is the idiom every
+          // other row in this file already uses for a name it cannot classify.
+          const cls = prefixClass(n.id.name);
+          if (cls !== null) add({ node: n.id, conforming: false, where: n.id.name, class: cls });
+        },
+      };
     },
   },
   {
@@ -563,12 +585,15 @@ export const NAMING_AST = [
       blind: null,
     },
     langs: ["js", "jsx"],
-    run(program, add) {
-      walk(program, (n) => {
-        if (n.type !== "TSTypeAliasDeclaration" || !n.id) return;
-        const cls = prefixClass(n.id.name);
-        if (cls !== null) add({ node: n.id, conforming: false, where: n.id.name, class: cls });
-      });
+    visitor(program, add) {
+      return {
+        node(n) {
+          if (n.type !== "TSTypeAliasDeclaration" || !n.id) return;
+          const cls = prefixClass(n.id.name);
+          if (cls !== null) add({ node: n.id, conforming: false, where: n.id.name, class: cls });
+        },
+      };
     },
   },
 ];
+for (const d of NAMING_AST) if (d.visitor) d.run = fromVisitor(d.visitor);

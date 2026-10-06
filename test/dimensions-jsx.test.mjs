@@ -672,3 +672,31 @@ test("an area of .js components counts the JSX rows over the files that hold JSX
   assert.equal(slot.candidates, 6);
   assert.equal(slot.langFileCount, 6, "the two helpers are not files the row could speak about");
 });
+
+test("jsxElementNames walks a tree once however many rows ask, and a new tree afresh", async () => {
+  // Three rows ask it of the same file; one walk answers all three.
+  const { jsxElementNames } = await import("../plugins/anatomiya/lib/dimensions-jsx.mjs");
+  const src = "const a = <Box/>;";
+  const first = parseSync("f.tsx", src, { sourceType: "module" }).program;
+  assert.equal(jsxElementNames(first), jsxElementNames(first));
+  const second = parseSync("f.tsx", src.replace("Box", "Card"), { sourceType: "module" }).program;
+  assert.deepEqual([...jsxElementNames(second)], ["Card"]);
+});
+
+test("text_translated scans no ancestors in a file without a translation layer", async () => {
+  // Main returned before walking such a file; on the shared walk the row only
+  // has to stay cheap there, since its sites are dropped at the end.
+  const { collectHits, walk } = await import("../plugins/anatomiya/lib/walk.mjs");
+  const src = `export const A = () => <div><p>Hello there</p>{label("x")}</div>;`;
+  const { program } = parseSync("f.tsx", src, { sourceType: "module" });
+  // The parent read is one index; the scan of every ancestor is the cost.
+  let scans = 0;
+  const counting = (tree, visit) =>
+    walk(tree, (node, ctx) => {
+      const ancestors = ctx.ancestors.slice();
+      ancestors.some = (...args) => (scans++, Array.prototype.some.apply(ancestors, args));
+      visit(node, { ...ctx, ancestors });
+    });
+  assert.deepEqual(collectHits(program, [dim("text_translated")], {}, counting), {});
+  assert.equal(scans, 0);
+});
