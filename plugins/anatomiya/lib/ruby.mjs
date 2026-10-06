@@ -457,21 +457,28 @@ export async function parseRuby(
  * limit took a scan of empire-flippers/api from 176 MB peak to 318 MB, and
  * held it is 197 MB against 183 MB. Measured, a 588 KB spec needs 20 MB of old
  * generation. A tree that outgrows its hold anyway is read again on a thread
- * with the default heap, so the hold costs time and never a file.
+ * with the default heap, with every file not yet answered, so the hold costs
+ * time and never a file, and a record already answered is kept rather than
+ * read twice.
  */
 function heldHeap(largestBytes) {
   return { maxYoungGenerationSizeMb: 1, maxOldGenerationSizeMb: 8 + Math.ceil((32 * largestBytes) / (1024 * 1024)) };
 }
 
 async function inWorker(files, job, largestBytes) {
-  return (await onThread(files, job, heldHeap(largestBytes))) ?? (await onThread(files, job, null));
+  const held = await onThread(files, job, heldHeap(largestBytes));
+  if (!held.ranOut) return held;
+  const answered = new Set(held.results.map((r) => r.rel));
+  const rest = await onThread(files.filter((f) => !answered.has(f.rel)), job, null);
+  return { ...rest, results: [...held.results, ...rest.results] };
 }
 
 /**
  * One shard in a worker thread. A worker that ends without answering charges
  * its own batch as crashed, the way a child that dies does, rather than
  * leaving those files out of the record; one that ran out of a held heap
- * answers null instead, for the caller to run again.
+ * answers `ranOut` with the records it did post, for the caller to read the
+ * rest again.
  *
  * The `ruby` child is started here, on the parent, at the thread's request,
  * and its bytes are passed through undecoded. A thread that dies takes its
@@ -505,7 +512,7 @@ function onThread(files, job, resourceLimits) {
     // Messages drain before exit, so one that answered has already resolved.
     worker.once("exit", async (code) => {
       await Promise.all([...children.values()].map(stopped));
-      if (resourceLimits && failure?.code === "ERR_WORKER_OUT_OF_MEMORY") return resolve(null);
+      if (resourceLimits && failure?.code === "ERR_WORKER_OUT_OF_MEMORY") return resolve({ ranOut: true, results });
       const out = blank();
       out.error = failure ? String(failure.message ?? failure) : `ruby shard exited ${code}`;
       for (const f of files) deliver(out, { rel: f.rel, ok: false, error: out.error, crashed: true }, 1);
