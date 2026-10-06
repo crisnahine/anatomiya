@@ -13,8 +13,8 @@
  * its own the moment it has answered, so there is no second pass to run this
  * in. What is kept is this object, a few strings per file.
  */
-import { walk, isFunctionLike } from "./walk.mjs";
-import { walkRuby, constName, args } from "./ruby-walk.mjs";
+import { isFunctionLike } from "./walk.mjs";
+import { constName, args } from "./ruby-walk.mjs";
 import { MINITEST_NAME } from "./test-shape.mjs";
 
 /**
@@ -144,18 +144,18 @@ function takeCjsExport(node, exports, exportedLocals) {
   }
 }
 
-/**
- * `program` for the walk, `module` for the parser's own record of the imports
- * and exports it saw. The record is already built and was being discarded.
- *
- * Its own walk, rather than a visitor folded into the dimensions': stubbed to a
- * constant, eslint's 1,489 files parse 40ms faster out of 1.45s, so the second
- * walk is under 3% and the shared hook would cost more to read than it saves.
- */
 // Every node the parser only ever emits for a type. `TS` is the prefix oxc uses
 // for Flow's shapes too, since the TypeScript grammar is what reads them.
 const TYPE_SYNTAX = /^TS[A-Z]/;
 
+/**
+ * `program` for the walk, `module` for the parser's own record of the imports
+ * and exports it saw. The record is already built and was being discarded.
+ *
+ * A visitor handed to the rows' own walk, and `done` answers once it is over:
+ * as a walk of its own it was a second pass over every tree, 369ms beside the
+ * rows' 1,067ms on empire-flippers/client's 2,485 files.
+ */
 export function jsFacets({ program, module: mod }) {
   const imports = [];
   // Which of the entries above still run: a statement where every specifier is
@@ -206,7 +206,7 @@ export function jsFacets({ program, module: mod }) {
   // file and the function it publishes was walked past long before it.
   const helpers = [];
 
-  walk(program, (n, ctx) => {
+  const node = (n, ctx) => {
     if (n.type === "JSXElement" || n.type === "JSXFragment") jsx = true;
     if (!typed && TYPE_SYNTAX.test(n.type)) typed = true;
 
@@ -241,36 +241,40 @@ export function jsFacets({ program, module: mod }) {
     if (n.type === "VariableDeclarator" && n.id?.type === "Identifier" && n.init && isFunctionLike(n.init)) {
       helpers.push(n.id.name);
     }
-  });
-
-  const inlineHelpers = helpers.filter((name) => !exportedLocals.has(name)).length;
-
-  // An import edge alone used to be enough: a config file importing
-  // `defineConfig`, or a page object importing only a type, took the runner's
-  // label with no case anywhere in the file. Requiring `declaresTest` costs
-  // nothing a real spec had, since every runner's own words are exactly what
-  // `TEST_CALLS` already looks for.
-  let testRunner = null;
-  if (declaresTest) {
-    for (const i of imports) {
-      if (!valueImports.has(i) || !TEST_RUNNER_MODULES.has(i.module)) continue;
-      testRunner = TEST_RUNNER_MODULES.get(i.module);
-      break;
-    }
-  }
-
-  return {
-    jsx,
-    typed,
-    imports,
-    exports,
-    testRunner,
-    testCalls,
-    inlineHelpers,
-    // Absent unless true: it crosses the process boundary once per file and
-    // almost every file holds something.
-    ...(program.body?.length ? {} : { empty: true }),
   };
+
+  const done = () => {
+    const inlineHelpers = helpers.filter((name) => !exportedLocals.has(name)).length;
+
+    // An import edge alone used to be enough: a config file importing
+    // `defineConfig`, or a page object importing only a type, took the runner's
+    // label with no case anywhere in the file. Requiring `declaresTest` costs
+    // nothing a real spec had, since every runner's own words are exactly what
+    // `TEST_CALLS` already looks for.
+    let testRunner = null;
+    if (declaresTest) {
+      for (const i of imports) {
+        if (!valueImports.has(i) || !TEST_RUNNER_MODULES.has(i.module)) continue;
+        testRunner = TEST_RUNNER_MODULES.get(i.module);
+        break;
+      }
+    }
+
+    return {
+      jsx,
+      typed,
+      imports,
+      exports,
+      testRunner,
+      testCalls,
+      inlineHelpers,
+      // Absent unless true: it crosses the process boundary once per file and
+      // almost every file holds something.
+      ...(program.body?.length ? {} : { empty: true }),
+    };
+  };
+
+  return { node, done };
 }
 
 /**
@@ -352,6 +356,7 @@ const requiresMinitest = (n) =>
   n.name === "require" &&
   /^minitest(\/|$)/.test(args(n)[0]?.t === "string" ? (args(n)[0].unescaped ?? "") : "");
 
+/** What `jsFacets` is for a Ruby tree: a visitor for the Ruby walk. */
 export function rubyFacets(program, rel = "") {
   let rspec = false;
   // RSpec's words other than the two minitest/spec shares, or a call made on
@@ -363,7 +368,7 @@ export function rubyFacets(program, rel = "") {
   let beaker = false;
   let testCalls = false;
 
-  walkRuby(program, (n, ctx) => {
+  const node = (n, ctx) => {
     // Inside a `def` the call runs when that method does and declares no case:
     // errbit writes its spec macros as plain methods holding `context ... do`.
     // A class or module body is where RSpec's own describes sit and stays a site.
@@ -408,24 +413,28 @@ export function rubyFacets(program, rel = "") {
         testCalls = true;
       }
     }
-  });
-
-  // Bare `describe` and `it` with nothing RSpec-only beside them are
-  // minitest/spec where the file says minitest some other way: by its path, as
-  // `test/models/user_test.rb` does, or by requiring minitest. Asked after the
-  // walk, since the require can sit anywhere above the first case.
-  if (specDsl && !rspecOnly && (minitestRequired || minitestByPath(rel))) {
-    minitest = true;
-  }
-
-  // The superclass wins over the calls, because shoulda-context writes
-  // `context` blocks inside an `ActiveSupport::TestCase` and that file is
-  // minitest whatever vocabulary its bodies are in. Beaker last: `test_name`
-  // never co-occurs with either of the other two.
-  return {
-    testRunner: minitest ? "minitest" : rspec ? "rspec" : beaker ? "beaker" : null,
-    testCalls,
-    // Absent unless true, for the reason the JavaScript side spells out.
-    ...(program.statements?.body?.length ? {} : { empty: true }),
   };
+
+  const done = () => {
+    // Bare `describe` and `it` with nothing RSpec-only beside them are
+    // minitest/spec where the file says minitest some other way: by its path, as
+    // `test/models/user_test.rb` does, or by requiring minitest. Asked after the
+    // walk, since the require can sit anywhere above the first case.
+    if (specDsl && !rspecOnly && (minitestRequired || minitestByPath(rel))) {
+      minitest = true;
+    }
+
+    // The superclass wins over the calls, because shoulda-context writes
+    // `context` blocks inside an `ActiveSupport::TestCase` and that file is
+    // minitest whatever vocabulary its bodies are in. Beaker last: `test_name`
+    // never co-occurs with either of the other two.
+    return {
+      testRunner: minitest ? "minitest" : rspec ? "rspec" : beaker ? "beaker" : null,
+      testCalls,
+      // Absent unless true, for the reason the JavaScript side spells out.
+      ...(program.statements?.body?.length ? {} : { empty: true }),
+    };
+  };
+
+  return { node, done };
 }

@@ -969,7 +969,7 @@ test("no files is an empty run, not a spawn", needsRuby, async () => {
   assert.equal(out.error, null);
 });
 
-test("a newline in a path is a path, not two paths", needsPosixPaths, needsRuby, async () => {
+test("a newline in a path is a path, not two paths", { ...needsPosixPaths, ...needsRuby }, async () => {
   const abs = join(dir, "two\nlines.rb");
   writeFileSync(abs, "def go\n  Time.now\nend\n");
   const out = await parseRuby([{ rel: "two\nlines.rb", abs }]);
@@ -2105,6 +2105,35 @@ test("failure class, the line cap: the run is truncated and nothing past the cap
     results: [["a.rb", false, "line cap", true, 1], ["b.rb", false, "line cap", true, 1]],
   });
   assert.deepEqual(lines, []);
+});
+
+test("facets that throw on a tree fall back on their own, and cost no row its sites", { ...needsRuby, ...needsShebang }, async () => {
+  // A def whose name is no string throws in the facets visitor, which rides the
+  // rows' walk, after an RSpec block the facets had already read: the fallback
+  // answers, not the half-read facets, and the rows still answer. A check
+  // asking for no rows gets the same fallback beside the tree it keeps.
+  const abs = join(dir, "odd_facets_spec.rb");
+  writeFileSync(abs, 'describe "x" do\n  it "y" do\n    begin\n      go\n    rescue => e\n    end\n  end\nend\n');
+  const one = [{ rel: "a.rb", abs }];
+  const ast = (await parseRuby(one)).results[0].program;
+  assert.equal((await parseRuby(one, { dimensions: RUBY_DIMENSIONS })).results[0].facets.testRunner, "rspec");
+  ast.statements.body.push({ t: "def", name: 5, line: 9 });
+  const ruby = stubRuby("odd-facets", [
+    "cat >/dev/null",
+    READY,
+    `printf '%s\\n' '${JSON.stringify({ rel: "a.rb", ok: true, errors: 0, length: 1, ast })}'`,
+  ]);
+  const fallback = { testRunner: null, testCalls: false };
+
+  const scan = (await parseRuby(one, { ruby, dimensions: RUBY_DIMENSIONS })).results[0];
+  assert.equal(scan.ok, true);
+  assert.deepEqual(scan.facets, fallback);
+  assert.ok(Object.keys(scan.hits).length, "the fixture reaches a row");
+  assert.deepEqual(scan.hits, collectHits(ast, RUBY_DIMENSIONS, { rel: "a.rb" }, walkRuby));
+
+  const check = (await parseRuby(one, { ruby })).results[0];
+  assert.deepEqual(check.facets, fallback);
+  assert.deepEqual(check.program, ast);
 });
 
 test("failure class, an unreadable file: the interpreter names the error class and the rest still count", needsRuby, async () => {

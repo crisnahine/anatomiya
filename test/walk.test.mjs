@@ -106,6 +106,47 @@ test("a throw while making a visitor or in its done costs that row only", () => 
   assert.deepEqual(hits, collectHits(program, asRuns));
 });
 
+test("a walk that throws costs the visitor rows their sites, never the run rows or the caller", () => {
+  // A recursive walker overflows on a deep enough tree, and the throw comes
+  // from the walk itself rather than from any one visitor.
+  const overflows = (tree, visit) => {
+    let n = 0;
+    walk(tree, (node, ctx) => {
+      if (++n === 5) throw new RangeError("Maximum call stack size exceeded");
+      visit(node, ctx);
+    });
+  };
+  assert.deepEqual(collectHits(program, asVisitors, {}, overflows), { program: [{ conforming: false, where: "Program" }] });
+});
+
+test("a visitor riding the walk is fed every node without any row, and keeps its own throw", () => {
+  let walks = 0;
+  const spy = (tree, visit) => {
+    walks++;
+    walk(tree, visit);
+  };
+  const types = [];
+  const rider = { node: (n) => types.push(n.type) };
+  assert.deepEqual(collectHits(program, [], {}, spy, [rider]), {});
+  assert.equal(walks, 1);
+  const alone = [];
+  walk(program, (n) => alone.push(n.type));
+  assert.deepEqual(types, alone);
+  assert.equal(rider.error, undefined);
+
+  let fed = 0;
+  const odd = new Error("an odd node");
+  const throwing = { node: () => { if (++fed === 3) throw odd; } };
+  assert.deepEqual(collectHits(program, asVisitors, {}, walk, [throwing]), collectHits(program, asRuns));
+  assert.equal(throwing.error, odd);
+  assert.equal(fed, 3, "fed no more nodes after its throw");
+
+  const overflow = new RangeError("Maximum call stack size exceeded");
+  const stranded = { node() {} };
+  collectHits(program, [], {}, () => { throw overflow; }, [stranded]);
+  assert.equal(stranded.error, overflow);
+});
+
 test("one walk serves every visitor row, and none is taken without one", () => {
   let walks = 0;
   const spy = (tree, visit) => {
