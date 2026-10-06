@@ -672,3 +672,13 @@ test("an area of .js components counts the JSX rows over the files that hold JSX
   assert.equal(slot.candidates, 6);
   assert.equal(slot.langFileCount, 6, "the two helpers are not files the row could speak about");
 });
+
+test("jsxElementNames walks a tree once however many rows ask, and a new tree afresh", async () => {
+  // Three rows ask it of the same file; one walk answers all three.
+  const { jsxElementNames } = await import("../plugins/anatomiya/lib/dimensions-jsx.mjs");
+  const src = "const a = <Box/>;";
+  const first = parseSync("f.tsx", src, { sourceType: "module" }).program;
+  assert.equal(jsxElementNames(first), jsxElementNames(first));
+  const second = parseSync("f.tsx", src.replace("Box", "Card"), { sourceType: "module" }).program;
+  assert.deepEqual([...jsxElementNames(second)], ["Card"]);
+});
