@@ -716,23 +716,30 @@ export function isSha(sha) {
  * one failure would read as a fact about the commit for the rest of the run
  * (F15). Bounded, because a long-lived process can be handed any number of
  * commits.
+ *
+ * `shas` are the commits the question names, and anything else is asked fresh.
+ * `copy` hands each caller its own answer, so one caller's edit never reaches
+ * another's.
  */
 const ANSWERS_MOST = 256;
 const answers = new Map();
 const FULL_SHA = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 const isFullSha = (s) => typeof s === "string" && FULL_SHA.test(s);
 
-function remembered(root, args, ask, kept) {
+async function remembered(root, shas, args, ask, kept, copy = (answer) => answer) {
+  if (!shas.every(isFullSha)) return ask();
   const key = `${resolve(root)}\0${args.join("\0")}`;
-  const known = answers.get(key);
-  if (known) return known;
-  const asked = ask().then((answer) => {
-    if (!kept(answer) && answers.get(key) === asked) answers.delete(key);
-    return answer;
-  });
-  answers.set(key, asked);
-  if (answers.size > ANSWERS_MOST) answers.delete(answers.keys().next().value);
-  return asked;
+  let asked = answers.get(key);
+  if (!asked) {
+    asked = ask().then((answer) => {
+      if (!kept(answer) && answers.get(key) === asked) answers.delete(key);
+      return answer;
+    });
+    answers.set(key, asked);
+    if (answers.size > ANSWERS_MOST) answers.delete(answers.keys().next().value);
+  }
+  const answer = await asked;
+  return answer && copy(answer);
 }
 
 // A ref name cannot begin with a dash. `rev-parse` takes revisions before any
@@ -774,7 +781,7 @@ export async function commitAt(root, ref) {
     const sha = r.ok ? r.stdout.trim() : "";
     return isSha(sha) ? sha : null;
   };
-  return isFullSha(ref) ? remembered(root, args, ask, (sha) => sha !== null) : ask();
+  return remembered(root, [ref], args, ask, (sha) => sha !== null);
 }
 
 /**
@@ -825,14 +832,13 @@ export async function mergeBase(root, a, b) {
     }
     return { found: false, failed: r.code !== 1, sha: null };
   };
-  if (!isFullSha(a) || !isFullSha(b)) return ask();
   // A commit is its own merge base, so verifying it answers the whole question.
-  if (a === b) {
+  if (a === b && isFullSha(a)) {
     const sha = await commitAt(root, a);
     if (sha !== null) return { found: true, failed: false, sha };
   }
   // "No common ancestor" is not kept either: a fetch can give the two one.
-  return remembered(root, ["merge-base", a, b], ask, (answer) => answer.found);
+  return remembered(root, [a, b], ["merge-base", a, b], ask, (answer) => answer.found);
 }
 
 const UNFINISHED_OPERATIONS = Object.freeze([
@@ -959,12 +965,10 @@ export async function filesAt(root, sha, { timeout, maxFieldBytes } = {}) {
   // The rev goes before the separator: git reads anything past `--` as a path.
   const args = ["ls-tree", "-r", "--name-only", "-z", sha, "--"];
   const ask = () => pathSet(root, args, { timeout, maxFieldBytes });
-  if (!isFullSha(sha)) return ask();
   // The bounds are part of the question: a listing read under one caller's
   // must not answer a caller that set tighter ones.
-  const paths = await remembered(root, [...args, `${timeout}`, `${maxFieldBytes}`], ask, (answer) => answer !== null);
-  // A copy each, so one caller's edit never reaches another's answer.
-  return paths && new Set(paths);
+  const key = [...args, `${timeout}`, `${maxFieldBytes}`];
+  return remembered(root, [sha], key, ask, (answer) => answer !== null, (paths) => new Set(paths));
 }
 
 /**
@@ -1006,7 +1010,6 @@ export async function diffRange(root, from, to) {
     }
     return { renames, changed };
   };
-  if (!isFullSha(from) || !isFullSha(to)) return ask();
-  const range = await remembered(root, args, ask, (answer) => answer !== null);
-  return range && { renames: new Map(range.renames), changed: new Set(range.changed) };
+  return remembered(root, [from, to], args, ask, (answer) => answer !== null,
+    (range) => ({ renames: new Map(range.renames), changed: new Set(range.changed) }));
 }
