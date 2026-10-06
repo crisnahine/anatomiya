@@ -7,6 +7,25 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.13.3] - 2026-10-06
+
+The docs catch up with Claude Code 2.1.288, which loads an area file after a Write or Edit as well as
+on a read, and the A/B harness test passes on 2.1.290. The map itself is unchanged.
+
+### Changed
+
+- The README, `docs/how-it-works.md`, A44 and H1 say that from Claude Code 2.1.288 an area file loads
+  after a Write or Edit lands in its area, as well as on a read, and so do the code comments that
+  had said only a read loads it. The write notice keeps its job: it names the one finding for that path, and it
+  still speaks for a path no area glob reaches and for a worktree with no map of its own. The
+  evidence is in `docs/research/what-changed-between-2-1-286-and-2-1-290.md`.
+
+### Fixed in the tests themselves
+
+- `test/ab.test.mjs` rules on the name Claude Code 2.1.290 adds to its string table with the next
+  entry's length byte on the end (`CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENTN`). The name
+  the build reads was already scrubbed.
+
 ## [0.13.2] - 2026-10-05
 
 Scans of large repositories take about 40% less time and write the same map, byte for byte: across
@@ -3555,7 +3574,8 @@ which are partial; several listed there are not implemented yet.
 - No claim that this catches defects. Measured across ten repositories, 1 of 317 defect review
   comments was preventable by a conventions map.
 
-[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.13.2...HEAD
+[Unreleased]: https://github.com/crisnahine/anatomiya/compare/v0.13.3...HEAD
+[0.13.3]: https://github.com/crisnahine/anatomiya/compare/v0.13.2...v0.13.3
 [0.13.2]: https://github.com/crisnahine/anatomiya/compare/v0.13.1...v0.13.2
 [0.13.1]: https://github.com/crisnahine/anatomiya/compare/v0.13.0...v0.13.1
 [0.13.0]: https://github.com/crisnahine/anatomiya/compare/v0.12.0...v0.13.0
