@@ -11,7 +11,7 @@
 import { createRequire } from "node:module";
 
 import { dimensionsFor } from "./dimensions.mjs";
-import { collectHits, walk } from "./walk.mjs";
+import { collectHits } from "./walk.mjs";
 import { jsFacets } from "./facets.mjs";
 import { rawTransferAllowed } from "./limits.mjs";
 import { ENGINES, grammarFor, holdsTypeSyntax, mayHoldFlow, mayBeCommonJS, spokenIn } from "./langs.mjs";
@@ -245,8 +245,7 @@ export async function parseFile(source, rel, lang, { withProgram = false, stripp
   // it is over: every row this file could be asked for walks, and the hits of
   // the ones its facets rule out are dropped. No row reads another's sites.
   const could = dimensionsFor(spokenIn(lang, { jsx: true })).filter((d) => !stripped || !d.blindWhenStripped);
-  const all = collectHits(tree.program, could, { comments: tree.comments ?? [], source: parsedSource, rel }, walk, [reading]);
-  if (reading.error) throw reading.error;
+  const all = collectHits(tree.program, could, { comments: tree.comments ?? [], source: parsedSource, rel }, { also: [reading] });
   const facets = reading.done();
   const hits = {};
   for (const d of dimensionsFor(spokenIn(lang, facets))) {

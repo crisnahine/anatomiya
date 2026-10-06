@@ -149,6 +149,22 @@ function takeCjsExport(node, exports, exportedLocals) {
 const TYPE_SYNTAX = /^TS[A-Z]/;
 
 /**
+ * The facets as a visitor riding `collectHits`'s walk. A throw on a node, or
+ * from the walk, is left in `error`, and `done` answers with it rather than
+ * with facets read off part of a tree.
+ */
+function riding(node, done) {
+  const visitor = {
+    node,
+    done: () => {
+      if (visitor.error) throw visitor.error;
+      return done();
+    },
+  };
+  return visitor;
+}
+
+/**
  * `program` for the walk, `module` for the parser's own record of the imports
  * and exports it saw. The record is already built and was being discarded.
  *
@@ -274,7 +290,7 @@ export function jsFacets({ program, module: mod }) {
     };
   };
 
-  return { node, done };
+  return riding(node, done);
 }
 
 /**
@@ -436,5 +452,5 @@ export function rubyFacets(program, rel = "") {
     };
   };
 
-  return { node, done };
+  return riding(node, done);
 }

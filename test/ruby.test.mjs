@@ -1415,7 +1415,7 @@ test("every Ruby row answers the same on the shared walk as walking alone, with 
   for (const [name, file] of programs) {
     const extra = { rel: `${name}.rb` };
     const alone = collectHits(file.program, RUBY_DIMENSIONS.map((d) => ({ key: d.key, run: d.run })), extra);
-    assert.deepEqual(collectHits(file.program, RUBY_DIMENSIONS, extra, frozen), alone, name);
+    assert.deepEqual(collectHits(file.program, RUBY_DIMENSIONS, extra, { walker: frozen }), alone, name);
     for (const key of Object.keys(alone)) reached.add(key);
   }
   assert.equal(reached.size, RUBY_DIMENSIONS.length, "the fixtures should reach every row");
@@ -2164,7 +2164,7 @@ test("facets that throw on a tree fall back on their own, and cost no row its si
   assert.equal(scan.ok, true);
   assert.deepEqual(scan.facets, fallback);
   assert.ok(Object.keys(scan.hits).length, "the fixture reaches a row");
-  assert.deepEqual(scan.hits, collectHits(ast, RUBY_DIMENSIONS, { rel: "a.rb" }, walkRuby));
+  assert.deepEqual(scan.hits, collectHits(ast, RUBY_DIMENSIONS, { rel: "a.rb" }, { walker: walkRuby }));
 
   const check = (await parseRuby(one, { ruby })).results[0];
   assert.deepEqual(check.facets, fallback);
