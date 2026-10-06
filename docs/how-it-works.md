@@ -217,8 +217,9 @@ are named with that cause and no install remedy, since `doctor` reports that ins
 | Resident memory | 1 GB | polled every 25ms, starting 250ms after the file goes in flight: read from `/proc/<pid>/status` on Linux, from `/bin/ps` on macOS and the BSDs without holding the parent, and not enforced on Windows, where the wall clock is what stops a runaway parse. A worker that moved on to another file while the read ran is not charged for the new one |
 | Worker start | 20s | `SIGKILL` from the parent for a worker that has not said ready; five such workers fail the pool, and its queued files are charged as crashed |
 
-Pool size is `min(8, cpus - 1)`. The memory grace period exists so a normal parse never pays for the
-polling.
+Pool size is `min(8, cores - 1)`, counting the cores this process may run on (`availableParallelism`):
+in a container held to two cores, `cpus()` still lists every core of the host. The memory grace period
+exists so a normal parse never pays for the polling.
 
 The dimensions run in the worker, not in the parent. They are 85% of the scan's CPU (1.57ms per file
 against 0.27ms to parse), and running them in the parent left that 85% on one core: throughput
@@ -239,15 +240,17 @@ calls, and this repository's scan from 897ms to 418ms. The check and the tests s
 a time, through a `run` that `dimensions.mjs` builds from the same visitor on its engine's walk. A
 row that reads only `program.body` never walked, and keeps its `run`.
 
-The facets ride the same walk, as a visitor `collectHits` takes beside the rows in its `also` list.
-They are not a row: they run when no row was asked for, as on the check's Ruby path, and a throw in
-them is held for the bridge to answer. A Ruby file then keeps its sites, with empty facets. A
-JavaScript file does not: `parse-file` throws it, and the file fails as it did before the walks were
-folded. Which JavaScript rows apply depends on the facets (JSX, type syntax), and those are known
-only once the walk is over, so every row the file could be asked for walks and the hits of the rows
-the facets rule out are dropped. On empire-flippers/client the facets' own walk was 369ms beside
-1,067ms of rows over 2,485 files. Folding it in took one walk off every file on both engines: a Ruby
-file on empire-flippers/api went from 6.5 walks to 5.5.
+A JavaScript file's facets take a walk of their own first, because they choose its rows: JSX and type
+syntax decide which rows the file gets, and only those rows go on the shared walk. Riding the rows'
+walk would save that walk, 369ms beside 1,067ms of rows over empire-flippers/client's 2,485 files, but
+every row the file could get would have to walk before the facets ruled any out: measured on this
+repository, 25 rows a file became 32 and worker CPU rose 9%, with the scan's wall flat. A Ruby batch's
+rows are chosen from its languages and the repository's frameworks before any file is read, so the
+Ruby facets choose nothing and ride the rows' walk, as a visitor `collectHits` takes beside the rows
+in its `also` list. They are not a row: they run when no row was asked for, as on the check's Ruby
+path, and a throw in them is held until their `done`, which throws it for the bridge to answer with no
+test runner, so it never stops a row's walk. That took one walk off every Ruby file: a file on
+empire-flippers/api went from 6.5 walks to 5.5.
 
 Two things the parser publishes are taken rather than reimplemented. It can hand its tree across
 from Rust without building it through a serialisation step, which measured 3.06x on the parse itself
@@ -286,7 +289,8 @@ number of files handed over, since a child that answers one file every fourteen 
 idle timer happy and never ends.
 
 A corpus of 1,000 Ruby files or more is split into batches, one child each: one per 500 files, up to
-six and never more than the machine's cores less one. The batches are balanced by bytes, the largest
+four and never more than the machine's cores less one. Six cut empire-flippers/api's scan by 4% to
+16% but put its peak memory 22% to 30% over main's, since each batch's thread holds a heap of its own. The batches are balanced by bytes, the largest
 file first into the lightest batch, and a file over the size cap weighs nothing, since the child
 skips it unread. The answers are put back in the order the files were handed over before anything
 reads them. One child left the parent idle for most of a Ruby-heavy scan (measured on discourse:
@@ -301,9 +305,11 @@ dies leaves its child to the parent, which kills and reaps it before anything el
 passes through the parent's event loop on its way, so the thread's idle clock also measures how busy
 the parent is. Each thread's heap is held to what its largest file needs, because V8 grows a heap
 toward its limit rather than its live set and four threads at the default limit doubled the scan's
-peak memory; a thread that runs out of its hold keeps the records it already sent, and the files it
-left unanswered are read again on a thread with the default heap, which costs time and never a
-file. Each child keeps its own clocks and its own retry, so a child that dies charges the files left
+peak memory. Past 256 KB the hold covers the densest code measured (nested calls or hashes, 90 MB of
+heap for a megabyte); below it the hold stays small, since covering dense code on every thread took
+empire-flippers/api's peak from 221 MB to about 340 MB. A thread that runs out of its hold keeps the
+records it already sent, and the files it left unanswered are read again on a thread with the
+default heap, which costs time and never a file. Each child keeps its own clocks and its own retry, so a child that dies charges the files left
 in its batch and no others. Which files those are follows the byte balance: a broken Ruby charges
 the same number of files, with the same text, as contiguous batches did, and may name different
 ones. A worker thread that ends any other way without answering charges its whole batch, the

@@ -360,12 +360,11 @@ end
 // Each child is handed at least this many files: for fewer, an interpreter's
 // startup costs more than it saves.
 const MIN_SHARD_FILES = 500;
-// Six since each shard walks its own trees: while the parent walked them all,
-// a fifth and sixth child only queued more for it (13.5s against 12.8s on
-// discourse). Scan medians of three under the bench lock, four against six:
-// discourse 10.2s against 8.7s, empire-flippers/api 2.79s against 2.58s for
-// 26 MB more peak memory.
-const MAX_SHARDS = Math.min(6, defaultPoolSize());
+// Four, because each shard thread holds a heap of its own. Six against four on
+// empire-flippers/api: 4% to 16% less scan wall, and 15 to 29 MB more peak,
+// which put the scan 22% to 30% over main's peak memory where four is 8% to
+// 14% over. Six was outside the memory budget.
+const MAX_SHARDS = Math.min(4, defaultPoolSize());
 
 function shardsFor(count) {
   return Math.max(1, Math.min(MAX_SHARDS, Math.floor(count / MIN_SHARD_FILES)));
@@ -419,7 +418,7 @@ export async function parseRuby(
   // Built once, and before any child: a bad override refuses here, loudly,
   // rather than dying inside the spawn where it reads as a broken install.
   const rubyScript = scriptFor(guards.maxBytes);
-  if (files.length === 0) return blank();
+  if (files.length === 0) return { ...blank(), results: [] };
   const load = await prismLoadArgs({ ruby });
 
   // One child left the parent idle for most of a large Ruby repository, and
@@ -436,7 +435,7 @@ export async function parseRuby(
     ),
   );
 
-  const out = blank();
+  const out = { ...blank(), results: [] };
   for (const o of outs) {
     for (const r of o.results) out.results.push(r);
     out.truncated = out.truncated || o.truncated;
@@ -455,6 +454,8 @@ export async function parseRuby(
   return out;
 }
 
+const STEEP_HOLD_BYTES = 256 * 1024;
+
 /**
  * A shard's heap is held to what its largest file needs, because V8 grows a
  * heap toward its limit rather than its live set: four threads at the default
@@ -464,9 +465,17 @@ export async function parseRuby(
  * with the default heap, with every file not yet answered, so the hold costs
  * time and never a file, and a record already answered is kept rather than
  * read twice.
+ *
+ * Dense code needs more: nested calls or hashes took 28 MB at 256 KB and 90 MB
+ * at a megabyte, and a hold that covered them on every shard took api's peak
+ * from 221 MB to about 340 MB. So only a shard whose largest file is past
+ * `STEEP_HOLD_BYTES` gets the hold that covers them, where a reread costs
+ * seconds; below it, a dense file reads again and costs little.
  */
 function heldHeap(largestBytes) {
-  return { maxYoungGenerationSizeMb: 1, maxOldGenerationSizeMb: 8 + Math.ceil((32 * largestBytes) / (1024 * 1024)) };
+  const mb = largestBytes / (1024 * 1024);
+  const old = largestBytes > STEEP_HOLD_BYTES ? 16 + Math.ceil(96 * mb) : 8 + Math.ceil(32 * mb);
+  return { maxYoungGenerationSizeMb: 1, maxOldGenerationSizeMb: old };
 }
 
 async function inWorker(files, job, largestBytes) {
@@ -517,9 +526,9 @@ function onThread(files, job, resourceLimits) {
     worker.once("exit", async (code) => {
       await Promise.all([...children.values()].map(killAndReap));
       if (resourceLimits && failure?.code === "ERR_WORKER_OUT_OF_MEMORY") return resolve({ ranOut: true, results });
-      const out = blank();
+      const out = { ...blank(), results: [] };
       out.error = failure ? String(failure.message ?? failure) : `ruby shard exited ${code}`;
-      for (const f of files) out.results.push({ rel: f.rel, ok: false, error: out.error, crashed: true, attempts: 1 });
+      for (const f of files) deliver((r) => out.results.push(r), { rel: f.rel, ok: false, error: out.error, crashed: true }, 1);
       resolve(out);
     });
   });
@@ -569,9 +578,10 @@ function killAndReap(child) {
   });
 }
 
+// How a batch ended. A batch hands its records over one at a time, so only a
+// caller that gathers them adds `results`.
 function blank() {
   return {
-    results: [],
     truncated: false,
     // Which prism read these files, off the child's own ready line. It was
     // parsed and dropped before anything could read it, so a map could not say
@@ -588,8 +598,8 @@ function blank() {
 /**
  * One child over one batch, retried once for what a timer cut off. The body a
  * shard worker runs; `onResult` takes each record as it is decided instead of
- * the batch holding them all, so the batch's own `results` stays empty, and
- * `spawner` starts the child on the parent.
+ * the batch holding them all, so what it returns is only how the batch ended,
+ * and `spawner` starts the child on the parent.
  */
 export async function parseBatch(files, { ruby, guards, rubyScript, load, dimensions, onResult, spawner }) {
   const out = blank();
@@ -782,9 +792,8 @@ function take(out, onResult, seen, line, dimensions, attempt) {
     // inside the stdout handler, so a throw on one odd tree escapes into the
     // stream and takes the whole shard rather than the file it came from.
     const facets = rubyFacets(program, result.rel);
-    const hits = collectHits(program, dimensions, { rel: result.rel }, walkRuby, [facets]);
+    const hits = collectHits(program, dimensions, { rel: result.rel }, { walker: walkRuby, also: [facets] });
     try {
-      if (facets.error) throw facets.error;
       result.facets = facets.done();
     } catch {
       result.facets = { testRunner: null, testCalls: false };

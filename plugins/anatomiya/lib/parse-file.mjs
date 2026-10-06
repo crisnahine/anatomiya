@@ -11,7 +11,7 @@
 import { createRequire } from "node:module";
 
 import { dimensionsFor } from "./dimensions.mjs";
-import { collectHits, walk } from "./walk.mjs";
+import { collectHits } from "./walk.mjs";
 import { jsFacets } from "./facets.mjs";
 import { rawTransferAllowed } from "./limits.mjs";
 import { ENGINES, grammarFor, holdsTypeSyntax, mayHoldFlow, mayBeCommonJS, spokenIn } from "./langs.mjs";
@@ -232,7 +232,7 @@ export async function parseFile(source, rel, lang, { withProgram = false, stripp
   // Read here rather than in the parent because the tree stays here. The
   // module record is the tree's, so a stripped file answers off the retry's
   // parse and reports the imports the stripper left standing.
-  const reading = jsFacets({ program: tree.program, module: tree.module });
+  const facets = jsFacets({ program: tree.program, module: tree.module });
   // A file that cannot carry the construct a row asks about leaves that row's
   // denominator: a file nobody asked is not a file that declined. Same trade
   // `blindWhenStripped` makes one line over. The extension answers it for the
@@ -240,23 +240,14 @@ export async function parseFile(source, rel, lang, { withProgram = false, stripp
   // file carries the annotation the extension says it cannot. The JSX rows are
   // chosen off the tree the same way, since a `.js` component holds JSX its
   // extension says nothing about.
-  //
-  // The facets ride the rows' own walk, so which rows apply is known only once
-  // it is over: every row this file could be asked for walks, and the hits of
-  // the ones its facets rule out are dropped. No row reads another's sites.
-  const could = dimensionsFor(spokenIn(lang, { jsx: true })).filter((d) => !stripped || !d.blindWhenStripped);
-  const all = collectHits(tree.program, could, { comments: tree.comments ?? [], source: parsedSource, rel }, walk, [reading]);
-  if (reading.error) throw reading.error;
-  const facets = reading.done();
-  const hits = {};
-  for (const d of dimensionsFor(spokenIn(lang, facets))) {
-    if (all[d.key] && (holdsTypeSyntax(rel, facets) || !d.needsTypeSyntax)) hits[d.key] = all[d.key];
-  }
+  const dims = dimensionsFor(spokenIn(lang, facets)).filter(
+    (d) => (!stripped || !d.blindWhenStripped) && (holdsTypeSyntax(rel, facets) || !d.needsTypeSyntax)
+  );
 
   const payload = {
     rel,
     ok: true,
-    hits,
+    hits: collectHits(tree.program, dims, { comments: tree.comments ?? [], source: parsedSource, rel }),
     facets,
     errors,
     stripped,
