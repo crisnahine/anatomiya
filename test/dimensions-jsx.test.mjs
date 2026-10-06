@@ -1,6 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { parseSync } from "oxc-parser";
 import { siteIdentity } from "../plugins/anatomiya/lib/introduced.mjs";
 import { calleeName, JSX_DIMENSIONS, jsxName, attrName } from "../plugins/anatomiya/lib/dimensions-jsx.mjs";
@@ -464,6 +466,28 @@ test("a handler that arrived as a prop is nobody's decision here", () => {
   assert.equal(h.length, 0);
 });
 
+test("a handler passed 3,000 elements deep keeps memory in step with its handlers, not the depth", () => {
+  // Measured in a process of its own so the collector can be asked. Each
+  // handler is allowed a kilobyte; a copy of every ancestor per handler is at
+  // least 3,000 * 3,000 / 2 pointers of four bytes, 18 MB.
+  const depth = 3_000;
+  const lib = new URL("../plugins/anatomiya/lib/", import.meta.url).href;
+  const script = `import { parseSync } from "oxc-parser";
+const { JSX_DIMENSIONS } = await import(${JSON.stringify(lib + "dimensions-jsx.mjs")});
+const { walk } = await import(${JSON.stringify(lib + "walk.mjs")});
+const src = "const h = () => 1;\\nexport const A = () => " + "<a onClick={h}>".repeat(${depth}) + "</a>".repeat(${depth}) + ";";
+const { program } = parseSync("f.tsx", src, { sourceType: "module" });
+gc();
+const before = process.memoryUsage().heapUsed;
+const row = JSX_DIMENSIONS.find((d) => d.key === "handler_memoised").visitor(program, () => {});
+walk(program, row.node);
+gc();
+process.stdout.write(String(process.memoryUsage().heapUsed - before));
+row.done();`;
+  const retained = Number(execFileSync(process.execPath, ["--expose-gc", "--input-type=module", "-e", script], { encoding: "utf8", cwd: fileURLToPath(new URL("..", import.meta.url)) }));
+  assert.ok(retained < depth * 1024, `${retained} bytes retained`);
+});
+
 /* --- something has to reach the DOM (#60) --- */
 
 test("a forwarded rest binding on a host element is not a site, because no list of prop names exists", () => {
@@ -472,6 +496,14 @@ test("a forwarded rest binding on a host element is not a site, because no list 
   // nobody named, which is the line.
   const src = `const ForwardButton = ({ children, ...rest }: Props) => <button {...rest}>{children}</button>`;
   assert.deepEqual(hits("spread_on_component", src), []);
+});
+
+test("a spread is judged against every name the file forwards, including one bound below it", () => {
+  const src = `const A = () => <div {...p}><span {...x} /><Box {...p} /></div>;\nconst p = useThing();`;
+  assert.deepEqual(hits("spread_on_component", src).map((h) => [slice(src, h.node), h.conforming, h.where]), [
+    ["{...x}", false, "A"],
+    ["{...p}", true, "A"],
+  ]);
 });
 
 test("a prop getter and a destructured hook return are the same forwarding", () => {
@@ -684,8 +716,8 @@ test("jsxElementNames walks a tree once however many rows ask, and a new tree af
 });
 
 test("text_translated scans no ancestors in a file without a translation layer", async () => {
-  // Main returned before walking such a file; on the shared walk the row only
-  // has to stay cheap there, since its sites are dropped at the end.
+  // The row walks every JSX file and drops its sites in done when the file
+  // reaches no translation layer, so there it must stay cheap.
   const { collectHits, walk } = await import("../plugins/anatomiya/lib/walk.mjs");
   const src = `export const A = () => <div><p>Hello there</p>{label("x")}</div>;`;
   const { program } = parseSync("f.tsx", src, { sourceType: "module" });

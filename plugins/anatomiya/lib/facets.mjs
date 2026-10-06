@@ -153,7 +153,7 @@ const TYPE_SYNTAX = /^TS[A-Z]/;
  * or from the walk, is left in `error`, and `done` answers with it rather than
  * with facets read off part of a tree.
  */
-function riding(node, done) {
+function visitorOf(node, done) {
   const visitor = {
     node,
     done: () => {
@@ -455,5 +455,5 @@ export function rubyFacets(program, rel = "") {
     };
   };
 
-  return riding(node, done);
+  return visitorOf(node, done);
 }

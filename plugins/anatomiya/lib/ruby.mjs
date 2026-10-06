@@ -362,7 +362,7 @@ end
 const MIN_SHARD_FILES = 500;
 // Four, because each shard thread holds a heap of its own. Six against four on
 // empire-flippers/api: 4% to 16% less scan wall, and 15 to 29 MB more peak,
-// which put the scan 22% to 30% over main's peak memory where four is 8% to
+// which put the scan 22% to 30% over 0.13.3's peak memory where four is 8% to
 // 14% over. Six was outside the memory budget.
 const MAX_SHARDS = Math.min(4, defaultPoolSize());
 
@@ -418,7 +418,7 @@ export async function parseRuby(
   // Built once, and before any child: a bad override refuses here, loudly,
   // rather than dying inside the spawn where it reads as a broken install.
   const rubyScript = scriptFor(guards.maxBytes);
-  if (files.length === 0) return { ...blank(), results: [] };
+  if (files.length === 0) return gathered();
   const load = await prismLoadArgs({ ruby });
 
   // One child left the parent idle for most of a large Ruby repository, and
@@ -435,7 +435,7 @@ export async function parseRuby(
     ),
   );
 
-  const out = { ...blank(), results: [] };
+  const out = gathered();
   for (const o of outs) {
     for (const r of o.results) out.results.push(r);
     out.truncated = out.truncated || o.truncated;
@@ -481,6 +481,8 @@ function heldHeap(largestBytes) {
 async function inWorker(files, job, largestBytes) {
   const held = await onThread(files, job, heldHeap(largestBytes));
   if (!held.ranOut) return held;
+  // Read again even when every file has a record: the held thread died before
+  // its last message, and only a child's ready line names the prism version.
   const answered = new Set(held.results.map((r) => r.rel));
   const rest = await onThread(files.filter((f) => !answered.has(f.rel)), job, null);
   return { ...rest, results: [...held.results, ...rest.results] };
@@ -512,8 +514,8 @@ function onThread(files, job, resourceLimits) {
     });
     const results = [];
     worker.on("message", (msg) => {
-      if (msg.result) results.push(msg.result);
-      else if (msg.out) resolve({ ...msg.out, results });
+      if (msg.result) results.push(msg.tree === undefined ? msg.result : { ...msg.result, program: JSON.parse(msg.tree) });
+      else if (msg.out) resolve({ ...msg.out, results: charged(files, results, "its record never reached the parent") });
       else if (msg.spawn) children.set(msg.id, startFor(worker, msg));
       else if (msg.read) children.get(msg.id)?.read();
       else if (msg.kill) children.get(msg.id)?.kill("SIGKILL");
@@ -522,16 +524,25 @@ function onThread(files, job, resourceLimits) {
     worker.once("error", (err) => {
       failure = err;
     });
+    // A message that cannot be decoded is dropped, and `out` charges its file.
+    worker.on("messageerror", () => {});
     // Messages drain before exit, so one that answered has already resolved.
     worker.once("exit", async (code) => {
       await Promise.all([...children.values()].map(killAndReap));
       if (resourceLimits && failure?.code === "ERR_WORKER_OUT_OF_MEMORY") return resolve({ ranOut: true, results });
-      const out = { ...blank(), results: [] };
+      const out = gathered();
       out.error = failure ? String(failure.message ?? failure) : `ruby shard exited ${code}`;
-      for (const f of files) deliver((r) => out.results.push(r), { rel: f.rel, ok: false, error: out.error, crashed: true }, 1);
+      out.results = charged(files, [], out.error);
       resolve(out);
     });
   });
+}
+
+/** `results`, plus a crashed record for every file in `files` that has none. */
+function charged(files, results, error) {
+  const answered = new Set(results.map((r) => r.rel));
+  for (const f of files) if (!answered.has(f.rel)) deliver((r) => results.push(r), { rel: f.rel, ok: false, error, crashed: true }, 1);
+  return results;
 }
 
 // Chunks in flight to a thread before the child's stdout is paused. Read
@@ -569,8 +580,14 @@ function startFor(worker, { id, spawn: [command, args, options] }) {
   return child;
 }
 
-/** Killed if still running, and resolved once the exit is reaped. */
+/**
+ * Killed if still running, and resolved once the exit is reaped. Its pipes are
+ * closed first: a dead thread never acks, so stdout may sit paused, and a
+ * process the child forked then blocks writing to it while the open handle
+ * keeps the parent alive.
+ */
 function killAndReap(child) {
+  for (const stream of [child?.stdin, child?.stdout, child?.stderr]) stream?.destroy();
   return new Promise((resolve) => {
     if (!child || child.pid === undefined || child.exitCode !== null || child.signalCode !== null) return resolve();
     child.once("exit", () => resolve());
@@ -593,6 +610,10 @@ function blank() {
     // version says nothing about the install.
     stalled: null,
   };
+}
+
+function gathered() {
+  return { ...blank(), results: [] };
 }
 
 /**
