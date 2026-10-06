@@ -837,3 +837,46 @@ test("the layout file is stamped from the record this writer renamed, not whatev
   assert.equal(replaced, 1, "the other writer ran once, right after this one's rename");
   assert.equal(readLayout(dir), null);
 });
+
+/** `fs[name]` throwing EPERM for every path `refuse` picks, for the rest of the test. */
+async function refuseFor(t, name, refuse) {
+  const fs = (await import("node:fs")).default;
+  const { syncBuiltinESMExports } = await import("node:module");
+  const real = fs[name];
+  fs[name] = (path, ...rest) => {
+    if (refuse(String(path))) throw Object.assign(new Error(`EPERM: operation not permitted, ${name}`), { code: "EPERM" });
+    return real(path, ...rest);
+  };
+  syncBuiltinESMExports();
+  t.after(() => {
+    fs[name] = real;
+    syncBuiltinESMExports();
+  });
+}
+
+test("a layout file that cannot be written leaves the record it was for unreplaced", async (t) => {
+  // A caller told the write failed must find the record it had, not a new one
+  // with no layout file to answer for it.
+  const dir = root(t);
+  writeFacts(dir, result([dim()]));
+  const before = readFileSync(join(dir, FACTS_PATH), "utf8");
+  await refuseFor(t, "openSync", (path) => path.includes("layout.json.tmp-"));
+
+  assert.throws(() => writeFacts(dir, result([dim({ key: "new" })])), /EPERM/);
+
+  assert.equal(readFileSync(join(dir, FACTS_PATH), "utf8"), before);
+  assert.deepEqual(readdirSync(join(dir, ".claude", "anatomiya")).sort(), ["facts.json", "layout.json"], "no temporary file left");
+  assert.notEqual(readLayout(dir), null, "the pair still answers");
+});
+
+test("a record that cannot be renamed into place leaves no temporary file", async (t) => {
+  const dir = root(t);
+  writeFacts(dir, result([dim()]));
+  const before = readFileSync(join(dir, FACTS_PATH), "utf8");
+  await refuseFor(t, "renameSync", (path) => path.includes("facts.json.tmp-"));
+
+  assert.throws(() => writeFacts(dir, result([dim({ key: "new" })])), /EPERM/);
+
+  assert.equal(readFileSync(join(dir, FACTS_PATH), "utf8"), before);
+  assert.deepEqual(readdirSync(join(dir, ".claude", "anatomiya")).sort(), ["facts.json", "layout.json"]);
+});
