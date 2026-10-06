@@ -182,7 +182,7 @@ export function ownLayout(from) {
   // the repository deciding what a write inside it was judged against.
   const hit = walkUp(from, (at) => {
     const path = resolveInside(at, FACTS_PATH);
-    return path === null ? null : (readLayout(at)?.layout ?? recordedLayout(path));
+    return path === null ? null : (readLayout(at, path)?.layout ?? recordedLayout(path));
   });
   return hit && { root: hit.at, layout: hit.found, from: hit.from };
 }

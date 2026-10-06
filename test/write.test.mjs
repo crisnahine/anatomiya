@@ -148,6 +148,16 @@ function snapshot(dir) {
   return out;
 }
 
+/**
+ * The snapshot with the layout file's stamp left out. The record a rollback
+ * puts back is a new file with a new mtime, so its layout file is stamped again.
+ */
+function unstamped(snap) {
+  const layout = JSON.parse(snap[`${STORE}/layout.json`]);
+  delete layout.record;
+  return { ...snap, [`${STORE}/layout.json`]: layout };
+}
+
 test("a rules directory that refuses the write leaves the previous facts as well as the previous files", needsPosixPermissions, () => {
   // `check` reads facts.json, so new facts beside the old files called the map
   // fresh while the session loaded a map of an older scan.
@@ -161,7 +171,8 @@ test("a rules directory that refuses the write leaves the previous facts as well
     chmodSync(rules(dir), 0o755);
   }
 
-  assert.deepEqual(snapshot(dir), before, "the previous map, whole, and no temporary file beside it");
+  assert.deepEqual(unstamped(snapshot(dir)), unstamped(before), "the previous map, whole, and no temporary file beside it");
+  assert.notEqual(readLayout(dir), null, "and its layout file answers for the record put back");
   rmSync(dir, { recursive: true, force: true });
 });
 
@@ -191,7 +202,8 @@ test("a replace that fails part way puts back every file it had already replaced
 
   assert.throws(() => writeMap(result(dir, [area("src/services"), area("src/hooks")])), /EPERM/);
 
-  assert.deepEqual(snapshot(dir), before, "the previous map, whole, and no temporary file beside it");
+  assert.deepEqual(unstamped(snapshot(dir)), unstamped(before), "the previous map, whole, and no temporary file beside it");
+  assert.notEqual(readLayout(dir), null, "and its layout file answers for the record put back");
   rmSync(dir, { recursive: true, force: true });
 });
 
@@ -204,7 +216,8 @@ test("a removal that fails puts back what the scan had written", async (t) => {
 
   assert.throws(() => writeMap(result(dir, [area("src/services")])), /EPERM/);
 
-  assert.deepEqual(snapshot(dir), before);
+  assert.deepEqual(unstamped(snapshot(dir)), unstamped(before));
+  assert.notEqual(readLayout(dir), null);
   rmSync(dir, { recursive: true, force: true });
 });
 
@@ -267,7 +280,10 @@ test("a replace that fails part way puts the previous layout file back with the 
   assert.throws(() => writeMap({ ...result(dir, [area("src/services"), area("src/hooks")]), layout: roster("src/b") }), /EPERM/);
 
   assert.ok(`${STORE}/layout.json` in before, "the first scan wrote one");
-  assert.deepEqual(snapshot(dir), before);
+  assert.deepEqual(unstamped(snapshot(dir)), unstamped(before));
+  // The record put back is a new file, so a layout file put back with its old
+  // stamp would leave every hook reading the whole record until the next scan.
+  assert.deepEqual(readLayout(dir), { layout: roster("src/a") }, "the pair put back still answers");
 });
 
 test("a dry run writes nothing at all", () => {
