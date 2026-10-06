@@ -267,10 +267,10 @@ export function crossing(hit) {
  *
  * `also` rides the same walk without being a row: a bridge's facets, which it
  * needs whether or not any row was asked for. Each is fed until it throws, or
- * the walk does, and is then left holding that error in `error` for its caller
- * to answer, so it never costs a row its sites.
+ * the walk does, and is then left holding that error in `error`, which its own
+ * `done` answers with, so it never costs a row its sites.
  */
-export function collectHits(program, dimensions, extra = {}, walker = walk, also = []) {
+export function collectHits(program, dimensions, extra = {}, { walker = walk, also = [] } = {}) {
   const found = new Array(dimensions.length);
   const visiting = [];
   for (let i = 0; i < dimensions.length; i++) {
@@ -293,34 +293,28 @@ export function collectHits(program, dimensions, extra = {}, walker = walk, also
       continue;
     }
   }
-  if (visiting.length || also.length) {
+  for (const v of also) visiting.push({ v, riding: true });
+  if (visiting.length) {
     let live = visiting;
-    let riding = also;
     try {
       walker(program, (node, ctx) => {
         for (let k = 0; k < live.length; k++) {
           try {
             live[k].v.node(node, ctx);
-          } catch {
-            live = live.filter((row) => row !== live[k]);
-            k--;
-          }
-        }
-        for (let k = 0; k < riding.length; k++) {
-          try {
-            riding[k].node(node, ctx);
           } catch (err) {
-            riding[k].error = err;
-            riding = riding.filter((v) => v !== riding[k]);
+            const row = live[k];
+            if (row.riding) row.v.error = err;
+            live = live.filter((other) => other !== row);
             k--;
           }
         }
       });
     } catch (err) {
+      for (const row of live) if (row.riding) row.v.error = err;
       live = [];
-      for (const v of riding) v.error = err;
     }
     for (const row of live) {
+      if (row.riding) continue;
       try {
         row.v.done?.();
         found[row.i] = row.sites;

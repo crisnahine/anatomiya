@@ -782,9 +782,8 @@ function take(out, onResult, seen, line, dimensions, attempt) {
     // inside the stdout handler, so a throw on one odd tree escapes into the
     // stream and takes the whole shard rather than the file it came from.
     const facets = rubyFacets(program, result.rel);
-    const hits = collectHits(program, dimensions, { rel: result.rel }, walkRuby, [facets]);
+    const hits = collectHits(program, dimensions, { rel: result.rel }, { walker: walkRuby, also: [facets] });
     try {
-      if (facets.error) throw facets.error;
       result.facets = facets.done();
     } catch {
       result.facets = { testRunner: null, testCalls: false };

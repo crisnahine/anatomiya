@@ -1347,7 +1347,7 @@ test("every Rails row answers the same on the shared walk as walking alone, with
   for (const [name, file] of programs) {
     const extra = { rel: `${name}.rb` };
     const alone = collectHits(file.program, RAILS_DIMENSIONS.map((d) => ({ key: d.key, run: d.run })), extra);
-    assert.deepEqual(collectHits(file.program, RAILS_DIMENSIONS, extra, frozen), alone, name);
+    assert.deepEqual(collectHits(file.program, RAILS_DIMENSIONS, extra, { walker: frozen }), alone, name);
     for (const key of Object.keys(alone)) reached.add(key);
   }
   assert.equal(reached.size, RAILS_DIMENSIONS.length, "the fixtures should reach every row");

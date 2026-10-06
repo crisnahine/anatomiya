@@ -697,6 +697,6 @@ test("text_translated scans no ancestors in a file without a translation layer",
       ancestors.some = (...args) => (scans++, Array.prototype.some.apply(ancestors, args));
       visit(node, { ...ctx, ancestors });
     });
-  assert.deepEqual(collectHits(program, [dim("text_translated")], {}, counting), {});
+  assert.deepEqual(collectHits(program, [dim("text_translated")], {}, { walker: counting }), {});
   assert.equal(scans, 0);
 });
