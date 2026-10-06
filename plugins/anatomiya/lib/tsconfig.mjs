@@ -252,15 +252,15 @@ export function confinedCompilerHost(ts, root, options) {
   };
   // Module resolution asks about thousands of paths, each a walk of realpath
   // calls up from the root, and the uncached walk was 45% of building the program.
-  const allowed = remembered(permitted);
-  const directories = remembered((p) => (allowed(p) ? base.getDirectories(p) : []));
+  const allowed = perBuild(permitted);
+  const directories = perBuild((p) => (allowed(p) ? base.getDirectories(p) : []));
 
   // Module resolution probes the same candidates from every importing file,
   // measured at 107,928 stats on 24,737 paths in one build.
   return {
     ...base,
-    fileExists: remembered((p) => allowed(p) && base.fileExists(p)),
-    directoryExists: base.directoryExists && remembered(base.directoryExists),
+    fileExists: perBuild((p) => allowed(p) && base.fileExists(p)),
+    directoryExists: base.directoryExists && perBuild(base.directoryExists),
     readFile: (p) => (allowed(p) ? base.readFile(p) : undefined),
     getSourceFile: (p, ...rest) => (allowed(p) ? base.getSourceFile(p, ...rest) : undefined),
     // Nothing this tier does may leave a file behind in a repository somebody
@@ -268,7 +268,7 @@ export function confinedCompilerHost(ts, root, options) {
     writeFile: () => {},
     getDirectories: (p) => directories(p).slice(),
     readDirectory: (p, ...rest) => (allowed(p) ? base.readDirectory(p, ...rest) : []),
-    realpath: base.realpath && remembered(base.realpath),
+    realpath: base.realpath && perBuild(base.realpath),
     getCurrentDirectory: () => root,
   };
 }
@@ -281,7 +281,7 @@ export function confinedCompilerHost(ts, root, options) {
  * per build, off the parent's answer, unless the path is itself a link.
  */
 export function walkingRealpath() {
-  const realpath = remembered((asked) => {
+  const realpath = perBuild((asked) => {
     // `..` as text first, the way `realpathSync` takes it.
     const p = resolve(asked);
     const up = dirname(p);
@@ -315,7 +315,7 @@ export function opened(p, realpath, platform = process.platform) {
 }
 
 /** `fn` answering each argument once, a throw included, for a build that sees a fixed tree. */
-function remembered(fn) {
+function perBuild(fn) {
   const seen = new Map();
   return (p) => {
     let r = seen.get(p);
