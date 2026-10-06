@@ -705,6 +705,36 @@ export function isSha(sha) {
   return typeof sha === "string" && /^[0-9a-f]{7,64}$/.test(sha);
 }
 
+/**
+ * What git answered about commits named by their full hash, per repository,
+ * for the life of the process.
+ *
+ * An object named by its full hash cannot change, and one check asked the same
+ * merge base three times and the same diff twice. A ref name or a short sha
+ * can name another commit a moment later, so neither is ever a key. Only an
+ * answer is kept: a read git could not perform is asked again next time, or
+ * one failure would read as a fact about the commit for the rest of the run
+ * (F15). Bounded, because a long-lived process can be handed any number of
+ * commits.
+ */
+const ANSWERS_MOST = 256;
+const answers = new Map();
+const FULL_SHA = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
+const isFullSha = (s) => typeof s === "string" && FULL_SHA.test(s);
+
+function remembered(root, args, ask, kept) {
+  const key = `${resolve(root)}\0${args.join("\0")}`;
+  const known = answers.get(key);
+  if (known) return known;
+  const asked = ask().then((answer) => {
+    if (!kept(answer) && answers.get(key) === asked) answers.delete(key);
+    return answer;
+  });
+  answers.set(key, asked);
+  if (answers.size > ANSWERS_MOST) answers.delete(answers.keys().next().value);
+  return asked;
+}
+
 // A ref name cannot begin with a dash. `rev-parse` takes revisions before any
 // `--`, so a ref of `--upload-pack=...` would be read as an option; a tracked
 // file with that name already exfiltrated a secret through the same class of
@@ -723,6 +753,8 @@ function safeRef(ref) {
  */
 export async function shaReachable(root, sha) {
   if (!isSha(sha)) return false;
+  // Asked the way `commitAt` asks it, so a pin checked here and resolved there is one read.
+  if (isFullSha(sha)) return (await commitAt(root, sha)) !== null;
   const r = await gitBuffered(root, ["cat-file", "-e", `${sha}^{commit}`]);
   return r.ok;
 }
@@ -737,9 +769,13 @@ export async function headSha(root) {
 
 /** The commit `ref` names, or null where it names none. */
 export async function commitAt(root, ref) {
-  const r = await gitBuffered(root, ["rev-parse", "--verify", "--quiet", `${ref}^{commit}`]);
-  const sha = r.ok ? r.stdout.trim() : "";
-  return isSha(sha) ? sha : null;
+  const args = ["rev-parse", "--verify", "--quiet", `${ref}^{commit}`];
+  const ask = async () => {
+    const r = await gitBuffered(root, args);
+    const sha = r.ok ? r.stdout.trim() : "";
+    return isSha(sha) ? sha : null;
+  };
+  return isFullSha(ref) ? remembered(root, args, ask, (sha) => sha !== null) : ask();
 }
 
 /**
@@ -782,12 +818,22 @@ export async function showBlob(root, sha, path, { timeout, env, lazyFetch = fals
  */
 export async function mergeBase(root, a, b) {
   if (!safeRef(a) || !safeRef(b)) return { found: false, failed: true, sha: null };
-  const r = await gitBuffered(root, ["merge-base", a, b]);
-  if (r.ok) {
-    const sha = r.stdout.trim();
-    return { found: sha.length > 0, failed: false, sha: sha || null };
+  const ask = async () => {
+    const r = await gitBuffered(root, ["merge-base", a, b]);
+    if (r.ok) {
+      const sha = r.stdout.trim();
+      return { found: sha.length > 0, failed: false, sha: sha || null };
+    }
+    return { found: false, failed: r.code !== 1, sha: null };
+  };
+  if (!isFullSha(a) || !isFullSha(b)) return ask();
+  // A commit is its own merge base, so verifying it answers the whole question.
+  if (a === b) {
+    const sha = await commitAt(root, a);
+    if (sha !== null) return { found: true, failed: false, sha };
   }
-  return { found: false, failed: r.code !== 1, sha: null };
+  // "No common ancestor" is not kept either: a fetch can give the two one.
+  return remembered(root, ["merge-base", a, b], ask, (answer) => answer.found);
 }
 
 const UNFINISHED_OPERATIONS = Object.freeze([
@@ -910,7 +956,12 @@ export async function filesAt(root, sha, { timeout, maxFieldBytes } = {}) {
   // from inside Node's own exit handler.
   //
   // The rev goes before the separator: git reads anything past `--` as a path.
-  return pathSet(root, ["ls-tree", "-r", "--name-only", "-z", sha, "--"], { timeout, maxFieldBytes });
+  const args = ["ls-tree", "-r", "--name-only", "-z", sha, "--"];
+  const ask = () => pathSet(root, args, { timeout, maxFieldBytes });
+  if (!isFullSha(sha)) return ask();
+  const paths = await remembered(root, args, ask, (answer) => answer !== null);
+  // A copy each, so one caller's edit never reaches another's answer.
+  return paths && new Set(paths);
 }
 
 /**
@@ -924,31 +975,35 @@ export async function diffRange(root, from, to) {
   // `${from}..` puts a leading dash at the head of the argument, where git
   // reads it as an option.
   if (!safeRef(from) || !safeRef(to)) return null;
+  const args = ["diff", "--find-renames", "--name-status", "-z", `${from}..${to}`, "--"];
+  const ask = async () => {
+    const renames = new Map();
+    const changed = new Set();
 
-  const renames = new Map();
-  const changed = new Set();
-
-  // Streamed for the same reason the two listings above are: the range between
-  // a pin and a distant base names every path in the repository.
-  try {
-    await gitStreamed(
-      root,
-      ["diff", "--find-renames", "--name-status", "-z", `${from}..${to}`, "--"],
-      nameStatusReader((row) => {
-        changed.add(row.to);
-        // Both names count as changed: at the pinned commit only the old one
-        // exists, and the map is what lets a renamed file find its own baseline
-        // instead of reading as greenfield.
-        if (row.from) {
-          renames.set(row.to, row.from);
-          changed.add(row.from);
-        }
-        return true;
-      })
-    );
-  } catch {
-    return null;
-  }
-
-  return { renames, changed };
+    // Streamed for the same reason the two listings above are: the range between
+    // a pin and a distant base names every path in the repository.
+    try {
+      await gitStreamed(
+        root,
+        args,
+        nameStatusReader((row) => {
+          changed.add(row.to);
+          // Both names count as changed: at the pinned commit only the old one
+          // exists, and the map is what lets a renamed file find its own baseline
+          // instead of reading as greenfield.
+          if (row.from) {
+            renames.set(row.to, row.from);
+            changed.add(row.from);
+          }
+          return true;
+        })
+      );
+    } catch {
+      return null;
+    }
+    return { renames, changed };
+  };
+  if (!isFullSha(from) || !isFullSha(to)) return ask();
+  const range = await remembered(root, args, ask, (answer) => answer !== null);
+  return range && { renames: new Map(range.renames), changed: new Set(range.changed) };
 }

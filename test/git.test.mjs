@@ -10,7 +10,10 @@ import { promisify } from "node:util";
 import { needsShebang } from "./platform.mjs";
 
 import { check } from "../plugins/anatomiya/lib/check.mjs";
-import { caseMagic, changedSinceWorktree, gitBuffered, gitStreamed, headSha, isSha, nameStatusReader, parsePorcelainRows, showBlob } from "../plugins/anatomiya/lib/git.mjs";
+import {
+  caseMagic, changedSinceWorktree, commitAt, diffRange, filesAt, gitBuffered, gitStreamed, headSha, isSha, mergeBase,
+  nameStatusReader, parsePorcelainRows, shaReachable, showBlob,
+} from "../plugins/anatomiya/lib/git.mjs";
 
 /** Every row a NUL-delimited name-status listing yields, read as a stream. */
 function nameStatusRows(out) {
@@ -1098,4 +1101,123 @@ test("a pathspec folds case exactly where the repository's git does", async (t) 
   assert.equal(await caseMagic(dir), "");
   execFileSync("git", ["config", "--unset", "core.ignorecase"], { cwd: dir });
   assert.equal(await caseMagic(dir), "");
+});
+
+/* --- an answer about a full commit sha is asked once per process --- */
+
+/**
+ * Every git this process starts while `run` is awaited, as its argument lists.
+ * The readers under test take no environment, so the shim goes on this
+ * process's own PATH and comes off it whatever `run` does.
+ */
+async function gitCalls(t, run) {
+  const bin = scratch(t, "anatomiya-git-log-");
+  const log = join(bin, "calls");
+  const real = execFileSync("sh", ["-c", "command -v git"]).toString().trim();
+  writeFileSync(join(bin, "git"), `#!/bin/sh\necho "$*" >> '${log}'\nexec '${real}' "$@"\n`, { mode: 0o755 });
+  const path = process.env.PATH;
+  process.env.PATH = `${bin}:${path}`;
+  try {
+    await run();
+  } finally {
+    process.env.PATH = path;
+  }
+  return existsSync(log) ? readFileSync(log, "utf8").trim().split("\n").filter((c) => !c.startsWith("config ")) : [];
+}
+
+function twoCommits(t) {
+  const { dir, git } = repo(t);
+  const first = git("rev-parse", "HEAD").toString().trim();
+  writeFileSync(join(dir, "b.ts"), "export const b = 1\n");
+  git("add", "-A");
+  git("commit", "-qm", "second");
+  return { dir, git, first, second: git("rev-parse", "HEAD").toString().trim() };
+}
+
+test("a question about full commit shas spawns git once however often it is asked", needsShebang, async (t) => {
+  // An object named by its full hash cannot change, and the check asked the
+  // same merge base three times and the same diff twice in one run.
+  const { dir, first, second } = twoCommits(t);
+  const answers = [];
+  const calls = await gitCalls(t, async () => {
+    for (let i = 0; i < 2; i++) {
+      answers.push(await mergeBase(dir, first, second));
+      answers.push(await commitAt(dir, second));
+      answers.push(await shaReachable(dir, second));
+      answers.push([...(await filesAt(dir, second))]);
+      answers.push([...(await diffRange(dir, first, second)).changed]);
+    }
+  });
+
+  assert.deepEqual(answers.slice(0, 5), [{ found: true, failed: false, sha: first }, second, true, ["a.ts", "b.ts"], ["b.ts"]]);
+  assert.deepEqual(answers.slice(5), answers.slice(0, 5), "the second asking answers the same");
+  const spawned = (sub) => calls.filter((c) => c.startsWith(`${sub} `)).length;
+  assert.deepEqual(
+    ["merge-base", "rev-parse", "cat-file", "ls-tree", "diff"].map((sub) => [sub, spawned(sub)]),
+    [["merge-base", 1], ["rev-parse", 1], ["cat-file", 0], ["ls-tree", 1], ["diff", 1]],
+    calls.join("\n")
+  );
+});
+
+test("a ref name or a short sha is asked again every time, because what it names moves", needsShebang, async (t) => {
+  const { dir, git, first } = twoCommits(t);
+  const short = first.slice(0, 7);
+  let before = null;
+  let after = null;
+  const calls = await gitCalls(t, async () => {
+    before = await commitAt(dir, "HEAD");
+    await mergeBase(dir, "HEAD", first);
+    await filesAt(dir, "HEAD");
+    await commitAt(dir, short);
+    writeFileSync(join(dir, "c.ts"), "export const c = 1\n");
+    git("add", "-A");
+    git("commit", "-qm", "third");
+    after = await commitAt(dir, "HEAD");
+    await mergeBase(dir, "HEAD", first);
+    await filesAt(dir, "HEAD");
+    await commitAt(dir, short);
+  });
+
+  assert.notEqual(after, before, "HEAD moved, and the answer moved with it");
+  const spawned = (prefix) => calls.filter((c) => c.startsWith(prefix)).length;
+  assert.equal(spawned("rev-parse --verify --quiet HEAD^{commit}"), 2);
+  assert.equal(spawned("merge-base HEAD"), 2);
+  assert.equal(spawned("ls-tree -r --name-only -z HEAD"), 2);
+  assert.equal(spawned(`rev-parse --verify --quiet ${short}^{commit}`), 2);
+});
+
+test("a question git could not answer is asked again, never remembered as the answer", needsShebang, async (t) => {
+  // F15: a failure kept would read as a fact about the commit for the rest of
+  // the process, and a later read that would have worked never runs.
+  const { dir, first } = twoCommits(t);
+  const absent = "f".repeat(40);
+  const answers = [];
+  const calls = await gitCalls(t, async () => {
+    for (let i = 0; i < 2; i++) {
+      answers.push(await filesAt(dir, absent));
+      answers.push(await diffRange(dir, first, absent));
+      answers.push((await mergeBase(dir, first, absent)).failed);
+      answers.push(await commitAt(dir, absent));
+    }
+  });
+
+  assert.deepEqual(answers, [null, null, true, null, null, null, true, null]);
+  const spawned = (sub) => calls.filter((c) => c.startsWith(`${sub} `)).length;
+  assert.deepEqual(
+    ["ls-tree", "diff", "merge-base"].map((sub) => [sub, spawned(sub)]),
+    [["ls-tree", 2], ["diff", 2], ["merge-base", 2]],
+    calls.join("\n")
+  );
+});
+
+test("the merge base of a commit with itself is the commit, with no merge-base spawned", needsShebang, async (t) => {
+  const { dir, second } = twoCommits(t);
+  const answers = [];
+  const calls = await gitCalls(t, async () => {
+    answers.push(await mergeBase(dir, second, second));
+    answers.push(await mergeBase(dir, second, second));
+  });
+
+  assert.deepEqual(answers, [{ found: true, failed: false, sha: second }, { found: true, failed: false, sha: second }]);
+  assert.deepEqual(calls, [`rev-parse --verify --quiet ${second}^{commit}`], "only the commit itself was verified");
 });
