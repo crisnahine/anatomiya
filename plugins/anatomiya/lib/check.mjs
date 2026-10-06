@@ -133,11 +133,11 @@ export async function check(cwd, { baseRef = null } = {}) {
   // run: no map on disk" above a note saying the map is a schema this build
   // cannot read. The first is false and points at the wrong fix.
   const [diff, status, dropOf, stale, added, tracked] = await Promise.all([
-    from ? changedFiles(root, from, base.head ?? "HEAD") : { ok: true, rows: [] },
+    from ? changedFiles(root, from, base.head) : { ok: true, rows: [] },
     pendingPaths(root),
     corpusDrop(root),
     staleness(root, facts, base, unreadable),
-    mode === "added-lines" ? addedRanges(root, from, base.head ?? "HEAD") : null,
+    mode === "added-lines" ? addedRanges(root, from, base.head) : null,
     trackedTests(root),
   ]);
   if (!diff.ok) {
@@ -174,7 +174,7 @@ export async function check(cwd, { baseRef = null } = {}) {
   // Both ask a listing of a commit, HEAD's and the merge base's, and neither
   // reads the other's answer.
   const [pending] = await Promise.all([
-    status !== null && mode === "compare" ? onlyInHead(root, status, base.head ?? "HEAD") : { present: [], deleted: [], removed: [] },
+    status !== null && mode === "compare" ? onlyInHead(root, status, base.head) : { present: [], deleted: [], removed: [] },
     resolvePendingBases(root, base.mergeBase, status?.present ?? []),
   ]);
   // Generated files leave with the path filter's rejects, by the corpus's own
@@ -418,8 +418,9 @@ async function resolveBase(root, baseRef, caveats) {
   const shallow = isShallow.out.trim() === "true";
   const head = headAt.out.trim();
   // Resolved once and handed down by sha, so every later read asks about the
-  // same commit and a question about two shas is one git can remember.
-  const at = isSha(head) ? head : null;
+  // same commit and a question about two shas is one git can remember. A
+  // branch with no commit yet has no sha, so its reads name HEAD.
+  const at = isSha(head) ? head : "HEAD";
   // A ref somebody typed and a candidate this tool guessed are different
   // questions. The guessed list not resolving is a repository that keeps its
   // trunk somewhere else, which is what the added-lines degradation is for; a
@@ -466,7 +467,7 @@ async function resolveBase(root, baseRef, caveats) {
       (named !== "" && fold(named) === fold(own) && !(await refsNamed(root, named)).length);
     if (named !== "" && !mine) return;
     if (mine) {
-      const unasked = await resolveBaseRef(root, null, { head: at ?? "HEAD" });
+      const unasked = await resolveBaseRef(root, null, { head: at });
       if (unasked.ok && unasked.sha === head) return;
     }
     throw new Error(refusal(baseRef, shallow, { own: true }));
@@ -478,7 +479,7 @@ async function resolveBase(root, baseRef, caveats) {
   // the parent rescue below, which only the fetch path asked.
   let held = null;
   for (const c of candidates) {
-    const r = await resolveBaseRef(root, c, { head: at ?? "HEAD" });
+    const r = await resolveBaseRef(root, c, { head: at });
     if (!r.ok) continue;
     const tip = r.tip;
     await ownTip(tip);
@@ -613,7 +614,7 @@ async function recordedParents(root) {
  * ancestor of HEAD, which is what makes diffing against it legitimate.
  */
 async function boundary(root, head) {
-  const r = await git(root, ["rev-list", "--max-parents=0", head ?? "HEAD"]);
+  const r = await git(root, ["rev-list", "--max-parents=0", head]);
   const first = r.out.trim().split("\n").filter(Boolean).pop();
   if (!first) return null;
   return first === head ? null : first;
@@ -950,7 +951,7 @@ async function addPairingFindings(root, findings, { examined, areas, base, cappe
   // corruption that fails one fails the other, and the run reports the diff
   // first. What is pinned instead is `filesAt` answering null at all, in
   // `git.test.mjs`, and the obligation still firing on a tree git does answer.
-  const tree = await filesAt(root, base.head ?? "HEAD", {
+  const tree = await filesAt(root, base.head, {
     timeout: GIT.checkTimeoutMs,
     maxFieldBytes: GIT.checkMaxBytes,
   });
@@ -1249,7 +1250,7 @@ async function staleness(root, facts, base, unreadable = null) {
   // the ref's tip: its own fork point with HEAD is itself, including on a
   // depth-1 clone where `merge-base` cannot see it, so the drift range is the
   // one the name would have given.
-  const state = await resolveBaseline(root, { baseRef: base.mergeBase ?? base.sha, head: base.head ?? "HEAD" });
+  const state = await resolveBaseline(root, { baseRef: base.mergeBase ?? base.sha, head: base.head });
   if (state.status === "unpinned") return { reason: "no baseline pinned" };
   if (state.status === "pin-unreadable") return { reason: `the pin on disk could not be read because ${state.unreadable}` };
   if (state.status === "unreachable") return { reason: "the pinned baseline commit is unreachable" };
