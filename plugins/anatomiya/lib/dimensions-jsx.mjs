@@ -1,4 +1,4 @@
-import { walk, isFunctionLike, declName, value, boundNames } from "./walk.mjs";
+import { walk, fromVisitor, isFunctionLike, declName, value, boundNames } from "./walk.mjs";
 
 /**
  * JSX dimensions, same contract as `dimensions.mjs`: one claim, one `add` per
@@ -120,20 +120,14 @@ const isTransElement = (n) =>
   n.openingElement &&
   TRANS_ELEMENT.test(jsxName(n.openingElement) ?? "");
 
-/** A file either ships a translation layer or the claim does not apply to it. */
-function usesI18n(program) {
-  let found = false;
-  walk(program, (n) => {
-    if (found) return;
-    if (n.type === "ImportDeclaration" || n.type === "ExportNamedDeclaration" ||
-        n.type === "ExportAllDeclaration") {
-      const src = n.source && n.source.value;
-      if (typeof src === "string" && I18N_MODULE.test(src)) found = true;
-      return;
-    }
-    if (n.type === "JSXOpeningElement" && TRANS_ELEMENT.test(jsxName(n) ?? "")) found = true;
-  });
-  return found;
+/** Whether this node shows a translation layer; a file without one is not asked the claim. */
+function showsI18n(n) {
+  if (n.type === "ImportDeclaration" || n.type === "ExportNamedDeclaration" ||
+      n.type === "ExportAllDeclaration") {
+    const src = n.source && n.source.value;
+    return typeof src === "string" && I18N_MODULE.test(src);
+  }
+  return n.type === "JSXOpeningElement" && TRANS_ELEMENT.test(jsxName(n) ?? "");
 }
 
 /** The expression a handler prop was given, or null where it has no container. */
@@ -155,6 +149,9 @@ function handlerValue(n) {
  * (`function_naming_case`).
  */
 export function jsxElementNames(program) {
+  // Asked by three rows of the same file, so walked once per tree.
+  const known = ELEMENT_NAMES.get(program);
+  if (known) return known;
   const names = new Set();
   walk(program, (n, ctx) => {
     if (n.type !== "JSXIdentifier") return;
@@ -168,8 +165,11 @@ export function jsxElementNames(program) {
       names.add(n.name);
     }
   });
+  ELEMENT_NAMES.set(program, names);
   return names;
 }
+
+const ELEMENT_NAMES = new WeakMap();
 
 /**
  * A function whose own body yields JSX, which is what a component is.
@@ -340,25 +340,22 @@ function isElement(node) {
 }
 
 /**
- * Names this file binds to something it never wrote out: a rest element, which
- * is by definition the props nobody named, or a call's return.
+ * The names this node binds to something the file never wrote out, gathered over
+ * every node: a rest element, which is by definition the props nobody named, or
+ * a call's return.
  *
  * The destructured form is what covers dnd-kit's `attributes` and `listeners`,
  * which arrive together off one `useSortable()` and which a literal reading of
  * "a name bound to a call's return" would miss.
  */
-function forwardedNames(program) {
-  const names = new Set();
-  walk(program, (n) => {
-    if (n.type === "RestElement") {
-      for (const name of boundNames(n.argument)) names.add(name);
-      return;
-    }
-    if (n.type !== "VariableDeclarator" || !n.init) return;
-    if (value(n.init).type !== "CallExpression") return;
-    for (const name of boundNames(n.id)) names.add(name);
-  });
-  return names;
+function noteForwarded(n, names) {
+  if (n.type === "RestElement") {
+    for (const name of boundNames(n.argument)) names.add(name);
+    return;
+  }
+  if (n.type !== "VariableDeclarator" || !n.init) return;
+  if (value(n.init).type !== "CallExpression") return;
+  for (const name of boundNames(n.id)) names.add(name);
 }
 
 /**
@@ -399,22 +396,24 @@ export const JSX_DIMENSIONS = [
     // check.mjs fingerprints the whole slice, so reporting the call would put a
     // useEffect body in the fingerprint and any edit inside it would resurface
     // as a newly introduced violation.
-    run(program, add) {
-      walk(program, (n, ctx) => {
-        if (n.type !== "CallExpression") return;
-        const c = n.callee;
-        if (!c) return;
-        if (c.type === "Identifier" && REACT_HOOKS.has(c.name)) {
-          return add({ node: c, conforming: true, where: declName(ctx.fn) });
-        }
-        // The object has to be React itself. Any other receiver is a library
-        // method that happens to share a hook's name, and charging it here
-        // would report a namespace choice nobody made.
-        if (c.type !== "MemberExpression" || c.computed) return;
-        if (!c.object || c.object.type !== "Identifier" || c.object.name !== "React") return;
-        if (!c.property || !REACT_HOOKS.has(c.property.name)) return;
-        add({ node: c, conforming: false, where: declName(ctx.fn) });
-      });
+    visitor(program, add) {
+      return {
+        node(n, ctx) {
+          if (n.type !== "CallExpression") return;
+          const c = n.callee;
+          if (!c) return;
+          if (c.type === "Identifier" && REACT_HOOKS.has(c.name)) {
+            return add({ node: c, conforming: true, where: declName(ctx.fn) });
+          }
+          // The object has to be React itself. Any other receiver is a library
+          // method that happens to share a hook's name, and charging it here
+          // would report a namespace choice nobody made.
+          if (c.type !== "MemberExpression" || c.computed) return;
+          if (!c.object || c.object.type !== "Identifier" || c.object.name !== "React") return;
+          if (!c.property || !REACT_HOOKS.has(c.property.name)) return;
+          add({ node: c, conforming: false, where: declName(ctx.fn) });
+        },
+      };
     },
   },
 
@@ -429,25 +428,27 @@ export const JSX_DIMENSIONS = [
       blind: null,
     },
     langs: ["jsx"],
-    run(program, add) {
-      walk(program, (n, ctx) => {
-        if (n.type !== "JSXAttribute") return;
-        const e = handlerValue(n);
-        if (!e) return;
-        const where = declName(ctx.fn);
-        // A bind call, a ternary and `undefined` are a third form the claim
-        // does not name. Counting them as violations reads a repository that
-        // hoists every handler as inconsistent and drops it under the ratio gate.
-        if (isFunctionLike(e)) {
-          return add({ node: n.name, conforming: false, where });
-        }
-        if (e.type === "Identifier" && e.name !== "undefined") {
-          return add({ node: n.name, conforming: true, where });
-        }
-        if (e.type === "MemberExpression" && !e.computed) {
-          add({ node: n.name, conforming: true, where });
-        }
-      });
+    visitor(program, add) {
+      return {
+        node(n, ctx) {
+          if (n.type !== "JSXAttribute") return;
+          const e = handlerValue(n);
+          if (!e) return;
+          const where = declName(ctx.fn);
+          // A bind call, a ternary and `undefined` are a third form the claim
+          // does not name. Counting them as violations reads a repository that
+          // hoists every handler as inconsistent and drops it under the ratio gate.
+          if (isFunctionLike(e)) {
+            return add({ node: n.name, conforming: false, where });
+          }
+          if (e.type === "Identifier" && e.name !== "undefined") {
+            return add({ node: n.name, conforming: true, where });
+          }
+          if (e.type === "MemberExpression" && !e.computed) {
+            add({ node: n.name, conforming: true, where });
+          }
+        },
+      };
     },
   },
 
@@ -464,27 +465,37 @@ export const JSX_DIMENSIONS = [
       blind: null,
     },
     langs: ["jsx"],
-    run(program, add) {
-      const forwarded = forwardedNames(program);
-      walk(program, (n, ctx) => {
-        if (n.type !== "JSXOpeningElement") return;
-        const component = !isHostElement(n);
-        const where = declName(ctx.fn);
-        // Per attribute, not per element: `<div {...a} {...b}>` is two sites,
-        // and counting one hides a wrapper that spreads twice.
-        for (const a of n.attributes || []) {
-          if (!a || a.type !== "JSXSpreadAttribute") continue;
-          // Something has to reach the DOM. A wrapper forwarding
-          // `ComponentPropsWithoutRef<"button">` has no list of names to write
-          // out instead, and a prop getter returns an object with a ref
-          // callback among its keys that the author cannot enumerate.
-          //
-          // Asymmetric on purpose: a spread that already landed on a component
-          // answered the claim, so it stays a site whatever it spreads.
-          if (!component && neverWrittenOut(a.argument, forwarded)) continue;
-          add({ node: a, conforming: component, where });
-        }
-      });
+    visitor(program, add) {
+      const forwarded = new Set();
+      const spreads = [];
+      return {
+        node(n, ctx) {
+          noteForwarded(n, forwarded);
+          if (n.type !== "JSXOpeningElement") return;
+          const component = !isHostElement(n);
+          const where = declName(ctx.fn);
+          // Per attribute, not per element: `<div {...a} {...b}>` is two sites,
+          // and counting one hides a wrapper that spreads twice.
+          for (const a of n.attributes || []) {
+            if (a && a.type === "JSXSpreadAttribute") spreads.push({ a, component, where });
+          }
+        },
+        // After the walk, because a name can be forwarded below the element
+        // that spreads it.
+        done() {
+          for (const { a, component, where } of spreads) {
+            // Something has to reach the DOM. A wrapper forwarding
+            // `ComponentPropsWithoutRef<"button">` has no list of names to write
+            // out instead, and a prop getter returns an object with a ref
+            // callback among its keys that the author cannot enumerate.
+            //
+            // Asymmetric on purpose: a spread that already landed on a component
+            // answered the claim, so it stays a site whatever it spreads.
+            if (!component && neverWrittenOut(a.argument, forwarded)) continue;
+            add({ node: a, conforming: component, where });
+          }
+        },
+      };
     },
   },
 
@@ -508,33 +519,41 @@ export const JSX_DIMENSIONS = [
      * Both dialects count. Element-form-only reads a `useTranslation()`
      * repository as 0 of 14 and states nothing where it measures 229 of 243.
      */
-    run(program, add) {
-      if (!usesI18n(program)) return;
-      walk(program, (n, ctx) => {
-        const inTrans = () => ctx.ancestors.some(isTransElement);
-        if (n.type === "JSXOpeningElement") {
-          if (TRANS_ELEMENT.test(jsxName(n) ?? "")) {
-            add({ node: n, conforming: true, where: declName(ctx.fn) });
+    visitor(program, add) {
+      // Held until the walk has seen whether the file reaches a translation layer.
+      let translates = false;
+      const sites = [];
+      return {
+        node(n, ctx) {
+          if (!translates && showsI18n(n)) translates = true;
+          const inTrans = () => ctx.ancestors.some(isTransElement);
+          if (n.type === "JSXOpeningElement") {
+            if (TRANS_ELEMENT.test(jsxName(n) ?? "")) {
+              sites.push({ node: n, conforming: true, where: declName(ctx.fn) });
+            }
+            return;
           }
-          return;
-        }
-        if (n.type === "JSXText") {
-          // Text inside a translation element is that element's data: charging
-          // every defaultMessage as an untranslated string inverts the claim.
-          if (!isVisibleText(n.value) || inTrans()) return;
-          add({ node: n, conforming: false, where: declName(ctx.fn) });
-          return;
-        }
-        if (n.type !== "JSXExpressionContainer") return;
-        const parent = ctx.ancestors[ctx.ancestors.length - 1];
-        // A child, not an attribute value: `values={{ n: t("x") }}` is data.
-        if (!parent || (parent.type !== "JSXElement" && parent.type !== "JSXFragment")) return;
-        const e = n.expression;
-        if (!e || e.type !== "CallExpression") return;
-        if (!TRANS_CALL.test(calleeName(e.callee) ?? "")) return;
-        if (inTrans()) return;
-        add({ node: n, conforming: true, where: declName(ctx.fn) });
-      });
+          if (n.type === "JSXText") {
+            // Text inside a translation element is that element's data: charging
+            // every defaultMessage as an untranslated string inverts the claim.
+            if (!isVisibleText(n.value) || inTrans()) return;
+            sites.push({ node: n, conforming: false, where: declName(ctx.fn) });
+            return;
+          }
+          if (n.type !== "JSXExpressionContainer") return;
+          const parent = ctx.ancestors[ctx.ancestors.length - 1];
+          // A child, not an attribute value: `values={{ n: t("x") }}` is data.
+          if (!parent || (parent.type !== "JSXElement" && parent.type !== "JSXFragment")) return;
+          const e = n.expression;
+          if (!e || e.type !== "CallExpression") return;
+          if (!TRANS_CALL.test(calleeName(e.callee) ?? "")) return;
+          if (inTrans()) return;
+          sites.push({ node: n, conforming: true, where: declName(ctx.fn) });
+        },
+        done() {
+          if (translates) for (const hit of sites) add(hit);
+        },
+      };
     },
   },
 
@@ -551,52 +570,61 @@ export const JSX_DIMENSIONS = [
     langs: ["jsx"],
     // Counting a received handler would make the number grow with how many a
     // component takes rather than how many it makes.
-    run(program, add) {
+    visitor(program, add) {
       // Each binding keeps the function it was made in. Without it the sets are
       // file-wide and a handler is judged by an unrelated binding of the same
       // name in another component.
       const bound = [];
-      walk(program, (n, ctx) => {
-        if (n.type === "FunctionDeclaration") {
-          if (n.id && n.id.name) bound.push({ name: n.id.name, memo: false, scope: ctx.fn });
-          return;
-        }
-        if (n.type !== "VariableDeclarator") return;
-        if (!n.id || n.id.type !== "Identifier" || !n.init) return;
-        if (n.init.type === "CallExpression" && calleeName(n.init.callee) === "useCallback") {
-          bound.push({ name: n.id.name, memo: true, scope: ctx.fn });
-        } else if (isFunctionLike(n.init)) {
-          bound.push({ name: n.id.name, memo: false, scope: ctx.fn });
-        }
-      });
-      if (bound.length === 0) return;
-
-      walk(program, (n, ctx) => {
-        if (n.type !== "JSXAttribute") return;
-        const e = handlerValue(n);
-        if (!e || e.type !== "Identifier") return;
-        const where = declName(ctx.fn);
-        // Innermost visible binding wins: module level, or a function this site
-        // sits inside. A binding in a sibling component is not visible here.
-        // Innermost by scope depth, not by walk order: a nested component's
-        // binding is walked before a same-named one its parent declares further
-        // down, and taking the last seen scored the child's useCallback as the
-        // parent's plain arrow.
-        let hit = null;
-        let depth = -2;
-        for (const b of bound) {
-          if (b.name !== e.name) continue;
-          const d = b.scope === null ? -1 : ctx.ancestors.indexOf(b.scope);
-          if (b.scope !== null && d < 0) continue;
-          if (d >= depth) {
-            hit = b;
-            depth = d;
+      // A handler can be passed above the line that binds it, so each one keeps
+      // the nodes above it and is judged after the walk.
+      const passed = [];
+      return {
+        node(n, ctx) {
+          if (n.type === "FunctionDeclaration") {
+            if (n.id && n.id.name) bound.push({ name: n.id.name, memo: false, scope: ctx.fn });
+            return;
           }
-        }
-        if (!hit) return;
-        if (hit.memo) add({ node: n.name, conforming: true, where });
-        else add({ node: n.name, conforming: false, where });
-      });
+          if (n.type === "VariableDeclarator") {
+            if (!n.id || n.id.type !== "Identifier" || !n.init) return;
+            if (n.init.type === "CallExpression" && calleeName(n.init.callee) === "useCallback") {
+              bound.push({ name: n.id.name, memo: true, scope: ctx.fn });
+            } else if (isFunctionLike(n.init)) {
+              bound.push({ name: n.id.name, memo: false, scope: ctx.fn });
+            }
+            return;
+          }
+          if (n.type !== "JSXAttribute") return;
+          const e = handlerValue(n);
+          if (!e || e.type !== "Identifier") return;
+          passed.push({ n, e, where: declName(ctx.fn), ancestors: ctx.ancestors.slice() });
+        },
+        done() {
+          if (bound.length === 0) return;
+          for (const { n, e, where, ancestors } of passed) {
+            // Innermost visible binding wins: module level, or a function this site
+            // sits inside. A binding in a sibling component is not visible here.
+            // Innermost by scope depth, not by walk order: a nested component's
+            // binding is walked before a same-named one its parent declares further
+            // down, and taking the last seen scored the child's useCallback as the
+            // parent's plain arrow.
+            let hit = null;
+            let depth = -2;
+            for (const b of bound) {
+              if (b.name !== e.name) continue;
+              const d = b.scope === null ? -1 : ancestors.indexOf(b.scope);
+              if (b.scope !== null && d < 0) continue;
+              if (d >= depth) {
+                hit = b;
+                depth = d;
+              }
+            }
+            if (!hit) continue;
+            if (hit.memo) add({ node: n.name, conforming: true, where });
+            else add({ node: n.name, conforming: false, where });
+          }
+        },
+      };
     },
   },
 ];
+for (const d of JSX_DIMENSIONS) if (d.visitor) d.run = fromVisitor(d.visitor);
