@@ -6,8 +6,8 @@ import { firstLine } from "./encode.mjs";
 import { olderThan } from "./version.mjs";
 import { ENGINES } from "./langs.mjs";
 import { defaultPoolSize } from "./pool.mjs";
-import { execFile } from "node:child_process";
-import { statSync } from "node:fs";
+import { execFile, spawn } from "node:child_process";
+import { stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { delimiter, isAbsolute } from "node:path";
 import { Worker } from "node:worker_threads";
@@ -393,20 +393,17 @@ export function shardsBySize(sizes, count) {
     .sort((a, b) => a[0] - b[0]);
 }
 
-function bytesOf(abs) {
-  try {
-    return statSync(abs).size;
-  } catch {
-    // The child reports what it cannot read; for balance it weighs nothing.
-    return 0;
-  }
-}
+// The child reports what it cannot read; for balance it weighs nothing.
+const bytesOf = (abs) => stat(abs).then((s) => s.size, () => 0);
 
 /**
  * Parse Ruby files. Resolves once every child has exited or a guard has fired.
  *
  * The results are the whole record: `parse.mjs` classifies every outcome off
  * them, so no count rides beside them.
+ *
+ * `dimensions` must be rows of `ALL_DIMENSIONS`: they reach the shard threads
+ * by key, and a row the registry does not hold charges its batch as crashed.
  */
 export async function parseRuby(
   files,
@@ -425,7 +422,7 @@ export async function parseRuby(
   // shard is a worker thread that runs its child, reads the trees and answers
   // the rows, and only counts reach this thread, as B10 does for JavaScript.
   const keys = dimensions.map((d) => d.key);
-  const sizes = files.map((f) => bytesOf(f.abs));
+  const sizes = await Promise.all(files.map((f) => bytesOf(f.abs)));
   const outs = await Promise.all(
     shardsBySize(sizes, shards).map((ix) =>
       inWorker(ix.map((i) => files[i]), { ruby, guards, rubyScript, load, keys }, ix.reduce((most, i) => Math.max(most, sizes[i]), 0)),
@@ -455,7 +452,7 @@ export async function parseRuby(
  * A shard's heap is held to what its largest file needs, because V8 grows a
  * heap toward its limit rather than its live set: four threads at the default
  * limit took a scan of empire-flippers/api from 176 MB peak to 318 MB, and
- * held it is 184 MB against 180 MB. Measured, a 588 KB spec needs 20 MB of old
+ * held it is 197 MB against 183 MB. Measured, a 588 KB spec needs 20 MB of old
  * generation. A tree that outgrows its hold anyway is read again on a thread
  * with the default heap, so the hold costs time and never a file.
  */
@@ -472,10 +469,17 @@ async function inWorker(files, job, largestBytes) {
  * its own batch as crashed, the way a child that dies does, rather than
  * leaving those files out of the record; one that ran out of a held heap
  * answers null instead, for the caller to run again.
+ *
+ * The `ruby` child is started here, on the parent, at the thread's request,
+ * and its bytes are passed through undecoded. A thread that dies takes its
+ * clocks with it, and a child it had started itself kept running unguarded and
+ * then stayed a zombie: only the thread that spawns a child can reap it. So
+ * the parent owns every child, and kills and reaps what a dead thread left.
  */
 function onThread(files, job, resourceLimits) {
   return new Promise((resolve) => {
     let failure = null;
+    const children = new Map();
     const worker = new Worker(SHARD, {
       workerData: { ...job, files: files.map(({ rel, abs }) => ({ rel, abs })) },
       // Empty for the reason `guardedChild` gives: a flag legal on the parent
@@ -484,18 +488,70 @@ function onThread(files, job, resourceLimits) {
       ...(resourceLimits ? { resourceLimits } : {}),
     });
     const results = [];
-    worker.on("message", (msg) => (msg.result ? results.push(msg.result) : resolve({ ...msg.out, results })));
+    worker.on("message", (msg) => {
+      if (msg.result) results.push(msg.result);
+      else if (msg.out) resolve({ ...msg.out, results });
+      else if (msg.spawn) children.set(msg.id, startFor(worker, msg));
+      else if (msg.read) children.get(msg.id)?.read();
+      else if (msg.kill) children.get(msg.id)?.kill("SIGKILL");
+      else if (msg.stdin !== undefined) children.get(msg.id)?.stdin.end(msg.stdin);
+    });
     worker.once("error", (err) => {
       failure = err;
     });
     // Messages drain before exit, so one that answered has already resolved.
-    worker.once("exit", (code) => {
+    worker.once("exit", async (code) => {
+      await Promise.all([...children.values()].map(stopped));
       if (resourceLimits && failure?.code === "ERR_WORKER_OUT_OF_MEMORY") return resolve(null);
       const out = blank();
       out.error = failure ? String(failure.message ?? failure) : `ruby shard exited ${code}`;
       for (const f of files) deliver(out, { rel: f.rel, ok: false, error: out.error, crashed: true }, 1);
       resolve(out);
     });
+  });
+}
+
+// Chunks in flight to a thread before the child's stdout is paused. Read
+// without a bound, the parent queued the whole stream faster than a thread
+// could parse it, and held it all.
+const IN_FLIGHT = 4;
+
+/** A child started for a thread, every event it raises sent back to that thread in order. */
+function startFor(worker, { id, spawn: [command, args, options] }) {
+  const send = (msg, moved) => worker.postMessage({ id, ...msg }, moved);
+  let child;
+  try {
+    child = spawn(command, args, options);
+  } catch (err) {
+    send({ error: { message: String(err?.message ?? err), code: err?.code } });
+    return null;
+  }
+  let unread = 0;
+  child.stdout.on("data", (bytes) => {
+    // Moved rather than copied where the chunk owns its memory: a copy left
+    // the parent holding every chunk it had read until its own next collection.
+    const owned = bytes.byteOffset === 0 && bytes.byteLength === bytes.buffer.byteLength;
+    send({ stdout: bytes }, owned ? [bytes.buffer] : undefined);
+    if (++unread >= IN_FLIGHT) child.stdout.pause();
+  });
+  child.read = () => {
+    if (--unread < IN_FLIGHT) child.stdout.resume();
+  };
+  child.stderr.on("data", (bytes) => send({ stderr: bytes }));
+  child.stdin.on("error", () => {
+    /* the child died first; its exit is what reports the failure */
+  });
+  child.on("error", (err) => send({ error: { message: String(err?.message ?? err), code: err?.code } }));
+  child.on("close", (code, signal) => send({ close: [code, signal] }));
+  return child;
+}
+
+/** Killed if still running, and resolved once the exit is reaped. */
+function stopped(child) {
+  return new Promise((resolve) => {
+    if (!child || child.pid === undefined || child.exitCode !== null || child.signalCode !== null) return resolve();
+    child.once("exit", () => resolve());
+    child.kill("SIGKILL");
   });
 }
 
@@ -518,9 +574,9 @@ function blank() {
 /**
  * One child over one batch, retried once for what a timer cut off. The body a
  * shard worker runs; `onResult` takes each record as it is decided instead of
- * the batch holding them all.
+ * the batch holding them all, and `spawner` starts the child on the parent.
  */
-export async function parseBatch(files, { ruby, guards, rubyScript, load, dimensions, onResult = null }) {
+export async function parseBatch(files, { ruby, guards, rubyScript, load, dimensions, onResult = null, spawner }) {
   const out = blank();
   if (onResult) out.results = { push: onResult };
   const seen = new Set();
@@ -539,6 +595,7 @@ export async function parseBatch(files, { ruby, guards, rubyScript, load, dimens
           env: rubyEnv(),
           stdio: ["pipe", "pipe", "pipe"],
           stderrBytes: guards.stderrBytes,
+          ...(spawner ? { spawner } : {}),
           // The whole run's ceiling: a child answering one file every fourteen
           // seconds keeps the idle clock happy and never ends.
           wallMs: guards.wallBaseMs + guards.wallPerFileMs * batch.length,

@@ -2125,13 +2125,66 @@ process.stdout.write(JSON.stringify(out.results.map((r) => [r.ok, r.error ?? nul
   assert.equal(stdout, '[[true,null]]');
 });
 
-test("a tree too large for a shard's held heap still answers, read again on a full one", needsRuby, async () => {
+/** Whether a pid still names a process, a zombie included: only a reaped child is gone. */
+function exists(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    return err.code !== "ESRCH";
+  }
+}
+
+test("a tree too large for a shard's held heap is read again on a full one, and the first child is stopped and reaped", { ...needsRuby, ...needsShebang }, async () => {
   // 600 KB, so inside the size cap, and the densest shape measured: a call
-  // per four bytes outgrows the hold its size buys.
+  // per four bytes outgrows the hold its size buys. The stand-in logs the pid
+  // of every parse child, and the first one lingers after its answer, so a
+  // child left running by the thread that died is still there to find.
+  const home = mkdtempSync(join(dir, "held-"));
+  const real = execFileSync("ruby", ["-e", "print RbConfig.ruby"], { encoding: "utf8" });
+  const log = join(home, "pids");
+  const ruby = join(home, "ruby");
+  writeFileSync(
+    ruby,
+    [
+      "#!/bin/sh",
+      `case "$*" in *MAX_BYTES*) ;; *) exec '${real}' "$@" ;; esac`,
+      `first=$(test -s '${log}' && echo no || echo yes)`,
+      `echo $$ >> '${log}'`,
+      `if [ "$first" = yes ]; then '${real}' "$@"; exec sleep 30; fi`,
+      `exec '${real}' "$@"`,
+      "",
+    ].join("\n"),
+    { mode: 0o755 }
+  );
   const big = write("heap_heavy", Array.from({ length: 150_000 }, () => "a.b").join("\n") + "\n");
-  const out = await parseRuby([big], { dimensions: RUBY_DIMENSIONS });
+  const out = await parseRuby([big], { ruby, dimensions: RUBY_DIMENSIONS });
 
   assert.equal(out.results[0].ok, true, out.results[0].error);
   assert.equal(out.results[0].attempts, 1);
   assert.equal(out.error, null);
+  const pids = readFileSync(log, "utf8").trim().split("\n").map(Number);
+  assert.equal(pids.length, 2, "the held thread ran out and the batch was read again");
+  assert.deepEqual(pids.filter(exists), [], "no child of either attempt is left, running or unreaped");
+});
+
+test("a shard whose thread throws after its child started stops and reaps that child", needsShebang, async () => {
+  // A fatal whose value cannot become a string throws inside the stream
+  // handler, after the child is running and with its clocks on that thread.
+  const home = mkdtempSync(join(dir, "throws-"));
+  const log = join(home, "pid");
+  const ruby = stubRuby("throws", [
+    "cat >/dev/null",
+    `echo $$ > '${log}'`,
+    READY,
+    `printf '{"fatal":{"toString":1,"valueOf":1}}\\n'`,
+    "exec sleep 30",
+  ]);
+  const started = Date.now();
+  const out = await parseRuby(pair, { ruby, dimensions: RUBY_DIMENSIONS });
+
+  assert.ok(Date.now() - started < 15_000, "the child was stopped, not waited out");
+  assert.deepEqual(out.results.map((r) => [r.rel, r.ok, Boolean(r.crashed), r.attempts]), [["a.rb", false, true, 1], ["b.rb", false, true, 1]]);
+  assert.match(out.results[0].error, /primitive/);
+  assert.equal(exists(Number(readFileSync(log, "utf8"))), false, "the child is gone, not running and not a zombie");
 });

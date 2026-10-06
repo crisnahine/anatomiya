@@ -273,13 +273,17 @@ more than the machine's cores less one. The batches are balanced by bytes, the l
 the lightest batch, and the answers are put back in the order the files were handed over before
 anything reads them. One child left the parent idle for most of a Ruby-heavy scan (measured on
 discourse: 22.1s with one child, 13.5s with four, 12.8s with six). Each batch runs in a worker
-thread that starts its child, reads the trees off the stream and answers the rows, so only counts
-reach the parent, the way a JavaScript parse worker answers. Each thread's heap is held to what its
-largest file needs, because V8 grows a heap toward its limit rather than its live set and four
-threads at the default limit doubled the scan's peak memory; a thread that runs out of its hold is
-started again with the default heap, which costs time and never a file. Each child keeps its own
-clocks and its own retry, so a child that dies charges the files left in its batch and no others,
-and a worker thread that ends any other way without answering charges its whole batch.
+thread that keeps its child's clocks, decodes and parses the stream and answers the rows. A scan
+asks for counts, so only counts reach the parent, the way a JavaScript parse worker answers; the
+check asks for trees for the files a diff touched, and those trees cross from the thread to the
+parent. The child itself is started by the parent at the thread's request and its bytes passed
+through undecoded, because only the thread that spawns a child can reap it: a thread that dies
+leaves its child to the parent, which kills and reaps it before anything else. Each thread's heap is
+held to what its largest file needs, because V8 grows a heap toward its limit rather than its live
+set and four threads at the default limit doubled the scan's peak memory; a thread that runs out of
+its hold is started again with the default heap, which costs time and never a file. Each child keeps
+its own clocks and its own retry, so a child that dies charges the files left in its batch and no
+others, and a worker thread that ends any other way without answering charges its whole batch.
 
 A child either of those timers killed is spawned once more, for the files that never answered and no
 others, and only what is still unanswered after that is charged. Both timers measure the machine
