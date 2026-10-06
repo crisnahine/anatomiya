@@ -29,7 +29,7 @@ import { isTestPath, precedentFindings } from "./precedent.mjs";
 import { claimFor, CLASSES } from "./dimensions-naming.mjs";
 import { rowsOfKind } from "./registry.mjs";
 import { couldSignal } from "./frameworks.mjs";
-import { gitBuffered, resolveBaseRef, mergeBase, filesAt, headSha, isSha, BASE_REFS, GIT } from "./git.mjs";
+import { gitBuffered, resolveBaseRef, mergeBase, filesAt, isSha, BASE_REFS, GIT } from "./git.mjs";
 import { addedRanges, changedFiles, onlyInHead, pendingPaths, renamesSkipped, resolvePendingBases, withPendingEdits } from "./changeset.mjs";
 import { readAtRevision } from "./revision.mjs";
 import { CAVEATS } from "./check-report.mjs";
@@ -127,7 +127,19 @@ export async function check(cwd, { baseRef = null } = {}) {
     );
   }
 
-  const diff = from ? await changedFiles(root, from) : { ok: true, rows: [] };
+  // None of these reads needs another's answer, so they run side by side. Each
+  // still reports its own failure below, in the order a reader has always seen.
+  // The refusal reason in `stale` travels, or the report prints "capped by this
+  // run: no map on disk" above a note saying the map is a schema this build
+  // cannot read. The first is false and points at the wrong fix.
+  const [diff, status, dropOf, stale, added, tracked] = await Promise.all([
+    from ? changedFiles(root, from) : { ok: true, rows: [] },
+    pendingPaths(root),
+    corpusDrop(root),
+    staleness(root, facts, base, unreadable),
+    mode === "added-lines" ? addedRanges(root, from) : null,
+    trackedTests(root),
+  ]);
   if (!diff.ok) {
     caveat(
       caveats,
@@ -148,7 +160,6 @@ export async function check(cwd, { baseRef = null } = {}) {
   const removed = diff.rows.filter((c) => c.status === "D").map((c) => c.path)
     .concat(diff.rows.filter((c) => c.from && c.from !== c.path).map((c) => c.from));
 
-  const status = await pendingPaths(root);
   if (status === null) {
     caveat(
       caveats,
@@ -160,8 +171,12 @@ export async function check(cwd, { baseRef = null } = {}) {
   // be called newly introduced, which is why the degraded modes report nothing
   // rather than everything, and reading the tree there would report every site
   // in an uncommitted file against an author who may not have written one.
-  const pending = status !== null && mode === "compare" ? await onlyInHead(root, status) : { present: [], deleted: [], removed: [] };
-  await resolvePendingBases(root, base.mergeBase, pending.present);
+  // Both ask a listing of a commit, HEAD's and the merge base's, and neither
+  // reads the other's answer.
+  const [pending] = await Promise.all([
+    status !== null && mode === "compare" ? onlyInHead(root, status, base.head ?? "HEAD") : { present: [], deleted: [], removed: [] },
+    resolvePendingBases(root, base.mergeBase, status?.present ?? []),
+  ]);
   // Generated files leave with the path filter's rejects, by the corpus's own
   // rule: a regenerated client was a MUST-FIX per site in code nobody writes by
   // hand, judged against claims the map counted without it. The rule's other
@@ -170,7 +185,6 @@ export async function check(cwd, { baseRef = null } = {}) {
   // where it is tracked, and read through the link its sites were charged
   // twice. Asked of the tree, where every examined row stands once the
   // pending edits are folded in.
-  const dropOf = await corpusDrop(root);
   const examined = withPendingEdits(changed.filter((c) => isCorpusPath(c.path)), pending)
     .filter((c) => dropOf(c.path) !== "generated" && !isLink(join(root, c.path)));
   const fromTree = examined.filter((c) => c.tree).length;
@@ -190,11 +204,6 @@ export async function check(cwd, { baseRef = null } = {}) {
     );
   }
 
-  // The refusal reason travels, or the report prints "capped by this run: no
-  // map on disk" above a note saying the map is a schema this build cannot
-  // read. The first is false and points at the wrong fix.
-  const stale = await staleness(root, facts, base, unreadable);
-  const added = mode === "added-lines" ? await addedRanges(root, from) : null;
   if (mode === "added-lines" && added === null) {
     caveat(
       caveats,
@@ -258,7 +267,6 @@ export async function check(cwd, { baseRef = null } = {}) {
   // file in it. The hook cannot ask this, since a `git ls-files` per write is a
   // subprocess per write, so it reads the directory and is quieter where a
   // stray file sits there; this run catches what that one let past.
-  const tracked = await trackedTests(root);
   const holdsTest = (dir) =>
     tracked === null || tracked.some((rel) => dirname(rel) === (dir || ".") && !brought.has(rel));
 
@@ -403,8 +411,15 @@ async function storedOrCollected(root, facts, field, derive, caveats, code, refu
  */
 async function resolveBase(root, baseRef, caveats) {
   const candidates = (baseRef ? [baseRef] : BASE_REFS).filter((c) => c && !c.startsWith("-"));
-  const shallow = (await git(root, ["rev-parse", "--is-shallow-repository"])).out.trim() === "true";
-  const head = (await git(root, ["rev-parse", "--verify", "--quiet", "HEAD^{commit}"])).out.trim();
+  const [isShallow, headAt] = await Promise.all([
+    git(root, ["rev-parse", "--is-shallow-repository"]),
+    git(root, ["rev-parse", "--verify", "--quiet", "HEAD^{commit}"]),
+  ]);
+  const shallow = isShallow.out.trim() === "true";
+  const head = headAt.out.trim();
+  // Resolved once and handed down by sha, so every later read asks about the
+  // same commit and a question about two shas is one git can remember.
+  const at = isSha(head) ? head : null;
   // A ref somebody typed and a candidate this tool guessed are different
   // questions. The guessed list not resolving is a repository that keeps its
   // trunk somewhere else, which is what the added-lines degradation is for; a
@@ -451,7 +466,7 @@ async function resolveBase(root, baseRef, caveats) {
       (named !== "" && fold(named) === fold(own) && !(await refsNamed(root, named)).length);
     if (named !== "" && !mine) return;
     if (mine) {
-      const unasked = await resolveBaseRef(root);
+      const unasked = await resolveBaseRef(root, null, { head: at ?? "HEAD" });
       if (unasked.ok && unasked.sha === head) return;
     }
     throw new Error(refusal(baseRef, shallow, { own: true }));
@@ -463,14 +478,14 @@ async function resolveBase(root, baseRef, caveats) {
   // the parent rescue below, which only the fetch path asked.
   let held = null;
   for (const c of candidates) {
-    const r = await resolveBaseRef(root, c);
+    const r = await resolveBaseRef(root, c, { head: at ?? "HEAD" });
     if (!r.ok) continue;
-    const tip = (await git(root, ["rev-parse", "--verify", "--quiet", `${c}^{commit}`])).out.trim() || r.sha;
+    const tip = r.tip;
     await ownTip(tip);
     const fork = r.forkPoint ? r.sha : shallow && (await recordedParents(root)).includes(tip) ? tip : null;
     if (fork || !shallow) {
       if (!fork) caveat(caveats, CAVEATS.NO_MERGE_BASE, `no merge base between ${c} and HEAD`);
-      return { ref: c, sha: tip, mergeBase: fork, shallow, boundary: fork ? null : await boundary(root) };
+      return { ref: c, sha: tip, mergeBase: fork, shallow, head: at, boundary: fork ? null : await boundary(root, at) };
     }
     // The remote's tip may have moved past the one this clone holds, and the
     // commit a pull request's merge names is the current one, so the fetch
@@ -498,12 +513,13 @@ async function resolveBase(root, baseRef, caveats) {
         sha: remote,
         mergeBase: fork,
         shallow,
-        boundary: fork ? null : await boundary(root),
+        head: at,
+        boundary: fork ? null : await boundary(root, at),
       };
     }
     if (held) {
       shallowNoHistory(caveats);
-      return { ...held, mergeBase: null, shallow, boundary: await boundary(root) };
+      return { ...held, mergeBase: null, shallow, head: at, boundary: await boundary(root, at) };
     }
     if (asked) throw new Error(refusal(baseRef, shallow));
     caveat(caveats, CAVEATS.SHALLOW_UNFETCHED, "shallow clone and the base commit could not be fetched");
@@ -514,7 +530,7 @@ async function resolveBase(root, baseRef, caveats) {
 
   // No ref, not the first candidate: the caveat above already names what was
   // tried, and reporting a base the run did not use reads as one it did.
-  return { ref: null, sha: null, mergeBase: null, shallow, boundary: await boundary(root) };
+  return { ref: null, sha: null, mergeBase: null, shallow, head: at, boundary: await boundary(root, at) };
 }
 
 /**
@@ -596,12 +612,11 @@ async function recordedParents(root) {
  * grafted as a root, so this is the earliest thing we hold, and it is an
  * ancestor of HEAD, which is what makes diffing against it legitimate.
  */
-async function boundary(root) {
+async function boundary(root, head) {
   const r = await git(root, ["rev-list", "--max-parents=0", "HEAD"]);
   const first = r.out.trim().split("\n").filter(Boolean).pop();
   if (!first) return null;
-  const head = await git(root, ["rev-parse", "HEAD"]);
-  return first === head.out.trim() ? null : first;
+  return first === head ? null : first;
 }
 
 /* --- analysis, run once at HEAD and once at the merge base --- */
@@ -649,9 +664,9 @@ async function collect(root, run) {
       }
     })
   );
-  // Resolved once. A blob is read by object name rather than by ref, so a pin
-  // file cannot name something else and have it read as source.
-  const head = await headSha(root);
+  // A blob is read by object name rather than by ref, so a pin file cannot
+  // name something else and have it read as source.
+  const head = base.head;
 
   // Asked before anything is read, so a language nothing is claimed about costs
   // no blob at either revision.
@@ -914,7 +929,7 @@ async function collect(root, run) {
  * claim it could execute, reported clean, and said nothing about the one it
  * could not: the same shape as reporting clean for a file that was never read.
  */
-async function addPairingFindings(root, findings, { examined, areas, capped, caveats, pending, removed }, droppedIn, headRecords) {
+async function addPairingFindings(root, findings, { examined, areas, base, capped, caveats, pending, removed }, droppedIn, headRecords) {
   const areaFor = areaIndex(areas);
   const changed = examined.map((f) => f.path);
   // A removed companion asks its language's obligations too, or a branch that
@@ -935,7 +950,7 @@ async function addPairingFindings(root, findings, { examined, areas, capped, cav
   // corruption that fails one fails the other, and the run reports the diff
   // first. What is pinned instead is `filesAt` answering null at all, in
   // `git.test.mjs`, and the obligation still firing on a tree git does answer.
-  const tree = await filesAt(root, "HEAD", {
+  const tree = await filesAt(root, base.head ?? "HEAD", {
     timeout: GIT.checkTimeoutMs,
     maxFieldBytes: GIT.checkMaxBytes,
   });
@@ -1234,7 +1249,7 @@ async function staleness(root, facts, base, unreadable = null) {
   // the ref's tip: its own fork point with HEAD is itself, including on a
   // depth-1 clone where `merge-base` cannot see it, so the drift range is the
   // one the name would have given.
-  const state = await resolveBaseline(root, { baseRef: base.mergeBase ?? base.sha });
+  const state = await resolveBaseline(root, { baseRef: base.mergeBase ?? base.sha, head: base.head ?? "HEAD" });
   if (state.status === "unpinned") return { reason: "no baseline pinned" };
   if (state.status === "pin-unreadable") return { reason: `the pin on disk could not be read because ${state.unreadable}` };
   if (state.status === "unreachable") return { reason: "the pinned baseline commit is unreachable" };
