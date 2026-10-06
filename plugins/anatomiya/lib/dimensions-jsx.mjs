@@ -523,10 +523,15 @@ export const JSX_DIMENSIONS = [
       // Held until the walk has seen whether the file reaches a translation layer.
       let translates = false;
       const sites = [];
+      // A translation element is visited before anything inside it, so with
+      // none seen yet nothing is inside one, and a file with no translation
+      // layer, which holds none, never scans its ancestors.
+      const opened = new Set();
       return {
         node(n, ctx) {
           if (!translates && showsI18n(n)) translates = true;
-          const inTrans = () => ctx.ancestors.some(isTransElement);
+          if (isTransElement(n)) opened.add(n);
+          const inTrans = () => opened.size > 0 && ctx.ancestors.some((a) => opened.has(a));
           if (n.type === "JSXOpeningElement") {
             if (TRANS_ELEMENT.test(jsxName(n) ?? "")) {
               sites.push({ node: n, conforming: true, where: declName(ctx.fn) });

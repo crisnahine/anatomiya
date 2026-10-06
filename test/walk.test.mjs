@@ -70,8 +70,19 @@ test("a visitor that throws on its third node loses its sites and no other row's
       },
     };
   };
-  const hits = collectHits(program, [{ key: "late", visitor: throwsLate }, ...asVisitors]);
-  assert.deepEqual(hits, collectHits(program, asRuns));
+  // Right after the throwing row, so its own call for the node that threw is
+  // the one a careless removal from the live list would skip.
+  const everyNode = (program, add) => ({
+    node(n) {
+      add({ conforming: true, where: n.type });
+    },
+  });
+  const hits = collectHits(program, [
+    { key: "late", visitor: throwsLate },
+    { key: "every", visitor: everyNode },
+    ...asVisitors,
+  ]);
+  assert.deepEqual(hits, collectHits(program, [{ key: "every", run: fromVisitor(everyNode) }, ...asRuns]));
 });
 
 test("a throw while making a visitor or in its done costs that row only", () => {
