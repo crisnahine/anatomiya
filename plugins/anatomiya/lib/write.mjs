@@ -290,10 +290,11 @@ function replaceAll(staged, removals, pair) {
     for (const [path, previous] of undo.reverse()) {
       try {
         if (previous === null) unlinkSync(path);
+        else if (previous === undefined) continue;
         // The record put back is a new file, so the layout file that answered
         // for it is stamped again or no hook reads it until the next scan.
-        else if (path === pair.record && pair.was !== null) writePair(dirname(path), previous, pair.was.layout);
-        else if (previous !== undefined) atomic(path, previous);
+        else if (path === pair.record && pair.was !== null) writePair(dirname(path), previous, pair.was.layout, pair.was.schema);
+        else atomic(path, previous);
       } catch {}
     }
     throw err;

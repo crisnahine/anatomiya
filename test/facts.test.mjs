@@ -748,7 +748,7 @@ test("the layout is written beside the record, and reads back as the record's ow
 
   const { size, mtimeMs } = statSync(join(dir, FACTS_PATH));
   assert.deepEqual(JSON.parse(readFileSync(join(dir, LAYOUT_PATH), "utf8")), { schema: FACTS_SCHEMA, record: { size, mtimeMs }, layout: record.layout });
-  assert.deepEqual(readLayout(dir), { layout: record.layout });
+  assert.deepEqual(readLayout(dir), { layout: record.layout, schema: FACTS_SCHEMA });
 });
 
 test("a layout file that cannot answer for the record beside it is not read", (t) => {
@@ -767,7 +767,7 @@ test("a layout file that cannot answer for the record beside it is not read", (t
   const exact = root(t);
   writeFacts(exact, result([dim()]));
   stamped(exact);
-  assert.deepEqual(readLayout(exact), { layout: { tests: [], roots: [] } }, "the control: an exact stamp is read");
+  assert.deepEqual(readLayout(exact), { layout: { tests: [], roots: [] }, schema: FACTS_SCHEMA }, "the control: an exact stamp is read");
 
   const ahead = root(t);
   writeFacts(ahead, result([dim()]));
@@ -879,4 +879,5 @@ test("a record that cannot be renamed into place leaves no temporary file", asyn
 
   assert.equal(readFileSync(join(dir, FACTS_PATH), "utf8"), before);
   assert.deepEqual(readdirSync(join(dir, ".claude", "anatomiya")).sort(), ["facts.json", "layout.json"]);
+  assert.notEqual(readLayout(dir), null, "the old pair still answers");
 });

@@ -118,6 +118,9 @@ a `.worktreeinclude` at the repository root copies the map and the pin in when t
 **/.claude/anatomiya/baseline.json
 ```
 
+The layout file saves time only where the copy keeps `facts.json`'s modification time. Elsewhere the
+hooks read the record, as they would with no layout file.
+
 The pin is the last line because the exclude above hides it along with the map, so the copied map
 arrives with the pin it was checked against. A linked worktree with no pin of its own reads its main
 checkout's, but only where that checkout can be named: a repository whose git directory is not the

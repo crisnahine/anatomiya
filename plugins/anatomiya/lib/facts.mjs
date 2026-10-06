@@ -388,14 +388,14 @@ export function writeFacts(root, result) {
 /**
  * The record's bytes and the layout file stamped from them, both written whole
  * before either is renamed, so a failure up to the record's rename replaces
- * nothing. The record goes first: a layout file left older than its record is
- * refused by the reader rather than believed.
+ * nothing. The record goes first because that rename is the one that can fail
+ * with nothing moved: the old pair stays whole and still answers.
  */
-export function writePair(dir, recordBytes, layout) {
+export function writePair(dir, recordBytes, layout, schema) {
   const record = join(dir, basename(FACTS_PATH));
   const temps = [writeTemp(record, recordBytes)];
   try {
-    temps.push(writeTemp(join(dir, basename(LAYOUT_PATH)), stampedLayout(layout, temps[0])));
+    temps.push(writeTemp(join(dir, basename(LAYOUT_PATH)), stampedLayout(layout, temps[0], schema)));
     renameSync(temps[0], record);
     renameSync(temps[1], join(dir, basename(LAYOUT_PATH)));
   } catch (err) {
@@ -416,15 +416,16 @@ export function factsJson(result) {
 /**
  * The layout file's bytes, under the record's schema, stamped with the size and
  * mtime of the record's temporary file. The rename keeps both, and a stat after
- * the rename could stamp another writer's record.
+ * the rename could stamp another writer's record. A rollback passes the schema
+ * the old layout file had, since the record it puts back was written under that.
  */
-export function stampedLayout(layout, recordTemp) {
+export function stampedLayout(layout, recordTemp, schema = FACTS_SCHEMA) {
   const { size, mtimeMs } = statSync(recordTemp);
-  return JSON.stringify({ schema: FACTS_SCHEMA, record: { size, mtimeMs }, layout: layout ?? null }, null, 2) + "\n";
+  return JSON.stringify({ schema, record: { size, mtimeMs }, layout: layout ?? null }, null, 2) + "\n";
 }
 
 /**
- * The layout the record beside it holds, as `{ layout }`, or null where the
+ * The layout the record beside it holds, as `{ layout, schema }`, or null where the
  * layout file cannot answer for that record and the record has to be read.
  *
  * Refused under the record's own schema rule, and unless the record on disk is
@@ -444,7 +445,7 @@ export function readLayout(root, facts = resolveInside(root, FACTS_PATH)) {
   const schema = parsed?.schema;
   if (!Number.isInteger(schema) || schema < 1 || schema > FACTS_SCHEMA) return null;
   if (parsed.record?.size !== record.size || parsed.record?.mtimeMs !== record.mtimeMs) return null;
-  return { layout: parsed.layout ?? null };
+  return { layout: parsed.layout ?? null, schema };
 }
 
 // Null for anything a stat refuses: this runs inside a hook, which never throws.
