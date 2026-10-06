@@ -3,7 +3,7 @@ import { dirname, join, resolve, sep } from "node:path";
 
 import { gitBuffered, gitStreamed } from "./git.mjs";
 import { EXT_BY_LANG, LANGUAGES, language } from "./langs.mjs";
-import { CAPABILITY_WORDS, fileStem, stemWords } from "./dimensions-capability.mjs";
+import { CAPABILITY_WORDS, fileStem, stemWords } from "./stems.mjs";
 import { FRAMEWORKS } from "./frameworks.mjs";
 import { isLink, readHead } from "./rules.mjs";
 

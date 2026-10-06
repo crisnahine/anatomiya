@@ -562,7 +562,7 @@ This repository:
   (the method, and the payload work on 2.1.251 and 2.1.250),
   `docs/research/one-line-that-finds-the-existing-function.md` (the reuse wording this note leaves
   alone), `plugins/anatomiya/hooks/hooks.json`, `plugins/anatomiya/lib/hook.mjs` (`echoContext`),
-  `plugins/anatomiya/lib/commands.mjs` (`runEcho`), `plugins/anatomiya/lib/reuse.mjs`
+  `plugins/anatomiya/lib/hook-verbs.mjs` (`runEcho`), `plugins/anatomiya/lib/reuse.mjs`
   (`REUSE_MARK`, `askedMarks`), `plugins/anatomiya/lib/rules.mjs` (`readTail`),
   `DECISIONS.md` row A24.
 

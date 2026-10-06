@@ -114,10 +114,11 @@ a `.worktreeinclude` at the repository root copies the map and the pin in when t
 ```
 **/.claude/rules/anatomiya-*.md
 **/.claude/anatomiya/facts.json
+**/.claude/anatomiya/layout.json
 **/.claude/anatomiya/baseline.json
 ```
 
-The pin is the third line because the exclude above hides it along with the map, so the copied map
+The pin is the last line because the exclude above hides it along with the map, so the copied map
 arrives with the pin it was checked against. A linked worktree with no pin of its own reads its main
 checkout's, but only where that checkout can be named: a repository whose git directory is not the
 checkout's own `.git` (moved out with `--separate-git-dir`) names none, and without the copied pin

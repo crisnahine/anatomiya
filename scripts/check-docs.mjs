@@ -28,9 +28,9 @@ import { CAVEATS } from "../plugins/anatomiya/lib/check-report.mjs";
 import { pairingsFor } from "../plugins/anatomiya/lib/pairing.mjs";
 import { REGISTRY, rowsForLangs, rowsOfKind } from "../plugins/anatomiya/lib/registry.mjs";
 import { EXCLUDE_LINES, PREFIX, RULES_DIR } from "../plugins/anatomiya/lib/rules.mjs";
-import { FACTS_PATH } from "../plugins/anatomiya/lib/facts.mjs";
+import { FACTS_PATH, LAYOUT_PATH } from "../plugins/anatomiya/lib/facts.mjs";
 import { PIN_PATH } from "../plugins/anatomiya/lib/baseline.mjs";
-import { GATES } from "../plugins/anatomiya/lib/reduce.mjs";
+import { GATES } from "../plugins/anatomiya/lib/gates.mjs";
 import { PARSE_OUTCOMES } from "../plugins/anatomiya/lib/parse.mjs";
 import { ELIGIBLE, REFUSED } from "../test/fixtures/counter-pins.mjs";
 
@@ -509,11 +509,11 @@ export function checkDocs() {
     /\b0\.90\b/.test(gateText),
     "no document states the 0.90 bar, which is the one number that never moves"
   );
-  claim(`${REL.anatomiya}/lib/reduce.mjs`, GATES.minRatio === 0.9, `minRatio is ${GATES.minRatio}, and it is fixed at 0.90 by decision`);
+  claim(`${REL.anatomiya}/lib/gates.mjs`, GATES.minRatio === 0.9, `minRatio is ${GATES.minRatio}, and it is fixed at 0.90 by decision`);
 
   // Anything the gates stopped reading must stop being described.
   for (const dead of ["minCandidates", "minAuthors", "maxSingleFileShare"]) {
-    claim(`${REL.anatomiya}/lib/reduce.mjs`, GATES[dead] === undefined, `${dead} is back in GATES; it was replaced by a repository-relative rule`);
+    claim(`${REL.anatomiya}/lib/gates.mjs`, GATES[dead] === undefined, `${dead} is back in GATES; it was replaced by a repository-relative rule`);
     claim("docs", !gateText.includes(dead), `the docs still name ${dead}, which the gates no longer read`);
   }
 
@@ -593,7 +593,7 @@ export function checkDocs() {
   // the pin it was checked against everywhere else. Read as lines, since git on
   // Windows checks the README out with CRLF endings.
   const readmeLines = new Set(read("README.md").split(/\r?\n/));
-  for (const path of [`${RULES_DIR}/${PREFIX}*.md`, FACTS_PATH, PIN_PATH]) {
+  for (const path of [`${RULES_DIR}/${PREFIX}*.md`, FACTS_PATH, LAYOUT_PATH, PIN_PATH]) {
     claim("README.md", readmeLines.has(`**/${path}`), `does not have a worktree Claude Code makes copy ${path}`);
   }
 

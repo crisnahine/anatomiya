@@ -8,13 +8,18 @@
  * version at all.
  */
 import { randomBytes } from "node:crypto";
-import { closeSync, existsSync, mkdirSync, openSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, openSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 
 import { outsideClaude, readHead, resolveInside } from "./rules.mjs";
-import { wilsonLower } from "./reduce.mjs";
+import { wilsonLower } from "./gates.mjs";
 
 export const FACTS_PATH = ".claude/anatomiya/facts.json";
+
+// The record's `layout` on its own, written with it by the same writer: the
+// hooks read only the layout, and parsing the whole record for it cost 14 ms of
+// a notice on microsoft/vscode, whose record is 10 MB and whose layout 1.5 KB.
+export const LAYOUT_PATH = ".claude/anatomiya/layout.json";
 
 // 2 added the polarity fields. A reader of the older shape sees no `states` and
 // falls back to `directive`, which is the claim side and is what every schema-1
@@ -378,12 +383,67 @@ export function writeFacts(root, result) {
     throw new Error(`${outsideClaude(dirname(FACTS_PATH))}, so the facts were not written`);
   }
   mkdirSync(dir, { recursive: true });
-  atomic(join(dir, basename(FACTS_PATH)), factsJson(result));
+  // Stamped from the temporary file, whose size and mtime the rename keeps:
+  // stat after the rename and another writer's record could be the one stamped.
+  const path = join(dir, basename(FACTS_PATH));
+  const tmp = writeTemp(path, factsJson(result));
+  let stamp;
+  try {
+    stamp = statSync(tmp);
+    renameSync(tmp, path);
+  } catch (err) {
+    try {
+      unlinkSync(tmp);
+    } catch {}
+    throw err;
+  }
+  atomic(join(dir, basename(LAYOUT_PATH)), layoutJson(result, stamp));
 }
 
 /** The record's bytes, for a writer that puts them on disk together with the map. */
 export function factsJson(result) {
   return JSON.stringify(factsRecord(result), null, 2) + "\n";
+}
+
+/**
+ * The layout file's bytes: the record's own `layout`, under the record's schema,
+ * stamped with the size and mtime of the record file it was taken from.
+ */
+export function layoutJson(result, { size, mtimeMs }) {
+  return JSON.stringify({ schema: FACTS_SCHEMA, record: { size, mtimeMs }, layout: result.layout ?? null }, null, 2) + "\n";
+}
+
+/**
+ * The layout the record beside it holds, as `{ layout }`, or null where the
+ * layout file cannot answer for that record and the record has to be read.
+ *
+ * Refused under the record's own schema rule, and unless the record on disk is
+ * the very file it was stamped from, to the byte count and the millisecond. An
+ * older build rewriting only the record, a checkout or a restore that changes it
+ * and keeps old mtimes, a conflict marker or a hand edit all leave a layout file
+ * describing some other record. Refused too past the size the reader takes, since
+ * the record then reads as nothing.
+ */
+export function readLayout(root) {
+  const path = resolveInside(root, LAYOUT_PATH);
+  const facts = path === null ? null : resolveInside(root, FACTS_PATH);
+  if (facts === null) return null;
+  const record = statOf(facts);
+  if (record === null || record.size > RECORD_MOST) return null;
+  const parsed = readRecord(path).record;
+  const schema = parsed?.schema;
+  if (!Number.isInteger(schema) || schema < 1 || schema > FACTS_SCHEMA) return null;
+  if (parsed.record?.size !== record.size || parsed.record?.mtimeMs !== record.mtimeMs) return null;
+  return { layout: parsed.layout ?? null };
+}
+
+// Null for anything a stat refuses: this runs inside a hook, which never throws.
+function statOf(path) {
+  try {
+    return statSync(path);
+  } catch {
+    return null;
+  }
 }
 
 function factsRecord(result) {
