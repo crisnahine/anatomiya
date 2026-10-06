@@ -159,9 +159,10 @@ function installMap(source, arm) {
  * The probe: did the map actually attach in this arm?
  *
  * A `paths` rule attaches when the agent uses the Read tool on a matching file
- * or when an `@file` mention names it. Not on grep, not on glob, not on `cat`,
- * not on an edit with no prior read. An arm where it did not attach measured
- * nothing, and the only way to know is to ask.
+ * or when an `@file` mention names it, and from 2.1.288 after a Write or Edit.
+ * Not on grep, not on glob, not on `cat`, and before 2.1.288 not on an edit
+ * with no prior read. An arm where it did not attach measured nothing, and the
+ * only way to know is to ask.
  */
 export const PROBE = [
   "Read the file at {file}.",

@@ -155,8 +155,9 @@ test("the principle and the finding refuse on the same floor", () => {
 
 test("a write into a directory with no precedent is worth a word before it happens", () => {
   // A44: the claim arrives on PostToolUse, after the file exists, and an area
-  // file loads only when something in it is read, so a directory nobody read
-  // says nothing at all. The verdict is decidable from the path alone.
+  // file loads on a read, or from 2.1.288 after a Write or Edit lands, so a
+  // directory nobody read says nothing before the write. The verdict is
+  // decidable from the path alone.
   const layout = {
     roots: [
       root("app/mailers", { files: 4, companions: { with: 0, of: 4, root: null } }),

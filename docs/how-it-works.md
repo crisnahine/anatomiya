@@ -649,7 +649,7 @@ Output goes to `.claude/rules/`, which is a context directory the agent loads fr
 | File | `paths` key | Loads |
 |---|---|---|
 | `anatomiya-overview.md` | none | every turn, and again from disk after a compaction |
-| `anatomiya-area-<id>.md` | the area glob | when a file under that glob is read, once per context window |
+| `anatomiya-area-<id>.md` | the area glob | when a file under that glob is read, or from 2.1.288 after one is written or edited, once per context window |
 
 There is a second delivery beside that one, declared by the plugin rather than installed by a scan: a
 hook that echoes the overview back after a turn or a tool call, stamped with the moment it was read,
@@ -681,7 +681,11 @@ The notice informs and never refuses. Measured on 2.1.250: a `PreToolUse` hook c
 this notice rests on a namesake match that reads a tested directory as untested where the names differ
 in case. Refusing on a count that can be wrong stalls real work, so it says its piece and lets the write
 through. The text reaches the model on its next turn, after that write and before the next one, which is
-what makes it worth saying at all when a session is creating twelve files rather than one.
+what makes it worth saying at all when a session is creating twelve files rather than one. From 2.1.288
+the build shows the area file for that path arriving at the same moment as the notice's text, though no
+live session has timed it (`docs/research/what-changed-between-2-1-286-and-2-1-290.md`). The notice
+still says the one finding for this path where the area file states counts for the whole directory,
+and it alone speaks for a path no area glob reaches and for a worktree with no map of its own.
 
 A root counts as testing its files once three of them have a namesake test, the same floor its producers
 take before its silence counts. One is an outlier: on a front end, one namesake among 517 files kept the
@@ -866,8 +870,10 @@ parallel reads gave four copies from the parent and one from inside the checkout
 options.
 
 That last row is the ceiling on the whole design. A `paths` rule attaches when the agent uses the
-Read tool on a matching file or when an `@file` mention names it. It does not attach on grep, on
-glob, on `cat` through bash, or on an edit with no prior read.
+Read tool on a matching file or when an `@file` mention names it, and from Claude Code 2.1.288 when
+a Write or Edit on one has landed. As read from the build, that load arrives with the next request,
+after the path was chosen. It does not attach on grep, on glob, on `cat` through bash, or on
+`NotebookEdit`, and before 2.1.288 not on an edit with no prior read.
 
 Once is per context window, not per session. A second read in the same area delivers nothing,
 because that file is already in the window. A compaction or a resume rebuilds the window and the
@@ -1136,10 +1142,10 @@ with a directory name and a count is nouned with an extension, so the tests line
 `0 of 504 .tsx files have a namesake test` rather than calling anything a component.
 
 It goes there and nowhere else because the overview has no `paths` key, so it is loaded before any
-Read or Write. That is the one channel that reaches a write path nobody read in first, which is
-measured: on a 5,517-file Rails API the exploration phase ran as four subagents and no area file
-attached in any of them, the one dissected having made 54 `cat`, `grep` and `head` calls and no Read
-at all. The four directories that feature's code landed in never attached one either.
+Read or Write. That is the one channel that reaches a write path nobody read before the write lands,
+which is measured: on a 5,517-file Rails API the exploration phase ran as four subagents and no area
+file attached in any of them, the one dissected having made 54 `cat`, `grep` and `head` calls and no
+Read at all. The four directories that feature's code landed in never attached one either.
 
 ### The layout corpus
 
