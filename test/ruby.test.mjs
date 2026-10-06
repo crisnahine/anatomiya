@@ -2248,6 +2248,40 @@ test("a tree too large for a shard's held heap is read again on a full one, and 
   assert.deepEqual(pids.filter(exists), [], "no child of either attempt is left, running or unreaped");
 });
 
+test("a held heap that runs out keeps the records already answered and reads again only the rest", { ...needsRuby, ...needsShebang }, async () => {
+  // Two small files answer before the dense one outgrows the hold. The stand-in
+  // keeps what each parse child was handed, by pid, in the order they started.
+  const home = mkdtempSync(join(dir, "held-rest-"));
+  const real = execFileSync("ruby", ["-e", "print RbConfig.ruby"], { encoding: "utf8" });
+  const log = join(home, "pids");
+  const ruby = join(home, "ruby");
+  writeFileSync(
+    ruby,
+    [
+      "#!/bin/sh",
+      `case "$*" in *MAX_BYTES*) ;; *) exec '${real}' "$@" ;; esac`,
+      `first=$(test -s '${log}' && echo no || echo yes)`,
+      `echo $$ >> '${log}'`,
+      `cat > '${home}/in.'$$`,
+      `if [ "$first" = yes ]; then '${real}' "$@" < '${home}/in.'$$; exec sleep 30; fi`,
+      `exec '${real}' "$@" < '${home}/in.'$$`,
+      "",
+    ].join("\n"),
+    { mode: 0o755 }
+  );
+  const small = [write("held_small_a", "a = 1\n"), write("held_small_b", "b = 2\n")];
+  const big = write("held_dense", Array.from({ length: 150_000 }, () => "a.b").join("\n") + "\n");
+  const out = await parseRuby([...small, big], { ruby, dimensions: RUBY_DIMENSIONS, shards: 1 });
+
+  assert.deepEqual(out.results.map((r) => [r.rel, r.ok, r.attempts]), [["held_small_a.rb", true, 1], ["held_small_b.rb", true, 1], ["held_dense.rb", true, 1]]);
+  assert.equal(out.error, null);
+  const pids = readFileSync(log, "utf8").trim().split("\n");
+  assert.equal(pids.length, 2, "the held thread ran out and a second child was started");
+  const rels = (pid) => readFileSync(join(home, `in.${pid}`), "utf8").split("\0").filter((_, i) => i % 2 === 0).slice(0, -1);
+  assert.deepEqual(rels(pids[0]), ["held_small_a.rb", "held_small_b.rb", "held_dense.rb"]);
+  assert.deepEqual(rels(pids[1]), ["held_dense.rb"], "only the file with no record is read again");
+});
+
 test("a shard whose thread throws after its child started stops and reaps that child", needsShebang, async () => {
   // A fatal whose value cannot become a string throws inside the stream
   // handler, after the child is running and with its clocks on that thread.
