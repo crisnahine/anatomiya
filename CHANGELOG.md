@@ -33,7 +33,9 @@ were measured on a loaded machine and will be re-timed before release.
   the files a diff touched. The Ruby dimensions and facets share one walk of each tree: 5.5 walks a
   file where it was 22.5. A large Ruby corpus is still read by up to four children, never more than
   the machine's cores less one. On a large Rails API the parse phase went from 3,224ms to 2,041ms
-  and the scan from 3,948ms to 2,677ms.
+  and the scan from 3,948ms to 2,677ms. When a `ruby` child dies mid-run, which files it charges
+  follows the byte balance of the batches, so the degraded map can differ from 0.13.3's: on 2,100
+  files under a `ruby` that hangs after five records, 3 areas against 1.
 - `check` resolves HEAD once, runs its independent git reads side by side and asks git once per
   commit sha: 26 git calls to 21 on a two-file branch here, and the median check went from 482ms to
   347ms here, 1821ms to 1636ms on a large Rails API and 607ms to 413ms on eslint.

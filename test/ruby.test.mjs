@@ -2218,9 +2218,9 @@ function exists(pid) {
 test("a tree too large for a shard's held heap is read again on a full one, and the first child is stopped and reaped", { ...needsRuby, ...needsShebang }, async () => {
   // 233 KB of nested calls, under the size where the hold grows to cover the
   // densest shapes, and dense enough to outgrow the hold its size buys there.
-  // The stand-in logs the pid
-  // of every parse child, and the first one lingers after its answer, so a
-  // child left running by the thread that died is still there to find.
+  // The stand-in logs the pid of every parse child and execs, so the pid is
+  // the interpreter's own, still blocked writing a tree the dead thread never
+  // read.
   const home = mkdtempSync(join(dir, "held-"));
   const real = execFileSync("ruby", ["-e", "print RbConfig.ruby"], { encoding: "utf8" });
   const log = join(home, "pids");
@@ -2230,9 +2230,7 @@ test("a tree too large for a shard's held heap is read again on a full one, and 
     [
       "#!/bin/sh",
       `case "$*" in *MAX_BYTES*) ;; *) exec '${real}' "$@" ;; esac`,
-      `first=$(test -s '${log}' && echo no || echo yes)`,
       `echo $$ >> '${log}'`,
-      `if [ "$first" = yes ]; then '${real}' "$@"; exec sleep 30; fi`,
       `exec '${real}' "$@"`,
       "",
     ].join("\n"),
@@ -2261,10 +2259,8 @@ test("a held heap that runs out keeps the records already answered and reads aga
     [
       "#!/bin/sh",
       `case "$*" in *MAX_BYTES*) ;; *) exec '${real}' "$@" ;; esac`,
-      `first=$(test -s '${log}' && echo no || echo yes)`,
       `echo $$ >> '${log}'`,
       `cat > '${home}/in.'$$`,
-      `if [ "$first" = yes ]; then '${real}' "$@" < '${home}/in.'$$; exec sleep 30; fi`,
       `exec '${real}' "$@" < '${home}/in.'$$`,
       "",
     ].join("\n"),
@@ -2363,4 +2359,58 @@ test("a shard whose thread throws after its child started stops and reaps that c
   assert.deepEqual(out.results.map((r) => [r.rel, r.ok, Boolean(r.crashed), r.attempts]), [["a.rb", false, true, 1], ["b.rb", false, true, 1]]);
   assert.match(out.results[0].error, /primitive/);
   assert.equal(exists(Number(readFileSync(log, "utf8"))), false, "the child is gone, not running and not a zombie");
+});
+
+test("a shard whose thread dies while a forked writer fills the paused stdout lets the scan's process exit", needsShebang, () => {
+  // The stand-in forks rather than execs, so killing it leaves the writer
+  // blocked on a pipe the dead thread will never ack. Only closing the
+  // parent's end stops it, and an open end kept the whole process alive.
+  const home = mkdtempSync(join(dir, "forked-"));
+  const writer = join(home, "writer");
+  const ruby = stubRuby("forked", [
+    "cat >/dev/null",
+    READY,
+    `printf '{"fatal":{"toString":1,"valueOf":1}}\\n'`,
+    `yes '{"rel":"zz.rb","ok":false,"error":"x"}' & echo $! > '${writer}'`,
+    "wait",
+  ]);
+  const lib = new URL("../plugins/anatomiya/lib/ruby.mjs", import.meta.url).href;
+  const script = `const { parseRuby } = await import(${JSON.stringify(lib)});
+const out = await parseRuby(${JSON.stringify(pair)}, { ruby: ${JSON.stringify(ruby)} });
+process.stdout.write(JSON.stringify(out.results.map((r) => [r.rel, Boolean(r.crashed)])));`;
+  try {
+    const stdout = execFileSync(process.execPath, ["--input-type=module", "-e", script], { encoding: "utf8", timeout: 20_000 });
+    assert.equal(stdout, '[["a.rb",true],["b.rb",true]]');
+    assert.equal(exists(Number(readFileSync(writer, "utf8"))), false, "the writer died on the closed pipe");
+  } finally {
+    try {
+      process.kill(Number(readFileSync(writer, "utf8")), "SIGKILL");
+    } catch {
+      // never started, or already gone
+    }
+  }
+});
+
+test("a check reads a tree 700 blocks deep: it crosses to the parent whole", needsRuby, async () => {
+  const deep = write("deep_blocks", "a {\n".repeat(700) + "}\n".repeat(700));
+  const out = await parseRuby([deep], { dimensions: [] });
+
+  assert.deepEqual(out.results.map((r) => [r.rel, r.ok, r.error ?? null]), [["deep_blocks.rb", true, null]]);
+  assert.equal(JSON.stringify(out.results[0].program).split('"t":"block"').length - 1, 700);
+});
+
+test("a record lost between a shard and the parent is charged rather than dropped", needsShebang, async () => {
+  // A child's record whose error is an object nested 3,000 deep, which the
+  // parent cannot decode off a message. The other file still answers.
+  const home = mkdtempSync(join(dir, "lost-"));
+  const lines = join(home, "lines");
+  const nested = JSON.parse('{"a":'.repeat(3_000) + "1" + "}".repeat(3_000));
+  writeFileSync(lines, JSON.stringify({ rel: "a.rb", ok: false, error: nested }) + "\n" + JSON.stringify({ rel: "b.rb", ok: false, error: "x" }) + "\n");
+  const ruby = stubRuby("lost", ["cat >/dev/null", READY, `cat '${lines}'`]);
+  const out = await parseRuby(pair, { ruby, dimensions: [] });
+
+  assert.deepEqual(out.results.map((r) => [r.rel, r.ok, r.error, Boolean(r.crashed), r.attempts]), [
+    ["a.rb", false, "its record never reached the parent", true, 1],
+    ["b.rb", false, "x", false, 1],
+  ]);
 });

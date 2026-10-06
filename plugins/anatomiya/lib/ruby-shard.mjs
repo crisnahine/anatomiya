@@ -67,7 +67,13 @@ function spawner(command, args, options) {
 }
 
 // Each record leaves as it is decided, so the held heap carries one tree
-// rather than every record of the batch.
-const out = await parseBatch(files, { ...job, dimensions, spawner, onResult: (result) => parentPort.postMessage({ result }) });
+// rather than every record of the batch. A check's tree crosses as JSON text:
+// decoding a deeply nested object off a message overflows the parent's stack,
+// and the record was lost with no error.
+const post = (result) =>
+  result.program
+    ? parentPort.postMessage({ result: { ...result, program: null }, tree: JSON.stringify(result.program) })
+    : parentPort.postMessage({ result });
+const out = await parseBatch(files, { ...job, dimensions, spawner, onResult: post });
 parentPort.postMessage({ out });
 parentPort.off("message", relay);
