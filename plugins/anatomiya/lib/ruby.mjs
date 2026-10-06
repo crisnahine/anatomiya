@@ -511,11 +511,11 @@ function onThread(files, job, resourceLimits) {
     });
     // Messages drain before exit, so one that answered has already resolved.
     worker.once("exit", async (code) => {
-      await Promise.all([...children.values()].map(stopped));
+      await Promise.all([...children.values()].map(killAndReap));
       if (resourceLimits && failure?.code === "ERR_WORKER_OUT_OF_MEMORY") return resolve({ ranOut: true, results });
       const out = blank();
       out.error = failure ? String(failure.message ?? failure) : `ruby shard exited ${code}`;
-      for (const f of files) deliver(out, { rel: f.rel, ok: false, error: out.error, crashed: true }, 1);
+      for (const f of files) out.results.push({ rel: f.rel, ok: false, error: out.error, crashed: true, attempts: 1 });
       resolve(out);
     });
   });
@@ -557,7 +557,7 @@ function startFor(worker, { id, spawn: [command, args, options] }) {
 }
 
 /** Killed if still running, and resolved once the exit is reaped. */
-function stopped(child) {
+function killAndReap(child) {
   return new Promise((resolve) => {
     if (!child || child.pid === undefined || child.exitCode !== null || child.signalCode !== null) return resolve();
     child.once("exit", () => resolve());
@@ -584,11 +584,11 @@ function blank() {
 /**
  * One child over one batch, retried once for what a timer cut off. The body a
  * shard worker runs; `onResult` takes each record as it is decided instead of
- * the batch holding them all, and `spawner` starts the child on the parent.
+ * the batch holding them all, so the batch's own `results` stays empty, and
+ * `spawner` starts the child on the parent.
  */
-export async function parseBatch(files, { ruby, guards, rubyScript, load, dimensions, onResult = null, spawner }) {
+export async function parseBatch(files, { ruby, guards, rubyScript, load, dimensions, onResult, spawner }) {
   const out = blank();
-  if (onResult) out.results = { push: onResult };
   const seen = new Set();
   const unanswered = () => files.filter((f) => !seen.has(f.rel));
 
@@ -649,7 +649,7 @@ export async function parseBatch(files, { ruby, guards, rubyScript, load, dimens
         while ((i = buf.indexOf("\n")) >= 0) {
           const line = buf.slice(0, i);
           buf = buf.slice(i + 1);
-          if (line) take(out, seen, line, dimensions, attempt);
+          if (line) take(out, onResult, seen, line, dimensions, attempt);
         }
         // A single line this long means one file produced it, and V8 refuses to
         // hold a string much larger. Dropping the run beats an unattributable
@@ -667,7 +667,7 @@ export async function parseBatch(files, { ruby, guards, rubyScript, load, dimens
         // whatever never answered. Reading the tail here would hand it a result
         // for a file it has already accounted for, after it stopped listening.
         if (settled) return;
-        if (buf) take(out, seen, buf, dimensions, attempt);
+        if (buf) take(out, onResult, seen, buf, dimensions, attempt);
         // The ready line is the proof that the script itself started. Without it
         // the failure is the interpreter, not a file, and stderr is the only
         // thing that says which.
@@ -716,7 +716,7 @@ export async function parseBatch(files, { ruby, guards, rubyScript, load, dimens
   // repository instead of a failed run.
   for (const f of unanswered()) {
     deliver(
-      out,
+      onResult,
       {
         rel: f.rel,
         ok: false,
@@ -731,7 +731,7 @@ export async function parseBatch(files, { ruby, guards, rubyScript, load, dimens
   return out;
 }
 
-function take(out, seen, line, dimensions, attempt) {
+function take(out, onResult, seen, line, dimensions, attempt) {
   let msg;
   try {
     msg = JSON.parse(line);
@@ -794,10 +794,10 @@ function take(out, seen, line, dimensions, attempt) {
       result.program = null;
     }
   }
-  deliver(out, result, attempt);
+  deliver(onResult, result, attempt);
 }
 
-function deliver(out, result, attempts) {
+function deliver(keep, result, attempts) {
   result.attempts = attempts;
-  out.results.push(result);
+  keep(result);
 }
