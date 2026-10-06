@@ -177,11 +177,20 @@ The shape:
     blind: null,
   },
   langs: ["js", "jsx"],
-  run(program, add) {
-    // one add() per candidate site, conforming decided per site
+  visitor(program, add) {
+    return {
+      node(n, ctx) {
+        // one add() per candidate site, conforming decided per site
+      },
+    };
   },
 }
 ```
+
+A JS row is a visitor of the one walk the parse worker takes over each file (B49), and its file sets
+`run` from it with `fromVisitor`, so the check and the tests can still ask one row at a time. Work
+that needs the whole file goes in an optional `done()` after the walk. A row that never walks,
+because it reads `program.body` alone, declares `run` instead. Ruby rows declare `run`.
 
 A file-to-file obligation is the same three numbers with the site defined differently: the site is
 the file, so `candidates` equals `applicability` and `conforming` counts the producers whose companion
