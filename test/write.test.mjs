@@ -1441,22 +1441,24 @@ test("a rules directory the repository shares between agents through a link is w
   rmSync(dir, { recursive: true, force: true });
 });
 
-test("a directory where facts.json belongs is refused by name before a dry run answers", () => {
+test("a directory where facts.json or layout.json belongs is refused by name before a dry run answers", () => {
   // Measured: a committed directory at .claude/anatomiya/facts.json let a dry
   // run print "would write" and the real scan die on a raw EISDIR out of the
-  // rename.
-  const dir = workspace();
-  mkdirSync(join(dir, STORE, "facts.json"), { recursive: true });
+  // rename. layout.json is renamed into place beside it the same way.
+  for (const leaf of ["facts.json", "layout.json"]) {
+    const dir = workspace();
+    mkdirSync(join(dir, STORE, leaf), { recursive: true });
 
-  for (const dryRun of [true, false]) {
-    assert.throws(
-      () => writeMap(result(dir, [area("src/services")]), { dryRun }),
-      (err) => err.message === `${STORE}/facts.json is not a file, so the map could not be written: remove it and scan again`,
-      dryRun ? "dry run" : "real write"
-    );
+    for (const dryRun of [true, false]) {
+      assert.throws(
+        () => writeMap(result(dir, [area("src/services")]), { dryRun }),
+        (err) => err.message === `${STORE}/${leaf} is not a file, so the map could not be written: remove it and scan again`,
+        `${leaf}, ${dryRun ? "dry run" : "real write"}`
+      );
+    }
+    assert.equal(existsSync(join(dir, RULES)), false, `${leaf}: and nothing else was written`);
+    rmSync(dir, { recursive: true, force: true });
   }
-  assert.equal(existsSync(join(dir, RULES)), false, "and nothing else was written");
-  rmSync(dir, { recursive: true, force: true });
 });
 
 test("a facts.json linked out of .claude is not read", () => {
