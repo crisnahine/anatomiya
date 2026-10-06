@@ -126,3 +126,58 @@ test("a visitor row that found nothing gets no entry", () => {
   const quiet = () => ({ node() {} });
   assert.deepEqual(collectHits(program, [{ key: "quiet", visitor: quiet }]), {});
 });
+
+/* --- every shipped row on the shared walk --- */
+
+const ROWS_SOURCE = `
+import React, { useCallback, useState } from "react";
+import type { Props } from "./types";
+import { Thing, Other } from "./things";
+import log from "./logger";
+import { get } from "./api-client";
+import axios from "axios";
+import config from "./config";
+const PORT = process.env.PORT || 3000;
+let counter = 0;
+export function useOne(): number { return counter++; }
+export const helper = (opts: Props) => opts.value ?? null;
+function overloaded(a: string): string;
+function overloaded(a: number): number;
+function overloaded(a: any) { return a; }
+export async function load(params) {
+  try { await fetch(params.url); } catch (e) { log.info(e); throw e; }
+  return { ok: true, data: axios.get(config.api.host) };
+}
+export default function Widget({ items, ...rest }: Props) {
+  const [n, setN] = useState(0);
+  const onClick = useCallback(() => setN(n + 1), [n]);
+  const onHover = () => console.log(n);
+  React.useEffect(() => { return undefined; }, []);
+  items.forEach((i) => get(i));
+  for (const i of items) new Thing(i!.id);
+  return <div {...rest} onClick={onClick} onMouseOver={onHover}><Other {...items} />Hello there</div>;
+}
+export class Base extends React.Component {}
+export interface IShape { x: number }
+export type TPoint = { x: Other };
+test("a case", () => { expect(Widget).toBeDefined(); assert.ok(1); });
+`;
+
+test("every JS row answers the same on the shared walk as walking alone, with a frozen ctx", async () => {
+  const { dimensionsFor } = await import("../plugins/anatomiya/lib/dimensions.mjs");
+  await import("../plugins/anatomiya/lib/registry.mjs");
+  const rows = dimensionsFor(["js", "jsx"]);
+  const { program, comments } = parseSync("f.tsx", ROWS_SOURCE, { sourceType: "module" });
+  const extra = { comments, source: ROWS_SOURCE, rel: "src/widget.tsx" };
+
+  const alone = collectHits(program, rows.map((d) => ({ key: d.key, run: d.run })), extra);
+  // A visitor that writes to the ctx it shares with every other row throws
+  // here, and loses its sites.
+  const frozen = (tree, visit) => walk(tree, (node, ctx) => visit(node, Object.freeze(ctx)));
+  const shared = collectHits(program, rows, extra, frozen);
+
+  assert.deepEqual(shared, alone);
+  const visiting = rows.filter((d) => d.visitor).map((d) => d.key);
+  const silent = visiting.filter((k) => !shared[k]);
+  assert.ok(silent.length <= 3, `the fixture should reach most visitor rows; silent: ${silent.join(", ")}`);
+});
