@@ -2282,6 +2282,43 @@ test("a held heap that runs out keeps the records already answered and reads aga
   assert.deepEqual(rels(pids[1]), ["held_dense.rb"], "only the file with no record is read again");
 });
 
+test("a shard whose thread dies while a stalled child's stdout is held open ends at once, charged, and reaps it", needsShebang, async () => {
+  // The child answers one file, starts a process that keeps its stdout open,
+  // and then goes silent. The thread then dies on a fatal it cannot turn into
+  // text. SIGKILL ends the child, but its pipe closes only when the holder
+  // ends, so a reaper waiting for the close waited out the holder's sleep.
+  // The clocks are short, so a thread that did not die would end it too.
+  const home = mkdtempSync(join(dir, "held-pipe-"));
+  const log = join(home, "pid");
+  const holder = join(home, "holder");
+  const ruby = stubRuby("held-pipe", [
+    "cat >/dev/null",
+    `echo $$ > '${log}'`,
+    READY,
+    `printf '{"rel":"a.rb","ok":false,"error":"x"}\\n'`,
+    `sleep 30 & echo $! > '${holder}'`,
+    "sleep 1",
+    `printf '{"fatal":{"toString":1,"valueOf":1}}\\n'`,
+    "exec sleep 30",
+  ]);
+  try {
+    const started = Date.now();
+    const out = await parseRuby(pair, { ruby, dimensions: RUBY_DIMENSIONS, guards: { idleMs: 3_000, wallBaseMs: 6_000 } });
+
+    assert.ok(Date.now() - started < 15_000, "the reaper did not wait for the held pipe");
+    assert.deepEqual(out.results.map((r) => [r.rel, r.ok, Boolean(r.crashed), r.attempts]), [["a.rb", false, true, 1], ["b.rb", false, true, 1]]);
+    assert.match(out.results[0].error, /primitive/);
+    assert.equal(out.results[1].error, out.results[0].error);
+    assert.equal(exists(Number(readFileSync(log, "utf8"))), false, "the child is gone, not running and not a zombie");
+  } finally {
+    try {
+      process.kill(Number(readFileSync(holder, "utf8")), "SIGKILL");
+    } catch {
+      // never started, or already gone
+    }
+  }
+});
+
 test("a shard whose thread throws after its child started stops and reaps that child", needsShebang, async () => {
   // A fatal whose value cannot become a string throws inside the stream
   // handler, after the child is running and with its clocks on that thread.
