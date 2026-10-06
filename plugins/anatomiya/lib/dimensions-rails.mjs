@@ -1,4 +1,3 @@
-import { fromVisitor } from "./walk.mjs";
 import { walkRuby, constName, ownDef, site, args } from "./ruby-walk.mjs";
 
 /**
@@ -778,7 +777,6 @@ export const RAILS_DIMENSIONS = [
   },
 
 ];
-for (const d of RAILS_DIMENSIONS) if (d.visitor) d.run = fromVisitor(d.visitor, walkRuby);
 
 /** The first string leaf under a call's arguments: `<<~SQL.squish` hides it behind a call. */
 function firstString(list) {
