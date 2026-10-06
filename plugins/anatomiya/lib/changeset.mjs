@@ -240,10 +240,11 @@ export async function pendingPaths(root, { timeout } = {}) {
  * HEAD is asked rather than the letters, which spell an index-only addition
  * deleted again more than one way (`AD`, ` D` after `add -N`), and a file no
  * commit held is no companion lost. A listing git would not give keeps both.
+ * `head` is HEAD's sha where the caller has resolved it.
  */
-export async function onlyInHead(root, pending) {
+export async function onlyInHead(root, pending, head = "HEAD") {
   if (pending.deleted.length + pending.removed.length === 0) return pending;
-  const atHead = await filesAt(root, "HEAD", { timeout: GIT.checkTimeoutMs, maxFieldBytes: GIT.checkMaxBytes });
+  const atHead = await filesAt(root, head, { timeout: GIT.checkTimeoutMs, maxFieldBytes: GIT.checkMaxBytes });
   if (atHead === null) return pending;
   const held = (paths) => paths.filter((path) => atHead.has(path));
   return { ...pending, deleted: held(pending.deleted), removed: held(pending.removed) };

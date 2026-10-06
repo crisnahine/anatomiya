@@ -9,7 +9,8 @@ import { execFileSync } from "node:child_process";
 import { scan } from "../plugins/anatomiya/lib/scan.mjs";
 import { renderOverview } from "../plugins/anatomiya/lib/render.mjs";
 import { globsReach } from "../plugins/anatomiya/lib/areas.mjs";
-import { PIN_PATH, PIN_SCHEMA } from "../plugins/anatomiya/lib/baseline.mjs";
+import { PIN_PATH, PIN_SCHEMA, resolve as resolveBaseline } from "../plugins/anatomiya/lib/baseline.mjs";
+import { parseAll } from "../plugins/anatomiya/lib/parse.mjs";
 import { RUBY_GUARDS } from "../plugins/anatomiya/lib/ruby.mjs";
 import { defaultPoolSize } from "../plugins/anatomiya/lib/pool.mjs";
 import { checkerBlocked, loadTypeScript } from "../plugins/anatomiya/lib/semantic.mjs";
@@ -1282,4 +1283,41 @@ test("a directory whose population nobody accepted lends nothing", async (t) => 
 
   assert.equal(small.gate, "evidence", JSON.stringify({ gate: small.gate, priorBound: small.priorBound }));
   assert.equal(small.borrowed, false);
+});
+
+test("the parse starts before the baseline answers, and the map is the same as when it waited", async (t) => {
+  // The parse needs only the files and the frameworks; awaiting the baseline's
+  // git reads first held it for nothing. A baseline that answers only once the
+  // parse has started proves the order, and the pinned fixture makes the
+  // baseline's answer reach the map.
+  const files = Array.from({ length: 20 }, (_, i) => `src/m${i}.ts`);
+  const dir = repo(t, (d, { git, write, author, pin }) => {
+    for (let i = 0; i < 20; i++) write(`src/m${i}.ts`, moduleSource(i, i < 5 ? "let" : "const"));
+    git("add", "-A");
+    git("commit", "-qm", "init");
+    pin([{ path: "src", files }]);
+    author("second@t.test");
+    for (let i = 0; i < 5; i++) write(`src/m${i}.ts`, moduleSource(i));
+    git("commit", "-qam", "repair");
+  });
+  const plain = await scan(dir);
+
+  let parseStarted;
+  const started = new Promise((resolve) => (parseStarted = resolve));
+  const parseFiles = (input, options) => {
+    parseStarted("parse first");
+    return parseAll(input, options);
+  };
+  let order = null;
+  const resolveState = async (root) => {
+    order = await Promise.race([started, new Promise((resolve) => setTimeout(resolve, 5_000, "baseline first"))]);
+    // And slower than the parse may take, so the parse is still running when it answers.
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    return resolveBaseline(root);
+  };
+  const delayed = await scan(dir, { resolveState, parseFiles });
+
+  assert.equal(order, "parse first");
+  assert.equal(plain.areas[0].baseline.status, "ok", "the fixture reaches the baseline");
+  assert.deepEqual(stable(delayed), stable(plain));
 });

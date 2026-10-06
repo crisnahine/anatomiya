@@ -871,7 +871,7 @@ export const BASE_REFS = ["origin/HEAD", "origin/main", "origin/master", "main",
  * This is the only base resolver: scan and check measuring drift against
  * different refs is two different answers to one question.
  */
-export async function resolveBaseRef(root, ref = null) {
+export async function resolveBaseRef(root, ref = null, { head = "HEAD" } = {}) {
   if (ref === "HEAD" || ref === "@") {
     return { ok: false, reason: "base ref must not be HEAD" };
   }
@@ -886,8 +886,10 @@ export async function resolveBaseRef(root, ref = null) {
 
     // The fork point, where one exists, so the branch's own commits sit outside
     // the range. Unrelated histories fall back to the ref tip rather than to "".
-    const base = await mergeBase(root, "HEAD", sha);
-    return { ok: true, ref: candidate, sha: base.found ? base.sha : sha, forkPoint: base.found };
+    // `head` is HEAD's own sha where the caller resolved it, so the question
+    // is about two commits and asked once per process.
+    const base = await mergeBase(root, head, sha);
+    return { ok: true, ref: candidate, sha: base.found ? base.sha : sha, tip: sha, forkPoint: base.found };
   }
   return { ok: false, reason: ref ? `cannot resolve ${ref}` : "no base branch found" };
 }

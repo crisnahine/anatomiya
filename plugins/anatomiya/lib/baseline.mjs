@@ -362,8 +362,11 @@ function areaBlock(state, population, baseline) {
  * step function of it, so a caller deriving it from today's file count
  * re-partitions the repository on one added file, and every area then reads as
  * a population change against a pin that knew the old partition.
+ *
+ * `head` is HEAD's sha where the caller has already resolved it, so every
+ * range here ends at the commit that caller is reading.
  */
-export async function resolve(root, { pin, baseRef = null } = {}) {
+export async function resolve(root, { pin, baseRef = null, head = "HEAD" } = {}) {
   // Read here unless handed in. A pin on disk that will not load drops to
   // counts like no pin at all, and carries why, so nothing prints "no baseline
   // pinned" over a pin a human committed.
@@ -390,13 +393,13 @@ export async function resolve(root, { pin, baseRef = null } = {}) {
   }
 
   const areas = indexAreas(pin);
-  const base = await resolveBaseRef(root, baseRef);
+  const base = await resolveBaseRef(root, baseRef, { head });
 
   // Two ranges, because they answer different questions. The rename map runs to
   // HEAD: the scan reads the files at HEAD, so a directory renamed on this very
   // branch has to be followed or the area reads as greenfield (E7). Drift runs
   // to the base ref and never to HEAD (E6).
-  const identity = await diffRange(root, pin.sha, "HEAD");
+  //
   // Drift is the base's own progress past what the pin already holds, and both
   // halves of that need saying. The range between two commits is symmetric, and
   // `anatomiya pin` puts the pin at HEAD, so on a branch the pin..base range
@@ -405,9 +408,12 @@ export async function resolve(root, { pin, baseRef = null } = {}) {
   // the shared commit sits behind work the pin holds, so a base whose tree is
   // byte-identical to the pin read as four changed files. A path is drift when
   // the base moved it and its bytes there differ from the pin's, which is both
-  // ranges at once.
-  const moved = base.ok ? await driftRange(root, pin.sha, base.sha) : null;
-  const sinceFork = await laterOnBase(root, pin);
+  // ranges at once. None of the three reads another's answer.
+  const [identity, moved, sinceFork] = await Promise.all([
+    diffRange(root, pin.sha, head),
+    base.ok ? driftRange(root, pin.sha, base.sha) : null,
+    laterOnBase(root, pin, head),
+  ]);
 
   return state({
     status: "ok",
@@ -435,8 +441,8 @@ export async function resolve(root, { pin, baseRef = null } = {}) {
  * the pin is in HEAD's history, and when git will not say, which is the
  * direction that suppresses rather than states.
  */
-async function laterOnBase(root, pin) {
-  const fork = await mergeBase(root, pin.sha, "HEAD");
+async function laterOnBase(root, pin, head) {
+  const fork = await mergeBase(root, pin.sha, head);
   if (!fork.found || fork.sha === pin.sha) return new Set();
   const atFork = await filesAt(root, fork.sha);
   if (!atFork) return new Set();
