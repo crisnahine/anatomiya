@@ -12,7 +12,7 @@
  * somebody is working in.
  */
 import { existsSync, lstatSync, realpathSync } from "node:fs";
-import { basename, dirname, join, parse, resolve, relative, isAbsolute, posix, win32 } from "node:path";
+import { basename, dirname, join, resolve, relative, isAbsolute, posix, win32 } from "node:path";
 
 import { realpathOf, resolveInside } from "./rules.mjs";
 
@@ -45,8 +45,14 @@ export function insideRoot(root, abs, { realpath } = {}) {
   if (climbs(rel) || isAbsolute(rel)) return false;
   // Lexical containment costs nothing and is not containment: resolve()
   // normalises ".." and follows no link, and the checker's own reads do.
-  return resolveInside(root, rel.split(/[\\/]/).join("/"), { realpath }) !== null;
+  return resolveInside(root, rel.split(separator()).join("/"), { realpath }) !== null;
 }
+
+/**
+ * What splits a path into segments on `platform`. A backslash is an ordinary
+ * filename character on POSIX: split on it, a link named `x\..\y` read as `y`.
+ */
+const separator = (platform = process.platform) => (platform === "win32" ? /[\\/]/ : "/");
 
 /**
  * A parse host that reads only inside the repository and lists no directory.
@@ -289,18 +295,21 @@ export function walkingRealpath() {
 /**
  * The path the OS reaches for `p` as written.
  *
- * The base host opens the raw string, and the OS takes each `..` from where
- * the links before it lead: `src/up/../x` with `up -> ..` is a sibling of the
- * root, while the string reads as `src/x`. A path with no `..` is its own answer.
+ * The base host opens the raw string. POSIX takes each `..` from where the
+ * links before it lead: `src/up/../x` with `up -> ..` is a sibling of the root,
+ * while the string reads as `src/x`. Windows collapses `..` as text before it
+ * opens anything, so there the text is the answer. A path with no `..` is its
+ * own answer.
  */
-function opened(p, realpath) {
-  const { root } = parse(p);
-  const segments = p.slice(root.length).split(/[\\/]/);
+export function opened(p, realpath, platform = process.platform) {
+  if (platform === "win32") return win32.resolve(p);
+  const { root } = posix.parse(p);
+  const segments = p.slice(root.length).split("/");
   if (!segments.includes("..")) return p;
   let at = root;
   for (const segment of segments) {
     if (segment === "" || segment === ".") continue;
-    at = segment === ".." ? dirname(realpath(at)) : join(at, segment);
+    at = segment === ".." ? posix.dirname(realpath(at)) : posix.join(at, segment);
   }
   return at;
 }
