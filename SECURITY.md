@@ -42,7 +42,7 @@ There are two runtime dependencies, `oxc-parser` and `flow-remove-types`. Neithe
 its own: the second is pure JavaScript, is loaded only inside the parser child, and is reached only
 after `oxc-parser` has already rejected a `.js`, `.jsx`, `.mjs` or `.cjs` file. It rewrites that
 file's text in memory and nothing is written back to disk. Ruby files go through `prism`, which is a default gem,
-in children (up to four on a large repository) each started as `ruby --disable-gems -e <script>` with `RUBYOPT`, `RUBYLIB` and `GEM_HOME`
+in children (up to six on a large repository) each started as `ruby --disable-gems -e <script>` with `RUBYOPT`, `RUBYLIB` and `GEM_HOME`
 dropped from its environment, because each of those can inject a `-r` into a process about to be
 pointed at repository files. The parser child gets `PATH` and `LANG` and nothing else (on Windows
 also `SystemRoot`, `SYSTEMROOT`, `COMSPEC` and `windir` where set, without which the interpreter
