@@ -1405,8 +1405,12 @@ test("a file that never reads the clock contributes nothing", needsRuby, () => {
 test("every Ruby row answers the same on the shared walk as walking alone, with a frozen ctx", needsRuby, () => {
   assert.deepEqual(RUBY_DIMENSIONS.filter((d) => !d.visitor).map((d) => d.key), []);
   // A visitor that writes to the ctx it shares with every other row throws
-  // here, and loses its sites.
-  const frozen = (tree, visit) => walkRuby(tree, (node, ctx) => visit(node, Object.freeze(ctx)));
+  // here, and loses its sites. The arrays are frozen copies, since the walk's
+  // own are live and a frozen ctx alone still lets a visitor push onto them.
+  const frozen = (tree, visit) =>
+    walkRuby(tree, (node, ctx) =>
+      visit(node, Object.freeze({ ...ctx, stack: Object.freeze([...ctx.stack]), ancestors: Object.freeze([...ctx.ancestors]) }))
+    );
   const reached = new Set();
   for (const [name, file] of programs) {
     const extra = { rel: `${name}.rb` };

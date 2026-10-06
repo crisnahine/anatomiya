@@ -224,8 +224,12 @@ test("every JS row answers the same on the shared walk as walking alone, with a 
 
   const alone = collectHits(program, rows.map((d) => ({ key: d.key, run: d.run })), extra);
   // A visitor that writes to the ctx it shares with every other row throws
-  // here, and loses its sites.
-  const frozen = (tree, visit) => walk(tree, (node, ctx) => visit(node, Object.freeze(ctx)));
+  // here, and loses its sites. The arrays are frozen copies, since the walk's
+  // own are live and a frozen ctx alone still lets a visitor push onto them.
+  const frozen = (tree, visit) =>
+    walk(tree, (node, ctx) =>
+      visit(node, Object.freeze({ ...ctx, stack: Object.freeze([...ctx.stack]), ancestors: Object.freeze([...ctx.ancestors]) }))
+    );
   const shared = collectHits(program, rows, extra, frozen);
 
   assert.deepEqual(shared, alone);
