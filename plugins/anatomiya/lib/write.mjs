@@ -1,7 +1,7 @@
-import { closeSync, constants, fstatSync, mkdirSync, openSync, readFileSync, renameSync, statSync, unlinkSync } from "node:fs";
-import { basename, join } from "node:path";
+import { closeSync, constants, fstatSync, mkdirSync, openSync, readFileSync, renameSync, unlinkSync } from "node:fs";
+import { basename, dirname, join } from "node:path";
 import { renderArea, renderOverview, splitUncovered } from "./render.mjs";
-import { FACTS_PATH, FACTS_SCHEMA, LAYOUT_PATH, readFacts, factsJson, layoutJson, atomic, writeTemp } from "./facts.mjs";
+import { FACTS_PATH, FACTS_SCHEMA, LAYOUT_PATH, readFacts, readLayout, factsJson, stampedLayout, atomic, writePair, writeTemp } from "./facts.mjs";
 import { byCode } from "./paths.mjs";
 import {
   RULES_DIR,
@@ -245,13 +245,12 @@ export function commitMap(root, plan) {
   try {
     const recordTemp = writeTemp(factsPath, factsJson(plan.result));
     staged.push([recordTemp, factsPath]);
-    // Stamped from the record's temporary file, whose size and mtime the rename keeps.
     const writes = [
-      [join(storeDir, basename(LAYOUT_PATH)), layoutJson(plan.result, statSync(recordTemp))],
+      [join(storeDir, basename(LAYOUT_PATH)), stampedLayout(plan.result.layout, recordTemp)],
       ...[...plan.bodies].map(([name, body]) => [join(rulesDir, name), body]),
     ];
     for (const [path, body] of writes) staged.push([writeTemp(path, body), path]);
-    replaceAll(staged, plan.remove.map((f) => join(rulesDir, f)));
+    replaceAll(staged, plan.remove.map((f) => join(rulesDir, f)), { record: factsPath, was: readLayout(root) });
   } catch (err) {
     for (const [tmp] of staged) quietUnlink(tmp);
     throw err;
@@ -267,7 +266,7 @@ export function commitMap(root, plan) {
  * A rename in a directory the temporary file was just created in still fails:
  * Windows refuses one over a file another process holds open.
  */
-function replaceAll(staged, removals) {
+function replaceAll(staged, removals, pair) {
   // Read before the first rename, so the window between the facts and the last
   // file holds renames and nothing else.
   const before = new Map([...staged.map(([, path]) => path), ...removals].map((p) => [p, previousBytes(p)]));
@@ -291,6 +290,9 @@ function replaceAll(staged, removals) {
     for (const [path, previous] of undo.reverse()) {
       try {
         if (previous === null) unlinkSync(path);
+        // The record put back is a new file, so the layout file that answered
+        // for it is stamped again or no hook reads it until the next scan.
+        else if (path === pair.record && pair.was !== null) writePair(dirname(path), previous, pair.was.layout);
         else if (previous !== undefined) atomic(path, previous);
       } catch {}
     }
