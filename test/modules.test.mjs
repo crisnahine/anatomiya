@@ -612,9 +612,9 @@ const ECHO_LOADS = [
 ];
 
 test("a hook verb loads none of the scan, the check or the parser", () => {
-  // Every hook process loaded 74 modules, oxc's native binding among them,
-  // because the binary imported every command up front and the facts reader
-  // took one bound from the reducer. A hook runs on every tool call.
+  // Counted from each verb's static imports: none of the heavy modules, no oxc,
+  // and the echo's exact list. A hook runs on every tool call, and the binary
+  // once imported every command up front, oxc's native binding among them.
   for (const verb of ["echo", "notice", "refresh"]) {
     const reached = armReach(verb);
     assert.ok(reached.has("hook.mjs"), `${verb}: the binary's own imports were not read`);

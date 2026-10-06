@@ -17,8 +17,7 @@ import { wilsonLower } from "./gates.mjs";
 export const FACTS_PATH = ".claude/anatomiya/facts.json";
 
 // The record's `layout` on its own, written with it by the same writer: the
-// hooks read only the layout, and parsing the whole record for it cost 14 ms of
-// a notice on microsoft/vscode, whose record is 10 MB and whose layout 1.5 KB.
+// hooks read only the layout, and need not parse a record of megabytes for it.
 export const LAYOUT_PATH = ".claude/anatomiya/layout.json";
 
 // 2 added the polarity fields. A reader of the older shape sees no `states` and
@@ -383,21 +382,30 @@ export function writeFacts(root, result) {
     throw new Error(`${outsideClaude(dirname(FACTS_PATH))}, so the facts were not written`);
   }
   mkdirSync(dir, { recursive: true });
-  // Stamped from the temporary file, whose size and mtime the rename keeps:
-  // stat after the rename and another writer's record could be the one stamped.
-  const path = join(dir, basename(FACTS_PATH));
-  const tmp = writeTemp(path, factsJson(result));
-  let stamp;
+  writePair(dir, factsJson(result), result.layout);
+}
+
+/**
+ * The record's bytes and the layout file stamped from them, both written whole
+ * before either is renamed, so a failure up to the record's rename replaces
+ * nothing. The record goes first: a layout file left older than its record is
+ * refused by the reader rather than believed.
+ */
+export function writePair(dir, recordBytes, layout) {
+  const record = join(dir, basename(FACTS_PATH));
+  const temps = [writeTemp(record, recordBytes)];
   try {
-    stamp = statSync(tmp);
-    renameSync(tmp, path);
+    temps.push(writeTemp(join(dir, basename(LAYOUT_PATH)), stampedLayout(layout, temps[0])));
+    renameSync(temps[0], record);
+    renameSync(temps[1], join(dir, basename(LAYOUT_PATH)));
   } catch (err) {
-    try {
-      unlinkSync(tmp);
-    } catch {}
+    for (const tmp of temps) {
+      try {
+        unlinkSync(tmp);
+      } catch {}
+    }
     throw err;
   }
-  atomic(join(dir, basename(LAYOUT_PATH)), layoutJson(result, stamp));
 }
 
 /** The record's bytes, for a writer that puts them on disk together with the map. */
@@ -406,11 +414,13 @@ export function factsJson(result) {
 }
 
 /**
- * The layout file's bytes: the record's own `layout`, under the record's schema,
- * stamped with the size and mtime of the record file it was taken from.
+ * The layout file's bytes, under the record's schema, stamped with the size and
+ * mtime of the record's temporary file. The rename keeps both, and a stat after
+ * the rename could stamp another writer's record.
  */
-export function layoutJson(result, { size, mtimeMs }) {
-  return JSON.stringify({ schema: FACTS_SCHEMA, record: { size, mtimeMs }, layout: result.layout ?? null }, null, 2) + "\n";
+export function stampedLayout(layout, recordTemp) {
+  const { size, mtimeMs } = statSync(recordTemp);
+  return JSON.stringify({ schema: FACTS_SCHEMA, record: { size, mtimeMs }, layout: layout ?? null }, null, 2) + "\n";
 }
 
 /**
@@ -422,12 +432,12 @@ export function layoutJson(result, { size, mtimeMs }) {
  * older build rewriting only the record, a checkout or a restore that changes it
  * and keeps old mtimes, a conflict marker or a hand edit all leave a layout file
  * describing some other record. Refused too past the size the reader takes, since
- * the record then reads as nothing.
+ * the record then reads as nothing. `facts` is the record's path, for a caller
+ * that has already resolved it.
  */
-export function readLayout(root) {
-  const path = resolveInside(root, LAYOUT_PATH);
-  const facts = path === null ? null : resolveInside(root, FACTS_PATH);
-  if (facts === null) return null;
+export function readLayout(root, facts = resolveInside(root, FACTS_PATH)) {
+  const path = facts === null ? null : resolveInside(root, LAYOUT_PATH);
+  if (path === null) return null;
   const record = statOf(facts);
   if (record === null || record.size > RECORD_MOST) return null;
   const parsed = readRecord(path).record;
