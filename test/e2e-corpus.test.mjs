@@ -5,13 +5,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { needsPosixSeparators, needsSymlinks, needsUnreadableDirs } from "./platform.mjs";
-import { git, scratch } from "./git-worktrees.mjs";
+import { git, initWithCommit, scratch } from "./git-worktrees.mjs";
 import { FACTS_PATH, FACTS_SCHEMA } from "../plugins/anatomiya/lib/facts.mjs";
 import { scanJson, scanSummary } from "../plugins/anatomiya/lib/summary.mjs";
 import { layoutSummary } from "../plugins/anatomiya/lib/render-layout.mjs";
 import {
   COLUMNS,
   areaProblems,
+  baseOf,
   byName,
   checkDirs,
   copyDependencies,
@@ -592,4 +593,18 @@ test("links inside an install are copied as the same links", needsSymlinks, asyn
   await copyDependencies(source, clone);
 
   assert.equal(readlinkSync(join(clone, "node_modules/c")), ".pnpm/c/node_modules/c");
+});
+
+test("a detached checkout is based on its commit, and only a repository with none has no base", (t) => {
+  // A frozen copy at a sha is detached, and its row once read "no commits" and
+  // counted as passed without running.
+  const dir = scratch(t, "anatomiya-e2e-base-");
+  git(dir, "init", "-q");
+  assert.equal(baseOf(dir), null);
+  initWithCommit(dir);
+  const branch = git(dir, "symbolic-ref", "--short", "HEAD").toString().trim();
+  assert.equal(baseOf(dir), branch);
+  const sha = git(dir, "rev-parse", "HEAD").toString().trim();
+  git(dir, "checkout", "-q", "--detach");
+  assert.equal(baseOf(dir), sha);
 });

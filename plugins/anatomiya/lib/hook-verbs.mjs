@@ -74,7 +74,7 @@ export async function runNotice(cwd, payload) {
   // brought: the guard above has already answered for a path something is at,
   // so anything this finds in that directory is another file.
   // Loaded here: the echo shares this module and runs on every tool call, and
-  // the notice's rules reach nine modules it never needs.
+  // the notice's rules reach twelve modules the echo never loads.
   const { isTestPath, noticeFor } = await import("./precedent.mjs");
   const holdsTest = holdsTestIn(found.root, isTestPath);
   const additionalContext = noticeFor(rel, found.layout, { holdsTest, from: found.from });

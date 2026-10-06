@@ -612,6 +612,7 @@ function blank() {
   };
 }
 
+/** An empty result with a `results` list to gather records into. */
 function gathered() {
   return { ...blank(), results: [] };
 }
