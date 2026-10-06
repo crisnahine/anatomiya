@@ -8,6 +8,8 @@ import { parseRuby } from "../plugins/anatomiya/lib/ruby.mjs";
 import { ALL_DIMENSIONS } from "../plugins/anatomiya/lib/dimensions.mjs";
 import { applicabilityFloor, applyGates } from "../plugins/anatomiya/lib/reduce.mjs";
 import { RAILS_DIMENSIONS } from "../plugins/anatomiya/lib/dimensions-rails.mjs";
+import { collectHits } from "../plugins/anatomiya/lib/walk.mjs";
+import { walkRuby } from "../plugins/anatomiya/lib/ruby-walk.mjs";
 import { RUBY_DECLINED } from "./declined-fixtures.mjs";
 import { siteIdentity } from "../plugins/anatomiya/lib/introduced.mjs";
 
@@ -1330,6 +1332,19 @@ test("every fixture parsed, through one child process", needsRuby, () => {
   assert.equal(parsed.results.length, Object.keys(SRC).length);
   assert.ok(parsed.results.every((r) => !r.crashed));
   assert.equal(parsed.error, null);
+});
+
+test("every Rails row answers the same on the shared walk as walking alone, with a frozen ctx", needsRuby, () => {
+  assert.deepEqual(RAILS_DIMENSIONS.filter((d) => !d.visitor).map((d) => d.key), []);
+  const frozen = (tree, visit) => walkRuby(tree, (node, ctx) => visit(node, Object.freeze(ctx)));
+  const reached = new Set();
+  for (const [name, file] of programs) {
+    const extra = { rel: `${name}.rb` };
+    const alone = collectHits(file.program, RAILS_DIMENSIONS.map((d) => ({ key: d.key, run: d.run })), extra);
+    assert.deepEqual(collectHits(file.program, RAILS_DIMENSIONS, extra, frozen), alone, name);
+    for (const key of Object.keys(alone)) reached.add(key);
+  }
+  assert.equal(reached.size, RAILS_DIMENSIONS.length, "the fixtures should reach every row");
 });
 
 /* --- migration_reversible --- */

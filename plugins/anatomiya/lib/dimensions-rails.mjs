@@ -1,3 +1,4 @@
+import { fromVisitor } from "./walk.mjs";
 import { walkRuby, constName, ownDef, site, args } from "./ruby-walk.mjs";
 
 /**
@@ -269,11 +270,13 @@ function isMigrationClass(n) {
   return MIGRATION.test(named || "");
 }
 
-/** Every migration class in one tree, with its own nested walk per class. */
-function eachMigration(ast, fn) {
-  walkRuby(ast, (n) => {
-    if (isMigrationClass(n)) fn(n);
-  });
+/** A visitor handing each migration class to `fn`, which takes its own nested walk per class. */
+function migrations(fn) {
+  return {
+    node(n) {
+      if (isMigrationClass(n)) fn(n);
+    },
+  };
 }
 
 /**
@@ -623,8 +626,8 @@ export const RAILS_DIMENSIONS = [
       blind: "a repository-local base class hides the migration from the superclass test",
     },
     langs: ["ruby"],
-    run(ast, add) {
-      eachMigration(ast, (cls) => {
+    visitor(ast, add) {
+      return migrations((cls) => {
         // A migration that rewrites rows is answered by `migration_schema_only`,
         // and asking it to declare `change` asks for a rollback that either
         // silently re-runs the update forward or raises
@@ -660,8 +663,8 @@ export const RAILS_DIMENSIONS = [
       blind: "unreadable SQL drops the class, and a repository-local base class hides the migration from the superclass test",
     },
     langs: ["ruby"],
-    run(ast, add) {
-      eachMigration(ast, (cls) => {
+    visitor(ast, add) {
+      return migrations((cls) => {
         const { touches, unreadable } = dataWork(cls);
         if (unreadable) return;
         add({ node: site(cls), conforming: !touches, where: cls.name ?? null });
@@ -682,8 +685,8 @@ export const RAILS_DIMENSIONS = [
       blind: "a repository-local base class hides the migration from the superclass test",
     },
     langs: ["ruby"],
-    run(ast, add) {
-      eachMigration(ast, (cls) => {
+    visitor(ast, add) {
+      return migrations((cls) => {
         walkRuby(cls.body, (m, mctx) => {
           if (m.t !== "call") return;
           const isColumn = COLUMN_TYPE.has(m.name) && inColumnBlock(m, mctx, "create_table");
@@ -709,8 +712,8 @@ export const RAILS_DIMENSIONS = [
       blind: "a repository-local base class hides the migration from the superclass test",
     },
     langs: ["ruby"],
-    run(ast, add) {
-      eachMigration(ast, (cls) => {
+    visitor(ast, add) {
+      return migrations((cls) => {
         walkRuby(cls.body, (m) => {
           if (!bare(m, "create_table")) return;
           if (lit(args(m)[0]) === null) return;
@@ -736,8 +739,8 @@ export const RAILS_DIMENSIONS = [
       blind: "a repository-local base class hides the migration from the superclass test",
     },
     langs: ["ruby"],
-    run(ast, add) {
-      eachMigration(ast, (cls) => {
+    visitor(ast, add) {
+      return migrations((cls) => {
         const keys = foreignKeys(cls);
         walkRuby(cls.body, (m, mctx) => {
           if (m.t !== "call") return;
@@ -775,6 +778,7 @@ export const RAILS_DIMENSIONS = [
   },
 
 ];
+for (const d of RAILS_DIMENSIONS) if (d.visitor) d.run = fromVisitor(d.visitor, walkRuby);
 
 /** The first string leaf under a call's arguments: `<<~SQL.squish` hides it behind a call. */
 function firstString(list) {

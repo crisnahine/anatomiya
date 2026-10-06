@@ -317,12 +317,13 @@ export function collectHits(program, dimensions, extra = {}, walker = walk) {
 
 /**
  * A visitor row's `run`: its own walk, for the callers that ask one row at a
- * time, such as the check and the tests.
+ * time, such as the check and the tests. `walker` is its bridge's walk, as in
+ * `collectHits`.
  */
-export function fromVisitor(visitor) {
+export function fromVisitor(visitor, walker = walk) {
   return (program, add, extra = {}) => {
     const v = visitor(program, add, extra);
-    walk(program, (node, ctx) => v.node(node, ctx));
+    walker(program, (node, ctx) => v.node(node, ctx));
     v.done?.();
   };
 }

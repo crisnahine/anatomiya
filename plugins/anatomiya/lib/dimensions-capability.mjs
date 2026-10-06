@@ -122,7 +122,7 @@ function importsOf(program) {
 }
 
 // A file that implements the routing has no sites, and nothing to visit.
-const NOTHING = Object.freeze({ node() {} });
+export const NOTHING = Object.freeze({ node() {} });
 
 const rootName = (node) => {
   let n = node;
