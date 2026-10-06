@@ -227,20 +227,26 @@ channel, where an AST serialises to about 16x the source it came from and the pa
 all of it. What crosses is a conforming flag and a scope name per site. The check asks for the tree
 as well, since it reports line numbers, and it only ever parses the files one diff touched.
 
-The dimensions share one walk of each JavaScript tree (B49). A row is a visitor: `collectHits`
-makes every row's visitor, walks the tree once handing each node to each row still live, then calls
-each row's `done` for the work that needs the whole file. A throw while a visitor is made, on any
-node, or in `done` drops that row's sites for the file and no other row's, the same as a row that
-throws on its own walk. When every row walked for itself, a file on a measured front end took 50.6
-walks and 18,118 visitor calls, and `collectHits` was 88% of each parse worker's time; one shared
-walk took that to 8.7 walks and 1,987 calls, and this repository's scan from 897ms to 418ms. The
-check and the tests still ask one row at a time, through a `run` built from the same visitor. A row
-that reads only `program.body` never walked, and keeps its `run`. Ruby rows keep theirs too.
+The dimensions share one walk of each tree (B49), `walk` for JavaScript and `walkRuby` for Ruby. A
+row is a visitor: `collectHits` makes every row's visitor, walks the tree once handing each node to
+each row still live, then calls each row's `done` for the work that needs the whole file. A throw
+while a visitor is made, on any node, or in `done` drops that row's sites for the file and no other
+row's. A throw from the walk itself, which a deep tree can raise from a recursive walker, drops every
+visitor row's sites for the file, and a row with its own `run` keeps its own. When every row walked
+for itself, a file on a measured front end took 50.6 walks and 18,118 visitor calls, and
+`collectHits` was 88% of each parse worker's time; one shared walk took that to 8.7 walks and 1,987
+calls, and this repository's scan from 897ms to 418ms. The check and the tests still ask one row at
+a time, through a `run` that `dimensions.mjs` builds from the same visitor on its engine's walk. A
+row that reads only `program.body` never walked, and keeps its `run`.
 
-The facets are a second walk over the same tree, and they stay one because the cost was measured
-rather than assumed: stubbed to a constant, eslint's 1,489 files parse 40ms faster out of 1.45s.
-That is 0.03ms a file and under 3% of the run, too little to be worth moving onto the dimensions'
-walk.
+The facets ride the same walk, as a visitor `collectHits` takes beside the rows in its `also` list.
+They are not a row: they run when no row was asked for, as on the check's Ruby path, and a throw in
+them is held for the bridge to answer, so it never costs a row its sites. Which JavaScript rows apply
+depends on the facets (JSX, type syntax), and those are known only once the walk is over, so every
+row the file could be asked for walks and the hits of the rows the facets rule out are dropped. On
+empire-flippers/client the facets' own walk was 369ms beside 1,067ms of rows over 2,485 files.
+Folding it in took one walk off every file on both engines: a Ruby file on empire-flippers/api went
+from 6.5 walks to 5.5.
 
 Two things the parser publishes are taken rather than reimplemented. It can hand its tree across
 from Rust without building it through a serialisation step, which measured 3.06x on the parse itself
@@ -278,22 +284,29 @@ for minutes and what a hung parse looks like is silence; behind it sits a wall c
 number of files handed over, since a child that answers one file every fourteen seconds keeps the
 idle timer happy and never ends.
 
-A corpus of 1,000 Ruby files or more is split into batches, one child each, up to four and never
-more than the machine's cores less one. The batches are balanced by bytes, the largest file first into
-the lightest batch, and the answers are put back in the order the files were handed over before
-anything reads them. One child left the parent idle for most of a Ruby-heavy scan (measured on
-discourse: 22.1s with one child, 13.5s with four, 12.8s with six). Each batch runs in a worker
-thread that keeps its child's clocks, decodes and parses the stream and answers the rows. A scan
-asks for counts, so only counts reach the parent, the way a JavaScript parse worker answers; the
-check asks for trees for the files a diff touched, and those trees cross from the thread to the
-parent. The child itself is started by the parent at the thread's request and its bytes passed
-through undecoded, because only the thread that spawns a child can reap it: a thread that dies
-leaves its child to the parent, which kills and reaps it before anything else. Each thread's heap is
-held to what its largest file needs, because V8 grows a heap toward its limit rather than its live
-set and four threads at the default limit doubled the scan's peak memory; a thread that runs out of
-its hold is started again with the default heap, which costs time and never a file. Each child keeps
-its own clocks and its own retry, so a child that dies charges the files left in its batch and no
-others, and a worker thread that ends any other way without answering charges its whole batch.
+A corpus of 1,000 Ruby files or more is split into batches, one child each: one per 500 files, up to
+six and never more than the machine's cores less one. The batches are balanced by bytes, the largest
+file first into the lightest batch, and a file over the size cap weighs nothing, since the child
+skips it unread. The answers are put back in the order the files were handed over before anything
+reads them. One child left the parent idle for most of a Ruby-heavy scan (measured on discourse:
+22.1s with one child, 13.5s with four, 12.8s with six while the parent still walked every tree).
+Each batch runs in a worker thread that keeps its child's clocks, decodes and parses the stream,
+and walks each tree once for the rows and the facets. A scan asks for counts, so only counts reach
+the parent, the way a JavaScript parse worker answers; the check asks for trees for the files a diff
+touched, and only those trees cross from the thread to the parent. The child itself is started by
+the parent at the thread's request and its bytes relayed undecoded, the child paused while four
+chunks wait on the thread, because only the thread that spawns a child can reap it: a thread that
+dies leaves its child to the parent, which kills and reaps it before anything else. Every chunk
+passes through the parent's event loop on its way, so the thread's idle clock also measures how busy
+the parent is. Each thread's heap is held to what its largest file needs, because V8 grows a heap
+toward its limit rather than its live set and four threads at the default limit doubled the scan's
+peak memory; a thread that runs out of its hold keeps the records it already sent, and the files it
+left unanswered are read again on a thread with the default heap, which costs time and never a
+file. Each child keeps its own clocks and its own retry, so a child that dies charges the files left
+in its batch and no others. Which files those are follows the byte balance: a broken Ruby charges
+the same number of files, with the same text, as contiguous batches did, and may name different
+ones. A worker thread that ends any other way without answering charges its whole batch, the
+records it had already sent included.
 
 A child either of those timers killed is spawned once more, for the files that never answered and no
 others, and only what is still unanswered after that is charged. Both timers measure the machine
@@ -811,7 +824,8 @@ schema is one this build reads and the record on disk has exactly that size and 
 the record otherwise. A length alone passed a record holding a conflict marker, and length and age
 together passed a checkout or a restore that keeps old mtimes, so the stamp names the one file. A
 map written before the layout file existed has none and is read as before, and so is a map the
-repository commits, after a clone or a checkout, since its record's mtime is then the checkout's. On
+repository commits, after a clone or a checkout that rewrites the record, since its record's mtime is
+then the checkout's. On
 the vscode record the notice went from 104ms to 48ms (A100 and A101 together).
 
 The payload itself is read to a megabyte and no further, because a hook runs on every tool call and
