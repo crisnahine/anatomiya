@@ -731,10 +731,16 @@ async function remembered(root, shas, args, ask, kept, copy = (answer) => answer
   const key = `${resolve(root)}\0${args.join("\0")}`;
   let asked = answers.get(key);
   if (!asked) {
-    asked = ask().then((answer) => {
-      if (!kept(answer) && answers.get(key) === asked) answers.delete(key);
-      return answer;
-    });
+    asked = ask().then(
+      (answer) => {
+        if (!kept(answer) && answers.get(key) === asked) answers.delete(key);
+        return answer;
+      },
+      (err) => {
+        if (answers.get(key) === asked) answers.delete(key);
+        throw err;
+      }
+    );
     answers.set(key, asked);
     if (answers.size > ANSWERS_MOST) answers.delete(answers.keys().next().value);
   }

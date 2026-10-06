@@ -1190,8 +1190,10 @@ test("a ref name or a short sha is asked again every time, because what it names
 test("a question git could not answer is asked again, never remembered as the answer", needsShebang, async (t) => {
   // F15: a failure kept would read as a fact about the commit for the rest of
   // the process, and a later read that would have worked never runs.
-  const { dir, first } = twoCommits(t);
+  const { dir, git, first } = twoCommits(t);
   const absent = "f".repeat(40);
+  // No common ancestor is an answer git gave, but a fetch can give the two one.
+  const orphan = git("commit-tree", `${first}^{tree}`, "-m", "orphan").toString().trim();
   const answers = [];
   const calls = await gitCalls(t, async () => {
     for (let i = 0; i < 2; i++) {
@@ -1199,16 +1201,31 @@ test("a question git could not answer is asked again, never remembered as the an
       answers.push(await diffRange(dir, first, absent));
       answers.push((await mergeBase(dir, first, absent)).failed);
       answers.push(await commitAt(dir, absent));
+      answers.push(await mergeBase(dir, first, orphan));
     }
   });
 
-  assert.deepEqual(answers, [null, null, true, null, null, null, true, null]);
+  const unrelated = { found: false, failed: false, sha: null };
+  assert.deepEqual(answers, [null, null, true, null, unrelated, null, null, true, null, unrelated]);
   const spawned = (sub) => calls.filter((c) => c.startsWith(`${sub} `)).length;
   assert.deepEqual(
     ["ls-tree", "diff", "merge-base"].map((sub) => [sub, spawned(sub)]),
-    [["ls-tree", 2], ["diff", 2], ["merge-base", 2]],
+    [["ls-tree", 2], ["diff", 2], ["merge-base", 4]],
     calls.join("\n")
   );
+});
+
+test("a read that threw is asked again, never kept as the answer", { skip: process.platform === "win32" }, async (t) => {
+  // An environment too large to start git with throws from the spawn itself,
+  // and a kept rejection would refuse that commit for the life of the process.
+  const { dir, second } = twoCommits(t);
+  process.env.GIT_ANATOMIYA_PAD = "x".repeat(4_000_000);
+  try {
+    await assert.rejects(commitAt(dir, second), { code: "E2BIG" });
+  } finally {
+    delete process.env.GIT_ANATOMIYA_PAD;
+  }
+  assert.equal(await commitAt(dir, second), second);
 });
 
 test("the merge base of a commit with itself is the commit, with no merge-base spawned", needsShebang, async (t) => {
@@ -1225,9 +1242,9 @@ test("the merge base of a commit with itself is the commit, with no merge-base s
 
 test("past its bound the memory drops the oldest answer first, and a dropped sha is asked again", needsShebang, async (t) => {
   // A stand-in git that names whatever full sha it is asked about, so filling
-  // the memory costs a shell per question rather than a commit each. The shas
-  // asked first are older than anything an earlier test left, so they are the
-  // ones the bound reaches.
+  // the memory costs a shell per question rather than a commit each. What
+  // earlier tests left is older still and goes first, so of this test's shas
+  // only the first is dropped.
   const bin = scratch(t, "anatomiya-git-fill-");
   const log = join(bin, "asked");
   writeFileSync(
