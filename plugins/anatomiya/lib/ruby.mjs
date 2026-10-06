@@ -514,8 +514,8 @@ function onThread(files, job, resourceLimits) {
     });
     const results = [];
     worker.on("message", (msg) => {
-      if (msg.result) results.push(msg.result);
-      else if (msg.out) resolve({ ...msg.out, results });
+      if (msg.result) results.push(msg.tree === undefined ? msg.result : { ...msg.result, program: JSON.parse(msg.tree) });
+      else if (msg.out) resolve({ ...msg.out, results: charged(files, results, "its record never reached the parent") });
       else if (msg.spawn) children.set(msg.id, startFor(worker, msg));
       else if (msg.read) children.get(msg.id)?.read();
       else if (msg.kill) children.get(msg.id)?.kill("SIGKILL");
@@ -524,16 +524,25 @@ function onThread(files, job, resourceLimits) {
     worker.once("error", (err) => {
       failure = err;
     });
+    // A message that cannot be decoded is dropped, and `out` charges its file.
+    worker.on("messageerror", () => {});
     // Messages drain before exit, so one that answered has already resolved.
     worker.once("exit", async (code) => {
       await Promise.all([...children.values()].map(killAndReap));
       if (resourceLimits && failure?.code === "ERR_WORKER_OUT_OF_MEMORY") return resolve({ ranOut: true, results });
       const out = gathered();
       out.error = failure ? String(failure.message ?? failure) : `ruby shard exited ${code}`;
-      for (const f of files) deliver((r) => out.results.push(r), { rel: f.rel, ok: false, error: out.error, crashed: true }, 1);
+      out.results = charged(files, [], out.error);
       resolve(out);
     });
   });
+}
+
+/** `results`, plus a crashed record for every file in `files` that has none. */
+function charged(files, results, error) {
+  const answered = new Set(results.map((r) => r.rel));
+  for (const f of files) if (!answered.has(f.rel)) deliver((r) => results.push(r), { rel: f.rel, ok: false, error, crashed: true }, 1);
+  return results;
 }
 
 // Chunks in flight to a thread before the child's stdout is paused. Read
