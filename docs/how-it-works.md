@@ -217,8 +217,9 @@ are named with that cause and no install remedy, since `doctor` reports that ins
 | Resident memory | 1 GB | polled every 25ms, starting 250ms after the file goes in flight: read from `/proc/<pid>/status` on Linux, from `/bin/ps` on macOS and the BSDs without holding the parent, and not enforced on Windows, where the wall clock is what stops a runaway parse. A worker that moved on to another file while the read ran is not charged for the new one |
 | Worker start | 20s | `SIGKILL` from the parent for a worker that has not said ready; five such workers fail the pool, and its queued files are charged as crashed |
 
-Pool size is `min(8, cores - 1)`, counting the cores this process may run on (`availableParallelism`):
-in a container held to two cores, `cpus()` still lists every core of the host. The memory grace period
+Pool size is `min(8, cores - 1)`, counting the cores this process may run on
+(`availableParallelism`: the CPU affinity, and from Node 22.12 a cgroup CPU quota, rounded down): in
+a container held to two cores, `cpus()` still lists every core of the host. The memory grace period
 exists so a normal parse never pays for the polling.
 
 The dimensions run in the worker, not in the parent. They are 85% of the scan's CPU (1.57ms per file
@@ -259,11 +260,12 @@ it is asked for through `rawTransferSupported()` rather than assumed, because th
 experimental upstream. Its deserializer recurses in JavaScript and runs out of stack near 3,000
 operands in one expression, which a generated string table reaches, so a file that overflows it is
 parsed again with the plain transfer, that file only. A process refused the raw transfer's 6 GiB
-reservation drops it for every later file. And it publishes, for all 165 node types it emits, which properties hold
-children. The walk used to enumerate each node instead, which pushed every string and number onto
-its work stack too: 63% of a measured corpus was scalars pushed and discarded one iteration later.
-Reading the published table visits the same 630,000 nodes 2.5x faster, with `Object.keys` left as
-the fallback for a type the table does not know, which no measured file produced.
+reservation drops it for every later file. And it publishes, for all 165 node types it emits, which
+properties hold children. The walk used to enumerate each node instead, which pushed every string
+and number onto its work stack too: 63% of a measured corpus was scalars pushed and discarded one
+iteration later. Reading the published table visits the same 630,000 nodes 2.5x faster, with
+`Object.keys` left as the fallback for a type the table does not know, which no measured file
+produced.
 
 Two rules apply to every parser result. First, offsets are never used to index a buffer read from
 disk: `oxc` reports offsets in UTF-16 code units and `prism` reports them in UTF-8 bytes, 5.4% of
@@ -290,38 +292,45 @@ idle timer happy and never ends.
 
 A corpus of 1,000 Ruby files or more is split into batches, one child each: one per 500 files, up to
 four and never more than the machine's cores less one. Six cut empire-flippers/api's scan by 4% to
-16% but put its peak memory 22% to 30% over main's, since each batch's thread holds a heap of its own. The batches are balanced by bytes, the largest
-file first into the lightest batch, and a file over the size cap weighs nothing, since the child
-skips it unread. The answers are put back in the order the files were handed over before anything
-reads them. One child left the parent idle for most of a Ruby-heavy scan (measured on discourse:
-22.1s with one child, 13.5s with four, 12.8s with six while the parent still walked every tree).
-Each batch runs in a worker thread that keeps its child's clocks, decodes and parses the stream,
-and walks each tree once for the rows and the facets. A scan asks for counts, so only counts reach
-the parent, the way a JavaScript parse worker answers; the check asks for trees for the files a diff
-touched, and only those trees cross from the thread to the parent. The child itself is started by
-the parent at the thread's request and its bytes relayed undecoded, the child paused while four
-chunks wait on the thread, because only the thread that spawns a child can reap it: a thread that
-dies leaves its child to the parent, which kills and reaps it before anything else. Every chunk
-passes through the parent's event loop on its way, so the thread's idle clock also measures how busy
-the parent is. Each thread's heap is held to what its largest file needs, because V8 grows a heap
-toward its limit rather than its live set and four threads at the default limit doubled the scan's
-peak memory. Past 256 KB the hold covers the densest code measured (nested calls or hashes, 90 MB of
-heap for a megabyte); below it the hold stays small, since covering dense code on every thread took
+16% but put its peak memory 22% to 30% over 0.13.3's, since each batch's thread holds a heap of its
+own. The batches are balanced by bytes, the largest file first into the lightest batch, and a file
+over the size cap weighs nothing, since the child skips it unread. The answers are put back in the
+order the files were handed over before anything reads them. One child left the parent idle for
+most of a Ruby-heavy scan (measured on discourse: 22.1s with one child, 13.5s with four, 12.8s with
+six while the parent still walked every tree). Each batch runs in a worker thread that keeps its
+child's clocks, decodes and parses the stream, and walks each tree once for the rows and the facets.
+A scan asks for counts, so only counts reach the parent, the way a JavaScript parse worker answers;
+the check asks for trees for the files a diff touched, and only those trees cross from the thread to
+the parent, as JSON text the parent parses: decoding a deeply nested object off a message overflowed
+the parent's stack, and the file was lost. When a thread answers, any file in its batch with no
+record is charged as crashed. The child itself is started by the parent at the thread's request and
+its bytes relayed undecoded, the child paused while four chunks wait on the thread, because only the
+thread that spawns a child can reap it: a thread that dies leaves its child to the parent, which
+closes the child's pipes, then kills and reaps it before anything else. A closed pipe matters when
+the `ruby` on `PATH` is a wrapper that forks: the forked process blocks writing to a stdout nobody
+reads, and the parent's open end kept the whole process alive. Every chunk passes through the
+parent's event loop on its way, so the thread's idle clock also measures how busy the parent is.
+Each thread's heap is held to what its largest file needs, because V8 grows a heap toward its limit
+rather than its live set and four threads at the default limit doubled the scan's peak memory. Past
+256 KB the hold covers the densest code measured (nested calls or hashes, 90 MB of heap for a
+megabyte); below it the hold stays small, since covering dense code on every thread took
 empire-flippers/api's peak from 221 MB to about 340 MB. A thread that runs out of its hold keeps the
 records it already sent, and the files it left unanswered are read again on a thread with the
-default heap, which costs time and never a file. Each child keeps its own clocks and its own retry, so a child that dies charges the files left
-in its batch and no others. Which files those are follows the byte balance: a broken Ruby charges
-the same number of files, with the same text, as contiguous batches did, and may name different
-ones. A worker thread that ends any other way without answering charges its whole batch, the
-records it had already sent included.
+default heap, which costs time and never a file. Each child keeps its own clocks and its own retry,
+so a child that dies charges the files left in its batch and no others. Which files those are
+follows the byte balance: a broken Ruby charges the same number of files, with the same text, as
+contiguous batches did, and may name different ones. On a large corpus the map moves with them:
+2,100 files under a `ruby` that hangs after five records gave 3 areas against 1, and 900 barren
+files against 1,500. A worker thread that ends any other way without answering charges its whole
+batch, the records it had already sent included.
 
 A child either of those timers killed is spawned once more, for the files that never answered and no
 others, and only what is still unanswered after that is charged. Both timers measure the machine
 rather than the files, and a file charged as crashed in one scan and parsed in the next moves the
 always-loaded overview, which is the same reason a JavaScript parse the pool's own clock killed is
-tried once more, alone, after the queue drains, when it died beside other parses. A child that exited on its own, a missing interpreter and a fatal from the
-script are charged on the first attempt: a second child answers those the same way at twice the
-cost. Every record says which attempt answered it.
+tried once more, alone, after the queue drains, when it died beside other parses. A child that
+exited on its own, a missing interpreter and a fatal from the script are charged on the first
+attempt: a second child answers those the same way at twice the cost. Every record says which attempt answered it.
 
 Every child this tool runs, the pool's parse workers, the Ruby stream and the type checker, goes
 through one supervisor that owns the spawn, the bounded stderr, the two clocks and the kill. The

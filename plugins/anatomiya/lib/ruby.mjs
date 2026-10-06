@@ -362,7 +362,7 @@ end
 const MIN_SHARD_FILES = 500;
 // Four, because each shard thread holds a heap of its own. Six against four on
 // empire-flippers/api: 4% to 16% less scan wall, and 15 to 29 MB more peak,
-// which put the scan 22% to 30% over main's peak memory where four is 8% to
+// which put the scan 22% to 30% over 0.13.3's peak memory where four is 8% to
 // 14% over. Six was outside the memory budget.
 const MAX_SHARDS = Math.min(4, defaultPoolSize());
 
