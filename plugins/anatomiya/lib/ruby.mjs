@@ -421,7 +421,8 @@ export async function parseRuby(
   // with several the parent's own reading of the trees was what the scan
   // waited on: on empire-flippers/api, 2.28s of a 3.45s parse phase. So each
   // shard is a worker thread that runs its child, reads the trees and answers
-  // the rows, and only counts reach this thread, as B10 does for JavaScript.
+  // the rows, and a scan gets only counts back, as B10 does for JavaScript. A
+  // check asks for no rows, so the trees of the files it touched do cross.
   const keys = dimensions.map((d) => d.key);
   const sizes = await Promise.all(files.map((f) => bytesOf(f.abs)));
   const outs = await Promise.all(
