@@ -418,7 +418,7 @@ export async function parseRuby(
   // Built once, and before any child: a bad override refuses here, loudly,
   // rather than dying inside the spawn where it reads as a broken install.
   const rubyScript = scriptFor(guards.maxBytes);
-  if (files.length === 0) return { ...blank(), results: [] };
+  if (files.length === 0) return gathered();
   const load = await prismLoadArgs({ ruby });
 
   // One child left the parent idle for most of a large Ruby repository, and
@@ -435,7 +435,7 @@ export async function parseRuby(
     ),
   );
 
-  const out = { ...blank(), results: [] };
+  const out = gathered();
   for (const o of outs) {
     for (const r of o.results) out.results.push(r);
     out.truncated = out.truncated || o.truncated;
@@ -481,6 +481,8 @@ function heldHeap(largestBytes) {
 async function inWorker(files, job, largestBytes) {
   const held = await onThread(files, job, heldHeap(largestBytes));
   if (!held.ranOut) return held;
+  // Read again even when every file has a record: the held thread died before
+  // its last message, and only a child's ready line names the prism version.
   const answered = new Set(held.results.map((r) => r.rel));
   const rest = await onThread(files.filter((f) => !answered.has(f.rel)), job, null);
   return { ...rest, results: [...held.results, ...rest.results] };
@@ -526,7 +528,7 @@ function onThread(files, job, resourceLimits) {
     worker.once("exit", async (code) => {
       await Promise.all([...children.values()].map(killAndReap));
       if (resourceLimits && failure?.code === "ERR_WORKER_OUT_OF_MEMORY") return resolve({ ranOut: true, results });
-      const out = { ...blank(), results: [] };
+      const out = gathered();
       out.error = failure ? String(failure.message ?? failure) : `ruby shard exited ${code}`;
       for (const f of files) deliver((r) => out.results.push(r), { rel: f.rel, ok: false, error: out.error, crashed: true }, 1);
       resolve(out);
@@ -599,6 +601,10 @@ function blank() {
     // version says nothing about the install.
     stalled: null,
   };
+}
+
+function gathered() {
+  return { ...blank(), results: [] };
 }
 
 /**
