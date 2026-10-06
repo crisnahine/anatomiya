@@ -566,8 +566,8 @@ test("every verb the binary declares carries its own arm in the one table", () =
  * What one verb of the binary loads: the binary's own imports and the modules
  * its arm imports, followed through static imports only. A dynamic import in a
  * function body loads when that function runs, not when its module does, so
- * `lazy` also follows the arm's own modules' dynamic imports: the verb's
- * function is what runs them.
+ * `lazy` also follows those at every depth, short of readiness.mjs's: they
+ * serve the engine probes, which no hook runs.
  */
 function armReach(verb, { lazy = false } = {}) {
   const src = readFileSync(BINARY, "utf8");
@@ -580,12 +580,8 @@ function armReach(verb, { lazy = false } = {}) {
     ...program.body.filter((n) => n.type === "ImportDeclaration").map((n) => n.source.value),
     ...[...src.slice(arm.start, arm.end).matchAll(/\bimport\(\s*["']([^"']+)["']\s*\)/g)].map((m) => m[1]),
   ].map((spec) => spec.replace(/^\.\.\/lib\//, ""));
-  const edges = graph(LIB, { dynamic: false });
-  if (lazy) {
-    const all = graph(LIB);
-    const armOwn = roots.slice(program.body.filter((n) => n.type === "ImportDeclaration").length);
-    for (const file of armOwn) edges.set(file, all.get(file));
-  }
+  const edges = graph(LIB, { dynamic: lazy });
+  if (lazy) edges.set("readiness.mjs", graph(LIB, { dynamic: false }).get("readiness.mjs"));
   return new Set(roots.flatMap((root) => [...reachedFrom(root, edges)]));
 }
 

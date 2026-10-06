@@ -523,7 +523,6 @@ export function writtenProblems(repo, wrote) {
   return { problems, written, facts };
 }
 
-/** The whole flow for one repository, on a clone that is removed either way. */
 /**
  * The ref the probe's check is based on: the branch, or the commit itself on a
  * detached checkout, which is how a frozen copy at a sha arrives. `null` with
@@ -535,6 +534,7 @@ export function baseOf(clone) {
   return (branch.status === 0 ? branch.out : git(["rev-parse", "HEAD"], clone).out).trim();
 }
 
+/** The whole flow for one repository, on a clone that is removed either way. */
 async function runRepo(name, source, scratchDir) {
   const clone = join(scratchDir, name);
   const started = Date.now();
