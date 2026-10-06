@@ -2390,3 +2390,27 @@ process.stdout.write(JSON.stringify(out.results.map((r) => [r.rel, Boolean(r.cra
     }
   }
 });
+
+test("a check reads a tree 700 blocks deep: it crosses to the parent whole", needsRuby, async () => {
+  const deep = write("deep_blocks", "a {\n".repeat(700) + "}\n".repeat(700));
+  const out = await parseRuby([deep], { dimensions: [] });
+
+  assert.deepEqual(out.results.map((r) => [r.rel, r.ok, r.error ?? null]), [["deep_blocks.rb", true, null]]);
+  assert.equal(JSON.stringify(out.results[0].program).split('"t":"block"').length - 1, 700);
+});
+
+test("a record lost between a shard and the parent is charged rather than dropped", needsShebang, async () => {
+  // A child's record whose error is an object nested 3,000 deep, which the
+  // parent cannot decode off a message. The other file still answers.
+  const home = mkdtempSync(join(dir, "lost-"));
+  const lines = join(home, "lines");
+  const nested = JSON.parse('{"a":'.repeat(3_000) + "1" + "}".repeat(3_000));
+  writeFileSync(lines, JSON.stringify({ rel: "a.rb", ok: false, error: nested }) + "\n" + JSON.stringify({ rel: "b.rb", ok: false, error: "x" }) + "\n");
+  const ruby = stubRuby("lost", ["cat >/dev/null", READY, `cat '${lines}'`]);
+  const out = await parseRuby(pair, { ruby, dimensions: [] });
+
+  assert.deepEqual(out.results.map((r) => [r.rel, r.ok, r.error, Boolean(r.crashed), r.attempts]), [
+    ["a.rb", false, "its record never reached the parent", true, 1],
+    ["b.rb", false, "x", false, 1],
+  ]);
+});
