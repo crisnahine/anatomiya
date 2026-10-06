@@ -391,8 +391,8 @@ export function writeFacts(root, result) {
     writePair(dir, factsJson(result), result.layout);
   } catch (err) {
     const now = previousBytes(record);
-    // Only where the failed write replaced what was there: unreadable before, or
-    // still the same bytes, and there is nothing to put back.
+    // Only where the failed write replaced what was there; unreadable before, or
+    // still the same bytes, leaves nothing to put back.
     if (previous !== undefined && (previous === null ? now !== null : !now?.equals(previous))) {
       try {
         putBack(record, previous, was);
