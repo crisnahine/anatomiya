@@ -278,12 +278,22 @@ for minutes and what a hung parse looks like is silence; behind it sits a wall c
 number of files handed over, since a child that answers one file every fourteen seconds keeps the
 idle timer happy and never ends.
 
-A corpus of 1,000 Ruby files or more is split into contiguous batches, one child each, up to four
-and never more than the machine's cores less one, and the answers are joined in the order the files
-were handed over. One child left the parent idle for most of a Ruby-heavy scan; past four, the
-parent's own walk of the trees is what the scan waits on (measured on discourse: 22.1s with one
-child, 13.5s with four, 12.8s with six). Each child keeps its own clocks and its own retry, so a
-child that dies charges the files left in its batch and no others.
+A corpus of 1,000 Ruby files or more is split into batches, one child each, up to four and never
+more than the machine's cores less one. The batches are balanced by bytes, the largest file first into
+the lightest batch, and the answers are put back in the order the files were handed over before
+anything reads them. One child left the parent idle for most of a Ruby-heavy scan (measured on
+discourse: 22.1s with one child, 13.5s with four, 12.8s with six). Each batch runs in a worker
+thread that keeps its child's clocks, decodes and parses the stream and answers the rows. A scan
+asks for counts, so only counts reach the parent, the way a JavaScript parse worker answers; the
+check asks for trees for the files a diff touched, and those trees cross from the thread to the
+parent. The child itself is started by the parent at the thread's request and its bytes passed
+through undecoded, because only the thread that spawns a child can reap it: a thread that dies
+leaves its child to the parent, which kills and reaps it before anything else. Each thread's heap is
+held to what its largest file needs, because V8 grows a heap toward its limit rather than its live
+set and four threads at the default limit doubled the scan's peak memory; a thread that runs out of
+its hold is started again with the default heap, which costs time and never a file. Each child keeps
+its own clocks and its own retry, so a child that dies charges the files left in its batch and no
+others, and a worker thread that ends any other way without answering charges its whole batch.
 
 A child either of those timers killed is spawned once more, for the files that never answered and no
 others, and only what is still unanswered after that is charged. Both timers measure the machine
