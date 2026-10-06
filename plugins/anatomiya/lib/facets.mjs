@@ -13,7 +13,7 @@
  * its own the moment it has answered, so there is no second pass to run this
  * in. What is kept is this object, a few strings per file.
  */
-import { isFunctionLike } from "./walk.mjs";
+import { walk, isFunctionLike } from "./walk.mjs";
 import { constName, args } from "./ruby-walk.mjs";
 import { MINITEST_NAME } from "./test-shape.mjs";
 
@@ -149,8 +149,8 @@ function takeCjsExport(node, exports, exportedLocals) {
 const TYPE_SYNTAX = /^TS[A-Z]/;
 
 /**
- * The facets as a visitor riding `collectHits`'s walk. A throw on a node, or
- * from the walk, is left in `error`, and `done` answers with it rather than
+ * The Ruby facets as a visitor riding `collectHits`'s walk. A throw on a node,
+ * or from the walk, is left in `error`, and `done` answers with it rather than
  * with facets read off part of a tree.
  */
 function riding(node, done) {
@@ -168,9 +168,11 @@ function riding(node, done) {
  * `program` for the walk, `module` for the parser's own record of the imports
  * and exports it saw. The record is already built and was being discarded.
  *
- * A visitor handed to the rows' own walk, and `done` answers once it is over:
- * as a walk of its own it was a second pass over every tree, 369ms beside the
- * rows' 1,067ms on empire-flippers/client's 2,485 files.
+ * Its own walk, ahead of the rows', because the facets choose which rows the
+ * file gets. Riding the rows' walk instead saved that walk, 369ms beside the
+ * rows' 1,067ms on empire-flippers/client's 2,485 files, but every row the file
+ * could get had to walk before the facets could rule any out: on this
+ * repository 25 rows a file became 32 and worker CPU rose 9%, scan wall flat.
  */
 export function jsFacets({ program, module: mod }) {
   const imports = [];
@@ -290,7 +292,8 @@ export function jsFacets({ program, module: mod }) {
     };
   };
 
-  return riding(node, done);
+  walk(program, node);
+  return done();
 }
 
 /**

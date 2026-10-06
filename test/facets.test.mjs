@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { repo } from "./ts-repo.mjs";
 import { needsRuby } from "./ruby-available.mjs";
 import { parseAll } from "../plugins/anatomiya/lib/parse.mjs";
-import { MINITEST_SUPERCLASSES, TEST_RUNNER_MODULES, jsFacets, rubyFacets } from "../plugins/anatomiya/lib/facets.mjs";
+import { MINITEST_SUPERCLASSES, TEST_RUNNER_MODULES, rubyFacets } from "../plugins/anatomiya/lib/facets.mjs";
 import { collectHits } from "../plugins/anatomiya/lib/walk.mjs";
 import { language } from "../plugins/anatomiya/lib/langs.mjs";
 
@@ -552,19 +552,17 @@ test("a file the parse read and found no statement in says so", needsRuby, async
   assert.equal("empty" in records.get("src/real.test.ts").facets, false);
 });
 
-test("facets whose walk was cut short answer done with that throw, never with part of a tree", () => {
+test("Ruby facets whose walk was cut short answer done with that throw, never with part of a tree", () => {
   const overflow = new RangeError("Maximum call stack size exceeded");
   const odd = new Error("an odd node");
-  for (const make of [() => jsFacets({ program: { type: "Program", body: [] } }), () => rubyFacets({ t: "program" })]) {
-    const cut = make();
-    collectHits({}, [], {}, { walker: () => { throw overflow; }, also: [cut] });
-    assert.throws(() => cut.done(), (err) => err === overflow);
+  const cut = rubyFacets({ t: "program" });
+  collectHits({}, [], {}, { walker: () => { throw overflow; }, also: [cut] });
+  assert.throws(() => cut.done(), (err) => err === overflow);
 
-    const fed = make();
-    fed.node = () => { throw odd; };
-    collectHits({}, [], {}, { walker: (tree, visit) => visit({}, {}), also: [fed] });
-    assert.throws(() => fed.done(), (err) => err === odd);
+  const fed = rubyFacets({ t: "program" });
+  fed.node = () => { throw odd; };
+  collectHits({}, [], {}, { walker: (tree, visit) => visit({}, {}), also: [fed] });
+  assert.throws(() => fed.done(), (err) => err === odd);
 
-    assert.doesNotThrow(() => make().done(), "nothing held, nothing thrown");
-  }
+  assert.doesNotThrow(() => rubyFacets({ t: "program" }).done(), "nothing held, nothing thrown");
 });
