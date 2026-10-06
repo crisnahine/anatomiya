@@ -232,13 +232,49 @@ test("every file being replaced is read before the first one is renamed", async 
   rmSync(dir, { recursive: true, force: true });
 });
 
+/** A roster with one root, the shape the overview renders from. */
+const roster = (root) => ({
+  size: 10,
+  minFiles: 3,
+  roots: [{ path: root, dir: root, files: 5, source: 5, exts: [[".ts", 5]], other: 0, jsx: 0, jsxExt: null, tests: [], testRoot: false }],
+  more: { roots: 0, files: 0, floor: { dirs: 4, files: 4, root: 14 } },
+  tests: [],
+  principles: [],
+  truncated: false,
+});
+
+test("a scan writes the layout file beside the record, holding the record's layout", () => {
+  const dir = workspace();
+  const layout = roster("src/services");
+
+  writeMap({ ...result(dir, [area("src/services")]), layout });
+
+  assert.deepEqual(JSON.parse(readFileSync(join(dir, STORE, "layout.json"), "utf8")).layout, readFacts(dir).layout);
+  assert.deepEqual(readFacts(dir).layout, layout);
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("a replace that fails part way puts the previous layout file back with the record", async (t) => {
+  // Staged with the record, so the two always describe the same scan.
+  const dir = workspace();
+  writeMap({ ...result(dir, [area("src/services"), area("src/api")]), layout: roster("src/a") });
+  const before = snapshot(dir);
+  await failNth(t, "renameSync", 3);
+
+  assert.throws(() => writeMap({ ...result(dir, [area("src/services"), area("src/hooks")]), layout: roster("src/b") }), /EPERM/);
+
+  assert.ok(`${STORE}/layout.json` in before, "the first scan wrote one");
+  assert.deepEqual(snapshot(dir), before);
+  rmSync(dir, { recursive: true, force: true });
+});
+
 test("a dry run writes nothing at all", () => {
   const dir = workspace();
 
   const plan = writeMap(result(dir, [area("src/services")]), { dryRun: true });
 
   assert.equal(plan.write.length, 2);
-  assert.equal(existsSync(join(dir, ".claude")), false, "not even the directory");
+  assert.equal(existsSync(join(dir, ".claude")), false, "not even the directory, so neither the record nor the layout file");
   rmSync(dir, { recursive: true, force: true });
 });
 
