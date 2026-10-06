@@ -330,7 +330,8 @@ rather than the files, and a file charged as crashed in one scan and parsed in t
 always-loaded overview, which is the same reason a JavaScript parse the pool's own clock killed is
 tried once more, alone, after the queue drains, when it died beside other parses. A child that
 exited on its own, a missing interpreter and a fatal from the script are charged on the first
-attempt: a second child answers those the same way at twice the cost. Every record says which attempt answered it.
+attempt: a second child answers those the same way at twice the cost. Every record says which
+attempt answered it.
 
 Every child this tool runs, the pool's parse workers, the Ruby stream and the type checker, goes
 through one supervisor that owns the spawn, the bounded stderr, the two clocks and the kill. The
@@ -839,10 +840,10 @@ stamped with the size and mtime of the record file it was taken from. A hook rea
 schema is one this build reads and the record on disk has exactly that size and that mtime, and
 reads the record otherwise. A length alone passed a record holding a conflict marker, and length and
 age together passed a checkout or a restore that keeps old mtimes, so the stamp names the one file.
-A map written before the layout file existed has none and is read as before, and so is a map the
-repository commits, after a clone or a checkout that rewrites the record, since its record's mtime
-is then the checkout's. On the vscode record the notice went from 104ms to 48ms (A100 and A101
-together).
+A map written before the layout file existed has none and is read as before. A `.claude/` the
+repository commits carries `layout.json` too, and it is inert after a clone or a checkout that
+rewrites the record: its stamp names an mtime the record no longer has, so the record is read. On
+the vscode record the notice went from 104ms to 48ms (A100 and A101 together).
 
 The payload itself is read to a megabyte and no further, because a hook runs on every tool call and
 the writer decides the size. What that megabyte holds is then read twice over. `JSON.parse` first,

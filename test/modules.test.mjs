@@ -565,9 +565,11 @@ test("every verb the binary declares carries its own arm in the one table", () =
 /**
  * What one verb of the binary loads: the binary's own imports and the modules
  * its arm imports, followed through static imports only. A dynamic import in a
- * function body loads when that function runs, not when its module does.
+ * function body loads when that function runs, not when its module does, so
+ * `lazy` also follows those at every depth, short of readiness.mjs's: they
+ * serve the engine probes, which no hook runs.
  */
-function armReach(verb) {
+function armReach(verb, { lazy = false } = {}) {
   const src = readFileSync(BINARY, "utf8");
   const { program } = parseSync("anatomiya.mjs", src, { sourceType: "module" });
   const table = program.body
@@ -578,7 +580,8 @@ function armReach(verb) {
     ...program.body.filter((n) => n.type === "ImportDeclaration").map((n) => n.source.value),
     ...[...src.slice(arm.start, arm.end).matchAll(/\bimport\(\s*["']([^"']+)["']\s*\)/g)].map((m) => m[1]),
   ].map((spec) => spec.replace(/^\.\.\/lib\//, ""));
-  const edges = graph(LIB, { dynamic: false });
+  const edges = graph(LIB, { dynamic: lazy });
+  if (lazy) edges.set("readiness.mjs", graph(LIB, { dynamic: false }).get("readiness.mjs"));
   return new Set(roots.flatMap((root) => [...reachedFrom(root, edges)]));
 }
 
@@ -598,11 +601,12 @@ const ECHO_LOADS = [
 ];
 
 test("a hook verb loads none of the scan, the check or the parser", () => {
-  // Counted from each verb's static imports: none of the heavy modules, no oxc,
-  // and the echo's exact list. A hook runs on every tool call, and the binary
-  // once imported every command up front, oxc's native binding among them.
-  for (const verb of ["echo", "notice", "refresh"]) {
-    const reached = armReach(verb);
+  // Counted from each verb's imports, its function's lazy ones included: none
+  // of the heavy modules, no oxc, and the echo's exact static list. A hook runs
+  // on every tool call, and the binary once imported every command up front,
+  // oxc's native binding among them.
+  for (const verb of ["echo", "notice", "reuse", "refresh"]) {
+    const reached = armReach(verb, { lazy: true });
     assert.ok(reached.has("hook.mjs"), `${verb}: the binary's own imports were not read`);
     for (const heavy of ["scan.mjs", "parse.mjs", "walk.mjs", "dimensions.mjs", "reduce.mjs", "check.mjs"]) {
       assert.equal(reached.has(heavy), false, `${verb} reaches ${heavy}`);
@@ -611,6 +615,8 @@ test("a hook verb loads none of the scan, the check or the parser", () => {
     assert.deepEqual(oxc, [], `${verb} loads oxc`);
   }
   assert.deepEqual([...armReach("echo")].sort(), ECHO_LOADS);
+  assert.ok(armReach("notice", { lazy: true }).has("precedent.mjs"), "the notice's lazy import was not followed");
+  assert.ok(armReach("reuse", { lazy: true }).has("reuse.mjs"), "the reuse check's lazy import was not followed");
 });
 
 const FUNCTIONS = new Set(["FunctionDeclaration", "FunctionExpression", "ArrowFunctionExpression"]);
