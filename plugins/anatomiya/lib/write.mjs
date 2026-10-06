@@ -1,7 +1,7 @@
 import { mkdirSync, renameSync, unlinkSync } from "node:fs";
-import { basename, dirname, join } from "node:path";
+import { basename, join } from "node:path";
 import { renderArea, renderOverview, splitUncovered } from "./render.mjs";
-import { FACTS_PATH, FACTS_SCHEMA, LAYOUT_PATH, readFacts, readLayout, factsJson, stampedLayout, atomic, previousBytes, writePair, writeTemp } from "./facts.mjs";
+import { FACTS_PATH, FACTS_SCHEMA, LAYOUT_PATH, readFacts, readLayout, factsJson, stampedLayout, previousBytes, putBack, writeTemp } from "./facts.mjs";
 import { byCode } from "./paths.mjs";
 import {
   RULES_DIR,
@@ -289,13 +289,9 @@ function replaceAll(staged, removals, pair) {
   } catch (err) {
     for (const [path, previous] of undo.reverse()) {
       try {
-        if (previous === null) unlinkSync(path);
-        // Unreadable before the replace: nothing to put back, so it is left as it is.
-        else if (previous === undefined) continue;
         // The record put back is a new file, so the layout file that answered
         // for it is stamped again or no hook reads it until the next scan.
-        else if (path === pair.record && pair.was !== null) writePair(dirname(path), previous, pair.was.layout, pair.was.schema);
-        else atomic(path, previous);
+        putBack(path, previous, path === pair.record ? pair.was : null);
       } catch {}
     }
     throw err;
