@@ -217,8 +217,9 @@ are named with that cause and no install remedy, since `doctor` reports that ins
 | Resident memory | 1 GB | polled every 25ms, starting 250ms after the file goes in flight: read from `/proc/<pid>/status` on Linux, from `/bin/ps` on macOS and the BSDs without holding the parent, and not enforced on Windows, where the wall clock is what stops a runaway parse. A worker that moved on to another file while the read ran is not charged for the new one |
 | Worker start | 20s | `SIGKILL` from the parent for a worker that has not said ready; five such workers fail the pool, and its queued files are charged as crashed |
 
-Pool size is `min(8, cpus - 1)`. The memory grace period exists so a normal parse never pays for the
-polling.
+Pool size is `min(8, cores - 1)`, counting the cores this process may run on (`availableParallelism`):
+in a container held to two cores, `cpus()` still lists every core of the host. The memory grace period
+exists so a normal parse never pays for the polling.
 
 The dimensions run in the worker, not in the parent. They are 85% of the scan's CPU (1.57ms per file
 against 0.27ms to parse), and running them in the parent left that 85% on one core: throughput
