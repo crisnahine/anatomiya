@@ -150,10 +150,10 @@ into its git directory: a repository sharing one rules directory between agents
 (`.claude/rules -> ../agents/rules`) is read through that link by Claude Code too, and the files
 written there are only this tool's own `anatomiya-*.md`. Any other link is refused by name before a
 dry run answers, and so is a store or record that the write could not get past (a file where a
-directory belongs, a directory at `facts.json` or `baseline.json`). A refusal names the path the
+directory belongs, a directory at `facts.json`, `layout.json` or `baseline.json`). A refusal names the path the
 repository spells, and says when it is a link, so it never points at the file a link resolves to.
-`facts.json` and `baseline.json` are read through the same resolution, their own name included, so a
-link at either leaf is not followed out of `.claude`; a write replaces such a link as an entry
+`facts.json`, `layout.json` and `baseline.json` are read through the same resolution, their own name
+included, so a link at any of those leaves is not followed out of `.claude`; a write replaces such a link as an entry
 rather than writing through it.
 
 ### Parser crashes are contained by a process boundary
@@ -291,10 +291,12 @@ Say the quiet part plainly.
   `extends` leaving the repository is refused rather than followed, the root file list is forced to
   the corpus rather than the config's globs, every option that writes to disk is forced off, and the
   lib files come from the plugin's own `typescript`, never the repository's, because a repository
-  can ship its own and reading it runs its code in this process. Decisions B7 to B9 in
+  can ship its own and reading it runs its code in this process. A path's containment is decided on
+  the path the system opens, so a `..` after a link is taken from where the link leads, and a path
+  that steps out of the repository that way is refused. Decisions B7 to B9 and B51 in
   `DECISIONS.md` carry the measurements. A scan that leaves the checker off reads no
   `tsconfig.json`.
-- **No guarantee the map is correct.** The gates in `plugins/anatomiya/lib/reduce.mjs` are thresholds, not proofs. A
+- **No guarantee the map is correct.** The gates in `plugins/anatomiya/lib/reduce.mjs`, with their numbers in `gates.mjs`, are thresholds, not proofs. A
   wrong directive is a correctness problem, not a security one, but it is worth knowing that a
   repository can shape its own numbers if it wants to.
 
