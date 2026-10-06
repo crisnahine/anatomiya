@@ -360,12 +360,11 @@ end
 // Each child is handed at least this many files: for fewer, an interpreter's
 // startup costs more than it saves.
 const MIN_SHARD_FILES = 500;
-// Six since each shard walks its own trees: while the parent walked them all,
-// a fifth and sixth child gained little (12.8s against 13.5s with four on
-// discourse). Scan medians of three under the bench lock, four against six:
-// discourse 10.2s against 8.7s, empire-flippers/api 2.79s against 2.58s for
-// 26 MB more peak memory.
-const MAX_SHARDS = Math.min(6, defaultPoolSize());
+// Four, because each shard thread holds a heap of its own. Six against four on
+// empire-flippers/api: 4% to 16% less scan wall, and 15 to 29 MB more peak,
+// which put the scan 22% to 30% over main's peak memory where four is 8% to
+// 14% over. Six was outside the memory budget.
+const MAX_SHARDS = Math.min(4, defaultPoolSize());
 
 function shardsFor(count) {
   return Math.max(1, Math.min(MAX_SHARDS, Math.floor(count / MIN_SHARD_FILES)));
