@@ -15,8 +15,8 @@ were measured on a loaded machine and will be re-timed before release.
 - `.claude/anatomiya/layout.json`, written beside `facts.json` by every scan, holds the record's
   layout on its own, stamped with the size and mtime of the record it was taken from. The notice,
   the end-of-turn check and the refresh read it instead of parsing the whole record, and read the
-  record wherever the stamp does not match. A `.worktreeinclude` that copies the map can copy it
-  too, and the README's list now names it.
+  record wherever the stamp does not match. The README's `.worktreeinclude` list names it too,
+  which saves time only where the copy keeps the record's mtime.
 
 ### Changed
 
@@ -32,9 +32,9 @@ were measured on a loaded machine and will be re-timed before release.
 - `scan` reads Ruby in worker threads, one per `ruby` child, that parse and walk the trees and send
   back counts, so the parent no longer reads or walks a Ruby tree; `check` still gets the trees of
   the files a diff touched. The Ruby dimensions and facets share one walk of each tree, as the
-  JavaScript ones do: 5.5 walks a file where it was 22.5. A large Ruby corpus is read by up to six children where it was four,
-  never more than the machine's cores less one. On a large Rails API the parse phase went from
-  3,224ms to 2,041ms and the scan from 3,948ms to 2,677ms.
+  JavaScript ones do: 5.5 walks a file where it was 22.5. A large Ruby corpus is read by up to six
+  children where it was four, never more than the machine's cores less one. On a large Rails API
+  the parse phase went from 3,224ms to 2,041ms and the scan from 3,948ms to 2,677ms.
 - `check` resolves HEAD once, runs its independent git reads side by side and asks git once per
   commit sha: 26 git calls to 21 on a two-file branch here, and the median check went from 482ms to
   347ms here, 1821ms to 1636ms on a large Rails API and 607ms to 413ms on eslint.
