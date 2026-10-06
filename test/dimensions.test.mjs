@@ -124,6 +124,14 @@ test("an error field is a result only beside the keys a result is made of", () =
   assert.deepEqual(results, { candidates: 6, conforming: 6 });
 });
 
+test("every throw is a site before every result, whatever order the file holds them in", () => {
+  const src = `function a() { return Result.ok(1) }\nfunction b() { throw new Error("x") }`;
+  assert.deepEqual(hits("error_shape", src).map((h) => [src.slice(h.node.start, h.node.end), h.conforming, h.where]), [
+    ['throw new Error("x")', false, "b"],
+    ["return Result.ok(1)", true, "a"],
+  ]);
+});
+
 // --- module_state_const ---
 
 test("module level is no enclosing declaration, not byte position", () => {
