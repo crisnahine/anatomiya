@@ -10,7 +10,7 @@
  */
 import { walk, isFunctionLike } from "./walk.mjs";
 import { jsxElementNames, makesComponent, typedAsComponent, yieldsJsx } from "./dimensions-jsx.mjs";
-import { fileStem } from "./dimensions-capability.mjs";
+import { fileStem } from "./stems.mjs";
 import { encode } from "./encode.mjs";
 
 const NAMESPACE = new Set(["TSModuleDeclaration"]);

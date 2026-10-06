@@ -135,6 +135,15 @@ test("the grammar deciding what a branch introduced reaches no git, no child and
   assert.deepEqual(importers, ["check.mjs"]);
 });
 
+test("the repository reader takes the capability stems without the walker", () => {
+  // The notice hook imports this module for `isCorpusPath`, and taking the
+  // stems from the capability rows loaded the walker and oxc along with it.
+  const reached = reachedFrom("corpus.mjs");
+  for (const module of ["walk.mjs", "dimensions-capability.mjs", "dimensions.mjs"]) {
+    assert.equal(reached.has(module), false, `corpus.mjs reaches ${module}`);
+  }
+});
+
 // A field a row adds to a hit crossed the worker boundary only if the copy in
 // `collectHits` named it, and nothing held that copy to what a reader reads:
 // `nesting` was dropped once and the base-class row stated nothing. The table
