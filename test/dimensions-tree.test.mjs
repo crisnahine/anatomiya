@@ -146,6 +146,8 @@ const CASES = {
       ["class A {\n    Runnable r = new Runnable() {\n        public void run() {}\n    };\n}\n", []],
       ["enum E {\n    X {\n        public void run() {}\n    };\n}\n", []],
       ["class A {\n    void m() {\n        class Local {\n            public void run() {}\n        }\n    }\n}\n", []],
+      // An interface's method is public with no modifier, and a private one is the interface's own helper.
+      ["interface A {\n    private void help() {}\n\n    default void run() { help(); }\n\n    static void make() {}\n}\n", [false, false]],
       // The runtime calls the entry point and nobody looks its documentation up.
       ["public class A {\n    public static void main(String[] args) {}\n}\n", []],
       ["public class A {\n    public void main(String[] args) {}\n}\n", [false]],
