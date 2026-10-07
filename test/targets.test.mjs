@@ -35,9 +35,21 @@ const fenceOf = (text) => {
 
 test("the three targets, their directories and their extensions", () => {
   assert.deepEqual(TARGETS, {
-    claude: { id: "claude", dir: ".claude/rules", ext: ".md", always: true, reader: "Claude Code" },
-    cursor: { id: "cursor", dir: ".cursor/rules", ext: ".mdc", always: false, reader: "Cursor" },
-    copilot: { id: "copilot", dir: ".github/instructions", ext: ".instructions.md", always: false, reader: "GitHub Copilot" },
+    claude: {
+      id: "claude", dir: ".claude/rules", ext: ".md", always: true, reader: "Claude Code",
+      reads: "Read a file before editing it: these notes load when you read, not when you grep.",
+      listed: "loaded when you read one of its files",
+    },
+    cursor: {
+      id: "cursor", dir: ".cursor/rules", ext: ".mdc", always: false, reader: "Cursor",
+      reads: "Open a file before editing it: an area's notes attach when one of its files is in context.",
+      listed: "attached when one of its files is in context",
+    },
+    copilot: {
+      id: "copilot", dir: ".github/instructions", ext: ".instructions.md", always: false, reader: "GitHub Copilot",
+      reads: "Open a file before editing it: an area's notes apply to the files its pattern names.",
+      listed: "applied to the files its pattern names",
+    },
   });
   assert.deepEqual(TARGET_IDS, ["claude", "cursor", "copilot"]);
   assert.ok(Object.isFrozen(TARGETS) && Object.isFrozen(TARGET_IDS) && TARGET_IDS.every((id) => Object.isFrozen(TARGETS[id])));

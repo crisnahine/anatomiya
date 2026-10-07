@@ -10,12 +10,27 @@
  * generator key are spelled here, and `test/targets.test.mjs` holds them equal
  * to the ones `rules.mjs` carries.
  */
-const describe = (id, dir, ext, reader) => Object.freeze({ id, dir, ext, always: id === "claude", reader });
+// `reads` and `listed` are the two sentences that say when a file reaches the
+// reader, which is the one thing about the body the three tools do not share.
+const describe = (id, dir, ext, reader, reads, listed) =>
+  Object.freeze({ id, dir, ext, always: id === "claude", reader, reads, listed });
 
 export const TARGETS = Object.freeze({
-  claude: describe("claude", ".claude/rules", ".md", "Claude Code"),
-  cursor: describe("cursor", ".cursor/rules", ".mdc", "Cursor"),
-  copilot: describe("copilot", ".github/instructions", ".instructions.md", "GitHub Copilot"),
+  claude: describe(
+    "claude", ".claude/rules", ".md", "Claude Code",
+    "Read a file before editing it: these notes load when you read, not when you grep.",
+    "loaded when you read one of its files"
+  ),
+  cursor: describe(
+    "cursor", ".cursor/rules", ".mdc", "Cursor",
+    "Open a file before editing it: an area's notes attach when one of its files is in context.",
+    "attached when one of its files is in context"
+  ),
+  copilot: describe(
+    "copilot", ".github/instructions", ".instructions.md", "GitHub Copilot",
+    "Open a file before editing it: an area's notes apply to the files its pattern names.",
+    "applied to the files its pattern names"
+  ),
 });
 
 export const TARGET_IDS = Object.freeze(Object.keys(TARGETS));
