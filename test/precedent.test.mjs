@@ -1,8 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { PRECEDENT_FLOOR, noticeFor, precedentFindings } from "../plugins/anatomiya/lib/precedent.mjs";
-import { principleKeys } from "../plugins/anatomiya/lib/principles.mjs";
+import { noticeFor, precedentFindings } from "../plugins/anatomiya/lib/precedent.mjs";
+import { PRECEDENT_FLOOR, principleKeys } from "../plugins/anatomiya/lib/principles.mjs";
 import { LEVEL_ONLY_LABEL } from "../plugins/anatomiya/lib/layout.mjs";
 
 /** A baseline layout root, in the shape `layout.mjs` records one. */

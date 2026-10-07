@@ -2,7 +2,25 @@
  * Pure and importing nothing from lib, so scan.mjs can build a layout and hand
  * it here without this module reaching back into what built it.
  */
-const unpaired = (r) => r?.companions && r.companions.with + (r.companions.inline ?? 0) < 3 && r.companions.of >= 3;
+
+/**
+ * Producers a source root needs before its silence counts as precedent, and
+ * namesake tests it needs before its testing does.
+ *
+ * One untested file is a repository that has not said anything, and one tested
+ * file among five hundred has not either: measured on a front end, a single
+ * namesake silenced the rule for 517 files. Three is where the learned-suffix
+ * vote also stops, arrived at separately rather than shared with it: the two
+ * answer different questions and moving one is not a reason to move the other.
+ *
+ * Here because this module imports nothing: the finding, the sentence's gate
+ * and the renderer's second namesake clause all read it, and two of them
+ * import each other.
+ */
+export const PRECEDENT_FLOOR = 3;
+
+const unpaired = (r) =>
+  r?.companions && r.companions.with + (r.companions.inline ?? 0) < PRECEDENT_FLOOR && r.companions.of >= PRECEDENT_FLOOR;
 
 export const PRINCIPLES = [
   {
@@ -29,11 +47,11 @@ export const PRINCIPLES = [
     // specs beside five components read 0 of 5, because `Thing0.tsx` and
     // `thing0.spec.js` are not namesakes. So the repository has to be seen
     // pairing tests with sources somewhere before this line can say it does not
-    // here. The floor is spelled rather than imported because this module reads
-    // nothing from lib; a test holds the two to the same boundary, on both the
-    // producers a directory needs and the namesakes that make it a tested one.
+    // here. A test holds this gate and the finding to the same boundary, on both
+    // the producers a directory needs and the namesakes that make it a tested one.
     // A file holding its own tests is precedent in the directory it sits in.
-    when: (layout) => layout.roots.some((r) => r?.companions && r.companions.with >= 3) && layout.roots.some(unpaired),
+    when: (layout) =>
+      layout.roots.some((r) => r?.companions && r.companions.with >= PRECEDENT_FLOOR) && layout.roots.some(unpaired),
     // The second conjunct again, of the roots the overview prints: armed only by
     // a root the budget folded away, the sentence has no line to be read against.
     // The first is a fact about the repository and needs none.

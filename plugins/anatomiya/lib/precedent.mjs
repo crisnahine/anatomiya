@@ -13,18 +13,7 @@ import { isCorpusPath } from "./corpus.mjs";
 import { LEVEL_ONLY_LABEL } from "./layout.mjs";
 import { namesakeClause, testsParts } from "./render-layout.mjs";
 import { encode } from "./encode.mjs";
-
-/**
- * Producers a source root needs before its silence counts as precedent, and
- * namesake tests it needs before its testing does.
- *
- * One untested file is a repository that has not said anything, and one tested
- * file among five hundred has not either: measured on a front end, a single
- * namesake silenced the rule for 517 files. Three is where the learned-suffix
- * vote also stops, arrived at separately rather than shared with it: the two
- * answer different questions and moving one is not a reason to move the other.
- */
-export const PRECEDENT_FLOOR = 3;
+import { PRECEDENT_FLOOR } from "./principles.mjs";
 
 /** Whether a root pairs enough of its files with tests to call that its habit. */
 function pairsTests(r) {

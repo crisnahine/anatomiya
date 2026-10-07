@@ -42,7 +42,7 @@ import { SEMANTIC_DIMENSIONS } from "../plugins/anatomiya/lib/dimensions-semanti
 import { baseOf, byCode, dirOf, extOf, stemOf } from "../plugins/anatomiya/lib/paths.mjs";
 import { scan } from "../plugins/anatomiya/lib/scan.mjs";
 import { MAX_LINES } from "../plugins/anatomiya/lib/render.mjs";
-import { namesakeClause, ROOT_LABEL, runnerCount, RUNNERS_SHOWN, specCount, TESTS_GROUPS, TRUNCATED_LAYOUT } from "../plugins/anatomiya/lib/render-layout.mjs";
+import { namesakeClause, ROOT_LABEL, runnerCount, RUNNERS_SHOWN, specCount, spokenCounts, TESTS_GROUPS, TRUNCATED_LAYOUT } from "../plugins/anatomiya/lib/render-layout.mjs";
 import { statedSide, writeFacts } from "../plugins/anatomiya/lib/facts.mjs";
 import { OVERVIEW_FILE } from "../plugins/anatomiya/lib/rules.mjs";
 import { planMap } from "../plugins/anatomiya/lib/write.mjs";
@@ -358,9 +358,9 @@ function checkSection(section, corpus, root, recordRoots) {
       if (clause !== expected) fail(`${parsed.label} tests clause: printed "${clause}", recount "${expected}"`);
     }
 
-    const also = counted.otherCompanions;
-    if (counted.companions) {
-      const expected = namesakeClause(counted.companions, also ? `${counted.companions.ext} file` : null);
+    const [first, also] = spokenCounts(counted);
+    if (first) {
+      const expected = namesakeClause(first, also ? `${first.ext} file` : null);
       const clause = take(clauses, expected);
       if (clause !== expected) fail(`${parsed.label} namesake clause: printed "${clause}", recount "${expected}"`);
     }
@@ -439,10 +439,12 @@ function checkTestsLine(line, corpus, recordRoots, testFiles, byStem) {
   // are recounted here like every other.
   const top = topNamesakeRoot(recordRoots, corpus, testFiles, byStem);
   if (top) {
-    const expected = namesakeClause({ ...top.companions, root: null }, `${top.companions.ext} file`, top.dir && top.path);
-    const clause = take(clauses, expected);
-    if (clause !== expected) fail(`tests line namesake clause: printed "${clause}", recount "${expected}"`);
-    const also = top.otherCompanions;
+    const [first, also] = spokenCounts(top);
+    if (first) {
+      const expected = namesakeClause({ ...first, root: null }, `${first.ext} file`, top.dir && top.path);
+      const clause = take(clauses, expected);
+      if (clause !== expected) fail(`tests line namesake clause: printed "${clause}", recount "${expected}"`);
+    }
     if (also) {
       const want = namesakeClause({ ...also, root: null }, `${also.ext} file`, top.dir && top.path);
       const second = take(clauses, want);

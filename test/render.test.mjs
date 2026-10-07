@@ -18,7 +18,7 @@ import {
 import { kindsLine, layoutSummary, namesakeClause, plural, renderLayout } from "../plugins/anatomiya/lib/render-layout.mjs";
 import { areaFilename, isOwned, GENERATOR } from "../plugins/anatomiya/lib/rules.mjs";
 import { layoutFacts } from "../plugins/anatomiya/lib/layout.mjs";
-import { principleKeys } from "../plugins/anatomiya/lib/principles.mjs";
+import { PRECEDENT_FLOOR, principleKeys } from "../plugins/anatomiya/lib/principles.mjs";
 import { discover, globEntry, globText } from "../plugins/anatomiya/lib/areas.mjs";
 import { REGISTRY } from "../plugins/anatomiya/lib/registry.mjs";
 import { ENGINES, LANGUAGES } from "../plugins/anatomiya/lib/langs.mjs";
@@ -3421,6 +3421,43 @@ test("a component count with no other beside it still says which files it is ove
   });
 
   assert.equal(kindsLine(only), "kinds: 9 .ts, 4 .svelte; 0 test files; 1 of 4 .svelte files has a namesake test");
+});
+
+test("the smaller of two namesake counts gets a clause from three files up", () => {
+  // shadcn-svelte: 28 of 38 two-clause kinds lines read `0 of 1 .ts file have a namesake test` for a lone `index.ts`.
+  const beside = (n) =>
+    root("docs/ui", {
+      files: 182 + n,
+      exts: [[".svelte", 182], [".ts", n]],
+      companions: { with: 0, of: 182, root: null, ext: ".svelte" },
+      otherCompanions: { with: 0, of: n, root: null, ext: ".ts" },
+    });
+  const both = "0 of 182 .svelte files have a namesake test; 0 of 3 .ts files have a namesake test";
+  assert.equal(PRECEDENT_FLOOR, 3);
+  assert.equal(kindsLine(beside(1)), "kinds: 182 .svelte, 1 .ts; 0 test files; 0 of 182 have a namesake test");
+  assert.equal(kindsLine(beside(2)), "kinds: 182 .svelte, 2 .ts; 0 test files; 0 of 182 have a namesake test");
+  assert.equal(kindsLine(beside(3)), `kinds: 182 .svelte, 3 .ts; 0 test files; ${both}`);
+
+  const lines = (n) => renderLayout({ ...clientLayout(), roots: [beside(n)], more: { roots: 0, files: 0 } });
+  assert.equal(lines(2)[2], "- docs/ui: 182 .svelte, 2 .ts; 0 of 182 have a namesake test");
+  assert.ok(lines(2)[3].endsWith("; 0 of 182 .svelte files under docs/ui have a namesake test"), lines(2)[3]);
+  assert.equal(lines(3)[2], `- docs/ui: 182 .svelte, 3 .ts; ${both}`);
+  assert.ok(lines(3)[3].endsWith("; 0 of 3 .ts files under docs/ui have a namesake test"), lines(3)[3]);
+
+  // The first extension printed is the smaller where most of its files are tests: the other's clause stands, named.
+  const few = root("pkg", {
+    exts: [[".ts", 10], [".vue", 9]],
+    companions: { with: 0, of: 2, root: null, ext: ".ts" },
+    otherCompanions: { with: 4, of: 9, root: null, ext: ".vue" },
+  });
+  assert.equal(kindsLine(few), "kinds: 10 .ts, 9 .vue; 0 test files; 4 of 9 .vue files have a namesake test");
+  // Two populations of one size: the first printed speaks.
+  const even = root("pkg", {
+    exts: [[".vue", 2], [".ts", 2]],
+    companions: { with: 0, of: 2, root: null, ext: ".vue" },
+    otherCompanions: { with: 1, of: 2, root: null, ext: ".ts" },
+  });
+  assert.equal(kindsLine(even), "kinds: 2 .vue, 2 .ts; 0 test files; 0 of 2 have a namesake test");
 });
 
 const constRow = (o = {}) =>

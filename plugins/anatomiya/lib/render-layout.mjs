@@ -7,7 +7,7 @@
  * asks for these lines; nothing here knows what an area or a directive is.
  */
 import { encode, encodePath } from "./encode.mjs";
-import { PRINCIPLES } from "./principles.mjs";
+import { PRECEDENT_FLOOR, PRINCIPLES } from "./principles.mjs";
 import { RUNNER_LABELS, UNNAMED_RUNNER } from "./test-shape.mjs";
 
 /**
@@ -108,11 +108,29 @@ export const namesakeClause = ({ with: withTest, of, root, under, inline = 0 }, 
 
 const extNoun = (c) => `${encode(c.ext)} file`;
 
-// Two counts on one line each name their extension; one alone stays bare.
+/**
+ * The namesake counts of a root that get a clause, the first extension's then
+ * the other's, null for one that gets none.
+ *
+ * The smaller of two populations is spoken of from the floor the precedent gate
+ * reads a directory at: 28 of shadcn-svelte's 88 area files read `0 of 1 .ts
+ * file have a namesake test` for a lone `index.ts` beside its components.
+ *
+ * Exported because `scripts/measure-layout.mjs` reads the clauses back.
+ */
+export const spokenCounts = (r) => {
+  const first = r.companions ?? null;
+  const also = r.otherCompanions ?? null;
+  if (first === null || also === null) return [first, also];
+  if (also.of <= first.of) return [first, also.of >= PRECEDENT_FLOOR ? also : null];
+  return [first.of >= PRECEDENT_FLOOR ? first : null, also];
+};
+
+// Two counts on one line each name their extension; the first alone stays bare.
 const namesakeParts = (r, place = {}) => {
-  const also = r.otherCompanions;
+  const [first, also] = spokenCounts(r);
   return [
-    ...(r.companions ? [namesakeClause({ ...r.companions, ...place }, also ? extNoun(r.companions) : null)] : []),
+    ...(first ? [namesakeClause({ ...first, ...place }, also ? extNoun(first) : null)] : []),
     ...(also ? [namesakeClause({ ...also, ...place }, extNoun(also))] : []),
   ];
 };
@@ -241,8 +259,8 @@ function testsLineText(layout) {
     // lib" read as the whole subtree two lines below `lib/sub: 0 of 4`. The
     // repository root as a root has an empty `dir` and no clause, as before.
     const ext = top.companions.ext ?? top.exts[0][0];
-    parts.push(namesakeClause({ ...top.companions, root: null }, `${encode(ext)} file`, top.dir && top.path));
-    const also = top.otherCompanions;
+    const [first, also] = spokenCounts(top);
+    if (first) parts.push(namesakeClause({ ...first, root: null }, `${encode(ext)} file`, top.dir && top.path));
     if (also) parts.push(namesakeClause({ ...also, root: null }, extNoun(also), top.dir && top.path));
   }
   return `- tests: ${parts.join("; ")}`;
