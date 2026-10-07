@@ -534,6 +534,17 @@ test("each other target's files are listed and counted under its own directory",
   assert.equal("targets" in JSON.parse(formatReportJson(bare())), false);
 });
 
+test("a name in another target's directory reaches the record as a locator", () => {
+  // A filename is the repository's to choose, and the record is read by something that is not a terminal.
+  const crafted = ["anatomiya-ev\u202eli.mdc", "anatomiya-a\nb.mdc"];
+  const cursor = { dir: ".cursor/rules", state: "on", foreign: crafted, unknown: crafted, rules: { escaped: false, listed: true, unreadable: crafted } };
+
+  const out = JSON.parse(formatReportJson(bare({ targets: { cursor } }))).targets.cursor;
+
+  const located = ["anatomiya-ev li.mdc", "anatomiya-a b.mdc"];
+  assert.deepEqual({ foreign: out.foreign, unknown: out.unknown, unreadable: out.rules.unreadable }, { foreign: located, unknown: located, unreadable: located });
+});
+
 test("the rule files nobody here wrote are counted, since only the text writer lists them", () => {
   const out = formatReportGithub(bare({ foreign: ["house.md", "team.md"], unknown: ["stale.md"] }));
 
