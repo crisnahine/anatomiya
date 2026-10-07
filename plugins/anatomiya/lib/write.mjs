@@ -245,24 +245,26 @@ function auditTarget(target, { on, explicit = false }, { root, previous, blind, 
   }
 
   // Ours, and this run is not rewriting it, so its area is gone or states
-  // nothing now, unless it is held, which is this run not knowing. Everything
-  // else in the directory is left where it is.
+  // nothing now, unless it is held, which is this run not knowing. A target
+  // that is off keeps none of ours, so what is held has no say there.
+  // Everything else in the directory is left where it is.
   //
   // A target left out by name is the exception to asking the record: a clone
   // can hold the files and not the store, and then no scan could turn it off.
   // The key decides there, for a name a scan gives a file: a copy somebody
   // kept under another name carries the key too.
   const mine = explicit && !on ? [...audit.ours, ...audit.unknown.filter((f) => isMapName(f, target))].sort() : audit.ours;
-  const stale = blind ? [] : mine.filter((f) => !planned.has(f) && !heldNames.has(f));
+  const stale = blind ? [] : mine.filter((f) => !planned.has(f) && (!on || !heldNames.has(f)));
   // Ours and held, so still ours after this run: the next record has to go on naming it.
-  const kept = mine.filter((f) => !planned.has(f) && heldNames.has(f));
+  const kept = mine.filter((f) => !planned.has(f) && !stale.includes(f) && heldNames.has(f));
   // Claude Code's two directories were held to this before anything was read.
   if (!target.always && (names.length > 0 || stale.length > 0)) refuseNonDirectory(root, target.dir);
 
   return {
     filed,
-    // The areas whose name somebody else's file holds, for the overview to leave out.
-    left: wanted.filter((a) => taken.includes(nameOf(a))).map((a) => a.id),
+    // The areas whose name somebody else's file holds, and the held ones this
+    // directory has no file of, for the overview to leave out.
+    left: [...wanted.filter((a) => taken.includes(nameOf(a))), ...held.filter((a) => !kept.includes(nameOf(a)))].map((a) => a.id),
     names,
     stale,
     kept,
