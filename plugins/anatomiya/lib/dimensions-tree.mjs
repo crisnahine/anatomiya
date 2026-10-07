@@ -231,6 +231,10 @@ function readsName(body, name, shapes, sets) {
 // A constructor and a destructor declare no return type, and a Python dunder's is fixed by its protocol.
 const UNTYPED = { python: /^__\w+__$/, php: /^__(?:construct|destruct)$/i };
 
+// A name that says the handler binds nothing, as `_` says it: the one name both Error Prone's UnusedVariable and
+// IntelliJ's "Catch block may ignore exception" pass over.
+const UNBOUND = { java: new Set(["ignored"]) };
+
 // A function row reports the function's name as its site: a site is known again by its text, and a line added to the body would make an old function a new one.
 export const TREE_DIMENSIONS = [
   {
@@ -240,20 +244,21 @@ export const TREE_DIMENSIONS = [
     counterClaim: null, // discarding the error is an absence, not a style anyone picked
     precision: "partial",
     applicabilityPredicate: {
-      sites: "a PHP or Java file holding a catch clause that binds the error to a name, each such clause of a chain counted; a PHP clause that names a type and binds no name has used what it was given and is not a site. A clause uses the error when its body reads the name it bound, inside a closure or an interpolated string too, or when its body throws: the error again, or another in its place. A property, a field or a method spelling the same name reads nothing",
+      sites: "a PHP or Java file holding a catch clause that binds the error to a name, each such clause of a chain counted; a PHP clause that names a type and binds no name has used what it was given and is not a site, and neither is a Java clause that binds `_` or names what it caught `ignored`. A clause uses the error when its body reads the name it bound, inside a closure or an interpolated string too, or when its body throws: the error again, or another in its place. A property, a field or a method spelling the same name reads nothing",
       blind: "a lambda, a closure or a nested handler that binds the same name again hides the caught one, and a read of the inner name counts as a read of the error",
     },
     langs: ["php", "java"],
     visitor(program, add) {
       const shapes = SHAPES[program.lang];
       const sets = SETS.get(program.lang);
+      const unbound = UNBOUND[program.lang];
       return {
         node(node, ctx) {
           if (!sets.catch.has(node.type)) return;
           const body = node.children.findLast((child) => sets.block.has(child.type));
           if (!body) return;
           const name = caughtName(node.children.filter((child) => child !== body && !sets.comment.has(child.type)), shapes, sets);
-          if (name === null) return;
+          if (name === null || unbound?.has(name)) return;
           const used = readsName(body, name, shapes, sets) || firstOf(body, sets.raise) !== null;
           add({ node: site(node), conforming: used, where: (ctx.fn && nameOf(ctx.fn)) ?? null });
         },
@@ -335,4 +340,5 @@ assertKeyed("DOC", DOC, asked("public_doc_comment").filter((lang) => !SHAPES[lan
 assertKeyed("NOT_OFFERED", NOT_OFFERED, [], asked("public_doc_comment"));
 assertKeyed("OUTSIDE", OUTSIDE, [], asked("public_doc_comment"));
 assertKeyed("NO_SITE", NO_SITE, [], asked("public_doc_comment"));
+assertKeyed("UNBOUND", UNBOUND, [], asked("caught_error_used"));
 assertKeyed("UNTYPED", UNTYPED, asked("declared_return_type"));
