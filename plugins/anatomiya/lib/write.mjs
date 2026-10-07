@@ -1,5 +1,5 @@
 import { lstatSync, mkdirSync, renameSync, rmdirSync, unlinkSync } from "node:fs";
-import { basename, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { hasFile, renderArea, renderOverview, splitUncovered } from "./render.mjs";
 import { FACTS_PATH, FACTS_SCHEMA, LAYOUT_PATH, readFacts, readLayout, factsJson, stampedLayout, previousBytes, putBack, writeTemp } from "./facts.mjs";
 import { byCode } from "./paths.mjs";
@@ -413,7 +413,14 @@ export function commitMap(root, plan) {
     // And once more with everything staged: writing the bodies is the long part,
     // and a link put at a directory meanwhile is where the renames would land.
     for (const t of others) own(t.id, t);
-    replaceAll(staged, removals, { record: factsPath, was: readLayout(root) });
+    // A removal has no temporary file beside it to hold it to the directory it
+    // was planned in, so each one asks where that directory is now.
+    const byDir = new Map(others.map((t) => [t.at, t]));
+    const stillOwn = (path) => {
+      const t = byDir.get(dirname(path));
+      if (t) own(t.id, t);
+    };
+    replaceAll(staged, removals, { record: factsPath, was: readLayout(root) }, stillOwn);
   } catch (err) {
     for (const [tmp] of staged) quietUnlink(tmp);
     // Deepest first, and only while empty: `rmdir` refuses anything else.
@@ -451,12 +458,13 @@ function makeOwnDirectory(at, rel, made) {
 
 /**
  * Rename every staged file into place and remove the orphans, or put back what
- * was there before the first one moved.
+ * was there before the first one moved. `stillOwn` throws for a path whose
+ * directory is no longer where the plan found it.
  *
  * A rename in a directory the temporary file was just created in still fails:
  * Windows refuses one over a file another process holds open.
  */
-function replaceAll(staged, removals, pair) {
+function replaceAll(staged, removals, pair, stillOwn) {
   // Read before the first rename, so the window between the facts and the last
   // file holds renames and nothing else.
   const before = new Map([...staged.map(([, path]) => path), ...removals].map((p) => [p, previousBytes(p)]));
@@ -468,6 +476,7 @@ function replaceAll(staged, removals, pair) {
     }
     for (const path of removals) {
       const previous = before.get(path);
+      stillOwn(path);
       try {
         unlinkSync(path);
       } catch (err) {
@@ -480,7 +489,9 @@ function replaceAll(staged, removals, pair) {
     for (const [path, previous] of undo.reverse()) {
       try {
         // The layout file is stamped from the record alone, so only the
-        // record's put-back writes it again.
+        // record's put-back writes it again. Nothing is put back through a
+        // directory that stopped being the repository's own.
+        stillOwn(path);
         putBack(path, previous, path === pair.record ? pair.was : null);
       } catch {}
     }
