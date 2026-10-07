@@ -2,9 +2,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { needsPathControl, needsPosixPaths, needsShebang, needsTmpdirVariable } from "./platform.mjs";
 import { existsSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import os, { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createPool, rssOf, GUARDS } from "../plugins/anatomiya/lib/pool.mjs";
+import { createPool, defaultPoolSize, rssOf, GUARDS } from "../plugins/anatomiya/lib/pool.mjs";
 import { pathToFileURL } from "node:url";
 
 function file(dir, name, body) {
@@ -524,4 +524,16 @@ test("a ps in the directory the scan runs from is never the one the guard runs",
   }
 
   assert.equal(existsSync(join(dir, "RAN")), false, "the repository's own ps ran");
+});
+
+test("the default pool is sized off the cores this process may use, not the host's", (t) => {
+  // A container limited to two cores still reports every host core in cpus(),
+  // and a pool sized off that ran eight workers on two cores.
+  t.mock.method(os, "cpus", () => Array.from({ length: 16 }, () => ({})));
+  const cores = t.mock.method(os, "availableParallelism", () => 3);
+  assert.equal(defaultPoolSize(), 2);
+  cores.mock.mockImplementation(() => 1);
+  assert.equal(defaultPoolSize(), 1);
+  cores.mock.mockImplementation(() => 32);
+  assert.equal(defaultPoolSize(), 8);
 });

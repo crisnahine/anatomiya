@@ -1,10 +1,6 @@
 #!/usr/bin/env node
-import { runCheck, runDoctor, runEcho, runNotice, runPin, runReuse, runScan, runSetup } from "../lib/commands.mjs";
 import { readPayload, respond } from "../lib/hook.mjs";
 import { unsupportedNode } from "../lib/readiness.mjs";
-import { noteScan, refreshRepository, runRefresh, WORKER_DEADLINE_MS } from "../lib/refresh.mjs";
-import { pinJson, pinLines, scanJson, scanLines } from "../lib/summary.mjs";
-import { formatReport, formatReportGithub, formatReportJson } from "../lib/check-report.mjs";
 
 const USAGE = [
   "usage: anatomiya scan   [path] [--dry-run] [--format <name>]",
@@ -19,8 +15,8 @@ const USAGE = [
   "scan runs the typescript checker on its own where it can resolve types: the",
   "optional typescript dependency is installed, the repository's own",
   "dependencies are on disk inside it, and it has a root tsconfig.json or a",
-  "TypeScript source file that is not a declaration file. It measured about 3x",
-  "a plain scan on a 3,800-file repository and about 6x on a 2,600-file one.",
+  "TypeScript source file that is not a declaration file. It measured about 5x",
+  "a plain scan on a 3,800-file repository and about 10x on a 2,600-file one.",
   "check never runs it, because the checker is whole-program and a check would",
   "have to build the corpus twice.",
   "",
@@ -44,7 +40,8 @@ const USAGE = [
  * argument a command has no use for is refused with the usage rather than
  * accepted and quietly ignored. The arm lives here so a verb cannot be declared
  * without one: the dispatch that ended in a bare else scanned for any verb it
- * did not name.
+ * did not name. Each arm imports its own modules, so a hook that runs on every
+ * tool call does not load the scan and the parser a person's command needs.
  */
 const COMMANDS = {
   scan: {
@@ -52,6 +49,9 @@ const COMMANDS = {
     dryRun: true,
     formats: ["text", "json"],
     async run(cwd, opts) {
+      const { runScan } = await import("../lib/commands.mjs");
+      const { noteScan } = await import("../lib/refresh-run.mjs");
+      const { scanJson, scanLines } = await import("../lib/summary.mjs");
       const { result, summary } = await runScan(cwd, { dryRun: opts.dryRun });
       // A scan run by hand is the refresh's answer too: it clears a failed
       // refresh the echo is reporting, and the next refresh has nothing to redo.
@@ -65,11 +65,14 @@ const COMMANDS = {
     dryRun: false,
     formats: ["text", "json", "github"],
     async run(cwd, opts) {
+      const { runCheck } = await import("../lib/commands.mjs");
+      const { formatReport, formatReportGithub, formatReportJson } = await import("../lib/check-report.mjs");
+      const writers = { text: formatReport, json: formatReportJson, github: formatReportGithub };
       const { report } = await runCheck(cwd, { baseRef: opts.baseRef });
       // Findings never set the exit code, in any format. A non-zero exit here
       // means the check could not run, which is what the command file tells the
       // agent to trust.
-      process.stdout.write(CHECK_WRITERS[opts.format](report));
+      process.stdout.write(writers[opts.format](report));
     },
   },
   pin: {
@@ -77,6 +80,8 @@ const COMMANDS = {
     dryRun: true,
     formats: ["text", "json"],
     async run(cwd, opts) {
+      const { runPin } = await import("../lib/commands.mjs");
+      const { pinJson, pinLines } = await import("../lib/summary.mjs");
       const { summary } = await runPin(cwd, { dryRun: opts.dryRun });
       if (opts.format === "json") process.stdout.write(pinJson(summary));
       else console.log(pinLines(summary).join("\n"));
@@ -92,6 +97,7 @@ const COMMANDS = {
     async run() {
       // Exit 0 whichever way it came out: what it found is the report, and a
       // non-zero exit would read as a probe that could not run.
+      const { runDoctor } = await import("../lib/commands.mjs");
       const { lines } = await runDoctor();
       console.log(lines.join("\n"));
     },
@@ -101,6 +107,7 @@ const COMMANDS = {
     dryRun: true,
     formats: ["text"],
     async run(_cwd, opts) {
+      const { runSetup } = await import("../lib/commands.mjs");
       const { ok, output } = await runSetup({ dryRun: opts.dryRun });
       if (!ok) fail(output);
       console.log(output);
@@ -120,6 +127,7 @@ const COMMANDS = {
       // exit interrupts the run it exists to help. Every path here writes an
       // object and exits 0, including the one where stdin was never readable and
       // the one where nobody is left to read the answer.
+      const { runEcho } = await import("../lib/hook-verbs.mjs");
       respond(runEcho(cwd, await readPayload()));
     },
   },
@@ -131,7 +139,8 @@ const COMMANDS = {
     async run(cwd) {
       // The same guarantee `echo` makes, on the event before the tool rather
       // than the one after it.
-      respond(runNotice(cwd, await readPayload()));
+      const { runNotice } = await import("../lib/hook-verbs.mjs");
+      respond(await runNotice(cwd, await readPayload()));
     },
   },
   reuse: {
@@ -141,6 +150,7 @@ const COMMANDS = {
     hook: true,
     async run(cwd) {
       // The same guarantee again, at the end of a turn.
+      const { runReuse } = await import("../lib/hook-verbs.mjs");
       respond(await runReuse(cwd, await readPayload()));
     },
   },
@@ -152,6 +162,7 @@ const COMMANDS = {
     async run(cwd) {
       // At a session's start and whenever HEAD moves: names the git files to
       // watch and starts the worker below, and returns before it does anything.
+      const { runRefresh } = await import("../lib/refresh.mjs");
       respond(runRefresh(cwd, await readPayload()));
     },
   },
@@ -163,15 +174,16 @@ const COMMANDS = {
     dryRun: false,
     formats: ["text"],
     async run(cwd) {
+      const { WORKER_DEADLINE_MS } = await import("../lib/refresh.mjs");
       setTimeout(() => process.exit(1), WORKER_DEADLINE_MS).unref();
+      const { refreshRepository } = await import("../lib/refresh-run.mjs");
       await refreshRepository(cwd);
     },
   },
 };
 
-// One writer per format, and the set of names the flag takes.
-const CHECK_WRITERS = { text: formatReport, json: formatReportJson, github: formatReportGithub };
-const FORMATS = new Set(Object.keys(CHECK_WRITERS));
+// The names the flag takes: every format some command answers in.
+const FORMATS = new Set(Object.values(COMMANDS).flatMap((spec) => spec.formats));
 
 function fail(message, code = 2) {
   console.error(message);

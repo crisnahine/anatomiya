@@ -14,15 +14,20 @@ const LIB = join(ANATOMIYA, "lib");
  * Who imports whom, inside one directory. Node's own modules and the one npm
  * dependency are not part of this repository's shape.
  */
-function graph(dir = LIB) {
+function graph(dir = LIB, { dynamic = true } = {}) {
   const edges = new Map();
   for (const file of readdirSync(dir).filter((f) => f.endsWith(".mjs"))) {
     const src = readFileSync(join(dir, file), "utf8");
     // Every spelling that closes a cycle, not just the one this repo writes
     // most: a bare `import "./x.mjs"` runs the module for its side effects and
-    // a dynamic `import("./x.mjs")` is the form `parse-worker.mjs` already uses.
-    // A cycle through either would pass a check that only knew `from`.
-    const local = [...src.matchAll(/(?:from\s*|import\s*\(\s*|import\s+)["']\.\/([^"']+\.mjs)["']/g)].map((m) => m[1]);
+    // a dynamic `import("./x.mjs")` is the form `hook-verbs.mjs` already uses,
+    // quoted or as a template literal with no substitution. A cycle through
+    // either would pass a check that only knew `from`. What a module costs to
+    // load is its static imports alone, which `dynamic: false` asks.
+    const spelling = dynamic
+      ? /(?:from\s*|import\s+)["']\.\/([^"']+\.mjs)["']|import\s*\(\s*(?:["']\.\/([^"']+\.mjs)["']|`\.\/([^`$]+\.mjs)`)/g
+      : /(?:from\s*|import\s+)["']\.\/([^"']+\.mjs)["']/g;
+    const local = [...src.matchAll(spelling)].map((m) => m[1] ?? m[2] ?? m[3]);
     edges.set(file, [...new Set(local)]);
   }
   return edges;
@@ -135,6 +140,34 @@ test("the grammar deciding what a branch introduced reaches no git, no child and
   assert.deepEqual(importers, ["check.mjs"]);
 });
 
+test("the change set reaches no parser, no dimension and no writer, and the Stop hook does not load the check", () => {
+  // The Stop hook needs two git readers, and taking them from the check loaded
+  // 48 modules, the parser and every dimension among them, on every turn.
+  const edges = graph();
+  const reached = reachedFrom("changeset.mjs", edges);
+  for (const module of ["parse.mjs", "dimensions.mjs", "render.mjs", "write.mjs", "check.mjs"]) {
+    assert.equal(reached.has(module), false, `changeset.mjs reaches ${module}`);
+  }
+  assert.equal(reachedFrom("reuse.mjs", edges).has("check.mjs"), false, "reuse.mjs reaches check.mjs");
+});
+
+test("the change set and the Stop hook reach no dimension module at all", () => {
+  const edges = graph();
+  for (const from of ["changeset.mjs", "reuse.mjs"]) {
+    const dims = [...reachedFrom(from, edges)].filter((file) => file.startsWith("dimensions"));
+    assert.deepEqual(dims, [], `${from} reaches ${dims.join(", ")}`);
+  }
+});
+
+test("the repository reader takes the capability stems without the walker", () => {
+  // The notice hook imports this module for `isCorpusPath`, and taking the
+  // stems from the capability rows loaded the walker and oxc along with it.
+  const reached = reachedFrom("corpus.mjs");
+  for (const module of ["walk.mjs", "dimensions-capability.mjs", "dimensions.mjs"]) {
+    assert.equal(reached.has(module), false, `corpus.mjs reaches ${module}`);
+  }
+});
+
 // A field a row adds to a hit crossed the worker boundary only if the copy in
 // `collectHits` named it, and nothing held that copy to what a reader reads:
 // `nesting` was dropped once and the base-class row stated nothing. The table
@@ -221,14 +254,14 @@ test("every git read that grows with the repository is streamed, never buffered"
   // values on a small repository, so the only thing that says which one a
   // function used is the call it makes.
   const git = bodies("git.mjs");
-  const check = bodies("check.mjs");
+  const changeset = bodies("changeset.mjs");
 
   for (const [name, body] of [
     ["filesAt", git.get("filesAt")],
     ["pathSet", git.get("pathSet")],
     ["changedSinceWorktree", git.get("changedSinceWorktree")],
     ["diffRange", git.get("diffRange")],
-    ["changedFiles", check.get("changedFiles")],
+    ["changedFiles", changeset.get("changedFiles")],
   ]) {
     assert.ok(body, `${name} is not a named function any more`);
     assert.doesNotMatch(body, /gitBuffered\(/, `${name} buffers a listing that grows with the repository`);
@@ -519,20 +552,74 @@ test("every verb the binary declares carries its own arm in the one table", () =
     const keys = value.type === "ObjectExpression" ? value.properties.map(keyOf) : [];
     assert.ok(keys.includes("run"), `${verb} carries no run`);
   }
-  // Every command the binary imports is called inside the table, so no arm can
-  // exist outside it for a verb to fall through to, however it is spelled. The
-  // names come off the import rather than a list here, so an arm added
-  // tomorrow is one this sees. The offsets are asserted first: compared
-  // against undefined, every call would read as inside.
-  const arms = program.body
-    .filter((n) => n.type === "ImportDeclaration" && n.source.value.endsWith("/commands.mjs"))
-    .flatMap((n) => n.specifiers.map((s) => s.local.name));
-  assert.ok(arms.length >= 5, `read ${arms.length} command imports`);
+  // A command is imported inside the arm that runs it, so no arm can exist
+  // outside the table for a verb to fall through to, and a hook loads only its
+  // own. The binary itself imports what reading argv and the never-fail
+  // boundary need. The offsets are asserted first: compared against undefined,
+  // every import would read as inside.
+  const own = program.body.filter((n) => n.type === "ImportDeclaration").map((n) => n.source.value);
+  assert.deepEqual(own.sort(), ["../lib/hook.mjs", "../lib/readiness.mjs"]);
   assert.ok(Number.isInteger(table.init.start) && Number.isInteger(table.init.end), "the table carries offsets");
-  const outside = [...scan(src).matchAll(new RegExp(`\\b(?:${arms.join("|")})\\(`, "g"))]
-    .filter((m) => m.index < table.init.start || m.index >= table.init.end)
-    .map((m) => m[0]);
-  assert.deepEqual(outside, []);
+  const loads = [...scan(src).matchAll(/\bimport\(/g)];
+  assert.ok(loads.length >= verbs.length, `read ${loads.length} arm imports`);
+  assert.deepEqual(loads.filter((m) => m.index < table.init.start || m.index >= table.init.end).map((m) => m[0]), []);
+});
+
+/**
+ * What one verb of the binary loads: the binary's own imports and the modules
+ * its arm imports, followed through static imports only. A dynamic import in a
+ * function body loads when that function runs, not when its module does, so
+ * `lazy` also follows those at every depth.
+ */
+function armReach(verb, { lazy = false } = {}) {
+  const src = readFileSync(BINARY, "utf8");
+  const { program } = parseSync("anatomiya.mjs", src, { sourceType: "module" });
+  const table = program.body
+    .flatMap((n) => (n.type === "VariableDeclaration" ? n.declarations : []))
+    .find((d) => d.id.type === "Identifier" && d.id.name === "COMMANDS");
+  const arm = table.init.properties.find((p) => (p.key.name ?? p.key.value) === verb).value;
+  const roots = [
+    ...program.body.filter((n) => n.type === "ImportDeclaration").map((n) => n.source.value),
+    ...[...src.slice(arm.start, arm.end).matchAll(/\bimport\s*\(\s*(?:["']([^"']+)["']|`([^`$]+)`)\s*\)/g)].map((m) => m[1] ?? m[2]),
+  ].map((spec) => spec.replace(/^\.\.\/lib\//, ""));
+  const edges = graph(LIB, { dynamic: lazy });
+  // readiness.mjs's lazy imports serve the engine probes, which no hook runs.
+  if (lazy) edges.set("readiness.mjs", graph(LIB, { dynamic: false }).get("readiness.mjs"));
+  return new Set(roots.flatMap((root) => [...reachedFrom(root, edges)]));
+}
+
+// Written out rather than counted, so a module joining the echo's load shows by name.
+const ECHO_LOADS = [
+  "child.mjs",
+  "encode.mjs",
+  "facts.mjs",
+  "gates.mjs",
+  "hook-verbs.mjs",
+  "hook.mjs",
+  "langs.mjs",
+  "readiness.mjs",
+  "rules.mjs",
+  "version.mjs",
+  "worktree.mjs",
+];
+
+test("a hook verb loads none of the scan, the check or the parser", () => {
+  // Counted from each verb's imports, its function's lazy ones included: none
+  // of the heavy modules, no oxc, and the echo's exact static list. A hook runs
+  // on every tool call, and the binary once imported every command up front,
+  // oxc's native binding among them.
+  for (const verb of ["echo", "notice", "reuse", "refresh"]) {
+    const reached = armReach(verb, { lazy: true });
+    assert.ok(reached.has("hook.mjs"), `${verb}: the binary's own imports were not read`);
+    for (const heavy of ["scan.mjs", "parse.mjs", "walk.mjs", "dimensions.mjs", "reduce.mjs", "check.mjs"]) {
+      assert.equal(reached.has(heavy), false, `${verb} reaches ${heavy}`);
+    }
+    const oxc = [...reached].filter((f) => /(?:from|import|require|\))\s*\(?\s*["']oxc-parser["']/.test(readFileSync(join(LIB, f), "utf8")));
+    assert.deepEqual(oxc, [], `${verb} loads oxc`);
+  }
+  assert.deepEqual([...armReach("echo")].sort(), ECHO_LOADS);
+  assert.ok(armReach("notice", { lazy: true }).has("precedent.mjs"), "the notice's lazy import was not followed");
+  assert.ok(armReach("reuse", { lazy: true }).has("reuse.mjs"), "the reuse check's lazy import was not followed");
 });
 
 const FUNCTIONS = new Set(["FunctionDeclaration", "FunctionExpression", "ArrowFunctionExpression"]);

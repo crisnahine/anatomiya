@@ -1,13 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { chmodSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, truncateSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { execFileSync, spawnSync } from "node:child_process";
 import { needsPosixPermissions, needsPosixSpecialFiles } from "./platform.mjs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
-import { atomic, writeFacts, readFacts, statedSide, FACTS_SCHEMA, FACTS_PATH } from "../plugins/anatomiya/lib/facts.mjs";
+import { atomic, writeFacts, readFacts, readLayout, statedSide, FACTS_SCHEMA, FACTS_PATH, LAYOUT_PATH } from "../plugins/anatomiya/lib/facts.mjs";
 
 /**
  * One owner for the machine record, so one round trip through it.
@@ -735,4 +735,200 @@ test("a write that fails part way leaves no temporary file behind", async (t) =>
 
   assert.throws(() => atomic(join(dir, "facts.json"), "{}\n"), /ENOSPC/);
   assert.deepEqual(readdirSync(dir), []);
+});
+
+test("the layout is written beside the record, and reads back as the record's own", (t) => {
+  // The hooks want the layout alone, and the record holding it was 10 MB on
+  // microsoft/vscode: parsing all of it to read 1.5 KB was most of a notice.
+  const dir = root(t);
+  const layout = { tests: [], roots: [{ dir: "app", path: "app", companions: { with: 0, of: 6 } }] };
+
+  writeFacts(dir, { ...result([dim()]), layout });
+  const record = JSON.parse(readFileSync(join(dir, FACTS_PATH), "utf8"));
+
+  const { size, mtimeMs } = statSync(join(dir, FACTS_PATH));
+  assert.deepEqual(JSON.parse(readFileSync(join(dir, LAYOUT_PATH), "utf8")), { schema: FACTS_SCHEMA, record: { size, mtimeMs }, layout: record.layout });
+  assert.deepEqual(readLayout(dir), { layout: record.layout, schema: FACTS_SCHEMA });
+});
+
+test("a layout file that cannot answer for the record beside it is not read", (t) => {
+  // Each refusal leaves the caller to read the record itself, which is what a
+  // map written before the layout file existed already needs.
+  const absent = root(t);
+  assert.equal(readLayout(absent), null, "nothing written");
+
+  // Stamped from the record as it stands, so each case below refuses on its one change.
+  const stamped = (dir, { schema = FACTS_SCHEMA, size = 0, mtimeMs = 0 } = {}) => {
+    const now = statSync(join(dir, FACTS_PATH));
+    const record = { size: now.size + size, mtimeMs: now.mtimeMs + mtimeMs };
+    writeFileSync(join(dir, LAYOUT_PATH), JSON.stringify({ schema, record, layout: { tests: [], roots: [] } }));
+  };
+
+  const exact = root(t);
+  writeFacts(exact, result([dim()]));
+  stamped(exact);
+  assert.deepEqual(readLayout(exact), { layout: { tests: [], roots: [] }, schema: FACTS_SCHEMA }, "the control: an exact stamp is read");
+
+  const ahead = root(t);
+  writeFacts(ahead, result([dim()]));
+  stamped(ahead, { schema: FACTS_SCHEMA + 1 });
+  assert.equal(readLayout(ahead), null, "a schema this build has not heard of");
+
+  const shifted = root(t);
+  writeFacts(shifted, result([dim()]));
+  stamped(shifted, { mtimeMs: 1 });
+  assert.equal(readLayout(shifted), null, "a record one millisecond off, at the same size");
+
+  const resized = root(t);
+  writeFacts(resized, result([dim()]));
+  stamped(resized, { size: 1 });
+  assert.equal(readLayout(resized), null, "a record of another size");
+
+  const alone = root(t);
+  writeFacts(alone, result([dim()]));
+  rmSync(join(alone, FACTS_PATH));
+  assert.equal(readLayout(alone), null, "no record for it to be the layout of");
+
+  // A restore or an older build that rewrites the record leaves this file
+  // describing a record that is no longer there, whatever the layout file's own mtime.
+  const behind = root(t);
+  writeFacts(behind, result([dim()]));
+  const then = new Date(Date.now() - 60_000);
+  utimesSync(join(behind, FACTS_PATH), then, then);
+  const later = new Date(Date.now() + 60_000);
+  utimesSync(join(behind, LAYOUT_PATH), later, later);
+  assert.equal(readLayout(behind), null, "a record with another mtime");
+
+  // Past the size the reader takes, the record reads as nothing, so the layout
+  // file cannot answer for it even stamped exactly. Sparse, so it costs no disk.
+  const over = root(t);
+  writeFacts(over, result([dim()]));
+  truncateSync(join(over, FACTS_PATH), 64 * 1024 * 1024 + 1);
+  stamped(over);
+  assert.equal(readLayout(over), null, "a record past the cap");
+});
+
+test("the layout file is stamped from the record this writer renamed, not whatever is there after", async (t) => {
+  // Another writer replacing the record right after this one's rename must
+  // leave a layout file that refuses, so the reader goes to that writer's record.
+  const dir = root(t);
+  writeFacts(dir, result([dim()]));
+  const fs = (await import("node:fs")).default;
+  const { syncBuiltinESMExports } = await import("node:module");
+  const real = fs.renameSync;
+  let replaced = 0;
+  // The writer renames through the resolved directory, so the target is matched by its tail.
+  fs.renameSync = (from, to) => {
+    real(from, to);
+    if (to.endsWith(join(".claude", "anatomiya", "facts.json"))) {
+      writeFileSync(`${to}.theirs`, readFileSync(to, "utf8") + "\n\n");
+      real(`${to}.theirs`, to);
+      replaced++;
+    }
+  };
+  syncBuiltinESMExports();
+  try {
+    writeFacts(dir, result([dim({ key: "mine" })]));
+  } finally {
+    fs.renameSync = real;
+    syncBuiltinESMExports();
+  }
+
+  assert.equal(replaced, 1, "the other writer ran once, right after this one's rename");
+  assert.equal(readLayout(dir), null);
+});
+
+/** `fs[name]` throwing EPERM for every path `refuse` picks, for the rest of the test. */
+async function refuseFor(t, name, refuse) {
+  const fs = (await import("node:fs")).default;
+  const { syncBuiltinESMExports } = await import("node:module");
+  const real = fs[name];
+  fs[name] = (path, ...rest) => {
+    if (refuse(String(path))) throw Object.assign(new Error(`EPERM: operation not permitted, ${name}`), { code: "EPERM" });
+    return real(path, ...rest);
+  };
+  syncBuiltinESMExports();
+  t.after(() => {
+    fs[name] = real;
+    syncBuiltinESMExports();
+  });
+}
+
+test("a layout file that cannot be written leaves the record it was for unreplaced", async (t) => {
+  // A caller told the write failed must find the record it had, not a new one
+  // with no layout file to answer for it.
+  const dir = root(t);
+  writeFacts(dir, result([dim()]));
+  const before = readFileSync(join(dir, FACTS_PATH), "utf8");
+  await refuseFor(t, "openSync", (path) => path.includes("layout.json.tmp-"));
+
+  assert.throws(() => writeFacts(dir, result([dim({ key: "new" })])), /EPERM/);
+
+  assert.equal(readFileSync(join(dir, FACTS_PATH), "utf8"), before);
+  assert.deepEqual(readdirSync(join(dir, ".claude", "anatomiya")).sort(), ["facts.json", "layout.json"], "no temporary file left");
+  assert.notEqual(readLayout(dir), null, "the pair still answers");
+});
+
+test("a record that cannot be renamed into place leaves no temporary file", async (t) => {
+  const dir = root(t);
+  writeFacts(dir, result([dim()]));
+  const before = readFileSync(join(dir, FACTS_PATH), "utf8");
+  await refuseFor(t, "renameSync", (path) => path.includes("facts.json.tmp-"));
+
+  assert.throws(() => writeFacts(dir, result([dim({ key: "new" })])), /EPERM/);
+
+  assert.equal(readFileSync(join(dir, FACTS_PATH), "utf8"), before);
+  assert.deepEqual(readdirSync(join(dir, ".claude", "anatomiya")).sort(), ["facts.json", "layout.json"]);
+  assert.notEqual(readLayout(dir), null, "the old pair still answers");
+});
+
+test("a layout file that cannot be renamed into place puts the record back", async (t) => {
+  // The record is renamed first, so a throw at the layout's rename had already
+  // replaced it: a caller told the write failed found the new record beside
+  // the old layout file.
+  const dir = root(t);
+  writeFacts(dir, result([dim()]));
+  const before = readFileSync(join(dir, FACTS_PATH), "utf8");
+  const fresh = root(t);
+  await refuseFor(t, "renameSync", (path) => path.includes("layout.json.tmp-"));
+
+  assert.throws(() => writeFacts(dir, result([dim({ key: "new" })])), /EPERM/);
+  assert.equal(readFileSync(join(dir, FACTS_PATH), "utf8"), before);
+  assert.deepEqual(readdirSync(join(dir, ".claude", "anatomiya")).sort(), ["facts.json", "layout.json"], "no temporary file left");
+
+  assert.throws(() => writeFacts(fresh, result([dim()])), /EPERM/);
+  assert.deepEqual(readdirSync(join(fresh, ".claude", "anatomiya")), [], "a record that was not there is not left there");
+});
+
+test("a record put back after a failed layout rename is answered by its layout file again", async (t) => {
+  // The record put back is a new file, so the old layout file's stamp no
+  // longer names it unless the rollback writes the pair again.
+  const dir = root(t);
+  writeFacts(dir, result([dim()]));
+  let refused = false;
+  await refuseFor(t, "renameSync", (path) => path.includes("layout.json.tmp-") && !refused && (refused = true));
+
+  assert.throws(() => writeFacts(dir, result([dim({ key: "new" })])), /EPERM/);
+  assert.notEqual(readLayout(dir), null, "the old pair still answers");
+});
+
+test("a directory with no record is answered before the layout file's path is resolved", async (t) => {
+  // The notice asks this of every ancestor it walks past, and most hold no map.
+  const dir = root(t);
+  const fs = (await import("node:fs")).default;
+  const { syncBuiltinESMExports } = await import("node:module");
+  const real = fs.realpathSync;
+  let resolved = 0;
+  fs.realpathSync = (...args) => {
+    resolved++;
+    return real(...args);
+  };
+  syncBuiltinESMExports();
+  try {
+    assert.equal(readLayout(dir, join(dir, FACTS_PATH)), null);
+  } finally {
+    fs.realpathSync = real;
+    syncBuiltinESMExports();
+  }
+  assert.equal(resolved, 0);
 });

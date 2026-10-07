@@ -8,13 +8,17 @@
  * version at all.
  */
 import { randomBytes } from "node:crypto";
-import { closeSync, existsSync, mkdirSync, openSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { closeSync, constants, existsSync, fstatSync, mkdirSync, openSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 
 import { outsideClaude, readHead, resolveInside } from "./rules.mjs";
-import { wilsonLower } from "./reduce.mjs";
+import { wilsonLower } from "./gates.mjs";
 
 export const FACTS_PATH = ".claude/anatomiya/facts.json";
+
+// The record's `layout` on its own, written with it by the same writer: the
+// hooks read only the layout, and need not parse a record of megabytes for it.
+export const LAYOUT_PATH = ".claude/anatomiya/layout.json";
 
 // 2 added the polarity fields. A reader of the older shape sees no `states` and
 // falls back to `directive`, which is the claim side and is what every schema-1
@@ -199,9 +203,9 @@ export function schemaProblem(parsed) {
  * How much of a record this tool wrote any reader takes.
  *
  * Not `HEAD_BYTES`, which sizes a rule file: the record is the whole count of a
- * repository, and the largest this tool has written is 9,957,450 bytes, on
- * microsoft/vscode. A megabyte would have gone silent on exactly the
- * repositories where a directory nobody read is easiest to miss. The cap is
+ * repository, measured at 10,217,406 bytes on microsoft/vscode. A megabyte
+ * would have gone silent on exactly the repositories where a directory nobody
+ * read is easiest to miss. The cap is
  * there for the shape a rule file cap is there for, a path holding something
  * nobody wrote, and only such a file ever pays it.
  */
@@ -378,12 +382,124 @@ export function writeFacts(root, result) {
     throw new Error(`${outsideClaude(dirname(FACTS_PATH))}, so the facts were not written`);
   }
   mkdirSync(dir, { recursive: true });
-  atomic(join(dir, basename(FACTS_PATH)), factsJson(result));
+  // The record is renamed before its layout file, so a throw at the second
+  // rename has already replaced it. Put back the way the map's own write does.
+  const record = join(dir, basename(FACTS_PATH));
+  const previous = previousBytes(record);
+  const was = previous ? readLayout(root, record) : null;
+  try {
+    writePair(dir, factsJson(result), result.layout);
+  } catch (err) {
+    const now = previousBytes(record);
+    // Only where the failed write replaced what was there: still the same bytes
+    // leaves nothing to put back, and `putBack` leaves a record it could not read.
+    if (previous === null ? now !== null : !(now && previous?.equals(now))) {
+      try {
+        putBack(record, previous, was);
+      } catch {}
+    }
+    throw err;
+  }
+}
+
+/**
+ * `previous`, from `previousBytes`, back at `path`: removed where nothing was,
+ * left where it could not be read, and where `was` is the layout file that
+ * answered for it, the pair written again so the restored record has one.
+ */
+export function putBack(path, previous, was) {
+  if (previous === undefined) return;
+  if (previous === null) unlinkSync(path);
+  else if (was !== null) writePair(dirname(path), previous, was.layout, was.schema);
+  else atomic(path, previous);
+}
+
+/** A regular file's bytes, `null` where nothing is, `undefined` where they cannot be put back. */
+export function previousBytes(path) {
+  let fd;
+  try {
+    // Opened then typed through the handle, so the file read is the file typed;
+    // O_NOFOLLOW refuses a link the way lstat did.
+    fd = openSync(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0));
+    return fstatSync(fd).isFile() ? readFileSync(fd) : undefined;
+  } catch (err) {
+    return err.code === "ENOENT" ? null : undefined;
+  } finally {
+    if (fd !== undefined) closeSync(fd);
+  }
+}
+
+/**
+ * The record's bytes and the layout file stamped from them, both written whole
+ * before either is renamed, so a failure up to the record's rename replaces
+ * nothing. The record goes first because that rename is the one that can fail
+ * with nothing moved: the old pair stays whole and still answers.
+ */
+function writePair(dir, recordBytes, layout, schema) {
+  const record = join(dir, basename(FACTS_PATH));
+  const temps = [writeTemp(record, recordBytes)];
+  try {
+    temps.push(writeTemp(join(dir, basename(LAYOUT_PATH)), stampedLayout(layout, temps[0], schema)));
+    renameSync(temps[0], record);
+    renameSync(temps[1], join(dir, basename(LAYOUT_PATH)));
+  } catch (err) {
+    for (const tmp of temps) {
+      try {
+        unlinkSync(tmp);
+      } catch {}
+    }
+    throw err;
+  }
 }
 
 /** The record's bytes, for a writer that puts them on disk together with the map. */
 export function factsJson(result) {
   return JSON.stringify(factsRecord(result), null, 2) + "\n";
+}
+
+/**
+ * The layout file's bytes, under the record's schema, stamped with the size and
+ * mtime of the record's temporary file. The rename keeps both, and a stat after
+ * the rename could stamp another writer's record. A rollback passes the schema
+ * the old layout file had, since the record it puts back was written under that.
+ */
+export function stampedLayout(layout, recordTemp, schema = FACTS_SCHEMA) {
+  const { size, mtimeMs } = statSync(recordTemp);
+  return JSON.stringify({ schema, record: { size, mtimeMs }, layout: layout ?? null }, null, 2) + "\n";
+}
+
+/**
+ * The layout the record beside it holds, as `{ layout, schema }`, or null where the
+ * layout file cannot answer for that record and the record has to be read.
+ *
+ * Refused under the record's own schema rule, and unless the record on disk is
+ * the very file it was stamped from, to the byte count and the millisecond. An
+ * older build rewriting only the record, a checkout or a restore that changes it
+ * and keeps old mtimes, a conflict marker or a hand edit all leave a layout file
+ * describing some other record. Refused too past the size the reader takes, since
+ * the record then reads as nothing. `facts` is the record's path, for a caller
+ * that has already resolved it.
+ */
+export function readLayout(root, facts = resolveInside(root, FACTS_PATH)) {
+  // The record first: most directories a hook asks about hold none.
+  const record = facts === null ? null : statOf(facts);
+  if (record === null || record.size > RECORD_MOST) return null;
+  const path = resolveInside(root, LAYOUT_PATH);
+  if (path === null) return null;
+  const parsed = readRecord(path).record;
+  const schema = parsed?.schema;
+  if (!Number.isInteger(schema) || schema < 1 || schema > FACTS_SCHEMA) return null;
+  if (parsed.record?.size !== record.size || parsed.record?.mtimeMs !== record.mtimeMs) return null;
+  return { layout: parsed.layout ?? null, schema };
+}
+
+// Null for anything a stat refuses: this runs inside a hook, which never throws.
+function statOf(path) {
+  try {
+    return statSync(path);
+  } catch {
+    return null;
+  }
 }
 
 function factsRecord(result) {

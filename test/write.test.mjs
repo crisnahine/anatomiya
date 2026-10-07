@@ -10,7 +10,7 @@ import { execFileSync } from "node:child_process";
 import { commitMap, planMap, writeMap } from "../plugins/anatomiya/lib/write.mjs";
 import { areaFilename, isOwned, realpathOf, realpathOrNull, EXCLUDE_LINES, HEAD_BYTES, PREFIX, SETTINGS_PATH } from "../plugins/anatomiya/lib/rules.mjs";
 import { areaId } from "../plugins/anatomiya/lib/areas.mjs";
-import { writeFacts, readFacts as readFactsFrom } from "../plugins/anatomiya/lib/facts.mjs";
+import { writeFacts, readFacts as readFactsFrom, readLayout, FACTS_SCHEMA } from "../plugins/anatomiya/lib/facts.mjs";
 import { severityFor } from "../plugins/anatomiya/lib/check.mjs";
 
 const RULES = ".claude/rules";
@@ -148,6 +148,16 @@ function snapshot(dir) {
   return out;
 }
 
+/**
+ * The snapshot with the layout file's stamp left out. The record a rollback
+ * puts back is a new file with a new mtime, so its layout file is stamped again.
+ */
+function unstamped(snap) {
+  const layout = JSON.parse(snap[`${STORE}/layout.json`]);
+  delete layout.record;
+  return { ...snap, [`${STORE}/layout.json`]: layout };
+}
+
 test("a rules directory that refuses the write leaves the previous facts as well as the previous files", needsPosixPermissions, () => {
   // `check` reads facts.json, so new facts beside the old files called the map
   // fresh while the session loaded a map of an older scan.
@@ -161,7 +171,8 @@ test("a rules directory that refuses the write leaves the previous facts as well
     chmodSync(rules(dir), 0o755);
   }
 
-  assert.deepEqual(snapshot(dir), before, "the previous map, whole, and no temporary file beside it");
+  assert.deepEqual(unstamped(snapshot(dir)), unstamped(before), "the previous map, whole, and no temporary file beside it");
+  assert.notEqual(readLayout(dir), null, "and its layout file answers for the record put back");
   rmSync(dir, { recursive: true, force: true });
 });
 
@@ -191,7 +202,8 @@ test("a replace that fails part way puts back every file it had already replaced
 
   assert.throws(() => writeMap(result(dir, [area("src/services"), area("src/hooks")])), /EPERM/);
 
-  assert.deepEqual(snapshot(dir), before, "the previous map, whole, and no temporary file beside it");
+  assert.deepEqual(unstamped(snapshot(dir)), unstamped(before), "the previous map, whole, and no temporary file beside it");
+  assert.notEqual(readLayout(dir), null, "and its layout file answers for the record put back");
   rmSync(dir, { recursive: true, force: true });
 });
 
@@ -204,7 +216,8 @@ test("a removal that fails puts back what the scan had written", async (t) => {
 
   assert.throws(() => writeMap(result(dir, [area("src/services")])), /EPERM/);
 
-  assert.deepEqual(snapshot(dir), before);
+  assert.deepEqual(unstamped(snapshot(dir)), unstamped(before));
+  assert.notEqual(readLayout(dir), null);
   rmSync(dir, { recursive: true, force: true });
 });
 
@@ -232,13 +245,103 @@ test("every file being replaced is read before the first one is renamed", async 
   rmSync(dir, { recursive: true, force: true });
 });
 
+/** A roster with one root, the shape the overview renders from. */
+const roster = (root) => ({
+  size: 10,
+  minFiles: 3,
+  roots: [{ path: root, dir: root, files: 5, source: 5, exts: [[".ts", 5]], other: 0, jsx: 0, jsxExt: null, tests: [], testRoot: false }],
+  more: { roots: 0, files: 0, floor: { dirs: 4, files: 4, root: 14 } },
+  tests: [],
+  principles: [],
+  truncated: false,
+});
+
+test("a scan writes the layout file beside the record, holding the record's layout", (t) => {
+  const dir = workspace();
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const layout = roster("src/services");
+
+  writeMap({ ...result(dir, [area("src/services")]), layout });
+
+  assert.deepEqual(JSON.parse(readFileSync(join(dir, STORE, "layout.json"), "utf8")).layout, readFacts(dir).layout);
+  assert.deepEqual(readFacts(dir).layout, layout);
+  // Read back too: the stamp is the record's as it landed, so the rename kept it.
+  assert.deepEqual(readLayout(dir), { layout, schema: FACTS_SCHEMA });
+});
+
+test("a replace that fails part way puts the previous layout file back with the record", async (t) => {
+  // Staged with the record, so the two always describe the same scan.
+  const dir = workspace();
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  writeMap({ ...result(dir, [area("src/services"), area("src/api")]), layout: roster("src/a") });
+  const before = snapshot(dir);
+  await failNth(t, "renameSync", 3);
+
+  assert.throws(() => writeMap({ ...result(dir, [area("src/services"), area("src/hooks")]), layout: roster("src/b") }), /EPERM/);
+
+  assert.ok(`${STORE}/layout.json` in before, "the first scan wrote one");
+  assert.deepEqual(unstamped(snapshot(dir)), unstamped(before));
+  // The record put back is a new file, so a layout file put back with its old
+  // stamp would leave every hook reading the whole record until the next scan.
+  assert.deepEqual(readLayout(dir), { layout: roster("src/a"), schema: FACTS_SCHEMA }, "the pair put back still answers");
+});
+
+test("a layout file put back keeps the schema it was written under", async (t) => {
+  // The record put back was written by that scan, so the layout file is restamped
+  // under that scan's schema, not this build's.
+  const dir = workspace();
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  writeMap({ ...result(dir, [area("src/services"), area("src/api")]), layout: roster("src/a") });
+  const layoutPath = join(dir, STORE, "layout.json");
+  const older = { ...JSON.parse(readFileSync(layoutPath, "utf8")), schema: FACTS_SCHEMA - 1 };
+  writeFileSync(layoutPath, JSON.stringify(older));
+  assert.deepEqual(readLayout(dir), { layout: roster("src/a"), schema: FACTS_SCHEMA - 1 }, "the control: the forged file answers");
+  await failNth(t, "renameSync", 3);
+
+  assert.throws(() => writeMap({ ...result(dir, [area("src/services"), area("src/hooks")]), layout: roster("src/b") }), /EPERM/);
+
+  assert.deepEqual(readLayout(dir), { layout: roster("src/a"), schema: FACTS_SCHEMA - 1 });
+});
+
+test("a record that could not be read before the replace is not written back", needsPosixPermissions, async (t) => {
+  // Its bytes are unknown, so there is nothing to put back, and the layout file
+  // beside it still answers for the old record and must not be restamped from nothing.
+  const dir = workspace();
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  writeMap({ ...result(dir, [area("src/services"), area("src/api")]), layout: roster("src/a") });
+  const record = join(dir, STORE, "facts.json");
+  const fs = (await import("node:fs")).default;
+  const { syncBuiltinESMExports } = await import("node:module");
+  const real = fs.openSync;
+  const recordTemps = [];
+  fs.openSync = (path, ...rest) => {
+    if (String(path).includes("facts.json.tmp-")) recordTemps.push(String(path));
+    return real(path, ...rest);
+  };
+  syncBuiltinESMExports();
+  t.after(() => {
+    fs.openSync = real;
+    syncBuiltinESMExports();
+  });
+  await failNth(t, "renameSync", 3);
+  chmodSync(record, 0o000);
+  try {
+    assert.notEqual(readLayout(dir), null, "the control: the old layout file answers");
+    assert.throws(() => writeMap({ ...result(dir, [area("src/services"), area("src/hooks")]), layout: roster("src/b") }), /EPERM/);
+  } finally {
+    chmodSync(record, 0o644);
+  }
+
+  assert.equal(recordTemps.length, 1, "only the scan's own record was staged");
+});
+
 test("a dry run writes nothing at all", () => {
   const dir = workspace();
 
   const plan = writeMap(result(dir, [area("src/services")]), { dryRun: true });
 
   assert.equal(plan.write.length, 2);
-  assert.equal(existsSync(join(dir, ".claude")), false, "not even the directory");
+  assert.equal(existsSync(join(dir, ".claude")), false, "not even the directory, so neither the record nor the layout file");
   rmSync(dir, { recursive: true, force: true });
 });
 
@@ -1338,22 +1441,24 @@ test("a rules directory the repository shares between agents through a link is w
   rmSync(dir, { recursive: true, force: true });
 });
 
-test("a directory where facts.json belongs is refused by name before a dry run answers", () => {
+test("a directory where facts.json or layout.json belongs is refused by name before a dry run answers", () => {
   // Measured: a committed directory at .claude/anatomiya/facts.json let a dry
   // run print "would write" and the real scan die on a raw EISDIR out of the
-  // rename.
-  const dir = workspace();
-  mkdirSync(join(dir, STORE, "facts.json"), { recursive: true });
+  // rename. layout.json is renamed into place beside it the same way.
+  for (const leaf of ["facts.json", "layout.json"]) {
+    const dir = workspace();
+    mkdirSync(join(dir, STORE, leaf), { recursive: true });
 
-  for (const dryRun of [true, false]) {
-    assert.throws(
-      () => writeMap(result(dir, [area("src/services")]), { dryRun }),
-      (err) => err.message === `${STORE}/facts.json is not a file, so the map could not be written: remove it and scan again`,
-      dryRun ? "dry run" : "real write"
-    );
+    for (const dryRun of [true, false]) {
+      assert.throws(
+        () => writeMap(result(dir, [area("src/services")]), { dryRun }),
+        (err) => err.message === `${STORE}/${leaf} is not a file, so the map could not be written: remove it and scan again`,
+        `${leaf}, ${dryRun ? "dry run" : "real write"}`
+      );
+    }
+    assert.equal(existsSync(join(dir, RULES)), false, `${leaf}: and nothing else was written`);
+    rmSync(dir, { recursive: true, force: true });
   }
-  assert.equal(existsSync(join(dir, RULES)), false, "and nothing else was written");
-  rmSync(dir, { recursive: true, force: true });
 });
 
 test("a facts.json linked out of .claude is not read", () => {

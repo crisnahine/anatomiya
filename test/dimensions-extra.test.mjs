@@ -652,7 +652,7 @@ test("every shape ?. really replaces is still a site", () => {
 /* --- a component read as JSX is a value read (#77 row 4) --- */
 
 test("a component read as a JSX element is a value read, not a type-only import", () => {
-  // `valueReads` matches Identifier and a JSX element name is a JSXIdentifier,
+  // The value-read note matches Identifier and a JSX element name is a JSXIdentifier,
   // so a component used in JSX plus once in a type position read as type-only.
   // Obeying gives TS1361: cannot be used as a value because it was imported
   // using import type.
@@ -791,7 +791,7 @@ test("a mid-chain assertion does not carry a write position past the grammar tes
 });
 
 test("an overload set inside a namespace or a block is not a function-style site either", () => {
-  // `overloadImplementations` read `program.body` alone, and a function inside
+  // The overload scan read `program.body` alone, and a function inside
   // `namespace N { }` has no enclosing declaration, so it was a module-level
   // site the exclusion could not reach: the only syntax an overload set has,
   // reported at MUST-FIX.

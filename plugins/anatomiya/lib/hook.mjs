@@ -25,7 +25,7 @@ import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "nod
 
 import { HEAD_BYTES, isOwned, OVERVIEW_FILE, REFRESH_STATE, RULES_DIR, SETTINGS_PATH, readHead, readTail, realpathOrNull, resolveInside } from "./rules.mjs";
 import { locator } from "./encode.mjs";
-import { FACTS_PATH, readRecord, schemaProblem } from "./facts.mjs";
+import { FACTS_PATH, readLayout, readRecord, schemaProblem } from "./facts.mjs";
 import { mainCheckoutOf } from "./worktree.mjs";
 
 export { SETTINGS_PATH };
@@ -182,7 +182,11 @@ export function ownLayout(from) {
   // the repository deciding what a write inside it was judged against.
   const hit = walkUp(from, (at) => {
     const path = resolveInside(at, FACTS_PATH);
-    return path === null ? null : readLayout(path);
+    if (path === null) return null;
+    // A layout file that answers is believed even when it says null: the
+    // record it was stamped from says the same, and reading that is the cost.
+    const stamped = readLayout(at, path);
+    return stamped === null ? recordedLayout(path) : stamped.layout;
   });
   return hit && { root: hit.at, layout: hit.found, from: hit.from };
 }
@@ -233,7 +237,7 @@ export function childLayouts(dir) {
  * and enforced nothing while the notice, one command over, spoke off the same
  * file.
  */
-function readLayout(path) {
+function recordedLayout(path) {
   // No record here, or one nobody can read. Both mean keep walking.
   const parsed = readRecord(path).record;
   return parsed !== null && schemaProblem(parsed) === null ? (parsed.layout ?? null) : null;

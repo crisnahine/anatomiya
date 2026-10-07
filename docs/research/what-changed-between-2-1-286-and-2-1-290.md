@@ -181,7 +181,7 @@ the hooks do:
 - 2.1.290: an async Stop hook with an unquoted path looped. anatomiya's Stop hook is synchronous and
   quotes `${CLAUDE_PLUGIN_ROOT}`.
 - 2.1.285: a synchronous hook no longer hangs on a background child that holds its output open.
-  `plugins/anatomiya/lib/refresh.mjs:189-194` starts its worker detached with `stdio: "ignore"` and
+  `plugins/anatomiya/lib/refresh.mjs:154-159` starts its worker detached with `stdio: "ignore"` and
   `unref()`, so it was never exposed.
 - 2.1.286: API 400s after a hook returned a non-string. anatomiya returns strings.
 

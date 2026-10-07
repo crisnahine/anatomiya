@@ -1,6 +1,6 @@
 # Contributing
 
-Read `DECISIONS.md` first. It is 256 numbered rows, each one a measurement or a review finding reduced
+Read `DECISIONS.md` first. It is 263 numbered rows, each one a measurement or a review finding reduced
 to the decision it forces on the code. It is the build contract, and most questions you will have
 about why something is shaped the way it is are answered there in one line.
 
@@ -177,11 +177,21 @@ The shape:
     blind: null,
   },
   langs: ["js", "jsx"],
-  run(program, add) {
-    // one add() per candidate site, conforming decided per site
+  visitor(program, add) {
+    return {
+      node(n, ctx) {
+        // one add() per candidate site, conforming decided per site
+      },
+    };
   },
 }
 ```
+
+A row is a visitor of the one walk its engine takes over each file (B49): `walk` for JavaScript,
+`walkRuby` for Ruby. Its file declares `visitor` and nothing else: `dimensions.mjs` gives every
+visitor row its `run` with `fromVisitor` on its engine's walk, so the check and the tests can still
+ask one row at a time. Work that needs the whole file goes in an optional `done()` after the walk. A
+row that never walks, because it reads `program.body` alone, declares `run` instead.
 
 A file-to-file obligation is the same three numbers with the site defined differently: the site is
 the file, so `candidates` equals `applicability` and `conforming` counts the producers whose companion

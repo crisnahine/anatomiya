@@ -75,7 +75,9 @@ const STRUCTURAL = [
 // stripped there rather than everywhere: "issue #42" survives intact.
 const BLOCK_MARKER = /^(?:[#>*+-]+|\d+[.)])\s*/;
 
-const GRAPHEMES = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+// Built on the first cap: most hook processes import this module and never cap.
+let graphemes = null;
+const segmenter = () => (graphemes ??= new Intl.Segmenter(undefined, { granularity: "grapheme" }));
 
 /** Strip anything that is not printable, then collapse runs of spaces. */
 export function printableOnly(s) {
@@ -92,7 +94,7 @@ function capGraphemes(s, max) {
   const out = [];
   const budget = max * UNITS_PER_GRAPHEME;
   let units = 0;
-  for (const { segment } of GRAPHEMES.segment(s)) {
+  for (const { segment } of segmenter().segment(s)) {
     const kept = firstCodePoints(segment, CLUSTER_MOST);
     if (out.length >= max || units + kept.length > budget) return out.join("") + "…";
     out.push(kept);

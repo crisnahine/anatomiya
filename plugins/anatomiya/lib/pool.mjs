@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { readFileSync, statSync } from "node:fs";
-import { cpus } from "node:os";
+import os from "node:os";
 import { promisify } from "node:util";
 
 import { guardedChild, retryOnce } from "./child.mjs";
@@ -333,8 +333,13 @@ export function createPool({ size, withProgram = false, execArgv = [], guards = 
   };
 }
 
+// The cores this process may run on: cpus() counts the host's, which in a
+// container held to two cores sized the pool for eight. On Linux this reads
+// the CPU affinity (cpuset), and a cgroup CPU quota only from Node 22.12
+// (libuv 1.49), rounded down. Read through the module object so a test can
+// hand it another machine.
 export function defaultPoolSize() {
-  return Math.max(1, Math.min(8, cpus().length - 1));
+  return Math.max(1, Math.min(8, os.availableParallelism() - 1));
 }
 
 // Absolute, never looked up. `scan .` runs from the repository, and an empty
