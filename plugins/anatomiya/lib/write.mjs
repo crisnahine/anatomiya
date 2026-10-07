@@ -199,9 +199,16 @@ function auditTarget(target, { on, explicit = false }, { root, previous, blind, 
   // whatever its name. Named, the target cannot be written as asked and the
   // scan says so. Merely on, the file stays and its area has no file there. An
   // overview that stopped being ours after the target read as on refuses too.
-  const taken = target.always ? [] : all.filter((n) => audit.foreign.includes(n) || audit.unreadable.includes(n));
+  // A directory or a fifo at the name is the same answer: a refresh nobody is
+  // watching may not stop over an entry in a directory another tool owns.
+  const theirs = [audit.foreign, audit.unreadable, audit.occupied];
+  const taken = target.always ? [] : all.filter((n) => theirs.some((list) => list.includes(n)));
   if (taken.length && (explicit || taken.includes(overviewName(target)))) {
-    const what = audit.unreadable.includes(taken[0]) ? "could not be read" : "was not written by this tool";
+    const what = audit.unreadable.includes(taken[0])
+      ? "could not be read"
+      : audit.occupied.includes(taken[0])
+        ? "is not a file"
+        : "was not written by this tool";
     throw new Error(
       `${target.dir}/${taken[0]} ${what}, so ${target.dir} could not be written and nothing was written anywhere: move or delete it and scan again`
     );
@@ -254,7 +261,7 @@ function auditTarget(target, { on, explicit = false }, { root, previous, blind, 
     // about a file this run just replaced. It also moved the overview
     // between two scans of unchanged source, which is the one thing it may never
     // do: named on the first scan, ours and silent on the second.
-    foreign: audit.foreign.filter((f) => !planned.has(f)),
+    foreign: [...audit.foreign.filter((f) => !planned.has(f)), ...taken.filter((n) => audit.occupied.includes(n))].sort(),
     replaced: audit.foreign.filter((f) => planned.has(f)),
     // Whose these are was never established. They load, they are never removed,
     // and calling them somebody else's would assert authorship nobody checked.
