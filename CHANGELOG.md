@@ -119,6 +119,10 @@ of its `cli`, and goes from 1,798 claims stated to 1,784.
 - `$lib/` in a SvelteKit project resolves to the importer's own `src/lib` for "most imported from
   here": 4,210 of 4,213 such imports on one measured repository, where 0.13.4 resolved none. No
   `svelte.config.js` is read, so a project that repoints the alias resolves nothing through it.
+  `@/`, `~/`, `#/` and `src/` written in a component resolve the same way, inside the component's
+  own project and its `src`, and credit nothing where no directory above the component holds the
+  file: a Vue package's `@/components/ui/button` is not counted as an importer of another
+  package's `button.tsx`.
 - The end-of-turn reuse check asks about a component: the lines its script added and no others. An
   edit to a template or a style block asks nothing.
 - `scan --targets cursor,copilot` writes the same map for Cursor and GitHub Copilot as well:
