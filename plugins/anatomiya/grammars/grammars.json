@@ -1,0 +1,65 @@
+[
+  {
+    "id": "python",
+    "package": "tree-sitter-python",
+    "version": "0.25.0",
+    "source": "tree-sitter-python.wasm",
+    "file": "python.wasm",
+    "sha256": "16108b50df4ee9a30168794252ab55e7c93bfc5765d7fa0aa3e335752c515f47",
+    "abi": 15
+  },
+  {
+    "id": "php",
+    "package": "tree-sitter-php",
+    "version": "0.24.2",
+    "source": "tree-sitter-php.wasm",
+    "file": "php.wasm",
+    "sha256": "d4df6a6ff08c87c3ec4f9cbb785fe09998a0cb570e03f57d7b19b3acfb146aa7",
+    "abi": 15
+  },
+  {
+    "id": "go",
+    "package": "tree-sitter-go",
+    "version": "0.25.0",
+    "source": "tree-sitter-go.wasm",
+    "file": "go.wasm",
+    "sha256": "9504573f352b20be7f2f1911754d710622aedc15afff16d5ed8fb5645681aee7",
+    "abi": 15
+  },
+  {
+    "id": "java",
+    "package": "tree-sitter-java",
+    "version": "0.23.5",
+    "source": "tree-sitter-java.wasm",
+    "file": "java.wasm",
+    "sha256": "4fdeac4ca6ca089f06c6f7e562abcac1733cd465728cc7031ebb73c2019122c4",
+    "abi": 14
+  },
+  {
+    "id": "csharp",
+    "package": "tree-sitter-c-sharp",
+    "version": "0.23.5",
+    "source": "tree-sitter-c_sharp.wasm",
+    "file": "csharp.wasm",
+    "sha256": "6f69e1cae44e1c32c1eccc170dc5a9778fb94ff716f71113fe1f8c4299aa2f40",
+    "abi": 15
+  },
+  {
+    "id": "rust",
+    "package": "tree-sitter-rust",
+    "version": "0.24.0",
+    "source": "tree-sitter-rust.wasm",
+    "file": "rust.wasm",
+    "sha256": "f65f354215611fd94ad34134b3427eb3d58cbb745df7b6509ba722184db73d57",
+    "abi": 14
+  },
+  {
+    "id": "kotlin",
+    "package": "@tree-sitter-grammars/tree-sitter-kotlin",
+    "version": "1.1.0",
+    "source": "tree-sitter-kotlin.wasm",
+    "file": "kotlin.wasm",
+    "sha256": "7009d69453bc8735e438b2818a633efb21c88f99782769abba60dffedfab73f7",
+    "abi": 14
+  }
+]

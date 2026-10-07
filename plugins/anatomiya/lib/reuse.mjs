@@ -315,6 +315,11 @@ export async function pendingChange(root, { since = null, turnStart = null } = {
   const files = [];
   for (const { path, status } of changed.sort((a, b) => byCode(a.path, b.path))) {
     if (ONE_OFF.test(path) || dropOf(path) !== null) continue;
+    // An engine with no line rule cannot tell a function from a comment, so its files ask nothing.
+    // The absence is deliberate until a language has a rule of its own.
+    const lang = language(path);
+    const engine = engineOf(lang);
+    if (!(engine in INERT)) continue;
     const entry = readHead(join(root, path), MAX_FILE_BYTES + 1);
     // Past the size the parser skips, or not a file: nothing this reads either.
     if (entry.kind !== "file" || entry.size > MAX_FILE_BYTES) continue;
@@ -323,13 +328,11 @@ export async function pendingChange(root, { since = null, turnStart = null } = {
       status === "A"
         ? [{ from: 1, to: lineCount(entry.head), created: true }].filter((h) => h.to > 0)
         : (ranges.get(path) ?? []).map(([from, to]) => ({ from, to, created: false }));
-    const lang = language(path);
-    const engine = engineOf(lang);
     const kind = embeddedIn(lang);
     const script = kind === null ? null : componentScript(engine, entry.head, kind);
     const hunks = script === null ? added : clipped(added, script.spans);
-    const inert = script !== null ? script.inert : engine in INERT ? inertLines(engine, entry.head.split("\n")) : null;
-    const defining = inert === null ? hunks : hunks.filter((h) => !inert.slice(h.from - 1, h.to).every(Boolean));
+    const inert = script === null ? inertLines(engine, entry.head.split("\n")) : script.inert;
+    const defining = hunks.filter((h) => !inert.slice(h.from - 1, h.to).every(Boolean));
     if (defining.length === 0) continue;
     // Over the checkout too: a sibling repository's copy of a file is another file.
     const mark = createHash("sha256").update(`${home}\0${path}\0`).update(entry.head).digest("hex").slice(0, 12);

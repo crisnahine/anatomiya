@@ -337,14 +337,21 @@ export async function scan(cwd, { guards = null, runChecker = runSemantic, resol
       skipped: head.tallies.oversize,
       failed: head.tallies.unreadable,
       syntaxErrors: head.tallies.rejected,
+      // Only where a rejection means something other than the file's own
+      // syntax, so the record of a run no grammar read for is unchanged.
+      ...(Object.keys(head.rejections ?? {}).some((means) => means !== "syntax") ? { rejections: head.rejections } : {}),
       // Which engine read this repository and at what version, and which one
       // was not there at all. The remedy differs per engine, and the summary
       // names the version so a map that moved under unchanged source has
       // somewhere to look first.
       engines: head.engines,
       missingEngines: head.missingEngines,
+      // Only where one did not load, so the record of a healthy run is unchanged.
+      ...(head.missingGrammars.length ? { missingGrammars: head.missingGrammars } : {}),
       missingParser: head.missingParser,
       missingStripper: head.missingStripper,
+      // Only where a file was read that way, so the record of a run that read every file whole is unchanged.
+      ...(head.oneBranch ? { oneBranch: head.oneBranch } : {}),
       unreadable,
     },
     // The areas the writer leaves as they are, and whether this run read any

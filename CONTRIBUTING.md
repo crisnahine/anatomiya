@@ -1,22 +1,28 @@
 # Contributing
 
-Read `DECISIONS.md` first. It is 275 numbered rows, each one a measurement or a review finding reduced
+Read `DECISIONS.md` first. It is 280 numbered rows, each one a measurement or a review finding reduced
 to the decision it forces on the code. It is the build contract, and most questions you will have
 about why something is shaped the way it is are answered there in one line.
 
 ## Setup and tests
 
-Node 22 or newer. ES modules, `.mjs` throughout. Two runtime dependencies, `oxc-parser` and
-`flow-remove-types`, the second loaded the first time a `.js`-family file is rejected. Ruby
+Node 22 or newer. ES modules, `.mjs` throughout. Three runtime dependencies: `oxc-parser`,
+`flow-remove-types`, loaded the first time a `.js`-family file is rejected, and `web-tree-sitter`,
+the runtime for the grammars under `plugins/anatomiya/grammars/`. Ruby
 dimensions need `prism` 1.x, a default gem on Ruby 3.4 and up, so a system Ruby is
 usually enough. If you do not have Ruby, the Ruby tests skip and the rest still run.
-The one dev dependency, `ignore`, is the package Claude Code matches a rule's `paths` with, so the
-tests read a rendered `paths` list through it.
+The dev dependency `ignore` is the package Claude Code matches a rule's `paths` with, so the
+tests read a rendered `paths` list through it. The other seven dev dependencies are the grammar
+packages the vendored `.wasm` files are copied from.
 
 ```sh
-npm install
+npm install --ignore-scripts
 node --test 'test/**/*.test.mjs'
 ```
+
+Install with `--ignore-scripts`. No dependency needs an install script, and the seven grammar
+packages each declare one that would load a native binary this project never uses. CI and the
+release install the same way.
 
 `npm test` runs the same thing. A single file while you are working on it:
 
@@ -27,8 +33,8 @@ node --test test/encode.test.mjs
 Changing what `plugins/anatomiya/package.json` depends on takes one more step:
 
 ```sh
-npm install                 # the marketplace's own lockfile
-npm run lock:plugin         # the plugin's, seeded from it
+npm install --ignore-scripts   # the marketplace's own lockfile
+npm run lock:plugin            # the plugin's, seeded from it
 ```
 
 The plugin ships a lockfile of its own because Claude Code installs a plugin's dependencies from the
@@ -36,6 +42,21 @@ one beside its manifest, and the marketplace's is a directory up where the loade
 seeded from the marketplace's resolutions rather than resolved afresh, so the two cannot answer
 different versions for one range. `npm run validate` refuses a plugin whose lockfile is missing,
 stale, or disagreeing.
+
+Moving a grammar package to another version takes one more step too:
+
+```sh
+npm install --save-dev --save-exact --ignore-scripts tree-sitter-go@<version>
+npm run grammars            # copies each .wasm into the plugin and rewrites grammars.json
+```
+
+The plugin ships each grammar's `.wasm` and not its package, which is mostly native prebuilds and C
+source. `grammars.json` records the package, version and SHA-256 each copy came from, and
+`npm run validate` refuses a copy whose hash is not its entry's or its installed package's file's,
+an entry whose version is not the root lockfile's, and an installed package that is not at the
+lockfile's version. It does not load a grammar; the test suite does, and reads the ABI there.
+Dependabot is told to leave the grammar packages alone, because a bump is red until the step above
+is run, so a new grammar release is something to look for by hand.
 
 No test framework, no mocks, no fixtures generated at runtime. `node:test` and `node:assert` only.
 Tests that need a repository build one in a temp directory with real `git init` and real commits,

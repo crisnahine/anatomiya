@@ -23,10 +23,16 @@
  * `parse.mjs`. The remedy lives here rather than at the printer that needed
  * one, because there were three printers and two of them said npm, which
  * cannot install an interpreter.
+ *
+ * `rejects` is what it means when the engine answers that a file is broken.
+ * oxc and prism are their languages' own parsers, so it is the file's syntax.
+ * A tree-sitter grammar covers less than its language: measured, it rejects a
+ * correct Kotlin file with a `when` guard in it, so it is the grammar's reach.
  */
 export const ENGINES = Object.freeze({
-  oxc:   { id: "oxc",   host: "node",        module: "oxc-parser",     extras: [{ module: "flow-remove-types", role: "stripper" }], remedy: "node bin/anatomiya.mjs setup in the plugin directory" },
-  prism: { id: "prism", host: "interpreter", command: "ruby",          floor: "1.0.0", remedy: "install Ruby 3.4 or newer, which ships prism 1.x, or run gem install prism on the Ruby you have, and put ruby on PATH" },
+  oxc:   { id: "oxc",   host: "node",        module: "oxc-parser",     extras: [{ module: "flow-remove-types", role: "stripper" }], remedy: "node bin/anatomiya.mjs setup in the plugin directory", rejects: "syntax" },
+  prism: { id: "prism", host: "interpreter", command: "ruby",          floor: "1.0.0", remedy: "install Ruby 3.4 or newer, which ships prism 1.x, or run gem install prism on the Ruby you have, and put ruby on PATH", rejects: "syntax" },
+  "tree-sitter": { id: "tree-sitter", host: "node", module: "web-tree-sitter", remedy: "node bin/anatomiya.mjs setup in the plugin directory", rejects: "grammar" },
 });
 
 const STRIPPER = ENGINES.oxc.extras.find((e) => e.role === "stripper");
@@ -70,6 +76,7 @@ const js = {
   // two apart, and a row whose whole question is the annotation would count a
   // confident zero on every plain JavaScript file.
   typed: { exts: ["ts", "mts", "cts"] },
+  directives: null,
   capabilities: { semantic: true, importGraph: true },
   positions: { offsets: "utf16", lines: false },
 };
@@ -89,6 +96,7 @@ const jsx = {
   // never the CommonJS wrapper's own dialect.
   commonjs: null,
   typed: { exts: ["tsx"] },
+  directives: null,
   capabilities: { semantic: true, importGraph: true },
   positions: { offsets: "utf16", lines: false },
 };
@@ -110,6 +118,7 @@ const component = (id) => ({
   dialect: null,
   commonjs: null,
   typed: null,
+  directives: null,
   capabilities: { semantic: false, importGraph: true },
   positions: { offsets: "utf16", lines: false },
 });
@@ -133,9 +142,42 @@ const ruby = {
   dialect: null,
   commonjs: null,
   typed: null,
+  directives: null,
   capabilities: { semantic: false, importGraph: false },
   positions: { offsets: null, lines: true },
 };
+
+// A language tree-sitter reads whole, through the one grammar file named after
+// its id. The family is its own: a Go test is no test of a Python file.
+const grammar = (id, exts) => ({
+  id,
+  fallback: false,
+  engine: "tree-sitter",
+  family: id,
+  embedded: null,
+  exts,
+  filenames: [],
+  scratchExt: exts[0],
+  grammars: { byExtension: {}, default: id },
+  dialect: null,
+  commonjs: null,
+  typed: null,
+  directives: null,
+  capabilities: { semantic: false, importGraph: false },
+  positions: { offsets: "utf16", lines: false },
+});
+
+// `.pyi` is deliberately absent, as `.rbi` is: a stub describes types rather
+// than anything anyone wrote.
+const python = grammar("python", ["py"]);
+const php = grammar("php", ["php"]);
+const go = grammar("go", ["go"]);
+const java = grammar("java", ["java"]);
+// The grammar reads `#if` around whole statements and members only, so a file
+// it rejects is read again with one branch of each conditional (`csharp-directives.mjs`).
+const csharp = { ...grammar("csharp", ["cs"]), directives: { exts: ["cs"] } };
+const rust = grammar("rust", ["rs"]);
+const kotlin = grammar("kotlin", ["kt", "kts"]);
 
 const freeze = (decl) => {
   Object.freeze(decl.exts);
@@ -154,6 +196,10 @@ const freeze = (decl) => {
     Object.freeze(decl.typed.exts);
     Object.freeze(decl.typed);
   }
+  if (decl.directives) {
+    Object.freeze(decl.directives.exts);
+    Object.freeze(decl.directives);
+  }
   Object.freeze(decl.capabilities);
   Object.freeze(decl.positions);
   return Object.freeze(decl);
@@ -162,7 +208,7 @@ const freeze = (decl) => {
 // The extractors `sfc.mjs` implements, which is what `embedded` may name.
 const EXTRACTORS = ["vue", "svelte"];
 
-export const LANGUAGES = Object.freeze([js, jsx, vue, svelte, ruby].map(freeze));
+export const LANGUAGES = Object.freeze([js, jsx, vue, svelte, ruby, python, php, go, java, csharp, rust, kotlin].map(freeze));
 
 const BY_ID = new Map(LANGUAGES.map((l) => [l.id, l]));
 const EXT_TO_ID = new Map(LANGUAGES.flatMap((l) => l.exts.map((e) => [e, l.id])));
@@ -250,6 +296,16 @@ const MAY_BE_COMMONJS = new RegExp(`\\.(${COMMONJS_EXT.join("|")})$`);
  * from the extensions the registry says the dialect applies to.
  */
 export const mayBeCommonJS = (path) => MAY_BE_COMMONJS.test(path);
+
+const DIRECTIVE_EXT = LANGUAGES.filter((l) => l.directives).flatMap((l) => l.directives.exts);
+const MAY_HOLD_DIRECTIVES = new RegExp(`\\.(${DIRECTIVE_EXT.join("|")})$`);
+
+/**
+ * Whether a file its grammar rejected is worth reading again with one branch
+ * of each conditional, derived from the declarations' own `directives` lists
+ * the way `mayHoldFlow` is.
+ */
+export const mayHoldDirectives = (path) => MAY_HOLD_DIRECTIVES.test(path);
 
 const TYPED_EXT = LANGUAGES.filter((l) => l.typed).flatMap((l) => l.typed.exts);
 const CARRIES_TYPES = new RegExp(`\\.(${TYPED_EXT.join("|")})$`);
@@ -346,6 +402,14 @@ export function assertRegistry(langs) {
     if (decl.commonjs) {
       for (const ext of decl.commonjs.exts) {
         if (!decl.exts.includes(ext)) throw new Error(`${decl.id} retries a commonjs wrapper for .${ext}, which it does not own`);
+      }
+    }
+    if (decl.directives) {
+      if (decl.engine !== ENGINES["tree-sitter"].id) {
+        throw new Error(`${decl.id} retries directives, which only tree-sitter does, and routes to ${decl.engine}`);
+      }
+      for (const ext of decl.directives.exts) {
+        if (!decl.exts.includes(ext)) throw new Error(`${decl.id} retries directives for .${ext}, which it does not own`);
       }
     }
     if (decl.positions.offsets !== "utf16" && decl.positions.offsets !== null) {

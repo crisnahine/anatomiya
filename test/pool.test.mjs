@@ -149,6 +149,52 @@ process.send = (msg, ...rest) => {
   }
 });
 
+test("a pool told not to retry charges each parse the clock killed once, beside other parses or not", async (t) => {
+  // Where the time is the parser's own on that file, a second attempt alone
+  // takes as long as the first, and retries run in series.
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-no-retry-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const log = join(dir, "log");
+  const worker = join(dir, "slow-worker.mjs");
+  writeFileSync(
+    worker,
+    `import { appendFileSync } from "node:fs";
+process.on("message", ({ rel }) => {
+  appendFileSync(${JSON.stringify(log)}, rel + "\\n");
+  if (rel.startsWith("slow")) for (;;);
+  process.send({ rel, ok: true });
+});
+process.send({ ready: true, engine: "stub", version: "1" });
+`,
+  );
+  const slow = Array.from({ length: 6 }, (_, i) => `slow${i}.kt`);
+  const files = [...slow, "quick0.kt", "quick1.kt"].map((name) => file(dir, name, "val x = 1\n"));
+  const timeoutMs = 500;
+
+  const pool = createPool({ size: 2, worker, engine: "stub", guards: { timeoutMs }, retryTimeouts: false });
+  try {
+    // Both workers answer first, so no slow file starts with the pool to itself.
+    await Promise.all([0, 1].map((k) => pool.parse(file(dir, `warm${k}.kt`, "val w = 1\n"))));
+    const started = Date.now();
+    const results = await Promise.all(files.map((f) => pool.parse(f)));
+    const elapsed = Date.now() - started;
+
+    for (const r of results.slice(0, slow.length)) {
+      assert.equal(r.crashed, true, r.rel);
+      assert.equal(r.error, "parser timed out", r.rel);
+      assert.equal(r.attempts, 1, `${r.rel} was run once`);
+    }
+    for (const r of results.slice(slow.length)) assert.equal(r.ok, true, `${r.rel}: ${r.error}`);
+
+    const handed = readFileSync(log, "utf8").trim().split("\n");
+    for (const rel of slow) assert.equal(handed.filter((x) => x === rel).length, 1, `${rel} reached a worker once`);
+    // Six files over two workers is three clocks. One retry each, alone, would add six more.
+    assert.ok(elapsed < slow.length * timeoutMs, `${elapsed}ms for ${slow.length} files on a ${timeoutMs}ms clock`);
+  } finally {
+    await pool.close();
+  }
+});
+
 test("a parse that answered is charged to one attempt", async () => {
   await withPool({ size: 1 }, async (pool, dir) => {
     const r = await pool.parse(file(dir, "fast.ts", "export const f = 1\n"));
@@ -381,6 +427,100 @@ test("a worker that starts and never says ready is killed on a clock, and the po
   } finally {
     await pool.close();
   }
+});
+
+test("a pool given another worker module forks that one and reports its engine", async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-stub-worker-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const worker = join(dir, "stub-worker.mjs");
+  writeFileSync(
+    worker,
+    `process.on("message", ({ rel }) => {
+  process.send({ rel, ok: true, hits: {}, facets: { testRunner: null, testCalls: false }, errors: 0 });
+});
+process.send({ ready: true, engine: "stub", version: "1" });
+`,
+  );
+  // Not JavaScript, so an answer of ok came from the stub and not from oxc.
+  const files = ["a.py", "b.py", "c.py"].map((name) => file(dir, name, "def f(:\n"));
+
+  const pool = createPool({ size: 2, worker, engine: "stub" });
+  try {
+    const results = await Promise.all(files.map((f) => pool.parse(f)));
+
+    assert.deepEqual(
+      results.map(({ attempts, ...r }) => r),
+      files.map((f) => ({ rel: f.rel, ok: true, hits: {}, facets: { testRunner: null, testCalls: false }, errors: 0 })),
+    );
+    assert.equal(pool.versions.stub, "1");
+    assert.equal(pool.versions.oxc, undefined, "no oxc worker was forked");
+  } finally {
+    await pool.close();
+  }
+});
+
+test("a worker that says it cannot go on finishes its file and is replaced before it is handed another", async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-retire-worker-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const worker = join(dir, "retiring-worker.mjs");
+  // After its trap this stub answers nothing, as a parser whose heap is gone would answer nothing true.
+  writeFileSync(
+    worker,
+    `let spent = false;
+process.on("message", ({ rel }) => {
+  if (spent) return;
+  if (rel !== "a.py") return process.send({ rel, ok: true, pid: process.pid });
+  spent = true;
+  process.send({ rel, ok: false, error: "wasm trap", retire: true, pid: process.pid });
+});
+process.send({ ready: true, engine: "stub", version: "1" });
+`,
+  );
+  const files = ["a.py", "b.py", "c.py"].map((name) => file(dir, name, "x = 1\n"));
+
+  const pool = createPool({ size: 1, worker, engine: "stub", guards: { timeoutMs: 3_000 } });
+  try {
+    const [a, b, c] = await Promise.all(files.map((f) => pool.parse(f)));
+
+    assert.deepEqual([a.rel, b.rel, c.rel], ["a.py", "b.py", "c.py"]);
+    assert.equal(a.ok, false);
+    assert.equal(a.error, "wasm trap", "the file that trapped keeps its own answer");
+    assert.equal(b.ok, true);
+    assert.equal(c.ok, true);
+    for (const r of [a, b, c]) assert.notEqual(r.crashed, true, `${r.rel} is charged to no crash`);
+    assert.notEqual(b.pid, a.pid, "the file queued behind the trap went to another process");
+    assert.notEqual(c.pid, a.pid);
+  } finally {
+    await pool.close();
+  }
+});
+
+test("a guard the pool does not carry is refused under the engine the pool was given", () => {
+  assert.throws(() => createPool({ size: 1, engine: "stub", guards: { timeoutMS: 1 } }), /timeoutMS is not one of the stub guards/);
+  assert.throws(() => createPool({ size: 1, guards: { timeoutMS: 1 } }), /timeoutMS is not one of the oxc guards/);
+});
+
+test("a worker module that does not exist fails the pool as a worker that will not start", async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-no-worker-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const files = ["a.ts", "b.ts", "c.ts"].map((name) => file(dir, name, "export const x = 1\n"));
+
+  const pool = createPool({ size: 2, worker: join(dir, "gone-worker.mjs"), engine: "stub" });
+  try {
+    const results = await Promise.all(files.map((f) => pool.parse(f)));
+
+    for (const r of results) {
+      assert.equal(r.ok, false);
+      assert.equal(r.crashed, true, "no parser answered, which is a crash on every file");
+      assert.match(r.error, /^parser worker will not start: /);
+    }
+    assert.deepEqual(results.map((r) => r.rel), files.map((f) => f.rel));
+    const later = await pool.parse(files[0]);
+    assert.equal(later.crashed, true, "a file asked for after the pool broke is charged the same way");
+  } finally {
+    await pool.close();
+  }
+  assert.equal((await pool.parse(files[0])).error, "pool closed");
 });
 
 test("the ready clock is a guard with a default", () => {

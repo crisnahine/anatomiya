@@ -122,6 +122,22 @@ test("an edited source file names only the lines it added", async (t) => {
   assert.deepEqual(hunksOf(await pendingChange(dir)), [["src/a.ts", [{ from: 2, to: 3, created: false }]]]);
 });
 
+test("a file of a language with no line rule of its own is not asked about", async (t) => {
+  const { dir, git, write } = repo(t);
+  write("svc/total.py", "def total(xs):\n    return sum(xs)\n");
+  git("add", "-A");
+  git("commit", "-qm", "python");
+  // An edit and a new file, each adding a function: nothing here can tell that from a comment yet.
+  write("svc/total.py", "import os\n\n\ndef total(xs):\n    return sum(xs)\n\n\ndef mean(xs):\n    return total(xs) / len(xs)\n");
+  write("cmd/main.go", "package main\n\nfunc main() {}\n");
+  write("src/b.ts", NEW_B);
+
+  assert.deepEqual(hunksOf(await pendingChange(dir)), [["src/b.ts", [{ from: 1, to: 3, created: true }]]]);
+
+  rmSync(join(dir, "src/b.ts"));
+  assert.equal(await pendingChange(dir), null, "with the TypeScript file gone the turn asks nothing");
+});
+
 test("a change that adds no source line has nothing to check", async (t) => {
   // A markdown edit started a subagent search for nothing in the measured runs,
   // at $1.05 against $0.48, and a deletion adds no function to compare.

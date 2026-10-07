@@ -8,14 +8,13 @@
  * a stripped file answers, was reachable only through a fork before, and four
  * measured incidents lived in it untested.
  */
-import { createRequire } from "node:module";
-
 import { dimensionsFor } from "./dimensions.mjs";
 import { collectHits } from "./walk.mjs";
 import { jsFacets } from "./facets.mjs";
 import { rawTransferAllowed } from "./limits.mjs";
 import { ENGINES, embeddedIn, grammarFor, holdsTypeSyntax, mayHoldFlow, mayBeCommonJS, spokenIn } from "./langs.mjs";
 import { blankOutside, scriptBlocks } from "./sfc.mjs";
+import { installedVersion } from "./version.mjs";
 
 let parseSync = null;
 let stripFlow = null;
@@ -54,15 +53,7 @@ export const ENGINE = ENGINES.oxc.id;
  * way. Absent is null, which the first parse then reports as the missing
  * install it is.
  */
-export const ENGINE_VERSION = readVersion();
-
-function readVersion() {
-  try {
-    return createRequire(import.meta.url)(`${ENGINES.oxc.module}/package.json`).version ?? null;
-  } catch {
-    return null;
-  }
-}
+export const ENGINE_VERSION = installedVersion(ENGINES.oxc.module);
 
 /**
  * The parser can hand its tree straight across from Rust instead of building it

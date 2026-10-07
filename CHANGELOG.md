@@ -110,6 +110,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   `.github/instructions`, and every file under `.claude/anatomiya/` that is not source. A map
   committed through a linked `.claude/rules` is left out where git tracks it. A hand-written file
   under one of those exact names is left out with it.
+- The overview's sentence about a directory with no test precedent prints only where such a
+  directory has a line in the same section. A root the line budget folded away could put it there
+  alone, so it read as being about the directories that were printed: on backstage, fastlane,
+  vscode, prisma and next.js it was armed only by a folded root and is gone. A repository that
+  prints an untested directory keeps it.
 
 ## [0.13.4] - 2026-10-07
 

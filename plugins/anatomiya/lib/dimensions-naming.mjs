@@ -263,6 +263,7 @@ export const NAMING_CORPUS = [
       sites: "a file whose stem does not match every naming class at once; a single lowercase word and a bare filename do match them all and are not sites, and neither is a name a file router reads (`[id]`, `$param`, `+page`, or one word under a leading underscore such as `_app`), and neither is a stem of capitals alone in a file that holds JSX, which React reads as a component (`SBA.jsx`). A stem spelling none of the four is a site the scan does not classify and the check counts against a stated claim",
       blind: null,
     },
+    // None of the seven tree-sitter languages: each names a file by its own rule, so the row would state a default (H52).
     langs: ["js", "jsx", "ruby", "vue", "svelte"],
     classify: classifyBasename,
     // Which names answer the claim at all. Separate from `classify` because

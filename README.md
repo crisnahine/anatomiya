@@ -57,10 +57,16 @@ error in the PowerShell Claude Code falls back to on Windows without Git Bash, w
 /plugin install anatomiya@crisnahine
 ```
 
-The scanner has two runtime dependencies, `oxc-parser` and `flow-remove-types`, and `/plugin
+The scanner has three runtime dependencies, `oxc-parser`, `flow-remove-types` and
+`web-tree-sitter`, and `/plugin
 install` installs them for you: Claude Code runs `npm ci --ignore-scripts` in a plugin's own
 directory when it finds a lockfile there, and this plugin ships one. There is no setup step in the
 ordinary case.
+
+`web-tree-sitter` is the WebAssembly runtime for the seven grammars the plugin carries as `.wasm`
+files under `plugins/anatomiya/grammars/`: Python, PHP, Go, Java, C#, Rust and Kotlin. Nothing is downloaded for them.
+Each file is a copy of the one in its grammar's npm package, and `plugins/anatomiya/grammars/grammars.json` records
+the package, the version and the SHA-256 of each.
 
 When nothing was installed, `/anatomiya:doctor` says so in its first line. When an install ran and
 stopped short, its engine lines say which one did not load. One command answers both:
@@ -80,7 +86,7 @@ Or skip the plugin and run it from a clone:
 
 ```
 git clone https://github.com/crisnahine/anatomiya
-cd anatomiya && npm install
+cd anatomiya && npm install --ignore-scripts
 node plugins/anatomiya/bin/anatomiya.mjs scan /path/to/your/repo
 ```
 
@@ -576,7 +582,7 @@ full numbers and their caveats are in [docs/why.md](docs/why.md).
 - [docs/plugin-contract.md](docs/plugin-contract.md) is what Claude Code requires of a plugin and a
   marketplace, read against the documentation and the CLI itself, with a source per claim and the
   version it was true of.
-- [DECISIONS.md](DECISIONS.md) is the build contract: 275 numbered decisions, each with the
+- [DECISIONS.md](DECISIONS.md) is the build contract: 280 numbered decisions, each with the
   measurement or the review finding that forced it. Why a threshold is where it is, why the parser
   runs in child processes, why no hook carries the map on its own: that is the file.
 - [docs/why.md](docs/why.md) is the longer argument and the full numbers.
@@ -586,8 +592,8 @@ full numbers and their caveats are in [docs/why.md](docs/why.md).
 ## Development
 
 ```
-npm install
+npm install --ignore-scripts
 node --test 'test/**/*.test.mjs'
 ```
 
-ES modules, `.mjs`, Node 22 or newer, two runtime dependencies.
+ES modules, `.mjs`, Node 22 or newer, three runtime dependencies.

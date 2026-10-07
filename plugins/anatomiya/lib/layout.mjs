@@ -11,9 +11,18 @@
  */
 
 import { namesakeCompanions, namesakeIndex } from "./companions.mjs";
-import { embeddedIn } from "./langs.mjs";
+import { embeddedIn, familyOf, language } from "./langs.mjs";
 import { baseOf, dirOf, extOf, stemOf, withoutExtension, byCode } from "./paths.mjs";
-import { TEST_DIRS, TEST_NAME, RUBY_TEST_NAME, TEST_ROOTS, TEST_TREES, UNNAMED_RUNNER } from "./test-shape.mjs";
+import {
+  FAMILY_TEST_NAMES,
+  TEST_DIRS,
+  TEST_NAME,
+  RUBY_TEST_NAME,
+  TEST_ROOTS,
+  UNNAMED_RUNNER,
+  coveredStem,
+  isTestTree,
+} from "./test-shape.mjs";
 
 /**
  * The floor rises with the corpus, so a directory earns a line by holding a
@@ -39,10 +48,15 @@ const inTestRoot = (rel) => rel.includes("/") && TEST_ROOTS.has(rel.slice(0, rel
  * `decidim-dev/lib/decidim/dev/test` scanned 46 files of shared RSpec tooling
  * as application code, both by this exact route.
  *
+ * `family` adds the names one language's own build gives a test tree, for a
+ * file or a root of that language and no other: `commonTest` is a Gradle
+ * source set and an ordinary directory name in a JavaScript repository.
+ *
  * Exported because `scripts/measure-layout.mjs` recounts the printed line and
  * a second copy of this rule there would measure the disagreement.
  */
-export const underTestTree = (dir) => dir !== "" && dir.split("/").some((seg) => TEST_TREES.has(seg));
+export const underTestTree = (dir, family = null) =>
+  dir !== "" && dir.split("/").some((seg) => isTestTree(seg, family));
 
 /**
  * What a root's label carries when its record covers one level and not the
@@ -69,8 +83,12 @@ export const LEVEL_ONLY_LABEL = " (files at this level)";
  *
  * Computed once over the whole layout corpus, because the question is about the
  * corpus and asking it per file walks it again.
+ *
+ * A language with a test name of its own takes no mirror, and the set holds
+ * the one place such a language's tool collects by instead: `cargoTests`.
  */
 export function mirroredTests(files) {
+  const named = (f) => FAMILY_TEST_NAMES[familyOf(f.lang)] !== undefined;
   const outside = new Set();
   for (const f of files) {
     if (!f.lang || inTestRoot(f.rel)) continue;
@@ -78,13 +96,34 @@ export function mirroredTests(files) {
     for (let i = 0; i < segments.length; i++) outside.add(segments.slice(i).join("/"));
   }
 
-  const mirrored = new Set();
+  const mirrored = cargoTests(files);
   for (const f of files) {
-    if (!f.lang || !inTestRoot(f.rel)) continue;
+    if (!f.lang || named(f) || !inTestRoot(f.rel)) continue;
     const under = withoutExtension(f.rel).slice(f.rel.indexOf("/") + 1);
     if (under.includes("/") && outside.has(under)) mirrored.add(f.rel);
   }
   return mirrored;
+}
+
+/**
+ * The Rust files cargo builds as integration tests: every one directly in a
+ * crate's `tests`, whatever it holds. A crate is a directory with a
+ * `Cargo.toml` or a `src` in it. A file one level deeper is a module those
+ * targets include, and is a test only by its own facets.
+ */
+function cargoTests(files) {
+  const crates = new Set();
+  for (const { rel } of files) {
+    if (baseOf(rel) === "Cargo.toml") crates.add(dirOf(rel));
+    const dirs = dirOf(rel).split("/");
+    for (let i = 0; i < dirs.length; i++) if (dirs[i] === "src") crates.add(dirs.slice(0, i).join("/"));
+  }
+  const out = new Set();
+  for (const f of files) {
+    if (f.lang !== "rust" || baseOf(dirOf(f.rel)) !== "tests") continue;
+    if (crates.has(dirOf(dirOf(f.rel)))) out.add(f.rel);
+  }
+  return out;
 }
 
 // A component with no script still holds its markup, which is the file.
@@ -125,8 +164,16 @@ export function isTestFile({ rel, lang, facets }, mirrored = null) {
   // (`test` nested inside `suite`) and this client's whole Cypress suite.
   if (facets?.empty === true) return false;
   const base = baseOf(rel);
-  if (TEST_NAME.test(base)) return true;
   const dir = dirOf(rel);
+  // A language with a test name of its own answers by it and by nothing
+  // written for another: no dotted form, no mirror, no `__tests__`.
+  const family = familyOf(lang);
+  const names = FAMILY_TEST_NAMES[family];
+  if (names) {
+    if (mirrored?.has(rel)) return true;
+    return coveredStem(stemOf(rel), family) !== null && (names.alone === true || underTestTree(dir, family));
+  }
+  if (TEST_NAME.test(base)) return true;
   // The Ruby form is the one a non-test file wears in earnest, so it is the one
   // that has to be corroborated by where the file sits. `software_spec.rb` is
   // Homebrew's `SoftwareSpec` class and has its own `software_spec_spec.rb`
@@ -163,6 +210,8 @@ export const isStoryFile = (rel) => STORY_NAME.test(baseOf(rel));
  */
 export function runnerOf(rel, facets) {
   if (facets?.testRunner) return facets.testRunner;
+  // cargo is the one Rust runner, and it collects some files by place alone.
+  if (language(rel) === "rust") return "cargo test";
   return dirOf(rel).split("/").includes("cypress") ? "cypress" : UNNAMED_RUNNER;
 }
 
@@ -492,11 +541,11 @@ export function rootFacts(root, { testFiles, mirrored, byStem }) {
     testRoot: tests.length * 2 > own.length,
   };
   if (stories.length > 0) record.stories = stories.length;
-  if (producers.length > 0 && testFiles.length > 0 && !underTestTree(dir)) {
+  if (producers.length > 0 && testFiles.length > 0 && !underTestTree(dir, familyOf(producers[0].lang))) {
     // The extension the count is over, which is not always the root's first.
     record.companions = { ...namesakeCompanions(producers, testFiles, dir, byStem), ext: producerExt };
   }
-  if (components.length > 0 && testFiles.length > 0 && !underTestTree(dir)) {
+  if (components.length > 0 && testFiles.length > 0 && !underTestTree(dir, familyOf(components[0].lang))) {
     record.componentCompanions = { ...namesakeCompanions(components, testFiles, dir, byStem), ext: componentExt };
   }
   const helpers = helperFacet(own, jsxFiles, mirrored);

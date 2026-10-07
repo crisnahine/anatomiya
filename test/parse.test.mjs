@@ -7,7 +7,9 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { needsRuby } from "./ruby-available.mjs";
+import { needsSymlinks } from "./platform.mjs";
 import { installWithoutStripper, FLOW_SOURCE } from "./no-stripper.mjs";
+import { installLacking } from "./plugin-install.mjs";
 
 import { parseAll, poolSizeFor } from "../plugins/anatomiya/lib/parse.mjs";
 import { GUARDS } from "../plugins/anatomiya/lib/pool.mjs";
@@ -111,6 +113,155 @@ test("the Ruby bridge reports its own engine's version the same way", needsRuby,
   const out = await parseAll([{ rel: "a.rb", source: "class A\nend\n", lang: "ruby" }]);
 
   assert.match(out.engines.prism.version, /^\d+\.\d+/);
+});
+
+test("a batch of one Python, one TypeScript and one Ruby file comes back read, and the run names all three engines", needsRuby, async () => {
+  const out = await parseAll([
+    { rel: "a.py", source: "x = 1\n", lang: "python" },
+    { rel: "a.ts", source: "export const a = 1\n", lang: "js" },
+    { rel: "a.rb", source: "class A\nend\n", lang: "ruby" },
+  ]);
+
+  assert.deepEqual([...out.records.values()].map((r) => [r.rel, r.kind]), [["a.ts", "ok"], ["a.rb", "ok"], ["a.py", "ok"]], "in the registry's engine order");
+  assert.deepEqual(Object.keys(out.engines), ["oxc", "prism", "tree-sitter"]);
+  for (const [id, engine] of Object.entries(out.engines)) assert.match(engine.version, /^\d+\.\d+/, id);
+  assert.deepEqual(out.missingEngines, []);
+  assert.deepEqual(out.missingGrammars, []);
+});
+
+// Correct C# 13 the grammar has no rule for.
+const UNREAD_CS = "class A<T> where T : allows ref struct { }\n";
+
+test("a rejected file says what its engine's rejection means, and the run counts each meaning apart", async () => {
+  const out = await parseAll([
+    { rel: "A.cs", source: UNREAD_CS, lang: "csharp" },
+    { rel: "b.ts", source: "export const b = 5\nfoo(\n", lang: "js" },
+    { rel: "c.ts", source: "export const c = 1\n", lang: "js" },
+    { rel: "D.kt", source: "class D { fun f() {} }\n", lang: "kotlin" },
+  ]);
+
+  assert.deepEqual([...out.records.values()].map((r) => [r.rel, r.kind, r.rejects]), [
+    ["b.ts", "rejected", "syntax"],
+    ["c.ts", "ok", undefined],
+    ["A.cs", "rejected", "grammar"],
+    ["D.kt", "rejected", "grammar"],
+  ]);
+  assert.equal(out.tallies.rejected, 3);
+  assert.deepEqual(out.rejections, { syntax: 1, grammar: 2 });
+  assert.deepEqual((await parseAll([{ rel: "c.ts", source: "export const c = 1\n", lang: "js" }])).rejections, {});
+});
+
+test("the run counts the files read with one branch of their conditionals, and a file read whole is not one", async () => {
+  const chain = 'class A\n{\n    bool F(string s)\n    {\n        return s\n#if SPAN\n            .Trim()\n#else\n            .TrimEnd()\n#endif\n            .StartsWith("a");\n    }\n}\n';
+  const out = await parseAll([
+    { rel: "A.cs", source: chain, lang: "csharp" },
+    { rel: "B.cs", source: chain.replace("#else\n            .TrimEnd()\n", ""), lang: "csharp" },
+    { rel: "C.cs", source: "class C { }\n", lang: "csharp" },
+    { rel: "D.cs", source: UNREAD_CS, lang: "csharp" },
+  ]);
+
+  assert.deepEqual([...out.records.values()].map((r) => [r.rel, r.kind, r.oneBranch]), [
+    ["A.cs", "ok", true],
+    ["B.cs", "ok", undefined],
+    ["C.cs", "ok", undefined],
+    ["D.cs", "rejected", undefined],
+  ]);
+  assert.equal(out.oneBranch, 1);
+  assert.equal((await parseAll([{ rel: "c.ts", source: "export const c = 1\n", lang: "js" }])).oneBranch, 0);
+});
+
+test("a file the Kotlin grammar cannot finish inside the clock is charged once, and the files beside it are read", async () => {
+  // The grammar is quadratic in a file's `<` comparisons: 4,000 of them is 190 KB
+  // and seconds of parsing, on any machine, where the same file written with `>` takes 50ms.
+  const slow = Array.from({ length: 4000 }, (_, i) => `fun f${i}(a: Int): Boolean {\n    return a < 0\n}\n`).join("\n");
+  const started = Date.now();
+
+  const out = await parseAll(
+    [
+      { rel: "Slow.kt", source: slow, lang: "kotlin" },
+      { rel: "Quick.kt", source: "fun quick(a: Int): Boolean {\n    return a < 0\n}\n", lang: "kotlin" },
+      { rel: "a.py", source: "x = 1\n", lang: "python" },
+      { rel: "a.go", source: "package a\n", lang: "go" },
+    ],
+    { guards: { kotlin: { timeoutMs: 400 } } },
+  );
+
+  const killed = out.records.get("Slow.kt");
+  assert.equal(killed.kind, "crashed");
+  assert.equal(killed.error, "parser timed out");
+  assert.equal(killed.attempts, 1, "a second parse alone would take as long as the first");
+  for (const rel of ["Quick.kt", "a.py", "a.go"]) assert.equal(out.records.get(rel).kind, "ok", `${rel}: ${out.records.get(rel).error}`);
+  assert.deepEqual(out.tallies, { ok: 3, rejected: 0, unreadable: 0, oversize: 0, crashed: 1 });
+  assert.ok(Date.now() - started < 5_000, "the clock ended the parse, and nothing waited for it to finish");
+});
+
+/** `parseAll` run out of another install of the plugin, since which modules resolve there is the thing under test. */
+function parseAllFrom(install, files) {
+  const script = `
+    import { parseAll } from ${JSON.stringify(pathToFileURL(join(install, "lib", "parse.mjs")).href)};
+    const out = await parseAll(${JSON.stringify(files)});
+    process.stdout.write(JSON.stringify({ ...out, records: [...out.records.values()] }));
+  `;
+  return JSON.parse(execFileSync(process.execPath, ["--input-type=module", "-e", script], { encoding: "utf8" }));
+}
+
+test("an install older than the tree-sitter runtime costs that engine's languages and no other", needsSymlinks, (t) => {
+  const install = installLacking(t, { modules: ["web-tree-sitter"] });
+
+  const out = parseAllFrom(install, [
+    { rel: "a.py", source: "x = 1\n", lang: "python" },
+    { rel: "a.ts", source: "export const a = 1\n", lang: "js" },
+  ]);
+
+  const [ts, py] = out.records;
+  assert.equal(ts.kind, "ok");
+  assert.equal(py.kind, "unreadable");
+  assert.equal(py.missingParser, true);
+  assert.notEqual(py.crashed, true, "the worker started and said what is missing");
+  assert.match(out.missingParser, /^web-tree-sitter is not installed: /);
+  assert.deepEqual(out.missingEngines, ["tree-sitter"]);
+  assert.deepEqual(out.missingGrammars, []);
+  assert.equal(out.engines["tree-sitter"].version, null, "an engine that did not load reports no version");
+  assert.match(out.engines.oxc.version, /^\d+\.\d+/);
+});
+
+test("a runtime that is installed and will not load reports no version, so nothing reads it as having run", needsSymlinks, (t) => {
+  // The manifest is there and the module throws: a version on the ready
+  // message would have the summary say the engine ran and answered for nothing.
+  const install = installLacking(t, { modules: ["web-tree-sitter"] });
+  const broken = join(install, "node_modules", "web-tree-sitter");
+  mkdirSync(broken);
+  writeFileSync(join(broken, "package.json"), JSON.stringify({ name: "web-tree-sitter", version: "9.9.9", type: "module", exports: "./index.js" }));
+  writeFileSync(join(broken, "index.js"), 'throw new Error("its wasm is gone");\n');
+
+  const out = parseAllFrom(install, [{ rel: "a.py", source: "x = 1\n", lang: "python" }]);
+
+  assert.equal(out.records[0].kind, "unreadable");
+  assert.equal(out.missingParser, "web-tree-sitter is not installed: its wasm is gone");
+  assert.deepEqual(out.missingEngines, ["tree-sitter"]);
+  assert.equal(out.engines["tree-sitter"].version, null);
+});
+
+test("a grammar file that is gone costs its own language, and the engine goes on reading the rest", needsSymlinks, (t) => {
+  const install = installLacking(t, { grammars: ["kotlin"] });
+
+  const out = parseAllFrom(install, [
+    { rel: "a.py", source: "x = 1\n", lang: "python" },
+    { rel: "a.kt", source: "val x = 1\n", lang: "kotlin" },
+    { rel: "b.kts", source: "val y = 2\n", lang: "kotlin" },
+  ]);
+
+  const [py, kt, kts] = out.records;
+  assert.equal(py.kind, "ok");
+  for (const r of [kt, kts]) {
+    assert.equal(r.kind, "unreadable", r.rel);
+    assert.equal(r.missingParser, true, r.rel);
+    assert.equal(r.missingGrammar, "kotlin", r.rel);
+  }
+  assert.match(out.missingParser, /^grammars\/kotlin\.wasm did not load: /);
+  assert.deepEqual(out.missingGrammars, ["kotlin"], "named once, as the language it is");
+  assert.deepEqual(out.missingEngines, [], "the engine is there: it read the Python file");
+  assert.match(out.engines["tree-sitter"].version, /^\d+\.\d+/);
 });
 
 test("an interpreter that is not there names its own engine and no other", async (t) => {

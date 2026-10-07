@@ -245,6 +245,54 @@ test("a file that kills the parser costs that one file", async (t) => {
   assert.ok(!dim.files.includes("src/bomb.ts"));
 });
 
+test("the scan counts a grammar's unread files apart, and a record of the older languages is the one it was", async (t) => {
+  const older = repo(t, (d, { git, write }) => {
+    for (let i = 0; i < 6; i++) write(`src/m${i}.ts`, moduleSource(i));
+    write("src/broken.ts", "export const broken = 5\nfoo(\n");
+    git("add", "-A");
+    git("commit", "-qm", "init");
+  });
+  const before = (await scan(older)).parse;
+  assert.equal(before.syntaxErrors, 1);
+  assert.equal("rejections" in before, false, "nothing new on a record no grammar touched");
+
+  const mixed = repo(t, (d, { git, write }) => {
+    for (let i = 0; i < 6; i++) write(`src/m${i}.ts`, moduleSource(i));
+    write("src/broken.ts", "export const broken = 5\nfoo(\n");
+    // Correct Kotlin the grammar has no rule for: a member on the line that closes its class.
+    write("app/A.kt", "class A { fun f() {} }\n");
+    write("app/B.kt", "class B { val x = 1 }\n");
+    git("add", "-A");
+    git("commit", "-qm", "init");
+  });
+  const after = (await scan(mixed)).parse;
+  assert.equal(after.syntaxErrors, 3, "the count of files rejected, whoever rejected them");
+  assert.deepEqual(after.rejections, { syntax: 1, grammar: 2 });
+});
+
+test("the scan counts the files it read with one branch of their conditionals, and says so under Not covered", async (t) => {
+  const member = (i) => `namespace App;\n\npublic class M${i}\n{\n    public int F(int x)\n    {\n        return x + ${i};\n    }\n}\n`;
+  const older = repo(t, (d, { git, write }) => {
+    for (let i = 0; i < 6; i++) write(`src/M${i}.cs`, member(i));
+    git("add", "-A");
+    git("commit", "-qm", "init");
+  });
+  const before = await scan(older);
+  assert.equal("oneBranch" in before.parse, false, "nothing new on the record of a run that read every file whole");
+  assert.doesNotMatch(renderOverview(before, { uncovered: 0 }), /one branch/);
+
+  const dir = repo(t, (d, { git, write }) => {
+    for (let i = 0; i < 6; i++) write(`src/M${i}.cs`, member(i));
+    write("src/Chain.cs", 'namespace App;\n\npublic class Chain\n{\n    public bool F(string s)\n    {\n        return s\n#if SPAN\n            .Trim()\n#else\n            .TrimEnd()\n#endif\n            .StartsWith("a");\n    }\n}\n');
+    git("add", "-A");
+    git("commit", "-qm", "init");
+  });
+  const after = await scan(dir);
+  assert.equal(after.parse.syntaxErrors, 0);
+  assert.equal(after.parse.oneBranch, 1);
+  assert.match(renderOverview(after, { uncovered: 0 }), /^- 1 file was read with one branch of each #if; the other branches were not read$/m);
+});
+
 test("a file the parser could not read costs that one file", async (t) => {
   const dir = repo(t, (d, { git, write }) => {
     for (let i = 0; i < 6; i++) write(`src/m${i}.ts`, moduleSource(i));
@@ -289,13 +337,13 @@ test("a directory nothing could be counted in is not a directory that was too sm
 test("the corpus tallies every file it has no language for, by extension", async (t) => {
   // The overview names an unread language from this field, and it exists
   // because the roster cannot be counted back off for the number: a root prints
-  // its top two extensions and folds the rest away, which held 781 of next.js's
-  // 1,016 Rust files. Pinned here rather than only at the renderer, where a
+  // its top two extensions and folds the rest away, which held 781 of the
+  // 1,016 files next.js had in a language this did not read. Pinned here rather than only at the renderer, where a
   // hand-built record would pass whatever the scan actually stored.
   const dir = repo(t, (d, { git, write }) => {
     for (let i = 0; i < 4; i++) write(`src/a${i}.ts`, `export const a${i} = 1\n`);
-    for (let i = 0; i < 3; i++) write(`crates/core/m${i}.rs`, `pub fn f${i}() -> i32 { ${i} }\n`);
-    write("crates/api/n0.rs", "pub fn g() -> i32 { 0 }\n");
+    for (let i = 0; i < 3; i++) write(`Sources/Core/m${i}.swift`, `func f${i}() -> Int { ${i} }\n`);
+    write("Sources/Api/n0.swift", "func g() -> Int { 0 }\n");
     write("README.md", "# hi\n");
     git("add", "-A");
     git("commit", "-qm", "init");
@@ -303,7 +351,7 @@ test("the corpus tallies every file it has no language for, by extension", async
 
   const result = await scan(dir);
 
-  assert.deepEqual(result.corpus.otherExts, [[".rs", 4], [".md", 1]]);
+  assert.deepEqual(result.corpus.otherExts, [[".swift", 4], [".md", 1]]);
   assert.equal("scriptOnly" in result.corpus, false, "a repository with no component carries no count of them");
   assert.equal(result.corpus.files, 4, "and the source count is the four it can read");
 });
@@ -1552,4 +1600,100 @@ test("three scans leave a map committed through a .claude/rules link byte-identi
   const roster = third["anatomiya-overview.md"].split("## What lives where\n\n")[1].split("\n\n")[0].split("\n");
   // The link and the team's one file, and none of the three the scan wrote beside it.
   assert.deepEqual(roster, ["- src: 8 .ts", "- and 2 files in 2 directories too small for a line of their own"]);
+});
+
+// One small repository per language, in the layout that language's own
+// repositories were measured to use: three sources, two of them tested.
+const SEVEN = {
+  python: {
+    runner: "pytest",
+    source: (s) => [`src/shop/${s}.py`, `def ${s}():\n    return 1\n`],
+    test: (s) => [`tests/test_${s}.py`, `from shop.${s} import ${s}\n\n\ndef test_${s}():\n    assert ${s}() == 1\n`],
+  },
+  php: {
+    runner: "phpunit",
+    source: (s) => [`src/Shop/${cap(s)}.php`, `<?php\n\nnamespace Shop;\n\nclass ${cap(s)}\n{\n}\n`],
+    test: (s) => [
+      `tests/Shop/${cap(s)}Test.php`,
+      `<?php\n\nnamespace Shop\\Tests;\n\nclass ${cap(s)}Test extends TestCase\n{\n    public function testRuns(): void\n    {\n    }\n}\n`,
+    ],
+  },
+  go: {
+    runner: "go test",
+    source: (s) => [`shop/${s}.go`, `package shop\n\nfunc ${cap(s)}() int {\n\treturn 1\n}\n`],
+    test: (s) => [`shop/${s}_test.go`, `package shop\n\nimport "testing"\n\nfunc Test${cap(s)}(t *testing.T) {\n}\n`],
+  },
+  java: {
+    runner: "junit",
+    source: (s) => [`src/main/java/shop/${cap(s)}.java`, `package shop;\n\nclass ${cap(s)} {\n}\n`],
+    test: (s) => [
+      `src/test/java/shop/${cap(s)}Test.java`,
+      `package shop;\n\nimport org.junit.jupiter.api.Test;\n\nclass ${cap(s)}Test {\n    @Test\n    void runs() {}\n}\n`,
+    ],
+  },
+  csharp: {
+    runner: "xunit",
+    source: (s) => [`src/Shop/${cap(s)}.cs`, `namespace Shop;\n\npublic class ${cap(s)}\n{\n}\n`],
+    test: (s) => [`test/Shop.Tests/${cap(s)}Tests.cs`, `namespace Shop.Tests;\n\npublic class ${cap(s)}Tests\n{\n    [Fact]\n    public void Runs() {}\n}\n`],
+  },
+  kotlin: {
+    runner: "kotlin.test",
+    source: (s) => [`shop/commonMain/src/shop/${cap(s)}.kt`, `package shop\n\nclass ${cap(s)}\n`],
+    test: (s) => [
+      `shop/commonTest/src/shop/${cap(s)}Test.kt`,
+      `package shop\n\nimport kotlin.test.Test\n\nclass ${cap(s)}Test {\n    @Test\n    fun runs() {\n    }\n}\n`,
+    ],
+  },
+};
+const cap = (s) => s[0].toUpperCase() + s.slice(1);
+
+for (const [lang, { runner, source, test: spec }] of Object.entries(SEVEN)) {
+  test(`${lang}: a scan counts the tests by their runner and the sources that have one of their name`, async (t) => {
+    const dir = repo(t, (d, { git, write }) => {
+      for (const s of ["cart", "order", "price"]) write(...source(s));
+      for (const s of ["cart", "order"]) write(...spec(s));
+      git("add", "-A");
+      git("commit", "-q", "-m", "init");
+    });
+
+    const result = await scan(dir);
+    assert.deepEqual(result.layout.tests.map((g) => [g.runner, g.files]), [[runner, 2]]);
+    const companions = result.layout.roots.map((r) => r.companions).filter(Boolean);
+    assert.deepEqual(companions.map((c) => [c.with, c.of]), [[2, 3]], JSON.stringify(result.layout.roots));
+    const overview = renderOverview(result, { uncovered: 0 });
+    assert.match(overview, new RegExp(`^- tests: 2 ${runner}.*; 2 of 3 `, "m"), overview);
+  });
+}
+
+test("rust: a scan counts a file that holds its own tests apart, and only what cargo collects as test files", async (t) => {
+  const inline = (s) => `pub fn ${s}() -> i64 {\n    1\n}\n\n#[cfg(test)]\nmod tests {\n    use super::*;\n\n    #[test]\n    fn runs() {\n        assert_eq!(${s}(), 1);\n    }\n}\n`;
+  const dir = repo(t, (d, { git, write }) => {
+    for (const s of ["cart", "order"]) write(`src/${s}.rs`, inline(s));
+    write("src/price.rs", "pub fn price() -> i64 {\n    1\n}\n");
+    write("tests/checkout.rs", "#[test]\nfn pays() {}\n");
+    write("tests/refund.rs", "#[test]\nfn refunds() {}\n");
+    write("tests/util.rs", "pub fn setup() {}\n");
+    write("tests/common/mod.rs", "pub fn setup() {}\n");
+    git("add", "-A");
+    git("commit", "-q", "-m", "init");
+  });
+
+  const result = await scan(dir);
+  assert.deepEqual(result.layout.tests.map((g) => [g.runner, g.files]), [["cargo test", 3]]);
+  const overview = renderOverview(result, { uncovered: 0 });
+  assert.match(overview, /^- tests: 3 cargo test.*; 0 of 1 .*; 2 hold their own tests$/m, overview);
+});
+
+test("a Go test beside a Python file of its stem is no test of the Python file", async (t) => {
+  const dir = repo(t, (d, { git, write }) => {
+    for (const s of ["cart", "order", "price"]) write(`shop/${s}.py`, `def ${s}():\n    return 1\n`);
+    write("shop/cart_test.go", 'package shop\n\nimport "testing"\n\nfunc TestCart(t *testing.T) {\n}\n');
+    write("shop/order_test.go", 'package shop\n\nimport "testing"\n\nfunc TestOrder(t *testing.T) {\n}\n');
+    git("add", "-A");
+    git("commit", "-q", "-m", "init");
+  });
+
+  const result = await scan(dir);
+  const [shop] = result.layout.roots;
+  assert.deepEqual([shop.companions.with, shop.companions.of, shop.companions.ext], [0, 3, ".py"]);
 });

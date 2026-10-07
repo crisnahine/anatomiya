@@ -96,7 +96,8 @@ _Avoid_: engine, ecosystem, stack
 
 **Namesake test**:
 A test file that answers one source file by carrying its stem. It says that file is tested, and nothing
-about where its root keeps its tests.
+about where its root keeps its tests. Always another file: a Rust source file with a `#[cfg(test)]`
+module **holds its own tests**, has no namesake test, and is counted apart from the files asked for one.
 _Avoid_: unit test, matching spec, paired test, sibling test
 
 **Uncovered**:
