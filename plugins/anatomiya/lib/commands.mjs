@@ -226,7 +226,7 @@ export async function runDoctor({ cwd = null } = {}) {
   return { rows, lines: problem === null ? lines : [problem, ...lines] };
 }
 
-/** One line per Cursor or Copilot target that is on or could not be read; none for one that is off. */
+/** One line per Cursor or Copilot target that is on, or that the record names files in and nobody can read; none for any other. */
 async function targetLines(cwd) {
   let root;
   try {
@@ -239,10 +239,11 @@ async function targetLines(cwd) {
   const lines = [];
   for (const target of Object.values(TARGETS).filter((t) => !t.always)) {
     const { state, reason } = targetStatus(root, target);
-    if (state === "unknown") lines.push(`${target.dir}: could not be read (${reason})`);
+    const known = knownNames(facts, target);
+    if (state === "unknown" && known?.size) lines.push(`${target.dir}: could not be read (${reason})`);
     if (state !== "on") continue;
     // The name and the key, with or without a record: a clone holds the files and not the store.
-    const { ours, unknown } = auditRules(root, knownNames(facts, target), target);
+    const { ours, unknown } = auditRules(root, known, target);
     lines.push(`${target.dir}: on, ${plural(ours.length + unknown.length, "file")}`);
   }
   return lines;

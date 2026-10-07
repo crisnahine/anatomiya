@@ -625,6 +625,44 @@ test("turning off a target that cannot be read refuses the scan and says why", n
   assert.deepEqual(readdirSync(elsewhere), []);
 });
 
+test("a repository that never turned a target on reads the same whatever sits in the other tools' directories", needsSymlinks, (t) => {
+  const repo = repoWithBranch(t);
+  const elsewhere = mkdtempSync(join(tmpdir(), "anatomiya-cli-elsewhere-"));
+  t.after(() => rmSync(elsewhere, { recursive: true, force: true }));
+  anatomiya(repo, "scan");
+  // The one thing that moves between two runs of unchanged source.
+  const settled = (out) => out.replace(/, \d+ms, /, ", Nms, ").replace(/"durationMs": \d+/, '"durationMs": 0');
+  const said = () => ({
+    scan: settled(anatomiya(repo, "scan")),
+    json: settled(anatomiya(repo, "scan", "--format", "json")),
+    dry: settled(anatomiya(repo, "scan", "--dry-run")),
+    check: anatomiya(repo, "check"),
+    doctor: execFileSync(process.execPath, [join(ANATOMIYA, "bin", "anatomiya.mjs"), "doctor"], { cwd: repo, encoding: "utf8" }),
+  });
+  const before = said();
+  assert.equal("targets" in JSON.parse(before.json), false);
+
+  // A link at `.cursor`, to a directory holding a hand-written file at the overview's name.
+  const hand = "---\nalwaysApply: true\n---\n# Written by hand\n";
+  mkdirSync(join(elsewhere, "rules"));
+  writeFileSync(join(elsewhere, "rules", "anatomiya-overview.mdc"), hand);
+  symlinkSync(elsewhere, join(repo, ".cursor"));
+  // A team's own instructions, one of them under this tool's prefix and another at its overview's name.
+  mkdirSync(join(repo, COPILOT), { recursive: true });
+  const theirs = {
+    "style.instructions.md": '---\napplyTo: "**"\n---\n# House style\n',
+    "anatomiya-notes.instructions.md": "# Notes on the map\n",
+    "anatomiya-overview.instructions.md": hand,
+  };
+  for (const [name, body] of Object.entries(theirs)) writeFileSync(join(repo, COPILOT, name), body);
+
+  const after = said();
+
+  for (const what of Object.keys(before)) assert.equal(after[what], before[what], what);
+  for (const [name, body] of Object.entries(theirs)) assert.equal(readFileSync(join(repo, COPILOT, name), "utf8"), body, name);
+  assert.deepEqual(readdirSync(join(elsewhere, "rules")), ["anatomiya-overview.mdc"]);
+});
+
 test("doctor names each other target that is on in the repository it is run in", (t) => {
   const repo = repoWithSource(t);
   const doctor = () => execFileSync(process.execPath, [join(ANATOMIYA, "bin", "anatomiya.mjs"), "doctor"], { cwd: repo, encoding: "utf8" });
