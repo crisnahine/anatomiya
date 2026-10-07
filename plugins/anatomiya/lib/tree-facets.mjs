@@ -71,6 +71,25 @@ function leaves(node, except = NONE) {
 
 const lastSegment = (path) => path.slice(path.lastIndexOf(".") + 1);
 
+/**
+ * One dotted path per name an import brings in. `imported` is what marks a
+ * name where one statement can list several, a field or node types: joined
+ * into one path, `from unittest import mock, TestCase` read as `unittest.mock`.
+ */
+function importPaths(node, imported) {
+  const isName = typeof imported === "string" ? (n) => n.field === imported : (n) => imported?.includes(n.type) === true;
+  const shared = [];
+  const names = [];
+  const work = [node];
+  while (work.length) {
+    const n = work.pop();
+    if (n !== node && isName(n)) names.push(leaves(n));
+    else if (!n.children.length) shared.push(n.text);
+    else for (let i = n.children.length - 1; i >= 0; i--) work.push(n.children[i]);
+  }
+  return names.length ? names.map((own) => [...shared, ...own].join(".")) : [shared.join(".")];
+}
+
 /** `{ testRunner, testCalls }` for one plain tree, and `empty: true` where it holds no statement or declaration. */
 export function treeFacets(program, lang) {
   const shapes = SHAPES[lang];
@@ -85,7 +104,7 @@ export function treeFacets(program, lang) {
   let called = false;
 
   walkTree(program, (node, ctx) => {
-    if (imports.has(node.type)) imported.push(leaves(node).join("."));
+    if (imports.has(node.type)) imported.push(...importPaths(node, shapes.imported));
     else if (annotations.has(node.type)) {
       const name = leaves(node, args).at(-1);
       // A Rust file's own unit tests sit in a module of it, and the file is still source.
