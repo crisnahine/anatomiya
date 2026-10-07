@@ -330,25 +330,42 @@ export function renderLayout(layout, budget = Infinity) {
 
   // The record stores the keys; the sentences live where their gates do.
   const principle = new Map(PRINCIPLES.map((p) => [p.key, p]));
-  let said = (layout.principles ?? []).map((k) => principle.get(k)).filter(Boolean);
-  let tests = testsLineText(layout);
-
-  const owed = () => LAYOUT_FRAME + (tests ? 1 : 0) + (said.length > 0 ? 1 + said.length : 0);
-  if (owed() > budget) said = [];
-  if (owed() > budget) tests = null;
-  if (owed() > budget) return [];
-
-  // A root line each, and the line that counts what did not get one.
-  const room = budget - owed();
+  const stored = (layout.principles ?? []).map((k) => principle.get(k)).filter(Boolean);
   const floor = layout.more.floor ?? null;
-  // Every population the fold line can carry, because the line is reserved on
-  // this and a term left out is invisible while any other term is non-zero: a
-  // repository whose whole remainder sits at its root lost the sentence
-  // outright at the budget that leaves room for exactly its roots.
-  const already =
-    layout.more.roots > 0 || layout.more.files > 0 || (floor?.files ?? 0) > 0 || (floor?.root ?? 0) > 0;
-  const whole = layout.roots.length + (already ? 1 : 0);
-  const shown = layout.roots.slice(0, whole <= room ? layout.roots.length : Math.max(0, room - 1));
+
+  // What the budget leaves once these sentences have their lines, or null where nothing fits.
+  const fit = (sentences) => {
+    let said = sentences;
+    let tests = testsLineText(layout);
+    const owed = () => LAYOUT_FRAME + (tests ? 1 : 0) + (said.length > 0 ? 1 + said.length : 0);
+    if (owed() > budget) said = [];
+    if (owed() > budget) tests = null;
+    if (owed() > budget) return null;
+
+    // A root line each, and the line that counts what did not get one.
+    const room = budget - owed();
+    // Every population the fold line can carry, because the line is reserved on
+    // this and a term left out is invisible while any other term is non-zero: a
+    // repository whose whole remainder sits at its root lost the sentence
+    // outright at the budget that leaves room for exactly its roots.
+    const already =
+      layout.more.roots > 0 || layout.more.files > 0 || (floor?.files ?? 0) > 0 || (floor?.root ?? 0) > 0;
+    const whole = layout.roots.length + (already ? 1 : 0);
+    const shown = layout.roots.slice(0, whole <= room ? layout.roots.length : Math.max(0, room - 1));
+    return { said, tests, room, shown };
+  };
+
+  let page = fit(stored);
+  if (page === null) return [];
+  // A sentence the printed roots do not arm holds no line, so the roots are fitted
+  // without it, up to the first that would arm it: the two cannot both have the line.
+  const unarmed = stored.filter((p) => p.onPage && !p.onPage(page.shown));
+  if (unarmed.length > 0) {
+    const without = fit(stored.filter((p) => !unarmed.includes(p)));
+    const arms = without.shown.findIndex((_, i) => unarmed.some((p) => p.onPage(without.shown.slice(0, i + 1))));
+    page = { ...without, shown: arms === -1 ? without.shown : without.shown.slice(0, arms) };
+  }
+  const { tests, room, shown } = page;
   const gaveWay = layout.roots.slice(shown.length);
 
   const lines = [LAYOUT_HEADING, ""];
@@ -363,7 +380,7 @@ export function renderLayout(layout, budget = Infinity) {
   if (fold && shown.length < room) lines.push(fold);
 
   if (tests) lines.push(tests);
-  said = said.filter((p) => !p.onPage || p.onPage(shown)).map((p) => p.sentence);
+  const said = page.said.filter((p) => !p.onPage || p.onPage(shown)).map((p) => p.sentence);
   if (said.length > 0) lines.push("", ...said);
 
   lines.push("");
