@@ -31,6 +31,7 @@ import {
   LEARNED_SUFFIX_FLOOR,
   LEARNED_SUFFIX_SHARE,
   NAMESAKE_SUFFIXES,
+  PACKAGE_FILE,
   PACKAGE_SHELL,
   coveredStem,
   pairedWith,
@@ -40,6 +41,12 @@ import {
 } from "./test-shape.mjs";
 
 const familyAt = (rel) => familyOf(language(rel));
+
+// The path a source file answers a test by: a package's own file answers as the module its directory is.
+const answersAs = (rel) => {
+  const dir = dirOf(rel);
+  return dir !== "" && stemOf(rel) === PACKAGE_FILE[familyAt(rel)] ? `${dir}${extOf(rel)}` : rel;
+};
 
 const namesakeStem = (rel) => {
   const stem = stemOf(rel);
@@ -220,7 +227,7 @@ function mirrorRoot(sourceDir, testDir, family) {
 function learnStemExtras(byStem, sourceFiles) {
   // Keyed by language as well as by name: `index.js` and `index_spec.rb` share
   // a stem and nothing else, and a Ruby spec is not a JavaScript module's test.
-  const stems = new Set(sourceFiles.map((f) => `${language(f.rel)}\u0000${stemOf(f.rel)}`));
+  const stems = new Set(sourceFiles.map((f) => `${language(f.rel)}\u0000${stemOf(answersAs(f.rel))}`));
   const perDir = new Map();
   const dirTotals = new Map();
   for (const candidates of byStem.values()) {
@@ -296,7 +303,7 @@ function assignOwners(byStem, sourceFiles) {
   // Keyed by language as well as by name, the way `learnStemExtras` is: a Ruby
   // spec is not a JavaScript module's test, and letting one own the other's
   // stem took the spec off the file it was structurally written for.
-  const sourcesByStem = Map.groupBy(sourceFiles, (f) => `${ownerGroup(f.rel)}\u0000${stemOf(f.rel)}`);
+  const sourcesByStem = Map.groupBy(sourceFiles, (f) => `${ownerGroup(f.rel)}\u0000${stemOf(answersAs(f.rel))}`);
 
   for (const [stem, candidates] of byStem) {
     for (const t of candidates) {
@@ -343,7 +350,7 @@ function ownerAmong(t, sources, near = sources) {
   let best = -1;
   let winners = [];
   for (const f of near) {
-    const n = sharedTail(t.bare, withoutTree(dirOf(f.rel), familyAt(f.rel)));
+    const n = sharedTail(t.bare, withoutTree(dirOf(answersAs(f.rel)), familyAt(f.rel)));
     if (n > best) {
       best = n;
       winners = [f.rel];
@@ -366,17 +373,17 @@ function ownerAmong(t, sources, near = sources) {
  * cannot say which the test was written for.
  */
 function assignPairs(byStem, sourceFiles) {
-  const sourcesByStem = Map.groupBy(sourceFiles, (f) => `${familyAt(f.rel)}\u0000${stemOf(f.rel)}`);
+  const sourcesByStem = Map.groupBy(sourceFiles, (f) => `${familyAt(f.rel)}\u0000${stemOf(answersAs(f.rel))}`);
   const dirsOf = new Map();
   for (const [family, files] of Map.groupBy(sourceFiles, (f) => familyAt(f.rel))) {
-    dirsOf.set(family, [...new Set(files.map((f) => dirOf(f.rel)))]);
+    dirsOf.set(family, [...new Set(files.map((f) => dirOf(answersAs(f.rel))))]);
   }
   for (const [stem, candidates] of byStem) {
     for (const t of candidates) {
       const family = familyAt(t.rel);
       const inProject = pairedWith(t.dir, family, stem, dirsOf.get(family));
       if (inProject === null) continue;
-      const held = (sourcesByStem.get(`${family}\u0000${stem}`) ?? []).filter((f) => inProject(dirOf(f.rel)));
+      const held = (sourcesByStem.get(`${family}\u0000${stem}`) ?? []).filter((f) => inProject(dirOf(answersAs(f.rel))));
       if (held.length === 1) t.paired = held[0].rel;
     }
   }
@@ -471,10 +478,11 @@ export function namesakeCompanions(sourceFiles, testFiles, rootPath = "", byStem
       inline++;
       continue;
     }
-    const fDir = dirOf(f.rel);
+    const named = answersAs(f.rel);
+    const fDir = dirOf(named);
     const family = familyAt(f.rel);
     const component = embeddedIn(language(f.rel)) !== null;
-    const tail = tailOf(f.rel, rootPath);
+    const tail = tailOf(named, rootPath);
     // The tail with the tree words dropped, falling back to the whole
     // directory's when that leaves nothing. A tail that is only tree words is
     // the most ordinary layout there is: at `packages/foo` the tail of
@@ -523,7 +531,9 @@ export function namesakeCompanions(sourceFiles, testFiles, rootPath = "", byStem
     // prints and settles a shape it does not contain.
     let kept = null;
     let pair = null;
-    for (const t of byStem.get(stemOf(f.rel)) ?? []) {
+    for (const t of byStem.get(stemOf(named)) ?? []) {
+      // A test its build pairs with one source was written for that one, whatever else its path lines up with.
+      if (t.paired !== null && t.paired !== f.rel) continue;
       // Another source in the corpus is the one this test was written for, so
       // it is not evidence about this file however the two paths line up.
       const owner = component ? t.componentOwner : t.owner;

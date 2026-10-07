@@ -166,10 +166,13 @@ test("a test tree has the names every family shares, and the ones its own family
   }
   assert.ok(!isTestTree("Serilog", "csharp"));
   assert.ok(!isTestTree("Serilog.Testing", "csharp"));
-  assert.ok(isTestTree("Test", "php"));
-  // The namespace directory is singular: composer's is `tests/Composer/Test`, and no measured repository writes `Tests`.
-  assert.ok(!isTestTree("Tests", "php"));
-  assert.ok(!isTestTree("Test", "csharp"));
+  // A project named in the singular, Autofac's `Autofac.Test`, is a test project as one named in the plural is.
+  for (const project of ["Autofac.Test", "Autofac.Specification.Test", "NodaTime.UnitTest"]) assert.ok(isTestTree(project, "csharp"), project);
+  for (const not of ["Autofac.Latest", "Autofac.Testing", "Test", "Tests", "Autofac.Test.Scenarios"]) assert.ok(!isTestTree(not, "csharp"), not);
+  // composer's namespace directory is `tests/Composer/Test`, and symfony keeps a `Tests` inside each component.
+  for (const tree of ["Test", "Tests"]) assert.ok(isTestTree(tree, "php"), tree);
+  for (const not of ["Testing", "Testsuite", "MyTests", "tests2"]) assert.ok(!isTestTree(not, "php"), not);
+  assert.ok(!isTestTree("Tests", "java"));
   assert.deepEqual(Object.keys(FAMILY_TREES).sort(), ["csharp", "java", "kotlin", "php"]);
 });
 
@@ -198,6 +201,8 @@ test("a test project or tree is paired with the project it is named for or sits 
   assert.ok(!serilog("test/Serilog.Tests/Support"));
   assert.ok(pairedWith("tests/Jellyfin.Api.Tests/Auth", "csharp")("Jellyfin.Api/Controllers"));
   assert.equal(pairedWith("test/Serilog/Core", "csharp"), null);
+  assert.ok(pairedWith("test/Autofac.Test/Core", "csharp")("src/Autofac/Core/Activators"));
+  assert.ok(!pairedWith("test/Autofac.Specification.Test/Features", "csharp")("src/Autofac/Features"));
 
   // Maven and Gradle: `src/test` beside `src/main`, and a source set beside the others.
   for (const family of ["java", "kotlin"]) {

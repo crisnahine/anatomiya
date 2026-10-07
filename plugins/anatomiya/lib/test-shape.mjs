@@ -190,14 +190,20 @@ const JVM_TREES = { test: /^[a-z][A-Za-z]*Test$/, source: /^[a-z][A-Za-z]*Main$/
  * Measured. okhttp and kotlinx.serialization keep 500 files under a
  * `<set>Test` directory, 402 of them holding cases. All 22 .NET test projects in three repositories are named for
  * the project they cover with a dotted word ending in `Tests`, `Serilog.Tests`
- * beside `Serilog`. composer files its tests under the `Test` namespace its
- * classes declare, `tests/Composer/Test/Util` for `src/Composer/Util`.
+ * beside `Serilog`, and Autofac names its own in the singular, `Autofac.Test`:
+ * read with the plural alone, 61 of its files with a test of their name read
+ * as having none. composer files its tests under the `Test` namespace its
+ * classes declare, `tests/Composer/Test/Util` for `src/Composer/Util`, and
+ * symfony keeps a `Tests` directory inside each component,
+ * `Component/Cache/Tests/Adapter` for `Component/Cache/Adapter`: 2,575 of its
+ * files gain a test of their name by that word, and 15 lose one that another
+ * component's test of the same class name had lent them.
  */
 export const FAMILY_TREES = {
   java: JVM_TREES,
   kotlin: JVM_TREES,
-  csharp: { test: /\.[A-Za-z]*Tests$/ },
-  php: { test: /^Test$/ },
+  csharp: { test: /\.[A-Za-z]*Tests?$/ },
+  php: { test: /^Tests?$/ },
 };
 
 /** Whether a directory name puts what is under it in a test tree, for a file of this family. */
@@ -230,6 +236,13 @@ export function namesATest(rel, family) {
  * package there and read 0 of 24 with 9 of its files answered by name.
  */
 export const PACKAGE_SHELL = { python: "src" };
+
+/**
+ * The file that is its own directory under another name, per family, so a
+ * test is written for the directory: Python's `flask/json/__init__.py` is the
+ * module `flask.json`, and `tests/test_json.py` is its test.
+ */
+export const PACKAGE_FILE = { python: "__init__" };
 
 /**
  * The families whose test tree files a test by feature below its top level, so
