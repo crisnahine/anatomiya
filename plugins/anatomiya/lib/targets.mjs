@@ -24,8 +24,7 @@ export const TARGETS = Object.freeze({
     listed: "loaded when you read one of its files",
   }),
   cursor: describe("cursor", ".cursor/rules", ".mdc", "Cursor", {
-    reads:
-      "An area's notes attach when one of its files is in context; where they have not, read the anatomiya-area-*.mdc file under .cursor/rules whose globs name the file before editing it.",
+    reads: "Read a file before editing it: an area's notes attach when you read one of its files.",
     listed: "attached when one of its files is in context",
     wrote: WROTE,
   }),
@@ -55,11 +54,15 @@ export function parseTargets(text) {
 export const overviewName = (target) => `${STEM}overview${target.ext}`;
 export const areaName = (target, areaId) => `${STEM}area-${areaId}${target.ext}`;
 
-// A comma separates patterns in both tools, a brace left after expansion is one
-// neither documents, and the rest would end the frontmatter line or its quotes.
-const UNSPELLABLE = /[,{}"\\\r\n]/;
-// Cursor's value is unquoted, so YAML reads these as a comment or a mapping.
-const UNSPELLABLE_BARE = / #|: |:$/;
+// A comma separates patterns in both tools and a brace left after expansion
+// would hide one. The rest is what each reader changes on the way to its matcher.
+const UNSPELLABLE = {
+  // No YAML here: Cursor cuts the line at its first colon and keeps the rest raw.
+  // It ends the frontmatter at any `---`, trims each pattern, unwraps a value
+  // that opens and closes on one quote, and turns a backslash into a slash.
+  cursor: /---|[,{}\\\r\n]|^[\s"']|\s$/,
+  copilot: /[,{}"\\\r\n]/,
+};
 const EXT_BRACE = /\.\{([^{}]+)\}$/;
 
 const expanded = (g) => {
@@ -69,30 +72,35 @@ const expanded = (g) => {
   return brace[1].split(",").map((ext) => ({ ...g, tail: `${stem}.${ext}` }));
 };
 
+const within = (dir, parent) => parent === "" || dir === parent || dir.startsWith(`${parent}/`);
+
 /**
  * An area's globs as one target can read them, each spelled by the caller's `text`.
  *
  * `dropped` is the negations the target cannot be told, so its file attaches
  * for more than the area. `unspellable` is the opposite: patterns that could
- * not be written, so the file does not attach there. `widened` is what the
- * target reads more loosely than written: VS Code puts `**` and a slash in
- * front of a pattern that starts with neither, so `app/*.rb` also matches
- * `vendor/x/app/a.rb`.
+ * not be written, so the file does not attach there, and a negation only they
+ * reach is in neither list. `widened` is what the target reads more loosely
+ * than written: VS Code puts `**` and a slash in front of a pattern that starts
+ * with neither, so `app/*.rb` also matches `vendor/x/app/a.rb`.
  */
 export function spelledGlobs(target, globs, text) {
   const out = { patterns: [], widened: [], dropped: [], unspellable: [] };
   if (target.id === "claude") return { ...out, patterns: globs.map((g) => text(g)) };
   // Read off the emitted string: an encoder can fold a comma in that the name did not hold.
-  const cannot = (p) => UNSPELLABLE.test(p) || (target.id === "cursor" && UNSPELLABLE_BARE.test(p));
-  for (const g of globs) {
-    if (g.negated) {
-      out.dropped.push(text({ ...g, negated: false }));
+  const cannot = (p) => UNSPELLABLE[target.id].test(p);
+  const written = [];
+  for (const g of globs.filter((g) => !g.negated)) {
+    const each = expanded(g).map((e) => text(e));
+    if (each.some(cannot)) {
+      out.unspellable.push(text(g));
       continue;
     }
-    const each = expanded(g).map((e) => text(e));
-    if (each.some(cannot)) out.unspellable.push(text(g));
-    else out.patterns.push(...each);
+    out.patterns.push(...each);
+    written.push(g.dir);
   }
+  const reached = (g) => written.some((dir) => within(g.dir, dir) || within(dir, g.dir));
+  out.dropped = globs.filter((g) => g.negated && reached(g)).map((g) => text({ ...g, negated: false }));
   if (target.id === "copilot") out.widened = out.patterns.filter((p) => !p.startsWith("**/"));
   return out;
 }
