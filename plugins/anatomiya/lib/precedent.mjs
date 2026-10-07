@@ -31,6 +31,11 @@ function pairsTests(r) {
   return (r?.companions?.with ?? 0) >= PRECEDENT_FLOOR;
 }
 
+/** Whether a root has precedent of its own, a file that holds its own tests counted as tested where it sits. */
+function hasPrecedent(r) {
+  return (r?.companions?.with ?? 0) + (r?.companions?.inline ?? 0) >= PRECEDENT_FLOOR;
+}
+
 /**
  * Whether this path names a test file, in either language's spelling.
  *
@@ -73,7 +78,7 @@ function testedTail(rel) {
  * is the directory the miss this rule was written for was in.
  *
  * A tail more than one root answers to is answered by none of them where any
- * one already pairs its files with tests (`pairsTests`). Longest is not
+ * one already has precedent (`hasPrecedent`). Longest is not
  * nearest: a repository with `app/mailers` specced beside an engine's own
  * untested `app/mailers` told a spec sitting with its four siblings that it had
  * no precedent, off the longer name, which is a directory it has nothing to do
@@ -98,7 +103,7 @@ function coveredRoot(rel, roots) {
     const tail = parts.slice(0, end).join("/");
     const matches = eligible.filter((r) => r.dir === tail || r.dir.endsWith(`/${tail}`));
     if (matches.length === 0) continue;
-    if (matches.some(pairsTests)) return null;
+    if (matches.some(hasPrecedent)) return null;
     return matches.sort((a, b) => b.companions.of - a.companions.of || byCode(a.dir, b.dir))[0];
   }
   return null;
