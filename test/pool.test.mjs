@@ -383,6 +383,64 @@ test("a worker that starts and never says ready is killed on a clock, and the po
   }
 });
 
+test("a pool given another worker module forks that one and reports its engine", async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-stub-worker-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const worker = join(dir, "stub-worker.mjs");
+  writeFileSync(
+    worker,
+    `process.on("message", ({ rel }) => {
+  process.send({ rel, ok: true, hits: {}, facets: { testRunner: null, testCalls: false }, errors: 0 });
+});
+process.send({ ready: true, engine: "stub", version: "1" });
+`,
+  );
+  // Not JavaScript, so an answer of ok came from the stub and not from oxc.
+  const files = ["a.py", "b.py", "c.py"].map((name) => file(dir, name, "def f(:\n"));
+
+  const pool = createPool({ size: 2, worker, engine: "stub" });
+  try {
+    const results = await Promise.all(files.map((f) => pool.parse(f)));
+
+    assert.deepEqual(
+      results.map(({ attempts, ...r }) => r),
+      files.map((f) => ({ rel: f.rel, ok: true, hits: {}, facets: { testRunner: null, testCalls: false }, errors: 0 })),
+    );
+    assert.equal(pool.versions.stub, "1");
+    assert.equal(pool.versions.oxc, undefined, "no oxc worker was forked");
+  } finally {
+    await pool.close();
+  }
+});
+
+test("a guard the pool does not carry is refused under the engine the pool was given", () => {
+  assert.throws(() => createPool({ size: 1, engine: "stub", guards: { timeoutMS: 1 } }), /timeoutMS is not one of the stub guards/);
+  assert.throws(() => createPool({ size: 1, guards: { timeoutMS: 1 } }), /timeoutMS is not one of the oxc guards/);
+});
+
+test("a worker module that does not exist fails the pool as a worker that will not start", async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-no-worker-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const files = ["a.ts", "b.ts", "c.ts"].map((name) => file(dir, name, "export const x = 1\n"));
+
+  const pool = createPool({ size: 2, worker: join(dir, "gone-worker.mjs"), engine: "stub" });
+  try {
+    const results = await Promise.all(files.map((f) => pool.parse(f)));
+
+    for (const r of results) {
+      assert.equal(r.ok, false);
+      assert.equal(r.crashed, true, "no parser answered, which is a crash on every file");
+      assert.match(r.error, /^parser worker will not start: /);
+    }
+    assert.deepEqual(results.map((r) => r.rel), files.map((f) => f.rel));
+    const later = await pool.parse(files[0]);
+    assert.equal(later.crashed, true, "a file asked for after the pool broke is charged the same way");
+  } finally {
+    await pool.close();
+  }
+  assert.equal((await pool.parse(files[0])).error, "pool closed");
+});
+
 test("the ready clock is a guard with a default", () => {
   assert.equal(typeof GUARDS.readyTimeoutMs, "number");
   assert.ok(GUARDS.readyTimeoutMs >= 10_000, "a cold native binding on a slow disk is not a stalled worker");

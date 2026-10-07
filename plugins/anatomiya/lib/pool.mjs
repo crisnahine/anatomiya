@@ -9,7 +9,7 @@ import { guardsOver, MAX_FILE_BYTES } from "./limits.mjs";
 import { firstLine } from "./encode.mjs";
 
 const execFileAsync = promisify(execFile);
-const WORKER = fileURLToPath(new URL("./parse-worker.mjs", import.meta.url));
+const OXC_WORKER = fileURLToPath(new URL("./parse-worker.mjs", import.meta.url));
 
 export const GUARDS = {
   maxBytes: MAX_FILE_BYTES,
@@ -54,8 +54,8 @@ const STDERR_BYTES = 2048;
  * across a whole repository is what held pool throughput to 2.8x on eleven
  * cores no matter how many workers ran.
  */
-export function createPool({ size, withProgram = false, execArgv = [], guards = null } = {}) {
-  const limits = guardsOver(GUARDS, guards, "oxc");
+export function createPool({ size, withProgram = false, execArgv = [], guards = null, worker = OXC_WORKER, engine = "oxc" } = {}) {
+  const limits = guardsOver(GUARDS, guards, engine);
   const workers = [];
   const idle = [];
   const queue = [];
@@ -81,7 +81,7 @@ export function createPool({ size, withProgram = false, execArgv = [], guards = 
     // file answers, where the supervisor's two clocks time a whole run.
     const sup = guardedChild({
       kind: "fork",
-      modulePath: WORKER,
+      modulePath: worker,
       execArgv,
       stdio: ["ignore", "ignore", "pipe", "ipc"],
       stderrBytes: STDERR_BYTES,
