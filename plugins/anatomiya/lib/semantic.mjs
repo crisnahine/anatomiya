@@ -86,10 +86,20 @@ const CONFIG_STAMP_BYTES = 1024 * 1024;
  */
 export function verdictStamp(root, build) {
   const name = configNameIn(root);
-  // Bounded and typed: the file comes with the repository, and one linked to an endless device read whole never returns.
-  const entry = name === null ? null : readHead(join(root, name), CONFIG_STAMP_BYTES);
-  const config = entry?.kind === "file" ? entry.head : (entry?.kind ?? "");
+  const config = name === null ? "" : configStamp(root, join(root, name));
   return createHash("sha256").update(`${build}\0${checkerStamp(root)}\0${installStamp(root)}\0${config}`).digest("hex");
+}
+
+/**
+ * A root config's bytes, or what stands in for them. One that leaves the
+ * repository gives the reason the checker refuses it for and is not opened.
+ * Bounded and typed: the file comes with the repository, and one linked to an
+ * endless device read whole never returns.
+ */
+function configStamp(root, path) {
+  if (!insideRoot(root, path)) return CONFIG_REFUSALS.escaped;
+  const entry = readHead(path, CONFIG_STAMP_BYTES);
+  return entry.kind === "file" ? entry.head : entry.kind;
 }
 
 /**
@@ -134,12 +144,37 @@ function sizeAndTime(path) {
  * has to measure: `recorded` is the last record's tier, `under` the stamp now.
  * Only a degraded verdict a run measured under the same stamp: an ok tier's
  * numbers are the claims, and a failed run measured nothing.
+ *
+ * The record is a file anyone on the machine can edit, and what is carried is
+ * printed in the always-loaded overview on every refresh after. So only a
+ * verdict a scan could have written is carried, and any other is measured.
  */
-export function carriedVerdict(recorded, under) {
-  if (recorded?.status !== "degraded" || recorded.reason === "tier-failed") return null;
-  if (typeof recorded.measuredAt !== "string" || recorded.measuredUnder !== under) return null;
-  const { status, reason, typedResolutionRate, measuredAt, measuredUnder } = recorded;
-  return { status, reason: reason ?? null, typedResolutionRate: typedResolutionRate ?? null, measuredAt, measuredUnder };
+export function carriedVerdict(recorded, under, now = Date.now()) {
+  if (recorded?.status !== "degraded" || (recorded.ran !== true && recorded.carried !== true)) return null;
+  if (recorded.measuredUnder !== under) return null;
+  const { status, reason, measuredAt, measuredUnder } = recorded;
+  const typedResolutionRate = recorded.typedResolutionRate ?? null;
+  if (!classified(reason, typedResolutionRate) || !isMomentBy(measuredAt, now)) return null;
+  return { status, reason, typedResolutionRate, measuredAt, measuredUnder };
+}
+
+const LOW_RESOLUTION = "low-resolution";
+const REFUSALS = new Set(Object.values(CONFIG_REFUSALS));
+
+/** Whether `classifySemantic` answers degraded with this reason beside this rate. */
+function classified(reason, rate) {
+  if (REFUSALS.has(reason)) return rate === null || isShare(rate, 1);
+  if (reason !== LOW_RESOLUTION && reason !== NO_CONFIG) return false;
+  return isShare(rate, 1) && rate < RESOLUTION_FLOOR;
+}
+
+const isShare = (rate, most) => typeof rate === "number" && rate >= 0 && rate <= most;
+
+/** Whether `text` is a moment as a scan writes one, and not after `now`. */
+function isMomentBy(text, now) {
+  if (typeof text !== "string") return false;
+  const at = Date.parse(text);
+  return Number.isFinite(at) && at <= now && new Date(at).toISOString() === text;
 }
 
 function hasConfig(root) {
@@ -173,7 +208,7 @@ import { guardsOver } from "./limits.mjs";
 import { holdsTypeSyntax } from "./langs.mjs";
 import { extOf } from "./paths.mjs";
 import { readHead } from "./rules.mjs";
-import { configNameIn } from "./tsconfig.mjs";
+import { CONFIG_REFUSALS, configNameIn, insideRoot, NO_CONFIG } from "./tsconfig.mjs";
 import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
@@ -211,7 +246,7 @@ export function classifySemantic({ config, resolution }) {
   // nothing for the checker to resolve. A config that read with a note of its
   // own, which is a root with no tsconfig at all, gives that note as the cause.
   if (rate !== null && rate < RESOLUTION_FLOOR) {
-    return { status: "degraded", reason: config?.reason ?? "low-resolution", typedResolutionRate: rate };
+    return { status: "degraded", reason: config?.reason ?? LOW_RESOLUTION, typedResolutionRate: rate };
   }
   return { status: "ok", reason: null, typedResolutionRate: rate };
 }

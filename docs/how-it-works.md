@@ -446,9 +446,12 @@ a run measured it, and the stamp it was measured under still holds, which is thi
 whether the root holds packages, where `typescript` resolves, the size and modification time of
 `node_modules` and of the install record in it (`.package-lock.json`, `.modules.yaml`,
 `.yarn-state.yml` or `.yarn-integrity`), and the name and bytes of the config the root is read
-through. The refresh then writes the recorded status, reason and rate with
+through. A root config that leaves the repository contributes its refusal in place of its bytes.
+The record has to be one a scan could have written: a reason the classifier or the config reader
+produces, a rate that reason allows, and a moment not after now; any other record is measured
+over. The refresh then writes the recorded status, reason and rate with
 `semantic.carried` true and the run's `semantic.measuredAt`, and the overview's sentence adds the
-day it was measured. Every other byte of the map is what the measuring scan wrote, since a degraded
+UTC day it was measured. Every other byte of the map is what the measuring scan wrote, since a degraded
 tier's rows are in neither. A
 scan run by hand always measures, and so does a refresh after any of those moved; an `ok` tier is
 measured on every refresh (B8). A pin does not switch it off: a pinned file unchanged since the pin reuses its working-tree

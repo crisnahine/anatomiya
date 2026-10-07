@@ -258,12 +258,14 @@ scanned by 0.13.4 and by this version.
   with peak memory of 808 MB to 2.7 GB against 160 to 243 MB. On those four the verdict was the
   same 50 commits earlier, within 0.3 points. A map written that way says
   `type-checked claims are not counted: 61% of type lookups resolved when measured 2026-10-07
-  (low-resolution)` in the overview, and those three words and the day are all that differ from
+  UTC (low-resolution)` in the overview, and those words and the day, which is the UTC one, are all that differ from
   the map the measuring scan wrote: on eslint, Ghost, prisma and react the other 29, 283, 192 and
   131 rule files are the same bytes. `/anatomiya:scan` always
   runs the checker, and a checker that reads `ok` runs on every refresh, as in 0.13.4. A
   repository whose code changes lift it over the floor stays `degraded` until someone runs the
-  scan. The record's `semantic` gains `carried`, `measuredAt` and `measuredUnder`, and the schema
+  scan. A refresh carries only a record a scan could have written: a reason from the checker's own
+  list, a rate that reason allows and a moment not after now. Any other record is measured over,
+  so text written into `facts.json` by hand does not reach the overview. The record's `semantic` gains `carried`, `measuredAt` and `measuredUnder`, and the schema
   stays 19.
 - A type checker that reads `degraded` prints no count for its claims, whether this scan measured
   it or a refresh carried the verdict. 0.13.4 printed `a call chain stays inside one type: no
