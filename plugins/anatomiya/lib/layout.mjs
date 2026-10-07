@@ -520,7 +520,8 @@ export function rootFacts(root, { testFiles, mirrored, byStem }) {
   // marketing site prints more screenshots than components, and matching
   // only exts[0] read every producer there as zero instead of naming its
   // `.tsx` files.
-  const producerExt = exts.find(([ext]) => own.some((f) => f.lang && extOf(f.rel) === ext))?.[0];
+  const read = (ext) => own.some((f) => f.lang && extOf(f.rel) === ext);
+  const producerExt = exts.find(([ext]) => read(ext))?.[0];
   // Neither source to imitate nor a test, so a story never fills the
   // namesake question: storybook's `.stories.tsx` is literal JSX and would
   // otherwise stand for the component beside it.
@@ -530,10 +531,12 @@ export function rootFacts(root, { testFiles, mirrored, byStem }) {
   // repository: once as the source that lost its test, once as a new producer.
   const producersOf = (counted) => own.filter((f) => extOf(f.rel) === counted && isProducer(f, mirrored));
   const producers = producersOf(producerExt);
-  // Counted apart: summed into the first, the denominator is a number the line never printed.
-  const componentExt = exts.find(
-    ([ext]) => ext !== producerExt && own.some((f) => f.lang && extOf(f.rel) === ext && embeddedIn(f.lang) !== null))?.[0];
-  const components = producersOf(componentExt);
+  // Where one of the two printed extensions is a component's the other is counted too, and apart:
+  // summed into the first, the denominator is a number the line never printed.
+  const component = (ext) => own.some((f) => isComponent(f.lang) && extOf(f.rel) === ext);
+  const otherExt = exts.find(
+    ([ext]) => ext !== producerExt && read(ext) && (component(ext) || component(producerExt)))?.[0];
+  const others = producersOf(otherExt);
   const stories = own.filter((f) => isStoryFile(f.rel));
 
   const record = {
@@ -558,8 +561,8 @@ export function rootFacts(root, { testFiles, mirrored, byStem }) {
     // The extension the count is over, which is not always the root's first.
     record.companions = { ...namesakeCompanions(producers, testFiles, dir, byStem), ext: producerExt };
   }
-  if (components.length > 0 && testFiles.length > 0 && !underTestTree(dir, familyOf(components[0].lang))) {
-    record.componentCompanions = { ...namesakeCompanions(components, testFiles, dir, byStem), ext: componentExt };
+  if (others.length > 0 && testFiles.length > 0 && !underTestTree(dir, familyOf(others[0].lang))) {
+    record.otherCompanions = { ...namesakeCompanions(others, testFiles, dir, byStem), ext: otherExt };
   }
   const helpers = helperFacet(own, jsxFiles, mirrored);
   if (helpers !== null) record.helpers = helpers;

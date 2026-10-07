@@ -110,7 +110,7 @@ const extNoun = (c) => `${encode(c.ext)} file`;
 
 // Two counts on one line each name their extension; one alone stays bare.
 const namesakeParts = (r, place = {}) => {
-  const also = r.componentCompanions;
+  const also = r.otherCompanions;
   return [
     ...(r.companions ? [namesakeClause({ ...r.companions, ...place }, also ? extNoun(r.companions) : null)] : []),
     ...(also ? [namesakeClause({ ...also, ...place }, extNoun(also))] : []),
@@ -242,7 +242,7 @@ function testsLineText(layout) {
     // repository root as a root has an empty `dir` and no clause, as before.
     const ext = top.companions.ext ?? top.exts[0][0];
     parts.push(namesakeClause({ ...top.companions, root: null }, `${encode(ext)} file`, top.dir && top.path));
-    const also = top.componentCompanions;
+    const also = top.otherCompanions;
     if (also) parts.push(namesakeClause({ ...also, root: null }, extNoun(also), top.dir && top.path));
   }
   return `- tests: ${parts.join("; ")}`;
