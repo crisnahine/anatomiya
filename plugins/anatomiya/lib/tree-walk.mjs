@@ -5,9 +5,12 @@
  * read after its tree is deleted answers wrongly and does not throw. This
  * module is handed a tree and loads no parser.
  */
+import { assertKeyed, hostedBy } from "./langs.mjs";
 import { SHAPES } from "./tree-shapes.mjs";
 
 const TEXT_CAP = 256;
+
+assertKeyed("SHAPES", SHAPES, hostedBy("tree-sitter"));
 
 const KINDS = new Map(
   Object.entries(SHAPES).map(([lang, { fn, cls }]) => [lang, new Map([...fn.map((type) => [type, "fn"]), ...cls.map((type) => [type, "cls"])])])

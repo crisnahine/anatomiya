@@ -57,7 +57,7 @@ test("the three targets, their directories and their extensions", () => {
     },
     copilot: {
       id: "copilot", dir: ".github/instructions", ext: ".instructions.md", reader: "GitHub Copilot", wrote,
-      widens: "VS Code also matches this file's patterns under any parent directory, so it can attach for a file outside the area.",
+      widens: "VS Code also matches this file's patterns under any parent directory, so they can match a file outside the area.",
       reads:
         "Each area has its own file under .github/instructions whose `applyTo:` names that area's files: before editing a file, read the one that names it.",
       listed: "whose `applyTo:` names its files",
@@ -66,7 +66,19 @@ test("the three targets, their directories and their extensions", () => {
   // A sentence that names a directory names the target's own.
   for (const target of [cursor, copilot]) assert.ok(target.reads.includes(` under ${target.dir} `), target.id);
   // Delivery is measured for Claude Code alone, so no other target's sentence says when a file arrives.
-  for (const target of [cursor, copilot]) assert.doesNotMatch(`${target.reads} ${target.listed}`, /\b(attach|applied|load|arrive)/i, target.id);
+  const DELIVERY = /\b(attach|applied|load|arrive)/i;
+  for (const target of [cursor, copilot]) assert.doesNotMatch(`${target.reads} ${target.listed} ${target.widens ?? ""}`, DELIVERY, target.id);
+  // The closing lines of an area file are a target's body too: one that drops a negation, widens a pattern and cannot spell another.
+  const loose = {
+    id: "0123abcd", path: "lib", fileCount: 9, dimensions: [],
+    globs: [{ negated: false, dir: "lib", tail: "**/*.rb" }, { negated: true, dir: "lib/fixtures", tail: "**/*.rb" }, { negated: false, dir: 'lib/q"t', tail: "*.rb" }],
+  };
+  for (const target of [cursor, copilot]) {
+    const body = renderArea(loose, target).split("\n---\n")[1];
+    assert.match(body, /patterns also match .*\n(?:.*\n)*.*patterns do not match /, target.id);
+    assert.doesNotMatch(body, DELIVERY, target.id);
+  }
+  assert.ok(renderArea(loose, copilot).includes(copilot.widens));
   assert.deepEqual(TARGET_IDS, ["claude", "cursor", "copilot"]);
   assert.ok(Object.isFrozen(TARGETS) && Object.isFrozen(TARGET_IDS) && TARGET_IDS.every((id) => Object.isFrozen(TARGETS[id])));
   assert.equal(claude.dir, RULES_DIR);
@@ -251,7 +263,7 @@ test("a negation is dropped only where a pattern that was written reaches it", (
   const not = (dir) => ({ negated: true, dir, tail: "x/*.js" });
   const odd = { negated: false, dir: "a,b", tail: "**/*.js" };
   for (const target of [cursor, copilot]) {
-    // The file does not attach under the pattern at all, so it cannot attach for too much there.
+    // The file matches nothing under the pattern at all, so it cannot match too much there.
     assert.deepEqual(spelledGlobs(target, [odd, not("a,b")], plain), { ...NONE, unspellable: ["a,b/**/*.js"] }, target.id);
     const mixed = spelledGlobs(target, [odd, not("a,b"), { negated: false, dir: "ok", tail: "**/*.js" }, not("ok/deep"), not("okay")], plain);
     assert.deepEqual(mixed.dropped, ["ok/deep/x/*.js"], target.id);

@@ -206,6 +206,8 @@ export const FAMILY_TREES = {
   php: { test: /^Tests?$/ },
 };
 
+assertKeyed("FAMILY_TREES", FAMILY_TREES, [], hostedBy("tree-sitter"));
+
 /** Whether a directory name puts what is under it in a test tree, for a file of this family. */
 export const isTestTree = (segment, family = null) =>
   TEST_TREES.has(segment) || FAMILY_TREES[family]?.test.test(segment) === true;
@@ -243,6 +245,9 @@ export const PACKAGE_SHELL = { python: "src" };
  * module `flask.json`, and `tests/test_json.py` is its test.
  */
 export const PACKAGE_FILE = { python: "__init__" };
+
+assertKeyed("PACKAGE_SHELL", PACKAGE_SHELL, [], hostedBy("tree-sitter"));
+assertKeyed("PACKAGE_FILE", PACKAGE_FILE, [], hostedBy("tree-sitter"));
 
 /**
  * The families whose test tree files a test by feature below its top level, so
@@ -326,6 +331,8 @@ const PAIRINGS = {
   },
 };
 
+assertKeyed("PAIRINGS", PAIRINGS, [], hostedBy("tree-sitter"));
+
 /** `covered` is the stem the test's name says it covers and `sourceDirs` the family's source directories, which only PHP's pairing reads. */
 export const pairedWith = (testDir, family, covered = "", sourceDirs = []) =>
   PAIRINGS[family]?.(testDir.split("/"), covered, sourceDirs) ?? null;
@@ -344,6 +351,8 @@ const inItsProject = (testDir, family) => pairedWith(testDir, family) !== null;
  * pointed, so a place there is a choice a repository makes. Rust names no test.
  */
 const FIXED_PLACE = { go: () => true, java: inItsProject, kotlin: inItsProject, csharp: inItsProject };
+
+assertKeyed("FIXED_PLACE", FIXED_PLACE, [], hostedBy("tree-sitter"));
 
 /** Whether a test in `testDir` sits where its family's tool reads it from, with nowhere else it could go. */
 export const sitsWhereItsToolReads = (testDir, family) => FIXED_PLACE[family]?.(testDir, family) === true;

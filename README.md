@@ -520,7 +520,7 @@ refresh, or a scan by hand, rewrites them. Each overview there says under its he
 is right where the two disagree.
 
 **The patterns are looser.** Neither reader that was run takes a pattern that leaves a subtree out,
-and the other Copilot surfaces document none, so an area file can attach for files the area
+and the other Copilot surfaces document none, so an area file's patterns can match files the area
 excluded, such as a `fixtures` directory under `test`, and its last lines say which. VS Code also
 matches a pattern under any parent directory. An area under a directory name one of the tools
 cannot be given, one holding a double quote for instance, has no file there, and the scan says how

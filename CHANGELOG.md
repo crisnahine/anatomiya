@@ -187,8 +187,8 @@ scanned by 0.13.4 and by this version.
   already replaced is put back.
 - Cursor and Copilot read looser patterns than Claude Code, and the files say so. A brace set is
   written as one pattern per extension and a negation is left out, since neither reader that was
-  run takes one and the other Copilot surfaces document none, so an area file can attach for files
-  the area excluded and names them in a closing line. A Copilot file adds that VS Code matches its
+  run takes one and the other Copilot surfaces document none, so an area file's patterns can match
+  files the area excluded, and a closing line names them. A Copilot file adds that VS Code matches its
   patterns under any parent directory. An area none of whose patterns can be written for a tool has
   no file there, and the scan says how many.
 - What those two copies are not. Delivery is not measured in either tool: for Cursor it was read

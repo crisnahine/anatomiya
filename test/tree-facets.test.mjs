@@ -326,6 +326,15 @@ test("a per-language table that loses a language refuses to load, and names the 
   await assert.rejects(import(copyOf("dimensions-tree.mjs", '{ java: new Set(["ignored"]) }', '{ python: new Set(["ignored"]) }')), /^Error: UNBOUND holds python, which nothing asks it about$/);
   await assert.rejects(import(copyOf("dimensions-tree.mjs", 'rust: ["@test"] }', 'ruby: ["@test"] }')), /^Error: NOT_OFFERED holds ruby, which nothing asks it about$/);
   await assert.rejects(import(copyOf("script-blocks.mjs", "{ vue, svelte }", "{ vue }")), /^Error: SCANNERS and the registry's extractors disagree on svelte$/);
+  // A table a family may leave out still holds no key the registry does not know.
+  await assert.rejects(import(copyOf("test-shape.mjs", "  csharp: { test: /", "  csharpp: { test: /")), /^Error: FAMILY_TREES holds csharpp, which nothing asks it about$/);
+  await assert.rejects(import(copyOf("test-shape.mjs", 'PACKAGE_SHELL = { python: "src" }', 'PACKAGE_SHELL = { pyhton: "src" }')), /^Error: PACKAGE_SHELL holds pyhton, which nothing asks it about$/);
+  await assert.rejects(import(copyOf("test-shape.mjs", 'PACKAGE_FILE = { python: "__init__" }', 'PACKAGE_FILE = { pyhton: "__init__" }')), /^Error: PACKAGE_FILE holds pyhton, which nothing asks it about$/);
+  await assert.rejects(import(copyOf("test-shape.mjs", '  kotlin: jvmPairing("kotlin"),', '  kotln: jvmPairing("kotlin"),')), /^Error: PAIRINGS holds kotln, which nothing asks it about$/);
+  await assert.rejects(import(copyOf("test-shape.mjs", "{ go: () => true, java: inItsProject,", "{ golang: () => true, java: inItsProject,")), /^Error: FIXED_PLACE holds golang, which nothing asks it about$/);
+  // The node names are read for every language the walk is handed, so one that lost its entry is refused where the walk loads.
+  const renamed = copyOf("tree-shapes.mjs", "\n  go: {", "\n  golang: {");
+  await assert.rejects(import(copyOf("tree-walk.mjs", "const TEXT_CAP", "const TEXT_CAP", { "tree-shapes.mjs": renamed })), /^Error: SHAPES has no entry for go$/);
   // `nameOf` reads one field for all seven, so a grammar that moved its own is refused where the walk loads.
   const shapes = copyOf("tree-shapes.mjs", '    renames: { token: "as" },\n    name: "name",', '    renames: { token: "as" },\n    name: "simple_name",');
   await assert.rejects(import(copyOf("tree-walk.mjs", "const TEXT_CAP", "const TEXT_CAP", { "tree-shapes.mjs": shapes })), /^Error: SHAPES names a definition's name field name and simple_name: nameOf reads one$/);

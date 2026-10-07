@@ -10,6 +10,7 @@ import {
   layoutRoots,
   minRootFiles,
   mirroredTests,
+  placedTests,
   rootFacts,
   runnerOf,
   tally,
@@ -1282,6 +1283,20 @@ test("Rust: cargo collects every file directly under a crate's tests directory, 
   // A `tests` directory beside nothing that makes a crate is a directory name.
   assert.equal(isTestFile(file("tests/util.rs", "rust", plain), mirroredTests([file("tests/util.rs", "rust", plain)])), false);
   assert.deepEqual(layoutFacts(corpus, { minFiles: 3 }).tests.map((g) => [g.runner, g.files]), [["cargo test", 4]]);
+});
+
+test("only a file of the language cargo builds is a test by sitting in a crate's tests directory", () => {
+  const corpus = [
+    file("crate/Cargo.toml"),
+    file("crate/src/lib.rs", "rust"),
+    file("crate/tests/it.rs", "rust"),
+    file("crate/tests/helper.py", "python"),
+    file("crate/tests/gen.go", "go"),
+    file("crate/tests/deep/mod.rs", "rust"),
+  ];
+
+  assert.deepEqual([...placedTests(corpus)], ["crate/tests/it.rs"]);
+  assert.deepEqual([...mirroredTests(corpus)], ["crate/tests/it.rs"]);
 });
 
 test("the seven languages take no test name from JavaScript or Ruby, and no mirror", () => {

@@ -3791,11 +3791,11 @@ const CLAUDE_CROWDED = [
   "",
 ];
 
-const ALSO = "This file also attaches for test/**/fixtures/**/*.{js,ts}, which the area leaves out.";
-const WIDENS = "VS Code also matches this file's patterns under any parent directory, so it can attach for a file outside the area.";
+const ALSO = "This file's patterns also match test/**/fixtures/**/*.{js,ts}, which the area leaves out.";
+const WIDENS = "VS Code also matches this file's patterns under any parent directory, so they can match a file outside the area.";
 const WROTE =
   "Written by anatomiya, a scanner run on this repository; where this and the code disagree, the code is right and this map is stale.";
-const notGiven = (pattern, reader) => `This file does not attach for ${pattern}, which ${reader} cannot be given.`;
+const notGiven = (pattern, reader) => `This file's patterns do not match ${pattern}, which ${reader} cannot be given.`;
 
 test("with no target named, the overview and an area file are the bytes they were", () => {
   assert.deepEqual(renderOverview(noted(), NOTED_FILES).split("\n"), CLAUDE_OVERVIEW);
@@ -3892,7 +3892,7 @@ test("a copilot area file carries one quoted applyTo, the lost negation and the 
   ]);
 });
 
-test("an area file says nothing about attaching where the target reads the area exactly", () => {
+test("an area file says nothing about what its patterns match where the target reads the area exactly", () => {
   const exact = scoped({ globs: [{ negated: false, dir: "", tail: "**/*.rb" }] });
   for (const target of [cursor, copilot]) {
     const lines = renderArea(exact, target).split("\n");
@@ -4148,7 +4148,7 @@ test("a long list of patterns is cut to six and counted", () => {
   ];
   assert.equal(
     renderArea(scoped({ globs }), cursor).split("\n").at(-2),
-    "This file also attaches for d0/*.rb, d1/*.rb, d2/*.rb, d3/*.rb, d4/*.rb, d5/*.rb and 2 more, which the area leaves out."
+    "This file's patterns also match d0/*.rb, d1/*.rb, d2/*.rb, d3/*.rb, d4/*.rb, d5/*.rb and 2 more, which the area leaves out."
   );
 });
 
@@ -4159,7 +4159,7 @@ test("a closing line longer than an encoded value's cap comes out whole", () => 
     ...Array.from({ length: 6 }, (_, i) => ({ negated: true, dir: deep(i), tail: "**/*.rb" })),
     ...Array.from({ length: 6 }, (_, i) => ({ negated: false, dir: `${deep(i)},x`, tail: "**/*.rb" })),
   ];
-  const also = `This file also attaches for ${Array.from({ length: 6 }, (_, i) => `${deep(i)}/**/*.rb`).join(", ")}, which the area leaves out.`;
+  const also = `This file's patterns also match ${Array.from({ length: 6 }, (_, i) => `${deep(i)}/**/*.rb`).join(", ")}, which the area leaves out.`;
   const not = notGiven(Array.from({ length: 6 }, (_, i) => `${deep(i)},x/**/*.rb`).join(", "), "Cursor");
   assert.ok(also.length > 300 && not.length > 300);
   assert.deepEqual(renderArea(scoped({ globs }), cursor).split("\n").slice(-4), ["", also, not, ""]);

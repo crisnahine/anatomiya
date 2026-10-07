@@ -274,8 +274,8 @@ function readsName(body, name, shapes, sets) {
 // A constructor and a destructor declare no return type, and a Python dunder's is fixed by its protocol.
 const UNTYPED = { python: /^__\w+__$/, php: PHP_BUILDS };
 
-// A name that says the handler binds nothing, as `_` says it: the one name both Error Prone's UnusedVariable and
-// IntelliJ's "Catch block may ignore exception" pass over.
+// A name that says the handler binds nothing, as `_` says it: IntelliJ's "Catch block may ignore exception" passes over a
+// parameter whose name matches `ignored?[A-Za-z\d]*`, and of the names that fits only this one is read.
 const UNBOUND = { java: new Set(["ignored"]) };
 
 // A function row reports the function's name as its site: a site is known again by its text, and a line added to the body would make an old function a new one.

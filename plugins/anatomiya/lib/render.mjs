@@ -61,18 +61,19 @@ const some = (names) => {
 };
 
 /**
- * What a target's reading of the cover gets wrong, in the file that is misdelivered.
+ * What a target's reading of the cover gets wrong, in the file whose patterns it reads. Each line says what the patterns
+ * match, which was measured, and not when the file is delivered, which was not.
  *
  * Each sentence is encoded whole: a pattern's tail can hold a directory name,
  * and encoding a pattern alone would strip its leading `*`.
  */
-function attachLines(target, { dropped, widened, unspellable }) {
+function matchLines(target, { dropped, widened, unspellable }) {
   const lines = [];
-  if (dropped.length) lines.push(`This file also attaches for ${some(dropped)}, which the area leaves out.`);
+  if (dropped.length) lines.push(`This file's patterns also match ${some(dropped)}, which the area leaves out.`);
   // Every widened pattern is already in the frontmatter, so the line names none.
   if (widened.length) lines.push(target.widens);
   if (unspellable.length) {
-    lines.push(`This file does not attach for ${some(unspellable)}, which ${target.reader} cannot be given.`);
+    lines.push(`This file's patterns do not match ${some(unspellable)}, which ${target.reader} cannot be given.`);
   }
   return lines.map((line) => encode(line, { max: Infinity }));
 }
@@ -567,9 +568,9 @@ function areaBlocks(area, target = TARGETS.claude) {
   // siblings do is better off by it.
   //
   // The closing lines and their blank come out the same way, so `settle` drops
-  // a block for them and never them: a file that attaches for more than its
+  // a block for them and never them: a file whose patterns match more than its
   // area and does not say so is worse than one directive short.
-  const closing = attachLines(target, spelled);
+  const closing = matchLines(target, spelled);
   const budget =
     Math.max(MIN_BODY_LINES, MAX_LINES - head.length) - (kinds ? KINDS_LINES : 0) - (closing.length ? closing.length + 1 : 0);
   return { head, blocks, keys, claims, stated, descriptions, kinds, budget, closing };

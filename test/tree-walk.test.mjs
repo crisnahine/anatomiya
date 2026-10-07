@@ -337,5 +337,6 @@ test("a tree of a language the table does not hold is refused, not walked as if 
 test("the walk is handed a tree and loads no parser of its own", () => {
   const src = readFileSync(join(ANATOMIYA, "lib", "tree-walk.mjs"), "utf8");
   const imported = [...src.matchAll(/(?:from\s*|import\s*\(?\s*)["']([^"']+)["']/g)].map((m) => m[1]);
-  assert.deepEqual(imported, ["./tree-shapes.mjs"]);
+  // The registry is a leaf, and the table of node names is data.
+  assert.deepEqual(imported, ["./langs.mjs", "./tree-shapes.mjs"]);
 });

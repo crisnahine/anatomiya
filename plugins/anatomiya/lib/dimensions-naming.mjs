@@ -5,7 +5,7 @@
  *
  * The corpus rows ask about filenames and need no parser; the reducer composes
  * them the way it composes pairings. The AST rows run in the worker like every
- * other dimension. Nothing here imports the registry, because the registry
+ * other dimension. Nothing here imports `registry.mjs`, because `registry.mjs`
  * imports this file.
  */
 import { templateMountsByName } from "./langs.mjs";
