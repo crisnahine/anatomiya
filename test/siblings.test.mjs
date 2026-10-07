@@ -465,6 +465,47 @@ test("$lib names nothing outside a src/lib above the importer", () => {
   assert.equal(specifierToFile("@/components/x", page, corpus("app/src/components/x.ts")), "app/src/components/x.ts", "the root prefixes read as they did");
 });
 
+test("an alias a component writes names a file of its own project, and no other package's", () => {
+  const rels = corpus(
+    "apps/lib/components/ui/button.tsx",
+    "blocks/vue/components/ui/Button.vue",
+    "blocks/vue/components/ui/card/index.ts",
+    "blocks/vue/src/composables/use-user.ts",
+    "blocks/vue/lib/utils.ts"
+  );
+  const form = "blocks/vue/forms/nuxtjs/app/form.vue";
+
+  assert.equal(specifierToFile("@/components/ui/button", form, rels), null, "the React file in the other package");
+  assert.equal(specifierToFile("~/components/ui/button", form, rels), null);
+  assert.equal(specifierToFile("@/components/ui/Button.vue", form, rels), "blocks/vue/components/ui/Button.vue");
+  assert.equal(specifierToFile("@/components/ui/card", form, rels), "blocks/vue/components/ui/card/index.ts");
+  assert.equal(specifierToFile("@/components/ui/card/", form, rels), "blocks/vue/components/ui/card/index.ts");
+  assert.equal(specifierToFile("~/lib/utils.js", form, rels), "blocks/vue/lib/utils.ts");
+  assert.equal(specifierToFile("@/composables/use-user", form, rels), "blocks/vue/src/composables/use-user.ts", "a root under src");
+  assert.equal(specifierToFile("@/ui/button", "apps/lib/pages/page.svelte", rels), null, "a tail is not a place in the project");
+  assert.equal(specifierToFile("@/components/ui/button", "apps/lib/pages/page.tsx", rels), "apps/lib/components/ui/button.tsx");
+});
+
+test("the nearest project above a component answers its alias", () => {
+  const rels = corpus("apps/a/src/lib/utils.ts", "apps/b/src/lib/utils.ts", "apps/b/src/lib/only-b.ts");
+
+  assert.equal(specifierToFile("@/lib/utils", "apps/a/src/pages/Home.vue", rels), "apps/a/src/lib/utils.ts");
+  assert.equal(specifierToFile("@/lib/utils", "apps/b/src/pages/Home.vue", rels), "apps/b/src/lib/utils.ts");
+  assert.equal(specifierToFile("@/lib/only-b", "apps/a/src/pages/Home.vue", rels), null, "another app's file is not this one's");
+  assert.equal(specifierToFile("@/lib/utils", "apps/a/src/pages/home.ts", rels), null, "a module's alias is matched as a tail, which two files answer");
+});
+
+test("a component's alias import credits no file of another package", () => {
+  const rels = corpus("apps/lib/components/ui/button.tsx", "blocks/vue/components/ui/Button.vue");
+  const records = new Map();
+  for (let i = 0; i < 6; i++) records.set(`apps/lib/pages/p${i}.tsx`, record(`apps/lib/pages/p${i}.tsx`, [{ module: "@/components/ui/button", names: ["Button"] }]));
+  for (let i = 0; i < 5; i++) records.set(`blocks/vue/forms/f${i}.vue`, record(`blocks/vue/forms/f${i}.vue`, [{ module: "@/components/ui/button", names: ["Button"] }]));
+
+  assert.deepEqual(mostImported(new Set(["apps/lib/components/ui/button.tsx"]), records, rels), [
+    { name: "Button", file: "apps/lib/components/ui/button.tsx", importers: 6 },
+  ]);
+});
+
 test("SvelteKit's virtual modules name no file", () => {
   // Every place a prefix read as an alias could land.
   const rels = corpus(

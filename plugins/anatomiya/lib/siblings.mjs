@@ -117,12 +117,9 @@ export function specifierToFile(spec, importerRel, corpusRels) {
   }
 
   if (spec.startsWith(LIB_ALIAS)) {
-    // Nearest first, and never the tail match below: two apps each hold a
-    // `src/lib/utils.ts`, and a `tools/lib` is nobody's `$lib`.
-    for (let dir = posix.dirname(importerRel); ; dir = posix.dirname(dir)) {
-      const found = fileAt(posix.join(dir, "src/lib", spec.slice(LIB_ALIAS.length)), dirOnly, corpusRels);
-      if (found !== null || dir === ".") return found;
-    }
+    // Never the tail match below: two apps each hold a `src/lib/utils.ts`,
+    // and a `tools/lib` is nobody's `$lib`.
+    return inProject(importerRel, [posix.join("src/lib", spec.slice(LIB_ALIAS.length))], dirOnly, corpusRels);
   }
 
   const alias = ALIASES.find((a) => spec.startsWith(a));
@@ -130,6 +127,14 @@ export function specifierToFile(spec, importerRel, corpusRels) {
   // A single segment is a bare package name (`react`) or too short to identify
   // a file, and both are somebody else's module.
   if (!tail.includes("/")) return null;
+  // A component's package keeps its components under the names another
+  // package's modules have, and a component answers no bare tail: the tail
+  // match below would hand its import to the one file left, in the other
+  // package. A module's alias stays a tail, since a root such as `~/` for
+  // `modules/` sits beside its importers and above none of them.
+  if (alias && embeddedIn(language(importerRel)) !== null) {
+    return inProject(importerRel, [tail, posix.join("src", tail)], dirOnly, corpusRels);
+  }
   const { stems: index, spelled } = tailIndex(corpusRels);
   if (dirOnly) return index.get(`/${tail}/index`) ?? null;
   const named = spelled.get(`/${tail}`);
@@ -142,6 +147,17 @@ export function specifierToFile(spec, importerRel, corpusRels) {
   const ext = extOf(tail);
   const found = index.get(`/${withoutExtension(tail)}`) ?? null;
   return found !== null && [ext, ...(SOURCE_OF[ext] ?? [])].includes(extOf(found)) ? found : null;
+}
+
+/** The file one of `paths` names under the nearest directory above the importer that holds one, or null. */
+function inProject(importerRel, paths, dirOnly, corpusRels) {
+  for (let dir = posix.dirname(importerRel); ; dir = posix.dirname(dir)) {
+    for (const path of paths) {
+      const found = fileAt(posix.join(dir, path), dirOnly, corpusRels);
+      if (found !== null) return found;
+    }
+    if (dir === ".") return null;
+  }
 }
 
 /** The file a path names as written, through an extension it leaves off or emits, or as a directory's index. */
