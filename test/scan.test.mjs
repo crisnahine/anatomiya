@@ -1398,6 +1398,24 @@ test("a directory of components becomes an area that counts its scripts and its 
   assert.doesNotMatch(lines, /nothing was counted in/);
 });
 
+test("a claim counted over a Gemfile names it, not the label the kinds line gives a file with no extension", async (t) => {
+  const rescued = "begin\n  run\nrescue StandardError => e\n  warn e\nend\n";
+  const dir = repo(t, (d, { git, write }) => {
+    for (const name of ["load", "save", "list", "drop"]) write(`tools/${name}.rb`, rescued);
+    write("tools/Gemfile", `source "https://rubygems.org"\n${rescued}`);
+    write("tools/old.js", "const old = 1;\n");
+    git("add", "-A");
+    git("commit", "-qm", "init");
+  });
+
+  const result = await scan(dir);
+  const text = planMap(result).bodies.get([...planMap(result).bodies.keys()].find((name) => name !== "anatomiya-overview.md"));
+
+  assert.match(text, /^kinds: .*\(none\)/m);
+  assert.match(text, /^rescue blocks use the error they caught, in \.rb files and Gemfile: /m);
+  assert.match(text, /^module-level bindings are const, in \.js files: /m);
+});
+
 test("a claim learned from the modules of a directory says so beside the components it was not asked of", async (t) => {
   const caught = "try {\n  run();\n} catch (err) {\n  console.error(err);\n}\n";
   const dir = repo(t, (d, { git, write }) => {

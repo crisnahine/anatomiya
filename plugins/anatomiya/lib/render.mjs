@@ -109,6 +109,9 @@ const series = (xs) => (xs.length > 1 ? `${xs.slice(0, -1).join(", ")} and ${xs.
  * rule. A clause on the sentence rather than a line under it, because the
  * sentence is what survives the budget and a line is one of forty.
  *
+ * Extensions first, then the files that have none by their own names: the kinds
+ * line's `(none)` is a label for a count and reads as nothing in a sentence.
+ *
  * Widened the way `spokenIn` widens: a row asked of JSX alone is asked of a
  * `.js` file that holds some. Read off the scan's own file list, which no
  * record carries, so a record prints the sentence bare and takes the same
@@ -120,9 +123,17 @@ function scopeClause(area, key) {
   if (!langs || held.length === 0) return "";
   const asked = held.filter(([lang]) => spokenIn(lang, { jsx: true }).some((l) => langs.includes(l)));
   if (asked.length === 0 || asked.length === held.length) return "";
-  const exts = [...new Set(asked.flatMap(([, exts]) => exts))].sort(byCode).map((e) => encode(e));
-  return `, in ${series(exts)} files`;
+  const counted = asked.flatMap(([, exts]) => exts);
+  // A declaration file is a TypeScript file to a reader, and `.d.ts and .ts` says one thing twice.
+  const exts = counted.filter((e) => e.startsWith(".")).map((e) => e.replace(/^\.d\./, "."));
+  const names = counted.filter((e) => !e.startsWith("."));
+  const listed = (xs) => series([...new Set(xs)].sort(byCode).map((e) => encode(e)));
+  const groups = [exts.length > 0 ? `${listed(exts)} files` : null, names.length > 0 ? listed(names) : null];
+  return `, in ${groups.filter(Boolean).join(" and ")}`;
 }
+
+// Inside the full stop that ends a sentence. `?.` ends one too and is an operator.
+const scoped = (claim, clause) => (clause && /\w\.$/.test(claim) ? `${claim.slice(0, -1)}${clause}.` : claim + clause);
 
 // Keyed off the registry rather than off the record, because both readers of
 // the layout have a key and only one of them has the prose. Storing the clause
@@ -415,7 +426,7 @@ function areaBlocks(area) {
   // The clauses this file has already printed, so a sentence shared by several
   // rows costs one line rather than one per row.
   const said = new Set();
-  const sentence = (d, s) => claimLine(s.claim) + scopeClause(area, d.key);
+  const sentence = (d, s) => scoped(claimLine(s.claim), scopeClause(area, d.key));
   for (const [d, s] of directives) {
     const block = [
       sentence(d, s),
