@@ -47,7 +47,7 @@ const RUNNERS = {
     named: /^test/,
     // pytest's fixtures are functions too, and a conftest names one `test_client`.
     notCase: "fixture",
-    // Measured on django: 1,382 files under `tests` wear no test name and 252 of them hold cases, every `tests.py` among them.
+    // Measured on django: 1,375 files under `tests` wear no test name and 222 of them hold cases, every `tests.py` among them.
     claims: (rel) => namedTest("python")(rel) || inTestTree("python")(rel),
     // A function at file level, or a class nothing made, is only pytest's to collect.
     unimported: (plain) => (plain ? "pytest" : "unittest"),
@@ -62,7 +62,7 @@ const RUNNERS = {
     unimported: () => "phpunit",
     calls: inTestTree("php"),
   },
-  // The compiler's rule and not an import's: 11 files in caddy and hugo declare `func Test` or `func Fuzz` outside a `_test.go`, and `go test` runs none.
+  // The compiler's rule and not an import's: 10 files in caddy and hugo declare `func Test` or `func Fuzz` outside a `_test.go`, and `go test` runs none.
   go: { named: /^(Test|Benchmark|Fuzz|Example)/, claims: namedTest("go"), unimported: () => "go test", collectedByName: true },
   java: { imports: JVM_IMPORTS, marks: JVM_CASES },
   // C# names its runner on the case: a project-wide `global using` leaves a test file importing nothing.

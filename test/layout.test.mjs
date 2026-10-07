@@ -1223,7 +1223,7 @@ test("Rust: a directory does not make a test file, and neither does a name", () 
 });
 
 test("Rust: cargo collects every file directly under a crate's tests directory, cases or none", () => {
-  // ripgrep declares 349 of its 365 cases with `rgtest!`, in files directly under `tests`.
+  // ripgrep declares 333 of its 365 cases with `rgtest!`, in six files directly under `tests`.
   const plain = { testRunner: null, testCalls: false };
   const cargo = { testRunner: "cargo test", testCalls: true };
   const corpus = [

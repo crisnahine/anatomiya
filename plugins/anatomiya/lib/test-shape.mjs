@@ -124,8 +124,8 @@ const JVM_NAMES = { camel: ["Tests", "Test", "IT"] };
  *
  * Measured over three repositories per language. `alone` is a name the
  * language's own tool collects by. Go builds a `_test.go` file under `go test`
- * and nowhere else: 578 files, 566 holding a case and the other 12 helpers no
- * build ships. pytest collects `test_*.py`: 1,180 files, 1,172 holding a case.
+ * and nowhere else: 578 files, 567 holding a case and the other 11 helpers no
+ * build ships. pytest collects `test_*.py`: 1,180 files, 1,168 holding a case.
  * `_test.py` is the other half of pytest's default and no measured repository
  * writes one, so it is here on pytest's word.
  *
@@ -136,8 +136,8 @@ const JVM_NAMES = { camel: ["Tests", "Test", "IT"] };
  * absent: two files in the 21 repositories end in it and neither is a test.
  * `TestCase` is what a base class is called, 69 files and 24 with no case.
  *
- * Rust has no name. cargo collects by directory, and a file's own unit tests
- * sit inside it.
+ * Rust has no name. cargo collects by place, a file directly in a crate's
+ * `tests`, and a file's own unit tests sit inside it.
  */
 export const FAMILY_TEST_NAMES = {
   python: { prefixes: ["test_"], suffixes: ["_test"], alone: true },
@@ -183,7 +183,7 @@ const JVM_TREES = { test: /^[a-z][A-Za-z]*Test$/, source: /^[a-z][A-Za-z]*Main$/
  * a mirror compares that and nothing above it.
  *
  * Measured. okhttp and kotlinx.serialization keep 500 files under a
- * `<set>Test` directory, 402 of them holding cases. All 23 .NET test projects in three repositories are named for
+ * `<set>Test` directory, 402 of them holding cases. All 22 .NET test projects in three repositories are named for
  * the project they cover with a dotted word ending in `Tests`, `Serilog.Tests`
  * beside `Serilog`. composer files its tests under the `Test` namespace its
  * classes declare, `tests/Composer/Test/Util` for `src/Composer/Util`.
