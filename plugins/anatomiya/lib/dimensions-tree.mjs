@@ -144,8 +144,19 @@ function goNamedByInterface(program, sets) {
   };
 }
 
-// Public and still no site, as a question built once per file.
-const NO_SITE = { go: goNamedByInterface };
+const PHP_BUILDS = /^__(?:construct|destruct)$/i;
+const atTopOfFile = (ctx) => ctx.ancestors.length === 1;
+
+// Public and still no site, as a question built once per file: what a runtime calls and no reader looks up, a constructor, and a
+// method whose interface names it. A Java, C# or Kotlin constructor is no function to its grammar and never reaches this.
+const NO_SITE = {
+  go: goNamedByInterface,
+  php: () => (name) => PHP_BUILDS.test(name),
+  java: () => (name, fn, words) => name === "main" && words.has("static"),
+  csharp: () => (name, fn, words) => name === "Main" && words.has("static"),
+  rust: () => (name, fn, words, ctx) => name === "main" && atTopOfFile(ctx),
+  kotlin: () => (name, fn, words, ctx) => name === "main" && atTopOfFile(ctx),
+};
 
 // An override, and a Kotlin `actual`, take their name and their documentation from what they implement.
 const INHERITED = ["@Override", "@override", "override", "actual"];
@@ -229,7 +240,7 @@ function readsName(body, name, shapes, sets) {
 }
 
 // A constructor and a destructor declare no return type, and a Python dunder's is fixed by its protocol.
-const UNTYPED = { python: /^__\w+__$/, php: /^__(?:construct|destruct)$/i };
+const UNTYPED = { python: /^__\w+__$/, php: PHP_BUILDS };
 
 // A name that says the handler binds nothing, as `_` says it: the one name both Error Prone's UnusedVariable and
 // IntelliJ's "Catch block may ignore exception" pass over.
@@ -273,7 +284,7 @@ export const TREE_DIMENSIONS = [
     counterClaim: "public functions carry no doc comment",
     precision: "partial",
     applicabilityPredicate: {
-      sites: "a function or method outside a test file, straight in the file or in the body of a named class or module (so not one inside a function, a block, an `if` or an anonymous class), that is public by its language's rule: in Python a name with no leading underscore, in Go a capitalised name, on a capitalised receiver type where it is a method, in Rust a bare `pub`, in PHP and Kotlin no private, protected or internal modifier, in Java and C# the `public` modifier or membership of an interface. A method marked as an override is not a site, nor is a Kotlin `actual` function, which is documented on its `expect`, a Python `@overload` stub or property setter or deleter, a Rust `#[test]` function, or anything under a Rust `#[cfg(test)]`, alone or inside `all(..)`, on an item or as `#![cfg(test)]` on the file, or under `#[doc(hidden)]`. A Rust trait's methods are not counted: a required one is a signature and a provided one carries no `pub`. A Go method named `Error`, `Read`, `ServeHTTP`, `String`, `Write` or `Unwrap` is not a site, nor is `Len`, `Less` or `Swap` on a type the file gives all three. It is documented by a docstring in Python, a plain string and never an f-string or bytes, and elsewhere by a doc comment in the comments and attributes that end on the line above it, a C# directive line between them passed over: `/** */` in PHP, Java and Kotlin, `///` or `/** */` in C# and Rust, `#[doc = \"..\"]` in Rust, and in Go any comment but a directive, with no blank line under it",
+      sites: "a function or method outside a test file, straight in the file or in the body of a named class or module (so not one inside a function, a block, an `if` or an anonymous class), that is public by its language's rule: in Python a name with no leading underscore, in Go a capitalised name, on a capitalised receiver type where it is a method, in Rust a bare `pub`, in PHP and Kotlin no private, protected or internal modifier, in Java and C# the `public` modifier or membership of an interface. A method marked as an override is not a site, nor is a Kotlin `actual` function, which is documented on its `expect`, a Python `@overload` stub or property setter or deleter, a Rust `#[test]` function, or anything under a Rust `#[cfg(test)]`, alone or inside `all(..)`, on an item or as `#![cfg(test)]` on the file, or under `#[doc(hidden)]`. A Rust trait's methods are not counted: a required one is a signature and a provided one carries no `pub`. A constructor is not a site, a PHP `__construct` or `__destruct` among them, nor is an entry point: a static `main` in Java, a static `Main` in C#, a `main` at the top of a Kotlin or Rust file. A Go method named `Error`, `Read`, `ServeHTTP`, `String`, `Write` or `Unwrap` is not a site, nor is `Len`, `Less` or `Swap` on a type the file gives all three. It is documented by a docstring in Python, a plain string and never an f-string or bytes, and elsewhere by a doc comment in the comments and attributes that end on the line above it, a C# directive line between them passed over: `/** */` in PHP, Java and Kotlin, `///` or `/** */` in C# and Rust, `#[doc = \"..\"]` in Rust, and in Go any comment but a directive, with no blank line under it",
       blind: `whether the module or the class around a function is itself public is not read, so a function in a private module, under a non-public class or left out of \`__all__\` counts as public. Rust code inside a macro call is not in the tree, so a function written there is not counted`,
     },
     langs: ["python", "php", "go", "java", "csharp", "rust", "kotlin"],
