@@ -270,10 +270,15 @@ function svelte(source) {
 
 const SCANNERS = { vue, svelte };
 
-// Held to the registry where the module loads, so a declaration never names a scanner that is not here.
-for (const kind of new Set([...EXTRACTORS, ...Object.keys(SCANNERS)])) {
-  if (!EXTRACTORS.includes(kind) || !Object.hasOwn(SCANNERS, kind)) throw new Error(`SCANNERS and the registry's extractors disagree on ${kind}`);
+/** Refuse a scanner table that lacks an extractor a declaration may name, or holds one none may. */
+export function assertScanners(scanners, extractors) {
+  for (const kind of new Set([...extractors, ...Object.keys(scanners)])) {
+    if (!extractors.includes(kind) || !Object.hasOwn(scanners, kind)) throw new Error(`SCANNERS and the registry's extractors disagree on ${kind}`);
+  }
 }
+
+// Where the module loads, so a declaration never names a scanner that is not here.
+assertScanners(SCANNERS, EXTRACTORS);
 
 /**
  * The script blocks a compiler would read, at most two, in file order.

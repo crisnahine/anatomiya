@@ -1,10 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { Language, Parser } from "web-tree-sitter";
 
-import { copyTree, fieldOf, fieldsOf, nameOf, site, walkTree } from "../plugins/anatomiya/lib/tree-walk.mjs";
+import { copyTree, fieldOf, fieldsOf, nameFieldOf, nameOf, site, walkTree } from "../plugins/anatomiya/lib/tree-walk.mjs";
 import { ANATOMIYA } from "../scripts/plugins.mjs";
 import * as SAMPLES from "./tree-samples.mjs";
 
@@ -339,4 +341,21 @@ test("the walk is handed a tree and loads no parser of its own", () => {
   const imported = [...src.matchAll(/(?:from\s*|import\s*\(?\s*)["']([^"']+)["']/g)].map((m) => m[1]);
   // The registry is a leaf, and the table of node names is data.
   assert.deepEqual(imported, ["./langs.mjs", "./tree-shapes.mjs"]);
+});
+
+test("the one field a definition's name sits in is read off the table, and a table naming two is refused", () => {
+  assert.equal(nameFieldOf({ go: { name: "name" }, rust: { name: "name" } }), "name");
+  assert.throws(
+    () => nameFieldOf({ go: { name: "name" }, csharp: { name: "simple_name" } }),
+    /^Error: SHAPES names a definition's name field name and simple_name: nameOf reads one$/
+  );
+});
+
+test("the walk holds the table of node names to the registry where it loads", () => {
+  // In a process of its own: an entry is taken out of the table before the walk is first imported, which this file did long ago.
+  const lib = (name) => JSON.stringify(pathToFileURL(join(ANATOMIYA, "lib", name)).href);
+  const script = `const { SHAPES } = await import(${lib("tree-shapes.mjs")}); delete SHAPES.go; await import(${lib("tree-walk.mjs")});`;
+  const run = spawnSync(process.execPath, ["--input-type=module", "-e", script], { encoding: "utf8" });
+  assert.notEqual(run.status, 0);
+  assert.match(run.stderr, /^Error: SHAPES has no entry for go$/m);
 });
