@@ -34,6 +34,8 @@ const GRAMMARS = fileURLToPath(new URL("../grammars/", import.meta.url));
 
 let runtime = null;
 // One parser per grammar file for the life of the process: a warm worker pays each load once.
+// A file that did not load holds its error here. Loaded again for every file, a grammar that
+// instantiates and then fails took 2.9 GB in 1,500 files, since nothing frees an instance.
 const parsers = new Map();
 
 const missing = (message, extra = {}) => Object.assign(new Error(message), { missingParser: true }, extra);
@@ -53,17 +55,22 @@ export async function ensureRuntime() {
 
 async function parserFor(grammar, dir, lang) {
   const key = `${dir}\0${grammar}`;
-  if (parsers.has(key)) return parsers.get(key);
+  const known = parsers.get(key);
+  if (known instanceof Error) throw known;
+  if (known) return known;
   const { Language, Parser } = await ensureRuntime();
-  let parser;
+  let parser = null;
   try {
     // Handed the bytes, so the path is read by node and never by the runtime's own loader.
     const language = await Language.load(readFileSync(join(dir, `${grammar}.wasm`)));
     parser = new Parser();
     parser.setLanguage(language);
   } catch (err) {
+    parser?.delete();
     // One language's loss, named as the language: every other grammar on this engine still reads its files.
-    throw missing(`grammars/${grammar}.wasm did not load: ${err && err.message}`, { missingGrammar: lang });
+    const lost = missing(`grammars/${grammar}.wasm did not load: ${err && err.message}`, { missingGrammar: lang });
+    parsers.set(key, lost);
+    throw lost;
   }
   parsers.set(key, parser);
   return parser;

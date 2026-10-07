@@ -459,7 +459,8 @@ process.send({ ready: true, engine: "stub", version: "1" });
   }
 });
 
-test("a worker that says it cannot go on finishes its file and is replaced before it is handed another", async (t) => {
+// Bounded, because a worker that is not replaced answers nothing and the files behind it wait for ever.
+test("a worker that says it cannot go on finishes its file and is replaced before it is handed another", { timeout: 60_000 }, async (t) => {
   const dir = mkdtempSync(join(tmpdir(), "anatomiya-retire-worker-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const worker = join(dir, "retiring-worker.mjs");
@@ -479,20 +480,18 @@ process.send({ ready: true, engine: "stub", version: "1" });
   const files = ["a.py", "b.py", "c.py"].map((name) => file(dir, name, "x = 1\n"));
 
   const pool = createPool({ size: 1, worker, engine: "stub", guards: { timeoutMs: 3_000 } });
-  try {
-    const [a, b, c] = await Promise.all(files.map((f) => pool.parse(f)));
+  // Closed by the test's end and not by a `finally`: at the timeout the parses below are still waiting.
+  t.after(() => pool.close());
+  const [a, b, c] = await Promise.all(files.map((f) => pool.parse(f)));
 
-    assert.deepEqual([a.rel, b.rel, c.rel], ["a.py", "b.py", "c.py"]);
-    assert.equal(a.ok, false);
-    assert.equal(a.error, "wasm trap", "the file that trapped keeps its own answer");
-    assert.equal(b.ok, true);
-    assert.equal(c.ok, true);
-    for (const r of [a, b, c]) assert.notEqual(r.crashed, true, `${r.rel} is charged to no crash`);
-    assert.notEqual(b.pid, a.pid, "the file queued behind the trap went to another process");
-    assert.notEqual(c.pid, a.pid);
-  } finally {
-    await pool.close();
-  }
+  assert.deepEqual([a.rel, b.rel, c.rel], ["a.py", "b.py", "c.py"]);
+  assert.equal(a.ok, false);
+  assert.equal(a.error, "wasm trap", "the file that trapped keeps its own answer");
+  assert.equal(b.ok, true);
+  assert.equal(c.ok, true);
+  for (const r of [a, b, c]) assert.notEqual(r.crashed, true, `${r.rel} is charged to no crash`);
+  assert.notEqual(b.pid, a.pid, "the file queued behind the trap went to another process");
+  assert.notEqual(c.pid, a.pid);
 });
 
 test("a guard the pool does not carry is refused under the engine the pool was given", () => {

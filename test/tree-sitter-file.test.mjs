@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -377,6 +378,42 @@ test("a grammar file cut short reads the same way, and the other languages keep 
   assert.equal((await parseTreeFile(SAMPLES.kotlin, "a.kt", "kotlin")).ok, true, "the plugin's own copy is untouched");
 });
 
+// Valid wasm that is no grammar: the runtime instantiates it, finds no language
+// function and throws, and what the instance took is never given back. Loaded
+// again per file, one process held 2.9 GB after 1,500 files and then ran out of heap.
+test("a grammar that would not load is asked for once, and every later file is answered from that", async (t) => {
+  const dir = scratch(t, "anatomiya-no-language-");
+  const real = readFileSync(join(GRAMMARS, "python.wasm"));
+  writeFileSync(join(dir, "python.wasm"), Buffer.from(real.toString("latin1").replaceAll("tree_sitter_python", "tree_sitter-python"), "latin1"));
+  const script = join(dir, "loop.mjs");
+  writeFileSync(
+    script,
+    `import { copyFileSync } from "node:fs";
+import { parseTreeFile } from ${JSON.stringify(pathToFileURL(BODY).href)};
+console.log = () => {};
+const [dir, real] = process.argv.slice(2);
+const ask = (i) => parseTreeFile("def f():\\n    return 1\\n", "m" + i + ".py", "python", { grammars: dir }).then(() => "read", (err) => err.missingGrammar + ": " + err.message);
+const first = await ask(0);
+const rss = [];
+for (let i = 1; i < 500; i++) {
+  await ask(i);
+  rss.push(process.memoryUsage().rss);
+}
+copyFileSync(real, dir + "/python.wasm");
+process.stderr.write(JSON.stringify({ first, last: await ask(500), early: rss[8], late: rss.at(-1) }));
+`,
+  );
+  const run = spawnSync(process.execPath, [script, dir, join(GRAMMARS, "python.wasm")], { stdio: ["ignore", "ignore", "pipe"], encoding: "utf8" });
+  assert.equal(run.status, 0, run.stderr);
+  const out = JSON.parse(run.stderr);
+
+  assert.match(out.first, /^python: grammars\/python\.wasm did not load: /);
+  const mb = (bytes) => Math.round(bytes / 1024 / 1024);
+  t.diagnostic(`rss after 10 files: ${mb(out.early)} MB, after 500: ${mb(out.late)} MB`);
+  assert.equal(out.last, out.first, "a file that loads by then is not looked at again in this process");
+  assert.ok(out.late - out.early < 64 * 1024 * 1024, `resident size grew ${mb(out.late - out.early)} MB over 490 files`);
+});
+
 test("the grammar probe counts what loads and names what does not", async (t) => {
   assert.deepEqual(await probeGrammars(), { total: 7, missing: [] });
 
@@ -460,10 +497,19 @@ test("a tree too deep for the channel is answered as unread, and its counts stil
   }
 });
 
-test("five hundred large parses leave the child's memory where it started", { timeout: 30 * 60_000 }, async (t) => {
+// About 160 s on a loaded laptop. Bounded well inside the CI job's own 30 minutes, so a slow runner
+// reports this test and not a cancelled job.
+test("five hundred large parses leave the child's memory where it started", { timeout: 12 * 60_000 }, async (t) => {
   const dir = scratch(t, "anatomiya-ts-memory-");
   const unit = SAMPLES.python.replace("from __future__ import annotations\n", "");
   const big = file(dir, "big.py", unit.repeat(Math.floor(990_000 / unit.length)), "python");
+  // Every fifth parse, the three trees a Python file never makes: no line break at the end, so the
+  // first retry loses and its tree is dropped; a conditional in a parameter list, so the second
+  // wins and replaces the first tree; and 100,000 levels, so the copy's cursor holds a stack worth
+  // seeing. Measured with each of those three left undeleted: 6, 6 and 1 to 5 MB a parse.
+  const member = "    void F(\n#if SPAN\n        System.ReadOnlySpan<char> context,\n#else\n        string context,\n#endif\n        out int level)\n    {\n        level = 0;\n    }\n";
+  const DEEP = 100_000;
+  const retried = file(dir, "Retried.cs", `class A\n{\n${member.repeat(100)}    int D() { return ${"(".repeat(DEEP)}1${")".repeat(DEEP)}; }\n}`, "csharp");
   // The real body behind a shell that also says how much the process holds,
   // which the pool's own shell has no reason to. The runtime frees a tree
   // nobody deleted once the collector reaches it, and measured that hid a body
@@ -477,7 +523,7 @@ import { readFileSync } from "node:fs";
 import { parseTreeFile } from ${JSON.stringify(pathToFileURL(BODY).href)};
 process.on("message", async ({ rel, abs, lang }) => {
   const r = await parseTreeFile(readFileSync(abs, "utf8"), rel, lang);
-  process.send({ rel, ok: r.ok, error: r.error, rss: process.memoryUsage().rss });
+  process.send({ rel, ok: r.ok, error: r.error, oneBranch: r.oneBranch === true, rss: process.memoryUsage().rss });
 });
 process.send({ ready: true, engine: "tree-sitter", version: null });
 `,
@@ -488,8 +534,9 @@ process.send({ ready: true, engine: "tree-sitter", version: null });
   try {
     const rss = [];
     for (let i = 0; i < 500; i++) {
-      const r = await pool.parse(big);
+      const r = await pool.parse(i % 5 === 4 ? retried : big);
       assert.equal(r.ok, true, `parse ${i + 1}: ${r.error}`);
+      assert.equal(r.oneBranch, i % 5 === 4, `parse ${i + 1}: the C# file is the one read on a retry`);
       rss.push(r.rss);
     }
     const mb = (bytes) => Math.round(bytes / 1024 / 1024);
