@@ -15,7 +15,7 @@
 // is and nothing about delivery, which nobody measured there, and carry what
 // Claude Code's hook says on its own.
 const describe = (id, dir, ext, reader, said) =>
-  Object.freeze({ id, dir, ext, always: id === "claude", reader, wrote: null, widens: null, ...said });
+  Object.freeze({ id, dir, ext, reader, wrote: null, widens: null, ...said });
 
 const WROTE =
   "Written by anatomiya, a scanner run on this repository; where this and the code disagree, the code is right and this map is stale.";
@@ -42,23 +42,36 @@ export const TARGETS = Object.freeze({
 
 export const TARGET_IDS = Object.freeze(Object.keys(TARGETS));
 
-const STEM = "anatomiya-";
-const HEAD = ["---", "generator: anatomiya"];
+/** Whether this is Claude Code's target: the one every scan writes, in a directory this tool has always written, read by the tool whose `paths` the map was made for. */
+export const isClaude = (target) => target.id === TARGETS.claude.id;
+
+/** The key a generated file's frontmatter carries, which is how a file is known as this tool's. */
+export const GENERATOR = "anatomiya";
+
+/** What every filename a scan writes starts with. */
+export const PREFIX = "anatomiya-";
+
+const HEAD = ["---", `generator: ${GENERATOR}`];
+
+/** Refuse a list holding a name that is no target's id, naming the first and the ids there are. */
+export function assertTargets(names) {
+  const unknown = names.find((n) => !TARGET_IDS.includes(n));
+  if (unknown !== undefined) throw new Error(`unknown target: ${unknown}; the targets are ${TARGET_IDS.join(", ")}`);
+}
 
 /** The target ids a `--targets` value names, in the table's order and Claude Code's with them. An empty list or an unknown name throws. */
 export function parseTargets(text) {
   const names = String(text ?? "").split(",").map((n) => n.trim().toLowerCase()).filter(Boolean);
   if (names.length === 0) throw new Error("--targets needs at least one name");
-  const unknown = names.find((n) => !TARGET_IDS.includes(n));
-  if (unknown !== undefined) throw new Error(`unknown target: ${unknown}; the targets are ${TARGET_IDS.join(", ")}`);
-  return TARGET_IDS.filter((id) => TARGETS[id].always || names.includes(id));
+  assertTargets(names);
+  return TARGET_IDS.filter((id) => isClaude(TARGETS[id]) || names.includes(id));
 }
 
 /** The filename a target's overview is written under. */
-export const overviewName = (target) => `${STEM}overview${target.ext}`;
+export const overviewName = (target) => `${PREFIX}overview${target.ext}`;
 
 /** The filename one area's file is written under for a target. */
-export const areaName = (target, areaId) => `${STEM}area-${areaId}${target.ext}`;
+export const areaName = (target, areaId) => `${PREFIX}area-${areaId}${target.ext}`;
 
 // A comma separates patterns in both tools and a brace left after expansion
 // would hide one. The rest is what each reader changes on the way to its matcher.
@@ -93,7 +106,7 @@ const within = (dir, parent) => parent === "" || dir === parent || dir.startsWit
  */
 export function spelledGlobs(target, globs, text) {
   const out = { patterns: [], widened: [], dropped: [], unspellable: [] };
-  if (target.id === "claude") return { ...out, patterns: globs.map((g) => text(g)) };
+  if (isClaude(target)) return { ...out, patterns: globs.map((g) => text(g)) };
   // Read off the emitted string: an encoder can fold a comma in that the name did not hold.
   const cannot = (p) => UNSPELLABLE[target.id].test(p);
   const written = [];
@@ -130,7 +143,7 @@ export function frontmatter(target, { kind, patterns = [] }) {
   if (kind === "overview") return [...HEAD, ...EVERYWHERE[target.id], "---"];
   if (patterns.length === 0) {
     // Measured for Claude Code: a `paths` key with nothing under it loads on every turn.
-    if (target.id === "claude") throw new Error("an area file with no pattern would load on every turn");
+    if (isClaude(target)) throw new Error("an area file with no pattern would load on every turn");
     // An `applyTo` cannot match nothing, so the writer leaves this file out.
     if (target.id === "copilot") throw new Error(`no pattern of this area can be written for ${target.reader}`);
   }

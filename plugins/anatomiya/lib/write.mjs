@@ -20,7 +20,7 @@ import {
   spelledOtherwise,
   targetStatus,
 } from "./rules.mjs";
-import { TARGETS, TARGET_IDS, areaName, overviewName } from "./targets.mjs";
+import { TARGETS, TARGET_IDS, areaName, assertTargets, isClaude, overviewName } from "./targets.mjs";
 
 /**
  * Write the map: plan it, and put it on disk unless this is a dry run.
@@ -157,11 +157,10 @@ export function planMap(result, { targets = null, leaveAlone = [] } = {}) {
 function otherTargets(root, asked, previous, leaveAlone) {
   if (asked !== null) {
     if (!Array.isArray(asked)) throw new Error("targets is a list of names, or null for the ones already on");
-    const stranger = asked.find((id) => !TARGET_IDS.includes(id));
-    if (stranger !== undefined) throw new Error(`unknown target: ${stranger}; the targets are ${TARGET_IDS.join(", ")}`);
+    assertTargets(asked);
   }
   return TARGET_IDS.map((id) => TARGETS[id])
-    .filter((target) => !target.always)
+    .filter((target) => !isClaude(target))
     .map((target) => {
       const { state, reason = null, remedy } = targetStatus(root, target);
       const explicit = asked !== null;
@@ -213,7 +212,7 @@ function auditTarget(target, { on, explicit = false }, { root, previous, blind, 
   // itself, may be that name on this volume, so writing ours may write over it.
   // Somebody's, whatever it says.
   const alias = (n) => spelledOtherwise(audit.entries, n);
-  const taken = target.always ? [] : all.filter((n) => alias(n) !== null || theirs.some((list) => list.includes(n)));
+  const taken = isClaude(target) ? [] : all.filter((n) => alias(n) !== null || theirs.some((list) => list.includes(n)));
   if (taken.length && (explicit || taken.includes(overviewName(target)))) {
     const at = alias(taken[0]) ?? taken[0];
     const what = at !== taken[0]
@@ -258,12 +257,12 @@ function auditTarget(target, { on, explicit = false }, { root, previous, blind, 
   // Ours and held, so still ours after this run: the next record has to go on naming it.
   const kept = mine.filter((f) => !planned.has(f) && !stale.includes(f) && heldNames.has(f));
   // Claude Code's two directories were held to this before anything was read.
-  if (!target.always && (names.length > 0 || stale.length > 0)) refuseNonDirectory(root, target.dir);
+  if (!isClaude(target) && (names.length > 0 || stale.length > 0)) refuseNonDirectory(root, target.dir);
 
   return {
     filed,
     // On with no flag and no file of ours on record: the overview somebody committed is all that asked.
-    first: !target.always && on && !explicit && !knownNames(previous, target)?.size,
+    first: !isClaude(target) && on && !explicit && !knownNames(previous, target)?.size,
     // The areas whose name somebody else's file holds, and the held ones this
     // directory has no file of, for the overview to leave out.
     left: [...wanted.filter((a) => taken.includes(nameOf(a))), ...held.filter((a) => !kept.includes(nameOf(a)))].map((a) => a.id),

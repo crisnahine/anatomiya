@@ -6,8 +6,10 @@
  * first end tag, inside a string too. One pass forward over the file, so a
  * megabyte of markup costs a megabyte.
  *
- * Read by the parser child, so it imports the registry and nothing else.
+ * Read by the parser child, so it imports the registry and the blanking, two
+ * leaves, and nothing else.
  */
+import { blank } from "./blank.mjs";
 import { EXTRACTORS } from "./langs.mjs";
 
 const LANGS = new Set(["js", "jsx", "ts", "tsx"]);
@@ -284,8 +286,6 @@ export function scriptBlocks(source, kind) {
   if (!Object.hasOwn(SCANNERS, kind)) throw new Error(`no script extractor named ${kind}`);
   return SCANNERS[kind](source);
 }
-
-const blank = (text) => text.replace(/[^\n\r]/g, " ");
 
 /**
  * The source with everything outside `start` to `end` turned to spaces.

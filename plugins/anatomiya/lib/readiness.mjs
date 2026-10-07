@@ -108,7 +108,7 @@ const GRAMMARS = {
 export const GRAMMAR_REMEDY = "reinstall this plugin, which ships its grammar files in its own directory";
 
 /** Whether a row is an engine that loads and lost a grammar file: nothing an install provides is missing from it. */
-export const lostGrammar = (row) => row.remedy === GRAMMAR_REMEDY;
+export const lostGrammar = (row) => row.lostGrammars?.length > 0;
 
 // The phrase the node remedy spells in the directory for. The table states it
 // the way a person would read it aloud; a person following it needs the path.
@@ -366,7 +366,7 @@ export function readinessLines(rows, { installSaid = false } = {}) {
 }
 
 /** One row, so every probe answers the same shape whatever it looked at. */
-function row(engine, { extra = null, present, version = null, ok = false, reason = null, remedy = null }) {
+function row(engine, { extra = null, present, version = null, ok = false, reason = null, remedy = null, lostGrammars = [] }) {
   return {
     engine: engine.id,
     extra,
@@ -376,6 +376,7 @@ function row(engine, { extra = null, present, version = null, ok = false, reason
     ok,
     reason: reason ?? engine.note ?? null,
     remedy: remedy ?? remedyFor(engine.id),
+    lostGrammars,
   };
 }
 
@@ -420,7 +421,7 @@ async function probeNode(engine) {
     const held = extra === null && GRAMMARS[engine.id] ? await GRAMMARS[engine.id]() : null;
     if (held?.missing.length) {
       const reason = `${grammarsLine(held)}, ${held.missing.map((id) => `${id}.wasm`).join(" and ")} did not load`;
-      rows.push(row(engine, { extra, present: true, version: installedVersion(module), reason, remedy: GRAMMAR_REMEDY }));
+      rows.push(row(engine, { extra, present: true, version: installedVersion(module), reason, remedy: GRAMMAR_REMEDY, lostGrammars: held.missing }));
       continue;
     }
     rows.push(row(engine, { extra, present: true, version: installedVersion(module), ok: true, reason: held ? grammarsLine(held) : null }));

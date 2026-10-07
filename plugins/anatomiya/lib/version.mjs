@@ -12,6 +12,16 @@ import { dirname, join } from "node:path";
 
 const require = createRequire(import.meta.url);
 
+/** The version the manifest in a directory states for the package of this name, or null where there is none to read, it is another package's, or it states none. */
+export function manifestVersion(dir, name) {
+  try {
+    const manifest = JSON.parse(readFileSync(join(dir, "package.json"), "utf8"));
+    return manifest.name === name ? (manifest.version ?? null) : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * The version an installed module's own manifest states, or null where it is
  * not installed.
@@ -34,12 +44,8 @@ export function installedVersion(module) {
     return null;
   }
   for (;;) {
-    try {
-      const manifest = JSON.parse(readFileSync(join(dir, "package.json"), "utf8"));
-      if (manifest.name === module) return manifest.version ?? null;
-    } catch {
-      // No manifest at this level, or one that is not this package's.
-    }
+    const version = manifestVersion(dir, module);
+    if (version !== null) return version;
     const up = dirname(dir);
     if (up === dir) return null;
     dir = up;

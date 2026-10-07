@@ -7,7 +7,7 @@ import { globText } from "./areas.mjs";
 import { listSome, LISTED, PREFIX } from "./rules.mjs";
 import { REGISTRY } from "./registry.mjs";
 import { byCode } from "./paths.mjs";
-import { frontmatter, spelledGlobs, TARGETS } from "./targets.mjs";
+import { frontmatter, isClaude, spelledGlobs, TARGETS } from "./targets.mjs";
 
 /**
  * The line bound every generated file is held to.
@@ -842,7 +842,7 @@ export function renderOverview(result, files, target = TARGETS.claude) {
   const room = Math.max(2, MAX_LINES - head.length - fixed.length - (unfiled.length ? 1 : 0));
   // The floors are what Claude's overview fills the bound with, so the lines only
   // another target carries are paid for by the one listing that can still fold.
-  const others = otherFiles(files.others, Math.max(1, room - 1), target !== TARGETS.claude);
+  const others = otherFiles(files.others, Math.max(1, room - 1), !isClaude(target));
   // No area at all left the heading over two blank lines, which reads as a
   // listing that failed to print rather than as a repository where no directory
   // cleared the floor and kept a count. Why is not said here: the causes are the

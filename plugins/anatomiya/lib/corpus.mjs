@@ -6,7 +6,7 @@ import { EXT_BY_LANG, LANGUAGES, language } from "./langs.mjs";
 import { CAPABILITY_WORDS, fileStem, stemWords } from "./stems.mjs";
 import { FRAMEWORKS } from "./frameworks.mjs";
 import { folded, isLink, isMapName, readHead, STORE_DIR, trackedRulesDir } from "./rules.mjs";
-import { TARGETS } from "./targets.mjs";
+import { TARGETS, isClaude } from "./targets.mjs";
 
 // Tracked files only. A working tree holds .env, master.key, an .npmrc with a
 // token and a .git/config with credentials in the remote URL; a filesystem walk
@@ -134,7 +134,7 @@ function excludedAt(path) {
 async function ownOutput(root) {
   const fold = (await caseMagic(root)) ? folded : (text) => text;
   const under = (path, dir) => fold(path.slice(0, dir.length + 1)) === fold(`${dir}/`);
-  const dirs = Object.values(TARGETS).map((t) => [t.id === TARGETS.claude.id ? trackedRulesDir(root) : t.dir, t]);
+  const dirs = Object.values(TARGETS).map((t) => [isClaude(t) ? trackedRulesDir(root) : t.dir, t]);
   return (path) =>
     under(path, STORE_DIR) ||
     dirs.some(([dir, t]) => under(path, dir) && isMapName(path.slice(dir.length + 1), t));

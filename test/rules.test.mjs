@@ -14,6 +14,7 @@ import {
   RULES_DIR,
   auditRules,
   isGeneratedName,
+  isMapName,
   isOwned,
   resolveRulesDir,
   resolveTargetDir,
@@ -82,6 +83,16 @@ test("ownership reads the fences it always read", () => {
   assert.equal(isOwned(`---\na\rb\ngenerator: ${GENERATOR}\n---\n`), false, "a lone carriage return inside");
   assert.equal(isOwned(`---\n---\n`), false, "an empty block");
   assert.equal(isOwned(42), false);
+});
+
+test("a name a scan gives a file is the overview's, or an area's eight hex digits and nothing after them", () => {
+  for (const target of [claude, cursor, copilot]) {
+    assert.equal(isMapName(overviewName(target), target), true);
+    assert.equal(isMapName(areaName(target, "0badf00d"), target), true);
+    for (const id of ["0badf00d1", "0badf00", "0BADF00D", "0badf00d-copy", "x0badf00d"]) assert.equal(isMapName(areaName(target, id), target), false, id);
+    assert.equal(isMapName(`${PREFIX}notes${target.ext}`, target), false, "ours by its prefix, and no name a scan produces");
+    assert.equal(isMapName(`x${areaName(target, "0badf00d")}`, target), false);
+  }
 });
 
 test("the claude names are the ones the target descriptors spell", () => {

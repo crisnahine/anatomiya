@@ -6,13 +6,12 @@
  * chains and initializers. Every directive line is blanked, and of each
  * `#if` to `#endif` every branch but the first. Blanked means spaces, line
  * breaks kept, so the text keeps its length and every offset and line a parser
- * reports on it is the file's own. A leaf: it is handed a string and loads
- * nothing.
+ * reports on it is the file's own. It is handed a string and loads nothing
+ * but the blanking itself.
  */
+import { blank } from "./blank.mjs";
 
 const DIRECTIVE = /^#[ \t]*(if|elif|else|endif|region|endregion|pragma|nullable|define|undef|line|error|warning)\b/;
-
-const blank = (text) => text.replace(/[^\n\r]/g, " ");
 
 function lineEnd(source, at) {
   let end = at;

@@ -42,7 +42,7 @@ import { FACTS_PATH, FACTS_SCHEMA, readRecord, statedSide } from "../plugins/ana
 import { PIN_PATH } from "../plugins/anatomiya/lib/baseline.mjs";
 import { MAX_LINES } from "../plugins/anatomiya/lib/render.mjs";
 import { isGeneratedName, OVERVIEW_FILE, RULES_DIR } from "../plugins/anatomiya/lib/rules.mjs";
-import { TARGETS, overviewName, parseTargets } from "../plugins/anatomiya/lib/targets.mjs";
+import { TARGETS, isClaude, overviewName, parseTargets } from "../plugins/anatomiya/lib/targets.mjs";
 import { scanLines } from "../plugins/anatomiya/lib/summary.mjs";
 import { TRUNCATED_LAYOUT } from "../plugins/anatomiya/lib/render-layout.mjs";
 import { formatReport } from "../plugins/anatomiya/lib/check-report.mjs";
@@ -169,7 +169,7 @@ export function areaProblems(name, text, target = TARGETS.claude) {
   const problems = [];
   const lines = text.trimEnd().split("\n");
   const end = frontmatterEnd(lines);
-  if (target !== TARGETS.claude) {
+  if (!isClaude(target)) {
     if (!SCOPED[target.id](lines.slice(0, end))) {
       problems.push(`${JSON.stringify(name)} does not carry the scope ${target.reader} attaches an area file by`);
     }
@@ -559,7 +559,7 @@ export function writtenProblems(repo, wrote, targets = {}) {
   const written = ruleFiles(repo);
   for (const target of Object.values(TARGETS)) {
     // Another target's directory is somebody else's until the scan's own record says it is on.
-    const said = target.always ? wrote : targets[target.id]?.state === "on" ? targets[target.id].wrote : null;
+    const said = isClaude(target) ? wrote : targets[target.id]?.state === "on" ? targets[target.id].wrote : null;
     if (said === null) continue;
     const at = `${target.dir}/`;
     const names = [...written.keys()].filter((k) => k.startsWith(at)).map((k) => k.slice(at.length));
