@@ -77,6 +77,7 @@ const js = {
   // confident zero on every plain JavaScript file.
   typed: { exts: ["ts", "mts", "cts"] },
   directives: null,
+  placeTests: null,
   capabilities: { semantic: true, importGraph: true },
   positions: { offsets: "utf16", lines: false },
 };
@@ -97,6 +98,7 @@ const jsx = {
   commonjs: null,
   typed: { exts: ["tsx"] },
   directives: null,
+  placeTests: null,
   capabilities: { semantic: true, importGraph: true },
   positions: { offsets: "utf16", lines: false },
 };
@@ -119,6 +121,7 @@ const component = (id) => ({
   commonjs: null,
   typed: null,
   directives: null,
+  placeTests: null,
   capabilities: { semantic: false, importGraph: true },
   positions: { offsets: "utf16", lines: false },
 });
@@ -143,6 +146,7 @@ const ruby = {
   commonjs: null,
   typed: null,
   directives: null,
+  placeTests: null,
   capabilities: { semantic: false, importGraph: false },
   positions: { offsets: null, lines: true },
 };
@@ -163,6 +167,7 @@ const grammar = (id, exts) => ({
   commonjs: null,
   typed: null,
   directives: null,
+  placeTests: null,
   capabilities: { semantic: false, importGraph: false },
   positions: { offsets: "utf16", lines: false },
 });
@@ -176,7 +181,8 @@ const java = grammar("java", ["java"]);
 // The grammar reads `#if` around whole statements and members only, so a file
 // it rejects is read again with one branch of each conditional (`csharp-directives.mjs`).
 const csharp = { ...grammar("csharp", ["cs"]), directives: { exts: ["cs"] } };
-const rust = grammar("rust", ["rs"]);
+// cargo builds every file directly under a crate's `tests` as a test, whatever it holds, so the place alone names the runner.
+const rust = { ...grammar("rust", ["rs"]), placeTests: { dir: "tests", runner: "cargo test" } };
 const kotlin = grammar("kotlin", ["kt", "kts"]);
 
 const freeze = (decl) => {
@@ -200,6 +206,7 @@ const freeze = (decl) => {
     Object.freeze(decl.directives.exts);
     Object.freeze(decl.directives);
   }
+  if (decl.placeTests) Object.freeze(decl.placeTests);
   Object.freeze(decl.capabilities);
   Object.freeze(decl.positions);
   return Object.freeze(decl);
@@ -232,6 +239,9 @@ export const familyOf = (id) => declOf(id).family;
 
 /** Whose rules find a language's script blocks, or null where the file is the script. */
 export const embeddedIn = (id) => declOf(id).embedded;
+
+/** The directory a language's tool collects every file of as a test, and what that tool is called, or null where none does. */
+export const placeTestsOf = (id) => declOf(id).placeTests;
 
 export const EXT_BY_LANG = Object.freeze(Object.fromEntries(LANGUAGES.map((l) => [l.id, l.exts])));
 
@@ -410,6 +420,12 @@ export function assertRegistry(langs) {
       }
       for (const ext of decl.directives.exts) {
         if (!decl.exts.includes(ext)) throw new Error(`${decl.id} retries directives for .${ext}, which it does not own`);
+      }
+    }
+    if (decl.placeTests === undefined) throw new Error(`${decl.id} does not say whether a tool collects its tests by place`);
+    if (decl.placeTests !== null) {
+      for (const [key, what] of [["dir", "directory"], ["runner", "runner"]]) {
+        if (typeof decl.placeTests[key] !== "string" || !decl.placeTests[key]) throw new Error(`${decl.id} collects tests by place and names no ${what}`);
       }
     }
     if (decl.positions.offsets !== "utf16" && decl.positions.offsets !== null) {

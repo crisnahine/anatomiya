@@ -11,7 +11,7 @@
  */
 
 import { namesakeCompanions, namesakeIndex } from "./companions.mjs";
-import { embeddedIn, familyOf, language } from "./langs.mjs";
+import { embeddedIn, familyOf, language, placeTestsOf } from "./langs.mjs";
 import { baseOf, dirOf, extOf, stemOf, withoutExtension, byCode } from "./paths.mjs";
 import {
   FAMILY_TEST_NAMES,
@@ -124,7 +124,7 @@ function cargoTests(files) {
   }
   const out = new Set();
   for (const f of files) {
-    if (f.lang !== "rust" || baseOf(dirOf(f.rel)) !== "tests") continue;
+    if (!f.lang || baseOf(dirOf(f.rel)) !== placeTestsOf(f.lang)?.dir) continue;
     if (crates.has(dirOf(dirOf(f.rel)))) out.add(f.rel);
   }
   return out;
@@ -231,8 +231,9 @@ export const isStoryFile = (rel) => STORY_NAME.test(baseOf(rel));
  */
 export function runnerOf(rel, facets) {
   if (facets?.testRunner) return facets.testRunner;
-  // cargo is the one Rust runner, and it collects some files by place alone.
-  if (language(rel) === "rust") return "cargo test";
+  // A tool that collects by place alone is its language's one runner.
+  const byPlace = placeTestsOf(language(rel))?.runner;
+  if (byPlace) return byPlace;
   return dirOf(rel).split("/").includes("cypress") ? "cypress" : UNNAMED_RUNNER;
 }
 

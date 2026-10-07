@@ -141,7 +141,8 @@ written under, the grammar route per real extension, the dialect the retry may s
 rejected file may be read again with one branch of each conditional, the
 capabilities its callers ask about, how its tree nodes are addressed (`positions`: UTF-16 offsets
 or line numbers), the family a test of it may be written in, whose rules find its script blocks
-where it is a component, and the name of the engine that hosts it. The seam routes each
+where it is a component, the directory its tool collects every file of as a test where one does
+(cargo and a crate's `tests`), and the name of the engine that hosts it. The seam routes each
 batch by that declaration, so nothing past it names a language or an engine. The registry is a leaf
 the parser child can read, which is what lets the corpus filter, the delivery globs, the grammar
 choice and the retry all take the same facts from one place; a wrong declaration fails at import,
@@ -268,7 +269,10 @@ scan refuses with that engine's remedy instead. A file skipped for its size neve
 so it counts neither way: one generated bundle beside a missing engine used to read as an answer,
 and the scan removed every area of that language. The check draws the same line: it names the files it
 could not read and the engine's remedy, and refuses only a change with nothing else in it to read. A
-syntax error is none of this: the parser ran and answered.
+syntax error is none of this: the parser ran and answered. The files of such a language are counted
+once, on the summary line that says why, `16 files: tree-sitter reported no version: ...`, and are
+on no `could not be parsed` or `crashed the parser` line of the summary or the overview: an engine
+that was not there is not a parse that failed.
 
 A grammar file that does not load costs its one language the same way, and is named apart from its
 engine, because the engine ran and read its other six. The line is `no kotlin file was read: the
@@ -2237,9 +2241,10 @@ binding is an optional dependency of `oxc-parser`: an npm configured with `optio
 out and answered "up to date". An exit of 0 is not taken at its word either: setup asks the
 node-hosted engines again, in a fresh node because a module that failed to load stays failed in the
 process that tried it, and fails naming any that still does not load. A grammar file is not
-something it can put back: with one cut short, `setup` lists `tree-sitter` as not installed, runs
-the same install, and answers that it is still not loading, so the line to act on is
-`doctor`'s. It is the only command that installs anything and the only one that
+something it can put back, and it is not listed as something to install: with one cut short,
+`setup` and `setup --dry-run` print `doctor`'s own line for it, `tree-sitter 0.27.0: grammars: 6
+of 7, kotlin.wasm did not load, reinstall this plugin, which ships its grammar files in its own
+directory`, run no install for it, and end non-zero. It is the only command that installs anything and the only one that
 reaches a package registry; `scan`, `check` and `pin` never call it. The only other outbound call
 anywhere here is the check's shallow-clone path, which is one `ls-remote` and one `fetch --depth=1`
 and nothing else (F5).

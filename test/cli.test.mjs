@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { chmodSync, mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, appendFileSync, statSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, dirname, resolve } from "node:path";
+import { delimiter, join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execFileSync, spawnSync } from "node:child_process";
 
@@ -118,10 +118,13 @@ test("a TypeScript and Python repository on that install has its TypeScript mapp
 
   assert.equal(code, 0, stdout);
   assert.match(stdout, /^read no python file at all, so none was counted/m, stdout);
-  assert.match(stdout, /^tree-sitter reported no version: run node bin\/anatomiya\.mjs setup in /m, stdout);
+  assert.match(stdout, /^8 files: tree-sitter reported no version: run node bin\/anatomiya\.mjs setup in /m, stdout);
+  // Counted once, on the line that says why: an engine that was not there is not a parse that failed.
+  assert.doesNotMatch(stdout, /could not be parsed|crashed the parser/, stdout);
   assert.match(stdout, /^engines: oxc \d[\d.]*$/m, "the engine that did not load is not listed as one that answered");
   const overview = readFileSync(join(repo, ".claude", "rules", "anatomiya-overview.md"), "utf8");
   assert.match(overview, /^- no python file was read: tree-sitter reported no version: run node bin\/anatomiya\.mjs setup in /m, overview);
+  assert.doesNotMatch(overview, /could not be parsed|crashed the parser/, overview);
   assert.match(overview, /^## Areas \(1\)$/m, overview);
   const [area, ...others] = rulesIn(repo).filter((name) => name !== "anatomiya-overview.md");
   assert.deepEqual(others, [], "the area this run could not read is not described");
@@ -149,7 +152,8 @@ test("a Python and Kotlin repository on that install has its Python read and its
 
   assert.equal(code, 0, stdout);
   assert.match(stdout, /^read no kotlin file at all, so none was counted/m, stdout);
-  assert.match(stdout, /^the plugin's kotlin grammar did not load: reinstall /m, stdout);
+  assert.match(stdout, /^8 files: the plugin's kotlin grammar did not load: reinstall /m, stdout);
+  assert.doesNotMatch(stdout, /could not be parsed|crashed the parser/, stdout);
   assert.match(stdout, /^engines: tree-sitter \d[\d.]*$/m, stdout);
   assert.doesNotMatch(stdout, /setup|ran and answered for none/, stdout);
   const overview = readFileSync(join(repo, ".claude", "rules", "anatomiya-overview.md"), "utf8");
@@ -1016,6 +1020,38 @@ test("a setup whose npm finished without the engine loading fails and names it",
   assert.equal(code, 2, stdout);
   assert.match(stderr, /up to date in 1ms/, "npm's own words still come back");
   assert.match(stderr, /^npm finished, and still not loading: oxc \(oxc-parser did not load\)/m, stderr);
+});
+
+for (const args of [["setup"], ["setup", "--dry-run"]]) {
+  test(`${args.join(" ")} on an install that lost a grammar file installs nothing, and says what doctor says of it`, needsSymlinks, (t) => {
+    // Every package is there. No install writes a grammar file, so one that ran would change nothing.
+    const install = installLacking(t, { grammars: ["kotlin"] });
+    const bin = stubNpm(t, "#!/bin/sh\necho ran > npm-ran.txt\n");
+
+    const { code, stdout, stderr } = runFrom(install, args, `${bin}${delimiter}${process.env.PATH}`);
+    const doctor = runFrom(install, ["doctor"], process.env.PATH).stdout.split("\n").find((line) => line.startsWith("tree-sitter "));
+
+    assert.match(doctor, /^tree-sitter \d[\d.]*: grammars: 6 of 7, kotlin\.wasm did not load, reinstall this plugin, /);
+    assert.equal(code, 2, stdout);
+    assert.ok(stderr.split("\n").includes(doctor), stderr);
+    assert.doesNotMatch(stderr, /not installed|would run|npm install/, stderr);
+    assert.match(stderr, /^nothing to install: /m, stderr);
+    assert.equal(existsSync(join(install, "npm-ran.txt")), false, "npm was not run");
+  });
+}
+
+test("a setup that installs a package on an install that also lost a grammar file names each once, and does not call the grammar a package still not loading", needsShebang, (t) => {
+  const install = installLacking(t, { modules: ["flow-remove-types"], grammars: ["kotlin"] });
+  const packages = join(ROOT, "node_modules", "flow-remove-types");
+  const bin = stubNpm(t, `#!/bin/sh\n/bin/ln -s ${JSON.stringify(packages)} node_modules/flow-remove-types\necho 'added 1 package'\n`);
+
+  const { code, stderr } = runFrom(install, ["setup"], `${bin}${delimiter}${process.env.PATH}`);
+
+  assert.equal(code, 2, stderr);
+  assert.match(stderr, /^not installed: flow-remove-types$/m, stderr);
+  assert.match(stderr, /added 1 package/, stderr);
+  assert.equal(stderr.split("kotlin.wasm did not load").length - 1, 1, stderr);
+  assert.doesNotMatch(stderr, /still not loading/, stderr);
 });
 
 test("doctor and setup refuse the arguments they have no use for", () => {

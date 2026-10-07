@@ -168,6 +168,7 @@ export async function scan(cwd, { guards = null, runChecker = runSemantic, resol
   // area is held rather than described from half its files, because
   // describing it would write over claims this run had no way to measure.
   const unreadable = unreadableLangs(files, head.records);
+  const unanswered = unansweredFiles(files, head.records);
   const held = areas.filter((a) => a.langs.some((l) => unreadable.includes(l)));
   const heldIds = new Set(held.map((a) => a.id));
 
@@ -333,9 +334,10 @@ export async function scan(cwd, { guards = null, runChecker = runSemantic, resol
     authors: { files: authors.size, error: authorsError, repo: repoAuthors, shallow },
     parse: {
       parsed: head.records.size,
-      crashed: head.tallies.crashed,
+      // Less the files no engine or grammar was there for: those are counted under `unanswered`, by the language that went unread.
+      crashed: head.tallies.crashed - unanswered.charged.crashed,
       skipped: head.tallies.oversize,
-      failed: head.tallies.unreadable,
+      failed: head.tallies.unreadable - unanswered.charged.unreadable,
       syntaxErrors: head.tallies.rejected,
       // Only where a rejection means something other than the file's own
       // syntax, so the record of a run no grammar read for is unchanged.
@@ -353,6 +355,7 @@ export async function scan(cwd, { guards = null, runChecker = runSemantic, resol
       // Only where a file was read that way, so the record of a run that read every file whole is unchanged.
       ...(head.oneBranch ? { oneBranch: head.oneBranch } : {}),
       unreadable,
+      ...(Object.keys(unanswered.byLang).length ? { unanswered: unanswered.byLang } : {}),
     },
     // The areas the writer leaves as they are, and whether this run read any
     // file at all. Beside the record rather than in it: both say what this run
@@ -432,6 +435,23 @@ function unreadableLangs(files, parsed) {
     if (r && (r.crashed || r.missingParser)) unanswered.set(f.lang, (unanswered.get(f.lang) || 0) + 1);
   }
   return [...total.keys()].filter((lang) => unanswered.get(lang) === total.get(lang)).sort();
+}
+
+/**
+ * The files whose engine or grammar was not there, per language, and how many
+ * of them each bridge charged as which outcome: oxc and tree-sitter answer
+ * unreadable for them and prism crashed (`parse.mjs`).
+ */
+function unansweredFiles(files, parsed) {
+  const byLang = {};
+  const charged = { crashed: 0, unreadable: 0 };
+  for (const f of files) {
+    const r = parsed.get(f.rel);
+    if (!r?.missingParser || !(r.kind in charged)) continue;
+    byLang[f.lang] = (byLang[f.lang] ?? 0) + 1;
+    charged[r.kind]++;
+  }
+  return { byLang, charged };
 }
 
 /**

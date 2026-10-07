@@ -309,7 +309,7 @@ export function unexaminedLines(parse, { stable = false } = {}) {
     if (kind !== "syntaxErrors") lines.push(line(parse[kind], kind));
     // In the table's order, never the order the engines answered in. A record
     // with no split was written where every rejection was the file's syntax.
-    else for (const [means, n] of rejectionsOf(parse)) lines.push(`${line(n, kind, means)}${REJECTED_NOTE[means] ?? ""}`);
+    else for (const [means, n] of rejectionsOf(parse)) lines.push(`${line(n, kind, means)}${REJECTED_NOTE[means]?.(n) ?? ""}`);
   }
   // Without the stripper every Flow file lands in the count above, and the two
   // facts are otherwise unconnected on screen. The dependency arrived after the
@@ -381,7 +381,7 @@ const UNEXAMINED_ONE = {
 // Said after a count, where there is room: a reader told only that files went
 // unread goes looking for what is wrong with them.
 const REJECTED_NOTE = {
-  grammar: ". That is a syntax error or syntax the grammar does not cover; the files may be fine.",
+  grammar: (n) => `. That is a syntax error or syntax the grammar does not cover; the ${n === 1 ? "file" : "files"} may be fine.`,
 };
 
 const rejectionsOf = (parse) => {

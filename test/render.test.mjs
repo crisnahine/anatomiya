@@ -1427,11 +1427,13 @@ test("plural leaves a count of zero plural", () => {
 test("a file a grammar could not read is not said to hold bad syntax, and a file oxc or prism rejected still is", () => {
   // A grammar this tool vendors also rejects code its language accepts, so its
   // count says whose limit it is. The older engines' sentence is unchanged.
-  const note = "That is a syntax error or syntax the grammar does not cover; the files may be fine.";
-  const grammar = (n) => `${n} file${n === 1 ? "" : "s"} could not be read by this tool's grammar. ${note}`;
+  const grammar = (n) =>
+    `${n} file${n === 1 ? "" : "s"} could not be read by this tool's grammar. That is a syntax error or syntax the grammar does not cover; the file${n === 1 ? "" : "s"} may be fine.`;
 
   assert.deepEqual(unexaminedLines({ syntaxErrors: 18, rejections: { grammar: 18 } }), [grammar(18)]);
-  assert.deepEqual(unexaminedLines({ syntaxErrors: 1, rejections: { grammar: 1 } }), [grammar(1)]);
+  assert.deepEqual(unexaminedLines({ syntaxErrors: 1, rejections: { grammar: 1 } }), [
+    "1 file could not be read by this tool's grammar. That is a syntax error or syntax the grammar does not cover; the file may be fine.",
+  ]);
   assert.deepEqual(unexaminedLines({ syntaxErrors: 9 }), ["9 files hold syntax the parser rejected"]);
   assert.deepEqual(unexaminedLines({ syntaxErrors: 1 }), ["1 file holds syntax the parser rejected"]);
   // Two counts, each with its own sentence, in one order whichever engine answered first.

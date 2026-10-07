@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import {
   EXT_BY_LANG,
@@ -17,6 +18,7 @@ import {
   assertRegistry,
   familyOf,
   embeddedIn,
+  placeTestsOf,
 } from "../plugins/anatomiya/lib/langs.mjs";
 
 const TREE_SITTER = ["python", "php", "go", "java", "csharp", "rust", "kotlin"];
@@ -67,6 +69,23 @@ test("a declaration retrying directives for an extension it does not own, or on 
   assert.throws(() => assertRegistry(unowned), /csharp retries directives for \.rs, which it does not own/);
   const elsewhere = LANGUAGES.map((l) => (l.id === "ruby" ? { ...l, directives: { exts: ["rb"] } } : l));
   assert.throws(() => assertRegistry(elsewhere), /ruby retries directives, which only tree-sitter does, and routes to prism/);
+});
+
+test("only Rust has a tool that collects a file as a test by the directory it sits in, and the layout asks the declaration", () => {
+  for (const decl of LANGUAGES) assert.deepEqual(decl.placeTests, decl.id === "rust" ? { dir: "tests", runner: "cargo test" } : null, decl.id);
+  assert.equal(Object.isFrozen(declOf("rust").placeTests), true);
+  assert.deepEqual(placeTestsOf("rust"), { dir: "tests", runner: "cargo test" });
+  assert.equal(placeTestsOf("go"), null);
+  // B21: the two facts are read off the declaration, so the layout spells no language id.
+  const layout = readFileSync(new URL("../plugins/anatomiya/lib/layout.mjs", import.meta.url), "utf8");
+  assert.deepEqual(layout.match(/["'`](?:python|php|go|java|csharp|rust|kotlin|vue|svelte|ruby|js|jsx)["'`]/g), null);
+});
+
+test("a declaration whose place tests name no directory or no runner refuses to load", () => {
+  const with_ = (placeTests) => LANGUAGES.map((l) => (l.id === "rust" ? { ...l, placeTests } : l));
+  assert.throws(() => assertRegistry(with_({ dir: "tests" })), /rust collects tests by place and names no runner/);
+  assert.throws(() => assertRegistry(with_({ dir: "", runner: "cargo test" })), /rust collects tests by place and names no directory/);
+  assert.throws(() => assertRegistry(with_(undefined)), /rust does not say whether a tool collects its tests by place/);
 });
 
 test("the Flow retry covers every JavaScript extension the corpus accepts", () => {

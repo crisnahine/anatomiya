@@ -107,6 +107,9 @@ const GRAMMARS = {
  */
 export const GRAMMAR_REMEDY = "reinstall this plugin, which ships its grammar files in its own directory";
 
+/** Whether a row is an engine that loads and lost a grammar file: nothing an install provides is missing from it. */
+export const lostGrammar = (row) => row.remedy === GRAMMAR_REMEDY;
+
 // The phrase the node remedy spells in the directory for. The table states it
 // the way a person would read it aloud; a person following it needs the path.
 const PLUGIN_DIRECTORY = "the plugin directory";
