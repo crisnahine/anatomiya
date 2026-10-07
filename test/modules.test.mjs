@@ -20,11 +20,14 @@ function graph(dir = LIB, { dynamic = true } = {}) {
     const src = readFileSync(join(dir, file), "utf8");
     // Every spelling that closes a cycle, not just the one this repo writes
     // most: a bare `import "./x.mjs"` runs the module for its side effects and
-    // a dynamic `import("./x.mjs")` is the form `parse-worker.mjs` already uses.
-    // A cycle through either would pass a check that only knew `from`. What a
-    // module costs to load is its static imports alone, which `dynamic: false` asks.
-    const spelling = dynamic ? /(?:from\s*|import\s*\(\s*|import\s+)["']\.\/([^"']+\.mjs)["']/g : /(?:from\s*|import\s+)["']\.\/([^"']+\.mjs)["']/g;
-    const local = [...src.matchAll(spelling)].map((m) => m[1]);
+    // a dynamic `import("./x.mjs")` is the form `parse-worker.mjs` already uses,
+    // quoted or as a template literal with no substitution. A cycle through
+    // either would pass a check that only knew `from`. What a module costs to
+    // load is its static imports alone, which `dynamic: false` asks.
+    const spelling = dynamic
+      ? /(?:from\s*|import\s+)["']\.\/([^"']+\.mjs)["']|import\s*\(\s*(?:["']\.\/([^"']+\.mjs)["']|`\.\/([^`$]+\.mjs)`)/g
+      : /(?:from\s*|import\s+)["']\.\/([^"']+\.mjs)["']/g;
+    const local = [...src.matchAll(spelling)].map((m) => m[1] ?? m[2] ?? m[3]);
     edges.set(file, [...new Set(local)]);
   }
   return edges;
@@ -566,8 +569,7 @@ test("every verb the binary declares carries its own arm in the one table", () =
  * What one verb of the binary loads: the binary's own imports and the modules
  * its arm imports, followed through static imports only. A dynamic import in a
  * function body loads when that function runs, not when its module does, so
- * `lazy` also follows those at every depth, short of readiness.mjs's: they
- * serve the engine probes, which no hook runs.
+ * `lazy` also follows those at every depth.
  */
 function armReach(verb, { lazy = false } = {}) {
   const src = readFileSync(BINARY, "utf8");
@@ -581,6 +583,7 @@ function armReach(verb, { lazy = false } = {}) {
     ...[...src.slice(arm.start, arm.end).matchAll(/\bimport\(\s*["']([^"']+)["']\s*\)/g)].map((m) => m[1]),
   ].map((spec) => spec.replace(/^\.\.\/lib\//, ""));
   const edges = graph(LIB, { dynamic: lazy });
+  // readiness.mjs's lazy imports serve the engine probes, which no hook runs.
   if (lazy) edges.set("readiness.mjs", graph(LIB, { dynamic: false }).get("readiness.mjs"));
   return new Set(roots.flatMap((root) => [...reachedFrom(root, edges)]));
 }

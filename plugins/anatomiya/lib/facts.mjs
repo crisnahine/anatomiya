@@ -203,7 +203,7 @@ export function schemaProblem(parsed) {
  * How much of a record this tool wrote any reader takes.
  *
  * Not `HEAD_BYTES`, which sizes a rule file: the record is the whole count of a
- * repository, and the largest this tool has written is 9,957,450 bytes, on
+ * repository, and this build writes 10,217,406 bytes of it for
  * microsoft/vscode. A megabyte would have gone silent on exactly the
  * repositories where a directory nobody read is easiest to miss. The cap is
  * there for the shape a rule file cap is there for, a path holding something
@@ -391,9 +391,9 @@ export function writeFacts(root, result) {
     writePair(dir, factsJson(result), result.layout);
   } catch (err) {
     const now = previousBytes(record);
-    // Only where the failed write replaced what was there; unreadable before, or
-    // still the same bytes, leaves nothing to put back.
-    if (previous !== undefined && (previous === null ? now !== null : !now?.equals(previous))) {
+    // Only where the failed write replaced what was there: still the same bytes
+    // leaves nothing to put back, and `putBack` leaves a record it could not read.
+    if (previous === null ? now !== null : !(now && previous?.equals(now))) {
       try {
         putBack(record, previous, was);
       } catch {}
@@ -407,7 +407,7 @@ export function writeFacts(root, result) {
  * left where it could not be read, and where `was` is the layout file that
  * answered for it, the pair written again so the restored record has one.
  */
-export function putBack(path, previous, was = null) {
+export function putBack(path, previous, was) {
   if (previous === undefined) return;
   if (previous === null) unlinkSync(path);
   else if (was !== null) writePair(dirname(path), previous, was.layout, was.schema);
