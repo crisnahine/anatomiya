@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { Language, Parser } from "web-tree-sitter";
 
-import { copyTree, fieldOf, fieldsOf, nameFieldOf, nameOf, site, walkTree } from "../plugins/anatomiya/lib/tree-walk.mjs";
+import { copyTree, fieldOf, nameFieldOf, nameOf, site, walkTree } from "../plugins/anatomiya/lib/tree-walk.mjs";
 import { ANATOMIYA } from "../scripts/plugins.mjs";
 import * as SAMPLES from "./tree-samples.mjs";
 
@@ -157,7 +157,6 @@ test("children are the named nodes in order, comments among them, and no token i
   assert.equal(body.children[0].text, "// why");
   const types = new Set(collect(program).map((node) => node.type));
   for (const token of ["{", "}", "(", ")", ";", "+", "class", "return", ","]) assert.equal(types.has(token), false, token);
-  assert.deepEqual(fieldsOf(fieldOf(body.children[1], "parameters"), "name"), []);
   assert.deepEqual(
     fieldOf(body.children[1], "parameters").children.map((param) => nameOf(param)),
     ["a", "b"]
@@ -180,15 +179,13 @@ test("text is on a node with no named child and on no other, cut at 256 UTF-16 u
   assert.equal(firstOf(program, "argument_list").text, "()");
 });
 
-test("a field that repeats is read whole, and one that is absent reads as none", async () => {
+test("a field that repeats is read by its first, and one that is absent reads as null", async () => {
   const program = await plain("python", "from y import a, b\nimport z\n");
   const [from, bare] = program.children;
 
-  assert.deepEqual(fieldsOf(from, "name").map((node) => node.children[0].text), ["a", "b"]);
   assert.equal(fieldOf(from, "name").children[0].text, "a", "the first of a field that repeats");
   assert.equal(fieldOf(from, "module_name").children[0].text, "y");
   assert.equal(fieldOf(bare, "module_name"), null);
-  assert.deepEqual(fieldsOf(bare, "module_name"), []);
   assert.equal(nameOf(from), null, "a dotted name is not a leaf, so it has no text of its own");
 });
 

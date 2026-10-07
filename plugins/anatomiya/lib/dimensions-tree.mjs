@@ -104,41 +104,46 @@ function firstOf(node, types) {
 
 const capitalised = (name) => /^\p{Lu}/u.test(name);
 
-/** A Go method is offered only where its receiver's type is: nobody outside the package can name the other kind. */
-function goExports(name, fn, sets) {
+/** The type a Go method is written on, `""` where the receiver names none, or null for a function with no receiver. */
+const goReceiver = (fn, sets) => {
   const receiver = fieldOf(fn, SHAPES.go.receiver);
-  return capitalised(name) && (receiver === null || capitalised(firstOf(receiver, sets.receiverType)?.text ?? ""));
+  return receiver === null ? null : (firstOf(receiver, sets.receiverType)?.text ?? "");
+};
+
+/** A Go method is offered only where its receiver's type is: nobody outside the package can name the other kind. */
+function goExports({ name, fn, sets }) {
+  const type = goReceiver(fn, sets);
+  return capitalised(name) && (type === null || capitalised(type));
 }
 
 const HIDDEN = ["private", "protected", "internal"];
 const shown = (words) => !HIDDEN.some((word) => words.has(word));
 
-/** Public by each language's own rule. An interface's members are public where the language says so without a modifier. */
+/**
+ * Public by each language's own rule. An interface's members are public where the language says so without a modifier.
+ *
+ * Asked of one function as `{ name, fn, words, ctx, sets, inInterface }`, which is what `NO_SITE` is asked of too.
+ */
 const PUBLIC = {
-  python: (name) => !name.startsWith("_"),
-  go: (name, words, inInterface, fn, sets) => goExports(name, fn, sets),
+  python: ({ name }) => !name.startsWith("_"),
+  go: goExports,
   // `pub(crate)` holds a node of its own, so only a bare `pub` is a word here.
-  rust: (name, words) => words.has("pub"),
-  php: (name, words) => shown(words),
-  kotlin: (name, words) => shown(words),
-  java: (name, words, inInterface) => words.has("public") || (inInterface && !words.has("private")),
-  csharp: (name, words, inInterface) => words.has("public") || (inInterface && shown(words)),
+  rust: ({ words }) => words.has("pub"),
+  php: ({ words }) => shown(words),
+  kotlin: ({ words }) => shown(words),
+  java: ({ words, inInterface }) => words.has("public") || (inInterface && !words.has("private")),
+  csharp: ({ words, inInterface }) => words.has("public") || (inInterface && shown(words)),
 };
 
 // The methods golint asks no doc comment of: `commonMethods` in golang/lint's lint.go, and the three of `sort.Interface` on a type that has all three.
 const GO_COMMON_METHODS = new Set(["Error", "Read", "ServeHTTP", "String", "Write", "Unwrap"]);
 const GO_SORT_METHODS = ["Len", "Less", "Swap"];
 
-const goReceiver = (fn, sets) => {
-  const receiver = fieldOf(fn, SHAPES.go.receiver);
-  return receiver === null ? null : (firstOf(receiver, sets.receiverType)?.text ?? "");
-};
-
 /** A Go method that satisfies a standard interface by its name. golint reads a package for the sortable types and this reads the file. */
 function goNamedByInterface(program, sets) {
   const methods = Map.groupBy(program.children.filter((node) => sets.fn.has(node.type) && goReceiver(node, sets) !== null), (fn) => goReceiver(fn, sets));
   const sortable = (type) => GO_SORT_METHODS.every((name) => methods.get(type).some((fn) => nameOf(fn) === name));
-  return (name, fn) => {
+  return ({ name, fn }) => {
     const type = goReceiver(fn, sets);
     return type !== null && (GO_COMMON_METHODS.has(name) || (GO_SORT_METHODS.includes(name) && sortable(type)));
   };
@@ -183,11 +188,11 @@ const atTopOfFile = (ctx) => ctx.ancestors.length === 1;
 // method whose interface names it. A Java, C# or Kotlin constructor is no function to its grammar and never reaches this.
 const NO_SITE = {
   go: goNamedByInterface,
-  php: () => (name) => PHP_BUILDS.test(name),
-  java: () => (name, fn, words) => name === "main" && words.has("static"),
-  csharp: () => (name, fn, words) => name === "Main" && words.has("static"),
-  rust: () => (name, fn, words, ctx) => name === "main" && atTopOfFile(ctx),
-  kotlin: () => (name, fn, words, ctx) => name === "main" && atTopOfFile(ctx),
+  php: () => ({ name }) => PHP_BUILDS.test(name),
+  java: () => ({ name, words }) => name === "main" && words.has("static"),
+  csharp: () => ({ name, words }) => name === "Main" && words.has("static"),
+  rust: () => ({ name, ctx }) => name === "main" && atTopOfFile(ctx),
+  kotlin: () => ({ name, ctx }) => name === "main" && atTopOfFile(ctx),
 };
 
 // An override, and a Kotlin `actual`, take their name and their documentation from what they implement.
@@ -339,8 +344,9 @@ export const TREE_DIMENSIONS = [
           const name = named?.text;
           if (!name) return;
           const words = headerOf(node, ctx, sets, shapes);
-          if (!PUBLIC[lang](name, words, ctx.cls !== null && sets.iface.has(ctx.cls.type), node, sets)) return;
-          if (inherited(words) || notOffered.some((word) => words.has(word)) || noSite(name, node, words, ctx)) return;
+          const func = { name, fn: node, words, ctx, sets, inInterface: ctx.cls !== null && sets.iface.has(ctx.cls.type) };
+          if (!PUBLIC[lang](func)) return;
+          if (inherited(words) || notOffered.some((word) => words.has(word)) || noSite(func)) return;
           const documented = sets.docstring.size > 0 ? hasDocstring(node, sets, source) : documentedAbove(node, ctx, sets, DOC[lang], source);
           add({ node: site(named), conforming: documented, where: within(ownerOf(node, ctx, shapes, sets), name) });
         },

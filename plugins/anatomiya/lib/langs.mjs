@@ -109,8 +109,8 @@ const jsx = {
 // that is read. `embedded` names whose rules find them. The grammar is the
 // block's own `lang` and the type syntax is the tag's to say, so no extension
 // routes either, and the checker is handed paths it could not open. `markup`
-// is what the part nobody reads changes about the script: whether `export let`
-// declares a prop a parent passes in, and whether the template mounts a
+// is what the part nobody reads changes about the script, one of `MARKUP`:
+// `export let` declares a prop a parent passes in, or the template mounts a
 // function under its own name.
 const component = (id, markup) => ({
   id,
@@ -132,8 +132,9 @@ const component = (id, markup) => ({
   positions: { offsets: "utf16", lines: false },
 });
 
-const vue = component("vue", { propsByExportLet: false, mountsByName: true });
-const svelte = component("svelte", { propsByExportLet: true, mountsByName: false });
+const MARKUP = ["propsByExportLet", "mountsByName"];
+const vue = component("vue", "mountsByName");
+const svelte = component("svelte", "propsByExportLet");
 
 const ruby = {
   id: "ruby",
@@ -216,7 +217,6 @@ const freeze = (decl) => {
     Object.freeze(decl.directives);
   }
   if (decl.placeTests) Object.freeze(decl.placeTests);
-  if (decl.markup) Object.freeze(decl.markup);
   Object.freeze(decl.capabilities);
   Object.freeze(decl.positions);
   return Object.freeze(decl);
@@ -347,10 +347,10 @@ const MAY_HOLD_DIRECTIVES = new RegExp(`\\.(${DIRECTIVE_EXT.join("|")})$`);
 export const mayHoldDirectives = (path) => MAY_HOLD_DIRECTIVES.test(path);
 
 /** Whether `export let` at the top of this file declares a prop a parent passes in, where a module's is an export. */
-export const exportLetIsProp = (path) => declOf(language(path)).markup?.propsByExportLet === true;
+export const exportLetIsProp = (path) => declOf(language(path)).markup === "propsByExportLet";
 
 /** Whether a capitalised function in this file is a component its template mounts under that name. */
-export const templateMountsByName = (path) => declOf(language(path)).markup?.mountsByName === true;
+export const templateMountsByName = (path) => declOf(language(path)).markup === "mountsByName";
 
 const TYPED_EXT = LANGUAGES.filter((l) => l.typed).flatMap((l) => l.typed.exts);
 const CARRIES_TYPES = new RegExp(`\\.(${TYPED_EXT.join("|")})$`);
@@ -419,8 +419,8 @@ export function assertRegistry(langs) {
     }
     if (decl.embedded && !decl.markup) throw new Error(`${decl.id} embeds its script and does not say what its markup changes`);
     if (!decl.embedded && decl.markup !== null) throw new Error(`${decl.id} has no markup to change its script`);
-    for (const key of decl.markup ? ["propsByExportLet", "mountsByName"] : []) {
-      if (typeof decl.markup[key] !== "boolean") throw new Error(`${decl.id} does not say whether its markup ${key}`);
+    if (decl.embedded && !MARKUP.includes(decl.markup)) {
+      throw new Error(`${decl.id} says its markup changes its script by ${decl.markup}, which is none of ${MARKUP.join(", ")}`);
     }
     const caps = Object.keys(decl.capabilities).sort().join(",");
     if (caps !== "importGraph,semantic") {

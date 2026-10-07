@@ -8,6 +8,7 @@
  * `test_*.py` that imports nothing from pytest at all.
  */
 import { assertKeyed, hostedBy, placeTestsOf } from "./langs.mjs";
+import { stemOf } from "./paths.mjs";
 import { coveredStem, isTestTree } from "./test-shape.mjs";
 import { SHAPES } from "./tree-shapes.mjs";
 import { fieldOf, nameOf, walkTree } from "./tree-walk.mjs";
@@ -18,11 +19,10 @@ const JVM_IMPORTS = [
   [/^org\.testng\./, "testng"],
 ];
 
-const stemAt = (rel) => rel.slice(rel.lastIndexOf("/") + 1).replace(/\.[^.]*$/, "");
 const dirsAt = (rel) => rel.split("/").slice(0, -1);
 
 // The layout's own two questions, asked of a path: a family is its language's id for all seven.
-const namedTest = (lang) => (rel) => coveredStem(stemAt(rel), lang) !== null;
+const namedTest = (lang) => (rel) => coveredStem(stemOf(rel), lang) !== null;
 const inTestTree = (lang) => (rel) => dirsAt(rel).some((segment) => isTestTree(segment, lang));
 
 /**
@@ -54,7 +54,7 @@ const RUNNERS = {
     // A function at file level, or a class nothing made, is only pytest's to collect.
     unimported: (plain) => (plain ? "pytest" : "unittest"),
     // pytest reads a `conftest.py` by its name wherever it sits, for the fixtures and hooks it holds.
-    reads: (rel) => stemAt(rel) === "conftest",
+    reads: (rel) => stemOf(rel) === "conftest",
   },
   php: {
     imports: [[/^PHPUnit\./, "phpunit"]],
@@ -85,9 +85,9 @@ const RUNNERS = {
     alias: (node, shapes) => (node.children.length > 1 ? fieldOf(node, shapes.usingAlias) : null),
   },
   rust: {
-    marks: new Map([["test", "cargo test"]]),
+    marks: new Map([["test", placeTestsOf("rust").runner]]),
     // cargo collects a file under `tests`; tokio splits a module's unit tests into a `tests.rs` beside it, 5 files and 5 holding cases.
-    claims: (rel) => dirsAt(rel).includes(placeTestsOf("rust").dir) || stemAt(rel) === "tests",
+    claims: (rel) => dirsAt(rel).includes(placeTestsOf("rust").dir) || stemOf(rel) === "tests",
     inline: true,
   },
   kotlin: {

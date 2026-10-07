@@ -38,9 +38,11 @@ test("a manifest's version is read for the package it names, and null for anothe
   write(JSON.stringify({ name: "tree-sitter-go", version: "0.25.0" }));
   assert.equal(manifestVersion(dir, "tree-sitter-go"), "0.25.0");
   assert.equal(manifestVersion(dir, "tree-sitter-rust"), null, "another package's manifest");
+  assert.equal(manifestVersion(dir), "0.25.0", "asked for no package by name, it is whichever the directory holds");
   write(JSON.stringify({ name: "tree-sitter-go" }));
   assert.equal(manifestVersion(dir, "tree-sitter-go"), null, "no version stated");
   write("{");
   assert.equal(manifestVersion(dir, "tree-sitter-go"), null);
+  assert.equal(manifestVersion(dir), null);
   assert.equal(installedVersion("oxc-parser"), manifestVersion(join(ROOT, "node_modules", "oxc-parser"), "oxc-parser"));
 });

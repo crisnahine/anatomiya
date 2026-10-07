@@ -7,10 +7,10 @@ import { assertScanners, scriptBlocks, blankOutside } from "../plugins/anatomiya
 const read = (source, kind) => {
   const { blocks, unterminated } = scriptBlocks(source, kind);
   assert.equal(unterminated, false, source);
-  return blocks.map((b) => ({ body: source.slice(b.start, b.end), lang: b.lang, role: b.role }));
+  return blocks.map((b) => ({ body: source.slice(b.start, b.end), lang: b.lang }));
 };
-const js = (body, role = "instance") => ({ body, lang: "js", role });
-const ts = (body, role = "instance") => ({ body, lang: "ts", role });
+const js = (body) => ({ body, lang: "js" });
+const ts = (body) => ({ body, lang: "ts" });
 
 test("vue: only a top-level script is a block, not one in a template or a comment", () => {
   assert.deepEqual(read("<template><script>x</script></template><script>y</script>", "vue"), [
@@ -67,7 +67,7 @@ test("vue: a template is passed over to its own end tag, whatever it holds", () 
 test("vue: the open tag is read with its quotes, so it ends at the last >", () => {
   const source =
     '<script setup lang="ts" generic="T extends Record<string, unknown>">\nconst a = 1\n</script>';
-  assert.deepEqual(read(source, "vue"), [ts("\nconst a = 1\n", "setup")]);
+  assert.deepEqual(read(source, "vue"), [ts("\nconst a = 1\n")]);
   assert.deepEqual(read("<script generic='A extends B<C>' lang=ts>a</script>", "vue"), [ts("a")]);
   assert.deepEqual(read('<script lang = "ts">a</script>', "vue"), [ts("a")]);
   // The compiler keeps the last of two.
@@ -76,10 +76,10 @@ test("vue: the open tag is read with its quotes, so it ends at the last >", () =
 
 test("vue: a newline may follow <script before the attributes", () => {
   assert.deepEqual(read('<script\n  setup\n  lang="ts"\n>\nconst a = 1\n</script>', "vue"), [
-    ts("\nconst a = 1\n", "setup"),
+    ts("\nconst a = 1\n"),
   ]);
   assert.deepEqual(read("<script\r\n>a</script>", "vue"), [js("a")]);
-  assert.deepEqual(read("<script\fsetup>a</script>", "vue"), [js("a", "setup")]);
+  assert.deepEqual(read("<script\fsetup>a</script>", "vue"), [js("a")]);
 });
 
 test("vue: the body ends at the first </script in any case, strings unread", () => {
@@ -98,31 +98,31 @@ test("vue: the body ends at the first </script in any case, strings unread", () 
 
 test("vue: the first setup script and the first plain one are kept, in file order", () => {
   assert.deepEqual(read("<script setup>a</script>\n<script>b</script>", "vue"), [
-    js("a", "setup"),
+    js("a"),
     js("b"),
   ]);
   assert.deepEqual(read("<script>b</script>\n<script setup>a</script>", "vue"), [
     js("b"),
-    js("a", "setup"),
+    js("a"),
   ]);
   assert.deepEqual(read("<script>a</script><script>b</script>", "vue"), [js("a")]);
   assert.deepEqual(
     read("<script setup>a</script><script setup>b</script><script>c</script>", "vue"),
-    [js("a", "setup"), js("c")]
+    [js("a"), js("c")]
   );
   // An empty value is still the attribute, and a bound one is a directive.
-  assert.deepEqual(read('<script setup="">a</script>', "vue"), [js("a", "setup")]);
+  assert.deepEqual(read('<script setup="">a</script>', "vue"), [js("a")]);
   assert.deepEqual(read('<script :setup="x">a</script>', "vue"), [js("a")]);
 });
 
 test("vue: lang is per block, absent is js, and any other value is not read", () => {
   assert.deepEqual(read('<script lang="ts">a</script><script setup>b</script>', "vue"), [
     ts("a"),
-    js("b", "setup"),
+    js("b"),
   ]);
   for (const lang of ["js", "jsx", "ts", "tsx"]) {
     assert.deepEqual(read(`<script lang="${lang}">a</script>`, "vue"), [
-      { body: "a", lang, role: "instance" },
+      { body: "a", lang },
     ]);
   }
   assert.deepEqual(read('<script lang="">a</script>', "vue"), [js("a")]);
@@ -146,7 +146,7 @@ test("vue: a whitespace-only body is dropped, and so is a block with src", () =>
   // A block with src is the file's plain script, so a later one is a duplicate.
   assert.deepEqual(read('<script src="./x.js"></script><script>a</script>', "vue"), []);
   assert.deepEqual(read('<script src="./x.js"></script><script setup>a</script>', "vue"), [
-    js("a", "setup"),
+    js("a"),
   ]);
 });
 
@@ -166,16 +166,16 @@ test("svelte: comments and style bodies are skipped", () => {
 test("svelte: the first module script and the first instance script are kept", () => {
   assert.deepEqual(
     read('<script context="module">a</script>\n<script>b</script>\n<script>c</script>', "svelte"),
-    [js("a", "module"), js("b")]
+    [js("a"), js("b")]
   );
   assert.deepEqual(
     read("<script>b</script>\n<script module>a</script>\n<script module>c</script>", "svelte"),
-    [js("b"), js("a", "module")]
+    [js("b"), js("a")]
   );
   assert.deepEqual(read('<script context="other">a</script>', "svelte"), [js("a")]);
   assert.deepEqual(
     read('<script generics="T extends Record<string, unknown>" module>a</script>', "svelte"),
-    [js("a", "module")]
+    [js("a")]
   );
 });
 
@@ -197,18 +197,18 @@ test("svelte: the end tag is lower-case </script, optional whitespace, then >", 
 
 test("svelte: the first <script> that states a lang decides for every block", () => {
   assert.deepEqual(read('<script module lang="ts">a</script>\n<script>b</script>', "svelte"), [
-    ts("a", "module"),
+    ts("a"),
     ts("b"),
   ]);
   assert.deepEqual(read('<script>b</script>\n<script module lang="ts">a</script>', "svelte"), [
     ts("b"),
-    ts("a", "module"),
+    ts("a"),
   ]);
   assert.deepEqual(read("<script lang=ts>a</script>", "svelte"), [ts("a")]);
   for (const lang of ["typescript", "TS", "tsx", "js"]) {
     assert.deepEqual(
       read(`<script module lang="${lang}">a</script>\n<script lang="ts">b</script>`, "svelte"),
-      [js("a", "module"), js("b")],
+      [js("a"), js("b")],
       lang
     );
   }
@@ -220,7 +220,7 @@ test("svelte: the first <script> that states a lang decides for every block", ()
   );
   assert.deepEqual(
     read('<script lang="">a</script>\n<script module lang="ts">b</script>', "svelte"),
-    [ts("a"), ts("b", "module")]
+    [ts("a"), ts("b")]
   );
 });
 
@@ -243,18 +243,18 @@ test("svelte: only a script at the start of its line is a block, and an empty on
   assert.deepEqual(read("<!-- note --><script>a</script>", "svelte"), [js("a")]);
   assert.deepEqual(read("<style>a{}</style><script>a</script>", "svelte"), [js("a")]);
   assert.deepEqual(read("<script module>a</script><script>b</script>", "svelte"), [
-    js("a", "module"),
+    js("a"),
     js("b"),
   ]);
   assert.deepEqual(read("<!-- note --> <script>a</script>", "svelte"), []);
   // A BOM opening the file is not markup, and the offsets stay the caller's own.
   assert.deepEqual(scriptBlocks("\uFEFF<script>a</script>", "svelte").blocks, [
-    { start: 9, end: 10, lang: "js", role: "instance" },
+    { start: 9, end: 10, lang: "js" },
   ]);
   assert.deepEqual(read("<p>a</p>\n\uFEFF<script>a</script>", "svelte"), []);
 
   const { blocks } = scriptBlocks("<script></script><p>hi</p>", "svelte");
-  assert.deepEqual(blocks, [{ start: 8, end: 8, lang: "js", role: "instance" }]);
+  assert.deepEqual(blocks, [{ start: 8, end: 8, lang: "js" }]);
   assert.deepEqual(read("<script>\n</script>", "svelte"), [js("\n")]);
   // A self-closing script has no body, so the next end tag is not its own.
   assert.deepEqual(read("<script />\n<script>y</script>", "svelte"), [js("y")]);

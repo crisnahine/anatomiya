@@ -9,10 +9,11 @@
  * mirror-tree, and sitting side by side is what makes each difference a stated
  * fact rather than a scattered surprise; `test/test-shape.test.mjs` pins them.
  *
- * It imports the registry, itself a leaf, and nothing else, because
- * `facets.mjs` reads it and the parser child reads the facets.
+ * It imports the registry and the path slices, two leaves, and nothing else,
+ * because `facets.mjs` reads it and the parser child reads the facets.
  */
 import { assertKeyed, hostedBy } from "./langs.mjs";
+import { stemOf } from "./paths.mjs";
 
 // `_spec.rb` and `_test.rb` are how Ruby spells the same thing the dotted forms
 // spell, and the hyphen is how Ember spells it: discourse writes 4,000 tests as
@@ -208,11 +209,32 @@ export const FAMILY_TREES = {
 
 assertKeyed("FAMILY_TREES", FAMILY_TREES, [], hostedBy("tree-sitter"));
 
+/**
+ * A directory with the words for its tree dropped: the ones every family
+ * shares, and the ones this family's own build adds. A Gradle source set
+ * drops out, `Serilog.Tests` is `Serilog`, and a Java path is its package,
+ * which is what follows the last `java` directory.
+ *
+ * Asked by the namesake match, and by the placement finding of the source
+ * directory a test's own directory is about.
+ */
+export const withoutTree = (dir, family) => {
+  const own = FAMILY_TREES[family];
+  let kept = [];
+  for (const seg of dir.split("/")) {
+    if (own?.packagesUnder?.has(seg)) kept = [];
+    if (TREE.has(seg) || own?.source?.test(seg) || own?.packagesUnder?.has(seg)) continue;
+    const cut = own ? seg.replace(own.test, "") : seg;
+    // A package is one dotted directory in one tree and a directory per name in the next.
+    if (own?.packagesUnder) kept.push(...cut.split(".").filter(Boolean));
+    else if (cut !== "") kept.push(cut);
+  }
+  return kept.join("/");
+};
+
 /** Whether a directory name puts what is under it in a test tree, for a file of this family. */
 export const isTestTree = (segment, family = null) =>
   TEST_TREES.has(segment) || FAMILY_TREES[family]?.test.test(segment) === true;
-
-const stemAt = (rel) => rel.slice(rel.lastIndexOf("/") + 1).replace(/\.[^./]*$/, "");
 
 /**
  * Whether a path's own name says its family's tool collects it: the name
@@ -225,7 +247,7 @@ const stemAt = (rel) => rel.slice(rel.lastIndexOf("/") + 1).replace(/\.[^./]*$/,
  */
 export function namesATest(rel, family) {
   const names = FAMILY_TEST_NAMES[family];
-  if (!names || coveredStem(stemAt(rel), family) === null) return false;
+  if (!names || coveredStem(stemOf(rel), family) === null) return false;
   return names.alone === true || rel.split("/").slice(0, -1).some((segment) => isTestTree(segment, family));
 }
 

@@ -38,6 +38,7 @@ import {
   startsAtSeparator,
   TEST_TREES,
   TREE,
+  withoutTree,
 } from "./test-shape.mjs";
 
 const familyAt = (rel) => familyOf(language(rel));
@@ -66,29 +67,6 @@ const tailOf = (rel, rootPath) => {
   if (rootPath === "" || rootPath === ".") return dir;
   if (dir === rootPath) return "";
   return dir.startsWith(`${rootPath}/`) ? dir.slice(rootPath.length + 1) : dir;
-};
-
-/**
- * A directory with the words for its tree dropped: the ones every family
- * shares, and the ones this family's own build adds. A Gradle source set
- * drops out, `Serilog.Tests` is `Serilog`, and a Java path is its package,
- * which is what follows the last `java` directory.
- *
- * Exported because the placement finding asks which source directory a test's
- * own directory is about, which is this question.
- */
-export const withoutTree = (dir, family) => {
-  const own = FAMILY_TREES[family];
-  let kept = [];
-  for (const seg of dir.split("/")) {
-    if (own?.packagesUnder?.has(seg)) kept = [];
-    if (TREE.has(seg) || own?.source?.test(seg) || own?.packagesUnder?.has(seg)) continue;
-    const cut = own ? seg.replace(own.test, "") : seg;
-    // A package is one dotted directory in one tree and a directory per name in the next.
-    if (own?.packagesUnder) kept.push(...cut.split(".").filter(Boolean));
-    else if (cut !== "") kept.push(cut);
-  }
-  return kept.join("/");
 };
 
 /**
