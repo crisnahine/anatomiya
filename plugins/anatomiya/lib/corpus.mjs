@@ -5,7 +5,8 @@ import { gitBuffered, gitStreamed } from "./git.mjs";
 import { EXT_BY_LANG, LANGUAGES, language } from "./langs.mjs";
 import { CAPABILITY_WORDS, fileStem, stemWords } from "./stems.mjs";
 import { FRAMEWORKS } from "./frameworks.mjs";
-import { isLink, readHead } from "./rules.mjs";
+import { isLink, isMapName, readHead, STORE_DIR } from "./rules.mjs";
+import { TARGETS } from "./targets.mjs";
 
 // Tracked files only. A working tree holds .env, master.key, an .npmrc with a
 // token and a .git/config with credentials in the remote URL; a filesystem walk
@@ -124,6 +125,12 @@ function excludedAt(path) {
     if (isExcludedDir(dir)) return dir;
   }
   return null;
+}
+
+// By name, with no head read: a hand-written file under one of these exact names is left out with the map.
+function isOwnOutput(path) {
+  if (path.startsWith(`${STORE_DIR}/`)) return true;
+  return Object.values(TARGETS).some((t) => path.startsWith(`${t.dir}/`) && isMapName(path.slice(t.dir.length + 1), t));
 }
 
 export function isSource(path) {
@@ -465,6 +472,7 @@ export async function collect(root) {
     const folded = drop === "notSource" || drop === "excluded" ? languageInAnyCase(rel) : null;
     if (drop === "notSource") {
       dropped.notSource++;
+      if (isOwnOutput(rel)) return;
       others.push({ rel });
       if (folded) uncounted.push({ rel, lang: folded });
       return;

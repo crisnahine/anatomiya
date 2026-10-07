@@ -1,13 +1,15 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { needsPosixPaths } from "./platform.mjs";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readdirSync, readFileSync, writeFileSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { execFileSync } from "node:child_process";
 
 import { scan } from "../plugins/anatomiya/lib/scan.mjs";
 import { renderOverview } from "../plugins/anatomiya/lib/render.mjs";
+import { writeMap } from "../plugins/anatomiya/lib/write.mjs";
+import { TARGETS } from "../plugins/anatomiya/lib/targets.mjs";
 import { globsReach } from "../plugins/anatomiya/lib/areas.mjs";
 import { PIN_PATH, PIN_SCHEMA, resolve as resolveBaseline } from "../plugins/anatomiya/lib/baseline.mjs";
 import { parseAll } from "../plugins/anatomiya/lib/parse.mjs";
@@ -1359,4 +1361,68 @@ test("the parse starts before the baseline answers, and the map is the same as w
   assert.equal(order, "parse first");
   assert.equal(plain.areas[0].baseline.status, "ok", "the fixture reaches the baseline");
   assert.deepEqual(stable(delayed), stable(plain));
+});
+
+/** A team's own files beside where each target's map lands, and enough source for one area. */
+function teamRepo(t) {
+  return repo(t, (d, { git, write }) => {
+    for (let i = 0; i < 8; i++) write(`src/m${i}.ts`, moduleSource(i));
+    for (const f of ["workflows/ci.yml", "workflows/release.yml", "dependabot.yml"]) write(`.github/${f}`, "on: push\n");
+    for (const f of ["team", "style", "review"]) write(`.cursor/rules/${f}.mdc`, "# ours\n");
+    git("add", "-A");
+    git("commit", "-qm", "init");
+  });
+}
+
+/** Every file in every target's directory, by path. */
+function mapBytes(dir) {
+  const out = {};
+  for (const target of Object.values(TARGETS)) {
+    for (const name of readdirSync(join(dir, target.dir)).sort()) {
+      out[`${target.dir}/${name}`] = readFileSync(join(dir, target.dir, name), "utf8");
+    }
+  }
+  return out;
+}
+
+const rosterLines = (bytes, dirName) =>
+  bytes[".claude/rules/anatomiya-overview.md"].split("\n").filter((l) => l.startsWith(`- ${dirName}`));
+
+async function threeScans(t, afterFirst) {
+  const dir = teamRepo(t);
+  writeMap(await scan(dir), { targets: Object.keys(TARGETS) });
+  const first = mapBytes(dir);
+  afterFirst(dir);
+  writeMap(await scan(dir), { targets: null });
+  const second = mapBytes(dir);
+  writeMap(await scan(dir), { targets: null });
+  return { first, second, third: mapBytes(dir) };
+}
+
+test("three scans with every target on leave every file byte-identical after the first", async (t) => {
+  // A repository that commits its map: the second scan's listing holds the first scan's files.
+  const { first, second, third } = await threeScans(t, (dir) => {
+    const git = (...a) => execFileSync("git", a, { cwd: dir, stdio: "pipe" });
+    git("add", "-A");
+    git("commit", "-qm", "the map");
+    const tracked = git("ls-files").toString();
+    for (const target of Object.values(TARGETS)) assert.ok(tracked.includes(`${target.dir}/anatomiya-overview`), target.dir);
+  });
+
+  assert.ok(Object.keys(first).some((p) => p.startsWith(".github/instructions/anatomiya-area-")), "an area file per target");
+  assert.ok(Object.keys(first).some((p) => p.startsWith(".cursor/rules/anatomiya-area-")));
+  assert.deepEqual(second, first);
+  assert.deepEqual(third, first);
+  assert.deepEqual(rosterLines(third, ".github"), ["- .github: 3 .yml"]);
+  assert.deepEqual(rosterLines(third, ".cursor"), ["- .cursor/rules: 3 .mdc"]);
+  assert.deepEqual(rosterLines(third, ".claude"), [], "nor the store and the map under .claude");
+});
+
+test("the same three scans agree when the map is left untracked and not ignored", async (t) => {
+  const { first, second, third } = await threeScans(t, () => {});
+
+  assert.deepEqual(second, first);
+  assert.deepEqual(third, first);
+  assert.deepEqual(rosterLines(third, ".github"), ["- .github: 3 .yml"]);
+  assert.deepEqual(rosterLines(third, ".cursor"), ["- .cursor/rules: 3 .mdc"]);
 });
