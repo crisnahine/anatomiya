@@ -2577,7 +2577,7 @@ test("a run that read nothing writes and removes nothing in any directory", (t) 
   assert.deepEqual(tree(fresh), {});
 });
 
-test("a held area's file is kept in every target it exists in", (t) => {
+test("a held area's file is kept in every target that stays on, and goes with one that is turned off", (t) => {
   const dir = workspace(t);
   const models = area("app/models");
   const services = area("app/services");
@@ -2601,24 +2601,43 @@ test("a held area's file is kept in every target it exists in", (t) => {
     assert.deepEqual(readFacts(dir).targets[t.id], mapOf(t, models, services), "and the record still names it");
   }
 
-  // Turned off by a run that cannot speak for the area: the rest goes, the held file stays owned.
+  // Off is none of ours left there, and what an area holds has no bearing on it.
   const off = writeMap(partial(), { targets: ["claude"] });
   for (const t of OTHERS) {
-    assert.deepEqual(off.targets[t.id].remove, mapOf(t, services));
-    assert.deepEqual(namesIn(dir, t), [areaName(t, models.id)]);
-    assert.deepEqual(readFacts(dir).targets[t.id], [areaName(t, models.id)]);
-  }
-
-  // And the next run that can read it finishes turning the target off.
-  const later = writeMap(result(dir, [models, services]));
-  for (const t of OTHERS) {
-    assert.deepEqual({ state: later.targets[t.id].state, on: later.targets[t.id].on, remove: later.targets[t.id].remove }, { state: "off", on: false, remove: [areaName(t, models.id)] });
+    assert.deepEqual(off.targets[t.id].remove, mapOf(t, models, services));
     assert.deepEqual(namesIn(dir, t), []);
   }
   assert.equal("targets" in readFacts(dir), false);
+  assert.equal(existsSync(join(rules(dir), areaFilename(models))), true, "Claude Code's own held file stays");
 });
 
-test("a held area's file that no record names is recorded when its target is turned off, so a later scan finishes", (t) => {
+test("a target turned on by a run that holds an area counts only the area files it has", (t) => {
+  const dir = workspace(t);
+  const models = area("app/models");
+  const services = area("app/services");
+  writeMap(result(dir, [models, services]));
+  const partial = result(dir, [services]);
+  partial.parse = { ...partial.parse, unreadable: ["ruby"] };
+  partial.held = [{ id: models.id, path: models.path, fileCount: models.fileCount }];
+  partial.readNothing = false;
+  const counts = (body) => [/^## Areas \(\d+\)$/m, /^Generated files: \d+/m].map((re) => body.match(re)?.[0]);
+
+  writeMap(partial, { targets: ALL });
+
+  assert.deepEqual(counts(readFileSync(join(rules(dir), overviewName(TARGETS.claude)), "utf8")), ["## Areas (2)", "Generated files: 3"]);
+  for (const t of OTHERS) {
+    assert.deepEqual(namesIn(dir, t), mapOf(t, services));
+    assert.deepEqual(counts(readFileSync(join(dir, t.dir, overviewName(t)), "utf8")), ["## Areas (1)", "Generated files: 2"], t.id);
+  }
+
+  // Held again with the target already on: the file is still not there, so it is still not counted.
+  writeMap({ ...partial }, {});
+  for (const t of OTHERS) {
+    assert.deepEqual(counts(readFileSync(join(dir, t.dir, overviewName(t)), "utf8")), ["## Areas (1)", "Generated files: 2"], t.id);
+  }
+});
+
+test("a held area's file that no record names goes with the rest when its target is turned off by name", (t) => {
   const models = area("app/models");
   const services = area("app/services");
   const dir = workspace(t);
@@ -2632,17 +2651,11 @@ test("a held area's file that no record names is recorded when its target is tur
   const off = writeMap(partial, { targets: ["claude"] });
 
   for (const target of OTHERS) {
-    assert.deepEqual(off.targets[target.id].remove, mapOf(target, services));
+    assert.deepEqual(off.targets[target.id].remove, mapOf(target, models, services));
     assert.deepEqual(off.targets[target.id].unknown, []);
-    assert.deepEqual(namesIn(dir, target), [areaName(target, models.id)]);
-    assert.deepEqual(readFacts(dir).targets[target.id], [areaName(target, models.id)]);
-  }
-
-  const later = writeMap(result(dir, [models, services]));
-  for (const target of OTHERS) {
-    assert.deepEqual(later.targets[target.id].remove, [areaName(target, models.id)]);
     assert.deepEqual(namesIn(dir, target), []);
   }
+  assert.equal("targets" in readFacts(dir), false);
 });
 
 test("a target directory swapped for a link once the renames began refuses in a sentence, with nothing written through it", needsSymlinks, async (t) => {
