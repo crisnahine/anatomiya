@@ -35,7 +35,7 @@ import { BINARY, REL } from "./plugins.mjs";
 import { isSource } from "../plugins/anatomiya/lib/corpus.mjs";
 import { hasInstall } from "../plugins/anatomiya/lib/semantic.mjs";
 import { byCode } from "../plugins/anatomiya/lib/paths.mjs";
-import { language } from "../plugins/anatomiya/lib/langs.mjs";
+import { familyOf, language } from "../plugins/anatomiya/lib/langs.mjs";
 import { CLASSES } from "../plugins/anatomiya/lib/dimensions-naming.mjs";
 import { rowByKey } from "../plugins/anatomiya/lib/registry.mjs";
 import { FACTS_PATH, FACTS_SCHEMA, readRecord, statedSide } from "../plugins/anatomiya/lib/facts.mjs";
@@ -231,6 +231,31 @@ const STEM = { camelCase: "zzProbeFile", PascalCase: "ZzProbeFile", "kebab-case"
 
 const langsOf = (key) => rowByKey(key)?.langs ?? [];
 
+// Per family, a file that holds a comment and nothing else, and a class given
+// the wrong base, each one its own grammar reads whole: a JavaScript comment in
+// a `.py` file is a rejected file, and the check reads that as nothing to say.
+// Null where the language has no class to give a base.
+const JS_PROBE = { comment: "// e2e probe\n", subclass: "class ZzProbe extends NotTheBase {}\n" };
+const PROBES = {
+  ruby: { comment: "# e2e probe\n", subclass: "class ZzProbe < NotTheBase\nend\n" },
+  python: { comment: "# e2e probe\n", subclass: "class ZzProbe(NotTheBase):\n    pass\n" },
+  php: { comment: "<?php\n// e2e probe\n", subclass: "<?php\n\nclass ZzProbe extends NotTheBase\n{\n}\n" },
+  go: { comment: "// e2e probe\npackage zzprobe\n", subclass: null },
+  java: { comment: "// e2e probe\n", subclass: "class ZzProbe extends NotTheBase {}\n" },
+  csharp: { comment: "// e2e probe\n", subclass: "class ZzProbe : NotTheBase {}\n" },
+  rust: { comment: "// e2e probe\n", subclass: null },
+  kotlin: { comment: "// e2e probe\n", subclass: "class ZzProbe : NotTheBase()\n" },
+};
+
+/** The probe file's text for one extension and row, or null where the language cannot break that row. */
+export function probeBody(ext, key, kind = null) {
+  const family = familyOf(language(`f${ext}`));
+  const probe = PROBES[family] ?? JS_PROBE;
+  if (key !== "file_naming_case") return probe.subclass;
+  // Only a JavaScript file can carry the element a row narrowed to JSX asks about.
+  return kind === "jsx" && probe === JS_PROBE ? "// e2e probe\nexport const ZzProbeElement = () => <div />\n" : probe.comment;
+}
+
 /** The area's own commonest extension that the row speaks and a check opens. */
 function extFor(area, key) {
   const langs = langsOf(key);
@@ -260,17 +285,9 @@ export function probePlan(facts) {
       const ext = extFor(area, key);
       if (ext === null) continue;
 
-      const ruby = language(`f${ext}`) === "ruby";
       const stem = key === "file_naming_case" ? STEM[OTHER_CLASS[d.learned]] : "zzprobe";
-      const jsxKind = d.learnedKind === "jsx" && !ruby;
-      const body =
-        key === "file_naming_case"
-          ? jsxKind
-            ? "// e2e probe\nexport const ZzProbeElement = () => <div />\n"
-            : `${ruby ? "#" : "//"} e2e probe\n`
-          : ruby
-            ? "class ZzProbe < NotTheBase\nend\n"
-            : "class ZzProbe extends NotTheBase {}\n";
+      const body = probeBody(ext, key, d.learnedKind ?? null);
+      if (body === null) continue;
       return { area: area.path, dimension: key, learned: d.learned, path: `${area.path}/${stem}${ext}`, body };
     }
   }

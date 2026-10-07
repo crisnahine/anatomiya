@@ -22,6 +22,7 @@ import {
   findingPaths,
   overviewProblems,
   parseArgs,
+  probeBody,
   probePlan,
   readJson,
   rootsColumn,
@@ -607,4 +608,38 @@ test("a detached checkout is based on its commit, and only a repository with non
   const sha = git(dir, "rev-parse", "HEAD").toString().trim();
   git(dir, "checkout", "-q", "--detach");
   assert.equal(baseOf(dir), sha);
+});
+
+test("a probe in each of the seven languages is a file its own grammar reads whole", async () => {
+  const { parseTreeFile } = await import("../plugins/anatomiya/lib/tree-sitter-file.mjs");
+  const { LANGUAGES } = await import("../plugins/anatomiya/lib/langs.mjs");
+  const seven = LANGUAGES.filter((l) => l.engine === "tree-sitter");
+  assert.equal(seven.length, 7);
+  for (const { id, exts } of seven) {
+    for (const key of ["file_naming_case", "class_base"]) {
+      const body = probeBody(`.${exts[0]}`, key);
+      if (body === null) continue;
+      const read = await parseTreeFile(body, `src/zzprobe.${exts[0]}`, id);
+      assert.equal(read.ok, true, `${id} ${key}: ${JSON.stringify(body)}`);
+    }
+    assert.equal(typeof probeBody(`.${exts[0]}`, "file_naming_case"), "string", id);
+  }
+  // A comment in the language's own character, never JavaScript's where the language has another.
+  assert.match(probeBody(".py", "file_naming_case"), /^# e2e probe/);
+  assert.match(probeBody(".php", "file_naming_case"), /^<\?php\n/);
+  assert.match(probeBody(".go", "file_naming_case"), /^package \w+$/m);
+  assert.match(probeBody(".py", "class_base"), /^class ZzProbe\(NotTheBase\):/);
+  assert.match(probeBody(".cs", "class_base"), /^class ZzProbe : NotTheBase\b/);
+  // Neither language has a class to give the wrong base.
+  assert.equal(probeBody(".go", "class_base"), null);
+  assert.equal(probeBody(".rs", "extends_base"), null);
+});
+
+test("the JavaScript and Ruby probes are the bodies they always were", () => {
+  assert.equal(probeBody(".ts", "file_naming_case"), "// e2e probe\n");
+  assert.equal(probeBody(".vue", "file_naming_case"), "// e2e probe\n");
+  assert.equal(probeBody(".tsx", "file_naming_case", "jsx"), "// e2e probe\nexport const ZzProbeElement = () => <div />\n");
+  assert.equal(probeBody(".rb", "file_naming_case", "jsx"), "# e2e probe\n");
+  assert.equal(probeBody(".ts", "extends_base"), "class ZzProbe extends NotTheBase {}\n");
+  assert.equal(probeBody(".rb", "class_base"), "class ZzProbe < NotTheBase\nend\n");
 });
