@@ -643,28 +643,31 @@ extension. Where the area holds components, its not-counted line names that firs
 import of a .vue file, which is written with its extension; ...`.
 
 An area delivers on one glob for every language in it, so a claim counted over a directory's `.ts`
-files reaches an agent editing the `.vue` file beside them. Where an area holds a source file of a
-language the row is never asked of, the claim says which files it was counted over:
+files reaches an agent editing the `.vue` file beside them. Where an area holds three or more
+source files of languages the row is never asked of, the claim says which files it was counted over:
 
 ```
-imports used only as types are marked import type, in .ts files
-  16 of 16 sites across 9 of 10 files, 8 authors  (partial: some sites are not visible statically)
-
-module-level bindings are const, in .ts files: 11 of 11 sites (matches model default)
-module-level functions are declared with function, not assigned as arrows: no convention. 31 of 31 sites (evidence)
+module-level bindings are const, in .ts files: no convention. 10 of 10 sites (concentration)
+imports used only as types are marked import type, in .ts files: no convention. 5 of 8 sites (ratio)  (partial: some sites are not visible statically)
+module-level functions are declared with function, not assigned as arrows: no convention. 12 of 17 sites (ratio)
 ```
 
-That area is vitepress's `docs`, ten `.ts` files and one `.vue`. The first two rows are not asked of Vue and carry
-the clause; the third is, and does not. The clause sits on the sentence because the sentence is the
-one part every form prints, so it costs no line. Whether it prints is a question about languages,
-and what it names is the files the row was asked of: a JSX row in an area of `.ts`, `.tsx` and
+That area is supabase's `blocks/vue/registry/default`, 13 `.ts` files and 6 `.vue`. The first two
+rows are not asked of Vue and carry the clause; the third is, and does not. The clause sits on the
+sentence because the sentence is the one part every form prints, so it costs no line. One or two
+files earn none: Homebrew's `Library/Homebrew` holds 220 Ruby files and one `.py`, and its Ruby
+claims print bare, so their counts leave that file out without saying so. The floor is the one a
+directory's tests are read from (`PRECEDENT_FLOOR`), counted per row, so in an area of many Ruby
+files and two `.js` files the JavaScript rows still say `, in .js files`. Above the floor, whether
+the clause prints is a question about languages, and what it names is the files the row was asked of: a JSX row in an area of `.ts`, `.tsx` and
 `.vue` files reads `, in .tsx files`. Ruby beside JavaScript is the same case, `rescue blocks use
 the error they caught, in .rb files`, and a file with no extension is named whole, `, in .rb files
 and Gemfile`. A row that skipped a whole extension by content, as a typed row skips the `.js` files
 beside `.ts` ones, prints no clause. Measured on the 35-repository corpus with the names drawn from
 the language ids, it changed 87 of 6,887 area files and 705 lines, added a line to none, and put no
 clause in 24 repositories. The count has not been taken again with the names drawn from the files
-asked.
+asked. With the floor of three, 573 lines in 85 of 6,947 area files carry a clause, in 14 of the
+35 (B56).
 
 The three `route_` rows ask whether a cross-cutting concern goes through the repository's own
 module. The wrapper is learned per file from its relative imports whose filename, up to its first

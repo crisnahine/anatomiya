@@ -298,6 +298,7 @@ export async function scan(cwd, { guards = null, runChecker = runSemantic, resol
       // Over every record in the repository, not this area's: the question is
       // who else reaches in here.
       reused: hasImports ? mostImported(new Set(area.files.map((f) => f.rel)), head.records, corpusRels) : null,
+      filesByLang: Object.fromEntries(tally(area.files.map((f) => f.lang))),
       dimensions: gated,
     });
   }

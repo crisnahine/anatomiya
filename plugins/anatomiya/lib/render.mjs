@@ -2,6 +2,7 @@ import { encode, encodePath } from "./encode.mjs";
 import { embeddedIn, MISSING_STRIPPER, spokenIn } from "./langs.mjs";
 import { unreadReasons } from "./readiness.mjs";
 import { kindsLine, plural, renderLayout } from "./render-layout.mjs";
+import { PRECEDENT_FLOOR } from "./principles.mjs";
 import { statedSide } from "./facts.mjs";
 import { globText } from "./areas.mjs";
 import { listSome, LISTED, PREFIX } from "./rules.mjs";
@@ -143,13 +144,18 @@ const series = (xs) => (xs.length > 1 ? `${xs.slice(0, -1).join(", ")} and ${xs.
  * as a `.js` file holding JSX is, so it alone earns no clause; and it is not
  * named in one, because no `.ts` file here was. Neither list is in a record,
  * so a record prints the sentence bare and takes the same number of lines.
+ *
+ * From three files of other languages up, the floor a directory's tests are
+ * read from: one stray script in an area of two hundred files of another
+ * language otherwise puts the clause on every line there.
  */
 function scopeClause(area, d) {
   const langs = ROW_LANGS.get(d.key);
   const counted = d.askedExts ?? [];
   if (!langs || counted.length === 0) return "";
-  const never = Object.keys(area.extsByLang ?? {}).some((lang) => !spokenIn(lang, { jsx: true }).some((l) => langs.includes(l)));
-  if (!never) return "";
+  const never = Object.keys(area.extsByLang ?? {}).filter((lang) => !spokenIn(lang, { jsx: true }).some((l) => langs.includes(l)));
+  const unasked = never.reduce((n, lang) => n + (area.filesByLang?.[lang] ?? 0), 0);
+  if (unasked < PRECEDENT_FLOOR) return "";
   // A declaration file is a TypeScript file to a reader, and `.d.ts and .ts` says one thing twice.
   const exts = counted.filter((e) => e.startsWith(".")).map((e) => e.replace(/^\.d\./, "."));
   const names = counted.filter((e) => !e.startsWith("."));

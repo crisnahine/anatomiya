@@ -53,6 +53,8 @@ const area = (o = {}) => {
   // A single-language area comes out of the reducer with a denominator equal to
   // its file count, and the renderer divides by that rather than by the area.
   return {
+    // Three files of each language named, unless the test counts them itself.
+    ...(built.extsByLang ? { filesByLang: Object.fromEntries(Object.keys(built.extsByLang).map((lang) => [lang, 3])) } : {}),
     ...built,
     dimensions: built.dimensions.map((d) => ({ langFileCount: built.fileCount, ...d })),
   };
@@ -3513,6 +3515,31 @@ test("a claim says which files it was counted over where the area holds others",
   const mixed = area({ extsByLang: { js: [".ts", ".js"], svelte: [".svelte"] }, dimensions: [constRow({ askedExts: [".ts", ".js"] })] });
 
   assert.match(renderArea(mixed), /^module-level bindings are const, in \.js and \.ts files\n {2}7 of 7 sites across /m);
+});
+
+test("one or two files of another language earn no scope, and three do", () => {
+  const held = (filesByLang) =>
+    renderArea(area({ extsByLang: { ruby: [".rb"], python: [".py"], php: [".php"] }, filesByLang, dimensions: [{ ...rescueRow(), askedExts: [".rb"] }] }));
+
+  assert.doesNotMatch(held({ ruby: 219, python: 1 }), /, in /);
+  assert.doesNotMatch(held({ ruby: 219, python: 2 }), /, in /);
+  assert.doesNotMatch(held({ ruby: 219, python: 1, php: 1 }), /, in /);
+  assert.match(held({ ruby: 219, python: 3 }), /^rescue blocks use the error they caught, in \.rb files$/m);
+  assert.match(held({ ruby: 219, python: 2, php: 1 }), /^rescue blocks use the error they caught, in \.rb files$/m, "three files it was not asked of, in two languages");
+  assert.doesNotMatch(held(undefined), /, in /, "an area that counts no files is a record");
+});
+
+test("the floor is counted per row, over the files that row was not asked of", () => {
+  const out = renderArea(
+    area({
+      extsByLang: { ruby: [".rb"], js: [".js"] },
+      filesByLang: { ruby: 219, js: 1 },
+      dimensions: [{ ...rescueRow(), askedExts: [".rb"] }, constRow({ askedExts: [".js"] })],
+    })
+  );
+
+  assert.match(out, /^rescue blocks use the error they caught$/m);
+  assert.match(out, /^module-level bindings are const, in \.js files$/m);
 });
 
 test("a counts line and a default-matching line carry the same scope", () => {
