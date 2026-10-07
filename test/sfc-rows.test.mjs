@@ -248,3 +248,16 @@ test("a Svelte prop is a prop to every row that reads an export or a function", 
     assert.deepEqual(await sites(key, "src/lib/todo.ts", script), inModule, `${key} in a module`);
   }
 });
+
+test("a Svelte prop holding a class is a prop when classes are named", async () => {
+  const script = `
+  export let Renderer = class {};
+  export const DefaultRenderer = class {};
+  export class PlainRenderer {}
+`;
+  const svelte = `<script>${script}</script>\n\n<p>{new Renderer()}</p>\n`;
+  const sites = async (rel, source) => (await hitsOf("exported_class_case", rel, source)).map((h) => h.where);
+
+  assert.deepEqual(await sites("src/lib/Canvas.svelte", svelte), ["DefaultRenderer", "PlainRenderer"]);
+  assert.deepEqual(await sites("src/lib/canvas.ts", script), ["Renderer", "DefaultRenderer", "PlainRenderer"]);
+});

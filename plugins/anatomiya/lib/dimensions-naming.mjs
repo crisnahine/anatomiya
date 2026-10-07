@@ -473,12 +473,12 @@ export const NAMING_AST = [
     counterClaim: null,
     precision: "precise",
     applicabilityPredicate: {
-      sites: "an export statement declaring a class, or a variable bound to a class expression, under a name that spells a naming class; an anonymous default export carries no name, and a renaming specifier is not resolved to a declaration, so neither is a site",
+      sites: "an export statement declaring a class, or a variable bound to a class expression, under a name that spells a naming class; an anonymous default export carries no name, and a renaming specifier is not resolved to a declaration, so neither is a site. A Svelte component's `export let` declares a prop and is not an export",
       blind: null,
     },
     langs: ["js", "jsx", "vue", "svelte"],
-    run(program, add) {
-      for (const s of exportedSites(program)) {
+    run(program, add, { rel } = {}) {
+      for (const s of exportedSites(program, componentProps(program, rel))) {
         if (s.population !== "class") continue;
         const cls = classifyWord(s.name);
         if (cls) add({ node: s.node, conforming: false, where: s.name, class: cls });
