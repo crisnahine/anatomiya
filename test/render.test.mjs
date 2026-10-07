@@ -3225,3 +3225,42 @@ test("an overview with no area says no directory made one, and claims nothing be
   assert.doesNotMatch(out, /every claim below/);
   assert.doesNotMatch(out, /\n\n\n/, "no run of blank lines");
 });
+
+test("a root that counts its components prints two namesake counts, each naming its extension", () => {
+  // Two facts, and summed they are neither: 85 of 745 .ts and 79 of 164 .vue.
+  const mixed = root("packages/components", {
+    files: 1063,
+    exts: [[".ts", 777], [".vue", 164]],
+    other: 122,
+    companions: { with: 85, of: 745, root: null, ext: ".ts" },
+    componentCompanions: { with: 79, of: 164, root: "packages/components", under: 60, ext: ".vue" },
+  });
+  const lines = renderLayout({ ...clientLayout(), roots: [mixed], more: { roots: 0, files: 0 } });
+
+  assert.equal(
+    lines[2],
+    "- packages/components: 777 .ts, 164 .vue and 122 other; 85 of 745 .ts files have a namesake test; " +
+      "79 of 164 .vue files have a namesake test, 60 under packages/components"
+  );
+  assert.ok(
+    lines[3].endsWith(
+      "; 85 of 745 .ts files under packages/components have a namesake test" +
+        "; 79 of 164 .vue files under packages/components have a namesake test"
+    ),
+    lines[3]
+  );
+  assert.equal(
+    kindsLine(mixed),
+    "kinds: 777 .ts, 164 .vue and 122 other; 0 test files; " +
+      "85 of 745 .ts files have a namesake test; 79 of 164 .vue files have a namesake test"
+  );
+});
+
+test("a component count with no other beside it still says which files it is over", () => {
+  const only = root("src/ui", {
+    exts: [[".ts", 9], [".svelte", 4]],
+    componentCompanions: { with: 1, of: 4, root: null, ext: ".svelte" },
+  });
+
+  assert.equal(kindsLine(only), "kinds: 9 .ts, 4 .svelte; 0 test files; 1 of 4 .svelte files has a namesake test");
+});

@@ -11,6 +11,7 @@
  */
 
 import { namesakeCompanions, namesakeIndex } from "./companions.mjs";
+import { embeddedIn } from "./langs.mjs";
 import { baseOf, dirOf, extOf, stemOf, withoutExtension, byCode } from "./paths.mjs";
 import { TEST_DIRS, TEST_NAME, RUBY_TEST_NAME, TEST_ROOTS, TEST_TREES, UNNAMED_RUNNER } from "./test-shape.mjs";
 
@@ -87,7 +88,7 @@ export function mirroredTests(files) {
 }
 
 // A component with no script still holds its markup, which is the file.
-const holdsNothing = (facets) => facets?.empty === true && !facets.embedded;
+export const holdsNothing = (facets) => facets?.empty === true && !facets.embedded;
 
 /**
  * A test file is one the parse saw import a runner or call `describe`, one
@@ -458,13 +459,19 @@ export function rootFacts(root, { testFiles, mirrored, byStem }) {
   // test could be written for either, so it belongs in neither side of the
   // pair. Left in, a commented-out spec was counted twice against the
   // repository: once as the source that lost its test, once as a new producer.
-  const producers = own.filter(
-    (f) =>
-      f.lang &&
-      extOf(f.rel) === producerExt &&
-      !holdsNothing(f.facets) &&
-      !isTestFile(f, mirrored) &&
-      !isStoryFile(f.rel));
+  const producersOf = (counted) =>
+    own.filter(
+      (f) =>
+        f.lang &&
+        extOf(f.rel) === counted &&
+        !holdsNothing(f.facets) &&
+        !isTestFile(f, mirrored) &&
+        !isStoryFile(f.rel));
+  const producers = producersOf(producerExt);
+  // Counted apart: summed into the first, the denominator is a number the line never printed.
+  const componentExt = exts.find(
+    ([ext]) => ext !== producerExt && own.some((f) => f.lang && extOf(f.rel) === ext && embeddedIn(f.lang) !== null))?.[0];
+  const components = producersOf(componentExt);
   const stories = own.filter((f) => isStoryFile(f.rel));
 
   const record = {
@@ -488,6 +495,9 @@ export function rootFacts(root, { testFiles, mirrored, byStem }) {
   if (producers.length > 0 && testFiles.length > 0 && !underTestTree(dir)) {
     // The extension the count is over, which is not always the root's first.
     record.companions = { ...namesakeCompanions(producers, testFiles, dir, byStem), ext: producerExt };
+  }
+  if (components.length > 0 && testFiles.length > 0 && !underTestTree(dir)) {
+    record.componentCompanions = { ...namesakeCompanions(components, testFiles, dir, byStem), ext: componentExt };
   }
   const helpers = helperFacet(own, jsxFiles, mirrored);
   if (helpers !== null) record.helpers = helpers;
