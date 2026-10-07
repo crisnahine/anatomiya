@@ -42,7 +42,18 @@ import { SEMANTIC_DIMENSIONS } from "../plugins/anatomiya/lib/dimensions-semanti
 import { baseOf, byCode, dirOf, extOf, stemOf } from "../plugins/anatomiya/lib/paths.mjs";
 import { scan } from "../plugins/anatomiya/lib/scan.mjs";
 import { MAX_LINES } from "../plugins/anatomiya/lib/render.mjs";
-import { namesakeClause, ROOT_LABEL, runnerCount, RUNNERS_SHOWN, specCount, spokenCounts, TESTS_GROUPS, TRUNCATED_LAYOUT } from "../plugins/anatomiya/lib/render-layout.mjs";
+import {
+  extNoun,
+  namesakeClause,
+  pathOfRootLabel,
+  ROOT_LABEL,
+  runnerCount,
+  RUNNERS_SHOWN,
+  specCount,
+  spokenCounts,
+  TESTS_GROUPS,
+  TRUNCATED_LAYOUT,
+} from "../plugins/anatomiya/lib/render-layout.mjs";
 import { statedSide, writeFacts } from "../plugins/anatomiya/lib/facts.mjs";
 import { OVERVIEW_FILE } from "../plugins/anatomiya/lib/rules.mjs";
 import { planMap } from "../plugins/anatomiya/lib/write.mjs";
@@ -69,7 +80,7 @@ const isTest = (f) => isTestFile(f, mirrored);
 const runner = (f) => runnerOf(f.rel, f.facets);
 
 // What the renderer calls a flat repository's one root, read back to the path.
-const pathOf = (label) => (label === ROOT_LABEL ? "." : label);
+const pathOf = (label) => (label === ROOT_LABEL ? "." : pathOfRootLabel(label));
 
 /** The files a printed root path stands for, by the rule that selected it. */
 function filesUnder(path, corpus) {
@@ -302,7 +313,7 @@ function checkSection(section, corpus, root, recordRoots) {
 
   const bullets = section.filter((l) => l.startsWith("- "));
   const testFiles = corpus.filter(isTest);
-  // The tests line is the last bullet of a repository that has tests. A root named `tests` prints the same prefix.
+  // The tests line is the last bullet of a repository that has tests. A root named `tests` prints `- tests/: `.
   const testsLine = testFiles.length > 0 && bullets.at(-1)?.startsWith("- tests: ") ? bullets.at(-1) : undefined;
   const rootLines = bullets.slice(0, testsLine ? -1 : undefined).filter((l) => !l.startsWith("- and "));
   if (rootLines.length === 0) fail(`${HEADING} printed no root line`);
@@ -360,12 +371,12 @@ function checkSection(section, corpus, root, recordRoots) {
 
     const [first, also] = spokenCounts(counted);
     if (first) {
-      const expected = namesakeClause(first, also ? `${first.ext} file` : null);
+      const expected = namesakeClause(first, also ? extNoun(first) : null);
       const clause = take(clauses, expected);
       if (clause !== expected) fail(`${parsed.label} namesake clause: printed "${clause}", recount "${expected}"`);
     }
     if (also) {
-      const expected = namesakeClause(also, `${also.ext} file`);
+      const expected = namesakeClause(also, extNoun(also));
       const clause = take(clauses, expected);
       if (clause !== expected) fail(`${parsed.label} second namesake clause: printed "${clause}", recount "${expected}"`);
     }
@@ -441,12 +452,12 @@ function checkTestsLine(line, corpus, recordRoots, testFiles, byStem) {
   if (top) {
     const [first, also] = spokenCounts(top);
     if (first) {
-      const expected = namesakeClause({ ...first, root: null }, `${first.ext} file`, top.dir && top.path);
+      const expected = namesakeClause({ ...first, root: null }, extNoun(first), top.dir && top.path);
       const clause = take(clauses, expected);
       if (clause !== expected) fail(`tests line namesake clause: printed "${clause}", recount "${expected}"`);
     }
     if (also) {
-      const want = namesakeClause({ ...also, root: null }, `${also.ext} file`, top.dir && top.path);
+      const want = namesakeClause({ ...also, root: null }, extNoun(also), top.dir && top.path);
       const second = take(clauses, want);
       if (second !== want) fail(`tests line second namesake clause: printed "${second}", recount "${want}"`);
     }

@@ -378,7 +378,7 @@ test("the recount reads a root whose second kind of file is under the floor: one
   assert.match(credited.section, /^- tests: 3 vitest specs under src\/ui\/__tests__; 2 of 8 \.vue files under src\/ui have a namesake test; 1 of 2 \.ts files under src\/ui has a namesake test$/m);
 });
 
-test("the recount counts a root named tests, which prints the tests line's own prefix", (t) => {
+test("the recount counts a root named tests, which prints with a slash so it is not the tests line", (t) => {
   // ripgrep's 22 files under `tests` were read as the tests line and left out of the sum.
   const run = recountOf(t, {
     ...Object.fromEntries([0, 1, 2, 3].map((i) => [`src/m${i}.js`, `export const m${i} = ${i};\n`])),
@@ -387,8 +387,9 @@ test("the recount counts a root named tests, which prints the tests line's own p
   });
 
   assert.equal(run.status, 0, run.stderr);
-  assert.match(run.section, /^- tests: 3 \.txt, 2 \.js; 2 node:test specs$/m);
+  assert.match(run.section, /^- tests\/: 3 \.txt, 2 \.js; 2 node:test specs$/m);
   assert.match(run.section, /^- tests: 2 node:test specs under tests; /m);
+  assert.equal(run.section.split("\n").filter((line) => line.startsWith("- tests: ")).length, 1, "one bullet carries the label");
 });
 
 test("a corpus directory that cannot be listed is refused by name, not with a stack", () => {

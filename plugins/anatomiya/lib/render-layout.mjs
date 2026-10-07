@@ -106,7 +106,8 @@ export const namesakeClause = ({ with: withTest, of, root, under, inline = 0 }, 
   );
 };
 
-const extNoun = (c) => `${encode(c.ext)} file`;
+/** The noun of a namesake count over one extension. Exported because `scripts/measure-layout.mjs` rebuilds the clause it reads back. */
+export const extNoun = (c) => `${encode(c.ext)} file`;
 
 /**
  * The namesake counts of a root that get a clause, the first extension's then
@@ -192,6 +193,21 @@ export const TRUNCATED_LAYOUT = "layout: not counted, the scan was truncated";
  */
 export const RUNNERS_SHOWN = 2;
 
+const TESTS_LABEL = "tests";
+
+// A root named exactly what the tests line is labelled prints as the directory it is, so no two bullets share a label.
+const rootLabel = (r) => {
+  const said = pathText(r.path);
+  return said === TESTS_LABEL ? `${said}/` : said;
+};
+
+/**
+ * The path a root line's label names: the label, less the slash that keeps a
+ * root named `tests` apart from the tests line. Exported because
+ * `scripts/measure-layout.mjs` reads the label back.
+ */
+export const pathOfRootLabel = (label) => (label === `${TESTS_LABEL}/` ? TESTS_LABEL : label);
+
 /** One directory: what it holds, what tests it holds, what has a namesake. */
 function rootLine(r) {
   // More than half of it is tests, so its extension counts are the specs
@@ -206,7 +222,7 @@ function rootLine(r) {
     const shown = r.tests.slice(0, RUNNERS_SHOWN);
     const rest = r.files - shown.reduce((n, t) => n + t.files, 0);
     const named = shown.map((t) => specCount(t.files, t.runner)).join(", ");
-    return `- ${pathText(r.path)}: ${named}${rest ? ` and ${rest} other` : ""}`;
+    return `- ${rootLabel(r)}: ${named}${rest ? ` and ${rest} other` : ""}`;
   }
 
   const parts = [extText(r), ...storiesPart(r), ...testsParts(r.tests)];
@@ -218,7 +234,7 @@ function rootLine(r) {
     // Only the JSX files are asked, so they are the denominator.
     parts.push(`${inlineFiles} of ${plural(r.jsx, "JSX file")} inline${inlineFiles === 1 ? "s" : ""} a helper`);
   }
-  return `- ${pathText(r.path)}: ${parts.join("; ")}`;
+  return `- ${rootLabel(r)}: ${parts.join("; ")}`;
 }
 
 /**
@@ -264,7 +280,7 @@ function testsLineText(layout) {
     if (first) parts.push(namesakeClause({ ...first, root: null }, `${encode(ext)} file`, top.dir && top.path));
     if (also) parts.push(namesakeClause({ ...also, root: null }, extNoun(also), top.dir && top.path));
   }
-  return `- tests: ${parts.join("; ")}`;
+  return `- ${TESTS_LABEL}: ${parts.join("; ")}`;
 }
 
 const directories = (n) => `${n} ${n === 1 ? "directory" : "directories"}`;
