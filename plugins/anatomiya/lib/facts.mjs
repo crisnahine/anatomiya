@@ -203,9 +203,9 @@ export function schemaProblem(parsed) {
  * How much of a record this tool wrote any reader takes.
  *
  * Not `HEAD_BYTES`, which sizes a rule file: the record is the whole count of a
- * repository, and this build writes 10,217,406 bytes of it for
- * microsoft/vscode. A megabyte would have gone silent on exactly the
- * repositories where a directory nobody read is easiest to miss. The cap is
+ * repository, measured at 10,217,406 bytes on microsoft/vscode. A megabyte
+ * would have gone silent on exactly the repositories where a directory nobody
+ * read is easiest to miss. The cap is
  * there for the shape a rule file cap is there for, a path holding something
  * nobody wrote, and only such a file ever pays it.
  */
