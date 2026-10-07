@@ -284,8 +284,8 @@ const blockGrammar = (block, lang, rel) => (block.lang === "ts" ? "ts" : grammar
 /**
  * A component file: each script block parsed apart, then read as one program.
  *
- * Apart, because each block is a module of its own to the compiler and the two
- * may import the same name. Everything outside a block is blanked in place, so
+ * Apart, because the two may import the same name, which one module may not
+ * declare twice. Everything outside a block is blanked in place, so
  * every offset either tree carries is the file's own and the rows are handed
  * the file as the caller holds it. No dialect retry runs: a component is built
  * by its compiler, never run under Node's wrapper or written in Flow.
@@ -306,7 +306,10 @@ function parseEmbedded(parse, source, rel, lang, { withProgram }) {
   const tree = {
     // The first block's hashbang and source type stand for the file.
     program: { ...first.program, body: trees.flatMap((t) => t.program.body), start: 0, end: source.length },
-    comments: trees.flatMap((t) => t.comments ?? []),
+    // A line comment beside the end tag runs on through the blanked tag.
+    comments: trees.flatMap((t, i) =>
+      (t.comments ?? []).map((c) => (c.end > read[i].end ? { ...c, end: read[i].end, value: c.value.slice(0, read[i].end - c.end) } : c))
+    ),
     module: {
       hasModuleSyntax: trees.some((t) => t.module?.hasModuleSyntax),
       staticImports: listed("staticImports"),
