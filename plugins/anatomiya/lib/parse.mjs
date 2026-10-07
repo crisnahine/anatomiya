@@ -119,8 +119,8 @@ function guardsFor(bag, files) {
 }
 
 // One batch through a pool of warm child processes, each hosting `worker`.
-async function runPool(files, { engine, withProgram, guards }, worker) {
-  const pool = createPool({ size: poolSizeFor(files.length), withProgram, guards, worker, engine });
+async function runPool(files, { engine, withProgram, guards }, worker, retryTimeouts) {
+  const pool = createPool({ size: poolSizeFor(files.length), withProgram, guards, worker, engine, retryTimeouts });
   try {
     const results = await Promise.all(files.map((f) => pool.parse(f)));
     // Read after the parses, because the version arrives on a worker's ready
@@ -142,8 +142,10 @@ const TREE_SITTER_WORKER = fileURLToPath(new URL("./tree-sitter-worker.mjs", imp
 
 // tree-sitter runs in the pool because its wasm heap is capped and never
 // shrinks: once a file fills it, every later parse in that process fails, and
-// a new process is the only thing that recovers.
-const runTreeSitter = (files, options) => runPool(files, options, TREE_SITTER_WORKER);
+// a new process is the only thing that recovers. A parse its clock kills is
+// not retried: the slow case measured is a grammar quadratic in one file's
+// tokens, which no quieter machine reads faster.
+const runTreeSitter = (files, options) => runPool(files, options, TREE_SITTER_WORKER, false);
 
 // prism is safe in-process, so it needs no pool; it runs in Ruby, so there is
 // a process boundary anyway and it is a streamed one (B4).

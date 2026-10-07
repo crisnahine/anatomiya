@@ -149,6 +149,52 @@ process.send = (msg, ...rest) => {
   }
 });
 
+test("a pool told not to retry charges each parse the clock killed once, beside other parses or not", async (t) => {
+  // Where the time is the parser's own on that file, a second attempt alone
+  // takes as long as the first, and retries run in series.
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-no-retry-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const log = join(dir, "log");
+  const worker = join(dir, "slow-worker.mjs");
+  writeFileSync(
+    worker,
+    `import { appendFileSync } from "node:fs";
+process.on("message", ({ rel }) => {
+  appendFileSync(${JSON.stringify(log)}, rel + "\\n");
+  if (rel.startsWith("slow")) for (;;);
+  process.send({ rel, ok: true });
+});
+process.send({ ready: true, engine: "stub", version: "1" });
+`,
+  );
+  const slow = Array.from({ length: 6 }, (_, i) => `slow${i}.kt`);
+  const files = [...slow, "quick0.kt", "quick1.kt"].map((name) => file(dir, name, "val x = 1\n"));
+  const timeoutMs = 500;
+
+  const pool = createPool({ size: 2, worker, engine: "stub", guards: { timeoutMs }, retryTimeouts: false });
+  try {
+    // Both workers answer first, so no slow file starts with the pool to itself.
+    await Promise.all([0, 1].map((k) => pool.parse(file(dir, `warm${k}.kt`, "val w = 1\n"))));
+    const started = Date.now();
+    const results = await Promise.all(files.map((f) => pool.parse(f)));
+    const elapsed = Date.now() - started;
+
+    for (const r of results.slice(0, slow.length)) {
+      assert.equal(r.crashed, true, r.rel);
+      assert.equal(r.error, "parser timed out", r.rel);
+      assert.equal(r.attempts, 1, `${r.rel} was run once`);
+    }
+    for (const r of results.slice(slow.length)) assert.equal(r.ok, true, `${r.rel}: ${r.error}`);
+
+    const handed = readFileSync(log, "utf8").trim().split("\n");
+    for (const rel of slow) assert.equal(handed.filter((x) => x === rel).length, 1, `${rel} reached a worker once`);
+    // Six files over two workers is three clocks. One retry each, alone, would add six more.
+    assert.ok(elapsed < slow.length * timeoutMs, `${elapsed}ms for ${slow.length} files on a ${timeoutMs}ms clock`);
+  } finally {
+    await pool.close();
+  }
+});
+
 test("a parse that answered is charged to one attempt", async () => {
   await withPool({ size: 1 }, async (pool, dir) => {
     const r = await pool.parse(file(dir, "fast.ts", "export const f = 1\n"));

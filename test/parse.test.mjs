@@ -129,6 +129,31 @@ test("a batch of one Python, one TypeScript and one Ruby file comes back read, a
   assert.deepEqual(out.missingGrammars, []);
 });
 
+test("a file the Kotlin grammar cannot finish inside the clock is charged once, and the files beside it are read", async () => {
+  // The grammar is quadratic in a file's `<` comparisons: 4,000 of them is 190 KB
+  // and seconds of parsing, on any machine, where the same file written with `>` takes 50ms.
+  const slow = Array.from({ length: 4000 }, (_, i) => `fun f${i}(a: Int): Boolean {\n    return a < 0\n}\n`).join("\n");
+  const started = Date.now();
+
+  const out = await parseAll(
+    [
+      { rel: "Slow.kt", source: slow, lang: "kotlin" },
+      { rel: "Quick.kt", source: "fun quick(a: Int): Boolean {\n    return a < 0\n}\n", lang: "kotlin" },
+      { rel: "a.py", source: "x = 1\n", lang: "python" },
+      { rel: "a.go", source: "package a\n", lang: "go" },
+    ],
+    { guards: { kotlin: { timeoutMs: 400 } } },
+  );
+
+  const killed = out.records.get("Slow.kt");
+  assert.equal(killed.kind, "crashed");
+  assert.equal(killed.error, "parser timed out");
+  assert.equal(killed.attempts, 1, "a second parse alone would take as long as the first");
+  for (const rel of ["Quick.kt", "a.py", "a.go"]) assert.equal(out.records.get(rel).kind, "ok", `${rel}: ${out.records.get(rel).error}`);
+  assert.deepEqual(out.tallies, { ok: 3, rejected: 0, unreadable: 0, oversize: 0, crashed: 1 });
+  assert.ok(Date.now() - started < 5_000, "the clock ended the parse, and nothing waited for it to finish");
+});
+
 /** `parseAll` run out of another install of the plugin, since which modules resolve there is the thing under test. */
 function parseAllFrom(install, files) {
   const script = `
