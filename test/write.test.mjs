@@ -87,7 +87,12 @@ test("files land in .claude/rules with the facts beside them", () => {
   // third line here is a dirty `git status` for anyone who followed the
   // documented exclude. The settings file was on this list while the scan
   // installed its hook there, and a scan only takes that entry out now.
-  assert.deepEqual(EXCLUDE_LINES, [`${RULES}/${PREFIX}*.md`, `${STORE}/`]);
+  assert.deepEqual(EXCLUDE_LINES, [
+    `${RULES}/${PREFIX}*.md`,
+    `${STORE}/`,
+    `.cursor/rules/${PREFIX}*.mdc`,
+    `.github/instructions/${PREFIX}*.instructions.md`,
+  ]);
   assert.equal(EXCLUDE_LINES.includes(SETTINGS_PATH), false, "nothing this writes lives there");
   rmSync(dir, { recursive: true, force: true });
 });
