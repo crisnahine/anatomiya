@@ -20,7 +20,7 @@ function graph(dir = LIB, { dynamic = true } = {}) {
     const src = readFileSync(join(dir, file), "utf8");
     // Every spelling that closes a cycle, not just the one this repo writes
     // most: a bare `import "./x.mjs"` runs the module for its side effects and
-    // a dynamic `import("./x.mjs")` is the form `parse-worker.mjs` already uses,
+    // a dynamic `import("./x.mjs")` is the form `hook-verbs.mjs` already uses,
     // quoted or as a template literal with no substitution. A cycle through
     // either would pass a check that only knew `from`. What a module costs to
     // load is its static imports alone, which `dynamic: false` asks.
@@ -580,7 +580,7 @@ function armReach(verb, { lazy = false } = {}) {
   const arm = table.init.properties.find((p) => (p.key.name ?? p.key.value) === verb).value;
   const roots = [
     ...program.body.filter((n) => n.type === "ImportDeclaration").map((n) => n.source.value),
-    ...[...src.slice(arm.start, arm.end).matchAll(/\bimport\(\s*["']([^"']+)["']\s*\)/g)].map((m) => m[1]),
+    ...[...src.slice(arm.start, arm.end).matchAll(/\bimport\s*\(\s*(?:["']([^"']+)["']|`([^`$]+)`)\s*\)/g)].map((m) => m[1] ?? m[2]),
   ].map((spec) => spec.replace(/^\.\.\/lib\//, ""));
   const edges = graph(LIB, { dynamic: lazy });
   // readiness.mjs's lazy imports serve the engine probes, which no hook runs.
