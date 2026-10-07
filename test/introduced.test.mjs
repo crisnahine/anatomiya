@@ -505,7 +505,7 @@ test("a Ruby rescue added above one the base held is the one reported", needsRub
 
   const found = only("rescue_uses_error", newlyIntroduced({ area: slot, path: "app/w.rb", lang: "ruby", head, base }));
 
-  assert.deepEqual(found.map((f) => f.where), ["brand_new"]);
+  assert.deepEqual(found.map((f) => f.where), ["W#brand_new"]);
 });
 
 test("an omission is reported only where the map stated the claim", needsRuby, async (t) => {

@@ -144,6 +144,22 @@ function goNamedByInterface(program, sets) {
   };
 }
 
+/** What a function is written in: the nearest class around it that has a name, the type a Rust `impl` is for, or in Go its receiver's type. Null at file level. */
+function ownerOf(fn, ctx, shapes, sets) {
+  if (shapes.receiver) return goReceiver(fn, sets) || null;
+  for (let i = ctx.stack.length - 1; i >= 0; i--) {
+    const body = ctx.stack[i];
+    if (!sets.cls.has(body.type)) continue;
+    const implFor = shapes.implFor ? fieldOf(body, shapes.implFor) : null;
+    const name = nameOf(body) ?? (implFor && firstOf(implFor, sets.receiverType)?.text);
+    if (name) return name;
+  }
+  return null;
+}
+
+// A site is told from another of its text by the declaration around it, and two classes each hold a `run`.
+const within = (owner, name) => (owner === null ? name : `${owner}.${name}`);
+
 const PHP_BUILDS = /^__(?:construct|destruct)$/i;
 const atTopOfFile = (ctx) => ctx.ancestors.length === 1;
 
@@ -247,6 +263,7 @@ const UNTYPED = { python: /^__\w+__$/, php: PHP_BUILDS };
 const UNBOUND = { java: new Set(["ignored"]) };
 
 // A function row reports the function's name as its site: a site is known again by its text, and a line added to the body would make an old function a new one.
+// `where` carries the class beside the name, which is what tells a new `B.run` from the `A.run` under it.
 export const TREE_DIMENSIONS = [
   {
     key: "caught_error_used",
@@ -271,7 +288,8 @@ export const TREE_DIMENSIONS = [
           const name = caughtName(node.children.filter((child) => child !== body && !sets.comment.has(child.type)), shapes, sets);
           if (name === null || unbound?.has(name)) return;
           const used = readsName(body, name, shapes, sets) || firstOf(body, sets.raise) !== null;
-          add({ node: site(node), conforming: used, where: (ctx.fn && nameOf(ctx.fn)) ?? null });
+          const held = ctx.fn && nameOf(ctx.fn);
+          add({ node: site(node), conforming: used, where: held ? within(ownerOf(ctx.fn, ctx, shapes, sets), held) : null });
         },
       };
     },
@@ -308,7 +326,7 @@ export const TREE_DIMENSIONS = [
           if (!PUBLIC[lang](name, words, ctx.cls !== null && sets.iface.has(ctx.cls.type), node, sets)) return;
           if (inherited(words) || notOffered.some((word) => words.has(word)) || noSite(name, node, words, ctx)) return;
           const documented = sets.docstring.size > 0 ? hasDocstring(node, sets, source) : documentedAbove(node, ctx, sets, DOC[lang], source);
-          add({ node: site(named), conforming: documented, where: name });
+          add({ node: site(named), conforming: documented, where: within(ownerOf(node, ctx, shapes, sets), name) });
         },
       };
     },
@@ -331,12 +349,12 @@ export const TREE_DIMENSIONS = [
       const sets = SETS.get(program.lang);
       const untyped = UNTYPED[program.lang];
       return {
-        node(node) {
+        node(node, ctx) {
           if (!sets.fn.has(node.type)) return;
           const named = fieldOf(node, shapes.name);
           const name = named?.text;
           if (!name || untyped.test(name)) return;
-          add({ node: site(named), conforming: fieldOf(node, shapes.returnType) !== null, where: name });
+          add({ node: site(named), conforming: fieldOf(node, shapes.returnType) !== null, where: within(ownerOf(node, ctx, shapes, sets), name) });
         },
       };
     },
