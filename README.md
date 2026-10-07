@@ -93,7 +93,9 @@ Then, in the repository you want mapped:
 It writes `.claude/rules/anatomiya-overview.md`, one file per area beside it,
 `.claude/anatomiya/facts.json`, and `layout.json` beside it. Pass `--dry-run` to see the plan
 without writing anything. It writes nowhere else unless the map is on for Cursor or GitHub Copilot
-as well, which is [Other tools](#other-tools).
+as well, which is [Other tools](#other-tools). The one other file a scan can change is
+`.claude/settings.local.json`: where it still holds the hook entry versions 0.2.4 to 0.2.6 put
+there, the scan takes that entry out.
 
 To keep the map out of git:
 
@@ -144,10 +146,11 @@ overview file starts with it off. To carry one in, add its line:
 **/.github/instructions/anatomiya-*.instructions.md
 ```
 
-Those exclude lines, with the first naming a linked rules directory's target, cover everything a scan
-leaves behind: the first two on every scan, the last two only where a target is on. Four hooks are
-declared by the plugin, in its own
-`hooks/hooks.json`, so nothing is written into your settings. The refresh keeps the map current, and
+The four exclude lines under [Quick start](#quick-start), with the first naming a linked rules
+directory's target, cover everything a scan leaves behind: the first two on every scan, the last two
+only where a target is on. Four hooks are declared by the plugin, in its own `hooks/hooks.json`, so
+a scan adds nothing to your settings. It can only take its own old entry out of
+`.claude/settings.local.json`. The refresh keeps the map current, and
 is described under [Staying current](#staying-current). The echo re-delivers the map after a turn or
 a tool call when the context window does not already hold that same map. The notice runs before a
 `Write`, an `Edit` or a `NotebookEdit`, and speaks only for a path where a test is going into a
@@ -406,7 +409,8 @@ applied.
 
 ## Other tools
 
-The same map can be written for Cursor and for GitHub Copilot. It is off until you ask for it:
+The same map can be written for Cursor and for GitHub Copilot. It is off until a scan is asked for
+it, or a clone brings a committed overview file with it. To ask:
 
 ```
 node plugins/anatomiya/bin/anatomiya.mjs scan /path/to/your/repo --targets cursor,copilot

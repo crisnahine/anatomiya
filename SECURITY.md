@@ -198,11 +198,16 @@ the map needs is somebody's when it has no key, is a link (whatever it leads to)
 a directory or a fifo, or is spelled as that name in another letter case with nothing at the name
 itself, which on a volume that folds case is the same file. A scan that names the target in
 `--targets` refuses wherever such an entry sits, and writes nothing anywhere. Otherwise it depends
-on the name. At the overview's own name the entry means the target is off, so the scan leaves it
-alone and writes nothing there. Where the record lists no file in that directory, the scan prints
-nothing about it. Where the record does, the scan removes those files under the first rule below,
-prints `.cursor/rules is off now`, and counts the entry in its summary. At an area's name, with the
-target on, the scan leaves the entry, writes no file at that name, and counts it in its summary
+on the name. At the overview's own name, a file without the key, or one spelled in another letter
+case with nothing at the name itself, means the target is off: the scan leaves it alone and writes
+nothing there, and where the record lists files in that directory it removes them under the first
+rule below, prints `.cursor/rules is off now`, and counts a keyless file in its summary. A link, a
+directory, a fifo or a file that will not open leaves the target unknown: the scan writes and
+removes nothing in that directory, and where the record lists files there it prints
+`.cursor/rules could not be read`, the reason, and `so nothing there was written or removed`.
+Where the record lists no file in that directory, the scan prints nothing about either. At an area's
+name, with the target on, the scan leaves the entry, writes no file at that name, and counts it in
+its summary
 (`.cursor/rules holds 1 entry named anatomiya-* that this scan neither wrote nor removed; it was
 left as it is`). A plain scan refuses only when the overview stops being this tool's between the
 moment the scan reads the target's state and the moment it lists the directory.
@@ -242,7 +247,9 @@ file back if a later step fails. Those files are `facts.json` and `layout.json` 
 without it, and every file it removes; and in `.cursor/rules` and `.github/instructions`, the files
 it replaces or removes there, which all carry the key, since a person's file at a planned name is
 never planned. A dry run reads none of them whole. Neither does a scan that writes nothing because
-an engine is missing and it read no source file, and a refresh reads none in a target it holds.
+an engine is missing and it read no source file, and a refresh reads none in a target it holds. A
+dry run still reads `facts.json` up to the 64 MB every command reads of it: a 600 MB `facts.json`
+took a dry run's peak resident memory from 65 MB to 193 MB.
 Measured on one machine, a scan's peak resident memory was 65 MB with nothing unusual in the tree,
 667 MB with a 600 MB keyless file at `.claude/rules/anatomiya-overview.md`, 668 MB with a 600 MB
 keyed file at a Cursor area name, 730 MB with a 600 MB `facts.json` and 794 MB with a 600 MB
@@ -423,7 +430,8 @@ These are real and they are tracked in `DECISIONS.md`.
 - **The put-back copy is read whole, with no cap of this tool's.** A scan reads every file it is
   about to replace or remove into memory, so it can put that file back if a later step fails. A
   repository that commits a large file at one of the map's names, or as `facts.json` or
-  `layout.json`, makes every scan that writes there hold all of it, the background refresh included.
+  `layout.json`, makes a scan that writes there hold the whole of each such file that is not above
+  2 GiB. So does the background refresh, outside a Cursor or Copilot directory it leaves alone.
   The section on the two more directories says which files, and gives the measured numbers.
 
 ## Reporting a vulnerability
