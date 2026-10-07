@@ -29,26 +29,36 @@ of its `cli`, and goes from 1,798 claims stated to 1,784.
   section and no area: flask got `83 files hold a language this map does not read (83 .py)`. This
   version adds areas, test files and namesake tests counted by the language's own naming, and the
   dimensions of the `Three dimensions` entry in this list. Expect mostly counts, and a claim only
-  where a directory is consistent: a scan of fastapi states 1 of 86 claims, hugo 0 of 102, ktor 0
+  where a directory is consistent: a scan of fastapi states 1 of 82 claims, hugo 0 of 102, ktor 0
   of 133 and tokio 14 of 33.
 - Test files and namesake tests in those seven languages. A test file is found by what the
-  language's own tool collects: `_test.go`; `test_*.py` and `*_test.py`; under a test tree,
-  `*Test`, `*Tests` and `*IT` for Java and Kotlin, `*Tests` and `*Test` for C# and `*Test.php` for
-  PHP; a `.rs` file directly under a crate's `tests`. The tests line names the runner:
-  `389 go test specs`, `22 of 27 pytest specs under tests`, `38 of 40 xunit specs under
-  test/Serilog.Tests`. A namesake test is matched inside the language, across the layout its build
+  language's own tool collects: `_test.go`; `test_*.py`, `*_test.py` and `conftest.py`; under a
+  test tree, `*Test`, `*Tests` and `*IT` for Java and Kotlin, `*Tests` and `*Test` for C# and
+  `*Test.php` for PHP; a `.rs` file directly under a crate's `tests`. A test tree is `test`,
+  `tests` and what the language's build names one: a Gradle source set ending in `Test`, a .NET
+  project named `X.Tests` or `X.Test`, a `Test` or `Tests` directory in PHP. The tests line names
+  the runner: `389 go test specs`, `505 of 522 pytest specs under tests`, `38 of 40 xunit specs
+  under test/Serilog.Tests`. A directory named exactly `tests` prints as `tests/` on its own
+  line, since the tests line is labelled `tests`. A namesake test is matched inside the language, across the layout its build
   uses: `55 of 152 .kt files under okhttp/src/commonJvmAndroid/kotlin/okhttp3 have a namesake
   test`, `28 of 113 .cs files under src/Serilog have a namesake test`. A Rust file that holds its
   own `#[test]` functions is asked for no namesake and is counted apart: `0 of 56 .rs files under
-  crates have a namesake test; 34 hold their own tests`. A C# test project is paired by name only
-  (`Serilog.Tests` with `Serilog`), so a project tested from one named for another is not
-  credited.
+  crates have a namesake test; 34 hold their own tests`. A Python package is asked for a test of
+  its directory's name, `flask/json/__init__.py` for `tests/test_json.py`. A C# test project is
+  paired by name only (`Serilog.Tests` with `Serilog`), so a project tested from one named for
+  another is not credited, and a test paired with one source file is credited to no other file
+  of that name.
 - Three dimensions over the languages a tree-sitter grammar reads, measured on three repositories
   per language and asked only of the languages whose repositories differ:
   `public functions carry a doc comment` in Python, PHP, Go, Java, C#, Rust and Kotlin and
   `functions declare what they return` in Python and PHP, each of which may state its inverse
   where an area writes the other way; `exception handlers use the error they caught` in PHP and
-  Java. A function row passes over test files. Not shipped: the handler row in Python, where all
+  Java. A function row passes over every file the layout counts as a test. The doc comment row
+  counts no constructor and no entry point (`main`), and in Go no method golint asks no comment
+  of: `Error`, `Read`, `ServeHTTP`, `String`, `Write`, `Unwrap`, and `Len`, `Less` and `Swap` on
+  a type that has all three. The handler row reads a Java clause that names what it caught
+  `ignored` as binding nothing, as `_` binds nothing. A finding of these rows names the class
+  beside the method, `Views.run`. Not shipped: the handler row in Python, where all
   three repositories read 1.0000, a language default; the handler row in Kotlin and C#, whose
   repositories did not differ by 0.15; how functions are named, which read over 0.94 in all
   fifteen repositories; and whether an import names what it takes, a default in Python and Java,
@@ -67,9 +77,8 @@ of its `cli`, and goes from 1,798 claims stated to 1,784.
   in six of the seven, and hold it to a directory of its own project where the build has
   projects. A Rust test has no name, so no `.rs` file is asked. Asked of the 5,727 test files of
   those languages that 60 repositories already hold, as if each had just been added, it reports
-  none. A file of the seven that its
-  grammar cannot finish in 5 seconds is counted as crashed and is not tried again; the case
-  measured is Kotlin.
+  none. A file of the seven that its grammar cannot finish in 5 seconds is counted as crashed and
+  is not tried again; the case measured is Kotlin.
 - Three runtime dependencies, where 0.13.4 had two. The new one is `web-tree-sitter`: JavaScript
   and one WebAssembly module, with no dependency and no install script. The seven grammars ship
   inside the plugin as `.wasm` files, 12 MB in all, each a copy of the file in its grammar's npm

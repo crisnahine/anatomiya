@@ -114,6 +114,7 @@ _Avoid_: engine, ecosystem, stack
 A test file that answers one source file by carrying its stem. It says that file is tested, and nothing
 about where its root keeps its tests. Always another file: a Rust source file with a `#[test]`
 function **holds its own tests**, has no namesake test, and is counted apart from the files asked for one.
+A Python package's `__init__.py` is asked for a test of its directory's name, since the file is the package.
 _Avoid_: unit test, matching spec, paired test, sibling test
 
 **Holds its own tests**:
@@ -123,10 +124,11 @@ counted in a clause of its own: `34 hold their own tests`.
 _Avoid_: inline test file, self-tested, unit-tested
 
 **Paired test project**:
-A test tree the language's build ties to one source tree by name and place: a .NET `X.Tests`
-project with `X`, a Maven or Gradle `src/test` or `<set>Test` source set with what sits beside
-it, a PHP `tests` with the `src` or `app` beside it. A test there answers the one source file of
-its stem in the paired tree at any depth, and no file where two carry the stem. A Python `tests`
+A test tree the language's build ties to one source tree by name and place: a .NET `X.Tests` or
+`X.Test` project with `X`, a Maven or Gradle `src/test` or `<set>Test` source set with what sits
+beside it, a PHP `tests` with the `src` or `app` beside it. A test there answers the one source
+file of its stem in the paired tree at any depth, no file where two carry the stem, and no file
+of that name outside the pair. A Python `tests`
 directory beside a package is paired too, and a test in it answers only the path it mirrors. No
 project file is read to find a pair.
 _Avoid_: test module, companion project, sibling project

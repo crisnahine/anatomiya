@@ -598,6 +598,18 @@ in `check`.
 | `public_doc_comment` | partial | python, php, go, java, csharp, rust, kotlin | public functions carry a doc comment |
 | `declared_return_type` | precise | python, php | functions declare what they return |
 
+The three rows over a tree-sitter tree leave out what each language's own tools leave out (C50,
+C51, C53). The two function rows hold no site in a file the layout counts as a test file, a
+`conftest.py` and a `.rs` file cargo builds from a crate's `tests` among them. The doc comment row
+counts no constructor (a PHP `__construct` or `__destruct`), no entry point (a static `main` in
+Java, a static `Main` in C#, a `main` at the top of a Kotlin or Rust file), and in Go no method
+golint asks no comment of: `Error`, `Read`, `ServeHTTP`, `String`, `Write`, `Unwrap`, and `Len`,
+`Less` and `Swap` on a type the file gives all three. The handler row reads a Java clause that
+names what it caught `ignored` as binding nothing, as `_` binds nothing. A site of these rows
+carries the class beside the name, `Views.run`, or in Go the receiver's type, which is what tells a
+new method from an older one of the same name in another class when `check` asks what a branch
+added.
+
 The five JSX rows are the ones that make the JSX total 33 rather than 28: a `.tsx` or `.jsx` file is
 counted by every `js` dimension as well as these. The five migration rows are Rails and count as
 Ruby, which is what takes Ruby from 11 to 16.
@@ -872,7 +884,10 @@ Four hooks run, on different events and answering different questions. `anatomiy
 `SessionStart` and `FileChanged` and keeps the map current (below). `anatomiya echo` fires on
 `UserPromptSubmit`, `PostToolUse` and `PostToolUseFailure` and re-delivers the map. `anatomiya notice`
 fires on `PreToolUse` for `Write`, `Edit` and `NotebookEdit`, and answers for the one path that call is
-about: whether a test is being put where its kind of file has no test precedent. It is silent otherwise,
+about: whether a test is being put where its kind of file has no test precedent. A test is one by
+its name: the JavaScript and Ruby forms, or its own language's in Python, PHP, Go, Java, C# and
+Kotlin, read by the rule the layout reads a file by. No Rust path is asked, since cargo collects by
+place and a crate is known only by the files around it. It is silent otherwise,
 which is most writes. That silence is the point rather than a saving. A session was handed the same
 overview more than a hundred times and still put a spec in a directory whose siblings had none, because
 the clause that mattered had scrolled past a hundred times with everything else; an unchanged block on
@@ -1646,7 +1661,7 @@ tool collects by, which is the only place a path is read:
 | Language | The path that makes a named function a case | Measured |
 |---|---|---|
 | Go | the file is `_test.go`, and nothing else is asked | 10 files in caddy and hugo declare `func Test` or `func Fuzz` outside one and `go test` runs none |
-| Python | the file is `test_*.py` or `*_test.py`, or sits under a test tree | the ordinary pytest file imports nothing from pytest: fastapi went from 289 files read as tests to 519, django from 179 to 854 |
+| Python | the file is `test_*.py` or `*_test.py`, or sits under a test tree | the ordinary pytest file imports nothing from pytest: read by the import alone fastapi holds 289 test files and django 179, and with the path 519 and 848 |
 | PHP | the file is `*Test.php` under a test tree | a class under `tests` that is not so named is a fixture PHPUnit never loads |
 | Rust | the file is under a `tests` directory, or is a `tests.rs` | see below |
 
@@ -1655,13 +1670,18 @@ Python `pytest` for a function at file level or a method of a class with no base
 method of a class something made. Django's `TestCase` is unittest's, so `django.test` says
 `unittest`. A Go `_test.go` file carries `go test` with or without a case in it, because the
 compiler builds it for nothing else. A pytest fixture is not a case whatever it is called (a
-conftest names one `test_client`), and neither is a function inside a function. Pest's `it(...)`
+conftest names one `test_client`), and neither is a function inside a function. A `conftest.py`
+itself is pytest's by its name, wherever it sits and with no case in it, as a Go `_test.go` of
+helpers is the compiler's: flask and fastapi hold three each. Pest's `it(...)`
 and `test(...)` at file level count under a test tree only.
 
 Rust is the one language whose tests mostly sit in the file they test. By default cargo builds
 every `.rs` directly in a crate's `tests` directory as an integration test, whatever it holds, so
-such a file is a test by place: a crate is a directory holding a `Cargo.toml` or a `src`. A manifest
-can turn that default off and the scan reads no manifest. ripgrep sets `autotests = false` and
+such a file is a test by place: a crate is a directory holding a `Cargo.toml` or a `src`. The
+listing answers that before any file is parsed and the parse is told, so the file's facets name
+`cargo test` with a case in it or none, and a row that leaves test files out leaves it out: read
+as source, serde's `test_suite/tests` printed `22 cargo test specs` above 12 undocumented sites.
+A manifest can turn that default off and the scan reads no manifest. ripgrep sets `autotests = false` and
 declares one target, `tests/tests.rs`: the other nine files directly under `tests` are its modules,
 all ten count as specs, and four of the ten hold no case (the target file, `hay.rs`, `util.rs` and
 `macros.rs`). ripgrep declares 349 of
@@ -1694,8 +1714,9 @@ no case of their own, most of them a subclass that inherits its cases. `IT` need
 letter or a digit before it, so `EXIT` is not one, and `Spec` is not a suffix at all: two files in
 the 21 repositories end in it and neither is a test. A test tree for these is the six names below
 plus the ones the family's own build uses: a Gradle source set ending in `Test` (`commonTest`,
-`jvmTest`) for Java and Kotlin, a dotted project name ending in `Tests` (`Serilog.Tests`) for C#,
-and a `Test` namespace directory for PHP. Rust has no name, and a file there is a test by its facets
+`jvmTest`) for Java and Kotlin, a dotted project name ending in `Tests` or `Test` (`Serilog.Tests`, `Autofac.Test`) for C#,
+and a `Test` or `Tests` directory for PHP (composer's `tests/Composer/Test`, symfony's
+`Component/Cache/Tests`). Rust has no name, and a file there is a test by its facets
 or by sitting directly in a crate's `tests`.
 Then a `__tests__` path segment, because nothing but a test is ever put in one. Last, for a source
 file under a top-level `test`, `tests` or `spec` directory, a source file outside that tree whose
@@ -1803,24 +1824,29 @@ Every clause is dropped when it counts nothing.
   okhttp's `commonJvmAndroid` reads 55 of 152, 49 of them under `jvmTest`. A package written as one
   dotted directory, `java/tools.fastlane.screengrab`, is the package a directory per name spells. Where no such directory
   exists a Gradle source set drops out, so `core/commonMain/src/k` mirrors `core/jvmTest/src/k`. The
-  rest: the `.Tests` on a .NET project, so
-  `test/Serilog.Tests/Core` mirrors `src/Serilog/Core`; a `Test` directory for PHP, so composer's
-  `tests/Composer/Test/Util` mirrors `src/Composer/Util`. A Python package directly under `src` is
+  rest: the `.Tests` or `.Test` on a .NET project, so
+  `test/Serilog.Tests/Core` mirrors `src/Serilog/Core`; a `Test` or `Tests` directory for PHP, so composer's
+  `tests/Composer/Test/Util` mirrors `src/Composer/Util` and symfony's `Component/Cache/Tests/Adapter`
+  mirrors `Component/Cache/Adapter`. A Python package directly under `src` is
   read as the top of the tree, which is where every import puts it, so a flat `tests/test_cli.py`
-  answers `src/flask/cli.py`: flask reads 9 of 24 under `src/flask`. A Python test tree files its tests by feature below its top level, so a test
+  answers `src/flask/cli.py`. A package's `__init__.py` answers as the module its directory is, so
+  `tests/test_json.py` answers `src/flask/json/__init__.py`: flask reads 10 of 24 under `src/flask`. A Python test tree files its tests by feature below its top level, so a test
   there answers a package at the top of the tree from the tree's own top level or from the path
   that mirrors the source's, and from nowhere deeper: fastapi's
   `tests/test_telemetry/test_exceptions.py` tests OpenTelemetry spans and does not answer
   `fastapi/exceptions.py`, and `fastapi` reads 3 of 50. A `tests`
   directory beside a package mirrors that package directory for directory, where one source file
   beside it carries the stem: `examples/tutorial/tests/test_auth.py` covers
-  `examples/tutorial/flaskr/auth.py`, and flask's `examples` reads 3 of 12. Four families pair a whole project with its tests, and there a test covers the one source
+  `examples/tutorial/flaskr/auth.py`, and flask's `examples` reads 4 of 10. Four families pair a whole project with its tests, and there a test covers the one source
   file of its stem at any depth: a .NET test project and the project its name carries
   (`Serilog.Tests` and `Serilog`), a Maven or Gradle `src/test` or `<set>Test` source set and what
   sits beside it, a PHP `tests` and the `src` or `app` beside it. serilog keeps
   `test/Serilog.Tests/Core/BatchingSinkTests.cs` for `src/Serilog/Core/Sinks/Batching/BatchingSink.cs`
   and reads 28 of 113; gson reads 34 of 80 and Laravel 267 of 1,630. Two source files of one stem in the project are credited with
-  nothing by it, since the stem cannot say which the test was written for. A PHP test whose name
+  nothing by it, since the stem cannot say which the test was written for. A test so paired with one
+  source answers no other file of that name, in another module or another tree: Laravel's `types`
+  holds PHPStan assertions named for the class they type, and reads 6 of 60 where the tests paired
+  to the classes under `src` had lent it three more. A PHP test whose name
   is its directory's name, alone or with a class after it, covers, by the pairing, only a source
   under a directory of that name: Laravel's `tests/Session/SessionStoreTest.php` tests
   `Illuminate\Session\Store` and does not answer `Cache/SessionStore.php`, and
@@ -1853,7 +1879,10 @@ Every clause is dropped when it counts nothing.
 
 ### The tests line
 
-One line for the whole repository, after the roots. A group per runner, biggest first, at most
+One line for the whole repository, after the roots, labelled `tests`. A root whose own name is
+exactly that prints with a slash, `- tests/: 41 .py, 9 .html and 10 other; 23 pytest specs`, so
+the two bullets never share a label: seven of the 21 repositories of the seven languages keep
+such a directory, and none of the 35 older ones. A group per runner, biggest first, at most
 three and then `and k more`. Each is named with the deepest directory holding at least the wrapper
 share of its files, and with no directory at all when that turns out to be the repository root.
 Not the prefix every one of them shares: one file kept outside the tree the rest sit in collapses a
@@ -2061,7 +2090,9 @@ match a claim, because a file that creates its own directory is the only member 
 itself every time. It carries the same finding shape as any other, `dimension: "test_precedent"` in the
 json, so a reader that filters by dimension sees it beside the counted rows; it is not in the dimension
 count the documentation checks, since nothing about it is measured per area. What it does and refuses to
-do is H38, and the sentence the map states beside it is H39. Its reason, which the `PreToolUse`
+do is H38, and the sentence the map states beside it is H39. In Java, Kotlin, C# and PHP, whose
+builds pair a test tree with a project, a test is held to a directory of its own project: a
+package path is the same in two Gradle modules, and the test of one says nothing about the other. Its reason, which the `PreToolUse`
 notice prints too, gives the root's count in the tests line's words, `src/hooks: 0 of 5 .tsx files
 have a namesake test`: the count is over one extension, and a bare `5 files` read as the whole of a
 directory holding nine. A map written before the root recorded that extension says `0 of 5 files`
@@ -2182,7 +2213,7 @@ Roughly, in order of how much they move the number of stated claims:
 - **Language.** JavaScript, TypeScript and Ruby, the script blocks of Vue and Svelte files, and
   Python, PHP, Go, Java, C#, Rust and Kotlin for the one to three rows section 4 counts for each. Nothing
   else is read, a component's template included. A map of one of those seven mostly prints counts:
-  a scan of fastapi states 1 of 86 claims, hugo 0 of 102 and ktor 0 of 133.
+  a scan of fastapi states 1 of 82 claims, hugo 0 of 102 and ktor 0 of 133.
 - **Repository size.** No cap. A 2,468 file repository takes about 1.8 seconds against a pinned
   baseline, a 5,477 file Ruby repository about 6.2, and a synthetic 100,000 file repository about
   9.2. Scaling is close to linear in file count. There was a 50,000 file cap, and hitting it did not
