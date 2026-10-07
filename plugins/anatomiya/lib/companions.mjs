@@ -361,10 +361,14 @@ function ownerAmong(t, sources, near = sources) {
  */
 function assignPairs(byStem, sourceFiles) {
   const sourcesByStem = Map.groupBy(sourceFiles, (f) => `${familyAt(f.rel)}\u0000${stemOf(f.rel)}`);
+  const dirsOf = new Map();
+  for (const [family, files] of Map.groupBy(sourceFiles, (f) => familyAt(f.rel))) {
+    dirsOf.set(family, [...new Set(files.map((f) => dirOf(f.rel)))]);
+  }
   for (const [stem, candidates] of byStem) {
     for (const t of candidates) {
       const family = familyAt(t.rel);
-      const inProject = pairedWith(t.dir, family, stem);
+      const inProject = pairedWith(t.dir, family, stem, dirsOf.get(family));
       if (inProject === null) continue;
       const held = (sourcesByStem.get(`${family}\u0000${stem}`) ?? []).filter((f) => inProject(dirOf(f.rel)));
       if (held.length === 1) t.paired = held[0].rel;

@@ -241,11 +241,12 @@ const below = (dir, above) => {
  * a PHP `tests` with the `src` or `app` beside it. A `test` directory under no
  * `src` is ktor's flat `<module>/test` and pairs with nothing.
  *
- * A PHP test whose name is its directory's and a word more is named
- * `<Directory><Class>` and is held to sources under a directory of that name:
- * Laravel's `tests/Session/SessionStoreTest.php` tests `Session\Store`, not
- * `Cache/SessionStore.php`. Of the 61 Laravel credits that cross a component 7
- * are so named, 5 of them wrong.
+ * A PHP test whose name is its directory's, alone or with a class after it,
+ * is held to sources under a directory of that name: Laravel's
+ * `tests/Session/SessionStoreTest.php` tests `Session\Store`, not
+ * `Cache/SessionStore.php`. Of the 61 Laravel credits that cross a component
+ * 10 are so named, 7 of them wrong. Only where a source directory of the
+ * paired tree carries the name: `tests/Unit` mirrors none.
  */
 const jvmPairing = (segments) => {
   const at = segments.findIndex((segment, i) => JVM_TREES.test.test(segment) || (segment === "test" && segments[i - 1] === "src"));
@@ -265,15 +266,17 @@ const PAIRINGS = {
   },
   java: jvmPairing,
   kotlin: jvmPairing,
-  php: (segments, covered) => {
+  php: (segments, covered, sourceDirs) => {
     const at = segments.indexOf("tests");
     if (at === -1) return null;
-    const own = segments.at(-1);
-    const named = covered.startsWith(own) && /^\p{Lu}/u.test(covered.slice(own.length)) ? own : null;
-    return (dir) => {
+    const inTree = (dir, under = null) => {
       const source = below(dir, segments.slice(0, at));
-      return source !== null && (source[0] === "src" || source[0] === "app") && (named === null || source.includes(named));
+      return source !== null && (source[0] === "src" || source[0] === "app") && (under === null || source.includes(under));
     };
+    const own = segments.at(-1);
+    const named = covered.startsWith(own) && /^(?:\p{Lu}|$)/u.test(covered.slice(own.length));
+    const held = named && sourceDirs.some((dir) => inTree(dir, own)) ? own : null;
+    return (dir) => inTree(dir, held);
   },
   python: (segments) => {
     const at = segments.findIndex((segment) => TEST_ROOTS.has(segment));
@@ -288,5 +291,6 @@ const PAIRINGS = {
   },
 };
 
-/** `covered` is the stem the test's name says it covers, which only PHP's pairing reads. */
-export const pairedWith = (testDir, family, covered = "") => PAIRINGS[family]?.(testDir.split("/"), covered) ?? null;
+/** `covered` is the stem the test's name says it covers and `sourceDirs` the family's source directories, which only PHP's pairing reads. */
+export const pairedWith = (testDir, family, covered = "", sourceDirs = []) =>
+  PAIRINGS[family]?.(testDir.split("/"), covered, sourceDirs) ?? null;

@@ -1038,12 +1038,23 @@ test("a test in a paired project covers the one source of its stem there, at any
   assert.equal(count(seeder, [file("tests/Integration/Generators/SeederMakeCommandTest.php")], "src/Illuminate"), 1);
   assert.equal(count([file("app/Models/User.php")], [file("tests/Unit/UserTest.php")], "app"), 1);
   // A test named `<Directory><Class>` covers a class of that directory, never one of the joined name elsewhere.
-  const cacheStore = [file("src/Illuminate/Cache/SessionStore.php")];
+  const store = file("src/Illuminate/Session/Store.php");
+  const cacheStore = [file("src/Illuminate/Cache/SessionStore.php"), store];
   assert.equal(count(cacheStore, [file("tests/Session/SessionStoreTest.php")], "src/Illuminate"), 0);
   assert.equal(count([file("src/Illuminate/Session/Stores/SessionStore.php")], [file("tests/Session/SessionStoreTest.php")], "src/Illuminate"), 1);
   // Two of the stem, one in the directory the test is named for: that one.
   const both = [...cacheStore, file("src/Illuminate/Session/Stores/SessionStore.php")];
   assert.equal(count(both, [file("tests/Session/SessionStoreTest.php")], "src/Illuminate"), 1);
+  // Named for its directory and no more: Laravel's `tests/Cookie/CookieTest.php` tests `CookieJar`, not the facade.
+  const facade = [file("src/Illuminate/Support/Facades/Cookie.php"), file("src/Illuminate/Cookie/CookieJar.php")];
+  assert.equal(count(facade, [file("tests/Cookie/CookieTest.php")], "src/Illuminate"), 0);
+  // The hold mirrors at any depth of the test tree: `tests/Integration/Database` is `src/Illuminate/Database`.
+  const lock = [file("src/Illuminate/Cache/DatabaseLock.php"), file("src/Illuminate/Database/Connection.php")];
+  assert.equal(count(lock, [file("tests/Integration/Database/DatabaseLockTest.php")], "src/Illuminate"), 0);
+  // `tests/Unit`, `tests/Feature` and `tests/Integration` mirror no source directory, so the name holds a test to nothing.
+  assert.equal(count([file("app/Services/UnitConverter.php")], [file("tests/Unit/UnitConverterTest.php")], "app"), 1);
+  assert.equal(count([file("app/Models/FeatureFlag.php")], [file("tests/Feature/FeatureFlagTest.php")], "app"), 1);
+  assert.equal(count([file("src/Acme/IntegrationManager.php")], [file("tests/Integration/IntegrationManagerTest.php")], "src/Acme"), 1);
   // Slim keeps its classes in `Slim`, which is no half of a pair.
   assert.equal(count([file("Slim/Routing/Route.php")], [file("tests/Deep/RouteTest.php")], "Slim"), 0);
 
