@@ -97,7 +97,7 @@ function errorsIn(tree) {
  * Parse one source string and answer the per-file record, pre-classify.
  *
  * `grammars` and `rows` are defined-only test overrides: a directory to load
- * grammar files from, and the rows to ask where the registry lists none.
+ * grammar files from, and the rows to ask in place of the registry's.
  */
 export async function parseTreeFile(source, rel, lang, { withProgram = false, grammars = GRAMMARS, rows } = {}) {
   const parser = await parserFor(grammarFor(lang, rel), grammars, lang);
@@ -141,11 +141,13 @@ export async function parseTreeFile(source, rel, lang, { withProgram = false, gr
     tree.delete();
   }
 
+  // Read once and handed to the rows, which ask what kind of file this is.
+  const facets = treeFacets(program, lang, rel);
   const payload = {
     rel,
     ok: true,
-    hits: collectHits(program, dimensionsFor([lang], rows ? { rows } : {}), { comments: [], source: parsed, rel }, { walker: walkTree }),
-    facets: treeFacets(program, lang, rel),
+    hits: collectHits(program, dimensionsFor([lang], rows ? { rows } : {}), { comments: [], source: parsed, rel, facets }, { walker: walkTree }),
+    facets,
     errors: 0,
     // The source's, never the root's span: a file that opens with blank lines has a root that starts past them.
     length: source.length,
@@ -154,6 +156,8 @@ export async function parseTreeFile(source, rel, lang, { withProgram = false, gr
   if (oneBranch) payload.oneBranch = true;
   if (withProgram) {
     payload.program = program;
+    // Absent unless it differs: a row asked of this tree reads the text the tree was read from, never the file as written.
+    if (parsed !== source) payload.text = parsed;
     // Comments are nodes of this tree. The channel is the oxc side's, kept so one caller reads both.
     payload.comments = [];
   }

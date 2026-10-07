@@ -111,6 +111,13 @@ test("an annotation is read by its last name, and its arguments are not its name
   assert.deepEqual(await facetsOf("rust", gated), { testRunner: null, testCalls: false });
 });
 
+test("a decorator's arguments are not its name, so a parametrized pytest case is a case whatever they spell", async () => {
+  const parametrized = 'import pytest\n\n\n@pytest.mark.parametrize("fixture", [1])\ndef test_a(fixture):\n    assert fixture\n';
+  assert.deepEqual(await facetsOf("python", parametrized), { testRunner: "pytest", testCalls: true });
+  const skipped = "import pytest\n\n\n@pytest.mark.skipif(not fixture, reason=\"\")\ndef test_a():\n    assert True\n";
+  assert.deepEqual(await facetsOf("python", skipped), { testRunner: "pytest", testCalls: true });
+});
+
 test("a Rust source file holding its own unit tests in a module is still a source file", async () => {
   const source = "pub fn total() -> i64 {\n    1\n}\n\n#[cfg(test)]\nmod tests {\n    use super::*;\n\n    #[test]\n    fn adds() {\n        assert_eq!(total(), 1);\n    }\n}\n";
   assert.deepEqual(await facetsOf("rust", source), { testRunner: null, testCalls: false, inlineTests: true });

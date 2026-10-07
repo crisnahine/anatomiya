@@ -511,7 +511,7 @@ function onThread(files, job, resourceLimits) {
     let failure = null;
     const children = new Map();
     const worker = new Worker(SHARD, {
-      workerData: { ...job, files: files.map(({ rel, abs }) => ({ rel, abs })) },
+      workerData: { ...job, files: files.map(({ rel, path, abs }) => ({ rel, path, abs })) },
       // Empty for the reason `guardedChild` gives: a flag legal on the parent
       // can be refused on a thread that loads a file.
       execArgv: [],
@@ -632,6 +632,7 @@ export async function parseBatch(files, { ruby, guards, rubyScript, load, dimens
   const out = blank();
   const seen = new Set();
   const unanswered = () => files.filter((f) => !seen.has(f.rel));
+  const paths = new Map(files.filter((f) => f.path).map((f) => [f.rel, f.path]));
 
   // Resolves true when one of our own timers did the killing, which is the only
   // ending a second child could answer differently.
@@ -690,7 +691,7 @@ export async function parseBatch(files, { ruby, guards, rubyScript, load, dimens
         while ((i = buf.indexOf("\n")) >= 0) {
           const line = buf.slice(0, i);
           buf = buf.slice(i + 1);
-          if (line) take(out, onResult, seen, line, dimensions, attempt);
+          if (line) take(out, onResult, seen, line, dimensions, attempt, paths);
         }
         // A single line this long means one file produced it, and V8 refuses to
         // hold a string much larger. Dropping the run beats an unattributable
@@ -708,7 +709,7 @@ export async function parseBatch(files, { ruby, guards, rubyScript, load, dimens
         // whatever never answered. Reading the tail here would hand it a result
         // for a file it has already accounted for, after it stopped listening.
         if (settled) return;
-        if (buf) take(out, onResult, seen, buf, dimensions, attempt);
+        if (buf) take(out, onResult, seen, buf, dimensions, attempt, paths);
         // The ready line is the proof that the script itself started. Without it
         // the failure is the interpreter, not a file, and stderr is the only
         // thing that says which.
@@ -772,7 +773,7 @@ export async function parseBatch(files, { ruby, guards, rubyScript, load, dimens
   return out;
 }
 
-function take(out, onResult, seen, line, dimensions, attempt) {
+function take(out, onResult, seen, line, dimensions, attempt, paths) {
   let msg;
   try {
     msg = JSON.parse(line);
@@ -818,7 +819,9 @@ function take(out, onResult, seen, line, dimensions, attempt) {
     // Guarded the way each dimension is, and for a sharper reason: this runs
     // inside the stdout handler, so a throw on one odd tree escapes into the
     // stream and takes the whole shard rather than the file it came from.
-    const facets = rubyFacets(program, result.rel);
+    // The file's own path where the caller keyed it by a label: minitest collects by the directory.
+    const path = paths.get(result.rel) ?? result.rel;
+    const facets = rubyFacets(program, path);
     const hits = collectHits(program, dimensions, { rel: result.rel }, { walker: walkRuby, also: [facets] });
     try {
       result.facets = facets.done();
