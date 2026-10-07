@@ -2107,9 +2107,12 @@ match a claim, because a file that creates its own directory is the only member 
 itself every time. It carries the same finding shape as any other, `dimension: "test_precedent"` in the
 json, so a reader that filters by dimension sees it beside the counted rows; it is not in the dimension
 count the documentation checks, since nothing about it is measured per area. What it does and refuses to
-do is H38, and the sentence the map states beside it is H39. In Java, Kotlin, C# and PHP, whose
-builds pair a test tree with a project, a test is held to a directory of its own project: a
-package path is the same in two Gradle modules, and the test of one says nothing about the other. Its reason, which the `PreToolUse`
+do is H38, and the sentence the map states beside it is H39. A test that sits in the one place its
+language's tool reads it from is asked nothing: a Go `_test.go` in its package's directory, a Java
+or Kotlin test in its module's own `src/test` or `<set>Test`, a C# test in its test project. In
+PHP, whose layout pairs a `tests` tree with the `src` beside it, a test is held to a directory of
+that tree. A test for a directory the branch itself created is not held to the files of the
+directory above it; `check` asks the merge base for that, and the notice cannot. Its reason, which the `PreToolUse`
 notice prints too, gives the root's count in the tests line's words, `src/hooks: 0 of 5 .tsx files
 have a namesake test`: the count is over one extension, and a bare `5 files` read as the whole of a
 directory holding nine. A map written before the root recorded that extension says `0 of 5 files`

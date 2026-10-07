@@ -8,7 +8,7 @@
  * instead, and answers it from counts the scan already took (H38).
  */
 import { byCode, dirOf } from "./paths.mjs";
-import { FAMILY_TEST_NAMES, RUBY_TEST_NAME, TEST_DIRS, TEST_NAME, TEST_ROOTS, namesATest, pairedWith } from "./test-shape.mjs";
+import { FAMILY_TEST_NAMES, RUBY_TEST_NAME, TEST_DIRS, TEST_NAME, TEST_ROOTS, namesATest, pairedWith, sitsWhereItsToolReads } from "./test-shape.mjs";
 import { withoutTree } from "./companions.mjs";
 import { isCorpusPath } from "./corpus.mjs";
 import { familyOf, language } from "./langs.mjs";
@@ -90,13 +90,16 @@ function testedTail(rel) {
  * the one with the most producers speaks, since that is the strongest count
  * that is true.
  *
- * Where the language's build pairs the test's directory with a project, only a
- * root of that project answers. A tail is a package there, and two modules
- * keep one: okhttp's `mockwebserver-junit4` tests its own one class under the
- * package `mockwebserver3`, and was held to the 2 of 14 of the `mockwebserver`
- * module beside it.
+ * Where the language's layout pairs the test's directory with a project, only a
+ * root of that project answers: a PHP `tests/Cache` is about the `src/Cache`
+ * beside it, and a `Cache` in another tree is not its to answer for.
+ *
+ * `created` answers whether the change made a directory. A tail shortened past
+ * one is a test of that directory, which has no habit yet, and the files of
+ * the directory above it are another directory's: a package added with its
+ * source and its test in one change was held to its parent's ratio.
  */
-function coveredRoot(rel, roots) {
+function coveredRoot(rel, roots, created) {
   const parts = testedTail(rel).split("/").filter(Boolean);
   const family = namedFamily(rel);
   const inProject = family === null ? null : pairedWith(dirOf(rel), family);
@@ -118,6 +121,8 @@ function coveredRoot(rel, roots) {
     const matches = eligible.filter((r) => r.dir === tail || r.dir.endsWith(`/${tail}`));
     if (matches.length === 0) continue;
     if (matches.some(hasPrecedent)) return null;
+    const below = parts.slice(end);
+    if (below.length > 0 && matches.some((r) => created([r.dir, ...below].join("/")))) return null;
     return matches.sort((a, b) => b.companions.of - a.companions.of || byCode(a.dir, b.dir))[0];
   }
   return null;
@@ -186,10 +191,16 @@ const testFilesHeld = (root) => (root.tests ?? []).reduce((n, t) => n + t.files,
  * of what says a file arrived.
  *
  * `holdsTest` answers whether a directory already holds a test that this change
- * did not bring. A caller that cannot tell says nothing, which leaves the rule
- * where it was before the question was asked.
+ * did not bring, and `created` whether the change made a directory. A caller
+ * that cannot tell says nothing, which leaves the rule where it was before the
+ * question was asked.
+ *
+ * Nothing is said of a test that sits where its language's own tool reads it
+ * from and nowhere else (`sitsWhereItsToolReads`): the first test of a Go
+ * package has no other directory to go to, so "where the siblings put theirs"
+ * is where it already is.
  */
-export function precedentFindings(arrived, roots, { fresh = true, holdsTest = () => false } = {}) {
+export function precedentFindings(arrived, roots, { fresh = true, holdsTest = () => false, created = () => false } = {}) {
   // A repository that pairs no tests anywhere has no habit to have departed
   // from, and a zero there is the absence of a practice rather than a breach of
   // one. It is also the first thing a repository adopting tests would trip.
@@ -199,7 +210,7 @@ export function precedentFindings(arrived, roots, { fresh = true, holdsTest = ()
   const found = [];
   for (const file of arrived) {
     const rel = typeof file === "string" ? file : file.path;
-    if (!isTestPath(rel)) continue;
+    if (!isTestPath(rel) || sitsWhereItsToolReads(dirOf(rel), namedFamily(rel))) continue;
     // The nearest evidence there is, and the half of issue 120's own sentence
     // this rule was missing: a test landing beside tests is following them,
     // whatever the root's ratio says a level or two up. The caller answers it,
@@ -207,7 +218,7 @@ export function precedentFindings(arrived, roots, { fresh = true, holdsTest = ()
     // notice can see is from the write it is about, and a check has to leave
     // out everything the same change brought.
     if (holdsTest(dirOf(rel))) continue;
-    const covered = coveredRoot(rel, roots);
+    const covered = coveredRoot(rel, roots, created);
     if (!covered) continue;
     if (covered.companions.of < PRECEDENT_FLOOR) continue;
     // Tests under the root that pair with nothing are still tests. The same

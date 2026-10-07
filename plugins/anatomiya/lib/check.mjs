@@ -260,6 +260,11 @@ export async function check(cwd, { baseRef = null } = {}) {
   // What "already" means here is not what it means for the hook: a change that
   // invents a directory and fills it with four specs must not have three of
   // them excused by the first, so everything it brought is subtracted.
+  // A relocation is an arrival too: moving a test into a directory whose
+  // siblings have none is the same deviation as writing it there. Read off
+  // `from` rather than the status letter, which spells the same move two ways:
+  // `R` from the diff, and `M` with an `orig` from a working tree where it is
+  // staged and not yet committed.
   // A rename within its own directory arrives nowhere: the file was already
   // there under another name. Counted as an arrival, it was also subtracted as
   // one, and a directory whose only test had been renamed read as holding none.
@@ -276,24 +281,17 @@ export async function check(cwd, { baseRef = null } = {}) {
   const holdsTest = (dir) =>
     tracked === null || tracked.some((rel) => dirname(rel) === (dir || ".") && !brought.has(rel));
 
-  findings.push(
-    ...precedentFindings(
-      // A relocation too: moving a test into a directory whose siblings have
-      // none is the same deviation as writing it there. Read off `from` rather
-      // than the status letter, which spells the same move two ways: `R` from
-      // the diff, and `M` with an `orig` from a working tree where it is staged
-      // and not yet committed.
-      arrived,
-      facts?.layout?.roots ?? [],
-      {
-        // The comparison alone is what says a file arrived; a stale map does
-        // not bear on that, and it caps at FIX anyway, which is this rule's
-        // ceiling.
-        fresh: mode === "compare",
-        holdsTest,
-      }
-    )
-  );
+  const roots = facts?.layout?.roots ?? [];
+  // The comparison alone is what says a file arrived; a stale map does not
+  // bear on that, and it caps at FIX anyway, which is this rule's ceiling.
+  const asked = { fresh: mode === "compare", holdsTest };
+  // Asked once to learn which directories the answer turns on, then again with
+  // what the merge base says of them: one listing, and none where no finding
+  // was about to be stated.
+  const turnsOn = new Set();
+  precedentFindings(arrived, roots, { ...asked, created: (dir) => turnsOn.add(dir) && false });
+  const created = await createdSince(root, base.mergeBase, [...turnsOn]);
+  findings.push(...precedentFindings(arrived, roots, { ...asked, created: (dir) => created.has(dir) }));
 
   findings.sort(
     (a, b) =>
@@ -671,6 +669,21 @@ async function trackedTests(root) {
     return null;
   }
   return found;
+}
+
+/**
+ * Which of `dirs` the merge base does not hold, so the change made them.
+ *
+ * None where there is no merge base to ask. A listing that failed names no
+ * directory, so each reads as made by the change and its finding is not
+ * stated: what decides whether one prints is a fact this could not read (C33).
+ */
+async function createdSince(root, mergeBase, dirs) {
+  if (!mergeBase || dirs.length === 0) return new Set();
+  const listed = await gitBuffered(root, ["ls-tree", "-z", "--name-only", mergeBase, "--", ...dirs], { timeout: GIT.checkTimeoutMs });
+  // Asked of a directory and of one inside it, git lists the inner one alone.
+  const held = listed.stdout.split("\0");
+  return new Set(dirs.filter((dir) => !held.some((entry) => entry === dir || entry.startsWith(`${dir}/`))));
 }
 
 /**
