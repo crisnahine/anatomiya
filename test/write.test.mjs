@@ -1810,6 +1810,75 @@ test("a target stays on without being named again", (t) => {
   assert.deepEqual(readFacts(dir).targets, { cursor: mapOf(cursor, a, b) });
 });
 
+test("a target a plain scan writes while the record names no file there is marked as its first write, once", (t) => {
+  const a = area("src/services");
+  const dir = workspace(t);
+  assert.equal(writeMap(result(dir, [a]), { targets: ALL }).targets.cursor.first, false, "named, so nobody needs telling");
+  // A clone: the committed files, and no record.
+  rmSync(join(dir, STORE), { recursive: true, force: true });
+
+  assert.deepEqual(OTHERS.map((o) => planMap(result(dir, [a])).targets[o.id].first), [true, true], "a dry run says it too");
+  const plan = writeMap(result(dir, [a]));
+  const again = writeMap(result(dir, [a]));
+
+  assert.deepEqual(OTHERS.map((o) => plan.targets[o.id].first), [true, true]);
+  assert.deepEqual(OTHERS.map((o) => again.targets[o.id].first), [false, false]);
+  assert.equal(writeMap(result(dir, [a]), { targets: ["claude"] }).targets.cursor.first, false);
+});
+
+test("a file that cannot be replaced or removed is named in a sentence with its directory and what to do", async (t) => {
+  const a = area("src/services");
+  const b = area("src/api");
+  const fs = (await import("node:fs")).default;
+  const { syncBuiltinESMExports } = await import("node:module");
+  const real = { renameSync: fs.renameSync, unlinkSync: fs.unlinkSync };
+  let locked = null;
+  for (const name of Object.keys(real)) {
+    fs[name] = (...args) => {
+      const at = String(args.at(-1)).split(sep).join("/");
+      if (locked !== null && at.endsWith(`/${locked.at}`)) throw Object.assign(new Error(`${locked.code}: operation not permitted, ${name} '${args[0]}'`), { code: locked.code });
+      return real[name](...args);
+    };
+  }
+  syncBuiltinESMExports();
+  t.after(() => {
+    Object.assign(fs, real);
+    syncBuiltinESMExports();
+  });
+  const said = (at, verb, code) =>
+    `${at} could not be ${verb} (${code}), so the scan stopped and put back what it had replaced: ` +
+    "the file is locked or read-only, so close what holds it or change its mode, then scan again";
+
+  for (const [at, code] of [
+    [`${copilot.dir}/${areaName(copilot, a.id)}`, "EPERM"],
+    [`${cursor.dir}/${overviewName(cursor)}`, "EBUSY"],
+    [`${RULES}/${areaFilename(a)}`, "EACCES"],
+    [`${STORE}/facts.json`, "EPERM"],
+  ]) {
+    const dir = workspace(t);
+    writeMap(result(dir, [a]), { targets: ALL });
+    const before = unstamped(snapshot(dir));
+    const theirs = OTHERS.map((o) => tree(join(dir, o.dir)));
+    locked = { at, code };
+
+    assert.throws(() => writeMap(result(dir, [a, b])), { message: said(at, "replaced", code) }, at);
+
+    locked = null;
+    assert.deepEqual(unstamped(snapshot(dir)), before, at);
+    assert.deepEqual(OTHERS.map((o) => tree(join(dir, o.dir))), theirs, `${at}: and no temporary file is left`);
+  }
+
+  const dir = workspace(t);
+  writeMap(result(dir, [a, b]), { targets: ALL });
+  locked = { at: `${cursor.dir}/${areaName(cursor, b.id)}`, code: "EPERM" };
+  assert.throws(() => writeMap(result(dir, [a])), { message: said(locked.at, "removed", "EPERM") });
+
+  // Anything else is not a lock, so it is not called one.
+  locked = { at: `${cursor.dir}/${overviewName(cursor)}`, code: "ENOSPC" };
+  assert.throws(() => writeMap(result(dir, [a, b])), { code: "ENOSPC" });
+  locked = null;
+});
+
 test("naming claude alone turns the others off and removes every file there that says this tool wrote it", (t) => {
   const dir = workspace(t);
   const a = area("src/services");

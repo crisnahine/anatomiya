@@ -751,6 +751,24 @@ test("each other target that was written says how many files, where, and for whi
   ]);
 });
 
+test("a target a plain scan writes for the first time says which file switched it on and what switches it off", () => {
+  const first = others({ state: "on", on: true, first: true, write: files(3) }, { state: "on", on: true, first: false, write: files(1) });
+  const s = scanSummary(result(), plan(first));
+  const clause = ", which .cursor/rules/anatomiya-overview.mdc switched on: `scan --targets claude` switches it off";
+
+  assert.deepEqual(s.targets.cursor, { state: "on", dir: ".cursor/rules", wrote: 3, removed: 0, unfiled: 0, foreign: 0, switchedOnBy: ".cursor/rules/anatomiya-overview.mdc" });
+  assert.equal("switchedOnBy" in s.targets.copilot, false);
+  assert.deepEqual(scanLines(s).slice(-3), [
+    `wrote 3 files under .cursor/rules for Cursor${clause}`,
+    "wrote 1 file under .github/instructions for GitHub Copilot",
+    RUNNING_SESSION,
+  ]);
+  assert.equal(JSON.parse(scanJson(s)).targets.cursor.switchedOnBy, ".cursor/rules/anatomiya-overview.mdc");
+  assert.equal(scanLines(scanSummary(result(), plan(first), { dryRun: true })).at(-2), `would write 3 files under .cursor/rules for Cursor${clause}`);
+  // A blind run writes nothing there, so it has nothing to explain.
+  assert.equal("switchedOnBy" in scanSummary(result(), plan(others({ state: "on", on: true, first: true, names: ["a"], remove: ["b"] }))).targets.cursor, false);
+});
+
 test("a target turned off says what was removed and that it is off", () => {
   const s = scanSummary(result(), plan(others({ state: "on", remove: ["a", "b", "c"] })));
 
