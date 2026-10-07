@@ -197,8 +197,8 @@ with no `lang` is read as a `.js` file is. A script that never closes, or a synt
 block, leaves the whole file rejected. A component with no script at all is read as an empty file:
 it keeps its name and its place in the layout and holds no sites. Neither retry above runs for a
 component. The template and the style block are never read, and the overview's Not covered section
-says so wherever the corpus holds one: `17 .vue and .svelte files are read for their script block;
-the template is not read`.
+says so wherever the corpus holds one: `of 17 .vue and .svelte files only the script block is read; the
+template is not`.
 
 A file is unexamined in four ways, and the scan names them apart because the reader's next move
 differs: it crashed the parser, the parser rejected its syntax, this tool could not read it, or it

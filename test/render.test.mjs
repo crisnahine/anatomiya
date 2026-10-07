@@ -1930,16 +1930,19 @@ test("a repository read in full carries no unread-language row", () => {
   assert.doesNotMatch(out, /a language this map does not read/);
 });
 
-test("component files are named as read for their script alone, by the extensions present", () => {
+test("component files are counted under the one part of them that is read, by the extensions present", () => {
+  // The count is every component in the corpus, one the parser rejected and one
+  // with no script included, so the line may not say any of them was read.
   const overview = (scriptOnly) =>
     renderOverview(result({ corpus: { files: 90, truncated: false, dropped: {}, ...(scriptOnly ? { scriptOnly } : {}) } }), { uncovered: 0 });
 
   assert.match(
     overview([[".vue", 9], [".svelte", 8]]),
-    /^- 17 \.vue and \.svelte files are read for their script block; the template is not read$/m
+    /^- of 17 \.vue and \.svelte files only the script block is read; the template is not$/m
   );
-  assert.match(overview([[".svelte", 12]]), /^- 12 \.svelte files are read for their script block; the template is not read$/m);
-  assert.match(overview([[".vue", 1]]), /^- 1 \.vue file is read for its script block; the template is not read$/m);
+  assert.match(overview([[".svelte", 12]]), /^- of 12 \.svelte files only the script block is read; the template is not$/m);
+  assert.match(overview([[".vue", 1]]), /^- of 1 \.vue file only the script block is read; the template is not$/m);
+  assert.doesNotMatch(overview([[".vue", 9], [".svelte", 8]]), /files? (is|are) read for/, "no file is said to have been read");
   assert.doesNotMatch(overview(null), /script block|template/, "a repository with no component says nothing of one");
   assert.equal(overview([[".vue", 9]]), overview([[".vue", 9]]), "and the line is the same between two scans");
 });

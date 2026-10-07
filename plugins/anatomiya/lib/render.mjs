@@ -852,11 +852,12 @@ function overviewTail(result, files) {
     lines.push(`- ${plural(total, "file")} ${total === 1 ? "holds" : "hold"} a language this map does not read (${named})`);
   }
   // A count over a component's script reads as a count over the component.
+  // The count is every component in the corpus, a rejected one included, so
+  // the line says which part is read and not that any one file was.
   const scripts = result.corpus?.scriptOnly ?? [];
   if (scripts.length) {
     const total = scripts.reduce((n, [, count]) => n + count, 0);
-    const read = total === 1 ? "file is read for its script block" : "files are read for their script block";
-    lines.push(`- ${total} ${series(scripts.map(([ext]) => ext))} ${read}; the template is not read`);
+    lines.push(`- of ${total} ${series(scripts.map(([ext]) => ext))} ${total === 1 ? "file" : "files"} only the script block is read; the template is not`);
   }
   // Dropped in `collect`, before anything counts, so without this row nothing
   // anywhere says they exist: a reader who knows the directory is there sees a
