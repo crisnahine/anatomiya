@@ -283,7 +283,7 @@ const blockGrammar = (block, lang, rel) => (block.lang === "ts" ? "ts" : grammar
  */
 function parseEmbedded(parse, source, rel, lang, { withProgram }) {
   const { blocks, unterminated } = scriptBlocks(source, embeddedIn(lang));
-  // A script that never ends is a broken file, whatever was read before it.
+  // A script that never ends is a rejected file, whatever was read before it.
   if (unterminated) return { rel, ok: false, error: "a script block is never closed", errors: 1 };
 
   // No block is an empty program, parsed like any other so the record is the same shape.

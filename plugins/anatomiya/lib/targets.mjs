@@ -6,9 +6,9 @@
  *
  * A leaf that imports nothing, because the hook verbs read it and must not load
  * the scan. The caller hands in its own spelling of one glob, so `areas.mjs`
- * stays the one owner of how a pattern's two halves compose. The stems and the
- * generator key are spelled here, and `test/targets.test.mjs` holds them equal
- * to the ones `rules.mjs` carries.
+ * stays the one owner of how a pattern's two halves compose. The filename prefix
+ * and the generator key are spelled here and nowhere else: `rules.mjs` exports
+ * these two again and carries none of its own.
  */
 // The sentences are the ones whose truth depends on the reader. Claude Code's
 // say when a file reaches it, which is measured. The others say what each file

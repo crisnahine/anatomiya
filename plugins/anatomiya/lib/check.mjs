@@ -709,8 +709,8 @@ async function placedAmong(root, examined) {
  *
  * `notes.txt` renamed to `notes.py` held nothing a row was ever asked of, so
  * the file arrives as an added one does and every site in it is new. Read as a
- * base, it was parsed by the fallback language: text that is no JavaScript was
- * skipped as unparsed, and text that is was taken for sites the base held.
+ * base it would go to the fallback language: text that is no JavaScript is
+ * rejected there, and text that is would be taken for sites the base held.
  */
 const heldSource = (file) => Boolean(file.from) && isSource(file.from);
 

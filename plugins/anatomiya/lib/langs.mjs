@@ -24,7 +24,7 @@
  * one, because there were three printers and two of them said npm, which
  * cannot install an interpreter.
  *
- * `rejects` is what it means when the engine answers that a file is broken.
+ * `rejects` is what it means when the engine rejects a file.
  * oxc and prism are their languages' own parsers, so it is the file's syntax.
  * A tree-sitter grammar covers less than its language: measured, it rejects a
  * correct Kotlin file with a `when` guard in it, so it is the grammar's reach.
