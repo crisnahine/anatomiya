@@ -13,6 +13,7 @@ import { join, resolve } from "node:path";
 
 import { invokedAs } from "./entry.mjs";
 import { REL, ROOT } from "./plugins.mjs";
+import { manifestVersion } from "../plugins/anatomiya/lib/version.mjs";
 
 /** Each language id against its package and the grammar file inside it. */
 export const GRAMMARS = {
@@ -44,15 +45,6 @@ function sha256Of(path) {
 function lockedIn(root) {
   const packages = JSON.parse(readFileSync(join(root, "package-lock.json"), "utf8")).packages ?? {};
   return (name) => packages[`node_modules/${name}`]?.version ?? null;
-}
-
-/** The version an installed package says it is, or null where its manifest cannot be read. */
-function installedVersion(root, name) {
-  try {
-    return JSON.parse(readFileSync(join(root, "node_modules", name, "package.json"), "utf8")).version;
-  } catch {
-    return null;
-  }
 }
 
 /** Copy each grammar out of its installed package and write the manifest. */
@@ -122,7 +114,7 @@ export function check(root) {
     if (installed === null) problems.push(`${named} is not installed, so nothing holds ${file} to it; run npm ci`);
     else if (installed !== entry.sha256) problems.push(`${named} does not hash to the manifest entry for ${entry.id}`);
     // A lockfile moved with no install after it leaves the old package's file here under the new version.
-    const has = installed === null ? version : installedVersion(root, grammar.package);
+    const has = installed === null ? version : manifestVersion(join(root, "node_modules", grammar.package), grammar.package);
     if (has !== version) problems.push(`installed ${grammar.package} is ${has ?? "unreadable"}, the lockfile says ${version}: run npm ci`);
   }
   for (const id of Object.keys(GRAMMARS)) {

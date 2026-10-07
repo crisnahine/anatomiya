@@ -10,7 +10,7 @@ import { execFileSync } from "node:child_process";
 import { commitMap, planMap, writeMap } from "../plugins/anatomiya/lib/write.mjs";
 import { areaFilename, isOwned, realpathOf, realpathOrNull, targetState, EXCLUDE_LINES, HEAD_BYTES, PREFIX, SETTINGS_PATH } from "../plugins/anatomiya/lib/rules.mjs";
 import { areaId } from "../plugins/anatomiya/lib/areas.mjs";
-import { TARGETS, areaName, overviewName } from "../plugins/anatomiya/lib/targets.mjs";
+import { TARGETS, areaName, isClaude, overviewName } from "../plugins/anatomiya/lib/targets.mjs";
 import { writeFacts, readFacts as readFactsFrom, readLayout, FACTS_SCHEMA } from "../plugins/anatomiya/lib/facts.mjs";
 import { severityFor } from "../plugins/anatomiya/lib/check.mjs";
 
@@ -885,7 +885,7 @@ function scanSequences(t, seed, runs) {
     { dir: t.dir, name: `${PREFIX}overview${t.ext}.bak${t.ext}`, body: "---\ngenerator: anatomiya\n---\n\nnot a name we plan\n" },
     { dir: t.dir, name: `${PREFIX}my-notes${t.ext}`, body: "---\ngenerator: anatomiya\n---\n\nnot a name we plan\n" },
     // A person's own file at a name a scan plans, where another tool reads it.
-    ...(t.always ? [] : [overviewName(t), areaName(t, areaId(pool[0])), areaName(t, areaId(pool[3]))].map((name) => ({ dir: t.dir, name, body: "# mine, at a name of yours\n" }))),
+    ...(isClaude(t) ? [] : [overviewName(t), areaName(t, areaId(pool[0])), areaName(t, areaId(pool[3]))].map((name) => ({ dir: t.dir, name, body: "# mine, at a name of yours\n" }))),
   ]);
   const record = (dir) => (existsSync(join(dir, STORE, "facts.json")) ? readFileSync(join(dir, STORE, "facts.json"), "utf8") : null);
   const sets = [null, ["claude"], ["claude", "cursor"], ["claude", "copilot"], ["claude", "cursor", "copilot"]];
@@ -937,7 +937,7 @@ function scanSequences(t, seed, runs) {
         plan = writeMap(scan, { dryRun, targets });
       } catch (err) {
         // The one refusal a sequence can reach: a named target with a person's file at a name it writes.
-        const named = every.find((t) => !t.always && targets?.includes(t.id) && err.message.startsWith(`${t.dir}/`));
+        const named = every.find((t) => !isClaude(t) && targets?.includes(t.id) && err.message.startsWith(`${t.dir}/`));
         if (!named || !/ was not written by this tool, so .* nothing was written anywhere/.test(err.message)) throw err;
         const now = snapshot(dir);
         if (before.size !== now.size || [...before].some(([name, hash]) => now.get(name) !== hash) || record(dir) !== recordBefore) {
@@ -948,7 +948,7 @@ function scanSequences(t, seed, runs) {
       const after = snapshot(dir);
 
       // Leaving Cursor or Copilot out by name is the one thing that removes a file no record lists.
-      const namedOff = (name) => !blind && !dryRun && targets !== null && !keyed.get(name)?.always && keyed.has(name) && !targets.includes(keyed.get(name).id);
+      const namedOff = (name) => !blind && !dryRun && targets !== null && keyed.has(name) && !isClaude(keyed.get(name)) && !targets.includes(keyed.get(name).id);
       for (const name of [...theirs.keys()].filter(namedOff)) {
         if (after.has(name)) problems.push(`${where}: ${name} says this tool wrote it and outlived its target being left out`);
         theirs.delete(name);

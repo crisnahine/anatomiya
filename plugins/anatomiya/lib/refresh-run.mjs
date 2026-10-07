@@ -15,7 +15,7 @@ import { pluginRoot } from "./readiness.mjs";
 import { movedByRemote } from "./refresh.mjs";
 import { checkerStamp } from "./semantic.mjs";
 import { OVERVIEW_FILE, readHead, realpathOf, REFRESH_STATE, resolveInside, STORE_DIR, targetState, trackedRulesDir } from "./rules.mjs";
-import { overviewName, TARGETS } from "./targets.mjs";
+import { isClaude, overviewName, TARGETS } from "./targets.mjs";
 import { commonDirOf, gitDirOf } from "./worktree.mjs";
 
 const LOCK_FILE = "refresh.lock";
@@ -428,7 +428,7 @@ async function committedTargets(root) {
   const magic = (await caseMagic(root)) ? ":(icase)" : "";
   const committed = [];
   for (const t of Object.values(TARGETS)) {
-    if (t.always || targetState(root, t) !== "on") continue;
+    if (isClaude(t) || targetState(root, t) !== "on") continue;
     const r = await gitBuffered(root, ["ls-files", "-z", "--", `${magic}${t.dir}/${overviewName(t)}`]);
     if (!r.ok || r.stdout.length > 0) committed.push(t.id);
   }

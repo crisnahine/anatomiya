@@ -20,7 +20,7 @@ import { language, MISSING_STRIPPER } from "./langs.mjs";
 import { areaOwner, globsReach } from "./areas.mjs";
 import { droppedSlots, unexaminedPhrase } from "./render.mjs";
 import { auditRules, isLink, knownNames, readHead, resolveInside, targetStatus } from "./rules.mjs";
-import { TARGETS } from "./targets.mjs";
+import { TARGETS, isClaude } from "./targets.mjs";
 import { FACTS_PATH, readFacts, statedSide } from "./facts.mjs";
 import { MAX_FILE_BYTES } from "./limits.mjs";
 import { remedyForMissing } from "./readiness.mjs";
@@ -335,7 +335,7 @@ export async function check(cwd, { baseRef = null } = {}) {
   };
   const { foreign, unknown, rules } = audited(TARGETS.claude);
   const targets = {};
-  for (const target of Object.values(TARGETS).filter((t) => !t.always)) {
+  for (const target of Object.values(TARGETS).filter((t) => !isClaude(t))) {
     const { state, reason } = targetStatus(root, target);
     if (state === "on") targets[target.id] = { dir: target.dir, state, ...audited(target) };
     // Unread, and the record says a scan wrote files there: they load whether or not this run saw them.

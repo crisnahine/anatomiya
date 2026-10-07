@@ -15,7 +15,7 @@ import { encodePath, firstLine } from "./encode.mjs";
 import { byCode } from "./paths.mjs";
 import { plural } from "./render-layout.mjs";
 import { auditRules, EXCLUDE_LINES, isMapName, knownNames, listSome, LISTED, PREFIX, RULES_DIR, targetStatus, trackedRulesDir } from "./rules.mjs";
-import { TARGETS } from "./targets.mjs";
+import { TARGETS, isClaude } from "./targets.mjs";
 import { readFacts } from "./facts.mjs";
 import { NODE_PROBE_IDS, PROBE_IDS, couldNotRead, installProblem, lostGrammar, pluginRoot, probeName, readiness, readinessAfresh, readinessLines, remedyForMissing } from "./readiness.mjs";
 import { pinSummary, scanSummary } from "./summary.mjs";
@@ -238,7 +238,7 @@ async function targetLines(cwd) {
   }
   const facts = readFacts(root).facts;
   const lines = [];
-  for (const target of Object.values(TARGETS).filter((t) => !t.always)) {
+  for (const target of Object.values(TARGETS).filter((t) => !isClaude(t))) {
     const { state, reason } = targetStatus(root, target);
     const known = knownNames(facts, target);
     if (state === "unknown" && known?.size) lines.push(`${target.dir}: could not be read (${reason})`);

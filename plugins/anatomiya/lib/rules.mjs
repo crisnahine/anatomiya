@@ -17,7 +17,7 @@
 import { accessSync, closeSync, constants, fstatSync, lstatSync, openSync, readSync, readdirSync, realpathSync, statSync } from "node:fs";
 import { basename, dirname, join, relative, isAbsolute, resolve, sep } from "node:path";
 
-import { TARGETS, areaName, overviewName } from "./targets.mjs";
+import { GENERATOR, PREFIX, TARGETS, areaName, isClaude, overviewName } from "./targets.mjs";
 
 /**
  * A path resolved through every link and alias the OS keeps, or null where it
@@ -51,8 +51,7 @@ export const REFRESH_STATE = `${STORE_DIR}/refresh.json`;
 // that writes it, because this module is where every path a scan touches is
 // spelled, and the exclude line below has to be the same string.
 export const SETTINGS_PATH = ".claude/settings.local.json";
-export const GENERATOR = "anatomiya";
-export const PREFIX = "anatomiya-";
+export { GENERATOR, PREFIX };
 export const OVERVIEW_FILE = overviewName(TARGETS.claude);
 
 export function areaFilename(area) {
@@ -110,7 +109,7 @@ export function isOwned(text) {
 }
 
 const FENCE = /^---[ \t]*$/;
-const KEY = /^generator:[ \t]*anatomiya[ \t]*$/;
+const KEY = new RegExp(`^generator:[ \\t]*${GENERATOR}[ \\t]*$`);
 
 /**
  * A name this tool may write, checked rather than assumed.
@@ -143,7 +142,7 @@ export function isMapName(name, target = TARGETS.claude) {
   return name === overviewName(target) || AREA_STEM.test(name.slice(0, -target.ext.length));
 }
 
-const AREA_STEM = /^anatomiya-area-[0-9a-f]{8}$/;
+const AREA_STEM = new RegExp(`^${PREFIX}area-[0-9a-f]{8}$`);
 
 /** What a volume that folds case compares. Upper first: APFS also folds the long s onto `s`. */
 export const folded = (name) => name.toUpperCase().toLowerCase();
@@ -167,7 +166,7 @@ export const spelledOtherwise = (entries, name) =>
  */
 export function knownNames(facts, target = TARGETS.claude) {
   if (!facts || !Array.isArray(facts.areas)) return null;
-  if (target.id !== TARGETS.claude.id) {
+  if (!isClaude(target)) {
     // Stored rather than derived: a target has no file for an area it cannot spell.
     const listed = facts.targets?.[target.id];
     return Array.isArray(listed) ? new Set(listed.filter((n) => isMapName(n, target))) : null;
@@ -227,7 +226,7 @@ export function auditRules(root, known = null, target = TARGETS.claude) {
   out.listed = true;
   out.entries = names;
 
-  const read = (n) => n.endsWith(target.ext) && (target.id === TARGETS.claude.id || n.startsWith(PREFIX));
+  const read = (n) => n.endsWith(target.ext) && (isClaude(target) || n.startsWith(PREFIX));
   for (const name of names.filter(read).sort()) {
     const entry = readHead(join(dir, name));
     // A name `readdir` reports that is not a regular file is not a rule file.
@@ -246,7 +245,7 @@ export function auditRules(root, known = null, target = TARGETS.claude) {
     }
     // A link too, in a directory another tool reads: this tool writes files
     // there, so a link is somebody's own entry whatever it leads to.
-    const theirLink = target.id !== TARGETS.claude.id && isLink(join(dir, name));
+    const theirLink = !isClaude(target) && isLink(join(dir, name));
     if (!name.startsWith(PREFIX) || !isOwned(entry.head) || theirLink) {
       out.foreign.push(name);
       continue;
@@ -295,7 +294,7 @@ export function resolveTargetDir(root, target) {
 
 // The directory, or the path in the way and what it is, for a reader to act on.
 function locateTarget(root, target) {
-  if (target.id === TARGETS.claude.id) return { dir: resolveRulesDir(root) };
+  if (isClaude(target)) return { dir: resolveRulesDir(root) };
   const own = ownDirectory(root, target.dir);
   if (own.dir === null) return own;
   // A `.claude/rules` link can lead here, and Claude Code would then load this target's files as its own.
@@ -357,7 +356,7 @@ export function targetState(root, target) {
  * gives.
  */
 export function targetStatus(root, target) {
-  if (target.always) return { state: "on" };
+  if (isClaude(target)) return { state: "on" };
   const { dir, reason, remedy } = locateTarget(root, target);
   if (dir === null) return { state: "unknown", reason, remedy };
   const path = join(dir, overviewName(target));
@@ -665,7 +664,7 @@ export const HEAD_BYTES = 1024 * 1024;
 export const EXCLUDE_LINES = [
   `${RULES_DIR}/${PREFIX}*.md`,
   `${STORE_DIR}/`,
-  ...[TARGETS.cursor, TARGETS.copilot].map((t) => `${t.dir}/${PREFIX}*${t.ext}`),
+  ...Object.values(TARGETS).filter((t) => !isClaude(t)).map((t) => `${t.dir}/${PREFIX}*${t.ext}`),
 ];
 
 /**

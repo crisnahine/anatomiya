@@ -13,7 +13,7 @@ import { installLacking, installWithoutDependencies } from "./plugin-install.mjs
 import { ANATOMIYA, BINARY, REL, ROOT, installed } from "../scripts/plugins.mjs";
 import { ENGINES } from "../plugins/anatomiya/lib/langs.mjs";
 import { runScan } from "../plugins/anatomiya/lib/commands.mjs";
-import { GRAMMAR_REMEDY, couldNotRead, installProblem, pluginRoot, readiness, readinessAfresh, readinessLines, remedyFor, remedyForMissing, unreadReasons } from "../plugins/anatomiya/lib/readiness.mjs";
+import { GRAMMAR_REMEDY, couldNotRead, installProblem, lostGrammar, pluginRoot, readiness, readinessAfresh, readinessLines, remedyFor, remedyForMissing, unreadReasons } from "../plugins/anatomiya/lib/readiness.mjs";
 import { olderThan } from "../plugins/anatomiya/lib/version.mjs";
 
 /** A directory on PATH holding one stub interpreter, so a probe meets a Ruby that is not this one. */
@@ -114,6 +114,12 @@ test("a grammar that does not load is named on the engine's row, with the remedy
   assert.equal(row.ok, false);
   assert.equal(row.reason, "grammars: 5 of 7, go.wasm and kotlin.wasm did not load");
   assert.equal(row.remedy, GRAMMAR_REMEDY);
+  assert.deepEqual(row.lostGrammars, ["go", "kotlin"]);
+  assert.equal(lostGrammar(row), true);
+  // The row says it, and no sentence is compared: a reworded remedy loses nothing.
+  assert.equal(lostGrammar({ ...row, remedy: "another sentence" }), true);
+  assert.equal(lostGrammar({ ...row, lostGrammars: [] }), false);
+  assert.equal(lostGrammar({ engine: "oxc", remedy: GRAMMAR_REMEDY }), false, "a row from before the field");
   assert.deepEqual(lines, [`tree-sitter ${row.version}: grammars: 5 of 7, go.wasm and kotlin.wasm did not load, ${GRAMMAR_REMEDY}`]);
 });
 
@@ -232,6 +238,7 @@ test("an interpreter that is not on PATH is absent, and carries the remedy that 
     ok: false,
     reason: "ruby is not on PATH",
     remedy: remedyFor("prism"),
+    lostGrammars: [],
   });
 });
 

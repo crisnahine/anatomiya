@@ -1,10 +1,15 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { join } from "node:path";
 
 import {
+  GENERATOR,
+  PREFIX,
   TARGETS,
   TARGET_IDS,
+  assertTargets,
+  isClaude,
   parseTargets,
   overviewName,
   areaName,
@@ -14,7 +19,10 @@ import {
 import { globEntry, globText } from "../plugins/anatomiya/lib/areas.mjs";
 import { encodePath } from "../plugins/anatomiya/lib/encode.mjs";
 import { renderArea, renderOverview } from "../plugins/anatomiya/lib/render.mjs";
-import { GENERATOR, OVERVIEW_FILE, RULES_DIR, areaFilename } from "../plugins/anatomiya/lib/rules.mjs";
+import * as RULES from "../plugins/anatomiya/lib/rules.mjs";
+import { ANATOMIYA } from "../scripts/plugins.mjs";
+
+const { OVERVIEW_FILE, RULES_DIR, areaFilename } = RULES;
 
 const { claude, cursor, copilot } = TARGETS;
 const EXTS = ["cjs", "cts", "js", "mjs", "mts", "ts"];
@@ -38,17 +46,17 @@ test("the three targets, their directories and their extensions", () => {
     "Written by anatomiya, a scanner run on this repository; where this and the code disagree, the code is right and this map is stale.";
   assert.deepEqual(TARGETS, {
     claude: {
-      id: "claude", dir: ".claude/rules", ext: ".md", always: true, reader: "Claude Code", wrote: null, widens: null,
+      id: "claude", dir: ".claude/rules", ext: ".md", reader: "Claude Code", wrote: null, widens: null,
       reads: "Read a file before editing it: these notes load when you read, not when you grep.",
       listed: "loaded when you read one of its files",
     },
     cursor: {
-      id: "cursor", dir: ".cursor/rules", ext: ".mdc", always: false, reader: "Cursor", wrote, widens: null,
+      id: "cursor", dir: ".cursor/rules", ext: ".mdc", reader: "Cursor", wrote, widens: null,
       reads: "Each area has its own file under .cursor/rules whose `globs:` names that area's files: before editing a file, read the one that names it.",
       listed: "whose `globs:` names its files",
     },
     copilot: {
-      id: "copilot", dir: ".github/instructions", ext: ".instructions.md", always: false, reader: "GitHub Copilot", wrote,
+      id: "copilot", dir: ".github/instructions", ext: ".instructions.md", reader: "GitHub Copilot", wrote,
       widens: "VS Code also matches this file's patterns under any parent directory, so it can attach for a file outside the area.",
       reads:
         "Each area has its own file under .github/instructions whose `applyTo:` names that area's files: before editing a file, read the one that names it.",
@@ -78,6 +86,29 @@ test("parseTargets always includes claude and answers in the fixed order", () =>
   assert.deepEqual(parseTargets(" Copilot , cursor "), ["claude", "cursor", "copilot"]);
   assert.deepEqual(parseTargets("claude"), ["claude"]);
   assert.deepEqual(parseTargets("cursor,cursor"), ["claude", "cursor"]);
+});
+
+test("Claude Code's target is the one every scan writes, and it is asked for one way", () => {
+  assert.deepEqual(Object.values(TARGETS).map(isClaude), [true, false, false]);
+  assert.equal(isClaude({ ...TARGETS.claude }), true, "by its id, so a copy answers the same");
+  const asked = /\.always\b|TARGETS\.claude\.id|[=!]== "claude"|[=!]== TARGETS\.claude\b/;
+  for (const module of ["check.mjs", "commands.mjs", "corpus.mjs", "refresh-run.mjs", "render.mjs", "rules.mjs", "write.mjs"]) {
+    assert.doesNotMatch(readFileSync(join(ANATOMIYA, "lib", module), "utf8"), asked, module);
+  }
+});
+
+test("a list of target names is refused at the first that is no target", () => {
+  assert.doesNotThrow(() => assertTargets(["claude", "copilot"]));
+  assert.doesNotThrow(() => assertTargets([]));
+  assert.throws(() => assertTargets(["cursor", "windsurf", "zed"]), { message: "unknown target: windsurf; the targets are claude, cursor, copilot" });
+});
+
+test("the prefix and the generator key are spelled here, and the rules module hands on the same two", () => {
+  assert.equal(PREFIX, "anatomiya-");
+  assert.equal(GENERATOR, "anatomiya");
+  assert.equal(RULES.PREFIX, PREFIX);
+  assert.equal(RULES.GENERATOR, GENERATOR);
+  assert.doesNotMatch(readFileSync(join(ANATOMIYA, "lib", "rules.mjs"), "utf8"), /["'`^]anatomiya/, "spelled again");
 });
 
 test("parseTargets refuses a name that is not a target, and an empty list", () => {

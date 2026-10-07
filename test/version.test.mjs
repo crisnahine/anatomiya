@@ -1,7 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
-import { olderThan } from "../plugins/anatomiya/lib/version.mjs";
+import { installedVersion, manifestVersion, olderThan } from "../plugins/anatomiya/lib/version.mjs";
+import { ROOT } from "../scripts/plugins.mjs";
 
 test("a prerelease of the floor version is older than the floor", () => {
   // Measured: `1.0.0.rc1` and `1.0.0-rc.1` both met a 1.0.0 floor. Split on the
@@ -23,4 +27,20 @@ test("a prerelease of the floor version is older than the floor", () => {
   assert.equal(olderThan("1.0.0+build.5", "1.0.0"), false);
   // A fourth number is a later version, not a candidate.
   assert.equal(olderThan("1.0.0.1", "1.0.0"), false);
+});
+
+test("a manifest's version is read for the package it names, and null for another's, a missing one or one that cannot be parsed", (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "anatomiya-manifest-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const write = (text) => writeFileSync(join(dir, "package.json"), text);
+
+  assert.equal(manifestVersion(dir, "tree-sitter-go"), null, "no manifest");
+  write(JSON.stringify({ name: "tree-sitter-go", version: "0.25.0" }));
+  assert.equal(manifestVersion(dir, "tree-sitter-go"), "0.25.0");
+  assert.equal(manifestVersion(dir, "tree-sitter-rust"), null, "another package's manifest");
+  write(JSON.stringify({ name: "tree-sitter-go" }));
+  assert.equal(manifestVersion(dir, "tree-sitter-go"), null, "no version stated");
+  write("{");
+  assert.equal(manifestVersion(dir, "tree-sitter-go"), null);
+  assert.equal(installedVersion("oxc-parser"), manifestVersion(join(ROOT, "node_modules", "oxc-parser"), "oxc-parser"));
 });

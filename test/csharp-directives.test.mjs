@@ -209,7 +209,7 @@ test("conditionals that do not balance are not guessed at", () => {
   assert.equal(withOneBranch("#elif X\n"), null);
 });
 
-test("the module is a leaf: it imports nothing", () => {
+test("the module is handed a string and loads nothing but the blanking both parser children share", () => {
   const src = readFileSync(join(ANATOMIYA, "lib", "csharp-directives.mjs"), "utf8");
-  assert.equal(/^\s*import[\s("'{*]|\brequire\s*\(/m.test(src), false);
+  assert.deepEqual(src.match(/^\s*import[\s("'{*].*$|\brequire\s*\(/gm), ['import { blank } from "./blank.mjs";']);
 });
