@@ -3423,7 +3423,7 @@ test("a component count with no other beside it still says which files it is ove
   assert.equal(kindsLine(only), "kinds: 9 .ts, 4 .svelte; 0 test files; 1 of 4 .svelte files has a namesake test");
 });
 
-test("the smaller of two namesake counts gets a clause from three files up", () => {
+test("the smaller of two namesake counts gets a clause from three files up, or where a test credits one of its files", () => {
   // shadcn-svelte: 28 of 38 two-clause kinds lines read `0 of 1 .ts file have a namesake test` for a lone `index.ts`.
   const beside = (n) =>
     root("docs/ui", {
@@ -3444,6 +3444,17 @@ test("the smaller of two namesake counts gets a clause from three files up", () 
   assert.equal(lines(3)[2], `- docs/ui: 182 .svelte, 3 .ts; ${both}`);
   assert.ok(lines(3)[3].endsWith("; 0 of 3 .ts files under docs/ui have a namesake test"), lines(3)[3]);
 
+  // element-plus: 15 kinds lines hold one or two components of which a test credits one, 17 components in all.
+  const credited = (n, held) =>
+    root("packages/ui", {
+      exts: [[".ts", 9], [".vue", n]],
+      companions: { with: 2, of: 9, root: null, ext: ".ts" },
+      otherCompanions: { with: held, of: n, root: null, ext: ".vue" },
+    });
+  assert.equal(kindsLine(credited(2, 1)), "kinds: 9 .ts, 2 .vue; 0 test files; 2 of 9 .ts files have a namesake test; 1 of 2 .vue files has a namesake test");
+  assert.equal(kindsLine(credited(1, 1)), "kinds: 9 .ts, 1 .vue; 0 test files; 2 of 9 .ts files have a namesake test; 1 of 1 .vue file has a namesake test");
+  assert.equal(kindsLine(credited(2, 0)), "kinds: 9 .ts, 2 .vue; 0 test files; 2 of 9 have a namesake test");
+
   // The first extension printed is the smaller where most of its files are tests: the other's clause stands, named.
   const few = root("pkg", {
     exts: [[".ts", 10], [".vue", 9]],
@@ -3451,13 +3462,15 @@ test("the smaller of two namesake counts gets a clause from three files up", () 
     otherCompanions: { with: 4, of: 9, root: null, ext: ".vue" },
   });
   assert.equal(kindsLine(few), "kinds: 10 .ts, 9 .vue; 0 test files; 4 of 9 .vue files have a namesake test");
-  // Two populations of one size: the first printed speaks.
-  const even = root("pkg", {
-    exts: [[".vue", 2], [".ts", 2]],
-    companions: { with: 0, of: 2, root: null, ext: ".vue" },
-    otherCompanions: { with: 1, of: 2, root: null, ext: ".ts" },
-  });
-  assert.equal(kindsLine(even), "kinds: 2 .vue, 2 .ts; 0 test files; 0 of 2 have a namesake test");
+  // Two populations of one size: the first printed speaks, and the second where a test credits one of its files.
+  const even = (held) =>
+    root("pkg", {
+      exts: [[".vue", 2], [".ts", 2]],
+      companions: { with: 0, of: 2, root: null, ext: ".vue" },
+      otherCompanions: { with: held, of: 2, root: null, ext: ".ts" },
+    });
+  assert.equal(kindsLine(even(0)), "kinds: 2 .vue, 2 .ts; 0 test files; 0 of 2 have a namesake test");
+  assert.equal(kindsLine(even(1)), "kinds: 2 .vue, 2 .ts; 0 test files; 0 of 2 .vue files have a namesake test; 1 of 2 .ts files has a namesake test");
 });
 
 const constRow = (o = {}) =>

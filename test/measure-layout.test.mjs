@@ -355,18 +355,27 @@ test("the recount reads a root of components then modules, which prints a namesa
   assert.match(run.section, /^- tests: 4 vitest specs under src\/ui\/__tests__; 2 of 8 \.vue files under src\/ui have a namesake test; 2 of 3 \.ts files under src\/ui have a namesake test$/m);
 });
 
-test("the recount reads a root whose second kind of file is under the floor, which prints one namesake clause", (t) => {
+test("the recount reads a root whose second kind of file is under the floor: one namesake clause, and two where a test credits one of the few", (t) => {
   const vitest = (name) => `import { test } from "vitest";\ntest("${name}", () => {});\n`;
-  const run = recountOf(t, {
+  const holding = (tests) => ({
     ...Object.fromEntries([0, 1, 2, 3, 4, 5, 6, 7].map((i) => [`src/ui/C${i}.vue`, `<script setup lang="ts">\nconst a = ${i}\n</script>\n<template><p>{{ a }}</p></template>\n`])),
     "src/ui/index.ts": "export const all = 8;\n",
     "src/ui/types.ts": "export const kinds = 2;\n",
-    ...Object.fromEntries(["C0", "C1", "index"].map((n) => [`src/ui/__tests__/${n}.test.ts`, vitest(n)])),
+    ...Object.fromEntries(tests.map((n) => [`src/ui/__tests__/${n}.test.ts`, vitest(n)])),
   });
 
-  assert.equal(run.status, 0, run.stderr);
-  assert.match(run.section, /^- src\/ui: 8 \.vue, 5 \.ts; 3 vitest specs under __tests__; 2 of 8 have a namesake test under src\/ui\/__tests__$/m);
-  assert.match(run.section, /^- tests: 3 vitest specs under src\/ui\/__tests__; 2 of 8 \.vue files under src\/ui have a namesake test$/m);
+  const bare = recountOf(t, holding(["C0", "C1"]));
+  assert.equal(bare.status, 0, bare.stderr);
+  assert.match(bare.section, /^- src\/ui: 8 \.vue, 4 \.ts; 2 vitest specs under __tests__; 2 of 8 have a namesake test under src\/ui\/__tests__$/m);
+  assert.match(bare.section, /^- tests: 2 vitest specs under src\/ui\/__tests__; 2 of 8 \.vue files under src\/ui have a namesake test$/m);
+
+  const credited = recountOf(t, holding(["C0", "C1", "index"]));
+  assert.equal(credited.status, 0, credited.stderr);
+  assert.match(
+    credited.section,
+    /^- src\/ui: 8 \.vue, 5 \.ts; 3 vitest specs under __tests__; 2 of 8 \.vue files have a namesake test under src\/ui\/__tests__; 1 of 2 \.ts files has a namesake test$/m
+  );
+  assert.match(credited.section, /^- tests: 3 vitest specs under src\/ui\/__tests__; 2 of 8 \.vue files under src\/ui have a namesake test; 1 of 2 \.ts files under src\/ui has a namesake test$/m);
 });
 
 test("the recount counts a root named tests, which prints the tests line's own prefix", (t) => {

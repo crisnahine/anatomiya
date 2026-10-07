@@ -1761,8 +1761,9 @@ Every clause is dropped when it counts nothing.
   test; 6 of 20 .ts files have a namesake test under __tests__/unit/client/theme-default` on
   vitepress's `src/client/theme-default`. The two are never summed. The smaller of the two
   populations gets its clause from three files up, the floor the precedent rule reads a directory
-  at, so ten components beside one `index.ts` print one count, bare, and no `0 of 1 .ts file have
-  a namesake test`. Where several components carry one stem a test answers one of them: the one
+  at, or where a test credits at least one of its files, so ten components beside one `index.ts`
+  print one count, bare, and no `0 of 1 .ts file have a namesake test`, and seven modules beside
+  two components print `1 of 2 .vue files has a namesake test` where one of the two has a test. Where several components carry one stem a test answers one of them: the one
   under the test's own directory, less the test tree words that directory ends in, or failing that
   the closest mirror, and an import that names another leaves it with none. That is asked apart
   from which module the test answers, so one test covers `button.vue` and the `button.ts` beside
