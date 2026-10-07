@@ -16,9 +16,13 @@ tests read a rendered `paths` list through it. The other seven dev dependencies 
 packages the vendored `.wasm` files are copied from.
 
 ```sh
-npm install
+npm install --ignore-scripts
 node --test 'test/**/*.test.mjs'
 ```
+
+Install with `--ignore-scripts`. No dependency needs an install script, and the seven grammar
+packages each declare one that would load a native binary this project never uses. CI and the
+release install the same way.
 
 `npm test` runs the same thing. A single file while you are working on it:
 
@@ -29,8 +33,8 @@ node --test test/encode.test.mjs
 Changing what `plugins/anatomiya/package.json` depends on takes one more step:
 
 ```sh
-npm install                 # the marketplace's own lockfile
-npm run lock:plugin         # the plugin's, seeded from it
+npm install --ignore-scripts   # the marketplace's own lockfile
+npm run lock:plugin            # the plugin's, seeded from it
 ```
 
 The plugin ships a lockfile of its own because Claude Code installs a plugin's dependencies from the
@@ -48,7 +52,11 @@ npm run grammars            # copies each .wasm into the plugin and rewrites gra
 
 The plugin ships each grammar's `.wasm` and not its package, which is mostly native prebuilds and C
 source. `grammars.json` records the package, version and SHA-256 each copy came from, and
-`npm run validate` refuses a copy that is not its installed package's file at the locked version.
+`npm run validate` refuses a copy whose hash is not its entry's or its installed package's file's,
+an entry whose version is not the root lockfile's, and an installed package that is not at the
+lockfile's version. It does not load a grammar; the test suite does, and reads the ABI there.
+Dependabot is told to leave the grammar packages alone, because a bump is red until the step above
+is run, so a new grammar release is something to look for by hand.
 
 No test framework, no mocks, no fixtures generated at runtime. `node:test` and `node:assert` only.
 Tests that need a repository build one in a temp directory with real `git init` and real commits,

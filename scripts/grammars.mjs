@@ -46,6 +46,15 @@ function lockedIn(root) {
   return (name) => packages[`node_modules/${name}`]?.version;
 }
 
+/** The version an installed package says it is, or null where its manifest cannot be read. */
+function installedVersion(root, name) {
+  try {
+    return JSON.parse(readFileSync(join(root, "node_modules", name, "package.json"), "utf8")).version;
+  } catch {
+    return null;
+  }
+}
+
 /** Copy each grammar out of its installed package and write the manifest. */
 export async function vendor(root) {
   const { Language, Parser } = await import("web-tree-sitter");
@@ -59,7 +68,9 @@ export async function vendor(root) {
     copyFileSync(installedIn(root, grammar), join(dir, file));
     // The ABI is the wasm's own answer: a package's source can be newer than the wasm beside it.
     const { abiVersion } = await Language.load(readFileSync(join(dir, file)));
-    entries.push({ id, package: grammar.package, version: locked(grammar.package), source: grammar.source, file, sha256: sha256Of(join(dir, file)), abi: abiVersion });
+    const version = locked(grammar.package);
+    const sha256 = sha256Of(join(dir, file));
+    entries.push({ id, package: grammar.package, version, source: grammar.source, file, sha256, abi: abiVersion });
   }
   writeFileSync(join(dir, MANIFEST), `${JSON.stringify(entries, null, 2)}\n`);
   return entries;
@@ -86,12 +97,16 @@ export function check(root) {
   const problems = [];
   const listed = new Set([MANIFEST]);
   for (const entry of entries) {
-    const grammar = Object.hasOwn(GRAMMARS, entry?.id) ? GRAMMARS[entry.id] : null;
+    const grammar = typeof entry?.id === "string" && Object.hasOwn(GRAMMARS, entry.id) ? GRAMMARS[entry.id] : null;
     if (grammar === null) {
       problems.push(`${at}/${MANIFEST} lists ${entry?.id}, which is not a grammar this vendors`);
       continue;
     }
     const file = `${entry.id}.wasm`;
+    if (listed.has(file)) {
+      problems.push(`${at}/${MANIFEST} lists ${entry.id} twice`);
+      continue;
+    }
     listed.add(file);
     if (entry.file !== file || entry.package !== grammar.package || entry.source !== grammar.source) {
       problems.push(`${at}/${MANIFEST} does not name ${entry.id} as ${grammar.package}/${grammar.source} vendored as ${file}`);
@@ -106,12 +121,17 @@ export function check(root) {
     const named = `node_modules/${grammar.package}/${grammar.source}`;
     if (installed === null) problems.push(`${named} is not installed, so nothing holds ${file} to it; run npm ci`);
     else if (installed !== entry.sha256) problems.push(`${named} does not hash to the manifest entry for ${entry.id}`);
+    // A lockfile moved with no install after it leaves the old package's file here under the new version.
+    const has = installed === null ? version : installedVersion(root, grammar.package);
+    if (has !== version) problems.push(`installed ${grammar.package} is ${has ?? "unreadable"}, the lockfile says ${version}: run npm ci`);
   }
   for (const id of Object.keys(GRAMMARS)) {
     if (!listed.has(`${id}.wasm`)) problems.push(`${id} has no manifest entry in ${at}/${MANIFEST}`);
   }
-  for (const name of readdirSync(dir).sort()) {
-    if (!listed.has(name)) problems.push(`${at}/${name} has no manifest entry`);
+  // A link hashes as its target here and ships as a link, which an installed plugin cannot follow.
+  for (const found of readdirSync(dir, { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : 1))) {
+    if (!found.isFile()) problems.push(`${at}/${found.name} is not a regular file`);
+    else if (!listed.has(found.name)) problems.push(`${at}/${found.name} has no manifest entry`);
   }
   return problems;
 }
