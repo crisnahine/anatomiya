@@ -174,12 +174,13 @@ of its `cli`, and goes from 1,798 claims stated to 1,784.
   `.kts` leave the line, since those files are read. mastodon gains `469 files hold a language this
   map does not read (310 .haml, 91 .scss, 47 .erb, 10 .css, 8 .sql, 3 .html)`. Where the overview
   already sat at its 40 lines, one root folds into the roster's last line to pay for it.
-- A claim says which files it was counted over where its area holds files the dimension is never
-  asked of: `module-level bindings are const, in .ts files` beside a `.vue` file, and `rescue
-  blocks use the error they caught, in .rb files` beside a `.js` one. This changes existing
-  maps. On the 35 corpus repositories, 80 of 6,947 area files gained the clause, on 792 lines in
-  all, most of them where Ruby sits beside JavaScript: 350 in discourse and 160 in decidim. The
-  clause joins a line and adds none, and 21 of the 35 gained no clause.
+- A claim says which files it was counted over where its area holds three or more files the
+  dimension is never asked of: `module-level bindings are const, in .ts files` beside `.vue`
+  files, and `rescue blocks use the error they caught, in .rb files` beside `.js` ones. This
+  changes existing maps. On the 35 corpus repositories, 85 of 6,947 area files carry the clause,
+  on 573 lines in all, most of them where Ruby sits beside JavaScript: 277 in discourse and 96 in
+  decidim. One or two files of another language earn no clause, so a count there leaves them out
+  without saying so. The clause joins a line and adds none, and 21 of the 35 carry no clause.
 - A directory whose components sit beside modules counts their namesake tests apart: `85 of 745
   .ts files have a namesake test; 81 of 164 .vue files have a namesake test`, on the root line,
   the tests line and an area's kinds line, whichever of the two the directory holds more of. The

@@ -1495,7 +1495,7 @@ test("a claim counted over a Gemfile names it, not the label the kinds line give
   const dir = repo(t, (d, { git, write }) => {
     for (const name of ["load", "save", "list", "drop"]) write(`tools/${name}.rb`, rescued);
     write("tools/Gemfile", `source "https://rubygems.org"\n${rescued}`);
-    write("tools/old.js", "const old = 1;\n");
+    for (const ext of ["js", "mjs", "cjs"]) write(`tools/old.${ext}`, "const old = 1;\n");
     git("add", "-A");
     git("commit", "-qm", "init");
   });
@@ -1505,7 +1505,24 @@ test("a claim counted over a Gemfile names it, not the label the kinds line give
 
   assert.match(text, /^kinds: .*\(none\)/m);
   assert.match(text, /^rescue blocks use the error they caught, in \.rb files and Gemfile: /m);
-  assert.match(text, /^module-level bindings are const, in \.js files: /m);
+  assert.match(text, /^module-level bindings are const, in \.cjs, \.js and \.mjs files: /m);
+});
+
+test("two stray files of another language put no scope on an area's claims", async (t) => {
+  const rescued = "begin\n  run\nrescue StandardError => e\n  warn e\nend\n";
+  const dir = repo(t, (d, { git, write }) => {
+    for (const name of ["load", "save", "list", "drop"]) write(`tools/${name}.rb`, rescued);
+    for (const name of ["old", "older"]) write(`tools/${name}.js`, "const old = 1;\n");
+    git("add", "-A");
+    git("commit", "-qm", "init");
+  });
+
+  const result = await scan(dir);
+  const text = planMap(result).bodies.get([...planMap(result).bodies.keys()].find((name) => name !== "anatomiya-overview.md"));
+
+  assert.match(text, /^rescue blocks use the error they caught: /m);
+  assert.match(text, /^module-level bindings are const, in \.js files: /m, "the two files' own row was not asked of the four");
+  assert.doesNotMatch(factsJson(result), /filesByLang/, "the record does not hold the count");
 });
 
 test("a claim learned from the modules of a directory says so beside the components it was not asked of", async (t) => {
@@ -1533,7 +1550,7 @@ test("a claim names only the extensions its row was asked of, and a row asked of
   const dir = repo(t, (d, { git, write }) => {
     for (const name of ["Load", "Save", "List", "Drop"]) write(`src/panel/${name}.tsx`, handler(name));
     for (const name of ["load", "save", "list", "drop"]) write(`src/panel/use-${name}.ts`, `export const ${name} = 1;\n`);
-    write("src/panel/Panel.vue", "<template><p /></template>\n");
+    for (const name of ["Panel", "Side", "Top"]) write(`src/panel/${name}.vue`, "<template><p /></template>\n");
     for (const name of ["load", "save", "list", "drop"]) write(`src/hooks/use-${name}.ts`, `export const ${name} = 1;\n`);
     write("src/hooks/Hook.vue", "<template><p /></template>\n");
     git("add", "-A");

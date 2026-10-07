@@ -376,9 +376,10 @@ spends no directive line; `check` still enforces it at full severity. A partial 
 its `(partial: ...)` warning on either kind of line. A claim reading `files here are named kebab-case` learned its class from the area's own
 files, so the same row states a different sentence in a different repository.
 
-A claim ending `, in .ts files` was counted over those files alone. The area also holds files the
-dimension is never asked of, a `.vue` component or a Ruby file, and the area file loads for them
-too, so the line says which files it speaks for.
+A claim ending `, in .ts files` was counted over those files alone. The area also holds three or
+more files the dimension is never asked of, `.vue` components or Ruby files, and the area file
+loads for them too, so the line says which files it speaks for. One or two such files earn no
+clause.
 
 ## What it measures
 
