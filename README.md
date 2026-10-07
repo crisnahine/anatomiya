@@ -348,9 +348,9 @@ too, so the line says which files it speaks for.
 
 ## What it measures
 
-58 dimensions ship: 28 for JavaScript, 33 reachable in JSX, 25 for Ruby. The script block of a Vue
-or Svelte file is asked a part of the JavaScript ones: 24 for Vue, 24 for Svelte. Each is one claim
-about one area, with a precision marker where the predicate cannot see every site. Among them:
+58 dimensions ship: 28 for JavaScript, 33 reachable in JSX, 25 for Ruby. A Vue or Svelte script
+block is asked most of the JavaScript ones: 24 for Vue, 24 for Svelte. Each is one claim about one
+area, with a precision marker where the predicate cannot see every site. Among them:
 
 - **Syntax habits**: error handling, `??` vs `||`, `?.` vs `!`, `import type`, hooks, handlers,
   translation calls, Rails migrations and callbacks, and the rest of the registry in
@@ -463,7 +463,7 @@ reports are the file's own. Three dimensions whose answer is in the template are
 types are marked import type`. `failure is returned, not thrown` is left out for Vue, and `a module
 that exports a hook exports one` for Svelte. The five JSX dimensions and the type-checked one are
 never asked of a component. Nothing is counted about markup: its directives, its event bindings, or
-which components it renders. The overview says so on every scan of a repository that holds one:
+which components it renders. The overview says so for any repository that holds a `.vue` or `.svelte` file:
 `of 17 .vue and .svelte files only the script block is read; the template is not`.
 
 **Small directories are not covered.** A directory needs `clamp(round(sqrt(N) / 6), 3, 8)` source

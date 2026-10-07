@@ -31,15 +31,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - `$lib/` in a SvelteKit project resolves to the importer's own `src/lib` for "most imported from
   here": 4,210 of 4,213 such imports on one measured repository, where none resolved before. No
   `svelte.config.js` is read, so a project that repoints the alias resolves nothing through it.
+- The end-of-turn reuse check asks about a component: the lines its script added and no others. An
+  edit to a template or a style block asks nothing.
 
 ### Changed
 
 - A claim says which files it was counted over where its area holds files the dimension is never
   asked of: `module-level bindings are const, in .ts files` beside a `.vue` file, and `rescue
-  blocks use the error they caught, in .rb files` beside a `.js` one. Existing maps change by
-  this. On the 35 measured repositories, 87 of 6,887 area files gain the clause, on 705 lines in
-  all, most of them where Ruby sits beside JavaScript. No file gains or loses a line, and 24 of
-  the 35 do not change.
+  blocks use the error they caught, in .rb files` beside a `.js` one. This changes existing
+  maps. On the 35 corpus repositories, 87 of 6,887 area files gained the clause, on 705 lines in
+  all, most of them where Ruby sits beside JavaScript. No file gained or lost a line, and 24 of
+  the 35 gained no clause. That count was taken with the clause naming extensions by language,
+  and has not been taken again with it naming only the files a dimension was asked of.
 - A directory whose components sit beside modules counts their namesake tests apart: `85 of 745
   .ts files have a namesake test; 79 of 164 .vue files have a namesake test`, on the root line,
   the tests line and an area's kinds line. The first count does not move.
@@ -48,8 +51,6 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   or a longer one. mastodon gains `469 files hold a language this map does not read (310 .haml,
   91 .scss, 47 .erb, 10 .css, 8 .sql, 3 .html)`. Where the overview already sat at its 40 lines,
   one root folds into the roster's last line to pay for it.
-- The end-of-turn reuse check asks about the lines a component's script added and no others. An
-  edit to a template or a style block asks nothing, where it used to ask about a `<button>`.
 - The type checker reads a root `tsconfig.base.json` where a repository has no root
   `tsconfig.json`, which is how a workspace with one config per package keeps its path aliases.
   Read on the compiler's defaults, every import through an alias resolved to nothing: of eight such

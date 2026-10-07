@@ -1948,7 +1948,7 @@ test("component files are counted under the one part of them that is read, by th
 });
 
 test("a template, a stylesheet and a shell script are named among what this map does not read", () => {
-  // A Rails fixture of six .erb and six .css files printed no word about twelve unread files.
+  // A Rails fixture printed no word about its twelve unread .erb and .css files.
   const corpus = { files: 90, truncated: false, dropped: {}, otherExts: [[".md", 40], [".json", 9], [".css", 6], [".erb", 6], [".sh", 2]] };
   const out = renderOverview(result({ corpus }), { uncovered: 0 });
 
