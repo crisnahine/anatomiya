@@ -61,10 +61,16 @@ const tailOf = (rel, rootPath) => {
   return dir.startsWith(`${rootPath}/`) ? dir.slice(rootPath.length + 1) : dir;
 };
 
-// The tree words every family shares, and the ones this family's own build
-// adds: a Gradle source set drops out, `Serilog.Tests` is `Serilog`, and a
-// Java path is its package, which is what follows the last `java` directory.
-const withoutTree = (dir, family) => {
+/**
+ * A directory with the words for its tree dropped: the ones every family
+ * shares, and the ones this family's own build adds. A Gradle source set
+ * drops out, `Serilog.Tests` is `Serilog`, and a Java path is its package,
+ * which is what follows the last `java` directory.
+ *
+ * Exported because the placement finding asks which source directory a test's
+ * own directory is about, which is this question.
+ */
+export const withoutTree = (dir, family) => {
   const own = FAMILY_TREES[family];
   let kept = [];
   for (const seg of dir.split("/")) {

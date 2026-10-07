@@ -585,8 +585,10 @@ carries. Each gets the layout section, its test files and namesake tests by the 
 naming, and the rows counted under [What it measures](#what-it-measures). A map of one of them
 mostly prints counts and states a claim only where a directory is consistent: a scan of fastapi
 states 1 of 86 claims, hugo 0 of 102, ktor 0 of 133 and tokio 14 of 33. None of the seven gets the
-type checker, the "most imported from here" lines, the end-of-turn reuse check or the notice before
-a test file is written. A file of any other language is not read: "What lives where" counts it, and
+type checker, the "most imported from here" lines or the end-of-turn reuse check. The notice before
+a test file is written, and the finding `check` reports for one, read a test by its language's
+name in six of them: a Rust test has no name, since cargo collects by place, so no `.rs` file is
+asked. A file of any other language is not read: "What lives where" counts it, and
 "Not covered" counts the ones whose extension it knows, `.c`, `.swift`, `.css` and `.sql` among them.
 
 **A grammar reads less than its language.** A file a grammar cannot read is left out of every

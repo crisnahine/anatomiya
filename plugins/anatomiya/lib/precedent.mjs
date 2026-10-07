@@ -8,8 +8,10 @@
  * instead, and answers it from counts the scan already took (H38).
  */
 import { byCode, dirOf } from "./paths.mjs";
-import { RUBY_TEST_NAME, TEST_DIRS, TEST_NAME, TEST_ROOTS } from "./test-shape.mjs";
+import { FAMILY_TEST_NAMES, RUBY_TEST_NAME, TEST_DIRS, TEST_NAME, TEST_ROOTS, namesATest, pairedWith } from "./test-shape.mjs";
+import { withoutTree } from "./companions.mjs";
 import { isCorpusPath } from "./corpus.mjs";
+import { familyOf, language } from "./langs.mjs";
 import { LEVEL_ONLY_LABEL } from "./layout.mjs";
 import { namesakeClause, testsParts } from "./render-layout.mjs";
 import { encode } from "./encode.mjs";
@@ -25,8 +27,16 @@ function hasPrecedent(r) {
   return (r?.companions?.with ?? 0) + (r?.companions?.inline ?? 0) >= PRECEDENT_FLOOR;
 }
 
+// The family whose own spelling of a test name a path is read by, or null where the JavaScript and Ruby spellings read it.
+const namedFamily = (rel) => {
+  const family = familyOf(language(rel));
+  return FAMILY_TEST_NAMES[family] ? family : null;
+};
+
 /**
- * Whether this path names a test file, in either language's spelling.
+ * Whether this path names a test file, in its language's spelling: the two
+ * JavaScript and Ruby share, or the one its own tool collects by. Rust has no
+ * name, cargo collecting by place, so no `.rs` path is one.
  *
  * Held to a source extension as well as to the name, because the name alone
  * admits `Component.test.tsx.snap`, `seed.test.sql`, `button.test.png` and
@@ -40,7 +50,9 @@ function hasPrecedent(r) {
  * four findings became none.
  */
 export function isTestPath(rel) {
-  return isCorpusPath(rel) && (TEST_NAME.test(rel) || RUBY_TEST_NAME.test(rel));
+  if (!isCorpusPath(rel)) return false;
+  const family = namedFamily(rel);
+  return family === null ? TEST_NAME.test(rel) || RUBY_TEST_NAME.test(rel) : namesATest(rel, family);
 }
 
 /**
@@ -52,6 +64,9 @@ export function isTestPath(rel) {
  * the same reason `companionRoot` drops it going the other way.
  */
 function testedTail(rel) {
+  // A family with a build of its own names its trees its own way: a Gradle source set, a `.Tests` project, a package under `java`.
+  const family = namedFamily(rel);
+  if (family !== null) return withoutTree(dirOf(rel), family);
   const parts = rel.split("/").slice(0, -1).filter((p) => !TEST_DIRS.has(p));
   return (TEST_ROOTS.has(parts[0]) ? parts.slice(1) : parts).join("/");
 }
@@ -74,9 +89,17 @@ function testedTail(rel) {
  * with. Where they are all untested the verdict is the same whichever it is, so
  * the one with the most producers speaks, since that is the strongest count
  * that is true.
+ *
+ * Where the language's build pairs the test's directory with a project, only a
+ * root of that project answers. A tail is a package there, and two modules
+ * keep one: okhttp's `mockwebserver-junit4` tests its own one class under the
+ * package `mockwebserver3`, and was held to the 2 of 14 of the `mockwebserver`
+ * module beside it.
  */
 function coveredRoot(rel, roots) {
   const parts = testedTail(rel).split("/").filter(Boolean);
+  const family = namedFamily(rel);
+  const inProject = family === null ? null : pairedWith(dirOf(rel), family);
   // A root recorded for one level counts nothing its children hold, so its zero
   // says the level is untested and never the directory. React's
   // `react-reconciler/src` reads 0 of 81 with 78 tests in the `__tests__`
@@ -86,7 +109,9 @@ function coveredRoot(rel, roots) {
   // schema this build knows and still hold a root that is not one; the hook's
   // never-fail catch is a floor rather than the answer.
   const eligible = roots.filter(
-    (r) => !r?.testRoot && typeof r?.dir === "string" && typeof r?.path === "string" && r?.companions && !r.path.endsWith(LEVEL_ONLY_LABEL)
+    (r) =>
+      !r?.testRoot && typeof r?.dir === "string" && typeof r?.path === "string" && r?.companions && !r.path.endsWith(LEVEL_ONLY_LABEL) &&
+      (inProject === null || inProject(r.dir))
   );
   for (let end = parts.length; end > 0; end -= 1) {
     const tail = parts.slice(0, end).join("/");
