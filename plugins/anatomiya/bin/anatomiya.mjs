@@ -38,10 +38,15 @@ const USAGE = [
   "repository the path is in, and scan prints the root it resolved to. doctor",
   "and setup take no path: they answer about this installation.",
   "",
-  "setup installs the node-hosted engine's dependencies in the plugin's own",
-  "directory. It is the only command that installs anything and the only one",
-  "that reaches a package registry, and nothing else here runs it. On Windows",
-  "it prints the command to run by hand instead.",
+  "doctor prints one line per engine: oxc, prism and tree-sitter, whose line",
+  "counts the grammars that load (grammars: 7 of 7). tree-sitter reads Python,",
+  "PHP, Go, Java, C#, Rust and Kotlin.",
+  "",
+  "setup installs the packages the node-hosted engines load, in the plugin's",
+  "own directory. It is the only command that installs anything and the only",
+  "one that reaches a package registry, and nothing else here runs it. On",
+  "Windows it prints the command to run by hand instead. A grammar file is no",
+  "package: one that does not load is fixed by reinstalling the plugin.",
 ].join("\n");
 
 /**

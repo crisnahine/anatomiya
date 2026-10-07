@@ -24,7 +24,15 @@ Run the readiness probe and report what it said.
    say before running it that setup runs npm in the plugin's own directory. For any other engine,
    report the remedy its line carries and stop there: installing an interpreter is the user's call.
 
-5. **Do not open the generated files with the Read tool.** Reading a context file permanently
+5. The `tree-sitter` line is the engine that reads Python, PHP, Go, Java, C#, Rust and Kotlin, and
+   it counts the grammar files that load: `tree-sitter 0.27.0 ok (grammars: 7 of 7)`. A line that
+   names a file, `grammars: 6 of 7, kotlin.wasm did not load`, is not something setup fixes: the
+   grammars ship in the plugin's own directory and no package install writes one. Report the remedy
+   the line carries, which is to reinstall the plugin, and do not offer `/anatomiya:setup` for it.
+   A scan still reads every other language meanwhile. `tree-sitter absent` is the package missing,
+   and that one setup does install.
+
+6. **Do not open the generated files with the Read tool.** Reading a context file permanently
    suppresses its automatic injection for the rest of the session. Use `cat` or `head` through
    Bash if you need to show one.
 

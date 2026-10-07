@@ -21,11 +21,13 @@ The scanner has three runtime dependencies, `oxc-parser`, `flow-remove-types` an
 `web-tree-sitter`, and `/plugin
 install` installs them: Claude Code runs `npm ci --ignore-scripts` in a plugin's own directory when
 it finds a lockfile there, and this plugin ships one. `web-tree-sitter` is the WebAssembly runtime
-for the seven grammars under `grammars/`, which ship as `.wasm` files and are not downloaded.
+for the seven grammars under `grammars/`, which ship as `.wasm` files and are not downloaded:
+Python, PHP, Go, Java, C#, Rust and Kotlin.
 
 Where nothing was installed, `/anatomiya:doctor` says so in its first line; where an install ran and
 stopped short, its engine lines say which one did not load. `/anatomiya:setup` answers both, and it
-is the only command that reaches a package registry. Outside Claude Code it is
+is the only command that reaches a package registry. A grammar file that does not load is named on
+the `tree-sitter` line, and the fix for that is to reinstall the plugin. Outside Claude Code it is
 `node bin/anatomiya.mjs setup`, run from this plugin's own directory.
 
 ## What it does

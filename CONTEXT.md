@@ -75,6 +75,21 @@ root took. A different unit from an area: it is counted over every tracked file 
 and it says nothing about which area a file belongs to.
 _Avoid_: top-level directory, folder, package, area
 
+**Engine**:
+One of the three parser engines a language is routed to: `oxc` for JavaScript, TypeScript and a
+component's script blocks, `prism` for Ruby, and `tree-sitter` for Python, PHP, Go, Java, C#, Rust
+and Kotlin. A language names its engine in its declaration, and `doctor` prints a line for each.
+The word also names the model and effort a measurement trial ran at, which is another thing.
+_Avoid_: parser (for the three as a set), backend, family
+
+**Grammar**:
+The `.wasm` file `tree-sitter` reads one language through: one per language, named after the
+language's id, shipped in the plugin's `grammars/` directory. It reads less than the language's own
+compiler does, so a file it cannot read is **unread** and not evidence of a syntax error. Under
+`oxc` the word is the dialect a file's extension picks (`ts`, `tsx`, a declaration file), which
+is a setting and no file.
+_Avoid_: parser, language pack, syntax file
+
 **Component**:
 A `.vue` or `.svelte` file: markup holding at most two script blocks. Its script is counted, by the
 dimensions that list its framework, and its template and style are not read. It is never a test
@@ -91,8 +106,8 @@ _Avoid_: script tag, script section, inline script
 
 **Family**:
 The languages a test may be written in and still answer a source file of another: JavaScript,
-TypeScript, JSX, Vue and Svelte are one family and Ruby is another. A test never answers a file
-of another family.
+TypeScript, JSX, Vue and Svelte are one family, Ruby is another, and Python, PHP, Go, Java, C#,
+Rust and Kotlin are each a family of one. A test never answers a file of another family.
 _Avoid_: engine, ecosystem, stack
 
 **Namesake test**:
@@ -100,6 +115,28 @@ A test file that answers one source file by carrying its stem. It says that file
 about where its root keeps its tests. Always another file: a Rust source file with a `#[cfg(test)]`
 module **holds its own tests**, has no namesake test, and is counted apart from the files asked for one.
 _Avoid_: unit test, matching spec, paired test, sibling test
+
+**Holds its own tests**:
+Said of a Rust source file with a `#[test]` function in it, in a `mod tests` or beside the code,
+that is not itself a test file. It stays a source file, is asked for no namesake test, and is
+counted in a clause of its own: `34 hold their own tests`.
+_Avoid_: inline test file, self-tested, unit-tested
+
+**Paired test project**:
+A test tree the language's build ties to one source tree by name and place: a .NET `X.Tests`
+project with `X`, a Maven or Gradle `src/test` or `<set>Test` source set with what sits beside
+it, a PHP `tests` with the `src` or `app` beside it. A test there answers the one source file of
+its stem in the paired tree at any depth, and no file where two carry the stem. A Python `tests`
+directory beside a package is paired too, and a test in it answers only the path it mirrors. No
+project file is read to find a pair.
+_Avoid_: test module, companion project, sibling project
+
+**One branch**:
+How a C# file is read when the grammar rejects it as written and takes it with every preprocessor
+directive line blanked and only the first branch of each `#if` kept. The file is examined, its
+counts are over the branch that was kept, and the scan and the check say so wherever a blanked
+branch held anything.
+_Avoid_: stripped, preprocessed, partial parse
 
 **Uncovered**:
 A source file that no area holds, either because discovery found nowhere to put it, or because the area
@@ -110,8 +147,11 @@ _Avoid_: unmapped, skipped, excluded
 A corpus file that contributed no sites, and which of the four reasons it was: **crashed** the
 parser, **rejected** as syntax the parser would not take, **oversize** past the per-file cap, or
 **unreadable**, meaning this tool or the filesystem could not produce it. A file that was examined
-is **ok**. The reader's next move differs for each, which is why one word will not do: rejected
-syntax is the repository's own code, and a crash is this tool's.
+is **ok**. The reader's next move differs for each, which is why one word will not do: a crash is
+this tool's, and what rejected means is the engine's to say. From `oxc` or `prism` it is a syntax
+error in the repository's own code. From a `tree-sitter` grammar the file is **unread**: a syntax
+error, or syntax the grammar does not cover, printed on a line of its own as a file this tool's
+grammar could not read. Unread is not unreadable.
 _Avoid_: failed, skipped, error, broken
 
 ### What is counted

@@ -1,6 +1,6 @@
 # Contributing
 
-Read `DECISIONS.md` first. It is 286 numbered rows, each one a measurement or a review finding reduced
+Read `DECISIONS.md` first. It is 295 numbered rows, each one a measurement or a review finding reduced
 to the decision it forces on the code. It is the build contract, and most questions you will have
 about why something is shaped the way it is are answered there in one line.
 
@@ -179,6 +179,11 @@ Where the code goes:
 - `plugins/anatomiya/lib/dimensions-jsx.mjs` the React surface, `langs: ["jsx"]` only
 - `plugins/anatomiya/lib/dimensions-ruby.mjs` Ruby, walking prism nodes through `walkRuby`
 - `plugins/anatomiya/lib/dimensions-rails.mjs` Rails schema and migrations, also prism
+- `plugins/anatomiya/lib/dimensions-tree.mjs` the rows asked of Python, PHP, Go, Java, C#, Rust and Kotlin, in
+  `TREE_DIMENSIONS`, walking a plain copy of a tree-sitter tree through `walkTree`
+- `plugins/anatomiya/lib/tree-shapes.mjs` what each grammar calls a function, a class, a comment, a handler and an
+  import. The only file that spells a grammar's node type or field name
+- `plugins/anatomiya/lib/tree-facets.mjs` whether a file of those seven declares a test case, and for which runner
 - `plugins/anatomiya/lib/pairing.mjs` file-to-file obligations and the `PAIRINGS` list. These are the one class the
   parse worker never runs, because it runs a program and an obligation has no program to run
   against. `reduceArea` composes both
@@ -209,7 +214,7 @@ The shape:
 ```
 
 A row is a visitor of the one walk its engine takes over each file (B49): `walk` for JavaScript,
-`walkRuby` for Ruby. Its file declares `visitor` and nothing else: `dimensions.mjs` gives every
+`walkRuby` for Ruby, `walkTree` for a tree-sitter tree. Its file declares `visitor` and nothing else: `dimensions.mjs` gives every
 visitor row its `run` with `fromVisitor` on its engine's walk, so the check and the tests can still
 ask one row at a time. Work that needs the whole file goes in an optional `done()` after the walk. A
 row that never walks, because it reads `program.body` alone, declares `run` instead.
@@ -336,6 +341,48 @@ prompt to open the row, never a verdict: measured across four repositories, all 
 named a construct that is simply rare. The share is not what finds an under-counting predicate. It
 cannot separate one from a rare construct, and the one under-count found so far was caught by a
 witness, on a row the share never flagged.
+
+### A row over a tree-sitter tree, and a language on that engine
+
+A row for one of the seven tree-sitter languages reads a plain copy of the tree: nodes of
+`{ type, start, end, line, field, text, children }`, with offsets in UTF-16 units into the source
+the row is handed. The wasm tree is deleted before the row runs (B62), so there is no other node to
+reach for.
+
+A row never spells a node type or a field name. Those go in `plugins/anatomiya/lib/tree-shapes.mjs`, one entry per
+language, and the row reads them from `SHAPES`. `test/tree-shapes.test.mjs` loads each vendored
+grammar and asks it for every name in the table, and it requires every name to appear in the tree
+of that language's sample in `test/tree-samples.mjs`. So a grammar release that renames a node
+fails a test. A name spelled inside a row is held by nothing, and after the rename it counts zero.
+Add the construct to the sample when you add a name.
+
+The row lists only the languages whose measured repositories differ on it, by the bar below, and
+its DECISIONS row names each language that was measured and left out, with the numbers. An unread
+file gives the row no site (B63), and a C# file read with one branch gives it the kept branch only
+(B64).
+
+Moving a grammar to another version is the two commands under [Setup and tests](#setup-and-tests),
+then the suite: `node scripts/grammars.mjs --check` (part of `npm run validate`) holds the copy to
+its package, and the shapes test says which names the new grammar dropped.
+
+A language new to the engine is these sites, in order:
+
+1. `plugins/anatomiya/lib/langs.mjs`: a `grammar(id, exts)` declaration and its place in `LANGUAGES`
+2. the grammar package as an exact dev dependency, its entry in `GRAMMARS` in
+   `scripts/grammars.mjs`, then `npm run grammars`
+3. `plugins/anatomiya/lib/tree-shapes.mjs` and `plugins/anatomiya/lib/tree-facets.mjs`: its entries
+4. `plugins/anatomiya/lib/render.mjs`: its extensions out of `OTHER_LANGUAGE_EXTS`, or the overview counts its
+   files as a language the map does not read
+5. `plugins/anatomiya/lib/test-shape.mjs`: its test names and its pairing, each decided by counting real
+   repositories
+6. `test/tree-samples.mjs` and `test/tree-broken.mjs`: an ordinary source, one the grammar answers
+   with an ERROR node and one with a MISSING token
+7. `scripts/check-docs.mjs` (`TREE_LANGS`): the name prose gives it, and `scripts/e2e-corpus.mjs`:
+   its probe body
+
+`test/langs.test.mjs` and `test/parse-contract.test.mjs` pin the list of ids and fail until the
+new one is in it. Before anything ships, measure how much of three real repositories the grammar
+leaves unread, and write the rate into DECISIONS beside B63's.
 
 ### Every site the row has to reach
 

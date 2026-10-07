@@ -132,13 +132,13 @@ stable filename across scans.
 
 ## 3. The parse pool
 
-One module drives both parsers and reads what comes back. The scan and the check each used to do
-that themselves, which meant each decided separately what an unread file means, and only one of them
-ever decided it.
+One module drives the three parser engines and reads what comes back, so what an unread file means is
+decided once for the scan and the check.
 
 Which parser reads a file is declared, not spelled. `plugins/anatomiya/lib/langs.mjs` holds one declaration per
 language: its extensions, its extensionless filenames, the scratch extension a path-less blob is
-written under, the grammar route per real extension, the dialect the retry may strip, the
+written under, the grammar route per real extension, the dialect the retry may strip, whether a
+rejected file may be read again with one branch of each conditional, the
 capabilities its callers ask about, how its tree nodes are addressed (`positions`: UTF-16 offsets
 or line numbers), the family a test of it may be written in, whose rules find its script blocks
 where it is a component, and the name of the engine that hosts it. The seam routes each
@@ -200,26 +200,58 @@ component. The template and the style block are never read, and the overview's N
 says so wherever the corpus holds one: `of 17 .vue and .svelte files only the script block is read; the
 template is not`.
 
+Python, PHP, Go, Java, C#, Rust and Kotlin are parsed by `web-tree-sitter`, one runtime for seven
+grammars. A grammar is a `.wasm` file in `plugins/anatomiya/grammars/`, named after its language's
+id and loaded from the plugin's own directory the first time a file of that language arrives. PHP
+takes its package's `php` grammar, so a `.php` file with no open tag is text, as PHP reads it, and
+counts as an empty file. The engine runs in the pool oxc runs in, under the same guards, in a child
+whose shell is `plugins/anatomiya/lib/tree-sitter-worker.mjs` over the body
+`plugins/anatomiya/lib/tree-sitter-file.mjs`. The process is there for another reason than oxc's.
+Nothing here segfaults, but a wasm tree is memory the collector never frees, and a wasm heap that
+reaches its cap fails every later parse in that process. So the body copies each tree into plain
+objects and deletes the wasm tree before a row or a facet reads anything. The copy keeps named
+nodes only, each with its type, its UTF-16 offsets, its line, its field name, and for a leaf its
+text up to 256 characters. Measured in one process, the resident size sat at 432 to 433 MB from the
+10th to the 300th parse of a 990 KB Python file. A parse that traps anyway answers its own file as
+unreadable and tells the pool to retire the worker, and the pool starts another before it hands
+out the next file.
+
+What each grammar calls a function, a class, a comment, a handler or an import is one table,
+`plugins/anatomiya/lib/tree-shapes.mjs`, and a test asks every vendored grammar for every node
+type and field the table names, so a grammar release that renames one fails a test where it would
+have counted zero.
+
 A file is unexamined in four ways, and the scan names them apart because the reader's next move
 differs: it crashed the parser, the parser rejected its syntax, this tool could not read it, or it
-was over the size cap. The second is new in this shape. Both parsers recover from a syntax error and
-hand back a tree, oxc to an almost empty one and prism to one holding nodes nobody wrote, and
-counting either moves the denominator without moving the code. So a parse reporting errors answers
+was over the size cap. The second is new in this shape. All three engines recover from a syntax error and
+hand back a tree, oxc an almost empty one, prism one holding nodes nobody wrote and tree-sitter
+one with an ERROR or MISSING node where it lost its place, and
+counting any of them moves the denominator without moving the code. So a parse reporting errors answers
 `ok: false` and contributes no sites, which is what every other unexamined file already gets.
 
 What a rejection means is the engine's to say. oxc and prism are their languages' own parsers, so a
 file they reject holds a syntax error. A tree-sitter grammar covers less than its language, so a
-file it rejects is counted on a line of its own, as one that could not be read by this tool's
-grammar, and the line says the file may be fine.
+file it rejects is counted on a line of its own, and the line says which two things that can mean:
+`82 files could not be read by this tool's grammar. That is a syntax error or syntax the grammar
+does not cover; the files may be fine.` That is ktor, where each of the 82 was opened and none holds a syntax error.
+On three repositories per language, the largest share of a repository's lines left unread is 0.00%
+for Python (one file in django, a fixture broken on purpose), 0.02% for PHP, none for Go and Rust,
+0.97% for Java, 4.35% for C# and 7.88% for Kotlin.
 
 The C# grammar reads `#if` around whole statements and whole members and nowhere else, and real C#
-writes it inside base lists, parameter lists, call chains and initializers: 18 of serilog's 216
-files and 66 of Newtonsoft.Json's 951 were rejected for it, over a quarter of each repository's
-lines. A `.cs` file the grammar rejects is parsed once more with every directive line blanked and
-every branch of each `#if` but the first, in place, so no offset or line moves, and the second
-tree is taken only where it is clean. That reads 17 of the 18 and all 66. A file read this way
-is counted over the branch that was kept, and where another branch went unread the scan counts
-the file on a line of its own: read with one branch of each `#if`.
+writes it inside base lists, parameter lists, call chains and initializers. It also rejects a file
+whose last line is a `#pragma`, `#endregion` or `#nullable` with no line break after it. Read as
+written, 18 of serilog's 216 files and 66 of Newtonsoft.Json's 951 are rejected, 27.7% and 25.9% of
+each repository's lines. A `.cs` file the grammar rejects is parsed twice more at most, and a
+retry is taken only where its tree is clean. The first appends a line break where the file ends
+without one, which drops nothing and moves no offset: it reads 23 of Newtonsoft.Json's 66, each
+ending in a `#pragma` line. The second blanks every directive line and every branch of each `#if`
+but the first, in place, so no offset or line moves: it reads 17 of serilog's 18 and the other 43
+of Newtonsoft.Json's. Where a blanked branch held anything, the file is counted over the branch
+that was kept and the scan counts it on a line of its own, `7 files were read with one branch of
+each #if; the other branches were not read`: 7 files in serilog and 31 in Newtonsoft.Json. The one
+serilog file still unread holds a C# 12 collection expression.
+
 prism is asked to parse as the interpreter it runs on (as 3.3, its oldest grammar, on an older
 one), because by default it parses as the newest Ruby it knows, and `a[0, k: 1] = 2`, valid until
 3.4, read as a syntax error on Ruby 3.3.
@@ -238,6 +270,11 @@ and the scan removed every area of that language. The check draws the same line:
 could not read and the engine's remedy, and refuses only a change with nothing else in it to read. A
 syntax error is none of this: the parser ran and answered.
 
+A grammar file that does not load costs its one language the same way, and is named apart from its
+engine, because the engine ran and read its other six. The line is `no kotlin file was read: the
+plugin's kotlin grammar did not load: reinstall this plugin, which ships its grammar files in its
+own directory`. The remedy is not `setup`: no package install writes a grammar file.
+
 Why a run went blind is asked of the engine rather than guessed. An engine that reported a version
 ran, so the files are what failed; one that reported none is the install, and its line carries that
 engine's own remedy. Guessing was measured wrong on a real machine: with `ruby` on `PATH` and no
@@ -249,7 +286,7 @@ are named with that cause and no install remedy, since `doctor` reports that ins
 | Guard | Value | Enforced |
 |---|---|---|
 | File size | 1 MB | checked with `stat` before the file is dispatched |
-| Wall time | 5s | `SIGKILL` from the parent; a file killed while other parses were in flight is retried once after the queue drains, with no other parse in flight, and one killed while it already ran alone is charged on that attempt, which is every kill in a one-worker pool (a one-file batch, or a machine with 2 or fewer CPUs) |
+| Wall time | 5s | `SIGKILL` from the parent; a tree-sitter parse it kills is charged on that attempt, and for oxc a file killed while other parses were in flight is retried once after the queue drains, with no other parse in flight, and one killed while it already ran alone is charged on that attempt, which is every kill in a one-worker pool (a one-file batch, or a machine with 2 or fewer CPUs) |
 | Resident memory | 1 GB | polled every 25ms, starting 250ms after the file goes in flight: read from `/proc/<pid>/status` on Linux, from `/bin/ps` on macOS and the BSDs without holding the parent, and not enforced on Windows, where the wall clock is what stops a runaway parse. A worker that moved on to another file while the read ran is not charged for the new one |
 | Worker start | 20s | `SIGKILL` from the parent for a worker that has not said ready; five such workers fail the pool, and its queued files are charged as crashed |
 
@@ -258,6 +295,12 @@ Pool size is `min(8, cores - 1)`, counting the cores this process may run on
 a container held to two cores, `cpus()` still lists every core of the host. The memory grace period
 exists so a normal parse never pays for the polling.
 
+A tree-sitter parse the wall clock kills is not retried, because the slow case measured is the
+grammar and not the machine. The Kotlin grammar is quadratic in a file's `<` comparisons: 1,000
+functions of one comparison each (48 KB) parsed in 0.4 seconds, 2,000 in 1.6 and 4,000 (195 KB) in
+6.4, and the 4,000 written with `>` in 0.09. A second parse alone would take as long as the
+first.
+
 The dimensions run in the worker, not in the parent. They are 85% of the scan's CPU (1.57ms per file
 against 0.27ms to parse), and running them in the parent left that 85% on one core: throughput
 stopped improving past four workers on an eleven-core machine. It also keeps the tree out of the IPC
@@ -265,7 +308,8 @@ channel, where an AST serialises to about 16x the source it came from and the pa
 all of it. What crosses is a conforming flag and a scope name per site. The check asks for the tree
 as well, since it reports line numbers, and it only ever parses the files one diff touched.
 
-The dimensions share one walk of each tree (B49), `walk` for JavaScript and `walkRuby` for Ruby. A
+The dimensions share one walk of each tree (B49), `walk` for JavaScript, `walkRuby` for Ruby and
+`walkTree` for a tree-sitter tree. A
 row is a visitor: `collectHits` makes every row's visitor, walks the tree once handing each node to
 each row still live, then calls each row's `done` for the work that needs the whole file. A throw
 while a visitor is made, on any node, or in `done` drops that row's sites for the file and no other
@@ -306,7 +350,7 @@ iteration later. Reading the published table visits the same 630,000 nodes 2.5x 
 produced.
 
 Two rules apply to every parser result. First, offsets are never used to index a buffer read from
-disk: `oxc` reports offsets in UTF-16 code units and `prism` reports them in UTF-8 bytes, 5.4% of
+disk: `oxc` and `web-tree-sitter` report offsets in UTF-16 code units and `prism` reports them in UTF-8 bytes, 5.4% of
 real files are non-ASCII, and the failure is silent corruption rather than a crash. Any slice comes
 from the same in-memory string the parser was handed. Second, the walk is outermost-first, which
 gives containment collapse for free: a nested match is visited after the node containing it, so the
@@ -2116,8 +2160,10 @@ Roughly, in order of how much they move the number of stated claims:
 - **Actual consistency.** The ratio gate is 0.90. Anything your team is 80% consistent about will
   print as counts, not as a claim. On the example repository, the ratio gate is the one most of the
   slots that did not state failed.
-- **Language.** JavaScript, TypeScript and Ruby, and the script blocks of Vue and Svelte files.
-  Nothing else is read, a component's template included.
+- **Language.** JavaScript, TypeScript and Ruby, the script blocks of Vue and Svelte files, and
+  Python, PHP, Go, Java, C#, Rust and Kotlin for the few rows section 4 counts for each. Nothing
+  else is read, a component's template included. A map of one of those seven mostly prints counts:
+  a scan of fastapi states 1 of 86 claims, hugo 0 of 102 and ktor 0 of 290.
 - **Repository size.** No cap. A 2,468 file repository takes about 1.8 seconds against a pinned
   baseline, a 5,477 file Ruby repository about 6.2, and a synthetic 100,000 file repository about
   9.2. Scaling is close to linear in file count. There was a 50,000 file cap, and hitting it did not
@@ -2177,6 +2223,7 @@ object and exits 0, as it does on any failure.
 | `node` | the process itself | its version is 22.0.0 or newer, the floor both manifests declare in `engines` | install Node 22 or newer and put it first on `PATH` |
 | `oxc` | node | `oxc-parser` imports | `anatomiya setup` in the plugin directory |
 | `flow-remove-types` | node | it imports. A row of its own, and not an engine: it is `oxc`'s dialect stripper, and one absent costs a dialect where the other costs the run | the same install |
+| `tree-sitter` | node | `web-tree-sitter` imports and each of the seven grammar files loads. The line carries the count, `grammars: 7 of 7`, and one that does not load is named on it: `grammars: 6 of 7, kotlin.wasm did not load` | the same install for the package; for a grammar file, reinstall the plugin, which ships them in its own directory |
 | `prism` | the `ruby` interpreter | the interpreter's own prism, or the newest prism gem installed for it when its own is older, answers a version of 1.0.0 or newer. A `ruby` that cannot run `ruby -e 1` at all (an rbenv shim with no version selected exits 127) is reported with its own first line of stderr, not as a missing prism | install Ruby 3.4 or newer, which ships prism 1.x, or run `gem install prism` on the Ruby you have, and put `ruby` on `PATH`; for a `ruby` that does not run, make `ruby -e 1` run first |
 | `typescript` | node | it imports at major 5, the one the tier runs on. One of another major is reported by its version rather than called absent, and the scan leaves the checker off. Optional: only the type checker needs it | the same install |
 
@@ -2189,7 +2236,10 @@ arbitrary code in the plugin directory. `--include=optional` is there because th
 binding is an optional dependency of `oxc-parser`: an npm configured with `optional=false` left it
 out and answered "up to date". An exit of 0 is not taken at its word either: setup asks the
 node-hosted engines again, in a fresh node because a module that failed to load stays failed in the
-process that tried it, and fails naming any that still does not load. It is the only command that installs anything and the only one that
+process that tried it, and fails naming any that still does not load. A grammar file is not
+something it can put back: with one cut short, `setup` lists `tree-sitter` as not installed, runs
+the same install, and answers that it is still not loading, so the line to act on is
+`doctor`'s. It is the only command that installs anything and the only one that
 reaches a package registry; `scan`, `check` and `pin` never call it. The only other outbound call
 anywhere here is the check's shallow-clone path, which is one `ls-remote` and one `fetch --depth=1`
 and nothing else (F5).
