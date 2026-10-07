@@ -167,6 +167,10 @@ test("the languages a run read none of are explained per cause: a grammar apart 
   assert.deepEqual(unreadReasons(["python", "go"], { engines: { "tree-sitter": { version: null } } }, "/plugin"), [
     { langs: ["python", "go"], why: "tree-sitter reported no version: run node bin/anatomiya.mjs setup in /plugin" },
   ]);
+  assert.deepEqual(unreadReasons(["python"], { engines: { "tree-sitter": { version: null } } }, null), [
+    { langs: ["python"], why: `tree-sitter reported no version: run ${ENGINES["tree-sitter"].remedy}` },
+  ]);
+  assert.equal(remedyFor("oxc", null), "run node bin/anatomiya.mjs setup in the plugin directory", "with no directory to name, the table's own words");
   assert.deepEqual(unreadReasons(["go", "kotlin"], { engines: {}, missingGrammars: ["kotlin", "go"] }), [
     { langs: ["go", "kotlin"], why: `the plugin's go and kotlin grammars did not load: ${GRAMMAR_REMEDY}` },
   ]);
