@@ -204,6 +204,15 @@ test("a component and the test file beside it are one engine, whatever the exten
   assert.equal(namesakeCompanions(src, [file("spec/components/Button.spec.rb")], "packages/ui/src/components").with, 0);
 });
 
+test("a TypeScript test mirrors a Vue component of the same stem", () => {
+  // The family and not the language: a component's test is a plain `.ts` file
+  // in every Vue and Svelte repository, and the two are different languages.
+  const src = [file("packages/ui/src/components/Foo.vue")];
+
+  assert.equal(namesakeCompanions(src, [file("spec/components/Foo.spec.ts")], "packages/ui/src/components").with, 1);
+  assert.equal(namesakeCompanions(src, [file("spec/components/Foo.spec.rb")], "packages/ui/src/components").with, 0);
+});
+
 test("the reversed mirror is refused across an engine, whichever way it is asked", () => {
   // mastodon keeps `app/javascript/mastodon/models/account.ts` beside
   // `app/models/account.rb`, and `spec/models/account_spec.rb` covers the Ruby

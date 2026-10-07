@@ -14,7 +14,8 @@ import { dimensionsFor } from "./dimensions.mjs";
 import { collectHits } from "./walk.mjs";
 import { jsFacets } from "./facets.mjs";
 import { rawTransferAllowed } from "./limits.mjs";
-import { ENGINES, grammarFor, holdsTypeSyntax, mayHoldFlow, mayBeCommonJS, spokenIn } from "./langs.mjs";
+import { ENGINES, embeddedIn, grammarFor, holdsTypeSyntax, mayHoldFlow, mayBeCommonJS, spokenIn } from "./langs.mjs";
+import { blankOutside, scriptBlocks } from "./sfc.mjs";
 
 let parseSync = null;
 let stripFlow = null;
@@ -160,6 +161,7 @@ async function ensureStripper() {
  */
 export async function parseFile(source, rel, lang, { withProgram = false, stripper } = {}) {
   const parse = await ensureParser();
+  if (embeddedIn(lang)) return parseEmbedded(parse, source, rel, lang, { withProgram });
 
   // The real extension, not the language: JSX is legal in a .js file and the
   // TypeScript grammar reads `<div` there as a type assertion, so the two
@@ -233,6 +235,11 @@ export async function parseFile(source, rel, lang, { withProgram = false, stripp
   // module record is the tree's, so a stripped file answers off the retry's
   // parse and reports the imports the stripper left standing.
   const facets = jsFacets({ program: tree.program, module: tree.module });
+  return record(tree, facets, { source, parsedSource, rel, lang, stripped, withProgram });
+}
+
+/** The ok record for a tree and the facets read off it: the rows it is asked, and what crosses. */
+function record(tree, facets, { source, parsedSource, rel, lang, stripped, withProgram }) {
   // A file that cannot carry the construct a row asks about leaves that row's
   // denominator: a file nobody asked is not a file that declined. Same trade
   // `blindWhenStripped` makes one line over. The extension answers it for the
@@ -249,7 +256,7 @@ export async function parseFile(source, rel, lang, { withProgram = false, stripp
     ok: true,
     hits: collectHits(tree.program, dims, { comments: tree.comments ?? [], source: parsedSource, rel }),
     facets,
-    errors,
+    errors: 0,
     stripped,
     // The source's own UTF-16 length, which the stripped copy must equal: this
     // is the one field a test can hold the offset-preserving strip against.
@@ -268,4 +275,50 @@ export async function parseFile(source, rel, lang, { withProgram = false, stripp
   }
 
   return payload;
+}
+
+// The grammar is the block's own `lang`, which no extension spells: a cast
+// written `<T>x` is legal under `ts` alone, and the rest read as a `.js` file does.
+const blockGrammar = (block, lang, rel) => (block.lang === "ts" ? "ts" : grammarFor(lang, rel));
+
+/**
+ * A component file: each script block parsed apart, then read as one program.
+ *
+ * Apart, because each block is a module of its own to the compiler and the two
+ * may import the same name. Everything outside a block is blanked in place, so
+ * every offset either tree carries is the file's own and the rows are handed
+ * the file as the caller holds it. No dialect retry runs: a component is built
+ * by its compiler, never run under Node's wrapper or written in Flow.
+ */
+function parseEmbedded(parse, source, rel, lang, { withProgram }) {
+  const { blocks, unterminated } = scriptBlocks(source, embeddedIn(lang));
+  // A script that never ends is a broken file, whatever was read before it.
+  if (unterminated) return { rel, ok: false, error: "a script block is never closed", errors: 1 };
+
+  // No block is an empty program, parsed like any other so the record is the same shape.
+  const read = blocks.length ? blocks : [{ start: 0, end: 0, lang: "js" }];
+  const trees = read.map((b) => parse(`f.${blockGrammar(b, lang, rel)}`, blankOutside(source, b.start, b.end)));
+  const errors = trees.reduce((n, t) => n + (t.errors || []).length, 0);
+  if (errors) return { rel, ok: false, error: `${errors} syntax error(s)`, errors };
+
+  const [first] = trees;
+  const listed = (key) => trees.flatMap((t) => t.module?.[key] ?? []);
+  const tree = {
+    // The first block's hashbang and source type stand for the file.
+    program: { ...first.program, body: trees.flatMap((t) => t.program.body), start: 0, end: source.length },
+    comments: trees.flatMap((t) => t.comments ?? []),
+    module: {
+      hasModuleSyntax: trees.some((t) => t.module?.hasModuleSyntax),
+      staticImports: listed("staticImports"),
+      staticExports: listed("staticExports"),
+      dynamicImports: listed("dynamicImports"),
+      importMetas: listed("importMetas"),
+    },
+  };
+
+  const facets = jsFacets({ program: tree.program, module: tree.module });
+  facets.embedded = embeddedIn(lang);
+  // The tag says so before any annotation does, and no extension can.
+  facets.typed ||= blocks.some((b) => b.lang === "ts" || b.lang === "tsx");
+  return record(tree, facets, { source, parsedSource: source, rel, lang, stripped: false, withProgram });
 }
