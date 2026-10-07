@@ -115,6 +115,15 @@ const CASES = {
       // A capitalised method of a type nobody outside the package can name is no part of what the package offers.
       ["package a\n\nfunc (binding) Bind() {}\n\nfunc (b *binding) Name() {}\n\nfunc (s *set[T]) Add(v T) {}\n", []],
       ["package a\n\n// Add adds.\nfunc (s *Set[t]) Add(v t) {}\n", [true]],
+      // A method that satisfies a standard interface says what it does by its name, and golint asks no comment of it.
+      ['package a\n\nfunc (t T) String() string { return "" }\n\nfunc (t *T) Error() string { return "" }\n\nfunc (t T) Unwrap() error { return nil }\n', []],
+      ["package a\n\nfunc (t T) Read(p []byte) (int, error) { return 0, nil }\n\nfunc (t T) Write(p []byte) (int, error) { return 0, nil }\n\nfunc (t T) ServeHTTP(w W, r *R) {}\n", []],
+      // The name alone is not the interface: a function of that name is offered as any other is.
+      ['package a\n\nfunc String() string { return "" }\n\nfunc (t T) Strings() []string { return nil }\n', [false, false]],
+      // Sorting is three methods, and a type holding all three in the file is sortable.
+      ["package a\n\nfunc (s S) Len() int { return 0 }\n\nfunc (s S) Less(i, j int) bool { return false }\n\nfunc (s *S) Swap(i, j int) {}\n", []],
+      ["package a\n\nfunc (s S) Len() int { return 0 }\n\nfunc (s S) Less(i, j int) bool { return false }\n\nfunc (q Q) Swap(i, j int) {}\n", [false, false, false]],
+      ["package a\n\nfunc main() {}\n\nfunc init() {}\n", []],
     ],
     java: [
       ["class A {\n    /** Runs. */\n    @Deprecated\n    public void run() {}\n}\n", [true]],
